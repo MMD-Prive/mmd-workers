@@ -2,7 +2,7 @@
 
 Status: Active memory lock
 Source: `mmd-prive-page-theme-migration-v2026.md`
-Updated: 2026-08-04
+Updated: 2026-09-19
 Scope: Webflow public pages, public acquisition pages, profiles, hall, public access, membership, trust pages, and customer-facing confirmation pages.
 
 ## 1. Core direction
@@ -235,6 +235,31 @@ components/webflow/sigil-trust-footer.html
 - no visible internal/SIGIL language
 
 The page may use the `HEro Sport.webp` asset for the hero when the older hero crop causes head cut-off.
+
+## 10A. Hall route lock — 2026-09-19
+
+Canonical public Hall page: `/hall` in Webflow.
+
+Current visible root:
+
+```text
+#mmd-hall-v6
+```
+
+Legacy `#mmd-hall-v5` is hidden fallback/source history only.
+
+Hall follows the public white-world theme and routes:
+- Find -> `/find?source=hall`
+- Browse Public Profiles -> `/profiles?source=hall`
+- Male Massage -> `/male-massage/home?source=hall`
+- Public Membership -> `/pay/membership?source=hall`
+- My MMD -> `/my-mmd/?source=hall`
+
+Public Membership is Member / Elite / Red Card. Standard / Premium stays in the explicit Private lane.
+
+Hall query-carry runtime targets `mmd-hall-v6` and carries only safe public campaign context (`code`, `promo`, `campaign`). Do not propagate signed payment/session authority such as `t` or `session_id` into unrelated Hall navigation.
+
+Hall remains presentation/navigation only and is not membership, payment, booking, entitlement or availability authority.
 
 ## 11. Final rule
 

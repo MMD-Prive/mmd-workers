@@ -51,6 +51,7 @@ function validPayload(overrides = {}) {
     phone: "+66 81 234 5678",
     telegram: "@smoke_private",
     work_types: ["Modeling", "Public Events", "Private Review Only"],
+    mmd_requested_public_roles: ["everyday_companion", "social_appearance"],
     consent: true,
     ...overrides,
   };
@@ -161,11 +162,12 @@ test("public model upload-url rejects invalid JSON and invalid payload", async (
 
 test("public model upload-url validates kind, role, MIME, and size", async () => {
   const cases = [
-    [{ kind: "video" }, "kind"],
+    [{ kind: "audio" }, "kind"],
     [{ kind: "photo", role: "trainer_certificate" }, "role"],
     [{ kind: "document", role: "front_face" }, "role"],
     [{ kind: "photo", content_type: "application/pdf", file_name: "profile.pdf" }, "content_type"],
     [{ kind: "document", role: "trainer_certificate", content_type: "application/pdf", file_name: "certificate.pdf" }, ""],
+    [{ kind: "clip", role: "introduction", content_type: "video/mp4", file_name: "intro.mp4" }, ""],
     [{ file_size: testInternals.PUBLIC_MODEL_MAX_UPLOAD_BYTES + 1 }, "file_size"],
     [{ file_size: 0 }, "file_size"],
     [{ file_name: "../front-face.jpg" }, "file_name"],
@@ -190,6 +192,29 @@ test("public model upload-url validates kind, role, MIME, and size", async () =>
       assert.equal(Object.hasOwn(body.fields, field), true, field);
     }
   }
+});
+
+test("public model upload contract caps photos at 8 and clips at 1", async () => {
+  const photos = Array.from({ length: 9 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_photo_${index}_123456` }));
+  const tooManyPhotos = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ upload_session_id: "pmu_session_123456", uploads: photos })),
+  });
+  const photoBody = await tooManyPhotos.json();
+  assert.equal(tooManyPhotos.status, 400);
+  assert.equal(photoBody.fields.upload_refs, "too many photos");
+
+  const clips = Array.from({ length: 2 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_clip_${index}_123456`, kind: "clip", role: "introduction" }));
+  const tooManyClips = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ upload_session_id: "pmu_session_123456", uploads: clips })),
+  });
+  const clipBody = await tooManyClips.json();
+  assert.equal(tooManyClips.status, 400);
+  assert.equal(clipBody.fields.upload_refs, "too many clips");
+  assert.equal(testInternals.PUBLIC_MODEL_MAX_UPLOAD_BYTES, 25 * 1024 * 1024);
+  assert.equal(testInternals.MAX_PHOTOS, 8);
+  assert.equal(testInternals.MAX_CLIPS, 1);
 });
 
 test("public model upload-url rejects structured metadata and camelCase server fields", async () => {
@@ -398,6 +423,20 @@ test("POST rejects upload object keys, URLs, raw data, and browser statuses", as
     assert.equal(body.ok, false);
     assert.equal(body.error, "invalid_payload");
   }
+});
+
+test("POST rejects unsupported requested public roles", async () => {
+  const response = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST",
+    headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ mmd_requested_public_roles: ["driver_companion", "doctor_without_verification"] })),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "invalid_payload");
+  assert.equal(body.fields.requested_roles, "contains unsupported role");
+  assert.equal(JSON.stringify(body).includes("doctor_without_verification"), false);
 });
 
 test("POST rejects unsupported public model work types", async () => {

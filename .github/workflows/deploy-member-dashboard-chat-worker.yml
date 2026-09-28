@@ -2,6 +2,16 @@ name: Deploy member-dashboard-chat-worker
 
 on:
   workflow_dispatch:
+    inputs:
+      payment_center_pending_intent_approved:
+        description: "Consented LINE test account and pending membership intent explicitly approved"
+        type: boolean
+        required: false
+        default: false
+      payment_center_test_plan:
+        description: "Approved test plan reference for authenticated Payment Center acceptance"
+        type: string
+        required: false
   push:
     branches:
       - main
@@ -9,6 +19,9 @@ on:
       - "member-dashboard-chat-worker/**"
       - "shared/verified-member-concierge.mjs"
       - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
+      - "shared/payment-intelligence.mjs"
+      - "shared/canonical-payment-evidence*"
+      - "shared/test/payment-memory-r2.mjs"
 
 concurrency:
   group: deploy-member-dashboard-chat-worker-production
@@ -30,6 +43,7 @@ jobs:
       WORKER_NAME: "member-dashboard-chat-worker"
       NO_COLOR: "1"
       AI_SERVICE_SMOKE_TOKEN: ${{ secrets.AI_SERVICE_SMOKE_TOKEN }}
+      MY_MMD_E2E_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -115,16 +129,24 @@ jobs:
       - name: Validate LINE, LIFF, CARE BACK, MMS Therapist, and MMS AI front gate
         id: tests
         run: |
+          node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
+          npm run test:payment-delivery
           node --check member-dashboard-chat-worker/src/index.js
+          node --check member-dashboard-chat-worker/src/my-mmd-orders-webflow-page.js
           node --check member-dashboard-chat-worker/src/front-gate-index.js
           node --check member-dashboard-chat-worker/src/mms-ai-knowledge-v4.js
           node --check member-dashboard-chat-worker/src/mms-ai-line-front-gate.js
+          node --check member-dashboard-chat-worker/src/internal-kenji-recommendation-shadow-smoke.mjs
+          node --check member-dashboard-chat-worker/src/eligible-recommendation-smoke-policy.mjs
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
           node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
+          node --test member-dashboard-chat-worker/test/model-availability-reminder.test.mjs
           node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
           node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
+          node --test member-dashboard-chat-worker/test/eligible-recommendation-smoke-policy.test.mjs
+          node --experimental-global-webcrypto --test member-pages-worker/private-teaser.test.mjs webflow/profiles/private-teaser-handoff.test.mjs
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
@@ -145,6 +167,68 @@ jobs:
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
 
+      - name: Apply pending Durable Object migration with direct deploy
+        id: migration_deploy
+        if: steps.upload.outcome == 'failure'
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          upload_log="$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
+          if ! grep -Fq "pending Durable Object migration" "$upload_log"; then
+            echo "versions upload failed for a non-migration reason; refusing direct deploy" >&2
+            exit 1
+          fi
+
+          tmp_config="wrangler.migration-deploy.toml"
+          trap 'rm -f "$tmp_config"' EXIT
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const output = [];
+          let skip = false;
+          for (const line of source) {
+            const trimmed = line.trim();
+            if (trimmed === "[triggers]" || trimmed === "[[routes]]") {
+              skip = true;
+              continue;
+            }
+            if (skip && /^\[/.test(trimmed)) {
+              skip = false;
+              if (trimmed === "[triggers]" || trimmed === "[[routes]]") {
+                skip = true;
+                continue;
+              }
+            }
+            if (!skip) output.push(line);
+          }
+          fs.writeFileSync("wrangler.migration-deploy.toml", output.join("\n"));
+          NODE
+
+          if grep -Eq '^\[\[routes\]\]|^\[triggers\]' "$tmp_config"; then
+            echo "temporary migration config still contains production route/trigger blocks" >&2
+            exit 1
+          fi
+          grep -q '^main = "src/my-mms-customer-front-gate-entry.js"$' "$tmp_config"
+          grep -q '^\[\[durable_objects.bindings\]\]$' "$tmp_config"
+          grep -q '^\[\[migrations\]\]$' "$tmp_config"
+          grep -q '^\[\[services\]\]$' "$tmp_config"
+
+          tag="gha-migration-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 deploy \
+            --config "$tmp_config" \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions Durable Object migration ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log"
+
+          version_id="$(sed -n -E 's/.*(Current|Worker) Version ID:[[:space:]]*([0-9a-fA-F-]+).*/\2/p' "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from direct migration deploy output" >&2
+            exit 2
+          fi
+          echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+          echo "Resolved direct-deploy version $version_id"
       - name: Resolve uploaded version ID
         id: resolve_version
         if: steps.upload.outcome == 'success'
@@ -173,7 +257,7 @@ jobs:
 
       - name: Sync MMS Therapist auth and AI smoke routes
         id: route_sync
-        if: steps.deploy.outcome == 'success'
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -186,6 +270,12 @@ jobs:
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
             "mmdbkk.com/v1/internal/ai/service-binding-smoke",
             "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
+            "mmdbkk.com/v1/member/payments*",
+            "www.mmdbkk.com/v1/member/payments*",
+            "mmdbkk.com/api/member/medical-request*",
+            "www.mmdbkk.com/api/member/medical-request*",
+            "mmdbkk.com/member/api/shop/*",
+            "www.mmdbkk.com/member/api/shop/*",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
@@ -265,6 +355,46 @@ jobs:
             }
           ' "$catalog"
 
+          payments_headers="$RUNNER_TEMP/member-payments.headers"
+          payments_body="$RUNNER_TEMP/member-payments.json"
+          payments_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$payments_headers" -o "$payments_body" -w "%{http_code}" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/v1/member/payments || true)"
+          test "$payments_code" = "401"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$payments_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$payments_headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$payments_headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$payments_headers"
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (body?.error?.code !== "MEMBER_SESSION_REQUIRED" || body?.auth_required !== true) {
+              throw new Error(`Unexpected member payments unauthenticated contract: ${JSON.stringify(body)}`);
+            }
+          ' "$payments_body"
+
+          medical_headers="$RUNNER_TEMP/member-medical-request.headers"
+          medical_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$medical_headers" -o /dev/null -w "%{http_code}" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/api/member/medical-request || true)"
+          test "$medical_code" = "401"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$medical_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$medical_headers"
+
+          payment_center_headers="$RUNNER_TEMP/my-mmd-payment-center.headers"
+          payment_center_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$payment_center_headers" -o /dev/null -w "%{http_code}"             https://www.mmdbkk.com/my-mmd/payments || true)"
+          test "$payment_center_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$payment_center_headers"
+          grep -qi '^x-mmd-presentation-owner: lovable' "$payment_center_headers"
+
+          continue_headers="$RUNNER_TEMP/liff-continue-payment.headers"
+          continue_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$continue_headers" -o /dev/null -w "%{http_code}"             'https://www.mmdbkk.com/member/liff?intent=continue_payment' || true)"
+          test "$continue_code" = "200"
+          grep -qi '^x-mmd-liff-return-target: /my-mmd/payments' "$continue_headers"
+          grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$continue_headers"
+
           auth_headers="$RUNNER_TEMP/mms-therapist-auth.headers"
           auth_body="$RUNNER_TEMP/mms-therapist-auth.json"
           curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
@@ -275,18 +405,323 @@ jobs:
           grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
           grep -qi '^cache-control: .*no-store' "$auth_headers"
 
+      - name: Smoke MY MMD Private Teaser Viewer route
+        id: private_teaser_route_smoke
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assert_viewer_headers() {
+            local headers="$1"
+            grep -qi '^x-mmd-ui-source: my-mmd-private-teaser-viewer-v1' "$headers"
+            grep -qi '^x-mmd-presentation-owner: mmd-workers' "$headers"
+            grep -qi '^cache-control: .*no-store' "$headers"
+            grep -qi '^x-frame-options: DENY' "$headers"
+            grep -qi "content-security-policy: .*frame-ancestors 'none'" "$headers"
+          }
+
+          # Canonical unauthenticated host: www renders the viewer directly.
+          www_landing_headers="$RUNNER_TEMP/private-teaser-www.headers"
+          www_landing_body="$RUNNER_TEMP/private-teaser-www.html"
+          www_landing_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$www_landing_headers" -o "$www_landing_body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/my-mmd/private-preview?model=acceptance-test')"
+          echo "Private Teaser www landing HTTP: $www_landing_code"
+          test "$www_landing_code" = "200"
+          assert_viewer_headers "$www_landing_headers"
+          grep -q 'Private Preview' "$www_landing_body"
+          grep -q '/api/member/app/private-teaser/availability?' "$www_landing_body"
+          if grep -Eqi 'private-model-media|r2\.cloudflarestorage|X-Amz-(Credential|Signature)' "$www_landing_body"; then
+            echo "Private Teaser landing leaked a storage locator or signed media URL on www" >&2
+            exit 1
+          fi
+
+          www_player_headers="$RUNNER_TEMP/private-teaser-player-www.headers"
+          www_player_body="$RUNNER_TEMP/private-teaser-player-www.html"
+          www_player_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$www_player_headers" -o "$www_player_body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/my-mmd/private-preview/view')"
+          echo "Private Teaser www player HTTP: $www_player_code"
+          test "$www_player_code" = "200"
+          assert_viewer_headers "$www_player_headers"
+          grep -q '/api/member/app/private-preview/status?t=' "$www_player_body"
+          grep -q '/api/member/app/private-preview/consume' "$www_player_body"
+
+          # Apex without a host-only session intentionally canonicalizes to www.
+          apex_redirect_headers="$RUNNER_TEMP/private-teaser-apex-redirect.headers"
+          apex_redirect_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$apex_redirect_headers" -o /dev/null -w "%{http_code}" \
+            'https://mmdbkk.com/my-mmd/private-preview?model=acceptance-test')"
+          echo "Private Teaser apex unauthenticated HTTP: $apex_redirect_code"
+          test "$apex_redirect_code" = "308"
+          grep -Fqi 'location: https://www.mmdbkk.com/my-mmd/private-preview?model=acceptance-test' "$apex_redirect_headers"
+          grep -qi '^x-mmd-my-mmd-canonical-host: www.mmdbkk.com' "$apex_redirect_headers"
+          grep -qi '^cache-control: .*no-store' "$apex_redirect_headers"
+
+          # Presence of the __Host- session cookie must preserve the apex host.
+          # This inert marker is never sent to a member API and cannot authenticate.
+          apex_session_headers="$RUNNER_TEMP/private-teaser-apex-session.headers"
+          apex_session_body="$RUNNER_TEMP/private-teaser-apex-session.html"
+          apex_session_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$apex_session_headers" -o "$apex_session_body" -w "%{http_code}" \
+            -H 'Cookie: __Host-mmd_liff_session=acceptance-host-preservation-only' \
+            'https://mmdbkk.com/my-mmd/private-preview?model=acceptance-test')"
+          echo "Private Teaser apex host-preservation HTTP: $apex_session_code"
+          test "$apex_session_code" = "200"
+          assert_viewer_headers "$apex_session_headers"
+          grep -q 'Private Preview' "$apex_session_body"
+
+          # Both API hosts must fail closed without a verified session.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            host="${origin#https://}"
+            api_headers="$RUNNER_TEMP/private-teaser-api-${host}.headers"
+            api_body="$RUNNER_TEMP/private-teaser-api-${host}.json"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+              -D "$api_headers" -o "$api_body" -w "%{http_code}" \
+              -H "Origin: $origin" \
+              "$origin/api/member/app/private-teaser/availability?model_slug=acceptance-test&work_lane=companion" || true)"
+            echo "Private Teaser $host unauthenticated API HTTP: $api_code"
+            test "$api_code" = "401"
+            jq -e '.ok == false and .error.code == "MEMBER_SESSION_REQUIRED"' "$api_body" >/dev/null
+            grep -qi '^cache-control: .*no-store' "$api_headers"
+          done
+
+          echo "PASS Private Teaser Viewer V1 canonical-host + session-preservation + fail-closed acceptance; no grant or media consumption performed"
+
+      - name: Record Private Teaser Viewer production acceptance
+        if: steps.private_teaser_route_smoke.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## ✅ Private Teaser Viewer V1 — LIVE ROUTE ACCEPTED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`${checked_at}\`\n- www landing: \`/my-mmd/private-preview\` = 200\n- www player: \`/my-mmd/private-preview/view\` = 200\n- apex without session: 308 canonical redirect to www\n- apex with host-only session-cookie presence: 200 and host preserved\n- UI source: \`my-mmd-private-teaser-viewer-v1\`\n- presentation owner: \`mmd-workers\`\n- unauthenticated availability API: \`401 MEMBER_SESSION_REQUIRED\` on apex + www\n- cache/frame/CSP guards: verified\n- public/signed private-media locator exposure: none detected\n- acceptance side effects: no session minted, no grant created, no media consumed"
+
+      - name: Authenticated My MMD Payment Center acceptance
+        id: member_payments_authenticated
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        env:
+          PAYMENT_CENTER_INTENT_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.payment_center_pending_intent_approved && 'true' || 'false' }}
+          PAYMENT_CENTER_TEST_PLAN: ${{ inputs.payment_center_test_plan || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MY_MMD_E2E_ID_TOKEN:-}" ] || [ "$PAYMENT_CENTER_INTENT_APPROVED" != "true" ] || [ -z "${PAYMENT_CENTER_TEST_PLAN//[[:space:]]/}" ]; then
+            echo 'status=BLOCKED_MISSING_CONSENT_OR_TOKEN' >> "$GITHUB_OUTPUT"
+            echo 'Payment Center acceptance: BLOCKED_MISSING_CONSENT_OR_TOKEN — a token, explicit pending-intent approval, and an approved test plan are required.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::add-mask::$MY_MMD_E2E_ID_TOKEN"
+          payment_center_status=RUNNING
+          payment_center_report() {
+            echo "status=$payment_center_status" >> "$GITHUB_OUTPUT"
+            echo "Payment Center acceptance: $payment_center_status" >> "$GITHUB_STEP_SUMMARY"
+          }
+          trap 'if [ "$payment_center_status" = RUNNING ]; then payment_center_status=FAILED; fi; payment_center_report' EXIT
+
+          jar="$RUNNER_TEMP/member-payments-live.cookies"
+          start_headers="$RUNNER_TEMP/member-payments-live-start.headers"
+          start_body="$RUNNER_TEMP/member-payments-live-start.json"
+          start_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$start_headers" -c "$jar" -o "$start_body" -w "%{http_code}"             -X POST https://www.mmdbkk.com/member/api/liff/start             -H 'Origin: https://www.mmdbkk.com'             -H 'Accept: application/json'             -H 'Content-Type: application/json'             --data-binary "$(jq -nc --arg id_token "$MY_MMD_E2E_ID_TOKEN" '{id_token:$id_token,intent:"continue_payment",liff_intent:"continue_payment"}')")"
+          test "$start_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$start_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$start_headers"
+          grep -q '__Host-mmd_liff_session' "$jar"
+          jq -e '.ok == true and (.data | type == "object")' "$start_body" >/dev/null
+
+          # Create/reuse a real backend-owned pending public Membership intent on the
+          # dedicated E2E account. This proves the signed handoff without fabricating
+          # payment truth or granting entitlement.
+          purchase_body="$RUNNER_TEMP/member-payments-live-purchase.json"
+          purchase_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -b "$jar" -c "$jar" -o "$purchase_body" -w "%{http_code}"             -X POST https://www.mmdbkk.com/member/api/liff/public-membership/purchase             -H 'Origin: https://www.mmdbkk.com'             -H 'Accept: application/json'             -H 'Content-Type: application/json'             --data-binary '{"package_code":"mmd_member"}')"
+          test "$purchase_code" = "200"
+          jq -e '.ok == true and .official_verification_required == true and .entitlement_granted == false and (.customer_payment_url | startswith("https://mmdbkk.com/pay/checkout?t="))' "$purchase_body" >/dev/null
+
+          auth_headers="$RUNNER_TEMP/member-payments-live.headers"
+          auth_body="$RUNNER_TEMP/member-payments-live.json"
+          auth_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$auth_headers" -b "$jar" -c "$jar" -o "$auth_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             https://www.mmdbkk.com/v1/member/payments)"
+          test "$auth_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$auth_headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$auth_headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$auth_headers"
+
+          node - "$auth_body" <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (body?.ok !== true || body?.schema !== "mmd_member_payments_v1") throw new Error("unexpected Payment Center BFF schema");
+          if (body?.authority !== "member-pages-worker" || body?.money_authority !== "payments-worker") throw new Error("payment authority boundary mismatch");
+          if (body?.surface_role !== "status_history_navigation") throw new Error("unexpected Payment Center surface role");
+          if (!Array.isArray(body?.records)) throw new Error("payment records are not an array");
+          const forbidden = new Set(["line_user_id","lineUserId","airtable_record_id","record_id","admin_note","internal_note","bank_account","promptpay_destination","qr_payload","verification_actor"]);
+          const walk = (value, path = "$") => {
+            if (!value || typeof value !== "object") return;
+            if (Array.isArray(value)) return value.forEach((v, i) => walk(v, path + "[" + i + "]"));
+            for (const [key, child] of Object.entries(value)) {
+              if (forbidden.has(key)) throw new Error("customer-unsafe field leaked at " + path + "." + key);
+              walk(child, path + "." + key);
+            }
+          };
+          walk(body);
+          const current = body.records.find((record) => record && record.payment_ref);
+          if (!current) throw new Error("real pending payment intent missing from Payment Center");
+          if (current.official_status === "pending_review" && current.customer_payment_url) throw new Error("pending_review leaked a payment CTA");
+          const signed = new URL(current.customer_payment_url);
+          if (signed.origin !== "https://mmdbkk.com" || signed.pathname !== "/pay/checkout" || [...signed.searchParams.keys()].join(",") !== "t" || !signed.searchParams.get("t")) {
+            throw new Error("Payment Center did not preserve the exact canonical signed handoff");
+          }
+          console.log("PASS real-member Payment Center acceptance; records=" + body.records.length);
+          NODE
+
+          reject_body="$RUNNER_TEMP/member-payments-live-reject.json"
+          reject_code="$(curl -sS -b "$jar" -o "$reject_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             'https://www.mmdbkk.com/v1/member/payments?payment_ref=browser-selected')"
+          test "$reject_code" = "400"
+          jq -e '.error.code == "BROWSER_PAYMENT_CONTEXT_REJECTED"' "$reject_body" >/dev/null
+          payment_center_status=PASSED
+
       - name: Smoke internal AI service binding
         id: ai_binding_smoke
-        if: steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
         shell: bash
         run: |
           response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
           node -e '
             const body = JSON.parse(process.argv[1]);
-            if (body.ok !== true || body.read_only !== true || body.service !== "ai-worker" || body.contract !== "kenji_customer_reasoning_v1") {
+            if (body.ok !== true || body.read_only !== true || body.service !== "ai-worker" || body.contract !== "kenji_conversation_matrix_shadow_v1" || body.customer_side_effects !== false) {
               throw new Error(`Unexpected AI service-binding smoke response: ${process.argv[1]}`);
             }
           ' "$response"
+
+      - name: Smoke Kenji Phase 2 contextual understanding shadow
+        id: kenji_contextual_shadow_smoke
+        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/kenji-contextual-shadow-smoke.json"
+          response_code="$(curl --retry 2 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$response_file" -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"contextual_understanding_shadow"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          response="$(cat "$response_file")"
+          echo "Kenji contextual shadow smoke HTTP: ${response_code}"
+          echo "Kenji contextual shadow smoke body: ${response}"
+          node -e '
+            const httpStatus = Number(process.argv[2]);
+            const body = JSON.parse(process.argv[1]);
+            if (httpStatus !== 200) {
+              throw new Error(`Kenji contextual shadow smoke HTTP ${httpStatus}: ${process.argv[1]}`);
+            }
+            if (
+              body.ok !== true ||
+              body.mode !== "contextual_understanding_shadow" ||
+              body.schema !== "mmd.kenji_line_contextual_understanding.v1" ||
+              body.shadow_only !== true ||
+              body.customer_side_effects !== false ||
+              body.auto_send_allowed !== false ||
+              body.model_attempted !== true ||
+              body.model_success !== true ||
+              body.analysis_source !== "model" ||
+              !["comparison", "referential_followup"].includes(body.relation) ||
+              body.topic_relation !== "same_topic" ||
+              body.wants_similar !== true ||
+              body.price_direction !== "lower"
+            ) {
+              throw new Error(`Unexpected Kenji contextual shadow smoke response: ${process.argv[1]}`);
+            }
+            if ("answer" in body || "reply" in body || "customer_copy" in body) {
+              throw new Error("Contextual shadow smoke exposed customer-facing copy");
+            }
+          ' "$response" "$response_code"
+
+      - name: Smoke real canonical Kenji recommendation service binding
+        id: kenji_recommendation_shadow_smoke
+        if: always() && steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AI_SERVICE_SMOKE_TOKEN}"
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"real_kenji_recommendation"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const receipt = body.recommendation_receipt || {};
+            const context = body.context_receipt || {};
+            const guard = body.guardrails || {};
+            if (
+              body.ok !== true ||
+              body.mode !== "real_kenji_recommendation" ||
+              body.read_only !== true ||
+              body.shadow_only !== true ||
+              body.caller !== "member-dashboard-chat-worker" ||
+              body.canonical_context_real !== true ||
+              body.customer_side_effects !== false ||
+              context.identity_state !== "known" ||
+              receipt.upstream_ok !== true ||
+              receipt.deployment_mode !== "shadow" ||
+              guard.auto_send_allowed !== false ||
+              guard.booking_confirmed !== false ||
+              guard.payment_confirmed !== false ||
+              guard.entitlement_mutated !== false ||
+              guard.source_rate_exposed !== false ||
+              guard.raw_notes_exposed !== false
+            ) {
+              throw new Error(`Unexpected real Kenji recommendation shadow smoke response: ${process.argv[1]}`);
+            }
+            console.log(JSON.stringify({
+              ok: body.ok,
+              mode: body.mode,
+              caller: body.caller,
+              context_receipt: context,
+              recommendation_receipt: receipt,
+              guardrails: guard,
+              customer_side_effects: body.customer_side_effects,
+            }, null, 2));
+          ' "$response"
+
+      - name: Smoke eligible-client Kenji recommendations
+        id: kenji_eligible_recommendation_shadow_smoke
+        if: always() && steps.kenji_recommendation_shadow_smoke.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AI_SERVICE_SMOKE_TOKEN}"
+          response_file="$RUNNER_TEMP/kenji-eligible-shadow-smoke.json"
+          response_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$response_file" -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"eligible_kenji_recommendation"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          response="$(cat "$response_file")"
+          echo "Eligible Kenji smoke HTTP: ${response_code}"
+          echo "Eligible Kenji smoke body: ${response}"
+          node --input-type=module -e '
+            import { assertEligibleRecommendationSmoke } from "./member-dashboard-chat-worker/src/eligible-recommendation-smoke-policy.mjs";
+            const body = JSON.parse(process.argv[1]);
+            const httpStatus = Number(process.argv[2]);
+            const result = assertEligibleRecommendationSmoke(body, httpStatus);
+            if (result.classification === "review_only") {
+              console.warn("::warning::Eligible recommendation pipeline is healthy but current live data is review-only (for example missing/stale availability or another safe offer gate).");
+            }
+            console.log(JSON.stringify({
+              ...result,
+              mode: body.mode,
+              attempted_eligible_clients: body.attempted_eligible_clients,
+              diagnostics: body.diagnostics || null,
+              recommendation_receipt: body.recommendation_receipt || null,
+              customer_side_effects: body.customer_side_effects,
+            }, null, 2));
+          ' "$response" "$response_code"
 
       - name: Report deploy stage diagnosis
         if: always()
@@ -299,10 +734,17 @@ jobs:
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
           DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
           UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          MIGRATION_DEPLOY_OUTCOME: ${{ steps.migration_deploy.outcome }}
           RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
+          PAYMENT_CENTER_ACCEPTANCE_OUTCOME: ${{ steps.member_payments_authenticated.outcome }}
+          PAYMENT_CENTER_ACCEPTANCE_STATUS: ${{ steps.member_payments_authenticated.outputs.status }}
+          KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
+          KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
+          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
         run: |
           set -euo pipefail
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -314,16 +756,24 @@ jobs:
             stopped="tests"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
             stopped="versions dry-run"
-          elif [ "$UPLOAD_OUTCOME" != "success" ]; then
-            stopped="versions upload"
-          elif [ "$RESOLVE_OUTCOME" != "success" ]; then
+          elif [ "$UPLOAD_OUTCOME" != "success" ] && [ "$MIGRATION_DEPLOY_OUTCOME" != "success" ]; then
+            stopped="versions upload / Durable Object migration deploy"
+          elif [ "$UPLOAD_OUTCOME" = "success" ] && [ "$RESOLVE_OUTCOME" != "success" ]; then
             stopped="resolve uploaded version"
-          elif [ "$DEPLOY_OUTCOME" != "success" ]; then
+          elif [ "$UPLOAD_OUTCOME" = "success" ] && [ "$DEPLOY_OUTCOME" != "success" ]; then
             stopped="versions deploy"
           elif [ "$ROUTE_SYNC_OUTCOME" != "success" ]; then
             stopped="MMS route sync"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
+          elif [ "$PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME" != "success" ]; then
+            stopped="MY MMD Private Teaser Viewer live route acceptance"
+          elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="Kenji Phase 2 contextual understanding shadow smoke"
+          elif [ "$KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="real Kenji recommendation shadow smoke"
+          elif [ "$KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="eligible-client Kenji recommendation shadow smoke"
           else
             stopped="none — live verified"
           fi
@@ -335,6 +785,7 @@ jobs:
             "$RUNNER_TEMP/cloudflare-whoami.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" \
             "$RUNNER_TEMP/mms-therapist-auth.headers" \
             "$RUNNER_TEMP/mms-therapist-auth.json"; do
             if [ -f "$log" ]; then
@@ -357,10 +808,17 @@ jobs:
           - tests: \`${TESTS_OUTCOME}\`
           - versions dry-run: \`${DRY_RUN_OUTCOME}\`
           - versions upload: \`${UPLOAD_OUTCOME}\`
+          - Durable Object migration deploy: \`${MIGRATION_DEPLOY_OUTCOME}\`
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - MMS route sync: \`${ROUTE_SYNC_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
+          - Private Teaser live route acceptance: \`${PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME}\`
+          - Payment Center authenticated acceptance step: \`${PAYMENT_CENTER_ACCEPTANCE_OUTCOME}\`
+          - Payment Center authenticated acceptance status: \`${PAYMENT_CENTER_ACCEPTANCE_STATUS:-NOT_RUN}\`
+          - Kenji contextual shadow smoke: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji canonical recommendation smoke: \`${KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji eligible-client recommendation smoke: \`${KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
           Cloudflare/Wrangler detail:
@@ -370,11 +828,54 @@ jobs:
           EOF
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
 
-      - name: Record verified live receipt
-        if: steps.smoke.outcome == 'success'
+      - name: Enforce production deploy success
+        if: always()
+        shell: bash
+        env:
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
+        run: |
+          if [ "$SMOKE_OUTCOME" != "success" ]; then
+            echo "member-dashboard-chat-worker production smoke did not pass" >&2
+            exit 1
+          fi
+          if [ "$PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME" != "success" ]; then
+            echo "MY MMD Private Teaser Viewer live route acceptance did not pass" >&2
+            exit 1
+          fi
+      - name: Record verified deployment and route receipt
+        if: >-
+          ${{ !cancelled() &&
+              ((steps.resolve_version.outcome == 'success' && steps.deploy.outcome == 'success') ||
+               steps.migration_deploy.outcome == 'success') &&
+              steps.route_sync.outcome == 'success' &&
+              steps.smoke.outcome == 'success' &&
+              env.MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID != '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
+          KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
+          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
         run: |
+          set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: MMD LINE + canonical MMS LINE runtime + MMS service binding verified\n- route mutation: \`6 narrow MMS routes synced\`"
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+          cat > "$body_file" <<EOF
+          ✅ member-dashboard-chat-worker DEPLOY + ROUTE VERIFIED
+
+          - source_sha: \`${GITHUB_SHA}\`
+          - deployed_at: \`${deployed_at}\`
+          - version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`
+          - MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`
+          - MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`
+          - MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`
+          - verified scope: version deployment + MMD LINE/MMS route ownership smoke
+          - required routes: verified by route_sync
+          - Kenji contextual shadow smoke: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji canonical recommendation smoke: \`${KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji eligible-client recommendation smoke: \`${KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - acceptance boundary: this receipt does not attest Kenji contextual/recommendation acceptance or Card 21829530 pilot/human E2E; see the deploy diagnosis for those outcomes
+          EOF
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"

@@ -127,6 +127,7 @@ jobs:
           const desired = [
             "mmdbkk.com/sigil/model/dashboard*",
             "www.mmdbkk.com/sigil/model/dashboard*",
+            "mmdbkk.com/sigil/model/wish*",
             "mmdbkk.com/assets/*",
             "www.mmdbkk.com/assets/*",
             "mmdbkk.com/_build/*",
@@ -187,37 +188,108 @@ jobs:
         run: |
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            pwa_headers="$(mktemp)"
+            pwa_body="$(mktemp)"
+            pwa_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$pwa_headers" -o "$pwa_body" -w "%{http_code}" \
+              "$origin/sigil/model/dashboard?launch=pwa&mmd_smoke=1")"
+            cat "$pwa_headers"
+            test "$pwa_code" = "200"
+            tr -d '\r' < "$pwa_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$pwa_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*pwa-liff-bootstrap-v1$'
+            grep -q 'withLoginOnExternalBrowser:true' "$pwa_body"
+            grep -q '2010864854-N34SgCqq' "$pwa_body"
+
+            anon_headers="$(mktemp)"
+            anon_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$anon_headers" -o /dev/null -w "%{http_code}" \
+              "$origin/sigil/model/dashboard?lang=th&flow=verify&mmd_smoke=1")"
+            cat "$anon_headers"
+            test "$anon_code" = "302"
+            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*line-miniapp-handoff-v1$'
+            tr -d '\r' < "$anon_headers" | grep -F -i -q 'location: https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify'
+
+            primary_headers="$(mktemp)"
+            primary_body="$(mktemp)"
+            primary_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$primary_headers" -o "$primary_body" -w "%{http_code}" \
+              "$origin/sigil/model/dashboard?liff.state=%3Fflow%3Dverify%26lang%3Dth&access_token=smoke-token")"
+            cat "$primary_headers"
+            test "$primary_code" = "200"
+            tr -d '\r' < "$primary_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$primary_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*liff-primary-preboot-v1$'
+            tr -d '\r' < "$primary_headers" | grep -i -q '^set-cookie:[[:space:]]*mmd_liff_boot=1;'
+            grep -q 'https://static.line-scdn.net/liff/edge/2/sdk.js' "$primary_body"
+            grep -q '2010864854-N34SgCqq' "$primary_body"
+            if grep -Eqi 'tanstack|react|liff\.login|redirectUri|location\.reload|location\.replace' "$primary_body"; then
+              echo "Primary LIFF preboot leaked SPA/login content for $origin" >&2
+              exit 1
+            fi
+
+            secondary_headers="$(mktemp)"
+            secondary_body="$(mktemp)"
+            secondary_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$secondary_headers" -o "$secondary_body" -w "%{http_code}" \
+              -H 'Cookie: mmd_liff_boot=1' \
+              "$origin/sigil/model/dashboard?lang=th&flow=verify&mmd_smoke=1")"
+            cat "$secondary_headers"
+            test "$secondary_code" = "200"
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*worker-rendered-liff-digital$'
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-app:[[:space:]]*mmd-app-digital-v3$'
+            grep -q 'data-mmd-app-digital="v3"' "$secondary_body"
+            grep -q 'data-design-source="lovable-vnext"' "$secondary_body"
+
             headers="$(mktemp)"
             body="$(mktemp)"
             code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
               -D "$headers" -o "$body" -w "%{http_code}" \
+              -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
               "$origin/sigil/model/dashboard?liff_env=published&mmd_smoke=1")"
             cat "$headers"
             test "$code" = "200"
             tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*lovable-presentation-proxy$'
-            grep -q 'lovable-model-dashboard' "$body"
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*worker-rendered-liff-digital$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-app:[[:space:]]*mmd-app-digital-v3$'
+            grep -q 'data-mmd-app-digital="v3"' "$body"
+            grep -q 'data-design-source="lovable-vnext"' "$body"
             if grep -q 'mmd-model-home-v3' "$body"; then
-              echo "Webflow fallback still owns ${origin}/sigil/model/dashboard" >&2
+              echo "Webflow fallback still owns $origin/sigil/model/dashboard" >&2
               exit 1
             fi
 
-            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
-            if [ -n "$asset" ]; then
-              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
-              test "$asset_code" = "200"
+            tg_js="$origin/sigil/model/dashboard-assets/telegram-connect-v1.js"
+            tg_css="$origin/sigil/model/dashboard-assets/telegram-connect-v1.css"
+            tg_js_body="$(mktemp)"
+            tg_js_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$tg_js_body" -w "%{http_code}" "$tg_js")"
+            test "$tg_js_code" = "200"
+            grep -q '/v1/model/telegram/bind' "$tg_js_body"
+            grep -q 'telegram_connected' "$tg_js_body"
+            tg_css_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$tg_css")"
+            test "$tg_css_code" = "200"
 
-              root_asset="/${asset#/sigil/model/dashboard-assets/}"
-              root_headers="$(mktemp)"
-              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
-                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
-              cat "$root_headers"
-              test "$root_asset_code" = "200"
-              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
-                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
-                exit 1
-              fi
+            manifest="$origin/sigil/model/dashboard/manifest.webmanifest"
+            manifest_body="$(mktemp)"
+            manifest_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$manifest_body" -w "%{http_code}" "$manifest")"
+            test "$manifest_code" = "200"
+          node --input-type=module - "$manifest_body" <<'NODE'
+          import fs from "node:fs";
+          const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (manifest?.display !== "standalone") throw new Error("MMD APP PWA must remain standalone");
+          if (manifest?.start_url !== "/sigil/model/dashboard?launch=pwa") throw new Error("MMD APP PWA start URL changed");
+          if (manifest?.scope !== "/sigil/model/dashboard") throw new Error("MMD APP PWA scope changed");
+          if (!Array.isArray(manifest?.icons) || manifest.icons.length < 1) throw new Error("MMD APP PWA icon is required");
+          NODE
+
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            if [ -n "$asset" ]; then
+              asset_headers="$(mktemp)"
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$asset_headers" -o /dev/null -w "%{http_code}" "$origin$asset")"
+              cat "$asset_headers"
+              test "$asset_code" = "200"
+              tr -d '\r' < "$asset_headers" | grep -i -q '^x-mmd-dashboard-addon:[[:space:]]*model-media-upload-v1$'
             fi
 
             api_body="$(mktemp)"
@@ -228,13 +300,88 @@ jobs:
             grep -q '"error":"model_session_required"' "$api_body"
           done
 
+          assert_wish_body() {
+            local body="$1"
+            grep -q 'id="mmd-model-wish-v1"' "$body"
+            grep -q 'data-mmd-wish-line-return-bridge-v1' "$body"
+            grep -q 'year6_direct_wish' "$body"
+          }
+
+          smoke_apex_wish() {
+            local url="$1"
+            local headers body code
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -w "%{http_code}" \
+              -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
+              "$url")"
+            cat "$headers"
+            test "$code" = "200"
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*webflow-apex-proxy$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-page:[[:space:]]*model-wish$'
+            if tr -d '\r' < "$headers" | grep -i -q '^location:'; then
+              echo "Model Wish apex route redirected and would drop the host-only session" >&2
+              exit 1
+            fi
+            if tr -d '\r' < "$headers" | grep -i -q '^set-cookie:.*mmd_model_session_v1'; then
+              echo "Model Wish front gate unexpectedly changed the Model session cookie" >&2
+              exit 1
+            fi
+            assert_wish_body "$body"
+          }
+
+          smoke_apex_wish 'https://mmdbkk.com/sigil/model/wish?mmd_smoke=1'
+          smoke_apex_wish 'https://mmdbkk.com/sigil/model/wish?line_return=1&mmd_smoke=1'
+
+          www_wish_body="$(mktemp)"
+          www_wish_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+            -o "$www_wish_body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/sigil/model/wish?mmd_smoke=1')"
+          test "$www_wish_code" = "200"
+          assert_wish_body "$www_wish_body"
+
+          canonical_headers="$(mktemp)"
+          canonical_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+            -D "$canonical_headers" -o /dev/null -w "%{http_code}" \
+            'https://mmdbkk.com/')"
+          case "$canonical_code" in
+            301|308) ;;
+            *)
+              echo "Unrelated apex canonicalization changed: HTTP $canonical_code" >&2
+              exit 1
+              ;;
+          esac
+          canonical_location="$(tr -d '\r' < "$canonical_headers" | grep -i '^location:' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          test "$canonical_location" = "location: https://www.mmdbkk.com/"
+
       - name: Deployment receipt
         shell: bash
         run: |
-          echo "Model Dashboard presentation source: Lovable"
+          set -euo pipefail
+          deployed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "Model Dashboard runtime: Worker-rendered · design source: Lovable vNext"
           echo "Worker: model-dashboard-presentation-worker"
           echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
           echo "Commit: ${GITHUB_SHA}"
+          echo "Deployed at: ${deployed_at}"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## MMD MODEL Wish — Production Recovery Receipt
+          - Source SHA: \`${GITHUB_SHA}\`
+          - Worker: \`model-dashboard-presentation-worker\`
+          - Deployment/version: \`${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}\`
+          - Deployed at: \`${deployed_at}\`
+          - Apex \`/sigil/model/wish\`: **PASS — 200, host preserved**
+          - Apex \`line_return=1\`: **PASS — 200, host preserved**
+          - WWW Wish body: **PASS**
+          - Wish root marker: **PASS**
+          - LINE return bridge marker: **PASS**
+          - direct-Wish runtime marker: **PASS**
+          - Unrelated apex canonicalization: **PASS**
+          - Model session-cookie rewrite: **NONE**
+          - Real Model E2E: **NOT STARTED**
+          EOF
 
       - name: Clean temporary config
         if: always()

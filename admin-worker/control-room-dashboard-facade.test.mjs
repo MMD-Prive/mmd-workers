@@ -55,6 +55,12 @@ test("credential-bound owner session reaches the canonical dashboard read model"
   assert.equal(payload.layer, "core");
   assert.ok(payload.counts && typeof payload.counts === "object");
   assert.ok(Array.isArray(payload.todos));
+  assert.equal(payload.control_room_v2?.schema, "mmd.control_room_v2.system_health.v1");
+  assert.equal(payload.control_room_v2?.phase1?.status, "CLOSED");
+  assert.equal(payload.control_room_v2?.phase1?.blocking_unresolved_count, 0);
+  assert.equal(payload.control_room_v2?.phase0?.accepted_workers, 6);
+  assert.equal(payload.control_room_v2?.authority?.read_only, true);
+  assert.equal(payload.control_room_v2?.operational_watch?.load_mode, "on_demand");
 });
 
 test("dashboard facade rejects non-production public hosts", async () => {

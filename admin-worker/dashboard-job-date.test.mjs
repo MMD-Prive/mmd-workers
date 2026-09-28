@@ -45,6 +45,7 @@ test("dashboard jobs preserve SIGIL job_date and render date with time", () => {
   assert.equal(jobs[0].time_only, "19:30");
   assert.ok(jobs[0].date_label);
   assert.equal(jobs[0].time, `${jobs[0].date_label} · 19:30`);
+  assert.equal(jobs[0].href, "/internal/admin/jobs/all?session_id=sess_today");
   assert.equal(jobs[1].id, "sess_future");
   assert.equal(jobs[2].id, "sess_past");
 });

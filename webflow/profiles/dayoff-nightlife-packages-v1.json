@@ -1,0 +1,91 @@
+{
+  "version": "mmd-dayoff-nightlife-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "products": {
+    "everyday_companion": {
+      "public_name": "DAY OFF",
+      "suggested_window": "10:00-20:00",
+      "packages": [
+        {
+          "key": "day_off_short",
+          "name": "DAY OFF — SHORT",
+          "price_thb": 3500,
+          "included_minutes": 180,
+          "worker_payout_thb": 2100
+        },
+        {
+          "key": "day_off_half_day",
+          "name": "DAY OFF — HALF DAY",
+          "price_thb": 5500,
+          "included_minutes": 300,
+          "worker_payout_thb": 3300
+        },
+        {
+          "key": "day_off_full_day",
+          "name": "DAY OFF — FULL DAY",
+          "price_thb": 8500,
+          "included_minutes": 480,
+          "worker_payout_thb": 5100
+        }
+      ]
+    },
+    "nightlife_companion": {
+      "public_name": "NIGHT LIFE",
+      "suggested_start": "18:00",
+      "packages": [
+        {
+          "key": "night_out",
+          "name": "NIGHT OUT",
+          "price_thb": 4500,
+          "included_minutes": 180,
+          "worker_payout_thb": 2800
+        },
+        {
+          "key": "dinner_to_midnight",
+          "name": "DINNER TO MIDNIGHT",
+          "price_thb": 6500,
+          "included_minutes": 300,
+          "worker_payout_thb": 4000
+        },
+        {
+          "key": "own_the_night",
+          "name": "OWN THE NIGHT",
+          "price_thb": 8900,
+          "included_minutes": 420,
+          "worker_payout_thb": 5500
+        }
+      ]
+    }
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 990,
+    "overtime_before_midnight_worker_thb_per_hour": 650,
+    "prebook_after_midnight_client_thb_per_hour": 500,
+    "prebook_after_midnight_worker_thb_per_hour": 350,
+    "overtime_after_midnight_client_thb_per_hour": 1490,
+    "overtime_after_midnight_worker_thb_per_hour": 1000,
+    "overtime_after_0300_client_thb_per_hour": 1790,
+    "overtime_after_0300_worker_thb_per_hour": 1200,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": [
+      "MY_MMD_request",
+      "MMD_MODEL_approve",
+      "payment_verified",
+      "MMD_confirmed"
+    ]
+  },
+  "customer_expenses": "actual_cost",
+  "customer_expense_examples": [
+    "food",
+    "drinks",
+    "tickets",
+    "activities",
+    "transport",
+    "parking",
+    "table_minimum"
+  ],
+  "confirmation": "Package selection is a request until MMD verifies model availability, scope, payment and confirmation.",
+  "private_money_separation": "These Public package and OT matrices never apply automatically to private_model jobs."
+}

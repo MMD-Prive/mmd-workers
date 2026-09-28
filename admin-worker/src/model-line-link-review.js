@@ -103,6 +103,7 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
   const candidate = safeModelCandidate(model.record, env);
   if (!candidate.active) return json({ ok: false, error: "model_not_active" }, 409);
   if (!candidate.drive_folder_id && !candidate.drive_folder_url) return json({ ok: false, error: "model_drive_folder_required" }, 409);
+  const existingLineUserId = linkedModelLineUserId(model.record, env);
 
   const collision = await findModelsByLineUserId(env, lineUserId);
   if (!collision.ok) return json({ ok: false, error: "model_line_collision_lookup_unavailable" }, collision.status || 503);
@@ -111,16 +112,35 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
     return json({ ok: false, error: "line_identity_already_linked" }, 409);
   }
 
-  const binding = await bindLineUserIdAtomic(env, {
-    modelRecordId,
-    lineUserId,
-    claimId,
-  });
+  let binding;
+  if (existingLineUserId && existingLineUserId !== lineUserId) {
+    const recovery = await preflightModelLineIdentityRecovery(env, {
+      previousLineUserId: existingLineUserId,
+      candidateLineUserId: lineUserId,
+    });
+    if (!recovery.ok) return json({ ok: false, error: recovery.error || "model_line_recovery_preflight_failed" }, recovery.status || 503);
+    if (!recovery.ready) return json({ ok: false, error: recovery.state || "model_line_recovery_not_ready" }, 409);
+
+    binding = await recoverLineUserIdAtomic(env, {
+      modelRecordId,
+      previousLineUserId: existingLineUserId,
+      lineUserId,
+      claimId,
+    });
+  } else {
+    binding = await bindLineUserIdAtomic(env, {
+      modelRecordId,
+      lineUserId,
+      claimId,
+    });
+  }
   if (!binding.ok) return json({ ok: false, error: binding.error || "model_line_binding_failed" }, binding.status || 409);
 
   const nowIso = new Date().toISOString();
   const actorId = clean(actor?.id || actor?.email || "owner").slice(0, 80);
-  const note = `Owner-reviewed MMD MODEL LINE link approved by ${actorId}; canonical Model record and its Drive folder were re-read before binding.`;
+  const note = binding.recovered === true
+    ? `Owner-reviewed MMD MODEL LINE recovery approved by ${actorId}; verified claim was reachable and the prior binding was unreachable in a non-sending check before replacement.`
+    : `Owner-reviewed MMD MODEL LINE link approved by ${actorId}; canonical Model record and its Drive folder were re-read before binding.`;
   const updated = await airtableUpdateRecord(env, claimsTable(env), claim.id, {
     claim_status: "linked",
     "Linked Model": [modelRecordId],
@@ -132,6 +152,7 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
   return json({
     ok: true,
     idempotent: Boolean(binding.idempotent),
+    recovered_stale_identity: binding.recovered === true,
     claim_id: claimId,
     model: {
       model_record_id: modelRecordId,
@@ -234,6 +255,61 @@ async function bindLineUserIdAtomic(env, { modelRecordId, lineUserId, claimId })
   return { ...data, ok: response.ok && data.ok !== false, status: response.status };
 }
 
+async function recoverLineUserIdAtomic(env, { modelRecordId, previousLineUserId, lineUserId, claimId }) {
+  const namespace = env.MODEL_ACTIVATION_COORDINATOR;
+  if (!namespace || typeof namespace.idFromName !== "function" || typeof namespace.get !== "function") {
+    return { ok: false, status: 503, error: "activation_coordinator_not_ready" };
+  }
+  const id = namespace.idFromName(modelRecordId);
+  const stub = namespace.get(id);
+  const response = await stub.fetch("https://model-activation.internal/recover", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model_record_id: modelRecordId,
+      previous_line_user_id: previousLineUserId,
+      line_user_id: lineUserId,
+      jti: `owner_recovery_${claimId}`,
+      exp: Math.floor(Date.now() / 1000) + 10 * 60,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  return { ...data, ok: response.ok && data.ok !== false, status: response.status };
+}
+
+async function preflightModelLineIdentityRecovery(env, { previousLineUserId, candidateLineUserId }) {
+  const binding = env.EVENTS_WORKER;
+  const auth = clean(env.AUTH_SERVICE_ADMIN_TO_EVENTS || env.CONFIRM_KEY);
+  if (!binding || typeof binding.fetch !== "function" || !auth) {
+    return { ok: false, status: 503, error: "model_line_recovery_preflight_not_configured" };
+  }
+  try {
+    const response = await binding.fetch(new Request(
+      "https://events-worker.internal/__internal/model/line-identity/recovery-preflight",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-internal-token": auth },
+        body: JSON.stringify({
+          previous_line_user_id: previousLineUserId,
+          candidate_line_user_id: candidateLineUserId,
+        }),
+      },
+    ));
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok !== true) {
+      return { ok: false, status: response.status || 503, error: clean(payload?.error) || "model_line_recovery_preflight_failed" };
+    }
+    return {
+      ok: true,
+      status: 200,
+      ready: payload.ready === true && clean(payload.state) === "model_line_identity_recovery_ready",
+      state: clean(payload.state) || "model_line_recovery_not_ready",
+    };
+  } catch {
+    return { ok: false, status: 503, error: "model_line_recovery_preflight_unavailable" };
+  }
+}
+
 async function airtableList(env, table, formula, pageSize = 20) {
   const apiKey = clean(env.AIRTABLE_API_KEY);
   const baseId = clean(env.AIRTABLE_BASE_ID);
@@ -278,6 +354,11 @@ async function airtableUpdateRecord(env, table, recordId, fields, typecast = fal
 function claimsTable(env) { return clean(env.AIRTABLE_TABLE_MODEL_LINE_IDENTITY_CLAIMS || CLAIMS_TABLE_DEFAULT); }
 function modelsTable(env) { return clean(env.AIRTABLE_TABLE_MODELS || MODELS_TABLE_DEFAULT); }
 function isCanonicalLineUserId(value) { return /^U[0-9a-f]{32}$/i.test(clean(value)); }
+function linkedModelLineUserId(record, env) {
+  const fields = record?.fields || {};
+  const value = firstText(fields, [...new Set([clean(env.AT_MODELS__LINE_USER_ID), "line_user_id", "LINE User ID"].filter(Boolean))]);
+  return isCanonicalLineUserId(value) ? value : "";
+}
 function linkedRecordId(value) {
   if (!Array.isArray(value) || !value.length) return "";
   const first = value[0];

@@ -22,7 +22,7 @@ Per approved proceeding with normalization and final QA on 2026-09-07. The 30 ca
 - use Per Voice customer copy without internal implementation jargon;
 - fail closed for payment, booking, availability, membership, access and special-tier decisions;
 - use `/member/dashboard` for customer-facing membership status / next-action guidance while keeping `/my-mmd/*` as the Worker-owned app runtime where applicable;
-- use `/sigil/member/membership` for membership selection, signup, renewal and upgrade;
+- split membership lanes: generic/Public signup uses `/pay/membership` for Member / Elite / Red Card; explicit Private Standard / Premium signup, renewal and upgrade use `/sigil/member/membership`;
 - replace stale `/recovery` with `/sigil/recovery`;
 - remove `/profiles` and `/public/access` from this pack because the current route-owner registry does not support using them as confident new customer CTAs here;
 - separate public `/booking` guidance from protected/private `/sigil/booking` use;

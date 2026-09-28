@@ -249,6 +249,26 @@ function projectMembership(snapshot = {}) {
   };
 }
 
+function projectFormerPrivateMembership(snapshot = {}) {
+  if (snapshot?.member_blocked === true) return null;
+  const priority = ["black_card", "svip", "vip", "private_premium", "private_standard"];
+  const rows = Array.isArray(snapshot?.entitlements) ? snapshot.entitlements : [];
+  const current = rows.filter((row) => ["active", "expiring_soon"].includes(text(row?.lifecycle).toLowerCase()));
+  const former = rows.filter((row) => ["expired", "grace"].includes(text(row?.lifecycle).toLowerCase()));
+  const capability = priority.find((name) => former.some((row) => text(row?.capability).toLowerCase() === name));
+  if (!capability) return null;
+  const currentPriority = priority.find((name) => current.some((row) => text(row?.capability).toLowerCase() === name));
+  if (currentPriority && priority.indexOf(currentPriority) <= priority.indexOf(capability)) return null;
+  const lifecycle = former.some((row) => text(row?.capability).toLowerCase() === capability && text(row?.lifecycle).toLowerCase() === "grace")
+    ? "grace" : "expired";
+  return {
+    level: capability,
+    label: LABELS[capability],
+    lifecycle,
+    expire_at: uniqueExpiry(snapshot, capability, lifecycle),
+  };
+}
+
 function projectPoints(profile = {}) {
   const points = isPlainObject(profile?.customer_360?.points) ? profile.customer_360.points : null;
   if (points?.status !== "verified") return { status: "unavailable", active_points: null };
@@ -258,18 +278,53 @@ function projectPoints(profile = {}) {
     : { status: "unavailable", active_points: null };
 }
 
+function projectResolverSnapshot(snapshot = {}) {
+  if (!isPlainObject(snapshot) || snapshot.schema_version !== RESOLVER_SCHEMA || snapshot.source_status !== "verified" || snapshot.fail_closed !== true) {
+    return null;
+  }
+  const state = isPlainObject(snapshot.capability_state) ? snapshot.capability_state : {};
+  const access = isPlainObject(snapshot.access) ? snapshot.access : {};
+  const evaluatedAt = text(snapshot.evaluated_at || snapshot.resolved_at);
+  if (!Number.isFinite(Date.parse(evaluatedAt))) return null;
+  return {
+    schema_version: RESOLVER_SCHEMA,
+    evaluated_at: new Date(evaluatedAt).toISOString(),
+    fail_closed: true,
+    member_blocked: snapshot.member_blocked === true,
+    capability_state: {
+      active: safeTokens(state.active),
+      expiring_soon: safeTokens(state.expiring_soon),
+      grace: safeTokens(state.grace),
+      inactive: safeTokens(state.inactive),
+      recognized: safeTokens(state.recognized),
+    },
+    access: {
+      public_service_access: access.public_service_access === true,
+      guest_pass_access: access.guest_pass_access === true,
+      red_card_request_lane: access.red_card_request_lane === true,
+      private_visibility_envelope: text(access.private_visibility_envelope || "none").toLowerCase(),
+      protected_allowlist_required: access.protected_allowlist_required === true,
+      protected_capabilities_active: safeTokens(access.protected_capabilities_active),
+      new_model_reveals_allowed: access.new_model_reveals_allowed === true,
+    },
+  };
+}
+
 export function projectKenjiLineMemberTruth(resolved = {}) {
   const profile = isPlainObject(resolved.profile) ? resolved.profile : {};
   const snapshot = isPlainObject(resolved.snapshot) ? resolved.snapshot : null;
   const membership = projectMembership(snapshot);
-  if (!membership) return null;
+  const resolverSnapshot = projectResolverSnapshot(snapshot);
+  if (!membership || !resolverSnapshot) return null;
   return {
     ok: true,
     authority: RESOLVER_SCHEMA,
     identity_status: "resolved",
     display_name: safeDisplayName(profile.display_name),
     membership,
+    former_private_membership: projectFormerPrivateMembership(snapshot),
     points: projectPoints(profile),
+    resolver_snapshot: resolverSnapshot,
   };
 }
 

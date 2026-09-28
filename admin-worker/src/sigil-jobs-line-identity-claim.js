@@ -123,7 +123,7 @@ function customerClaimUrl(tokenValue) {
 }
 
 function modelClaimUrl(tokenValue) {
-  const url = new URL(`https://miniapp.line.me/${MODEL_LIFF_ID}`);
+  const url = new URL(`https://miniapp.line.me/${MODEL_LIFF_ID}/`);
   url.searchParams.set("job_claim", tokenValue);
   return url.toString();
 }

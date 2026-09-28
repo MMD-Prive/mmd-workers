@@ -88,6 +88,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
 zone_name = "mmdbkk.com"
 
+# Canonical owner Create Job / Job Board composition surface.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
 # Webflow keeps ownership of /internal/admin/member-intelligence. Its browser
 # runtime is served under the existing Worker-owned Control Room route family.
 
@@ -131,6 +140,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/dashboard*"
+zone_name = "mmdbkk.com"
+
+# Fast App Runtime owner snapshot. This is a lightweight read-only projection of
+# the canonical dashboard, not a new business-truth source.
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/owner/snapshot*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/owner/snapshot*"
 zone_name = "mmdbkk.com"
 
 [[routes]]

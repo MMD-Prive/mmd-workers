@@ -1,12 +1,15 @@
 // sigil-booking-worker/src/index.js
 // MMD Booking / SIGIL public booking resolver
+import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 // Webflow calls this worker. Browser never touches Airtable, R2, Gmail, or Drive directly.
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LOCK = "sigil-booking-worker-v24-airtable-resolver-telegram-notify";
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = normalizePath(url.pathname);
     const method = req.method.toUpperCase();
@@ -17,7 +20,7 @@ export default {
 
     try {
       if (method === "GET" && (path === "/ping" || path === "/health")) {
-        return withCors(json({ ok: true, worker: "sigil-booking-worker", lock: LOCK, ts: Date.now() }), cors);
+        return withCors(json({ ok: true, worker: "sigil-booking-worker", lock: LOCK, analytics: authorityRuntimeHealth(env, "sigil-booking-worker", ctx), ts: Date.now() }), cors);
       }
       if (method === "POST" && path === "/sigil/api/client/resolve") {
         return withCors(json(await handleClientResolve(req, env)), cors);
@@ -26,7 +29,7 @@ export default {
         return withCors(json(await handleModelSearch(req, env, url)), cors);
       }
       if (method === "POST" && path === "/sigil/api/booking/intake") {
-        return withCors(json(await handleBookingIntake(req, env)), cors);
+        return withCors(json(await handleBookingIntake(req, env, ctx)), cors);
       }
       return withCors(json({ ok: false, error: "not_found", path }, 404), cors);
     } catch (error) {
@@ -98,12 +101,31 @@ async function handleModelSearch(req, env, url) {
   }
 
   const records = await searchModels(env, q, 24);
-  const allowed = records.map((record) => sanitizeModelForBooking(record, { scope, privateAllowed, env })).filter(Boolean);
+  const baseModels = records.map((record) => sanitizeModelForBooking(record, { scope, privateAllowed, env })).filter(Boolean);
+  const salesContext = await resolveBookingSalesContext(env, storedAccess);
+  const allowed = [];
+  for (const model of baseModels) {
+    const projected = projectBookingSalesControl(model, salesContext, {
+      requested_at: body.requested_at || body.preferred_at || body.date_time || new Date().toISOString(),
+      work_lane: body.work_lane || body.job_class || body.lane || scope,
+    });
+    if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
+    allowed.push(projected);
+  }
   const first = allowed[0] || null;
-  return { ok: true, matched: Boolean(first), source: first?.source || "manual_review", model: first, items: allowed.slice(0, 8), access_scope: privateAllowed ? "public_private" : "public_only", member_status: storedAccess.member_status || "unknown" };
+  return {
+    ok: true,
+    matched: Boolean(first),
+    source: first?.source || "manual_review",
+    model: first,
+    items: allowed.slice(0, 8),
+    access_scope: privateAllowed ? "public_private" : "public_only",
+    member_status: storedAccess.member_status || "unknown",
+    sales_control: salesContext.available ? "canonical" : "legacy_compatible"
+  };
 }
 
-async function handleBookingIntake(req, env) {
+async function handleBookingIntake(req, env, ctx) {
   const body = await safeJson(req);
   requireAirtable(env);
 
@@ -156,6 +178,24 @@ async function handleBookingIntake(req, env) {
     ? { ok: false, skipped: true, reason: "silent_booking_intent_collection" }
     : await notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl });
 
+  queueAuthorityEvent(ctx, env, {
+    event: "booking_received",
+    authority: "sigil-booking-worker",
+    scope: "booking",
+    distinctValue: bookingRef,
+    insertValue: bookingRef,
+    properties: {
+      surface: "booking",
+      flow: "booking_intake",
+      world: fields.lane === "private" ? "private" : "public",
+      lane: fields.lane,
+      job_class: fields.job_class,
+      access_scope: fields.access_scope,
+      member_status: fields.member_status,
+      status: "draft",
+    },
+  });
+
   return {
     ok: true,
     record_id: rec?.id || null,
@@ -178,13 +218,24 @@ async function resolveMemberAccess(env, input) {
   const expiry = Date.parse(str(f["Expire At"] || f["Membership Expiry"] || f["Membership End Date"] || f["Expiry Date"] || f.expire_at));
   const expiryOk = expiry && expiry >= Date.now();
 
-  if (ledger.active || (statusToken === "active" && expiryOk)) return accessOut("active", ledger.tier || tierFromText(f["Membership Tier"] || f["Package / Tier"]), "public_private", true, "continue_booking", "matched");
-  if (statusToken === "expired" || statusToken === "inactive" || (expiry && !expiryOk)) return accessOut("expired", tierFromText(f["Membership Tier"]), "public_only", false, "renew_for_private", "matched");
-  return accessOut("pending", tierFromText(f["Membership Tier"]), "public_only", false, "signup_or_continue_public", "matched");
+  const links = Array.isArray(f.Clients) ? f.Clients.filter((value) => typeof value === "string" && value.startsWith("rec")) : [];
+  const ids = { member_record_id: member.id, client_record_id: links.length === 1 ? links[0] : "" };
+  if (ledger.active || (statusToken === "active" && expiryOk)) return accessOut("active", ledger.tier || tierFromText(f["Membership Tier"] || f["Package / Tier"]), "public_private", true, "continue_booking", "matched", ids);
+  if (statusToken === "expired" || statusToken === "inactive" || (expiry && !expiryOk)) return accessOut("expired", tierFromText(f["Membership Tier"]), "public_only", false, "renew_for_private", "matched", ids);
+  return accessOut("pending", tierFromText(f["Membership Tier"]), "public_only", false, "signup_or_continue_public", "matched", ids);
 }
 
-function accessOut(memberStatus, tier, accessScope, canPrivate, nextRequiredAction, lookupStatus) {
-  return { client_lookup_status: lookupStatus, member_status: memberStatus, membership_tier: tier || "", access_scope: accessScope, can_search_private_models: Boolean(canPrivate), next_required_action: nextRequiredAction };
+function accessOut(memberStatus, tier, accessScope, canPrivate, nextRequiredAction, lookupStatus, ids = {}) {
+  return {
+    client_lookup_status: lookupStatus,
+    member_status: memberStatus,
+    membership_tier: tier || "",
+    access_scope: accessScope,
+    can_search_private_models: Boolean(canPrivate),
+    next_required_action: nextRequiredAction,
+    member_record_id: str(ids.member_record_id),
+    client_record_id: str(ids.client_record_id)
+  };
 }
 
 async function findMember(env, { clientNickname, clientContact, lineOrMemberId }) {
@@ -223,7 +274,82 @@ async function lookupStoredBookingAccess(env, { bookingRef, sessionId }) {
   if (sessionId) checks.push(`{session_id}=${formulaText(sessionId)}`);
   const rec = await firstWorkingFormula(env, table, checks);
   const f = rec?.fields || {};
-  return { member_status: normalizeMemberStatus(f.member_status), access_scope: normalizeAccessScope(f.access_scope) };
+  let payload = {};
+  try {
+    const parsed = JSON.parse(str(f.resolver_payload_json));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) payload = parsed;
+  } catch {}
+  return {
+    member_status: normalizeMemberStatus(f.member_status),
+    access_scope: normalizeAccessScope(f.access_scope),
+    member_record_id: str(payload?.access?.member_record_id),
+    client_record_id: str(payload?.access?.client_record_id)
+  };
+}
+
+
+async function resolveBookingSalesContext(env, storedAccess) {
+  const memberRecordId = str(storedAccess?.member_record_id);
+  const clientRecordId = str(storedAccess?.client_record_id);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(memberRecordId)) {
+    return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId };
+  }
+
+  const entitlementTable = env.AIRTABLE_TABLE_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const offerRulesTable = env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || env.AIRTABLE_TABLE_MODEL_OFFER_RULES || "MMD — Model Offer Rules";
+  try {
+    const [entitlements, rules] = await Promise.all([
+      airtableListByFormula(env, entitlementTable, `FIND(${formulaText(memberRecordId)},ARRAYJOIN({member}))`, 100),
+      airtableListByFormula(env, offerRulesTable, "", 500),
+    ]);
+    const snapshot = resolveMemberEntitlements(entitlements);
+    if (snapshot?.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot?.fail_closed !== true) {
+      return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId };
+    }
+    return { available: true, entitlement_snapshot: snapshot, rules, client_record_id: clientRecordId };
+  } catch {
+    return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId };
+  }
+}
+
+function projectBookingSalesControl(model, context, requestContext = {}) {
+  if (!context?.available || !context.entitlement_snapshot) {
+    return { ...model, sales_control: { configured: false, state: "legacy_compatible" } };
+  }
+  const modelId = str(model.model_id || model.model_record_id);
+  const modelKey = str(model.model_key || model.unique_key).toLowerCase();
+  const relevant = (context.rules || []).filter((record) => {
+    const fields = record?.fields || {};
+    const linked = Array.isArray(fields.Model) ? fields.Model.map((value) => str(value?.id || value)) : [];
+    const key = str(fields.model_key).toLowerCase();
+    return Boolean((modelId && linked.includes(modelId)) || (modelKey && key && key === modelKey));
+  });
+  if (!relevant.length) {
+    return { ...model, sales_control: { configured: false, state: "legacy_unconfigured" } };
+  }
+  const offer = resolveModelSalesOffer({
+    model_id: modelId,
+    model_key: modelKey,
+    client_id: context.client_record_id || "",
+    requested_at: requestContext.requested_at || new Date().toISOString(),
+    work_lane: requestContext.work_lane || "",
+    entitlement_snapshot: context.entitlement_snapshot,
+    rules: relevant,
+  });
+  return {
+    ...model,
+    sales_control: {
+      configured: true,
+      sellable: offer.sellable === true,
+      customer_rate_thb: Number.isFinite(offer.customer_rate_thb) ? offer.customer_rate_thb : null,
+      price_visible: offer.price_visible === true,
+      requires_per_approval: offer.requires_per_approval === true,
+      reason_code: str(offer.reason_code),
+      term_summary: str(offer.term_summary),
+      matched_rule_key: str(offer.matched_rule_key) || null,
+      rule_version: offer.rule_version ?? null,
+    },
+  };
 }
 
 async function searchModels(env, q, limit) {
@@ -473,10 +599,12 @@ function corsHeaders(req, env) {
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
   h.set("Access-Control-Max-Age", "86400");
   h.set("Content-Type", "application/json");
+  h.set("X-MMD-Route-Owner", "sigil-booking-worker");
+  h.set("Cache-Control", "no-store");
   return h;
 }
 function isAllowedOrigin(req, env) { const origin = req.headers.get("Origin") || ""; if (!origin) return true; const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean); return !allowed.length || allowed.includes(origin); }
-function withCors(res, cors) { const headers = new Headers(res.headers); cors.forEach((v, k) => headers.set(k, v)); return new Response(res.body, { status: res.status, headers }); }
+function withCors(res, cors) { const headers = new Headers(res.headers); cors.forEach((v, k) => headers.set(k, v)); headers.set("X-MMD-Route-Owner", "sigil-booking-worker"); headers.set("Cache-Control", "no-store"); return new Response(res.body, { status: res.status, headers }); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }); }
 async function safeJson(req) { try { return await req.json(); } catch (_) { return {}; } }
 function normalizePath(path = "") { const p = String(path || "/").replace(/\/{2,}/g, "/"); return p.length > 1 ? p.replace(/\/$/, "") : p; }
@@ -494,7 +622,7 @@ function normalizeMemberStatus(v) { const t = token(v); if (["active", "existing
 function normalizeAccessScope(v) { const t = token(v); if (["public_private", "private_review", "blocked"].includes(t)) return t; return "public_only"; }
 function normalizeRequestStatus(v) { const t = token(unwrapJsonString(v)); return ["draft", "pending", "review_required", "confirmed", "cancelled", "canceled"].includes(t) ? t : "draft"; }
 function normalizeJobClass(v) { const t = token(v); return ["travel", "extreme", "vip", "pn", "private_review"].includes(t) ? t : "travel"; }
-function normalizeModelAssetSource(v) { const t = token(v); return ["r2_catalog", "r2_prefix", "airtable_attachment", "drive_folder", "gmail_folder_reference", "manual_review"].includes(t) ? t : "manual_review"; }
+function normalizeModelAssetSource(v) { const t = token(v); return ["mmd_model_media_assets", "r2_catalog", "r2_prefix", "airtable_attachment", "drive_folder", "gmail_folder_reference", "manual_review"].includes(t) ? t : "manual_review"; }
 function unwrapJsonString(v) { const s = str(v); if (s.length < 2 || s[0] !== '"' || s[s.length - 1] !== '"') return s; try { const parsed = JSON.parse(s); return typeof parsed === "string" ? parsed : s; } catch (_) { return s.replace(/^"+|"+$/g, ""); } }
 function isRequestStatusSelectFailure(res, fields) { return Object.hasOwn(fields || {}, "Request Status") && res.status === 422 && /(INVALID_MULTIPLE_CHOICE_OPTIONS|INVALID_VALUE_FOR_COLUMN|Request Status|draft)/i.test(str(res.text)); }
 function withoutRequestStatus(fields) { const next = { ...fields }; delete next["Request Status"]; return next; }

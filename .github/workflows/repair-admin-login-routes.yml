@@ -90,6 +90,10 @@ jobs:
             "/internal/admin/login",
             "/internal/admin/login*",
             "/internal/admin/login/session",
+            "/sigil/admin/login",
+            "/sigil/admin/login*",
+            "/admin/login",
+            "/admin/login*",
           ];
           const desired = paths.flatMap((path) => [
             `mmdbkk.com${path}`,
@@ -203,3 +207,47 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Smoke legacy admin login aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for alias_path in /sigil/admin/login /admin/login; do
+              alias_ok=0
+              for attempt in $(seq 1 12); do
+                headers_file="$(mktemp)"
+                body_file="$(mktemp)"
+                http_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+                  -D "$headers_file" \
+                  -o "$body_file" \
+                  -w "%{http_code}" \
+                  "$origin$alias_path?source=phase1")"
+                location="$(grep -Ei '^location:' "$headers_file" | tail -1 | tr -d '\r' | cut -d ':' -f2- | xargs || true)"
+                if [ "$http_code" = "308" ] \
+                  && grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$headers_file" \
+                  && grep -Eiq '^x-mmd-admin-login-canonical:[[:space:]]*/internal/admin/login' "$headers_file" \
+                  && printf '%s' "$location" | grep -Eq '^https://mmdbkk\.com/internal/admin/login\?' \
+                  && printf '%s' "$location" | grep -q 'source=phase1' \
+                  && printf '%s' "$location" | grep -q 'next=%2Finternal%2Fadmin%2Fcontrol-room'; then
+                  alias_ok=1
+                  echo "Legacy admin alias passed: origin=$origin path=$alias_path attempt=$attempt"
+                  break
+                fi
+                echo "Legacy admin alias not converged: origin=$origin path=$alias_path attempt=$attempt status=$http_code location=$location"
+                sleep 5
+              done
+              test "$alias_ok" = "1"
+            done
+          done
+
+          post_headers="$(mktemp)"
+          post_body="$(mktemp)"
+          post_code="$(curl -sS -D "$post_headers" -o "$post_body" -w '%{http_code}' \
+            -X POST \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data 'credential=must-not-run' \
+            'https://www.mmdbkk.com/sigil/admin/login')"
+          test "$post_code" = "405"
+          grep -Eiq '^allow:[[:space:]]*GET, HEAD' "$post_headers"
+          grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$post_headers"

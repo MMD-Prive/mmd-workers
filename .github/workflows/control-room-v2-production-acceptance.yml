@@ -1,0 +1,459 @@
+name: Control Room V2 Production Acceptance
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/control-room-v2-production-acceptance.yml"
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+      - Deploy immigrate-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-room-v2-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Verify authenticated Control Room V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || "").trim();
+            if (!credential) throw new Error("ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required");
+
+            const login = await fetch(`${origin}/internal/admin/login/session`, {
+              method: "POST",
+              headers: {
+                Origin: origin,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-MMD-Login-Fetch": "1",
+              },
+              body: new URLSearchParams({
+                credential,
+                next: "/internal/admin/control-room",
+              }).toString(),
+              redirect: "manual",
+            });
+            const loginPayload = await login.clone().json().catch(() => null);
+            if (login.status !== 200 || loginPayload?.ok !== true) {
+              throw new Error(`owner login failed: ${login.status}`);
+            }
+            const cookie = (login.headers.get("set-cookie") || "").split(";", 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookie)) throw new Error("owner session cookie missing");
+
+            let pageUrl = new URL("/internal/admin/control-room", origin);
+            let page = null;
+            let html = "";
+            let payload = null;
+            let v2 = null;
+            let lastReason = "not_started";
+
+            for (let attempt = 1; attempt <= 24; attempt += 1) {
+              pageUrl = new URL("/internal/admin/control-room", origin);
+              page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+              if ([301, 302, 303, 307, 308].includes(page.status)) {
+                const location = page.headers.get("location") || "";
+                if (!location) throw new Error("Control Room redirect missing location");
+                pageUrl = new URL(location, pageUrl);
+                if (!["mmdbkk.com", "www.mmdbkk.com"].includes(pageUrl.hostname) || pageUrl.pathname !== "/internal/admin/control-room") {
+                  throw new Error(`unexpected Control Room redirect: ${pageUrl.href}`);
+                }
+                page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+              }
+
+              html = await page.text();
+              const pageReady =
+                page.status === 200 &&
+                page.headers.get("x-mmd-control-room-v2") === "system-health-v1" &&
+                page.headers.get("x-mmd-control-room-phase1") === "closed" &&
+                page.headers.get("x-mmd-owner-analytics") === "intent-truth-v1" &&
+                ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2", "data-mmd-owner-analytics=\"v1\"", "Intent ≠ Business Truth"].every((marker) => html.includes(marker));
+
+              const dashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
+                headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+                cache: "no-store",
+              });
+              payload = await dashboard.json().catch(() => null);
+              v2 = payload?.control_room_v2;
+              const keys = new Set((v2?.systems || []).map((item) => item?.key));
+              const dashboardReady =
+                dashboard.status === 200 &&
+                payload?.ok === true &&
+                v2?.schema === "mmd.control_room_v2.system_health.v1" &&
+                ["website","workers","deploy","routes","analytics","payments","telegram","line","data","jobs"].every((key) => keys.has(key));
+
+              if (pageReady && dashboardReady) break;
+
+              lastReason = JSON.stringify({
+                attempt,
+                page_status: page.status,
+                page_v2: page.headers.get("x-mmd-control-room-v2"),
+                phase1_header: page.headers.get("x-mmd-control-room-phase1"),
+                dashboard_status: dashboard.status,
+                schema: v2?.schema || null,
+                systems: [...keys],
+              });
+              if (attempt === 24) throw new Error(`Control Room V2 did not converge after deploy: ${lastReason}`);
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+            if (v2?.schema !== "mmd.control_room_v2.system_health.v1") throw new Error("Control Room V2 schema mismatch");
+            if (v2?.phase1?.status !== "CLOSED" || Number(v2?.phase1?.blocking_unresolved_count) !== 0) {
+              throw new Error("Phase 1 machine closure not projected");
+            }
+            if (Number(v2?.phase0?.accepted_workers) !== 6) throw new Error("Phase 0 authority acceptance not projected");
+            if (v2?.authority?.read_only !== true || v2?.authority?.business_truth_mutated !== false) {
+              throw new Error("Control Room V2 read-only authority contract failed");
+            }
+            if (v2?.operational_watch?.load_mode !== "on_demand" || v2?.operational_watch?.duplicate_dashboard_fetch !== false) {
+              throw new Error("HYPE/STUCK/SLA load contract failed");
+            }
+
+            const analyticsResponse = await fetch(`${pageUrl.origin}/v1/admin/dashboard/analytics`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const ownerAnalytics = await analyticsResponse.json().catch(() => null);
+            if (analyticsResponse.status !== 200 || ownerAnalytics?.ok !== true) {
+              throw new Error(`Owner Analytics read failed: ${analyticsResponse.status}`);
+            }
+            if (ownerAnalytics?.schema !== "mmd.owner_analytics_dashboard.v1" || ownerAnalytics?.analytics_schema !== "mmd_analytics_canon_v2") {
+              throw new Error("Owner Analytics schema mismatch");
+            }
+            if (ownerAnalytics?.read_only !== true || ownerAnalytics?.guardrails?.no_business_truth_mutation !== true) {
+              throw new Error("Owner Analytics read-only contract failed");
+            }
+            if (ownerAnalytics?.guardrails?.cross_layer_person_conversion !== false) {
+              throw new Error("Owner Analytics must forbid mixed client/server person conversion");
+            }
+            if (!["connected", "partial", "read_scope_missing", "query_unavailable"].includes(ownerAnalytics?.state)) {
+              throw new Error(`unexpected Owner Analytics state: ${ownerAnalytics?.state}`);
+            }
+
+            const ownerActionsResponse = await fetch(`${pageUrl.origin}/v1/admin/dashboard/owner-actions`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const calendarPageResponse = await fetch(`${pageUrl.origin}/internal/admin/calendar`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "text/html" },
+              cache: "no-store",
+              redirect: "manual",
+            });
+            const calendarPageHtml = await calendarPageResponse.text();
+            if (calendarPageResponse.status !== 200 || !calendarPageHtml.includes("calendar-onboarding-cohort-v2-20260923")) {
+              throw new Error(`Calendar onboarding cohort UI missing: ${calendarPageResponse.status}`);
+            }
+            if (
+              !calendarPageHtml.includes("data-cal-onboarding-cohort") ||
+              !calendarPageHtml.includes("/v1/admin/calendar/availability-cohort/start") ||
+              !calendarPageHtml.includes("/v1/admin/calendar/availability-reminder") ||
+              !calendarPageHtml.includes("/v1/admin/calendar/availability-activation")
+            ) {
+              throw new Error("Calendar onboarding cohort UI action boundary missing");
+            }
+
+            const calendarResponse = await fetch(`${pageUrl.origin}/v1/admin/calendar`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const calendar = await calendarResponse.json().catch(() => null);
+            if (calendarResponse.status !== 200 || calendar?.ok !== true) {
+              throw new Error(`Calendar availability diagnostic failed: ${calendarResponse.status}`);
+            }
+            const actionableStages = new Set([
+              "identity_recovery_required",
+              "line_link_required",
+              "line_link_expired",
+              "availability_confirmation_required",
+              "reminder_follow_up_due",
+            ]);
+            const availabilityHealth = calendar?.availability?.coverage_health || null;
+            const onboarding = calendar?.availability?.onboarding || null;
+            if (onboarding?.schema !== "mmd.availability.onboarding-cohorts.v1") {
+              throw new Error("Availability onboarding cohort contract missing");
+            }
+            if (onboarding?.batch_size !== 5 || !Array.isArray(onboarding?.current_batch) || onboarding.current_batch.length > 5) {
+              throw new Error("Availability onboarding batch boundary failed");
+            }
+            if (onboarding?.automatic_send !== false || onboarding?.owner_click_required !== true || onboarding?.no_guess !== true) {
+              throw new Error("Availability onboarding safety boundary failed");
+            }
+            const cohortTracking = onboarding?.tracking || null;
+            if (cohortTracking?.schema !== "mmd.availability.onboarding-outcomes.v1") {
+              throw new Error("Availability onboarding outcome tracking contract missing");
+            }
+            if (!["not_started", "active", "completed"].includes(cohortTracking?.state)) {
+              throw new Error(`unexpected Availability cohort state: ${cohortTracking?.state}`);
+            }
+            if (cohortTracking?.auto_advance !== false) {
+              throw new Error("Availability cohort must not auto-advance");
+            }
+            if (cohortTracking?.action_sequence_mode !== "one_at_a_time") {
+              throw new Error("Availability cohort must expose one-at-a-time owner sequencing");
+            }
+            if (cohortTracking?.state === "not_started" && cohortTracking?.start_required !== true) {
+              throw new Error("Availability Cohort 1 start gate missing");
+            }
+            if (cohortTracking?.state !== "not_started" && (
+              cohortTracking?.start_required !== false ||
+              !cohortTracking?.cohort_id ||
+              !cohortTracking?.started_at
+            )) {
+              throw new Error("Availability active cohort receipt missing");
+            }
+            const outcomeStates = new Set(["action_required","waiting_for_line","waiting_for_availability","follow_up_due","completed","blocked"]);
+            for (const item of onboarding.current_batch) {
+              if (!outcomeStates.has(String(item?.outcome_state || ""))) {
+                throw new Error(`unexpected Cohort 1 outcome state: ${item?.outcome_state}`);
+              }
+            }
+            const outcomeCountTotal = Object.values(cohortTracking?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+            if (outcomeCountTotal !== onboarding.current_batch.length) {
+              throw new Error("Availability Cohort 1 outcome counts do not match membership");
+            }
+            const ownerActionStates = new Set(["action_required","follow_up_due"]);
+            const expectedNextOwnerItem = cohortTracking?.state === "active"
+              ? onboarding.current_batch.find((item) => ownerActionStates.has(String(item?.outcome_state || ""))) || null
+              : null;
+            const expectedPendingOwnerActions = onboarding.current_batch.filter((item) => ownerActionStates.has(String(item?.outcome_state || ""))).length;
+            if (Number(cohortTracking?.pending_owner_actions || 0) !== expectedPendingOwnerActions) {
+              throw new Error("Availability Cohort pending owner-action count mismatch");
+            }
+            let availabilityReminderPreflight = null;
+            if (expectedNextOwnerItem) {
+              if (
+                !cohortTracking?.next_owner_action ||
+                String(cohortTracking.next_owner_action.name || "") !== String(expectedNextOwnerItem.name || "") ||
+                String(cohortTracking.next_owner_action.recovery_stage || "") !== String(expectedNextOwnerItem.recovery_stage || "")
+              ) {
+                throw new Error("Availability Cohort next owner action does not match the first actionable receipt member");
+              }
+
+              const nextStage = String(expectedNextOwnerItem.recovery_stage || "");
+              const nextModelKey = String(expectedNextOwnerItem.model_key || "");
+              if (["availability_confirmation_required","reminder_follow_up_due"].includes(nextStage) && nextModelKey) {
+                const preflightResponse = await fetch(`${pageUrl.origin}/v1/admin/calendar/availability-reminder/preflight`, {
+                  method: "POST",
+                  headers: {
+                    Origin: pageUrl.origin,
+                    Cookie: cookie,
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ model_key: nextModelKey }),
+                  cache: "no-store",
+                });
+                const preflight = await preflightResponse.json().catch(() => null);
+                if (preflightResponse.status !== 200 || preflight?.ok !== true) {
+                  throw new Error(`Availability reminder preflight unavailable: ${preflightResponse.status} ${preflight?.error || "unknown"}`);
+                }
+                if (preflight?.schema !== "mmd.availability_reminder_preflight.v1" || preflight?.message_sent !== false) {
+                  throw new Error("Availability reminder preflight safety contract failed");
+                }
+                availabilityReminderPreflight = {
+                  name: String(expectedNextOwnerItem.name || "—").slice(0, 120),
+                  ready: preflight.ready === true,
+                  state: String(preflight.state || "unknown").slice(0, 120),
+                  token_mode: String(preflight.token_mode || "unknown").slice(0, 40),
+                  transport: String(preflight.transport || "none").slice(0, 120),
+                  recipient_reachable: preflight.recipient_reachable === true,
+                  provider_status: Number.isInteger(preflight.provider_status) ? preflight.provider_status : null,
+                  message_sent: false,
+                };
+              }
+            } else if (cohortTracking?.next_owner_action) {
+              throw new Error("Availability Cohort exposed a next owner action when none is actionable");
+            }
+            if (Number(onboarding?.unique_backlog_models || 0) > Number(onboarding?.raw_backlog_rows || 0)) {
+              throw new Error("Availability onboarding dedupe count is invalid");
+            }
+            const currentCohortKeys = onboarding.current_batch.map((item) => String(item?.model_key || item?.record_id || ""));
+            if (new Set(currentCohortKeys).size !== currentCohortKeys.length) {
+              throw new Error("Availability onboarding current batch contains duplicate canonical Models");
+            }
+            const onboardingCurrent = onboarding.current_batch.map((item) => ({
+              name: String(item?.name || "—").slice(0, 120),
+              model_id: String(item?.model_id || "—").slice(0, 80),
+              recovery_stage: String(item?.recovery_stage || "unknown"),
+              priority_bucket: String(item?.priority_bucket || "unknown"),
+              upcoming_job_at: item?.upcoming_job_at || null,
+              partner_job: item?.partner_job === true,
+              line_connected: item?.line_connected === true,
+              duplicate_records_collapsed: Number(item?.duplicate_records_collapsed || 0),
+              outcome_state: String(item?.outcome_state || "unknown"),
+              last_owner_action: item?.last_owner_action || null,
+              last_owner_action_at: item?.last_owner_action_at || null,
+              completed_at: item?.completed_at || null,
+              safe_availability_state: item?.safe_availability_state || null,
+            }));
+            const availabilityExceptions = (calendar?.availability?.models || [])
+              .filter((item) => actionableStages.has(String(item?.recovery_stage || "")))
+              .map((item) => ({
+                name: String(item?.name || "—").slice(0, 120),
+                model_id: String(item?.model_id || "—").slice(0, 80),
+                recovery_stage: String(item?.recovery_stage || "unknown"),
+                recovery_action: String(item?.recovery_action || "none"),
+                snapshot_state: String(item?.snapshot_state || "unknown"),
+                line_connected: item?.line_connected === true,
+              }));
+            const ownerActions = await ownerActionsResponse.json().catch(() => null);
+            if (ownerActionsResponse.status !== 200 || ownerActions?.ok !== true) {
+              throw new Error(`Owner Actions read failed: ${ownerActionsResponse.status}`);
+            }
+            if (ownerActions?.contract !== "mmd_owner_actions_queue_v1" || ownerActions?.mode !== "owner_review_only") {
+              throw new Error("Owner Actions contract mismatch");
+            }
+            const availabilitySource = (ownerActions?.source_coverage || []).find((item) => item?.source === "availability");
+            if (!availabilitySource) throw new Error("Availability source missing from Owner Actions");
+            if (availabilitySource?.authority !== "sigil_availability_snapshot_v1" || availabilitySource?.href !== "/internal/admin/calendar" || availabilitySource?.read_only !== true) {
+              throw new Error("Availability source authority mismatch");
+            }
+            if (ownerActions?.guardrails?.availability_truth !== "sigil_availability_snapshot_v1" || ownerActions?.guardrails?.no_auto_send !== true || ownerActions?.guardrails?.no_business_truth_mutation !== true) {
+              throw new Error("Availability Owner Actions guardrails failed");
+            }
+            const availabilityAction = (ownerActions?.actions || []).find((item) => item?.action_key === "availability_exception_review");
+            if (availabilityAction && (
+              availabilityAction?.href !== "/internal/admin/calendar" ||
+              availabilityAction?.authority !== "sigil_availability_snapshot_v1" ||
+              availabilityAction?.send_allowed !== false ||
+              availabilityAction?.mutation_allowed !== false
+            )) {
+              throw new Error("Availability exception action boundary failed");
+            }
+            const truthMetrics = ownerAnalytics?.business_truth?.metrics || {};
+            for (const metric of Object.values(truthMetrics)) {
+              if (metric && metric.observed === false) {
+                for (const key of ["events_30d", "amount_30d", "payments_30d"]) {
+                  if (key in metric && metric[key] === 0) throw new Error(`Owner Analytics fabricated zero for unobserved ${key}`);
+                }
+              }
+            }
+
+            const keys = new Set((v2?.systems || []).map((item) => item?.key));
+            for (const key of ["website","workers","deploy","routes","analytics","payments","telegram","line","data","jobs"]) {
+              if (!keys.has(key)) throw new Error(`system health lane missing: ${key}`);
+            }
+
+            const unauthDashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
+              headers: { Origin: pageUrl.origin },
+              redirect: "manual",
+            });
+            if (unauthDashboard.status !== 401) throw new Error(`unauth dashboard must fail closed, got ${unauthDashboard.status}`);
+
+            const unauthAnalytics = await fetch(`${pageUrl.origin}/v1/admin/dashboard/analytics`, {
+              headers: { Origin: pageUrl.origin },
+              redirect: "manual",
+            });
+            if (unauthAnalytics.status !== 401) throw new Error(`unauth analytics must fail closed, got ${unauthAnalytics.status}`);
+
+            const unauthOwnerActions = await fetch(`${pageUrl.origin}/v1/admin/dashboard/owner-actions`, {
+              headers: { Origin: pageUrl.origin },
+              redirect: "manual",
+            });
+            if (unauthOwnerActions.status !== 401) throw new Error(`unauth Owner Actions must fail closed, got ${unauthOwnerActions.status}`);
+
+            const unauthPage = await fetch(`${pageUrl.origin}/internal/admin/control-room`, { redirect: "manual" });
+            if (![302, 303, 307, 308].includes(unauthPage.status)) {
+              throw new Error(`unauth Control Room must redirect to login, got ${unauthPage.status}`);
+            }
+            const unauthLocation = unauthPage.headers.get("location") || "";
+            if (!unauthLocation.includes("/internal/admin/login")) throw new Error("unauth Control Room redirect is not login");
+
+            console.log(JSON.stringify({
+              ok: true,
+              schema: v2.schema,
+              overall_status: v2.overall_status,
+              systems: [...keys],
+              phase0_workers: v2.phase0.accepted_workers,
+              phase1_status: v2.phase1.status,
+              authority: "read_only",
+              owner_analytics_state: ownerAnalytics.state,
+              owner_analytics_schema: ownerAnalytics.analytics_schema,
+              owner_actions_contract: ownerActions.contract,
+              availability_source_state: availabilitySource.state,
+              availability_exception_present: Boolean(availabilityAction),
+              availability_reminder_preflight: availabilityReminderPreflight,
+              availability_onboarding_ui: "calendar-onboarding-cohort-v2-20260923",
+              availability_onboarding_tracking: {
+                state: cohortTracking.state,
+                cohort_id: cohortTracking.cohort_id,
+                cohort_number: cohortTracking.cohort_number,
+                started_at: cohortTracking.started_at,
+                start_required: cohortTracking.start_required,
+                completion_percent: cohortTracking.completion_percent,
+                cohort_complete: cohortTracking.cohort_complete,
+                counts: cohortTracking.counts,
+                action_sequence_mode: cohortTracking.action_sequence_mode,
+                next_owner_action: cohortTracking.next_owner_action,
+                pending_owner_actions: cohortTracking.pending_owner_actions,
+                auto_advance: cohortTracking.auto_advance,
+              },
+              availability_onboarding: {
+                raw_backlog_rows: onboarding.raw_backlog_rows,
+                unique_backlog_models: onboarding.unique_backlog_models,
+                duplicate_rows_collapsed: onboarding.duplicate_rows_collapsed,
+                batch_size: onboarding.batch_size,
+                remaining_after_current: onboarding.remaining_after_current,
+                cohort_counts: onboarding.cohort_counts,
+                current_batch: onboardingCurrent,
+              },
+              availability_health: availabilityHealth ? {
+                review_status: availabilityHealth.review_status,
+                canonical_models: availabilityHealth.canonical_models,
+                fresh_models: availabilityHealth.fresh_models,
+                fresh_coverage_percent: availabilityHealth.fresh_coverage_percent,
+                owner_action_required: availabilityHealth.owner_action_required,
+                follow_up_due: availabilityHealth.follow_up_due,
+                waiting_for_model: availabilityHealth.waiting_for_model,
+                identity_missing: availabilityHealth.identity_missing,
+                source_unavailable_models: availabilityHealth.source_unavailable_models,
+              } : null,
+              availability_exceptions: availabilityExceptions,
+            }, null, 2));
+          })().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Acceptance receipt
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Control Room V2 Production Acceptance
+          - Authenticated page: PASS
+          - Phase 0 PostHog authority receipt: 6/6
+          - Phase 1 machine canon: CLOSED / blocking 0
+          - Website / Workers / Deploy Gate / Routes / PostHog / Payments / Telegram / LINE / Data / Jobs: projected
+          - HYPE / STUCK / SLA: on-demand, no duplicate dashboard fetch
+          - Business authority: read-only
+          - Owner Analytics: Intent / Business Truth / Authority Health separated
+          - Owner Actions: Availability source projected from canonical coverage health
+          - Availability exception: Calendar-only, read-only, no auto-send or mutation
+          - Availability diagnostic: actionable rows logged with safe fields only (name/model_id/stage/state/LINE-connected)
+          - Availability reminder preflight: next Model transport/readiness checked without sending a message
+          - Availability onboarding: canonical-key dedupe + 5-Model Owner-click cohort verified
+          - Availability onboarding UI: live Calendar start gate + Cohort 1 outcomes + one-at-a-time next owner action verified
+          - Cross-layer person conversion: forbidden
+          - Unobserved terminal event: null / —, never fabricated zero
+          - Unauthenticated page/API/analytics: fail-closed
+          EOF

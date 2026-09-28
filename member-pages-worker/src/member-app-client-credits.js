@@ -152,7 +152,11 @@ function safeCredit(record, now) {
     else if (expiryMs !== null && now > expiryMs) status = "expired";
   }
   const creditType = normalized(fields["Credit Type"]) || null;
-  const isCancellationCarry = creditType === "carried_forward_deposit"
+  // A historical carry-forward record can be legitimate without carrying the
+  // modern cancellation deadline. Do not infer a cancellation-specific notice
+  // until the live record provides one valid, customer-safe expiry.
+  const isCancellationCarry = Number.isFinite(expiryMs)
+    && creditType === "carried_forward_deposit"
     && ["client_cancel_no_penalty", "client_cancel_gt_48h"].includes(normalized(fields.Reason));
   return {
     creditId: clean(fields.credit_id, 120) || null,

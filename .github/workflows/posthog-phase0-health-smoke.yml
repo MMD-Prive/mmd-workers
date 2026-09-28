@@ -1,0 +1,81 @@
+name: PostHog Phase 0 authority health smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/posthog-phase0-health-smoke.yml"
+      - "shared/posthog-authority-events.mjs"
+      - "payments-worker/**"
+      - "member-pages-worker/**"
+      - "mms-worker/**"
+      - "himai-chat-worker/**"
+      - "partners-worker/**"
+      - "sigil-booking-worker/**"
+
+permissions:
+  contents: read
+
+jobs:
+  authority-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify PostHog authority runtime health
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const targets = [
+            ["payments-worker", "https://sigil.mmdbkk.com/v1/pay/slip/evidence/health"],
+            ["member-pages-worker", "https://member-pages-worker.malemodel-bkk.workers.dev/health"],
+            ["mms-worker", "https://mms-worker.malemodel-bkk.workers.dev/health"],
+            ["himai-chat-worker", "https://www.mmdbkk.com/mmd-shop/api/health"],
+            ["partners-worker", "https://partners-worker.malemodel-bkk.workers.dev/health"],
+            ["sigil-booking-worker", "https://sigil-booking-worker.malemodel-bkk.workers.dev/health"],
+          ];
+
+          async function readHealth(name, url) {
+            let last = null;
+            for (let attempt = 1; attempt <= 24; attempt += 1) {
+              try {
+                const response = await fetch(url, {
+                  headers: {
+                    accept: "application/json",
+                    origin: "https://www.mmdbkk.com",
+                    "user-agent": "mmd-posthog-phase0-health-smoke/1",
+                  },
+                  signal: AbortSignal.timeout(15000),
+                });
+                const text = await response.text();
+                let payload = null;
+                try { payload = JSON.parse(text); } catch {}
+                last = { status: response.status, payload, text: text.slice(0, 300) };
+                if (
+                  response.ok &&
+                  payload?.ok === true &&
+                  payload?.analytics?.posthog_authority === "configured" &&
+                  payload?.analytics?.schema === "mmd_authority_v1"
+                ) {
+                  return { name, status: response.status, analytics: payload.analytics };
+                }
+              } catch (error) {
+                last = { error: String(error?.message || error) };
+              }
+              await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+            throw new Error(`${name} analytics health failed: ${JSON.stringify(last)}`);
+          }
+
+          const results = [];
+          for (const [name, url] of targets) {
+            results.push(await readHealth(name, url));
+          }
+          console.log(JSON.stringify({ ok: true, schema: "mmd_posthog_phase0_health_smoke_v1", results }, null, 2));
+          NODE

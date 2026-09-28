@@ -4,6 +4,8 @@
 
 name = "admin-worker"
 main = "src/admin-login-hero-worker.js"
+
+triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -15,6 +17,26 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/model/liff/exchange"
+zone_name = "mmdbkk.com"
+
+# LIFF Login V2 -> Model Job Board signed handoff. The Model session stays
+# host/path scoped; this endpoint issues a short-lived one-time-style bridge
+# after /v1/model/profile validates the existing Model session.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/job-board/handoff*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/job-board/handoff*"
+zone_name = "mmdbkk.com"
+
+# Owner-only Create Job -> Model Job Board publish bridge.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job-board/publish"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job-board/publish"
 zone_name = "mmdbkk.com"
 
 # First-time Model Dashboard activation. A short-lived admin-issued invite plus
@@ -61,6 +83,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/profile*"
 zone_name = "mmdbkk.com"
 
+# Model My Card requests are model-session-only. Keep the query-safe companion
+# narrow; all field, RUN NUMBER, template, and final design choices stay Studio-owned.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/compcard/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/compcard/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/compcard/request*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/compcard/request*"
+zone_name = "mmdbkk.com"
+
 # Model Telegram secondary-channel binding. LINE/session remains the identity
 # authority; this exact endpoint only issues an opaque one-time bot token.
 [[routes]]
@@ -69,6 +109,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/model/telegram/bind"
+zone_name = "mmdbkk.com"
+
+# Model-visible completed work, confirmed earnings, and verified payout history.
+# Keep ownership exact so adjacent /v1/model routes remain independently governed.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/history"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/history"
 zone_name = "mmdbkk.com"
 
 # Model Dashboard media self-service. This includes list/upload/file/set-main/delete
@@ -218,6 +268,109 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/login/session"
 zone_name = "mmdbkk.com"
 
+# Legacy admin-login aliases are redirect-only compatibility surfaces owned by
+# admin-worker. Keep these exact/narrow; do not claim broad /sigil/admin/*.
+[[routes]]
+pattern = "mmdbkk.com/sigil/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/admin/login*"
+zone_name = "mmdbkk.com"
+
+
+
+# Exact owner-authenticated LINE Rich Menu production acceptance routes.
+# Keep these narrow: no /v1/admin/* wildcard and no browser/public publisher.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/line/rich-menu/three-level/prepare"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/line/rich-menu/three-level/prepare"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/line/rich-menu/three-level/audit"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/line/rich-menu/three-level/audit"
+zone_name = "mmdbkk.com"
+
+# MMD Shop owner workspace and authenticated API. Webflow is presentation only.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/shop/inventory*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/shop/inventory*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/shop/products*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/shop/products*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/shop/inventory*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/shop/inventory*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/shop/products*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/shop/products*"
+zone_name = "mmdbkk.com"
+
 # Public Model application review. The page, review API, decision endpoint and
 # private media proxy all stay behind the credential-bound admin gate.
 [[routes]]
@@ -304,6 +457,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/payments/historical-backfill*"
 zone_name = "mmdbkk.com"
 
+# Owner-only cancellation-to-credit recovery. This stays a narrow API route;
+# the Historical Backfill page remains the browser presentation surface.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/cancellation-credit-recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/cancellation-credit-recovery"
+zone_name = "mmdbkk.com"
+
 # Model Dashboard first-time invite issuer. Browser access is protected by the
 # existing credential-bound internal admin gate; the invite itself carries no admin credential.
 [[routes]]
@@ -355,6 +518,74 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
+zone_name = "mmdbkk.com"
+
+# Owner-only MY MMD Recovery Diagnostic. Runtime pathname matching is exact;
+# wildcard companions only allow query strings through Cloudflare routing.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/my-mmd/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/my-mmd/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/my-mmd/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/my-mmd/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
+zone_name = "mmdbkk.com"
+
+# Recovery Control owner/operator surface. Runtime pathname/method matching is exact;
+# wildcard companions only allow query strings through Cloudflare routing.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/recovery/cases"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/recovery/cases"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/recovery/cases*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/recovery/cases*"
 zone_name = "mmdbkk.com"
 
 # Kenji Admin canonical control centre.
@@ -433,6 +664,32 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/kenji/models/draft"
+zone_name = "mmdbkk.com"
+
+# Model Sales Control V1 resolver. Browser access remains behind the credential-bound
+# admin gate; the handler reads canonical Airtable Model Offer Rules and is read-only.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models/sales/resolve"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/resolve"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models/sales/rules"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/rules"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models/sales/rules*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/rules*"
 zone_name = "mmdbkk.com"
 
 # Kenji CEO Control read APIs. Keep exact routes plus narrow query-safe companions; no broad /v1/admin/kenji/control/* ownership.
@@ -534,6 +791,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/job/create"
 zone_name = "mmdbkk.com"
 
+# Owner-only single-job Private grant. This never grants standing membership;
+# it records one exact job fingerprint for the Create Job entitlement gate.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job/owner-grant"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job/owner-grant"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/internal/kenji/knowledge/published"
 zone_name = "mmdbkk.com"
@@ -598,6 +865,11 @@ zone_name = "mmdbkk.com"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+# Internal-only owner publish bridge for Model Job Board listings.
+[[services]]
+binding = "PUBLIC_JOB_BOARD_WORKER"
+service = "public-access-worker"
+
 # ETA durability/timeline is events-worker-owned. Model Dashboard never writes ETA
 # business state directly from the browser.
 [[services]]
@@ -620,6 +892,18 @@ service = "mmd-slip-extractor"
 binding = "MODEL_DRIVE_DIRECTORY"
 service = "member-pages-worker"
 
+# Bounded customer-safe Points + Coupon projection for HYPE.
+# Identity is resolved in admin-worker first; member-pages-worker owns points/coupon truth.
+[[services]]
+binding = "MEMBER_PAGES_MEMBER_WALLET"
+service = "member-pages-worker"
+
+# Bounded customer-safe MMD Shop order projection for HYPE.
+# member-pages-worker owns order/customer ownership filtering and fulfillment truth.
+[[services]]
+binding = "MEMBER_PAGES_SHOP_ORDERS"
+service = "member-pages-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 # Private scheduling bridge for Admin Calendar diagnostics.
 # No public credential is exposed; the downstream Worker remains independently deployable.
@@ -628,7 +912,20 @@ binding = "CAL_SYNC_WORKER"
 service = "cal-sync-worker"
 
 [vars]
+INTERNAL_LOVABLE_ORIGIN = "https://mmd-os.lovable.app"
+MODEL_CARD_AUTO_ENABLED = "false"
+MODEL_CARD_DAILY_LIMIT = "20"
+# Approved brand assets must exist before enabling generation. No public URLs.
+MODEL_CARD_MMD_LOGO_KEY = "studio-card-brand/mmd-approved.png"
+MODEL_CARD_SIGIL_LOGO_KEY = "studio-card-brand/sigil-v4.webp"
+MODEL_CARD_PROVINCE_BY_MODEL_JSON = "{}"
+AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS = "tblbIhMUXMAYlXmpi"
+MMD_MODEL_DRIVE_METADATA_SYNC_ENABLED = "false"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
+# Customer Continuity Phase 4A is limited to deterministic drafts inside the
+# credential-bound Client Intelligence view. Unknown values fail closed, and
+# this mode never sends customer copy or gains business-truth authority.
+KENJI_CONTINUITY_PHASE4_MODE = "operator_draft"
 # Exact cross-site origin used by the current Lovable Model Hub preview. Its model
 # session is partitioned (not a broadly third-party cookie) and only this origin opts in.
 MODEL_DASHBOARD_ORIGIN = "https://mmdmodel.lovable.app"
@@ -652,6 +949,9 @@ TELEGRAM_CHAT_ID = "-1003546439681"
 TELEGRAM_STUDIO_CHAT_ID = "-1003546439681"
 TG_THREAD_ALERTS_EXCEPTIONS = "9"
 TG_THREAD_STUDIO_ALERT = "9"
+TG_THREAD_PAYMENTS_CONFIRM = "22"
+TG_THREAD_PAYMENT = "22"
+TG_THREAD_CONFIRM = "22"
 
 # Secrets: AUTH_SERVICE_ADMIN_TO_PAYMENTS, AUTH_SERVICE_STUDIO_TO_TELEGRAM,
 # AUTH_SERVICE_ADMIN_TO_EVENTS (optional until provisioned; ETA service auth falls back to CONFIRM_KEY)
@@ -683,6 +983,8 @@ AIRTABLE_TABLE_MODEL_MEDIA = "tblrpQXhHnbTU9RhW"
 AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS = "tbl2624vwyWkOeP0y"
 AIRTABLE_CLIENT_NAME_FIELD = "Client Name"
 AIRTABLE_TABLE_MODELS = "models"
+AIRTABLE_TABLE_MODEL_OFFER_RULES_ID = "tblSbxUGTFqd2CgPy"
+AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS = "tblrwsAdzFhtmknlF"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AT_SESSIONS__SESSION_ID = "session_id"
 AT_SESSIONS__PAYMENT_REF = "payment_ref"
@@ -724,6 +1026,11 @@ class_name = "ModelActivationCoordinator"
 [[durable_objects.bindings]]
 name = "MODEL_LOCATION_COORDINATOR"
 class_name = "ModelLocationCoordinator"
+
+# Serializes public/private media quota reservations per canonical Model record.
+[[durable_objects.bindings]]
+name = "MODEL_MEDIA_SLOT_COORDINATOR"
+class_name = "ModelMediaSlotCoordinator"
 
 
 # One durable job serializes Console Inbox pagination and provides resumable progress.
@@ -786,6 +1093,24 @@ class_name = "MmsPartnerAuthStore"
 tag = "v2026-09-06-mms-partner-auth"
 new_sqlite_classes = ["MmsPartnerAuthStore"]
 
+[[migrations]]
+tag = "v2026-09-27-model-media-slot-coordinator"
+new_sqlite_classes = ["ModelMediaSlotCoordinator"]
+
+# Draft only: deploy/configure after owner review, then enable explicitly.
+[[durable_objects.bindings]]
+name = "MODEL_CARD_COORDINATOR"
+class_name = "ModelCardCoordinator"
+
+[[migrations]]
+tag = "v2026-09-27-model-card-drafts"
+new_sqlite_classes = ["ModelCardCoordinator"]
+
+[browser]
+binding = "MODEL_CARD_BROWSER"
+
+# Secret, server-side only: OPENAI_IMAGE_API_KEY
+
 # Canonical client lookup: avoid Webflow HTML fallback for POST requests.
 
 [[routes]]
@@ -802,6 +1127,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/clients/recent"
+zone_name = "mmdbkk.com"
+
+# Owner/admin profile-photo history sync. Pulls the current LINE profile image
+# into Clients.Profile Photo as a rolling max-8 album.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/profile-photo/sync"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/profile-photo/sync"
 zone_name = "mmdbkk.com"
 
 # Exact, credential-bound diagnostic only. Do not capture other payment routes.
@@ -859,4 +1194,50 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/models/review-queue*"
+zone_name = "mmdbkk.com"
+
+
+[[services]]
+binding = "MMD_SHOP_WORKER"
+service = "himai-chat-worker"
+
+
+[[services]]
+binding = "MEMBER_DASHBOARD_CHAT_WORKER"
+service = "member-dashboard-chat-worker"
+
+# Owner-only, read-only receipt for Kenji Conversation Shadow Mode.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/conversation-shadow-receipt"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/conversation-shadow-receipt"
+zone_name = "mmdbkk.com"
+
+# Read-only HYPE Telegram router health fan-in. This binding exposes bounded
+# notification health only; telegram-worker remains the route owner.
+[[services]]
+binding = "TELEGRAM_ROUTER"
+service = "telegram-worker"
+
+# Partner owner review uses the existing credential-bound admin session.
+[[services]]
+binding = "PARTNERS_WORKER"
+service = "partners-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/partners*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/partners/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/partners*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/partners/*"
 zone_name = "mmdbkk.com"

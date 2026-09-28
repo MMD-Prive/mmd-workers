@@ -15,7 +15,7 @@ function canonicalPublicRichMenu() {
       { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=public_membership" } },
       { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status" } },
       { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
       { action: { type: "message", text: "Hi MMD" } },
     ],
   };
@@ -28,7 +28,7 @@ function canonicalPrivateRichMenu() {
       { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=points" } },
       { action: { type: "uri", uri: "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=renewal" } },
       { action: { type: "postback", data: "mmd_action=private_support&source=private_rich_menu", displayText: "Private Support" } },
-      { action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
+      { action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
       { action: { type: "message", text: "Hi MMD" } },
     ],
   };
@@ -41,11 +41,12 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-function makeEnv({ binding = true, upstreamBody = { ok: true, rich_menu_type: "public_world" }, upstreamStatus = 200 } = {}) {
+function makeEnv({ binding = true, upstreamBody = { ok: true, rich_menu_type: "public_world" }, upstreamStatus = 200, internalToken = "" } = {}) {
   const calls = [];
   const env = {
     ADMIN_BEARER,
     CONFIRM_KEY,
+    ...(internalToken ? { INTERNAL_TOKEN: internalToken } : {}),
   };
 
   if (binding) {
@@ -100,7 +101,7 @@ test("admin draft calls member-dashboard service binding without forwarding oper
   assert.equal(body.rich_menu.areas[1].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=public_membership");
   assert.equal(body.rich_menu.areas[2].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status");
   assert.equal(body.rich_menu.areas[3].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
-  assert.equal(body.rich_menu.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
+  assert.equal(body.rich_menu.areas[4].action.uri, "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status");
   assert.deepEqual(body.rich_menu.areas[5].action, { type: "message", text: "Hi MMD" });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://member-dashboard-chat-worker.local/__internal/line/rich-menu/public-world/draft");
@@ -245,4 +246,50 @@ test("admin rich menu response is sanitized", async () => {
   assert.equal(response.status, 502);
   assert.equal(body.nested.rich_menu_id, "richmenu-public");
   assert.doesNotMatch(rendered, /should-not-leak|hidden|authorization|secret|token/i);
+});
+
+test("current three-level prepare, activate and audit require admin auth plus internal service token", async () => {
+  const missing = makeEnv({ internalToken: "" });
+  const missingResult = await adminFetch("/v1/admin/line/rich-menu/three-level/prepare", {
+    headers: { authorization: `Bearer ${ADMIN_BEARER}` },
+  }, missing.env);
+  assert.equal(missingResult.response.status, 502);
+  assert.deepEqual(missingResult.body, { ok: false, error: "internal_token_unavailable" });
+  assert.equal(missing.calls.length, 0);
+
+  const { env, calls } = makeEnv({
+    internalToken: "member-internal-secret",
+    upstreamBody: {
+      ok: true,
+      version: "mmd-rm3-20260923-v4.2",
+      five_state_matrix_match: true,
+      physical_tap_verified: false,
+    },
+  });
+
+  const prepare = await adminFetch("/v1/admin/line/rich-menu/three-level/prepare", {
+    headers: { authorization: `Bearer ${ADMIN_BEARER}` },
+  }, env);
+  const activate = await adminFetch("/v1/admin/line/rich-menu/three-level/activate", {
+    method: "POST",
+    headers: { authorization: `Bearer ${ADMIN_BEARER}` },
+  }, env);
+  const audit = await adminFetch("/v1/admin/line/rich-menu/three-level/audit", {
+    method: "GET",
+    headers: { "x-confirm-key": CONFIRM_KEY },
+  }, env);
+
+  assert.equal(prepare.response.status, 200);
+  assert.equal(activate.response.status, 200);
+  assert.equal(audit.response.status, 200);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/prepare");
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].headers.authorization, "Bearer member-internal-secret");
+  assert.equal(calls[1].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/activate");
+  assert.equal(calls[1].method, "POST");
+  assert.equal(calls[1].headers.authorization, "Bearer member-internal-secret");
+  assert.equal(calls[2].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/audit");
+  assert.equal(calls[2].method, "GET");
+  assert.equal(calls[2].headers.authorization, "Bearer member-internal-secret");
 });

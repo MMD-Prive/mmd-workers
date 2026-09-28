@@ -13,9 +13,24 @@
 import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
+import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
+import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
+import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
+import { buildOwnerAnnualFinance } from "./owner-annual-finance.js";
+import { buildOwnerActionsQueue } from "./owner-actions-queue.js";
+import { buildOwnerActionDetail } from "./owner-action-detail.js";
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { readPartnerFinanceAuditCoverage } from "./partner-owner-console.js";
+import { readMmsOwnerActionCoverage } from "./mms-admin-runtime.js";
+import { readCrossSystemStuckSlaWatch } from "./hype-cross-system-stuck-sla.js";
+import { readRecoveryQueueIntelligence } from "./recovery-control.js";
+import { readAdminCalendar } from "./admin-calendar-runtime-v2.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
+const OWNER_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
+const OWNER_ANNUAL_FINANCE_PATH = "/v1/admin/dashboard/annual-finance";
+const OWNER_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
@@ -32,7 +47,7 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if (path === DASHBOARD_PATH) {
+    if (path === DASHBOARD_PATH || path === OWNER_ANALYTICS_PATH || path === OWNER_ACTIONS_PATH || path === OWNER_ANNUAL_FINANCE_PATH) {
       if (!isAllowedOrigin(req, env)) {
         return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
       }
@@ -45,6 +60,36 @@ export default {
         return withCors(json({ ok: false, error: "method_not_allowed" }, 405), cors);
       }
 
+      if (path === OWNER_ANNUAL_FINANCE_PATH) {
+        const actor = await readCredentialBoundAdminActor(req, env);
+        if (!actor || String(actor.role || "").trim().toLowerCase() !== "owner") {
+          return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
+        }
+        const year = Number(url.searchParams.get("year"));
+        const summary = await buildOwnerAnnualFinance(env, year);
+        return withCors(json(summary, summary.ok ? 200 : summary.error === "invalid_year" ? 400 : 503), cors);
+      }
+
+      if (path === OWNER_ANALYTICS_PATH) {
+        return withCors(json(await buildOwnerAnalyticsDashboard(env)), cors);
+      }
+
+      if (path === OWNER_ACTIONS_PATH) {
+        const actor = await readCredentialBoundAdminActor(req, env);
+        if (!actor) return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+        if (String(actor.role || "").trim().toLowerCase() !== "owner") {
+          return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
+        }
+        const dashboard = await buildAdminDashboard(env, { ownerActor: actor });
+        const actionKey = url.searchParams.get("action_key");
+        if (actionKey !== null) {
+          const detail = buildOwnerActionDetail(dashboard.owner_actions_source, actionKey);
+          if (!detail) return withCors(json({ ok: false, error: "owner_action_not_found" }, 404), cors);
+          return withCors(json(detail), cors);
+        }
+        return withCors(json(buildOwnerActionsQueue(dashboard.owner_actions_source)), cors);
+      }
+
       return withCors(json(await buildAdminDashboard(env)), cors);
     }
 
@@ -52,50 +97,62 @@ export default {
   },
 };
 
-export async function buildAdminDashboard(env) {
+export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   const now = new Date();
   const tomorrow = bangkokDateOffset(now, 1);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
+  const ownerRecoveryQueue = ownerActionRecoveryQueue(env, ownerActor, now);
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult, financeAuditResult, mmsResult, hypeResult, availabilityResult] = await Promise.allSettled([
     loadCanonicalPaymentReviewQueue(env),
     loadCanonicalHistoricalQueue(env),
     airtableList(env, sessionsTable, 100),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
     airtableListSessionsForDate(env, sessionsTable, tomorrow),
+    readHypeTelegramRouterHealth(env),
+    ownerActionCoverage(env, ownerActor),
+    ownerActionMmsCoverage(env, ownerActor),
+    ownerActionHypeCoverage(env, ownerActor, now, ownerRecoveryQueue),
+    ownerActionAvailabilityCoverage(env, ownerActor, now),
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
+  const ownerPaymentReview = ownerActionPaymentReviewItems(paymentQueue);
   const historicalQueue = settledRecords(historicalQueueResult);
   const historicalPending = historicalQueue.filter(isHistoricalPending);
   const sessionRecords = settledRecords(sessionsResult);
   const memberRecords = settledRecords(membersResult);
+  const membershipReview = ownerActionMembershipReviewItems(memberRecords);
 
-  const money = buildMoneyList(paymentQueue);
+  const money = buildMoneyList(ownerPaymentReview);
   const jobs = buildJobList(sessionRecords, now);
   const members = buildMemberList(memberRecords, now);
   const reconfirm = reconfirmSessionsResult.status === "fulfilled"
     ? buildReconfirmOverview(reconfirmSessionsResult.value, now, tomorrow)
     : unavailableReconfirmOverview(tomorrow, resultReason(reconfirmSessionsResult));
-  const boss = buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords });
+  const boss = buildBossList({ sessionRecords });
   const todos = buildTodos({ money, historicalPending, jobs, members, boss });
 
   const counts = {
     urgent: todos.length + boss.length,
     payments: paymentQueue.length,
-    payment_review: paymentQueue.length,
+    payment_review: ownerPaymentReview.length,
+    // Additive owner-surface aliases for compact Internal/Lovable task cards.
+    // These are projections of the same canonical Payment Review queue, not new truth.
+    payment_slips_pending: ownerPaymentReview.length,
+    payments_review_pending: ownerPaymentReview.length,
     historical_recovery: historicalPending.length,
     jobs: jobs.length,
     jobs_need_confirm: Number(reconfirm.pending || 0) + Number(reconfirm.overdue || 0),
     members: members.length,
-    membership_review: members.length,
+    membership_review: membershipReview.length,
     reconfirm_pending: reconfirm.pending,
     reconfirm_overdue: reconfirm.overdue,
   };
 
   const queues = {
     payment_review: {
-      count: paymentQueue.length,
+      count: ownerPaymentReview.length,
       href: "/internal/admin/payments",
       authority: "payment-review-runtime",
     },
@@ -110,15 +167,48 @@ export async function buildAdminDashboard(env) {
       authority: "session-reconfirm-runtime",
     },
     membership_review: {
-      count: members.length,
+      count: membershipReview.length,
       href: "/internal/admin/member-intelligence",
-      authority: "canonical-members",
+      authority: "my_mmd_entitlement_resolver_v1",
     },
   };
 
   const focus = buildFocus({ money, historicalPending, jobs, members, boss });
+  const telegramRouterHealth = telegramRouterResult.status === "fulfilled"
+    ? telegramRouterResult.value
+    : { available: false, status: "unknown", summary: "Telegram Router health source unavailable" };
+  const financeAudit = coverageResult(financeAuditResult, "finance_audit_unavailable");
+  const mms = coverageResult(mmsResult, "mms_snapshot_unavailable");
+  const hype = coverageResult(hypeResult, "hype_watch_unavailable");
+  const availability = coverageResult(availabilityResult, "availability_coverage_unavailable");
+  const sourceCoverage = [
+    sourceCoverageEntry("finance_audit", "Finance Audit", financeAudit, "/internal/admin/partners", "canonical_finance_timeline"),
+    sourceCoverageEntry("mms", "MMS", mms, "/internal/admin/mms", "mms-worker"),
+    sourceCoverageEntry("hype", "HYPE operational watch", hype, "/internal/admin/control-room", "hype_coordinator_read_only"),
+    sourceCoverageEntry("availability", "Availability", availability, "/internal/admin/calendar", "sigil_availability_snapshot_v1"),
+  ];
+  const telegramStatus = telegramRouterHealth?.status === "configured"
+    ? "พร้อม"
+    : telegramRouterHealth?.status === "partial"
+      ? "บางส่วน"
+      : telegramRouterHealth?.status === "degraded"
+        ? "มีปัญหา"
+        : "ยังยืนยันไม่ได้";
 
-  return {
+  const dashboardStatus = {
+    admin: "พร้อม",
+    payments: statusFromResult(paymentQueueResult),
+    historical_recovery: statusFromResult(historicalQueueResult),
+    telegram: telegramStatus,
+    data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
+    reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
+  };
+  const controlRoomV2 = buildControlRoomV2SystemHealth({
+    dashboardStatus,
+    telegramRouterHealth,
+  });
+
+  const payload = {
     ok: true,
     layer: "core",
     source: "admin-worker",
@@ -126,6 +216,10 @@ export async function buildAdminDashboard(env) {
     focus,
     counts,
     queues,
+    shortcut_counts: {
+      payment_slip_inbox: ownerPaymentReview.length,
+      money_control: ownerPaymentReview.length,
+    },
     todos,
     jobs,
     money,
@@ -133,33 +227,149 @@ export async function buildAdminDashboard(env) {
     members,
     boss,
     reconfirm,
-    status: {
-      admin: "พร้อม",
-      payments: statusFromResult(paymentQueueResult),
-      historical_recovery: statusFromResult(historicalQueueResult),
-      telegram: "พร้อม",
-      data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
-      reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
-    },
+    telegram_router_health: telegramRouterHealth,
+    control_room_v2: controlRoomV2,
+    status: dashboardStatus,
     debug: {
       payment_review_loaded: paymentQueue.length,
+      payment_owner_review_ready: ownerPaymentReview.length,
       historical_loaded: historicalQueue.length,
       historical_pending: historicalPending.length,
       sessions_loaded: sessionRecords.length,
       members_loaded: memberRecords.length,
+      membership_owner_review_ready: membershipReview.length,
       reconfirm_sessions_loaded: reconfirm.items.length,
       payment_source: resultReason(paymentQueueResult),
       historical_source: resultReason(historicalQueueResult),
       session_source: resultReason(sessionsResult),
       member_source: resultReason(membersResult),
       reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
+      telegram_router_source: telegramRouterResult.status === "fulfilled" ? cleanDebugStatus(telegramRouterHealth?.status) : resultReason(telegramRouterResult),
     },
   };
+  Object.defineProperty(payload, "owner_actions_source", {
+    value: {
+      now,
+      money: ownerPaymentReview,
+      historical_recovery: historicalPending,
+      reconfirm,
+      members: membershipReview,
+      boss,
+      finance_audit: financeAudit,
+      mms,
+      hype,
+      availability,
+      source_coverage: sourceCoverage,
+      unavailable_sources: sourceCoverage.filter((source) => source.state !== "connected").map((source) => source.source),
+    },
+    enumerable: false,
+  });
+  return payload;
+}
+
+function coverageResult(result, fallbackReason) {
+  if (result?.status === "fulfilled" && result.value?.available === true) return result.value;
+  return {
+    available: false,
+    reason: cleanDebugStatus(result?.status === "rejected" ? resultReason(result) : result?.value?.reason || fallbackReason),
+  };
+}
+
+function ownerActionCoverage(env, actor) {
+  return actor ? readPartnerFinanceAuditCoverage(env, actor) : Promise.resolve({ available: false, reason: "owner_scope_required" });
+}
+
+function ownerActionMmsCoverage(env, actor) {
+  return actor ? readMmsOwnerActionCoverage(env) : Promise.resolve({ available: false, reason: "owner_scope_required" });
+}
+
+function ownerActionRecoveryQueue(env, actor, now) {
+  return actor
+    ? readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now).catch(() => ({ ok: false, error: "recovery_queue_unavailable" }))
+    : Promise.resolve({ ok: false, error: "owner_scope_required" });
+}
+
+function ownerActionAvailabilityCoverage(env, actor, now) {
+  if (!actor) return Promise.resolve({ available: false, reason: "owner_scope_required" });
+  return readAdminCalendar(env, bangkokDateOffset(now, 0)).then((calendar) => {
+    const health = calendar?.availability?.coverage_health;
+    if (!health || health.schema !== "mmd.availability.coverage-health.v1") {
+      return { available: false, reason: "availability_coverage_contract_missing" };
+    }
+    const sourceAttention = health.review_status === "source_attention";
+    return {
+      available: true,
+      complete: !sourceAttention,
+      status: sourceAttention ? "partial" : "ok",
+      authority: "sigil_availability_snapshot_v1",
+      coverage_health: {
+        schema: health.schema,
+        review_status: cleanDebugStatus(health.review_status),
+        canonical_models: nonNegativeInteger(health.canonical_models),
+        fresh_models: nonNegativeInteger(health.fresh_models),
+        fresh_coverage_percent: Number.isFinite(Number(health.fresh_coverage_percent)) ? Number(health.fresh_coverage_percent) : null,
+        identity_missing: nonNegativeInteger(health.identity_missing),
+        unconfirmed_models: nonNegativeInteger(health.unconfirmed_models),
+        source_unavailable_models: nonNegativeInteger(health.source_unavailable_models),
+        owner_action_required: nonNegativeInteger(health.owner_action_required),
+        follow_up_due: nonNegativeInteger(health.follow_up_due),
+        waiting_for_model: nonNegativeInteger(health.waiting_for_model),
+        automatic_send: false,
+        no_guess: true,
+      },
+    };
+  });
+}
+
+function ownerActionHypeCoverage(env, actor, now, recoveryQueue) {
+  return actor
+    ? Promise.resolve(recoveryQueue).then((value) => readCrossSystemStuckSlaWatch(env, { now, recoveryQueue: value }))
+    : Promise.resolve({ available: false, reason: "owner_scope_required" });
+}
+
+function sourceCoverageEntry(source, label, value, href, fallbackAuthority) {
+  const partial = value?.complete === false || value?.status === "partial";
+  return {
+    source,
+    label,
+    state: value?.available === true ? (partial ? "partial" : "connected") : "unavailable",
+    authority: cleanDebugStatus(value?.authority || fallbackAuthority),
+    href,
+    action_count: ownerCoverageActionCount(source, value),
+    routine_count: ownerCoverageRoutineCount(source, value),
+    operating_model: cleanDebugStatus(value?.operating_model || ""),
+    read_only: true,
+  };
+}
+
+function ownerCoverageActionCount(source, value) {
+  if (source === "finance_audit") return nonNegativeInteger(value?.reconciliation_count) + nonNegativeInteger(value?.payout_hold_count);
+  if (source === "mms") return nonNegativeInteger(value?.exception_count);
+  if (source === "availability") {
+    const health = value?.coverage_health || {};
+    if (health.review_status === "source_attention") return Math.max(1, nonNegativeInteger(health.source_unavailable_models));
+    return nonNegativeInteger(health.follow_up_due);
+  }
+  if (source === "hype") return nonNegativeInteger(value?.counts?.owner_actionable_overdue);
+  return nonNegativeInteger(value?.counts?.total);
+}
+
+function ownerCoverageRoutineCount(source, value) {
+  if (source === "finance_audit") return nonNegativeInteger(value?.diagnostic_count);
+  if (source === "mms") {
+    return nonNegativeInteger(value?.routine_application_count) + nonNegativeInteger(value?.routine_prebooking_count);
+  }
+  return 0;
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
 async function loadCanonicalPaymentReviewQueue(env) {
   const response = await handlePaymentReviewRequest(
-    new Request("https://admin.internal/v1/admin/payments/review-queue?limit=100"),
+    new Request("https://admin.internal/v1/admin/payments/review-queue?limit=100&include_context=1"),
     env,
     { id: "dashboard", role: "admin" },
   );
@@ -263,7 +473,7 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
     todos.push({
       title: `เช็กงาน ${job.id || job.title}`,
       text: job.text,
-      href: job.href || "/internal/admin/jobs",
+      href: job.href || "/internal/admin/jobs/all",
       icon: "+",
       tag: "เช็กงาน",
       color: "yellow",
@@ -285,7 +495,7 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
     todos.push({
       title: boss[0].title,
       text: boss[0].text,
-      href: boss[0].href || "/internal/admin/exceptions",
+      href: boss[0].href || "/internal/admin/jobs/all",
       icon: "!",
       tag: "Boss Per",
       color: "gold",
@@ -293,6 +503,47 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
   }
 
   return todos.slice(0, 4);
+}
+
+export function ownerActionPaymentReviewItems(items) {
+  return (Array.isArray(items) ? items : []).filter((item) =>
+    item?.reviewable === true &&
+    item?.review_lane === "owner_review" &&
+    item?.can_approve === true &&
+    item?.settlement_recovery !== true &&
+    !(Array.isArray(item?.context_issues) && item.context_issues.length)
+  );
+}
+
+export function ownerActionMembershipReviewItems(records) {
+  const reviewStates = new Set([
+    "review_required",
+    "needs_review",
+    "ready_for_owner_verification",
+    "conflict",
+    "ambiguous",
+    "insufficient_evidence",
+    "owner_review_required",
+    "manual_review",
+    "hold",
+    "blocked",
+  ]);
+
+  return (Array.isArray(records) ? records : []).map((record) => {
+    const fields = record?.fields || {};
+    const candidates = [
+      fields.resolver_state,
+      fields.entitlement_state,
+      fields.membership_state,
+      fields.review_state,
+      fields.identity_readiness,
+      fields["Verification Status"],
+      fields["Membership Status"],
+      fields.status,
+    ].map(normalizeWord).filter(Boolean);
+    const state = candidates.find((value) => reviewStates.has(value));
+    return state ? { id: firstText(record?.id), review_state: state } : null;
+  }).filter((item) => item?.id);
 }
 
 function buildMoneyList(items) {
@@ -345,7 +596,9 @@ export function buildJobList(records, now = new Date()) {
       when,
       status: thaiStatus(status),
       progress: progressFromStatus(status),
-      href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
+      href: /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/.test(sessionId)
+        ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}`
+        : "/internal/admin/jobs/all",
     };
   });
 
@@ -456,48 +709,24 @@ function buildMemberList(records, now) {
     });
 }
 
-function buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords }) {
-  const out = [];
-
-  const blackCardMember = memberRecords.find((record) => /black|vip|svip/i.test(JSON.stringify(record.fields || {})));
-  if (blackCardMember) {
-    const fields = blackCardMember.fields || {};
-    out.push({
-      title: `Black Card Review · ${firstText(fields["Full Name (Display)"], fields["Full Name"], fields.name, fields.mmd_client_name, fields.email, "สมาชิก")}`,
-      text: "มีข้อมูลระดับ VIP / Black Card ควรให้ Boss Per ตรวจเอง",
-      href: "/internal/admin/black-card-review",
+export function buildBossList({ sessionRecords = [] } = {}) {
+  return (Array.isArray(sessionRecords) ? sessionRecords : [])
+    .filter((item) => {
+      const fields = item?.fields || {};
+      const state = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status);
+      return /(?:^|[\s_-])(exception|hold|blocked)(?:$|[\s_-])/i.test(state);
+    })
+    .slice(0, 6)
+    .map((record) => {
+      const fields = record.fields || {};
+      const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
+      return {
+        id: sessionId,
+        title: "ตรวจงานที่มีปัญหา",
+        text: sessionId ? `เปิดงาน ${sessionId} เพื่อตรวจจุดที่ติด` : "เปิดงานทั้งหมดเพื่อตรวจสถานะ",
+        href: sessionId ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}` : "/internal/admin/jobs/all",
+      };
     });
-  }
-
-  const unmatchedPayment = (Array.isArray(paymentQueue) ? paymentQueue : []).find((item) =>
-    Array.isArray(item?.context_issues) && item.context_issues.includes("customer_or_job_not_linked")
-  );
-  if (unmatchedPayment) {
-    out.push({
-      title: "ยอดโอนจับคู่ไม่ได้",
-      text: "มีรายการจ่ายเงินที่ยังจับคู่กับ Session หรือสมาชิกไม่ได้",
-      href: "/internal/admin/payments",
-    });
-  }
-
-  const exceptionJob = sessionRecords.find((record) => /exception|telegram missing|invalid|hold|blocked/i.test(JSON.stringify(record.fields || {})));
-  if (exceptionJob) {
-    out.push({
-      title: "Job Exception",
-      text: "มีงานที่สถานะไม่ปกติ ควรตรวจเองก่อนให้ flow ไปต่อ",
-      href: "/internal/admin/exceptions",
-    });
-  }
-
-  if (!out.length && (money.length > 3 || jobs.length > 5 || members.length > 3)) {
-    out.push({
-      title: "รายการวันนี้ค่อนข้างแน่น",
-      text: "ควรไล่ตรวจเงิน งาน และสมาชิกที่ใกล้หมดอายุก่อน",
-      href: "/internal/admin/dashboard",
-    });
-  }
-
-  return out.slice(0, 5);
 }
 
 async function airtableList(env, tableName, maxRecords = 20) {
@@ -557,6 +786,10 @@ function settledRecords(result) {
 
 function statusFromResult(result) {
   return result.status === "fulfilled" ? "พร้อม" : "ยังไม่มีข้อมูล";
+}
+
+function cleanDebugStatus(value) {
+  return String(value ?? "").trim().slice(0, 80) || "unknown";
 }
 
 function resultReason(result) {

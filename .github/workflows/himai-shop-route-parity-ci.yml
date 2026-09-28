@@ -1,0 +1,24 @@
+name: Himai Shop route parity CI
+on:
+  pull_request:
+    paths:
+      - "himai-chat-worker/scripts/verify-himai-shop-routes.mjs"
+      - "himai-chat-worker/test/himai-shop-route-deploy.test.mjs"
+      - "himai-chat-worker/wrangler.toml"
+      - ".github/workflows/deploy-himai-chat-worker.yml"
+      - ".github/workflows/himai-shop-route-parity-ci.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  route-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate read-only smoke and route parity regression tests
+        run: |
+          node --check himai-chat-worker/scripts/verify-himai-shop-routes.mjs
+          node --test himai-chat-worker/test/himai-shop-route-deploy.test.mjs

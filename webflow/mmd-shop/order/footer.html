@@ -1,0 +1,422 @@
+<script>
+/* MMD Shop TH / EN / ZH runtime i18n
+ * Routes: /mmd-shop and /mmd-shop/*
+ * Contract: ?lang=th|en|zh -> safe localStorage.mmd_shop_lang -> th
+ * Business truth stays language-neutral; this layer translates presentation only.
+ */
+(function(){
+"use strict";
+if(window.MMDShopI18n)return;
+
+var STORAGE_KEY="mmd_shop_lang";
+var params=new URL(location.href).searchParams;
+function safeGet(){try{return localStorage.getItem(STORAGE_KEY)||""}catch(_){return""}}
+function safeSet(v){try{localStorage.setItem(STORAGE_KEY,v)}catch(_){}}
+function normalize(v){
+  var x=String(v||"").trim().toLowerCase();
+  if(x==="zh"||x.indexOf("zh-")===0)return"zh";
+  if(x==="en"||x.indexOf("en-")===0)return"en";
+  return"th";
+}
+var lang=normalize(params.get("lang")||safeGet()||"th");
+var LOCALES={th:"th-TH",en:"en-US",zh:"zh-CN"};
+
+var COPY={
+ th:{
+  rules:"กติกา",products:"สินค้า",orders:"Orders",backShop:"กลับไปเลือกของ",backMmdShop:"กลับ MMD Shop",browse:"ดูของที่ผมเลือก",shortRules:"กติกาสั้น ๆ",
+  rootHeroTitle:"ผมเลือกมาให้แล้ว เหลือแค่เลือกชิ้นที่ใช่",rootHeroCopy:"ของทุกชิ้นในหน้านี้ผ่านการคัดให้เหมาะกับลูกค้า MMD แล้วครับ",
+  rootL1a:"01 · เลือก",rootL1b:"เลือกเฉพาะชิ้นที่อยากได้",rootL2a:"02 · เช็ก",rootL2b:"MMD เช็กราคาและของจริง",
+  rootL3a:"03 · จ่าย",rootL3b:"จ่ายตาม Order ที่เปิดให้",rootL4a:"04 · ตาม",rootL4b:"สถานะอยู่กับ Order เดิม",
+  selectedNow:"SELECTED NOW",rootCatalogTitle:"เลือกง่าย เห็นของที่ใช่เร็วขึ้น",rootCatalogCopy:"ดูสินค้า ราคา และตัวเลือกที่พร้อมตอนนี้ได้ตรงนี้",
+  rootFold1:"ทำไมผมถึงเลือกของพวกนี้",rootFold1Body:"ผมดูทั้งของจริง ความเหมาะกับลูกค้า MMD และประสบการณ์หลังซื้อ แล้วคัดเฉพาะชิ้นที่มั่นใจครับ",
+  rootFold2:"ราคาและสต๊อกดูจากไหน",rootFold2Body:"ก่อนเปิด Order ผมให้เช็กราคาและสต๊อกจริงอีกครั้ง ปุ่มสั่งจะพร้อมทันทีเมื่อรายการพร้อม",
+  rootCloseTitle:"ชอบชิ้นไหน เก็บไว้ก่อนก็ได้",rootCloseCopy:"พร้อมเมื่อไรค่อยเปิด Order ครับ",
+  yourCart:"YOUR CART",cartTitle:"ของที่เลือกไว้",cartCopy:"พอพร้อมสั่ง ผมให้ MMD เช็กราคาและสต๊อกจริงอีกครั้งก่อนเปิด Order ครับ",
+  total:"รวม",askMmd:"ถาม MMD",copy:"คัดลอก",clearCart:"ล้าง Cart",emptyCart:"เริ่มเลือกสินค้าใส่ Cart ได้เลย",remove:"ลบ",
+  addCart:"เพิ่มลง Cart",addedCart:"เพิ่มลง Cart แล้ว",viewDetails:"ดูรายละเอียด",viewVariant:"ดูรายละเอียดตัวเลือกนี้",
+  variantSize:"เลือกขนาด",variantFlavour:"เลือก Flavour",sku:"SKU",readyOrder:"พร้อมสั่งซื้อ",
+  restricted:"สินค้ากลุ่มนี้สั่งผ่าน MMD ได้โดยตรง",stockChecking:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",
+  supplierChecking:"กำลังยืนยัน Supplier ก่อนเปิดรับรายการ",outStock:"รอรอบสต๊อกถัดไป",onlineClosed:"กำลังเตรียมเปิดรับรายการออนไลน์",
+  checkoutTitle:"ข้อมูลสำหรับสั่งซื้อ",checkoutCopy:"ก่อนเปิด Order ผมให้ MMD เช็กราคา สต๊อก และข้อมูลจัดส่งอีกครั้งครับ",
+  namePh:"ชื่อผู้สั่งซื้อ *",phonePh:"เบอร์โทร *",emailPh:"อีเมล (ถ้ามี)",deliveryMethod:"วิธีรับสินค้า",
+  delivery:"จัดส่ง",pickup:"รับสินค้าเอง / Pickup",address1:"ที่อยู่จัดส่ง *",address2:"อาคาร / ชั้น / ห้อง (ถ้ามี)",
+  subdistrict:"แขวง / ตำบล",district:"เขต / อำเภอ *",province:"จังหวัด *",postal:"รหัสไปรษณีย์ *",deliveryNote:"หมายเหตุการจัดส่ง (ถ้ามี)",
+  checkout:"สั่งซื้อและชำระเงิน",cartUpdated:"ผมอัปเดต Cart ตามสต๊อกล่าสุดแล้ว ลองดูรายการอีกครั้งครับ",
+  cartNeedItem:"กรุณาเพิ่มสินค้าลง Cart ก่อน",cartBlocked:"Cart มีรายการที่รอความพร้อม กรุณาเลือกเฉพาะรายการที่พร้อมสั่งซื้อ",
+  contactRequired:"กรุณากรอกชื่อและเบอร์โทรให้ครบ",addressRequired:"กรุณากรอกที่อยู่ เขต/อำเภอ จังหวัด และรหัสไปรษณีย์ให้ครบ",
+  openingOrder:"กำลังเปิด Order ให้ครับ…",checkoutFailed:"ระบบกำลังเตรียมรายการชำระเงิน กรุณาลองอีกครั้ง",
+  productGraphic:"ดูของชิ้นนี้ให้จบ แล้วค่อยตัดสินใจ",loadingProduct:"ขอเปิดรายละเอียดแป๊บครับ…",
+  productError:"รายละเอียดสินค้ากำลังอัปเดตครับ",productErrorCopy:"กลับไปเลือกจาก MMD Shop แล้วลองใหม่อีกครั้งได้เลย",retry:"ลองใหม่",
+  productPriceNote:"ก่อนรับ Order ผมให้เช็กราคาและสต๊อกจริงอีกครั้ง",qty:"จำนวน",
+  saveCart:"เก็บไว้ก่อน",buyThis:"เอาชิ้นนี้",productRestricted:"ชิ้นนี้จะเปิดสั่งออนไลน์ทันทีเมื่อสถานะพร้อมครับ",
+  productRestrictedCopy:"ดูรายละเอียดได้ก่อน ถ้าของพร้อมปุ่มสั่งจะเปิดเอง",whyPick:"ทำไมผมเลือกชิ้นนี้",
+  beforeOrder:"ก่อนสั่ง ดูแค่นี้",beforeOrderBody:"ยอดบน Order คือยอดจริง ส่วนสลิปจะถือว่าชำระแล้วเมื่อ MMD ตรวจยอดเรียบร้อย",
+  readRules:"อ่านกติกาสั้น ๆ →",backChoose:"← กลับไปเลือกของ",viewOrders:"ดู Orders ของฉัน →",
+  stockOnDemand:"สั่งแบบ On-Demand · MMD ยืนยันกับ Supplier หลังได้รับออเดอร์",stockOut:"สินค้าหมด",stockLow:"เหลือน้อย",stockReady:"พร้อมสั่ง · {n} ชิ้น",
+  stockUntrackedTitle:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",stockUntrackedCopy:"พอมีสต๊อกจริงที่ยืนยันแล้ว ปุ่มสั่งจะเปิดให้เองครับ",
+  stockOutCopy:"รอบรับ Order ถัดไปจะเปิดเมื่อสินค้าพร้อมครับ",priceClosed:"กำลังเตรียมราคา Online Checkout",priceClosedCopy:"ดูรายละเอียดได้ก่อน ถ้าอยากถามเพิ่มคุยกับ MMD ได้ครับ",
+  noProduct:"เลือกสินค้าจาก MMD Shop เพื่อดูรายละเอียด",noProductCopy:"เปิดหน้านี้จากสินค้าบน MMD Shop หรือใช้ URL ที่มี SKU ของสินค้า",
+  productNotFound:"กำลังพากลับไปดูสินค้าที่พร้อม",productNotFoundCopy:"สถานะสินค้าหรือ URL มีการอัปเดต กรุณาเปิดจาก MMD Shop อีกครั้ง",
+  productLoadError:"กำลังเตรียมรายละเอียดสินค้า",productLoadErrorCopy:"กรุณาลองใหม่ หรือกลับไปที่ MMD Shop",timeout:"การเชื่อมต่อใช้เวลานานเกินไป กรุณาลองอีกครั้ง",
+  cartSaved:"เพิ่ม {n} ชิ้นลง Cart แล้ว",cartStorage:"Cart จะเก็บรายการไว้ระหว่างการใช้งานหน้านี้",
+  size:"ขนาด",flavour:"Flavour",
+  rulesHeroTitle:"กติกาสั้น ๆ ดูครบในหน้านี้ครับ",rulesHeroCopy:"ผมพับรายละเอียดไว้ให้แล้ว อ่านหัวข้อก่อน ถ้าต้องใช้ค่อยกด +",
+  rulesL1:"เลือก",rulesL2:"เช็กของ",rulesL3:"ชำระ",rulesL4:"รับของ",rulesL5:"ดูแลต่อ",
+  rulesS1:"ราคาและสต๊อก",rulesS2:"การชำระเงินและสลิป",rulesS3:"การเตรียมและรับสินค้า",rulesS4:"คืนสินค้าและคืนเงิน",rulesS5:"ถ้าติดตรงไหน",
+  rulesP11:"ราคาที่เห็นคือราคาของ MMD Shop ก่อนเปิด Order ผมให้เช็กอีกครั้งจากรายการจริง",
+  rulesP12:"เมื่อสต๊อกยืนยันพร้อม ปุ่มสั่งจะเปิดทันที เพื่อให้ทุก Order เริ่มจากของจริง",\n  rulesP12b:"ของ On-demand เปิด Order ได้เมื่อ Supplier ยืนยัน และสถานะพร้อมส่งจะเริ่มเมื่อเข้าสู่ขั้นตอนเตรียมของ",
+  rulesP13:"บางชิ้นเปิดให้ดูรายละเอียดล่วงหน้า และปุ่มสั่งจะพร้อมตามสถานะสินค้า",
+  rulesP21:"จ่ายจากลิงก์ของ Order นั้นเท่านั้น ยอดใน Order คือยอดที่ใช้จริง",
+  rulesP22:"ส่งสลิปครั้งเดียวพอครับ ระบบจะขึ้นว่ารับหลักฐานแล้ว และค่อยยืนยันเมื่อ MMD ตรวจยอด",
+  rulesP31:"พอยืนยันยอด ผมให้ทุกอย่างเดินต่อใน Order เดิม ทั้งเตรียมของ วิธีรับ และ tracking",
+  rulesP32:"ถ้าการส่งต้องดูแลต่อ เราจะอัปเดตบน Order เดิมให้ครบ",
+  rulesP41:"Return / Refund ก็เดินต่อบน Order เดิม จะได้ตามเรื่องง่าย",
+  rulesP42:"สถานะคืนเงินจะขึ้นเมื่อมีการคืนเงินจริงแล้ว",
+  rulesP51:"ส่ง Order ID มาได้เลยครับ MMD จะเปิดรายการเดิมและดูแลต่อจากจุดนั้น",
+  lineMmd:"คุยกับ MMD ทาง LINE",rulesClose:"เรียบร้อยครับ เลือกของต่อได้เลย",goShop:"ไป MMD Shop",
+  orderBack:"กลับไปที่ร้าน",orderLoading:"กำลังเปิด Order ให้ครับ…",orderTotalLabel:"ยอดรวม",orderPaymentLabel:"การชำระเงิน",orderPay:"ดำเนินการชำระเงิน",orderMore:"เลือกสินค้าเพิ่ม",
+  orderEyebrow:"YOUR ORDER",orderTitle:"Order นี้ดูตรงนี้ที่เดียวครับ",orderLead:"ยอด สถานะ และการส่ง ผมรวมไว้ให้ในรายการเดียว",
+  orderHelp:"ติดตรงไหน ส่ง Order ID มาได้เลย",orderHelpCopy:"MMD จะเปิดรายการนี้ดูให้ตรง ๆ และต่อเรื่องจากข้อมูลเดิม",
+  orderDraft:"รอชำระ / รอตรวจ",orderConfirmed:"กำลังเตรียมรายการ",orderDone:"สำเร็จ",orderCancelled:"ยกเลิก",orderChecking:"กำลังตรวจ",
+  fAwait:"รอชำระ / รอตรวจ",fConfirmed:"ยืนยัน Order แล้ว",fPreparing:"กำลังเตรียมสินค้า",fReady:"พร้อมส่ง / พร้อมรับ",fShipped:"จัดส่งแล้ว",
+  fDelivered:"ส่งถึงแล้ว",fFailed:"รอจัดส่งอีกครั้ง",fCompleted:"สำเร็จ",fReturnRequested:"กำลังดำเนินการคืนสินค้า",fReturnReceived:"รับสินค้าคืนแล้ว",
+  fRefundPending:"กำลังคืนเงิน",fRefunded:"คืนเงินแล้ว",rReserved:"สำรองสินค้าแล้ว",rReview:"กำลังตรวจการชำระ",rCommitted:"ยืนยันสต๊อกสำหรับ Order แล้ว",
+  rExpired:"หมดเวลาชำระ · คืนสต๊อกแล้ว",rReleased:"คืนสต๊อกแล้ว",pVerified:"ยืนยันยอดแล้ว",pProof:"ได้รับหลักฐานแล้ว · รอตรวจ",
+  pPending:"รอการชำระเงิน",pPartial:"ชำระบางส่วน",pRefunded:"คืนเงินแล้ว",pFailed:"ต้องตรวจใหม่",
+  reservationFold:"ของที่กันไว้ให้",fulfillmentFold:"การรับหรือจัดส่ง",pickupLabel:"รับสินค้าเอง / Pickup",deliveryLabel:"จัดส่ง",
+  newOrderAfterExpiry:"สามารถเริ่ม Order ใหม่ได้จาก MMD Shop",reservedUntil:"สำรองสินค้าไว้ถึง {time}",reviewHold:"ของยังถูกกันไว้ระหว่าง MMD ตรวจยอด",
+  qtyUnit:"{n} ชิ้น",refundAmount:"คืนเงิน {amount}",orderLinkHint:"เปิดรายการนี้จากลิงก์ Order ใน MMD Shop หรือ MY MMD ครับ",
+  orderUnavailable:"กลับ MY MMD หรือติดต่อ MMD เพื่อเปิด Order ต่อได้เลย"
+ },
+ en:{
+  rules:"Rules",products:"Products",orders:"Orders",backShop:"Back to products",backMmdShop:"Back to MMD Shop",browse:"See my picks",shortRules:"Quick rules",
+  rootHeroTitle:"I picked the good stuff. You choose what fits.",rootHeroCopy:"Every item here is selected with confidence for MMD clients.",
+  rootL1a:"01 · PICK",rootL1b:"Choose only what you actually want",rootL2a:"02 · CHECK",rootL2b:"MMD checks price and real stock",
+  rootL3a:"03 · PAY",rootL3b:"Pay only from the Order we open",rootL4a:"04 · TRACK",rootL4b:"Everything stays on the same Order",
+  selectedNow:"SELECTED NOW",rootCatalogTitle:"Less browsing. Better choices.",rootCatalogCopy:"See what’s available, the real price, and the options that matter.",
+  rootFold1:"Why did I pick these?",rootFold1Body:"I look at the actual product, fit for MMD clients, and the experience after purchase, then keep the choices I’m confident in.",
+  rootFold2:"Where do price and stock come from?",rootFold2Body:"Before an Order opens, MMD checks the real price and stock again. The order button becomes available as soon as the item is ready.",
+  rootCloseTitle:"Like it? Keep it in Cart.",rootCloseCopy:"Open the Order when you’re ready.",
+  yourCart:"YOUR CART",cartTitle:"Your selection",cartCopy:"When you’re ready, MMD checks the real price and stock once more before opening the Order.",
+  total:"Total",askMmd:"Ask MMD",copy:"Copy",clearCart:"Clear Cart",emptyCart:"Start your Cart with a favorite",remove:"Remove",
+  addCart:"Add to Cart",addedCart:"Added to Cart",viewDetails:"View details",viewVariant:"View this option",
+  variantSize:"Choose size",variantFlavour:"Choose flavour",sku:"SKU",readyOrder:"Ready to order",
+  restricted:"This product group is available directly through MMD",stockChecking:"Checking stock before orders open",
+  supplierChecking:"Confirming with the supplier before orders open",outStock:"Next stock round",onlineClosed:"Online ordering is being prepared",
+  checkoutTitle:"Order details",checkoutCopy:"Before opening the Order, MMD checks price, stock, and delivery details again.",
+  namePh:"Name *",phonePh:"Phone *",emailPh:"Email (optional)",deliveryMethod:"Delivery method",
+  delivery:"Delivery",pickup:"Pickup",address1:"Delivery address *",address2:"Building / floor / room (optional)",
+  subdistrict:"Subdistrict",district:"District *",province:"Province *",postal:"Postal code *",deliveryNote:"Delivery note (optional)",
+  checkout:"Order & pay",cartUpdated:"I’ve updated your Cart to match the latest stock. Please check it once more.",
+  cartNeedItem:"Add an item to Cart first",cartBlocked:"Some items are preparing for ordering. Keep the items currently ready for checkout.",
+  contactRequired:"Please enter your name and phone number",addressRequired:"Please complete the address, district, province, and postal code",
+  openingOrder:"Opening your Order…",checkoutFailed:"Payment is being prepared. Please try again.",
+  productGraphic:"See this one clearly, then decide.",loadingProduct:"Opening the details…",
+  productError:"Product details are being updated",productErrorCopy:"Go back to MMD Shop and try again.",retry:"Try again",
+  productPriceNote:"Before accepting the Order, I have MMD recheck the real price and stock.",qty:"Quantity",
+  saveCart:"Keep it for later",buyThis:"Choose this one",productRestricted:"Online ordering opens as soon as this item is ready.",
+  productRestrictedCopy:"You can review it now. The order button opens when the item is truly ready.",whyPick:"Why I picked this",
+  beforeOrder:"Before ordering, just know this",beforeOrderBody:"The Order amount is the real amount. A payment slip counts as paid only after MMD verifies it.",
+  readRules:"Read the quick rules →",backChoose:"← Back to products",viewOrders:"View my Orders →",
+  stockOnDemand:"On-demand · MMD confirms with the supplier after your order",stockOut:"Out of stock",stockLow:"Low stock",stockReady:"Ready · {n} available",
+  stockUntrackedTitle:"Checking stock before orders open",stockUntrackedCopy:"The order button opens after active stock is verified.",
+  stockOutCopy:"The next Order window opens when this item is ready.",priceClosed:"Online checkout price is being prepared",priceClosedCopy:"You can review the details first and ask MMD if you need anything.",
+  noProduct:"Choose a product from MMD Shop to view its details",noProductCopy:"Open this page from an MMD Shop product, or use a product SKU URL.",
+  productNotFound:"Showing you the products currently available",productNotFoundCopy:"The product status or URL has been updated. Open it again from MMD Shop.",
+  productLoadError:"Product details are being prepared",productLoadErrorCopy:"Try again or return to MMD Shop.",timeout:"The connection took too long. Please try again.",
+  cartSaved:"Added {n} to Cart",cartStorage:"Your Cart stays available during this page session",
+  size:"Size",flavour:"Flavour",
+  rulesHeroTitle:"Just a few rules before you order",rulesHeroCopy:"I folded the details away. Read the headings first; tap + only when you need more.",
+  rulesL1:"Choose",rulesL2:"Check stock",rulesL3:"Pay",rulesL4:"Receive",rulesL5:"Aftercare",
+  rulesS1:"Price & stock",rulesS2:"Payment & slips",rulesS3:"Preparation & delivery",rulesS4:"Returns & refunds",rulesS5:"If something gets stuck",
+  rulesP11:"The price you see is the MMD Shop price. Before opening an Order, I have it checked once more against the actual item.",
+  rulesP12:"The order button opens as soon as stock is verified, so every Order starts from confirmed availability.",\n  rulesP12b:"For on-demand items, an Order opens once the supplier is confirmed, and ready-to-ship status begins when preparation starts.",
+  rulesP13:"Some items are available to view early, and the order button follows the item’s ready status.",
+  rulesP21:"Pay only from that Order’s link. The amount on the Order is the amount that counts.",
+  rulesP22:"Send the slip once. It shows as proof received first, then becomes confirmed after MMD checks the amount.",
+  rulesP31:"Once payment is verified, everything continues on the same Order: preparation, pickup or delivery, and tracking.",
+  rulesP32:"If delivery needs more care, we continue the update on the same Order.",
+  rulesP41:"Returns and refunds stay on the same Order so the case is easy to follow.",
+  rulesP42:"Refunded appears only after the actual refund is recorded.",
+  rulesP51:"Send the Order ID and MMD will continue directly from that same Order.",
+  lineMmd:"Chat with MMD on LINE",rulesClose:"That’s it. Go choose what you want.",goShop:"Go to MMD Shop",
+  orderBack:"Back to shop",orderLoading:"Opening your Order…",orderTotalLabel:"Order total",orderPaymentLabel:"Payment",orderPay:"Continue to payment",orderMore:"Choose more products",
+  orderEyebrow:"YOUR ORDER",orderTitle:"Keep this Order in one place",orderLead:"Amount, status, and delivery all stay on this one Order.",
+  orderHelp:"Something stuck? Send the Order ID.",orderHelpCopy:"MMD will open this exact Order and continue from the information already there.",
+  orderDraft:"Awaiting payment / review",orderConfirmed:"Preparing order",orderDone:"Completed",orderCancelled:"Cancelled",orderChecking:"Checking",
+  fAwait:"Awaiting payment / review",fConfirmed:"Order confirmed",fPreparing:"Preparing item",fReady:"Ready to send / collect",fShipped:"Shipped",
+  fDelivered:"Delivered",fFailed:"Delivery retry in progress",fCompleted:"Completed",fReturnRequested:"Return in progress",fReturnReceived:"Return received",
+  fRefundPending:"Refund in progress",fRefunded:"Refunded",rReserved:"Stock reserved",rReview:"Reviewing payment",rCommitted:"Stock committed to Order",
+  rExpired:"Payment window expired · stock released",rReleased:"Stock released",pVerified:"Payment verified",pProof:"Proof received · awaiting review",
+  pPending:"Awaiting payment",pPartial:"Partially paid",pRefunded:"Refunded",pFailed:"Needs review",
+  reservationFold:"Reserved for this Order",fulfillmentFold:"Delivery / pickup",pickupLabel:"Pickup",deliveryLabel:"Delivery",
+  newOrderAfterExpiry:"You can start a new Order from MMD Shop",reservedUntil:"Stock reserved until {time}",reviewHold:"Stock remains reserved while MMD reviews payment",
+  qtyUnit:"{n} pcs",refundAmount:"Refund {amount}",orderLinkHint:"Open this from the Order link in MMD Shop or MY MMD.",
+  orderUnavailable:"Return to MY MMD or contact MMD to continue opening this Order."
+ },
+ zh:{
+  rules:"规则",products:"商品",orders:"订单",backShop:"返回选购",backMmdShop:"返回 MMD Shop",browse:"查看我的精选",shortRules:"快速规则",
+  rootHeroTitle:"我已经替你挑好了，剩下只选适合你的",rootHeroCopy:"这里每一件商品都经过筛选，更适合 MMD 客人。",
+  rootL1a:"01 · 选择",rootL1b:"只选你真正想要的",rootL2a:"02 · 确认",rootL2b:"MMD 再确认价格与真实库存",
+  rootL3a:"03 · 支付",rootL3b:"只按已开启的 Order 支付",rootL4a:"04 · 跟进",rootL4b:"所有状态都留在同一张 Order",
+  selectedNow:"当前精选",rootCatalogTitle:"少一点浏览，多一点好选择",rootCatalogCopy:"这里直接看现在可选的商品、价格和选项。",
+  rootFold1:"我为什么选这些",rootFold1Body:"我看真实商品、是否适合 MMD 客人，以及购买后的体验，只留下我有信心的选择。",
+  rootFold2:"价格和库存看哪里",rootFold2Body:"开启 Order 前，MMD 会再次确认真实价格和库存。商品准备好后，下单按钮会立即开放。",
+  rootCloseTitle:"喜欢哪件，先放进 Cart 也可以",rootCloseCopy:"准备好了再开启 Order。",
+  yourCart:"你的 CART",cartTitle:"已选商品",cartCopy:"准备下单时，MMD 会再次确认真实价格和库存，再开启 Order。",
+  total:"合计",askMmd:"询问 MMD",copy:"复制",clearCart:"清空 Cart",emptyCart:"现在就可以把喜欢的商品放进 Cart",remove:"删除",
+  addCart:"加入 Cart",addedCart:"已加入 Cart",viewDetails:"查看详情",viewVariant:"查看这个选项",
+  variantSize:"选择容量",variantFlavour:"选择口味",sku:"SKU",readyOrder:"可以下单",
+  restricted:"此商品类别可直接通过 MMD 下单",stockChecking:"正在确认库存，确认后开放下单",
+  supplierChecking:"正在向 Supplier 确认，确认后开放下单",outStock:"等待下一轮库存",onlineClosed:"正在准备开放线上下单",
+  checkoutTitle:"下单资料",checkoutCopy:"开启 Order 前，MMD 会再次确认价格、库存和配送资料。",
+  namePh:"姓名 *",phonePh:"电话 *",emailPh:"邮箱（可选）",deliveryMethod:"收货方式",
+  delivery:"配送",pickup:"自取 / Pickup",address1:"配送地址 *",address2:"楼栋 / 楼层 / 房号（可选）",
+  subdistrict:"街道 / 分区",district:"区 / 县 *",province:"府 / 省 *",postal:"邮编 *",deliveryNote:"配送备注（可选）",
+  checkout:"下单并支付",cartUpdated:"我已按最新库存更新 Cart，请再检查一次。",
+  cartNeedItem:"请先把商品加入 Cart",cartBlocked:"Cart 中有正在准备的商品，请保留当前可下单的商品。",
+  contactRequired:"请填写姓名和电话",addressRequired:"请完整填写地址、区县、府/省和邮编",
+  openingOrder:"正在为你开启 Order…",checkoutFailed:"正在准备支付，请再试一次。",
+  productGraphic:"先把这件看清楚，再决定。",loadingProduct:"正在打开详情…",
+  productError:"商品详情正在更新",productErrorCopy:"返回 MMD Shop 后再试一次。",retry:"重试",
+  productPriceNote:"接受 Order 前，我会让 MMD 再确认真实价格和库存。",qty:"数量",
+  saveCart:"先放着",buyThis:"就选这个",productRestricted:"这件商品正在准备开放线上下单。",
+  productRestrictedCopy:"可以先看详情。商品真的准备好时，下单按钮会自动开放。",whyPick:"我为什么选它",
+  beforeOrder:"下单前，看这一点就够了",beforeOrderBody:"Order 上的金额才是实际金额。付款凭证要等 MMD 核对后才算已付款。",
+  readRules:"查看快速规则 →",backChoose:"← 返回选购",viewOrders:"查看我的 Orders →",
+  stockOnDemand:"按需订购 · 收到订单后 MMD 再向 Supplier 确认",stockOut:"缺货",stockLow:"库存余量有限",stockReady:"可下单 · {n} 件",
+  stockUntrackedTitle:"正在确认库存",stockUntrackedCopy:"确认有真实 Active Stock 后，下单按钮才会开启。",
+  stockOutCopy:"商品准备好后会开启下一轮 Order。",priceClosed:"正在准备线上结账价格",priceClosedCopy:"可以先看详情，需要的话直接问 MMD。",
+  noProduct:"请从 MMD Shop 选择商品查看详情",noProductCopy:"请从 MMD Shop 商品页打开，或使用带 SKU 的商品链接。",
+  productNotFound:"正在为你显示当前可选商品",productNotFoundCopy:"商品状态或链接已经更新，请从 MMD Shop 再次打开。",
+  productLoadError:"正在准备商品详情",productLoadErrorCopy:"请重试或返回 MMD Shop。",timeout:"连接时间过长，请再试一次。",
+  cartSaved:"已将 {n} 件加入 Cart",cartStorage:"Cart 会在当前页面使用期间保留",
+  size:"容量",flavour:"口味",
+  rulesHeroTitle:"下单前只有几条简单规则",rulesHeroCopy:"细节我都折起来了。先看标题，需要时再点 +。",
+  rulesL1:"选择",rulesL2:"确认库存",rulesL3:"支付",rulesL4:"收货",rulesL5:"售后",
+  rulesS1:"价格与库存",rulesS2:"支付与凭证",rulesS3:"备货与配送",rulesS4:"退货与退款",rulesS5:"遇到问题时",
+  rulesP11:"你看到的是 MMD Shop 价格。开启 Order 前，我会再按实际商品确认一次。",
+  rulesP12:"库存确认后，下单按钮会立即开放，让每张 Order 都从真实可用库存开始。",\n  rulesP12b:"On-demand 商品在 Supplier 确认后可以开启 Order，进入备货阶段后状态会更新为可发货。",
+  rulesP13:"有些商品可以先看详情，下单按钮会按照商品准备状态开放。",
+  rulesP21:"只从该 Order 的付款链接支付，Order 上的金额才是实际金额。",
+  rulesP22:"付款凭证传一次就够了。系统先显示已收到凭证，MMD 核对金额后才确认。",
+  rulesP31:"确认付款后，备货、取货或配送、tracking 都继续留在同一张 Order。",
+  rulesP32:"配送需要继续处理时，我们会在原 Order 上持续更新。",
+  rulesP41:"Return / Refund 也沿用原 Order，方便一路跟进。",
+  rulesP42:"只有真正完成退款后，状态才会显示已退款。",
+  rulesP51:"把 Order ID 发来即可，MMD 会直接从原 Order 继续处理。",
+  lineMmd:"在 LINE 联系 MMD",rulesClose:"就这些，继续选你想要的吧。",goShop:"前往 MMD Shop",
+  orderBack:"返回商店",orderLoading:"正在打开你的 Order…",orderTotalLabel:"订单合计",orderPaymentLabel:"付款",orderPay:"继续付款",orderMore:"继续选购",
+  orderEyebrow:"你的 ORDER",orderTitle:"这张 Order 看这里就够了",orderLead:"金额、状态和配送都放在同一张 Order 里。",
+  orderHelp:"哪里卡住了，直接发 Order ID",orderHelpCopy:"MMD 会直接打开这张 Order，并从现有信息继续处理。",
+  orderDraft:"等待付款 / 核对",orderConfirmed:"正在准备订单",orderDone:"已完成",orderCancelled:"已取消",orderChecking:"正在确认",
+  fAwait:"等待付款 / 核对",fConfirmed:"Order 已确认",fPreparing:"正在备货",fReady:"可寄送 / 可自取",fShipped:"已寄出",
+  fDelivered:"已送达",fFailed:"等待再次配送",fCompleted:"已完成",fReturnRequested:"正在处理退货",fReturnReceived:"已收到退货",
+  fRefundPending:"正在退款",fRefunded:"已退款",rReserved:"库存已预留",rReview:"正在核对付款",rCommitted:"库存已锁定到 Order",
+  rExpired:"付款时间已过 · 库存已释放",rReleased:"库存已释放",pVerified:"付款已确认",pProof:"已收到凭证 · 等待核对",
+  pPending:"等待付款",pPartial:"部分付款",pRefunded:"已退款",pFailed:"需要重新核对",
+  reservationFold:"为这张 Order 预留的商品",fulfillmentFold:"配送 / 自取",pickupLabel:"自取 / Pickup",deliveryLabel:"配送",
+  newOrderAfterExpiry:"可以从 MMD Shop 重新开启 Order",reservedUntil:"库存预留至 {time}",reviewHold:"MMD 核对付款期间，库存会继续保留",
+  qtyUnit:"{n} 件",refundAmount:"退款 {amount}",orderLinkHint:"请从 MMD Shop 或 MY MMD 的 Order 链接打开。",
+  orderUnavailable:"请返回 MY MMD 或联系 MMD，继续开启这张 Order。"
+ }
+};
+
+function dict(){return COPY[lang]||COPY.th}
+function t(key,vars){
+  var value=(dict()[key]||COPY.th[key]||key);
+  if(vars)Object.keys(vars).forEach(function(k){value=value.replace(new RegExp("\\{"+k+"\\}","g"),String(vars[k]))});
+  return value;
+}
+function locale(){return LOCALES[lang]||LOCALES.th}
+function money(value){
+  var n=Number(value);
+  if(!Number.isFinite(n))return lang==="th"?"สอบถามราคา":lang==="zh"?"询价":"Ask MMD";
+  var formatted=new Intl.NumberFormat(locale(),{maximumFractionDigits:0}).format(n);
+  if(lang==="th")return formatted+" บาท";
+  if(lang==="zh")return formatted+" 泰铢";
+  return "THB "+formatted;
+}
+function qtyText(n){return t("qtyUnit",{n:Number(n)||0})}
+function storage(){safeSet(lang)}
+function setHtmlLang(){document.documentElement.lang=lang==="zh"?"zh-CN":lang}
+
+var reverse={};
+Object.keys(COPY).forEach(function(code){
+  Object.keys(COPY[code]).forEach(function(key){
+    var value=COPY[code][key];
+    if(typeof value==="string"&&value.indexOf("{")<0)reverse[value.trim()]=key;
+  });
+});
+
+function translateLeaf(el){
+  if(!el||el.children.length)return;
+  var raw=(el.textContent||"").trim();
+  var key=el.dataset&&el.dataset.mmdI18nKey||reverse[raw];
+  if(!key)return;
+  if(el.dataset)el.dataset.mmdI18nKey=key;
+  var next=t(key);
+  if(raw!==next)el.textContent=next;
+}
+function translatePlaceholders(root){
+  (root||document).querySelectorAll("input[placeholder],textarea[placeholder]").forEach(function(el){
+    var raw=(el.getAttribute("placeholder")||"").trim();
+    var key=el.dataset.mmdI18nPlaceholder||reverse[raw];
+    if(!key)return;
+    el.dataset.mmdI18nPlaceholder=key;
+    var next=t(key);
+    if(raw!==next)el.setAttribute("placeholder",next);
+  });
+}
+function translateLeaves(root){
+  var scope=root||document;
+  scope.querySelectorAll("a,button,span,strong,small,p,h1,h2,h3,h4,div,label,summary,option").forEach(translateLeaf);
+  translatePlaceholders(scope);
+}
+function syncComposite(selector,keys){
+  document.querySelectorAll(selector).forEach(function(el,i){
+    var b=el.querySelector("b"),key=keys[i];
+    if(!b||!key)return;
+    var desired=t(key),tail=null,node=b.nextSibling;
+    while(node){
+      if(node.nodeType===3){tail=node;break}
+      node=node.nextSibling;
+    }
+    if(!tail){el.appendChild(document.createTextNode(" "+desired));return}
+    if(String(tail.nodeValue||"").trim()!==desired)tail.nodeValue=" "+desired;
+  });
+}
+function composite(){
+  syncComposite("#mmdshop-rules-v1 .mmdr__layers span",["rulesL1","rulesL2","rulesL3","rulesL4","rulesL5"]);
+  syncComposite("#mmdshop-rules-v1 .mmdr__accordion summary span",["rulesS1","rulesS2","rulesS3","rulesS4","rulesS5"]);
+}
+function syncLinks(){
+  document.querySelectorAll('a[href^="/mmd-shop"]').forEach(function(a){
+    try{
+      var u=new URL(a.getAttribute("href"),location.origin);
+      u.searchParams.set("lang",lang);
+      a.setAttribute("href",u.pathname+u.search+u.hash);
+    }catch(_){}
+  });
+}
+function ensureStyle(){
+  if(document.getElementById("mmd-shop-i18n-style"))return;
+  var style=document.createElement("style");style.id="mmd-shop-i18n-style";
+  style.textContent='.mmd-shop-lang{display:inline-flex;gap:2px;padding:3px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(17,20,22,.24);backdrop-filter:blur(10px)}.mmd-shop-lang button{min-width:30px;min-height:28px;padding:0 7px;border:0;border-radius:7px;background:transparent;color:rgba(255,255,255,.65);font:600 9px/1 "Inter",Arial,sans-serif;cursor:pointer}.mmd-shop-lang button[aria-pressed="true"]{background:#fff;color:#111416}.mmdr__topbar .mmd-shop-lang,.shop-top .mmd-shop-lang{margin-left:auto;margin-right:6px}html[lang="zh-CN"] #mmdshop-final,html[lang="zh-CN"] #mmdshop-product-v1,html[lang="zh-CN"] #mmdshop-rules-v1,html[lang="zh-CN"] .shop-order{font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei","Inter",sans-serif!important}@media(max-width:520px){.mmd-shop-lang button{min-width:27px;padding:0 5px}.mmd-toplinks{align-items:center}}';
+  document.head.appendChild(style);
+}
+function ensureSwitcher(){
+  var host=document.querySelector("#mmdshop-final .mmd-toplinks,#mmdshop-product-v1 .mmdp__nav");
+  var top=document.querySelector("#mmdshop-rules-v1 .mmdr__topbar,.shop-order .shop-top");
+  var parent=host||top;if(!parent||parent.querySelector(".mmd-shop-lang"))return;
+  var box=document.createElement("div");box.className="mmd-shop-lang";box.setAttribute("role","group");box.setAttribute("aria-label","Language");
+  [["th","TH"],["en","EN"],["zh","中文"]].forEach(function(pair){
+    var b=document.createElement("button");b.type="button";b.dataset.lang=pair[0];b.textContent=pair[1];box.appendChild(b);
+  });
+  if(host)host.insertBefore(box,host.firstChild);else{
+    var last=top.lastElementChild;top.insertBefore(box,last||null);
+  }
+  box.addEventListener("click",function(e){var b=e.target.closest("button[data-lang]");if(b)setLanguage(b.dataset.lang)});
+}
+function syncPressed(){
+  document.querySelectorAll(".mmd-shop-lang button[data-lang]").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.lang===lang?"true":"false")});
+}
+function apply(root){
+  setHtmlLang();storage();ensureStyle();ensureSwitcher();syncPressed();translateLeaves(root||document);composite();syncLinks();
+}
+function setLanguage(next){
+  lang=normalize(next);apply(document);
+  var u=new URL(location.href);u.searchParams.set("lang",lang);
+  try{history.replaceState(history.state,"",u.pathname+u.search+u.hash)}catch(_){}
+  document.dispatchEvent(new CustomEvent("mmd:shop-language-change",{detail:{lang:lang}}));
+  if(document.querySelector(".shop-order"))setTimeout(function(){location.reload();},0);
+}
+var api={t:t,money:money,qty:qtyText,locale:locale,setLanguage:setLanguage,apply:apply,get lang(){return lang}};
+window.MMDShopI18n=api;
+
+var queued=false;
+var observer=new MutationObserver(function(){
+  if(queued)return;queued=true;
+  requestAnimationFrame(function(){queued=false;apply(document)});
+});
+function start(){
+  apply(document);
+  observer.observe(document.body,{childList:true,subtree:true});
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
+})();
+</script>
+<script>
+(function(){
+"use strict";
+var state=document.getElementById("orderState"),card=document.getElementById("orderCard");
+if(!state||!card)return;
+var p=new URLSearchParams(location.search),t=p.get("t")||"";
+var $=function(id){return document.getElementById(id)};
+var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})};
+var money=function(v){var i=window.MMDShopI18n;if(i&&typeof i.money==="function")return i.money(v);var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"—"};
+var orderLabel=function(v){return({draft:"รอชำระ / รอตรวจ",confirmed:"กำลังเตรียมรายการ",fulfilled:"สำเร็จ",cancelled:"ยกเลิก"})[String(v||"").toLowerCase()]||"กำลังตรวจ"};
+var fulfillmentLabel=function(v){return({awaiting_payment:"รอชำระ / รอตรวจ",confirmed:"ยืนยัน Order แล้ว",preparing:"กำลังเตรียมสินค้า",ready:"พร้อมส่ง / พร้อมรับ",shipped:"จัดส่งแล้ว",delivered:"ส่งถึงแล้ว",delivery_failed:"รอจัดส่งอีกครั้ง",completed:"สำเร็จ",return_requested:"กำลังดำเนินการคืนสินค้า",return_received:"รับสินค้าคืนแล้ว",refund_pending:"กำลังคืนเงิน",refunded:"คืนเงินแล้ว",cancelled:"ยกเลิก"})[String(v||"").toLowerCase()]||""};
+var reservationLabel=function(v){return({reserved:"สำรองสินค้าแล้ว",payment_review:"กำลังตรวจการชำระ",committed:"ยืนยันสต๊อกสำหรับ Order แล้ว",expired:"หมดเวลาชำระ · คืนสต๊อกแล้ว",released:"คืนสต๊อกแล้ว"})[String(v||"").toLowerCase()]||""};
+var dateTime=function(v){if(!v)return"";try{var i=window.MMDShopI18n;var loc=i&&typeof i.locale==="function"?i.locale():"th-TH";return new Intl.DateTimeFormat(loc,{dateStyle:"medium",timeStyle:"short"}).format(new Date(v))}catch(e){return""}};
+var payLabel=function(v,proof,verified){if(verified)return"ยืนยันยอดแล้ว";if(proof)return"ได้รับหลักฐานแล้ว · รอตรวจ";return({pending:"รอการชำระเงิน",partial:"ชำระบางส่วน",paid:"ยืนยันยอดแล้ว",refunded:"คืนเงินแล้ว",failed:"ต้องตรวจใหม่"})[String(v||"").toLowerCase()]||"กำลังตรวจ"};
+function fail(msg){state.innerHTML="<p class=\"shop-state-text\">"+esc(msg)+"</p>";card.hidden=true}
+function renderReservation(r){
+ var old=document.getElementById("orderReservation");if(old)old.remove();if(!r)return;
+ var box=document.createElement("div"),expired=["expired","released"].indexOf(String(r.state||"").toLowerCase())>-1;
+ box.id="orderReservation";box.className="shop-reservation"+(expired?" is-expired":"");
+ var expiry=r.expires_at?dateTime(r.expires_at):"";
+ var ii=window.MMDShopI18n;var tt=function(k,v){return ii&&typeof ii.t==="function"?ii.t(k,v):k};var detail=expired?tt("newOrderAfterExpiry"):expiry&&r.state==="reserved"?tt("reservedUntil",{time:expiry}):r.state==="payment_review"?tt("reviewHold"):"";
+ box.innerHTML="<small>STOCK RESERVATION</small><strong>"+esc(reservationLabel(r.state)||"กำลังตรวจสต๊อก")+"</strong>"+(detail?"<p>"+esc(detail)+"</p>":"");
+ var target=document.getElementById("orderFulfillment"),pay=$("payCta");
+ if(target&&target.parentNode)target.parentNode.insertBefore(box,target);else if(pay&&pay.parentNode)pay.parentNode.insertBefore(box,pay);else card.appendChild(box)
+}
+function renderFulfillment(f){
+ var old=document.getElementById("orderFulfillment");if(old)old.remove();if(!f)return;
+ var box=document.createElement("div");box.id="orderFulfillment";box.className="shop-fulfillment";
+ var ii=window.MMDShopI18n;var tt=function(k){return ii&&typeof ii.t==="function"?ii.t(k):k};var method=f.delivery_method==="pickup"?tt("pickupLabel"):f.delivery_method==="delivery"?tt("deliveryLabel"):tt("orderChecking");
+ var tracking=f.tracking_number?(esc(f.courier||"Courier")+" · "+esc(f.tracking_number)):"",refund=Number(f.refund_amount_thb)>0?esc(tt("refundAmount").replace("{amount}",money(f.refund_amount_thb)))+(f.refund_method?" · "+esc(f.refund_method):""):"";
+ box.innerHTML='<small>FULFILLMENT</small><strong>'+esc(fulfillmentLabel(f.state)||method)+'</strong><p>'+esc(method)+(tracking?'<br>'+tracking:'')+(refund?'<br>'+refund:'')+'</p>';
+ var pay=$("payCta");if(pay&&pay.parentNode)pay.parentNode.insertBefore(box,pay);else card.appendChild(box)
+}
+async function load(){
+ if(!t){fail("เปิดรายการนี้จากลิงก์ Order ใน MMD Shop หรือ MY MMD ครับ");return}
+ try{
+  var r=await fetch("https://sigil.mmdbkk.com/v1/confirm/details",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},credentials:"omit",cache:"no-store",body:JSON.stringify({t:t,expected_role:"customer"})});
+  var d=await r.json().catch(function(){return{}});
+  if(!r.ok||d.ok!==true||d.payment_type!=="shop"||!d.shop_order)throw new Error(d.error||"order_unavailable");
+  state.hidden=true;card.hidden=false;
+  var fulfillment=d.shop_order.fulfillment||null,reservation=d.shop_order.reservation||null;
+  $("orderId").textContent=d.shop_order.order_id||d.session_id||"—";
+  $("orderStatus").textContent=fulfillment&&fulfillment.state?fulfillmentLabel(fulfillment.state):orderLabel(d.session_status);
+  $("orderTotal").textContent=money(d.amount_thb);
+  $("paymentStatus").textContent=reservation&&["expired","released"].indexOf(String(reservation.state||"").toLowerCase())>-1?"หมดเวลาชำระ · คืนสต๊อกแล้ว":payLabel(d.payment_status,d.payment&&d.payment.proof_received,d.payment&&d.payment.verified);
+  var items=Array.isArray(d.shop_order.items)?d.shop_order.items:[];
+  $("orderItems").innerHTML=items.length?items.map(function(x){return"<div class=\"shop-item\"><div><div class=\"shop-item-name\">"+esc(x.item_name||"MMD Shop Item")+"</div><small class=\"shop-item-meta\">"+esc(window.MMDShopI18n&&typeof window.MMDShopI18n.qty==="function"?window.MMDShopI18n.qty(x.quantity||0):(x.quantity||0)+" ชิ้น")+" · "+esc(money(x.unit_price_thb))+"</small></div><div class=\"shop-item-total\">"+esc(money(x.line_total_thb))+"</div></div>"}).join(""):"<div class=\"shop-item\"><div class=\"shop-item-name\">รายการสินค้ากำลังอัปเดต</div></div>";
+  renderFulfillment(fulfillment);
+  renderReservation(reservation);
+  var pay=$("payCta");
+  if(pay){var verified=!!(d.payment&&d.payment.verified),accepting=!(d.payment&&d.payment.accepting_payment===false),rstate=String(reservation&&reservation.state||"").toLowerCase();pay.hidden=verified||!accepting||["expired","released"].indexOf(rstate)>-1||String(d.session_status||"").toLowerCase()==="cancelled";if(!pay.hidden)pay.href="/pay/checkout?t="+encodeURIComponent(t)}
+ }catch(e){fail("กลับ MY MMD หรือติดต่อ MMD เพื่อเปิด Order ต่อได้เลย")}
+}
+load();
+})();
+</script>
+
+<script id="mmdshop-order-fold-v1">
+(function(){
+ var card=document.getElementById("orderCard");if(!card)return;
+ function fold(id,title){
+  var box=document.getElementById(id);if(!box||box.dataset.folded==="1")return;
+  box.dataset.folded="1";
+  var d=document.createElement("details");d.className="shop-fold";
+  var s=document.createElement("summary");s.textContent=title;
+  var b=document.createElement("div");b.className="shop-fold-body";
+  while(box.firstChild)b.appendChild(box.firstChild);
+  d.appendChild(s);d.appendChild(b);box.replaceWith(d);
+ }
+ var mo=new MutationObserver(function(){fold("orderReservation","ของที่กันไว้ให้");fold("orderFulfillment","การรับหรือจัดส่ง")});
+ mo.observe(card,{childList:true,subtree:true});
+ fold("orderReservation","ของที่กันไว้ให้");fold("orderFulfillment","การรับหรือจัดส่ง");
+})();
+</script>

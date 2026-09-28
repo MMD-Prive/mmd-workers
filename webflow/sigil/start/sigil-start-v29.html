@@ -1,0 +1,410 @@
+<!--
+MMD Privé · /sigil/start · V29
+Presentation-only Webflow source mirror.
+Exactly 3 lanes: Member Card / Model Cards / Partner.
+Visible copy must not expose internal routing, token or staff/system language.
+-->
+<section id="mmd-sigil-start-v29" class="st29" data-st29 data-lang="th" aria-label="MMD Privé — Choose your path">
+<style>
+#mmd-sigil-start-v29{
+  --bg:#070707;--panel:#0e0e0d;--panel2:#141310;--text:#f8f2e8;--body:#c7c0b6;--muted:#8d867c;
+  --gold:#d9bb77;--gold2:#f1dca8;--line:rgba(241,220,168,.16);--paper:#f3eee6;--ink:#1b1713;
+  --ease:cubic-bezier(.22,1,.36,1);
+  width:100%;min-height:100svh;overflow:hidden;background:var(--bg)!important;color:var(--text)!important;
+  font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans SC","PingFang SC","Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
+  font-synthesis-weight:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;isolation:isolate
+}
+#mmd-sigil-start-v29,#mmd-sigil-start-v29 *{box-sizing:border-box}
+#mmd-sigil-start-v29 *{-webkit-text-fill-color:currentColor!important}
+#mmd-sigil-start-v29 img{display:block;width:100%}
+#mmd-sigil-start-v29 a{color:inherit;text-decoration:none}
+#mmd-sigil-start-v29 button{font:inherit}
+.st29__shell{width:min(1180px,100%);margin:0 auto}
+.st29__nav{height:60px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:rgba(7,7,7,.78);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);position:relative;z-index:20}
+.st29__brand{width:112px;display:block}
+.st29__brand img{height:auto}
+.st29__langs{display:flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025)}
+.st29__langs button{width:30px;height:28px;border:0;border-radius:999px;background:transparent;color:#777067!important;font-size:8px;font-weight:850;letter-spacing:.05em;cursor:pointer}
+.st29__langs button[aria-pressed="true"]{background:rgba(217,187,119,.16);color:var(--gold2)!important}
+
+.st29__hero{position:relative;min-height:520px;display:flex;align-items:flex-end;padding:88px 14px 30px;overflow:hidden;background:#070707 url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab042681d11dfe0e5a5689d_Boss%20sigil%20start%20mob.webp") center 18%/cover no-repeat}
+.st29__hero:before{content:"";position:absolute;inset:0;z-index:0;background:
+  linear-gradient(180deg,rgba(7,7,7,.05) 0%,rgba(7,7,7,.12) 28%,rgba(7,7,7,.68) 72%,#070707 100%),
+  linear-gradient(90deg,rgba(7,7,7,.68) 0%,rgba(7,7,7,.28) 50%,rgba(7,7,7,.08) 100%)}
+.st29__hero:after{content:"";position:absolute;right:-72px;top:86px;width:240px;height:240px;border:1px solid rgba(241,220,168,.12);border-radius:58px;transform:rotate(33deg);z-index:1}
+.st29__hero-grid{display:grid;gap:20px;width:100%;position:relative;z-index:2}
+.st29__eyebrow{margin:0 0 11px;color:var(--gold)!important;font-size:8px;font-weight:900;letter-spacing:.18em;text-transform:uppercase}
+.st29__hero h1{margin:0;max-width:780px;color:#fff9ef!important;font-size:clamp(48px,14vw,72px);line-height:.9;letter-spacing:-.06em;font-weight:760}
+.st29__hero h1 em{display:block;margin-top:10px;color:var(--gold2)!important;font-style:normal;font-size:.4em;line-height:1.12;letter-spacing:-.028em}
+.st29__lead{margin:16px 0 0;max-width:700px;color:#d6cfc5!important;font-size:12px;line-height:1.68}
+.st29__per{display:flex;align-items:center;gap:10px;margin-top:16px;color:#8d867c!important;font-size:8px;letter-spacing:.08em}
+.st29__per b{color:var(--gold)!important;font-size:9px}
+.st29__hero-card{padding:14px;border:1px solid rgba(241,220,168,.24);border-radius:20px;background:rgba(11,10,9,.68);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.st29__hero-card small{display:block;color:#797168!important;font-size:7px;font-weight:900;letter-spacing:.12em}
+.st29__hero-card strong{display:block;margin-top:7px;color:#f2dfb4!important;font-size:15px;line-height:1.2}
+.st29__hero-card p{margin:7px 0 0;color:#a69e94!important;font-size:10px;line-height:1.55}
+.st29__hero-paths{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.st29__hero-paths span{padding:10px 5px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(255,255,255,.025);text-align:center;color:#eee6db!important;font-size:8px;font-weight:800}
+
+.st29__transition{position:relative;height:150px;display:grid;place-items:center;padding:18px 14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;background:#0b0a09}
+.st29__transition:before,.st29__transition:after{content:"";position:absolute;height:1px;background:linear-gradient(90deg,transparent,rgba(241,220,168,.62),transparent)}
+.st29__transition:before{width:72%;left:-12%;top:38%;transform:rotate(-4deg)}
+.st29__transition:after{width:66%;right:-14%;bottom:30%;transform:rotate(4deg)}
+.st29__transition-copy{position:relative;z-index:2;width:100%;text-align:center}
+.st29__transition-copy small{display:block;color:var(--gold)!important;font-size:7px;font-weight:900;letter-spacing:.18em}
+.st29__transition-copy strong{display:block;margin-top:7px;color:#f6eee2!important;font-size:clamp(24px,8vw,42px);line-height:.98;letter-spacing:-.045em}
+.st29__transition-copy span{display:block;margin-top:8px;color:#7e776e!important;font-size:8px;letter-spacing:.08em}
+
+.st29__lanes-sec{padding:24px 14px 30px;background:linear-gradient(180deg,#090908,#0d0c0b)}
+.st29__lanes-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:13px}
+.st29__lanes-head h2{margin:4px 0 0;color:#f7efe3!important;font-size:28px;line-height:1;letter-spacing:-.045em}
+.st29__tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px;padding:4px;border:1px solid var(--line);border-radius:14px;background:#11100e}
+.st29__tabs button{min-height:38px;border:0;border-radius:10px;background:transparent;color:#837c73!important;font-size:8px;font-weight:900;letter-spacing:.06em;cursor:pointer}
+.st29__tabs button[aria-selected="true"]{background:#f2eadf;color:#17130e!important}
+.st29__grid{display:grid;gap:10px}
+.st29__lane{overflow:hidden;border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:0 20px 60px rgba(0,0,0,.12)}
+.st29__lane[hidden]{display:none!important}
+.st29__media{position:relative;aspect-ratio:16/10;overflow:hidden;background:#171614}
+.st29__media img{height:100%;object-fit:cover;filter:saturate(.86) contrast(1.04) brightness(.84)}
+.st29__lane--member .st29__media img{object-position:center 24%}
+.st29__lane--model .st29__media img{object-position:center 20%}
+.st29__lane--partner .st29__media img{object-position:center 20%}
+.st29__media:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 50%,rgba(8,8,8,.88))}
+.st29__media-label{position:absolute;z-index:2;left:13px;right:13px;bottom:11px;display:flex;justify-content:space-between;align-items:end;gap:10px}
+.st29__media-label span{color:#d8cfbf!important;font-size:7px;font-weight:850;letter-spacing:.12em}
+.st29__media-label b{color:var(--gold2)!important;font-size:10px;letter-spacing:.1em}
+.st29__body{padding:15px}
+.st29__role{margin:0;color:var(--gold)!important;font-size:7px;font-weight:900;letter-spacing:.13em}
+.st29__body h3{margin:6px 0 0;color:#fff7ea!important;font-size:29px;line-height:1;letter-spacing:-.045em}
+.st29__summary{margin:9px 0 0;color:#bbb3a8!important;font-size:10.5px;line-height:1.58}
+.st29__quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.st29__quick span{padding:6px 8px;border:1px solid rgba(255,255,255,.08);border-radius:999px;color:#8f877d!important;font-size:7.5px}
+.st29__detail{margin-top:12px;border-top:1px solid var(--line)}
+.st29__detail summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;color:#f1e8dc!important;font-size:9px;font-weight:850;cursor:pointer}
+.st29__detail summary::-webkit-details-marker{display:none}
+.st29__plus{width:24px;height:24px;border:1px solid rgba(255,255,255,.11);border-radius:50%;display:grid;place-items:center;color:var(--gold)!important;font-size:14px;transition:transform .35s var(--ease),background .3s ease}
+.st29__detail[open] .st29__plus{transform:rotate(45deg);background:rgba(217,187,119,.1)}
+.st29__detail-body{padding:0 0 10px;color:#9e978d!important;font-size:9.5px;line-height:1.55}
+.st29__detail-body ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.st29__detail-body li{position:relative;padding-left:12px}
+.st29__detail-body li:before{content:"—";position:absolute;left:0;color:var(--gold)!important}
+.st29__detail-body p{margin:9px 0 0}
+.st29__actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:11px}
+.st29__primary{display:inline-flex;align-items:center;justify-content:space-between;gap:14px;min-height:43px;padding:0 13px;border-radius:999px;background:#f2eadf;color:#17130e!important;font-size:9px;font-weight:900}
+.st29__lane--partner .st29__primary{background:linear-gradient(135deg,#f0dba7,#cfaa61)}
+.st29__secondary{padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.28);color:#d3cbc0!important;font-size:8.5px}
+.st29__branches{display:grid;gap:5px;margin-top:11px}
+.st29__branches a{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:43px;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:#0a0a09}
+.st29__branches b{display:block;color:#eee6da!important;font-size:9px}
+.st29__branches em{display:block;margin-top:2px;color:#7f786f!important;font-size:7.5px;font-style:normal}
+.st29__branches i{color:var(--gold)!important;font-size:10px;font-style:normal}
+
+.st29__closing{padding:29px 14px 32px;background:var(--paper);color:var(--ink)!important}
+.st29__closing-grid{display:grid;gap:10px;max-width:900px;margin:0 auto}
+.st29__closing .st29__eyebrow{color:#9a793d!important;margin:0}
+.st29__closing h2{margin:0;color:#1a1713!important;font-size:30px;line-height:1;letter-spacing:-.045em}
+.st29__closing p{margin:0;color:#6e665d!important;font-size:10.5px;line-height:1.58}
+.st29__footer{padding:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;background:#070707;color:#6f6961!important;font-size:7.5px;letter-spacing:.06em}
+.st29 [data-reveal]{opacity:0;transform:translateY(16px) scale(.994);filter:blur(7px);transition:opacity .75s var(--ease),transform .88s var(--ease),filter .72s ease}
+.st29 [data-reveal].is-visible{opacity:1;transform:none;filter:none}
+
+@media(min-width:860px){
+  .st29__nav{height:68px;padding:0 24px}.st29__brand{width:150px}
+  .st29__hero{min-height:560px;padding:92px 24px 40px;background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab042672da68cef12603a49_Boss%20sigil%20start%20Desk.webp");background-position:center center}.st29__hero-grid{grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);align-items:end;gap:26px}.st29__hero h1{font-size:84px}.st29__lead{font-size:13px}
+  .st29__transition{height:170px}.st29__lanes-sec{padding:30px 24px 42px}.st29__lanes-head h2{font-size:36px}.st29__tabs{display:none}
+  .st29__grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}.st29__lane[hidden]{display:block!important}.st29__media{aspect-ratio:16/9;max-height:286px}.st29__body{padding:17px}.st29__body h3{font-size:34px}
+  .st29__closing{padding:36px 24px 42px}.st29__closing-grid{grid-template-columns:.75fr 1.25fr;align-items:end;gap:32px}.st29__closing h2{font-size:42px}.st29__footer{padding:16px 24px 22px}
+}
+@media(max-width:420px){
+  .st29__nav{padding:0 11px}.st29__brand{width:102px}
+  .st29__hero{padding-left:11px;padding-right:11px}.st29__hero h1{font-size:49px;color:#fff9ef!important}.st29__lead{color:#ddd5cb!important}
+  .st29__transition{padding-left:11px;padding-right:11px}.st29__lanes-sec,.st29__closing,.st29__footer{padding-left:11px;padding-right:11px}
+  .st29__body h3{color:#fff7ea!important}.st29__summary{color:#bfb7ac!important}.st29__detail summary{color:#f1e8dc!important}.st29__detail-body{color:#a59d92!important}
+  .st29__closing h2{color:#1a1713!important}.st29__closing p{color:#696158!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .st29 *, .st29 *:before,.st29 *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .st29 [data-reveal]{opacity:1!important;transform:none!important;filter:none!important}
+}
+</style>
+
+<div class="st29__shell">
+  <nav class="st29__nav">
+    <a class="st29__brand" href="/" aria-label="MMD Privé">
+      <img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé">
+    </a>
+    <div class="st29__langs" role="group" aria-label="Language">
+      <button type="button" data-lang="th" aria-pressed="true">TH</button>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      <button type="button" data-lang="zh" aria-pressed="false">ZH</button>
+    </div>
+  </nav>
+
+  <main>
+    <section class="st29__hero" data-reveal>
+      <div class="st29__hero-grid">
+        <div>
+          <p class="st29__eyebrow">MMD PRIVÉ · PRIVATE ENTRY</p>
+          <h1><span data-i18n="heroTitle">Choose your path.</span><em data-i18n="heroAccent">เริ่มจากความสัมพันธ์ที่คุณมีกับ MMD วันนี้</em></h1>
+          <p class="st29__lead" data-i18n="heroLead"></p>
+          <div class="st29__per"><b>PER</b><span data-i18n="perNote">Founder · เปิดประตูไว้ให้ แล้วเลือกทางที่ตรงกับคุณครับ</span></div>
+        </div>
+        <aside class="st29__hero-card" aria-label="Three paths">
+          <small>ONE WORLD · THREE RELATIONSHIPS</small>
+          <strong data-i18n="heroCardTitle">เลือกแค่ 1 ทางก่อนก็พอ</strong>
+          <p data-i18n="heroCardCopy"></p>
+          <div class="st29__hero-paths"><span>MEMBER</span><span>MODEL</span><span>PARTNER</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="st29__transition" data-reveal aria-label="Text graphic transition">
+      <div class="st29__transition-copy">
+        <small>MEMBER · MODEL · PARTNER</small>
+        <strong data-i18n="transitionTitle">คนละความสัมพันธ์ คนละประตู</strong>
+        <span data-i18n="transitionCopy">เลือกจากสิ่งที่คุณต้องการในวันนี้</span>
+      </div>
+    </section>
+
+    <section class="st29__lanes-sec" aria-labelledby="st29-lanes-title">
+      <header class="st29__lanes-head" data-reveal>
+        <div><p class="st29__eyebrow">CHOOSE ONE</p><h2 id="st29-lanes-title" data-i18n="lanesTitle">คุณอยู่ Lane ไหน?</h2></div>
+      </header>
+
+      <div class="st29__tabs" role="tablist" aria-label="Choose a lane">
+        <button type="button" role="tab" data-tab="member" aria-selected="true" data-i18n="tabMember">Member</button>
+        <button type="button" role="tab" data-tab="model" aria-selected="false" data-i18n="tabModel">Model</button>
+        <button type="button" role="tab" data-tab="partner" aria-selected="false" data-i18n="tabPartner">Partner</button>
+      </div>
+
+      <div class="st29__grid">
+        <article class="st29__lane st29__lane--member" data-lane="member" data-reveal>
+          <div class="st29__media">
+            <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab030ae56be7bcca053d2cd_Kenji%20sigil%20start.webp" alt="Kenji — Member Concierge" loading="eager">
+            <div class="st29__media-label"><span>01 · MEMBER CARD</span><b>KENJI</b></div>
+          </div>
+          <div class="st29__body">
+            <p class="st29__role">MEMBER · KENJI</p>
+            <h3 data-i18n="memberTitle">สำหรับสมาชิก</h3>
+            <p class="st29__summary" data-i18n="memberSummary"></p>
+            <div class="st29__quick"><span data-i18n="memberQ1"></span><span data-i18n="memberQ2"></span><span data-i18n="memberQ3"></span></div>
+            <details class="st29__detail">
+              <summary><span data-i18n="more">ดูว่า Lane นี้เหมาะกับคุณอย่างไร</span><span class="st29__plus" aria-hidden="true">＋</span></summary>
+              <div class="st29__detail-body">
+                <ul><li data-i18n="memberFit1"></li><li data-i18n="memberFit2"></li><li data-i18n="memberFit3"></li></ul>
+                <p data-i18n="memberHelp"></p>
+              </div>
+            </details>
+            <div class="st29__actions">
+              <a class="st29__primary" href="/sigil/inme" data-preserve-link><span data-i18n="memberCta">เข้า Member Space</span><span>↗</span></a>
+              <a class="st29__secondary" href="/sigil/member/membership" data-preserve-link data-i18n="memberSecondary">ดู Membership</a>
+            </div>
+          </div>
+        </article>
+
+        <article class="st29__lane st29__lane--model" data-lane="model" data-reveal hidden>
+          <div class="st29__media">
+            <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a7c2a712841940b82b8e349_Tart%20-%20Inme.webp" alt="TarT — Model lane" loading="lazy">
+            <div class="st29__media-label"><span>02 · MODEL CARDS</span><b>TarT</b></div>
+          </div>
+          <div class="st29__body">
+            <p class="st29__role">MODEL · TarT</p>
+            <h3 data-i18n="modelTitle">สำหรับโมเดล</h3>
+            <p class="st29__summary" data-i18n="modelSummary"></p>
+            <div class="st29__quick"><span>PUBLIC</span><span>PRIVATE</span><span>TRAVEL</span></div>
+            <details class="st29__detail">
+              <summary><span data-i18n="more">ดูว่า Lane นี้เหมาะกับคุณอย่างไร</span><span class="st29__plus" aria-hidden="true">＋</span></summary>
+              <div class="st29__detail-body">
+                <ul><li data-i18n="modelFit1"></li><li data-i18n="modelFit2"></li><li data-i18n="modelFit3"></li></ul>
+                <p data-i18n="modelHelp"></p>
+              </div>
+            </details>
+            <nav class="st29__branches" aria-label="Model paths">
+              <a href="/apply/public-model" data-preserve-link><span><b data-i18n="publicModel">Public Model</b><em data-i18n="publicModelSub"></em></span><i>↗</i></a>
+              <a href="/sigil/apply/model" data-preserve-link><span><b data-i18n="applyModel">Apply as Model</b><em data-i18n="applyModelSub"></em></span><i>↗</i></a>
+              <a href="/sigil/travel-model" data-preserve-link><span><b data-i18n="travelModel">Travel Model</b><em data-i18n="travelModelSub"></em></span><i>↗</i></a>
+            </nav>
+          </div>
+        </article>
+
+        <article class="st29__lane st29__lane--partner" data-lane="partner" data-reveal hidden>
+          <div class="st29__media">
+            <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a7c2a71da2f2d7e5f5e14c8_159e1b62f6520bc27016b9eb2a0938c8_Yuki%20-%20Inme.webp" alt="Yuki — Partner Division" loading="lazy">
+            <div class="st29__media-label"><span>03 · PARTNER</span><b>YUKI</b></div>
+          </div>
+          <div class="st29__body">
+            <p class="st29__role">PARTNER · YUKI</p>
+            <h3 data-i18n="partnerTitle">สำหรับพาร์ตเนอร์</h3>
+            <p class="st29__summary" data-i18n="partnerSummary"></p>
+            <div class="st29__quick"><span data-i18n="partnerQ1"></span><span data-i18n="partnerQ2"></span><span data-i18n="partnerQ3"></span></div>
+            <details class="st29__detail">
+              <summary><span data-i18n="more">ดูว่า Lane นี้เหมาะกับคุณอย่างไร</span><span class="st29__plus" aria-hidden="true">＋</span></summary>
+              <div class="st29__detail-body">
+                <ul><li data-i18n="partnerFit1"></li><li data-i18n="partnerFit2"></li><li data-i18n="partnerFit3"></li></ul>
+                <p data-i18n="partnerHelp"></p>
+              </div>
+            </details>
+            <div class="st29__actions">
+              <a class="st29__primary" href="/sigil/apply/partner" data-preserve-link><span data-i18n="partnerCta">สมัคร Partner</span><span>↗</span></a>
+              <a class="st29__secondary" href="/partner" data-preserve-link data-i18n="partnerSecondary">Partner Division</a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="st29__closing" data-reveal>
+      <div class="st29__closing-grid">
+        <div><p class="st29__eyebrow">FROM PER</p><h2 data-i18n="closeTitle">เลือกทางที่ตรงกับคุณตอนนี้ก็พอ</h2></div>
+        <p data-i18n="closeCopy"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="st29__footer"><span>MMD PRIVÉ · SĪGIL START</span><span data-i18n="footer">Three relationships · One private world</span></footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const root=document.getElementById("mmd-sigil-start-v29");
+  if(!root||root.dataset.ready==="1")return;
+  root.dataset.ready="1";
+
+  const COPY={
+    th:{
+      heroTitle:"Choose your path.",heroAccent:"เริ่มจากความสัมพันธ์ที่คุณมีกับ MMD วันนี้",
+      heroLead:"สมาชิก โมเดล และพาร์ตเนอร์เข้ามาหา MMD ด้วยเหตุผลต่างกัน หน้านี้จึงมีเพียงสามทางให้เลือก แล้วแต่ละทางจะพาคุณไปยังพื้นที่ที่เหมาะกับคุณต่อครับ",
+      perNote:"Founder · เปิดประตูไว้ให้ แล้วเลือกทางที่ตรงกับคุณครับ",
+      heroCardTitle:"เลือกแค่ 1 ทางก่อนก็พอ",heroCardCopy:"สิทธิ์ งาน และความร่วมมือค่อยดูต่อในพื้นที่ของแต่ละ Lane",
+      transitionTitle:"คนละความสัมพันธ์ คนละประตู",transitionCopy:"เลือกจากสิ่งที่คุณต้องการในวันนี้",
+      lanesTitle:"คุณอยู่ Lane ไหน?",tabMember:"Member",tabModel:"Model",tabPartner:"Partner",
+      memberTitle:"สำหรับสมาชิก",memberSummary:"สำหรับลูกค้าและสมาชิกที่ต้องการเข้าพื้นที่ของตัวเอง ดู Membership หรือกลับมาดูสถานะและสิทธิ์ที่เกี่ยวข้อง",
+      memberQ1:"MEMBER SPACE",memberQ2:"MEMBERSHIP",memberQ3:"STATUS",
+      more:"ดูว่า Lane นี้เหมาะกับคุณอย่างไร",
+      memberFit1:"กำลังเริ่มต้นหรือพิจารณา Membership",memberFit2:"เป็นสมาชิกและต้องการกลับเข้า Member Space",memberFit3:"ต้องการดูสถานะ สิทธิ์ หรือข้อมูลของตัวเอง",
+      memberHelp:"Kenji ดูแลความต่อเนื่องฝั่งสมาชิก ช่วยพาคุณไปยังหน้าที่เหมาะกับสิ่งที่ต้องการในตอนนั้น โดยสถานะและสิทธิ์จริงยึดข้อมูลของสมาชิกแต่ละคน",
+      memberCta:"เข้า Member Space",memberSecondary:"ดู Membership",
+      modelTitle:"สำหรับโมเดล",modelSummary:"สำหรับผู้ชายที่สนใจทำงานกับ MMD ตั้งแต่ทำความรู้จักงาน ส่งโปรไฟล์ ไปจนถึงเส้นทาง Travel Model",
+      modelFit1:"อยากรู้ว่างานของ MMD และวิธีทำงานเป็นแบบไหน",modelFit2:"พร้อมส่งโปรไฟล์เพื่อรับการพิจารณา",modelFit3:"สนใจงานเดินทางหรือโอกาสเฉพาะทาง",
+      modelHelp:"TarT ดูแลทางเข้าฝั่งโมเดล ช่วยให้เลือกได้ว่าควรเริ่มจาก Public Model, Apply as Model หรือ Travel Model ตามจุดที่คุณอยู่ตอนนี้",
+      publicModel:"Public Model",publicModelSub:"รู้จักงานและภาพรวมก่อนสมัคร",applyModel:"Apply as Model",applyModelSub:"ส่งโปรไฟล์เพื่อรับการพิจารณา",travelModel:"Travel Model",travelModelSub:"ดูเส้นทางงานที่เกี่ยวกับการเดินทาง",
+      partnerTitle:"สำหรับพาร์ตเนอร์",partnerSummary:"สำหรับบุคคล แบรนด์ สถานที่ หรือคนที่มีทรัพยากรและไอเดียซึ่งอาจเติบโตไปกับ MMD",
+      partnerQ1:"BRAND",partnerQ2:"VENUE",partnerQ3:"PROJECT",
+      partnerFit1:"มีข้อเสนอหรือทรัพยากรที่เชื่อมกับโลกของ MMD",partnerFit2:"ต้องการร่วมงานด้านสถานที่ บริการ แบรนด์ หรือโปรเจกต์",partnerFit3:"พร้อมเล่าบริบทเพื่อดูว่าความร่วมมือเหมาะกันอย่างไร",
+      partnerHelp:"Yuki ดูแล Partner Division และช่วยรวบรวมบริบทของข้อเสนอให้ชัดก่อนพาไปยังขั้นตอนถัดไปของความร่วมมือ",
+      partnerCta:"สมัคร Partner",partnerSecondary:"Partner Division",
+      closeTitle:"เลือกทางที่ตรงกับคุณตอนนี้ก็พอ",closeCopy:"ความสัมพันธ์กับ MMD เปลี่ยนได้ตามเวลา วันนี้เริ่มจาก Member, Model หรือ Partner ที่ตรงกับคุณที่สุด แล้วค่อยกลับมาเลือกใหม่เมื่อบริบทของคุณเปลี่ยนครับ",
+      footer:"Three relationships · One private world"
+    },
+    en:{
+      heroTitle:"Choose your path.",heroAccent:"Start with the relationship you have with MMD today.",
+      heroLead:"Members, models and partners come to MMD for different reasons. This page keeps the choice to three paths, each leading to the space that fits what you need now.",
+      perNote:"Founder · The door is open. Choose the path that fits you.",
+      heroCardTitle:"Start with one path.",heroCardCopy:"Membership, work and partnership details continue inside the lane that belongs to you.",
+      transitionTitle:"Different relationship. Different door.",transitionCopy:"Choose based on what you need today.",
+      lanesTitle:"Which lane is yours?",tabMember:"Member",tabModel:"Model",tabPartner:"Partner",
+      memberTitle:"For Members",memberSummary:"For clients and members who want to enter their own space, review Membership, or return to their status and benefits.",
+      memberQ1:"MEMBER SPACE",memberQ2:"MEMBERSHIP",memberQ3:"STATUS",
+      more:"See how this lane fits you",
+      memberFit1:"You are starting or considering Membership",memberFit2:"You are a member returning to Member Space",memberFit3:"You want to review your own status, benefits or information",
+      memberHelp:"Kenji supports member continuity and guides you to the right member page for what you need at that moment. Actual status and benefits follow each member's confirmed information.",
+      memberCta:"Enter Member Space",memberSecondary:"View Membership",
+      modelTitle:"For Models",modelSummary:"For men interested in working with MMD, from understanding the work and submitting a profile to the Travel Model path.",
+      modelFit1:"You want to understand MMD work and how it operates",modelFit2:"You are ready to submit a profile for consideration",modelFit3:"You are interested in travel-related or specialist opportunities",
+      modelHelp:"TarT guides the model entry and helps you choose between Public Model, Apply as Model and Travel Model based on where you are today.",
+      publicModel:"Public Model",publicModelSub:"Understand the work before applying",applyModel:"Apply as Model",applyModelSub:"Submit a profile for consideration",travelModel:"Travel Model",travelModelSub:"Explore travel-related opportunities",
+      partnerTitle:"For Partners",partnerSummary:"For individuals, brands, venues or people with resources and ideas that may grow together with MMD.",
+      partnerQ1:"BRAND",partnerQ2:"VENUE",partnerQ3:"PROJECT",
+      partnerFit1:"You have an offer or resource connected to the MMD world",partnerFit2:"You want to work together on venues, services, brands or projects",partnerFit3:"You are ready to share context and explore the right partnership shape",
+      partnerHelp:"Yuki leads Partner Division intake and helps clarify the proposal before moving the conversation to the next step.",
+      partnerCta:"Apply as Partner",partnerSecondary:"Partner Division",
+      closeTitle:"Choose what fits you today.",closeCopy:"Your relationship with MMD can change over time. Start with Member, Model or Partner today, then return and choose again when your context changes.",
+      footer:"Three relationships · One private world"
+    },
+    zh:{
+      heroTitle:"Choose your path.",heroAccent:"从你今天与 MMD 的关系开始。",
+      heroLead:"会员、模特和合作伙伴来到 MMD 的原因不同。这个页面只保留三条路径，每一条都会把你带到更适合当前需求的空间。",
+      perNote:"Founder · 门已经打开，选择现在最适合你的路径。",
+      heroCardTitle:"先选一条就够了。",heroCardCopy:"会员权益、工作与合作细节，会在对应的 Lane 里继续了解。",
+      transitionTitle:"不同关系，不同入口。",transitionCopy:"根据你今天的需求来选择。",
+      lanesTitle:"你属于哪一个 Lane？",tabMember:"Member",tabModel:"Model",tabPartner:"Partner",
+      memberTitle:"会员",memberSummary:"适合客户与会员进入自己的空间、查看 Membership，或回到与自己有关的状态和权益。",
+      memberQ1:"MEMBER SPACE",memberQ2:"MEMBERSHIP",memberQ3:"STATUS",
+      more:"看看这个 Lane 是否适合你",
+      memberFit1:"正在开始或考虑 Membership",memberFit2:"已经是会员并希望返回 Member Space",memberFit3:"希望查看自己的状态、权益或相关信息",
+      memberHelp:"Kenji 负责会员体验的连续性，并根据你当下需要的事情带你进入合适的会员页面。实际状态与权益以每位会员的确认信息为准。",
+      memberCta:"进入 Member Space",memberSecondary:"查看 Membership",
+      modelTitle:"模特",modelSummary:"适合希望与 MMD 合作的男性，从了解工作、提交资料，到 Travel Model 路线。",
+      modelFit1:"想了解 MMD 的工作类型和合作方式",modelFit2:"准备提交资料接受评估",modelFit3:"对旅行相关或专项机会感兴趣",
+      modelHelp:"TarT 负责模特入口，并根据你现在所处的阶段，帮助选择 Public Model、Apply as Model 或 Travel Model。",
+      publicModel:"Public Model",publicModelSub:"先了解工作与整体方式",applyModel:"Apply as Model",applyModelSub:"提交资料接受评估",travelModel:"Travel Model",travelModelSub:"了解旅行相关工作路线",
+      partnerTitle:"合作伙伴",partnerSummary:"适合个人、品牌、场地，或拥有资源与想法并希望与 MMD 一起发展的人。",
+      partnerQ1:"BRAND",partnerQ2:"VENUE",partnerQ3:"PROJECT",
+      partnerFit1:"拥有与 MMD 世界相关的提案或资源",partnerFit2:"希望在场地、服务、品牌或项目方面合作",partnerFit3:"愿意提供背景，让双方了解什么合作方式更合适",
+      partnerHelp:"Yuki 负责 Partner Division 的初步沟通，先把提案背景整理清楚，再进入下一步合作讨论。",
+      partnerCta:"申请 Partner",partnerSecondary:"Partner Division",
+      closeTitle:"先选择今天最适合你的方向。",closeCopy:"你与 MMD 的关系可以随着时间变化。今天从 Member、Model 或 Partner 开始，当你的情况改变时，再回来选择新的入口。",
+      footer:"Three relationships · One private world"
+    }
+  };
+
+  const preserveKeys=["t","code","promo","liff.state","from","payment_ref","session_id"];
+  function norm(v){
+    const x=String(v||"").trim().toLowerCase();
+    if(x==="en"||x.startsWith("en-"))return"en";
+    if(x==="zh"||x.startsWith("zh-")||x==="cn"||x.startsWith("cn-"))return"zh";
+    return"th";
+  }
+  function syncLinks(lang){
+    const incoming=new URLSearchParams(location.search);
+    root.querySelectorAll("[data-preserve-link]").forEach(a=>{
+      try{
+        const url=new URL(a.getAttribute("href"),location.origin);
+        preserveKeys.forEach(k=>{const v=incoming.get(k);if(v&&!url.searchParams.has(k))url.searchParams.set(k,v)});
+        if(lang&&!url.searchParams.has("lang"))url.searchParams.set("lang",lang);
+        a.setAttribute("href",url.pathname+url.search+url.hash);
+      }catch{}
+    });
+  }
+  function applyLang(value,{write=true}={}){
+    const lang=norm(value),t=COPY[lang];
+    root.dataset.lang=lang;
+    document.documentElement.lang=lang==="zh"?"zh-CN":lang;
+    root.querySelectorAll("[data-i18n]").forEach(el=>{const k=el.dataset.i18n;if(k in t)el.textContent=t[k]});
+    root.querySelectorAll("[data-lang]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.lang===lang)));
+    if(write){const u=new URL(location.href);u.searchParams.set("lang",lang);history.replaceState(history.state,"",u.pathname+u.search+u.hash);}
+    syncLinks(lang);
+  }
+  function selectLane(name){
+    const mobile=matchMedia("(max-width:859px)").matches;
+    root.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===name)));
+    root.querySelectorAll("[data-lane]").forEach(card=>{card.hidden=mobile?card.dataset.lane!==name:false});
+  }
+  root.querySelectorAll("[data-lang]").forEach(b=>b.addEventListener("click",()=>applyLang(b.dataset.lang)));
+  root.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>selectLane(b.dataset.tab)));
+  const startLang=norm(new URL(location.href).searchParams.get("lang")||document.documentElement.lang||"th");
+  applyLang(startLang,{write:false});
+  selectLane("member");
+  let mq=matchMedia("(max-width:859px)");
+  const handleLayout=()=>{const selected=root.querySelector("[data-tab][aria-selected='true']");selectLane(selected?selected.dataset.tab:"member")};
+  if(mq.addEventListener)mq.addEventListener("change",handleLayout);else if(mq.addListener)mq.addListener(handleLayout);
+
+  root.querySelectorAll(".st29__detail").forEach(d=>d.addEventListener("toggle",()=>{
+    if(!d.open)return;
+    const lane=d.closest("[data-lane]");
+    if(lane)lane.querySelectorAll(".st29__detail").forEach(o=>{if(o!==d)o.open=false});
+  }));
+
+  const reveal=[...root.querySelectorAll("[data-reveal]")];
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches||!("IntersectionObserver" in window)){
+    reveal.forEach(el=>el.classList.add("is-visible"));
+  }else{
+    const io=new IntersectionObserver(entries=>entries.forEach(e=>{
+      if(e.isIntersecting){e.target.classList.add("is-visible");io.unobserve(e.target);}
+    }),{threshold:.12,rootMargin:"0px 0px -5% 0px"});
+    reveal.forEach(el=>io.observe(el));
+  }
+})();
+</script>
+</section>

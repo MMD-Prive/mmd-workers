@@ -21,3 +21,23 @@ test("final payment reuses canonical SIGIL PAY and never owns a second proof upl
   assert.doesNotMatch(source, /FormData\(/);
   assert.doesNotMatch(source, /data-final-proof-file/);
 });
+
+
+test("customer can submit time location and operational change requests to MMD", () => {
+  assert.match(source, /\/v1\/confirm\/change-request/);
+  assert.match(source, /data-change-time/);
+  assert.match(source, /data-change-location/);
+  assert.match(source, /data-change-type/);
+  assert.match(source, /date_change/);
+  assert.match(source, /reschedule/);
+  assert.match(source, /cancellation/);
+  assert.match(source, /Remark \/ เหตุผลหรือรายละเอียด/);
+  assert.match(source, /MMD ได้รับคำขอแล้ว · รอตรวจสอบ/);
+});
+
+test("customer edit controls submit requests instead of rewriting confirmation truth in-browser", () => {
+  assert.match(source, /request_type: "time_change"/);
+  assert.match(source, /request_type: "location_change"/);
+  assert.doesNotMatch(source, /localStorage/);
+  assert.doesNotMatch(source, /sessionStorage/);
+});

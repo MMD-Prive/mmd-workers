@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleMemberAppSessionApi, isMemberAppSessionPath } from "../src/member-app-session.js";
+import { customerEtaFromEvents, handleMemberAppSessionApi, isMemberAppSessionPath } from "../src/member-app-session.js";
 
 const IDENTITY = { lineUserId: "U1234567890abcdef1234567890abcdef", memberId: "recMember123" };
 
@@ -25,13 +25,27 @@ function sessionRecord(overrides = {}) {
   };
 }
 
-function envWith(record = sessionRecord()) {
+function jobRecord(events = []) {
+  return {
+    id: "recJob123",
+    fields: {
+      session_id: "SESSION-001",
+      events_json: JSON.stringify(events),
+      model_private_gps: "must-never-leak",
+    },
+  };
+}
+
+function envWith(record = sessionRecord(), { jobRecords = [] } = {}) {
   let current = structuredClone(record);
   const writes = [];
+  const reads = { sessions: 0, jobs: 0 };
   return {
     writes,
+    reads,
     AIRTABLE_API_KEY: "test-key",
     AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_TABLE_JOBS: "Jobs",
     AIRTABLE_HTTP: {
       async fetch(request) {
         if (request.method === "PATCH") {
@@ -40,11 +54,18 @@ function envWith(record = sessionRecord()) {
           current.fields = { ...current.fields, ...payload.fields };
           return Response.json({ id: current.id, fields: current.fields });
         }
+        const table = decodeURIComponent(new URL(request.url).pathname.split("/").at(-1) || "");
+        if (table === "Jobs") {
+          reads.jobs += 1;
+          return Response.json({ records: jobRecords });
+        }
+        reads.sessions += 1;
         return Response.json({ records: [current] });
       },
     },
     PAYMENTS_WORKER: {
       async fetch(request) {
+        assert.equal(request.headers.get("origin"), "https://mmdbkk.com");
         const body = await request.json();
         if (body.t !== "valid-token" || body.expected_role !== "customer") {
           return Response.json({ ok: false }, { status: 403 });
@@ -83,6 +104,48 @@ test("current returns one customer-safe canonical Session projection", async () 
   assert.doesNotMatch(JSON.stringify(body), /private_phone|payout|9999|must-never-leak/i);
 });
 
+test("MY MMD derives its ETA label from the newest active ETA event", async () => {
+  const now = Date.now();
+  const env = envWith(sessionRecord({ customer_eta_label: "legacy label must not win" }), {
+    jobRecords: [jobRecord([
+      { ts: new Date(now - 2 * 60_000).toISOString(), event: "eta_update", by: "model", eta_minutes: 70 },
+      { ts: new Date(now).toISOString(), event: "eta_update", by: "model", eta_minutes: 25, source: "mmd_model_dashboard" },
+    ])],
+  });
+
+  const response = await handleMemberAppSessionApi(request("/api/member/app/session/current"), env, readIdentity);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.etaLabel, "ถึงโดยประมาณในอีก 25 นาที");
+  assert.equal(env.reads.jobs, 1);
+  assert.doesNotMatch(JSON.stringify(body), /events_json|model_private_gps|mmd_model_dashboard|legacy label/i);
+});
+
+test("expired ETA events clear stale labels instead of falling back to customer_eta_label", async () => {
+  const now = Date.now();
+  const env = envWith(sessionRecord({ customer_eta_label: "stale legacy ETA" }), {
+    jobRecords: [jobRecord([
+      { ts: new Date(now - 21 * 60_000).toISOString(), event: "eta_update", eta_minutes: 20 },
+    ])],
+  });
+
+  const response = await handleMemberAppSessionApi(request("/api/member/app/session/current"), env, readIdentity);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.etaLabel, null);
+});
+
+test("ETA event parser ignores malformed entries and chooses the newest valid timestamp", () => {
+  const now = Date.UTC(2026, 8, 24, 12, 0, 0);
+  const eta = customerEtaFromEvents(JSON.stringify([
+    { ts: "not-a-date", event: "eta_update", eta_minutes: 80 },
+    { ts: new Date(now - 3 * 60_000).toISOString(), event: "eta_update", eta_minutes: 35 },
+    { ts: new Date(now - 60_000).toISOString(), event: "eta_update", eta_minutes: 12 },
+    { ts: new Date(now).toISOString(), event: "other_event", eta_minutes: 240 },
+  ]), now);
+  assert.deepEqual(eta, { hasEvent: true, label: "ถึงโดยประมาณในอีก 11 นาที" });
+});
+
 test("current returns 204 when no owned active Session exists", async () => {
   const env = envWith();
   env.AIRTABLE_HTTP.fetch = async () => Response.json({ records: [] });
@@ -91,7 +154,58 @@ test("current returns 204 when no owned active Session exists", async () => {
   assert.equal(await response.text(), "");
 });
 
-test("context accepts a customer token only after canonical ownership matches", async () => {
+test("context accepts a valid signed customer token without a LIFF cookie and remains customer-safe", async () => {
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/context?t=valid-token"),
+    envWith(),
+    async () => null,
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.valid, true);
+  assert.equal(body.session.sessionId, "SESSION-001");
+  assert.equal(body.session.lifecycle, "confirmed");
+  assert.doesNotMatch(JSON.stringify(body), /private_phone|payout|9999|must-never-leak/i);
+});
+
+test("context returns only bounded diagnostics when confirmation verification fails", async () => {
+  const env = envWith();
+  env.PAYMENTS_WORKER.fetch = async (request) => {
+    assert.equal(request.headers.get("origin"), "https://mmdbkk.com");
+    return Response.json({ ok: false, error: "origin_not_allowed", token: "must-not-leak" }, { status: 403 });
+  };
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/context?t=sensitive-token"),
+    env,
+    async () => null,
+  );
+  const body = await response.json();
+  assert.deepEqual(body, {
+    valid: false,
+    session: null,
+    diagnostic: "confirm_context_http_403",
+  });
+  assert.doesNotMatch(JSON.stringify(body), /sensitive-token|must-not-leak|origin_not_allowed/);
+});
+
+test("context reports a missing payments binding without exposing the credential", async () => {
+  const env = envWith();
+  delete env.PAYMENTS_WORKER;
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/context?t=sensitive-token"),
+    env,
+    async () => null,
+  );
+  const body = await response.json();
+  assert.deepEqual(body, {
+    valid: false,
+    session: null,
+    diagnostic: "payments_binding_missing",
+  });
+  assert.doesNotMatch(JSON.stringify(body), /sensitive-token/);
+});
+
+test("context still fails closed when an authenticated LIFF identity does not own the signed session", async () => {
   const response = await handleMemberAppSessionApi(request("/api/member/app/session/context?t=valid-token"), envWith(), readIdentity);
   const body = await response.json();
   assert.equal(body.valid, true);
@@ -100,6 +214,17 @@ test("context accepts a customer token only after canonical ownership matches", 
   const foreign = envWith(sessionRecord({ line_user_id: "Uffffffffffffffffffffffffffffffff", member_id: "recOther" }));
   const denied = await handleMemberAppSessionApi(request("/api/member/app/session/context?t=valid-token"), foreign, readIdentity);
   assert.deepEqual(await denied.json(), { valid: false, session: null });
+});
+
+test("current remains LIFF-session protected even though signed context is cookie-less", async () => {
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(),
+    async () => null,
+  );
+  assert.equal(response.status, 401);
+  const body = await response.json();
+  assert.equal(body.error.code, "MEMBER_SESSION_REQUIRED");
 });
 
 test("ack writes only customer_ack_at and returns refreshed projection", async () => {

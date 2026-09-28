@@ -29,7 +29,7 @@ This document supersedes earlier CARE BACK guidance where it conflicts, includin
 5. Only a successfully saved Wish can unlock the personal coupon.
 6. Apply membership, payment, Points, and approved coupon benefits only after each canonical owner completes verification or approved historical reconstruction.
 
-Identity verification starts review only. Opening the page, logging in, or submitting identity must never issue a coupon, add Points, approve payment, or create a membership term.
+For an existing member with a canonical match, successful Verify grants the one-year existing-member extension idempotently. Opening the page without successful canonical verification must never issue a coupon, add Points, approve payment, or create membership time. Coupon and Points remain separate gates.
 
 ## Legacy verification doctrine
 
@@ -94,8 +94,8 @@ For historical Points specifically, **Per's original customer note is the primar
 
 | Customer status | CARE BACK benefit | Points |
 | --- | --- | --- |
-| Current member (active/grace) | +180 days from the real existing expiry | Reconstruct/reconcile historical Points from Per Notes and linked legacy evidence at 100 THB = 1 Point; no automatic CARE BACK bonus |
-| Former/expired member | After verified renewal/payment and restored active/grace: +90 days | +150 Points after the related renewal is verified and applied; prior historical Points may be reconstructed separately from legacy notes |
+| Current member (active/grace) | **Verify +1 year** from the real existing expiry | Reconstruct/reconcile historical Points from Per Notes and linked legacy evidence at 100 THB = 1 Point; no automatic CARE BACK bonus |
+| Former/expired member | **Verify +1 year** from the verification date; a later paid renewal adds its normal package term separately | +150 Points only after the related renewal is verified and applied; prior historical Points may be reconstructed separately from legacy notes |
 | New Standard | No historical extension | +150 Welcome Points after verified membership/payment |
 | New Premium | No historical extension | +250 Welcome Points after verified membership/payment |
 | Approved special selection | No historical extension | Up to +350 Points after verified membership/payment; Black Card review consideration only |

@@ -5,8 +5,17 @@ import { APPROVED_ANSWERS } from "./fixtures/kenji-sales-v2-approved.mjs";
 import { SALES_CARD_IDS, SALES_ROUTES, SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, refineKenjiSalesIntent, publishedSalesCard } from "../src/kenji-sales-reply-v2-policy.mjs";
 import { SALES_REPLY_HASHES, validateSalesCard, resolveKenjiSalesReply, inspectKenjiSalesPublication } from "../src/kenji-sales-reply-v2-runtime.mjs";
 import { createLineSignature } from "../src/index.js";
-import { resolveKenjiSeedDecision, handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
-import { handleKenjiSeedLineRequestWithRedeliveryRecovery } from "../src/kenji-line-redelivery-recovery.mjs";
+import { resolveKenjiSeedDecision, handleKenjiSeedLineRequest as seedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
+import { handleKenjiSeedLineRequestWithRedeliveryRecovery as seedLineRequestWithRecovery } from "../src/kenji-line-redelivery-recovery.mjs";
+
+// The seed runtime requires a durable intake result before it may reply.
+const legacyWorker = { fetch: async (request) => {
+  const { events = [] } = await request.json();
+  return Response.json({ ok: true, saved: events.map(() => ({ ok: true })) });
+} };
+const handleKenjiSeedLineRequest = (request, env, ctx) => seedLineRequest(request, env, ctx, legacyWorker);
+const handleKenjiSeedLineRequestWithRedeliveryRecovery = (request, env, ctx) =>
+  seedLineRequestWithRecovery(request, env, ctx, legacyWorker);
 
 const NOW = Date.parse("2026-09-14T12:00:00+07:00");
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
@@ -65,6 +74,12 @@ for (const [message, prior, expected] of [
   ["DOUBLE MOMENT จ่าย 20000 ได้อะไร", "payment_slip", "double_moment"],
   ["DOUBLE MOMENT ส่งสลิปแล้ว", "payment_slip", "care_back_payment_points"],
   ["เดือนนี้มีโปรโมชั่นอะไร", "pricing_review", "promotion_overview"],
+  ["สมัครสมาชิก", "note_only", "membership_signup"],
+  ["สมัคร Public Membership", "note_only", "membership_signup"],
+  ["สมัคร Elite", "note_only", "membership_signup"],
+  ["สมัคร Private Membership", "note_only", "private_membership_signup"],
+  ["สมัคร Standard", "note_only", "private_membership_signup"],
+  ["สมัคร Premium", "note_only", "private_membership_signup"],
   ["CARE BACK ข้อมูลลูกค้าคนอื่น", "privacy_request", "privacy_request"],
   ["CARE BACK คุยกับคน", "human_handoff", "human_handoff"],
   ["CARE BACK มีปัญหาโอนเงิน", "payment_dispute", "payment_dispute"],
@@ -87,6 +102,20 @@ test("current member is not pitched a new signup or unsolicited renewal", async 
   assert.match(result.text, /ทดสอบ/);
   assert.equal(result.live_truth_used, true);
   oneSafeCta(result);
+});
+
+test("generic signup uses Public Membership while explicit Private signup stays in SIGIL", async () => {
+  const generic = await resolveKenjiSalesReply(event("สมัครสมาชิก"), ENV, options("membership_signup"));
+  assert.equal(generic.cta_route, SALES_ROUTES.signup);
+  assert.match(generic.text, /Public Membership/);
+  assert.doesNotMatch(generic.text, /sigil\/member\/membership/);
+  oneSafeCta(generic);
+
+  const privateSignup = await resolveKenjiSalesReply(event("สมัคร Premium"), ENV, options("private_membership_signup"));
+  assert.equal(privateSignup.cta_route, SALES_ROUTES.privateSignup);
+  assert.match(privateSignup.text, /Private Membership/);
+  assert.doesNotMatch(privateSignup.text, /pay\/membership\?source=line/);
+  oneSafeCta(privateSignup);
 });
 for (const state of ["expiring_soon", "expired", "grace"]) {
   test(`${state} directs to account renewal options, never unsigned checkout`, async () => {
@@ -177,6 +206,13 @@ test("valid LINE signature reaches one reviewed reply and its single CTA", async
   assert.equal(payload.saved[0].reply_pack_version, SALES_REPLY_VERSION);
   assert.equal(calls.line.length, 1);
   assert.equal(calls.line[0].messages[0].text, APPROVED_ANSWERS.care_back);
+}));
+test("missing durable intake result blocks a LINE reply", async () => mockedRuntime(async (env, calls) => {
+  const result = await seedLineRequest(await signedRequest(env, event("CARE BACK")), env);
+  assert.equal(result.status, 503);
+  assert.equal((await result.json()).error, "line_intake_unavailable");
+  assert.equal(calls.line.length, 0);
+  assert.equal(calls.writes.length, 0);
 }));
 test("invalid signature cannot fetch published cards or send LINE", async () => mockedRuntime(async (env, calls) => {
   const result = await handleKenjiSeedLineRequest(await signedRequest(env, event("CARE BACK"), false), env);

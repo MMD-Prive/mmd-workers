@@ -7,7 +7,10 @@ const INTENTS = new Set(["support","membership","renewal","payment_proof","booki
 const clean = (v) => String(v ?? "").trim();
 
 export function canonicalRichMenuIntent(input = {}) {
-  const raw = clean(input.intent || input.postback_intent || input.data).toLowerCase();
+  const data = clean(input.data || input.postback_data);
+  let postbackAction = "";
+  try { postbackAction = clean(new URLSearchParams(data).get("mmd_action")).toLowerCase(); } catch {}
+  const raw = clean(postbackAction || input.intent || input.postback_intent || data).toLowerCase();
   const map = {
     support: "support",
     mmd_support: "support",
@@ -16,7 +19,7 @@ export function canonicalRichMenuIntent(input = {}) {
     new_follow: "support",
     postback: "support",
     line_event: "support",
-    talk_to_per_ai: "support",
+    talk_to_per_ai: "talk_to_per",
     membership: "membership",
     join: "membership",
     membership_signup: "membership",
@@ -104,7 +107,7 @@ export function generateSafeReply(input = {}) {
     return { text: `ได้ครับ${name ? ` คุณ${name}` : ""} ส่งบริการ วันที่ เวลา และโซนมาได้เลยครับ เปอร์จะจัดบรีฟเพื่อตรวจความพร้อมก่อนยืนยันครับ`, silent: false, intent, level: policy.level, next_action: "collect_booking_brief", source: "verified_member_concierge_v1" };
   }
   if (intent === "kenji_ai" && policy.allow_private) {
-    return { text: "ได้ครับ ถ้าเรื่องนี้ต้องดูรายละเอียดต่อ Kenji ช่วยเปอร์ประสานให้ได้ครับ", silent: false, intent, level: policy.level, next_action: "kenji_private_assist", source: "verified_member_concierge_v1" };
+    return { text: `${greeting}\nKenji อยู่ตรงนี้ครับ บอกได้เลยว่าอยากให้ช่วยเรื่องนัดหมาย รายการที่สนใจ หรือขั้นตอนต่อไปแบบไหน แล้วผมจะประสานต่อให้ถูกสิทธิ์ครับ`, silent: false, intent, level: policy.level, next_action: "kenji_private_assist", source: "verified_member_concierge_v1" };
   }
 
   return {

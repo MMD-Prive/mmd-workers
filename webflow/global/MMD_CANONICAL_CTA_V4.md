@@ -14,7 +14,8 @@ Production source for the Webflow canonical membership/navigation runtime. Versi
 - Generic member status / next action: `/member/dashboard`.
 - Legacy app runtime compatibility: `/member/my-mmd`; do not use it as the generic member-status CTA.
 - `/public/access` keeps its explicit member-app entry behavior: LIFF status for the primary login button and `/member/my-mmd` for the legacy app button.
-- CARE BACK `/promotion/6-years-care-back` and `/promotion/6-years-care-back/wish` intentionally keep the bounded `/member/my-mmd` handoff.
+- CARE BACK `/promotion/6-years-care-back` keeps the bounded `/member/my-mmd` status handoff.
+- CARE BACK Wish `/promotion/6-years-care-back/wish` sends the post-Wish/member continuation directly to `/my-mmd/coupons`.
 - CARE BACK main page keeps its explicit Wish destination `/promotion/6-years-care-back/wish`.
 - `/member/promotion`, `/membership`, and `/member/membership` use `/member/dashboard` for generic dashboard actions.
 - `/member/my-mmd` retains its explicit LIFF status handoff.

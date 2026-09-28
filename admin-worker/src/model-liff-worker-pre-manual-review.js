@@ -270,7 +270,7 @@ function identityReviewResponse(request, env, reason, claimStatus) {
     error: "identity_review_required",
     reason,
     claim_status: claimStatus,
-    message: "กำลังเชื่อมโปรไฟล์ MMD MODEL กรุณารอการตรวจสอบข้อมูลครับ",
+    message: "กำลังเชื่อมโปรไฟล์ MMD APP กรุณารอการตรวจสอบข้อมูลครับ",
   }, 202, request, env);
 }
 

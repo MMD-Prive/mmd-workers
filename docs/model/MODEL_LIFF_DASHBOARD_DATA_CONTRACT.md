@@ -60,6 +60,33 @@ Existing source tables still remain canonical for raw operational truth:
 - `MMD — Model Review Requests` for rate/media/gallery/visibility request status.
 - `MMD — Model Media Assets` for approved media metadata only.
 
+## Current Job / Offer payout summary
+
+Before a model accepts a job or an extension, the current-offer projection must show one compact **คุณได้รับ** block sourced from the canonical offer/session payout snapshot.
+
+Required model-visible fields:
+
+- base payout for the confirmed package scope;
+- official start and end time;
+- included minutes / included package scope;
+- OT payout before midnight;
+- after-midnight premium payout when pre-booked time crosses 00:00;
+- OT payout after midnight;
+- OT payout after 03:00 where applicable;
+- reimbursable-expense policy;
+- cancellation payout policy;
+- payout policy version / lock timestamp.
+
+The model must never be asked to infer their payout from the customer-facing package price.
+
+The payout block is model-visible financial truth for the specific offer. It must not expose MMD margin, customer spend history, commission internals, or protected client identity.
+
+For extension requests, the original booking remains authoritative until the canonical flow reaches:
+
+`MY MMD request → MMD MODEL approve → payment verified → MMD confirmed`
+
+See: `docs/model/MMD_MODEL_PAYOUT_DISCLOSURE_V1.md`.
+
 ## Model LIFF projection
 
 LIFF should stay light. It is for a model checking or acting on the current context in LINE.
@@ -73,6 +100,7 @@ Allowed in LIFF:
 - compact rating badge only when `review_rating_verified=true` and `review_model_visible=true`
 - one short `liff_summary_th` if `model_visible_liff=true`
 - pending review/action notices such as media review pending or rate request pending
+- direct Year 6 Model Wish status: `manual_review` may be shown as yellow `รอยืนยัน`; this is informational and must never imply Dashboard or job access is blocked
 
 Do not show in LIFF by default:
 

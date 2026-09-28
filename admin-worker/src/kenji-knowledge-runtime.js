@@ -87,13 +87,27 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "medium",
     source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไข, Payment status /member/payments สำหรับดูและไปต่อจากรายการชำระเงินเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบมี URL /sigil/pay ที่ลงนามสำหรับรายการปัจจุบัน ให้ใช้ URL นั้นโดยตรง การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระ สิทธิ์สมาชิก การจอง หรือ access และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
+      "ถ้าถามเรื่อง Membership ผมแยกทางให้ตามประเภทได้เลยครับ: Public Membership — MMD Member / Elite / Red Card เริ่มที่ https://mmdbkk.com/pay/membership ส่วน Private Membership — Standard / Premium / private access ใช้ https://mmdbkk.com/sigil/member/membership ถ้าต่ออายุ Private ใช้ https://mmdbkk.com/sigil/member/membership?source=line&intent=renew และถ้าต้องการดูรายการชำระหรือสถานะเดิม ใช้ https://mmdbkk.com/member/payments ครับ ถ้า MMD สร้างลิงก์ชำระเฉพาะรายการให้แล้ว ให้ใช้ลิงก์นั้นตรง ๆ: Public/TMIB ใช้ /pay/checkout?t=... และ Private/Service ใช้ /sigil/pay?t=... หลักฐานเป็น evidence จนกว่า MMD Official Verify และรายการเดิมไม่ต้องส่งหลักฐานซ้ำครับ",
     internal_instruction:
-      "Canonical MY MMD route map: /member/dashboard = MY MMD Home; /sigil/member/membership = package selection/start/renew/upgrade; /sigil/membership = renewal/access conditions, not checkout; /member/payments = generic payment list/status/navigation; exact signed /sigil/pay?t=... = canonical combined payment+proof surface only when current backend intent supplies it; /confirm/payment-proof = legacy/manual no-ref compatibility only; /sigil/booking = booking request gate; /sigil/onboarding = explicit onboarding only. /member/membership is legacy compatibility. Preserve applicable t, code, promo, session_id, package, payment_ref context. Never create a replacement payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
+      "Public/Private lane lock 2026-09-19: /pay/membership = canonical Public Membership selection for mmd_member / elite / red_card. /sigil/member/membership = canonical Private Membership selection/start/renew/upgrade for Standard / Premium / private access. Private renewal CTA = /sigil/member/membership?source=line&intent=renew. /member/payments = payment list/status/navigation. Exact backend-issued /pay/checkout?t=... = Public/TMIB payment+proof; exact backend-issued /sigil/pay?t=... = Private/Service payment+proof. NEVER use /pay/membership for payment status or Private renewal. NEVER send Public Member/Elite/Red Card to /sigil/member/membership. NEVER send fresh customer CTAs to /sigil/pay/renew, /sigil/pay/renewal, or /pay/renewal; those are redirect-only compatibility routes. Preserve the exact backend-issued signed URL. Never mint payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
+  },
+  {
+    id: "kenji_20_012_my_mmd_trust_rule",
+    title: "Kenji AI 2.0 — MY MMD Trust Rule",
+    category: "membership",
+    language: "th",
+    status: "active",
+    response_mode: "handoff_required",
+    risk_level: "critical",
+    source_path: "docs/architecture/MY_MMD_TRUST_RULE_V1.md",
+    customer_answer:
+      "MY MMD จะยึดสถานะจากข้อมูลสมาชิกและสิทธิ์ที่ MMD ยืนยันได้ครับ หากระบบกำลังดึงประวัติเดิมจะไม่สรุป Guest หรือแต้มจากค่าชั่วคราว และเมื่อข้อมูลต้องให้ MMD ตรวจต่อ ระบบจะคงสถานะไว้ให้ตรวจโดยไม่ให้ลูกค้าต้องเริ่มใหม่ครับ",
+    internal_instruction:
+      "CANONICAL MY MMD TRUST RULE 2026-09-19: Verified LINE + protected/canonical evidence never resolves to Guest. Guest is only a successful proven negative canonical lookup with no Canonical Client and no protected marker. Historical reconstruction authority is recovery KV state only: checking/in_progress = loading; reconciled = terminal complete; review_required = terminal with bounded manual review; blocked = fail-closed. Missing membership_start or historical expiry alone MUST NOT create recovery_pending. Active VIP/SVIP/Black Card without canonical expiry uses durable first-connect +2y active-through and MUST NOT slide per request. Points MUST remain pending/null while recovery is checking/in_progress and temporary 0 MUST NOT be finalized. Owner QA uses /internal/admin/my-mmd/recovery and server-side evidence instead of repeated customer E2E. Never ask a customer to reopen MY MMD merely for QA when Owner diagnostic/log/KV evidence is sufficient. Re-contact customer only for a real customer-visible blocker. This rule overrides older missing-metadata pending logic.",
   },
   {
     id: "kenji_20_007_drop_690_guard",
-    title: "Kenji AI 2.0 — Drop 690 Main Route Guard",
+    title: "Kenji AI 2.0 — Public Membership 690 Safety Guard",
     category: "admin_policy",
     language: "th",
     status: "active",
@@ -101,9 +115,9 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "webflow/customer-facing-routing",
     customer_answer:
-      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake ตามบริบท และถ้าต้องไปต่อเรื่องการชำระเงินจะใช้รายการเดิมผ่าน /member/payments หรือ URL /sigil/pay ที่ระบบสร้างให้สำหรับรายการนั้นเท่านั้น หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และ MMD จะตรวจความเหมาะสมก่อนเสมอ",
+      "MMD Member 690 เป็น Public Membership จริงครับ ไม่ใช่ pay-to-view หรือ instant unlock หากต้องการสมัครให้เริ่มที่ /pay/membership และให้ระบบสร้าง signed /pay/checkout?t=... เอง ส่วน Private Membership หรือค่าบริการจะใช้ signed /sigil/pay?t=... ตามรายการที่ backend สร้างให้ หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และสิทธิ์จะมีผลหลัง MMD Official Verify เท่านั้น",
     internal_instruction:
-      "Drop Public Access 690 as main route. Block pay-to-view, instant unlock, and old upstream wording. For payment continuation use the exact signed /sigil/pay?t=... only when supplied by the current backend intent; otherwise /member/payments. /confirm/payment-proof is legacy/manual no-ref compatibility only. Never create a replacement payment_ref or ask for proof resubmission when one is pending.",
+      "MMD Member 690 is an active Public Membership product, not pay-to-view and not instant unlock. Public membership starts at /pay/membership and uses the exact signed /pay/checkout?t=... only when backend intent returns it. TMIB single-episode purchases use the same public checkout. Private membership/service payments use exact signed /sigil/pay?t=.... Otherwise use /member/payments for existing payment status. Proof is evidence only until Official Verify. Never mint a replacement payment_ref or request proof resubmission when one is pending.",
   },
   {
     id: "kenji_20_006_payment_proof",
@@ -115,9 +129,9 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "/member/payments",
     customer_answer:
-      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
+      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการเดิมที่ https://mmdbkk.com/member/payments ได้เลยครับ ถ้า MMD มีลิงก์ชำระเฉพาะรายการให้แล้ว ใช้ลิงก์นั้นตรง ๆ: Public Membership / TMIB ใช้ /pay/checkout?t=... ส่วน Private Membership / Service ใช้ /sigil/pay?t=... ครับ ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ใช้รายการเดิมต่อได้เลยและไม่ต้องส่งหลักฐานซ้ำ หลักฐานยังเป็น evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
     internal_instruction:
-      "Use the exact signed /sigil/pay?t=... URL only when the current backend payment intent supplies it; otherwise use /member/payments for payment list/status/navigation. /confirm/payment-proof is legacy/manual no-ref compatibility only and must never be the default new-payment CTA or mint a replacement payment_ref. Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms. If proof/ref is already pending verification, do not ask for resubmission.",
+      "Canonical payment handoff 2026-09-19: exact backend-issued /pay/checkout?t=... is Public Membership/TMIB payment+proof; exact backend-issued /sigil/pay?t=... is Private Membership/Black Card/Service payment+proof. Do not convert between surfaces. Without a current signed payment URL, use /member/payments for status/history/navigation. /sigil/pay/renew, /sigil/pay/renewal and /pay/renewal are compatibility redirects only and must not be sent as fresh payment/renewal CTAs. /confirm/payment-proof remains legacy/manual no-ref compatibility only. Proof is evidence only. Never say paid, verified, approved, activated or successful before Money Truth confirms; never ask for duplicate proof or mint a replacement payment_ref.",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",
@@ -145,7 +159,7 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     customer_answer:
       "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ",
     internal_instruction:
-      "Final lock 2026-08-19. One idempotent claim only. Login/identity alone never issues a coupon or points. Wish saved is mandatory before coupon activation. Current active/grace: +180 days from real expiry, no automatic bonus. Expired: verified renewal/payment and restored active/grace before +90 days and +150 points. New Standard +150, New Premium +250, approved special selection up to +350 after verified membership/payment. Trial/Guest Pass has no automatic welcome points. Reconcile only verified payments at 100 THB = 1 Point. Proof is evidence only. Black Card is review only; VIP is not a package; SVIP is private Per review. Reject new claims after 2026-09-30 while allowing existing verified claims to resume. Never mutate payment, membership, points, coupon, Black Card, or SVIP from browser/chat.",
+      "Final lock 2026-08-19. One idempotent claim only. Login/identity alone never issues a coupon or points. Wish saved is mandatory before coupon activation. Existing current/grace: canonical Verify grants +1 year from real expiry. Existing expired: canonical Verify grants +1 year from Verify; +150 points still require a later verified renewal/payment. New Standard +150, New Premium +250, approved special selection up to +350 after verified membership/payment. Trial/Guest Pass has no automatic welcome points. Reconcile only verified payments at 100 THB = 1 Point. Proof is evidence only. Black Card is review only; VIP is not a package; SVIP is private Per review. Reject new claims after 2026-09-30 while allowing existing verified claims to resume. Never mutate payment, membership, points, coupon, Black Card, or SVIP from browser/chat.",
   },
 ]);
 

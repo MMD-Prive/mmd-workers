@@ -1,5 +1,6 @@
 import { buildCustomerMemorySnapshotV2 } from "../../shared/kenji-customer-memory-v2.mjs";
 import { buildKenjiMemorySnapshot } from "../../shared/kenji-member-memory-snapshot.mjs";
+import { fastTrustLineFormula, fastTrustRenamedName, resolveFastTrustAirtableSource } from "../../shared/my-mmd-fast-trust-source.mjs";
 
 const CLIENTS_TABLE_FALLBACK = "tblVv58TCbwh5j1fS";
 const ENTITLEMENTS_TABLE_FALLBACK = "tblNImdF9PKAxhXGi";
@@ -125,6 +126,35 @@ async function findExactClient(env = {}, lineUserId = "") {
   if (result.records.length > 1) return { ok: false, status: "ambiguous", reason: "multiple_exact_clients", records: result.records };
   if (result.records.length === 0) return { ok: true, status: "not_found", reason: "exact_client_not_found", records: [] };
   return { ok: true, status: "resolved", reason: "exact_clients_line_user_id", record: result.records[0], records: result.records };
+}
+
+// The LINE OFC rename is Per's relationship context. Only use it after its
+// exact LINE identity and canonical Client link agree with the Clients row.
+async function findPerRename(env = {}, lineUserId = "", clientRecordId = "") {
+  const source = resolveFastTrustAirtableSource(env);
+  const formula = fastTrustLineFormula(lineUserId, source);
+  if (!formula) return { status: "unavailable" };
+  const result = await airtableList(env, source.table, {
+    maxRecords: 2,
+    pageSize: 2,
+    filterByFormula: formula,
+  });
+  if (!result.ok) return { status: "unavailable" };
+  if (!result.records.length) return { status: "not_found" };
+  if (result.records.length !== 1) return { status: "conflict" };
+  const fields = result.records[0]?.fields || {};
+  const linked = fields[source.canonicalClientField];
+  const ids = Array.isArray(linked) ? linked : linked?.linkedRecordIds || [];
+  if (ids.length !== 1 || text(ids[0]) !== clientRecordId || text(fields[source.lineUserIdField]) !== lineUserId) {
+    return { status: "conflict" };
+  }
+  const rename = fastTrustRenamedName(result.records[0], source);
+  if (!rename) return { status: "not_found" };
+  // The suffix may contain Per's private notes or historical tier labels.
+  // Keep those out of customer-facing names and current entitlement claims.
+  const name = rename.split(/\s+[-–—|]\s+/u)[0].trim();
+  const safeName = /^[\p{L}\p{M} .]{2,40}$/u.test(name) ? name : "";
+  return { status: "matched", safe_name: safeName };
 }
 
 async function findEntitlementsByLine(env = {}, lineUserId = "") {
@@ -373,6 +403,10 @@ export async function resolveKenjiLineCustomerMemoryContext({ env = {}, event = 
   }
 
   const clientRecordId = text(exact.record.id);
+  const perRename = await findPerRename(env, lineUserId, clientRecordId);
+  if (perRename.status === "conflict") {
+    return { resolved: false, status: "ambiguous", reason: "per_rename_client_conflict" };
+  }
   const snapshotId = `kms2_${clientRecordId}`;
   const conversationHash = await sha256Hex(`line_ofc:${lineUserId}`);
   const [entitlementResult, memoryResult, matrixResult] = await Promise.all([
@@ -393,6 +427,10 @@ export async function resolveKenjiLineCustomerMemoryContext({ env = {}, event = 
   const observation = entitlementResult.ok ? entitlementObservation(entitlementResult.records) : entitlementObservation([]);
   const relationship = relationshipContext({ observation, verification });
   const client = clientForMemory(exact.record);
+  if (perRename.safe_name) {
+    client.mmd_client_name = perRename.safe_name;
+    client.nickname = perRename.safe_name;
+  }
   const compat = buildKenjiMemorySnapshot({
     client,
     entitlement: observation.observed,
@@ -443,6 +481,7 @@ export async function resolveKenjiLineCustomerMemoryContext({ env = {}, event = 
     snapshot_id: snapshotId,
     relationship_context: relationship,
     verification_status: verification,
+    per_rename_status: perRename.status,
     conversation_hash: conversationHash,
     snapshot_version: snapshot.version,
     memory_created: memory.created === true,
@@ -451,6 +490,7 @@ export async function resolveKenjiLineCustomerMemoryContext({ env = {}, event = 
       relationship_context: relationship,
       verification_status: verification,
       display_name_for_kenji: snapshot.display_name_for_kenji,
+      per_rename_status: perRename.status,
       snapshot_id: snapshotId,
       live_truth_wins_over_memory: true,
     },

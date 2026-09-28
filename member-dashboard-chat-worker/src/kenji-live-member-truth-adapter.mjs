@@ -14,7 +14,9 @@ export async function resolveKenjiLiveMemberContext(env={},lineUserId="",intent=
   if(!body?.ok || body.authority!=="my_mmd_entitlement_resolver_v1") return null;
   const membership=body.membership||{};
   const canonicalLevel=text(membership.level).toLowerCase();
-  const level=canonicalLevel==="public_member"?"public":canonicalLevel==="private_standard"||canonicalLevel==="private_premium"||["vip","svip","black_card","red_card"].includes(canonicalLevel)?"private":"guest";
+  const isPublicLevel=["public_member","red_card"].includes(canonicalLevel);
+  const isPrivateLevel=["private_standard","private_premium","vip","svip","black_card"].includes(canonicalLevel);
+  const level=isPrivateLevel?"private":isPublicLevel?"public":"guest";
   const lifecycle=text(membership.lifecycle).toLowerCase()||"unresolved";
   return {
     identity_state:body.identity_status==="resolved"?"matched":"unresolved",

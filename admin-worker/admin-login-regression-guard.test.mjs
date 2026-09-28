@@ -28,6 +28,16 @@ test("admin deploy actions use Node24 runtimes without changing the application 
   assert.doesNotMatch(workflow, /ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION/);
 });
 
+test("normal admin deploy preserves the SIGIL availability KV binding", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/deploy-admin-worker.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Ensure SIGIL availability KV binding/);
+  assert.match(workflow, /MMD_SIGIL_AVAILABILITY_SNAPSHOTS_V1/);
+  assert.match(workflow, /binding = \"SIGIL_AVAILABILITY_SNAPSHOTS\"/);
+  assert.match(workflow, /ADMIN_WORKER_WRANGLER_CONFIG=\$\{output\}/);
+  assert.match(workflow, /versions upload --dry-run --keep-vars \\\n\s+--config "\$\{ADMIN_WORKER_WRANGLER_CONFIG\}"/);
+  assert.match(workflow, /versions upload \\\n\s+--keep-vars \\\n\s+--config "\$\{ADMIN_WORKER_WRANGLER_CONFIG\}"/);
+});
+
 test("dashboard deploy smoke distinguishes allowed production ingress from a blocked direct host", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-admin-worker.yml", import.meta.url), "utf8");
   assert.match(workflow, /ADMIN_DASHBOARD_PRODUCTION_URL: https:\/\/mmdbkk\.com\/v1\/admin\/dashboard/);
@@ -59,6 +69,51 @@ test("core fallback renders the same approved login page", async () => {
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
   assert.match(html, /rel="icon" type="image\/webp"/);
   for (const marker of LEGACY_MARKERS) assert.equal(html.includes(marker), false, marker);
+});
+
+test("legacy admin login aliases redirect through admin-worker to the canonical login", async () => {
+  for (const alias of ["/sigil/admin/login", "/admin/login"]) {
+    const response = await coreWorker.fetch(
+      new Request(`https://www.mmdbkk.com${alias}?source=phase1`),
+      {},
+    );
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
+    assert.equal(response.headers.get("x-mmd-admin-login-canonical"), "/internal/admin/login");
+
+    const location = new URL(response.headers.get("location"));
+    assert.equal(location.origin, "https://mmdbkk.com");
+    assert.equal(location.pathname, "/internal/admin/login");
+    assert.equal(location.searchParams.get("source"), "phase1");
+    assert.equal(location.searchParams.get("next"), "/internal/admin/control-room");
+  }
+});
+
+test("legacy admin login aliases fail closed for non-navigation methods", async () => {
+  const response = await coreWorker.fetch(
+    new Request("https://www.mmdbkk.com/sigil/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "credential=must-not-run",
+    }),
+    {},
+  );
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get("allow"), "GET, HEAD");
+  assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
+  assert.equal((await response.json()).canonical_login, "/internal/admin/login");
+});
+
+test("wrangler owns only narrow legacy admin login aliases", async () => {
+  const wrangler = await readFile(new URL("./wrangler.toml", import.meta.url), "utf8");
+  for (const alias of ["/sigil/admin/login", "/admin/login"]) {
+    for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
+      const escaped = `${host.replaceAll(".", "\\.")}${alias.replaceAll("/", "\\/")}`;
+      assert.match(wrangler, new RegExp(`pattern = "${escaped}"`));
+      assert.match(wrangler, new RegExp(`pattern = "${escaped}\\*"`));
+    }
+  }
+  assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/sigil\/admin\/\*"/);
 });
 
 test("legacy login shell markers cannot remain in either runtime entrypoint", async () => {

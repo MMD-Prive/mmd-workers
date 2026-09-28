@@ -1,6 +1,8 @@
 import phase1Worker from "./index.phase1.js";
+import { handlePublicSessionExtensionPayment, isPublicSessionExtensionPaymentPath } from "./public-session-extension-payment.js";
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { PointsPhase1Coordinator } from "./index.phase1.js";
+import { authorityRuntimeHealth, queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
 import { handleReviewedProof, isReviewedProofRequest } from "./reviewed-proof.js";
 import {
@@ -11,6 +13,10 @@ import {
   handleCanonicalConfirmLink,
   isCanonicalConfirmLinkRequest,
 } from "./canonical-confirm-link.js";
+import {
+  handleConfirmationReissue,
+  isConfirmationReissueRequest,
+} from "./confirmation-link-reissue.js";
 import { canonicalizeConfirmLinkRequest } from "./confirm-route-canonicalizer.js";
 import {
   enforceSigilSessionServiceAmount,
@@ -29,6 +35,7 @@ import {
   enrichUnifiedConfirmVerify,
   handleUnifiedPaymentIntent,
   handleUnifiedSlipEvidence,
+  drainWebProofNotifications,
   isUnifiedConfirmVerifyRequest,
   isUnifiedPaymentIntentRequest,
   isUnifiedSlipEvidenceRequest,
@@ -47,6 +54,16 @@ import {
   isFinalPaymentFlowRequest,
   reconcileReviewedFinalPayment,
 } from "./final-payment-flow.js";
+import {
+  handleShopIntent,
+  handleShopIntentExpiry,
+  handleShopRefundConfirm,
+  enrichShopConfirmVerify,
+  isShopIntentRequest,
+  maybeHandleShopConfirmationDetails,
+  preflightReviewedShopPayment,
+  reconcileReviewedShopPayment,
+} from "./shop-payment-v1.js";
 
 export { PointsPhase1Coordinator };
 
@@ -66,11 +83,68 @@ function canonicalTelegramEnv(env = {}) {
 }
 
 export default {
+  async scheduled(event, env, ctx) {
+    await drainWebProofNotifications(canonicalTelegramEnv(env));
+    if (typeof phase1Worker.scheduled === "function") await phase1Worker.scheduled(event, env, ctx);
+  },
   async fetch(request, env, ctx) {
     env = canonicalTelegramEnv(env);
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isPublicSessionExtensionPaymentPath(url)) {
+      return handlePublicSessionExtensionPayment(request, env);
+    }
+
+    if (method === "GET" && (path === "/health" || path === "/ping")) {
+      const response = await phase1Worker.fetch(request, env, ctx);
+      if (!response?.ok) return response;
+      const payload = await response.clone().json().catch(() => null);
+      if (!payload || typeof payload !== "object") return response;
+      const headers = new Headers(response.headers);
+      headers.set("content-type", "application/json; charset=utf-8");
+      headers.set("cache-control", "no-store");
+      return new Response(JSON.stringify({
+        ...payload,
+        analytics: authorityRuntimeHealth(env, "payments-worker", ctx),
+      }), { status: response.status, headers });
+    }
+
+    if (method === "GET" && path === "/v1/pay/slip/evidence/health") {
+      const airtableReady = Boolean(String(env.AIRTABLE_BASE_ID || "").trim() && String(env.AIRTABLE_API_KEY || "").trim() && String(env.AIRTABLE_TABLE_PAYMENT_PROOFS || "").trim());
+      const r2Ready = Boolean(env.PAYMENT_SLIP_EVIDENCE && typeof env.PAYMENT_SLIP_EVIDENCE.put === "function");
+      const telegramReady = Boolean(env.TELEGRAM_WORKER && typeof env.TELEGRAM_WORKER.fetch === "function" && String(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM || "").trim());
+      const tokenReady = Boolean(String(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY || "").trim() && env.PAY_SESSIONS_KV);
+      const telegramThreadId = Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22) || 22;
+      return json({
+        ok: true,
+        authority: "payments-worker",
+        schema: "mmd_web_payment_proof_v1",
+        version: "sigil_pay_proof_intake_v3",
+        signed_token_required: true,
+        canonical_proof_status: "pending",
+        telegram_thread_id: telegramThreadId,
+        bindings: {
+          airtable: airtableReady,
+          r2: r2Ready,
+          telegram: telegramReady,
+          confirmation_token: tokenReady,
+        },
+        analytics: authorityRuntimeHealth(env, "payments-worker", ctx),
+        ready: airtableReady && r2Ready && telegramReady && tokenReady && telegramThreadId === 22,
+      }, 200);
+    }
+
+    const shopExpiryResponse = await handleShopIntentExpiry(request.clone(), env);
+    if (shopExpiryResponse) return shopExpiryResponse;
+
+    const shopRefundResponse = await handleShopRefundConfirm(request.clone(), env);
+    if (shopRefundResponse) return shopRefundResponse;
+
+    if (isShopIntentRequest(path, method)) {
+      return handleShopIntent(request, env);
+    }
 
     if (isFinalPaymentFlowRequest(path, method)) {
       return handleFinalPaymentFlow(request, env);
@@ -83,12 +157,16 @@ export default {
     }
 
     if (isPaymentInstructionsRequest(path, method)) {
-      return handlePaymentInstructions(request, env, (detailsRequest) =>
-        handleCustomerSessionDetails(detailsRequest, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx))
-      );
+      return handlePaymentInstructions(request, env, async (detailsRequest) => {
+        const shopDetails = await maybeHandleShopConfirmationDetails(detailsRequest, env);
+        if (shopDetails) return shopDetails;
+        return handleCustomerSessionDetails(detailsRequest, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      });
     }
 
     if (isCustomerSessionDetailsRequest(path, method)) {
+      const shopDetails = await maybeHandleShopConfirmationDetails(request.clone(), env);
+      if (shopDetails) return shopDetails;
       return handleCustomerSessionDetails(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
     }
 
@@ -96,6 +174,10 @@ export default {
       const canonicalRequest = await canonicalizeConfirmLinkRequest(request);
       const response = await handleCanonicalConfirmLink(canonicalRequest, env, ctx);
       return reconcileSigilConfirmLinkMoneyTruth(canonicalRequest, response, env);
+    }
+
+    if (isConfirmationReissueRequest(path, method)) {
+      return handleConfirmationReissue(request, env);
     }
 
     if (isUnifiedPaymentIntentRequest(path, method)) {
@@ -110,13 +192,24 @@ export default {
     }
 
     if (isUnifiedConfirmVerifyRequest(path, method)) {
-      return enrichUnifiedConfirmVerify(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      const shopVerifyRequest = request.clone();
+      const verifiedResponse = await enrichUnifiedConfirmVerify(
+        request,
+        env,
+        (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx),
+      );
+      return enrichShopConfirmVerify(shopVerifyRequest, verifiedResponse, env);
     }
 
     if (isReviewedProofRequest(path, method)) {
+      const analyticsRequest = request.clone();
       const reconcileRequest = request.clone();
+      const shopRequest = request.clone();
       const doubleMomentRequest = request.clone();
       const finalPaymentRequest = request.clone();
+      const shopPreflight = await preflightReviewedShopPayment(shopRequest.clone(), env);
+      if (shopPreflight) return shopPreflight;
+
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
@@ -151,15 +244,95 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
-      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
+      const shopResponse = await reconcileReviewedShopPayment(shopRequest.clone(), reviewResponse, env);
+      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), shopResponse, env);
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
-      return reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
+      const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
+      queueReviewedPaymentAuthorityEvents(ctx, env, analyticsRequest, finalResponse);
+      return finalResponse;
     }
 
     return phase1Worker.fetch(request, env, ctx);
   },
 };
+
+function queueReviewedPaymentAuthorityEvents(ctx, env, request, response) {
+  if (!response?.ok) return;
+  const task = Promise.all([
+    request.clone().json().catch(() => null),
+    response.clone().json().catch(() => null),
+  ]).then(([body, payload]) => {
+    if (!body || !payload?.ok) return;
+    const decision = String(body.decision || "").trim().toLowerCase();
+    if (decision !== "approved") return;
+
+    const paymentRef = String(body.payment_ref || body.transaction_ref || "").trim();
+    if (!paymentRef) return;
+
+    const paymentStage = String(body.payment_stage || body.stage || body.payment_type || "").trim().toLowerCase();
+    const paymentFlow = paymentStage === "membership"
+      ? "membership_payment"
+      : paymentStage === "shop"
+        ? "shop_payment"
+        : paymentStage === "mms"
+          ? "mms_payment"
+          : "booking_payment";
+    const paymentWorld = paymentStage === "shop"
+      ? "shop"
+      : paymentStage === "mms"
+        ? "mms"
+        : paymentStage === "membership"
+          ? "member"
+          : "private";
+    const amount = Number(body.amount_thb ?? body.amount);
+    queueAuthorityEvent(ctx, env, {
+      event: "payment_verified",
+      authority: "payments-worker",
+      scope: "payment",
+      distinctValue: paymentRef,
+      insertValue: `${paymentRef}:${paymentStage || "unknown"}`,
+      properties: {
+        surface: "payment",
+        flow: paymentFlow,
+        world: paymentWorld,
+        payment_stage: paymentStage || "unknown",
+        amount_thb: Number.isFinite(amount) ? amount : undefined,
+        currency: "THB",
+        verification: "official",
+        decision: "approved",
+        status: "verified",
+        duplicate: payload.duplicate === true,
+      },
+    });
+
+    const materialized = payload.entitlement_materialized === true
+      || payload.membership_write_through?.status === "materialized";
+    if (paymentStage === "membership" && materialized) {
+      const memberCorrelation = String(body.member_id || body.member_record_id || paymentRef).trim();
+      queueAuthorityEvent(ctx, env, {
+        event: "membership_activated",
+        authority: "payments-worker",
+        scope: "membership",
+        distinctValue: memberCorrelation,
+        insertValue: `${paymentRef}:membership_activated`,
+        properties: {
+          surface: "membership",
+          flow: "membership_activation",
+          world: "member",
+          payment_stage: "membership",
+          package_code: String(body.package_code || body.package || payload.membership_write_through?.package_code || "").trim(),
+          status: "active",
+          materialized: true,
+          duplicate: payload.duplicate === true,
+        },
+      });
+    }
+  }).catch(() => null);
+
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(task);
+  else void task;
+}
 
 async function runSigilCombinedReviewedNotify(request, env, ctx, body, components) {
   const notifyRequest = new Request(new URL(NOTIFY_PATH, request.url), {

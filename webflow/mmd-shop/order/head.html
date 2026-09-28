@@ -1,0 +1,64 @@
+<meta name="robots" content="noindex,nofollow"><meta name="googlebot" content="noindex,nofollow">
+<style id="mmdshop-order-next">
+.shop-order,.shop-order *{box-sizing:border-box}
+.shop-order{
+ --ink:#111416;--bg:#f4f5f2;--muted:#697176;--line:rgba(17,20,22,.12);--signal:#315c66;
+ min-height:100vh;padding:12px;background:var(--bg);color:var(--ink);
+ font-family:"IBM Plex Sans Thai","Noto Sans Thai","LINE Seed Sans TH",Tahoma,sans-serif;font-weight:400;-webkit-font-smoothing:antialiased
+}
+.shop-order a{text-decoration:none;color:inherit}
+.shop-top,.shop-hero,.shop-state,.shop-card,.shop-help{width:min(960px,100%);margin-left:auto;margin-right:auto}
+.shop-top{min-height:52px;margin-bottom:10px;padding:7px 9px 7px 12px;display:flex;align-items:center;justify-content:space-between;border-radius:14px;background:#111416;color:#fff}
+.shop-brand{font-family:"Inter",Arial,sans-serif;font-size:15px!important;font-weight:600!important;color:#fff!important}
+.shop-brand-accent{font-size:8px!important;font-weight:600!important;letter-spacing:.15em!important;color:#c8e4e8!important}
+.shop-back{padding:7px 9px;border:1px solid rgba(255,255,255,.15);border-radius:9px;color:#fff!important;font-size:10px}
+.shop-hero{
+ position:relative;overflow:hidden;height:280px;margin-bottom:10px;padding:16px;display:flex;flex-direction:column;justify-content:flex-end;
+ border-radius:18px;background:#111416 url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf17333ae8f604b0086cf3_MMD%20Shop%20-%2009.webp") center/cover no-repeat;color:#fff
+}
+.shop-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(9,11,12,.84),rgba(9,11,12,.06) 72%)}
+.shop-hero>*{position:relative;z-index:2}
+.shop-eyebrow{margin:0 0 5px;color:#c8e4e8!important;font-family:"Inter",Arial,sans-serif;font-size:8px!important;font-weight:600!important;letter-spacing:.14em!important;text-transform:uppercase}
+.shop-title{margin:0;max-width:720px;color:#fff!important;font-size:clamp(36px,9vw,56px)!important;line-height:1.02!important;letter-spacing:-.035em!important;font-weight:600!important}
+.shop-lead{max-width:620px;margin:7px 0 0;color:rgba(255,255,255,.76)!important;font-size:12px!important;line-height:1.6!important}
+.shop-state{min-height:170px;display:grid;place-items:center;align-content:center;gap:8px;padding:20px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.shop-loader{width:28px;height:28px;border:2px solid rgba(17,20,22,.12);border-top-color:var(--signal);border-radius:50%;animation:mmd-order-spin .8s linear infinite}
+.shop-state-text{margin:0;color:var(--muted)!important;font-size:11px!important}
+.shop-card{padding:14px;border:1px solid var(--line)!important;border-radius:18px!important;background:#fff!important;box-shadow:none!important}
+.shop-order-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.shop-label,.shop-summary-label{font-family:"Inter",Arial,sans-serif!important;font-size:8px!important;font-weight:600!important;letter-spacing:.11em!important;text-transform:uppercase;color:var(--signal)!important}
+.shop-order-id{display:block;margin-top:3px;font-family:"Inter",Arial,sans-serif;font-size:17px;font-weight:600}
+.shop-pill{padding:6px 8px;border-radius:8px!important;background:#edf4f4!important;color:var(--signal)!important;font-family:"Inter",Arial,sans-serif;font-size:9px!important;font-weight:600!important}
+.shop-items{display:grid;gap:0;margin-top:4px}
+.shop-item{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+.shop-item-name{font-size:12px;font-weight:600}.shop-item-meta{display:block;margin-top:2px;color:var(--muted);font-size:9px}.shop-item-total{font-family:"Inter",Arial,sans-serif;font-size:11px;font-weight:600;white-space:nowrap}
+.shop-summary{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;margin:12px -14px 0;padding:0 14px 4px}
+.shop-summary::-webkit-scrollbar{display:none}
+.shop-summary-box{flex:0 0 152px;scroll-snap-align:start;padding:10px;border:1px solid var(--line);border-radius:10px;background:#f7f8f6}
+.shop-summary-value{display:block;margin-top:3px;font-size:12px;font-weight:600}
+.shop-fulfillment,.shop-reservation{margin-top:9px;padding:10px;border:1px solid var(--line)!important;border-radius:10px!important;background:#f7f8f6!important}
+.shop-fulfillment small,.shop-reservation small{display:none}
+.shop-fulfillment strong,.shop-reservation strong{display:block;font-size:11px;font-weight:600;color:var(--ink)}
+.shop-fulfillment p,.shop-reservation p{margin:4px 0 0;color:var(--muted)!important;font-size:9px;line-height:1.55}
+.shop-fold{margin-top:0;border-bottom:1px solid var(--line)}
+.shop-fold summary{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;font-size:11px;font-weight:500}
+.shop-fold summary::-webkit-details-marker{display:none}
+.shop-fold summary:after{content:"+";font-family:"Inter",Arial,sans-serif;font-size:20px;transition:transform .25s ease}
+.shop-fold[open] summary:after{transform:rotate(45deg)}
+.shop-fold-body{padding:0 0 8px}
+.shop-actions{display:grid;grid-template-columns:1.15fr 1fr;gap:7px;margin-top:12px}
+.shop-primary,.shop-secondary{min-height:44px;display:flex;align-items:center;justify-content:center;padding:0 12px;border-radius:10px!important;font-size:11px!important;font-weight:600!important}
+.shop-primary{background:#111416!important;color:#fff!important;border:1px solid #111416}.shop-secondary{background:#f7f8f6!important;color:#111416!important;border:1px solid var(--line)!important}
+.shop-help{margin-top:9px;padding:10px 12px;border:1px solid var(--line)!important;border-radius:12px!important;background:transparent!important;box-shadow:none!important}
+.shop-help-title{font-size:11px;font-weight:600}.shop-help-copy{margin:3px 0 0;color:var(--muted)!important;font-size:9px!important;line-height:1.55!important}
+@keyframes mmd-order-spin{to{transform:rotate(360deg)}}
+@media(min-width:760px){
+ .shop-order{padding:20px}
+ .shop-hero{height:360px;padding:28px}
+ .shop-card{padding:20px}
+ .shop-summary{margin-left:0;margin-right:0;padding-left:0;padding-right:0;overflow:visible}
+ .shop-summary-box{flex:1}
+}
+@media(max-width:640px){.shop-actions{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.shop-order *{transition:none!important;animation-duration:.001ms!important}}
+</style>

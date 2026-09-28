@@ -125,6 +125,8 @@ async function withAirtablePages(pages, fn) {
 
 test("multi-row legacy lookup follows pagination and lets operator Rename beat guest webhook rows", async () => {
   const env = await envForSession({ memberExists: false });
+  env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE = "LINE OFC Client Import Staging";
+  env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID = "LINE OFC Client Import Staging";
   const guestRow = {
     id: "recGuestWebhook01",
     createdTime: "2026-06-01T07:40:02.000Z",
@@ -163,6 +165,8 @@ test("multi-row legacy lookup follows pagination and lets operator Rename beat g
 
 test("canonical SVIP stays active while empty history and zero points remain recovery-pending", async () => {
   const env = await envForSession({ memberExists: true });
+  env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE = "LINE OFC Client Import Staging";
+  env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID = "LINE OFC Client Import Staging";
   const legacyService = {
     id: "recHistoricalService1",
     createdTime: "2026-09-03T17:36:52.000Z",

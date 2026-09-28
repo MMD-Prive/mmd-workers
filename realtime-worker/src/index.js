@@ -303,10 +303,11 @@ export default {
 
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-    if (method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
-      return new Response(JSON.stringify({ ok: true, worker: "realtime-worker" }), {
+    if (method === "GET" && (url.pathname === "/" || url.pathname === "/health" || url.pathname === "/v1/rt/health")) {
+      const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store", "X-MMD-Route-Owner": "realtime-worker", ...Object.fromEntries(cors) });
+      return new Response(JSON.stringify({ ok: true, worker: "realtime-worker", route_owner: "realtime-worker", namespace: "/v1/rt/*" }), {
         status: 200,
-        headers: new Headers({ "Content-Type": "application/json", ...Object.fromEntries(cors) }),
+        headers,
       });
     }
 

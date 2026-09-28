@@ -45,7 +45,8 @@ test("approve orchestration does not read a raw canonical Airtable id from brows
 test("active wrapper clones guarded Private Model requests before delegated worker consumes them", async () => {
   const source = await readFile(new URL("./src/admin-login-hero-worker.js", import.meta.url), "utf8");
   assert.match(source, /if \(isPrivateModelAdminRequest\(request\)\) privateModelRequest = request\.clone\(\)/);
-  assert.match(source, /maybeHandlePrivateModelAdminRequest\(privateModelRequest, env, response\)/);
+  assert.match(source, /maybeHandlePrivateModelAdminRequest\(privateModelRequest, runtimeEnv, response\)/);
+  assert.match(source, /const runtimeEnv = modelMoneyRuntimeEnv\(env\)/);
 });
 
 

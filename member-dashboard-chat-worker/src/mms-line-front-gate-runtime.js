@@ -8,13 +8,16 @@ import {
 } from "./mmd-rich-menu-scheduled-runtime.mjs";
 import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
+  hasCardCampaignContext,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
+import { createLineSignature, resolveLineCardCampaignTrigger } from "./index.js";
 import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
 } from "./kenji-line-transport-health.mjs";
 import { handleKenjiLineWithIngressTrace } from "./kenji-line-ingress-trace.mjs";
+import { runLineSlipEvidenceMaintenance } from "./line-group-ingress-front-gate.js";
 
 export { KenjiModelIdempotency } from "./my-mmd-bounded-status-front-gate.js";
 
@@ -26,6 +29,7 @@ const KENJI_RUNTIME_SCOPES = Object.freeze([
   "all_kenji_mutations",
 ]);
 const RUNTIME_STATUS_SENTINEL = "service-binding-runtime-status";
+const LINE_CARD_INGRESS_OWNER_PATH = "/v1/internal/line/card-21829530/ingress";
 
 // MY MMS Therapist work app is a separate, approval-gated private surface.
 // Lovable owns only the presentation bytes. All session/access/job authority
@@ -40,6 +44,11 @@ const MY_MMS_THERAPIST_SHELL_MARKER = 'data-mms-shell="lovable-single-file-v1"';
 
 function text(value) {
   return value == null ? "" : String(value).trim();
+}
+
+async function sha256HexText(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function normalizedPath(request) {
@@ -82,6 +91,37 @@ function runtimeJson(payload, status = 200) {
       "x-mmd-runtime-status-source": status === 200 ? "airtable-fallback" : "fail-closed",
     },
   });
+}
+
+async function handleLineCardIngressOwner(request, env = {}) {
+  const respond = (payload, status = 200) => new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, private", "x-content-type-options": "nosniff" },
+  });
+  const expected = text(env.INTERNAL_TOKEN);
+  const supplied = text(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+  if (!expected || !supplied || !timingSafeStringEqual(expected, supplied)) {
+    console.log(JSON.stringify({ line_card_ingress_owner: "denied", reason: "unauthorized" }));
+    return respond({ ok: false, error: "unauthorized" }, 401);
+  }
+  if (String(request.method || "GET").toUpperCase() !== "POST") return respond({ ok: false, error: "method_not_allowed" }, 405);
+  let input;
+  try { input = await request.json(); } catch (_) { return respond({ ok: false, error: "invalid_json" }, 400); }
+  const action = text(input?.action);
+  const receiptId = text(input?.receipt_id).toLowerCase();
+  if (!["status", "reprocess"].includes(action) || !/^[a-f0-9]{64}$/.test(receiptId)) return respond({ ok: false, error: "invalid_request" }, 400);
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return respond({ ok: false, error: "campaign_ingress_binding_missing" }, 503);
+  try {
+    const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${receiptId}`));
+    const response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    console.log(JSON.stringify({ line_card_ingress_owner: "authorized", action, receipt_prefix: receiptId.slice(0, 12), status: Number(response.status) || 0 }));
+    return respond(payload, response.status);
+  } catch (_) {
+    return respond({ ok: false, error: "campaign_ingress_unavailable" }, 503);
+  }
 }
 
 function myMmsJson(payload, status = 200) {
@@ -408,6 +448,128 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
   }
 
   const eventCount = Array.isArray(body?.events) ? body.events.length : 0;
+  const events = Array.isArray(body?.events) ? body.events : [];
+  const flagsOn = [env.LINE_CARD_21829530_LEAD_ENABLED, env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR]
+    .every((value) => ["1", "true", "yes", "on"].includes(text(value).toLowerCase()));
+  if (events.length) {
+    const hashes = text(env.LINE_CARD_21829530_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const pilotConfigValid = flagsOn && hashes.length && hashes.every((hash) => /^[a-f0-9]{64}$/.test(hash));
+    if (pilotConfigValid || events.some((event) => event?.type === "unsend")) {
+      const campaignEvents = [];
+      const unsendEvents = [];
+      const ordinaryEvents = [];
+      const triggeredUsers = new Set(events
+        .filter((event) => event?.source?.type === "user" && event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text))
+        .map((event) => text(event.source.userId)));
+      for (const event of events) {
+        const userId = text(event?.source?.userId);
+        let pilot = false;
+        let subjectHash = "";
+        if (event?.source?.type === "user" && /^U[a-f0-9]{32}$/i.test(userId)) {
+          const hash = await sha256HexText(userId);
+          subjectHash = hash;
+          pilot = pilotConfigValid && hashes.includes(hash);
+        }
+        const unsendMessageId = text(event?.unsend?.messageId);
+        if (subjectHash && event?.type === "unsend" && /^[A-Za-z0-9_-]{1,120}$/.test(unsendMessageId)) {
+          if (pilot) {
+            unsendEvents.push({ event, subjectHash });
+            continue;
+          }
+          // A prior pilot message still needs redaction after its flags or
+          // allowlist entry are removed. Only known Card aliases are routed.
+          if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
+          const messageKey = await sha256HexText(unsendMessageId);
+          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
+          let aliasResponse;
+          try {
+            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "lookup", message_id: unsendMessageId, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const alias = await aliasResponse.json().catch(() => ({}));
+          if (!aliasResponse.ok || alias?.ok !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          if (alias.found === true) {
+            unsendEvents.push({ event, subjectHash });
+            continue;
+          }
+        }
+        const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
+        if (campaign) campaignEvents.push({ event, subjectHash });
+        else ordinaryEvents.push(event);
+      }
+      if (campaignEvents.length || unsendEvents.length) {
+        if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
+        const stubs = [];
+        for (const item of unsendEvents) {
+          const { event, subjectHash } = item;
+          const eventId = text(event?.unsend?.messageId);
+          const messageKey = await sha256HexText(eventId);
+          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
+          let aliasResponse;
+          try {
+            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "cancel", message_id: eventId, receipt_id: messageKey, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const alias = await aliasResponse.json().catch(() => ({}));
+          if (!aliasResponse.ok || alias?.cancelled !== true || !/^[a-f0-9]{64}$/.test(text(alias?.receipt_id))) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          const key = text(alias.receipt_id);
+          const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
+          let response;
+          try {
+            response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unsend", event_id: eventId, receipt_id: key, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || result?.cancelled !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+        }
+        for (const item of campaignEvents) {
+          const { event, subjectHash } = item;
+          const eventId = text(event?.message?.id);
+          const webhookEventId = text(event?.webhookEventId || eventId);
+          if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
+          const key = await sha256HexText(webhookEventId);
+          const messageKey = await sha256HexText(eventId);
+          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
+          let aliasResponse;
+          try {
+            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "bind", message_id: eventId, receipt_id: key, webhook_event_id: webhookEventId, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const alias = await aliasResponse.json().catch(() => ({}));
+          if (!aliasResponse.ok) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          if (alias?.cancelled === true) continue;
+          const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
+          let response;
+          try {
+            response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || (result?.accepted !== true && result?.cancelled !== true)) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          if (result?.accepted === true) stubs.push(stub);
+        }
+        ctx.waitUntil((async () => {
+          for (const stub of stubs) {
+            await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }),
+            }).catch(() => null);
+          }
+          if (ordinaryEvents.length) {
+            const subsetBody = JSON.stringify({ ...body, events: ordinaryEvents });
+            const subsetHeaders = new Headers(request.headers);
+            subsetHeaders.set("x-line-signature", await createLineSignature(subsetBody, env.LINE_CHANNEL_SECRET));
+            await handler(new Request(request.url, { method: "POST", headers: subsetHeaders, body: subsetBody }));
+          }
+        })());
+        return lineAckResponse(eventCount);
+      }
+    }
+  }
   const backgroundRequest = new Request(request.url, {
     method: "POST",
     headers: new Headers(request.headers),
@@ -440,6 +602,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
 
 export default {
   async fetch(request, env = {}, ctx) {
+    if (normalizedPath(request) === LINE_CARD_INGRESS_OWNER_PATH) return handleLineCardIngressOwner(request, env);
     if (isMyMmsTherapistAppApiRequest(request)) return forwardMyMmsTherapistAppApi(request, env);
     if (isMyMmsTherapistAppUiRequest(request)) return handleMyMmsTherapistAppUi(request, env);
     if (isKenjiLineTransportHealthRequest(request)) {
@@ -470,6 +633,12 @@ export default {
     return currentWorker.fetch(request, env, ctx);
   },
   async scheduled(event, env = {}, ctx) {
+    // Recovery floor for LINE payment evidence: retry undelivered HYPE/Ops
+    // notifications and reprocess held evidence candidates even when LINE is
+    // quiet. It never settles payments and never blocks the rich-menu job.
+    const maintenance = runLineSlipEvidenceMaintenance(env, {}).catch(() => null);
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(maintenance);
+    else await maintenance;
     return handleMmdRichMenuScheduled(event, env, ctx);
   },
 };

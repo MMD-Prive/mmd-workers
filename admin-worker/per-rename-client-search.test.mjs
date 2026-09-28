@@ -189,6 +189,92 @@ test("broad Per nickname returns linked canonical choices without guessing", asy
   }
 });
 
+test("LINE User ID disambiguates the same broad Per Rename across canonical Clients", async () => {
+  const restore = installResolverMock(
+    [kongIndex, otherKongIndex],
+    {
+      recAcTMLy1teHWMp1: kongClient,
+      recOtherClient: otherKongClient,
+    },
+  );
+  try {
+    const result = await resolvePerRenameAlias(env, "ก้อง", {
+      line_user_id: "U3c779cd79247ece116509ec78e3957fa",
+    });
+    assert.equal(result.state, "resolved");
+    assert.equal(result.record.client_id, "recOtherClient");
+    assert.equal(result.record.line_user_id, "U3c779cd79247ece116509ec78e3957fa");
+  } finally {
+    restore();
+  }
+});
+
+test("Per Rename and LINE User ID disagreement fails closed", async () => {
+  const restore = installResolverMock([kongIndex]);
+  try {
+    const result = await resolvePerRenameAlias(env, "ก้อง SVIP", {
+      line_user_id: "U3c779cd79247ece116509ec78e3957fa",
+    });
+    assert.equal(result.state, "ambiguous");
+    assert.equal(result.reason, "per_rename_line_identity_mismatch");
+  } finally {
+    restore();
+  }
+});
+
+test("canonical Client LINE identity conflict fails closed even when index row matches", async () => {
+  const conflictingClient = {
+    ...kongClient,
+    fields: {
+      ...kongClient.fields,
+      line_user_id: "U3c779cd79247ece116509ec78e3957fa",
+    },
+  };
+  const restore = installResolverMock([kongIndex], {
+    recAcTMLy1teHWMp1: conflictingClient,
+  });
+  try {
+    const result = await resolvePerRenameAlias(env, "ก้อง SVIP", {
+      line_user_id: "U64e58603b56a881f48da2236f8036b18",
+    });
+    assert.equal(result.state, "ambiguous");
+    assert.equal(result.reason, "canonical_line_identity_conflict");
+  } finally {
+    restore();
+  }
+});
+
+test("same canonical Client prefers the newest valid date suffix", async () => {
+  const oldRename = {
+    ...kongIndex,
+    id: "recKongOld",
+    fields: {
+      ...kongIndex.fields,
+      preferred_name: "ก้อง 12 กย 68",
+    },
+  };
+  const newestRename = {
+    ...kongIndex,
+    id: "recKongNew",
+    fields: {
+      ...kongIndex.fields,
+      preferred_name: "ก้อง 28 กย 69",
+    },
+  };
+  const restore = installResolverMock([oldRename, newestRename]);
+  try {
+    const result = await resolvePerRenameAlias(env, "ก้อง");
+    assert.equal(result.state, "resolved");
+    assert.equal(result.record.client_id, "recAcTMLy1teHWMp1");
+    assert.equal(result.record.per_rename, "ก้อง 28 กย 69");
+    assert.equal(result.record.per_rename_base_name, "ก้อง");
+    assert.equal(result.record.per_rename_date_iso, "2026-09-28");
+    assert.equal(result.record.per_rename_date_source, "per_rename_suffix");
+  } finally {
+    restore();
+  }
+});
+
 test("exact LINE display does not hide other broad Per Rename canonical choices", async () => {
   const exactLineDisplay = {
     ...kongIndex,

@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "auth-worker/**"
+      - "shared/my-mmd-fast-trust-source.mjs"
+      - "scripts/validate-my-mmd-fast-trust-airtable-schema.mjs"
       - ".github/workflows/deploy-auth-worker.yml"
 
 concurrency:
@@ -25,6 +27,8 @@ jobs:
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
       WORKER_NAME: "mmd-auth-worker"
       NO_COLOR: "1"
 
@@ -38,7 +42,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Normalize Cloudflare credentials
+      - name: Normalize Cloudflare and Airtable credentials
         shell: bash
         run: |
           set -euo pipefail
@@ -49,17 +53,27 @@ jobs:
           const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
           const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
           const zoneId = clean(process.env.CLOUDFLARE_ZONE_ID);
+          const airtableApiKey = clean(process.env.AIRTABLE_API_KEY);
+          const airtableBaseId = clean(process.env.AIRTABLE_BASE_ID);
           if (!deployToken || !routesToken || !accountId || !zoneId) {
             throw new Error("Cloudflare deploy/routes credentials are missing after normalization");
           }
+          if (!airtableApiKey) throw new Error("Airtable production token is missing after normalization");
+          if (airtableBaseId !== "appsV1ILPRfIjkaYg") throw new Error("Unexpected AIRTABLE_BASE_ID for mmd-auth-worker");
+          console.log(`::add-mask::${airtableApiKey}`);
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ZONE_ID=${zoneId}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `AIRTABLE_API_KEY=${airtableApiKey}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `AIRTABLE_BASE_ID=${airtableBaseId}\n`);
           NODE
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify My MMD Fast Trust Airtable schema
+        run: node scripts/validate-my-mmd-fast-trust-airtable-schema.mjs
 
       - name: Run focused auth resolver tests
         run: |

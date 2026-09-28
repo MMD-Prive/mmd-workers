@@ -1,0 +1,122 @@
+name: Kenji Verified Identity Readiness
+
+on:
+  schedule:
+    # Monday 09:15 Asia/Bangkok. Scheduled runs always execute from default branch main.
+    - cron: "15 2 * * 1"
+  pull_request:
+    paths:
+      - "immigrate-worker/public/a/member-intelligence.js"
+      - "immigrate-worker/src/customer-360-live-ingress-wrapper.ts"
+      - "immigrate-worker/src/customer-identity-alignment-client.ts"
+      - "immigrate-worker/src/customer-identity-evidence-protocol-client.ts"
+      - "immigrate-worker/src/customer-identity-alignment.ts"
+      - "immigrate-worker/test/customer-360-live-ingress.test.mjs"
+      - "immigrate-worker/test/customer-identity-alignment.test.mjs"
+      - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.test.mjs"
+      - "scripts/member-intelligence-authenticated-observation.mjs"
+      - "scripts/member-intelligence-authenticated-observation.test.mjs"
+      - "docs/operations/KENJI_PHASE4E_VERIFIED_IDENTITY_READINESS.md"
+      - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
+      - "docs/operations/KENJI_PHASE4G_EVIDENCE_CAPTURE_OWNER_REVIEW_PROTOCOL.md"
+      - "docs/operations/KENJI_PHASE4H_OWNER_EVIDENCE_REVIEW_ADOPTION.md"
+      - "docs/operations/KENJI_PHASE4J_EVIDENCE_CAPTURE_BACKLOG_TRIAGE.md"
+      - "docs/operations/KENJI_PHASE4K_SOURCE_EVIDENCE_CAPTURE_OWNER_WORKBENCH.md"
+      - ".github/workflows/kenji-verified-identity-readiness.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "immigrate-worker/public/a/member-intelligence.js"
+      - "immigrate-worker/src/customer-360-live-ingress-wrapper.ts"
+      - "immigrate-worker/src/customer-identity-alignment-client.ts"
+      - "immigrate-worker/src/customer-identity-evidence-protocol-client.ts"
+      - "immigrate-worker/src/customer-identity-alignment.ts"
+      - "immigrate-worker/test/customer-360-live-ingress.test.mjs"
+      - "immigrate-worker/test/customer-identity-alignment.test.mjs"
+      - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.test.mjs"
+      - "scripts/member-intelligence-authenticated-observation.mjs"
+      - "scripts/member-intelligence-authenticated-observation.test.mjs"
+      - "docs/operations/KENJI_PHASE4E_VERIFIED_IDENTITY_READINESS.md"
+      - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
+      - "docs/operations/KENJI_PHASE4G_EVIDENCE_CAPTURE_OWNER_REVIEW_PROTOCOL.md"
+      - "docs/operations/KENJI_PHASE4H_OWNER_EVIDENCE_REVIEW_ADOPTION.md"
+      - "docs/operations/KENJI_PHASE4J_EVIDENCE_CAPTURE_BACKLOG_TRIAGE.md"
+      - "docs/operations/KENJI_PHASE4K_SOURCE_EVIDENCE_CAPTURE_OWNER_WORKBENCH.md"
+      - ".github/workflows/kenji-verified-identity-readiness.yml"
+  workflow_dispatch:
+    inputs:
+      scan_limit:
+        description: Maximum recent canonical clients to inspect without emitting identifiers
+        required: true
+        default: "24"
+        type: choice
+        options:
+          - "8"
+          - "16"
+          - "24"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kenji-verified-identity-readiness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract-and-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORIGIN: https://mmdbkk.com
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Immigrate Worker dependencies
+        run: npm ci --prefix immigrate-worker
+
+      - name: Typecheck readiness projection
+        working-directory: immigrate-worker
+        run: >-
+          ./node_modules/.bin/tsc --noEmit
+          --target es2022
+          --module esnext
+          --moduleResolution bundler
+          --lib es2022,dom
+          --types @cloudflare/workers-types
+          --skipLibCheck
+          src/customer-identity-alignment.ts
+
+      - name: Check browser and observation syntax
+        run: |
+          node --check immigrate-worker/public/a/member-intelligence.js
+          node --check scripts/kenji-verified-identity-readiness-observation.mjs
+
+      - name: Test read-only identity readiness contracts
+        run: |
+          node immigrate-worker/test/customer-identity-alignment.test.mjs
+          node immigrate-worker/test/customer-360-live-ingress.test.mjs
+          node --test immigrate-worker/test/member-intelligence-runtime.test.mjs
+          node --test scripts/kenji-verified-identity-readiness-observation.test.mjs
+          node --test scripts/member-intelligence-authenticated-observation.test.mjs
+
+      - name: Require main for production observation
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "Production observation is restricted to main." >&2
+          exit 1
+
+      - name: Run authenticated production readiness observation
+        if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+          OBSERVATION_SCAN_LIMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.scan_limit || '24' }}
+        run: node scripts/kenji-verified-identity-readiness-observation.mjs

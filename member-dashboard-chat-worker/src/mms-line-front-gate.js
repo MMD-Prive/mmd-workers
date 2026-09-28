@@ -7,7 +7,7 @@ const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/statu
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
-const DEFAULT_STATUS_RETURN_TARGET = "/my-mmd/";
+const DEFAULT_STATUS_RETURN_TARGET = "";
 const COUPON_STATUS_RETURN_TARGET = "/my-mmd/coupons";
 const RETURN_TARGET_BASE = "https://www.mmdbkk.com";
 const TMIB_ACT_PATH = /^\/tmib\/act-\d{3}$/;
@@ -53,16 +53,33 @@ function liffStateSearchParams(url) {
   return new URLSearchParams();
 }
 
-function tmibReturnTarget(value) {
+const RICH_MENU_RETURN_TARGETS = Object.freeze({
+  "/profiles": new Set(["rich_menu_guest_models", "rich_menu_public_models"]),
+  "/booking": new Set(["rich_menu_guest_booking", "rich_menu_public_booking"]),
+  "/services/companion": new Set(["rich_menu_guest_services"]),
+  "/tmib": new Set(["rich_menu_guest_stories"]),
+  "/member/private": new Set(["rich_menu_model_cards", "rich_menu_prive_update"]),
+  "/find": new Set(["rich_menu_private_booking"]),
+});
+
+function safeStatusReturnTarget(value) {
   const raw = String(value || "").trim();
-  if (!raw || raw.length > 600 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) return "";
+  if (!raw || raw.length > 9000 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) return "";
 
   let target;
   try { target = new URL(raw, RETURN_TARGET_BASE); } catch { return ""; }
   if (target.origin !== RETURN_TARGET_BASE) return "";
 
   const path = target.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
-  if (path === "/tmib" || path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
+  if (path === "/sigil/confirm/job-confirmation" || path === "/confirm/job-confirmation") {
+    const keys = [...target.searchParams.keys()];
+    const tokenValue = String(target.searchParams.get("t") || "").trim();
+    if (keys.length !== 1 || keys[0] !== "t" || !tokenValue || tokenValue.length > 8000 || !/^[A-Za-z0-9._~-]+$/.test(tokenValue)) return "";
+    return `${path}?t=${encodeURIComponent(tokenValue)}`;
+  }
+  if (raw.length > 600) return "";
+  if (path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
+    if ([...target.searchParams.keys()].length) return "";
     return `${path}${target.hash || ""}`;
   }
 
@@ -74,7 +91,20 @@ function tmibReturnTarget(value) {
     return `/pay/tmib?episode=${encodeURIComponent(episode)}${target.hash || ""}`;
   }
 
-  return "";
+  const allowedEntries = RICH_MENU_RETURN_TARGETS[path];
+  if (!allowedEntries) return "";
+  const keys = [...target.searchParams.keys()];
+  if (keys.some((key) => key !== "source" && key !== "entry_route")) return "";
+  if (target.searchParams.get("source") !== "line") return "";
+  const entryRoute = String(target.searchParams.get("entry_route") || "").trim();
+  if (!allowedEntries.has(entryRoute)) return "";
+
+  const allowedHash = path === "/member/private"
+    ? new Set(["", "#detail-model", "#access"])
+    : new Set([""]);
+  if (!allowedHash.has(target.hash || "")) return "";
+
+  return `${path}?${target.searchParams.toString()}${target.hash || ""}`;
 }
 
 export function statusReturnTarget(request) {
@@ -82,8 +112,9 @@ export function statusReturnTarget(request) {
   try { url = new URL(request.url); } catch { return DEFAULT_STATUS_RETURN_TARGET; }
   const stateParams = liffStateSearchParams(url);
   const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim();
+  if (!returnTo) return DEFAULT_STATUS_RETURN_TARGET;
   if (returnTo.toLowerCase() === "coupon") return COUPON_STATUS_RETURN_TARGET;
-  return tmibReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
+  return safeStatusReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
 }
 
 export function isStatusLiffShellRequest(request) {
@@ -127,11 +158,13 @@ function safeNonce(html) {
 
 export function stabilizeStatusShell(html, request) {
   if (!isStatusLiffShellRequest(request)) return String(html || "");
-  const targetJson = JSON.stringify(statusReturnTarget(request));
+  const target = statusReturnTarget(request);
+  if (!target) return String(html || "");
+  const targetJson = JSON.stringify(target);
   let output = String(html || "");
   output = output.replace(
     /(^|\n)[ \t]*const existingProfile = await readProfile\(\);[ \t]*\n[ \t]*if \(existingProfile\) return;/m,
-    "$1      // Status is an auth-only bridge. Do not rotate the new session with profile/wallet reads here.\n      const existingProfile = null;",
+    "$1      // Explicit return_to uses LIFF as an auth-only bridge. Direct status stays in the LIFF dashboard.\n      const existingProfile = null;",
   );
   output = output.replace(
     /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,

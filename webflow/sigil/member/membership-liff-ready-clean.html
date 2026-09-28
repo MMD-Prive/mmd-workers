@@ -1,0 +1,90 @@
+<!--
+MMD SIGIL Member Membership - LIFF-ready clean Webflow snippet
+Route owner: /sigil/member/membership
+Rich Menu Button 2 canonical entry: https://mmdbkk.com/sigil/member/membership
+
+Company knowledge locks used:
+- Rich Menu is navigation only, not membership truth.
+- LIFF identity alone must not activate membership, payment, points, package, access, entitlements, or dashboard.
+- Existing backend bridge is POST /member/api/liff/identify.
+- Dashboard remains locked until trusted first real job/session evidence exists.
+- Payment route should be membership payment, not auto-renewal.
+
+Install in Webflow page /sigil/member/membership.
+Set data-liff-id to the real LIFF ID from LINE Developers before production LIFF smoke.
+-->
+
+<section
+  id="mmd-liff-membership"
+  class="mmd-liff-membership"
+  data-liff-enabled="true"
+  data-liff-id=""
+  data-identify-path="/member/api/liff/identify"
+  data-payment-url="/sigil/pay/membership"
+  data-dashboard-url="/sigil/member/dashboard"
+  data-membership-url="/sigil/member/membership"
+  data-source="sigil_member_membership"
+  data-default-entry-route="public_membership"
+>
+  <div class="mlm-bg" aria-hidden="true"><span></span><i></i></div>
+
+  <header class="mlm-header">
+    <a class="mlm-brand" href="/" aria-label="MMD Privé Home"><b>MMD</b><span>SIGIL MEMBER</span></a>
+    <a class="mlm-pill" href="/sigil/member/dashboard">เช็กสมาชิก</a>
+  </header>
+
+  <main class="mlm-main">
+    <section class="mlm-hero">
+      <div class="mlm-copy">
+        <p class="mlm-kicker">KENJI / LIFF MEMBERSHIP ENTRY</p>
+        <h1>เริ่มสมาชิก MMD ผ่าน LINE</h1>
+        <p class="mlm-lead">เลือกแพ็กเกจสมาชิก ระบบจะเชื่อม LINE profile เมื่อเปิดผ่าน LINE โดยไม่เปิดสถานะสมาชิกอัตโนมัติจนกว่าการชำระเงินและการตรวจสอบจะสำเร็จ</p>
+
+        <div class="mlm-liff-state" data-liff-status-card data-state="pending">
+          <span class="mlm-dot"></span>
+          <div>
+            <strong data-liff-status-title>กำลังตรวจสอบ LINE</strong>
+            <small data-liff-status-text>Kenji กำลังเตรียมการเชื่อมต่อแบบปลอดภัย</small>
+          </div>
+        </div>
+        <p class="mlm-note" data-liff-note hidden>เปิดผ่าน LINE เพื่อเชื่อมข้อมูลสมาชิกอัตโนมัติ แต่ยังสามารถเลือกแพ็กเกจต่อได้ตามปกติ</p>
+      </div>
+
+      <aside class="mlm-kenji">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a3895db88d86c8f3ba6ffa1_08%20Kenji%20membership.webp" alt="Kenji Membership Guide" loading="lazy">
+        <div><span>KENJI</span><strong>Membership Guide</strong><small>ช่วยพาคุณเข้า flow สมาชิกโดยยังคงชั้นตรวจสอบไว้ครบ</small></div>
+      </aside>
+    </section>
+
+    <section class="mlm-section">
+      <div class="mlm-section-head"><p>SELECT MEMBERSHIP</p><h2>เลือกทางเข้าที่เหมาะกับคุณ</h2></div>
+      <div class="mlm-packages">
+        <article class="mlm-card" data-package-card data-code="trial_guest_pass" data-title="7 Days Guest Pass" data-amount="1499" data-intent="pay_membership">
+          <span>ทดลองเข้าใช้งาน</span><h3>7 Days Guest Pass</h3><p>เหมาะกับคนที่อยากลองเข้ามารู้จักระบบก่อนสมัครรายปี</p><b>฿1,499</b><ul><li>อายุ 7 วัน</li><li>ใช้เป็นทางเข้าทดลอง</li><li>ต้องตรวจสอบหลังชำระเงิน</li></ul><button type="button" data-package-select>เลือก Guest Pass</button>
+        </article>
+        <article class="mlm-card is-featured" data-package-card data-code="standard_package" data-title="Standard Package" data-amount="1199" data-intent="pay_membership">
+          <span>เริ่มสมาชิกหลัก</span><h3>Standard Package</h3><p>ทางเข้าพื้นฐานสำหรับสมาชิกที่ต้องการเริ่มใช้งานอย่างเป็นระบบ</p><b>฿1,199</b><ul><li>อายุ 365 วัน</li><li>Standard model set</li><li>เชื่อมต่อ Dashboard หลังผ่านเงื่อนไขจริง</li></ul><button type="button" data-package-select>เลือก Standard</button>
+        </article>
+        <article class="mlm-card" data-package-card data-code="premium_package" data-title="Premium Package" data-amount="2999" data-intent="pay_membership">
+          <span>ตัวเลือกมากขึ้น</span><h3>Premium Package</h3><p>เหมาะกับสมาชิกที่ต้องการขอบเขตการเข้าถึงกว้างขึ้น</p><b>฿2,999</b><ul><li>อายุ 365 วัน</li><li>Standard + Premium model set</li><li>ต้องตรวจสอบหลังชำระเงิน</li></ul><button type="button" data-package-select>เลือก Premium</button>
+        </article>
+      </div>
+    </section>
+
+    <section class="mlm-selected" data-selected-panel hidden>
+      <div><p class="mlm-kicker">SELECTED MEMBERSHIP</p><h2 data-selected-title>—</h2><p data-selected-copy>ระบบจะเชื่อม LIFF identity หากพร้อม แล้วพาคุณไปหน้าชำระสมาชิก</p></div>
+      <div class="mlm-actions"><button type="button" data-continue-payment>ไปต่อขั้นตอนสมาชิก</button><button type="button" class="mlm-ghost" data-clear-selection>เลือกใหม่</button></div>
+      <p class="mlm-bind-message" data-bind-message hidden></p>
+    </section>
+  </main>
+</section>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+<style>
+#mmd-liff-membership,#mmd-liff-membership *{box-sizing:border-box}#mmd-liff-membership{--bg:#080705;--panel:rgba(255,250,240,.075);--panel2:rgba(255,250,240,.12);--ivory:#fff7e8;--muted:rgba(255,247,232,.68);--soft:rgba(255,247,232,.48);--gold:#d7b46a;--gold2:#f0d596;--line:rgba(255,247,232,.16);position:relative;overflow:hidden;min-height:100vh;color:var(--ivory);background:radial-gradient(circle at 18% 0%,rgba(215,180,106,.18),transparent 34%),linear-gradient(145deg,#090806,#14110c 48%,#070604);font-family:Inter,"Noto Sans Thai",system-ui,sans-serif}#mmd-liff-membership a{color:inherit;text-decoration:none}.mlm-bg{position:absolute;inset:0;pointer-events:none}.mlm-bg span,.mlm-bg i{position:absolute;border-radius:999px;filter:blur(70px);opacity:.24}.mlm-bg span{width:42vw;height:42vw;top:-14vw;left:-16vw;background:rgba(215,180,106,.48)}.mlm-bg i{width:38vw;height:38vw;right:-18vw;top:18vw;background:rgba(255,247,232,.18)}.mlm-header,.mlm-main{position:relative;z-index:2;width:min(1180px,calc(100% - 32px));margin:0 auto}.mlm-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:24px 0 8px}.mlm-brand{display:inline-flex;align-items:center;gap:12px;letter-spacing:.14em}.mlm-brand b{display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--line);border-radius:14px;color:var(--gold2);background:rgba(255,250,240,.07)}.mlm-brand span{font-size:11px;font-weight:800;color:var(--muted)}.mlm-pill{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 14px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:rgba(255,250,240,.06);font-size:13px}.mlm-main{padding:36px 0 80px}.mlm-hero{display:grid;gap:26px}.mlm-kicker,.mlm-section-head p{margin:0 0 12px;color:var(--gold2);font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.mlm-copy h1{max-width:720px;margin:0;font-size:clamp(42px,12vw,88px);line-height:1.05;letter-spacing:-.04em}.mlm-lead{max-width:640px;margin:18px 0 0;color:var(--muted);font-size:16px;line-height:1.75}.mlm-liff-state{display:flex;gap:12px;align-items:flex-start;max-width:640px;margin-top:22px;padding:14px;border:1px solid var(--line);border-radius:22px;background:rgba(255,250,240,.07);box-shadow:0 28px 90px rgba(0,0,0,.42)}.mlm-dot{width:11px;height:11px;margin-top:5px;border-radius:999px;background:var(--gold);box-shadow:0 0 0 6px rgba(215,180,106,.12)}.mlm-liff-state[data-state=connected] .mlm-dot{background:#9de6be}.mlm-liff-state[data-state=error] .mlm-dot{background:#ffb4a8}.mlm-liff-state strong{display:block;font-size:14px}.mlm-liff-state small,.mlm-note{display:block;color:var(--muted);font-size:13px;line-height:1.5}.mlm-note{max-width:640px;margin-top:14px;padding:12px 14px;border:1px solid rgba(215,180,106,.24);border-radius:18px;background:rgba(215,180,106,.08)}.mlm-kenji{display:grid;grid-template-columns:104px 1fr;gap:16px;align-items:center;padding:16px;border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,rgba(255,250,240,.1),rgba(255,250,240,.04));box-shadow:0 28px 90px rgba(0,0,0,.42)}.mlm-kenji img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:22px}.mlm-kenji span{color:var(--gold2);font-size:11px;font-weight:800;letter-spacing:.16em}.mlm-kenji strong{display:block;margin-top:6px;font-size:20px}.mlm-kenji small{display:block;margin-top:8px;color:var(--muted);line-height:1.5}.mlm-section,.mlm-selected{margin-top:32px;padding:18px;border:1px solid var(--line);border-radius:30px;background:rgba(255,250,240,.055);box-shadow:0 28px 90px rgba(0,0,0,.42)}.mlm-section-head h2,.mlm-selected h2{margin:0;font-size:clamp(30px,8vw,54px);line-height:1.05;letter-spacing:-.04em}.mlm-packages{display:grid;gap:14px;margin-top:18px}.mlm-card{display:flex;flex-direction:column;padding:18px;border:1px solid var(--line);border-radius:26px;background:rgba(8,7,5,.38)}.mlm-card.is-featured{border-color:rgba(215,180,106,.46);background:radial-gradient(circle at top right,rgba(215,180,106,.16),transparent 40%),rgba(8,7,5,.44)}.mlm-card span{color:var(--muted);font-size:12px}.mlm-card h3{margin:7px 0 0;font-size:22px}.mlm-card p{color:var(--muted);line-height:1.65}.mlm-card b{margin-top:6px;color:var(--gold2);font-size:32px}.mlm-card ul{display:grid;gap:8px;margin:14px 0 20px;padding-left:18px;color:var(--soft);font-size:14px}.mlm-card button,.mlm-actions button{width:100%;min-height:48px;border:0;border-radius:999px;padding:0 18px;font:inherit;font-size:14px;font-weight:800;cursor:pointer;color:#161007;background:linear-gradient(135deg,#f0d596,#c59b45)}.mlm-card button{margin-top:auto}.mlm-actions{display:grid;gap:10px;margin-top:18px}.mlm-actions .mlm-ghost{color:var(--ivory);border:1px solid var(--line);background:rgba(255,250,240,.08)}.mlm-bind-message{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:18px;background:rgba(255,250,240,.06);color:var(--muted);font-size:13px}@media(min-width:760px){.mlm-hero{grid-template-columns:minmax(0,1fr) 340px}.mlm-packages{grid-template-columns:repeat(3,minmax(0,1fr))}.mlm-selected{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:24px;align-items:center}}@media(min-width:1024px){.mlm-hero{grid-template-columns:minmax(0,1fr) 380px;gap:42px}.mlm-kenji{grid-template-columns:1fr}.mlm-kenji img{aspect-ratio:4/5}}
+</style>
+
+<script>
+(function(){"use strict";var root=document.getElementById("mmd-liff-membership");if(!root)return;var cfg={liffEnabled:root.dataset.liffEnabled==="true",liffId:(root.dataset.liffId||"").trim(),identifyPath:root.dataset.identifyPath||"/member/api/liff/identify",paymentUrl:root.dataset.paymentUrl||"/sigil/pay/membership",source:root.dataset.source||"sigil_member_membership",defaultEntryRoute:root.dataset.defaultEntryRoute||"public_membership"};var state={isInClient:false,profile:null,selected:null,busy:false};var $=function(s){return root.querySelector(s)};var $$=function(s){return Array.prototype.slice.call(root.querySelectorAll(s))};var ui={card:$("[data-liff-status-card]"),title:$("[data-liff-status-title]"),text:$("[data-liff-status-text]"),note:$("[data-liff-note]"),cards:$$("[data-package-card]"),panel:$("[data-selected-panel]"),selectedTitle:$("[data-selected-title]"),selectedCopy:$("[data-selected-copy]"),continueBtn:$("[data-continue-payment]"),clearBtn:$("[data-clear-selection]"),msg:$("[data-bind-message]")};function clean(v){return v==null?"":String(v).trim()}function setStatus(k,t,x){if(ui.card)ui.card.dataset.state=k;if(ui.title)ui.title.textContent=t;if(ui.text)ui.text.textContent=x}function note(x){if(!ui.note)return;ui.note.textContent=x;ui.note.hidden=false}function msg(x){if(!ui.msg)return;ui.msg.textContent=x;ui.msg.hidden=false}function hideMsg(){if(ui.msg){ui.msg.hidden=true;ui.msg.textContent=""}}function safeParams(){var p=new URLSearchParams(location.search),o={};["t","code","promo","source","entry_route","liff_state"].forEach(function(k){var v=p.get(k);if(v)o[k]=v});return o}function appendSafe(url){var u=new URL(url,location.origin),p=safeParams();Object.keys(p).forEach(function(k){u.searchParams.set(k,p[k])});return u}function pkg(card){return{code:clean(card.dataset.code),title:clean(card.dataset.title),amount:clean(card.dataset.amount),intent:clean(card.dataset.intent)||"pay_membership"}}function select(card){var p=pkg(card);if(!p.code||!p.amount)return;state.selected=p;ui.cards.forEach(function(c){c.classList.toggle("is-selected",c===card)});if(ui.selectedTitle)ui.selectedTitle.textContent=p.title;if(ui.selectedCopy)ui.selectedCopy.textContent="ระบบจะเชื่อม LINE identity แบบปลอดภัย แล้วพาไปขั้นตอนชำระสมาชิกสำหรับ "+p.title;if(ui.panel)ui.panel.hidden=false;hideMsg();try{localStorage.setItem("mmd_liff_last_package",p.code)}catch(e){}}function paymentUrl(p){var u=appendSafe(cfg.paymentUrl);u.searchParams.set("package",p.code);u.searchParams.set("amount",p.amount);u.searchParams.set("intent",p.intent);u.searchParams.set("source",cfg.source);return u.toString()}async function identify(entryRoute,p){if(!state.profile||!state.profile.userId)return{ok:false,skipped:true,reason:"missing_line_identity"};var payload={line_user_id:state.profile.userId,line_display_name:state.profile.displayName||"",line_picture_url:state.profile.pictureUrl||"",entry_route:entryRoute||cfg.defaultEntryRoute,source:cfg.source,selected_package:p?p.code:"",selected_amount:p?p.amount:"",page_url:location.href};Object.assign(payload,safeParams());var res=await fetch(cfg.identifyPath,{method:"POST",headers:{"content-type":"application/json"},credentials:"omit",body:JSON.stringify(payload)});var data={};try{data=await res.json()}catch(e){}return{ok:res.ok&&data&&data.ok===true,status:res.status,data:data}}async function initLiff(){if(!cfg.liffEnabled){setStatus("web_fallback","เปิดใช้งานแบบเว็บ","เลือกแพ็กเกจได้ตามปกติ");return}if(!cfg.liffId){setStatus("web_fallback","ยังไม่ได้ใส่ LIFF ID","หน้านี้พร้อมรองรับ LIFF แล้ว แต่ต้องใส่ LIFF ID จริงก่อนใช้งานเต็มระบบ");note("ตอนนี้ยังเลือกแพ็กเกจได้ ระบบจะไม่บังคับเชื่อม LINE");return}if(!window.liff||typeof window.liff.init!=="function"){setStatus("web_fallback","LIFF SDK ยังไม่พร้อม","ยังเลือกแพ็กเกจต่อได้ตามปกติ");note("เปิดผ่าน LINE เพื่อเชื่อมข้อมูลสมาชิกอัตโนมัติ");return}try{await window.liff.init({liffId:cfg.liffId});state.isInClient=typeof window.liff.isInClient==="function"&&window.liff.isInClient();if(!state.isInClient){setStatus("web_fallback","เปิดอยู่นอก LINE","เลือกแพ็กเกจได้ หากต้องการเชื่อมอัตโนมัติให้เปิดผ่าน LINE");note("เปิดผ่าน LINE เพื่อเชื่อมข้อมูลสมาชิกอัตโนมัติ");return}var profile=await window.liff.getProfile();state.profile={userId:clean(profile.userId),displayName:clean(profile.displayName),pictureUrl:clean(profile.pictureUrl)};if(state.profile.userId){setStatus("connected","เชื่อม LINE แล้ว","พร้อมบันทึก identity intent แบบ staging เท่านั้น");await identify(cfg.defaultEntryRoute,null).catch(function(){})}else{setStatus("web_fallback","ไม่พบ LINE user ID","ยังไปต่อได้โดยไม่บล็อก")}}catch(e){setStatus("error","เชื่อม LINE ไม่สำเร็จ","ยังเลือกแพ็กเกจและไปต่อได้");note("เชื่อม LINE ไม่สำเร็จ แต่สามารถไปต่อได้ตามปกติ")}}async function go(){if(!state.selected||state.busy)return;state.busy=true;if(ui.continueBtn){ui.continueBtn.disabled=true;ui.continueBtn.textContent="กำลังเตรียมขั้นตอนสมาชิก"}try{var r=await identify("pay_membership",state.selected);if(r.ok)msg("เชื่อม LINE สำเร็จ กำลังพาไปหน้าชำระสมาชิก");else if(r.skipped)msg("ยังไม่ได้เชื่อม LINE แต่สามารถไปต่อได้");else msg("เชื่อม LINE ไม่สำเร็จ แต่สามารถไปต่อได้")}catch(e){msg("เชื่อม LINE ไม่สำเร็จ แต่สามารถไปต่อได้")}setTimeout(function(){location.href=paymentUrl(state.selected)},450)}function bind(){ui.cards.forEach(function(card){card.addEventListener("click",function(e){if(e.target&&e.target.closest("button"))e.preventDefault();select(card)})});if(ui.continueBtn)ui.continueBtn.addEventListener("click",go);if(ui.clearBtn)ui.clearBtn.addEventListener("click",function(){state.selected=null;if(ui.panel)ui.panel.hidden=true;hideMsg();ui.cards.forEach(function(c){c.classList.remove("is-selected")})})}bind();initLiff();})();
+</script>

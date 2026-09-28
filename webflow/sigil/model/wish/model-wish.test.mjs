@@ -31,7 +31,7 @@ function setup({ handle, liff } = {}) {
   const root = new Element(), nodes = {}, requests = [], storage = new Map();
   const names = ['wish-form', 'birthday-wish', 'mmd-message', 'private-per', 'telegram-consent',
     'past-clients-consent', 'media-input', 'media-grid', 'media-count', 'media-note', 'error',
-    'submit', 'submit-label', 'session-chip', 'auth-note', 'success', 'success-scope', 'written-count'];
+    'submit', 'submit-label', 'session-chip', 'auth-note', 'auth-retry', 'success', 'success-scope', 'written-count'];
   for (const name of names) root.children['[data-' + name + ']'] = nodes[name] = new Element();
   for (const key of ['birthday', 'mmd', 'private']) root.children['[data-count="' + key + '"]'] = new Element();
   const questions = ['birthday-wish', 'mmd-message', 'private-per'].map(name => {
@@ -102,18 +102,42 @@ test('a private note alone is a valid submission with no media or sharing requir
   assert.equal(f.nodes.success.hidden, false);
 });
 
-test('auth-in-progress blocks duplicate submission and initialization; login keeps the full return URL', async () => {
+test('opening the page automatically starts LINE authentication and preserves the full return URL', async () => {
   let release, redirect;
   const pending = new Promise(resolve => { release = resolve; });
-  const f = setup({ handle: () => response({}, 401),
-    liff: { init: () => pending, isLoggedIn: () => false, login: args => { redirect = args.redirectUri; } } });
-  await flush(); runInNewContext(source, f.context);
-  assert.equal(f.requests.length, 1);
-  f.nodes['birthday-wish'].value = 'Draft retained'; f.nodes['wish-form'].fire('submit');
-  f.nodes['wish-form'].fire('submit'); assert.equal(f.nodes.submit.disabled, true);
-  release(); await flush();
-  assert.equal(redirect, f.context.location.href); assert.equal(f.requests.length, 1);
-  assert.equal(f.nodes.submit.disabled, false); assert.equal(f.storage.size, 1);
+  const f = setup({
+    handle: url => url.includes('profile') ? response({}, 401) : response({ ok: true }),
+    liff: {
+      init: () => pending,
+      isLoggedIn: () => false,
+      login: args => { redirect = args.redirectUri; },
+    },
+  });
+  await flush();
+  assert.equal(f.requests.filter(r => r.url.includes('profile')).length, 1);
+  assert.equal(f.nodes.submit.disabled, true);
+  release();
+  await flush();
+  assert.equal(redirect, f.context.location.href);
+  assert.equal(f.nodes.submit.disabled, false);
+  assert.match(f.nodes['session-chip'].textContent, /ยืนยัน/);
+});
+
+test('an existing manual-review Wish opens directly in the calm pending state after authentication', async () => {
+  const f = setup({
+    handle: (url, options = {}) => {
+      if (url.includes('profile')) return response({ display_name: 'Fixture Model' });
+      if (options.method === 'GET' && url.includes('year6_direct_wish')) {
+        return response({ ok: true, submitted: true, state: 'manual_review', display_status: { label: 'รอยืนยัน', tone: 'yellow' } });
+      }
+      return response({ ok: true, state: 'manual_review' });
+    },
+  });
+  await flush();
+  assert.equal(f.wrap.hidden, true);
+  assert.equal(f.nodes.success.hidden, false);
+  assert.match(f.nodes.success.children?.textContent || f.nodes.success.textContent || '', /^$/);
+  assert.equal(f.requests.filter(r => r.method === 'POST').length, 0);
 });
 
 test('an unconfirmed or malformed submit response keeps the draft and visible form for retry', async () => {

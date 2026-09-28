@@ -52,6 +52,14 @@ export function normalizeModelWishTier(value = "") {
   return "unknown";
 }
 
+export function modelDirectWishDisplayState(value = "") {
+  const state = clean(value).toLowerCase();
+  if (state === "manual_review") return { key: "pending_review", label: "รอยืนยัน", tone: "yellow" };
+  if (state === "completed") return { key: "approved", label: "ยืนยันแล้ว", tone: "green" };
+  if (state === "revoked") return { key: "not_approved", label: "ยังไม่เผยแพร่", tone: "neutral" };
+  return { key: "not_submitted", label: "ยังไม่ได้ส่ง", tone: "neutral" };
+}
+
 export function modelWishTelegramTargets(tier = "", env = {}) {
   const normalized = normalizeModelWishTier(tier);
   const standardId = clean(env.TELEGRAM_STANDARD_GROUP_ID || "-1002073919780");
@@ -74,32 +82,50 @@ export async function handleModelDirectWishRequest(request, env = {}) {
     if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
     return new Response(null, { status: 204, headers: corsHeaders(request, env) });
   }
-  if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env, { Allow: "POST, OPTIONS" });
+  if (!["GET", "POST"].includes(method)) {
+    return json({ ok: false, error: "method_not_allowed" }, 405, request, env, { Allow: "GET, POST, OPTIONS" });
+  }
   if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
 
   const auth = await requireModelSession(request, env);
   if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
   if (!storageReady(env)) return json({ ok: false, error: "model_wish_storage_not_configured" }, 503, request, env);
 
+  const modelRecordId = clean(auth.payload.model_record_id);
+  const key = `modeldirectwish:${modelRecordId}`;
+  const existing = await findWish(env, key);
+  if (!existing.ok) return json({ ok: false, error: existing.error }, existing.status, request, env);
+
+  if (method === "GET") {
+    const fields = existing.record?.fields || {};
+    const state = existing.record ? (clean(fields.wish_status) || "manual_review") : "";
+    return json({
+      ok: true,
+      submitted: Boolean(existing.record),
+      state: state || "not_submitted",
+      review_required: state === "manual_review",
+      display_status: modelDirectWishDisplayState(state),
+      submitted_at: existing.record ? clean(fields.submitted_at) || null : null,
+    }, 200, request, env);
+  }
+
   const parsed = await readInput(request);
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, parsed.status, request, env);
   const input = normalizeModelDirectWishInput(parsed.body);
   if (!input.ok) return json({ ok: false, error: input.error }, input.status, request, env);
 
-  const modelRecordId = clean(auth.payload.model_record_id);
   const model = await readModel(env, modelRecordId);
   if (!model.ok) return json({ ok: false, error: model.error }, model.status, request, env);
 
-  const key = `modeldirectwish:${modelRecordId}`;
-  const existing = await findWish(env, key);
-  if (!existing.ok) return json({ ok: false, error: existing.error }, existing.status, request, env);
   if (existing.record) {
+    const state = clean(existing.record.fields?.wish_status) || "manual_review";
     return json({
       ok: true,
-      state: clean(existing.record.fields?.wish_status) || "manual_review",
+      state,
       submitted: true,
       idempotent: true,
-      review_required: true,
+      review_required: state === "manual_review",
+      display_status: modelDirectWishDisplayState(state),
       wish_id: clean(existing.record.fields?.wish_id) || null,
     }, 200, request, env);
   }
@@ -155,6 +181,7 @@ export async function handleModelDirectWishRequest(request, env = {}) {
     submitted: true,
     idempotent: false,
     review_required: true,
+    display_status: modelDirectWishDisplayState("manual_review"),
     wish_id: clean(created.record?.fields?.wish_id) || fields.wish_id,
     delivery: { telegram: input.telegramConsent, past_clients: input.pastClientsConsent },
   }, 200, request, env);
@@ -504,7 +531,7 @@ function isAllowedOrigin(request, env) {
 function corsHeaders(request, env) {
   const origin = clean(request.headers.get("origin"));
   const headers = new Headers({
-    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-headers": "Content-Type",
     "access-control-allow-credentials": "true",
     "cache-control": "no-store, private",

@@ -4,7 +4,7 @@
 2. `/tmib/stories` and `/tmib/act-001` render public teaser content without protected frame URLs.
 3. Active verified MMD membership opens Long Story and receives media map for frames 04-20.
 4. Guest/trial/expired/blocked/revoked state does not open Long Story.
-5. Single Episode purchase creates canonical 299 THB `tmib_act_001` intent and redirects only to signed `/sigil/pay?t=...`.
+5. Single Episode purchase creates canonical 299 THB `tmib_act_001` intent and redirects only to signed `/pay/checkout?t=...`.
 6. Pending proof does not grant access; Paid + Verified/Approved grants it.
 7. Protected media URL rejects missing session, expired token and invalid signature.
 8. Protected frame response is same-origin, private/no-store and noindex.

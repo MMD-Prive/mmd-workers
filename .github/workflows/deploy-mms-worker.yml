@@ -1,4 +1,5 @@
 name: Deploy mms-worker
+# Phase 0 analytics runtime deploy retry 2026-09-22
 
 on:
   workflow_dispatch:
@@ -6,11 +7,12 @@ on:
     branches:
       - main
     paths:
+      - "shared/posthog-authority-events.mjs"
       - "mms-worker/**"
       - ".github/workflows/deploy-mms-worker.yml"
 
 concurrency:
-  group: deploy-mms-worker-production
+  group: telegram-router-secret-rotation-production
   cancel-in-progress: false
 
 permissions:
@@ -143,6 +145,27 @@ jobs:
           ensure_secret MMS_THERAPIST_IDENTITY_PEPPER
           printf 'configured=true\n' >> "$GITHUB_OUTPUT"
 
+      - name: Rotate MMS-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'MMS_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          router_secret_log="$RUNNER_TEMP/telegram-worker-mms-secret-version.log"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_MMS_TO_TELEGRAM \
+            --config telegram-worker/wrangler.toml \
+            --tag "router-mms-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
+            --message "Rotate AUTH_SERVICE_MMS_TO_TELEGRAM from ${GITHUB_SHA}" \
+            2>&1 | tee "$router_secret_log"
+          router_version_id="$(sed -n -e 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' -e 's/.*Created version[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
+          if [ -z "$router_version_id" ]; then
+            echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_MMS_TO_TELEGRAM" >&2
+            cat "$router_secret_log" >&2
+            exit 1
+          fi
+          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config telegram-worker/wrangler.toml
+
       - name: Prepare optional runtime secrets
         id: runtime-secrets
         shell: bash
@@ -151,15 +174,15 @@ jobs:
           const fs = require("node:fs");
           const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const token = clean(process.env.AIRTABLE_API_TOKEN);
-          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
-          const telegramChatId = clean(process.env.MMS_TELEGRAM_CHAT_ID);
+          const routerSecret = clean(process.env.MMS_TELEGRAM_ROUTER_SECRET);
+          const lineChannelSecret = clean(process.env.LINE_CHANNEL_SECRET);
+          const lineChannelAccessToken = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN);
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
           const lines = [];
           if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
-          if (telegramToken && telegramChatId) {
-            console.log(`::add-mask::${telegramToken}`);
-            console.log(`::add-mask::${telegramChatId}`);
-            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`, `MMS_TELEGRAM_CHAT_ID=${telegramChatId}`);
+          if (routerSecret) {
+            console.log(`::add-mask::${routerSecret}`);
+            lines.push(`AUTH_SERVICE_MMS_TO_TELEGRAM=${routerSecret}`);
           }
           if (lineChannelSecret && lineChannelAccessToken) {
             console.log(`::add-mask::${lineChannelSecret}`);
@@ -211,52 +234,93 @@ jobs:
 
       - name: Verify production health, catalog, and dispatch fail-closed boundary
         shell: bash
+        env:
+          MMS_LIVE_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          url="${{ steps.deploy.outputs.url }}"
-          for attempt in $(seq 1 12); do
-            code="$(curl --silent --show-error --output "$RUNNER_TEMP/mms-health.json" --write-out '%{http_code}' "$url/health" || true)"
-            if [ "$code" = "200" ]; then break; fi
-            sleep 5
-          done
-          test "${code:-}" = "200"
-          curl --fail --silent --show-error "$url/mms/api/catalog" > "$RUNNER_TEMP/mms-catalog.json"
-
-          dispatch_code="$(curl --silent --show-error --output "$RUNNER_TEMP/mms-dispatch-unauth.json" --write-out '%{http_code}' "$url/male-massage/therapists/api/app/offers" || true)"
-          test "$dispatch_code" = "401"
-
           node <<'NODE'
           const fs = require("node:fs");
-          const health = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-health.json", "utf8"));
-          const catalog = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-catalog.json", "utf8"));
-          const unauth = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-dispatch-unauth.json", "utf8"));
-          if (!health.ok || health.worker !== "mms-worker") throw new Error("mms-worker health identity failed");
-          if (!health.bindings?.coordinator || !health.bindings?.dispatch_coordinator || !health.bindings?.private_uploads) throw new Error("required production Durable Object/R2 bindings are missing");
-          if (!health.bindings?.dispatch_jobs || !health.bindings?.dispatch_offers) throw new Error("dispatch table bindings are missing");
-          if (!catalog.ok || catalog.data?.skills?.length !== 8) throw new Error("MMS skill catalog failed");
-          if (unauth?.ok !== false || unauth?.error?.code !== "THERAPIST_SESSION_REQUIRED") throw new Error(`dispatch fail-closed smoke failed: ${JSON.stringify(unauth)}`);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
-            "## mms-worker live",
-            "",
-            `- URL: ${{ steps.deploy.outputs.url }}`,
-            `- Version ID: ${process.env.MMS_WORKER_VERSION_ID}`,
-            `- Version tag: ${process.env.MMS_WORKER_VERSION_TAG}`,
-            `- Source SHA: ${process.env.GITHUB_SHA}`,
-            `- Traffic: 100%`,
-            `- Core Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
-            `- Dispatch Durable Object: ${health.bindings.dispatch_coordinator ? "ready" : "missing"}`,
-            `- MMS Jobs table: ${health.bindings.dispatch_jobs ? "ready" : "missing"}`,
-            `- MMS Job Offers table: ${health.bindings.dispatch_offers ? "ready" : "missing"}`,
-            `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
-            `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
-            `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
-            `- Therapist LINE Channel ID: 2011425652`,
-            `- Therapist LIFF ID: 2011425652-YqK1F6y8`,
-            `- Therapist auth secrets: ${{ steps.therapist-secrets.outputs.configured }}`,
-            `- Dispatch unauthenticated boundary: 401 THERAPIST_SESSION_REQUIRED`,
-            `- Skill catalog: ${catalog.data.skills.length}/8`,
-            "",
-          ].join("\n"));
+          (async () => {
+            const base = String(process.env.MMS_LIVE_URL || "").replace(/\/$/, "");
+            if (!/^https:\/\//.test(base)) throw new Error("MMS live URL is missing");
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            async function fetchJson(path, expectedStatuses, attempts = 1) {
+              let last = { status: 0, body: null, error: "" };
+              for (let attempt = 1; attempt <= attempts; attempt += 1) {
+                try {
+                  const response = await fetch(base + path, {
+                    headers: { "user-agent": "mmd-mms-deploy-verifier/1" },
+                  });
+                  const text = await response.text();
+                  let body = null;
+                  try { body = text ? JSON.parse(text) : null; } catch {}
+                  last = { status: response.status, body, error: body?.error?.code || "" };
+                  console.log(`MMS verify ${path} attempt ${attempt}: HTTP ${response.status}${last.error ? ` ${last.error}` : ""}`);
+                  if (expectedStatuses.includes(response.status)) return last;
+                } catch (error) {
+                  last = { status: 0, body: null, error: String(error?.message || "FETCH_FAILED").slice(0, 120) };
+                  console.log(`MMS verify ${path} attempt ${attempt}: fetch failed ${last.error}`);
+                }
+                if (attempt < attempts) await sleep(5000);
+              }
+              return last;
+            }
+
+            const healthResult = await fetchJson("/health", [200], 12);
+            if (healthResult.status !== 200) {
+              throw new Error(`mms-worker health unavailable after retries: HTTP ${healthResult.status} ${healthResult.error}`);
+            }
+
+            const catalogResult = await fetchJson("/mms/api/catalog", [200], 3);
+            if (catalogResult.status !== 200) {
+              throw new Error(`MMS catalog unavailable: HTTP ${catalogResult.status} ${catalogResult.error}`);
+            }
+
+            const dispatchResult = await fetchJson("/male-massage/therapists/api/app/offers", [401], 3);
+            if (dispatchResult.status !== 401) {
+              throw new Error(`dispatch fail-closed HTTP mismatch: ${dispatchResult.status} ${dispatchResult.error}`);
+            }
+
+            const health = healthResult.body || {};
+            const catalog = catalogResult.body || {};
+            const unauth = dispatchResult.body || {};
+
+            if (!health.ok || health.worker !== "mms-worker") throw new Error("mms-worker health identity failed");
+            if (!health.bindings?.coordinator || !health.bindings?.dispatch_coordinator || !health.bindings?.private_uploads) throw new Error("required production Durable Object/R2 bindings are missing");
+            if (!health.bindings?.dispatch_jobs || !health.bindings?.dispatch_offers) throw new Error("dispatch table bindings are missing");
+            if (!catalog.ok || catalog.data?.skills?.length !== 8) throw new Error("MMS skill catalog failed");
+            if (unauth?.ok !== false || unauth?.error?.code !== "THERAPIST_SESSION_REQUIRED") {
+              throw new Error(`dispatch fail-closed contract mismatch: ${String(unauth?.error?.code || "UNKNOWN").slice(0, 120)}`);
+            }
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+              "## mms-worker live",
+              "",
+              `- URL: ${base}`,
+              `- Version ID: ${process.env.MMS_WORKER_VERSION_ID}`,
+              `- Version tag: ${process.env.MMS_WORKER_VERSION_TAG}`,
+              `- Source SHA: ${process.env.GITHUB_SHA}`,
+              "- Traffic: 100%",
+              `- Core Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
+              `- Dispatch Durable Object: ${health.bindings.dispatch_coordinator ? "ready" : "missing"}`,
+              `- MMS Jobs table: ${health.bindings.dispatch_jobs ? "ready" : "missing"}`,
+              `- MMS Job Offers table: ${health.bindings.dispatch_offers ? "ready" : "missing"}`,
+              `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
+              `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
+              `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
+              "- Therapist LINE Channel ID: 2011425652",
+              "- Therapist LIFF ID: 2011425652-YqK1F6y8",
+              "- Dispatch unauthenticated boundary: 401 THERAPIST_SESSION_REQUIRED",
+              `- Skill catalog: ${catalog.data.skills.length}/8`,
+              "",
+            ].join("\n"));
+
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
           NODE
 
       - name: Record deployment receipt

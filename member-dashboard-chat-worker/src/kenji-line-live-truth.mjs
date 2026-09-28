@@ -34,6 +34,7 @@ function safeEnvelope(value) {
 function boundedTruth(payload = {}) {
   if (payload?.ok !== true || payload?.authority !== AUTHORITY || payload?.identity_status !== "resolved") return null;
   const membership = payload?.membership && typeof payload.membership === "object" ? payload.membership : {};
+  const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
   const points = payload?.points && typeof payload.points === "object" ? payload.points : {};
   const activePoints = Number(points.active_points);
   return {
@@ -50,6 +51,14 @@ function boundedTruth(payload = {}) {
       private_visibility_envelope: safeEnvelope(membership.private_visibility_envelope),
       member_blocked: membership.member_blocked === true,
     },
+    former_private_membership: former && ["expired", "grace"].includes(safeLifecycle(former.lifecycle)) &&
+      ["black_card", "svip", "vip", "private_premium", "private_standard"].includes(safeLevel(former.level))
+      ? {
+        level: safeLevel(former.level),
+        label: text(former.label).slice(0, 40),
+        lifecycle: safeLifecycle(former.lifecycle),
+        expire_at: /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text(former.expire_at)) ? text(former.expire_at) : "",
+      } : null,
     points: {
       status: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? "verified" : "unavailable",
       active_points: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? Math.floor(activePoints) : null,
@@ -118,6 +127,28 @@ function membershipStatusText(membership = {}) {
   return "ตอนนี้ยังไม่พบสิทธิ์สมาชิกที่ Active อยู่ครับ";
 }
 
+function privateEnvelopeLabel(value = "") {
+  const envelope = safeEnvelope(value);
+  if (envelope === "standard") return "Private Standard";
+  if (envelope === "premium") return "Private Premium";
+  if (envelope === "vip") return "VIP";
+  if (envelope === "svip") return "SVIP";
+  if (envelope === "black_card") return "Black Card";
+  return "";
+}
+
+function membershipRightsText(membership = {}) {
+  const lifecycle = safeLifecycle(membership.lifecycle);
+  if (!["active", "expiring_soon", "grace"].includes(lifecycle) || membership.member_blocked === true) return "";
+
+  const parts = [];
+  parts.push(membership.public_service_access === true ? "Public Service: ใช้ได้" : "Public Service: ยังไม่เปิด");
+  const privateLabel = privateEnvelopeLabel(membership.private_visibility_envelope);
+  parts.push(privateLabel ? `Private visibility: ${privateLabel}` : "Private visibility: ยังไม่เปิด");
+
+  return `\nสิทธิ์ที่ยืนยันได้ตอนนี้ — ${parts.join(" · ")}\nการเข้าถึง GWs/EMs และ Model รายบุคคลยังตรวจแยกตามสิทธิ์ของบัญชีและการอนุญาต ไม่ได้เปิดทั้งหมดจากระดับสมาชิกเพียงอย่างเดียวครับ`;
+}
+
 function knownIdentity(continuity = {}) {
   return Boolean(text(continuity.client_record_id || continuity?.matrix?.client_record_id));
 }
@@ -129,7 +160,7 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
   if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY) {
     if (value === "membership_status") {
       return {
-        text: membershipStatusText(liveTruth.membership || {}),
+        text: `${membershipStatusText(liveTruth.membership || {})}${membershipRightsText(liveTruth.membership || {})}`,
         reply_source: "live_truth",
         guard_blocked: false,
         guard_reason: "",

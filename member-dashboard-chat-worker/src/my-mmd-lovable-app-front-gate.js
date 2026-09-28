@@ -1,4 +1,7 @@
 import currentWorker from "./line-group-ingress-front-gate.js";
+import { isMyMmdOrdersPage, proxyMyMmdOrdersPage } from "./my-mmd-orders-webflow-page.js";
+import { isMyMmdPrivateTeaserViewerPath, myMmdPrivateTeaserViewerPage } from "./my-mmd-private-teaser-viewer.js";
+import { MY_MMD_BANGKOK_BOARD_URL, MY_MMD_BRAND_LOGO_URL } from "./my-mmd-visual-assets.js";
 export { KenjiModelIdempotency } from "./line-group-ingress-front-gate.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -8,7 +11,7 @@ const LEGACY_MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
 const MY_MMD_PRESENTATION_MODE = "lovable-full-app-20260905";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile"];
+const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile", "payments"];
 const HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp";
 const HYPE_LOADING_PATH = `${MY_MMD_ASSET_PREFIX}hype.webp`;
 const STATUS_HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif";
@@ -100,7 +103,196 @@ function presentationUrlForAsset(request) {
   return upstream;
 }
 
-function rewriteMyMmdHtml(html) {
+function publicExtensionSkin() {
+  return `<style id="mmd-public-extension-v1-style">
+#mmd-public-extension-v1{margin:14px 16px 0;padding:16px;border:1px solid rgba(188,154,92,.28);border-radius:18px;background:#fffaf1;color:#2b2723;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;box-sizing:border-box}
+#mmd-public-extension-v1[hidden]{display:none!important}
+#mmd-public-extension-v1 .mmd-ext-k{font-size:10px;font-weight:800;letter-spacing:.14em;color:#a67f3c}
+#mmd-public-extension-v1 h2{margin:6px 0 4px;font-size:16px;font-weight:700}
+#mmd-public-extension-v1 p{margin:5px 0;font-size:12px;line-height:1.55;color:#756a5d}
+#mmd-public-extension-v1 .mmd-ext-time{margin-top:10px;padding:10px 12px;border-radius:12px;background:#fff;font-size:13px}
+#mmd-public-extension-v1 .mmd-ext-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+#mmd-public-extension-v1 button,#mmd-public-extension-v1 a{min-height:42px;border-radius:12px;border:1px solid #d7c49f;padding:10px 12px;font:inherit;font-size:12px;font-weight:700;box-sizing:border-box}
+#mmd-public-extension-v1 button{background:#2b2723;color:#fff}
+#mmd-public-extension-v1 button:disabled{opacity:.5}
+#mmd-public-extension-v1 a{display:flex;align-items:center;justify-content:center;background:#c79d51;color:#fff;text-decoration:none}
+#mmd-public-extension-v1 textarea{grid-column:1/-1;min-height:72px;width:100%;resize:vertical;border:1px solid #ddd0ba;border-radius:12px;padding:10px 12px;background:#fff;color:#2b2723;font:inherit;font-size:12px;box-sizing:border-box}
+#mmd-public-extension-v1 .mmd-ext-wide{grid-column:1/-1}
+#mmd-public-extension-v1 .mmd-ext-error{color:#a33}
+</style>`;
+}
+
+function publicExtensionMarkup() {
+  return `<section id="mmd-public-extension-v1" hidden aria-live="polite">
+<div class="mmd-ext-k">ACTIVE SESSION · PUBLIC</div>
+<h2>ต่อเวลา / เปลี่ยนแผน</h2>
+<p>เวลาใหม่จะเป็นทางการเมื่อ Model อนุมัติ ชำระเงินได้รับการตรวจสอบ และ MMD ยืนยันแล้วเท่านั้น</p>
+<div class="mmd-ext-time" data-ext-summary></div>
+<div class="mmd-ext-actions" data-ext-actions></div>
+<p class="mmd-ext-error" data-ext-error hidden></p>
+</section>`;
+}
+
+function publicExtensionScript() {
+  return `<script id="mmd-public-extension-v1-script">
+(() => {
+  if (window.__MMD_PUBLIC_EXTENSION_V1__) return;
+  window.__MMD_PUBLIC_EXTENSION_V1__ = true;
+  const root = document.getElementById("mmd-public-extension-v1");
+  if (!root) return;
+  const summary = root.querySelector("[data-ext-summary]");
+  const actions = root.querySelector("[data-ext-actions]");
+  const error = root.querySelector("[data-ext-error]");
+  let timer = null;
+  const terminal = new Set(["model_declined","mmd_confirmed","review_required","cancelled"]);
+  const statusCopy = {
+    requested:"ส่งให้ Model แล้ว · รอการตอบรับ",
+    model_approved:"Model อนุมัติแล้ว · MMD กำลังเตรียมยอด",
+    payment_required:"พร้อมชำระเงินเพิ่ม",
+    payment_pending:"ได้รับรายการชำระแล้ว · รอตรวจสอบ",
+    payment_verified:"ชำระเงินตรวจสอบแล้ว · กำลังยืนยันเวลาใหม่",
+    mmd_confirmed:"MMD ยืนยันเวลาใหม่แล้ว",
+    review_required:"MMD กำลังตรวจรายละเอียดนี้",
+    model_declined:"Model ไม่สะดวกต่อเวลานี้",
+    cancelled:"คำขอนี้ถูกยกเลิก"
+  };
+  const fmtTime = value => {
+    const d = new Date(String(value || ""));
+    if (Number.isNaN(d.getTime())) return "—";
+    return new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Bangkok"}).format(d);
+  };
+  const fmtMoney = value => {
+    const n = Number(value);
+    return Number.isFinite(n) ? new Intl.NumberFormat("th-TH",{maximumFractionDigits:0}).format(n) + " บาท" : "";
+  };
+  const safePayUrl = value => {
+    try {
+      const u = new URL(String(value || ""));
+      const keys = [...u.searchParams.keys()];
+      return u.protocol === "https:" && u.hostname === "mmdbkk.com" && u.pathname === "/pay/checkout" &&
+        keys.length === 1 && keys[0] === "t" && !!u.searchParams.get("t") ? u.toString() : "";
+    } catch { return ""; }
+  };
+  const request = async (path, options = {}) => {
+    const res = await fetch(path,{credentials:"same-origin",cache:"no-store",headers:{accept:"application/json",...(options.body?{"content-type":"application/json"}:{})},...options});
+    const body = await res.json().catch(()=>null);
+    if (!res.ok || !body || body.ok !== true) throw new Error(String(body?.error?.code || "extension_unavailable"));
+    return body;
+  };
+  const setError = text => {
+    error.textContent = text || "";
+    error.hidden = !text;
+  };
+  const submit = async (sessionId, body, button) => {
+    setError("");
+    [...actions.querySelectorAll("button")].forEach(x=>x.disabled=true);
+    try {
+      await request("/api/member/app/session/extension/request",{method:"POST",body:JSON.stringify({session_id:sessionId,...body})});
+      await load();
+    } catch {
+      setError("ตอนนี้ยังส่งคำขอไม่ได้ กรุณาลองอีกครั้ง");
+      [...actions.querySelectorAll("button")].forEach(x=>x.disabled=false);
+    }
+  };
+  const render = data => {
+    const session = data?.session || null;
+    const ext = data?.extension || null;
+    if (!session && !ext) {
+      root.hidden = true;
+      if (timer) clearTimeout(timer);
+      return;
+    }
+    root.hidden = false;
+    summary.replaceChildren();
+    actions.replaceChildren();
+    setError("");
+
+    const end = document.createElement("div");
+    end.innerHTML = "<strong>เวลาจบที่ MMD ยืนยัน</strong><br>" + fmtTime(ext?.confirmed_end_at || session?.official_end_at);
+    summary.append(end);
+
+    if (ext) {
+      const state = document.createElement("p");
+      state.textContent = statusCopy[ext.status] || "กำลังตรวจสอบ";
+      summary.append(state);
+      if (ext.requested_end_at && ext.status !== "mmd_confirmed") {
+        const requested = document.createElement("p");
+        requested.textContent = "เวลาที่ขอ: " + fmtTime(ext.requested_end_at) + (ext.customer_amount_thb ? " · " + fmtMoney(ext.customer_amount_thb) : "");
+        summary.append(requested);
+      }
+      const pay = safePayUrl(ext.customer_payment_url);
+      if (ext.status === "payment_required" && pay) {
+        const a = document.createElement("a");
+        a.href = pay;
+        a.className = "mmd-ext-wide";
+        a.textContent = "ชำระ Extension ↗";
+        actions.append(a);
+      }
+    }
+
+    if (data?.can_request === true && session?.session_id) {
+      for (const [label, minutes] of [["+30 นาที",30],["+1 ชั่วโมง",60],["+2 ชั่วโมง",120],["+3 ชั่วโมง",180]]) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = label;
+        b.addEventListener("click",()=>submit(session.session_id,{request_kind:"extend_time",requested_minutes:minutes},b));
+        actions.append(b);
+      }
+      const textarea = document.createElement("textarea");
+      textarea.maxLength = 600;
+      textarea.placeholder = "เปลี่ยนแผน เช่น Dinner → Bar หรือเปลี่ยนกิจกรรม";
+      const change = document.createElement("button");
+      change.type = "button";
+      change.className = "mmd-ext-wide";
+      change.textContent = "CHANGE PLAN · ส่งให้ MMD ตรวจ";
+      change.addEventListener("click",()=>{
+        const note = textarea.value.trim();
+        if (!note) return textarea.focus();
+        submit(session.session_id,{request_kind:"change_plan",note},change);
+      });
+      actions.append(textarea,change);
+    }
+
+    if (timer) clearTimeout(timer);
+    if (ext && !terminal.has(String(ext.status || ""))) timer = setTimeout(load,25000);
+  };
+  async function load() {
+    try { render(await request("/api/member/app/session/extension")); }
+    catch { root.hidden = true; if (timer) clearTimeout(timer); }
+  }
+  load();
+})();
+</script>`;
+}
+
+function myMmdBangkokTheme() {
+  return `<style id="mmd-bangkok-theme-v1">
+:root{--mmd-bkk-ink:#211b1a;--mmd-bkk-ivory:#fffaf3;--mmd-bkk-wine:#6b2737;--mmd-bkk-gold:#c59a58;--mmd-bkk-line:rgba(33,27,26,.14)}
+html{background:var(--mmd-bkk-ivory)!important;color:var(--mmd-bkk-ink)!important}
+body{min-height:100svh;overflow-x:hidden;background:linear-gradient(180deg,rgba(255,250,243,.76),rgba(255,250,243,.94) 72%,#fffaf3),url("${MY_MMD_BANGKOK_BOARD_URL}") center top/cover fixed no-repeat!important;color:var(--mmd-bkk-ink)!important}
+body[data-mmd-board-layout="quiet"]{background:linear-gradient(180deg,rgba(255,250,243,.92),rgba(255,250,243,.97)),url("${MY_MMD_BANGKOK_BOARD_URL}") center top/cover fixed no-repeat!important}
+#mmd-bangkok-theme-v1{position:fixed;z-index:30;top:0;left:max(20px,calc((100vw - 768px)/2 + 20px));height:70px;display:flex;align-items:center;width:auto;pointer-events:none}
+#mmd-bangkok-theme-v1 .mmd-bkk-brand{display:inline-flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
+#mmd-bangkok-theme-v1 .mmd-bkk-brand{pointer-events:auto}
+#mmd-bangkok-theme-v1 .mmd-bkk-logo{width:52px;height:52px;object-fit:contain;display:block}
+#mmd-bangkok-theme-v1 .mmd-bkk-name{font-size:13px;font-weight:700;letter-spacing:.05em;white-space:nowrap}
+body header.sticky a.leading-tight{visibility:hidden}
+body[data-mmd-world="private"] #mmd-bangkok-theme-v1{--mmd-bkk-ink:#f7efe5;--mmd-bkk-ivory:#171114;--mmd-bkk-wine:#f1c6cf;--mmd-bkk-line:rgba(255,255,255,.16)}
+body[data-mmd-world="private"]{background:linear-gradient(180deg,rgba(23,17,20,.86),rgba(23,17,20,.96)),url("${MY_MMD_BANGKOK_BOARD_URL}") center top/cover fixed no-repeat!important}
+@media(max-width:560px){#mmd-bangkok-theme-v1{left:12px;height:70px}#mmd-bangkok-theme-v1 .mmd-bkk-logo{width:48px;height:48px}#mmd-bangkok-theme-v1 .mmd-bkk-name{font-size:12px}}
+</style>`;
+}
+
+function myMmdBrandMarkup() {
+  return `<header id="mmd-bangkok-theme-v1" data-mmd-bangkok-theme="v1" aria-label="MMD Privé">
+<a class="mmd-bkk-brand" href="/my-mmd/" aria-label="กลับ MY MMD">
+<img class="mmd-bkk-logo" src="${MY_MMD_BRAND_LOGO_URL}" alt="MMD Privé">
+<span class="mmd-bkk-name">MMD Privé</span>
+</a>
+</header>`;
+}
+
+function rewriteMyMmdHtml(html, path = "/my-mmd/") {
   let output = String(html || "");
 
   // Lovable owns presentation only. Remove editor-only chrome from the same-origin customer shell.
@@ -115,6 +307,16 @@ function rewriteMyMmdHtml(html) {
   output = output.replace(/href=["']\/["']/g, `href="${MY_MMD_UI_PREFIX}/"`);
   for (const suffix of MY_MMD_ROUTE_SUFFIXES) {
     output = output.replace(new RegExp(`href=["']\\/${suffix}(?:\\/)?["']`, "g"), `href="${MY_MMD_UI_PREFIX}/${suffix}"`);
+  }
+  if (!output.includes('id="mmd-public-extension-v1"')) {
+    if (output.includes("</head>")) output = output.replace("</head>", publicExtensionSkin() + "</head>");
+    if (output.includes("<body>")) output = output.replace("<body>", "<body>" + publicExtensionMarkup());
+    if (output.includes("</body>")) output = output.replace("</body>", publicExtensionScript() + "</body>");
+  }
+  if (!output.includes('data-mmd-bangkok-theme="v1"')) {
+    if (output.includes("</head>")) output = output.replace("</head>", myMmdBangkokTheme() + "</head>");
+    const layout = /^\/my-mmd(?:\/(?:profile\/?)?)?$/.test(path) ? "hero" : "quiet";
+    output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes} data-mmd-board-layout="${layout}">` + myMmdBrandMarkup());
   }
   return output;
 }
@@ -166,7 +368,7 @@ async function proxyLovablePage(request) {
     return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
   }
   if (isHtml) {
-    return new Response(rewriteMyMmdHtml(await upstream.text()), {
+    return new Response(rewriteMyMmdHtml(await upstream.text(), normalizedPath(request)), {
       status: upstream.status,
       statusText: upstream.statusText,
       headers,
@@ -232,10 +434,10 @@ function liffStateSearchParams(url) {
   return new URLSearchParams();
 }
 
-function isStatusLiffShellRequest(request) {
+function liffAuthBridgeTarget(request) {
   const url = new URL(request.url);
   const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
-  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return false;
+  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return "";
 
   const stateParams = liffStateSearchParams(url);
   const intent = String(
@@ -247,9 +449,15 @@ function isStatusLiffShellRequest(request) {
   ).trim().toLowerCase();
   const campaign = String(url.searchParams.get("campaign") || stateParams.get("campaign") || "").trim().toLowerCase();
 
-  if (campaign) return false;
-  if (!intent || intent === "unknown") return true;
-  return intent === "status";
+  if (campaign) return "";
+  if (intent === "private_teaser") {
+    const model = String(url.searchParams.get("model") || stateParams.get("model") || "").trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
+    return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
+  }
+  if (!intent || intent === "unknown" || intent === "status") return "";
+  if (intent === "continue_payment") return "/my-mmd/payments";
+  return "";
 }
 
 function statusBridgeSkin() {
@@ -303,18 +511,21 @@ function injectStatusBridgeSkin(html) {
 }
 
 async function rewriteStatusReturnTarget(request, response) {
-  if (!isStatusLiffShellRequest(request) || request.method === "HEAD" || !response.ok) return response;
+  const target = liffAuthBridgeTarget(request);
+  if (!target || request.method === "HEAD" || !response.ok) return response;
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
-  const canonical = html.replace('const target = "/member/my-mmd";', 'const target = "/my-mmd/";');
+  const canonical = html
+    .replace('const target = "/member/my-mmd";', `const target = ${JSON.stringify(target)};`)
+    .replace('const target = "/member/payments";', `const target = ${JSON.stringify(target)};`);
   const rewritten = injectStatusBridgeSkin(canonical);
 
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
-  headers.set("x-mmd-liff-return-target", "/my-mmd/");
+  headers.set("x-mmd-liff-return-target", target);
   headers.set("x-mmd-liff-ui-mode", "auth-bridge-only");
   return new Response(rewritten, {
     status: response.status,
@@ -328,13 +539,15 @@ export default {
     const path = normalizedPath(request);
 
     if (isLegacyMyMmdUiPath(path)) return redirectLegacyMyMmd(request);
+    if (isMyMmdOrdersPage(request)) return proxyMyMmdOrdersPage(request);
+    if (isMyMmdPrivateTeaserViewerPath(request)) return myMmdPrivateTeaserViewerPage(request);
     if (isMyMmdAssetPath(path)) return proxyLovableAsset(request);
     if (isMyMmdUiPath(path)) return proxyLovablePage(request);
 
     // Identity, session, points, membership, entitlement, coupons, history,
     // CARE BACK and every authoritative calculation remain on MMD Workers.
-    // For intent=status, LIFF is only a verification bridge; /my-mmd/ is the
-    // single customer-facing dashboard surface.
+    // Direct intent=status stays in the Worker-rendered LIFF Digital Home.
+    // Lovable remains a secondary presentation surface; Points uses /my-mmd/points.
     const response = await currentWorker.fetch(request, env, ctx);
     return rewriteStatusReturnTarget(request, response);
   },

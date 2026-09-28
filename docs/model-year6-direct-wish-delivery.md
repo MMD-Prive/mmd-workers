@@ -1,132 +1,164 @@
 # MMD MODEL · Year 6 Direct Wish Delivery
 
-Status: implementation contract
-Surface: `/sigil/model/wish`
+Status: implementation contract  
+Surface: `/sigil/model/wish`  
 Campaign: `mmd_year_6_model_direct_wish`
 
-## Flow
+## Canonical flow
 
 ```text
-Model
-→ authenticated MMD MODEL / LINE session
-→ Wish submission
-→ manual_review
-→ Per/Admin Approve
-→ deliver only to Model-selected scopes
-   ├─ Telegram customer group(s)
-   └─ Past Clients → private note in MY MMD
+Model opens /sigil/model/wish
+-> browser checks the existing signed Model session
+-> if valid, the Wish form opens directly
+-> if missing/expired, preserve the local Wish draft temporarily
+-> enter LINE through the registered MMD MODEL Mini App URL
+-> LINE opens the configured dashboard endpoint
+-> exchange LINE identity for mmd_model_session_v1
+-> read the signed Model profile back
+-> once session phase is ready, return_to=wish opens /sigil/model/wish?line_return=1
+-> restore the Wish draft once and remove the bridge copy
+-> Model writes Wish
+-> optional profile media upload
+-> Model submits
+-> wish_status = manual_review
+-> UI shows yellow "รอยืนยัน"
+-> Model Dashboard remains fully usable
+-> Per/Admin Approve
+-> only approved, consented delivery scopes activate
 ```
 
-This is deliberately separate from the existing post-job `mmd_year_6_model_wish` sidecar. Direct Year 6 Wish does not need an active job and must never create a fake Session or affect payout.
+The direct campaign is independent of an active Job and independent of the post-job `mmd_year_6_model_wish` sidecar. Never create a fake Session and never use Wish as a payout gate.
 
-## Model input
+## Entry authentication
 
-The Webflow page submits to the existing query-safe Model route:
+Opening `/sigil/model/wish` starts authentication immediately.
 
-```text
-POST /v1/model/session/current?mode=year6_direct_wish
-```
+1. Browser first checks the existing Model profile/session.
+2. If the signed Model session is missing or expired, the Wish page must **not** call `liff.login({ redirectUri: location.href })`.
+3. The Wish page hands off to the permanent registered Mini App URL with the bounded intent `return_to=wish`.
+4. The configured MMD MODEL dashboard endpoint owns LIFF initialization and LINE identity exchange.
+5. Exchange LINE identity through `POST /v1/model/liff/exchange`.
+6. Re-check the signed Model profile before treating the session as ready.
+7. Only after session phase reaches `ready`, return once to `/sigil/model/wish?line_return=1`.
 
-Identity authority is the signed `mmd_model_session_v1` session.
+Do not defer the primary auth flow until the Model presses Submit.
 
-Profile media are optional and remain owned by the authenticated MMD MODEL Gallery upload flow. On the same `/sigil/model/wish` screen the Model may add up to 5 update files total: photos (JPG/PNG/WEBP/HEIC/HEIF, max 15 MB each) and/or intro clips (MP4/MOV/WEBM, max 50 MB each). Photos are written as `public_gallery`; clips are written as `intro_video`. The direct Wish never stores those media IDs as Telegram/Past-Client delivery authority and submission still works when no media are selected.
+If auto-auth cannot finish, present a calm retry control. Do not describe the Model as blocked, rejected, or unable to access Model Dashboard.
 
-Visible Q1 copy is locked:
+### Endpoint audit lock
 
-```text
-01 · อวยพร 6 ปี MMD
-อวยพร MMD ครบ 6 ปี
-```
+Published Mini App ID:
 
-Submission stores in `MMD — Birthday Wishes` (`tblvMJjYXy29mgDLb`) with:
+`2010864854-N34SgCqq`
 
-```text
-campaign_id = mmd_year_6_model_direct_wish
-wish_option = model_direct_wish
-wish_status = manual_review
-idempotency = one direct Year 6 Wish per canonical Model
-```
+Permanent entry:
 
-## Review gate
+`https://miniapp.line.me/2010864854-N34SgCqq/`
 
-The existing credential-bound Model Wish review endpoints remain authority:
+The Model Wish page is a post-session destination, not the registered LIFF endpoint. Submitting either `https://www.mmdbkk.com/sigil/model/wish` or `https://mmdbkk.com/sigil/model/wish` as a direct OAuth redirect URI can produce LINE HTTP 400 `invalid url`.
 
-```text
-GET  /v1/admin/model-wishes/review-queue
-POST /v1/admin/model-wishes/review
-```
+### Return and draft safety
 
-The direct campaign extends that queue only after the existing admin gate has authorized the request. Approve activates only checked scopes. Reject stores `revoked`.
+Only the literal `return_to=wish` target is accepted. Never accept a caller-provided absolute or relative return URL.
 
-No Telegram send and no past-client projection may happen while `manual_review`.
+The draft bridge may copy the existing `mmd_model_wish_draft_v5` payload from `sessionStorage` into short-lived `localStorage` only during the cross-origin Mini App handoff. The bridge copy:
 
-## Telegram routing
+- expires after 30 minutes;
+- restores only when the Wish page is reopened;
+- is deleted immediately after restore;
+- never contains LINE tokens, Model IDs, session cookies, activation tokens, or entitlement claims.
 
-Canonical Model taxonomy is exactly:
+## Direct Wish transport
 
-```text
-Standard / Premium / Exclusive
-```
+Authenticated Model session authority remains `mmd_model_session_v1`.
 
-There is no VIP Model tier.
+Endpoint:
+- `GET /v1/model/session/current?mode=year6_direct_wish` — read current direct-Wish status.
+- `POST /v1/model/session/current?mode=year6_direct_wish` — submit direct Wish.
 
-Approved Model Wish distribution:
+GET is read-only and never creates a Wish.
 
-```text
-Standard  → Standard Group + Premium Group
-Premium   → Premium Group
-Exclusive → Premium Group
-```
+## Review state projection
 
-Wish delivery is text-only. This preserves the customer-facing Exclusive rule that real Model photos must not be exposed; any future Exclusive visual must use an explicitly approved AI-safe asset.
+Internal canonical state remains unchanged:
 
-Current configured/fallback group IDs used by this flow:
+- `manual_review`
+- `completed`
+- `revoked`
 
-```text
-Standard Group: -1002073919780
-Premium Group:  -1001668261779
-```
+Model-facing projection:
 
-Both remain environment-overridable. Black Room and INNER Chamber are not destinations for this campaign.
+| Canonical state | Model label | Tone |
+| --- | --- | --- |
+| `manual_review` | `รอยืนยัน` | yellow |
+| `completed` | `ยืนยันแล้ว` | green |
+| `revoked` | `ยังไม่เผยแพร่` | neutral |
+| no row | `ยังไม่ได้ส่ง` | neutral |
 
-## Past Clients → MY MMD
+`manual_review` means the submission was received and is waiting for Per/Admin review. It is not an authentication, account, access, job, or payout problem.
 
-Past-client visibility is independent from Telegram consent.
+## Model Dashboard
 
-The Worker requires all of the following:
+Canonical live dashboard route:
+`/sigil/model/dashboard`
 
-- direct Wish is approved (`completed`),
-- `past_clients_consent === true`,
-- authenticated MY MMD member session,
-- exact canonical Client resolution,
-- a completed canonical Session linked to that exact Client (prefer direct Client → Sessions reverse links; email/name lookup is compatibility enrichment only),
-- the exact `Canonical Model` record on that completed Session equals the Wish Model.
+The dashboard presentation worker may read the GET status endpoint using the existing authenticated browser session.
 
-If exact canonical linkage is unavailable, the projection fails closed and returns no note.
+While state is `manual_review`, show a compact yellow Model Wish notice:
+- `MODEL WISH`
+- `รอยืนยัน`
+- `MMD ได้รับคำอวยพรแล้ว · พี่เปอร์กำลังตรวจให้ครับ`
+- clarify that this does not affect Dashboard access or receiving work.
 
-Customer-safe dashboard projection:
+This notice is presentation only. It does not mutate Wish state or Model entitlement.
 
-```json
-{
-  "private_model_notes": [
-    {
-      "type": "model_wish",
-      "visibility": "past_client_private",
-      "model_name": "safe display name",
-      "text": "approved birthday_wish only",
-      "submitted_at": "timestamp or null",
-      "approved_at": "timestamp or null"
-    }
-  ]
-}
-```
+## Content and consent
 
-The canonical My MMD presentation consumes this from `GET /api/member/app/dashboard` and renders it privately on the member home screen.
+Visible primary prompt:
+- `01 · อวยพร 6 ปี MMD`
+- `อวยพร MMD ครบ 6 ปี`
 
-## Privacy locks
+At least one of the three message areas may be used:
+- birthday Wish;
+- note to MMD;
+- Per-only private note.
 
-`private_note_per` is Per-only and is never sent to Telegram or MY MMD customers.
+Two delivery consent scopes remain independent and optional:
+1. Telegram promotion.
+2. Past Clients in authenticated MY MMD.
 
-The customer projection never exposes Q2 MMD message, Airtable IDs, Model record IDs, LINE IDs, media IDs, R2 data, `payload_json`, internal statuses, or review audit details.
+Nothing is delivered to either scope before approval.
 
-This direct campaign is also excluded from the general public Wish wall; that public projection continues to use its separate campaign/status rules.
+`private_note_per` remains Per-only and must never be returned to customer/member APIs or downstream public delivery.
+
+## Storage
+
+Canonical table:
+`MMD — Birthday Wishes` (`tblvMJjYXy29mgDLb`)
+
+Locks:
+- `campaign_id = mmd_year_6_model_direct_wish`
+- `wish_option = model_direct_wish`
+- new submission -> `wish_status = manual_review`
+- idempotency = one direct Year 6 Wish per canonical Model
+
+## Gallery media
+
+Media are optional and remain owned by the authenticated MMD MODEL Gallery flow.
+
+On the same screen the Model may add up to 5 files:
+- photos JPG/PNG/WEBP/HEIC/HEIF, max 10 MB each;
+- clips MP4/MOV/WEBM, max 50 MB each.
+
+Photos save as `public_gallery`; clips save as `intro_video`.
+Media IDs are not direct-Wish delivery authority.
+
+## Hard locks
+
+- Wish never becomes a Model Session state.
+- Wish never gates payout.
+- Wish never blocks Model Dashboard.
+- Browser cannot approve its own Wish.
+- Manual review remains fail-closed for delivery, not for dashboard access.
+- Return targets remain allowlisted and bounded.
+- Do not expose internal Model IDs, Airtable IDs, R2 keys, LINE IDs, customer identity, or Per-only notes.

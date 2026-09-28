@@ -1,5 +1,7 @@
 # My MMD Member App API V1
 
+> **SUPERSEDED FOR DEFAULT MEMBER CONSOLE — 2026-09-28:** The current owner-approved default is the Worker-rendered MY MMD Digital LIFF Home. Direct `intent=status` must stay in LIFF. Lovable remains a secondary presentation surface and the Points presentation exception at `/my-mmd/points`; it is not the default whole-app handoff. Customer-history recovery remains MMD backend-owned. See `MY_MMD_LIFF_DIGITAL_HOME_V1_20260928.md`.
+
 Status: CANONICAL ROUTE + API CONTRACT
 Refreshed: 2026-09-06 +07
 
@@ -119,6 +121,9 @@ CARE BACK backend reads/writes remain under the existing LIFF/member backend con
 - Membership Level, lifecycle status and Actual Access are separate concepts.
 - Browser code must never infer access from tier or status.
 - Missing or unverified backend state must render `checking` / recovery, not guessed values.
+- A verified LINE identity with canonical Client evidence must never be rendered as `Guest/new` solely because Member/entitlement reconstruction is incomplete.
+- A Fast Trust source/schema failure must never become a `signup` decision; unresolved identity remains `checking` until authoritative recovery succeeds.
+- Only a successful canonical identity lookup with no canonical Client evidence and no protected entitlement marker may be treated as a genuine new Guest.
 - Internal Airtable IDs, notes, payment refs, proof IDs, allowlists, model grants and secrets must not be exposed.
 - Presentation failures do not authorize fallback demo/member data.
 
@@ -184,3 +189,63 @@ prove the published Lovable build changed. Production acceptance still requires
 a real verified LINE session and comparing the displayed balance, signed ledger,
 status and tier with the authenticated BFF replies. No member records or Points
 entries are rewritten by this repair.
+
+
+## Known-customer resolution invariant — 2026-09-19
+
+My MMD has a strict separation between **identity known** and **membership fully reconstructed**.
+
+```text
+verified LINE
+-> canonical LINE evidence lookup
+-> canonical Client known?
+   -> yes + membership unresolved: checking/recovery, never Guest/signup
+   -> no: continue protected Fast Trust lookup
+-> Fast Trust source available?
+   -> no: checking/recovery, never Guest/signup
+-> trusted VIP/SVIP/Black Card marker?
+   -> yes: verified protected tier now; history enrichment later
+   -> no + no canonical Client: genuine Guest/new flow may continue
+```
+
+A storage/table/field regression is an infrastructure failure, not evidence that a customer is new.
+
+
+## Identity recovery projection — 2026-09-23
+
+The My MMD presentation already contains a fail-closed RecoveryPanel and the
+same-origin submit endpoint remains `POST /member/api/liff/recovery`. The
+member app BFF now projects `membership.identity_recovery.state` from the
+verified LIFF session plus the exact LINE identity's canonical
+`MMD — Identity Merge Requests` row.
+
+The browser does not choose this state.
+
+```text
+member exists
+-> linked
+
+member missing + no canonical recovery evidence
+-> auto_resolving
+
+member missing
++ exact LINE identity has review_required/not_found
++ review source = owner-controlled first-real-payment acceptance
+-> manual_required
+
+customer submits old email / Member ID through /member/api/liff/recovery
+-> review_required while verification/review is pending
+
+canonical identity applied
+-> linked
+```
+
+`manual_required` is intentionally narrow. A new Guest, an unmatched LINE
+contact, a fuzzy rename, a payment amount, or a browser-supplied identity field
+can never unlock the manual form. Failure to read canonical review storage falls
+closed to `auto_resolving`.
+
+This closes the presentation gap discovered by the first real Membership
+Payment E2E: a verified renewal payment may remain fail-closed while identity is
+unresolved, but the exact verified LINE customer now has a safe path to provide
+their old email or Member ID without exposing LINE IDs or granting entitlement.

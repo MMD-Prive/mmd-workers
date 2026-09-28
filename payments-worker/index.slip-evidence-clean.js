@@ -119,7 +119,7 @@ function fileMeta(file) {
 
 function stage(v) {
   const raw = s(v).toLowerCase();
-  const ok = new Set(["deposit", "final", "tips", "full", "membership"]);
+  const ok = new Set(["deposit", "final", "tips", "full", "extension", "membership"]);
   return ok.has(raw) ? raw : "";
 }
 

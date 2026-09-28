@@ -1,0 +1,56 @@
+<script>(function(){
+"use strict";
+var root=document.getElementById("mmd-shop-inventory-admin-v1");
+if(!root||root.dataset.bound==="1")return;root.dataset.bound="1";
+var API=root.dataset.api,BATCH_API=root.dataset.batchApi,ADJUST_API=root.dataset.adjustApi;
+var state=root.querySelector("[data-state]"),productsEl=root.querySelector("[data-products]"),batchesEl=root.querySelector("[data-batches]"),movementsEl=root.querySelector("[data-movements]");
+var search=root.querySelector("[data-search]"),batchFilter=root.querySelector("[data-batch-filter]"),batchForm=root.querySelector("[data-batch-form]");
+var productSelect=root.querySelector("[data-product-select]"),supplierSelect=root.querySelector("[data-supplier-select]"),batchStatus=root.querySelector("[data-batch-status]");
+var data={products:[],batches:[],movements:[],suppliers:[],metrics:{},reconciliation:null};
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
+function money(v){var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH",{maximumFractionDigits:2})+" ฿":"—"}
+function num(v){var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH"):"0"}
+function login(){location.href="/internal/admin/login?next="+encodeURIComponent("/internal/admin/shop/inventory")}
+async function api(url,opt){var r=await fetch(url,Object.assign({credentials:"include",headers:{accept:"application/json"},cache:"no-store"},opt||{}));var d=await r.json().catch(function(){return{}});if(r.status===401){login();throw new Error("auth")}if(!r.ok||d.ok!==true)throw new Error(d.error||"request_failed");return d}
+function metric(k,v){var el=root.querySelector('[data-metric="'+k+'"]');if(el)el.textContent=num(v)}
+function ensureHealthUi(){
+ var metrics=root.querySelector(".shopops-metrics");
+ if(metrics&&!metrics.querySelector('[data-metric="reserved_units"]')){
+  [["reserved_units","Reserved Units"],["physical_estimate_units","Physical Estimate"],["reconciliation_mismatches","Mismatch"]].forEach(function(item){
+   var card=document.createElement("article");card.innerHTML="<small>"+item[1]+"</small><strong data-metric=\""+item[0]+"\">—</strong>";metrics.appendChild(card)
+  })
+ }
+ if(!root.querySelector("[data-stock-health]")){
+  var panel=root.querySelector(".shopops-panel");if(panel){var box=document.createElement("div");box.className="shopops-callout shopops-health";box.setAttribute("data-stock-health","");panel.insertBefore(box,panel.firstChild)}
+ }
+}
+function syncMetrics(){ensureHealthUi();Object.keys(data.metrics||{}).forEach(function(k){metric(k,data.metrics[k])});var box=root.querySelector("[data-stock-health]"),m=data.metrics||{};if(box){var bad=Number(m.reconciliation_mismatches||0)>0;box.classList.toggle("is-alert",bad);box.innerHTML="<strong>"+(bad?"ต้องตรวจ Stock Reconciliation":"Stock Reconciliation ปกติ")+"</strong><span>Available "+num(m.total_units)+" · Reserved "+num(m.reserved_units)+" · Physical "+num(m.physical_estimate_units)+" · Mismatch "+num(m.reconciliation_mismatches)+"</span>"}}
+function syncSelects(){
+ productSelect.innerHTML='<option value="">เลือกสินค้า</option>'+data.products.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.product_name)+(p.sku?' · '+esc(p.sku):'')+'</option>'}).join("");
+ supplierSelect.innerHTML='<option value="">ไม่ระบุ</option>'+data.suppliers.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.supplier_name)+'</option>'}).join("")
+}
+function renderProducts(){
+ var q=String(search&&search.value||"").trim().toLowerCase();
+ var rows=data.products.filter(function(p){return !q||[p.product_name,p.sku].join(" ").toLowerCase().indexOf(q)>-1});
+ productsEl.innerHTML=rows.length?rows.map(function(p){return '<article class="shopops-card"><div class="shopops-cardtop"><div><h3>'+esc(p.product_name)+'</h3><div class="shopops-meta">'+esc(p.sku||"No SKU")+' · '+esc(p.status||"draft")+'</div></div><div class="shopops-stock">'+num(p.available_units==null?p.quantity_remaining:p.available_units)+'<small>available</small></div></div><div class="shopops-productmeta"><span class="shopops-pill '+(p.low_stock?'is-low':'is-good')+'">'+(p.low_stock?'LOW STOCK':'STOCK OK')+'</span><span class="shopops-pill">'+num(p.active_batches)+' batches</span><span class="shopops-pill">Reserved '+num(p.reserved_units||0)+'</span>'+(Number(p.reconciliation_mismatches||0)>0?'<span class="shopops-pill is-bad">MISMATCH '+num(p.reconciliation_mismatches)+'</span>':'')</div></article>'}).join(""):'<div class="shopops-empty">ไม่พบสินค้า</div>'
+}
+function batchVisible(b){
+ var f=batchFilter&&batchFilter.value||"active";if(f==="all")return true;if(f==="low")return b.low_stock&&b.batch_status==="active";return b.batch_status===f
+}
+function renderBatches(){
+ var rows=data.batches.filter(batchVisible);
+ batchesEl.innerHTML=rows.length?rows.map(function(b){return '<article class="shopops-batch"><div class="shopops-batchtop"><div><h3>'+esc(b.product_name||"Product")+'</h3><div class="shopops-meta">'+esc(b.batch_code||b.batch_name||b.id)+' · '+esc(b.supplier_name||"No supplier")+'</div></div><div><span class="shopops-pill '+(b.low_stock?'is-low':'')+'">'+esc(b.batch_status||"unknown")+'</span>'+(b.reconciliation&&b.reconciliation.reconciliation_status==="mismatch"?'<span class="shopops-pill is-bad" style="margin-left:5px">MISMATCH</span>':'')+'</div></div><div class="shopops-batchbody"><div class="shopops-stat"><small>รับเข้า</small><strong>'+num(b.quantity_in)+'</strong></div><div class="shopops-stat"><small>Available</small><strong>'+num(b.reconciliation?b.reconciliation.available_units:b.quantity_remaining)+'</strong></div><div class="shopops-stat"><small>Reserved</small><strong>'+num(b.reconciliation?b.reconciliation.reserved_units:0)+'</strong></div><div class="shopops-stat"><small>Physical est.</small><strong>'+num(b.reconciliation?b.reconciliation.physical_estimate_units:b.quantity_remaining)+'</strong></div><div class="shopops-stat"><small>Ledger Expected</small><strong>'+num(b.reconciliation?b.reconciliation.ledger_expected_remaining:b.quantity_remaining)+'</strong></div><div class="shopops-stat"><small>Delta</small><strong>'+(b.reconciliation&&b.reconciliation.reconciliation_status==="mismatch"?(Number(b.reconciliation.reconciliation_delta)>0?"+":"")+num(b.reconciliation.reconciliation_delta):"0")+'</strong></div><div class="shopops-stat"><small>ต้นทุน/หน่วย</small><strong>'+esc(money(b.unit_cost_thb))+'</strong></div><div class="shopops-stat"><small>มูลค่าคงเหลือ</small><strong>'+esc(money(b.remaining_stock_value_thb))+'</strong></div></div><details class="shopops-adjust"><summary>ปรับจำนวน Stock</summary><form class="shopops-adjustform" data-adjust-form data-batch-id="'+esc(b.id)+'"><label><span>Delta (+/-) *</span><input name="delta" type="number" step="1" required placeholder="-1 หรือ 5"></label><label><span>Low Stock</span><select name="low_stock"><option value="">ไม่เปลี่ยน</option><option value="true">Low</option><option value="false">OK</option></select></label><label class="shopops-adjustwide"><span>เหตุผล *</span><input name="note" required placeholder="เช่น ตรวจนับจริง / ของเสีย"></label><button class="shopops-btn shopops-btn--primary" type="submit">บันทึก Adjustment</button><span class="shopops-adjuststatus" data-adjust-status aria-live="polite"></span></form></details></article>'}).join(""):'<div class="shopops-empty">ไม่มี Batch ตามตัวกรองนี้</div>'
+}
+function renderMovements(){
+ var rows=(data.movements||[]).slice(0,30);
+ movementsEl.innerHTML=rows.length?rows.map(function(m){var n=Number(m.quantity)||0;return '<article class="shopops-movement"><div><strong>'+esc(m.movement_name||m.movement_type||"Movement")+'</strong><div class="shopops-meta">'+esc(m.product_name||"")+' · '+esc(m.movement_date||"")+(m.note?' · '+esc(m.note):'')+'</div></div><div class="shopops-movementqty '+(n<0?'is-negative':n>0?'is-positive':'')+'">'+(n>0?"+":"")+num(n)+'</div></article>'}).join(""):'<div class="shopops-empty">ยังไม่มี Stock Movement</div>'
+}
+function render(){syncMetrics();syncSelects();renderProducts();renderBatches();renderMovements();state.hidden=true;productsEl.hidden=false}
+async function load(){
+ state.hidden=false;state.textContent="กำลังโหลด Inventory…";productsEl.hidden=true;
+ try{var d=await api(API);data=d;render()}catch(e){if(e.message!=="auth"){state.hidden=false;state.textContent="โหลด Inventory ไม่สำเร็จ กรุณารีเฟรชหรือตรวจ Admin Session"}}
+}
+batchForm.addEventListener("submit",async function(e){e.preventDefault();var btn=batchForm.querySelector('button[type="submit"]');btn.disabled=true;batchStatus.textContent="กำลังบันทึก…";var fd=new FormData(batchForm);var body={product_id:fd.get("product_id"),supplier_id:fd.get("supplier_id")||undefined,batch_code:fd.get("batch_code")||undefined,received_date:fd.get("received_date")||undefined,quantity:Number(fd.get("quantity")),unit_cost_thb:Number(fd.get("unit_cost_thb")),note:fd.get("note")||""};try{await api(BATCH_API,{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify(body)});batchStatus.textContent="บันทึก Batch แล้ว";batchForm.reset();await load()}catch(err){batchStatus.textContent="บันทึกไม่ได้: "+err.message}finally{btn.disabled=false}});
+batchesEl.addEventListener("submit",async function(e){var form=e.target.closest("[data-adjust-form]");if(!form)return;e.preventDefault();var btn=form.querySelector('button[type="submit"]'),status=form.querySelector("[data-adjust-status]"),fd=new FormData(form),low=fd.get("low_stock");btn.disabled=true;status.textContent="กำลังบันทึก…";var body={batch_id:form.dataset.batchId,delta:Number(fd.get("delta")),note:String(fd.get("note")||"")};if(low==="true"||low==="false")body.low_stock=low==="true";try{await api(ADJUST_API,{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify(body)});status.textContent="ปรับ Stock แล้ว";await load()}catch(err){status.textContent="ปรับไม่ได้: "+err.message;btn.disabled=false}});
+root.querySelector("[data-refresh]").addEventListener("click",load);if(search)search.addEventListener("input",renderProducts);if(batchFilter)batchFilter.addEventListener("change",renderBatches);load()
+})();</script>

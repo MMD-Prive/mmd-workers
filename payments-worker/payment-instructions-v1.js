@@ -2,6 +2,8 @@ export const PAYMENT_INSTRUCTIONS_PATH = "/v1/confirm/payment-instructions";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_TABLE = "tblTPC2yV1P3CwbgU";
 const DEFAULT_CARD_FEE_PERCENT = 4;
+const PRIMARY_INSTRUCTION_ID = "mmd_payment_primary_v1";
+const SHOP_INSTRUCTION_ID = "mmd_shop_himai_v1";
 
 export function isPaymentInstructionsRequest(path, method) {
   const normalized = String(path || "/").replace(/\/{2,}/g, "/").replace(/\/+$/g, "") || "/";
@@ -48,6 +50,7 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     return responseJson({ ok: false, error: "payment_state_unavailable", authority: "payments-worker" }, 409, responseHeaders);
   }
 
+  const instructionId = paymentInstructionId(details, payment);
   const base = {
     ok: true,
     authority: "payments-worker",
@@ -57,8 +60,12 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     stage: text(payment.stage, 80) || null,
     amount_due_thb: numberOrNull(payment.amount_due_thb),
     currency: "THB",
+    instruction_profile: instructionId,
   };
 
+  if (payment.accepting_payment === false) {
+    return responseJson({ ...base, available: false, reason: "payment_not_accepting" }, 200, responseHeaders);
+  }
   if (payment.verified) {
     return responseJson({ ...base, available: false, reason: "payment_verified" }, 200, responseHeaders);
   }
@@ -69,7 +76,7 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     return responseJson({ ...base, available: false, reason: "no_amount_due" }, 200, responseHeaders);
   }
 
-  const config = await readActiveInstructions(env);
+  const config = await readActiveInstructions(env, instructionId);
   if (!config) {
     return responseJson({ ok: false, error: "payment_instructions_unavailable", authority: "payments-worker" }, 503, responseHeaders);
   }
@@ -84,15 +91,23 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     : DEFAULT_CARD_FEE_PERCENT;
   const cardFeeThb = roundMoney(base.amount_due_thb * cardFeePercent / 100);
   const cardAmountDueThb = roundMoney(base.amount_due_thb + cardFeeThb);
-  const qrUrl = methods.has("promptpay") && promptPayRef && text(config["QR Strategy"], 80) === "dynamic_amount"
-    ? dynamicPromptPayQr(promptPayRef, base.amount_due_thb)
+  const qrStrategy = text(config["QR Strategy"], 80);
+  const configuredQrUrl = safeHttpsUrl(config["QR Image URL"]);
+  const qrUrl = methods.has("promptpay")
+    ? (qrStrategy === "dynamic_amount" && promptPayRef
+      ? dynamicPromptPayQr(promptPayRef, base.amount_due_thb)
+      : qrStrategy === "static_url"
+        ? configuredQrUrl
+        : null)
     : null;
 
   const instructions = {
-    promptpay: methods.has("promptpay") && promptPayRef ? {
+    promptpay: methods.has("promptpay") && qrUrl ? {
       enabled: true,
-      display_ref: formatPromptPay(promptPayRef),
+      display_ref: promptPayRef ? formatPromptPay(promptPayRef) : null,
       qr_url: qrUrl,
+      qr_strategy: qrStrategy || null,
+      amount_entry: qrStrategy === "static_url" ? "customer_manual" : "embedded",
     } : { enabled: false },
     bank_transfer: methods.has("bank_transfer") && accountNumber ? {
       enabled: true,
@@ -121,7 +136,12 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
   return responseJson({ ...base, available: true, instructions }, 200, responseHeaders);
 }
 
-async function readActiveInstructions(env) {
+function paymentInstructionId(details = {}, payment = {}) {
+  const stage = text(payment.stage || details.payment_type || details.payment_stage, 80).toLowerCase();
+  return stage === "shop" || details.shop_order ? SHOP_INSTRUCTION_ID : PRIMARY_INSTRUCTION_ID;
+}
+
+async function readActiveInstructions(env, instructionId) {
   const baseId = text(env.AIRTABLE_BASE_ID, 120);
   const table = text(env.AIRTABLE_TABLE_PAYMENT_INSTRUCTIONS, 120) || DEFAULT_TABLE;
   const apiKey = text(env.AIRTABLE_API_KEY, 500);
@@ -129,7 +149,7 @@ async function readActiveInstructions(env) {
 
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
   url.searchParams.set("maxRecords", "50");
-  url.searchParams.set("filterByFormula", "{Status}='active'");
+  url.searchParams.set("filterByFormula", `AND({Status}='active',{Instruction ID}='${formulaValue(instructionId)}')`);
   const http = env.AIRTABLE_HTTP && typeof env.AIRTABLE_HTTP.fetch === "function" ? env.AIRTABLE_HTTP : globalThis;
   const response = await http.fetch(url.toString(), {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
@@ -140,6 +160,7 @@ async function readActiveInstructions(env) {
   const candidates = array(payload?.records)
     .map((record) => record?.fields || {})
     .filter((fields) => text(fields.Status, 40).toLowerCase() === "active")
+    .filter((fields) => text(fields["Instruction ID"], 160) === instructionId)
     .filter((fields) => {
       const effective = Date.parse(text(fields["Effective From"], 120));
       return !Number.isFinite(effective) || effective <= now;
@@ -193,6 +214,9 @@ function safeHttpsUrl(value) {
   } catch { return null; }
 }
 
+function formulaValue(value) {
+  return text(value, 240).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
 function digits(value) { return String(value ?? "").replace(/\D+/g, ""); }
 function array(value) { return Array.isArray(value) ? value : []; }
 function numberOrNull(value) {

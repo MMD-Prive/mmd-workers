@@ -46,6 +46,7 @@ const CLIENT_FIELDS = [
   "source",
   "primary_channel",
   "notes_raw",
+  "Profile Photo",
 ];
 
 const MEMBER_FIELDS = [
@@ -366,6 +367,7 @@ function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, st
     member["Verification Status"],
   );
   const telegramUsername = firstText(client.telegram_username, member.telegram_username, entitlement.telegram_username);
+  const profilePhotos = attachmentUrls(client["Profile Photo"], 8);
   const aliases = collectAliases(client, member, stagingRecords, rememberedName, canonicalName);
   const score = Number(match?.score) || 70;
 
@@ -393,6 +395,8 @@ function toClientLineageRecord(clientRecord, memberRecord, entitlementRecord, st
     legacy_tags: mergeLegacyTags(stagingRecords),
     customer_telegram_username: telegramUsername,
     customer_telegram_status: normalizeTelegramStatus(entitlement.telegram_access_status),
+    profile_photos: profilePhotos,
+    profile_image_url: profilePhotos[0] || "",
     confidence: Math.max(1, Math.min(100, Math.round(score))),
     lineage_source: "canonical_client",
     entitlement_snapshot_source: entitlementRecord
@@ -945,6 +949,20 @@ function firstText(...values) {
     }
   }
   return "";
+}
+
+function attachmentUrls(value, limit = 8) {
+  const items = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const url = clean(item?.url || item?.thumbnails?.large?.url || item?.thumbnails?.full?.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+    if (out.length >= Math.max(1, Math.min(Number(limit) || 8, 8))) break;
+  }
+  return out;
 }
 
 function compact(object) {

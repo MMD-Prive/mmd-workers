@@ -6,6 +6,8 @@ on:
       - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
       - "member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs"
       - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate-runtime.js"
+      - "member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js"
       - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs"
       - "member-dashboard-chat-worker/wrangler.toml"
@@ -20,8 +22,11 @@ on:
       - "member-dashboard-chat-worker/src/kenji-line-transport-health.mjs"
       - "member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs"
       - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate-runtime.js"
+      - "member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js"
       - "member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs"
+      - "member-dashboard-chat-worker/wrangler.toml"
       - "member-pages-worker/src/kenji-line-member-truth-health.js"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/test/kenji-line-member-truth.test.mjs"
@@ -48,6 +53,8 @@ jobs:
           node --check member-dashboard-chat-worker/src/kenji-line-transport-health.mjs
           node --check member-dashboard-chat-worker/src/kenji-line-ingress-trace.mjs
           node --check member-dashboard-chat-worker/src/mms-line-front-gate.js
+          node --check member-dashboard-chat-worker/src/mms-line-front-gate-runtime.js
+          node --check member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js
           node --check member-pages-worker/src/kenji-line-member-truth-health.js
           node --check member-pages-worker/src/runtime-index.js
           node --test member-dashboard-chat-worker/test/kenji-line-transport-health.test.mjs member-dashboard-chat-worker/test/kenji-line-ingress-trace.test.mjs member-pages-worker/test/kenji-line-member-truth.test.mjs

@@ -134,3 +134,13 @@ test("friendly preview is discovery-only and never calls a generative reply endp
   assert.match(friendly, /customer_answer/);
   assert.doesNotMatch(friendly, /\/v1\/internal\/kenji\/reply|\/chat\/completion|openai/i);
 });
+
+
+test("Ad and Rich Menu entry fields stay scoped to Model aliases and Knowledge metadata", () => {
+  assert.match(js, /Ad \/ Rich Menu Trigger \+ Alias/);
+  assert.match(js, /Trigger ไม่สามารถเพิ่มสิทธิ์การเห็น Model/);
+  assert.match(friendly, /id="ksoEntryTrigger"/);
+  assert.match(friendly, /entry_trigger: entryTrigger \|\| null/);
+  assert.match(friendly, /Never widen entitlement, Model visibility, payment truth, or booking authority/);
+  assert.match(friendly, /Ad \/ LINE Trigger/);
+});

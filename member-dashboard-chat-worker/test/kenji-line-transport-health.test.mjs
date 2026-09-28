@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import productionWorker from "../src/my-mms-customer-front-gate-entry.js";
 import {
   canonicalLineWebhookEndpointMatches,
   handleKenjiLineTransportHealth,
@@ -64,6 +65,34 @@ test("recognizes bounded MMD LINE transport health only on the canonical GET pat
   assert.equal(isKenjiLineTransportHealthRequest(new Request("https://www.mmdbkk.com/webhooks/line?transport_health=1", { method: "POST" })), false);
 });
 
+test("wrangler production entrypoint routes bounded transport health before normal LINE handling", async () => {
+  const calls = [];
+  const originalFetch = installReadyLineFetch(calls);
+  try {
+    const response = await productionWorker.fetch(
+      new Request("https://www.mmdbkk.com/webhooks/line?transport_health=1"),
+      {
+        LINE_CHANNEL_SECRET: "secret-signature-value",
+        LINE_CHANNEL_ACCESS_TOKEN: "secret-token-value",
+        MEMBER_PAGES_WORKER: memberPagesHealthBinding(),
+      },
+      {},
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.route, "line_transport_health");
+    assert.equal(payload.schema, "mmd.kenji_line_transport_health.v4");
+    assert.equal(payload.signed_webhook_test_attempted, true);
+    assert.equal(payload.signed_webhook_test_success, true);
+    assert.equal(payload.signed_webhook_test_status_code, 200);
+    assert.equal(payload.member_truth_bridge_ok, true);
+    assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("accepts only the two canonical MMD webhook endpoints", () => {
   assert.equal(canonicalLineWebhookEndpointMatches("https://mmdbkk.com/webhooks/line"), true);
   assert.equal(canonicalLineWebhookEndpointMatches("https://www.mmdbkk.com/webhooks/line/"), true);
@@ -82,6 +111,9 @@ test("requires signed webhook, ingress diagnostics, and member truth bridge befo
       {
         LINE_CHANNEL_SECRET: "secret-signature-value",
         LINE_CHANNEL_ACCESS_TOKEN: "secret-token-value",
+        LINE_FIRST_CONTACT_ENABLED: "true",
+        LINE_KENJI_AI_ENABLED: "true",
+        LINE_AUTO_REPLY_ENABLED: "false",
         MEMBER_PAGES_WORKER: memberPagesHealthBinding(),
       },
     );
@@ -90,6 +122,8 @@ test("requires signed webhook, ingress diagnostics, and member truth bridge befo
     assert.equal(payload.ok, true);
     assert.equal(payload.schema, "mmd.kenji_line_transport_health.v4");
     assert.equal(payload.status, "ready");
+    assert.equal(payload.first_contact_configured, true);
+    assert.equal(payload.broad_auto_reply_configured, false);
     assert.equal(payload.signature_secret_present, true);
     assert.equal(payload.access_token_present, true);
     assert.equal(payload.line_api_reachable, true);

@@ -1,9 +1,7 @@
 #mmd-wish [data-success]::before{pointer-events:none}
 #mmd-wish [data-dashboard],#mmd-wish .wish-coupon-link{position:relative;z-index:1;pointer-events:auto;cursor:pointer}
 #mmd-wish .wish-coupon-link{display:inline-flex;align-items:center;justify-content:center;min-height:48px;margin:12px 0 0 12px;padding:0 20px;border:1px solid #d6b978;border-radius:28px;color:#fff3d6!important;-webkit-text-fill-color:#fff3d6!important;text-decoration:none}
-#mmd-wish .wish-public-consent{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:10px;margin-top:18px;color:#51483c!important;font-size:13px;line-height:1.6}
-#mmd-wish .wish-public-consent input{width:18px;height:18px;margin:3px 0 0;accent-color:#9d722c}
-#mmd-wish .wish-public-consent span{color:#51483c!important;-webkit-text-fill-color:#51483c!important}
+#mmd-wish .wish-public-consent{display:none!important}
 #mmd-wish .wish-member-wall{width:min(1180px,calc(100% - 28px));margin:28px auto 48px;padding:24px;border:1px solid #594c33;border-radius:24px;background:#101214;color:#f6eddb}
 #mmd-wish .wish-member-wall h2{margin:0;color:#fff3d6!important;-webkit-text-fill-color:#fff3d6!important;font-size:26px;line-height:1.4}
 #mmd-wish .wish-member-wall p{color:#d4c8b6!important;-webkit-text-fill-color:#d4c8b6!important;font-size:13px;line-height:1.7}
@@ -17,3 +15,19 @@
 
 #mmd-wish [data-success][hidden]{display:none!important}
 #mmd-wish [data-success]:not([hidden]){opacity:1!important;transform:none!important}
+
+/* V30: one clear route — explain eligibility, send Wish, then open My MMD. */
+#mmd-wish .wish-v23-ribbon,#mmd-wish .wish-v23-policy{display:none!important}
+#mmd-wish .wish-v23-reveal{opacity:1!important;transform:none!important;visibility:visible!important}
+#mmd-wish [data-wish-copy="title"],#mmd-wish [data-phase2-coupon] h2{white-space:pre-line}
+#mmd-wish .wish-phase2{padding-bottom:18px!important}
+#mmd-wish .wish-phase2__visual{min-height:360px!important}
+#mmd-wish .wish-phase2__copy{padding:clamp(26px,4vw,48px)!important}
+#mmd-wish .wish-phase2__reward{margin-top:18px!important}
+#mmd-wish #wish-flow{padding-top:18px!important}
+#mmd-wish #wish-flow>[class]{opacity:1!important;transform:none!important}
+#mmd-wish [data-wish-copy="separation"]{max-width:680px!important;margin-inline:auto!important;padding:12px 16px!important;border:1px solid rgba(157,114,44,.22)!important;border-radius:14px!important;background:rgba(157,114,44,.07)!important}
+#mmd-wish [data-consent]{accent-color:#9d722c}
+#mmd-wish [data-wish-copy="consent"]{line-height:1.55!important}
+#mmd-wish .wish-member-wall{margin-top:18px}
+@media(max-width:767px){#mmd-wish .wish-phase2__visual{min-height:0!important}#mmd-wish .wish-phase2__copy{padding:24px 20px 26px!important}#mmd-wish #wish-flow{padding-top:8px!important}}

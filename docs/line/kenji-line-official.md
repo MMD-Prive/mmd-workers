@@ -9,6 +9,19 @@ Kenji LINE OA is the member-facing concierge entry for MMD Privé. It is not the
 - `/sigil/board`: internal system/admin/rules/control layer
 - LINE OA Kenji: member-facing conversational entry
 
+## MMD memory owner lock
+
+Kenji LINE is locked by current MMD memory to this runtime ownership:
+
+```text
+member-dashboard-chat-worker = current production LINE webhook owner / Kenji member-facing entry
+ai-worker = intelligence and answer support
+```
+
+`mmd-redirect-worker` may be used only as a route bridge/front gate when healthy. It is not the Kenji brain and must not be treated as the LINE answer owner.
+
+`immigrate-worker` is legacy/migration compatibility. Do not revive or retarget LINE OFC to `immigrate-worker` unless there is a separate, explicit migration decision.
+
 ## Production Webhook Route
 
 LINE Official uses the stable MMD domain route:
@@ -37,12 +50,13 @@ Cloudflare runtime flags:
 
 \`\`\`text
 LINE_AUTO_REPLY_ENABLED=true
+LINE_FIRST_CONTACT_ENABLED=true
 LINE_KENJI_AI_ENABLED=true
 LINE_KENJI_KNOWLEDGE_ENABLED=true
 AIRTABLE_KENJI_KNOWLEDGE_TABLE_ID=tblsLd1uVOtG2kHoU
 \`\`\`
 
-\`LINE_KENJI_KNOWLEDGE_ENABLED\` lets the webhook load only Knowledge Board cards that are \`active\`, \`auto_reply_allowed\`, and approved for \`LINE_OFC\`. If the card source is unavailable or fails the Per Voice guard, the Worker uses the safe local fallback instead.
+First Contact V2 uses deterministic, bounded replies after the OA greeting. It accepts explicit voluntary gender/style answers, asks for a service brief, and holds protected matters for review. The broader Knowledge Board reply path remains paused. See `docs/line/KENJI_LINE_FIRST_CONTACT_V2.md`.
 
 ## Test Phrases
 

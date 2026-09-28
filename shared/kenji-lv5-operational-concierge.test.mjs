@@ -6,12 +6,14 @@ import {
   KENJI_LV5_SCHEMA,
 } from "./kenji-lv5-operational-concierge.mjs";
 
-test("deposit-triggered booking asks for rate and duration without inferring payment", () => {
+test("deposit-triggered booking defaults to 90 minutes and asks only for rate", () => {
   const out = buildKenjiLv5OperationalContext({
     client: { canonical_client_id: "recClient123", status: "canonical" },
     intent: { type: "booking", trigger: "deposit", model_name: "Rossi", date: "2026-09-20", time: "20:00", location: "สุขุมวิท" },
   });
-  assert.deepEqual(out.missing, ["duration_or_end_time", "rate"]);
+  assert.deepEqual(out.missing, ["rate"]);
+  assert.equal(out.intent.duration_hours, 1.5);
+  assert.equal(out.intent.duration_source, "mmd_standard_minimum_90m_default");
   assert.equal(out.guardrails.no_payment_inference_from_slip, true);
 });
 

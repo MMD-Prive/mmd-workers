@@ -1,0 +1,28 @@
+name: Payment evidence and delivery contract
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/**"
+      - "payments-worker/**"
+      - "member-dashboard-chat-worker/src/line-group-ingress-front-gate.js"
+      - "shared/canonical-payment-evidence*"
+      - "shared/payment-notification-outbox*"
+      - "shared/test/payment-memory-r2.mjs"
+      - "scripts/ensure-payment-notification-cron*"
+      - "package.json"
+      - ".github/workflows/payment-evidence-delivery-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm run test:payment-delivery

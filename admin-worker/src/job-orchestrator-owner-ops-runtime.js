@@ -1,6 +1,7 @@
 import { sendCanonicalTelegramAlert, telegramAlertDiagnostic } from "./telegram-alert-matrix.js";
 
-export const OWNER_JOB_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
+// Kept separate from the owner-review queue at /v1/admin/dashboard/owner-actions.
+export const OWNER_JOB_ACTIONS_PATH = "/v1/admin/jobs/owner-actions";
 export const JOB_ORCHESTRATOR_AUTHORITY = "model_session_contract_v1";
 
 const API = "https://api.airtable.com/v0";

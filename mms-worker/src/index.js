@@ -11,6 +11,8 @@ import {
   uploadRequest,
 } from "./core.mjs";
 import { mmsApplicationThreadId } from "./application-telegram-routing.mjs";
+import { handleMmsLineWebhook, lineBotStatus } from "./line-bot.mjs";
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 
 const WORKER_NAME = "mms-worker";
 const JSON_LIMIT_BYTES = 64 * 1024;
@@ -213,7 +215,7 @@ export class MmsCoordinator extends DurableObject {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const requestId = crypto.randomUUID();
     const url = new URL(request.url);
     const path = normalizedPath(url.pathname);
@@ -272,7 +274,7 @@ export default {
 
       if (path === "/mms/api/prebookings" && request.method === "POST") {
         await requireInternalRequest(request, env);
-        return await handlePrebooking(request, env, cors, requestId);
+        return await handlePrebooking(request, env, cors, requestId, ctx);
       }
 
       const applicationReadMatch = path.match(/^\/internal\/mms\/applications\/(mmsapp_[a-f0-9]{24})$/);
@@ -455,7 +457,7 @@ async function handleMatching(request, env, cors, requestId) {
   return json({ ok: true, data: result }, 200, cors, requestId);
 }
 
-async function handlePrebooking(request, env, cors, requestId) {
+async function handlePrebooking(request, env, cors, requestId, ctx) {
   const payload = prebookingPayload(await readJsonLimited(request));
   const prebookingId = `mmspre_${(await sha256Hex(`prebooking:${payload.idempotency_key}`)).slice(0, 24)}`;
   const now = new Date().toISOString();
@@ -492,6 +494,21 @@ async function handlePrebooking(request, env, cors, requestId) {
     sync_status: sync.status,
     status,
   }, new Date().toISOString());
+  queueAuthorityEvent(ctx, env, {
+    event: "mms_prebooking_received",
+    authority: "mms-worker",
+    scope: "mms",
+    distinctValue: prebookingId,
+    insertValue: prebookingId,
+    properties: {
+      surface: "mms",
+      flow: "mms_prebooking",
+      world: "mms",
+      status,
+      sync_status: sync.status,
+      duplicate: false,
+    },
+  });
   return json({
     ok: true,
     prebooking: publicPrebooking(record),
@@ -570,20 +587,22 @@ async function syncApplicationTelegram(env, applicationRecord, payload, applicat
   }
 
   try {
-    const response = await fetch(`https://api.telegram.org/bot${String(env.TELEGRAM_BOT_TOKEN).trim()}/sendMessage`, {
+    const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${String(env.AUTH_SERVICE_MMS_TO_TELEGRAM || "").trim()}`,
+      },
       body: JSON.stringify({
-        chat_id: String(env.MMS_TELEGRAM_CHAT_ID).trim(),
-        message_thread_id: mmsApplicationThreadId(env),
+        flow: "mms_application",
         text: applicationTelegramMessage(payload, { application_id: applicationId }),
         disable_web_page_preview: true,
       }),
-    });
+    }));
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok !== true) {
-      const error = new Error(`TELEGRAM_HTTP_${response.status}`);
-      error.code = `TELEGRAM_HTTP_${response.status}`;
+    if (!response.ok || data?.ok !== true || data?.telegram?.ok !== true) {
+      const error = new Error(`TELEGRAM_ROUTER_HTTP_${response.status}`);
+      error.code = `TELEGRAM_ROUTER_HTTP_${response.status}`;
       throw error;
     }
     const notifiedAt = new Date().toISOString();
@@ -605,7 +624,11 @@ async function syncApplicationTelegram(env, applicationRecord, payload, applicat
 }
 
 function telegramConfigured(env) {
-  return Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim() && String(env.MMS_TELEGRAM_CHAT_ID || "").trim());
+  return Boolean(
+    env.TELEGRAM_WORKER
+      && typeof env.TELEGRAM_WORKER.fetch === "function"
+      && String(env.AUTH_SERVICE_MMS_TO_TELEGRAM || "").trim()
+  );
 }
 
 function selectName(value) {

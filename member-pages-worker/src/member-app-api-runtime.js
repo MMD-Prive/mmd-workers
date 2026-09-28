@@ -1,12 +1,22 @@
 import liffFoundation from "./liff-identity-foundation.js";
 import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { handleMemberAppSessionApi, isMemberAppSessionPath } from "./member-app-session.js";
+import { handleMemberAppSessionExtensionApi, isMemberAppSessionExtensionPath } from "./member-app-session-extension.js";
+import {
+  MY_MMD_FAST_TRUST_SCHEMA,
+  fastTrustHasCanonicalClient,
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
 
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LEGACY_STAGING_TABLE = "tbl1u0foFBvgFpT9G";
 const LEGACY_PAGE_SIZE = 100;
 const LEGACY_MAX_PAGES = 10;
+const IDENTITY_MERGE_REQUESTS_TABLE = "MMD — Identity Merge Requests";
+const IDENTITY_RECOVERY_MANUAL_SOURCE = "membership_payment_e2e_first_real_payment_acceptance";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBERSHIP_SIGNUP_URL = "/sigil/member/membership?source=line&intent=signup";
 const MEMBERSHIP_RENEW_URL = "/sigil/member/membership?source=line&intent=renew";
@@ -30,7 +40,7 @@ function normalizePath(value) {
 
 export function isMemberAppApiPath(input) {
   const url = input instanceof URL ? input : new URL(String(input));
-  return ROUTES.has(normalizePath(url.pathname)) || isMemberAppSessionPath(url);
+  return ROUTES.has(normalizePath(url.pathname)) || isMemberAppSessionPath(url) || isMemberAppSessionExtensionPath(url);
 }
 
 function methodNotAllowed() {
@@ -143,27 +153,184 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function readMemberAppSession(request, env = {}) {
+function canonicalMemberPaymentUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    const keys = [...url.searchParams.keys()];
+    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.port || url.username || url.password || url.hash) return "";
+    if (!["/pay/checkout", "/sigil/pay"].includes(url.pathname)) return "";
+    if (keys.length !== 1 || keys[0] !== "t" || !asString(url.searchParams.get("t"), 8192)) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function paymentSnapshotFromSession(session = {}) {
+  const selected = asObject(session.selected_package);
+  const renewal = asObject(session.renewal_offer);
+  const amountValue = session.payment_amount_thb ?? renewal.amount_thb ?? selected.amount_thb;
+  const amount = Number(amountValue);
+  const packageCode = asString(session.payment_package_code || renewal.package_code || selected.package_code, 80)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "");
+  return {
+    paymentRef: asString(session.payment_ref, 220) || null,
+    sessionId: asString(session.payment_intent_session_id || session.session_id, 220) || null,
+    paymentStage: asString(session.payment_stage, 80) || null,
+    packageCode: packageCode || null,
+    amountThb: Number.isFinite(amount) && amount > 0 && amount <= 100000000 ? Math.round(amount * 100) / 100 : null,
+    bindingStatus: asString(session.payment_binding_status, 80) || null,
+    customerPaymentUrl: canonicalMemberPaymentUrl(session.customer_payment_url) || null,
+    createdAt: asString(session.payment_intent_created_at, 80) || null,
+  };
+}
+
+async function loadMemberAppSessionState(request, env = {}) {
   const store = env.LIFF_IDENTITY_KV;
   const secret = String(env.LIFF_SESSION_SECRET || "");
   const token = cookieValue(request, SESSION_COOKIE);
   if (!store?.get || secret.length < 32 || !token) return null;
   try {
     const hash = await hmacHex(secret, `session:${token}`);
-    const session = await store.get(`liff:session:${hash}`, "json");
+    const sessionKey = `liff:session:${hash}`;
+    const session = await store.get(sessionKey, "json");
     if (!session || Number(session.expires_at || 0) <= Date.now()) return null;
     const lineUserId = asString(session.line_user_id, 160);
     if (!/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
-    return {
-      lineUserId,
-      memberExists: session.member_exists === true,
-      memberId: asString(session.member_id, 160) || null,
-      memberProfile: asObject(session.member_profile),
-    };
+    return { store, sessionKey, session, lineUserId };
   } catch {
     return null;
   }
 }
+
+export async function readMemberAppSession(request, env = {}) {
+  const state = await loadMemberAppSessionState(request, env);
+  if (!state) return null;
+  return {
+    lineUserId: state.lineUserId,
+    memberExists: state.session.member_exists === true,
+    memberId: asString(state.session.member_id, 160) || null,
+    memberProfile: asObject(state.session.member_profile),
+    paymentSnapshot: paymentSnapshotFromSession(state.session),
+    identityRecoveryState: asString(state.session.identity_recovery_state, 64) || null,
+  };
+}
+
+function normalizedRecoveryStatus(value) {
+  return asString(value, 80).toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+export function identityRecoveryStateFromEvidence(session = null, record = null) {
+  if (!session?.lineUserId) return null;
+  if (session.memberExists === true) return "linked";
+
+  const sessionState = normalizedRecoveryStatus(session.identityRecoveryState);
+  if (["linked", "already_linked", "applied"].includes(sessionState)) return "linked";
+  if (["known_identity", "review_required"].includes(sessionState)) return "review_required";
+
+  if (!record || typeof record !== "object") return "auto_resolving";
+  const fields = asObject(record.fields);
+  const status = normalizedRecoveryStatus(fields.status);
+  const matchType = normalizedRecoveryStatus(fields.match_type);
+  const sourcePath = asString(fields.source_path, 240);
+
+  if (status === "applied") return "linked";
+  if (
+    status === "review_required"
+    && matchType === "not_found"
+    && sourcePath === IDENTITY_RECOVERY_MANUAL_SOURCE
+  ) {
+    return "manual_required";
+  }
+  if (
+    ["pending_verification", "email_verified", "approved", "review_required"].includes(status)
+    || sourcePath === "/member/api/liff/recovery"
+  ) {
+    return "review_required";
+  }
+  return "auto_resolving";
+}
+
+export async function readIdentityRecoveryState(env = {}, session = null) {
+  const base = identityRecoveryStateFromEvidence(session, null);
+  if (base === null || base === "linked" || base === "review_required") return base;
+
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  const lineUserId = asString(session?.lineUserId, 160);
+  const table = String(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS || IDENTITY_MERGE_REQUESTS_TABLE).trim();
+  if (!apiKey || !baseId || !table || !/^U[a-f0-9]{32}$/i.test(lineUserId)) return base;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineUserId)}`);
+    url.searchParams.set("maxRecords", "5");
+    url.searchParams.set("sort[0][field]", "created_at");
+    url.searchParams.set("sort[0][direction]", "desc");
+    const request = new Request(url.toString(), {
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      signal: controller.signal,
+    });
+    const response = env.AIRTABLE_HTTP?.fetch
+      ? await env.AIRTABLE_HTTP.fetch(request)
+      : await fetch(request);
+    const payload = await response.json().catch(() => null);
+    const record = response.ok && Array.isArray(payload?.records) ? payload.records[0] : null;
+    return identityRecoveryStateFromEvidence(session, record);
+  } catch {
+    return base;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function withIdentityRecovery(membership, state) {
+  // A successful canonical negative lookup is the one path allowed to present
+  // a real new customer. Do not keep showing a stale automatic-recovery banner
+  // on that settled state; manual/review states remain visible.
+  if (!state || (membership?.lifecycle === "new" && state === "auto_resolving")) return membership;
+  return { ...membership, identity_recovery: { state } };
+}
+
+export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}) {
+  const state = await loadMemberAppSessionState(request, env);
+  if (!state?.store?.put) return false;
+  const paymentUrl = canonicalMemberPaymentUrl(input.customerPaymentUrl || input.customer_payment_url);
+  const paymentRef = asString(input.paymentRef || input.payment_ref, 220);
+  const sessionId = asString(input.sessionId || input.session_id, 220);
+  const packageCode = asString(input.packageCode || input.package_code, 80).toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+  const stage = asString(input.paymentStage || input.payment_stage, 80).toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+  const amount = Number(input.amountThb ?? input.amount_thb);
+  if (!paymentUrl || !paymentRef || !sessionId || !packageCode || !stage || !Number.isFinite(amount) || amount <= 0 || amount > 100000000) return false;
+
+  state.session.payment_intent_session_id = sessionId;
+  state.session.payment_binding_status = "canonical_pending";
+  state.session.payment_ref = paymentRef;
+  state.session.payment_stage = stage;
+  state.session.payment_package_code = packageCode;
+  state.session.payment_amount_thb = Math.round(amount * 100) / 100;
+  state.session.customer_payment_url = paymentUrl;
+  state.session.payment_intent_created_at = new Date().toISOString();
+  state.session.route_after_liff = "/member/payments";
+
+  const remainingSeconds = Math.ceil((Number(state.session.expires_at || 0) - Date.now()) / 1000);
+  if (remainingSeconds <= 0) return false;
+  const ttl = Math.min(15 * 60, Math.max(60, remainingSeconds));
+  try {
+    await state.store.put(state.sessionKey, JSON.stringify(state.session), { expirationTtl: ttl });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const MEMBER_PAYMENT_SNAPSHOT_INTERNALS = Object.freeze({
+  canonicalMemberPaymentUrl,
+  paymentSnapshotFromSession,
+});
 
 function formulaString(value) {
   return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
@@ -253,11 +420,72 @@ function selectLegacySignal(records) {
   return candidates[0] || null;
 }
 
-async function readLegacyDisplay(env = {}, lineUserId = "") {
+function canonicalDisplaySignal(record, source) {
+  const fields = asObject(record?.fields);
+  const rename = fastTrustRenamedName(record, source);
+  const level = levelFromRenamedName(rename);
+  const membershipStatus = statusFromRenamedName(rename, level);
+  const createdAt = Number.isFinite(Date.parse(asString(record?.createdTime, 80)))
+    ? Date.parse(asString(record?.createdTime, 80))
+    : 0;
+  return {
+    level,
+    membershipStatus,
+    parseConfidence: asNumber(fields.parse_confidence || fields["Parse Confidence"]),
+    renameSignal: level !== "unknown" || membershipStatus !== "unknown",
+    createdAt,
+  };
+}
+
+function selectCanonicalDisplaySignal(records, source) {
+  const candidates = (Array.isArray(records) ? records : [])
+    .map((record) => canonicalDisplaySignal(record, source))
+    .filter((item) => item.renameSignal);
+  candidates.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+    const aInfo = Number(a.level !== "unknown") + Number(a.membershipStatus !== "unknown");
+    const bInfo = Number(b.level !== "unknown") + Number(b.membershipStatus !== "unknown");
+    if (aInfo !== bInfo) return bInfo - aInfo;
+    return Number(b.parseConfidence || 0) - Number(a.parseConfidence || 0);
+  });
+  return candidates[0] || null;
+}
+
+function displayFromRecords(records, selectSignal, displaySource, signalSource = undefined) {
+  const selected = selectSignal(records, signalSource);
+  const historicalServiceEvidence = (Array.isArray(records) ? records : [])
+    .some((record) => hasHistoricalServiceEvidence(asObject(record?.fields)));
+  if (!selected && !historicalServiceEvidence) return null;
+  return {
+    level: selected?.level || "unknown",
+    membershipStatus: selected?.membershipStatus || "unknown",
+    parseConfidence: selected?.parseConfidence ?? null,
+    historicalServiceEvidence,
+    source: displaySource,
+  };
+}
+
+function sourceUsesLegacyFields(source) {
+  return source?.lineUserIdField === MY_MMD_FAST_TRUST_SCHEMA.legacyLineUserIdField
+    || source?.table === MY_MMD_FAST_TRUST_SCHEMA.legacyTable;
+}
+
+function legacyStagingTable(env = {}) {
+  return String(
+    env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID
+    || env.AIRTABLE_TABLE_LINE_OFC_STAGING
+    || LEGACY_STAGING_TABLE,
+  ).trim();
+}
+
+function sameAirtableTable(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+}
+
+async function listExactLineAirtableRecords(env = {}, table = "", filterByFormula = "") {
   const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
   const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
-  const table = String(env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || LEGACY_STAGING_TABLE).trim();
-  if (!apiKey || !baseId || !table || !/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
+  if (!apiKey || !baseId || !table || !filterByFormula) return { state: "unavailable", records: [] };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -266,40 +494,62 @@ async function readLegacyDisplay(env = {}, lineUserId = "") {
   try {
     for (let page = 0; page < LEGACY_MAX_PAGES; page += 1) {
       const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
-      url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineUserId)}`);
+      url.searchParams.set("filterByFormula", filterByFormula);
       url.searchParams.set("pageSize", String(LEGACY_PAGE_SIZE));
       if (offset) url.searchParams.set("offset", offset);
-      const response = await fetch(url.toString(), {
+      const init = {
         method: "GET",
         headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
         signal: controller.signal,
-      });
+      };
+      const response = env.AIRTABLE_HTTP?.fetch
+        ? await env.AIRTABLE_HTTP.fetch(new Request(url.toString(), init))
+        : await fetch(url.toString(), init);
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload || !Array.isArray(payload.records)) {
-        if (!records.length) return null;
-        break;
+        return { state: "unavailable", records };
       }
       records.push(...payload.records);
       offset = asString(payload.offset, 512);
       if (!offset) break;
     }
-
-    if (!records.length) return null;
-    const selected = selectLegacySignal(records);
-    const historicalServiceEvidence = records.some((record) => hasHistoricalServiceEvidence(asObject(record?.fields)));
-    if (!selected && !historicalServiceEvidence) return null;
-    return {
-      level: selected?.level || "unknown",
-      membershipStatus: selected?.membershipStatus || "unknown",
-      parseConfidence: selected?.parseConfidence ?? null,
-      historicalServiceEvidence,
-      source: "line_ofc_legacy_display_only",
-    };
+    return { state: "resolved", records };
   } catch {
-    return null;
+    return { state: "unavailable", records };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// The canonical LINE→Client projection is the only negative proof that may
+// show a verified LINE identity as a genuine new customer. The older staging
+// table remains display/history evidence only; an outage there cannot turn a
+// resolved canonical negative lookup into an indefinite signup block.
+async function readLegacyDisplayResult(env = {}, lineUserId = "") {
+  if (!/^U[a-f0-9]{32}$/i.test(lineUserId)) {
+    return { identityState: "unavailable", historyState: "unavailable", canonicalClientKnown: false, display: null };
+  }
+
+  const canonicalSource = resolveFastTrustAirtableSource(env);
+  const canonicalFormula = fastTrustLineFormula(lineUserId, canonicalSource);
+  const canonical = await listExactLineAirtableRecords(env, canonicalSource.table, canonicalFormula);
+  const legacyTable = legacyStagingTable(env);
+  const legacy = sameAirtableTable(canonicalSource.table, legacyTable)
+    ? canonical
+    : await listExactLineAirtableRecords(env, legacyTable, `{line_user_id}=${formulaString(lineUserId)}`);
+  const canonicalDisplay = sourceUsesLegacyFields(canonicalSource)
+    ? displayFromRecords(canonical.records, selectLegacySignal, "line_ofc_legacy_display_only", canonicalSource)
+    : displayFromRecords(canonical.records, selectCanonicalDisplaySignal, "line_ofc_canonical_display_only", canonicalSource);
+  const legacyDisplay = sameAirtableTable(canonicalSource.table, legacyTable)
+    ? null
+    : displayFromRecords(legacy.records, selectLegacySignal, "line_ofc_legacy_display_only");
+
+  return {
+    identityState: canonical.state,
+    historyState: legacy.state,
+    canonicalClientKnown: canonical.records.some((record) => fastTrustHasCanonicalClient(record, canonicalSource)),
+    display: canonicalDisplay || legacyDisplay,
+  };
 }
 
 function identityFromProfile(profile) {
@@ -369,8 +619,10 @@ function careBackOpen(now = new Date()) {
   return now.getTime() <= Date.parse(CARE_BACK_CONTINUATION_END_AT);
 }
 
-function legacyIndicatesPriorMembership(legacy) {
+function legacyIndicatesPriorMembership(legacy, canonicalClientKnown = false) {
+  if (canonicalClientKnown) return true;
   if (!legacy) return false;
+  if (legacy.historicalServiceEvidence === true) return true;
   if (["member", "review_required"].includes(legacy.membershipStatus)) return true;
   return !["unknown", "guest"].includes(legacy.level);
 }
@@ -391,7 +643,10 @@ function nextActionFor(lifecycle) {
   return { kind: "none", label: null, url: null };
 }
 
-function enrichMembership(baseMembership, session, legacy) {
+function enrichMembership(baseMembership, session, legacy, {
+  canonicalClientKnown = false,
+  identityLookupUnavailable = false,
+} = {}) {
   const membership = { ...baseMembership };
   const canonicalLevel = membership.levelVerified === true && membership.level !== "unknown";
   const expiry = baseMembership.renewalDueAt || asString(session?.memberProfile?.membership_expires_at, 40) || null;
@@ -405,7 +660,9 @@ function enrichMembership(baseMembership, session, legacy) {
 
   let lifecycle = "checking";
   if (session?.memberExists === false) {
-    lifecycle = legacyIndicatesPriorMembership(legacy) ? "checking" : "new";
+    lifecycle = identityLookupUnavailable || legacyIndicatesPriorMembership(legacy, canonicalClientKnown)
+      ? "checking"
+      : "new";
   } else if (["active", "grace"].includes(membership.status)) {
     lifecycle = "active";
   } else if (membership.status === "expired") {
@@ -555,18 +812,10 @@ function careFromState(payload) {
   };
 }
 
-async function sessionAndLegacy(request, env, baseMembership) {
-  const session = await readMemberAppSession(request, env);
-  const needsLegacy = Boolean(session?.lineUserId)
-    && (session.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
-  const legacy = needsLegacy ? await readLegacyDisplay(env, session.lineUserId) : null;
-  return { session, legacy };
-}
-
-async function legacyForRecoveryCheck(request, env) {
+async function legacyEvidenceForRecoveryCheck(request, env) {
   const session = await readMemberAppSession(request, env);
   if (!session?.lineUserId) return null;
-  return readLegacyDisplay(env, session.lineUserId);
+  return readLegacyDisplayResult(env, session.lineUserId);
 }
 
 async function adaptDashboard(request, env, delegate) {
@@ -582,13 +831,21 @@ async function adaptDashboard(request, env, delegate) {
   const pointsNeedsRecoveryCheck = Boolean(sessionSnapshot?.lineUserId)
     && canonicalHistory.length === 0
     && (points.confirmedBalance === null || points.confirmedBalance === 0);
-  const legacy = membershipNeedsLegacy || pointsNeedsRecoveryCheck
-    ? await readLegacyDisplay(env, sessionSnapshot.lineUserId)
+  const legacyEvidence = membershipNeedsLegacy || pointsNeedsRecoveryCheck
+    ? await readLegacyDisplayResult(env, sessionSnapshot.lineUserId)
     : null;
-  const membership = enrichMembership(baseMembership, sessionSnapshot, membershipNeedsLegacy ? legacy : null);
+  const legacy = legacyEvidence?.display || null;
+  const identityRecoveryState = await readIdentityRecoveryState(env, sessionSnapshot);
+  const membership = withIdentityRecovery(
+    enrichMembership(baseMembership, sessionSnapshot, membershipNeedsLegacy ? legacy : null, {
+      canonicalClientKnown: legacyEvidence?.canonicalClientKnown === true,
+      identityLookupUnavailable: legacyEvidence?.identityState === "unavailable",
+    }),
+    identityRecoveryState,
+  );
   const pointsRecoveryPending = Boolean(
     pointsNeedsRecoveryCheck
-    && legacy?.historicalServiceEvidence,
+    && (legacy?.historicalServiceEvidence || legacyEvidence?.historyState === "unavailable"),
   );
   return responseFrom(result.upstream, {
     greetingName: asString(asObject(data.member).display_name, 120) || null,
@@ -640,8 +897,16 @@ async function adaptMembership(request, env, delegate) {
   const baseMembership = membershipFromDashboard(asObject(result.payload.data));
   const needsLegacy = Boolean(sessionSnapshot?.lineUserId)
     && (sessionSnapshot.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
-  const legacy = needsLegacy ? await readLegacyDisplay(env, sessionSnapshot.lineUserId) : null;
-  return responseFrom(result.upstream, enrichMembership(baseMembership, sessionSnapshot, legacy));
+  const legacyEvidence = needsLegacy ? await readLegacyDisplayResult(env, sessionSnapshot.lineUserId) : null;
+  const legacy = legacyEvidence?.display || null;
+  const identityRecoveryState = await readIdentityRecoveryState(env, sessionSnapshot);
+  return responseFrom(
+    result.upstream,
+    withIdentityRecovery(enrichMembership(baseMembership, sessionSnapshot, legacy, {
+      canonicalClientKnown: legacyEvidence?.canonicalClientKnown === true,
+      identityLookupUnavailable: legacyEvidence?.identityState === "unavailable",
+    }), identityRecoveryState),
+  );
 }
 
 async function adaptPoints(request, env, delegate) {
@@ -655,8 +920,8 @@ async function adaptPoints(request, env, delegate) {
     && canonicalHistory.length === 0
     && (summary.confirmedBalance === null || summary.confirmedBalance === 0);
   if (needsRecoveryCheck) {
-    const legacy = await legacyForRecoveryCheck(request, env);
-    if (legacy?.historicalServiceEvidence) {
+    const legacyEvidence = await legacyEvidenceForRecoveryCheck(request, env);
+    if (legacyEvidence?.display?.historicalServiceEvidence || legacyEvidence?.historyState === "unavailable") {
       return responseFrom(result.upstream, {
         state: "checking",
         summary: { ...summary, confirmedBalance: null, currencyLabel: null },
@@ -682,8 +947,8 @@ async function adaptHistory(request, env, delegate) {
     if (linkedHistory.state !== "resolved") return responseFrom(result.upstream, { state: "checking", items: [] });
   }
   if (items.length === 0) {
-    const legacy = await legacyForRecoveryCheck(request, env);
-    if (legacy?.historicalServiceEvidence) {
+    const legacyEvidence = await legacyEvidenceForRecoveryCheck(request, env);
+    if (legacyEvidence?.display?.historicalServiceEvidence || legacyEvidence?.historyState === "unavailable") {
       return responseFrom(result.upstream, { state: "checking", items: [] });
     }
   }
@@ -707,6 +972,7 @@ async function adaptCare(request, env, delegate) {
 
 export async function handleMemberAppApi(request, env = {}, delegate = liffFoundation) {
   if (isMemberAppSessionPath(request.url)) return handleMemberAppSessionApi(request, env, readMemberAppSession);
+  if (isMemberAppSessionExtensionPath(request.url)) return handleMemberAppSessionExtensionApi(request, env, readMemberAppSession, rememberMemberPaymentSnapshot);
   if (request.method !== "GET") return methodNotAllowed();
   const path = normalizePath(new URL(request.url).pathname);
   if (!ROUTES.has(path)) return routeNotFound();

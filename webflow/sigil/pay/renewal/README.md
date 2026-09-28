@@ -1,33 +1,24 @@
-# SĪGIL Renewal Webflow Path
+# SĪGIL Renewal Compatibility Route
 
-This folder is intentionally non-runtime.
+Status: redirect-only runtime.
 
-The renewal payment page is production locked to the Cloudflare Worker renderer below:
+The route family is owned by `member-dashboard-chat-worker` only so a stale Webflow or legacy payment page can never win route precedence.
 
-```text
-owner: member-dashboard-chat-worker
-renderer: single-renewal-renderer
-marker: mmd-renewal-single
-```
-
-Do not use Webflow as the runtime source for these routes:
+## Route behavior
 
 ```text
 /pay/renewal*
 /sigil/pay/renewal*
 ```
 
-Do not proxy or fallback renewal routes to Webflow. Any UI, copy, CSS, JS, or logic changes must be made only in the canonical worker renderer.
+- When a valid-looking signed token `t` is present:
+  - redirect to `https://mmdbkk.com/sigil/pay?t=...`
+  - the canonical signed SIGIL Pay page owns payment UI, payment instructions and proof intake.
+- Without `t`:
+  - redirect to `https://mmdbkk.com/sigil/member/membership?intent=renew`
+  - preserve only safe renewal-entry context such as package/plan/tier/code/promo/source/campaign.
+- The compatibility route renders **no customer-visible HTML**.
+- It does not show a loading page, fallback card, bank details, QR, proof uploader or legacy renewal review UI.
+- It is never payment authority.
 
-The customer-facing principle for payment proof is:
-
-```text
-ส่งหลักฐานไว้ให้ MMD ตรวจรายการได้เลยครับ
-สถานะสมาชิกจะอัปเดตหลังยอดจริงถูกตรวจสอบเรียบร้อยแล้ว
-```
-
-See:
-
-```text
-docs/locks/MMD_SIGIL_RENEWAL_PAGE_LOCK.md
-```
+Webflow may retain a hidden/non-runtime compatibility page record, but the Worker route wins production and must remain redirect-only.

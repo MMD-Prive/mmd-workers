@@ -157,6 +157,7 @@ test("Himai supplier registration links a canonical Supplier record", async () =
 
 test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   const cases = [
+      ["สมัคร Premium", "private_membership_signup", /intent=signup/],
     ["ไป dinner", "mmd_companion", /MMD Companion/],
     ["อยากนวด recovery", "mms_wellness", /MMS Wellness/],
     ["ไม่มีสถานที่ ใช้ Relax Spa", "partner_venue", /Relax Spa by 9/],
@@ -235,14 +236,15 @@ test("membership signup and renewal webhooks reply once without model use", asyn
   };
   try {
     const cases = [
-      ["สมัครสมาชิก", "membership_signup", "intent=signup"],
-      ["อยากสมัครสมาชิก", "membership_signup", "intent=signup"],
-      ["ขอสมัครสมาชิก", "membership_signup", "intent=signup"],
-      ["ต่ออายุ", "membership_renewal", "intent=renew"],
-      ["ต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
-      ["ขอต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
+      ["สมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
+      ["อยากสมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
+      ["ขอสมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
+      ["สมัคร Premium", "private_membership_signup", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/],
+      ["ต่ออายุ", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
+      ["ต่ออายุสมาชิก", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
+      ["ขอต่ออายุสมาชิก", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
     ];
-    for (const [text, intent, query] of cases) {
+    for (const [text, intent, routePattern] of cases) {
       calls.length = 0;
       const event = lineTextEvent(text, { mode: "active", message: { id: `msg-${text}`, type: "text", text } });
       assert.equal(inferLineIntent(text, event), intent, text);
@@ -256,7 +258,7 @@ test("membership signup and renewal webhooks reply once without model use", asyn
       assert.equal(calls.filter((call) => call.url.includes("api.openai.com")).length, 0, text);
       const replyBody = JSON.parse(calls.find((call) => call.url.includes("/message/reply")).init.body);
       assert.equal(replyBody.messages.length, 1, text);
-      assert.match(replyBody.messages[0].text, new RegExp(`https://mmdbkk\\.com/sigil/member/membership\\?source=line&${query}`), text);
+      assert.match(replyBody.messages[0].text, routePattern, text);
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -317,12 +319,12 @@ test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases 
     ["โปร 6 ปีหมดเขตเมื่อไหร่", "care_back_dates", /1–30 กันยายน 2026/],
     ["Phase 2 เริ่มวันไหน", "care_back_dates", /1–30 กันยายน 2026/],
     ["CARE BACK กันยายนได้สิทธิ์ซ้ำไหม", "care_back_dates", /ไม่สร้างสิทธิ์ซ้ำ/],
-    ["CARE BACK สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /180 วัน/],
+    ["CARE BACK สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /1 ปี/],
     ["สมาชิก active โปร 6 ปีต่อวันยังไง", "care_back_current_member", /วันหมดอายุจริง/],
     ["แคร์แบ็ก grace member", "care_back_current_member", /active หรือ grace/],
-    ["CARE BACK ยังไม่หมดอายุเพิ่มกี่วัน", "care_back_current_member", /180 วัน/],
-    ["CARE BACK สมาชิกหมดอายุได้อะไร", "care_back_expired_member", /90 วันและ 150 Points/],
-    ["former member โปร 6 ปี", "care_back_expired_member", /กลับเป็น active หรือ grace/],
+    ["CARE BACK ยังไม่หมดอายุเพิ่มกี่วัน", "care_back_current_member", /1 ปี/],
+    ["CARE BACK สมาชิกหมดอายุได้อะไร", "care_back_expired_member", /1 ปี/],
+    ["former member โปร 6 ปี", "care_back_expired_member", /วัน Verify/],
     ["แคร์แบ็กต่ออายุแล้วได้กี่แต้ม", "care_back_expired_member", /150 Points/],
     ["expired CARE BACK ต้องทำอะไร", "care_back_expired_member", /ต่ออายุหรือชำระ/],
     ["CARE BACK สมาชิกใหม่ Standard", "care_back_new_standard", /150 Welcome Points/],
@@ -368,7 +370,7 @@ test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases 
 test("context-free CARE BACK minimum and production-smoke phrases stay deterministic and non-authoritative", async () => {
   const minimumCases = [
     ["ผมได้ 180 วันแล้วใช่ไหม", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
-    ["หมดอายุแล้วได้ 150 แต้มเลยไหม", "care_back_expired_member", /กลับเป็น active หรือ grace ก่อน/],
+    ["หมดอายุแล้วได้ 150 แต้มเลยไหม", "care_back_expired_member", /150 Points ยังเป็นสิทธิ์แยก/],
     ["สมัคร Standard วันนี้แต้มเข้าเลยไหม", "care_back_new_standard", /150 Welcome Points/],
     ["Premium ได้ 250 แล้วใช่ไหม", "care_back_new_premium", /250 Welcome Points/],
     ["350 แต้มคือ Black Card ใช่ไหม", "care_back_black_card", /ไม่ได้รับ Black Card อัตโนมัติ/],
@@ -383,8 +385,8 @@ test("context-free CARE BACK minimum and production-smoke phrases stay determini
   const smokeCases = [
     ["โปร 6 ปีคืออะไร", "care_back_overview", /สิทธิ์ดูแลกลับ/],
     ["โปรถึงวันไหน", "care_back_dates", /31 สิงหาคม 2026/],
-    ["สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /180 วัน/],
-    ["หมดอายุแล้วได้อะไร", "care_back_expired_member", /90 วันและ 150 Points/],
+    ["สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /1 ปี/],
+    ["หมดอายุแล้วได้อะไร", "care_back_expired_member", /1 ปี/],
     ["Standard ใหม่ได้อะไร", "care_back_new_standard", /150 Welcome Points/],
     ["Premium ใหม่ได้อะไร", "care_back_new_premium", /250 Welcome Points/],
     ["Guest Pass ได้แต้มไหม", "care_back_new_member", /ไม่มี CARE BACK Welcome Points อัตโนมัติ/],

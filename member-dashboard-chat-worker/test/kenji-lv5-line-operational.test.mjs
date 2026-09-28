@@ -72,9 +72,96 @@ test("P3 supports relative Bangkok dates and non-office-hour Thai time", () => {
   assert.equal(extractOperationalTime("บ่ายสอง"), "14:00");
 });
 
+test("Payment Center navigation is not consumed as payment-status truth", () => {
+  assert.equal(isKenjiLv5LineOperationalCandidate(event("ชำระเงิน"), "payment_center"), false);
+  assert.equal(parseKenjiLv5LineIntent(event("ชำระเงิน"), "payment_center", NOW), null);
+  assert.equal(isKenjiLv5LineOperationalCandidate(event("โอนแล้ว"), "payment_status"), true);
+});
+
 test("strong booking request is operational even when legacy intent is mmd_companion", () => {
   assert.equal(isKenjiLv5LineOperationalCandidate(event("จอง Rossi พรุ่งนี้ 20:00 ที่สุขุมวิท"), "mmd_companion"), true);
   assert.equal(isKenjiLv5LineOperationalCandidate(event("อยากรู้ว่ามีบริการอะไรบ้าง"), "service_guidance"), false);
+});
+
+test("guided booking asks exactly one missing customer field at a time", () => {
+  const base = {
+    active: true,
+    resolved_intent: "mmd_companion",
+    draft: {
+      draft_id: "kbd1_guided",
+      revision: 1,
+      ready: false,
+      missing_fields: ["model_name", "date", "time", "location", "amount_thb"],
+    },
+  };
+
+  const askModel = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("mmd_companion", base);
+  assert.match(askModel.text, /นายแบบคนไหน/);
+  assert.equal(askModel.operational.awaiting_field, "model_name");
+
+  const askDate = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("model_lookup", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      model_working_name_hint: "Jasper",
+      missing_fields: ["date", "time", "location", "amount_thb"],
+    },
+  });
+  assert.match(askDate.text, /Jasper/);
+  assert.match(askDate.text, /วันไหน/);
+  assert.doesNotMatch(askDate.text, /เวลาไหน|สถานที่/);
+
+  const askTime = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("note_only", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      date: "2026-09-20",
+      missing_fields: ["time", "location", "amount_thb"],
+    },
+  });
+  assert.match(askTime.text, /เวลาไหน/);
+  assert.doesNotMatch(askTime.text, /สถานที่/);
+
+  const askLocation = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("note_only", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      date: "2026-09-20",
+      time: "20:00",
+      missing_fields: ["location", "amount_thb"],
+    },
+  });
+  assert.match(askLocation.text, /พื้นที่หรือสถานที่/);
+
+  const noCustomerField = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("note_only", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      date: "2026-09-20",
+      time: "20:00",
+      location: "สุขุมวิท",
+      missing_fields: ["amount_thb"],
+    },
+  });
+  assert.equal(noCustomerField, null);
+});
+
+test("rate-only missing state is reviewed by Per instead of asking the customer to supply a rate", () => {
+  const reply = renderKenjiLv5LineReply({
+    ok: true,
+    client_360: { canonical_client_id: "recClient", display_name: "คุณเอ็ม" },
+    fan_in: { identity_resolution: "canonical" },
+    entitlement_live: { member_blocked: false },
+    missing: ["rate"],
+    next_actions: [{ action: "request_missing_input" }],
+  }, { type: "booking", model_name: "Rossi", date: "2026-09-20", time: "20:00", location: "สุขุมวิท" });
+  assert.match(reply, /เปอร์ตรวจเรท/);
+  assert.match(reply, /ไม่ต้องส่งข้อมูลเดิมซ้ำ/);
+  assert.doesNotMatch(reply, /ส่งเรทราคา/);
 });
 
 test("P3 asks only for missing booking inputs and preserves known inputs", () => {
@@ -129,21 +216,64 @@ test("model access silent state does not reveal private model existence or sched
   assert.doesNotMatch(reply, /ว่าง|ไม่ว่าง|มีนายแบบ|ไม่มีนายแบบ/);
 });
 
-test("model code or alias must not bypass canonical calendar-name mapping", () => {
+test("matched Model with Sales Control off stops booking progression without exposing a price", () => {
+  const reply = renderKenjiLv5ModelGateReply({
+    required: true,
+    status: "match",
+    model: {
+      model_code: "EMs21",
+      working_name: "J Dye",
+      sales: {
+        sellable: false,
+        visibility: "off",
+        customer_rate_thb: null,
+        price_visible: false,
+        reason_code: "sales_visibility_off",
+      },
+    },
+  });
+  assert.match(reply, /เงื่อนไขการขาย/);
+  assert.match(reply, /ยังไม่เสนอราคา/);
+  assert.doesNotMatch(reply, /\d[\d,]*\s*(?:บาท|THB)/i);
+});
+
+test("matched Model with an allowed Sales Control offer continues the existing booking lane", () => {
+  const reply = renderKenjiLv5ModelGateReply({
+    required: true,
+    status: "match",
+    model: { sales: { sellable: true, price_visible: true, customer_rate_thb: 25000 } },
+  });
+  assert.equal(reply, "");
+});
+
+test("verified model code maps to canonical Calendar name while an unverified alias still blocks", () => {
   const same = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
     required: true,
     status: "match",
     parsed: { model_name: "Rossi" },
     model: { working_name: "Rossi", model_code: "EMs20" },
   });
-  const alias = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
+  const code = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
     required: true,
     status: "match",
     parsed: { model_name: "EMs20" },
     model: { working_name: "Rossi", model_code: "EMs20" },
   });
+  const alias = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
+    required: true,
+    status: "match",
+    parsed: { model_name: "Ross" },
+    model: { working_name: "Rossi", model_code: "EMs20" },
+  });
+  const mapped = KENJI_LV5_LINE_REQUEST_INTERNALS.canonicalizeVerifiedModelIntent(
+    { type: "booking", model_name: "EMs20", date: "2026-09-20" },
+    { status: "match", model: { working_name: "Rossi", model_code: "EMs20" } },
+  );
   assert.equal(same, false);
+  assert.equal(code, false);
   assert.equal(alias, true);
+  assert.equal(mapped.model_name, "Rossi");
+  assert.equal(mapped.requested_model_ref, "EMs20");
 });
 
 test("LINE auto-reply pause suppresses customer delivery without disabling booking mutation flow", () => {
@@ -160,10 +290,12 @@ test("HYPE exception routing keeps payment, membership and identity in canonical
   const payment = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "payment_review_required", operational: { primary_action: "review_payment" } });
   const membership = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "model_access:renewal", operational: { model_access_status: "renewal" } });
   const identity = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "canonical_client_unresolved", operational: { primary_action: "resolve_identity" } });
+  const silent = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "model_access:silent", operational: { model_access_status: "silent" } });
   assert.equal(payment.thread_id, 22);
   assert.equal(payment.event, "payment_match_uncertain");
   assert.equal(membership.thread_id, 20);
   assert.equal(membership.event, "membership_review_required");
   assert.equal(identity.thread_id, 9);
   assert.equal(identity.event, "identity_client_verification_failed");
+  assert.equal(silent, null);
 });

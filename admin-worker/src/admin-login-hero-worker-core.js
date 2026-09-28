@@ -15,6 +15,8 @@ export { KenjiKnowledgeCoordinator } from "./kenji-knowledge-airtable-adapter.js
 export { ModelActivationCoordinator } from "./model-first-time-activation.js";
 export { ModelLocationCoordinator } from "./model-location-runtime.js";
 export { LineOfcConsoleBackfillCoordinator } from "./line-ofc-console-backfill.js";
+export { ModelMediaSlotCoordinator } from "../../shared/model-media-slot-coordinator.mjs";
+export { ModelCardCoordinator } from "./model-card-automation.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 import {
@@ -49,6 +51,39 @@ import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from ".
 import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from "./payment-issuer-diagnostic.js";
 import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
 import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
+import { HYPE_OPERATIONAL_STATUS_PATH, handleHypeOperationalStatusRpc } from "./hype-operating-concierge.js";
+import { HYPE_MEMBER_WALLET_PATH, handleHypeMemberWalletRpc } from "./hype-member-wallet.js";
+import {
+  HYPE_SHOP_ORDERS_PATH,
+  HYPE_SHOP_ORDERS_SMOKE_PATH,
+  handleHypeShopOrdersRpc,
+  handleHypeShopOrdersSmokeRpc,
+} from "./hype-shop-orders.js";
+import { HYPE_OWNER_SUMMARY_PATH, handleHypeOwnerSummaryRpc } from "./hype-owner-summary.js";
+import {
+  handleOwnerMyMmdRecoveryDiagnostic,
+  isOwnerMyMmdRecoveryDiagnosticRequest,
+  OWNER_MY_MMD_RECOVERY_PAGE_PATH,
+} from "./owner-my-mmd-recovery-diagnostic.js";
+import {
+  handleRecoveryControl,
+  isRecoveryControlRequest,
+  RECOVERY_CONTROL_PAGE_PATH,
+} from "./recovery-control.js";
+import {
+  HYPE_CONTINUITY_PATH,
+  HYPE_CONVERSATION_CONTEXT_PATH,
+  HYPE_HANDOFF_PATH,
+  HYPE_HANDOFF_STATUS_PATH,
+  HYPE_TRANSACTION_INTAKE_PATH,
+  HYPE_SUPERVISED_EXECUTION_PATH,
+  handleHypeContinuityRpc,
+  handleHypeConversationContextRpc,
+  handleHypeHandoffRpc,
+  handleHypeHandoffStatusRpc,
+  handleHypeTransactionIntakeRpc,
+  handleHypeSupervisedExecutionRpc,
+} from "./hype-handoff-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -78,16 +113,31 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/control-room",
   "/internal/admin/customer-data",
   "/internal/admin/dashboard",
+  "/internal/admin/calendar",
   "/internal/admin/applications",
+  "/internal/admin/jobs/all",
+  "/internal/admin/member-intelligence",
+  "/internal/admin/membership-access",
   "/internal/admin/model-applications",
+  "/internal/admin/model-link",
   "/internal/admin/mmd-review",
   MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
+  "/internal/admin/payments/historical-backfill",
+  "/internal/admin/shop/orders",
   "/internal/admin/jobs/create-session",
   "/internal/admin/jobs/create-job",
   "/internal/admin/create-session",
   "/internal/admin/kenji",
   "/internal/admin/kenji-knowledge",
+  "/internal/ceo/dashboard",
+  "/internal/ceo/audience",
+  "/internal/ceo/relink-review",
+  "/internal/ceo/payment-slip-inbox",
+  "/internal/ceo/kenji-control",
+  "/internal/ceo/models",
+  OWNER_MY_MMD_RECOVERY_PAGE_PATH,
+  RECOVERY_CONTROL_PAGE_PATH,
   "/internal/jobs/create-job",
 ];
 
@@ -116,6 +166,48 @@ export default {
     // production route and the handler also requires admin-worker.internal.
     if (path === TELEGRAM_BIND_INTERNAL_PATH) {
       return handleTelegramBindAuthorityRpc(request, env);
+    }
+
+    // Service-binding-only HYPE operating concierge. Returns a customer-safe,
+    // read-only projection from the same live fan-in used by Kenji LV5.
+    if (path === HYPE_OPERATIONAL_STATUS_PATH) {
+      return handleHypeOperationalStatusRpc(request, env);
+    }
+    if (path === HYPE_MEMBER_WALLET_PATH) {
+      return handleHypeMemberWalletRpc(request, env);
+    }
+    if (path === HYPE_SHOP_ORDERS_PATH) {
+      return handleHypeShopOrdersRpc(request, env);
+    }
+    if (path === HYPE_SHOP_ORDERS_SMOKE_PATH) {
+      return handleHypeShopOrdersSmokeRpc(request, env);
+    }
+
+    // Service-binding-only owner summary for HYPE. Read-only and derived from
+    // the same canonical admin dashboard data used by Back Office.
+    if (path === HYPE_OWNER_SUMMARY_PATH) {
+      return handleHypeOwnerSummaryRpc(request, env);
+    }
+
+    // Service-binding-only cross-channel continuity and supervised HYPE handoff.
+    // These mutate conversation context only; canonical business truth remains untouched.
+    if (path === HYPE_CONTINUITY_PATH) {
+      return handleHypeContinuityRpc(request, env);
+    }
+    if (path === HYPE_CONVERSATION_CONTEXT_PATH) {
+      return handleHypeConversationContextRpc(request, env);
+    }
+    if (path === HYPE_HANDOFF_PATH) {
+      return handleHypeHandoffRpc(request, env);
+    }
+    if (path === HYPE_HANDOFF_STATUS_PATH) {
+      return handleHypeHandoffStatusRpc(request, env);
+    }
+    if (path === HYPE_TRANSACTION_INTAKE_PATH) {
+      return handleHypeTransactionIntakeRpc(request, env);
+    }
+    if (path === HYPE_SUPERVISED_EXECUTION_PATH) {
+      return handleHypeSupervisedExecutionRpc(request, env);
     }
 
     // Model Console V16 schema-patch routes live in the legacy core runtime,
@@ -169,6 +261,25 @@ export default {
 
     if (path === MODEL_MEDIA_E2E_SMOKE_PATH) {
       return handleModelMediaE2ESmoke(request, env, strictGate.actor);
+    }
+
+    if (isOwnerMyMmdRecoveryDiagnosticRequest(path, method)) {
+      return handleOwnerMyMmdRecoveryDiagnostic(request, env, strictGate.actor);
+    }
+
+    if (isRecoveryControlRequest(path, method)) {
+      return handleRecoveryControl(request, env, strictGate.actor);
+    }
+
+    if ((method === "GET" || method === "HEAD") && path === "/internal/admin") {
+      const target = new URL("/internal/admin/control-room", request.url);
+      return new Response(null, {
+        status: 303,
+        headers: adminGateHeaders(request, env, {
+          location: target.toString(),
+          "x-mmd-admin-entry": "control-room",
+        }),
+      });
     }
 
     if (isPublicModelApplicationReviewRequest(path)) {
@@ -372,7 +483,14 @@ async function handleCredentialBoundAdminLogin(request, env) {
       return adminLoginFailure(request, env, requestedNext, "mms_partner_credential_collision", "รหัส Partner ต้องแยกจากรหัส Owner", 503, wantsJson);
     }
     if (code !== adminSecret) return adminLoginFailure(request, env, requestedNext, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
-    actor = { id: "per", role: "admin", auth_method: "credential" };
+    // Only the dedicated Per credential may mint an owner session. Legacy
+    // compatibility credentials remain admin so Owner Actions fails closed.
+    const dedicatedOwnerCredential = String(env.ADMIN_LOGIN_CREDENTIAL || "").trim();
+    actor = {
+      id: "per",
+      role: dedicatedOwnerCredential && code === dedicatedOwnerCredential ? "owner" : "admin",
+      auth_method: "credential",
+    };
     next = requestedNext;
   }
 

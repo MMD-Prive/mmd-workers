@@ -1,0 +1,43 @@
+<script>
+(() => {
+  const p = new URLSearchParams(location.search);
+  if (p.get('role') !== 'medical_professional' || p.get('brief') !== 'verified_request_only') return;
+  const root = document.querySelector('#mmd-access-gate') || document.body;
+  const preferred = (p.get('model') || '').replace(/[<>]/g, '').slice(0, 120);
+  const host = document.createElement('section');
+  host.id = 'mmd-medical-verified-request';
+  host.innerHTML = `
+    <style>
+      #mmd-medical-verified-request{max-width:680px;margin:28px auto;padding:24px;border:1px solid #d8d1c6;border-radius:16px;background:#fff;color:#1b1b1b;font-family:inherit}#mmd-medical-verified-request h2{margin:0 0 8px;font-size:22px}#mmd-medical-verified-request p{line-height:1.55}#mmd-medical-verified-request label{display:block;margin:15px 0 6px;font-weight:600}#mmd-medical-verified-request select,#mmd-medical-verified-request input{width:100%;box-sizing:border-box;padding:11px;border:1px solid #aaa;border-radius:8px;font:inherit}#mmd-medical-verified-request .checks label{display:flex;gap:9px;align-items:flex-start;font-size:14px;font-weight:400}#mmd-medical-verified-request .checks input{width:auto;margin-top:3px}#mmd-medical-verified-request button{margin-top:14px;padding:12px 16px;border:0;border-radius:8px;background:#151515;color:#fff;font:inherit;font-weight:700;cursor:pointer}#mmd-medical-verified-request [data-status]{margin-top:14px;font-size:14px}#mmd-medical-verified-request .mmd-medical-note{padding:12px;background:#f7f3ed;border-radius:8px;font-size:14px}
+    </style>
+    <h2>Verified Medical Professional Request</h2>
+    <p class="mmd-medical-note">สำหรับขอให้ MMD ตรวจขอบเขตและ credential เท่านั้น ไม่มีราคา การชำระเงิน การยืนยันคิว หรือการจับคู่จากหน้านี้ และไม่ใช้สำหรับเหตุฉุกเฉินหรือขอคำวินิจฉัย/การรักษา</p>
+    <div data-status>กำลังตรวจสอบ LINE identity…</div>
+    <form hidden novalidate>
+      <label>ลักษณะคำขอ<select name="purpose" required><option value="healthcare_facility_companion">เพื่อนไปสถานพยาบาล (ไม่ใช่การรักษา)</option><option value="healthcare_event_companion">เพื่อนไปงาน/กิจกรรมด้านสุขภาพ</option><option value="non_clinical_presence">ต้องการ presence แบบไม่ใช่บริการทางคลินิก</option><option value="other_non_clinical">คำขอ non-clinical อื่น</option></select></label>
+      <label>วันที่สะดวก (ถ้ามี)<input name="preferred_date" type="date"></label>
+      <label>ช่วงเวลา<select name="time_window"><option value="flexible">ยืดหยุ่น</option><option value="morning">เช้า</option><option value="afternoon">บ่าย</option><option value="evening">เย็น</option></select></label>
+      <label>พื้นที่กว้าง ๆ เช่น เขต/จังหวัด (ถ้ามี)<input name="area" maxlength="120" autocomplete="off"></label>
+      <label>Model ที่สนใจ (ถ้ามี)<input name="model_preference" maxlength="120" autocomplete="off"></label>
+      <div class="checks"><label><input type="checkbox" name="not_emergency">ไม่ใช่เหตุฉุกเฉิน</label><label><input type="checkbox" name="no_diagnosis_or_treatment">ไม่ได้ขอคำวินิจฉัยหรือการรักษา และจะไม่ส่งข้อมูลสุขภาพละเอียดในฟอร์มนี้</label><label><input type="checkbox" name="mmd_review_required">เข้าใจว่า MMD ต้อง review ก่อนทุกขั้นตอน</label></div>
+      <button type="submit">ส่ง Verified Request ให้ MMD</button>
+    </form>`;
+  root.appendChild(host);
+  const status = host.querySelector('[data-status]'), form = host.querySelector('form');
+  form.elements.model_preference.value = preferred;
+  const endpoint = '/api/member/medical-request';
+  const show = (message) => { status.textContent = message; };
+  fetch(endpoint, {credentials:'same-origin', headers:{accept:'application/json'}}).then(async r => ({r, data:await r.json().catch(()=>({}))})).then(({r,data}) => {
+    if (!r.ok || data.eligible !== true) { show('กรุณาเปิด MY MMD ผ่าน LINE และยืนยันตัวตนก่อนส่งคำขอ'); return; }
+    show('ยืนยัน LINE identity แล้ว — ส่งได้เฉพาะ structured request ที่ไม่เก็บข้อมูลสุขภาพละเอียด'); form.hidden = false;
+  }).catch(() => show('ยังตรวจสอบ identity ไม่ได้ กรุณาลองใหม่ใน MY MMD'));
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const acknowledgements = ['not_emergency','no_diagnosis_or_treatment','mmd_review_required'].filter(key => data.get(key) === 'on');
+    const payload = {purpose:data.get('purpose'), preferred_date:data.get('preferred_date'), time_window:data.get('time_window'), area:data.get('area'), model_preference:data.get('model_preference'), acknowledgements};
+    const button = form.querySelector('button'); button.disabled = true; show('กำลังส่งให้ MMD review…');
+    try { const response = await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(payload)}); const result = await response.json().catch(()=>({})); if (!response.ok || !result.ok) throw new Error(result?.error?.code || 'request_unavailable'); form.hidden=true; show(`MMD รับคำขอแล้ว · Ref ${result.request_ref} · สถานะ: รอ scope review`); } catch { button.disabled=false; show('ยังส่งคำขอไม่ได้ กรุณาลองใหม่ผ่าน MY MMD'); }
+  });
+})();
+</script>

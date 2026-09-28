@@ -10,7 +10,7 @@ export interface InternalRoutesEnv extends InternalPageEnv {
   ADMIN_WORKER?: Fetcher;
   PROMOTION_WORKER?: Fetcher;
   ADMIN_WORKER_BASE_URL?: string;
-  INTERNAL_SERVICE_SECRET?: string;
+  INTERNAL_LOVABLE_ORIGIN?: string;
   ASSETS?: Fetcher;
 }
 
@@ -32,6 +32,36 @@ function redirect(to: string, status = 302): Response {
 
 function withQuery(path: string, url: URL): string {
   return `${path}${url.search || ""}`;
+}
+
+async function renderLovableInternalPage(request: Request, env: InternalRoutesEnv, fallback: () => Response): Promise<Response> {
+  const origin = String(env.INTERNAL_LOVABLE_ORIGIN || "https://mmd-os.lovable.app").replace(/\/+$/, "");
+  const incoming = new URL(request.url);
+  const target = new URL(incoming.pathname + incoming.search, origin);
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: request.method === "HEAD" ? "HEAD" : "GET",
+      headers: { accept: request.headers.get("accept") || "text/html" },
+      redirect: "follow",
+    });
+    if (!upstream.ok) return fallback();
+    const headers = new Headers(upstream.headers);
+    headers.delete("set-cookie");
+    headers.delete("content-length");
+    headers.set("cache-control", "no-store, no-cache, must-revalidate");
+    headers.set("x-robots-tag", "noindex, nofollow, noarchive");
+    headers.set("x-mmd-presentation-source", "lovable");
+    headers.set("x-mmd-presentation-version", "internal-lovable-v1");
+    if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+    const type = String(upstream.headers.get("content-type") || "").toLowerCase();
+    if (!type.includes("text/html")) return fallback();
+    const html = (await upstream.text())
+      .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
+      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
+    return new Response(html, { status: 200, headers });
+  } catch {
+    return fallback();
+  }
 }
 
 function publicAdminAuthBaseUrl(request: Request): string {
@@ -738,13 +768,13 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/admin/control-room") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderOwnerControlRoomPage();
+    return await renderLovableInternalPage(request, env, () => renderOwnerControlRoomPage());
   }
 
   if (pathname === "/internal/admin/customer-data") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderCustomer360Page();
+    return await renderLovableInternalPage(request, env, () => renderCustomer360Page());
   }
 
   if (pathname === ANNIVERSARY_PAGE) {
@@ -760,9 +790,13 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   }
 
   if (pathname === "/internal/jobs/create-job") {
+    return redirect(withQuery("/internal/admin/jobs/create-job", url), 308);
+  }
+
+  if (pathname === "/internal/admin/jobs/create-job") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return withCreateJobAmountInput(renderCreateJobPage());
+    return renderCreateJobPage();
   }
 
   return null;

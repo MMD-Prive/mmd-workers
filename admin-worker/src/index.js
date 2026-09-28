@@ -2,6 +2,11 @@ import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import {
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
 import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecord, assertPrivateObject, ownedBy, privateBucket } from "../../shared/private-media.mjs";
 // src/index.js
 // =========================================================
@@ -36,6 +41,10 @@ import {
   handleCreateSessionClientLineageRequest,
   isCreateSessionClientLineageRequest,
 } from "./create-session-client-lineage-runtime.js";
+import {
+  listUnifiedModelLineCandidates,
+  materializeApprovedDriveModel,
+} from "./unified-model-drive-link.js";
 import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
@@ -132,6 +141,7 @@ const KENJI_KNOWLEDGE_ALLOWED_AUDIENCE = new Set(["internal", "internal_only", "
 const KENJI_KNOWLEDGE_ALLOWED_SORT = new Set(["updated_at", "created_at", "title", "status", "lane", "language", "audience"]);
 const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
 const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+const LEGACY_ADMIN_LOGIN_PATHS = new Set(["/sigil/admin/login", "/admin/login"]);
 const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH = "/internal/admin/control-room";
@@ -149,6 +159,7 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
 const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
 const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
+const MEMBER_DASHBOARD_CURRENT_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu";
 const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
   "confirm_final_payment",
   "mark_final_payment_confirmed",
@@ -173,6 +184,10 @@ export default {
     const path = normalizePathname(url.pathname);
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
+
+    if (LEGACY_ADMIN_LOGIN_PATHS.has(path)) {
+      return redirectLegacyAdminLogin(req, method);
+    }
 
     if (isLegacySigilInternalAdminPath(path) && path !== SIGIL_ADMIN_LOGIN_PAGE_PATH) {
       return redirectLegacySigilInternalAdmin(req);
@@ -218,7 +233,7 @@ export default {
 
     if (isKenjiKnowledgeShellPath(path)) {
       if (method === "GET" || method === "HEAD") {
-        return kenjiKnowledgeAdminShell(req, "canonical");
+        return kenjiKnowledgeAdminShell(req, "canonical", env);
       }
       return methodNotAllowed(["GET", "HEAD"]);
     }
@@ -1222,7 +1237,7 @@ function json(data, status = 200) {
   });
 }
 
-function kenjiKnowledgeAdminShell(req, routeKind) {
+function kenjiKnowledgeLegacyShell(req, routeKind) {
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"><style>html,body{margin:0;min-height:100%;background:#080604;color:#fff0dc}#mmdKenjiAdminV1{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css"></head><body><div id="mmdKenjiAdminV1" aria-live="polite"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js"></script></body></html>`;
   return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
@@ -1239,12 +1254,95 @@ function kenjiKnowledgeAdminShell(req, routeKind) {
   });
 }
 
+async function kenjiKnowledgeAdminShell(req, routeKind, env = {}) {
+  const incoming = new URL(req.url);
+  // Keep explicit legacy compatibility views on the old shell until their
+  // specialized handoffs are migrated individually.
+  if (incoming.searchParams.has("view")) return kenjiKnowledgeLegacyShell(req, routeKind);
+
+  const configuredOrigin = String(env.INTERNAL_LOVABLE_ORIGIN || "").trim();
+  if (!configuredOrigin) return kenjiKnowledgeLegacyShell(req, routeKind);
+  const origin = configuredOrigin.replace(/\/+$/, "");
+  const target = new URL(KENJI_KNOWLEDGE_CANONICAL_PATH + incoming.search, origin);
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: req.method.toUpperCase() === "HEAD" ? "HEAD" : "GET",
+      headers: { accept: req.headers.get("accept") || "text/html" },
+      redirect: "follow",
+    });
+    const type = String(upstream.headers.get("content-type") || "").toLowerCase();
+    if (!upstream.ok || !type.includes("text/html")) return kenjiKnowledgeLegacyShell(req, routeKind);
+
+    const headers = new Headers(upstream.headers);
+    headers.delete("set-cookie");
+    headers.delete("content-length");
+    headers.delete("content-security-policy");
+    headers.delete("content-security-policy-report-only");
+    headers.delete("x-frame-options");
+    headers.set("content-type","text/html; charset=utf-8");
+    headers.set("cache-control","no-store, no-cache, must-revalidate");
+    headers.set("x-robots-tag","noindex, nofollow, noarchive");
+    headers.set("x-mmd-route-owner","admin-worker");
+    headers.set("x-mmd-page","kenji-admin");
+    headers.set("x-mmd-worker","admin-worker");
+    headers.set("x-mmd-route-canonical",KENJI_KNOWLEDGE_CANONICAL_PATH);
+    headers.set("x-mmd-route-kind",routeKind);
+    headers.set("x-mmd-presentation-source","lovable");
+    headers.set("x-mmd-presentation-version","internal-lovable-v1");
+
+    if (req.method.toUpperCase() === "HEAD") return new Response(null,{status:200,headers});
+
+    const html = (await upstream.text())
+      .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
+      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
+    return new Response(html,{status:200,headers});
+  } catch {
+    return kenjiKnowledgeLegacyShell(req, routeKind);
+  }
+}
+
 function isKenjiKnowledgeShellPath(path) {
   return path === KENJI_KNOWLEDGE_CANONICAL_PATH;
 }
 
 function isKenjiKnowledgeCapturedPath(path) {
   return path === KENJI_KNOWLEDGE_LEGACY_PATH || path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+}
+
+function redirectLegacyAdminLogin(req, method) {
+  if (method !== "GET" && method !== "HEAD") {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "legacy_admin_login_method_not_allowed",
+      canonical_login: ADMIN_LOGIN_PAGE_PATH,
+    }), {
+      status: 405,
+      headers: {
+        "allow": "GET, HEAD",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+        "x-mmd-route-owner": "admin-worker",
+        "x-mmd-admin-login-canonical": ADMIN_LOGIN_PAGE_PATH,
+      },
+    });
+  }
+
+  const source = new URL(req.url);
+  const target = new URL(ADMIN_LOGIN_PAGE_PATH, "https://mmdbkk.com");
+  target.search = source.search;
+  if (!target.searchParams.has("next")) {
+    target.searchParams.set("next", ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH);
+  }
+
+  return new Response(null, {
+    status: 308,
+    headers: {
+      "cache-control": "no-store",
+      "location": target.toString(),
+      "x-mmd-route-owner": "admin-worker",
+      "x-mmd-admin-login-canonical": ADMIN_LOGIN_PAGE_PATH,
+    },
+  });
 }
 
 function redirectKenjiKnowledgeLegacy(req) {
@@ -1629,6 +1727,9 @@ function isAdminRichMenuRoute(path, method) {
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) ||
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) ||
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate`) ||
+    (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/list`)
   );
@@ -1644,6 +1745,9 @@ function adminRichMenuServicePath(path) {
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) return "/public-world/publish";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) return "/private-member/draft";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) return "/private-member/validate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`) return "/three-level/prepare";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate`) return "/three-level/activate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`) return "/three-level/audit";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) return "/default";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/list`) return "/list";
   return "";
@@ -1673,12 +1777,21 @@ async function handleAdminRichMenuRoute(req, env, path, method) {
   const servicePath = adminRichMenuServicePath(path);
   if (!servicePath) return json({ ok: false, error: "not_found" }, 404);
 
+  const currentThreeLevel = path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare` ||
+    path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate` ||
+    path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`;
+  const internalToken = currentThreeLevel ? str(env.INTERNAL_TOKEN) : "";
+  if (currentThreeLevel && !internalToken) {
+    return json({ ok: false, error: "internal_token_unavailable" }, 502);
+  }
+
   const init = {
     method,
     headers: {
       "content-type": "application/json",
       "x-mmd-service-binding": "admin-worker",
       "x-mmd-internal-call": "true",
+      ...(currentThreeLevel ? { authorization: `Bearer ${internalToken}` } : {}),
     },
   };
 
@@ -1687,7 +1800,8 @@ async function handleAdminRichMenuRoute(req, env, path, method) {
   }
 
   const url = new URL(req.url);
-  const serviceUrl = new URL(`${MEMBER_DASHBOARD_RICH_MENU_BASE_URL}${servicePath}`);
+  const serviceBase = currentThreeLevel ? MEMBER_DASHBOARD_CURRENT_RICH_MENU_BASE_URL : MEMBER_DASHBOARD_RICH_MENU_BASE_URL;
+  const serviceUrl = new URL(`${serviceBase}${servicePath}`);
   if (url.searchParams.get("debug") === "1") serviceUrl.searchParams.set("debug", "1");
   const upstream = await binding.fetch(new Request(serviceUrl, init));
   const payload = await upstream.json().catch(() => ({ ok: false, error: "member_dashboard_response_invalid" }));
@@ -1911,6 +2025,7 @@ export function modelSchemaPatchV1Tables(env = {}) {
         publicSafe: str(env.AT_MEDIA_ASSETS__PUBLIC_SAFE || "public_safe"),
         privateSafe: str(env.AT_MEDIA_ASSETS__PRIVATE_SAFE || "private_safe"),
         flashSafe: str(env.AT_MEDIA_ASSETS__FLASH_SAFE || "flash_safe"),
+        teaserSafe: str(env.AT_MEDIA_ASSETS__TEASER_SAFE || "teaser_safe"),
         fileName: str(env.AT_MEDIA_ASSETS__FILE_NAME || "file_name"),
         fileType: str(env.AT_MEDIA_ASSETS__FILE_TYPE || "file_type"),
         fileSizeBytes: str(env.AT_MEDIA_ASSETS__FILE_SIZE_BYTES || "file_size_bytes"),
@@ -2062,10 +2177,25 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
         return new Response(object.body,{headers:{"content-type":asset.contentType,"cache-control":"private, no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"}});
       }
       const status = body.decision === "approve" ? "approved" : "rejected";
-      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
+      const requestedTeaser = body.teaser_safe === true;
+      const mediaType = normalizeSchemaPatchWord(media.fields.media_type);
+      // Teaser is its own commercial consent lane. It must be a purpose-built
+      // private asset, explicitly approved, and cannot be backfilled from a
+      // legacy/profile image simply by toggling a checkbox.
+      if (requestedTeaser && (body.decision !== "approve" || !["private_gallery", "flash_preview"].includes(mediaType))) {
+        return modelSchemaPatchJson({ ok:false, error:"teaser_media_type_invalid" }, 422);
+      }
+      const teaserSafe = status === "approved" && requestedTeaser;
+      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,teaser_safe:teaserSafe,media_sha256:asset.sha256,source:"private_media_review_v1"}});
       const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
-      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{[fields.reviewStatus]:status,[fields.publicSafe]:false,[fields.privateSafe]:status === "approved",[fields.flashSafe]:status === "approved"});
-      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
+      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{
+        [fields.reviewStatus]:status,
+        [fields.publicSafe]:false,
+        [fields.privateSafe]:status === "approved",
+        [fields.flashSafe]:status === "approved",
+        [fields.teaserSafe]:teaserSafe,
+      });
+      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,teaser_safe:teaserSafe,review});
     }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
       return modelSchemaPatchJson(await handleModelVisibilityUpdate(env, body || {}, context));
@@ -2135,6 +2265,8 @@ function modelSessionTables(env = {}) {
         locationName: str(env.AT_SESSIONS__LOCATION_NAME || "location_name"),
         googleMapUrl: str(env.AT_SESSIONS__GOOGLE_MAP_URL || "google_map_url"),
         payModelThb: str(env.AT_SESSIONS__MODEL_PAYOUT_AMOUNT_THB || "pay_model_thb"),
+        packageCode: str(env.AT_SESSIONS__PACKAGE_CODE || "package_code"),
+        modelWorkLane: str(env.AT_SESSIONS__MODEL_WORK_LANE || "model_work_lane"),
       },
     },
   };
@@ -2414,6 +2546,91 @@ function modelSessionPageSlug(page) {
   return str(page?.path).replace(/^\/model\/session\//, "").replace(/-/g, "_");
 }
 
+function modelSessionPayoutTerms(workLane, packageCode, basePayoutThb) {
+  const lane = str(workLane).trim().toLowerCase();
+  const code = str(packageCode).trim().toLowerCase();
+  const safeBasePayout = Number.isFinite(basePayoutThb) && basePayoutThb > 0 ? basePayoutThb : null;
+
+  if (lane === "private_model") {
+    return {
+      policy_version: "mmd_private_model_money_v1_20260922",
+      money_lane: "private_model",
+      compensation_mode: "case_locked",
+      base_payout_thb: safeBasePayout,
+      public_package_matrix_applies: false,
+      public_ot_matrix_applies: false,
+      extension_rate_mode: "mmd_case_quote_required",
+      extension_requires_model_approval: true,
+      extension_requires_mmd_confirmation: true,
+    };
+  }
+
+  if (lane !== "public_model") return null;
+
+  const terms = {
+    pick_me_up: { overtime_payout_thb_per_hour: 550, late_night_payout_thb: 200, extra_km_payout_thb: 15, reimbursable_expenses: ["tollway", "parking"] },
+    airport_please: { overtime_payout_thb_per_hour: 550, late_night_payout_thb: 200, extra_km_payout_thb: 15, reimbursable_expenses: ["tollway", "parking"] },
+    wait_for_me: { overtime_payout_thb_per_hour: 550, late_night_payout_thb: 200, extra_km_payout_thb: 15, reimbursable_expenses: ["tollway", "parking"] },
+    half_day_with_him: { overtime_payout_thb_per_hour: 550, late_night_payout_thb: 200, extra_km_payout_thb: 15, reimbursable_expenses: ["tollway", "parking"] },
+    cook_with_me: { overtime_payout_thb_per_hour: 450, extra_guest_payout_thb: 300, reimbursable_expenses: ["ingredients", "parking", "approved_special_travel"] },
+    dinner_made_for_you: { overtime_payout_thb_per_hour: 450, extra_guest_payout_thb: 300, reimbursable_expenses: ["ingredients", "parking", "approved_special_travel"] },
+    market_to_table: { overtime_payout_thb_per_hour: 450, extra_guest_payout_thb: 300, reimbursable_expenses: ["ingredients", "parking", "approved_special_travel"] },
+    private_table: { overtime_payout_thb_per_hour: 450, extra_guest_payout_thb: 300, reimbursable_expenses: ["ingredients", "parking", "approved_special_travel"] },
+    day_off_short: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    day_off_half_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    day_off_full_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    move_with_me: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["venue_or_court_fee", "class_or_activity_fee", "equipment_rental", "ticket", "transport", "parking", "food_and_drinks"] },
+    game_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["venue_or_court_fee", "class_or_activity_fee", "equipment_rental", "ticket", "transport", "parking", "food_and_drinks"] },
+    active_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["venue_or_court_fee", "class_or_activity_fee", "equipment_rental", "ticket", "transport", "parking", "food_and_drinks"] },
+    reset_with_me: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"] },
+    wellness_day: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"] },
+    slow_reset: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"] },
+    business_lunch: { overtime_before_midnight_payout_thb_per_hour: 1200, overtime_after_midnight_payout_thb_per_hour: 1550, overtime_after_0300_payout_thb_per_hour: 1900, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"] },
+    smart_presence: { overtime_before_midnight_payout_thb_per_hour: 1200, overtime_after_midnight_payout_thb_per_hour: 1550, overtime_after_0300_payout_thb_per_hour: 1900, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"] },
+    context_day: { overtime_before_midnight_payout_thb_per_hour: 1200, overtime_after_midnight_payout_thb_per_hour: 1550, overtime_after_0300_payout_thb_per_hour: 1900, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"] },
+    gallery_with_me: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"] },
+    creative_city: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"] },
+    creative_day: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"] },
+    night_out: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    dinner_to_midnight: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    own_the_night: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    dinner_guest: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    event_partner: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    formal_evening: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    bangkok_with_me: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+    local_bangkok: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+    your_bangkok_day: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+  }[code];
+
+  if (!terms) {
+    return {
+      policy_version: "mmd_public_model_money_v1_20260922",
+      money_lane: "public_model",
+      compensation_mode: "public_session_locked",
+      package_code: code || null,
+      base_payout_thb: safeBasePayout,
+      public_package_matrix_applies: false,
+      public_ot_matrix_applies: false,
+      extension_rate_mode: "package_policy_missing_review_required",
+      extension_requires_model_approval: true,
+      extension_requires_mmd_confirmation: true,
+    };
+  }
+
+  return {
+    policy_version: "mmd_public_model_money_v1_20260922",
+    money_lane: "public_model",
+    compensation_mode: "public_package_matrix",
+    package_code: code,
+    base_payout_thb: safeBasePayout,
+    public_package_matrix_applies: true,
+    public_ot_matrix_applies: true,
+    ...terms,
+    extension_requires_model_approval: true,
+    extension_requires_mmd_confirmation: true,
+  };
+}
+
 function modelSessionResponseSession(tables, record) {
   const fields = record?.fields || {};
   const names = tables.sessions.fields;
@@ -2421,6 +2638,9 @@ function modelSessionResponseSession(tables, record) {
   const normalized = normalizeSessionState(stateInfo.state);
   const page = resolveModelSessionPage(normalized);
   const payModelThb = Number(fields[names.payModelThb]);
+  const packageCode = str(fields[names.packageCode] || "");
+  const modelWorkLane = str(fields[names.modelWorkLane] || "");
+  const safePayModelThb = Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null;
   return {
     session_id: str(fields[names.sessionId] || ""),
     state: stateInfo.state,
@@ -2434,7 +2654,10 @@ function modelSessionResponseSession(tables, record) {
     end_time: str(fields[names.endTime] || ""),
     location_name: str(fields[names.locationName] || ""),
     google_map_url: str(fields[names.googleMapUrl] || ""),
-    pay_model_thb: Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null,
+    package_code: packageCode || null,
+    model_work_lane: modelWorkLane || null,
+    pay_model_thb: safePayModelThb,
+    payout_terms: modelSessionPayoutTerms(modelWorkLane, packageCode, safePayModelThb),
   };
 }
 
@@ -2516,6 +2739,209 @@ async function handleModelSessionLinkIssuer(req, env) {
   });
 }
 
+const PUBLIC_EXTENSION_TABLE_DEFAULT = "tblbIhMUXMAYlXmpi";
+const PUBLIC_EXTENSION_FIELDS = Object.freeze({
+  requestId: "fldWgNAnDzvKFPqgK",
+  session: "fldJgynlVTWudlHAq",
+  sessionId: "fldYkRVUJkztQ2ThT",
+  kind: "flddIurJJZlZHmOtg",
+  status: "fld2mTgTg7JZePg9z",
+  lane: "fld14fjGt8shKWb73",
+  packageCode: "fldO8jptuBhZi6gZd",
+  originalEnd: "fld4eFaGprFvrcFrm",
+  requestedEnd: "fldVsKOtXr1SP3plX",
+  minutes: "fldJBdPuy1jhUwtrk",
+  customerAmount: "fldkGgu84J4sQjxfg",
+  modelPayout: "fldDdV5lu1GNWrbZZ",
+  policy: "fld0otgJgiw1ZXJb1",
+  modelNote: "fldLalD8oFLEV0EV0",
+  modelAt: "fldPCYvCRPCTbold6",
+  paymentRef: "fldQHdL9CPy52I7aX",
+  paymentStage: "fldBbN30nVWgAdZnc",
+  paymentUrl: "fld5dDpTX3wZHinLq",
+  updatedAt: "fldd3BmpwWa8ylpeb",
+  audit: "fldSWvZLwv0Uswtu4",
+});
+const PUBLIC_EXTENSION_MODEL_ACTIONS = new Set(["approve_extension", "decline_extension"]);
+const PUBLIC_EXTENSION_OPEN_STATES = new Set(["requested", "model_approved", "payment_required", "payment_pending", "payment_verified"]);
+
+function publicExtensionTable(env) {
+  return str(env.AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS || PUBLIC_EXTENSION_TABLE_DEFAULT);
+}
+function publicExtensionStatus(value) {
+  return str(value).trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+function publicExtensionSessionEndIso(tables, record) {
+  const fields = record?.fields || {};
+  const raw = str(fields[tables.sessions.fields.endTime] || fields.end_time || "");
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return new Date(direct).toISOString();
+  const date = str(fields[tables.sessions.fields.jobDate] || fields.job_date || "");
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && match) {
+    const parsed = Date.parse(`${date}T${match[1].padStart(2, "0")}:${match[2]}:00+07:00`);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  return "";
+}
+function publicExtensionOneLink(value) {
+  if (!Array.isArray(value) || value.length !== 1) return "";
+  return str(typeof value[0] === "string" ? value[0] : value[0]?.id);
+}
+async function findPublicExtensionForSession(env, sessionRecord) {
+  const sessionId = str(sessionRecord?.fields?.session_id || sessionRecord?.fields?.["Session ID"]);
+  if (!sessionId || !sessionRecord?.id) return null;
+  const params = new URLSearchParams();
+  params.set("pageSize", "20");
+  params.set("filterByFormula", `{session_id}="${escapeFormulaValue(sessionId)}"`);
+  params.set("sort[0][field]", "updated_at");
+  params.set("sort[0][direction]", "desc");
+  const result = await airtableFetch(env, `/${encodeURIComponent(publicExtensionTable(env))}?${params.toString()}`);
+  if (!result.ok) return null;
+  const rows = Array.isArray(result.data?.records) ? result.data.records : [];
+  const exact = rows.filter((row) => publicExtensionOneLink(row?.fields?.[PUBLIC_EXTENSION_FIELDS.session]) === str(sessionRecord.id));
+  return exact.find((row) => PUBLIC_EXTENSION_OPEN_STATES.has(publicExtensionStatus(row?.fields?.[PUBLIC_EXTENSION_FIELDS.status])))
+    || exact[0]
+    || null;
+}
+function publicExtensionModelProjection(record) {
+  if (!record) return null;
+  const f = record.fields || {};
+  const payout = Number(f[PUBLIC_EXTENSION_FIELDS.modelPayout]);
+  return {
+    request_id: str(f[PUBLIC_EXTENSION_FIELDS.requestId]) || null,
+    request_kind: publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.kind]) || null,
+    status: publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.status]) || null,
+    original_end_at: str(f[PUBLIC_EXTENSION_FIELDS.originalEnd]) || null,
+    requested_end_at: str(f[PUBLIC_EXTENSION_FIELDS.requestedEnd]) || null,
+    requested_minutes: Number.isFinite(Number(f[PUBLIC_EXTENSION_FIELDS.minutes])) ? Number(f[PUBLIC_EXTENSION_FIELDS.minutes]) : null,
+    model_payout_thb: Number.isFinite(payout) && payout >= 0 ? payout : null,
+    pricing_policy_version: str(f[PUBLIC_EXTENSION_FIELDS.policy]) || null,
+  };
+}
+async function patchPublicExtension(env, recordId, fields) {
+  const result = await airtableFetch(env, `/${encodeURIComponent(publicExtensionTable(env))}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: compactObject(fields), typecast: true }),
+  });
+  if (!result.ok) return null;
+  return { id: result.data?.id || recordId, fields: result.data?.fields || {} };
+}
+async function issuePublicExtensionPayment(env, extensionRecord) {
+  const token = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!token || typeof env.PAYMENTS_WORKER?.fetch !== "function") {
+    return { ok: false, error: "extension_payment_service_not_ready" };
+  }
+  const f = extensionRecord?.fields || {};
+  const payload = {
+    request_id: str(f[PUBLIC_EXTENSION_FIELDS.requestId]),
+    session_id: str(f[PUBLIC_EXTENSION_FIELDS.sessionId]),
+    payment_ref: str(f[PUBLIC_EXTENSION_FIELDS.paymentRef]),
+    amount_thb: Number(f[PUBLIC_EXTENSION_FIELDS.customerAmount]),
+    original_end_at: str(f[PUBLIC_EXTENSION_FIELDS.originalEnd]),
+    requested_end_at: str(f[PUBLIC_EXTENSION_FIELDS.requestedEnd]),
+  };
+  const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.internal/v1/internal/payments/session-extension/intent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Internal-Token": token },
+    body: JSON.stringify(payload),
+  }));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok !== true || !str(data.customer_payment_url)) {
+    return { ok: false, error: str(data?.error || "extension_payment_intent_failed") };
+  }
+  return { ok: true, data };
+}
+async function ensurePublicExtensionPayment(env, extensionRecord) {
+  const status = publicExtensionStatus(extensionRecord?.fields?.[PUBLIC_EXTENSION_FIELDS.status]);
+  if (!["model_approved", "payment_required", "payment_pending"].includes(status)) return { ok: true, record: extensionRecord };
+  const intent = await issuePublicExtensionPayment(env, extensionRecord);
+  if (!intent.ok) return { ok: false, error: intent.error, record: extensionRecord };
+  const now = new Date().toISOString();
+  const patched = await patchPublicExtension(env, extensionRecord.id, {
+    [PUBLIC_EXTENSION_FIELDS.status]: "payment_required",
+    [PUBLIC_EXTENSION_FIELDS.paymentRef]: str(intent.data.payment_ref),
+    [PUBLIC_EXTENSION_FIELDS.paymentStage]: "extension",
+    [PUBLIC_EXTENSION_FIELDS.paymentUrl]: str(intent.data.customer_payment_url),
+    [PUBLIC_EXTENSION_FIELDS.updatedAt]: now,
+    [PUBLIC_EXTENSION_FIELDS.audit]: JSON.stringify({
+      schema: "public_session_extension_v1",
+      event: "payment_intent_ready",
+      payment_ref: str(intent.data.payment_ref),
+      amount_thb: Number(intent.data.amount_thb),
+    }),
+  });
+  return patched ? { ok: true, record: patched } : { ok: false, error: "extension_payment_record_patch_failed", record: extensionRecord };
+}
+async function handlePublicExtensionModelAction(env, body, context) {
+  const action = str(body?.action).trim().toLowerCase();
+  const state = normalizeSessionState(modelSessionStateFromRecord(context.tables, context.session).state);
+  if (state !== "work_started") return modelSessionJson({ ok: false, error: "extension_requires_active_work" }, 409);
+  const sessionView = modelSessionResponseSession(context.tables, context.session);
+  if (sessionView.model_work_lane !== "public_model") return modelSessionJson({ ok: false, error: "extension_public_money_only" }, 409);
+  let extension = await findPublicExtensionForSession(env, context.session);
+  if (!extension) return modelSessionJson({ ok: false, error: "extension_request_not_found" }, 404);
+  const f = extension.fields || {};
+  const requestId = str(body?.extension_request_id);
+  if (!requestId || requestId !== str(f[PUBLIC_EXTENSION_FIELDS.requestId])) {
+    return modelSessionJson({ ok: false, error: "extension_request_mismatch" }, 409);
+  }
+  const currentStatus = publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.status]);
+  const currentEnd = publicExtensionSessionEndIso(context.tables, context.session);
+  const originalEnd = str(f[PUBLIC_EXTENSION_FIELDS.originalEnd] || "");
+  if (!currentEnd || !originalEnd || Date.parse(currentEnd) !== Date.parse(originalEnd)) {
+    return modelSessionJson({ ok: false, error: "extension_session_end_changed" }, 409);
+  }
+  const now = new Date().toISOString();
+
+  if (action === "decline_extension") {
+    if (currentStatus === "model_declined") {
+      return modelSessionJson({ ok: true, idempotent: true, session: sessionView, extension_request: publicExtensionModelProjection(extension) });
+    }
+    if (currentStatus !== "requested") return modelSessionJson({ ok: false, error: "extension_not_pending_model_decision" }, 409);
+    extension = await patchPublicExtension(env, extension.id, {
+      [PUBLIC_EXTENSION_FIELDS.status]: "model_declined",
+      [PUBLIC_EXTENSION_FIELDS.modelAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.modelNote]: str(body?.reason).slice(0, 500),
+      [PUBLIC_EXTENSION_FIELDS.updatedAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.audit]: JSON.stringify({ schema:"public_session_extension_v1", event:"model_declined", at:now }),
+    });
+    if (!extension) return modelSessionJson({ ok: false, error: "extension_write_failed" }, 503);
+    return modelSessionJson({ ok: true, session: sessionView, extension_request: publicExtensionModelProjection(extension) });
+  }
+
+  if (currentStatus === "requested") {
+    extension = await patchPublicExtension(env, extension.id, {
+      [PUBLIC_EXTENSION_FIELDS.status]: "model_approved",
+      [PUBLIC_EXTENSION_FIELDS.modelAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.modelNote]: str(body?.note).slice(0, 500),
+      [PUBLIC_EXTENSION_FIELDS.updatedAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.audit]: JSON.stringify({ schema:"public_session_extension_v1", event:"model_approved", at:now }),
+    });
+    if (!extension) return modelSessionJson({ ok: false, error: "extension_write_failed" }, 503);
+  } else if (!["model_approved","payment_required","payment_pending"].includes(currentStatus)) {
+    return modelSessionJson({ ok: false, error: "extension_not_pending_model_decision" }, 409);
+  }
+
+  const payment = await ensurePublicExtensionPayment(env, extension);
+  if (!payment.ok) {
+    return modelSessionJson({
+      ok: true,
+      payment_intent_ready: false,
+      payment_intent_error: payment.error,
+      session: sessionView,
+      extension_request: publicExtensionModelProjection(payment.record || extension),
+    });
+  }
+  return modelSessionJson({
+    ok: true,
+    payment_intent_ready: true,
+    session: sessionView,
+    extension_request: publicExtensionModelProjection(payment.record),
+  });
+}
+
 async function handleModelSessionCurrent(req, env) {
   const context = await resolveModelSessionContext(req, env);
   if (!context.ok) return modelSessionJson({ ok: false, error: context.error }, context.status);
@@ -2525,9 +2951,11 @@ async function handleModelSessionCurrent(req, env) {
     return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
   }
 
+  const extension = await findPublicExtensionForSession(env, context.session);
   return modelSessionJson({
     ok: true,
     session: modelSessionResponseSession(context.tables, context.session),
+    extension_request: publicExtensionModelProjection(extension),
   });
 }
 
@@ -2587,6 +3015,11 @@ async function handleModelSessionAction(req, env) {
   const body = await safeJson(req);
   const authContext = await resolveModelSessionContext(req, env, body);
   if (!authContext.ok) return modelSessionJson({ ok: false, error: authContext.error }, authContext.status);
+
+  const rawAction = str(body?.action).trim().toLowerCase();
+  if (PUBLIC_EXTENSION_MODEL_ACTIONS.has(rawAction)) {
+    return handlePublicExtensionModelAction(env, body, authContext);
+  }
 
   const action = normalizeModelSessionAction(body?.action);
   if (!MODEL_SESSION_MODEL_ALLOWED_ACTIONS.has(str(body?.action)) && !MODEL_SESSION_MODEL_ALLOWED_ACTIONS.has(action)) {
@@ -2815,6 +3248,7 @@ async function handleModelMediaUploadInit(env, body) {
     [fields.publicSafe]: false,
     [fields.privateSafe]: false,
     [fields.flashSafe]: false,
+    [fields.teaserSafe]: false,
     [fields.fileName]: safeSchemaPatchFilename(body.file_name || assetId),
     [fields.fileType]: str(body.content_type || ""),
     [fields.fileSizeBytes]: body.file_size_bytes,
@@ -2862,6 +3296,7 @@ async function handleModelMediaUploadComplete(env, body) {
     [fields.r2Bucket]: str(env.MODEL_ASSETS_BUCKET_NAME || "MMD_MODEL_ASSETS"),
     [fields.reviewStatus]: "pending_review",
     [fields.flashSafe]: Boolean(body.flash_safe === true),
+    [fields.teaserSafe]: false,
     [fields.uploadedAt]: new Date().toISOString(),
   };
   const rec = existing
@@ -4653,6 +5088,76 @@ async function airtableListByFormula(env, tableName, filterByFormula, limit = 50
   return (r.data?.records || []).map((rec) => ({ id: rec.id, fields: rec.fields || {}, createdTime: rec.createdTime }));
 }
 
+
+const CREATE_JOB_FAST_TRUST_RANK = Object.freeze({ vip: 1, svip: 2, black_card: 3 });
+
+function createJobFastTrustTierFromRenamedName(value) {
+  const text = str(value)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\s*[-–—|/]\s*)+$/, "")
+    .trim();
+  if (!text) return "";
+  if (/(?:^|[^A-Za-z0-9])black\s*card$/i.test(text)) return "black_card";
+  if (/(?:^|[^A-Za-z0-9])svip$/i.test(text)) return "svip";
+  if (/(?:^|[^A-Za-z0-9])vip$/i.test(text)) return "vip";
+  return "";
+}
+
+function createJobFastTrustLinkedClientIds(record, source = {}) {
+  const fields = record?.fields || {};
+  const values = [];
+  for (const field of [source.canonicalClientField, "Canonical Client", "matched_client", "matched_client_id"]) {
+    if (!field || fields[field] == null) continue;
+    values.push(...(Array.isArray(fields[field]) ? fields[field] : [fields[field]]));
+  }
+  return [...new Set(values
+    .map((value) => str(value && typeof value === "object" ? (value.id || value.recordId || value.value) : value))
+    .filter((value) => /^rec[A-Za-z0-9]{14,}$/.test(value)))];
+}
+
+async function resolveCanonicalClientFastTrustPrivateAccess(env, clientRecordId, lineUserId) {
+  const clientId = str(clientRecordId);
+  const lineId = str(lineUserId);
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(clientId) || !/^U[0-9a-f]{32}$/i.test(lineId)) {
+    return { found: false };
+  }
+
+  const source = resolveFastTrustAirtableSource(env);
+  const formula = fastTrustLineFormula(lineId, source);
+  if (!source?.table || !formula) return { found: false };
+
+  const records = await airtableListByFormula(env, source.table, formula, 20);
+  const candidates = [];
+  for (const record of records) {
+    if (!createJobFastTrustLinkedClientIds(record, source).includes(clientId)) continue;
+    const packageCode = createJobFastTrustTierFromRenamedName(fastTrustRenamedName(record, source));
+    if (!packageCode) continue;
+    candidates.push({
+      package_code: packageCode,
+      rank: CREATE_JOB_FAST_TRUST_RANK[packageCode] || 0,
+    });
+  }
+  if (!candidates.length) return { found: false };
+
+  candidates.sort((a, b) => b.rank - a.rank);
+  const packageCode = candidates[0].package_code;
+  const tier = packageCode === "svip" || packageCode === "black_card" ? "black_card" : "vip";
+  return {
+    found: true,
+    tier,
+    package_code: packageCode,
+    membership_status: "active",
+    allowed_folders: PRIVATE_ACCESS_FOLDERS[tier].slice(),
+    entitlement_authority: "my_mmd_entitlement_resolver_v1",
+    entitlement_schema_version: "my_mmd_entitlement_resolver_v1",
+    entitlement_recovery_source: "line_oa_renamed_name_fast_trust",
+    canonical_client_record_id: clientId,
+    line_user_id: lineId,
+    fast_trust: true,
+  };
+}
+
 async function resolveAuthoritativeMemberAccess(env, ids = {}) {
   const membersTable = env.AIRTABLE_TABLE_MEMBERS || "members";
 
@@ -4688,6 +5193,38 @@ async function resolveAuthoritativeMemberAccess(env, ids = {}) {
       telegram_username: str(ids.telegram_username || directClientAccess.identity.telegram_username),
     };
   }
+
+  // MY MMD Fast Trust is already the protected-member recovery rule for an
+  // exact verified LINE identity carrying an MMD-controlled trailing
+  // VIP/SVIP/Black Card marker. Create Job must honor the same authority when
+  // the canonical Client is linked but its entitlement row has not yet been
+  // materialized. Require the Fast Trust staging row to point back to this
+  // exact canonical Client; browser labels never grant access.
+  const fastTrustAccess = await resolveCanonicalClientFastTrustPrivateAccess(
+    env,
+    directClientAccess.client_record_id || ids.client_id,
+    ids.line_user_id,
+  );
+  if (fastTrustAccess.found) {
+    return {
+      resolved: true,
+      member_record_id: "",
+      member_id: "",
+      member_email: str(directClientAccess.identity?.member_email || ids.member_email).toLowerCase(),
+      membership_status: fastTrustAccess.membership_status,
+      tier: fastTrustAccess.tier,
+      package_code: fastTrustAccess.package_code,
+      expire_at: "",
+      allowed_folders: fastTrustAccess.allowed_folders,
+      entitlement_authority: fastTrustAccess.entitlement_authority,
+      entitlement_schema_version: fastTrustAccess.entitlement_schema_version,
+      entitlement_recovery_source: fastTrustAccess.entitlement_recovery_source,
+      canonical_client_record_id: fastTrustAccess.canonical_client_record_id,
+      line_user_id: fastTrustAccess.line_user_id,
+      fast_trust: true,
+    };
+  }
+
   const lookups = [
     ["client_id", ids.client_id, false],
     ["member_id", ids.member_id, false],
@@ -4926,17 +5463,51 @@ async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, id
   };
 }
 
+function modelPublicDiscoveryContext(fields = {}) {
+  const source = accessToken([
+    fields.service_layer,
+    fields.job_types,
+    fields.public_category,
+    fields["MMD Public Category"],
+    fields.source_folder,
+    fields.folder_path,
+    fields.folder_name,
+    fields.folder_scope_key,
+  ].filter(Boolean).join(" "));
+  const tokens = new Set(source.split("_").filter(Boolean));
+  const folders = [];
+  if (tokens.has("travel")) folders.push("travel");
+  if (tokens.has("extreme")) folders.push("extreme");
+
+  let lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  if (!lane) {
+    if (tokens.has("straight")) lane = "straight";
+    else if (tokens.has("gay")) lane = "gay";
+    else if (tokens.has("both") || tokens.has("bi")) lane = "both";
+  }
+  return { source, folders, lane };
+}
+
 function modelAccessProfile(fields = {}) {
   const rawTags = []
     .concat(Array.isArray(fields.legacy_tags) ? fields.legacy_tags : String(fields.legacy_tags || "").split(/[,\n]/))
     .concat(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || "").split(/[,\n]/));
   const tags = new Set(rawTags.map(accessToken).filter(Boolean));
+  const publicContext = modelPublicDiscoveryContext(fields);
+  const canWorkPublic =
+    fields.can_work_public === true ||
+    ["1", "true", "yes", "public", "allowed", "approved"].includes(accessToken(fields.can_work_public));
 
   const visibilityToken = accessToken(fields.booking_visibility);
   const salesLayer = accessToken(fields.sales_layer);
   let bookingVisibility = "";
   if (visibilityToken === "private" || salesLayer.includes("private")) bookingVisibility = "private";
-  else if (visibilityToken === "public" || salesLayer.includes("public")) bookingVisibility = "public";
+  else if (
+    visibilityToken === "public" ||
+    salesLayer.includes("public") ||
+    canWorkPublic ||
+    publicContext.folders.length
+  ) bookingVisibility = "public";
 
   let accessFolder = accessToken(fields.access_folder || fields.model_access_folder || fields.model_folder);
   if (!CANONICAL_PRIVATE_FOLDERS.has(accessFolder)) {
@@ -4949,11 +5520,11 @@ function modelAccessProfile(fields = {}) {
   }
 
   const serviceSource = accessToken([fields.service_layer, fields.job_types, fields.private_tier].filter(Boolean).join(" "));
-  const publicFolders = [];
-  if (serviceSource.includes("travel") || tags.has("travel")) publicFolders.push("travel");
-  if (serviceSource.includes("extreme") || tags.has("extreme")) publicFolders.push("extreme");
+  const publicFolders = publicContext.folders.slice();
+  if ((serviceSource.includes("travel") || tags.has("travel")) && !publicFolders.includes("travel")) publicFolders.push("travel");
+  if ((serviceSource.includes("extreme") || tags.has("extreme")) && !publicFolders.includes("extreme")) publicFolders.push("extreme");
 
-  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation) || publicContext.lane;
   const statusActive = !MODEL_BLOCKED_STATUS_TOKENS.has(accessToken(fields.status));
   const availabilityToken = accessToken(fields.availability_status);
   const availableNow =
@@ -4975,7 +5546,6 @@ function modelAccessProfile(fields = {}) {
 
   return { bookingVisibility, accessFolder, publicFolders, lane, statusActive, availableNow, explicitlyUnavailable, ops };
 }
-
 function isDriveLazyPrivateModel(fields = {}) {
   const tag = accessToken(fields.raw_import_tag);
   const scope = accessToken(fields.folder_scope_key);
@@ -4989,8 +5559,23 @@ function effectivePrivateModelLane(profile, fields, selectedLane) {
   return isDriveLazyPrivateModel(fields) && (lane === "straight" || lane === "gay") ? lane : "";
 }
 
+export function modelProfilePhotoUrls(fields = {}) {
+  const seen = new Set();
+  const out = [];
+  const add = (value) => {
+    const url = str(value?.url || value?.thumbnails?.large?.url || value?.thumbnails?.full?.url || value);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    out.push(url);
+  };
+  for (const item of Array.isArray(fields.profile_photo) ? fields.profile_photo : []) add(item);
+  add(fields["Public Image URL"]);
+  return out.slice(0, 8);
+}
+
 function sanitizeCreateSessionModel(record, profile) {
   const fields = record.fields || {};
+  const profilePhotos = modelProfilePhotoUrls(fields);
   const folders = profile.bookingVisibility === "private"
     ? (profile.accessFolder ? [profile.accessFolder] : [])
     : profile.publicFolders.slice();
@@ -5001,6 +5586,8 @@ function sanitizeCreateSessionModel(record, profile) {
     model_id: record.id,
     model_name: str(fields.working_name || fields.display_name || fields.model_name || fields.nickname || fields.name || fields.Name),
     model_lookup_key: str(fields.model_lookup_key || fields.unique_key || fields.model_code),
+    profile_photos: profilePhotos,
+    profile_image_url: profilePhotos[0] || "",
     telegram_username: telegramConnected ? str(fields.telegram_username).replace(/^@/, "") : "",
     telegram_status: telegramConnected ? "verified" : (telegramStatus || "not_connected"),
     telegram_connected: telegramConnected,
@@ -5013,6 +5600,68 @@ function sanitizeCreateSessionModel(record, profile) {
     status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
     available: profile.availableNow && !profile.explicitlyUnavailable,
     operational: { ...profile.ops },
+  };
+}
+
+async function discoverApprovedDrivePublicModel(env, url, selectedFolder, selectedLane) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  if (q.length < 2) return null;
+
+  const candidateUrl = new URL(url.toString());
+  candidateUrl.searchParams.set("lane", "public");
+  const unified = await listUnifiedModelLineCandidates(env, candidateUrl);
+  if (!unified.ok) return null;
+
+  const driveOnly = (Array.isArray(unified.items) ? unified.items : [])
+    .filter((item) => item?.source === "drive" && item?.materialized === false)
+    .filter((item) => {
+      const context = modelPublicDiscoveryContext({
+        can_work_public: true,
+        source_folder: item?.folder_path,
+        folder_name: item?.folder_name || item?.working_name,
+        folder_scope_key: item?.folder_scope_key,
+      });
+      if (selectedFolder && !context.folders.includes(selectedFolder)) return false;
+      if (selectedLane && context.lane && context.lane !== selectedLane && context.lane !== "both") return false;
+      return true;
+    });
+
+  const normalizeName = (value) => String(value == null ? "" : value)
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]+/g, "");
+  const qNorm = normalizeName(q);
+  const exact = qNorm
+    ? driveOnly.filter((item) => normalizeName(item?.folder_name || item?.working_name) === qNorm)
+    : [];
+  const selectable = exact.length === 1 ? exact : driveOnly;
+  if (selectable.length !== 1) return null;
+
+  const chosen = selectable[0];
+  const materialized = await materializeApprovedDriveModel(
+    env,
+    chosen.drive_folder_id,
+    { id: "public_model_owner_discovery" },
+  );
+  if (!materialized.ok || !materialized.record?.id) return null;
+
+  const fields = materialized.record.fields || {};
+  const profile = modelAccessProfile(fields);
+  if (!profile.statusActive || profile.bookingVisibility === "private") return null;
+  if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) return null;
+  if (selectedLane && profile.lane && profile.lane !== selectedLane && profile.lane !== "both") return null;
+
+  const item = sanitizeCreateSessionModel(materialized.record, profile);
+  if (!item.model_name) return null;
+  return {
+    ...item,
+    source: materialized.materialized
+      ? "owner_approved_drive_lazy_materialized_public_v1"
+      : "owner_canonical_inventory_public_drive_v1",
+    drive_folder_id: str(chosen.drive_folder_id),
+    drive_folder_url: str(chosen.drive_folder_url),
+    drive_materialized: materialized.materialized === true,
   };
 }
 
@@ -5295,8 +5944,25 @@ async function searchCreateSessionModels(env, url) {
     if (items.length >= limit) break;
   }
 
-  const out = { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items };
+  let publicRecovery = null;
+  if (bookingVisibility !== "private" && q.length >= 2 && items.length === 0) {
+    publicRecovery = await discoverApprovedDrivePublicModel(env, url, selectedFolder, lane);
+    if (publicRecovery) items.push(publicRecovery);
+  }
+
+  const out = {
+    ok: true,
+    layer: publicRecovery ? "owner_discovery" : "core",
+    booking_visibility: bookingVisibility,
+    folder: selectedFolder,
+    customer_lane: lane,
+    items,
+  };
   if (memberSummary) out.private_access = memberSummary;
+  if (publicRecovery) {
+    out.owner_discovery = true;
+    out.discovery_reason = "approved_drive_public_inventory_recovery";
+  }
   return out;
 }
 
@@ -5356,6 +6022,88 @@ export function computeCustomerDepositAmount(serviceAmountThb) {
   return Math.min(total, rounded);
 }
 
+const PUBLIC_JOB_V2_FORMATS = new Set([
+  "dining",
+  "event",
+  "party",
+  "travel",
+  "guest_care",
+  "social_appearance",
+  "brand_guest",
+  "city_companion",
+  "other",
+]);
+const PRIVATE_JOB_TYPE_TOKENS = new Set(["pn", "vip", "private_review"]);
+
+function publicJobInteger(value, field, { min = 0, max = 1000, fallback } = {}) {
+  if ((value === undefined || value === null || value === "") && fallback !== undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new CreateSessionAccessError("public_job_invalid", `Public Job ${field} is invalid.`, 400);
+  }
+  return n;
+}
+
+function normalizePublicJobV2(body = {}, jobVisibility = "public") {
+  const details = body?.job_details || {};
+  const raw = body?.public_job || details.public_job;
+  const hasPublicJob = raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length > 0;
+  const requestedJobType = accessToken(body.job_type || body?.work?.job_type || body?.work?.work_type || "");
+  if (jobVisibility === "public" && PRIVATE_JOB_TYPE_TOKENS.has(requestedJobType)) {
+    throw new CreateSessionAccessError("public_job_private_type_forbidden", "Public Job cannot use PN, VIP, or private-review work types.", 400);
+  }
+  if (jobVisibility !== "public") {
+    if (hasPublicJob && accessToken(raw.schema_version) === "mmd_public_job_v2") {
+      throw new CreateSessionAccessError("private_job_public_brief_forbidden", "Private Job cannot submit a Public Job V2 brief.", 400);
+    }
+    return null;
+  }
+  if (!hasPublicJob) return null; // legacy public callers remain compatible
+
+  const schemaVersion = accessToken(raw.schema_version || "mmd_public_job_v2");
+  if (schemaVersion !== "mmd_public_job_v2") {
+    throw new CreateSessionAccessError("public_job_schema_invalid", "Unsupported Public Job schema.", 400);
+  }
+  const format = accessToken(raw.format || raw.job_format);
+  if (!PUBLIC_JOB_V2_FORMATS.has(format)) {
+    throw new CreateSessionAccessError("public_job_format_invalid", "Public Job format is not supported.", 400);
+  }
+  const duties = str(raw.duties).slice(0, 1200);
+  if (!duties) throw new CreateSessionAccessError("public_job_duties_required", "Public Job duties are required.", 400);
+
+  const customerCount = publicJobInteger(raw.customer_count, "customer_count", { min: 1, max: 200 });
+  const careCount = publicJobInteger(raw.care_count, "care_count", { min: 0, max: 200, fallback: 0 });
+  if (careCount > customerCount) {
+    throw new CreateSessionAccessError("public_job_care_count_invalid", "Public Job care_count cannot exceed customer_count.", 400);
+  }
+  const modelCount = publicJobInteger(raw.model_count, "model_count", { min: 1, max: 20, fallback: 1 });
+
+  return {
+    schema_version: "mmd_public_job_v2",
+    format,
+    duties,
+    customer_count: customerCount,
+    care_count: careCount,
+    special_care_names: str(raw.special_care_names).slice(0, 1200),
+    model_count: modelCount,
+    model_assignment_note: str(raw.model_assignment_note).slice(0, 1200),
+    presentation_note: str(raw.presentation_note).slice(0, 1200),
+    remark: str(raw.remark || body.remark).slice(0, 1200),
+  };
+}
+
+function withCanonicalPublicJobNote(note, publicJob) {
+  const lines = str(note)
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("[MMD PUBLIC JOB v2]"));
+  const cleanNote = lines.join("\n").trim();
+  if (!publicJob) return cleanNote;
+  return [cleanNote, `[MMD PUBLIC JOB v2] ${JSON.stringify(publicJob)}`]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 4000);
+}
+
 async function createAdminJob(env, body) {
   const work = body?.work || {};
   const model = body?.model || {};
@@ -5378,25 +6126,46 @@ async function createAdminJob(env, body) {
     }
   }
 
+  const publicJob = normalizePublicJobV2(body, jobVisibility);
   const client_name = strReq(body.client_name || body.client_lineage?.client_name, "client_name");
   const model_name = strReq(body.model_name || model.model_name, "model_name");
-  const job_type = strReq(body.job_type || work.job_lane || work.work_type, "job_type");
+  const job_type = publicJob?.format || strReq(body.job_type || work.job_lane || work.work_type, "job_type");
   const job_date = strReq(body.job_date || jobDetails.job_date, "job_date");
   const start_time = strReq(body.start_time || jobDetails.start_time, "start_time");
   const end_time = strReq(body.end_time || jobDetails.end_time, "end_time");
   const location_name = strReq(body.location_name || jobDetails.location_name, "location_name");
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
-  const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const payment_type = "deposit";
+  const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
+  const note = withCanonicalPublicJobNote(rawNote, publicJob);
+  const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
+  if (!["deposit", "full"].includes(requested_payment_type)) {
+    throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
+  }
+  const payment_type = requested_payment_type;
   const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
   // amount_thb may include a separately itemized membership renewal. The
   // customer deposit is always calculated from service money only.
   const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
   const service_amount_thb = numReq(body.service_amount_thb || payment.service_amount_thb || amount_thb, "service_amount_thb");
-  const deposit_percent = CUSTOMER_DEPOSIT_PERCENT;
-  const deposit_amount_thb = computeCustomerDepositAmount(service_amount_thb);
-  const balance_amount_thb = Math.max(0, service_amount_thb - deposit_amount_thb);
+  const original_amount_raw = Number(
+    body.original_amount_thb ??
+    payment.original_amount_thb ??
+    payment.payment_original_amount_thb ??
+    service_amount_thb
+  );
+  const original_amount_thb = Number.isFinite(original_amount_raw) && original_amount_raw >= service_amount_thb
+    ? original_amount_raw
+    : service_amount_thb;
+  const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
+    .toLowerCase();
+  const deposit_percent = payment_type === "deposit" ? CUSTOMER_DEPOSIT_PERCENT : undefined;
+  const deposit_amount_thb = payment_type === "deposit"
+    ? computeCustomerDepositAmount(service_amount_thb)
+    : undefined;
+  const balance_amount_thb = payment_type === "deposit"
+    ? Math.max(0, service_amount_thb - deposit_amount_thb)
+    : 0;
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
   const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
@@ -5414,6 +6183,8 @@ async function createAdminJob(env, body) {
     amount_thb,
     pay_model_thb: body.pay_model_thb,
     service_amount_thb,
+    original_amount_thb,
+    pricing_adjustment,
     deposit_percent,
     deposit_amount_thb,
     balance_amount_thb,
@@ -5422,6 +6193,7 @@ async function createAdminJob(env, body) {
     payment_stage: payment_type,
     payment_method,
     note,
+    public_job: publicJob || undefined,
     confirm_page,
     model_confirm_page,
   };
@@ -5487,9 +6259,11 @@ async function createAdminJob(env, body) {
       end_time,
       location_name,
       amount_thb,
+      payment_type,
       deposit_amount_thb,
       balance_amount_thb,
       customer_payment_url,
+      public_job: publicJob || undefined,
     });
     if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
   } catch (_) {
@@ -5505,8 +6279,10 @@ async function createAdminJob(env, body) {
     confirmation_release_state: "held_until_payment_approved",
     notification_status: notificationStatus,
     owner_job_grant_status: ownerJobGrantStatus,
-    deposit_percent,
-    deposit_amount_thb,
+    payment_type,
+    amount_due_thb: payment_type === "full" ? service_amount_thb : deposit_amount_thb,
+    ...(publicJob ? { public_job: publicJob } : {}),
+    ...(payment_type === "deposit" ? { deposit_percent, deposit_amount_thb } : {}),
     balance_amount_thb,
   };
 }
@@ -5544,9 +6320,13 @@ async function notifyJobCreated(env, data) {
     `Date: <b>${escHtml(data.job_date)}</b>`,
     `Time: <b>${escHtml(data.start_time)} - ${escHtml(data.end_time)}</b>`,
     `Location: <b>${escHtml(data.location_name)}</b>`,
+    data.public_job ? `Public: <b>${escHtml(data.public_job.format)}</b> · ${Number(data.public_job.customer_count)} guests · care ${Number(data.public_job.care_count)} · ${Number(data.public_job.model_count)} model(s)` : "",
+    data.public_job?.duties ? `Duties: ${escHtml(data.public_job.duties)}` : "",
+    data.public_job?.special_care_names ? `Special care: ${escHtml(data.public_job.special_care_names)}` : "",
     `Amount: <b>${Number(data.amount_thb).toLocaleString("en-US")} THB</b>`,
-    data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
-    data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.payment_type === "full" ? "Payment: <b>FULL</b>" : "",
+    data.payment_type === "deposit" && data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.payment_type === "deposit" && data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
     `Session: <code>${escHtml(data.session_id || "-")}</code>`,
     `Payment Ref: <code>${escHtml(data.payment_ref || "-")}</code>`,
     "",

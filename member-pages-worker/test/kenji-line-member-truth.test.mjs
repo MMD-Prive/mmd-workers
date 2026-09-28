@@ -43,6 +43,7 @@ function verifiedSnapshot() {
   return {
     schema_version: "my_mmd_entitlement_resolver_v1",
     source_status: "verified",
+    evaluated_at: "2026-09-21T12:00:00.000Z",
     fail_closed: true,
     member_blocked: false,
     capability_state: {
@@ -54,7 +55,12 @@ function verifiedSnapshot() {
     },
     access: {
       public_service_access: true,
+      guest_pass_access: false,
+      red_card_request_lane: false,
       private_visibility_envelope: "svip",
+      protected_allowlist_required: true,
+      protected_capabilities_active: ["svip"],
+      new_model_reveals_allowed: true,
     },
     entitlements: [{
       entitlement_id: "internal-row",
@@ -131,6 +137,28 @@ test("returns a bounded verified SVIP truth projection without raw LINE identity
     member_blocked: false,
   });
   assert.deepEqual(payload.points, { status: "verified", active_points: 88 });
+  assert.deepEqual(payload.resolver_snapshot, {
+    schema_version: "my_mmd_entitlement_resolver_v1",
+    evaluated_at: "2026-09-21T12:00:00.000Z",
+    fail_closed: true,
+    member_blocked: false,
+    capability_state: {
+      active: ["svip"],
+      expiring_soon: [],
+      grace: [],
+      inactive: [],
+      recognized: ["svip"],
+    },
+    access: {
+      public_service_access: true,
+      guest_pass_access: false,
+      red_card_request_lane: false,
+      private_visibility_envelope: "svip",
+      protected_allowlist_required: true,
+      protected_capabilities_active: ["svip"],
+      new_model_reveals_allowed: true,
+    },
+  });
   const serialized = JSON.stringify(payload);
   assert.equal(serialized.includes(LINE_USER_ID), false);
   assert.equal(serialized.includes("internal-row"), false);
@@ -189,10 +217,86 @@ test("membership_status uses lightweight canonical entitlement resolver without 
   assert.equal(payload.membership.lifecycle, "active");
   assert.equal(payload.membership.public_service_access, true);
   assert.equal(payload.membership.private_visibility_envelope, "svip");
+  assert.equal(payload.resolver_snapshot.schema_version, "my_mmd_entitlement_resolver_v1");
+  assert.equal(payload.resolver_snapshot.fail_closed, true);
+  assert.deepEqual(payload.resolver_snapshot.capability_state.active, ["svip"]);
   assert.deepEqual(payload.points, { status: "unavailable", active_points: null });
   assert.equal(airtableCalls, 1);
   assert.equal(fullProfileCalls, 0);
   assert.equal(JSON.stringify(payload).includes(LINE_USER_ID), false);
+});
+
+test("Per Rename or display labels never override canonical entitlement truth", () => {
+  const snapshot = {
+    schema_version: "my_mmd_entitlement_resolver_v1",
+    source_status: "verified",
+    evaluated_at: "2026-09-28T12:00:00.000Z",
+    fail_closed: true,
+    member_blocked: false,
+    capability_state: {
+      active: ["public_member"],
+      expiring_soon: [],
+      grace: [],
+      inactive: ["svip"],
+      recognized: ["public_member", "svip"],
+    },
+    access: {
+      public_service_access: true,
+      guest_pass_access: false,
+      red_card_request_lane: false,
+      private_visibility_envelope: "none",
+      protected_allowlist_required: true,
+      protected_capabilities_active: [],
+      new_model_reveals_allowed: false,
+    },
+    entitlements: [
+      { capability: "public_member", lifecycle: "active", expire_at: "2027-09-28T00:00:00.000Z" },
+      { capability: "svip", lifecycle: "expired", expire_at: "2026-01-01T00:00:00.000Z" },
+    ],
+  };
+  const projected = projectKenjiLineMemberTruth({
+    profile: { display_name: "BOSS - SVIP - 28/09/26" },
+    snapshot,
+  });
+  assert.equal(projected.membership.level, "public_member");
+  assert.equal(projected.membership.lifecycle, "active");
+  assert.equal(projected.membership.private_visibility_envelope, "none");
+  assert.equal(projected.former_private_membership.level, "svip");
+  assert.equal(projected.former_private_membership.lifecycle, "expired");
+});
+
+test("Red Card projects as public access without private visibility", () => {
+  const snapshot = {
+    schema_version: "my_mmd_entitlement_resolver_v1",
+    source_status: "verified",
+    evaluated_at: "2026-09-28T12:00:00.000Z",
+    fail_closed: true,
+    member_blocked: false,
+    capability_state: {
+      active: ["red_card"],
+      expiring_soon: [],
+      grace: [],
+      inactive: [],
+      recognized: ["red_card"],
+    },
+    access: {
+      public_service_access: true,
+      guest_pass_access: false,
+      red_card_request_lane: true,
+      private_visibility_envelope: "none",
+      protected_allowlist_required: false,
+      protected_capabilities_active: [],
+      new_model_reveals_allowed: false,
+    },
+    entitlements: [
+      { capability: "red_card", lifecycle: "active", expire_at: "2027-09-28T00:00:00.000Z" },
+    ],
+  };
+  const projected = projectKenjiLineMemberTruth({ profile: { display_name: "Red" }, snapshot });
+  assert.equal(projected.membership.level, "red_card");
+  assert.equal(projected.membership.label, "Red Card");
+  assert.equal(projected.membership.public_service_access, true);
+  assert.equal(projected.membership.private_visibility_envelope, "none");
 });
 
 test("service endpoint is not reachable without the exact internal caller contract", async () => {

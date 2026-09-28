@@ -1,3 +1,8 @@
+import {
+  readMemberHistoryPreload,
+  recoveryStatusFromPreload,
+} from "./member-history-preload.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const POLICY = "member_history_recovery_v2_note_first";
@@ -6,6 +11,7 @@ const LOCK_TTL_SECONDS = 180;
 const AIRTABLE_TIMEOUT_MS = 10000;
 const HISTORY_WINDOW_YEARS = 5;
 const POINT_RATE_THB = 100;
+const POINTS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const POINTS_BUCKET = "base_phase1";
 const POINTS_SOURCE = "line_ofc_history";
 
@@ -81,12 +87,12 @@ export async function handleMemberHistoryRecoveryRequest(request, env = {}, ctx)
 
   if (STATUS_PATHS.has(url.pathname)) {
     if (request.method !== "GET") return methodNotAllowed("GET");
-    const status = await readRecoveryStatus(env, session.line_user_id);
+    const status = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
     return withCors(request, env, json({ ok: true, history_recovery: publicStatus(status) }, 200));
   }
 
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const existing = await readRecoveryStatus(env, session.line_user_id);
+  const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) {
     return withCors(request, env, json({ ok: true, history_recovery: publicStatus(existing), accepted: false }, 200));
   }
@@ -107,8 +113,11 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
   // LINE OFC history is the source of truth from the first login. Do not gate
   // the background scan on a pre-existing Member/Airtable wallet or a slip.
   if (!session || !safeLineUserId(session.line_user_id)) return false;
-  const existing = await readRecoveryStatus(env, session.line_user_id);
+  const preloaded = await useBatchPreload(env, session.line_user_id, trigger);
+  if (preloaded) return true;
+  const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
+  if (!shouldAutoRunHistoryRecovery(existing, trigger)) return true;
   await markQueued(env, session.line_user_id, trigger);
   schedule(ctx, runMemberHistoryRecovery({
     env,
@@ -117,6 +126,12 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
     trigger,
   }));
   return true;
+}
+
+export function shouldAutoRunHistoryRecovery(status = {}, trigger = "login") {
+  if (String(trigger || "").trim().toLowerCase() === "manual_refresh") return true;
+  const state = String(status?.state || "").trim().toLowerCase();
+  return !["reconciled", "review_required"].includes(state);
 }
 
 export async function runMemberHistoryRecovery({
@@ -130,6 +145,13 @@ export async function runMemberHistoryRecovery({
   if (!hasBindings(env) && !store) return statusPayload("blocked", { reason: "not_configured", trigger });
   if (!safeLineUserId(lineUserId)) return statusPayload("blocked", { reason: "identity_invalid", trigger });
 
+  // The scheduled batch projection is the normal path. The broad historical
+  // scan below runs only when that projection is missing, stale, or ambiguous.
+  if (!store) {
+    const preloaded = await useBatchPreload(env, lineUserId, trigger, now);
+    if (preloaded) return preloaded;
+  }
+
   const db = store || new AirtableHistoryStore(env);
   const lockKey = await recoveryKey("lock", lineUserId);
   const statusKey = await recoveryKey("status", lineUserId);
@@ -138,7 +160,7 @@ export async function runMemberHistoryRecovery({
   try {
     const held = await env.LIFF_IDENTITY_KV?.get(lockKey, "json").catch(() => null);
     if (held?.started_at && Date.now() - Date.parse(held.started_at) < LOCK_TTL_SECONDS * 1000) {
-      return await readRecoveryStatus(env, lineUserId);
+      return await readMemberHistoryRecoveryStatus(env, lineUserId);
     }
     if (env.LIFF_IDENTITY_KV?.put) {
       await env.LIFF_IDENTITY_KV.put(lockKey, JSON.stringify({ started_at: startedAt, trigger }), { expirationTtl: LOCK_TTL_SECONDS });
@@ -248,7 +270,7 @@ export async function runMemberHistoryRecovery({
       historical_points_recovered: pointsTarget.points,
       historical_points_added: pointsResult.historical_points_added,
       current_points_total: pointsResult.current_points_total,
-      points_expire: false,
+      points_expire: true,
       history_window_years: HISTORY_WINDOW_YEARS,
       source_pending: sourcePending,
       trigger,
@@ -397,9 +419,10 @@ async function reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarg
     points: aggregatePoints,
     rate_policy: "historical_lifetime_total_100_thb_1_point_v2",
     source: POINTS_SOURCE,
-    note: `policy=${POLICY};window_years=${HISTORY_WINDOW_YEARS};expiry=none_phase1;notes_primary=true;slips_optional=true`,
+    note: `policy=${POLICY};window_years=${HISTORY_WINDOW_YEARS};expiry=365d_from_entry;notes_primary=true;slips_optional=true`,
     idempotency_key: aggregateKey,
     posted_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + POINTS_TTL_MS).toISOString(),
     transaction_status: "posted",
     created_by: POLICY,
     points_bucket: POINTS_BUCKET,
@@ -718,7 +741,7 @@ async function readSessionByToken(token, env) {
   }
 }
 
-async function readRecoveryStatus(env, lineUserId) {
+export async function readMemberHistoryRecoveryStatus(env, lineUserId) {
   if (!env.LIFF_IDENTITY_KV?.get) return statusPayload("checking", { reason: "status_unavailable" });
   const key = await recoveryKey("status", lineUserId);
   const stored = await env.LIFF_IDENTITY_KV.get(key, "json").catch(() => null);
@@ -727,12 +750,26 @@ async function readRecoveryStatus(env, lineUserId) {
     : statusPayload("checking", { reason: "not_started" });
 }
 
+async function useBatchPreload(env, lineUserId, trigger, now = new Date()) {
+  try {
+    const preload = await readMemberHistoryPreload(env, lineUserId, { now });
+    const raw = recoveryStatusFromPreload(preload, trigger, now);
+    if (!raw) return null;
+    const status = statusPayload(raw.state, raw);
+    await writeStatusKey(env, await recoveryKey("status", lineUserId), status);
+    return status;
+  } catch (error) {
+    console.warn({ event: "member_history_preload_lookup_failed", reason: safeErrorCode(error) });
+    return null;
+  }
+}
+
 async function markQueued(env, lineUserId, trigger) {
   const status = statusPayload("checking", {
     trigger,
     reason: "queued",
     updated_at: new Date().toISOString(),
-    points_expire: false,
+    points_expire: true,
     history_window_years: HISTORY_WINDOW_YEARS,
   });
   await writeStatusKey(env, await recoveryKey("status", lineUserId), status);
@@ -758,12 +795,17 @@ function statusPayload(state, extra = {}) {
     note_without_amount_count: nonNegativeInt(extra.note_without_amount_count),
     unmatched_payment_count: nonNegativeInt(extra.unmatched_payment_count),
     verified_service_spend_thb: roundMoney(extra.verified_service_spend_thb),
+    lifetime_service_spend_thb: roundMoney(extra.lifetime_service_spend_thb),
+    service_spend_365d_thb: roundMoney(extra.service_spend_365d_thb),
+    completed_service_count: nonNegativeInt(extra.completed_service_count),
     historical_points_recovered: nonNegativeInt(extra.historical_points_recovered),
     historical_points_added: signedInt(extra.historical_points_added),
     current_points_total: nullableNonNegativeInt(extra.current_points_total),
-    points_expire: false,
+    points_expire: true,
     history_window_years: HISTORY_WINDOW_YEARS,
     source_pending: extra.source_pending === true,
+    preload_source: bounded(extra.preload_source, 48) || null,
+    projection_computed_at: isoDate(extra.projection_computed_at),
     trigger: bounded(extra.trigger, 32) || null,
     reason: bounded(extra.reason, 80) || null,
     started_at: isoDate(extra.started_at),
@@ -782,7 +824,7 @@ function refreshExpired(status) {
 }
 
 function reviewNote(trigger, reason) {
-  return `policy=${POLICY};trigger=${bounded(trigger, 32) || "unknown"};reason=${bounded(reason, 120) || "unknown"};identity=verified_liff_exact_client;note_occurrence=true;old_slip_required=false;points_expiry=none_phase1;entitlements=untouched`;
+  return `policy=${POLICY};trigger=${bounded(trigger, 32) || "unknown"};reason=${bounded(reason, 120) || "unknown"};identity=verified_liff_exact_client;note_occurrence=true;old_slip_required=false;points_expiry=365d_from_entry;entitlements=untouched`;
 }
 
 class AirtableHistoryStore {

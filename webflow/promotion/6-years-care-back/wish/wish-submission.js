@@ -17,8 +17,9 @@
       tooLong: "คำอวยพรยาวเกินจำนวนที่กำหนดครับ",
       invalid: "มีอักขระที่ใช้ไม่ได้ครับ ลองปรับข้อความอีกครั้ง",
       unavailable: "ตอนนี้ยังส่งไม่ได้ครับ ลองใหม่อีกครั้งในอีกสักครู่",
-      success: "MMD ได้รับคำอวยพรของคุณแล้วครับ กรุณาไปยืนยัน LINE เพื่อเคลมคูปองทันทีครับ",
-      benefit: "ยืนยัน LINE ต่อใน My MMD เพื่อเคลมคูปองส่วนตัวทันทีครับ",
+      success: "MMD ได้รับคำอวยพรของคุณแล้วครับ",
+      benefit: "หากเคยเป็นสมาชิก ให้ยืนยัน LINE ใน My MMD เพื่อให้ข้อความขึ้นและรับคูปองทันทีครับ",
+      publicConsent: "ยืนยันส่งข้อความนี้ และยินยอมให้แสดงแบบไม่ระบุชื่อหากระบบยืนยันว่าเคยเป็นสมาชิก MMD",
       counter: "ตัวอักษร",
       benefitCta: "ดูคูปองของฉัน",
     },
@@ -31,8 +32,9 @@
       tooLong: "Your wish is longer than the allowed limit.",
       invalid: "Some characters cannot be used. Please revise your wish.",
       unavailable: "Your wish cannot be sent right now. Please try again shortly.",
-      success: "MMD has received your wish. Verify LINE in My MMD to claim your coupon immediately.",
-      benefit: "Verify LINE in My MMD to claim your personal coupon immediately.",
+      success: "MMD has received your wish.",
+      benefit: "If you have ever been an MMD member, verify LINE in My MMD to publish it anonymously and receive your coupon immediately.",
+      publicConsent: "Send this message and display it anonymously if MMD verifies that I am or was a member.",
       counter: "characters",
       benefitCta: "View my coupons",
     },
@@ -45,8 +47,9 @@
       tooLong: "祝福内容超过允许的长度。",
       invalid: "内容含有无法使用的字符，请修改后重试。",
       unavailable: "暂时无法发送祝福，请稍后再试。",
-      success: "MMD 已收到您的祝福。请在 My MMD 验证 LINE 立即领取优惠券。",
-      benefit: "请在 My MMD 验证 LINE，立即领取个人优惠券。",
+      success: "MMD 已收到您的祝福。",
+      benefit: "如果您曾是 MMD 会员，请在 My MMD 验证 LINE；祝福将匿名显示，优惠券也会立即发放。",
+      publicConsent: "发送此留言；若 MMD 核实我现在或过去是会员，可匿名公开显示。",
       counter: "字符",
       benefitCta: "查看我的优惠券",
     },
@@ -162,7 +165,7 @@
     clearExistingError(form);
 
     try {
-      const payload = await postWish(validation.value, root);
+      const payload = await postWish(validation.value, root, form.consent.checked);
       if (!isCompletedPayload(payload)) {
         setExistingError(form, safeFailureMessage(payload, copy));
         setExistingStatus(form, copy.unavailable, "error");
@@ -235,7 +238,9 @@
       form.textarea.focus({ preventScroll: true });
     });
     form.textarea.addEventListener("input", () => updateCount(form));
+    form.consent.addEventListener("change", () => updateGenerated(form));
     form.element.addEventListener("submit", (event) => void submitGeneratedWish(event, form));
+    updateGenerated(form);
   }
 
   function buildForm() {
@@ -259,14 +264,20 @@
     count.id = "mmd-wish-submit-count";
     const submit = element("button", "mmd-wish-submit__button", copy.submit);
     submit.type = "submit";
+    const consentLabel = element("label", "mmd-wish-submit__consent");
+    const consent = document.createElement("input");
+    consent.type = "checkbox";
+    consent.required = true;
+    const consentCopy = element("span", "", copy.publicConsent);
+    consentLabel.append(consent, consentCopy);
     const status = element("p", "mmd-wish-submit__status");
     status.id = "mmd-wish-submit-status";
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
     footer.append(count, submit);
-    elementForm.append(title, textarea, footer, status);
+    elementForm.append(title, textarea, consentLabel, footer, status);
     wrap.append(elementForm);
-    return { wrap, element: elementForm, textarea, count, submit, status, copy, pending: false };
+    return { wrap, element: elementForm, textarea, consent, count, submit, status, copy, pending: false };
   }
 
   async function submitGeneratedWish(event, form) {
@@ -278,11 +289,15 @@
       form.textarea.focus();
       return;
     }
+    if (!form.consent.checked) {
+      updateGenerated(form);
+      return;
+    }
     form.pending = true;
     form.submit.disabled = true;
     setStatus(form, form.copy.pending, "pending");
     try {
-      const payload = await postWish(validation.value);
+      const payload = await postWish(validation.value, null, form.consent.checked);
       if (!isCompletedPayload(payload)) {
         setStatus(form, safeFailureMessage(payload, form.copy), "error");
         return;
@@ -294,22 +309,23 @@
       const message = safeServerMessage(payload) || `${form.copy.success} ${form.copy.benefit}`;
       setStatus(form, message, "success");
       form.textarea.disabled = true;
+      form.consent.disabled = true;
       form.submit.hidden = true;
       document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed", couponClaimRequired: true, next: MEMBER_URL } }));
     } catch {
       setStatus(form, form.copy.unavailable, "error");
     } finally {
       form.pending = false;
-      if (!form.textarea.disabled) form.submit.disabled = false;
+      if (!form.textarea.disabled) updateGenerated(form);
     }
   }
 
-  async function postWish(wishText, root) {
+  async function postWish(wishText, root, publicDisplayConsent) {
     const response = await fetch(ENDPOINT, {
       method: "POST",
       credentials: "same-origin",
       headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(buildPayload(wishText, root)),
+      body: JSON.stringify(buildPayload(wishText, root, publicDisplayConsent)),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) return payload || { ok: false, error: { code: "PUBLIC_WISH_REQUEST_FAILED" } };
@@ -327,10 +343,21 @@
         body: JSON.stringify({ wish_link_token: token }),
       });
       const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.ok === true && payload?.linked === true) forgetLinkToken();
+      if (response.ok && payload?.ok === true && payload?.linked === true) {
+        forgetLinkToken();
+        document.dispatchEvent(new CustomEvent("mmd:care-back:wish-linked", {
+          detail: {
+            eligible: payload?.benefits?.member_eligible === true,
+            publication: String(payload?.publication?.state || ""),
+            couponState: String(payload?.coupon?.state || ""),
+          },
+        }));
+        return payload;
+      }
     } catch {
       // Linking benefits is best-effort and must never block the public Wish.
     }
+    return null;
   }
 
   function validateWish(value, maxLength = MAX_WISH) {
@@ -342,8 +369,13 @@
     return { ok: true, value: wish };
   }
 
-  function buildPayload(wishText, root) {
-    return { wish_text: wishText, request_id: requestId(), language: currentLanguage(root) };
+  function buildPayload(wishText, root, publicDisplayConsent = false) {
+    return {
+      wish_text: wishText,
+      request_id: requestId(),
+      language: currentLanguage(root),
+      public_display_consent: publicDisplayConsent === true,
+    };
   }
 
   function requestId() {
@@ -398,7 +430,14 @@
     try { localStorage.removeItem(LINK_TOKEN_KEY); } catch {}
   }
 
-  function updateCount(form) { form.count.textContent = `${form.textarea.value.length} / ${MAX_WISH} ${form.copy.counter}`; }
+  function updateCount(form) {
+    form.count.textContent = `${form.textarea.value.length} / ${MAX_WISH} ${form.copy.counter}`;
+    updateGenerated(form);
+  }
+  function updateGenerated(form) {
+    const validText = validateWish(form.textarea.value, MAX_WISH).ok;
+    form.submit.disabled = !validText || !form.consent.checked || form.pending;
+  }
   function setStatus(form, message, state) { form.status.textContent = message; form.status.dataset.state = state; }
   function currentLanguage(root) {
     const language = String(root?.lang || document.documentElement?.lang || "th").toLowerCase();
@@ -409,6 +448,6 @@
   function prefersReducedMotion() { return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true; }
 
   if (globalThis.__MMD_WISH_TEST_MODE__ === true) {
-    globalThis.__MMD_WISH_TEST__ = Object.freeze({ validateWish, buildPayload, requestId, isCompletedPayload, safeServerMessage, safeFailureMessage, effectiveLimit, validLinkToken });
+    globalThis.__MMD_WISH_TEST__ = Object.freeze({ validateWish, buildPayload, requestId, isCompletedPayload, safeServerMessage, safeFailureMessage, effectiveLimit, validLinkToken, tryLinkStoredWish });
   }
 })();

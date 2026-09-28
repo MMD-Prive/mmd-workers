@@ -196,6 +196,22 @@ async function post(url, body, env) {
   }), env);
 }
 
+test("production apply accepts V12 form version while keeping the V8 contract", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    form_version: "public-model-apply-v12",
+    nickname: "V12 Production Test",
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, "intake_received");
+  assert.equal(env.__airtable.applications.length, 1);
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.formVersion], "public-model-apply-v12");
+});
+
 test("production apply persists once and returns an idempotent duplicate response", async () => {
   const env = makeEnv();
   const first = await post(APPLY_URL, validApplication(), env);
@@ -221,6 +237,86 @@ test("production apply persists once and returns an idempotent duplicate respons
   assert.equal(duplicateBody.duplicate, true);
   assert.equal(duplicateBody.application_id, firstBody.application_id);
   assert.equal(env.__airtable.applications.length, 1);
+});
+
+test("production apply persists scoped non-member image consent in dedicated Airtable fields", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    mmd_requested_public_roles: ["driver_companion", "culinary_companion"],
+    mmd_nonmember_profile_image_consent: true,
+    mmd_nonmember_promo_roles: ["driver_companion"],
+    mmd_public_promo_consent_version: publicModelTestInternals.PROMO_CONSENT_VERSION,
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(env.__airtable.applications.length, 1);
+
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberImageConsent], true);
+  assert.deepEqual(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberPromoRoles], ["driver_companion"]);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentStatus], "granted");
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentVersion], publicModelTestInternals.PROMO_CONSENT_VERSION);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentSource], "/apply/public-model");
+  assert.match(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentAt], /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentRevokedAt], undefined);
+});
+
+test("production apply stores explicit non-consent without promo authority", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    mmd_requested_public_roles: ["driver_companion"],
+    mmd_nonmember_profile_image_consent: false,
+    mmd_nonmember_promo_roles: [],
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberImageConsent], false);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentStatus], "not_granted");
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberPromoRoles], undefined);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentAt], undefined);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentVersion], undefined);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentSource], undefined);
+});
+
+test("public image consent fails closed for unrequested promo roles and stale consent version", async () => {
+  const cases = [
+    {
+      mmd_requested_public_roles: ["driver_companion"],
+      mmd_nonmember_profile_image_consent: true,
+      mmd_nonmember_promo_roles: ["culinary_companion"],
+      mmd_public_promo_consent_version: publicModelTestInternals.PROMO_CONSENT_VERSION,
+      expected: "mmd_nonmember_promo_roles",
+    },
+    {
+      mmd_requested_public_roles: ["driver_companion"],
+      mmd_nonmember_profile_image_consent: true,
+      mmd_nonmember_promo_roles: ["driver_companion"],
+      mmd_public_promo_consent_version: "legacy-v0",
+      expected: "mmd_public_promo_consent_version",
+    },
+    {
+      mmd_requested_public_roles: ["driver_companion"],
+      mmd_nonmember_profile_image_consent: false,
+      mmd_nonmember_promo_roles: ["driver_companion"],
+      expected: "mmd_nonmember_promo_roles",
+    },
+  ];
+
+  for (const item of cases) {
+    const env = makeEnv();
+    const { expected, ...overrides } = item;
+    const response = await post(APPLY_URL, validApplication(overrides), env);
+    const body = await response.json();
+    assert.equal(response.status, 400, expected);
+    assert.equal(body.error, "invalid_payload", expected);
+    assert.equal(Object.hasOwn(body.fields, expected), true, expected);
+    assert.equal(env.__airtable.applications.length, 0, expected);
+  }
 });
 
 test("a fresh coordinator adopts the persisted application ID for pre-migration retries", async () => {
@@ -362,7 +458,7 @@ test("production upload issues a signed opaque URL, stores R2 privately, and att
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   const uploadBody = await upload.json();
@@ -393,6 +489,40 @@ test("production upload issues a signed opaque URL, stores R2 privately, and att
   assert.equal(env.__airtable.applications.length, 1);
 });
 
+test("upload without Content-Length accepts only the signed number of actual bytes", async () => {
+  for (const { bytes, expectedStatus, expectedError } of [
+    { bytes: [255, 216, 255, 1], expectedStatus: 200 },
+    { bytes: [255, 216, 255], expectedStatus: 400, expectedError: "upload_size_mismatch" },
+  ]) {
+    const env = makeEnv();
+    const authorization = await post(UPLOAD_URL, {
+      application_type: "public_model",
+      consent: true,
+      kind: "photo",
+      role: "front_face",
+      file_name: "front.jpg",
+      content_type: "image/jpeg",
+      file_size: 4,
+    }, env);
+    assert.equal(authorization.status, 200);
+    const { upload_url: uploadUrl } = await authorization.json();
+    const request = new Request(uploadUrl, {
+      method: "PUT",
+      headers: { origin: ORIGIN, "content-type": "image/jpeg" },
+      body: new Uint8Array(bytes),
+      duplex: "half",
+    });
+    assert.equal(request.headers.get("content-length"), null);
+
+    const response = await worker.fetch(request, env);
+    assert.equal(response.status, expectedStatus);
+    const result = await response.json();
+    assert.equal(result.error, expectedError);
+    assert.equal(env.PUBLIC_MODEL_UPLOADS_R2.objects.size, expectedStatus === 200 ? 1 : 0);
+    assert.equal(env.__airtable.uploads.length, expectedStatus === 200 ? 1 : 0);
+  }
+});
+
 test("repeated upload PUT is idempotent and does not duplicate Airtable metadata", async () => {
   const env = makeEnv();
   const authorization = await post(UPLOAD_URL, {
@@ -408,7 +538,7 @@ test("repeated upload PUT is idempotent and does not duplicate Airtable metadata
   const uploadRequest = () => new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   });
 
@@ -437,7 +567,7 @@ test("a fresh coordinator bootstraps attachment state for a pre-migration upload
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   assert.equal(upload.status, 200);
@@ -471,7 +601,7 @@ test("production apply rejects an upload already attached to another application
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   assert.equal(upload.status, 200);
@@ -508,7 +638,7 @@ test("concurrent applications cannot both claim the same uploaded asset", async 
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   assert.equal(upload.status, 200);
@@ -541,7 +671,7 @@ test("duplicate success waits until a previously failed upload attachment is rec
   await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
 

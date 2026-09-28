@@ -5,6 +5,7 @@ import {
   membershipGrantsTmib,
   paymentGrantsTmib,
   handleTmibStoryAccess,
+  TMIB_STORY_INTERNALS,
 } from "../src/tmib-story-access.js";
 import { getTmibEpisode, publicTmibEpisodeMetadata } from "../src/tmib-episode-catalog.js";
 
@@ -87,4 +88,13 @@ test("purchase requires same-origin browser request", async () => {
   assert.equal(response.status, 403);
   const payload = await response.json();
   assert.equal(payload.error.code, "SAME_ORIGIN_REQUIRED");
+});
+
+
+test("TMIB payment URL validator accepts public checkout and rejects SIGIL surface", () => {
+  assert.equal(
+    TMIB_STORY_INTERNALS.canonicalPayUrl("https://mmdbkk.com/pay/checkout?t=signed"),
+    "https://mmdbkk.com/pay/checkout?t=signed",
+  );
+  assert.equal(TMIB_STORY_INTERNALS.canonicalPayUrl("https://mmdbkk.com/sigil/pay?t=signed"), "");
 });

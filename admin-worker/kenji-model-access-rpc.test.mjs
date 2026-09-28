@@ -19,7 +19,10 @@ const ENV = {
   AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
   AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
   AIRTABLE_TABLE_MODELS: "models",
+  AIRTABLE_TABLE_MODEL_KEYWORD_PROFILES: "profiles",
   AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS: "approvals",
+  AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS: "decisions",
+  AIRTABLE_TABLE_MODEL_OFFER_RULES: "rules",
 };
 
 function record(id, fields) { return { id, fields }; }
@@ -70,14 +73,27 @@ function approval(cohort, folders, overrides = {}) {
   });
 }
 
-function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = []) {
-  return { entitlements, models, approvals };
+function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], rules = [], profiles = [], decisions = []) {
+  return { entitlements, models, approvals, rules, profiles, decisions };
+}
+
+function keywordProfile(alias, model = privateModel(), overrides = {}) {
+  return record("rec-profile-" + alias, {
+    Model: [model.id],
+    model_key: model.fields.model_code,
+    working_name: model.fields.working_name,
+    search_aliases: alias,
+    status: "Active",
+    ...overrides,
+  });
 }
 
 const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
-  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name"]),
+  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "folder_name"]),
   approvals: new Set(["line_user_id"]),
+  decisions: new Set(["line_user_id"]),
+  profiles: new Set([]),
 };
 
 function airtableFetch(data, { failTables = [] } = {}) {
@@ -86,6 +102,9 @@ function airtableFetch(data, { failTables = [] } = {}) {
     const table = decodeURIComponent(url.pathname.split("/").pop());
     if (failTables.includes(table)) return new Response("source private error", { status: 503 });
     const formula = url.searchParams.get("filterByFormula") || "";
+    if ((table === "rules" || table === "profiles" || table === "models") && !formula) {
+      return new Response(JSON.stringify({ records: data[table] || [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
     if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
     const field = match[1];
@@ -131,6 +150,37 @@ test("active canonical Standard entitlement sees Standard private model", async 
   const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData()) });
   assert.equal(result.status, "match");
   assert.equal(result.model.model_code, "MX17");
+});
+
+test("published exact Keyword Profile alias resolves an Ad / Rich Menu trigger without widening access", async () => {
+  const model = privateModel("MX17", "standard", { working_name: "Jaspal OP" });
+  const data = baseData([entitlement("private_standard")], [model], [], [], [keywordProfile("JASPAL", model)]);
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(result.status, "match");
+  assert.equal(result.model.model_code, "MX17");
+  assert.equal(result.model.working_name, "Jaspal OP");
+
+  const guestData = baseData([entitlement("guest_pass")], [model], [], [], [keywordProfile("JASPAL", model)]);
+  const guest = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, { fetchImpl: airtableFetch(guestData) });
+  assert.equal(guest.status, "silent");
+});
+
+test("exact folder name resolves only through canonical member access", async () => {
+  const model = privateModel("NANO7", "standard", { folder_name: "Nano", working_name: "นายแบบนาโน" });
+  const active = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "Nano" }, { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) });
+  assert.equal(active.status, "match");
+  assert.equal(active.model.model_code, "NANO7");
+  const expired = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "Nano" }, { fetchImpl: airtableFetch(baseData([entitlement("private_standard", "expired")], [model])) });
+  assert.equal(expired.status, "renewal");
+});
+
+test("duplicate exact card name fails closed before membership filtering", async () => {
+  const first = privateModel("JASPAL1", "standard", { folder_name: "JASPAL", working_name: "Jaspal" });
+  const second = privateModel("JASPER1", "premium", { folder_name: "JASPAL", working_name: "Jasper" });
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [first, second])),
+  });
+  assert.equal(result.status, "clarification");
 });
 
 test("Premium canonical envelope includes Standard and Premium while Standard cannot see Premium", async () => {
@@ -229,4 +279,168 @@ test("RPC match returns only safe model projection and policy version", async ()
   assert.equal(payload.policy_version, KENJI_MODEL_ACCESS_POLICY_VERSION);
   assert.equal(payload.model.model_code, "MX17");
   assert.doesNotMatch(JSON.stringify(payload), /0800000000|private_contact|availability|admin_note/i);
+});
+
+
+test("canonical Sales Control projects the customer-safe matched offer after entitlement resolution", async () => {
+  const model = privateModel("MX17", "standard");
+  const rules = [record("rec-offer-active", {
+    Model: [model.id],
+    model_key: "MX17",
+    status: "Active",
+    sales_visibility: "on",
+    audience_scope: ["Standard"],
+    customer_sell_rate_thb: 25000,
+    price_visibility: "visible",
+    priority: 10,
+    version: 2,
+  })];
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "MX17", work_lane: "pn", requested_at: "2026-09-21T19:00:00+07:00" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales.sellable, true);
+  assert.equal(result.model.sales.customer_rate_thb, 25000);
+  assert.equal(result.model.sales.price_visible, true);
+  assert.equal(result.model.sales.matched_rule_key, null);
+  assert.equal(result.model.sales.rule_version, 2);
+});
+
+test("lookup without a verified work lane never returns a rate", async () => {
+  const model = privateModel("MX17", "standard");
+  const rules = [record("rec-offer-active", {
+    Model: [model.id], model_key: "MX17", status: "Active", sales_visibility: "on",
+    audience_scope: ["Standard"], offer_type: "pn", customer_sell_rate_thb: 25000,
+    price_visibility: "visible", version: 2,
+  })];
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)),
+  });
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales, undefined);
+});
+
+test("Draft Model Offer Rules remain fail-closed in the Kenji consumer", async () => {
+  const model = privateModel("MX17", "standard");
+  const rules = [record("rec-offer-draft", {
+    Model: [model.id],
+    model_key: "MX17",
+    status: "Draft",
+    sales_visibility: "on",
+    audience_scope: ["Standard"],
+    customer_sell_rate_thb: 25000,
+    price_visibility: "visible",
+    version: 1,
+  })];
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "MX17", work_lane: "pn", requested_at: "2026-09-21T19:00:00+07:00" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales.sellable, false);
+  assert.equal(result.model.sales.customer_rate_thb, null);
+  assert.equal(result.model.sales.reason_code, "no_matching_active_rule");
+});
+
+
+test("production-shaped private model may derive Premium access folder from canonical model_tier", async () => {
+  const model = privateModel("PRCANON", "", {
+    access_folder: undefined,
+    model_tier: { name: "premium" },
+    booking_visibility: "private",
+    visibility: "private",
+    status: "active",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "PRCANON" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_premium")], [model])) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.model_code, "PRCANON");
+});
+
+test("canonical Premium model_tier does not widen Standard member access", async () => {
+  const model = privateModel("PRCANON2", "", {
+    access_folder: undefined,
+    model_tier: { name: "premium" },
+    booking_visibility: "private",
+    visibility: "private",
+    status: "active",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "PRCANON2" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+  );
+  assert.equal(result.status, "silent");
+});
+
+test("canonical folder inference never rescues an inactive or review-only model", async () => {
+  const model = privateModel("PRCANON3", "", {
+    access_folder: undefined,
+    model_tier: { name: "premium" },
+    booking_visibility: "private",
+    visibility: "private",
+    status: "inactive",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "PRCANON3" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_premium")], [model])) },
+  );
+  assert.equal(result.status, "silent");
+});
+
+test("exact denied GWs and EMs return only their broad category", async () => {
+  for (const [code, category] of [["GWs19", "gws"], ["EMs19", "ems"]]) {
+    const model = privateModel(code, "exclusive", { working_name: "Private Name" });
+    const result = await resolveKenjiModelAccess(
+      ENV, { line_user_id: LINE_USER_ID, query: code },
+      { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+    );
+    assert.deepEqual(result, { status: "restricted_category", category });
+    assert.doesNotMatch(JSON.stringify(result), /Private Name|exclusive|image|summary/i);
+  }
+});
+
+test("unknown or inactive GWs and EMs never produce an access promotion", async () => {
+  const data = baseData([entitlement("private_standard")], [privateModel("GWs19", "exclusive", { status: "inactive" })]);
+  const fetchImpl = airtableFetch(data);
+  const inactive = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "GWs19" }, { fetchImpl });
+  const unknown = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "GWs20" }, { fetchImpl });
+  assert.equal(inactive.status, "silent");
+  assert.equal(unknown.status, "silent");
+});
+
+test("GWs and EMs require one current Per approval for this exact client and Model", async () => {
+  const model = privateModel("EMs19", "exclusive", { working_name: "Private Name" });
+  const decision = record("rec-decision", {
+    line_user_id: LINE_USER_ID, Model: [model.id], model_key: "EMs19", category: "EMs",
+    decision_status: "Approved", allow_profile: true, approved_by: "Per",
+    approved_at: "2026-09-27T12:00:00Z", expires_at: "2099-12-31T23:59:59Z",
+    source_ref: "owner-review-1",
+  });
+  const member = entitlement("private_standard");
+  const fetchImpl = airtableFetch(baseData([member], [model], [], [], [], [decision]));
+  const allowed = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, { fetchImpl });
+  assert.equal(allowed.status, "match");
+  assert.equal(allowed.model.model_code, "EMs19");
+  for (const patch of [{ allow_profile: false }, { Model: ["rec-other"] }, { decision_status: "Draft" }, { expires_at: "2020-01-01T00:00:00Z" }]) {
+    const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
+      fetchImpl: airtableFetch(baseData([member], [model], [], [], [], [record("rec-decision", { ...decision.fields, ...patch })])),
+    });
+    assert.deepEqual(denied, { status: "restricted_category", category: "ems" });
+  }
+});
+
+test("legacy unique key never bypasses the EMs per-model approval", async () => {
+  const model = privateModel("mdl_exc_ems_ems19", "exclusive", { working_name: "EMs19" });
+  const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])),
+  });
+  assert.deepEqual(denied, { status: "restricted_category", category: "ems" });
 });

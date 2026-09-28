@@ -126,13 +126,20 @@ jobs:
             bridge_code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -L -D "$bridge_headers" -o "$bridge_body" -w "%{http_code}" "https://${host}/member/liff?intent=status")"
             echo "${host} /member/liff?intent=status -> ${bridge_code}"
             test "$bridge_code" = "200"
-            grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$bridge_headers"
-            grep -qi '^x-mmd-liff-session-check: status-v1' "$bridge_headers"
+            if grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$bridge_headers"; then
+              echo "direct MY MMD status unexpectedly entered whole-app Lovable auth bridge on ${host}" >&2
+              exit 1
+            fi
+            return_target="$(awk -F': ' 'tolower($1)=="x-mmd-liff-return-target"{gsub("\r","",$2); print $2}' "$bridge_headers" | tail -n1)"
+            test -z "$return_target"
             node - "$bridge_body" <<'NODE'
           const fs = require("node:fs");
           const html = fs.readFileSync(process.argv[2], "utf8");
-          if (!html.includes("/member/api/liff/status")) throw new Error("live LIFF bridge is not using session status endpoint");
-          if (html.includes("fetch(profileEndpoint,")) throw new Error("live LIFF bridge still gates on member profile");
+          if (!html.includes("LIFF Digital Home")) throw new Error("live direct status is missing the Worker-rendered Digital Home");
+          if (!html.includes('/api/member/app/history')) throw new Error("live Digital Home is missing canonical History wiring");
+          if (!html.includes('const LOVABLE_POINTS_PATH = "/my-mmd/points"')) throw new Error("live Digital Home is missing the Lovable Points exception");
+          if (!html.includes('view === "history" ? "history-panel" : view')) throw new Error("live Digital Home no longer keeps History inside Worker LIFF");
+          if (html.includes("mmd-status-bridge-veil")) throw new Error("live direct status still contains the whole-app Lovable bridge veil");
           NODE
 
             status_headers="$(mktemp)"
@@ -179,4 +186,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD + LIFF MEMBERSHIP VERIFICATION ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- canonical My MMD + LIFF route set: 14/14 verified on apex + www\n- LIFF status bridge: \`auth-bridge-only\` + \`session-check=status-v1\`\n- LIFF bridge uses \`/member/api/liff/status\`, not member-profile gating\n- My MMD UI owner: \`lovable-full-app-proxy\` through MMD Worker\n- same-origin member API ownership verified\n- no membership, entitlement, payment, or customer records mutated by this recovery"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD DIGITAL LIFF ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- canonical My MMD + LIFF route set: 14/14 verified on apex + www\n- direct \`intent=status\`: Worker-rendered Digital LIFF Home\n- Points presentation exception: \`/my-mmd/points\` through Lovable\n- History remains Worker/backend-owned and is not redirected to Lovable\n- \`/my-mmd/*\` remains a separate Lovable presentation route, not the default status handoff\n- same-origin member API ownership verified\n- no membership, entitlement, payment, Points, history, or customer records mutated by this recovery"

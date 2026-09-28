@@ -18,6 +18,8 @@ import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./
 import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import { handleTmibStoryAccess, isTmibStoryAccessPath } from "./tmib-story-access.js";
+import { handlePublicMembershipPayment, isPublicMembershipPaymentPath } from "./public-membership-payment.js";
+import { handleMemberPaymentsBff, isMemberPaymentsBffPath } from "./member-payments-bff.js";
 import { handleTmibAct001Content, isTmibAct001ContentPath } from "./tmib-act001-content.js";
 import { handleTmibAct001Media, isTmibAct001MediaPath } from "./tmib-media-lazy-seed.js";
 import {
@@ -32,6 +34,8 @@ import {
 } from "./member-history-recovery.js";
 import {
   applyMyMmdCanonicalEntitlementResponse,
+  handleMyMmdWelcomeContext,
+  isMyMmdWelcomeContextPath,
   prepareMyMmdCanonicalEntitlementContext,
 } from "./my-mmd-canonical-entitlement-bridge.js";
 import {
@@ -46,6 +50,34 @@ import {
 import { handleMmsCustomerHistoryPage } from "./mms-customer-history-page.js";
 import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
 import { handleMemberTelegramBind, isMemberTelegramBindPath } from "./member-telegram-bind.js";
+import { handleMedicalVerifiedRequest, isMedicalVerifiedRequestPath } from "./medical-verified-request.js";
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+
+function queueVerifiedLiffSessionEvent(request, response, env, ctx) {
+  if (request.method !== "POST" || !response?.ok) return;
+  const path = new URL(request.url).pathname.replace(/\/+$/, "");
+  if (path !== "/member/api/liff/start") return;
+
+  const setCookie = response.headers.get("set-cookie") || "";
+  const match = setCookie.match(/(?:^|[,;]\s*)__Host-mmd_liff_session=([^;,s]+)/i);
+  const sessionToken = String(match?.[1] || "").trim();
+  if (!sessionToken) return;
+
+  queueAuthorityEvent(ctx, env, {
+    event: "my_mmd_session_started",
+    authority: "member-pages-worker",
+    scope: "my_mmd",
+    distinctValue: sessionToken,
+    insertValue: sessionToken,
+    properties: {
+      surface: "my_mmd",
+      flow: "my_mmd_login",
+      world: "member",
+      status: "verified",
+      route: "/member/api/liff/start",
+    },
+  });
+}
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coordinator.js";
@@ -60,7 +92,16 @@ export default {
     if (isTmibAct001ContentPath(url)) return handleTmibAct001Content(request, env);
     if (isTmibAct001MediaPath(url)) return handleTmibAct001Media(request, env);
     if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
+    if (isPublicMembershipPaymentPath(url)) return handlePublicMembershipPayment(request, env);
+    if (isMemberPaymentsBffPath(url)) return handleMemberPaymentsBff(request, env);
     if (isMemberTelegramBindPath(url)) return handleMemberTelegramBind(request, env);
+    if (isMedicalVerifiedRequestPath(url)) {
+      try {
+        return await handleMedicalVerifiedRequest(request, env);
+      } catch (error) {
+        return Response.json({ ok: false, error: { code: String(error?.code || "MEDICAL_REQUEST_UNAVAILABLE") } }, { status: Number(error?.status) || 503, headers: { "cache-control": "no-store" } });
+      }
+    }
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
     // bound to the server-verified LINE session. It must remain available even
@@ -77,6 +118,10 @@ export default {
         });
       }
     }
+
+    // This minimal preflight reads only the authenticated session and canonical
+    // protected entitlement. It bypasses history recovery and profile projections.
+    if (isMyMmdWelcomeContextPath(url)) return handleMyMmdWelcomeContext(request, env);
 
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
     if (canonicalContext?.unavailable) {
@@ -120,6 +165,7 @@ export default {
     if (isLiffHistoryRecoveryStartPath(url)) {
       const response = await liffFoundation.fetch(request, env, ctx);
       scheduleMemberHistoryRecoveryFromLiffResponse(response, env, ctx);
+      queueVerifiedLiffSessionEvent(request, response, env, ctx);
       return finish(response);
     }
     if (isMemberHistoryOnAccessPath(url)) {

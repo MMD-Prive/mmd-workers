@@ -4,9 +4,11 @@
   const DASHBOARD = "/member/dashboard";
   const MY_MMD = "/member/my-mmd";
   const MY_MMD_CANONICAL = "/my-mmd/";
+  const CARE_BACK_COUPONS = "/my-mmd/coupons";
   const COUPON_ENTRY = "/coupon";
   const LIFF_STATUS = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status";
   const CARE_BACK_WISH = "/promotion/6-years-care-back/wish";
+  const PUBLIC_MEMBERSHIP = "/pay/membership";
 
   function setLinks(selector, target, root = document) {
     root.querySelectorAll(selector).forEach((anchor) => {
@@ -218,6 +220,10 @@
   function patch() {
     const path = location.pathname.replace(/\/+$/, "") || "/";
     let root;
+    const PUBLIC_MEMBERSHIP_SURFACES = new Set(["/", "/hall", "/profiles", "/public/access", "/services/companion", "/booking"]);
+    if (PUBLIC_MEMBERSHIP_SURFACES.has(path)) {
+      setLinks('a[href="/membership"],a[href^="/membership?"]', PUBLIC_MEMBERSHIP);
+    }
 
     if (path === "/member/login") {
       const target = memberLoginTarget();
@@ -245,8 +251,8 @@
     if (path === "/promotion/6-years-care-back/wish") {
       root = document.getElementById("mmd-wish");
       if (root) {
-        root.dataset.dashboardUrl = MY_MMD;
-        setLinks('a[href*="/member/liff"],a[href*="miniapp.line.me"]', MY_MMD, root);
+        root.dataset.dashboardUrl = CARE_BACK_COUPONS;
+        setLinks('a[href*="/member/liff"],a[href*="miniapp.line.me"],a[href*="/member/my-mmd"],a[href="/my-mmd/"],a[href="/my-mmd"]', CARE_BACK_COUPONS, root);
       }
     }
 
@@ -310,4 +316,49 @@
   } else {
     boot();
   }
+})();
+
+
+(function(){'use strict';const p=location.pathname.replace(/\/+$/,'')||'/';if(!p.startsWith('/partner'))return;const css=`
+[data-mmd-partner-canon-v3] .mmd-canon-primary{background:#d7af67!important;border-color:#d7af67!important;color:#17120b!important;box-shadow:0 12px 28px rgba(215,175,103,.16)!important}
+[data-mmd-partner-canon-v3] .mmd-canon-secondary{background:rgba(10,9,8,.78)!important;border-color:rgba(215,175,103,.48)!important;color:#f5e2b5!important}
+.mmd-partner-friend-canon{--paper:#0a0908!important;--paper2:#0f0d0b!important;--ivory:#fff9f0!important;--ink:#fff9f0!important;--text:#d9d1c7!important;--muted:#91887f!important;--line:rgba(215,175,103,.28)!important;--wine:#d7af67!important;--wine2:#f5e2b5!important;--rose:#2a0e13!important;--soft:#12100e!important;--shadow:rgba(0,0,0,.45)!important;background:radial-gradient(circle at 84% 0,rgba(215,175,103,.12),transparent 30%),linear-gradient(180deg,#0a0908,#0f0d0b)!important;color:#d9d1c7!important}
+.mmd-partner-friend-canon :is(.rm13-heroin,.rm13-block,.rm13-final,.rm13-card,.rm13-deep,.rma02-hero-in,.rma02-panel,.rma02-form-shell,.rma02-warning,.rma02-final,.rma02-form,.rma02-cards article,.rma02-routes article,.rma02-steps li,.rma02-note,.rma02-form fieldset,.rma02-prompt,.rmr04-hero-card,.rmr04-panel,.rmr04-gallery,.rmr04-final,.rmr04-card,.rmr04-steps li){background:linear-gradient(145deg,#171411,#0d0c0a)!important;color:#d9d1c7!important;box-shadow:0 18px 48px rgba(0,0,0,.28)!important}
+.mmd-partner-friend-canon :is(.rm13-nav,.rma02-branch,.rmr04-branch){background:rgba(10,9,8,.88)!important;border-color:rgba(215,175,103,.28)!important}.mmd-partner-friend-canon :is(.rm13-drawer,.rma02-drawer,.rmr04-drawer,.rm13-menu,.rma02-menu,.rmr04-menu,.rm13-dock button,.rma02-dock button,.rmr04-dock button,.rm13-listnav button,.rma02-listnav button,.rma02-child button,.rmr04-drawer-list button,.rmr04-child-list button,.rmr04-back){background:#12100e!important;color:#fff9f0!important;border-color:rgba(215,175,103,.32)!important}
+.mmd-partner-friend-canon :is(.rma02-form input,.rma02-form select,.rma02-form textarea){background:#0f0d0b!important;color:#fff9f0!important;border-color:rgba(215,175,103,.36)!important}.mmd-partner-friend-canon :is(h1,h2,h3,b,strong){color:#fff9f0!important}.mmd-partner-friend-canon :is(p,small,span){color:inherit}.mmd-partner-friend-canon :is(.rm13-copy h1,.rma02-copy h1,.rmr04-copy h1){font-size:clamp(2.25rem,5vw,4rem)!important;line-height:1.04!important;letter-spacing:-.04em!important}.mmd-partner-friend-canon :is(.rm13-copy h1 em,.rma02-copy h1 em,.rmr04-copy h1 em){color:#f5e2b5!important}.mmd-partner-friend-canon :is(.rm13-btn.main,.rma02-btn.main,.rma02-submit,.rmr04-btn.primary,.rma02-dock .main,.rmr04-dock .main){background:#d7af67!important;border-color:#d7af67!important;color:#17120b!important}.mmd-partner-friend-canon :is(.rm13-btn:not(.main),.rma02-btn:not(.main),.rmr04-btn.ghost){background:#12100e!important;border-color:rgba(215,175,103,.48)!important;color:#f5e2b5!important}.mmd-partner-friend-canon :is(.rmr04-hero-media::after){background:linear-gradient(180deg,transparent 38%,rgba(10,9,8,.88))!important}@media(max-width:640px){.mmd-partner-friend-canon :is(.rm13-copy h1,.rma02-copy h1,.rmr04-copy h1){font-size:clamp(2.15rem,10vw,3.15rem)!important}}
+`;function style(){if(document.getElementById('mmd-partner-canon-v3'))return;const s=document.createElement('style');s.id='mmd-partner-canon-v3';s.textContent=css;document.head.append(s)}function words(){const r=[['YUKI','MMD'],['Yuki','MMD Partner Desk'],['Start Partner Review','เริ่ม Partner Intake'],['Start Partner Intake','เริ่ม Partner Intake'],['สมัคร Service Partner','เริ่ม Service Partner Intake'],['Enter Talent Review','เริ่ม Modeling Partner Intake'],['Enter Service Review','เริ่ม Service Partner Intake'],['Enter Brand Review','เริ่ม Brand / Venue Intake'],['Request Private Review','เริ่ม Private Access Intake'],['Open Referral Lane','เริ่ม Client / Referral Intake']];const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);for(let n;n=w.nextNode();){if(n.parentElement&&/^(SCRIPT|STYLE)$/i.test(n.parentElement.tagName))continue;let v=n.nodeValue;for(const [a,b]of r)if(v.includes(a))v=v.split(a).join(b);if(v!==n.nodeValue)n.nodeValue=v}}function links(){document.querySelectorAll('a[href]').forEach(a=>{let h=a.getAttribute('href')||'';if(h==='/partner/login')h='/sigil/model/dashboard/partner-login';if(h==='/partner/model/recommend-model/apply'||h==='/partner/model/recommend-model-apply')h='/partner/model/recommend-model-apply?source=model-to-model';if(h.startsWith('/partner/apply')){const u=new URL(h,location.origin);if(u.searchParams.get('partner_type')==='model')u.searchParams.set('partner_type','modeling');if(u.searchParams.get('intent')==='refer_model'){u.searchParams.delete('intent');u.searchParams.set('partner_type','modeling')}h=u.pathname+u.search+u.hash}a.setAttribute('href',h)})}function ctas(){document.body.dataset.mmdPartnerCanonV3='1';document.querySelectorAll('a,button').forEach(e=>{const t=(e.textContent||'').trim().replace(/\s+/g,' ');if(/^(เริ่ม|ส่งชื่อ|ส่งเข้า|เข้าสู่ระบบด้วย LINE|เปิด Partner Dashboard|OPEN PARTNER|START$|CONTINUE)/i.test(t))e.classList.add('mmd-canon-primary');else if(/^(ดู|อ่าน|Partner Home|READ|VIEW)/i.test(t))e.classList.add('mmd-canon-secondary')})}function friendHeadings(){const set=(selector,html)=>{const el=document.querySelector(selector);if(el&&el.innerHTML!==html)el.innerHTML=html};if(p==="/partner/model/recommend-model")set(".mmd-rm13 h1","แนะนำเพื่อน<br><em>อย่างมีขอบเขต</em>");if(p==="/partner/model/recommend-model-apply")set(".mmd-rma02 h1","ส่งข้อมูลเพื่อน<br><em>เพื่อเริ่มการพิจารณาเบื้องต้น</em>")}function apply(){style();friendHeadings();if(document.querySelector('.mmd-rm13,.mmd-rma02,.mmd-rmr04'))document.querySelector('.mmd-rm13,.mmd-rma02,.mmd-rmr04').classList.add('mmd-partner-friend-canon');links();words();ctas()}apply();let q;new MutationObserver(()=>{clearTimeout(q);q=setTimeout(apply,80)}).observe(document.documentElement,{childList:true,subtree:true})})();
+
+
+(function(){
+  "use strict";
+  const path=(location.pathname||"/").replace(/\/+$/,"")||"/";
+  const isMms=path.startsWith("/male-massage")||path==="/therapists"||path.startsWith("/apply/mms-");
+  const isPrivate=path.startsWith("/sigil")||path.startsWith("/blackcard")||path==="/member/private"||path==="/trust/inme"||path==="/inme"||path.startsWith("/partner");
+  const isInternal=path.startsWith("/internal/");
+  const isMember=path.startsWith("/member")||path.startsWith("/my-mmd");
+  const world=isMms?"mms":isPrivate?"private":isInternal?"internal":isMember?"member":"public";
+  document.documentElement.dataset.mmdWorld=world;
+  document.documentElement.dataset.mmdGlobalSurface="v1";
+  if(document.getElementById("mmd-global-surface-v1"))return;
+  const style=document.createElement("style");
+  style.id="mmd-global-surface-v1";
+  style.textContent=`
+html[data-mmd-global-surface="v1"]{min-height:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;text-rendering:optimizeLegibility}
+html[data-mmd-global-surface="v1"] body{min-height:100dvh;overflow-x:hidden;font-family:Inter,"Noto Sans Thai","IBM Plex Sans Thai",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+html[data-mmd-world="public"]{--mmd-surface:#f4efe8;--mmd-ink:#171513;--mmd-panel:#fffaf3;--mmd-line:rgba(91,61,44,.15);--mmd-accent:#8f2636;--mmd-gold:#c8a563;color-scheme:light;background:#f4efe8}
+html[data-mmd-world="public"] body{background:radial-gradient(circle at 88% 0,rgba(143,38,54,.08),transparent 28%),linear-gradient(180deg,#fbf7f1,#f1eae1);color:var(--mmd-ink)}
+html[data-mmd-world="member"]{--mmd-surface:#171614;--mmd-ink:#fff8ed;--mmd-panel:#211f1b;--mmd-line:rgba(210,178,108,.18);--mmd-accent:#d2b06b;--mmd-gold:#d2b06b;color-scheme:dark;background:#171614}
+html[data-mmd-world="member"] body{background:radial-gradient(circle at 86% 0,rgba(210,176,107,.14),transparent 30%),linear-gradient(180deg,#171614,#22201c 58%,#171614);color:var(--mmd-ink)}
+html[data-mmd-world="private"]{--mmd-surface:#070706;--mmd-ink:#fff9ef;--mmd-panel:#11100e;--mmd-line:rgba(216,184,111,.22);--mmd-accent:#d8b86f;--mmd-gold:#d8b86f;color-scheme:dark;background:#070706}
+html[data-mmd-world="private"] body{background:radial-gradient(circle at 18% -8%,rgba(216,184,111,.16),transparent 32%),radial-gradient(circle at 94% 8%,rgba(93,116,149,.12),transparent 28%),linear-gradient(180deg,#070706,#11100e 58%,#070706);color:var(--mmd-ink)}
+html[data-mmd-world="internal"]{--mmd-surface:#0c0b0a;--mmd-ink:#fff9ef;--mmd-panel:#15130f;--mmd-line:rgba(216,184,111,.18);--mmd-accent:#d8b86f;--mmd-gold:#d8b86f;color-scheme:dark;background:#0c0b0a}
+html[data-mmd-world="internal"] body{background:linear-gradient(180deg,#0c0b0a,#15130f);color:var(--mmd-ink)}
+html[data-mmd-world="mms"]{--mmd-surface:#102018;--mmd-ink:#f7f2e8;--mmd-panel:#182a20;--mmd-line:rgba(198,215,194,.18);--mmd-accent:#8ca687;--mmd-gold:#d7bf84;color-scheme:dark;background:#102018}
+html[data-mmd-world="mms"] body{background:radial-gradient(circle at 84% 0,rgba(132,165,132,.16),transparent 30%),linear-gradient(180deg,#102018,#182a20);color:var(--mmd-ink)}
+html[data-mmd-global-surface="v1"] :is(main,[role="main"]){max-width:100%;overflow-x:hidden}
+html[data-mmd-global-surface="v1"] img,html[data-mmd-global-surface="v1"] video{max-width:100%}
+html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inherit}
+@media(max-width:767px){html[data-mmd-global-surface="v1"] :is(main,[role="main"]){min-height:100dvh}html[data-mmd-global-surface="v1"] body{margin:0}}
+`;
+  document.head.appendChild(style);
 })();

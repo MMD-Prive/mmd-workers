@@ -1,6 +1,8 @@
+import { parsePerRenameDateSuffix } from "./per-rename-date-suffix.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v5-broad-per-name-choice";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v7-line-guard";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
@@ -31,7 +33,7 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
   if (!body?.ok) return response;
 
   try {
-    const resolved = await resolvePerRenameAlias(env, query);
+    const resolved = await resolvePerRenameAlias(env, query, { line_user_id: clean(payload?.line_user_id) });
     if (resolved.state === "none") return withSearchHeader(response, "none");
 
     if (resolved.state === "multiple") {
@@ -99,7 +101,7 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
   }
 }
 
-export async function resolvePerRenameAlias(env, query) {
+export async function resolvePerRenameAlias(env, query, options = {}) {
   requireStorage(env);
   const rows = await searchAuthoritativePerRenameRows(env, query);
   if (!rows.length) return { state: "none" };
@@ -109,8 +111,22 @@ export async function resolvePerRenameAlias(env, query) {
     .filter(Boolean);
   if (!matches.length) return { state: "none" };
 
-  const bestQuality = Math.max(...matches.map((match) => match.quality));
-  const best = matches.filter((match) => match.quality === bestQuality);
+  const expectedLineUserId = canonicalLineUserId(options?.line_user_id);
+  const guardedMatches = expectedLineUserId
+    ? matches.filter((match) => canonicalLineUserId(match.line_user_id) === expectedLineUserId)
+    : matches;
+
+  if (expectedLineUserId && guardedMatches.length === 0) {
+    return {
+      state: "ambiguous",
+      reason: "per_rename_line_identity_mismatch",
+      matched_names: unique(matches.map((match) => match.per_name)),
+      expected_line_user_id: expectedLineUserId,
+    };
+  }
+
+  const bestQuality = Math.max(...guardedMatches.map((match) => match.quality));
+  const best = guardedMatches.filter((match) => match.quality === bestQuality);
   const linkedIds = unique(best.flatMap((match) => match.client_ids));
 
   if (!linkedIds.length) return { state: "none" };
@@ -144,6 +160,15 @@ export async function resolvePerRenameAlias(env, query) {
           reason: "canonical_fetch_incomplete",
         };
       }
+      if (expectedLineUserId && canonicalClientLineConflict(client, expectedLineUserId)) {
+        return {
+          state: "ambiguous",
+          client_ids: linkedIds,
+          matched_names: unique(best.map((match) => match.per_name)),
+          reason: "canonical_line_identity_conflict",
+          expected_line_user_id: expectedLineUserId,
+        };
+      }
       records.push(toCanonicalPerRenameRecord(client, chosen, query));
     }
 
@@ -166,6 +191,15 @@ export async function resolvePerRenameAlias(env, query) {
   const chosen = sameClient.sort(compareMatches)[0];
   const client = await fetchCanonicalClient(env, clientId);
   if (!client?.id) return { state: "none" };
+  if (expectedLineUserId && canonicalClientLineConflict(client, expectedLineUserId)) {
+    return {
+      state: "ambiguous",
+      client_ids: [clientId],
+      matched_names: unique(best.map((match) => match.per_name)),
+      reason: "canonical_line_identity_conflict",
+      expected_line_user_id: expectedLineUserId,
+    };
+  }
 
   return {
     state: "resolved",
@@ -255,10 +289,15 @@ function authoritativeMatch(record, query) {
   else if (normalizedAliases.some((alias) => q.length >= 3 && alias.includes(q))) quality = 180;
   if (!quality) return null;
 
+  const parsedRename = parsePerRenameDateSuffix(perName);
   return {
     record_id: clean(record?.id),
     quality,
     per_name: perName,
+    per_name_base: parsedRename.base_name,
+    per_name_date_label: parsedRename.date_label,
+    per_name_date_iso: parsedRename.date_iso,
+    per_name_date_ms: parsedRename.date_ms,
     line_display_name: lineDisplay,
     line_user_id: lineUserId,
     source_record_id: firstText(fields.source_record_id),
@@ -288,6 +327,10 @@ function toCanonicalPerRenameRecord(record, match, query) {
     remembered_name: perName,
     current_line_rename: perName,
     per_rename: perName,
+    per_rename_base_name: firstText(match.per_name_base, perName),
+    per_rename_date_label: firstText(match.per_name_date_label),
+    per_rename_date_iso: firstText(match.per_name_date_iso),
+    per_rename_date_source: match.per_name_date_iso ? "per_rename_suffix" : "none",
     canonical_name: canonicalName,
     client_name: perName || canonicalName || query,
     aliases: unique([
@@ -331,6 +374,9 @@ function toCanonicalPerRenameRecord(record, match, query) {
 
 function compareMatches(a, b) {
   if (b.quality !== a.quality) return b.quality - a.quality;
+  if ((b.per_name_date_ms || 0) !== (a.per_name_date_ms || 0)) {
+    return (b.per_name_date_ms || 0) - (a.per_name_date_ms || 0);
+  }
   return a.per_name.localeCompare(b.per_name, "th");
 }
 
@@ -379,6 +425,19 @@ function linkIds(value) {
   if (Array.isArray(value)) return value.map(clean).filter(Boolean);
   const one = clean(value);
   return one ? [one] : [];
+}
+
+function canonicalLineUserId(value) {
+  const id = clean(value, 80);
+  return /^U[0-9a-f]{32}$/i.test(id) ? id.toUpperCase() : "";
+}
+
+function canonicalClientLineConflict(record = {}, expectedLineUserId = "") {
+  const expected = canonicalLineUserId(expectedLineUserId);
+  if (!expected) return false;
+  const fields = record?.fields || {};
+  const observed = canonicalLineUserId(firstText(fields.line_user_id, fields["LINE User ID"]));
+  return Boolean(observed && observed !== expected);
 }
 
 function firstText(...values) {

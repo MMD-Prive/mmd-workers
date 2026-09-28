@@ -43,9 +43,23 @@
     const counts = data.counts || {};
     ['urgent', 'payments', 'jobs', 'members'].forEach((key) => setText(`[data-count="${key}"]`, counts[key]));
 
+    const todos = Array.isArray(data.todos) ? data.todos : [];
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     const focus = data.focus || {};
-    setText('[data-focus-title]', focus.title || 'พร้อมทำงาน');
-    setText('[data-focus-copy]', focus.text || 'เชื่อมข้อมูลจาก admin-worker แล้ว');
+    setText('[data-focus-title]', todos.length
+      ? (focus.title || 'ต้องให้เปอร์จัดการ ' + todos.length + ' รายการ')
+      : jobs.length ? 'คิวเร่งด่วนเคลียร์แล้ว · ตามงานวันนี้' : 'วันนี้ยังไม่มีคิวเร่งด่วน');
+    setText('[data-focus-copy]', todos.length
+      ? (focus.text || 'เปิดรายการที่ต้องตัดสินใจด้านล่าง')
+      : jobs.length ? 'เปิดงานที่ต้องติดตามด้านล่าง' : 'เริ่มสร้างงานหรือเปิดเครื่องมือที่ใช้บ่อยได้เลย');
+
+    const workgrid = $('.adm27-main > .adm27-workgrid');
+    const todoCard = $('[data-todo-list]')?.closest('.adm27-card');
+    const jobCard = $('[data-job-list]')?.closest('.adm27-card');
+    if (workgrid && todoCard && jobCard) {
+      workgrid.insertBefore(todos.length || !jobs.length ? todoCard : jobCard,
+        todos.length || !jobs.length ? jobCard : todoCard);
+    }
     const focusState = $('[data-focus-state]');
     if (focusState) {
       focusState.textContent = 'พร้อม';
@@ -57,7 +71,7 @@
     const login = $('[data-login-link]');
     if (login) login.hidden = true;
 
-    renderList('[data-todo-list]', data.todos, 'ตอนนี้ยังไม่มีรายการเร่งด่วน', (item) => `
+    renderList('[data-todo-list]', data.todos, 'คิวเร่งด่วนเคลียร์แล้ว', (item) => `
       <a class="adm27-row" href="${esc(href(item.href, '/internal/admin/control-room'))}">
         <span><strong>${esc(item.title || 'รายการที่ต้องทำ')}</strong><p>${esc(item.text || '')}</p></span>
         <em>${esc(item.tag || 'เปิด')}</em>
@@ -192,6 +206,10 @@
       hydrateCalendar();
     } catch (error) {
       setApiState('ระบบยังไม่พร้อม', 'is-bad');
+      setText('[data-focus-title]', 'ยังโหลดคิวไม่ได้');
+      setText('[data-focus-copy]', 'กดโหลดใหม่เพื่อตรวจรายการจากระบบอีกครั้ง');
+      const todoState = $('[data-todo-state]');
+      if (todoState) { todoState.textContent = 'ตรวจข้อมูล'; todoState.className = 'adm27-chip is-wait'; }
       console.warn('MMD dashboard runtime v3', error);
     }
   }

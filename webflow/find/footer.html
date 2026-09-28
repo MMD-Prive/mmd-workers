@@ -1,0 +1,1117 @@
+<script>(function () {
+  "use strict";
+
+  var root = document.getElementById("mmd-find");
+
+  if (!root || root.dataset.initialized === "true") {
+    return;
+  }
+
+  root.dataset.initialized = "true";
+
+
+  /* =======================================================
+     Elements
+  ======================================================= */
+
+  var form = root.querySelector("[data-mmd-find-form]");
+  var success = root.querySelector("[data-mmd-success]");
+
+  var submitButton = root.querySelector(
+    "[data-submit-button]"
+  );
+
+  var submitLabel = root.querySelector(
+    "[data-submit-label]"
+  );
+
+  var submitArrow = root.querySelector(
+    "[data-submit-arrow]"
+  );
+
+  var modelInput = root.querySelector(
+    "[data-mmd-model-input]"
+  );
+
+  var noteField = root.querySelector(
+    'textarea[name="request_note"]'
+  );
+
+  var noteCount = root.querySelector(
+    "[data-note-count]"
+  );
+
+  var currentStep = 1;
+  var submitting = false;
+
+
+  if (!form) {
+    return;
+  }
+
+
+  /* =======================================================
+     Helpers
+  ======================================================= */
+
+  function clean(value) {
+    return typeof value === "string"
+      ? value.trim()
+      : "";
+  }
+
+
+  function query(selector) {
+    return root.querySelector(selector);
+  }
+
+
+  function queryAll(selector) {
+    return Array.prototype.slice.call(
+      root.querySelectorAll(selector)
+    );
+  }
+
+
+  function getSelected(name) {
+    var selected = form.querySelector(
+      'input[name="' + name + '"]:checked'
+    );
+
+    return selected
+      ? clean(selected.value)
+      : "";
+  }
+
+
+  function showToast(message) {
+    var toast = query("[data-mmd-toast]");
+
+    if (!toast) {
+      return;
+    }
+
+    toast.textContent = message;
+    toast.hidden = false;
+
+    window.clearTimeout(showToast.timer);
+
+    showToast.timer = window.setTimeout(function () {
+      toast.hidden = true;
+    }, 4000);
+  }
+
+
+  function showError(step, message) {
+    var error = query(
+      '[data-step-error="' + step + '"]'
+    );
+
+    if (!error) {
+      return;
+    }
+
+    error.textContent = message;
+    error.hidden = false;
+  }
+
+
+  function clearError(step) {
+    var error = query(
+      '[data-step-error="' + step + '"]'
+    );
+
+    if (!error) {
+      return;
+    }
+
+    error.hidden = true;
+    error.textContent = "";
+  }
+
+
+  /*
+   * Preserve the known MMD continuity parameters.
+   *
+   * "t" is canonical.
+   * Never rename to "token".
+   */
+  function withContinuityParams(destination) {
+    var value = clean(destination);
+
+    if (!value) {
+      return "";
+    }
+
+    try {
+      var current = new URL(window.location.href);
+      var target = new URL(
+        value,
+        window.location.origin
+      );
+
+      ["t", "code", "promo"].forEach(function (key) {
+        if (
+          current.searchParams.has(key) &&
+          !target.searchParams.has(key)
+        ) {
+          target.searchParams.set(
+            key,
+            current.searchParams.get(key)
+          );
+        }
+      });
+
+      if (target.origin === window.location.origin) {
+        return (
+          target.pathname +
+          target.search +
+          target.hash
+        );
+      }
+
+      return target.toString();
+
+    } catch (error) {
+      return value;
+    }
+  }
+
+
+  /* =======================================================
+     Internal links
+  ======================================================= */
+
+  var myMmdUrl =
+    clean(root.dataset.myMmdUrl) ||
+    "/member/dashboard";
+
+
+  queryAll("[data-mmd-find-my-mmd-link]")
+    .forEach(function (link) {
+      link.setAttribute(
+        "href",
+        withContinuityParams(myMmdUrl)
+      );
+    });
+
+
+  /* =======================================================
+     Minimum date
+  ======================================================= */
+
+  var dateInput = form.querySelector(
+    'input[name="preferred_date"]'
+  );
+
+
+  if (dateInput) {
+    var now = new Date();
+
+    var localYear = now.getFullYear();
+    var localMonth = String(
+      now.getMonth() + 1
+    ).padStart(2, "0");
+
+    var localDay = String(
+      now.getDate()
+    ).padStart(2, "0");
+
+    dateInput.min =
+      localYear +
+      "-" +
+      localMonth +
+      "-" +
+      localDay;
+  }
+
+
+  /* =======================================================
+     Initial model from trusted renderer / query bridge
+  ======================================================= */
+
+  var initialModel = clean(
+    root.dataset.initialModel
+  );
+
+
+  if (!initialModel) {
+    try {
+      var initialUrl = new URL(
+        window.location.href
+      );
+
+      initialModel =
+        clean(
+          initialUrl.searchParams.get(
+            "model"
+          )
+        );
+    } catch (error) {
+      initialModel = "";
+    }
+  }
+
+
+  if (modelInput && initialModel) {
+    modelInput.value =
+      initialModel.slice(0, 80);
+  }
+
+
+  /*
+   * IMPORTANT:
+   *
+   * Production autocomplete should connect only to the
+   * existing approved worker endpoint under:
+   *
+   * /api/sigil/models/*
+   *
+   * This page deliberately does NOT invent a search endpoint.
+   *
+   * When endpoint ownership is confirmed, connect search here
+   * and return only frontend-safe model summaries.
+   */
+
+
+  /* =======================================================
+     Note counter
+  ======================================================= */
+
+  function updateNoteCount() {
+    if (!noteField || !noteCount) {
+      return;
+    }
+
+    noteCount.textContent =
+      String(noteField.value.length);
+  }
+
+
+  if (noteField) {
+    noteField.addEventListener(
+      "input",
+      updateNoteCount
+    );
+
+    updateNoteCount();
+  }
+
+
+  /* =======================================================
+     Step navigation
+  ======================================================= */
+
+  function setStep(step) {
+    var targetStep = Number(step);
+
+    if (
+      !Number.isFinite(targetStep) ||
+      targetStep < 1 ||
+      targetStep > 3
+    ) {
+      return;
+    }
+
+    currentStep = targetStep;
+
+
+    queryAll("[data-step]")
+      .forEach(function (section) {
+        var isTarget =
+          Number(section.dataset.step) ===
+          targetStep;
+
+        section.hidden = !isTarget;
+
+        section.classList.toggle(
+          "is-active",
+          isTarget
+        );
+      });
+
+
+    queryAll("[data-progress-target]")
+      .forEach(function (button) {
+        var value = Number(
+          button.dataset.progressTarget
+        );
+
+        var isCurrent =
+          value === targetStep;
+
+        button.classList.toggle(
+          "is-active",
+          isCurrent
+        );
+
+        button.classList.toggle(
+          "is-complete",
+          value < targetStep
+        );
+
+        if (isCurrent) {
+          button.setAttribute(
+            "aria-current",
+            "step"
+          );
+        } else {
+          button.removeAttribute(
+            "aria-current"
+          );
+        }
+      });
+
+
+    window.scrollTo({
+      top:
+        root.getBoundingClientRect().top +
+        window.scrollY,
+      behavior:
+        window.matchMedia(
+          "(prefers-reduced-motion: reduce)"
+        ).matches
+          ? "auto"
+          : "smooth"
+    });
+  }
+
+
+  /* =======================================================
+     Validation
+  ======================================================= */
+
+  function validateStep1() {
+    clearError(1);
+
+    var intent =
+      getSelected("service_intent");
+
+    if (!intent) {
+      showError(
+        1,
+        "เลือกสิ่งที่อยากให้ MMD ช่วยครับ"
+      );
+
+      return false;
+    }
+
+    return true;
+  }
+
+
+  function validateStep2() {
+    clearError(2);
+
+    var date = clean(
+      form.elements.preferred_date
+        ? form.elements.preferred_date.value
+        : ""
+    );
+
+    var time = clean(
+      form.elements.preferred_time
+        ? form.elements.preferred_time.value
+        : ""
+    );
+
+    var area = clean(
+      form.elements.area
+        ? form.elements.area.value
+        : ""
+    );
+
+    var duration =
+      getSelected("duration");
+
+
+    if (!date) {
+      showError(
+        2,
+        "เลือกวันที่ที่สะดวกครับ"
+      );
+
+      return false;
+    }
+
+
+    if (!time) {
+      showError(
+        2,
+        "ใส่เวลาประมาณที่สะดวกได้เลยครับ"
+      );
+
+      return false;
+    }
+
+
+    if (!area) {
+      showError(
+        2,
+        "ใส่พื้นที่คร่าว ๆ ให้ MMD ดูได้เลยครับ"
+      );
+
+      return false;
+    }
+
+
+    if (!duration) {
+      showError(
+        2,
+        "เลือกระยะเวลาคร่าว ๆ หรือเลือก “ให้ MMD ช่วยกะเวลา” ได้ครับ"
+      );
+
+      return false;
+    }
+
+
+    return true;
+  }
+
+
+  /* =======================================================
+     Review labels
+  ======================================================= */
+
+  var intentLabels = {
+    travel: "ไปกิน / เที่ยวด้วยกัน",
+    private: "Private Request",
+    recommend: "ให้ MMD ช่วยแนะนำ",
+    other: "อื่น ๆ"
+  };
+
+
+  var durationLabels = {
+    short: "ประมาณ 1–3 ชั่วโมง",
+    half_day: "ประมาณ 4–6 ชั่วโมง",
+    full_day: "ประมาณ 6 ชั่วโมงขึ้นไป",
+    unsure: "ให้ MMD ช่วยแนะนำ"
+  };
+
+
+  function formatDate(value) {
+    var cleanDate = clean(value);
+
+    if (!cleanDate) {
+      return "—";
+    }
+
+    try {
+      var parts = cleanDate.split("-");
+
+      if (parts.length !== 3) {
+        return cleanDate;
+      }
+
+      var date = new Date(
+        Number(parts[0]),
+        Number(parts[1]) - 1,
+        Number(parts[2])
+      );
+
+      return new Intl.DateTimeFormat(
+        "th-TH",
+        {
+          day: "numeric",
+          month: "short",
+          year: "numeric"
+        }
+      ).format(date);
+
+    } catch (error) {
+      return cleanDate;
+    }
+  }
+
+
+  function updateReview() {
+    var intent =
+      getSelected("service_intent");
+
+    var duration =
+      getSelected("duration");
+
+    var model =
+      clean(
+        form.elements.model_preference
+          ? form.elements.model_preference.value
+          : ""
+      );
+
+    var date =
+      clean(
+        form.elements.preferred_date
+          ? form.elements.preferred_date.value
+          : ""
+      );
+
+    var time =
+      clean(
+        form.elements.preferred_time
+          ? form.elements.preferred_time.value
+          : ""
+      );
+
+    var area =
+      clean(
+        form.elements.area
+          ? form.elements.area.value
+          : ""
+      );
+
+    var note =
+      clean(
+        form.elements.request_note
+          ? form.elements.request_note.value
+          : ""
+      );
+
+
+    var intentElement =
+      query("[data-review-intent]");
+
+    var modelElement =
+      query("[data-review-model]");
+
+    var dateElement =
+      query("[data-review-date]");
+
+    var timeElement =
+      query("[data-review-time]");
+
+    var areaElement =
+      query("[data-review-area]");
+
+    var durationElement =
+      query("[data-review-duration]");
+
+    var noteWrap =
+      query("[data-review-note-wrap]");
+
+    var noteElement =
+      query("[data-review-note]");
+
+
+    if (intentElement) {
+      intentElement.textContent =
+        intentLabels[intent] ||
+        "—";
+    }
+
+
+    if (modelElement) {
+      modelElement.textContent =
+        model ||
+        "ให้ MMD แนะนำ";
+    }
+
+
+    if (dateElement) {
+      dateElement.textContent =
+        formatDate(date);
+    }
+
+
+    if (timeElement) {
+      timeElement.textContent =
+        time || "—";
+    }
+
+
+    if (areaElement) {
+      areaElement.textContent =
+        area || "—";
+    }
+
+
+    if (durationElement) {
+      durationElement.textContent =
+        durationLabels[duration] ||
+        "—";
+    }
+
+
+    if (noteWrap && noteElement) {
+      if (note) {
+        noteElement.textContent = note;
+        noteWrap.hidden = false;
+      } else {
+        noteWrap.hidden = true;
+        noteElement.textContent = "";
+      }
+    }
+  }
+
+
+  /* =======================================================
+     Next / Previous
+  ======================================================= */
+
+  queryAll("[data-next-step]")
+    .forEach(function (button) {
+      button.addEventListener(
+        "click",
+        function () {
+          var next =
+            Number(
+              button.dataset.nextStep
+            );
+
+          if (
+            currentStep === 1 &&
+            !validateStep1()
+          ) {
+            return;
+          }
+
+
+          if (
+            currentStep === 2 &&
+            !validateStep2()
+          ) {
+            return;
+          }
+
+
+          if (next === 3) {
+            updateReview();
+          }
+
+
+          setStep(next);
+        }
+      );
+    });
+
+
+  queryAll("[data-prev-step]")
+    .forEach(function (button) {
+      button.addEventListener(
+        "click",
+        function () {
+          setStep(
+            Number(
+              button.dataset.prevStep
+            )
+          );
+        }
+      );
+    });
+
+
+  /* =======================================================
+     Build payload
+  ======================================================= */
+
+  function buildPayload() {
+    var currentUrl;
+
+    try {
+      currentUrl = new URL(
+        window.location.href
+      );
+    } catch (error) {
+      currentUrl = null;
+    }
+
+
+    /*
+     * Do not send raw "t" as a generic token field.
+     *
+     * The production API contract must decide how access/session
+     * continuity is authenticated.
+     *
+     * The frontend request contains customer preferences only.
+     */
+    return {
+      service_intent:
+        getSelected("service_intent"),
+
+      model_preference:
+        clean(
+          form.elements.model_preference
+            ? form.elements.model_preference.value
+            : ""
+        ),
+
+      request_note:
+        clean(
+          form.elements.request_note
+            ? form.elements.request_note.value
+            : ""
+        ),
+
+      preferred_date:
+        clean(
+          form.elements.preferred_date
+            ? form.elements.preferred_date.value
+            : ""
+        ),
+
+      preferred_time:
+        clean(
+          form.elements.preferred_time
+            ? form.elements.preferred_time.value
+            : ""
+        ),
+
+      area:
+        clean(
+          form.elements.area
+            ? form.elements.area.value
+            : ""
+        ),
+
+      duration:
+        getSelected("duration"),
+
+      source:
+        "find-your-mmd",
+
+      promo:
+        currentUrl
+          ? clean(
+              currentUrl.searchParams.get(
+                "promo"
+              )
+            )
+          : "",
+
+      code:
+        currentUrl
+          ? clean(
+              currentUrl.searchParams.get(
+                "code"
+              )
+            )
+          : ""
+    };
+  }
+
+
+  /* =======================================================
+     Loading
+  ======================================================= */
+
+  function setSubmitting(state) {
+    submitting = Boolean(state);
+
+    if (!submitButton) {
+      return;
+    }
+
+    submitButton.disabled =
+      submitting;
+
+    submitButton.setAttribute(
+      "aria-busy",
+      submitting
+        ? "true"
+        : "false"
+    );
+
+
+    if (submitLabel) {
+      submitLabel.textContent =
+        submitting
+          ? "กำลังส่งคำขอ..."
+          : "ส่งคำขอให้ MMD";
+    }
+
+
+    if (submitArrow) {
+      submitArrow.textContent =
+        submitting
+          ? "···"
+          : "→";
+    }
+  }
+
+
+  /* =======================================================
+     Success
+  ======================================================= */
+
+  function showSuccess(responseData) {
+    form.hidden = true;
+
+    var progress = query(
+      ".mmd-find__progress"
+    );
+
+    if (progress) {
+      progress.hidden = true;
+    }
+
+
+    if (success) {
+      success.hidden = false;
+    }
+
+
+    var ref =
+      responseData &&
+      typeof responseData === "object"
+        ? clean(
+            responseData.request_ref ||
+            responseData.request_id ||
+            responseData.reference
+          )
+        : "";
+
+
+    if (ref) {
+      var refWrap = query(
+        "[data-request-ref-wrap]"
+      );
+
+      var refElement = query(
+        "[data-request-ref]"
+      );
+
+      if (refWrap && refElement) {
+        refElement.textContent = ref;
+        refWrap.hidden = false;
+      }
+    }
+
+
+    var successLink = query(
+      "[data-success-link]"
+    );
+
+    var successUrl =
+      clean(root.dataset.successUrl) ||
+      "/member/dashboard";
+
+
+    if (successLink) {
+      successLink.setAttribute(
+        "href",
+        withContinuityParams(
+          successUrl
+        )
+      );
+    }
+
+
+    window.scrollTo({
+      top:
+        root.getBoundingClientRect().top +
+        window.scrollY,
+      behavior:
+        window.matchMedia(
+          "(prefers-reduced-motion: reduce)"
+        ).matches
+          ? "auto"
+          : "smooth"
+    });
+  }
+
+
+  /* =======================================================
+     Submission
+  ======================================================= */
+
+  form.addEventListener(
+    "submit",
+    async function (event) {
+      event.preventDefault();
+
+
+      if (submitting) {
+        return;
+      }
+
+
+      clearError(3);
+
+
+      if (
+        !validateStep1() ||
+        !validateStep2()
+      ) {
+        showError(
+          3,
+          "เติมข้อมูลสำคัญอีกนิดครับ แล้วส่งต่อได้เลย"
+        );
+
+        return;
+      }
+
+
+      var endpoint =
+        clean(
+          root.dataset.submitEndpoint
+        );
+
+
+      if (!endpoint) {
+        showError(
+          3,
+          "MMD พร้อมรับรายละเอียดผ่านช่องทางหลักครับ ทักเราเพื่อให้ช่วยรับเรื่องได้ทันที"
+        );
+
+        showToast(
+          "ทัก MMD ได้เลยครับ เดี๋ยวเรารับรายละเอียดให้"
+        );
+
+        return;
+      }
+
+
+      setSubmitting(true);
+
+
+      var controller =
+        typeof AbortController !== "undefined"
+          ? new AbortController()
+          : null;
+
+
+      var timeoutId =
+        window.setTimeout(
+          function () {
+            if (controller) {
+              controller.abort();
+            }
+          },
+          15000
+        );
+
+
+      try {
+        var response =
+          await fetch(
+            endpoint,
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                "Accept":
+                  "application/json"
+              },
+
+              credentials:
+                "same-origin",
+
+              body:
+                JSON.stringify(
+                  buildPayload()
+                ),
+
+              signal:
+                controller
+                  ? controller.signal
+                  : undefined
+            }
+          );
+
+
+        var body = null;
+
+
+        try {
+          body =
+            await response.json();
+        } catch (jsonError) {
+          body = null;
+        }
+
+
+        if (!response.ok) {
+          var message =
+            body &&
+            typeof body.message ===
+              "string"
+              ? body.message
+              : "";
+
+
+          if (
+            response.status === 401
+          ) {
+            throw new Error(
+              "SESSION_REQUIRED"
+            );
+          }
+
+
+          if (
+            response.status === 403
+          ) {
+            throw new Error(
+              "REQUEST_NOT_ALLOWED"
+            );
+          }
+
+
+          throw new Error(
+            message ||
+            "REQUEST_FAILED"
+          );
+        }
+
+
+        showSuccess(body || {});
+
+      } catch (error) {
+
+        if (
+          error &&
+          error.name ===
+            "AbortError"
+        ) {
+          showError(
+            3,
+            "การเชื่อมต่อรอบนี้ใช้เวลานานกว่าปกติครับ กดส่งอีกครั้งได้เลย"
+          );
+
+        } else if (
+          error &&
+          error.message ===
+            "SESSION_REQUIRED"
+        ) {
+          showError(
+            3,
+            "เปิด My MMD เพื่อยืนยันการเข้าใช้งาน แล้วกลับมาส่งคำขอได้ทันทีครับ"
+          );
+
+        } else if (
+          error &&
+          error.message ===
+            "REQUEST_NOT_ALLOWED"
+        ) {
+          showError(
+            3,
+            "เปิด My MMD เพื่อให้ MMD เช็กสถานะของรายการนี้ แล้วเราจะพาไปขั้นตอนที่ตรงกับคุณครับ"
+          );
+
+        } else {
+          showError(
+            3,
+            "ลองส่งคำขออีกครั้งได้เลยครับ หรือทัก MMD เพื่อให้เราช่วยรับเรื่อง"
+          );
+        }
+
+      } finally {
+        window.clearTimeout(
+          timeoutId
+        );
+
+        setSubmitting(false);
+      }
+    }
+  );
+
+
+  /* =======================================================
+     Initial UI
+  ======================================================= */
+
+  setStep(1);
+
+})();</script>

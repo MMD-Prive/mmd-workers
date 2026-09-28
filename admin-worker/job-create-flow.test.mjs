@@ -93,7 +93,13 @@ test('active Create Job returns only payment URL while storing confirmation link
   assert.equal(s.fldlTO5aNfqUmlNWm, 7000);
   assert.equal(s.fldBeG0FkWwa8kgnp, '2026-09-20T22:00:00+07:00');
   assert.equal(s.fldiDSz0wW9Ct9I3P, '2026-09-21T02:00:00+07:00');
-  assert.match(s.fldEcDkF7CH9VixWM, /^Operator note\nSecond line\n\[SIGIL Pricing v1\]/);
+  assert.match(s.fldEcDkF7CH9VixWM, /^Operator note\nSecond line$/);
+  assert.equal(h.issuances[0].payment_type, 'full');
+  assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 10000);
+  assert.equal(h.data.payment_type, 'full');
+  assert.equal(h.data.amount_due_thb, 10000);
+  assert.equal(h.data.balance_amount_thb, 0);
+  assert.equal(Object.hasOwn(h.data, 'deposit_amount_thb'), false);
   assert.equal(h.kv.size, 2);
   assert.match(h.data.customer_payment_url, /^https:\/\/mmdbkk\.com\/sigil\/pay\?t=/);
   assert.equal(h.data.payment_dispatch_state, 'awaiting_payment_approval');
@@ -103,6 +109,95 @@ test('active Create Job returns only payment URL while storing confirmation link
   assert.equal(Object.hasOwn(h.data, 'raw'), false);
   assert.match(s.fldi9ZdoiUXzSv1rI, /\/confirm\/job-confirmation\?t=/);
   assert.match(s.fld0mFma9J9yfEaKb, /\/confirm\/job-model\?t=/);
+});
+
+test('Public Job V2 persists an operational brief and uses format as canonical job type', async () => {
+  const body = form();
+  body.public_job = {
+    schema_version: 'mmd_public_job_v2',
+    format: 'event',
+    duties: 'Host guests and provide event presence',
+    customer_count: 8,
+    care_count: 3,
+    special_care_names: 'คุณ A, คุณ B',
+    model_count: 3,
+    model_assignment_note: 'Lead Model handles A/B; remaining staff cover the group',
+    presentation_note: 'Black smart casual',
+    remark: 'Public event brief',
+  };
+  body.job_details = { world: 'public', public_job: body.public_job };
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 1);
+  assert.equal(h.issuances[0].job_type, 'event');
+  assert.equal(h.data.public_job.format, 'event');
+  assert.equal(h.data.public_job.model_count, 3);
+  const note = String(h.records.get(SESSIONS)[0].fields.fldEcDkF7CH9VixWM || '');
+  const marker = note.match(/\[MMD PUBLIC JOB v2\]\s+(\{[^\n]+\})/);
+  assert.ok(marker, note);
+  const brief = JSON.parse(marker[1]);
+  assert.equal(brief.customer_count, 8);
+  assert.equal(brief.care_count, 3);
+  assert.equal(brief.model_count, 3);
+  assert.equal(brief.duties, 'Host guests and provide event presence');
+});
+
+test('Public Job rejects PN/VIP semantics before any payment issuer call', async () => {
+  for (const jobType of ['pn', 'vip']) {
+    const body = form();
+    body.job_type = jobType;
+    body.job_visibility = 'public';
+    const h = await run(body);
+    assert.equal(h.status, 400, JSON.stringify(h.data));
+    assert.equal(h.issuances.length, 0);
+    assert.equal(h.records.size, 0);
+  }
+});
+
+test('Public Job V2 rejects care count above customer count', async () => {
+  const body = form();
+  body.public_job = {
+    schema_version: 'mmd_public_job_v2',
+    format: 'dining',
+    duties: 'Guest care',
+    customer_count: 2,
+    care_count: 3,
+    model_count: 1,
+  };
+  body.job_details = { world: 'public', public_job: body.public_job };
+  const h = await run(body);
+  assert.equal(h.status, 400, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 0);
+  assert.equal(h.records.size, 0);
+});
+
+test('Create Job preserves negotiated discount into SIGIL Pricing v1', async () => {
+  const body = form();
+  body.payment = {
+    ...body.payment,
+    amount_thb: 25000,
+    original_amount_thb: 30000,
+    pricing_adjustment: 'discount',
+    payment_type: 'deposit',
+  };
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 1);
+  assert.equal(h.issuances[0].amount_thb, 25000);
+  assert.equal(h.issuances[0].original_amount_thb, 30000);
+  assert.equal(h.issuances[0].pricing_adjustment, 'discount');
+
+  const s = h.records.get(SESSIONS)[0].fields;
+  const marker = String(s.fldEcDkF7CH9VixWM || '').match(/\[SIGIL Pricing v1\]\s+(\{[^\n]+\})/);
+  assert.ok(marker, s.fldEcDkF7CH9VixWM);
+  const pricing = JSON.parse(marker[1]);
+  assert.equal(pricing.full_price_thb, 30000);
+  assert.equal(pricing.discount_mode, 'amount');
+  assert.equal(pricing.discount_thb, 5000);
+  assert.equal(pricing.net_price_thb, 25000);
+  assert.equal(pricing.deposit_basis_thb, 25000);
+  assert.equal(pricing.deposit_due_thb, 7500);
+  assert.equal(pricing.balance_thb, 17500);
 });
 
 for (const visibility of ['private', 'public']) test(`pending ${visibility} creates an operational Job without Payment, tokens, notification or reconfirm`, async () => {

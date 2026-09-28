@@ -1,11 +1,17 @@
 import { readMemberAppSession } from "./member-app-api.js";
+import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
+import {
+  lifetimePointsFromPreload,
+  readMemberHistoryPreload,
+} from "./member-history-preload.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
 const POINTS_LEDGER_TABLE = "tbl5dfnwjUFMLbnWL";
 const MAX_RECORDS = 2000;
 const TIMEOUT_MS = 8000;
-const POLICY = "mmd_points_lifetime_total_phase1";
+const POLICY = "mmd_points_expiring_lots_365d";
+const POINTS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 const ELIGIBLE_PATHS = new Set([
   "/api/member/app/points",
@@ -36,9 +42,27 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
   if (!(request instanceof Request) || request.method !== "GET" || !isMyMmdLifetimePointsPath(request)) return null;
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return null;
   const session = await readMemberAppSession(request, env);
-  if (!session?.memberId) return null;
+  if (!session?.memberId || !session?.lineUserId) return null;
 
   try {
+    try {
+      const preload = await readMemberHistoryPreload(env, session.lineUserId);
+      // The preload projection only contains a lifetime aggregate and cannot
+      // represent lot expiry. Read the ledger below so each entry is aged
+      // from its own posted/entered date.
+    } catch (error) {
+      console.warn({ event: "my_mmd_points_preload_lookup_failed", failure_class: safeFailure(error) });
+    }
+
+    const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
+    const recoveryState = normalizeToken(recoveryStatus?.state);
+    if (["checking", "in_progress", "review_required"].includes(recoveryState)) {
+      return { state: "checking", recoveryState, pointsRecoveryPending: true };
+    }
+    if (recoveryState === "blocked") {
+      return { state: "blocked", recoveryState, pointsRecoveryPending: false };
+    }
+
     const member = await resolveMember(env, session.memberId);
     if (!member) return null;
     const formula = pointsFormula(member.memberId, member.email);
@@ -47,7 +71,11 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
       filterByFormula: formula,
       maxRecords: MAX_RECORDS,
     });
-    return summarizeLifetimePoints(records);
+    return {
+      ...summarizeLifetimePoints(records),
+      recoveryState: normalizeToken(recoveryStatus?.state) || null,
+      pointsRecoveryPending: false,
+    };
   } catch (error) {
     console.warn({ event: "my_mmd_lifetime_points_lookup_failed", failure_class: safeFailure(error) });
     return null;
@@ -75,12 +103,12 @@ export async function applyMyMmdLifetimePointsResponse(request, response, contex
   });
 }
 
-export function summarizeLifetimePoints(records = []) {
+export function summarizeLifetimePoints(records = [], now = new Date()) {
   const seen = new Set();
   let earnedTotal = 0;
   let redeemedTotal = 0;
-  let balance = 0;
   let recordsCount = 0;
+  const lots = [];
 
   for (const record of Array.isArray(records) ? records : []) {
     const fields = record?.fields || {};
@@ -93,37 +121,61 @@ export function summarizeLifetimePoints(records = []) {
     const points = pointsValue(fields);
     if (points === null) continue;
     recordsCount += 1;
-    balance += points;
-    if (points >= 0) earnedTotal += points;
-    else redeemedTotal += Math.abs(points);
+    if (points > 0) {
+      earnedTotal += points;
+      const enteredAt = parseDate(fields.posted_at || fields.created_at || record?.createdTime) || now;
+      const expiresAt = parseDate(fields.expires_at) || new Date(enteredAt.getTime() + POINTS_TTL_MS);
+      lots.push({ points, remaining: points, enteredAt, expiresAt });
+    } else if (points < 0) {
+      redeemedTotal += Math.abs(points);
+      consumeLots(lots, Math.abs(points), parseDate(fields.posted_at || fields.created_at || record?.createdTime) || now);
+    }
   }
+
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
+  const activeLots = lots.filter((lot) => lot.expiresAt.getTime() > nowMs && lot.remaining > 0);
+  const expiredLots = lots.filter((lot) => lot.expiresAt.getTime() <= nowMs && lot.remaining > 0);
+  const available = activeLots.reduce((sum, lot) => sum + lot.remaining, 0);
+  const nearest = activeLots.sort((a, b) => a.expiresAt - b.expiresAt)[0]?.expiresAt || null;
+  const horizon = nowMs + 30 * 24 * 60 * 60 * 1000;
 
   return {
     state: "resolved",
-    confirmedBalance: Math.max(0, Math.trunc(balance)),
+    confirmedBalance: Math.max(0, Math.trunc(available)),
     earnedTotal: Math.max(0, Math.trunc(earnedTotal)),
     redeemedTotal: Math.max(0, Math.trunc(redeemedTotal)),
     recordsCount,
     currencyLabel: "MMD Points",
-    pointsExpire: false,
-    expiryPolicy: "none_phase1",
-    nearestExpiry: null,
-    expiringPoints: 0,
+    pointsExpire: true,
+    expiryPolicy: "lot_365d_from_entry",
+    nearestExpiry: nearest ? nearest.toISOString() : null,
+    expiringPoints: activeLots.filter((lot) => lot.expiresAt.getTime() <= horizon).reduce((sum, lot) => sum + lot.remaining, 0),
+    expiredPoints: expiredLots.reduce((sum, lot) => sum + lot.remaining, 0),
     policy: POLICY,
   };
 }
 
 export function patchLifetimePointsPayload(path, payload, summary) {
+  if (summary?.pointsRecoveryPending === true || ["checking", "in_progress", "review_required"].includes(normalizeToken(summary?.recoveryState))) {
+    return patchPendingLifetimePointsPayload(path, payload);
+  }
+  if (normalizeToken(summary?.recoveryState) === "blocked" || summary?.state === "blocked") {
+    return patchBlockedLifetimePointsPayload(path, payload);
+  }
+
   const safeSummary = {
     confirmedBalance: summary.confirmedBalance,
     earnedTotal: summary.earnedTotal,
     redeemedTotal: summary.redeemedTotal,
     currencyLabel: "MMD Points",
     recordsCount: summary.recordsCount,
-    pointsExpire: false,
-    expiryPolicy: "none_phase1",
-    nearestExpiry: null,
-    expiringPoints: 0,
+    pointsExpire: true,
+    expiryPolicy: "lot_365d_from_entry",
+    nearestExpiry: summary.nearestExpiry || null,
+    expiringPoints: nonNegativeInt(summary.expiringPoints),
+    lifetimeServiceSpendThb: money(summary.lifetimeServiceSpendThb),
+    serviceSpend365dThb: money(summary.serviceSpend365dThb),
+    completedServiceCount: nonNegativeInt(summary.completedServiceCount),
   };
 
   if (/^\/api\/member\/app\/points\/?$/.test(path)) {
@@ -132,7 +184,7 @@ export function patchLifetimePointsPayload(path, payload, summary) {
       ...payload,
       state: "resolved",
       summary: { ...current, ...safeSummary },
-      pointsPolicy: { expires: false, mode: "lifetime_total", phase: 1 },
+      pointsPolicy: { expires: true, mode: "expiring_lots", ttlDays: 365 },
     };
   }
 
@@ -142,7 +194,7 @@ export function patchLifetimePointsPayload(path, payload, summary) {
       ...payload,
       points: { ...current, ...safeSummary },
       pointsRecoveryPending: false,
-      pointsPolicy: { expires: false, mode: "lifetime_total", phase: 1 },
+      pointsPolicy: { expires: true, mode: "expiring_lots", ttlDays: 365 },
     };
   }
 
@@ -151,8 +203,11 @@ export function patchLifetimePointsPayload(path, payload, summary) {
       ...payload,
       points_confirmed: summary.confirmedBalance,
       points_records_count: summary.recordsCount,
-      points_expire: false,
-      points_policy: "lifetime_total_phase1",
+      lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+      service_spend_365d_thb: money(summary.serviceSpend365dThb),
+      completed_service_count: nonNegativeInt(summary.completedServiceCount),
+      points_expire: true,
+      points_policy: "lot_365d_from_entry",
     };
   }
 
@@ -169,9 +224,12 @@ export function patchLifetimePointsPayload(path, payload, summary) {
           value: summary.confirmedBalance,
           active_points: summary.confirmedBalance,
           records_count: summary.recordsCount,
-          expiring_points: 0,
-          nearest_expiry: null,
-          expiry_policy: "none_phase1",
+          expiring_points: nonNegativeInt(summary.expiringPoints),
+          nearest_expiry: summary.nearestExpiry || null,
+          expiry_policy: "lot_365d_from_entry",
+          lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+          service_spend_365d_thb: money(summary.serviceSpend365dThb),
+          completed_service_count: nonNegativeInt(summary.completedServiceCount),
         },
       },
     };
@@ -187,8 +245,11 @@ export function patchLifetimePointsPayload(path, payload, summary) {
         ...data,
         points: summary.confirmedBalance,
         points_records_count: summary.recordsCount,
-        points_expire: false,
-        points_policy: "lifetime_total_phase1",
+        lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+        service_spend_365d_thb: money(summary.serviceSpend365dThb),
+        completed_service_count: nonNegativeInt(summary.completedServiceCount),
+        points_expire: true,
+        points_policy: "lot_365d_from_entry",
         customer_360: {
           ...customer360,
           points: {
@@ -196,15 +257,117 @@ export function patchLifetimePointsPayload(path, payload, summary) {
             status: "verified",
             active_points: summary.confirmedBalance,
             records_count: summary.recordsCount,
-            expiring_points: 0,
-            nearest_expiry: null,
-            expiry_policy: "none_phase1",
+            expiring_points: nonNegativeInt(summary.expiringPoints),
+            nearest_expiry: summary.nearestExpiry || null,
+            expiry_policy: "lot_365d_from_entry",
+            lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+            service_spend_365d_thb: money(summary.serviceSpend365dThb),
+            completed_service_count: nonNegativeInt(summary.completedServiceCount),
           },
         },
       },
     };
   }
 
+  return payload;
+}
+
+function patchPendingLifetimePointsPayload(path, payload) {
+  if (/^\/api\/member\/app\/points\/?$/.test(path)) {
+    return {
+      ...payload,
+      state: "checking",
+      summary: {
+        ...(isObject(payload.summary) ? payload.summary : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: true,
+    };
+  }
+  if (/^\/api\/member\/app\/dashboard\/?$/.test(path)) {
+    return {
+      ...payload,
+      points: {
+        ...(isObject(payload.points) ? payload.points : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: true,
+    };
+  }
+  if (/^\/api\/member\/app\/profile\/?$/.test(path)) {
+    return { ...payload, points_confirmed: null, points_records_count: null, points_recovery_pending: true };
+  }
+  if (/^\/api\/member\/dashboard\/?$/.test(path)) {
+    const data = isObject(payload.data) ? payload.data : {};
+    return {
+      ...payload,
+      data: {
+        ...data,
+        points: {
+          ...(isObject(data.points) ? data.points : {}),
+          status: "checking",
+          value: null,
+          active_points: null,
+        },
+      },
+    };
+  }
+  if (/^\/member\/api\/liff\/profile\/?$/.test(path)) {
+    const data = isObject(payload.data) ? payload.data : {};
+    const customer360 = isObject(data.customer_360) ? data.customer_360 : {};
+    return {
+      ...payload,
+      data: {
+        ...data,
+        points: null,
+        points_records_count: null,
+        points_recovery_pending: true,
+        customer_360: {
+          ...customer360,
+          points: {
+            ...(isObject(customer360.points) ? customer360.points : {}),
+            status: "checking",
+            active_points: null,
+          },
+        },
+      },
+    };
+  }
+  return payload;
+}
+
+function patchBlockedLifetimePointsPayload(path, payload) {
+  if (/^\/api\/member\/app\/dashboard\/?$/.test(path)) {
+    return {
+      ...payload,
+      points: {
+        ...(isObject(payload.points) ? payload.points : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: false,
+      pointsRecoveryState: "blocked",
+    };
+  }
+  if (/^\/api\/member\/app\/points\/?$/.test(path)) {
+    return {
+      ...payload,
+      state: "checking",
+      summary: {
+        ...(isObject(payload.summary) ? payload.summary : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: false,
+      pointsRecoveryState: "blocked",
+    };
+  }
   return payload;
 }
 
@@ -265,6 +428,24 @@ function pointsValue(fields = {}) {
   return Number.isFinite(amount) ? Math.floor(amount / 100) : null;
 }
 
+function consumeLots(lots, amount, at) {
+  let remaining = Math.max(0, Math.trunc(amount));
+  const eligible = lots
+    .filter((lot) => lot.remaining > 0 && lot.expiresAt.getTime() >= at.getTime())
+    .sort((a, b) => a.expiresAt - b.expiresAt);
+  for (const lot of eligible) {
+    if (!remaining) break;
+    const used = Math.min(lot.remaining, remaining);
+    lot.remaining -= used;
+    remaining -= used;
+  }
+}
+
+function parseDate(value) {
+  const parsed = value instanceof Date ? value : new Date(value || "");
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
 function formulaString(value) {
   return `'${clean(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
@@ -280,6 +461,16 @@ function normalizeToken(value) {
 
 function isObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonNegativeInt(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+}
+
+function money(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0;
 }
 
 function clean(value) {

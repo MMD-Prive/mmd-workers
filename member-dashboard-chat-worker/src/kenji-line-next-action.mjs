@@ -2,8 +2,10 @@ import { buildKenjiNextActionPolicy } from "../../shared/kenji-customer-memory-v
 
 const ROUTES = Object.freeze({
   dashboard: "https://mmdbkk.com/member/dashboard",
-  membership: "https://mmdbkk.com/sigil/member/membership",
-  membershipSignup: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+  membership: "https://mmdbkk.com/pay/membership?source=line",
+  membershipSignup: "https://mmdbkk.com/pay/membership?source=line",
+  privateMembership: "https://mmdbkk.com/sigil/member/membership",
+  privateMembershipSignup: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
   membershipRenewal: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
   points: "https://mmdbkk.com/my-mmd/points",
   payments: "https://mmdbkk.com/member/payments",
@@ -118,10 +120,19 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
     action = {
       schema: "mmd.kenji_next_action.v1",
       type: "open_action_route",
-      label: "เริ่มสมัครสมาชิก",
+      label: "ดู Public Membership",
       route: ROUTES.membershipSignup,
-      customer_text: `เริ่มสมัครสมาชิกจากหน้าทางการนี้ได้เลยครับ → ${ROUTES.membershipSignup}`,
-      reason: "membership_signup_uses_reviewed_membership_intake",
+      customer_text: `ถ้าจะเริ่มสมัครสมาชิก MMD แบบ Public — Member / Elite / Red Card เปิดจากหน้านี้ได้เลยครับ → ${ROUTES.membershipSignup}`,
+      reason: "generic_membership_signup_defaults_to_public_lane",
+    };
+  } else if (value === "private_membership_signup") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "open_action_route",
+      label: "ดู Private Membership",
+      route: ROUTES.privateMembershipSignup,
+      customer_text: `ถ้าต้องการ Standard / Premium หรือ Private Membership เปิดจากหน้านี้ได้เลยครับ → ${ROUTES.privateMembershipSignup}`,
+      reason: "explicit_private_membership_signup_uses_private_lane",
     };
   } else if (value === "membership_renewal") {
     action = {
@@ -136,10 +147,10 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
     action = {
       schema: "mmd.kenji_next_action.v1",
       type: "open_action_route",
-      label: "เปิด Membership Intake",
+      label: "ดู Public Membership",
       route: ROUTES.membership,
-      customer_text: `เปิด Membership Intake ได้ที่นี่ครับ → ${ROUTES.membership}`,
-      reason: "membership_uses_canonical_reviewed_intake",
+      customer_text: `ถ้ากำลังดูสมาชิกแบบทั่วไป เริ่มจาก Public Membership — Member / Elite / Red Card ได้ที่นี่ครับ → ${ROUTES.membership} ถ้าต้องการ Standard / Premium บอกผมว่า “Private Membership” ได้เลยครับ`,
+      reason: "generic_membership_defaults_to_public_lane",
     };
   } else if (value === "points_status") {
     action = {
@@ -149,6 +160,15 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
       route: ROUTES.points,
       customer_text: `ถ้าจะดูยอดล่าสุด เปิด My MMD > Points ตรงนี้ได้เลยครับ → ${ROUTES.points}`,
       reason: "points_status_has_safe_self_service_next_step",
+    };
+  } else if (value === "payment_center") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "open_action_route",
+      label: "เปิด Payment Center",
+      route: ROUTES.payments,
+      customer_text: `เปิด Payment Center ของบัญชีนี้ได้เลยครับ → ${ROUTES.payments}`,
+      reason: "payment_center_is_navigation_not_payment_confirmation",
     };
   } else if (["payment_slip", "payment_status"].includes(value)) {
     action = paymentStatusAction(continuity);

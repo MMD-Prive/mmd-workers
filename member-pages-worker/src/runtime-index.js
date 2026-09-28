@@ -1,4 +1,6 @@
-import worker from "./index.js";
+import baseWorker from "./index.js";
+import { MemberResolverDiagnosticEntrypoint } from "./resolver-diagnostic-entrypoint.js";
+import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-runtime.js";
 import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
@@ -22,6 +24,18 @@ import {
   isKenjiLineMemberTruthRequest,
 } from "./kenji-line-member-truth.js";
 import {
+  handleHypeMemberWallet,
+  isHypeMemberWalletRequest,
+} from "./hype-member-wallet-projection.js";
+import {
+  handleHypeShopOrders,
+  isHypeShopOrdersRequest,
+} from "./hype-shop-orders-projection.js";
+import {
+  handleOwnerMyMmdRecoveryDiagnosticRpc,
+  isOwnerMyMmdRecoveryDiagnosticRpc,
+} from "./owner-my-mmd-recovery-diagnostic.js";
+import {
   handleKenjiLineMemberTruthHealth,
   isKenjiLineMemberTruthHealthRequest,
 } from "./kenji-line-member-truth-health.js";
@@ -34,10 +48,13 @@ import {
   isPrivatePreviewRequest,
   PrivatePreviewGate,
 } from "./private-preview.js";
+import { handlePrivateTeaser, isPrivateTeaserRequest } from "./private-teaser.js";
+import { handleMemberCustomerRequest, isMemberCustomerRequestPath } from "./member-customer-requests.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
 export { PrivatePreviewGate };
+export { MemberResolverDiagnosticEntrypoint };
 
 const CARE_BACK_WEBVIEW_PATHS = new Set([
   "/member/api/care-back/public-wish",
@@ -71,9 +88,21 @@ export function normalizeCareBackWebViewOrigin(request) {
   return new Request(request, { headers });
 }
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    const runtimeUrl = new URL(request.url);
+    const runtimePath = runtimeUrl.pathname.replace(/\/+$/, "") || "/";
+    if (request.method === "GET" && (runtimePath === "/health" || runtimePath === "/ping")) {
+      return Response.json({
+        ok: true,
+        worker: "member-pages-worker",
+        analytics: authorityRuntimeHealth(env, "member-pages-worker", ctx),
+        time: new Date().toISOString(),
+      }, { headers: { "cache-control": "no-store" } });
+    }
+
+
     // Service-binding-only model inventory discovery. The synthetic hostname is
     // never routed publicly, so Drive credentials and inventory remain backend-only.
     if (isModelDriveDirectoryRequest(request)) {
@@ -82,14 +111,29 @@ export default {
     if (isMemberClientCreditsRequest(request)) {
       return handleMemberClientCredits(request, env);
     }
+    if (isMemberCustomerRequestPath(request)) {
+      return handleMemberCustomerRequest(request, env);
+    }
     if (isPrivatePreviewRequest(request)) {
       return handlePrivatePreview(request, env);
+    }
+    if (isPrivateTeaserRequest(request)) {
+      return handlePrivateTeaser(request, env);
     }
     if (isKenjiLineMemberTruthHealthRequest(request)) {
       return handleKenjiLineMemberTruthHealth(request, env);
     }
     if (isKenjiLineMemberTruthRequest(request)) {
       return handleKenjiLineMemberTruth(request, env);
+    }
+    if (isHypeMemberWalletRequest(request)) {
+      return handleHypeMemberWallet(request, env);
+    }
+    if (isHypeShopOrdersRequest(request)) {
+      return handleHypeShopOrders(request, env);
+    }
+    if (isOwnerMyMmdRecoveryDiagnosticRpc(request)) {
+      return handleOwnerMyMmdRecoveryDiagnosticRpc(request, env);
     }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
@@ -102,7 +146,7 @@ export default {
     const runtimeEnv = withStatusFirstMemberResolver(request, channelCompatibleEnv);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
-    let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+    let firstResponse = await baseWorker.fetch(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
     firstResponse = await augmentMemberModelWishNotes(request, firstResponse, env);
     let firstPayload = await jsonPayload(firstResponse);
@@ -111,7 +155,7 @@ export default {
       request,
       response: firstResponse,
       payload: firstPayload,
-      worker,
+      worker: baseWorker,
       env: runtimeEnv,
       ctx,
     });
@@ -146,7 +190,7 @@ export default {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        let retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        let retriedResponse = await baseWorker.fetch(request, runtimeEnv, ctx);
         retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
         retriedResponse = await augmentMemberModelWishNotes(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
@@ -165,6 +209,8 @@ export default {
     return attachTraceId(rewritten, trace?.traceId || "");
   },
 };
+
+export default worker;
 
 async function jsonPayload(response) {
   if (!(response instanceof Response)) return null;

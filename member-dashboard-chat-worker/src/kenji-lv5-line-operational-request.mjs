@@ -16,6 +16,10 @@ import {
   applyKenjiLv5BookingActionToDecision,
   executeKenjiLv5LineBookingAction,
 } from "./kenji-lv5-line-action-execution.mjs";
+import {
+  accumulateKenjiLineBookingDraft,
+  recordKenjiBookingAccumulatorAction,
+} from "./kenji-line-booking-accumulator.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 
@@ -114,7 +118,24 @@ function needsCanonicalCalendarMapping(gate = {}) {
   if (gate.required !== true || gate.status !== "match") return false;
   const requested = normalizedModelRef(gate?.parsed?.model_name);
   const canonical = normalizedModelRef(gate?.model?.working_name);
-  return Boolean(requested && canonical && requested !== canonical);
+  const modelCode = normalizedModelRef(gate?.model?.model_code);
+  return Boolean(requested && canonical && requested !== canonical && requested !== modelCode);
+}
+
+function canonicalizeVerifiedModelIntent(parsedIntent = null, gate = {}) {
+  if (!parsedIntent || typeof parsedIntent !== "object" || gate?.status !== "match") return parsedIntent;
+  const requested = text(parsedIntent.model_name, 120);
+  const requestedKey = normalizedModelRef(requested);
+  const canonical = text(gate?.model?.working_name, 120);
+  const canonicalKey = normalizedModelRef(canonical);
+  const modelCodeKey = normalizedModelRef(gate?.model?.model_code);
+  if (!requestedKey || !canonical || requestedKey === canonicalKey) return parsedIntent;
+  if (requestedKey !== modelCodeKey) return parsedIntent;
+  return {
+    ...parsedIntent,
+    requested_model_ref: requested,
+    model_name: canonical,
+  };
 }
 
 function isPreparedBookingDecision(decision = {}, modelGate = {}) {
@@ -125,12 +146,60 @@ function isPreparedBookingDecision(decision = {}, modelGate = {}) {
     && text(modelGate?.parsed?.type, 40) === "booking";
 }
 
+function guidedBookingDecision(currentIntent = "", accumulator = null) {
+  if (accumulator?.active !== true || !accumulator?.draft) return null;
+  const draft = accumulator.draft;
+  const missing = Array.isArray(draft.missing_fields) ? draft.missing_fields : [];
+  const next = missing.find((field) => ["model_name", "date", "time", "location"].includes(field));
+  if (!next) return null;
+
+  const model = text(draft.model_working_name_hint || draft.model_name, 120);
+  let reply = "";
+  if (next === "model_name") {
+    reply = "ได้ครับ สนใจนายแบบคนไหนครับ พิมพ์ชื่อหรือรหัสมาได้เลยครับ";
+  } else if (next === "date") {
+    reply = `${model ? `รับ ${model} ไว้แล้วครับ ` : ""}ต้องการวันไหนครับ`;
+  } else if (next === "time") {
+    reply = "รับวันที่ไว้แล้วครับ ต้องการเวลาไหนครับ";
+  } else if (next === "location") {
+    reply = "รับเวลาไว้แล้วครับ ขอพื้นที่หรือสถานที่ที่ต้องการใช้บริการด้วยครับ";
+  }
+  if (!reply) return null;
+
+  const intent = text(accumulator.resolved_intent || currentIntent, 120) || "mmd_companion";
+  return {
+    text: reply,
+    intent,
+    inferred_intent: intent,
+    reply_source: "lv5_booking_guided_intake",
+    handoff_required: false,
+    handoff_reason: "",
+    truth_authority: "",
+    truth_status: "collecting_customer_input",
+    live_truth_used: false,
+    live_truth_verified: false,
+    operational: {
+      phase: "P2_guided_booking_intake",
+      operational_intent: "booking",
+      matrix_booking_draft_id: text(draft.draft_id, 80),
+      matrix_booking_ready: draft.ready === true,
+      matrix_booking_missing: missing,
+      matrix_booking_revision: Number(draft.revision || 0),
+      awaiting_field: next,
+    },
+  };
+}
+
 function isDepositBookingIntent(modelGate = {}) {
   return text(modelGate?.parsed?.type, 40) === "booking"
     && text(modelGate?.parsed?.trigger, 40) === "deposit";
 }
 
-async function applyP4Action(env, event, modelGate, decision) {
+async function applyP4Action(env, event, modelGate, decision, accumulator = null) {
+  if (accumulator?.active === true && accumulator?.action_allowed !== true) {
+    const status = accumulator?.locked === true ? "matrix_booking_already_actioned" : "matrix_booking_incomplete";
+    return { decision, result: { attempted: false, executed: false, status } };
+  }
   if (!isPreparedBookingDecision(decision, modelGate) && !isDepositBookingIntent(modelGate)) {
     return { decision, result: { attempted: false, executed: false, status: "not_eligible" } };
   }
@@ -166,7 +235,6 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   const raw = eventText(event);
   if (!raw) return null;
   const currentIntent = inferLineIntent(raw, event);
-  if (!isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
 
   if (!enabled(env.LINE_KENJI_AI_ENABLED) || !enabled(env.LINE_KENJI_BOOKING_INTENT_ENABLED ?? "true")) return null;
   const runtime = await requestKenjiRuntimeStatus(env).catch(() => ({ ok: false }));
@@ -174,14 +242,65 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   if (runtime?.ok !== true || controls.all_kenji_mutations === true) return null;
   const replyAllowed = isLineReplyAllowed(env, controls);
 
-  const modelGate = await resolveKenjiLv5LineModelGate({ env, event, currentIntent }).catch(() => ({ required: true, status: "unavailable" }));
+  const accumulator = await accumulateKenjiLineBookingDraft({ env, event, currentIntent }).catch(() => null);
+  const operationalCandidate = isKenjiLv5LineOperationalCandidate(event, currentIntent)
+    || accumulator?.accepted === true
+    || accumulator?.active === true;
+  if (!operationalCandidate) return null;
+
+  const guidedDecision = guidedBookingDecision(currentIntent, accumulator);
+  if (guidedDecision) {
+    const delivery = replyAllowed
+      ? await sendReply(env, replyToken(event), guidedDecision.text)
+      : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
+    return {
+      handled: true,
+      response: new Response(JSON.stringify({
+        ok: true,
+        route: "line_webhook",
+        operational: "lv5_p2",
+        action_executed: false,
+        delivered: delivery.ok === true,
+        reply_suppressed: delivery.suppressed === true,
+      }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "x-mmd-worker": "member-dashboard-chat-worker",
+          "x-mmd-kenji-operational": "lv5-p2",
+          "x-mmd-kenji-reply": delivery.suppressed === true ? "suppressed" : (delivery.ok === true ? "delivered" : "failed"),
+        },
+      }),
+      event,
+      decision: guidedDecision,
+      delivered: delivery.ok === true,
+      attempted: replyAllowed,
+      delivery_status: Number.isInteger(delivery.status) ? delivery.status : null,
+    };
+  }
+
+  const accumulatedIntent = accumulator?.merged_intent || null;
+  let modelGate = await resolveKenjiLv5LineModelGate({
+    env,
+    event,
+    currentIntent,
+    parsedIntent: accumulatedIntent,
+  }).catch(() => ({ required: true, status: "unavailable", parsed: accumulatedIntent }));
   let decision;
   if (modelGate.required === true && modelGate.status !== "match") {
     decision = gateDecision(currentIntent, modelGate);
   } else if (needsCanonicalCalendarMapping(modelGate)) {
     decision = aliasCalendarDecision(currentIntent, modelGate);
   } else {
-    decision = await resolveKenjiLv5LineOperationalDecision({ env, event, currentIntent }).catch(() => null);
+    const liveIntent = canonicalizeVerifiedModelIntent(accumulatedIntent, modelGate);
+    if (liveIntent && liveIntent !== modelGate.parsed) modelGate = { ...modelGate, parsed: liveIntent };
+    decision = await resolveKenjiLv5LineOperationalDecision({
+      env,
+      event,
+      currentIntent,
+      parsedIntent: liveIntent,
+    }).catch(() => null);
   }
   if (!decision?.text) return null;
 
@@ -193,11 +312,26 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
       ...(decision.operational || {}),
       operational_intent: text(modelGate?.parsed?.type || decision?.operational?.operational_intent, 80),
       model_access_status: modelGate.required === true ? text(modelGate.status, 80) : "not_required",
+      matrix_booking_draft_id: text(accumulator?.draft?.draft_id, 80),
+      matrix_booking_ready: accumulator?.draft?.ready === true,
+      matrix_booking_missing: Array.isArray(accumulator?.draft?.missing_fields) ? accumulator.draft.missing_fields : [],
+      matrix_booking_revision: Number(accumulator?.draft?.revision || 0),
     },
   };
 
-  const p4 = await applyP4Action(env, event, modelGate, decision);
+  const p4 = await applyP4Action(env, event, modelGate, decision, accumulator);
   decision = p4.decision;
+  if (accumulator?.draft?.draft_id && p4?.result?.attempted === true) {
+    const actionStateWrite = recordKenjiBookingAccumulatorAction({
+      env,
+      event,
+      currentIntent,
+      draft: accumulator.draft,
+      actionResult: p4.result,
+    }).catch(() => ({ skipped: true, reason: "matrix_action_state_write_failed" }));
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(actionStateWrite);
+    else await actionStateWrite;
+  }
   const delivery = replyAllowed
     ? await sendReply(env, replyToken(event), decision.text)
     : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
@@ -229,4 +363,4 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   };
 }
 
-export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, canonicalizeVerifiedModelIntent, guidedBookingDecision, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });

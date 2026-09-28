@@ -132,6 +132,52 @@ function request({ source = "payment_review_console", token = "service-test", ca
   });
 }
 
+function serviceRequest() {
+  return new Request("https://payments.example.test/v1/internal/payments/reviewed-proof", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer service-test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source: "payment_review_console",
+      decision: "approved",
+      proof_id: PROOF_ID,
+      evidence_record_id: PROOF_RECORD,
+      payment_ref: PAYMENT_REF,
+      amount_thb: 2500,
+      payment_stage: "full",
+      session_id: "sess-service-001",
+      payment_method: "promptpay",
+      review_reason: "Owner verified service payment evidence",
+      review_actor: "per",
+    }),
+  });
+}
+
+test("service proof is reconciled to verified only after money truth succeeds", async () => {
+  const h = harness();
+  const response = await handleReviewedProof(serviceRequest(), h.env, {}, async () =>
+    Response.json({ ok: true, payment_ref: PAYMENT_REF, payment_stage: "full" })
+  );
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.ok, true);
+  assert.equal(result.proof_reconciled, true);
+  assert.equal(result.proof_reconcile_failed, false);
+  assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status, "verified");
+  assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.verified_by, "payments-worker");
+});
+
+test("service proof stays pending when money truth fails", async () => {
+  const h = harness();
+  const response = await handleReviewedProof(serviceRequest(), h.env, {}, async () =>
+    Response.json({ ok: false, error: "money_truth_failed" }, { status: 409 })
+  );
+  assert.equal(response.status, 409);
+  assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status, "pending");
+});
+
 test("email-less canonical LINE recovery materializes entitlement only after trusted notify succeeds", async () => {
   const h = harness();
   let notifyCalls = 0;

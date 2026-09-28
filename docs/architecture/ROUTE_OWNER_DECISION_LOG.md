@@ -1,5 +1,8 @@
 # Route Owner Decision Log
 
+> **2026-09-19 owner correction:** `/pay/membership` is Public Membership selection (Member / Elite / Red Card), not a payment-evidence page. `/member/payments` is the member-facing payment status/history/navigation surface: Webflow presentation, target member-safe BFF in `member-pages-worker`, and `payments-worker` as money truth. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility owned by `member-dashboard-chat-worker` in production; no fallback renewal UI.
+
+
 Status: Phase 1B ready for human review.
 Base: `origin/main` at `dbc4669`
 
@@ -19,9 +22,9 @@ Base: `origin/main` at `dbc4669`
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Booking page owner | RESOLVED | `/sigil/booking` | Route: `sigil-booking-proxy-worker`; UI source: Webflow | `mmd-redirect-worker` catch-all, direct stale Webflow as canonical route owner | `workers/sigil-booking-proxy-worker/*`, existing registry | Exact route config and proxy contract exist. | stale/default Webflow page | Phase 2B | apex/www redirect, sigil proxy, query allowlist, stale markers absent | keep proxy rollback to Webflow source |
 | SIGIL apply owner | CORRECTED_UNRESOLVED | `/sigil/apply` | Candidate target: `sigil-worker`; current owner unresolved | Webflow fallback, Telegram brief page, catch-all, direct lock to handler not present | `mmd-redirect-worker/src/index.js` delegates; current `sigil-worker/src/index.js` has no matching handler and `sigil-worker/wrangler.toml` has no custom route | Review thread found delegation without target handler proof. | target not_found and private model route risk | Phase 4A | implement/prove GET/HEAD/slash/query, POST/OPTIONS/body/auth, owner headers | keep front gate and do not lock until handler and production route pass acceptance |
-| Renewal route owner | CORRECTED_TEMPORARY | `/sigil/pay/renewal` | Candidate renderer: `member-dashboard-chat-worker`; production owner unverified | Webflow stale page, `member-pages-worker` manual legacy safety page, direct lock without route proof | current `member-dashboard-chat-worker/wrangler.toml` only declares LINE webhook routes; `mmd-redirect-worker/src/index.js` delegates SIGIL renewal to member pages; renderer code exists | Review thread found exact direct ownership not proven by current route config. | route precedence and production winner conflict | Phase 3/7 | exact route config, production winner, GET/HEAD/slash/query, Webflow bridge redirect | keep compatibility and do not remove front-gate/member-pages dependency until acceptance proof |
+| Renewal route owner | RESOLVED_REDIRECT_ONLY | `/sigil/pay/renewal`, `/pay/renewal` | `member-dashboard-chat-worker` redirect-only bridge | rendered renewal fallback UI | production route patch + redirect renderer + CI/smoke lock | Signed `t` hands off to `/sigil/pay?t=...`; unsigned hands off to `/sigil/member/membership?intent=renew`; no visible fallback UI. | restoring stale renewal page | Phase 7 | GET/HEAD/slash/query keep redirect-only contract | keep compatibility routes redirect-only |
 | Membership page owner | RESOLVED | `/sigil/member/membership` | Webflow page; `member-pages-worker` retains LIFF/API responsibilities | `/member/membership` as canonical, abbreviated Worker renderer, admin-worker, payment worker | published Webflow route, `mmd-redirect-worker/src/index.js` | User route lock places the membership gate inside SIGIL and the published Webflow page is the complete intended UI; payment and membership truth remain separate backend concerns. | front gate pass-through dependency | Phase 3A | full Webflow UI visible, legacy 301 query preservation, LIFF API still Worker-owned, no auto-renewal redirect | keep aliases and Worker fallback code |
-| Payment evidence page owner | RESOLVED | `/pay/membership` | Page: `member-pages-worker`; API truth: `payments-worker` target | frontend activation, admin-only page | `member-pages-worker/src/index.js` | UI evidence submission is separate from payment truth. | API owner not fully enumerated | Phase 2/7 | proof does not activate membership; pending page works | keep admin review backend |
+| Public Membership page owner | RESOLVED | `/pay/membership` | Webflow presentation; backend package/payment intent APIs; `payments-worker` money truth | legacy payment-evidence interpretation | Webflow Public Membership page + Public/Private lane lock | Member / Elite / Red Card selection only; signed Public checkout is `/pay/checkout?t=...`. | treating membership selection as payment status/proof | Phase 2/7 | package catalog + LINE session + signed checkout handoff | keep payment authority server-side |
 | Board page/API split | RESOLVED | `/sigil/board` page, `/sigil/board/runtime*` APIs | Page: Webflow; APIs: `sigil-board-worker` | `sigil-worker`, `immigrate-worker`, catch-all | registry, `workers/sigil-board-worker/*` | Visible route and API routes have different owners. | API Worker swallowing visible page | Phase 5/10 | visible page not JSON; runtime read-only; POST auth | keep Webflow page |
 | Trust/login aliases | TEMPORARY_DECISION | `/sigil/start` | TBD Webflow target; current aliases via `mmd-redirect-worker` | independent alias pages | `mmd-redirect-worker/src/index.js` | Canonical visible owner not yet proven. | alias sprawl | Phase 2A then 6A | prove `/sigil/start`, query behavior | keep current aliases |
 | Member dashboard owner | BLOCKED | `/member/dashboard` | TBD non-legacy owner | `immigrate-worker` canonical, generic recovery shell | `mmd-redirect-worker/src/index.js`, `immigrate-worker/src/index.ts` | Current owner is legacy bridge. | member status/auth truth risk | Phase 3A | login/session, `mmd_member_id`, dashboard state | retain front gate/legacy until replacement |
@@ -85,7 +88,7 @@ Base: `origin/main` at `dbc4669`
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Complete immigrate-worker machine classification | `/v1/admin/ping`, `/v1/admin/clients/lineage-lookup`, `/v1/admin/clients/recent`, `/v1/admin/models/search`, `/v1/admin/job/draft`, `/v1/admin/create-session`, `/v1/admin/create-job`, `/v1/admin/jobs/create-session`, `/v1/admin/line/push` | Namespace exception list preserved 9 routes, but `worker_classifications` summarized only the 3 create-session/create-job aliases. | Machine consumers could remove or capture the other 6 bridge routes from stale classification text. | `/v1/admin/*` namespace exception map; `immigrate-worker/wrangler.toml`; `immigrate-worker/src/internal-routes.ts`; prior B4B decision log. | Bridge count parity 9/9. | `immigrate-worker` remains legacy/temporary compatibility bridge only, not canonical business owner. | `immigrate-worker` ingress: 6 path-preserving bridges and 3 normalized aliases. | `admin-worker` or endpoint-specific upstream operation behind `ADMIN_WORKER`. | Direct canonical clients, equivalent auth/header/query behavior, and accepted migration before wildcard capture or bridge removal. | none |
 | Complete unresolved blocker index | Renewal, SIGIL Apply, SIGIL booking APIs, realtime, Telegram, and existing unresolved entries | Route and namespace records had unresolved production-owner states, but `unresolved_decisions` was a partial historical list. | A later phase treating the machine index as the blocker queue could miss route-attachment and handler work. | route records, namespace records, unresolved table, decision log. | Machine-readable blocker queue mirrors current unresolved truth. | UNRESOLVED entries remain unresolved; no candidate was promoted to canonical. | candidate owners remain evidence-bounded where applicable. | production owner remains unresolved until each acceptance gate passes. | Keep blocker queue complete before Phase 2/Phase 6 planning. | none |
-| Telegram production routing unresolved | `/telegram/webhook`, `/v1/webhook`, `/telegram/internal/send`, `/v1/internal/send`, `/v1/send`, plus complaint/preview aliases | Telegram endpoints were LOCKED to `telegram-worker` as canonical production owner. | Handlers exist, but current repo evidence proves workers.dev/internal consumers only and no exact custom-host route or service binding. | `telegram-worker/src/index.js`; `telegram-worker/wrangler.toml`; internal consumer URLs pointing at `telegram-worker.malemodel-bkk.workers.dev`. | PARTIAL INTEGRATION. | Production route ownership is UNRESOLVED. | `telegram-worker` implementation/candidate owner. | custom-host route or service binding TBD. | Prove exact route/binding, webhook path, send path, auth, aliases, and production smoke before locking production ownership. | none |
+| Telegram core production routing locked | `/telegram/webhook`, `/v1/webhook`, `/telegram/internal/send`, `/v1/internal/send`, `/v1/send` | Core Telegram production routing was UNRESOLVED because only workers.dev/internal-consumer evidence existed. | Exact apex/www routes are now declared for `telegram-worker`; deployment sync refuses route takeover, and an internal-auth deployment action asks `telegram-worker` to use its own runtime `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET_TOKEN` to hard-lock the Bot API webhook to the canonical route. GitHub does not need those Telegram secrets, and auth/secret fail-closed behavior is smoked after deploy. | `telegram-worker/src/index.js`; `telegram-worker/wrangler.toml`; `.github/workflows/deploy-telegram-worker.yml`. | LIVE CONNECTED / LOCKED for webhook + internal-send core. | `telegram-worker` is canonical production owner for these five core aliases. Complaint/preview aliases remain separately unresolved until exact production attachment is added. | `telegram-worker`. | `telegram-worker` exact apex/www routes. | Deploy workflow must pass route sync, webhook URL verification, invalid-secret smoke and unauthenticated internal-send smoke. | exact custom-host routes added; webhook lock enforced |
 
 ## Phase 1B.5B10 LIFF Queue, Partner Request, And Rich-Menu Ownership Correction
 
@@ -127,3 +130,75 @@ Base: `origin/main` at `dbc4669`
 No runtime implementation was performed.
 No route mutation was performed.
 No deploy or Webflow publish was performed.
+
+| Member payments owner | RESOLVED_TARGET | `/member/payments` | Webflow presentation + `member-pages-worker` member-safe BFF target + `payments-worker` money truth | admin-worker member/admin mixed facade | Webflow page id `69dfd6c51dd636056fdb35ea`, `#mmd-payments-maxx`, route lock `MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md` | Status/history/navigation only; never admin review or independent proof authority. | legacy admin facade can leak authority boundaries | Phase 3A/5 | prove member-safe `/v1/member/payments` BFF and production route before retiring bridge | retain legacy bridge only until acceptance |
+
+## 2026-09-19 Public Access Visible Page Reconciliation
+
+Webflow now provides direct evidence for the visible `/public/access` presentation that was missing during the earlier Phase 1B.5B12 audit.
+
+- Webflow page: `6a58a1f259f7960f6edafce9`
+- published path: `/public/access`
+- active root: `#mmd-access-gate`
+- primary action: LINE LIFF status entry
+- secondary action: `/member/my-mmd`
+- current visible page contains no intake form and does not call `POST /public/api/access/intake`
+
+Decision override:
+- visible presentation source: **Webflow**;
+- normalized status: **PARTIAL INTEGRATION** until production GET/HEAD route smoke passes;
+- `public-access-worker` remains the separate implementation owner for `POST /public/api/access/intake`;
+- API live smoke remains pending and does not determine whether the visible gate exists;
+- do not reclassify the current access gate as an intake form unless product scope explicitly changes.
+
+## 2026-09-19 Member Payments BFF Source Implementation
+
+The previously locked target architecture for `/member/payments` now has explicit source implementation.
+
+- visible page: Webflow `69dfd6c51dd636056fdb35ea`, root `#mmd-payments-maxx`
+- browser endpoint: `GET /v1/member/payments`
+- front gate: `member-dashboard-chat-worker` exact apex/www route
+- transport: `MEMBER_PAGES_WORKER` service binding
+- BFF: `member-pages-worker/src/member-payments-bff.js`
+- BFF schema: `mmd_member_payments_v1`
+- identity: signed LIFF/member session only
+- current intent: server-created payment snapshot from the short-lived session only
+- verified history: customer-safe member profile / Customer 360 projection
+- money authority: `payments-worker` remains unchanged
+- signed resume URLs: exact backend-issued `/pay/checkout?t=...` or `/sigil/pay?t=...` only
+
+Decision:
+- source state becomes **PARTIAL INTEGRATION / LOCKED_SOURCE**;
+- production ingress and authenticated acceptance remain pending until deploy/smoke;
+- legacy admin delegation must remain until those acceptance checks pass;
+- no browser-selected identity, amount, payment_ref, payment lane, verification or entitlement is accepted.
+
+
+## Phase 1 Route Ownership Cleanup — Production Superseding Snapshot (2026-09-22)
+
+This section supersedes older Phase 1 `UNRESOLVED` / `PARTIAL` labels for the routes listed below. Older rows are retained as historical evidence only.
+
+| Surface | Canonical production owner | Production acceptance |
+| --- | --- | --- |
+| `/`, `/profiles`, `/public/access` | Webflow presentation | post-retirement live 200 smoke with no legacy front-gate interception |
+| `/member/login` | Webflow presentation; My MMD/LIFF Worker remains identity authority | Webflow no-script route exclusion + live page smoke |
+| `/member/dashboard` | Webflow presentation | Webflow no-script route exclusion + live page smoke |
+| `/member/membership`, `/member/promotion` | Webflow presentation | post-retirement live 200 smoke |
+| `/blackcard`, `/blackcard/black-card` | Webflow presentation; compatibility page retained outside sitemap for legacy alias | post-retirement live 200 smoke on both paths |
+| `/api/member/dashboard` | `member-dashboard-chat-worker` → `member-pages-worker` | owner/upstream headers + unauth boundary smoke |
+| `/pay/renewal`, `/sigil/pay/renewal` | `member-dashboard-chat-worker` redirect-only compatibility | 307 + canonical renewal target smoke |
+| SIGIL booking API subset | `sigil-booking-worker` | exact custom-host routes + owner header/CORS smoke |
+| `/v1/partner/*` | `partners-worker` | production route + login boundary smoke |
+| `/v1/rt/*` | `realtime-worker` | dedicated zone route sync + owner health + fail-closed room smoke |
+| `/sigil/apply*`, `/sigil/api/private-model/*` | `sigil-worker` | custom-host route sync + GET/HEAD/OPTIONS/invalid-POST smoke |
+| `/blackcard/black-card` | Webflow compatibility page for canonical `/blackcard` surface | compatibility page excluded from sitemap and published on apex + www |
+| `/sigil/admin/login`, `/admin/login` | `admin-worker` redirect-only compatibility aliases → `/internal/admin/login` | exact apex/www routes; GET/HEAD 308 with query preservation; non-navigation methods fail closed |
+| `/sigil/internal/admin/login` | `admin-worker` compatibility login surface | exact `/sigil/internal/admin*` route family remains canonical Worker-owned |
+| `/sigil/admin` | Webflow presentation | post-retirement live 200 smoke; login remains separate `admin-worker` route |
+| `/webhooks/line`, `/webhooks/line/mms` | `member-dashboard-chat-worker` | exact apex/www route config + production LINE/MMS ownership smoke |
+| `/telegram/webhook`, `/v1/webhook`, `/telegram/internal/send`, `/v1/internal/send`, `/v1/send` | `telegram-worker` | exact apex/www route sync + canonical Telegram webhook repair + secret/auth-boundary smoke |
+| `mmd-redirect-worker` | no canonical ownership | source is HARD DISABLED/pass-through only; production route table verified at zero |
+
+Final Phase 1 retirement gate: `.github/workflows/retire-mmd-redirect-worker-production.yml` snapshots every production route still attached to `mmd-redirect-worker`, verifies replacement surfaces, retires only those legacy routes, runs production acceptance, and restores the snapshot automatically if acceptance fails.
+
+Control Room V2 must not treat an older historical `UNRESOLVED` row as current truth when the same surface appears in this superseding snapshot.

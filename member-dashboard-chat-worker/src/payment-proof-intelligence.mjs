@@ -193,12 +193,61 @@ function scoreSession(record, amountThb, explicitTip) {
   return null;
 }
 
-export function inferServicePaymentPurpose({ amount_thb, sessions = [], context_text = "" } = {}) {
+function rankedServicePaymentCandidates({ amount_thb, sessions = [], context_text = "" } = {}) {
   const explicitTip = /(\btip\b|\btips\b|ทิป|ค่าทิป)/i.test(clean(context_text));
-  const ranked = sessions.map((record) => ({ record, score: scoreSession(record, amount_thb, explicitTip) })).filter((item) => item.score).sort((a, b) => b.score.confidence - a.score.confidence);
+  return sessions
+    .map((record) => ({ record, score: scoreSession(record, amount_thb, explicitTip) }))
+    .filter((item) => item.score)
+    .sort((a, b) => b.score.confidence - a.score.confidence);
+}
+
+function sessionSummary(record, score = null) {
+  const f = record?.fields || {};
+  const amounts = sessionAmounts(record);
+  return {
+    session_record_id: clean(record?.id) || null,
+    session_id: clean(f.session_id || f["Session ID"]) || null,
+    job_id: clean(f.job_id || f["Job ID"]) || null,
+    client_name: clean(f.client_name || f["Client Name"]) || null,
+    model_name: clean(f.model_name || f["Assigned Model"] || f.Model) || null,
+    job_type: clean(f.job_type || f["Session Type"]) || null,
+    job_date: clean(f.job_date || f["Session Date"]) || null,
+    start_time: clean(f.start_time || f["Start Time"]) || null,
+    end_time: clean(f.end_time || f["End Time"]) || null,
+    location_name: clean(f.location_name || f.Location || f["Location (สถานที่)"]) || null,
+    session_state: clean(f.session_state || f["Session Status"] || f.status) || null,
+    total_thb: amounts.total,
+    balance_due_thb: amounts.balance,
+    paid_received_thb: amounts.received,
+    match_stage: clean(score?.stage) || null,
+    match_label: clean(score?.label) || null,
+    match_basis: clean(score?.basis) || null,
+    match_confidence: Number.isFinite(Number(score?.confidence)) ? Number(score.confidence) : null,
+  };
+}
+
+export function servicePaymentCandidates({ amount_thb, sessions = [], context_text = "", max = 5 } = {}) {
+  const limit = Math.max(1, Math.min(Number(max) || 5, 5));
+  return rankedServicePaymentCandidates({ amount_thb, sessions, context_text })
+    .slice(0, limit)
+    .map(({ record, score }) => sessionSummary(record, score));
+}
+
+export function inferServicePaymentPurpose({ amount_thb, sessions = [], context_text = "" } = {}) {
+  const ranked = rankedServicePaymentCandidates({ amount_thb, sessions, context_text });
   if (!ranked.length) return null;
   const [top, second] = ranked;
-  if (second && second.score.confidence >= top.score.confidence - 0.02 && second.record.id !== top.record.id) return { inferred_stage: "unknown", inferred_label: "ต้องตรวจประเภทเงิน", confidence: 0.6, ambiguous: true, match_basis: "multiple_session_candidates", session_record_id: null };
+  if (second && second.score.confidence >= top.score.confidence - 0.02 && second.record.id !== top.record.id) {
+    return {
+      inferred_stage: "unknown",
+      inferred_label: "ต้องตรวจประเภทเงิน",
+      confidence: 0.6,
+      ambiguous: true,
+      match_basis: "multiple_session_candidates",
+      session_record_id: null,
+      candidate_count: ranked.length,
+    };
+  }
   return { inferred_stage: top.score.stage, inferred_label: top.score.label, confidence: top.score.confidence, ambiguous: false, match_basis: top.score.basis, session_record_id: top.record.id, session_id: top.score.session_id || null, job_id: top.score.job_id || null };
 }
 
@@ -259,7 +308,9 @@ export async function analyzeProductionPaymentProof({ env = {}, image, lineUserI
     }
   }
 
-  const service = inferServicePaymentPurpose({ amount_thb: extraction.amount_thb, sessions: [...sessionMap.values()], context_text: contextText });
+  const sessionRecords = [...sessionMap.values()];
+  const service = inferServicePaymentPurpose({ amount_thb: extraction.amount_thb, sessions: sessionRecords, context_text: contextText });
+  const serviceCandidates = servicePaymentCandidates({ amount_thb: extraction.amount_thb, sessions: sessionRecords, context_text: contextText, max: 5 });
   const renewalPackage = canonicalMembershipPackage(renewal?.fields?.requested_package || renewal?.fields?.package_code);
   const membership = inferMembershipPayment({ amount_thb: extraction.amount_thb, linked_member: Boolean(member?.id), linked_renewal: Boolean(renewal?.id), package_code: renewalPackage, source_context: "line_ofc_cloudflare_payment_proof" });
   const renewalPackageMismatch = Boolean(renewalPackage && membership && membership.inferred_package_code !== renewalPackage);
@@ -268,6 +319,39 @@ export async function analyzeProductionPaymentProof({ env = {}, image, lineUserI
     : choosePurpose({ membership, service, contextText, renewal }) || { inferred_stage: "unknown", inferred_label: "ยังระบุประเภทเงินไม่ได้", confidence: 0, ambiguous: false, match_basis: "no_supported_payment_purpose" };
   const sessionRecordId = !intelligence.ambiguous && ["deposit", "final", "full", "tips"].includes(clean(intelligence.inferred_stage)) ? clean(intelligence.session_record_id) : "";
   const links = { member: clean(member?.id), client: clean(client?.id), renewal: clean(renewal?.id), session: sessionRecordId };
+  let jobCorrelation;
+  if (clean(intelligence.inferred_stage) === "membership") {
+    jobCorrelation = { status: "not_applicable", reason: "membership_payment", candidate_count: 0, selected: null, candidates: [] };
+  } else if (sessionRecordId) {
+    const selectedRecord = sessionMap.get(sessionRecordId) || null;
+    const selected = selectedRecord ? sessionSummary(selectedRecord, scoreSession(selectedRecord, extraction.amount_thb, /(\btip\b|\btips\b|ทิป|ค่าทิป)/i.test(clean(contextText)))) : serviceCandidates[0] || null;
+    jobCorrelation = {
+      status: selected ? "exact" : "unresolved",
+      reason: selected ? clean(intelligence.match_basis) || "unique_session_match" : "selected_session_missing",
+      confidence: Number(intelligence.confidence) || null,
+      candidate_count: selected ? 1 : 0,
+      selected,
+      candidates: selected ? [selected] : [],
+    };
+  } else if (service?.ambiguous === true && serviceCandidates.length) {
+    jobCorrelation = {
+      status: "ambiguous",
+      reason: clean(service.match_basis) || "multiple_session_candidates",
+      confidence: Number(service.confidence) || null,
+      candidate_count: serviceCandidates.length,
+      selected: null,
+      candidates: serviceCandidates,
+    };
+  } else {
+    jobCorrelation = {
+      status: "unresolved",
+      reason: !links.member && !links.client ? "canonical_customer_unresolved" : serviceCandidates.length ? "service_match_below_unique_threshold" : "no_matching_job_session",
+      confidence: Number(intelligence.confidence) || 0,
+      candidate_count: serviceCandidates.length,
+      selected: null,
+      candidates: serviceCandidates,
+    };
+  }
   const missing = [];
   if (!links.member && !links.client) missing.push("canonical_customer");
   if (!clean(extraction.payment_ref)) missing.push("payment_ref");
@@ -290,7 +374,25 @@ export async function analyzeProductionPaymentProof({ env = {}, image, lineUserI
     links,
     customer: { status: memberLookup.ambiguous || clientLookup.ambiguous ? "ambiguous" : links.member || links.client ? "matched" : "unmatched", member_record_id: links.member || null, client_record_id: links.client || null, display_name: clientLabel(client) || null, source: links.member ? "members.line_id" : links.client ? "clients.line_user_id" : null },
     payment_intelligence: { ...intelligence, tracking_kind: trackingKind, official_verification_required: true, may_mark_paid: false },
-    review_summary: { image_class: classification.image_class, customer_match: links.member ? "member" : links.client ? "client" : "unmatched", client_name: clientLabel(client) || null, payment_stage: intelligence.inferred_stage, tracking_kind: trackingKind, payment_label: intelligence.inferred_label, confidence: intelligence.confidence, missing, recommended_admin_reason: reasonParts.filter(Boolean).length ? `ระบบตรวจแล้ว · ${reasonParts.filter(Boolean).join(" · ")}` : "ระบบยังจับคู่ข้อมูลการชำระเงินไม่ครบ" },
+    job_correlation: jobCorrelation,
+    review_summary: {
+      image_class: classification.image_class,
+      customer_match: links.member ? "member" : links.client ? "client" : "unmatched",
+      client_name: clientLabel(client) || null,
+      payment_stage: intelligence.inferred_stage,
+      tracking_kind: trackingKind,
+      payment_label: intelligence.inferred_label,
+      confidence: intelligence.confidence,
+      job_correlation_status: jobCorrelation.status,
+      job_id: jobCorrelation.selected?.job_id || null,
+      session_id: jobCorrelation.selected?.session_id || null,
+      model_name: jobCorrelation.selected?.model_name || null,
+      job_date: jobCorrelation.selected?.job_date || null,
+      location_name: jobCorrelation.selected?.location_name || null,
+      candidate_count: jobCorrelation.candidate_count || 0,
+      missing,
+      recommended_admin_reason: reasonParts.filter(Boolean).length ? `ระบบตรวจแล้ว · ${reasonParts.filter(Boolean).join(" · ")}` : "ระบบยังจับคู่ข้อมูลการชำระเงินไม่ครบ",
+    },
     ops_route: opsRoute,
     settlement_context: {
       member_email: memberEmail(member) || null,

@@ -76,6 +76,17 @@ test('wrong customer, wrong model, unapproved media, wrong type and public-bucke
   const changes=[f=>{f.grant.fields.Client=['recOther'];},f=>{f.asset.fields.Model=['recOther'];},f=>{f.asset.fields.private_safe=false;},f=>{f.asset.fields.review_status='pending_review';},f=>{f.grant.fields.payload_json=JSON.stringify({preview_kind:'private_clip'});},f=>{f.asset.fields.r2_bucket='mmd-models';},f=>{f.grant.fields.view_limit=2;},f=>{f.grant.fields.view_count=NaN;}];
   for(const change of changes){const f=setup();change(f);assert.notEqual((await handlePrivatePreview(req(),f.env)).status,200);assert.equal(f.storage.has('consumed'),false);}
 });
+test('Private Teaser consumption requires explicit teaser approval and never falls back to private_safe',async()=>{
+  const f=setup();
+  f.grant.fields.payload_json=JSON.stringify({preview_kind:'private_pic',access_lane:'private_teaser'});
+  f.asset.fields.private_safe=false;f.asset.fields.teaser_safe=true;
+  assert.equal((await handlePrivatePreview(req(),f.env)).status,200);
+  const blocked=setup();
+  blocked.grant.fields.payload_json=JSON.stringify({preview_kind:'private_pic',access_lane:'private_teaser'});
+  blocked.asset.fields.private_safe=true;blocked.asset.fields.teaser_safe=false;
+  assert.notEqual((await handlePrivatePreview(req(),blocked.env)).status,200);
+  assert.equal(blocked.storage.has('consumed'),false);
+});
 test('missing session and cross-origin consume cannot burn a grant',async()=>{
   const f=setup();assert.equal((await handlePrivatePreview(req('consume',{origin:'https://evil.example'}),f.env)).status,403);
   assert.equal((await handlePrivatePreview(req('consume',{cookie:''}),f.env)).status,401);assert.equal(f.storage.has('consumed'),false);

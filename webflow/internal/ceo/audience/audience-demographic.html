@@ -1,0 +1,81 @@
+<section class="aud27" id="aud27" data-mmd-color-lock="ceo-audience" data-mmd-headline-gradient="off" data-audience-endpoint="/v1/admin/audience/brief">
+  <aside class="aud27-side">
+    <a class="aud27-brand" href="/internal/ceo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a1cd2b25096daa2e996fe68_MMD%20Prive%20Trans.png" alt="MMD Privé"><span><strong>MMD PRIVÉ</strong><small>AUDIENCE INTELLIGENCE</small></span></a>
+    <nav class="aud27-nav" aria-label="Audience Intelligence sections">
+      <button class="is-active" data-go="#aud-overview"><i>01</i><span>Brief</span></button>
+      <button data-go="#aud-live"><i>02</i><span>Live Signals</span></button>
+      <button data-go="#aud-actions"><i>03</i><span>Next Actions</span></button>
+      <button data-go="#aud-campaign"><i>04</i><span>Campaign Lab</span></button>
+      <button data-go="#aud-history"><i>05</i><span>History</span></button>
+      <button data-go="#aud-guard"><i>06</i><span>Guardrails</span></button>
+    </nav>
+    <div class="aud27-sidefoot"><a href="/internal/ceo">← CEO Control</a><a href="/internal/admin/customer-data">↗ Customer Data</a><a href="/internal/ceo/models">↗ Model Assets</a><p>INTERNAL · DECISION SUPPORT<br>NO BROADCAST FROM WEBFLOW</p></div>
+  </aside>
+
+  <div class="aud27-app">
+    <header class="aud27-top">
+      <div><p class="aud27-route">/internal/ceo/audience · CEO DECISION SUPPORT</p><h1>Audience Intelligence</h1><p class="aud27-sub">ดูว่า audience กำลังเปลี่ยนยังไง → แปลว่าอะไร → แล้วกดไปทำงานต่อในหน้าที่ถูกต้อง</p></div>
+      <div class="aud27-topright"><span class="aud27-chip" data-api-state>LIVE DATA · CHECKING</span><span class="aud27-chip is-persona">LINE: เปอร์ / เปอร์ AI</span><div class="aud27-kenji"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69fb506861d22990dd3cf2b1_Kenji%20AR.png" alt="Kenji"><span><b>KENJI</b><small>Audience Guide</small></span></div></div>
+    </header>
+
+    <main class="aud27-main">
+      <section class="aud27-hero" id="aud-overview">
+        <article class="aud27-brief">
+          <span class="aud27-kicker">CEO BRIEF</span>
+          <h2 data-brief-title>ยังไม่ควรเดา audience จาก snapshot เก่า</h2>
+          <p data-brief-copy>หน้านี้จะใช้ข้อมูล live เมื่อ backend พร้อมครับ ระหว่างนี้ตัวเลขเก่าถูกย้ายไป History และติดวันที่ชัดเจน ไม่เอามาปนเป็น KPI ปัจจุบัน</p>
+          <div class="aud27-actions"><button class="aud27-btn is-primary" data-refresh>Refresh signals</button><a class="aud27-btn" href="/internal/admin/customer-data">ดู Customer Data ↗</a><a class="aud27-btn" href="/internal/admin/control-room">เปิด Control Room ↗</a></div>
+        </article>
+        <aside class="aud27-now"><div class="aud27-nowhead"><span>WHAT MATTERS NOW</span><b data-brief-state>WAITING DATA</b></div><div class="aud27-nowlist" data-priority-list><p><i>1</i><span><strong>Live audience signal</strong><small>รอ authenticated backend brief</small></span></p><p><i>2</i><span><strong>Conversion context</strong><small>เช็ก booking / payment ก่อนสรุป revenue</small></span></p><p><i>3</i><span><strong>Campaign timing</strong><small>ใช้ calendar + demand signal ก่อนยิงโปร</small></span></p></div></aside>
+      </section>
+
+      <section class="aud27-section" id="aud-live">
+        <div class="aud27-sectionhead"><div><span class="aud27-kicker">LIVE SIGNALS</span><h2>ตัวเลขต้องมาจาก source ที่ยืนยันได้</h2></div><p>ไม่มี live source = แสดง WAITING ไม่สร้างเปอร์เซ็นต์เอง</p></div>
+        <div class="aud27-signals">
+          <article><span>LINE Audience</span><strong data-signal="audience">WAITING</strong><p data-note="audience">Contacts / reaches / blocks / friend period</p></article>
+          <article><span>Engagement</span><strong data-signal="engagement">WAITING</strong><p data-note="engagement">Chat / reply / campaign response trend</p></article>
+          <article><span>Booking Conversion</span><strong data-signal="booking">WAITING</strong><p data-note="booking">Intent → request → confirmed session</p></article>
+          <article><span>Revenue Mix</span><strong data-signal="revenue">WAITING</strong><p data-note="revenue">Payment / session evidence only</p></article>
+        </div>
+        <div class="aud27-sourcebar"><span>EXPECTED SOURCES</span><code>LINE OFC</code><code>Customer Data</code><code>Booking</code><code>Payments</code><code>Calendar</code><b>Webflow = presentation only</b></div>
+      </section>
+
+      <section class="aud27-section" id="aud-actions">
+        <div class="aud27-sectionhead"><div><span class="aud27-kicker">NEXT BEST ACTION</span><h2>แนะนำแล้วต้องมีทางไปต่อ</h2></div><span class="aud27-status" data-decision-state>RULE-BASED UNTIL LIVE DATA</span></div>
+        <div class="aud27-decisiongrid">
+          <article class="aud27-decision"><div><span>IF</span><strong>Chat / Reach ขึ้น แต่ Booking ไม่ขึ้น</strong></div><p>อย่ารีบยิง broadcast เพิ่ม ให้ตรวจ funnel และ request quality ก่อน</p><div class="aud27-actions"><a class="aud27-btn is-primary" href="/internal/admin/customer-data">ตรวจ Audience / Client ↗</a><a class="aud27-btn" href="/internal/admin/control-room">ดู Ops Funnel ↗</a></div></article>
+          <article class="aud27-decision"><div><span>IF</span><strong>Demand ขึ้น แต่ Model supply ต่ำ</strong></div><p>หยุดขยาย reach ก่อน แล้วเช็ก model readiness / availability ให้พอรับ demand</p><div class="aud27-actions"><a class="aud27-btn is-primary" href="/internal/ceo/models">ดู Model Supply ↗</a><a class="aud27-btn" href="/internal/admin/studio">เปิด Studio ↗</a></div></article>
+          <article class="aud27-decision"><div><span>IF</span><strong>Holiday / payday ใกล้ และ intent เริ่มขยับ</strong></div><p>เตรียม campaign ก่อนวันจริง แต่ต้องเช็ก supply, payment flow และ message fatigue พร้อมกัน</p><div class="aud27-actions"><button class="aud27-btn is-primary" data-go="#aud-campaign">เปิด Campaign Lab</button><a class="aud27-btn" href="/internal/admin/payments">เช็ก Payments ↗</a></div></article>
+          <article class="aud27-decision"><div><span>IF</span><strong>Block / opt-out เพิ่มหลัง campaign</strong></div><p>ลด frequency, แยก segment และหยุดใช้ urgency ซ้ำกับฐานเก่า</p><div class="aud27-actions"><a class="aud27-btn is-primary" href="/internal/admin/customer-data">แยก Segment ↗</a><a class="aud27-btn" href="/internal/ceo/kenji-control">Ask Kenji ↗</a></div></article>
+        </div>
+      </section>
+
+      <section class="aud27-grid2" id="aud-campaign">
+        <article class="aud27-card">
+          <div class="aud27-cardhead"><div><span class="aud27-kicker">CAMPAIGN LAB</span><h2>ก่อนทำโปร เช็ก 4 อย่าง</h2></div><span class="aud27-status">PLAN ONLY</span></div>
+          <div class="aud27-checklist"><label><input type="checkbox" data-campaign-check><span><b>Audience</b><small>segment นี้กำลัง active จริงไหม</small></span></label><label><input type="checkbox" data-campaign-check><span><b>Supply</b><small>model / therapist พร้อมพอไหม</small></span></label><label><input type="checkbox" data-campaign-check><span><b>Operations</b><small>booking + payment รับ volume ได้ไหม</small></span></label><label><input type="checkbox" data-campaign-check><span><b>Timing</b><small>holiday / payday / competing campaign ชนกันไหม</small></span></label></div>
+          <div class="aud27-campaignstate"><strong data-campaign-state>0 / 4 READY</strong><p>Webflow จะไม่ส่ง broadcast และไม่ถือว่า campaign approved</p></div>
+        </article>
+        <article class="aud27-card">
+          <div class="aud27-cardhead"><div><span class="aud27-kicker">KENJI PLAYBOOK</span><h2>สถานการณ์นี้ รับมือยังไง</h2></div></div>
+          <div class="aud27-playbook"><button class="is-active" data-play="old">ฐานเก่าเงียบ</button><button data-play="promo">ทำโปรติดกัน</button><button data-play="supply">คนถามเยอะ คนไม่พอ</button><button data-play="conversion">คนคุยเยอะ ไม่จอง</button></div>
+          <div class="aud27-playcopy" data-playcopy><strong>เปิดห้องก่อน อย่าเริ่มด้วยส่วนลด</strong><p>ฐานเก่าควรรู้สึกว่า “กลับมาได้โดยไม่ต้องเริ่มใหม่” แล้วค่อยให้เลือก intent เพื่อ segment ต่อ</p><div class="aud27-actions"><a class="aud27-btn is-primary" href="/internal/admin/customer-data">เปิด Customer Data ↗</a><a class="aud27-btn" href="/internal/ceo/kenji-control">คุยกับ Kenji ↗</a></div></div>
+        </article>
+      </section>
+
+      <section class="aud27-section" id="aud-history">
+        <div class="aud27-sectionhead"><div><span class="aud27-kicker">HISTORICAL REFERENCE</span><h2>Demographic · ข้อมูลอ้างอิง</h2></div><span class="aud27-status is-history">SNAPSHOT · 2026-06-01</span></div>
+        <details class="aud27-history" id="aud-demographic"><summary>Demographic · ข้อมูล LINE วันที่ 1 มิ.ย. 2026 <span>+</span></summary><p>เพศชาย 90.8% · กรุงเทพฯ 72.2% · ช่วงอายุที่มากที่สุด 35–39 ปี</p><div class="aud27-historygrid"><article><span>Contacts</span><strong>5,288</strong></article><article><span>Target reaches</span><strong>3,073</strong></article><article><span>Blocks</span><strong>1,513</strong></article><article><span>Male</span><strong>90.8%</strong></article><article><span>Bangkok</span><strong>72.2%</strong></article><article><span>&gt; 1 year friends</span><strong>93.2%</strong></article><article><span>iOS</span><strong>62.1%</strong></article><article><span>Age peak</span><strong>35–39</strong></article></div><p>Snapshot LINE วันที่ 1 มิ.ย. 2026 สำหรับดูโครงผู้ติดตามในอดีต ก่อนวางแคมเปญใหม่ให้ตรวจข้อมูลปัจจุบันจาก LINE OFC อีกครั้ง</p></details>
+      </section>
+      <script>(function(){function openDemographic(){if(location.hash!=="#aud-demographic")return;var panel=document.getElementById("aud-demographic");if(panel){panel.open=true;panel.scrollIntoView({block:"start"})}}window.addEventListener("hashchange",openDemographic);if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",openDemographic,{once:true});else openDemographic()})();</script>
+
+      <section class="aud27-grid2" id="aud-guard">
+        <article class="aud27-card"><div class="aud27-cardhead"><div><span class="aud27-kicker">PERSONA ROUTING</span><h2>ใครพูดกับใคร</h2></div></div><div class="aud27-lines"><p><span>Customer · LINE Official</span><strong>เปอร์ / เปอร์ AI</strong></p><p><span>CEO / Internal Web</span><strong>Kenji</strong></p><p><span>Customer-safe CTA</span><strong>ให้เปอร์ช่วยดู / ส่ง Request</strong></p><p><span>Final approval</span><strong>Boss / canonical backend owner</strong></p></div></article>
+        <article class="aud27-card"><div class="aud27-cardhead"><div><span class="aud27-kicker">SAFETY LOCK</span><h2>Audience page ทำอะไรไม่ได้</h2></div></div><div class="aud27-locks"><p>× ไม่ส่ง LINE broadcast จาก Webflow</p><p>× ไม่สร้าง customer truth / payment truth</p><p>× ไม่ auto-grant Membership / Access</p><p>× ไม่ expose private model assets</p><p>× ไม่เปลี่ยน historical snapshot ให้เป็น live KPI</p></div></article>
+      </section>
+
+      <section class="aud27-footpanel"><div><span class="aud27-kicker">QUICK ROUTES</span><h2>จาก Audience ไปงานจริง</h2></div><div class="aud27-quick"><a href="/internal/admin/customer-data"><span>Customer Data</span><b>Segment / context ↗</b></a><a href="/internal/ceo/models"><span>Model Assets</span><b>Supply / readiness ↗</b></a><a href="/internal/admin/payments"><span>Payments</span><b>Conversion truth ↗</b></a><a href="/internal/admin/membership-access"><span>Access</span><b>Entitlement ↗</b></a><a href="/internal/ceo/kenji-control"><span>Kenji Control</span><b>Decision support ↗</b></a><a href="/internal/ceo"><span>CEO Control</span><b>Back to brief ↗</b></a></div></section>
+    </main>
+  </div>
+  <div class="aud27-toast" data-toast aria-live="polite"></div>
+</section>

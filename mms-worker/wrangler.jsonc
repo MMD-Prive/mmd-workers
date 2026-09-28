@@ -11,6 +11,7 @@
     "head_sampling_rate": 1
   },
   "vars": {
+    "POSTHOG_PROJECT_TOKEN": "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK",
     "MMS_RUNTIME_SCOPE": "production",
     "MMS_INTERNAL_HOST": "mms.internal",
     "MMS_PUBLIC_BASE_URL": "https://mms-worker.malemodel-bkk.workers.dev",
@@ -33,6 +34,12 @@
     "AIRTABLE_OFFERS_TABLE_ID": "tblrSS5OegYNnGiEU",
     "AIRTABLE_SERVICE_ZONES_TABLE_ID": "tbl6VODlZSC0vJgJD"
   },
+  "services": [
+    {
+      "binding": "TELEGRAM_WORKER",
+      "service": "telegram-worker"
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "MMS_PRIVATE_UPLOADS",

@@ -54,6 +54,29 @@ test("admin login preserves the canonical secure form contract", async () => {
   assert.doesNotMatch(html, /access_code|\/v1\/admin\/auth\/login|\/kenji\/access-code\/validate/);
 });
 
+test("admin login preserves canonical CEO Models return path", () => {
+  assert.equal(normalizeNext("/internal/ceo/models"), "/internal/ceo/models");
+  assert.equal(normalizeNext("/internal/ceo/models?view=readiness"), "/internal/ceo/models?view=readiness");
+  assert.equal(
+    normalizeNext("/internal/ceo/models?token=secret"),
+    "/internal/admin/control-room",
+  );
+});
+
+test("admin login preserves selected internal work through the return path", async () => {
+  const selected = "/internal/admin/jobs/all?session_id=sess_123&page=2#job";
+  assert.equal(normalizeNext(selected), selected);
+  assert.equal(
+    normalizeNext("/internal/admin/shop/orders?order_id=shop_123"),
+    "/internal/admin/shop/orders?order_id=shop_123",
+  );
+  const html = await renderAdminLogin(new Request(
+    `https://www.mmdbkk.com/internal/admin/login?next=${encodeURIComponent(selected)}`,
+  )).text();
+  assert.match(html, /name="next" value="\/internal\/admin\/jobs\/all\?session_id=sess_123&amp;page=2#job"/);
+  assert.equal(normalizeNext("/internal/admin/jobs/all?token=secret"), "/internal/admin/control-room");
+});
+
 test("admin login next route fails closed", () => {
   assert.equal(normalizeNext("https://evil.example/internal/admin/control-room"), "/internal/admin/control-room");
   assert.equal(normalizeNext("//evil.example/internal/admin/control-room"), "/internal/admin/control-room");

@@ -85,14 +85,19 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
     stage = "upload";
     const fixtureBytes = decodeBase64(PNG_FIXTURE_BASE64);
     fileName = `mmd-model-media-e2e-${Date.now()}.png`;
-    const form = new FormData();
-    form.append("file", new Blob([fixtureBytes], { type: "image/png" }), fileName);
-    form.append("media_type", "public_gallery");
-
-    const uploadResponse = await delegatedWorker.fetch(new Request(`${url.origin}/v1/model/media/upload`, {
+    const planResponse = await delegatedWorker.fetch(new Request(`${url.origin}/v1/model/media/upload-url`, {
       method: "POST",
-      headers: { cookie, origin, accept: "application/json" },
-      body: form,
+      headers: { cookie, origin, accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ media_type: "public_gallery", file_name: fileName, content_type: "image/png", file_size_bytes: fixtureBytes.byteLength }),
+    }), env);
+    const plan = await planResponse.clone().json().catch(() => ({}));
+    if (!planResponse.ok || plan?.ok !== true || !plan?.upload_url || plan?.upload_method !== "PUT") {
+      throw smokeError("upload_plan", planResponse.status, plan?.error || "media_upload_plan_failed");
+    }
+    const uploadResponse = await delegatedWorker.fetch(new Request(plan.upload_url, {
+      method: "PUT",
+      headers: { cookie, origin, accept: "application/json", "content-type": "image/png" },
+      body: fixtureBytes,
     }), env);
     const upload = await uploadResponse.clone().json().catch(() => ({}));
     mediaId = clean(upload?.media?.media_id);
@@ -101,6 +106,9 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
     }
     if (clean(upload?.media?.file_name) !== fileName || clean(upload?.media?.file_type) !== "image/png") {
       throw smokeError("upload_projection", 502, "upload_projection_mismatch");
+    }
+    if (upload.review_required !== true || clean(upload?.media?.review_status) !== "pending_review") {
+      throw smokeError("review_queue", 502, "pending_review_not_observed");
     }
 
     stage = "registry";
@@ -166,8 +174,10 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
       checks: {
         model_session_authenticated: true,
         real_model_profile_read: true,
+        short_lived_upload_authorized: true,
         r2_write: true,
         media_record_created: true,
+        pending_review_observed: true,
         media_record_read_back: true,
         r2_file_opened: true,
         byte_match: true,

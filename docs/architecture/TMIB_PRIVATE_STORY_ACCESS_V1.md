@@ -23,7 +23,7 @@ Blocked, suspended, revoked, expired, guest, trial, unresolved and display-only 
 
 `POST /member/api/liff/tmib/episodes/act-001/purchase`
 
-The member-pages Worker creates/reuses a deterministic `payments-worker` intent for the verified LINE identity and returns the canonical signed `/sigil/pay?t=...` URL. The browser never chooses the authoritative amount or package. Payment proof alone is not a grant; access is issued only after canonical Paid + Verified/Approved state is observed.
+The member-pages Worker creates/reuses a deterministic `payments-worker` intent for the verified LINE identity and returns the canonical signed `/pay/checkout?t=...` URL. The browser never chooses the authoritative amount or package. Payment proof alone is not a grant; access is issued only after canonical Paid + Verified/Approved state is observed.
 
 ## Protected media
 

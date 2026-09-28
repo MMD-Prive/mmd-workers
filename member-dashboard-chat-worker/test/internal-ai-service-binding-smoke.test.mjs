@@ -13,7 +13,14 @@ test("internal AI service-binding smoke sends synthetic read-only context only",
           ok: true,
           data: {
             read_only: true,
-            evidence_discovery: { unavailable_is_not_not_found: true },
+            schema_version: "mmd.kenji_conversation_matrix.v1",
+            identity: { state: "unknown" },
+            safety: {
+              memory_is_context_only: true,
+              may_grant_entitlement: false,
+              may_confirm_payment: false,
+              may_confirm_booking_or_availability: false,
+            },
           },
         }), { status: 200, headers: { "content-type": "application/json" } });
       },
@@ -25,19 +32,20 @@ test("internal AI service-binding smoke sends synthetic read-only context only",
     ok: true,
     read_only: true,
     service: "ai-worker",
-    contract: "kenji_customer_reasoning_v1",
+    contract: "kenji_conversation_matrix_shadow_v1",
+    customer_side_effects: false,
   });
   assert.equal(upstreamRequest.method, "POST");
-  assert.equal(upstreamRequest.url, "https://ai-worker.local/v1/ai/kenji/customer-reasoning");
+  assert.equal(upstreamRequest.url, "https://ai-worker.local/v1/ai/kenji/conversation-matrix");
   assert.equal(upstreamRequest.headers.get("x-mmd-internal-call"), "true");
   assert.equal(upstreamRequest.headers.get("x-mmd-service-binding"), "member-dashboard-chat-worker");
 
   const body = await upstreamRequest.json();
   assert.equal(body.actor.role, "system");
   assert.equal(body.actor.purpose, "read_only_service_binding_smoke");
-  assert.equal(body.customer_context.synthetic, true);
-  assert.equal(body.customer_context.line_user_id, "");
-  assert.equal(body.customer_context.current_line_event.observed, false);
+  assert.equal(body.context_bundle.customer_context.synthetic, true);
+  assert.equal(body.context_bundle.identity.state, "unknown");
+  assert.equal(body.context_bundle.identity.canonical_client_ref, "");
   assert.equal(JSON.stringify(body).match(/replyToken|messageId|U[a-f0-9]{32}/gi), null);
 });
 
@@ -74,7 +82,17 @@ test("diagnostic route requires dedicated AI_SERVICE_SMOKE_TOKEN before invoking
         calls += 1;
         return new Response(JSON.stringify({
           ok: true,
-          data: { read_only: true, evidence_discovery: { unavailable_is_not_not_found: true } },
+          data: {
+            read_only: true,
+            schema_version: "mmd.kenji_conversation_matrix.v1",
+            identity: { state: "unknown" },
+            safety: {
+              memory_is_context_only: true,
+              may_grant_entitlement: false,
+              may_confirm_payment: false,
+              may_confirm_booking_or_availability: false,
+            },
+          },
         }), { headers: { "content-type": "application/json" } });
       },
     },
@@ -97,6 +115,7 @@ test("diagnostic route requires dedicated AI_SERVICE_SMOKE_TOKEN before invoking
     ok: true,
     read_only: true,
     service: "ai-worker",
-    contract: "kenji_customer_reasoning_v1",
+    contract: "kenji_conversation_matrix_shadow_v1",
+    customer_side_effects: false,
   });
 });

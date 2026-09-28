@@ -1,0 +1,491 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildOwnerActionsQueue } from "./src/owner-actions-queue.js";
+import { buildOwnerActionDetail } from "./src/owner-action-detail.js";
+
+test("owner actions queue deduplicates within each authoritative decision class", () => {
+  const queue = buildOwnerActionsQueue({
+    now: "2026-09-23T00:00:00.000Z",
+    money: [{ proof_id: "proof-1" }, { proof_id: "proof-1" }, { proof_id: "proof-2" }],
+    historical_recovery: [{ proof_id: "old-1" }, { proof_id: "old-1" }],
+    reconfirm: { available: true, items: [
+      { session_id: "s-1", status: "overdue" },
+      { session_id: "s-1", status: "overdue" },
+      { session_id: "s-2", status: "pending" },
+    ] },
+    members: [{ id: "m-1" }, { id: "m-1" }],
+    boss: [{ href: "/internal/admin/exceptions" }],
+    unavailable_sources: ["finance_audit", "mms", "hype", "unknown"],
+  });
+
+  assert.equal(queue.contract, "mmd_owner_actions_queue_v1");
+  assert.equal(queue.actions[0].action_key, "payment_review");
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
+    ["payment_review", 2],
+    ["historical_recovery", 1],
+    ["job_reconfirm_overdue", 1],
+    ["job_reconfirm_pending", 1],
+    ["membership_review", 1],
+    ["owner_exception", 1],
+  ]);
+  assert.deepEqual(queue.unavailable_sources, ["finance_audit", "mms", "hype"]);
+});
+
+test("owner actions queue uses stable source record ids for memberships and full authoritative lists", () => {
+  const queue = buildOwnerActionsQueue({
+    money: Array.from({ length: 8 }, (_, index) => ({ proof_id: `proof-${index}` })),
+    historical_recovery: Array.from({ length: 7 }, (_, index) => ({ proof_id: `historical-${index}` })),
+    members: [{ id: "rec-member-1" }, { id: "rec-member-2" }, { id: "rec-member-2" }],
+  });
+  const byKey = Object.fromEntries(queue.actions.map((item) => [item.action_key, item.count]));
+  assert.equal(byKey.payment_review, 8);
+  assert.equal(byKey.historical_recovery, 7);
+  assert.equal(byKey.membership_review, 2);
+});
+
+test("owner actions queue does not expose source names, payment refs, or raw notes", () => {
+  const queue = buildOwnerActionsQueue({
+    money: [{ proof_id: "proof-secret", customer_name: "Private Name", payment_ref: "bank-secret" }],
+    boss: [{ title: "Raw private note", text: "do not project", href: "/internal/admin/exceptions" }],
+  });
+
+  assert.equal(JSON.stringify(queue).includes("Private Name"), false);
+  assert.equal(JSON.stringify(queue).includes("bank-secret"), false);
+  assert.equal(JSON.stringify(queue).includes("Raw private note"), false);
+  assert.equal(queue.send_allowed, false);
+  assert.equal(queue.mutation_allowed, false);
+});
+
+test("owner actions queue keeps MMS routine backlog in source coverage and surfaces exceptions only", () => {
+  const queue = buildOwnerActionsQueue({
+    finance_audit: { available: true, reconciliation_count: 2, payout_hold_count: 1 },
+    mms: {
+      available: true,
+      operating_model: "bau_exception_only_v1",
+      application_review_count: 3,
+      prebooking_coordination_count: 4,
+      routine_application_count: 3,
+      routine_prebooking_count: 3,
+      exception_prebooking_count: 1,
+      exception_count: 1,
+    },
+    hype: { available: true, counts: { total: 2, overdue: 1, owner_actionable_overdue: 1, owner_actionable_by_kind: { entitlement_notification_incomplete: 1 } } },
+    source_coverage: [
+      { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 3 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 1, routine_count: 6, operating_model: "bau_exception_only_v1" },
+      { source: "hype", label: "HYPE operational watch", state: "partial", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 1 },
+    ],
+    unavailable_sources: ["hype"],
+  });
+
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
+    ["finance_reconciliation", 2],
+    ["finance_payout_hold", 1],
+    ["mms_prebooking_coordination", 1],
+    ["hype_entitlement_notification_overdue", 1],
+  ]);
+  assert.equal(queue.actions.some((item) => item.action_key === "mms_application_review"), false);
+  assert.deepEqual(queue.unavailable_sources, ["hype"]);
+  assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.action_count, item.routine_count, item.read_only]), [
+    ["finance_audit", "connected", 3, 0, true],
+    ["mms", "connected", 1, 6, true],
+    ["hype", "partial", 1, 0, true],
+  ]);
+  assert.equal(queue.queue_health.operating_model, "bau_exception_only_v1");
+  assert.equal(queue.queue_health.routine_source_records, 6);
+  assert.equal(queue.queue_health.phase_6_bau_ready, false);
+  assert.equal(JSON.stringify(queue).includes("bank-secret"), false);
+});
+
+
+
+test("phase 6 BAU readiness is true when MMS is exception-only and all sources are connected", () => {
+  const queue = buildOwnerActionsQueue({
+    mms: {
+      available: true,
+      operating_model: "bau_exception_only_v1",
+      routine_application_count: 18,
+      routine_prebooking_count: 2,
+      exception_prebooking_count: 0,
+      exception_count: 0,
+    },
+    hype: { available: true, counts: { owner_actionable_overdue: 0, owner_actionable_by_kind: {} } },
+    source_coverage: [
+      { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 0 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 0, routine_count: 20, operating_model: "bau_exception_only_v1" },
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0 },
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0 },
+    ],
+  });
+
+  assert.equal(queue.actions.some((item) => item.action_key.startsWith("mms_")), false);
+  assert.equal(queue.queue_health.routine_source_records, 20);
+  assert.equal(queue.queue_health.classification_complete, true);
+  assert.equal(queue.queue_health.source_coverage_complete, true);
+  assert.equal(queue.queue_health.phase_6_bau_ready, true);
+});
+
+test("availability operations surface only SLA follow-up or source exceptions", () => {
+  const queue = buildOwnerActionsQueue({
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "owner_action_required",
+        owner_action_required: 3,
+        follow_up_due: 1,
+        source_unavailable_models: 0,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 1 },
+    ],
+  });
+
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count, item.urgency]), [
+    ["availability_exception_review", 1, "urgent"],
+  ]);
+  assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.href]), [
+    ["availability", "connected", "/internal/admin/calendar"],
+  ]);
+
+  const onboardingBacklog = buildOwnerActionsQueue({
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "owner_action_required",
+        owner_action_required: 27,
+        follow_up_due: 0,
+        source_unavailable_models: 0,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0 },
+    ],
+  });
+  assert.equal(onboardingBacklog.actions.some((item) => item.action_key === "availability_exception_review"), false);
+
+  const current = buildOwnerActionsQueue({
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "coverage_current",
+        owner_action_required: 0,
+        follow_up_due: 0,
+        source_unavailable_models: 0,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0 },
+    ],
+  });
+  assert.equal(current.actions.some((item) => item.action_key === "availability_exception_review"), false);
+  assert.equal(current.source_coverage[0].state, "connected");
+});
+
+test("availability source attention is fail-closed and routes to Calendar", () => {
+  const input = {
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "source_attention",
+        owner_action_required: 0,
+        follow_up_due: 0,
+        source_unavailable_models: 2,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "partial", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 2 },
+    ],
+    unavailable_sources: ["availability"],
+  };
+  const queue = buildOwnerActionsQueue(input);
+  const action = queue.actions.find((item) => item.action_key === "availability_exception_review");
+  assert.equal(action.count, 2);
+  assert.equal(action.urgency, "attention");
+  assert.equal(action.authority, "sigil_availability_snapshot_v1");
+  assert.equal(action.href, "/internal/admin/calendar");
+  assert.deepEqual(queue.unavailable_sources, ["availability"]);
+
+  const detail = buildOwnerActionDetail(input, "availability_exception_review");
+  assert.equal(detail.drilldown.source_surface, "/internal/admin/calendar");
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.match(detail.drilldown.decision_boundary, /ห้ามเดาสถานะว่าง/);
+});
+
+
+
+test("HYPE watch-only backlog stays out while overdue items split into source cohorts", () => {
+  const watchOnly = buildOwnerActionsQueue({
+    hype: { available: true, counts: { total: 53, overdue: 0, watch: 53, owner_actionable_overdue: 0, owner_actionable_by_kind: {} } },
+    source_coverage: [
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0 },
+    ],
+  });
+  assert.equal(watchOnly.actions.some((item) => item.action_key.startsWith("hype_")), false);
+
+  const overdue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        total: 53,
+        overdue: 12,
+        watch: 41,
+        owner_actionable_overdue: 4,
+        owner_actionable_by_kind: {
+          entitlement_notification_incomplete: 1,
+          recovery_unassigned: 1,
+          coupon_manual_review: 1,
+          telegram_bind_unconsumed: 1,
+        },
+      },
+    },
+    source_coverage: [
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 4 },
+    ],
+  });
+  assert.deepEqual(overdue.actions.map((item) => [item.action_key, item.count, item.href, item.authority]), [
+    ["hype_entitlement_notification_overdue", 1, "/internal/admin/member-intelligence", "my_mmd_entitlement_resolver_v1"],
+    ["hype_recovery_unassigned_overdue", 1, "/internal/admin/recovery?assignment=unassigned", "recovery_queue_operational_metadata"],
+    ["hype_coupon_manual_review_overdue", 1, "/internal/admin/member-intelligence", "care_back_claim_policy"],
+    ["hype_telegram_bind_overdue", 1, "/internal/admin/control-room", "telegram_identity_bind_authority"],
+  ]);
+});
+
+test("non-actionable and stale HYPE diagnostics never create an Owner Action", () => {
+  const queue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        total: 0,
+        overdue: 0,
+        watch: 0,
+        owner_actionable_overdue: 0,
+        owner_actionable_by_kind: {},
+        stale_terminal_records: 9,
+        non_actionable_records: 2,
+      },
+      stale_terminal_by_kind: {
+        coupon_manual_review_terminal: 8,
+        telegram_bind_expired_pending: 1,
+      },
+      non_actionable_by_kind: {
+        entitlement_pending_invite_expected: 2,
+      },
+    },
+  });
+
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_coupon_manual_review_overdue"), false);
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_entitlement_notification_overdue"), false);
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_telegram_bind_overdue"), false);
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_operational_watch"), false);
+  assert.equal(queue.queue_health.schema, "mmd_owner_actions_queue_health_v1");
+  assert.equal(queue.queue_health.active_owner_decisions, 0);
+  assert.equal(queue.queue_health.unknown_hype_overdue, 0);
+  assert.equal(queue.queue_health.stale_terminal_records, 9);
+  assert.deepEqual(queue.queue_health.stale_terminal_by_kind, {
+    coupon_manual_review_terminal: 8,
+    telegram_bind_expired_pending: 1,
+  });
+  assert.equal(queue.queue_health.non_actionable_records, 2);
+  assert.deepEqual(queue.queue_health.non_actionable_by_kind, {
+    entitlement_pending_invite_expected: 2,
+  });
+  assert.equal(queue.queue_health.classification_complete, true);
+  assert.equal(queue.queue_health.phase_5_closure_ready, true);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
+});
+
+test("unknown HYPE overdue kind remains visible through generic fail-closed fallback", () => {
+  const queue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        owner_actionable_overdue: 3,
+        owner_actionable_by_kind: {
+          entitlement_notification_incomplete: 2,
+          future_unknown_kind: 1,
+        },
+      },
+    },
+  });
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
+    ["hype_entitlement_notification_overdue", 2],
+    ["hype_operational_watch", 1],
+  ]);
+});
+
+
+
+test("queue health fails phase closure safely on unknown HYPE overdue or unavailable source", () => {
+  const queue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        owner_actionable_overdue: 2,
+        owner_actionable_by_kind: {
+          entitlement_notification_incomplete: 1,
+          future_unknown_kind: 1,
+        },
+      },
+    },
+    unavailable_sources: ["hype"],
+  });
+
+  assert.equal(queue.queue_health.unknown_hype_overdue, 1);
+  assert.equal(queue.queue_health.classification_complete, false);
+  assert.equal(queue.queue_health.source_coverage_complete, false);
+  assert.equal(queue.queue_health.phase_5_closure_ready, false);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
+});
+
+test("Phase 6B workload SLO classifies due-now, due-today and source-breached decisions", () => {
+  const queue = buildOwnerActionsQueue({
+    money: [{ proof_id: "proof-new" }],
+    historical_recovery: [{ proof_id: "historical-1" }],
+    reconfirm: {
+      available: true,
+      items: [{ session_id: "job-overdue", status: "overdue" }],
+    },
+  });
+
+  const byKey = Object.fromEntries(queue.actions.map((item) => [item.action_key, item]));
+  assert.equal(byKey.payment_review.slo.state, "due_now");
+  assert.equal(byKey.payment_review.slo.target_minutes, 240);
+  assert.equal(byKey.payment_review.slo.source_breached, false);
+
+  assert.equal(byKey.historical_recovery.slo.state, "due_today");
+  assert.equal(byKey.historical_recovery.slo.target_minutes, 1440);
+  assert.equal(byKey.historical_recovery.slo.source_breached, false);
+
+  assert.equal(byKey.job_reconfirm_overdue.slo.state, "breached");
+  assert.equal(byKey.job_reconfirm_overdue.slo.target_minutes, 240);
+  assert.equal(byKey.job_reconfirm_overdue.slo.source_breached, true);
+
+  assert.equal(queue.queue_health.workload_slo.schema, "mmd_owner_workload_slo_v1");
+  assert.equal(queue.queue_health.workload_slo.state, "breached");
+  assert.equal(queue.queue_health.workload_slo.active_decisions, 3);
+  assert.equal(queue.queue_health.workload_slo.breached_decisions, 1);
+  assert.equal(queue.queue_health.workload_slo.due_now_decisions, 1);
+  assert.equal(queue.queue_health.workload_slo.due_today_decisions, 1);
+  assert.equal(queue.queue_health.workload_slo.burn_down_remaining, 3);
+  assert.equal(queue.queue_health.workload_slo.burn_down_target, 0);
+  assert.equal(queue.queue_health.workload_slo.slo_met, false);
+  assert.equal(queue.guardrails.workload_slo_projection_only, true);
+});
+
+test("Phase 6B workload SLO is CLEAR at zero exceptions and stays read-only", () => {
+  const queue = buildOwnerActionsQueue({
+    mms: {
+      available: true,
+      operating_model: "bau_exception_only_v1",
+      routine_application_count: 18,
+      routine_prebooking_count: 4,
+      exception_prebooking_count: 0,
+      exception_count: 0,
+    },
+    hype: { available: true, counts: { owner_actionable_overdue: 0, owner_actionable_by_kind: {} } },
+    source_coverage: [
+      { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 0, routine_count: 0 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 0, routine_count: 22, operating_model: "bau_exception_only_v1" },
+      { source: "hype", label: "HYPE", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0, routine_count: 0 },
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0, routine_count: 0 },
+    ],
+  });
+
+  assert.equal(queue.actions.length, 0);
+  assert.equal(queue.queue_health.workload_slo.state, "clear");
+  assert.equal(queue.queue_health.workload_slo.active_decisions, 0);
+  assert.equal(queue.queue_health.workload_slo.breached_decisions, 0);
+  assert.equal(queue.queue_health.workload_slo.burn_down_remaining, 0);
+  assert.equal(queue.queue_health.workload_slo.slo_met, true);
+  assert.equal(queue.queue_health.phase_6b_slo_ready, true);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
+});
+
+test("Phase 6B workload SLO fails safely to SOURCE_ATTENTION when a source is unavailable", () => {
+  const queue = buildOwnerActionsQueue({
+    unavailable_sources: ["finance_audit"],
+  });
+
+  assert.equal(queue.queue_health.workload_slo.state, "source_attention");
+  assert.equal(queue.queue_health.workload_slo.slo_met, false);
+  assert.equal(queue.queue_health.phase_6b_slo_ready, false);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
+});
+
+test("HYPE cohort detail routes to the owning source and remains read-only", () => {
+  const input = {
+    hype: {
+      available: true,
+      counts: {
+        owner_actionable_overdue: 1,
+        owner_actionable_by_kind: { recovery_unassigned: 1 },
+      },
+    },
+  };
+  const detail = buildOwnerActionDetail(input, "hype_recovery_unassigned_overdue");
+  assert.equal(detail.drilldown.source_surface, "/internal/admin/recovery?assignment=unassigned");
+  assert.equal(detail.drilldown.authority, "recovery_queue_operational_metadata");
+  assert.equal(detail.drilldown.records_exposed, false);
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.match(detail.drilldown.decision_boundary, /business truth/);
+});
+
+test("known Owner Action detail stays safe when the action clears between queue and drilldown", () => {
+  const detail = buildOwnerActionDetail({}, "hype_telegram_bind_overdue");
+
+  assert.equal(detail.ok, true);
+  assert.equal(detail.state, "cleared_since_queue");
+  assert.equal(detail.action.action_key, "hype_telegram_bind_overdue");
+  assert.equal(detail.action.count, 0);
+  assert.equal(detail.action.review_required, false);
+  assert.equal(detail.action.authority, "telegram_identity_bind_authority");
+  assert.equal(detail.action.href, "/internal/admin/control-room");
+  assert.equal(detail.drilldown.state, "cleared_since_queue");
+  assert.equal(detail.drilldown.observed_count, 0);
+  assert.equal(detail.drilldown.records_exposed, false);
+  assert.equal(detail.drilldown.personal_data_exposed, false);
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.match(detail.drilldown.decision_boundary, /snapshot เก่า/);
+});
+
+test("owner action detail is a source-safe owner-only read projection", () => {
+  const detail = buildOwnerActionDetail({
+    now: "2026-09-23T00:00:00.000Z",
+    money: [{ proof_id: "proof-secret", customer_name: "Private Name", payment_ref: "bank-secret" }],
+    unavailable_sources: ["mms"],
+  }, "payment_review");
+
+  assert.equal(detail.contract, "mmd_owner_action_detail_v1");
+  assert.equal(detail.action.detail_href, "/v1/admin/dashboard/owner-actions?action_key=payment_review");
+  assert.equal(detail.drilldown.records_exposed, false);
+  assert.equal(detail.drilldown.personal_data_exposed, false);
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.equal(JSON.stringify(detail).includes("Private Name"), false);
+  assert.equal(JSON.stringify(detail).includes("bank-secret"), false);
+  assert.equal(buildOwnerActionDetail({ money: [{ proof_id: "proof-1" }] }, "unknown"), null);
+});
+
+
+test("problem queues lead to the canonical work page", () => {
+  const input = {
+    reconfirm: { available: true, items: [
+      { session_id: "job-1", status: "overdue" },
+      { session_id: "job-2", status: "pending" },
+    ] },
+    boss: [{ id: "job-3", href: "/internal/admin/jobs/all?date=2026-09-26" }],
+  };
+  const queue = buildOwnerActionsQueue(input);
+  const routes = Object.fromEntries(queue.actions.map((item) => [item.action_key, item.href]));
+  assert.equal(routes.job_reconfirm_overdue, "/internal/admin/jobs/all?ops=confirm");
+  assert.equal(routes.job_reconfirm_pending, "/internal/admin/jobs/all?ops=confirm");
+  assert.equal(routes.owner_exception, "/internal/admin/jobs/all");
+  for (const key of ["job_reconfirm_overdue", "job_reconfirm_pending", "owner_exception"]) {
+    assert.equal(buildOwnerActionDetail(input, key).drilldown.source_surface, routes[key]);
+  }
+  assert.equal(queue.actions.some((item) => ["/internal/admin/jobs", "/internal/admin/exceptions"].includes(item.href)), false);
+});

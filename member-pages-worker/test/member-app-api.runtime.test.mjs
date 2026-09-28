@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleMemberAppApi, isMemberAppApiPath } from "../src/member-app-api.js";
+import { identityRecoveryStateFromEvidence, readIdentityRecoveryState } from "../src/member-app-api-runtime.js";
 
 function delegate(payloadByPath = {}, statusByPath = {}) {
   const calls = [];
@@ -39,6 +40,93 @@ test("recognizes only the bounded My MMD app routes", () => {
   }
   assert.equal(isMemberAppApiPath("https://mmdbkk.com/api/member/app/admin"), false);
   assert.equal(isMemberAppApiPath("https://mmdbkk.com/api/member/dashboard"), false);
+});
+
+test("identity recovery manual form is unlocked only by exact server-owned not-found review evidence", () => {
+  const session = { lineUserId: `U${"a".repeat(32)}`, memberExists: false, identityRecoveryState: null };
+
+  assert.equal(identityRecoveryStateFromEvidence(session, null), "auto_resolving");
+  assert.equal(identityRecoveryStateFromEvidence({ ...session, memberExists: true }, null), "linked");
+
+  assert.equal(identityRecoveryStateFromEvidence(session, {
+    fields: {
+      status: "review_required",
+      match_type: "not_found",
+      source_path: "membership_payment_e2e_first_real_payment_acceptance",
+    },
+  }), "manual_required");
+
+  assert.equal(identityRecoveryStateFromEvidence(session, {
+    fields: {
+      status: "review_required",
+      match_type: "not_found",
+      source_path: "/member/api/liff/recovery",
+    },
+  }), "review_required");
+
+  assert.equal(identityRecoveryStateFromEvidence({
+    ...session,
+    identityRecoveryState: "known_identity",
+  }, null), "review_required");
+
+  assert.equal(identityRecoveryStateFromEvidence(session, {
+    fields: {
+      status: "applied",
+      match_type: "exact_member_email",
+      source_path: "/member/api/liff/recovery",
+    },
+  }), "linked");
+});
+
+test("identity recovery projection queries review evidence by the exact server LINE session only", async () => {
+  const lineUserId = `U${"b".repeat(32)}`;
+  const requests = [];
+  const env = {
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appTestIdentity01",
+    AIRTABLE_HTTP: {
+      async fetch(request) {
+        requests.push(new URL(request.url));
+        return Response.json({
+          records: [{
+            id: "recReviewABC12345",
+            fields: {
+              status: "review_required",
+              match_type: "not_found",
+              source_path: "membership_payment_e2e_first_real_payment_acceptance",
+            },
+          }],
+        });
+      },
+    },
+  };
+
+  const state = await readIdentityRecoveryState(env, {
+    lineUserId,
+    memberExists: false,
+    identityRecoveryState: null,
+  });
+
+  assert.equal(state, "manual_required");
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].searchParams.get("filterByFormula") || "", /line_user_id/);
+  assert.match(requests[0].searchParams.get("filterByFormula") || "", new RegExp(lineUserId));
+  assert.equal(requests[0].searchParams.get("sort[0][field]"), "created_at");
+  assert.equal(requests[0].searchParams.get("sort[0][direction]"), "desc");
+});
+
+test("identity recovery projection fails closed when canonical review storage is unavailable", async () => {
+  const lineUserId = `U${"c".repeat(32)}`;
+  const state = await readIdentityRecoveryState({
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appTestIdentity02",
+    AIRTABLE_HTTP: { async fetch() { throw new Error("synthetic_unavailable"); } },
+  }, {
+    lineUserId,
+    memberExists: false,
+    identityRecoveryState: null,
+  });
+  assert.equal(state, "auto_resolving");
 });
 
 test("coupon artwork variants require verified backend tiers and do not grant membership access", async () => {

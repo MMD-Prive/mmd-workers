@@ -5,7 +5,30 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/customer-change-resolution.js"
+      - "admin-worker/customer-change-resolution.test.mjs"
+      - "shared/confirmation-revision*"
+      - "payments-worker/confirmation-ack*"
+      - "payments-worker/confirmation-details*"
+      - "admin-worker/src/payment-confirmation-followthrough.js"
+      - "admin-worker/src/job-readiness-followthrough.js"
+      - "admin-worker/job-readiness-followthrough.test.mjs"
+      - "admin-worker/payment-confirmation-followthrough.test.mjs"
+      - "admin-worker/src/payment-review-display-context.js"
+      - "admin-worker/src/payment-review-discovery.js"
+      - "admin-worker/payment-review-discovery.test.mjs"
+      - "admin-worker/payment-review-flow-ui.test.cjs"
+      - "admin-worker/src/payment-proof-client-provenance-wrapper.js"
+      - "admin-worker/payment-proof-client-provenance-wrapper.test.mjs"
+      - "admin-worker/src/cancellation-credit-recovery.js"
+      - "admin-worker/cancellation-credit-recovery.test.mjs"
+      - "admin-worker/src/client-credit-ref-wrapper.js"
+      - "admin-worker/payment-review-simple.test.mjs"
       - "admin-worker/src/payment-review-line-recovery.js"
+      - "admin-worker/src/membership-payment-pending-recovery.js"
+      - "admin-worker/src/membership-genuine-liff-acceptance-observer.js"
+      - "admin-worker/membership-genuine-liff-acceptance-observer.test.mjs"
+      - "admin-worker/membership-payment-pending-recovery.test.mjs"
       - "admin-worker/src/payment-review-owner-context.js"
       - "admin-worker/src/payment-review-auto-context.js"
       - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
@@ -15,6 +38,8 @@ on:
       - "admin-worker/payment-review-auto-context.test.mjs"
       - "admin-worker/wrangler.toml"
       - "payments-worker/index.review-wrapper.js"
+      - "payments-worker/index.phase1.js"
+      - "payments-worker/historical-cancellation-credit-recovery.test.mjs"
       - "payments-worker/reviewed-proof.js"
       - "payments-worker/reviewed-proof-line-recovery.test.mjs"
       - "payments-worker/reviewed-proof-canonical-money-truth.js"
@@ -46,13 +71,18 @@ jobs:
           set -euo pipefail
           node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/payment-review-runtime.js
+          node --check admin-worker/src/payment-review-discovery.js
           node --check admin-worker/src/payment-review-line-recovery.js
+          node --check admin-worker/src/membership-payment-pending-recovery.js
+          node --check admin-worker/src/membership-genuine-liff-acceptance-observer.js
           node --check admin-worker/src/payment-review-owner-context.js
           node --check admin-worker/src/payment-review-auto-context.js
+          node --check admin-worker/src/cancellation-credit-recovery.js
           node --check webflow/internal/admin/payments/payment-owner-match-v1.js
           node --check webflow/internal/admin/payments/payment-owner-match-v2.js
           node --check webflow/internal/admin/payments/historical-payment-context-v3.js
           node --check payments-worker/index.review-wrapper.js
+          node --check payments-worker/index.phase1.js
           node --check payments-worker/reviewed-proof.js
           node --check payments-worker/reviewed-proof-canonical-money-truth.js
           node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
@@ -63,11 +93,23 @@ jobs:
           set -euo pipefail
           node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
+          node --test admin-worker/payment-review-simple.test.mjs admin-worker/payment-confirmation-followthrough.test.mjs admin-worker/job-readiness-followthrough.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs admin-worker/cancellation-credit-recovery.test.mjs
+          node --experimental-global-webcrypto --test payments-worker/historical-cancellation-credit-recovery.test.mjs
+
+      - name: Customer change resolution and acknowledgement revision
+        run: node --test admin-worker/customer-change-resolution.test.mjs shared/confirmation-revision.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/confirmation-details.test.mjs
+
+      - name: Payment workspace interaction guards
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/payment-review-ui" --no-save --ignore-scripts jsdom@30.0.1
+          MMD_UI_TEST_MODULES="$RUNNER_TEMP/payment-review-ui/node_modules" node --test admin-worker/payment-review-flow-ui.test.cjs
 
       - name: Manual renewal recovery contract
         run: |
           set -euo pipefail
-          node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs
+          node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs admin-worker/membership-payment-pending-recovery.test.mjs admin-worker/membership-genuine-liff-acceptance-observer.test.mjs
 
       - name: Owner payment context match contract
         run: |

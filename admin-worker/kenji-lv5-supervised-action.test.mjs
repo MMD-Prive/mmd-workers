@@ -61,10 +61,31 @@ test("P4 booking payload is a SIGIL draft with canonical evidence and no payment
   assert.deepEqual(payload.resolver_payload_json.protected_actions_pending, ["assign_model", "create_calendar_hold", "confirm_payment", "confirm_job"]);
 });
 
-test("deposit intent requires end time and rate before automatic Create Job", () => {
+test("deposit intent defaults to 90 minutes and requires only the rate when duration is omitted", () => {
   const partial = { ...intent, trigger: "deposit" };
-  assert.deepEqual(missingKenjiBookingIntentFields(partial), ["duration_or_end_time", "rate"]);
-  assert.deepEqual(missingKenjiBookingIntentFields({ ...partial, end_time: "22:00", amount_thb: 9000 }), []);
+  assert.deepEqual(missingKenjiBookingIntentFields(partial), ["rate"]);
+  assert.deepEqual(missingKenjiBookingIntentFields({ ...partial, amount_thb: 9000 }), []);
+});
+
+test("canonical Create Job defaults 19:00 standard booking to 20:30 and floors shorter duration", () => {
+  const defaultPayload = buildKenjiCanonicalJobPayload({
+    context,
+    modelAccess: { ...modelAccess, model_access: { ...modelAccess.model_access, visibility: "public" } },
+    intent: { ...intent, time: "19:00", trigger: "deposit", amount_thb: 25000 },
+    actionId: "matrix:kbd1_default_90m",
+    refs: { booking_ref: "kenji_90m" },
+  });
+  assert.equal(defaultPayload.schedule.start, "19:00");
+  assert.equal(defaultPayload.schedule.end, "20:30");
+
+  const flooredPayload = buildKenjiCanonicalJobPayload({
+    context,
+    modelAccess: { ...modelAccess, model_access: { ...modelAccess.model_access, visibility: "public" } },
+    intent: { ...intent, time: "19:00", end_time: "20:00", duration_hours: 1, trigger: "deposit", amount_thb: 25000 },
+    actionId: "matrix:kbd1_floor_90m",
+    refs: { booking_ref: "kenji_90m_floor" },
+  });
+  assert.equal(flooredPayload.schedule.end, "20:30");
 });
 
 test("canonical Create Job payload uses canonical records and never treats deposit wording as paid", () => {

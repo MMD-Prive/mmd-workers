@@ -15,10 +15,10 @@ function assertDirectReturn(output, target = "/my-mmd/") {
   assert.match(output, /if \(started\)/);
 }
 
-test("status LIFF shell becomes auth-only and returns directly to My MMD after verified start", () => {
+test("direct status LIFF stays in the worker-rendered member dashboard", () => {
   const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
-  assert.equal(I.statusReturnTarget(request), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+  assert.equal(I.statusReturnTarget(request), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
 });
 
 test("coupon status LIFF returns to the single /coupon entry after verified start", () => {
@@ -39,7 +39,40 @@ test("TMIB status LIFF returns to the originating story or checkout after verifi
   assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, checkoutRequest), checkoutTarget);
 });
 
-test("TMIB return-to-origin fails closed for external, privileged, or malformed targets", () => {
+test("Rich Menu status LIFF returns only to bounded customer destinations after verified start", () => {
+  const targets = [
+    "/profiles?source=line&entry_route=rich_menu_guest_models",
+    "/profiles?source=line&entry_route=rich_menu_public_models",
+    "/booking?source=line&entry_route=rich_menu_guest_booking",
+    "/booking?source=line&entry_route=rich_menu_public_booking",
+    "/services/companion?source=line&entry_route=rich_menu_guest_services",
+    "/tmib?source=line&entry_route=rich_menu_guest_stories",
+    "/member/private?source=line&entry_route=rich_menu_model_cards#detail-model",
+    "/member/private?source=line&entry_route=rich_menu_prive_update#access",
+    "/find?source=line&entry_route=rich_menu_private_booking",
+  ];
+  for (const target of targets) {
+    const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+    assert.equal(I.statusReturnTarget(request), target);
+    assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), target);
+  }
+});
+
+test("Rich Menu status LIFF fails closed for mismatched, privileged, or expanded return targets", () => {
+  const hostileTargets = [
+    "/profiles?source=line&entry_route=rich_menu_private_booking",
+    "/booking?source=web&entry_route=rich_menu_public_booking",
+    "/member/private?source=line&entry_route=rich_menu_model_cards#admin",
+    "/find?source=line&entry_route=rich_menu_private_booking&next=/internal/admin",
+    "/internal/admin?source=line&entry_route=rich_menu_guest_models",
+  ];
+  for (const target of hostileTargets) {
+    const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+    assert.equal(I.statusReturnTarget(request), "");
+  }
+});
+
+test("TMIB return-to-origin fails closed inside LIFF for external, privileged, or malformed targets", () => {
   const hostileTargets = [
     "https://evil.example/",
     "//evil.example/tmib/act-001",
@@ -50,16 +83,34 @@ test("TMIB return-to-origin fails closed for external, privileged, or malformed 
   ];
   for (const target of hostileTargets) {
     const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
-    assert.equal(I.statusReturnTarget(request), "/my-mmd/");
+    assert.equal(I.statusReturnTarget(request), "");
+    assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
   }
 });
 
-test("LINE liff.state status launch gets the same direct My MMD return", () => {
+
+test("signed customer job confirmation enters through LIFF and returns only to the canonical confirmation page", () => {
+  const target = "/sigil/confirm/job-confirmation?t=abc.DEF_123";
+  const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+  assert.equal(I.statusReturnTarget(request), target);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), target);
+
+  for (const hostile of [
+    "/sigil/confirm/job-confirmation?t=abc&next=/internal/admin",
+    "/sigil/confirm/job-confirmation?next=/internal/admin",
+    "/internal/admin?t=abc.DEF_123",
+  ]) {
+    const bad = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(hostile)}`);
+    assert.equal(I.statusReturnTarget(bad), "");
+  }
+});
+
+test("LINE liff.state status launch stays in the worker-rendered LIFF dashboard", () => {
   const state = encodeURIComponent("/member/liff?intent=status");
   const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
   assert.equal(I.isStatusLiffShellRequest(request), true);
-  assert.equal(I.statusReturnTarget(request), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+  assert.equal(I.statusReturnTarget(request), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
 });
 
 test("LINE liff.state carries the coupon return target without allowing arbitrary redirects", () => {
@@ -71,8 +122,8 @@ test("LINE liff.state carries the coupon return target without allowing arbitrar
 
   const hostileState = encodeURIComponent("/member/liff?intent=status&return_to=https://evil.example/");
   const hostileRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${hostileState}`);
-  assert.equal(I.statusReturnTarget(hostileRequest), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest));
+  assert.equal(I.statusReturnTarget(hostileRequest), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest), STATUS_SHELL);
 });
 
 test("LINE liff.state carries the bounded TMIB origin", () => {

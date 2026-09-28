@@ -66,11 +66,11 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     risk_level: "medium",
     source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไข, Payment status /member/payments สำหรับดูและไปต่อจากรายการชำระเงินเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบมี URL /sigil/pay ที่ลงนามสำหรับรายการปัจจุบัน ให้ใช้ URL นั้นโดยตรง การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระ สิทธิ์สมาชิก การจอง หรือ access และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
+      "ถ้าถามเรื่อง Membership ผมแยกทางให้ตามประเภทได้เลยครับ: Public Membership — MMD Member / Elite / Red Card เริ่มที่ https://mmdbkk.com/pay/membership ส่วน Private Membership — Standard / Premium / private access ใช้ https://mmdbkk.com/sigil/member/membership ถ้าต่ออายุ Private ใช้ https://mmdbkk.com/sigil/member/membership?source=line&intent=renew และถ้าต้องการดูรายการชำระหรือสถานะเดิม ใช้ https://mmdbkk.com/member/payments ครับ ถ้า MMD สร้างลิงก์ชำระเฉพาะรายการให้แล้ว ให้ใช้ลิงก์นั้นตรง ๆ: Public/TMIB ใช้ /pay/checkout?t=... และ Private/Service ใช้ /sigil/pay?t=... หลักฐานเป็น evidence จนกว่า MMD Official Verify และรายการเดิมไม่ต้องส่งหลักฐานซ้ำครับ",
   },
   {
     id: "kenji_20_007_drop_690_guard",
-    title: "Kenji AI 2.0 — Drop 690 Main Route Guard",
+    title: "Kenji AI 2.0 — Public Membership 690 Safety Guard",
     category: "admin_policy",
     language: "th",
     status: "active",
@@ -78,7 +78,7 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "webflow/customer-facing-routing",
     customer_answer:
-      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake ตามบริบท และถ้าต้องไปต่อเรื่องการชำระเงินจะใช้รายการเดิมผ่าน /member/payments หรือ URL /sigil/pay ที่ระบบสร้างให้สำหรับรายการนั้นเท่านั้น หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และ MMD จะตรวจความเหมาะสมก่อนเสมอ",
+      "MMD Member 690 เป็น Public Membership จริงครับ ไม่ใช่ pay-to-view หรือ instant unlock หากต้องการสมัครให้เริ่มที่ /pay/membership และให้ระบบสร้าง signed /pay/checkout?t=... เอง ส่วน Private Membership หรือค่าบริการจะใช้ signed /sigil/pay?t=... ตามรายการที่ backend สร้างให้ หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และสิทธิ์จะมีผลหลัง MMD Official Verify เท่านั้น",
   },
   {
     id: "kenji_20_006_payment_proof",
@@ -90,7 +90,7 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "/member/payments",
     customer_answer:
-      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
+      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการเดิมที่ https://mmdbkk.com/member/payments ได้เลยครับ ถ้า MMD มีลิงก์ชำระเฉพาะรายการให้แล้ว ใช้ลิงก์นั้นตรง ๆ: Public Membership / TMIB ใช้ /pay/checkout?t=... ส่วน Private Membership / Service ใช้ /sigil/pay?t=... ครับ ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ใช้รายการเดิมต่อได้เลยและไม่ต้องส่งหลักฐานซ้ำ หลักฐานยังเป็น evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",

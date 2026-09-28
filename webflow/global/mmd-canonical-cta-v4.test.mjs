@@ -28,12 +28,14 @@ test("restores public access without changing bounded My MMD entry", () => {
   assert.match(source, /buttons\[1\].*MY_MMD/);
 });
 
-test("keeps CARE BACK on bounded My MMD and restores the wish link", () => {
+test("keeps CARE BACK on bounded My MMD while Wish hands off to the coupon wallet", () => {
   assert.match(source, /path === "\/promotion\/6-years-care-back"/);
   assert.match(source, /dataset\.memberUrl = MY_MMD/);
   assert.match(source, /\[data-wish-link\].*CARE_BACK_WISH/);
   assert.match(source, /path === "\/promotion\/6-years-care-back\/wish"/);
-  assert.match(source, /dataset\.dashboardUrl = MY_MMD/);
+  assert.match(source, /const CARE_BACK_COUPONS = "\/my-mmd\/coupons"/);
+  assert.match(source, /dataset\.dashboardUrl = CARE_BACK_COUPONS/);
+  assert.match(source, /\/member\/my-mmd.*CARE_BACK_COUPONS/);
 });
 
 test("restores member promotion and membership dashboard handoffs", () => {

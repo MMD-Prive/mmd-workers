@@ -110,7 +110,8 @@ const ANNIVERSARY_ADMIN = {
 
 const JOBS = {
   root: "/internal/jobs",
-  createJob: "/internal/jobs/create-job",
+  createJob: "/internal/admin/jobs/create-job",
+  createJobLegacy: "/internal/jobs/create-job",
   createLinks: "/internal/jobs/create-links",
   createInvite: "/internal/jobs/create-invite-link",
   customerConfirm: "/internal/jobs/customer-confirm",
@@ -2425,7 +2426,8 @@ function shouldUseInternalRoutesBridge(pathname: string): boolean {
     pathname === ANNIVERSARY_ADMIN.page ||
     pathname === ADMIN_JOBS.createSession ||
     pathname === ADMIN_JOBS.createSessionLegacy ||
-    pathname === JOBS.createJob
+    pathname === JOBS.createJob ||
+    pathname === JOBS.createJobLegacy
   );
 }
 
@@ -2744,7 +2746,7 @@ function renderMemberMembershipPage(request: Request): Response {
           ${packages.map(([name, line]) => `<article class="member-packages__card"><div><span>Member option</span><strong>${escapeHtml(name)}</strong></div><p>${escapeHtml(line)}</p><div class="member-packages__actions"><a class="member-packages__btn primary" href="${escapeHtml(paymentHref)}">Select ${escapeHtml(name)}</a></div></article>`).join("")}
         </section>
         <section class="member-packages__note" aria-label="Route lock">
-          <p><strong>Route lock:</strong> /sigil/member/membership is the canonical member gate. /pay/membership remains the separate payment page.</p>
+          <p><strong>Membership:</strong> Public Member / Elite / Red Card use /pay/membership. Private Standard / Premium / renewal use /sigil/member/membership.</p>
           <a class="member-packages__btn" href="${escapeHtml(dashboardHref)}">Back to Status Hub</a>
         </section>
       </div>

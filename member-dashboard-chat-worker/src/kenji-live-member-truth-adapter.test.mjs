@@ -29,3 +29,27 @@ assert.equal(result.renewal_state,"expiring_soon");
 assert.equal(result.expire_at,"2026-09-30");
 assert.equal(await resolveKenjiLiveMemberContext({}, "U1234567890abcdef1234567890abcdef","booking"),null);
 console.log("kenji live member truth adapter tests passed");
+
+
+const redCardEnv={MEMBER_PAGES_WORKER:{fetch:async req=>{
+  const b=await req.json();
+  assert.equal(b.line_user_id,"U1234567890abcdef1234567890abcdef");
+  return new Response(JSON.stringify({
+    ok:true,
+    authority:"my_mmd_entitlement_resolver_v1",
+    identity_status:"resolved",
+    display_name:"Red",
+    membership:{
+      level:"red_card",
+      lifecycle:"active",
+      private_visibility_envelope:"none",
+      expire_at:"2027-09-28"
+    }
+  }));
+}}};
+
+const redCard=await resolveKenjiLiveMemberContext(redCardEnv,"U1234567890abcdef1234567890abcdef","booking");
+assert.equal(redCard.level,"public");
+assert.equal(redCard.membership_level,"public");
+assert.equal(redCard.canonical_membership_level,"red_card");
+assert.equal(redCard.private_visibility_envelope,"none");

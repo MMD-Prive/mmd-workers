@@ -1,4 +1,6 @@
-export const MMS_AI_KNOWLEDGE_VERSION = "mms-ai-knowledge-v4-20260906";
+import { CONCIERGE_CAPABILITY_PACK_VERSION, conciergeCapabilityPrompt, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+
+export const MMS_AI_KNOWLEDGE_VERSION = "mms-ai-knowledge-v4-20260919-capability-pack-1-7";
 export const MMS_APPLICATION_ROUTE = "/apply/mms-therapist";
 export const MMS_APPLICATION_REVIEW_ROUTE = "/internal/admin/mms?tab=applications&application_id=";
 
@@ -48,6 +50,15 @@ export function classifyMmsIntent(value = "") {
   const raw = normalized(value);
   if (!raw) return "unknown";
   if (/^(?:hi|hello|hey|สวัสดี|หวัดดี|你好|您好)\b/i.test(raw)) return "greeting";
+
+  const sharedCapability = detectSharedConciergeCapability(raw);
+  if (sharedCapability === "shop_orders") return "mmd_shop_orders";
+  if (sharedCapability === "care_back_coupon") return "care_back_coupon";
+  if (sharedCapability === "mms_therapist_options") return "therapist_recommendation";
+  if (sharedCapability === "service_recovery") return "service_recovery";
+  if (sharedCapability === "closed_loop_handoff") return "closed_loop_handoff";
+  if (sharedCapability === "hall_model_discovery") return "hall_model_discovery";
+  if (sharedCapability === "points_coupon_balance") return "points_coupon_balance";
   if (/(?:สมัคร|apply|application|应聘|申请).*(?:therapist|เทอราปิส|นักบำบัด|按摩师)|(?:อยากสมัคร|สมัครงาน)/i.test(raw)) return "application_start";
   if (/mmsapp_[a-f0-9]{24}/i.test(raw) || /(?:ใบสมัคร|application).*(?:ถึงไหน|สถานะ|status|进度|状态)/i.test(raw)) return "application_status";
   if (/(?:ขาด|missing|ยังไม่ครบ|เอกสาร|document|certificate|证件|资料)/i.test(raw) && /(?:สมัคร|application|mmsapp_)/i.test(raw)) return "missing_documents";
@@ -75,6 +86,42 @@ function joinServices(language) {
 
 export function staticMmsReply({ message = "", intent = classifyMmsIntent(message), role = "unknown" } = {}) {
   const language = detectMmsLanguage(message);
+
+  if (intent === "mmd_shop_orders") {
+    if (language === "zh") return "MMD Shop 订单属于 MY MMD 会员范围，请从 /my-mmd/orders 查询；HENNA 不会从 MMS 聊天里猜订单或付款状态。";
+    if (language === "en") return "MMD Shop orders belong to the MY MMD member lane. Check /my-mmd/orders; HENNA will not guess order or payment state from MMS chat.";
+    return "MMD Shop เป็นฝั่ง MY MMD ครับ เช็ก Order/Payment ได้ที่ /my-mmd/orders และ HENNA จะไม่เดาสถานะจากแชต MMS";
+  }
+
+  if (intent === "care_back_coupon") {
+    if (language === "zh") return "CARE BACK / Coupon 属于 MMD 会员权益。请使用 /promotion/6-years-care-back 或 /my-mmd/coupons；HENNA 不会替会员系统开通或重发优惠券。";
+    if (language === "en") return "CARE BACK / Coupons are MMD member benefits. Use /promotion/6-years-care-back or /my-mmd/coupons; HENNA does not activate or reissue coupons.";
+    return "CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ ใช้ /promotion/6-years-care-back หรือ /my-mmd/coupons และ HENNA จะไม่ activate/reissue สิทธิ์แทนระบบ";
+  }
+
+  if (intent === "service_recovery") {
+    if (language === "zh") return "如果是 MMS 服务问题，可以告诉我发生了什么和 booking/pre-booking reference（如果有）。我可以帮助分流，但在实际审核前不会认定责任、退款或已解决。";
+    if (language === "en") return "If this is an MMS service issue, tell me what happened and the booking/pre-booking reference if available. I can route it, but I won't claim fault, refund approval, or resolution before real review.";
+    return "ถ้าเป็นปัญหาฝั่ง MMS บอกเหตุการณ์กับ booking/pre-booking reference ถ้ามีได้ครับ ผมช่วยแยกทางให้ แต่จะยังไม่สรุปว่าใครผิด คืนเงิน หรือเคสจบก่อนมีการตรวจจริง";
+  }
+
+  if (intent === "closed_loop_handoff") {
+    if (language === "zh") return "我知道你是在跟进已转交的事项，但除非有真实的 acknowledgement / review state，我不会说工作人员已经接手或案件已经解决。跨系统跟进请使用 HYPE。";
+    if (language === "en") return "I understand you're following up on a handoff, but I won't claim it was acknowledged or resolved without a real acknowledgement/review state. Use HYPE for cross-system follow-up.";
+    return "ผมรู้ว่าเป็นการตามเรื่องที่ส่งต่อครับ แต่จะไม่บอกว่าทีมรับแล้วหรือเคสจบแล้วถ้ายังไม่มี acknowledgement/review state จริง เรื่องข้ามระบบให้ HYPE รับต่อ";
+  }
+
+  if (intent === "hall_model_discovery") {
+    if (language === "zh") return "如果你说的是 MMD Privé Model，请先通过 /hall 选择自己的查看范围。HENNA 不会推断性别/受众，也不会一次拉出全部 Model。";
+    if (language === "en") return "If you mean MMD Privé Models, use /hall to choose your own viewing lane first. HENNA won't infer gender/audience or dump all Models.";
+    return "ถ้าหมายถึง Model ฝั่ง MMD Privé ให้เลือกมุมมองผ่าน /hall ก่อนครับ HENNA จะไม่เดาเพศ/มุมมองและไม่ดึง Model ทั้งหมดมาให้";
+  }
+
+  if (intent === "points_coupon_balance") {
+    if (language === "zh") return "Points / Coupon 属于 MMD 会员数据。请使用 /my-mmd/points 和 /my-mmd/coupons；HENNA 不会从 MMS 对话猜余额。";
+    if (language === "en") return "Points / Coupons are MMD member data. Use /my-mmd/points and /my-mmd/coupons; HENNA won't guess balances from MMS chat.";
+    return "Points / Coupon เป็นข้อมูลสมาชิก MMD ครับ ใช้ /my-mmd/points และ /my-mmd/coupons HENNA จะไม่เดายอดจากแชต MMS";
+  }
 
   if (intent === "greeting") {
     if (language === "zh") return "你好。如果想预约上门按摩，可以先告诉我今天更想放松、恢复体力，还是重点处理某个部位。我可以帮你缩小选择范围。";
@@ -182,8 +229,13 @@ Knowledge lock: ${MMS_AI_KNOWLEDGE_VERSION}.
 Core authority:
 - mms-worker owns current MMS truth.
 - You are conversation/guidance only. Never become the source of truth.
-- HENNA is an internal operations guardian, not the customer-facing brain and not an approver.
+- HENNA is the MMS specialist / internal operations guardian, not an approver.
+- HYPE is the cross-system MMD operating concierge. Non-MMS member/account work may bridge to HYPE or the exact MY MMD surface.
 - MMS Partner operates human workflows. Per is final authority where defined.
+
+Shared capability awareness:
+${conciergeCapabilityPrompt("henna")}
+Capability pack lock: ${CONCIERGE_CAPABILITY_PACK_VERSION}.
 
 Voice:
 - Always use Per Voice without impersonating Per.

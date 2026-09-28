@@ -9,6 +9,7 @@ on:
       - "admin-worker/historical-slip-backfill-route.test.mjs"
       - "admin-worker/historical-slip-backfill-handoff-probe.test.mjs"
       - "admin-worker/historical-slip-backfill-private-evidence.test.mjs"
+      - "admin-worker/historical-slip-backfill-queue-order.test.mjs"
       - "admin-worker/wrangler.toml"
       - ".github/workflows/historical-backfill-route-gate.yml"
   workflow_run:
@@ -39,7 +40,8 @@ jobs:
           node --experimental-global-webcrypto --test \
             admin-worker/historical-slip-backfill-route.test.mjs \
             admin-worker/historical-slip-backfill-handoff-probe.test.mjs \
-            admin-worker/historical-slip-backfill-private-evidence.test.mjs
+            admin-worker/historical-slip-backfill-private-evidence.test.mjs \
+            admin-worker/historical-slip-backfill-queue-order.test.mjs
       - name: Preserve canonical route, private evidence, and Money Truth separation
         run: |
           set -euo pipefail

@@ -234,6 +234,36 @@ export async function createInternalHoldForSession(env, sessionId, { fetchImpl =
   return { ok: true, state: "created", booking_uid: created.booking_uid, mapping_record_id: linked.record_id };
 }
 
+export async function ensureInternalHoldThroughBridge(env, sessionId) {
+  const sid = clean(sessionId, 180);
+  if (!sid) return { ok: false, state: "deferred", reason: "session_id_missing" };
+  const binding = env?.CAL_SYNC_WORKER;
+  if (!binding || typeof binding.fetch !== "function") {
+    return { ok: false, state: "deferred", reason: "cal_sync_service_binding_missing" };
+  }
+  try {
+    const response = await binding.fetch(new Request("https://cal-sync.internal/internal/holds/ensure", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ session_id: sid }),
+    }));
+    const body = await response.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return { ok: false, state: "deferred", reason: "cal_sync_invalid_response" };
+    }
+    if (!response.ok && body.ok !== true) {
+      return {
+        ok: false,
+        state: clean(body.state, 80) || "deferred",
+        reason: clean(body.reason || body.error, 120) || `cal_sync_${response.status}`,
+      };
+    }
+    return body;
+  } catch (error) {
+    return { ok: false, state: "deferred", reason: clean(error?.message, 120) || "cal_sync_unavailable" };
+  }
+}
+
 export function isModelConfirmActionRequest(request) {
   try {
     const url = new URL(request.url);
@@ -262,7 +292,7 @@ export async function maybeCreateInternalHoldAfterModelConfirm(request, response
 
   let result;
   try {
-    result = await createInternalHoldForSession(env, sessionId, { fetchImpl });
+    result = await ensureInternalHoldThroughBridge(env, sessionId);
   } catch (error) {
     result = { ok: false, state: "deferred", reason: clean(error?.message, 120) || "unknown_error" };
   }

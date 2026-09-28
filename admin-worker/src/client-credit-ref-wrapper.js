@@ -73,20 +73,31 @@ async function getRecord(env, tableId, recordId) {
   return airtableRequest(env, tableId, `/${encodeURIComponent(id)}`).catch(() => null);
 }
 
+function isOfficialSourceProof(proof) {
+  const status = clean(proof?.fields?.[PROOF_STATUS_FIELD], 80).toLowerCase();
+  // Historical backfill marks a proof as reviewed only after payments-worker
+  // completes its signed handoff. The carry-forward endpoint still independently
+  // verifies the official Payment record before it can create a credit.
+  return status === "verified" || status === "reviewed";
+}
+
+async function findOfficialSourceProofByRef(env, paymentRef) {
+  const payload = await airtableRequest(env, PAYMENT_PROOFS_TABLE, "", {
+    query: { filterByFormula: `{payment_ref}=${formulaString(paymentRef)}`, pageSize: 4 },
+  });
+  const matches = (Array.isArray(payload?.records) ? payload.records : []).filter(isOfficialSourceProof);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 async function resolveVerifiedSourceProof(env, payment, paymentRef) {
   const linkedIds = Array.isArray(payment?.fields?.[PAYMENT_PROOFS_BACKLINK_FIELD])
     ? [...new Set(payment.fields[PAYMENT_PROOFS_BACKLINK_FIELD].map((value) => clean(value, 40)).filter((value) => /^rec[A-Za-z0-9]{14}$/.test(value)))]
     : [];
   if (linkedIds.length === 1) {
     const linked = await getRecord(env, PAYMENT_PROOFS_TABLE, linkedIds[0]);
-    if (clean(linked?.fields?.[PROOF_STATUS_FIELD], 80).toLowerCase() === "verified") return linked;
+    if (isOfficialSourceProof(linked)) return linked;
   }
-  const byRef = await findOne(
-    env,
-    PAYMENT_PROOFS_TABLE,
-    `AND({payment_ref}=${formulaString(paymentRef)},{status}='verified')`,
-  ).catch(() => null);
-  return byRef?.id ? byRef : null;
+  return findOfficialSourceProofByRef(env, paymentRef).catch(() => null);
 }
 
 async function attachCreditProofProvenance(env, creditRecordId, proof) {

@@ -35,6 +35,41 @@ export function isMmsAdminRequest(pathname = "") {
   return path === PAGE_PATH || path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
 }
 
+// Phase 4D: owner-action coverage consumes only aggregate, read-only state.
+// Snapshot records never leave this adapter.
+export async function readMmsOwnerActionCoverage(env = {}) {
+  const snapshot = await readMmsSnapshot(env);
+  if (!snapshot.ok) {
+    return { available: false, reason: "mms_snapshot_unavailable" };
+  }
+
+  const applications = uniqueMmsIds(
+    snapshot.applications.filter((item) => ["submitted", "under review"].includes(normalizeMmsStatus(item?.status))),
+    "application_id",
+  );
+  const routinePrebookings = uniqueMmsIds(
+    snapshot.prebookings.filter((item) => ["draft", "submitted", "matching", "options ready"].includes(normalizeMmsStatus(item?.status))),
+    "prebooking_id",
+  );
+  const exceptionPrebookings = uniqueMmsIds(
+    snapshot.prebookings.filter((item) => normalizeMmsStatus(item?.status) === "pending coordination"),
+    "prebooking_id",
+  );
+
+  return {
+    available: true,
+    authority: "mms-worker",
+    complete: snapshot.complete,
+    operating_model: "bau_exception_only_v1",
+    application_review_count: applications,
+    prebooking_coordination_count: routinePrebookings + exceptionPrebookings,
+    routine_application_count: applications,
+    routine_prebooking_count: routinePrebookings,
+    exception_prebooking_count: exceptionPrebookings,
+    exception_count: exceptionPrebookings,
+  };
+}
+
 export async function handleMmsAdminRequest(request, env = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
@@ -210,6 +245,7 @@ async function readMmsSnapshot(env) {
     if (!response.ok || !data?.ok) return { ok: false };
     return {
       ok: true,
+      complete: data.complete !== false,
       applications: Array.isArray(data.applications) ? data.applications : [],
       therapists: Array.isArray(data.therapists) ? data.therapists : [],
       prebookings: Array.isArray(data.prebookings) ? data.prebookings : [],
@@ -217,6 +253,19 @@ async function readMmsSnapshot(env) {
   } catch {
     return { ok: false };
   }
+}
+
+function uniqueMmsIds(items, key) {
+  const ids = new Set();
+  for (const item of Array.isArray(items) ? items : []) {
+    const id = clean(item?.[key], 120);
+    if (id) ids.add(id);
+  }
+  return ids.size;
+}
+
+function normalizeMmsStatus(value) {
+  return clean(value, 80).toLowerCase().replace(/\s+/g, " ");
 }
 
 async function persistMmsJobReceipt(env, prebooking, receipt) {

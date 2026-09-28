@@ -7,6 +7,7 @@ workers_dev = true
 routes = []
 
 [vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
@@ -15,6 +16,7 @@ AIRTABLE_TABLE_CONSOLE_INBOX = "MMD — Console Inbox"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 LINE_LIFF_ID = "2010862595-yT4DCEMc"
 LINE_DASHBOARD_CHANNEL_ID = "2010862595"
+LINE_BACKUP_CHANNEL_ID = "2011691294"
 DRIVE_MEMBERSHIP_OWNER_EMAIL = "malemodel.bkk@gmail.com"
 DRIVE_PREMIUM_PACKAGE_FOLDER_ID = "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD"
 DRIVE_STANDARD_PACKAGE_FOLDER_ID = "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8"
@@ -24,6 +26,11 @@ DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID = "141CGk8114pC2EGxTwEdVUWlzmKKG4n9w"
 AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
 AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
 AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_JOBS = "tbl0jxIjN8QYwGABX"
+AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
+AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS = "tblbIhMUXMAYlXmpi"
+AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS = "tbl2624vwyWkOeP0y"
 
 [[kv_namespaces]]
 binding = "LIFF_IDENTITY_KV"
@@ -67,6 +74,13 @@ bucket_name = "mmd-models"
 binding = "PRIVATE_MODEL_MEDIA"
 bucket_name = "mmd-private-model-media"
 
+# Customer-submitted reference images are private intake evidence. They never
+# share the model-media buckets and are read only through the internal request
+# handoff after a verified member submits a request.
+[[r2_buckets]]
+binding = "CUSTOMER_REQUEST_EVIDENCE"
+bucket_name = "mmd-customer-request-evidence"
+
 [[durable_objects.bindings]]
 name = "PRIVATE_PREVIEW_GATE"
 class_name = "PrivatePreviewGate"
@@ -78,6 +92,7 @@ new_sqlite_classes = ["PrivatePreviewGate"]
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)
 # - var LINE_DASHBOARD_CHANNEL_ID (dedicated Member Dashboard audience)
+# - var LINE_BACKUP_CHANNEL_ID (MY MMD Backup LINE Login audience)
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
@@ -147,6 +162,7 @@ LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
 LINE_LOGIN_CHANNEL_ID = "care-back-staging-channel"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_JOBS = "tbl0jxIjN8QYwGABX"
 AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
 AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
 AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"

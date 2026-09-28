@@ -68,7 +68,7 @@ test("therapist application is the single canonical five-step source", async () 
   assert.doesNotMatch(js, /file\.lastModified/);
   assert.doesNotMatch(js, /localStorage\.removeItem\(storageKey\).*uploadFiles/);
   assert.doesNotMatch(html, /Inside MMS|MMS shop|หน้าร้าน MMS/i);
-  assert.match(html, /https:\/\/lin\.ee\/WKKjnZ1/);
+  assert.match(html, /https:\/\/lin\.ee\/NkfXMu7/);
   assert.equal((html.match(/data-mmd-contrast-skip="world-headline"/g) || []).length, 5);
 });
 

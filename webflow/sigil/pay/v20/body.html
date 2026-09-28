@@ -1,0 +1,252 @@
+<section
+  id="sigil-pay-v20"
+  class="sp20"
+  data-sp20
+  data-api-base="https://sigil.mmdbkk.com"
+  data-details-path="/v1/confirm/details"
+  data-instructions-path="/v1/confirm/payment-instructions"
+  data-proof-path="/v1/pay/slip/evidence"
+  data-canonical-origin="https://mmdbkk.com"
+  data-payments-url="/member/payments"
+  data-help-url="https://lin.ee/xRqsALs"
+  aria-busy="true"
+>
+  <div class="sp20__shell">
+    <header class="sp20__top">
+      <a class="sp20__brand" href="/my-mmd/" aria-label="กลับ My MMD">
+        <span class="sp20__sigil" aria-hidden="true">M</span>
+        <span><strong>SĪGIL</strong><small>MMD Privé · Private Payment</small></span>
+      </a>
+      <span class="sp20__private"><i></i>PRIVATE</span>
+    </header>
+
+    <section class="sp20__state" data-sp20-loading aria-live="polite">
+      <span class="sp20__spinner" aria-hidden="true"></span>
+      <div>
+        <strong>กำลังเปิดรายการครับ</strong>
+        <p>MMD กำลังดึงรายละเอียด ยอด และช่องทางชำระของรายการนี้</p>
+      </div>
+    </section>
+
+    <section class="sp20__state sp20__state--error" data-sp20-error hidden aria-live="assertive">
+      <span class="sp20__state-icon" aria-hidden="true">!</span>
+      <div>
+        <strong data-sp20-error-title>เปิดรายการนี้ไม่ได้ครับ</strong>
+        <p data-sp20-error-message>ลองเปิดจากลิงก์ชำระล่าสุดที่ MMD ส่งให้ครับ</p>
+        <div class="sp20__state-actions">
+          <button type="button" class="sp20__btn sp20__btn--ghost" data-sp20-retry>ลองอีกครั้ง</button>
+          <a class="sp20__btn sp20__btn--ghost" href="https://lin.ee/xRqsALs">ติดต่อ MMD</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="sp20__content" data-sp20-content hidden>
+      <section class="sp20__summary" aria-labelledby="sp20-title">
+        <div class="sp20__summary-head">
+          <div>
+            <p class="sp20__eyebrow">MMD · PRIVATE PAYMENT</p>
+            <h1 id="sp20-title">เช็กรายการ แล้วชำระได้เลยครับ</h1>
+          </div>
+          <span class="sp20__status-pill" data-sp20-status>รอการชำระเงิน</span>
+        </div>
+
+        <div class="sp20__summary-grid">
+          <div class="sp20__due">
+            <span>ยอดที่ชำระครั้งนี้</span>
+            <strong><i>฿</i><b data-sp20-amount>—</b></strong>
+            <small data-sp20-stage>ยอดที่ต้องชำระ</small>
+          </div>
+          <div class="sp20__summary-note">
+            <strong>ก่อนชำระ เช็ก 4 อย่างให้ตรง</strong>
+            <p>Model · วันเวลา · สถานที่ · ยอดครั้งนี้</p>
+            <div class="sp20__refs">
+              <span data-sp20-payment-ref>—</span>
+              <span data-sp20-session-id>—</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="sp20__layout">
+        <main class="sp20__main">
+          <section class="sp20__card" id="sp20-details">
+            <div class="sp20__section-head">
+              <div>
+                <p class="sp20__kicker">01 · CHECK</p>
+                <h2>รายละเอียดงาน</h2>
+              </div>
+              <span class="sp20__truth">ข้อมูลจาก MMD</span>
+            </div>
+
+            <div class="sp20__model">
+              <span class="sp20__avatar" data-sp20-model-initial>M</span>
+              <div>
+                <small>MODEL</small>
+                <strong data-sp20-model>—</strong>
+                <p data-sp20-service>Private Session</p>
+              </div>
+            </div>
+
+            <dl class="sp20__facts">
+              <div><dt>ลูกค้า</dt><dd data-sp20-client>—</dd></div>
+              <div><dt>วันที่</dt><dd data-sp20-date>—</dd></div>
+              <div><dt>เวลา</dt><dd data-sp20-time>—</dd></div>
+              <div>
+                <dt>สถานที่</dt>
+                <dd><span data-sp20-location>—</span><a data-sp20-map href="#" target="_blank" rel="noopener noreferrer" hidden>เปิดแผนที่ ↗</a></dd>
+              </div>
+            </dl>
+
+            <div class="sp20__pricing">
+              <div data-sp20-full-row hidden><span>ราคาปกติ</span><del data-sp20-full>—</del></div>
+              <div data-sp20-discount-row hidden><span>ส่วนลด</span><strong class="sp20__gold" data-sp20-discount>—</strong></div>
+              <div><span>ราคาที่ตกลง</span><strong data-sp20-net>—</strong></div>
+              <div><span>ชำระครั้งนี้</span><strong class="sp20__gold" data-sp20-due>—</strong></div>
+              <div data-sp20-balance-row hidden><span>คงเหลือหลังยอดนี้</span><strong data-sp20-balance>—</strong></div>
+            </div>
+          </section>
+
+          <section class="sp20__card sp20__card--payment" id="sp20-payment">
+            <div class="sp20__section-head">
+              <div>
+                <p class="sp20__kicker">02 · PAYMENT</p>
+                <h2>เลือกช่องทางชำระเงิน</h2>
+              </div>
+            </div>
+            <p class="sp20__body">ช่องทางด้านล่างมาจาก Payment Truth ของ MMD โดยตรงครับ</p>
+
+            <div class="sp20__method-state" data-sp20-method-state aria-live="polite">
+              <span class="sp20__mini-spinner" aria-hidden="true"></span>
+              <span>กำลังโหลด 3 ช่องทางชำระเงิน</span>
+            </div>
+
+            <div class="sp20__method-list" role="tablist" aria-label="ช่องทางชำระเงิน" data-sp20-tabs hidden>
+              <button type="button" class="sp20__method" role="tab" data-sp20-method="promptpay" aria-selected="false">
+                <span class="sp20__method-no">01</span>
+                <span><strong>QR PromptPay</strong><small>สแกนจากแอปธนาคาร</small></span>
+                <i>›</i>
+              </button>
+              <button type="button" class="sp20__method" role="tab" data-sp20-method="bank_transfer" aria-selected="false">
+                <span class="sp20__method-no">02</span>
+                <span><strong>โอนธนาคาร</strong><small>ดูเลขบัญชีเมื่อพร้อมโอน</small></span>
+                <i>›</i>
+              </button>
+              <button type="button" class="sp20__method" role="tab" data-sp20-method="paypal_card" aria-selected="false">
+                <span class="sp20__method-no">03</span>
+                <span><strong>Credit / Debit Card</strong><small>PayPal · ค่าดำเนินการตามระบบ</small></span>
+                <i>›</i>
+              </button>
+            </div>
+
+            <div class="sp20__method-panel" data-sp20-panel="promptpay" role="tabpanel" hidden>
+              <div class="sp20__panel-head"><div><small>PROMPTPAY</small><strong>สแกน QR สำหรับยอดนี้</strong></div><span>แนะนำ</span></div>
+              <div class="sp20__qr-wrap">
+                <img data-sp20-qr src="" alt="PromptPay QR สำหรับรายการนี้" hidden>
+                <div class="sp20__qr-fallback" data-sp20-qr-fallback hidden>
+                  <small>PromptPay</small><strong data-sp20-promptpay-ref>—</strong>
+                </div>
+              </div>
+              <p class="sp20__hint">เช็กยอดในแอปธนาคารให้ตรงกับ “ยอดที่ชำระครั้งนี้” ก่อนยืนยันครับ</p>
+            </div>
+
+            <div class="sp20__method-panel" data-sp20-panel="bank_transfer" role="tabpanel" hidden>
+              <div class="sp20__panel-head"><div><small>BANK TRANSFER</small><strong data-sp20-bank-name>โอนเข้าบัญชีธนาคาร</strong></div></div>
+              <div class="sp20__bank">
+                <div><span>ชื่อบัญชี</span><strong data-sp20-account-name>—</strong></div>
+                <div><span>เลขบัญชี</span><strong data-sp20-account-number>••••••••••</strong></div>
+              </div>
+              <div class="sp20__inline-actions">
+                <button type="button" class="sp20__btn sp20__btn--ghost" data-sp20-bank-reveal>ดูเลขบัญชี</button>
+                <button type="button" class="sp20__btn sp20__btn--ghost" data-sp20-bank-copy disabled>คัดลอกเลขบัญชี</button>
+              </div>
+            </div>
+
+            <div class="sp20__method-panel" data-sp20-panel="paypal_card" role="tabpanel" hidden>
+              <div class="sp20__panel-head"><div><small>CREDIT / DEBIT CARD</small><strong>ชำระผ่าน PayPal</strong></div><span data-sp20-card-rate>+4%</span></div>
+              <div class="sp20__fee">
+                <div><span>ยอดบริการ</span><strong data-sp20-card-base>—</strong></div>
+                <div><span>ค่าดำเนินการบัตร</span><strong data-sp20-card-fee>—</strong></div>
+                <div><span>ยอดชำระผ่านบัตร</span><strong class="sp20__gold" data-sp20-card-total>—</strong></div>
+              </div>
+              <p class="sp20__hint">ค่าดำเนินการบัตรเป็น processing fee แยกจากค่าบริการครับ</p>
+              <a class="sp20__btn sp20__btn--gold sp20__btn--wide" data-sp20-paypal href="#" target="_blank" rel="noopener noreferrer">ชำระด้วยบัตร / PayPal ↗</a>
+            </div>
+          </section>
+
+          <section class="sp20__card" id="sp20-proof">
+            <div class="sp20__section-head">
+              <div>
+                <p class="sp20__kicker">03 · PAYMENT PROOF</p>
+                <h2>ชำระแล้ว ส่งสลิปที่นี่ครับ</h2>
+              </div>
+            </div>
+            <p class="sp20__body">ส่งครั้งเดียวพอครับ ระบบจะผูกหลักฐานกับรายการนี้ และสถานะยังเป็น “รอตรวจสอบ” จนกว่า MMD จะยืนยันยอด</p>
+
+            <div data-sp20-proof-form>
+              <label class="sp20__upload" for="sp20-file">
+                <input id="sp20-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-sp20-file>
+                <span>＋</span>
+                <strong>เลือกสลิป</strong>
+                <small>JPG · PNG · WEBP · PDF / ไม่เกิน 10 MB</small>
+              </label>
+
+              <div class="sp20__file-card" data-sp20-file-card hidden>
+                <div class="sp20__preview" data-sp20-preview>FILE</div>
+                <div><strong data-sp20-file-name>—</strong><small data-sp20-file-size>—</small></div>
+                <button type="button" data-sp20-file-remove>เปลี่ยน</button>
+              </div>
+
+              <label class="sp20__field">
+                <span>หมายเหตุเพิ่มเติม <em>ไม่บังคับ</em></span>
+                <textarea rows="3" maxlength="500" placeholder="เช่น โอนจากชื่อบัญชีอื่น" data-sp20-note></textarea>
+              </label>
+
+              <label class="sp20__consent">
+                <input type="checkbox" data-sp20-consent>
+                <span>ตรวจสอบยอดแล้ว และส่งหลักฐานนี้ให้ MMD ใช้ตรวจสอบการชำระเงิน</span>
+              </label>
+
+              <button type="button" class="sp20__btn sp20__btn--gold sp20__btn--wide" data-sp20-submit disabled>
+                <span data-sp20-submit-label>ส่งสลิปให้ MMD</span>
+              </button>
+              <p class="sp20__submit-status" data-sp20-submit-status aria-live="polite"></p>
+            </div>
+
+            <div class="sp20__proof-state" data-sp20-proof-state hidden></div>
+          </section>
+        </main>
+
+        <aside class="sp20__aside">
+          <section class="sp20__side-card">
+            <p class="sp20__kicker">STATUS</p>
+            <h2 data-sp20-side-status>รอการชำระเงิน</h2>
+            <p data-sp20-side-copy>เมื่อ MMD ตรวจยอดแล้ว สถานะจะอัปเดตให้เองครับ</p>
+          </section>
+
+          <section class="sp20__side-card">
+            <p class="sp20__kicker">MY MMD</p>
+            <h2>ติดตามต่อได้จาก My MMD</h2>
+            <p>หลังส่งสลิปแล้ว ไม่ต้องส่งซ้ำครับ ดูสถานะรายการต่อได้ที่นี่</p>
+            <a class="sp20__btn sp20__btn--ghost sp20__btn--wide" href="/member/payments">ดูการชำระของฉัน</a>
+          </section>
+
+          <section class="sp20__side-card sp20__side-card--help">
+            <p class="sp20__kicker">MMD CONCIERGE</p>
+            <h2>อยากให้ช่วยเช็กก่อนชำระ</h2>
+            <a class="sp20__text-link" href="https://lin.ee/xRqsALs">คุยกับ MMD ทาง LINE ↗</a>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="sp20__footer">
+        <strong>SĪGIL</strong>
+        <span>MMD verifies every payment before confirmation.</span>
+      </footer>
+    </div>
+  </div>
+
+  <div class="sp20__sticky" data-sp20-sticky hidden>
+    <div><small data-sp20-sticky-stage>ยอดที่ชำระ</small><strong data-sp20-sticky-amount>฿—</strong></div>
+    <button type="button" class="sp20__btn sp20__btn--gold" data-sp20-sticky-action>เลือกช่องทาง</button>
+  </div>
+</section>

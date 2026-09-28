@@ -5,8 +5,7 @@ const LANDING_PATH = "/promotion/6-years-care-back";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const COUPON_VALIDITY_MONTHS = 2;
 const COUPON_MAX_DISCOUNT_PERCENT = 10;
-const CURRENT_MEMBER_EXTENSION_DAYS = 180;
-const RENEWED_MEMBER_EXTENSION_DAYS = 90;
+const EXISTING_MEMBER_VERIFY_EXTENSION_DAYS = 365;
 const RENEWED_MEMBER_BONUS_POINTS = 150;
 const NEW_MEMBER_WELCOME_POINTS = 66;
 const POINTS_RATE_THB = 100;
@@ -515,12 +514,12 @@ function initialClaimPolicy(observed) {
     return {
       match_status: "matched",
       classification_group: "current_member",
-      default_months: 6,
+      default_months: 12,
       payment_status: "not_required",
       payment_required: false,
       review_status: "not_required",
       claim_status: "benefit_approved",
-      membership_benefit: { kind: "membership_extension", days: CURRENT_MEMBER_EXTENSION_DAYS, state: "pending_application" },
+      membership_benefit: { kind: "membership_extension", days: EXISTING_MEMBER_VERIFY_EXTENSION_DAYS, state: "pending_application" },
       points_policy: {
         reconciliation_state: "pending",
         rate_thb_per_point: POINTS_RATE_THB,
@@ -533,12 +532,12 @@ function initialClaimPolicy(observed) {
     return {
       match_status: "matched",
       classification_group: "inactive_expired",
-      default_months: 3,
-      payment_status: "pending",
-      payment_required: true,
+      default_months: 12,
+      payment_status: "not_required",
+      payment_required: false,
       review_status: "not_required",
-      claim_status: "payment_pending",
-      membership_benefit: { kind: "membership_extension", days: RENEWED_MEMBER_EXTENSION_DAYS, state: "renewal_required" },
+      claim_status: "benefit_approved",
+      membership_benefit: { kind: "membership_extension", days: EXISTING_MEMBER_VERIFY_EXTENSION_DAYS, state: "pending_application" },
       points_policy: {
         reconciliation_state: "pending",
         rate_thb_per_point: POINTS_RATE_THB,
@@ -574,11 +573,12 @@ function resolvedClaimPolicy(fields, observed) {
     const membershipRestored = observed.status === "active" || observed.status === "grace";
     return {
       ...policy,
-      payment_status: paymentVerified ? "verified" : "pending",
-      claim_status: paymentVerified && membershipRestored ? "benefit_approved" : "payment_pending",
+      payment_status: paymentVerified ? "verified" : "not_required",
+      payment_required: false,
+      claim_status: "benefit_approved",
       membership_benefit: {
         ...policy.membership_benefit,
-        state: paymentVerified && membershipRestored ? "pending_application" : "renewal_required",
+        state: "pending_application",
       },
       points_policy: {
         ...policy.points_policy,
@@ -641,17 +641,10 @@ function couponStateFor(claimPolicy, observed, promoFields, now = new Date(), wi
 
 function couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted) {
   if (!wishSubmitted) return false;
-  const membershipVerified = observed.status === "active" || observed.status === "grace";
-  const paymentVerified = claimPolicy.payment_required
-    ? claimPolicy.payment_status === "verified"
-    : claimPolicy.payment_status === "not_required";
-  const reviewVerified = claimPolicy.review_status === "approved" || claimPolicy.review_status === "not_required";
-  const claimApproved = ["benefit_approved", "applying", "benefit_applied"].includes(String(claimPolicy.claim_status || ""));
-  return membershipVerified
-    && paymentVerified
-    && reviewVerified
-    && claimApproved
-    && claimPolicy.membership_benefit?.state !== "renewal_required";
+  // The anniversary coupon belongs to every verified MMD member, including
+  // expired members. Existing-member Verify grants the one-year membership
+  // benefit separately from renewal-only Points; the Wish coupon remains standalone.
+  return ["active", "grace", "expired"].includes(observed.status);
 }
 
 function normalizeModelLevel(value) {

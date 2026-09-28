@@ -77,6 +77,8 @@ jobs:
             "/v1/model/session/action",
             "/v1/model/profile",
             "/v1/model/profile*",
+            "/v1/model/compcard/request",
+            "/v1/model/compcard/request*",
             "/v1/model/media*",
             "/v1/model/settings/gps-visibility",
             "/v1/model/location/capability",

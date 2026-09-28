@@ -178,6 +178,7 @@ function env(overrides = {}) {
   const runtime = {
     LINE_LOGIN_CHANNEL_ID: "2000000000",
     LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+    LINE_BACKUP_CHANNEL_ID: "2011691294",
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
     MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
@@ -195,7 +196,7 @@ function env(overrides = {}) {
 function lineVerify({ sub = "U123", aud = "2000000000", exp = Math.floor(Date.now() / 1000) + 600, status = 200, malformed = false } = {}) {
   globalThis.fetch = async (_url, init) => {
     const params = new URLSearchParams(init.body);
-    assert.ok(["2000000000", "2010862595"].includes(params.get("client_id")));
+    assert.ok(["2000000000", "2010862595", "2011691294"].includes(params.get("client_id")));
     assert.ok(params.get("id_token"));
     if (malformed) return new Response("{not-json", { status, headers: { "content-type": "application/json" } });
     return new Response(JSON.stringify({ sub, aud, exp }), {
@@ -272,11 +273,12 @@ async function keyedDigestForTest(secret, value) {
 }
 
 describe("Phase 1 LIFF identity foundation security correction", () => {
-  it("verifies CARE BACK and Dashboard tokens only against the fixed server-owned audiences", async () => {
+  it("verifies CARE BACK, Dashboard and Backup tokens only against fixed server-owned audiences", async () => {
     const clients = [];
     const runtime = env({
       LINE_LOGIN_CHANNEL_ID: "2010298002",
       LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+      LINE_BACKUP_CHANNEL_ID: "2011691294",
     });
     globalThis.fetch = async (_url, init) => {
       const params = new URLSearchParams(init.body);
@@ -285,6 +287,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       clients.push({ token, clientId });
       const expected = token === "care-back-token" ? "2010298002"
         : token === "dashboard-token" ? "2010862595"
+          : token === "backup-token" ? "2011691294"
           : "";
       if (!expected || clientId !== expected) {
         return Response.json({ error: "invalid_token" }, { status: 400 });
@@ -305,12 +308,20 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       { token: "dashboard-token", clientId: "2010862595" },
     ]);
 
+    assert.equal((await request("/member/api/liff/start", { body: { id_token: "backup-token" } }, runtime)).response.status, 200);
+    assert.deepEqual(clients.splice(0), [
+      { token: "backup-token", clientId: "2010298002" },
+      { token: "backup-token", clientId: "2010862595" },
+      { token: "backup-token", clientId: "2011691294" },
+    ]);
+
     const unknown = await request("/member/api/liff/start", { body: { id_token: "unknown-token" } }, runtime);
     assert.equal(unknown.response.status, 401);
     assert.equal(unknown.payload.error.code, "LINE_ID_TOKEN_INVALID");
     assert.deepEqual(clients.splice(0), [
       { token: "unknown-token", clientId: "2010298002" },
       { token: "unknown-token", clientId: "2010862595" },
+      { token: "unknown-token", clientId: "2011691294" },
     ]);
   });
 
@@ -318,6 +329,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const runtime = env({
       LINE_LOGIN_CHANNEL_ID: "2010298002",
       LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+      LINE_BACKUP_CHANNEL_ID: "2011691294",
     });
     globalThis.fetch = async (_url, init) => {
       const clientId = new URLSearchParams(init.body).get("client_id");
@@ -407,6 +419,79 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(memberResolver.calls.length, 1);
     assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
   });
+  it("self-heals a stale pending LIFF session on profile read after canonical member evidence appears", async () => {
+    const initialResolver = resolver({ member_exists: false });
+    const runtime = env({ MEMBER_STATUS_RESOLVER: initialResolver });
+    const started = await start(runtime, { id_token: "stale-pending-token", liff_intent: "status" });
+    const staleCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+
+    assert.equal(started.payload.data.member_resolved, false);
+    assert.equal(started.payload.data.pending_identity, true);
+
+    const recoveredResolver = resolver({
+      member_exists: true,
+      mmd_member_id: "MMD-PROTECTED-RECOVERED",
+      profile: {
+        display_name: "มาดามใจ",
+        tier: "SVIP",
+        membership_status: "active",
+        membership_expires_at: "2028-09-23",
+        points: null,
+        history_window: { from: "2025-09-23", to: "2026-09-23", timezone: "Asia/Bangkok" },
+        history: [],
+      },
+    });
+    runtime.MEMBER_STATUS_RESOLVER = recoveredResolver;
+
+    const profile = await request("/member/api/liff/profile", {
+      method: "GET",
+      cookie: staleCookie,
+    }, runtime);
+
+    assert.equal(profile.response.status, 200);
+    assert.equal(profile.payload.ok, true);
+    assert.equal(profile.payload.data.display_name, "มาดามใจ");
+    // The foundation serializer deliberately masks protected labels; the
+    // runtime Fast Trust overlay restores the customer-visible SVIP tier.
+    assert.equal(profile.payload.data.tier, "Member");
+    assert.equal(profile.payload.data.membership_status, "active");
+    assert.equal(recoveredResolver.calls.length, 1);
+    assert.equal(recoveredResolver.calls[0]._path, "/__internal/member-profile/read");
+    assertHostCookie(findCookie(profile.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
+  });
+
+  it("self-heals a stale pending LIFF session on dashboard read without asking the member to restart LINE", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: false }) });
+    const started = await start(runtime, { id_token: "stale-dashboard-token", liff_intent: "status" });
+    const staleCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+
+    runtime.MEMBER_STATUS_RESOLVER = resolver({
+      member_exists: true,
+      mmd_member_id: "MMD-PROTECTED-DASHBOARD",
+      profile: {
+        display_name: "Protected Member",
+        tier: "SVIP",
+        membership_status: "active",
+        membership_expires_at: "2028-09-23",
+        points: 0,
+        history_window: { from: "2025-09-23", to: "2026-09-23", timezone: "Asia/Bangkok" },
+        history: [],
+      },
+    });
+
+    const dashboard = await request("/api/member/dashboard", {
+      method: "GET",
+      cookie: staleCookie,
+    }, runtime);
+
+    assert.equal(dashboard.response.status, 200);
+    assert.equal(dashboard.payload.ok, true);
+    // The raw foundation keeps the protected tier field in checking state.
+    // runtime-index overlays the exact-UID Fast Trust tier after this 200 response.
+    assert.equal(dashboard.payload.data.member.tier.status, "checking");
+    assert.equal(dashboard.payload.data.member.membership_status.value, "active");
+  });
+
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
     const { response, payload, runtime } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
@@ -458,7 +543,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
             discount_percent: 0,
             coupon_state: "wish_required",
             coupon_message: "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้",
-            membership_benefit: { type: "membership_extension", days: 180, state: "pending_application" },
+            membership_benefit: { type: "membership_extension", days: 365, state: "pending_application" },
             resumed: false,
           };
         },
@@ -1200,6 +1285,45 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].hype_decision_status, "asking_audience");
     assert.equal(runtime.LIFF_GATEWAY_STORE.decisions.length, 1);
     assert.deepEqual(result.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+  });
+
+  it("lets a new private Premium signup select the canonical 2,999 package without a Hall audience", async () => {
+    const runtime = env();
+    runtime.LIFF_GATEWAY_STORE.packages.set("premium", {
+      package_code: "premium", pricing_lane: "premium_2999", amount_thb: 2999,
+      duration_days: 730, points_after_verification: 0, requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "new-private-member", liff_intent: "signup" });
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "premium" },
+    }, runtime);
+    assert.equal(selected.response.status, 200);
+    assert.equal(selected.payload.data.payment_summary.amount_thb, 2999);
+    assert.equal(selected.payload.data.next_screen_key, "payment_start");
+    assert.deepEqual(selected.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+
+    const payment = await request("/member/api/liff/payment-intent", {
+      cookie: cookiePair(findCookie(selected.response, "__Host-mmd_liff_session")),
+      body: { package_code: "premium", payment_stage: "membership" },
+    }, runtime);
+    assert.equal(payment.response.status, 503);
+    assert.equal(payment.payload.error.code, "PAYMENT_TOKEN_CONTRACT_UNAVAILABLE");
+  });
+
+  it("does not offer the new signup rate to an existing member", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true }) });
+    runtime.LIFF_GATEWAY_STORE.packages.set("premium", {
+      package_code: "premium", pricing_lane: "premium_2999", amount_thb: 2999,
+      duration_days: 730, points_after_verification: 0, requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "existing-private-member", liff_intent: "signup" });
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "premium" },
+    }, runtime);
+    assert.equal(selected.response.status, 409);
+    assert.equal(selected.payload.error.code, "PACKAGE_NOT_READY");
   });
 
   it("stores a bounded Hall audience decision without exposing its internal labels to the customer", async () => {

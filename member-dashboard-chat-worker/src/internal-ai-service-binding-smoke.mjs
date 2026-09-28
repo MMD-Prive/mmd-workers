@@ -1,4 +1,4 @@
-const AI_REASONING_URL = "https://ai-worker.local/v1/ai/kenji/customer-reasoning";
+const AI_MATRIX_URL = "https://ai-worker.local/v1/ai/kenji/conversation-matrix";
 const SMOKE_TIMEOUT_MS = 1_500;
 
 function text(value) {
@@ -9,29 +9,32 @@ function unavailable(reason) {
   return { state: "SOURCE_UNAVAILABLE", reason };
 }
 
-function syntheticCustomerContext() {
+function syntheticContextBundle() {
   return {
-    synthetic: true,
-    line_user_id: "",
-    evidence_sources: {
-      rename_identity: unavailable("diagnostic_synthetic_context"),
-      line_oa_1to1: unavailable("diagnostic_synthetic_context"),
-      line_crew: unavailable("diagnostic_synthetic_context"),
-      chat_exports_attachments: unavailable("diagnostic_synthetic_context"),
-      hashtags_tenure: unavailable("diagnostic_synthetic_context"),
-      recognition_history: unavailable("diagnostic_synthetic_context"),
-      membership_cycles: unavailable("diagnostic_synthetic_context"),
-      payment_evidence: unavailable("diagnostic_synthetic_context"),
-      resolver_snapshot: unavailable("diagnostic_synthetic_context"),
+    evaluated_at: new Date().toISOString(),
+    identity: {
+      state: "unknown",
+      canonical_client_ref: "",
+      preferred_name: "",
+      confidence: "unknown",
+      source: "synthetic_diagnostic",
     },
-    current_line_event: {
-      observed: false,
-      source_type: "diagnostic",
-      crew_source_allowlisted: false,
-      event_type: "diagnostic",
-      message_type: "none",
-      redelivery: false,
+    customer_context: {
+      synthetic: true,
+      evidence_sources: {
+        rename_identity: unavailable("diagnostic_synthetic_context"),
+        line_oa_1to1: unavailable("diagnostic_synthetic_context"),
+        line_crew: unavailable("diagnostic_synthetic_context"),
+        chat_exports_attachments: unavailable("diagnostic_synthetic_context"),
+        hashtags_tenure: unavailable("diagnostic_synthetic_context"),
+        recognition_history: unavailable("diagnostic_synthetic_context"),
+        membership_cycles: unavailable("diagnostic_synthetic_context"),
+        payment_evidence: unavailable("diagnostic_synthetic_context"),
+        resolver_snapshot: unavailable("diagnostic_synthetic_context"),
+      },
     },
+    current_intent: "line_event",
+    domain_guard: { handoff_required: false, review_required: false },
   };
 }
 
@@ -39,7 +42,12 @@ function contractAccepted(payload) {
   const data = payload?.data;
   return payload?.ok === true &&
     data?.read_only === true &&
-    data?.evidence_discovery?.unavailable_is_not_not_found === true;
+    data?.schema_version === "mmd.kenji_conversation_matrix.v1" &&
+    data?.identity?.state === "unknown" &&
+    data?.safety?.memory_is_context_only === true &&
+    data?.safety?.may_grant_entitlement === false &&
+    data?.safety?.may_confirm_payment === false &&
+    data?.safety?.may_confirm_booking_or_availability === false;
 }
 
 function failed(status, code) {
@@ -56,7 +64,8 @@ function failed(status, code) {
 
 /**
  * Internal diagnostic only. It sends a fully synthetic context to the existing
- * read-only Kenji reasoning contract and deliberately returns no upstream body.
+ * read-only Conversation Matrix shadow contract and deliberately returns no
+ * upstream memory body or customer-facing copy.
  */
 export async function runInternalAiServiceBindingSmoke(env = {}) {
   if (!env.AI_WORKER?.fetch) return failed(503, "AI_WORKER_BINDING_MISSING");
@@ -64,7 +73,7 @@ export async function runInternalAiServiceBindingSmoke(env = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("ai_service_binding_smoke_timeout"), SMOKE_TIMEOUT_MS);
   try {
-    const response = await env.AI_WORKER.fetch(new Request(AI_REASONING_URL, {
+    const response = await env.AI_WORKER.fetch(new Request(AI_MATRIX_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -75,7 +84,7 @@ export async function runInternalAiServiceBindingSmoke(env = {}) {
       },
       body: JSON.stringify({
         actor: { role: "system", purpose: "read_only_service_binding_smoke" },
-        customer_context: syntheticCustomerContext(),
+        context_bundle: syntheticContextBundle(),
       }),
       signal: controller.signal,
     }));
@@ -90,7 +99,8 @@ export async function runInternalAiServiceBindingSmoke(env = {}) {
         ok: true,
         read_only: true,
         service: "ai-worker",
-        contract: "kenji_customer_reasoning_v1",
+        contract: "kenji_conversation_matrix_shadow_v1",
+        customer_side_effects: false,
       },
     };
   } catch (_) {
@@ -102,5 +112,5 @@ export async function runInternalAiServiceBindingSmoke(env = {}) {
 
 export const INTERNAL_AI_SERVICE_BINDING_SMOKE = Object.freeze({
   path: "/v1/internal/ai/service-binding-smoke",
-  url: AI_REASONING_URL,
+  url: AI_MATRIX_URL,
 });

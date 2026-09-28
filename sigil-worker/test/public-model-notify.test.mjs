@@ -53,24 +53,29 @@ test("success writes pending then sent and routes to dedicated topic with action
   const telegramCalls = [];
   const env = {
     AIRTABLE_API_TOKEN: "test-airtable-token",
-    TELEGRAM_BOT_TOKEN: "test-telegram-token",
-    TELEGRAM_CHAT_ID: "-100123",
-    TELEGRAM_PUBLIC_MODEL_THREAD_ID: "155",
-    TG_THREAD_CONFIRM: "61",
+    AUTH_SERVICE_SIGIL_TO_TELEGRAM: "sigil-router-secret",
     PUBLIC_MODEL_REVIEW_BASE_URL: REVIEW_BASE,
     AIRTABLE_FETCH: async (url, init = {}) => {
       const method = init.method || "GET";
       if (method === "GET") { assert.match(String(url), /filterByFormula/); return jsonResponse({ records: [{ id: RECORD_ID, fields: {} }] }); }
       const body = JSON.parse(init.body); writes.push(body.fields); return jsonResponse({ id: RECORD_ID, fields: body.fields });
     },
-    TELEGRAM_FETCH: async (url, init = {}) => { telegramCalls.push({ url: String(url), body: JSON.parse(init.body) }); return jsonResponse({ ok: true }); },
+    TELEGRAM_WORKER: {
+      fetch: async (request) => {
+        const body = await request.json();
+        telegramCalls.push({ url: request.url, auth: request.headers.get("authorization"), body });
+        return jsonResponse({ ok: true, telegram: { ok: true, result: { message_id: 101, message_thread_id: 155 } } });
+      },
+    },
   };
   const result = await notifyPublicModelApplication({ env, payload: { nickname: "Tester" }, applicationId: APPLICATION_ID });
   assert.equal(result.ok, true);
   assert.equal(telegramCalls.length, 1);
-  assert.equal(telegramCalls[0].body.chat_id, "-100123");
-  assert.equal(telegramCalls[0].body.message_thread_id, 155);
-  assert.notEqual(telegramCalls[0].body.message_thread_id, 61);
+  assert.match(telegramCalls[0].url, /telegram-worker\.internal\/telegram\/internal\/send$/);
+  assert.equal(telegramCalls[0].auth, "Bearer sigil-router-secret");
+  assert.equal(telegramCalls[0].body.flow, "public_model");
+  assert.equal("chat_id" in telegramCalls[0].body, false);
+  assert.equal("message_thread_id" in telegramCalls[0].body, false);
   assert.match(telegramCalls[0].body.text, new RegExp(`application_id=${APPLICATION_ID}`));
   assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].text, "ตรวจ / อนุมัติใบสมัคร");
   assert.equal(telegramCalls[0].body.reply_markup.inline_keyboard[0][0].url, `${REVIEW_BASE}?application_id=${APPLICATION_ID}`);
@@ -79,20 +84,17 @@ test("success writes pending then sent and routes to dedicated topic with action
   assert.ok(writes[1][TELEGRAM_NOTIFY_FIELDS.notifiedAt]);
 });
 
-test("shared chat without dedicated Public Model topic is audited and never falls back to confirm", async () => {
+test("missing canonical Telegram router transport is audited and never falls back to direct Bot API", async () => {
   const writes = [];
   const env = {
     AIRTABLE_API_TOKEN: "test-airtable-token",
-    TELEGRAM_BOT_TOKEN: "test-telegram-token",
-    TELEGRAM_CHAT_ID: "-100123",
-    TG_THREAD_CONFIRM: "61",
     AIRTABLE_FETCH: async (_url, init = {}) => {
       const method = init.method || "GET";
       if (method === "GET") return jsonResponse({ records: [{ id: RECORD_ID, fields: {} }] });
       const body = JSON.parse(init.body); writes.push(body.fields); return jsonResponse({ id: RECORD_ID, fields: body.fields });
     },
   };
-  await assert.rejects(notifyPublicModelApplication({ env, payload: { nickname: "Tester" }, applicationId: APPLICATION_ID }), /missing_public_model_telegram_configuration/);
+  await assert.rejects(notifyPublicModelApplication({ env, payload: { nickname: "Tester" }, applicationId: APPLICATION_ID }), /missing_public_model_telegram_router_configuration/);
   assert.equal(writes[0][TELEGRAM_NOTIFY_FIELDS.status], "pending");
   assert.equal(writes[1][TELEGRAM_NOTIFY_FIELDS.status], "failed");
 });

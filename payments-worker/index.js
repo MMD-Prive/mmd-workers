@@ -137,7 +137,7 @@ function makePaymentRef(prefix = "pay") {
 
 function normalizeStage(value) {
   const s = toStr(value).toLowerCase();
-  const allowed = ["deposit", "final", "tips", "full", "membership"];
+  const allowed = ["deposit", "final", "tips", "full", "extension", "membership", "shop"];
   if (!allowed.includes(s)) throw new Error("invalid_payment_stage");
   return s;
 }
@@ -423,31 +423,29 @@ async function createSessionIfMissing(env, payload) {
 /* telegram */
 /* -------------------------------------------------- */
 async function telegramSend(env, text, threadId = null) {
-  const token = toStr(env.TELEGRAM_BOT_TOKEN);
-  const chatId = toStr(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
+  const service = env.TELEGRAM_WORKER;
+  const token = toStr(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM);
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
 
-  if (!token) {
-    return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
-  }
-
-  const body = {
-    chat_id: chatId,
-    text: toStr(text),
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  };
-
-  if (thread) body.message_thread_id = Number(thread);
-
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const thread = Number(toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "22"));
+  const flow = thread === 17 ? "points_threshold" : thread === 20 ? "membership" : "payment";
+  const res = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      flow,
+      text: toStr(text),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  }));
 
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok && data?.ok === true && data?.telegram?.ok === true, status: res.status, data, flow };
 }
 
 /* -------------------------------------------------- */
@@ -509,18 +507,24 @@ async function airtableFindFirstByFormula(env, table, formula) {
   return data?.records?.[0] || null;
 }
 
-async function airtableCreate(env, table, fields) {
+async function airtableCreate(env, table, fields, options = {}) {
   const data = await airtableFetch(env, encodeURIComponent(table), {
     method: "POST",
-    body: JSON.stringify({ records: [{ fields }] }),
+    body: JSON.stringify({
+      records: [{ fields }],
+      ...(options.typecast === true ? { typecast: true } : {}),
+    }),
   });
   return data?.records?.[0] || null;
 }
 
-async function airtablePatch(env, table, recordId, fields) {
+async function airtablePatch(env, table, recordId, fields, options = {}) {
   const data = await airtableFetch(env, `${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
     method: "PATCH",
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({
+      fields,
+      ...(options.typecast === true ? { typecast: true } : {}),
+    }),
   });
   return data || null;
 }
@@ -557,38 +561,57 @@ async function findPointLedgerByPaymentRef(env, paymentRef) {
 /* -------------------------------------------------- */
 /* core actions */
 /* -------------------------------------------------- */
-async function createOrUpdatePaymentIntent(env, payload) {
+const CANONICAL_MEMBERSHIP_PACKAGES = new Set(["mmd_member", "elite", "red_card", "standard", "premium"]);
+
+export function reviewedMembershipSchemaTypecast(payload = {}, options = {}) {
+  if (options.allow_membership_schema_typecast !== true) return false;
+  if (toStr(payload.payment_stage).toLowerCase() !== "membership") return false;
+  return CANONICAL_MEMBERSHIP_PACKAGES.has(toStr(payload.package_code).toLowerCase());
+}
+
+async function createOrUpdatePaymentIntent(env, payload, options = {}) {
   const table = getPaymentsTable(env);
   const existing = await findPaymentByPaymentRef(env, payload.payment_ref);
+  const typecast = reviewedMembershipSchemaTypecast(payload, options);
+
+  // Canonical Payments writes use only schema-backed fields. Do not write to
+  // formula aliases such as `payment_ref` / `verification_status`, and do
+  // not send legacy field names that are absent from the production table.
+  const paymentMethodRaw = toStr(payload.payment_method || "promptpay").toLowerCase();
+  const paymentMethod =
+    paymentMethodRaw.includes("prompt") ? "PromptPay" :
+    paymentMethodRaw.includes("bank") ? "Bank Transfer" :
+    paymentMethodRaw.includes("credit") ? "Credit Card" :
+    paymentMethodRaw.includes("cash") ? "Cash" : "Other";
+  const paymentDate = toStr(payload.paid_at || nowIso()).slice(0, 10);
+  const alreadyVerified = toStr(existing?.fields?.[toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]).toLowerCase() === "paid"
+    && toStr(existing?.fields?.[toStr(env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status")]).toLowerCase() === "verified";
+  const verified = alreadyVerified || (toStr(payload.payment_status).toLowerCase() === "paid"
+    && toStr(payload.verification_status).toLowerCase() === "verified");
 
   const fields = compact({
-    payment_ref: payload.payment_ref,
-    session_id: payload.session_id,
-    payment_stage: payload.payment_stage,
-    payment_type: payload.payment_stage,
-    amount_thb: payload.amount,
-    amount: payload.amount,
-    member_email: payload.member_email || "",
-    package_code: payload.package_code || "",
-    notes: payload.notes || "",
-    receipt_url: payload.receipt_url || "",
-    "Receipt Photo": payload.receipt_url || "",
-    "Payment Method": payload.payment_method || "promptpay",
-    "Payment Status": payload.payment_status || "pending",
-    "Verification Status": payload.verification_status || "pending",
-    "Payment Intent Status (AI)": payload.intent_status || "manual_review",
-    "Payment Date": payload.paid_at || nowIso(),
-    "Created At": payload.created_at || nowIso(),
-    [toStr(env.AT_PAYMENTS__CAMPAIGN_CLAIM_ID || CAMPAIGN_CLAIM_FIELD_ID)]: payload.campaign_claim_id || undefined,
+    [toStr(env.AT_PAYMENTS__PAYMENT_REF || "Payment Reference")]: payload.payment_ref,
+    [toStr(env.AT_PAYMENTS__PAYMENT_DATE || "Payment Date")]: paymentDate,
+    [toStr(env.AT_PAYMENTS__AMOUNT || "Amount")]: payload.amount,
+    [toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]: verified ? "Paid" : "Pending",
+    [toStr(env.AT_PAYMENTS__PAYMENT_METHOD || "Payment Method")]: paymentMethod,
+    [toStr(env.AT_PAYMENTS__NOTES || "Notes")]: toStr(payload.notes) || undefined,
+    [toStr(env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status")]: verified ? "verified" : "pending_review",
+    [toStr(env.AT_PAYMENTS__PAYMENT_INTENT_STATUS || "Payment Intent Status")]: verified ? "Confirmed" : "Pending Confirmation",
+    [toStr(env.AT_PAYMENTS__PACKAGE_CODE || "Package Code")]: toStr(payload.package_code) || undefined,
+    [toStr(env.AT_PAYMENTS__SESSION_ID || "session_id")]: toStr(payload.session_id) || undefined,
+    [toStr(env.AT_PAYMENTS__PAYMENT_STAGE || "payment_stage")]: toStr(payload.payment_stage) || undefined,
+    [toStr(env.AT_PAYMENTS__PAYMENT_TYPE || "payment_type")]:
+      ["deposit", "final", "tips", "full", "extension"].includes(toStr(payload.payment_stage)) ? toStr(payload.payment_stage) : undefined,
+    [toStr(env.AT_PAYMENTS__CREATED_AT || "Created At")]: existing?.id ? undefined : (payload.created_at || nowIso()),
   });
 
   if (existing?.id) {
-    assertPaymentClaimMatch(existing, payload.campaign_claim_id ? { claimId: payload.campaign_claim_id } : null, env);
-    await airtablePatch(env, table, existing.id, fields);
+    await airtablePatch(env, table, existing.id, fields, { typecast });
     return { ok: true, mode: "update", record_id: existing.id };
   }
 
-  const created = await airtableCreate(env, table, fields);
+  const created = await airtableCreate(env, table, fields, { typecast });
   return { ok: true, mode: "create", record_id: created?.id || null };
 }
 
@@ -598,73 +621,50 @@ async function updateSessionFromPayment(env, payload) {
     return { ok: false, skipped: true, reason: "session_not_found" };
   }
 
-  const nextStatus = paymentStatusFromStage(payload.stage);
-  const isFinal = payload.stage === "final" || payload.stage === "full";
-  const sessionFields = session.fields || {};
-  const lifecycleField = ["session_state", "state", "status"]
-    .find((name) => Object.prototype.hasOwnProperty.call(sessionFields, name)) || "status";
+  // Money truth must not advance the booking/model lifecycle. Session Status,
+  // status/session_state and model_session_state stay owned by their existing
+  // lifecycle contracts. This write only projects payment state.
+  const currentPaymentStatus = toStr(
+    session.fields?.[toStr(env.AT_SESSIONS__PAYMENT_STATUS || "payment_status")] ||
+    session.fields?.payment_status
+  ).toLowerCase();
+  const nextPaymentStatus =
+    payload.stage === "deposit" ? "partial" :
+    ["final", "full", "membership"].includes(payload.stage) ? "paid" :
+    currentPaymentStatus;
 
   const fields = compact({
-    [lifecycleField]: isFinal ? "final_payment_confirmed" : nextStatus,
-    "Session Status": nextStatus,
-    "Payment Status": nextStatus,
-    // The signed customer/model links remain bound to the original payment
-    // stage. Final payment has its own canonical ref and must not replace that
-    // original Session ref.
-    payment_ref: isFinal ? undefined : payload.payment_ref,
-    last_payment_ref: payload.payment_ref,
-    payment_type: payload.stage,
-    amount_thb: payload.amount_thb,
-    paid_at: payload.paid_at || nowIso(),
-    receipt_url: payload.receipt_url || "",
-    member_email: payload.member_email || "",
-    package_code: payload.package_code || "",
-    deposit_paid_at: payload.stage === "deposit" ? (payload.paid_at || nowIso()) : undefined,
-    final_paid_at: payload.stage === "final" || payload.stage === "full" ? (payload.paid_at || nowIso()) : undefined,
-    tips_paid_at: payload.stage === "tips" ? (payload.paid_at || nowIso()) : undefined,
+    [toStr(env.AT_SESSIONS__PAYMENT_STATUS || "payment_status")]: nextPaymentStatus || undefined,
+    [toStr(env.AT_SESSIONS__PAYMENT_REF || "payment_ref")]:
+      payload.stage === "deposit" && !toStr(session.fields?.[toStr(env.AT_SESSIONS__PAYMENT_REF || "payment_ref")])
+        ? payload.payment_ref
+        : undefined,
   });
 
-  await airtablePatch(env, getSessionsTable(env), session.id, fields);
+  if (Object.keys(fields).length) {
+    await airtablePatch(env, getSessionsTable(env), session.id, fields);
+  }
 
   return {
     ok: true,
     session_record_id: session.id,
-    status: nextStatus,
+    payment_status: nextPaymentStatus || null,
+    lifecycle_unchanged: true,
   };
 }
 
 async function awardPointsIfEligible(env, payload) {
-  if (!stageEligibleForPoints(payload.stage)) {
-    return { ok: true, skipped: true, reason: "stage_not_eligible" };
-  }
-
-  const existing = await findPointLedgerByPaymentRef(env, payload.payment_ref);
-  if (existing?.id) {
-    return { ok: true, duplicate: true, awarded: false, record_id: existing.id, points: 0 };
-  }
-
-  const points = computePoints(env, payload.amount_thb);
-  if (points <= 0) {
-    return { ok: true, skipped: true, reason: "points_zero", awarded: false, points: 0 };
-  }
-
-  const record = await airtableCreate(env, getPointsLedgerTable(env), {
-    payment_ref: payload.payment_ref,
-    session_id: payload.session_id || "",
-    member_email: payload.member_email || "",
-    package_code: payload.package_code || "",
-    amount_thb: payload.amount_thb,
-    points,
-    type: "earn",
-    payment_type: payload.stage,
-    created_at: nowIso(),
-  });
-
+  // Retired: Base Points Phase 1 in index.phase1.js is the only canonical
+  // points writer. This legacy hook must never touch Airtable after money
+  // truth is committed, otherwise an auxiliary ledger failure can make an
+  // Official Verify look failed after Payments is already Paid/verified.
   return {
     ok: true,
-    awarded: true,
-    record_id: record?.id || null,
-    points,
+    skipped: true,
+    awarded: false,
+    reason: "legacy_points_writer_retired",
+    canonical_writer: "points_phase1",
+    payment_ref: toStr(payload?.payment_ref) || null,
   };
 }
 
@@ -837,10 +837,14 @@ async function handleNotify(req, env) {
       verification_status: "verified",
       intent_status: receipt_url ? "manual_slip_submitted" : "manual_review",
       created_at: nowIso(),
-      campaign_claim_id: campaignHandoff?.claimId,
+    }, {
+      // Only the internal Official Verify path may extend Airtable select choices
+      // for canonical membership packages. Public/browser verify paths keep
+      // schema typecasting disabled.
+      allow_membership_schema_typecast: true,
     });
 
-    const session_updated = session_id
+    const session_updated = session_id && stage !== "shop"
       ? await updateSessionFromPayment(env, {
           payment_ref,
           stage,

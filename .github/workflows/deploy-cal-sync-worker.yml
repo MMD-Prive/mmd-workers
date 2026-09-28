@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: npx --yes wrangler@4 whoami
 
-      - name: Validate Cal shadow bridge
+      - name: Validate Cal shadow bridge and narrow hold writer
         shell: bash
         run: |
           set -euo pipefail
@@ -111,6 +111,11 @@ jobs:
           grep -q '"service":"cal-sync-worker"' "$body"
           grep -q '"mode":"shadow"' "$body"
           grep -q '"timezone":"Asia/Bangkok"' "$body"
+          grep -q '"internal_hold":{' "$body"
+          grep -q '"write_enabled":true' "$body"
+          grep -q '"coordinator_configured":true' "$body"
+          grep -q '"event_type_id":7057823' "$body"
+          grep -q '"writer":"cal-sync-worker"' "$body"
           if [ -n "$CAL_LEDGER_AIRTABLE_TOKEN" ]; then
             grep -q '"mapping_ledger_configured":true' "$body"
           fi
@@ -120,6 +125,16 @@ jobs:
           if [ -n "$CAL_API_KEY_VALUE" ]; then
             grep -q '"api_key_configured":true' "$body"
           fi
+
+      - name: Verify live-write route stays private
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl -sS -o "$body" -w "%{http_code}" -X POST             -H 'content-type: application/json'             --data '{"session_id":"CAL-PUBLIC-PROBE"}'             "$CAL_SYNC_WORKER_PRODUCTION_URL/internal/holds/ensure")"
+          cat "$body"
+          test "$code" = "404"
+          grep -q '"error":"not_found"' "$body"
 
       - name: Deployment receipt
         shell: bash

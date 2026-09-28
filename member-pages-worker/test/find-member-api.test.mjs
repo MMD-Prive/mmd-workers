@@ -67,12 +67,18 @@ function browserRequest(path, token, body) {
   });
 }
 
+function futureDate(days = 30) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function validFindBody(overrides = {}) {
   return {
     service_intent: "travel",
     model_preference: "Kenji",
     request_note: "อยากได้คนคุยง่าย สบาย ๆ",
-    preferred_date: "2026-09-20",
+    preferred_date: futureDate(),
     preferred_time: "19:30",
     area: "Sathorn",
     duration: "half_day",
@@ -133,7 +139,7 @@ describe("Find Your MMD member API", () => {
     assert.equal(seen[1].body.session_id, seen[0].body.session_id);
     assert.equal(seen[1].body.line_or_member_id, "member_001");
     assert.equal(seen[1].body.model_search_query, "Kenji");
-    assert.equal(seen[1].body.preferred_date, "2026-09-20");
+    assert.equal(seen[1].body.preferred_date, futureDate());
     assert.equal(seen[1].body.preferred_time, "19:30");
     assert.equal(seen[1].body.city, "Sathorn");
     assert.equal(seen[1].body.next_url, "https://mmdbkk.com/member/requests");

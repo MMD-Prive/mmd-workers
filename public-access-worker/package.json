@@ -1,0 +1,8 @@
+{
+  "name": "public-access-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:job-board": "node --test test/public-job-board-v2.test.mjs"
+  }
+}

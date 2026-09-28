@@ -1,5 +1,11 @@
+import {
+  fastTrustHasCanonicalClient,
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
-const STAGING_TABLE = "LINE OFC Client Import Staging";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
@@ -34,20 +40,20 @@ function normalizeRenamedName(value) {
     .trim();
 }
 
-export async function resolveFastTrustForLine(env = {}, lineUserId = "") {
+export async function resolveFastTrustEvidenceForLine(env = {}, lineUserId = "") {
   const lineId = canonicalLineId(lineUserId);
-  if (!lineId) return null;
+  if (!lineId) return { state: "invalid", reason: "invalid_line_identity", knownCanonicalClient: false, fastTrust: null, recordCount: 0 };
+
   const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
   const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
-  const table = String(
-    env.AIRTABLE_TABLE_LINE_OFC_STAGING
-      || env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID
-      || STAGING_TABLE,
-  ).trim();
-  if (!apiKey || !baseId || !table) return null;
+  const source = resolveFastTrustAirtableSource(env);
+  const filterByFormula = fastTrustLineFormula(lineId, source);
+  if (!apiKey || !baseId || !source.table || !filterByFormula) {
+    return { state: "unavailable", reason: "fast_trust_source_unavailable", knownCanonicalClient: false, fastTrust: null, recordCount: 0 };
+  }
 
-  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
-  url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineId)}`);
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(source.table)}`);
+  url.searchParams.set("filterByFormula", filterByFormula);
   url.searchParams.set("maxRecords", "20");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -61,31 +67,78 @@ export async function resolveFastTrustForLine(env = {}, lineUserId = "") {
       ? await env.AIRTABLE_HTTP.fetch(new Request(url.toString(), init))
       : await fetch(url.toString(), init);
     const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || !Array.isArray(payload.records)) return null;
+    if (!response.ok || !payload || !Array.isArray(payload.records)) {
+      console.warn({
+        event: "fast_trust_lookup_error",
+        component: "member-pages-worker",
+        failure_class: `airtable_${response.status || "malformed"}`,
+      });
+      return { state: "unavailable", reason: `fast_trust_airtable_${response.status || "malformed"}`, knownCanonicalClient: false, fastTrust: null, recordCount: 0 };
+    }
 
-    const candidates = payload.records.flatMap((record) => {
-      const renamedName = String(record?.fields?.line_renamed_name || "").trim();
+    const records = payload.records;
+    const knownCanonicalClient = records.some((record) => fastTrustHasCanonicalClient(record, source));
+    const candidates = records.flatMap((record) => {
+      const renamedName = fastTrustRenamedName(record, source);
       const tier = trustedTierFromRenamedName(renamedName);
       return tier ? [{ tier, renamedName }] : [];
     });
-    if (!candidates.length) return null;
+    if (!candidates.length) {
+      if (knownCanonicalClient) {
+        console.info({
+          event: "protected_member_recovery",
+          component: "member-pages-worker",
+          recovery_reason: "known_canonical_client_history_pending",
+        });
+      } else {
+        console.info({
+          event: "guest_negative_lookup_confirmed",
+          component: "member-pages-worker",
+          canonical_client: false,
+          protected_marker: false,
+        });
+      }
+      return {
+        state: "resolved",
+        reason: knownCanonicalClient ? "known_client_no_protected_marker" : "no_protected_marker",
+        knownCanonicalClient,
+        fastTrust: null,
+        recordCount: records.length,
+      };
+    }
 
     candidates.sort((a, b) => FAST_TRUST_RANK[b.tier] - FAST_TRUST_RANK[a.tier]);
     const winner = candidates[0];
     return {
-      tier: winner.tier,
-      label: FAST_TRUST_LABEL[winner.tier],
-      displayName: displayNameFromRenamedName(winner.renamedName) || null,
-      source: FAST_TRUST_SOURCE,
-      membershipStart: todayDate(),
-      membershipExpiresAt: addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
-      historyState: "recovery_pending",
+      state: "resolved",
+      reason: "trusted_line_oa_renamed_name",
+      knownCanonicalClient,
+      recordCount: records.length,
+      fastTrust: {
+        tier: winner.tier,
+        label: FAST_TRUST_LABEL[winner.tier],
+        displayName: displayNameFromRenamedName(winner.renamedName) || null,
+        source: FAST_TRUST_SOURCE,
+        membershipStart: todayDate(),
+        membershipExpiresAt: addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
+        historyState: "recovery_pending",
+      },
     };
-  } catch {
-    return null;
+  } catch (error) {
+    console.warn({
+      event: "fast_trust_lookup_error",
+      component: "member-pages-worker",
+      failure_class: String(error?.name || "lookup_unavailable").toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 80),
+    });
+    return { state: "unavailable", reason: "fast_trust_lookup_unavailable", knownCanonicalClient: false, fastTrust: null, recordCount: 0 };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function resolveFastTrustForLine(env = {}, lineUserId = "") {
+  const evidence = await resolveFastTrustEvidenceForLine(env, lineUserId);
+  return evidence.fastTrust || null;
 }
 
 export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
@@ -97,44 +150,292 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   const isLiffProfile = LIFF_PROFILE_PATHS.has(path);
   if (!isDashboard && !isMemberApp && !isLiffProfile) return response;
 
-  // Fresh resolver decisions and explicit restrictions outrank recovery markers.
-  if (response.headers.get("x-mmd-member-display-authority") === "my_mmd_entitlement_resolver_v1") return response;
-
-  // Dashboard reads rotate the LIFF cookie. Try the request token first, then
-  // the replacement token emitted by the response so Fast Trust survives the
-  // normal secure session-rotation boundary.
-  const session = await readSessionFromRequestOrResponse(request, response, env);
-  if (!session?.lineUserId) return response;
-  const fastTrust = await resolveFastTrustForLine(env, session.lineUserId);
-  if (!fastTrust?.tier) return response;
-
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("application/json")) return response;
   const payload = await response.clone().json().catch(() => null);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return response;
 
-  const currentStatus = isDashboard ? payload.data?.member?.membership_status?.value : (payload.membership?.status || payload.membership_status || payload.status);
+  const session = await readSessionFromRequestOrResponse(request, response, env);
+  if (!session?.lineUserId) return response;
+
+  // Fresh canonical entitlement decisions always outrank recovery evidence, but
+  // successful dashboard resolution is still production-acceptance evidence.
+  if (response.headers.get("x-mmd-member-display-authority") === "my_mmd_entitlement_resolver_v1") {
+    const tier = canonicalAcceptedTier(path, payload);
+    if (!tier) return response;
+    const acceptance = await recordMyMmdAcceptanceEvidence(env, session.lineUserId, {
+      tier,
+      source: "my_mmd_entitlement_resolver_v1",
+      historyState: "canonical_resolved",
+    }, path);
+    if (!acceptance?.evidenceId) return response;
+    const headers = new Headers(response.headers);
+    headers.set("x-mmd-acceptance-evidence", acceptance.evidenceId);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const evidence = await resolveFastTrustEvidenceForLine(env, session.lineUserId);
+  const unproven = isUnprovenMemberPayload(path, payload);
+  if (evidence.state === "unavailable" && unproven) {
+    console.info({
+      event: "protected_member_recovery",
+      component: "member-pages-worker",
+      recovery_reason: "fast_trust_source_unavailable",
+      route: path,
+    });
+    return pendingResolutionResponse(response, path, payload, "fast_trust_source_unavailable");
+  }
+  if (!evidence.fastTrust?.tier) {
+    if (evidence.knownCanonicalClient && unproven) {
+      console.info({
+        event: "protected_member_recovery",
+        component: "member-pages-worker",
+        recovery_reason: "known_client_resolution_pending",
+        route: path,
+      });
+      return pendingResolutionResponse(response, path, payload, "known_client_resolution_pending");
+    }
+    return response;
+  }
+
+  const fastTrust = evidence.fastTrust;
+  const currentStatus = isDashboard
+    ? payload.data?.member?.membership_status?.value
+    : (payload.membership?.status || payload.membership_status || payload.status);
   if (["blocked", "suspended", "revoked", "expired", "pending_review", "under_review"].includes(currentStatus)) return response;
 
   const patched = isDashboard
     ? patchDashboardPayload(payload, fastTrust)
     : isLiffProfile
       ? patchLiffProfilePayload(payload, fastTrust)
-    : patchMemberAppPayload(path, payload, fastTrust);
+      : patchMemberAppPayload(path, payload, fastTrust);
   if (!patched) return response;
 
+  const acceptance = await recordMyMmdAcceptanceEvidence(env, session.lineUserId, fastTrust, path);
   const headers = new Headers(response.headers);
   headers.delete("content-length");
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store");
   headers.set("x-mmd-fast-trust", "true");
+  headers.set("x-mmd-fast-trust-lookup", evidence.state);
   headers.set("x-mmd-tier-source", FAST_TRUST_SOURCE);
   headers.set("x-mmd-fast-trust-tier", fastTrust.tier);
+  if (acceptance?.evidenceId) headers.set("x-mmd-acceptance-evidence", acceptance.evidenceId);
   return new Response(JSON.stringify(patched), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+export async function recordMyMmdAcceptanceEvidence(env = {}, lineUserId = "", fastTrust = {}, path = "") {
+  const store = env.LIFF_IDENTITY_KV;
+  const secret = String(env.LIFF_SESSION_SECRET || "");
+  const lineId = canonicalLineId(lineUserId);
+  if (!store?.put || secret.length < 32 || !lineId) return { ok: false, reason: "evidence_store_unavailable" };
+  if (!DASHBOARD_PATHS.has(path) && path !== `${APP_PREFIX}dashboard`) return { ok: false, reason: "not_acceptance_surface" };
+
+  try {
+    const fingerprint = (await hmacHex(secret, `my-mmd-acceptance:${lineId}`)).slice(0, 24);
+    const tier = asString(fastTrust.tier, 40) || "protected";
+    const evidenceId = `mmdacc_${fingerprint}`;
+    const record = {
+      version: 1,
+      evidence_id: evidenceId,
+      identity_fingerprint: fingerprint,
+      result: "protected_member_resolved",
+      tier,
+      tier_source: asString(fastTrust.source || fastTrust.tierSource, 80) || FAST_TRUST_SOURCE,
+      route: asString(path, 160),
+      history_state: asString(fastTrust.historyState, 80) || "recovery_pending",
+      recorded_at: new Date().toISOString(),
+      contains_raw_line_id: false,
+      contains_session_token: false,
+    };
+    await store.put(`ops:my-mmd:acceptance:${fingerprint}`, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 30 });
+    console.info({
+      event: "my_mmd_acceptance_evidence_recorded",
+      component: "member-pages-worker",
+      evidence_id: evidenceId,
+      tier,
+      route: record.route,
+    });
+    return { ok: true, evidenceId };
+  } catch (error) {
+    console.warn({
+      event: "my_mmd_acceptance_evidence_write_failed",
+      component: "member-pages-worker",
+      failure_class: String(error?.name || "write_failed").toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 80),
+    });
+    return { ok: false, reason: "evidence_write_failed" };
+  }
+}
+
+function canonicalAcceptedTier(path, payload) {
+  if (DASHBOARD_PATHS.has(path)) {
+    const member = asObject(asObject(payload.data).member);
+    const tier = asObject(member.tier);
+    const status = asObject(member.membership_status);
+    const tierValue = asString(tier.value, 64);
+    const membershipStatus = asString(status.value, 64).toLowerCase();
+    if (tier.status === "verified" && status.status === "verified" && tierValue && membershipStatus === "active") return tierValue;
+    return "";
+  }
+  if (path === `${APP_PREFIX}dashboard`) {
+    const membership = asObject(payload.membership);
+    const tierValue = asString(membership.level, 64);
+    const status = asString(membership.status, 64).toLowerCase();
+    const access = asString(membership.access, 64).toLowerCase();
+    if (membership.levelVerified === true && tierValue && status === "active" && access === "granted") return tierValue;
+    return "";
+  }
+  return "";
+}
+
+function isUnprovenMemberPayload(path, payload) {
+  if (DASHBOARD_PATHS.has(path)) {
+    const member = asObject(asObject(payload.data).member);
+    const tier = asObject(member.tier);
+    const status = asObject(member.membership_status);
+    return tier.status !== "verified" || status.status !== "verified";
+  }
+  if (LIFF_PROFILE_PATHS.has(path)) {
+    const data = asObject(payload.data);
+    const tier = asString(data.tier, 64).toLowerCase();
+    const status = asString(data.membership_status, 64).toLowerCase();
+    return !status || status === "checking" || ["", "guest", "member", "unknown"].includes(tier);
+  }
+  if (path === `${APP_PREFIX}profile`) {
+    const status = asString(payload.membership_status, 64).toLowerCase();
+    const match = asString(payload.match_state, 64).toLowerCase();
+    return match !== "matched" || !status || status === "checking";
+  }
+  if (path === `${APP_PREFIX}dashboard`) {
+    const membership = asObject(payload.membership);
+    const level = asString(membership.level, 64).toLowerCase();
+    const lifecycle = asString(payload.lifecycle || membership.lifecycle, 64).toLowerCase();
+    const action = asString(asObject(payload.nextAction || membership.nextAction).kind, 64).toLowerCase();
+    return ["", "guest", "unknown"].includes(level) || ["", "new", "checking"].includes(lifecycle) || action === "signup";
+  }
+  if (path === `${APP_PREFIX}membership`) {
+    const membership = asObject(payload);
+    const level = asString(membership.level, 64).toLowerCase();
+    const lifecycle = asString(membership.lifecycle, 64).toLowerCase();
+    const action = asString(asObject(membership.nextAction).kind, 64).toLowerCase();
+    return ["", "guest", "unknown"].includes(level) || ["", "new", "checking"].includes(lifecycle) || action === "signup";
+  }
+  return false;
+}
+
+function pendingResolutionResponse(response, path, payload, reason) {
+  const patched = patchPendingResolution(path, payload, reason);
+  if (!patched) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  headers.set("x-mmd-member-resolution-guard", reason);
+  headers.set("x-mmd-fast-trust-lookup", reason === "fast_trust_source_unavailable" ? "unavailable" : "resolved");
+  return new Response(JSON.stringify(patched), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function patchPendingResolution(path, payload, reason) {
+  const checkingAction = { kind: "checking", label: null, url: null };
+  if (DASHBOARD_PATHS.has(path)) {
+    const data = asObject(payload.data);
+    const member = asObject(data.member);
+    const messages = Array.isArray(data.messages)
+      ? data.messages.filter((item) => !["member_new", "signup"].includes(asString(asObject(item).code, 64)))
+      : [];
+    if (!messages.some((item) => asString(asObject(item).code, 64) === "member_checking")) {
+      messages.push({ code: "member_checking", text: "กำลังตรวจสอบข้อมูลสมาชิก" });
+    }
+    return {
+      ...payload,
+      state: "checking",
+      data: {
+        ...data,
+        dashboard_state: "checking",
+        data_status: "checking",
+        member: {
+          ...member,
+          tier: { value: null, status: "checking", source: "member_resolution_guard" },
+          membership_status: { value: null, status: "checking", source: "member_resolution_guard" },
+        },
+        messages,
+        resolution_guard: { state: "checking", reason },
+      },
+    };
+  }
+  if (LIFF_PROFILE_PATHS.has(path)) {
+    const data = asObject(payload.data);
+    return {
+      ...payload,
+      data: {
+        ...data,
+        membership_status: "checking",
+        actual_access: "checking",
+        pending_identity: true,
+        resolution_guard: { state: "checking", reason },
+      },
+    };
+  }
+  if (path === `${APP_PREFIX}profile`) {
+    return {
+      ...payload,
+      match_state: "checking",
+      membership_tier: "unknown",
+      membership_status: "checking",
+      actual_access: "checking",
+      resolution: "unresolved",
+      resolution_guard: { state: "checking", reason },
+    };
+  }
+  if (path === `${APP_PREFIX}dashboard`) {
+    const membership = asObject(payload.membership);
+    return {
+      ...payload,
+      state: "checking",
+      membership: {
+        ...membership,
+        level: "unknown",
+        levelVerified: false,
+        status: "checking",
+        access: "checking",
+        lifecycle: "checking",
+        displayOnly: false,
+        nextAction: checkingAction,
+        resolution: "unresolved",
+      },
+      lifecycle: "checking",
+      nextAction: checkingAction,
+      legacyDisplay: null,
+      resolution_guard: { state: "checking", reason },
+    };
+  }
+  if (path === `${APP_PREFIX}membership`) {
+    return {
+      ...payload,
+      level: "unknown",
+      levelVerified: false,
+      status: "checking",
+      access: "checking",
+      lifecycle: "checking",
+      displayOnly: false,
+      nextAction: checkingAction,
+      resolution: "unresolved",
+      resolution_guard: { state: "checking", reason },
+    };
+  }
+  return payload;
 }
 
 function patchLiffProfilePayload(payload, fastTrust) {

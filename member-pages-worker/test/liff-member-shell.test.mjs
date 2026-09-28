@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import worker from "../src/index.js";
 import { handleCareBackLiffOrchestrator } from "../src/care-back-liff-orchestrator.js";
+import { resolveTrustedWelcomeWorld } from "../src/liff-member-shell.js";
 
 function env(overrides = {}) {
   return {
@@ -22,6 +23,45 @@ async function stagingShell(hostname, path, runtime) {
 }
 
 describe("same-site /member/liff shell", () => {
+ it("keeps browser hints fail-closed and renders both trusted customer welcome copies", async () => {
+    for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous", "?intent=signup&view=signup"]) {
+      const response = await shell(`/member/liff${query}`);
+      const html = await response.text();
+      assert.equal(response.status, 200);
+      assert.match(html, /world-public/);
+      assert.match(html, /id="intro-screen" class="intro-screen my-mmd-welcome"/);
+      assert.match(html, /dataset\.welcomeAudience = audience/);
+      assert.match(html, /canonical_member_profile/);
+      assert.match(html, /audience === "existing"/);
+      assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
+      assert.match(html, /ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว/);
+      assert.match(html, /ไม่ได้หายไปติดผู้ชายนะครับ 5555/);
+      assert.match(html, /ถามไป หายไม่มีคนตอบ/);
+      assert.match(html, /AI เปอร์ก็รำคาญนะ 555/);
+      assert.match(html, /กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี/);
+      assert.match(html, /ระบบจะรวมสิทธิ์ให้เป็น 2 ปี/);
+      assert.match(html, /MMD%20Academy%20fback%20inside\.webp/);
+      assert.match(html, /SIGIL%20Apply%20Hero\.webp/);
+      assert.match(html, /data-welcome-audience="existing"/);
+      assert.match(html, /width="31" height="31"/);
+      assert.match(html, /aria-label="เข้าสู่บอร์ดสมาชิก MY MMD"/);
+      assert.match(html, /ENTER →/);
+      assert.match(html, /"world":"public"/);
+      assert.match(html, /context-resolving/);
+      assert.doesNotMatch(html, /<details id="per-letter"/);
+    }
+  });
+
+  it("selects Private only from canonical active protected entitlement evidence", () => {
+    const trusted = "my_mmd_entitlement_resolver_v1";
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, trusted), "private");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "Black Card", membership_status: "grace" }, trusted), "private");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "Premium", membership_status: "active" }, trusted), "public");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "expired" }, trusted), "public");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, "member_profile_resolver"), "public");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, ""), "public");
+  });
+
   it("renders the dedicated published Member Dashboard LIFF ID", async () => {
     const response = await shell("/member/liff?intent=status&view=profile", {
       runtime: env({ LINE_LIFF_ID: "2010862595-yT4DCEMc" }),
@@ -51,9 +91,36 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /\/member\/api\/liff\/care-back\/state/);
     assert.match(html, /\/member\/api\/liff\/care-back\/wallet/);
     assert.match(html, /\/member\/api\/liff\/care-back\/wish/);
+    assert.match(html, /\/member\/api\/liff\/customer-requests/);
+    assert.match(html, /\/member\/api\/liff\/customer-request-evidence/);
+    assert.match(html, /YOUR REQUEST/);
+    assert.match(html, /window\.MMD_LIFF_SAVE_MODEL/);
     assert.doesNotMatch(html, /line_user_id|lineUserId|decodedIDToken|getProfile\(/);
     assert.doesNotMatch(html, /must-not-render-secret|must-not-render-airtable-key/);
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
+  });
+
+  it("offers server-priced Public Membership signup after LINE verification and guards checkout", async () => {
+    const response = await shell("/member/liff?intent=signup&view=signup");
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /"intent":"signup"/);
+    assert.match(html, /"view":"signup"/);
+    assert.match(html, /id="signup-packages"/);
+    assert.match(html, /href="https:\/\/miniapp\.line\.me\/2000000000-AbCdEfGh\/\?intent=signup&amp;view=signup"/);
+    assert.match(html, /CONFIG\.intent === "signup" && !window\.liff\.isInClient\(\)/);
+    assert.match(html, /\/sigil\/member\/membership\?source=line&amp;intent=signup/);
+    assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
+    assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
+    assert.match(html, /JSON\.stringify\(\{ package_code: packageCode \}\)/);
+    assert.match(html, /payload\?\.official_verification_required === true/);
+    assert.match(html, /payload\?\.entitlement_granted === false/);
+    assert.match(html, /url\.hostname === "mmdbkk\.com"/);
+    assert.match(html, /welcomeContextPromise = resolveInitialWelcomeContext\(\)/);
+    assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
+    assert.doesNotMatch(html, /MMD PRIVÉ · LINE MEMBERSHIP|สมัครสมาชิก MMD|เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE/);
+    assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("await readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
+    assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
   });
 
   it("checks the existing same-site member session before any LIFF init or login", async () => {
@@ -67,7 +134,7 @@ describe("same-site /member/liff shell", () => {
     assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
     assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
-    assert.match(html, /if \(existingProfile\) return/);
+    assert.match(html, /if \(existingProfile\) \{ signupLineEntry\?\.classList\.add\("hidden"\); await readSignupCatalog\(\); return; \}/);
   });
 
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
@@ -82,7 +149,9 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /final_display/);
     assert.match(html, /CONFIG\.intent === "promo" && CONFIG\.campaign === "care_back"/);
     assert.match(html, /กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ/);
-    assert.doesNotMatch(html, /localStorage|sessionStorage|line_user_id|claim_id/);
+    assert.doesNotMatch(html, /localStorage|line_user_id|claim_id/);
+    assert.match(html, /window\.sessionStorage/);
+    assert.match(html, /mmd\.customer_request\.pending\.v1\./);
   });
 
   it("normalizes untrusted query intent and promo values before embedding them", async () => {
@@ -136,10 +205,39 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /scroll-snap-type:x mandatory/);
     assert.match(html, /prefers-reduced-motion/);
     assert.match(html, /"LINE Seed Sans TH"/);
+    assert.match(html, /data-mmd-liff-digital="v3"/);
+    assert.doesNotMatch(html, /data-design-source|lovable/i);
+    assert.match(html, /--digital-surface:#1c1d1b/);
+    assert.match(html, /--digital-gold:#d8b26a/);
+    assert.match(html, /--digital-radius:8px/);
+    assert.match(html, /data-view="history" aria-current="false"><i>▤<\/i>HISTORY/);
+    assert.match(html, /id="digital-companion"[\s\S]*hidden/);
+    assert.match(html, /id="digital-tmib-story"[\s\S]*hidden/);
+    assert.doesNotMatch(html, /data-view="jobs" aria-current="false"><i>▤<\/i>งาน/);
     assert.match(html, /customer_360/);
     assert.match(html, /points\.status === "verified"/);
+    assert.match(html, /membership\.levelVerified === true/);
+    assert.match(html, /svip:"SVIP"/);
+    assert.match(html, /dashboard\.points\?\.confirmedBalance/);
+    assert.match(html, /membershipStatus\(status\)/);
+    assert.match(html, /membership\.expiresAt \|\| membership\.renewalDueAt/);
+    assert.match(html, /id="points-lifetime-spend"/);
+    assert.match(html, /id="points-365-spend"/);
+    assert.match(html, /Points มีอายุ 365 วัน · หมดอายุเป็นราย lot จากวันที่เข้าระบบ/);
+    assert.match(html, /formatThb\(points\.lifetime_service_spend_thb\)/);
     assert.match(html, /navHome:"👤 HOME"/);
     assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
+    assert.match(html, /const CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
+    assert.match(html, /if \(view === "points"\) \{[\s\S]*window\.location\.assign\(CANONICAL_POINTS_PATH\);[\s\S]*return;[\s\S]*\}/);
+    assert.match(html, /const targetId = view === "history" \? "history-panel" : view/);
+    assert.match(html, /"historyEndpoint":"\/api\/member\/app\/history"/);
+    assert.match(html, /"historyRecoveryEndpoint":"\/api\/member\/app\/history\/recovery"/);
+    assert.match(html, /async function readCanonicalHistory\(\)/);
+    assert.match(html, /fetch\(CONFIG\.historyEndpoint/);
+    assert.match(html, /fetch\(CONFIG\.historyRecoveryEndpoint/);
+    assert.match(html, /credentials:"same-origin"/);
+    assert.match(html, /await readCreditWallet\(\);\s*await readCanonicalHistory\(\);\s*await readCustomerRequests\(\);/);
+    assert.match(html, /recoveryPayload\?\.history_recovery\?\.state/);
     assert.match(html, /pointsTitle:"⭐ 积分"/);
     assert.doesNotMatch(html, /payment_ref|provider_transaction_id|line_user_id|telegram_user_id|Airtable|R2 key|slip_url/i);
     const scriptStart = html.lastIndexOf("<script nonce=");
@@ -147,6 +245,83 @@ describe("same-site /member/liff shell", () => {
     const scriptBodyEnd = html.indexOf("</script>", scriptBodyStart);
     assert.ok(scriptStart >= 0 && scriptBodyStart > scriptStart && scriptBodyEnd > scriptBodyStart);
     assert.doesNotThrow(() => new Function(html.slice(scriptBodyStart, scriptBodyEnd)));
+  });
+
+  it("keeps Customer Requests retry state opaque, stable, and bounded to session storage", async () => {
+    const response = await shell("/member/liff?intent=status&view=my-requests");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /pendingRequestId\("profile_update"\)/);
+    assert.match(html, /pendingRequestId\("your_request"\)/);
+    assert.match(html, /pendingRequestId\("saved_model", token\)/);
+    assert.match(html, /opaqueStorageToken\(action \+ ":" \+ modelId\)/);
+    assert.match(html, /opaqueStorageToken\(\[file\.type, file\.size, file\.lastModified/);
+    assert.match(html, /\^evidence_\[a-f0-9\]\{32\}\$/);
+    assert.match(html, /terminalClientError\(response\)/);
+    assert.match(html, /contact\.telegramUsername \|\| contact\.telegram_username \|\| contact\.telegram/);
+    assert.doesNotMatch(html, /sessionStorage\.setItem\([^\n]*(?:email|phone|telegram|line_user_id|entitlement|preferences)/i);
+  });
+
+  it("keeps MY MMD welcome and request surfaces readable at the approved fixture breakpoints", async () => {
+    const response = await shell("/member/liff");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /@media\(max-width:340px\)/);
+    assert.match(html, /@media\(max-width:390px\)/);
+    assert.match(html, /@media\(max-width:430px\)/);
+    assert.match(html, /@media\(min-width:700px\)/);
+    assert.match(html, /body:not\(\.app-entered\) main,\s*body\.world-public:not\(\.signup-mode\):not\(\.app-entered\) main,\s*body\.world-private:not\(\.signup-mode\):not\(\.app-entered\) main\{[^}]*width:100%[^}]*max-width:none/);
+    assert.match(html, /overflow-x:hidden/);
+    assert.match(html, /\.my-mmd-welcome \.per-letter-copy\{[^}]*max-height:none[^}]*overflow:visible/);
+    assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
+  });
+
+  it("keeps the entered MY MMD LIFF shell edge-to-edge with safe areas and unchanged member snapshot sizing", async () => {
+    const response = await shell("/member/liff?intent=status&view=home");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /html,body\{margin:0;padding:0;width:100%;min-width:100%;min-height:100%;overflow-x:hidden\}/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\)\{[^}]*min-height:100dvh[^}]*width:100%[^}]*max-width:100%[^}]*overflow-x:clip/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*width:100%[^}]*max-width:none[^}]*min-height:100dvh/);
+    assert.match(html, /padding:calc\(16px \+ env\(safe-area-inset-top\)\) 16px calc\(90px \+ env\(safe-area-inset-bottom\)\)/);
+    assert.match(html, /padding-left:max\(16px,env\(safe-area-inset-left\)\)/);
+    assert.match(html, /padding-right:max\(16px,env\(safe-area-inset-right\)\)/);
+    assert.match(html, /\.digital-dock\{[^}]*left:0;right:0;[^}]*width:100%;[^}]*max-width:none;[^}]*transform:none/);
+    assert.match(html, /\.digital-dock\{[^}]*env\(safe-area-inset-right\)[^}]*env\(safe-area-inset-bottom\)[^}]*env\(safe-area-inset-left\)/);
+    assert.match(html, /@media\(max-width:699px\)\{[^}]*width:100vw;max-width:100vw;min-height:100dvh/);
+    assert.match(html, /@media\(min-width:700px\)\{[^}]*#profile[^}]*width:min\(100%,760px\);margin-left:auto;margin-right:auto/);
+    assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) #status\{display:none!important;margin:0\}/);
+    assert.doesNotMatch(html, /data-design-source|lovable|DESIGN PREVIEW/i);
+    assert.doesNotMatch(html, /LIFF HOME|Member LIFF|>LIFF</i);
+    assert.match(html, /MY MMD · MEMBER APP/);
+    assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
+    assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
+  });
+
+  it("renders a verified-only Credit Wallet through the same-site credit API", async () => {
+    const response = await shell("/member/liff?intent=status&view=credits&lang=th");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"creditWalletEndpoint":"\/api\/member\/app\/credits"/);
+    assert.match(html, /data-view="credits"/);
+    assert.match(html, /id="credits" class="panel"/);
+    assert.match(html, /id="credit-available"/);
+    assert.match(html, /id="credit-reserved"/);
+    assert.match(html, /id="credit-used"/);
+    assert.match(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
+    assert.match(html, /credentials:"same-origin"/);
+    assert.match(html, /payload\.state !== "resolved" \|\| payload\.verificationState !== "verified_only"/);
+    assert.match(html, /item\.verified !== true \|\| item\.verificationState !== "verified"/);
+    assert.match(html, /\["available", "partially_used", "used", "refunded", "expired"\]/);
+    assert.match(html, /items\.slice\(0, 3\)/);
+    assert.match(html, /กำลังตรวจสอบเครดิตบริการของคุณครับ/);
+    assert.match(html, /ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ/);
+    assert.doesNotMatch(html, /credit_id|Campaign Claim ID|Verification Snapshot|payment_authority/i);
   });
 
   it("supports HEAD without a response body and rejects unsupported shell methods", async () => {

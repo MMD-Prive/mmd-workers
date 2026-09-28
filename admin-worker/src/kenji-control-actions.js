@@ -266,6 +266,13 @@ async function readRuntimeControls(env) {
   return Object.fromEntries(pairs.map(([scope, state]) => [scope, Boolean(state.enabled)]));
 }
 
+// Read-only consumers such as Client Intelligence need the same canonical
+// runtime-control snapshot as the LINE worker. Keeping this adapter here avoids
+// reimplementing the Airtable control semantics in an operator UI endpoint.
+export async function readKenjiRuntimeControls(env = {}) {
+  return readRuntimeControls(env);
+}
+
 async function isRuntimeScopeEnabled(env, scope) {
   return Boolean((await latestRuntimeScope(env, scope)).enabled);
 }

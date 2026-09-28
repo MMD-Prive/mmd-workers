@@ -67,6 +67,29 @@ const driveCandidate = {
   folder_scope_key: "exclusive:drive:19Gt19oczQj7qc0omY4XNeGAJ_yEtS5wH",
 };
 
+const ems16Candidate = {
+  source: "drive",
+  materialized: false,
+  lane: "exclusive",
+  lanes: ["exclusive"],
+  drive_folder_id: "1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t",
+  folder_name: "EMs16",
+  drive_folder_url: "https://drive.google.com/drive/folders/1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t",
+  folder_path: "MMD Exclusive Models / Exclusive PN / EMs16",
+  folder_scope_key: "exclusive:drive:1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t",
+};
+const ems16ReviewCandidate = {
+  source: "drive",
+  materialized: false,
+  lane: "exclusive",
+  lanes: ["exclusive"],
+  drive_folder_id: "1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd",
+  folder_name: "Review EMs16 Gohan",
+  drive_folder_url: "https://drive.google.com/drive/folders/1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd",
+  folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan",
+  folder_scope_key: "exclusive:drive:1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd",
+};
+
 const env = {
   AIRTABLE_API_KEY: "test-key",
   AIRTABLE_BASE_ID: "appTest1234567890",
@@ -75,13 +98,17 @@ const env = {
     async fetch(request) {
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/__internal/model-drive/search") {
-        return new Response(JSON.stringify({ ok: true, count: 1, items: [driveCandidate] }), {
+        const q = String(url.searchParams.get("q") || "").toLowerCase();
+        const items = q.includes("ems16") ? [ems16Candidate, ems16ReviewCandidate] : [driveCandidate];
+        return new Response(JSON.stringify({ ok: true, count: items.length, items }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
       }
       if (request.method === "POST" && url.pathname === "/__internal/model-drive/resolve") {
-        return new Response(JSON.stringify({ ok: true, item: driveCandidate }), {
+        const body = await request.clone().json().catch(() => ({}));
+        const item = body?.drive_folder_id === ems16Candidate.drive_folder_id ? ems16Candidate : driveCandidate;
+        return new Response(JSON.stringify({ ok: true, item }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -111,6 +138,26 @@ const pnRecord = {
     private_service_level: "PN",
   },
 };
+const ems16MaterializedRecord = {
+  id: "recEms16Gohan001",
+  fields: {
+    working_name: "EMs16",
+    status: "Active",
+    sales_layer: "private",
+    visibility: "private",
+    model_tier: "Exclusive Models",
+    private_tier: "Exclusive Models",
+    private_service_level: "PN",
+    private_work_format: "PN",
+    approved_for_private_sales: true,
+    can_work_private: true,
+    drive_folder_id: ems16Candidate.drive_folder_id,
+    drive_folder_url: ems16Candidate.drive_folder_url,
+    source_folder: ems16Candidate.folder_path,
+    folder_scope_key: ems16Candidate.folder_scope_key,
+  },
+};
+
 const driveMaterializedRecord = {
   id: "recEms21JDye001",
   fields: {
@@ -162,9 +209,12 @@ try {
     if (method === "POST" && url.pathname.endsWith("/Models")) {
       const rawBody = typeof init?.body === "string" ? init.body : (input instanceof Request ? await input.clone().text() : "{}");
       const body = JSON.parse(rawBody || "{}");
+      const baseRecord = body?.fields?.drive_folder_id === ems16Candidate.drive_folder_id
+        ? ems16MaterializedRecord
+        : driveMaterializedRecord;
       return new Response(JSON.stringify({
-        id: driveMaterializedRecord.id,
-        fields: { ...driveMaterializedRecord.fields, ...(body.fields || {}) },
+        id: baseRecord.id,
+        fields: { ...baseRecord.fields, ...(body.fields || {}) },
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.searchParams.has("filterByFormula")) {
@@ -172,7 +222,14 @@ try {
       if (formula.includes("RECORD_ID()")) {
         return new Response(JSON.stringify({ records: [vipRecord, pnRecord] }), { status: 200, headers: { "content-type": "application/json" } });
       }
-      if (formula.toLowerCase().includes("ems21") || formula.includes(driveCandidate.drive_folder_id) || formula.includes(driveCandidate.folder_scope_key)) {
+      if (
+        formula.toLowerCase().includes("ems21")
+        || formula.includes(driveCandidate.drive_folder_id)
+        || formula.includes(driveCandidate.folder_scope_key)
+        || formula.toLowerCase().includes("ems16")
+        || formula.includes(ems16Candidate.drive_folder_id)
+        || formula.includes(ems16Candidate.folder_scope_key)
+      ) {
         return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
       }
       return new Response(JSON.stringify({ records: [vipRecord, pnRecord] }), { status: 200, headers: { "content-type": "application/json" } });
@@ -231,6 +288,18 @@ try {
   assert.equal(driveOnlyPayload.items[0].model_name, "EMs21 J Dye");
   assert.equal(driveOnlyPayload.items[0].drive_materialized, true);
   assert.deepEqual(driveOnlyPayload.items[0].private_work_capabilities, ["vip", "pn"]);
+
+  const ems16Search = new Request(
+    "https://mmdbkk.com/v1/admin/models/search?booking_visibility=private&private_work=pn&selected_access_folder=exclusive&customer_lane=straight&q=EMs16",
+  );
+  const ems16Recovered = await enforcePrivateModelSearchPolicy(ems16Search, memberMissing.clone(), env);
+  const ems16Payload = await ems16Recovered.json();
+  assert.equal(ems16Recovered.status, 200);
+  assert.equal(ems16Payload.items.length, 1, "unique exact EMs16 model root must win over nested Review EMs16 Gohan");
+  assert.equal(ems16Payload.items[0].model_id, ems16MaterializedRecord.id);
+  assert.equal(ems16Payload.items[0].model_name, "EMs16");
+  assert.equal(ems16Payload.items[0].drive_folder_id, ems16Candidate.drive_folder_id);
+  assert.deepEqual(ems16Payload.items[0].private_work_capabilities, ["pn"]);
 
   const pnJob = new Request("https://mmdbkk.com/v1/admin/job/create", {
     method: "POST",

@@ -1,0 +1,40 @@
+{
+  "version": "mmd-wellness-companion-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "product": "wellness_companion",
+  "positioning": "healthy_lifestyle_companion_not_personal_trainer_therapist_or_mms",
+  "public_packages": [
+    { "key": "reset_with_me", "name": "RESET WITH ME", "price_thb": 5000, "included_minutes": 180, "worker_payout_thb": 3000, "activity_scope": "one_gentle_plan" },
+    { "key": "wellness_day", "name": "WELLNESS DAY", "price_thb": 8500, "included_minutes": 300, "worker_payout_thb": 5000, "activity_scope": "two_or_three_gentle_moments" },
+    { "key": "slow_reset", "name": "SLOW RESET", "price_thb": 13500, "included_minutes": 480, "worker_payout_thb": 8000, "activity_scope": "full_day_wellness_plan" }
+  ],
+  "safety_scope": {
+    "personal_training_included": false,
+    "therapy_or_recovery_treatment_included": false,
+    "massage_included": false,
+    "medical_or_injury_advice_included": false,
+    "mms_wellness_route_required_for_massage_or_recovery_service": true,
+    "customer_health_and_activity_readiness_remains_customer_responsibility": true,
+    "mmd_must_confirm_model_lifestyle_fit_and_availability": true
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 1690,
+    "overtime_before_midnight_worker_thb_per_hour": 1000,
+    "overtime_after_midnight_client_thb_per_hour": 2190,
+    "overtime_after_midnight_worker_thb_per_hour": 1350,
+    "overtime_after_0300_client_thb_per_hour": 2690,
+    "overtime_after_0300_worker_thb_per_hour": 1700,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": ["MY_MMD_request", "MMD_MODEL_approve", "payment_verified", "MMD_confirmed"]
+  },
+  "customer_expenses": "actual_cost",
+  "customer_expense_examples": ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"],
+  "scope_change": {
+    "massage_recovery_treatment_or_therapist_service": "mms_wellness_route_required",
+    "personal_training_or_medical_support": "separate_qualified_provider_required",
+    "overnight_or_after_0600": "re_quote_required"
+  },
+  "private_money_separation": "These Public package and OT matrices never apply automatically to private_model jobs."
+}

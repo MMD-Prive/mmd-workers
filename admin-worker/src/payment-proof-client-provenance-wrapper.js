@@ -107,6 +107,10 @@ async function clientContext(env, proof) {
 export function applyCanonicalClientToReviewItem(item, context = {}) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return item;
   if (!context.clientRecordId || context.ambiguous) return item;
+  if (item.client_record_id && item.client_record_id !== context.clientRecordId) {
+    return { ...item, can_approve: false, review_lane: "needs_enrichment", context_issues: [...new Set([...(item.context_issues || []), "canonical_client_link_ambiguous"])] };
+  }
+  const keepPreferred = item.client_record_id === context.clientRecordId && item.customer_name_source === "per_rename";
   const issues = Array.isArray(item.context_issues)
     ? item.context_issues.filter((issue) => issue !== "customer_or_job_not_linked")
     : [];
@@ -114,7 +118,8 @@ export function applyCanonicalClientToReviewItem(item, context = {}) {
     ...item,
     client_record_id: context.clientRecordId,
     client_name: context.clientName || item.client_name || null,
-    customer_name: context.clientName || item.customer_name || item.payer_name || null,
+    customer_name: (keepPreferred && item.customer_name) || context.clientName || item.customer_name || item.payer_name || null,
+    customer_aliases: [...new Set([...(item.customer_aliases || []), item.customer_name, context.clientName].filter(Boolean))],
     identity_state: item.identity_state || "canonical_client_linked",
     context_issues: issues,
     review_lane: issues.length ? "needs_enrichment" : "owner_review",

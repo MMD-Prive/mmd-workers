@@ -1,3 +1,5 @@
+import { modelMediaSlotCoordinatorFixture } from "./model-media-slot-coordinator-fixture.mjs";
+
 // Synthetic test fixture. Never installed as an API route or production env.
 export function privateMediaFixture() {
   const lineUserId = `U${"a".repeat(32)}`;
@@ -13,6 +15,7 @@ export function privateMediaFixture() {
   const fixture = { lineUserId, asset, grant, object, state, storage, gateFailure:0, registryFailure:false, logFailure:false, auditFailure:false, audits:[], writes:[], objects:new Map() };
   fixture.env = {
     AIRTABLE_API_KEY:"synthetic",AIRTABLE_BASE_ID:"appTest",LIFF_SESSION_SECRET:"s".repeat(32),
+    MODEL_MEDIA_SLOT_COORDINATOR:modelMediaSlotCoordinatorFixture(),
     LIFF_IDENTITY_KV:{get:async()=>({line_user_id:lineUserId,expires_at:Date.now()+60_000})},
     PRIVATE_MODEL_MEDIA:{head:async()=>object,get:async()=>({...object,body:new Uint8Array([137,80,78,71,13,10,26,10])})},
     AIRTABLE_HTTP:{fetch:async request => {

@@ -119,5 +119,5 @@ test("static fallback still prevents empty published cards when Airtable env is 
   assert.match(careBack.customer_answer, /Birthday Wish/);
   assert.match(careBack.customer_answer, /10%/);
   assert.match(careBack.internal_instruction, /2026-09-30/);
-  assert.match(careBack.internal_instruction, /\+180 days/);
+  assert.match(careBack.internal_instruction, /\+1 year/);
 });

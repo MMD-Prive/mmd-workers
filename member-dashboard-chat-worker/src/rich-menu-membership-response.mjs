@@ -1,7 +1,7 @@
-import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
-const BLOCKED = new Set(["blocked", "suspended", "revoked", "unresolved"]);
+const BLOCKED = new Set(["blocked", "suspended", "revoked", "unresolved", "pending", "ambiguous", "needs_review"]);
 const PACK_IDS = Object.freeze({
   guest: "rich_menu_membership_level_response_pack_v1_lv1_guest",
   public_member: "rich_menu_membership_level_response_pack_v1_lv2_public_member",
@@ -16,18 +16,15 @@ export function isRichMenuSupport(event = {}) {
 
 // Fresh exact identity and entitlement rows only. Client audience and memory
 // never enter the canonical resolver or the response-level decision.
-export function canonicalSupportLevel(client, rows, now = new Date().toISOString()) {
-  if (!client) return { level: "guest", reason: "identity_unresolved" };
-  const fields = client.fields || {};
-  const status = text(fields["Membership Status"]).toLowerCase();
-  if (BLOCKED.has(status)) return { level: "guest", reason: "identity_blocked" };
-  if (text(fields["Verification Status"]).toLowerCase() !== "verified") return { level: "guest", reason: "identity_unverified" };
-  const snapshot = resolveMemberEntitlements(rows, { now });
-  if (snapshot.member_blocked || snapshot.entitlements.some(row => ["blocked", "revoked"].includes(row.lifecycle))) {
-    return { level: "guest", reason: "entitlement_blocked" };
-  }
-  if (["expired", "grace", "grace_period"].includes(status)) return { level: "public_member", reason: "membership_expired_or_grace" };
-  if (snapshot.access.private_visibility_envelope !== "none") return { level: "private_member", reason: "verified_active_private" };
+export function canonicalSupportLevel(context = {}) {
+  context = context || {};
+  const identity = text(context.identity_state).toLowerCase();
+  const membership = text(context.membership_state).toLowerCase();
+  const level = text(context.level || context.membership_level).toLowerCase();
+  if (identity !== "matched") return { level: "guest", reason: "identity_unresolved" };
+  if (BLOCKED.has(membership)) return { level: "guest", reason: "membership_blocked_or_unresolved" };
+  if (["expired", "grace", "grace_period"].includes(membership)) return { level: "public_member", reason: "membership_expired_or_grace" };
+  if (level === "private" && ["active", "expiring_soon"].includes(membership)) return { level: "private_member", reason: "verified_active_private" };
   return { level: "public_member", reason: "verified_without_active_private" };
 }
 
@@ -70,14 +67,9 @@ export async function resolveRichMenuSupport(event, env) {
   try {
     const id = event.source?.type === "user" ? text(event.source.userId) : "";
     if (!/^U[0-9a-f]{32}$/i.test(id)) throw new Error("identity_unavailable");
-    const formula = `{line_user_id}="${id}"`;
-    const clients = await readRows(env, env.AIRTABLE_TABLE_CLIENTS_ID || "tblVv58TCbwh5j1fS", formula, ["line_user_id", "Verification Status", "Membership Status"]);
-    if (clients.length > 1) throw new Error("identity_ambiguous");
-    if (clients.length === 0) canonical = { level: "guest", reason: "identity_not_found" };
-    else {
-      const rows = await readRows(env, env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || "tblNImdF9PKAxhXGi", formula, []);
-      canonical = canonicalSupportLevel(clients[0], rows);
-    }
+    const context = await resolveKenjiLiveMemberContext(env, id, "support");
+    if (!context?.live_truth) throw new Error("member_truth_unavailable");
+    canonical = canonicalSupportLevel(context);
     verified = true;
   } catch { /* Generic MMD only when canonical lookup is incomplete. */ }
   let card = null;

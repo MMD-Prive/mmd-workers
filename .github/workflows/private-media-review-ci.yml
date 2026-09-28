@@ -4,6 +4,8 @@ on:
     paths:
       - 'admin-worker/src/private-media-review*'
       - 'admin-worker/private-media-review.test.mjs'
+      - 'admin-worker/private-media-ingest-once.test.mjs'
+      - 'admin-worker/src/private-media-ingest-once.js'
       - 'admin-worker/src/admin-login-hero-worker.js'
       - 'webflow/internal/admin/mmd-review/**'
       - '.github/workflows/private-media-review-ci.yml'
@@ -17,4 +19,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test admin-worker/private-media-review.test.mjs admin-worker/model-schema-patch-v1.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs
+      - run: node --test admin-worker/private-media-review.test.mjs admin-worker/private-media-ingest-once.test.mjs admin-worker/model-schema-patch-v1.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs

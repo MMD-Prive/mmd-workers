@@ -9,11 +9,243 @@ const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "u
 test("Member Intelligence reads only canonical same-origin admin projections", () => {
   assert.match(source, /\/v1\/admin\/clients\/recent/);
   assert.match(source, /\/v1\/admin\/clients\/lineage-lookup/);
-  assert.match(source, /\/v1\/admin\/kenji\/control\/memory\?client_id=/);
+  assert.match(source, /\/v1\/admin\/clients\/intelligence/);
+  assert.doesNotMatch(source, /\/v1\/admin\/kenji\/control\/memory\?client_id=/);
   assert.match(source, /credentials:\s*"same-origin"/);
   assert.match(source, /cache:\s*"no-store"/);
   assert.doesNotMatch(source, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(source, /AIRTABLE_API_KEY|ADMIN_BEARER|CONFIRM_KEY|X-Confirm-Key/);
+});
+
+test("Member Intelligence renders a fail-closed reviewed operator draft without a send path", () => {
+  assert.match(source, /mmd\.kenji_continuity_operator_draft\.v1/);
+  assert.match(source, /mmd\.kenji_verified_identity_readiness\.v1/);
+  assert.match(source, /mmd\.kenji_identity_evidence_recovery\.v1/);
+  assert.match(source, /mmd\.kenji_identity_evidence_owner_review_protocol\.v1/);
+  assert.match(source, /Verified Identity Readiness/);
+  assert.match(source, /READY FOR PER REVIEW/);
+  assert.match(source, /readiness\.status==="verified"/);
+  assert.match(source, /readiness\.kenji_continuity_ready===true/);
+  assert.match(source, /recovery\.status==="complete"/);
+  assert.match(source, /recovery\.queue_eligible===false/);
+  assert.match(source, /protocol\.status==="complete"/);
+  assert.match(source, /protocol\.evidence_written===false/);
+  assert.match(source, /readiness\?\.automatic_verification_allowed===false/);
+  assert.match(source, /readiness\?\.identity_mutated===false/);
+  assert.match(source, /draft\.send_allowed===false/);
+  assert.match(source, /guards\.customer_auto_send===false/);
+  assert.match(source, /guards\.business_truth_claims===false/);
+  assert.match(source, /draft\.requires_owner_review===true/);
+  assert.match(source, /continuity\.freshness==="fresh"/);
+  assert.match(source, /continuity\.live_truth_wins===true/);
+  assert.match(source, /miDraftReview/);
+  assert.match(source, /miDraftMatrix/);
+  assert.match(source, /miDraftKill/);
+  assert.match(source, /runtime\.operator_copy_allowed===true/);
+  assert.match(source, /recordDraftAudit\("view"/);
+  assert.match(source, /recordDraftAudit\("copy"/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
+  assert.ok(
+    source.indexOf('await recordDraftAudit("copy"') < source.indexOf("navigator.clipboard.writeText"),
+    "copy authorization audit must succeed before clipboard mutation",
+  );
+  assert.doesNotMatch(source, /api\.line\.me|\/messages\/.+\/send|pushMessage|replyMessage/);
+});
+
+test("Member Intelligence builds a bounded read-only identity evidence recovery queue", () => {
+  assert.match(source, /const recoveryScanLimit=24/);
+  assert.match(source, /คิวเติมหลักฐานตัวตน/);
+  assert.match(source, /data-recovery-filter="all"/);
+  assert.match(source, /data-recovery-filter="pending"/);
+  assert.match(source, /data-recovery-filter="evidence_required"/);
+  assert.match(source, /data-recovery-filter="evidence_review"/);
+  assert.match(source, /data-recovery-filter="owner_review_ready"/);
+  assert.match(source, /data-recovery-filter="blocked"/);
+  assert.match(source, /data-recovery-filter="complete"/);
+  assert.match(source, /review_line_ofc_evidence/);
+  assert.match(source, /review_liff_identity_evidence/);
+  assert.match(source, /owner_review_verification_status/);
+  assert.match(source, /resolve_identity_conflict/);
+  assert.match(source, /retry_identity_evidence_read/);
+  assert.match(source, /Math\.min\(3,ids\.length\)/);
+  assert.match(source, /identityRecoveryContract\(payload\)/);
+  assert.match(source, /identityEvidenceProtocolContract\(payload\)/);
+  assert.match(source, /OWNER PROTOCOL/);
+  assert.match(source, /reread_identity_evidence/);
+  assert.match(source, /capture_verified_liff_session/);
+  assert.match(source, /verification_status_mutated===false/);
+  assert.match(source, /state\.intelligenceCache/);
+  assert.match(source, /function lockSelectedDetailForRecoveryRefresh\(\)/);
+  assert.match(source, /state\.selectionSeq\+=1/);
+  assert.match(source, /Copy ถูกล็อกจนกว่าจะตรวจสถานะล่าสุดเสร็จ/);
+  assert.match(source, /await selectRecord\(state\.selected\)/);
+  assert.match(source, /เปิด Customer 360 เพื่อตรวจ/);
+  assert.match(source, /automatic_recovery_allowed===false/);
+  assert.match(source, /verification_status_mutated===false/);
+  assert.match(source, /customer_send_allowed===false/);
+  assert.doesNotMatch(source, /identity-evidence-recovery[^\n]*(?:method:\s*"POST"|method:\s*'POST')/i);
+});
+
+test("Member Intelligence provides a one-client source evidence owner workbench without mutations", () => {
+  const workbenchSource = source.slice(
+    source.indexOf("function ensureSourceEvidenceWorkbenchUi()"),
+    source.indexOf("function resetIdentityReadinessUi("),
+  );
+  assert.match(source, /mmd\.kenji_source_evidence_owner_workbench\.v1/);
+  assert.match(source, /Source Evidence Capture Workbench/);
+  assert.match(source, /ONE CLIENT AT A TIME/);
+  assert.match(source, /EVIDENCE REVIEW FIRST/);
+  assert.match(source, /sourceEvidenceWorkbenchContract\(payload\)/);
+  assert.match(source, /review_line_ofc_evidence/);
+  assert.match(source, /capture_verified_liff_session/);
+  assert.match(source, /reread_identity_evidence/);
+  assert.match(source, /owner_review_verification_status/);
+  assert.match(source, /client_scope_required:protocol\?\.handoff\?\.client_scope_required===true/);
+  assert.match(source, /fresh_reread_required:protocol\?\.review\?\.fresh_read_required===true/);
+  assert.match(source, /automatic_capture_allowed:false/);
+  assert.match(source, /automatic_verification_allowed:false/);
+  assert.match(source, /verification_status_mutated:false/);
+  assert.match(source, /identity_mutated:false/);
+  assert.match(source, /entitlement_changed:false/);
+  assert.match(source, /customer_send_allowed:false/);
+  assert.match(workbenchSource, /link\.hidden=true;link\.removeAttribute\("href"\)/);
+  assert.match(workbenchSource, /const locked=workbench\.status\.startsWith\("locked_"\)/);
+  assert.match(workbenchSource, /if\(locked\)link\.removeAttribute\("href"\)/);
+  assert.match(workbenchSource, /reread\.disabled=!workbench\.reread_allowed\|\|rereading/);
+  assert.match(workbenchSource, /conflict_locked:"locked_conflict"/);
+  assert.match(workbenchSource, /unavailable_locked:"locked_unavailable"/);
+  assert.match(workbenchSource, /reread_allowed:!locked&&status!=="complete"/);
+  assert.match(workbenchSource, /หลักฐานขัดกัน · หยุดการทำงานใน workbench และแก้ที่ source of truth ก่อน/);
+  assert.match(workbenchSource, /อ่าน source evidence ไม่ได้อย่างปลอดภัย · หยุดการทำงานและกู้การอ่านข้อมูลก่อน/);
+  assert.doesNotMatch(workbenchSource, /method\s*:\s*["']POST["']/);
+  assert.match(workbenchSource, /if\(currentClientId&&state\.intelligence\)renderSourceEvidenceWorkbench\(state\.intelligence,currentClientId\)/);
+  assert.doesNotMatch(workbenchSource, /currentClientId===clientId&&state\.intelligence/);
+  assert.match(source, /bulk_owner_action_allowed:false/);
+  assert.match(source, /state\.intelligenceCache\.delete\(clientId\)/);
+  assert.match(source, /await selectRecord\(record\)/);
+  assert.match(source, /workbench\.handoff_path\}\?client_id=/);
+  assert.doesNotMatch(workbenchSource, /method:\s*["']POST["']/);
+  assert.doesNotMatch(workbenchSource, /identity\/(?:verify|merge|commit)/i);
+  assert.doesNotMatch(workbenchSource, /membership[_-](?:activate|renew|grant)/i);
+  assert.match(workbenchSource, /sourceEvidenceRereadingClients\.has\(clean\(clientId\)\)/);
+  assert.match(workbenchSource, /state\.sourceEvidenceRereadingClients\.add\(clientId\)/);
+  assert.match(workbenchSource, /state\.sourceEvidenceRereadingClients\.delete\(clientId\)/);
+  assert.doesNotMatch(workbenchSource, /\/(?:verify|merge|membership\/(?:activate|renew|grant)|access\/(?:grant|revoke)|points\/|payments\/.*(?:capture|confirm)|messages\/.*\/send)/i);
+});
+
+test("a completed re-read for client A leaves selected client B re-read enabled", async () => {
+  const start = source.indexOf("  async function rereadSelectedSourceEvidence(){");
+  const end = source.indexOf("\n  function resetIdentityReadinessUi(", start);
+  assert.ok(start >= 0 && end > start, "re-read implementation is available for race exercise");
+  const rereadSource = source.slice(start, end);
+  const state = {
+    selected: { client_id: "recClientA123" },
+    intelligence: { workbench: { reread_allowed: true } },
+    sourceEvidenceWorkbench: { reread_allowed: true },
+    sourceEvidenceRereadingClients: new Set(),
+    intelligenceCache: new Map([["recClientA123", {}]]),
+  };
+  let finishA;
+  const pendingA = new Promise((resolve) => { finishA = resolve; });
+  let rereadDisabled = false;
+  const renderSourceEvidenceWorkbench = (_payload, clientId) => {
+    rereadDisabled = !state.sourceEvidenceWorkbench?.reread_allowed
+      || state.sourceEvidenceRereadingClients.has(String(clientId).trim());
+  };
+  const run = new Function(
+    "state", "clean", "renderSourceEvidenceWorkbench", "setStatus", "selectRecord",
+    `${rereadSource}; return rereadSelectedSourceEvidence;`,
+  )(
+    state,
+    (value) => String(value ?? "").trim(),
+    renderSourceEvidenceWorkbench,
+    () => {},
+    async () => pendingA,
+  );
+
+  const readA = run();
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123"), true);
+  state.selected = { client_id: "recClientB456" };
+  state.intelligence = { workbench: { reread_allowed: true } };
+  state.sourceEvidenceWorkbench = { reread_allowed: true };
+  renderSourceEvidenceWorkbench(state.intelligence, "recClientB456");
+  assert.equal(rereadDisabled, false, "B is not disabled by A's in-flight request");
+
+  finishA();
+  await readA;
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123"), false);
+  assert.equal(rereadDisabled, false, "A completion leaves the currently selected B usable");
+});
+
+test("a completed re-read for A restores the selected client's B controls and projection", async () => {
+  const start = source.indexOf("async function rereadSelectedSourceEvidence(){");
+  const end = source.indexOf("\n  function resetIdentityReadinessUi(", start);
+  assert.ok(start >= 0 && end > start, "re-read function should remain directly testable");
+  const rereadSource = source.slice(start, end);
+  const state = {
+    selected: { client_id: "recClientA123456" },
+    sourceEvidenceWorkbench: { reread_allowed: true },
+    sourceEvidenceRereadingClients: new Set(),
+    intelligenceCache: new Map([["recClientA123456", Promise.resolve({ client_id: "recClientA123456" })]]),
+    intelligence: { owner: "A" },
+  };
+  const renders = [];
+  let finishA;
+  const reread = new Function(
+    "state", "clean", "renderSourceEvidenceWorkbench", "setStatus", "selectRecord", "resetSourceEvidenceWorkbench",
+    `${rereadSource}; return rereadSelectedSourceEvidence;`,
+  )(
+    state,
+    (value) => String(value || "").trim(),
+    (payload, clientId) => renders.push({ payload, clientId, rereading: state.sourceEvidenceRereadingClients.has(clientId) }),
+    () => {},
+    () => new Promise((resolve) => { finishA = resolve; }),
+    () => {},
+  );
+
+  const pending = reread();
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123456"), true);
+  state.selected = { client_id: "recClientB123456" };
+  state.intelligence = { owner: "B" };
+  finishA();
+  await pending;
+
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123456"), false);
+  assert.deepEqual(renders.at(-1), { payload: { owner: "B" }, clientId: "recClientB123456", rereading: false });
+});
+
+test("Member Intelligence records bounded operator quality feedback before enabling copy", () => {
+  assert.match(source, /mmd\.kenji_continuity_operator_feedback\.v1/);
+  assert.match(source, /data-feedback-outcome="accepted"/);
+  assert.match(source, /data-feedback-outcome="needs_edit"/);
+  assert.match(source, /data-feedback-outcome="rejected"/);
+  assert.match(source, /tone_adjustment/);
+  assert.match(source, /missing_context/);
+  assert.match(source, /unsafe_or_inaccurate/);
+  assert.match(source, /feedback_schema:feedbackSchema/);
+  assert.match(source, /recordDraftAudit\("feedback"/);
+  assert.match(source, /result\?\.operator_feedback_recorded!==true/);
+  assert.match(source, /result\?\.copy_eligible!==copyEligible/);
+  assert.match(source, /state\.feedbackReceipt=copyEligible\?clean\(result\.feedback_receipt\):""/);
+  assert.match(source, /&&state\.feedbackRecorded/);
+  assert.match(source, /&&clean\(state\.feedbackReceipt\)\.length>0/);
+  assert.match(source, /&&state\.feedbackOutcome!=="rejected"/);
+  assert.match(source, /!state\.feedbackRecorded\|\|!clean\(state\.feedbackReceipt\)\|\|state\.feedbackOutcome==="rejected"/);
+  assert.match(source, /recordDraftAudit\("copy",clientId,true,\{feedback_receipt:state\.feedbackReceipt\}\)/);
+  assert.match(source, /operator_feedback_receipt_required/);
+  assert.ok(
+    source.indexOf('await recordDraftAudit("feedback"') < source.indexOf('await recordDraftAudit("copy"'),
+    "quality feedback receipt must be recorded before the copy path can run",
+  );
+  assert.doesNotMatch(source, /miDraftFeedback(?:Note|Text)|feedback_(?:note|text)/i);
+});
+
+test("Member Intelligence explains unavailable drafts and locks copy on audit or runtime-control failure", () => {
+  assert.match(source, /phase4_mode_off/);
+  assert.match(source, /matrix_stale_or_expired/);
+  assert.match(source, /AUDIT UNAVAILABLE · Copy ถูกล็อกแบบ fail-closed/);
+  assert.match(source, /UNKNOWN · COPY LOCKED/);
+  assert.match(source, /COPY LOCKED/);
 });
 
 test("Member Intelligence fails closed on unresolved identity and browser auth loss", () => {
@@ -23,6 +255,8 @@ test("Member Intelligence fails closed on unresolved identity and browser auth l
   assert.match(source, /response\.status===401\|\|response\.status===403/);
   assert.match(source, /\/internal\/admin\/login\?next=/);
   assert.match(source, /BACKEND WAITING/);
+  assert.match(source, /Readiness \/ Recovery \/ Owner Protocol contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed/);
+  assert.match(source, /\/internal\/admin\/customer-data\?client_id=/);
 });
 
 test("Member Intelligence does not mutate payment, membership or entitlement truth", () => {
@@ -30,6 +264,8 @@ test("Member Intelligence does not mutate payment, membership or entitlement tru
   assert.doesNotMatch(source, /verified_at\s*=/);
   assert.doesNotMatch(source, /membership[_-](?:activate|renew|grant)/i);
   assert.doesNotMatch(source, /telegram\/(?:grant|add|remove)|drive\/(?:grant|add|remove)/i);
+  assert.doesNotMatch(source, /Verification Status["']?\s*[:=]/);
+  assert.doesNotMatch(source, /identity\/(?:verify|merge|commit)/i);
   assert.match(source, /My MMD Resolver/);
 });
 

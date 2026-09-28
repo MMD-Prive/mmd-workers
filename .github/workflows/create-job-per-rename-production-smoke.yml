@@ -8,6 +8,10 @@ on:
     paths:
       - "admin-worker/src/per-rename-client-search.js"
       - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/**create-job**"
+      - "immigrate-worker/src/internal-pages.ts"
+      - "immigrate-worker/src/internal-routes.ts"
+      - "webflow/internal/admin/jobs/create-job/**"
       - "scripts/create-job-per-rename-live-smoke.mjs"
       - ".github/workflows/create-job-per-rename-production-smoke.yml"
   workflow_run:

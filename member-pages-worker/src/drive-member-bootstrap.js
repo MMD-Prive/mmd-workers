@@ -1,3 +1,5 @@
+import { approvedLineChannelIds } from "./line-channel-audiences.js";
+
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
 const PURPOSE = "liff_drive_member_bootstrap";
 const IDENTITY_PURPOSE = "liff_drive_identity_resolution";
@@ -120,9 +122,7 @@ function driveBootstrapConfigured(env) {
 }
 
 async function verifyLineIdentityForDrive(idToken, env) {
-  const channelIds = [env.LINE_DASHBOARD_CHANNEL_ID, env.LINE_LOGIN_CHANNEL_ID]
-    .map((value) => String(value || "").trim())
-    .filter((value, index, values) => value && values.indexOf(value) === index);
+  const channelIds = approvedLineChannelIds(env, { dashboardFirst: true });
   if (!channelIds.length) return { ok: false, reason: "line_channel_missing" };
 
   for (const channelId of channelIds) {

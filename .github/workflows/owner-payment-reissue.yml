@@ -1,0 +1,101 @@
+name: Owner payment reissue
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-payment-reissue
+  cancel-in-progress: false
+
+jobs:
+  reissue:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      AIRTABLE_TABLE_SESSIONS: tblC98mKWbzmPuNzX
+
+    steps:
+      - name: Resolve explicit owner reissue request
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AIRTABLE_API_KEY:-}"
+
+          response="$RUNNER_TEMP/reissue-candidates.json"
+          curl --retry 3 --retry-delay 1 --retry-all-errors -sS -G             -H "Authorization: Bearer $AIRTABLE_API_KEY"             --data-urlencode 'maxRecords=3'             --data-urlencode 'returnFieldsByFieldId=true'             --data-urlencode 'filterByFormula=FIND("[MMD_PAYMENT_REISSUE_REQUEST_V1]",{notes})'             "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/$AIRTABLE_TABLE_SESSIONS" > "$response"
+
+          node - "$response" "$GITHUB_ENV" <<'NODE'
+          const fs = require('node:fs');
+          const [file, envFile] = process.argv.slice(2);
+          const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const rows = Array.isArray(data.records) ? data.records : [];
+          if (rows.length === 0) {
+            fs.appendFileSync(envFile, 'MMD_REISSUE_SKIP=1\n');
+            console.log('No pending owner payment reissue request.');
+            process.exit(0);
+          }
+          if (rows.length !== 1) throw new Error('owner_payment_reissue_request_ambiguous');
+          const fields = rows[0].fields || {};
+          const sessionId = String(fields.fldLTq2kZbyRv22IA || '').trim();
+          const notes = String(fields.fldwl9Gs5tYlXG5ls || '');
+          const markers = [...notes.matchAll(/\[MMD_PAYMENT_REISSUE_REQUEST_V1\]\s*(\{[^\n]+\})/g)];
+          if (!sessionId || !markers.length) throw new Error('owner_payment_reissue_request_invalid');
+          const request = JSON.parse(markers[markers.length - 1][1]);
+          if (String(request.payment_type || '').toLowerCase() !== 'full') throw new Error('owner_payment_reissue_not_full');
+          fs.appendFileSync(envFile, 'MMD_REISSUE_SKIP=0\n');
+          fs.appendFileSync(envFile, 'MMD_REISSUE_SESSION_ID=' + sessionId.replace(/[\r\n]/g, '') + '\n');
+          console.log('Resolved one explicit owner full-payment reissue request.');
+          NODE
+
+      - name: Reissue canonical full-payment intent
+        if: env.MMD_REISSUE_SKIP != '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          cookie="$RUNNER_TEMP/reissue.cookies"
+          headers="$RUNNER_TEMP/reissue-login.headers"
+          body="$RUNNER_TEMP/reissue-login.body"
+
+          login_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS             -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}"             -X POST             -H "Origin: $ORIGIN"             -H "Content-Type: application/x-www-form-urlencoded"             --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL"             --data-urlencode "next=/internal/admin/control-room"             "$ORIGIN/internal/admin/login/session")"
+          test "$login_code" = "303"
+
+          request_body="$RUNNER_TEMP/reissue-request.json"
+          node - "$MMD_REISSUE_SESSION_ID" "$request_body" <<'NODE'
+          const fs = require('node:fs');
+          fs.writeFileSync(process.argv[3], JSON.stringify({
+            mode: 'reissue_existing_session',
+            session_id: process.argv[2],
+            payment_type: 'full',
+          }));
+          NODE
+
+          result="$RUNNER_TEMP/reissue-result.json"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS             -o "$result" -b "$cookie" -w "%{http_code}"             -X POST             -H "Origin: $ORIGIN"             -H "Content-Type: application/json"             --data-binary @"$request_body"             "$ORIGIN/v1/admin/payment-issuer-diagnostic")"
+
+          test "$code" = "200"
+          node - "$result" <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (p?.ok !== true) throw new Error('reissue_not_ok');
+          if (!['issued', 'existing_full_links'].includes(String(p.stage || ''))) throw new Error('reissue_stage_unexpected');
+          if (p.payment_type !== 'full') throw new Error('reissue_not_full');
+          if (!p.payment_ref) throw new Error('reissue_payment_ref_missing');
+          if (p.customer_confirmation_url || p.model_confirmation_url || p.customer_t || p.model_t) throw new Error('signed_url_leaked_to_workflow');
+          console.log('Canonical full-payment reissue PASS. Signed URLs remain server-side.');
+          NODE

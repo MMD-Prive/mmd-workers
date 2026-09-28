@@ -6,6 +6,7 @@ compatibility_date = "2026-01-20"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TELEGRAM_PREVIEW_CHANNEL_ID = "-1002393788585"
 TELEGRAM_STANDARD_GROUP_ID = "-1002073919780"
+TELEGRAM_PREMIUM_GROUP_ID = "-1001668261779"
 TELEGRAM_PREVIEW_GROUP_ID = "-1002393788585"
 TELEGRAM_MMD_CHAT_GROUP_ID = "-1002073919780"
 TELEGRAM_BOT_USERNAME = "mmdprivebot"
@@ -17,6 +18,7 @@ TG_THREAD_POINTS = "17"
 TG_THREAD_PAYMENTS_CONFIRM = "22"
 TG_THREAD_ALERTS = "9"
 TG_THREAD_PUBLIC_MODEL = "155"
+TG_THREAD_PARTNER_CONFIRM = "61"
 TG_THREAD_HIMAI_ORDERS = "157"
 TG_THREAD_HIMAI_PAYMENTS = "158"
 TG_THREAD_HIMAI_ALERTS = "159"
@@ -57,6 +59,11 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 # AUTH_SERVICE_STUDIO_TO_TELEGRAM
 # AUTH_SERVICE_AUTH_TO_TELEGRAM
 # AUTH_SERVICE_LINE_TO_TELEGRAM
+# AUTH_SERVICE_PAYMENTS_TO_TELEGRAM
+# AUTH_SERVICE_MMS_TO_TELEGRAM
+# AUTH_SERVICE_SIGIL_TO_TELEGRAM
+# AUTH_SERVICE_HIMAI_TO_TELEGRAM
+# AUTH_SERVICE_PARTNERS_TO_TELEGRAM
 #
 # Optional persistent promo-code ledger:
 # [[kv_namespaces]]
@@ -70,3 +77,66 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 [[services]]
 binding = "TELEGRAM_BIND_AUTHORITY"
 service = "admin-worker"
+
+# Read-only customer status fan-in for HYPE Telegram Operating Concierge.
+# The admin-worker endpoint is service-binding-only and exposes a bounded
+# customer-safe projection; HYPE never becomes business-truth authority.
+[[services]]
+binding = "HYPE_OPERATIONS"
+service = "admin-worker"
+
+# Cross-channel Conversation Matrix continuity + supervised handoff writer.
+# Kept separate from HYPE_OPERATIONS so read-only customer status and
+# conversation-context writes remain distinct contracts.
+[[services]]
+binding = "HYPE_CONTEXT_WRITER"
+service = "admin-worker"
+
+# Partner job confirmation authority. Telegram only transports the verified
+# Partner response; partners-worker re-validates Partner binding + Session snapshot.
+[[services]]
+binding = "PARTNERS_WORKER"
+service = "partners-worker"
+
+
+# Canonical production Telegram ingress / internal-send ownership.
+# Exact paths only; workers.dev remains compatibility transport for existing internal callers.
+[[routes]]
+pattern = "mmdbkk.com/telegram/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/telegram/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/telegram/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/telegram/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/send"
+zone_name = "mmdbkk.com"

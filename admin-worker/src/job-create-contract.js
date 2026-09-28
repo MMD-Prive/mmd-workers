@@ -9,6 +9,15 @@ export function normalizeJobCreateBody(input = {}) {
   const details = body.job_details || {};
   const schedule = body.schedule || {};
   const notes = body.notes || {};
+  const rawPublicJob = body.public_job || details.public_job || {};
+  const publicJob = rawPublicJob && typeof rawPublicJob === 'object' && !Array.isArray(rawPublicJob)
+    ? structuredClone(rawPublicJob)
+    : {};
+  const hasPublicJob = Object.keys(publicJob).length > 0;
+  const visibility = String(
+    body.job_visibility || body.visibility || details.world || work.job_visibility || body.work_type || ''
+  ).trim().toLowerCase();
+  const publicFormat = String(publicJob.format || publicJob.job_format || '').trim().toLowerCase();
   const partnerRelationship = details.partner_relationship || body.partner_relationship || {};
   const settlementOwner = String(partnerRelationship.settlement_owner || '').trim().toLowerCase();
   const settlementMethod = String(partnerRelationship.settlement_method || '').trim().toLowerCase();
@@ -47,7 +56,15 @@ export function normalizeJobCreateBody(input = {}) {
     },
     model_name: body.model_name || model.model_name,
     model: { ...model, model_lookup_key: model.model_lookup_key || model.lookup_key },
-    job_type: body.job_type || work.job_lane || work.work_type || body.work_type,
+    job_visibility: body.job_visibility || body.visibility || details.world || work.job_visibility || body.work_type,
+    public_job: hasPublicJob ? publicJob : undefined,
+    job_details: {
+      ...details,
+      ...(hasPublicJob ? { public_job: publicJob } : {}),
+    },
+    job_type: visibility === 'public' && publicFormat
+      ? publicFormat
+      : (body.job_type || work.job_lane || work.work_type || body.work_type),
     job_date: body.job_date || details.job_date || schedule.date,
     start_time: body.start_time || details.start_time || schedule.start,
     end_time: body.end_time || details.end_time || schedule.end,

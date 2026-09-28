@@ -12,9 +12,12 @@ export const TG_THREADS = (env) => ({
 });
 
 export async function telegramNotify(payload, env) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
-    return { ok: false, skipped: true, reason: "missing_telegram_env" };
+  const service = env.TELEGRAM_WORKER;
+  const token = String(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM || "").trim();
+  if (!service || typeof service.fetch !== "function") {
+    return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
   }
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
 
   const threads = TG_THREADS(env);
   const flow = String(payload.flow || "").toLowerCase().trim();
@@ -24,22 +27,18 @@ export async function telegramNotify(payload, env) {
   }
 
   const text = formatTelegramMessage(payload);
-
-  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const res = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: env.TELEGRAM_CHAT_ID,
-      message_thread_id: threadId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({ flow, text, parse_mode: "HTML", disable_web_page_preview: true }),
+  }));
 
   const data = await res.json().catch(() => null);
-  if (!res.ok || (data && data.ok === false)) return { ok: false, status: res.status, error: data || null };
-  return { ok: true, thread_id: threadId };
+  if (!res.ok || data?.ok !== true || data?.telegram?.ok !== true) return { ok: false, status: res.status, error: data || null };
+  return { ok: true, thread_id: threadId, routed: true };
 }
 
 export function formatTelegramMessage(p) {

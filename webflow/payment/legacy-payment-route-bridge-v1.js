@@ -12,8 +12,9 @@
     return url.pathname + url.search;
   }
 
-  function membershipEntry() {
+  function membershipEntry(intent) {
     var url = new URL("/sigil/member/membership", location.origin);
+    if (intent) url.searchParams.set("intent", intent);
     ["plan", "package", "tier", "code", "promo", "src", "campaign", "from"].forEach(function (key) {
       var value = params.get(key);
       if (value) url.searchParams.set(key, value);
@@ -22,15 +23,20 @@
   }
 
   if (path === "/sigil/pay/renew") {
-    target = "/sigil/pay/renewal" + (location.search || "") + (location.hash || "");
-  } else if (path === "/sigil/pay/membership" || path === "/pay/membership") {
-    target = token ? signedPay(token) : membershipEntry();
+    target = token ? signedPay(token) : membershipEntry("renew");
+  } else if (path === "/sigil/pay/membership") {
+    target = token ? signedPay(token) : membershipEntry("");
   } else if (path === "/sigil/pay/payment") {
     target = token ? signedPay(token) : "/member/payments";
   }
 
   if (target && target !== path + (location.search || "") + (location.hash || "")) {
-    window.MMDLegacyPaymentRouteBridgeV1 = { from: path, to: target };
+    window.MMDLegacyPaymentRouteBridgeV1 = {
+      from: path,
+      to: target,
+      canonical: true,
+      updated: "2026-09-19",
+    };
     location.replace(target);
   }
 })();

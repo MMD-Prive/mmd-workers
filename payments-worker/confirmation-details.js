@@ -1,5 +1,6 @@
 import { verifyConfirmToken } from "./index.js";
 import { stablePaymentRef } from "./unified-payment-proof.js";
+import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_DETAILS_PATH = "/v1/confirm/details";
@@ -79,6 +80,7 @@ export async function handleConfirmationDetails(request, env = {}) {
     const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
     const vip = parseMarkedJson(note, "SIGIL VIP Detail v1");
     const common = {
+      ...await confirmationRevision(env, session, claims.session_id),
       ok: true,
       authority: "payments-worker",
       schema: "confirmation_details_v1",
@@ -104,6 +106,7 @@ export async function handleConfirmationDetails(request, env = {}) {
       const net = numberOrNull(fields[field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]);
       const safePricing = customerPricing(pricing, net);
       let paymentRecord = null;
+      let proofRecord = null;
       let activePaymentRef = text(claims.payment_ref, 200);
       try {
         const finalPayment = await findPayment(env, finalPaymentRef, claims.session_id);
@@ -113,6 +116,9 @@ export async function handleConfirmationDetails(request, env = {}) {
         } else {
           paymentRecord = await findPayment(env, claims.payment_ref, claims.session_id);
         }
+      } catch {}
+      try {
+        proofRecord = await findProofEvidence(env, activePaymentRef);
       } catch {}
       const customerAmountDue = numberOrNull(fields[SESSION_FIELDS.customerAmountDueThb]);
       return withCors(request, env, json({
@@ -127,6 +133,7 @@ export async function handleConfirmationDetails(request, env = {}) {
           claimedPaymentType: claims.payment_type,
           sessionPaymentStatus: common.payment_status,
           paymentRef: activePaymentRef,
+          proofRecord,
         }),
       }));
     }
@@ -166,7 +173,7 @@ function customerPricing(raw, netFallback) {
   };
 }
 
-function customerPaymentDisplay({ paymentRecord, pricing, customerAmountDue, claimedPaymentType, sessionPaymentStatus, paymentRef }) {
+function customerPaymentDisplay({ paymentRecord, proofRecord, pricing, customerAmountDue, claimedPaymentType, sessionPaymentStatus, paymentRef }) {
   const fields = paymentRecord?.fields || {};
   const storedStage = normalizePaymentStage(fields[PAYMENT_FIELDS.paymentStage] || fields[PAYMENT_FIELDS.paymentType]);
   const claimedStage = normalizePaymentStage(claimedPaymentType);
@@ -189,7 +196,10 @@ function customerPaymentDisplay({ paymentRecord, pricing, customerAmountDue, cla
     fields[PAYMENT_FIELDS.paymentStatus],
     sessionPaymentStatus,
   );
-  const proofReceived = isProofReceived(fields[PAYMENT_FIELDS.intentStatus], fields[PAYMENT_FIELDS.verificationStatus]);
+  // "pending_review" is also the default verification state for a newly-created
+  // unpaid intent, so Verification Status alone must never imply that proof exists.
+  // Payment Intent Status is the evidence-receipt signal.
+  const proofReceived = isProofReceived(fields[PAYMENT_FIELDS.intentStatus]) || isProofEvidenceRecord(proofRecord);
 
   return {
     schema: "customer_payment_display_v1",
@@ -316,6 +326,50 @@ async function findSession(env, sessionId) {
   const records = Array.isArray(data?.records) ? data.records : [];
   if (records.length > 1) throw httpError(409, "session_id_ambiguous");
   return records[0] || null;
+}
+
+async function findProofEvidence(env, paymentRef) {
+  const ref = text(paymentRef, 200);
+  if (!ref) return null;
+
+  const baseId = clean(env.AIRTABLE_BASE_ID, 100);
+  const tableId = clean(env.AIRTABLE_TABLE_PAYMENT_PROOFS || "tblfJfM4Sqag9zrLi", 100);
+  const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
+  if (!baseId || !tableId || !apiKey) return null;
+
+  const formula = `{payment_ref}='${formulaValue(ref)}'`;
+  const query = new URLSearchParams({
+    maxRecords: "2",
+    filterByFormula: formula,
+  });
+  const req = new Request(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}?${query.toString()}`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${apiKey}` },
+  });
+  const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(req) : await fetch(req);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw httpError(response.status >= 500 ? 503 : 500, "airtable_proof_request_failed");
+  const records = Array.isArray(data?.records) ? data.records : [];
+  if (records.length > 1) return null;
+  return records[0] || null;
+}
+
+function isProofEvidenceRecord(record) {
+  const status = text(record?.fields?.status, 80).toLowerCase().replace(/[\s-]+/g, "_");
+  if (!record?.id) return false;
+  if (!status) return true;
+  return new Set([
+    "submitted",
+    "pending",
+    "pending_review",
+    "review",
+    "review_required",
+    "needs_review",
+    "under_review",
+    "matched",
+    "verified",
+    "approved",
+  ]).has(status);
 }
 
 async function findPayment(env, paymentRef, sessionId) {

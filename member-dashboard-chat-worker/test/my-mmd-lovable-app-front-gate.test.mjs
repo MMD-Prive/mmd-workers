@@ -23,7 +23,7 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
         <link rel="icon" href="/favicon.ico">
         <link rel="stylesheet" href="/assets/app.css">
       </head><body>
-        <a href="/">Home</a><a href="/membership">Membership</a>
+        <a href="/">Home</a><a href="/membership">Membership</a><a href="/payments">Payments</a>
         <main>MMD PRIVÉ · MY MMD</main>
         <script type="module" src="/assets/app.js"></script>
       </body></html>`, {
@@ -56,12 +56,119 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
   assert.equal(response.headers.get("x-mmd-presentation-owner"), "lovable");
   assert.equal(response.headers.get("x-mmd-behavior-owner"), "mmd-workers");
   assert.match(html, /MMD PRIVÉ · MY MMD/);
+  assert.match(html, /id="mmd-bangkok-theme-v1"/);
+  assert.match(html, /data-mmd-bangkok-theme="v1"/);
+  assert.match(html, /MMD_Prive%CC%81_logo_signature_transparent/);
+  assert.match(html, /alt="MMD Privé"/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.match(html, /data-mmd-board-layout="quiet"/);
+  assert.doesNotMatch(html, /clip-path:polygon/);
   assert.match(html, /\/my-mmd-assets\/app\.css/);
   assert.match(html, /\/my-mmd-assets\/app\.js/);
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
   assert.match(html, /href="\/my-mmd\/"/);
   assert.match(html, /href="\/my-mmd\/membership"/);
+  assert.match(html, /href="\/my-mmd\/payments"/);
   assert.doesNotMatch(html, /\/member\/my-mmd/);
+});
+
+test("Private Teaser is a dedicated MY MMD viewer and never fetches the Lovable presentation", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response("unexpected");
+  };
+
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview?model=Example%20Model"), {});
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, []);
+  assert.equal(response.headers.get("x-mmd-ui-source"), "my-mmd-private-teaser-viewer-v1");
+  assert.match(response.headers.get("content-security-policy") || "", /frame-ancestors 'none'/);
+  assert.match(html, /MMD PRIVÉ · PRIVATE PREVIEW/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.match(html, /alt="MMD Privé"/);
+  assert.match(html, /\/api\/member\/app\/private-teaser\/availability/);
+  assert.match(html, /\/api\/member\/app\/private-teaser\/grant/);
+  assert.match(html, /model_slug:modelSlug/);
+  assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|media_id|localStorage|sessionStorage|indexedDB/);
+});
+
+test("Bangkok board uses hero treatment on home and profile, and Orders recovery keeps its closed state", async () => {
+  globalThis.fetch = async request => new Response(
+    new URL(request.url).hostname === "mmdprive.webflow.io" ? "unavailable" : "<!doctype html><html><head></head><body><main>MY MMD</main></body></html>",
+    { status: new URL(request.url).hostname === "mmdprive.webflow.io" ? 404 : 200, headers: { "content-type": "text/html" } },
+  );
+  for (const path of ["/my-mmd", "/my-mmd/", "/my-mmd/profile"]) {
+    const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`), {});
+    const html = await response.text();
+    assert.match(html, /data-mmd-board-layout="hero"/);
+    assert.match(html, /BKK%20View%2001\.webp/);
+    assert.equal((html.match(/<header id="mmd-bangkok-theme-v1"/g) || []).length, 1);
+  }
+  const orders = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
+  const ordersHtml = await orders.text();
+  assert.equal(orders.status, 502);
+  assert.equal(orders.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  assert.equal(orders.headers.get("x-mmd-ui-source"), "webflow:my-mmd-orders");
+  assert.equal(orders.headers.get("x-mmd-behavior-owner"), "member-pages-worker");
+  assert.match(ordersHtml, /รายการสั่งซื้อยังเปิดไม่สำเร็จ/);
+  assert.match(ordersHtml, /BKK%20View%2001\.webp/);
+  assert.match(ordersHtml, /alt="MMD Privé"/);
+});
+
+test("Orders 200 presentation receives the approved board and one logo", async () => {
+  globalThis.fetch = async () => new Response('<!doctype html><html><head></head><body><main>Orders</main></body></html>', { headers: { "content-type": "text/html" } });
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /id="mmd-orders-board"/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.equal((html.match(/alt="MMD Privé"/g) || []).length, 1);
+  assert.match(html, /<main>Orders<\/main>/);
+});
+
+test("unauthenticated Shop Orders stays fail-closed through the member authority", async () => {
+  const calls = [];
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({ path: new URL(request.url).pathname, method: request.method });
+        return new Response(JSON.stringify({ ok: false, error: "authentication_required" }), {
+          status: 401,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+        });
+      },
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/member/api/shop/orders"), runtime);
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(calls, [{ path: "/member/api/shop/orders", method: "GET" }]);
+  assert.equal(body.ok, false);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
+test("MY MMD Private Teaser media player stays on MY MMD and accepts read-only access only", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview/view#t=secret"), {});
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /\/api\/member\/app\/private-preview\/status/);
+  assert.match(html, /\/api\/member\/app\/private-preview\/consume/);
+  assert.match(html, /URL\.revokeObjectURL/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.match(html, /alt="MMD Privé"/);
+  assert.match(html, /setTimeout\(conceal,3000\)/);
+  assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|localStorage|sessionStorage|indexedDB/);
+
+  const post = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview", { method:"POST" }), {});
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get("allow"), "GET, HEAD");
 });
 
 test("Lovable upstream failure returns a visible fail-closed recovery page with HYPE", async () => {
@@ -179,11 +286,11 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ surface", async () => {
+test("direct status LIFF stays in the Worker-rendered Digital Home", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd/";</script></body></html>`,
+        `<!doctype html><html><head></head><body><main>MMD Privé · LIFF Digital Home</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const LOVABLE_POINTS_PATH = "/my-mmd/points"; const targetId = view === "history" ? "history-panel" : view;</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
@@ -193,14 +300,63 @@ test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ su
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.match(html, /MMD Privé · LIFF Digital Home/);
+  assert.match(html, /LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
+  assert.match(html, /view === "history" \? "history-panel" : view/);
+  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
+});
+
+test("private_teaser LIFF verifies the member then returns only to the allowlisted MY MMD teaser model", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PRIVATE TEASER BRIDGE</main><div id="message"></div><div id="actions"></div><script nonce="teaser123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?intent=private_teaser&model=toto"),
+    runtime,
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/private-preview?from=line_verify&model=toto");
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-  assert.match(html, /const target = "\/my-mmd\/"/);
+  assert.match(html, /const target = "\/my-mmd\/private-preview\?from=line_verify&model=toto"/);
+
+  const hostile = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?intent=private_teaser&model=https%3A%2F%2Fevil.example"),
+    runtime,
+  );
+  assert.equal(hostile.headers.get("x-mmd-liff-return-target"), null);
+});
+
+test("continue_payment LIFF stays auth-bridge-only and returns to My MMD Payment Center", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PAYMENT BRIDGE</main><div id="message"></div><div id="actions"></div><script nonce="pay123">const target = "/member/payments"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?liff.state=%3Fintent%3Dcontinue_payment"),
+    runtime,
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/payments");
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.match(html, /const target = "\/my-mmd\/payments"/);
   assert.match(html, /id="mmd-status-bridge-veil"/);
-  assert.match(html, /html,body\{background:#000!important\}/);
-  assert.match(html, /กำลังยืนยันสมาชิก…/);
-  assert.match(html, /\/my-mmd-assets\/hype-loading\.gif/);
-  assert.match(html, /\/member\/api\/liff\/profile/);
 });
 
 test("non-status LIFF intents keep their existing specialized surfaces", async () => {

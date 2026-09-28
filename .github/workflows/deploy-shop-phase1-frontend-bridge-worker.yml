@@ -1,0 +1,189 @@
+name: Shop Phase 1 frontend bridge
+
+on:
+  pull_request:
+    paths:
+      - "workers/shop-phase1-frontend-bridge-worker/**"
+      - ".github/workflows/deploy-shop-phase1-frontend-bridge-worker.yml"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "workers/shop-phase1-frontend-bridge-worker/**"
+      - ".github/workflows/deploy-shop-phase1-frontend-bridge-worker.yml"
+
+concurrency:
+  group: shop-phase1-frontend-bridge-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit tests
+        working-directory: workers/shop-phase1-frontend-bridge-worker
+        run: |
+          set -euo pipefail
+          npm test
+          npm run check
+      - name: Wrangler dry run
+        run: npx --yes wrangler@4 deploy --dry-run --config workers/shop-phase1-frontend-bridge-worker/wrangler.toml
+
+      - name: Route-free deploy config dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="workers/shop-phase1-frontend-bridge-worker/wrangler.toml"
+          tmp="workers/shop-phase1-frontend-bridge-worker/.wrangler-no-routes.toml"
+          trap 'rm -f "$tmp"' EXIT
+          node - "$src" "$tmp" <<'NODE'
+          const fs = require("node:fs");
+          const [src, out] = process.argv.slice(2);
+          const input = fs.readFileSync(src, "utf8").split(/\r?\n/);
+          const lines = [];
+          let skipping = false;
+          for (const line of input) {
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              skipping = true;
+              continue;
+            }
+            if (skipping && /^\s*\[/.test(line)) skipping = false;
+            if (!skipping) lines.push(line);
+          }
+          fs.writeFileSync(out, lines.join("\n") + "\n");
+          NODE
+          npx --yes wrangler@4 deploy --dry-run --config "$tmp"
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "shop-phase1-frontend-bridge-worker"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy worker code without route mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="workers/shop-phase1-frontend-bridge-worker/wrangler.toml"
+          tmp="workers/shop-phase1-frontend-bridge-worker/.wrangler-no-routes.toml"
+          trap 'rm -f "$tmp"' EXIT
+          node - "$src" "$tmp" <<'NODE'
+          const fs = require("node:fs");
+          const [src, out] = process.argv.slice(2);
+          const input = fs.readFileSync(src, "utf8").split(/\r?\n/);
+          const lines = [];
+          let skipping = false;
+          for (const line of input) {
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              skipping = true;
+              continue;
+            }
+            if (skipping && /^\s*\[/.test(line)) skipping = false;
+            if (!skipping) lines.push(line);
+          }
+          fs.writeFileSync(out, lines.join("\n") + "\n");
+          NODE
+          npx --yes wrangler@4 deploy --config "$tmp"
+
+      - name: Sync exact storefront page routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").trim();
+          const zoneId = String(process.env.CLOUDFLARE_ZONE_ID || "").trim();
+          const worker = String(process.env.WORKER_NAME || "").trim();
+          if (!token || !zoneId || !worker) throw new Error("Cloudflare route credentials are not configured");
+
+          const desired = [
+            "mmdbkk.com/shop",
+            "www.mmdbkk.com/shop",
+            "mmdbkk.com/shop/",
+            "www.mmdbkk.com/shop/",
+            "mmdbkk.com/mmd-shop",
+            "www.mmdbkk.com/mmd-shop",
+            "mmdbkk.com/mmd-shop/",
+            "www.mmdbkk.com/mmd-shop/",
+          ];
+
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          async function cf(path, options = {}) {
+            let lastError;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+                  ...options,
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                    ...(options.headers || {}),
+                  },
+                });
+                const raw = await response.text();
+                let body = null;
+                try { body = JSON.parse(raw); } catch {}
+                if (response.ok && body?.success === true) return body.result;
+                const retryable = response.status === 429 || response.status >= 500 || !body;
+                lastError = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${raw.slice(0,160)}`);
+                if (!retryable) throw lastError;
+              } catch (error) {
+                lastError = error;
+              }
+              if (attempt < 5) await sleep(attempt * 1000);
+            }
+            throw lastError || new Error("cloudflare_route_api_failed");
+          }
+
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          const verified = await cf(routePath);
+          const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} exact storefront routes`);
+          NODE
+
+      - name: Production smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in https://mmdbkk.com/shop https://www.mmdbkk.com/shop https://mmdbkk.com/mmd-shop https://www.mmdbkk.com/mmd-shop; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" "$url")"
+            test "$code" = "200"
+            grep -qi '^x-mmd-route-owner: shop-phase1-frontend-bridge-worker' "$headers"
+            grep -q 'mmd-shop-phase1-edge-bridge' "$body"
+            rm -f "$headers" "$body"
+          done
+          api="$(curl --retry 5 --retry-delay 2 --retry-all-errors -fsS https://mmdbkk.com/shop/api/products)"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||x.shop!=="shop") process.exit(1)' "$api"
+          api="$(curl --retry 5 --retry-delay 2 --retry-all-errors -fsS https://mmdbkk.com/mmd-shop/api/products)"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||x.shop!=="mmd-shop") process.exit(1)' "$api"

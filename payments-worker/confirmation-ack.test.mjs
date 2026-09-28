@@ -32,3 +32,9 @@ test("confirmation ack does not mark payment paid", () => {
   assert.doesNotMatch(source, /paymentStatus[^\n]*Paid/i);
   assert.doesNotMatch(source, /may_mark_paid/i);
 });
+
+
+test("confirmation authorization can be reused by customer change request intake", () => {
+  assert.match(source, /export async function authorizeConfirmationRequest\(request, env\)/);
+  assert.match(source, /return \{ claims, session, expectedRole, body \}/);
+});

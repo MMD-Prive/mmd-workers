@@ -140,10 +140,20 @@ jobs:
             "www.mmdbkk.com/internal/admin/customer-data",
             "mmdbkk.com/internal/admin/customer-data*",
             "www.mmdbkk.com/internal/admin/customer-data*",
+            "mmdbkk.com/internal/admin/jobs/create-job*",
+            "www.mmdbkk.com/internal/admin/jobs/create-job*",
+            "mmdbkk.com/internal/jobs/create-job*",
+            "www.mmdbkk.com/internal/jobs/create-job*",
             "mmdbkk.com/internal/admin/jobs/create-session/core",
             "www.mmdbkk.com/internal/admin/jobs/create-session/core",
             "mmdbkk.com/a/create-session.js",
             "www.mmdbkk.com/a/create-session.js",
+            "mmdbkk.com/v1/admin/clients/lineage-lookup*",
+            "www.mmdbkk.com/v1/admin/clients/lineage-lookup*",
+            "mmdbkk.com/v1/admin/clients/recent*",
+            "www.mmdbkk.com/v1/admin/clients/recent*",
+            "mmdbkk.com/v1/admin/clients/intelligence*",
+            "www.mmdbkk.com/v1/admin/clients/intelligence*",
           ];
           const obsolete = [
             "mmdbkk.com/internal/admin/jobs/create-session.js",
@@ -194,6 +204,58 @@ jobs:
           console.log(`verified ${desired.length}/${desired.length} exact MMD internal routes`);
           NODE
 
+      - name: Verify Client Intelligence ingress fails closed in production
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          read_headers="$(mktemp)"
+          read_body="$(mktemp)"
+          audit_headers="$(mktemp)"
+          audit_body="$(mktemp)"
+          trap 'rm -f "$read_headers" "$read_body" "$audit_headers" "$audit_body"' EXIT
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            verified=0
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              : > "$read_headers"
+              : > "$read_body"
+              : > "$audit_headers"
+              : > "$audit_body"
+              read_code="$(curl -sS -D "$read_headers" -o "$read_body" -w '%{http_code}' \
+                "${origin}/v1/admin/clients/intelligence?client_id=recSMOKE00000001&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              audit_code="$(curl -sS -D "$audit_headers" -o "$audit_body" -w '%{http_code}' \
+                -X POST \
+                -H "Origin: ${origin}" \
+                -H 'Content-Type: application/json' \
+                --data '{"action":"view","client_id":"recSMOKE00000001"}' \
+                "${origin}/v1/admin/clients/intelligence/audit")"
+
+              if [ "$read_code" = "401" ] \
+                && [ "$audit_code" = "401" ] \
+                && grep -Eiq '^x-mmd-control-room-dashboard-ingress:[[:space:]]*immigrate-to-admin-client-intelligence-v1' "$read_headers" \
+                && grep -Eiq '^x-mmd-control-room-dashboard-ingress:[[:space:]]*immigrate-to-admin-client-intelligence-audit-v1' "$audit_headers"; then
+                echo "Client Intelligence ingress verified for ${origin} on attempt ${attempt}"
+                verified=1
+                break
+              fi
+
+              echo "Client Intelligence ingress not ready for ${origin} (attempt ${attempt}, read ${read_code}, audit ${audit_code}); retrying..."
+              sleep 3
+            done
+
+            if [ "$verified" != "1" ]; then
+              echo "Client Intelligence ingress production verification failed for ${origin}" >&2
+              grep -Ei '^(HTTP/|content-type:|location:|x-mmd-control-room-dashboard-ingress:|server:|cf-ray:)' "$read_headers" >&2 || true
+              grep -Ei '^(HTTP/|content-type:|location:|allow:|x-mmd-control-room-dashboard-ingress:|server:|cf-ray:)' "$audit_headers" >&2 || true
+              head -c 240 "$read_body" >&2 || true
+              echo >&2
+              head -c 240 "$audit_body" >&2 || true
+              echo >&2
+              exit 1
+            fi
+          done
+
       - name: Verify Customer Data readable UI in production
         shell: bash
         run: |
@@ -210,7 +272,7 @@ jobs:
               "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
-              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v2' "$headers" \
+              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers" \
               && grep -Eiq '^x-mmd-customer-data-authority:[[:space:]]*identity-context-staging-only' "$headers" \
               && grep -q 'นำเข้าจาก Console Inbox' "$body" \
               && grep -q 'คิวที่ต้องดู' "$body" \
@@ -251,27 +313,64 @@ jobs:
               "https://mmdbkk.com/internal/admin/control-room?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
-              && grep -Eiq '^x-mmd-control-room-ui:[[:space:]]*owner-desktop-v3-latest' "$headers" \
-              && grep -Eiq '^x-mmd-control-room-authority:[[:space:]]*canonical-backend' "$headers" \
-              && grep -q 'data-control-room-v3' "$body" \
-              && grep -q 'MMD PRIVÉ · OWNER CONTROL ROOM V3' "$body" \
-              && grep -q 'My MMD Entitlement Resolver' "$body" \
-              && grep -q 'Telegram / Google Drive' "$body" \
+              && grep -Eiq '^x-mmd-presentation-source:[[:space:]]*lovable' "$headers" \
+              && grep -Eiq '^x-mmd-presentation-version:[[:space:]]*internal-lovable-v1' "$headers" \
+              && grep -Eq 'https://mmd-os\.lovable\.app/assets/' "$body" \
+              && grep -Eiq '<!doctype html|<html' "$body" \
               && ! grep -q 'WORKER-RENDERED INTERNAL PAGES' "$body"; then
-              echo "Production Control Room owner v3 verified on attempt ${attempt}"
+              echo "Production Control Room Lovable presentation verified on attempt ${attempt}"
               verified=1
               break
             fi
 
-            echo "Control Room v3 not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
+            echo "Control Room Lovable presentation not ready yet (attempt ${attempt}, HTTP ${code}); retrying..."
+            grep -Ei '^(x-mmd-presentation-source|x-mmd-presentation-version|location:|server|cf-ray):' "$headers" || true
             sleep 2
           done
 
           if [ "$verified" != "1" ]; then
-            echo "Control Room v3 production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-control-room-ui|x-mmd-control-room-authority|server|cf-ray):' "$headers" || true
+            echo "Control Room Lovable production verification failed after bounded propagation retries" >&2
+            grep -Ei '^(x-mmd-presentation-source|x-mmd-presentation-version|location:|server|cf-ray):' "$headers" >&2 || true
+            head -c 320 "$body" >&2 || true
+            echo >&2
             exit 1
           fi
+
+      - name: Verify canonical Create Job and legacy compatibility route
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            legacy_headers="$(mktemp)"
+            trap 'rm -f "$body" "$headers" "$legacy_headers"' EXIT
+
+            verified=0
+            for attempt in 1 2 3 4 5 6 7 8; do
+              : > "$body"
+              : > "$headers"
+              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}'                 "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              if [ "$code" = "200" ]                 && grep -q 'id="job-board-text" maxlength="1000"' "$body"                 && grep -q 'id="job-customer-gender"' "$body"                 && grep -q 'id="job-budget-disclosure"' "$body"                 && grep -q '/v1/admin/job-board/publish' "$body"                 && grep -q 'https://www.mmdbkk.com/sigil/model/login?' "$body"; then
+                echo "Canonical Create Job verified for $origin on attempt $attempt"
+                verified=1
+                break
+              fi
+              echo "Create Job not ready for $origin (attempt $attempt, HTTP $code); retrying..."
+              sleep 2
+            done
+            if [ "$verified" != "1" ]; then
+              echo "Canonical Create Job production verification failed for $origin" >&2
+              head -c 500 "$body" >&2 || true
+              exit 1
+            fi
+
+            legacy_code="$(curl -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}'               "$origin/internal/jobs/create-job?source=legacy-smoke")"
+            test "$legacy_code" = "308"
+            expected="/internal/admin/jobs/create-job?source=legacy-smoke"
+            grep -Fqi "location: $expected" "$legacy_headers"
+          done
 
       - name: Verify MMD Create Session Owner v14 in production
         shell: bash

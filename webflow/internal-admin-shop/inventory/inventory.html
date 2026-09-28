@@ -1,0 +1,81 @@
+<main id="mmd-shop-inventory-admin-v1" data-api="/v1/admin/shop/inventory" data-batch-api="/v1/admin/shop/inventory/batch" data-adjust-api="/v1/admin/shop/inventory/adjust">
+  <header class="shopops-top">
+    <a class="shopops-brand" href="/internal/admin/shop/orders"><span>MMD</span><small>SHOP OPS</small></a>
+    <nav class="shopops-nav" aria-label="Shop admin">
+      <a href="/internal/admin/shop/orders">Orders</a>
+      <a class="is-active" href="/internal/admin/shop/inventory">Inventory</a>
+      <a href="/internal/admin/shop/products">Products</a>
+    </nav>
+  </header>
+
+  <section class="shopops-hero">
+    <div>
+      <span class="shopops-kicker">OWNER OPERATIONS · INVENTORY</span>
+      <h1>สต๊อก MMD Shop</h1>
+      <p>ดูจำนวนคงเหลือ, batch, ต้นทุน และ stock movement จาก MMD inventory authority เดียวกัน</p>
+    </div>
+    <button class="shopops-btn shopops-btn--ghost" type="button" data-refresh>รีเฟรช</button>
+  </section>
+
+  <section class="shopops-metrics" aria-label="Inventory metrics">
+    <article><small>สินค้า MMD</small><strong data-metric="products">—</strong></article>
+    <article><small>มี Stock Tracking</small><strong data-metric="tracked_products">—</strong></article>
+    <article><small>Active Batches</small><strong data-metric="active_batches">—</strong></article>
+    <article><small>Low Stock</small><strong data-metric="low_batches">—</strong></article>
+    <article><small>Units Remaining</small><strong data-metric="total_units">—</strong></article>
+  </section>
+
+  <section class="shopops-panel">
+    <div class="shopops-panelhead">
+      <div><span class="shopops-kicker">STOCK OVERVIEW</span><h2>สินค้าและจำนวนคงเหลือ</h2></div>
+      <label class="shopops-search"><span>ค้นหา</span><input type="search" data-search placeholder="ชื่อสินค้า / SKU"></label>
+    </div>
+    <div class="shopops-state" data-state>กำลังโหลด Inventory…</div>
+    <div class="shopops-grid" data-products hidden></div>
+  </section>
+
+  <section class="shopops-panel">
+    <div class="shopops-panelhead">
+      <div><span class="shopops-kicker">BATCH RECEIVE</span><h2>รับสินค้าเข้าสต๊อก</h2></div>
+    </div>
+    <form class="shopops-form" data-batch-form>
+      <label><span>สินค้า *</span><select name="product_id" required data-product-select><option value="">เลือกสินค้า</option></select></label>
+      <label><span>Supplier</span><select name="supplier_id" data-supplier-select><option value="">ไม่ระบุ</option></select></label>
+      <label><span>Batch Code</span><input name="batch_code" autocomplete="off" placeholder="เว้นว่างให้ระบบสร้าง"></label>
+      <label><span>วันที่รับ</span><input name="received_date" type="date"></label>
+      <label><span>จำนวน *</span><input name="quantity" type="number" min="1" step="1" inputmode="numeric" required></label>
+      <label><span>ต้นทุน / หน่วย *</span><input name="unit_cost_thb" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+      <label class="shopops-formwide"><span>หมายเหตุ</span><textarea name="note" rows="2" placeholder="ข้อมูลรับสินค้า / ใบส่งของ / หมายเหตุภายใน"></textarea></label>
+      <div class="shopops-formwide shopops-formactions">
+        <button class="shopops-btn shopops-btn--primary" type="submit">บันทึก Batch</button>
+        <span class="shopops-formstatus" data-batch-status aria-live="polite"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="shopops-panel">
+    <div class="shopops-panelhead">
+      <div><span class="shopops-kicker">BATCH CONTROL</span><h2>Batch และปรับสต๊อก</h2></div>
+      <select class="shopops-filter" data-batch-filter aria-label="กรอง batch">
+        <option value="active">Active</option>
+        <option value="all">ทั้งหมด</option>
+        <option value="low">Low Stock</option>
+        <option value="depleted">Depleted</option>
+        <option value="archived">Archived</option>
+      </select>
+    </div>
+    <div class="shopops-stack" data-batches></div>
+  </section>
+
+  <section class="shopops-panel">
+    <div class="shopops-panelhead">
+      <div><span class="shopops-kicker">STOCK LEDGER</span><h2>Movement ล่าสุด</h2></div>
+    </div>
+    <div class="shopops-stack" data-movements></div>
+  </section>
+
+  <footer class="shopops-foot">
+    <a href="/internal/admin/shop/orders">← Orders</a>
+    <a href="/internal/admin/shop/products">Products →</a>
+  </footer>
+</main>

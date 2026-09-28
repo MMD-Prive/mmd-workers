@@ -7,9 +7,25 @@ import {
   resolveDrivePackageForEmail,
   resolveTrustedBootstrapEmail,
 } from "../src/drive-member-bootstrap.js";
+import { approvedLineChannelIds } from "../src/line-channel-audiences.js";
 
 const LINE_ID = "U5107dbdc87dbdd985ef5516b7f208fc3";
 const SECRET = "0123456789abcdef0123456789abcdef";
+
+test("LINE audience allowlist includes the backup channel and remains bounded", () => {
+  const runtime = {
+    LINE_LOGIN_CHANNEL_ID: "2010298002",
+    LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+    LINE_BACKUP_CHANNEL_ID: "2011691294",
+  };
+  assert.deepEqual(approvedLineChannelIds(runtime), ["2010298002", "2010862595", "2011691294"]);
+  assert.deepEqual(approvedLineChannelIds(runtime, { dashboardFirst: true }), ["2010862595", "2010298002", "2011691294"]);
+  assert.deepEqual(approvedLineChannelIds({
+    LINE_LOGIN_CHANNEL_ID: "2010862595",
+    LINE_DASHBOARD_CHANNEL_ID: "2010862595",
+    LINE_BACKUP_CHANNEL_ID: "attacker supplied value",
+  }), ["2010862595"]);
+});
 
 test("Premium package inherits Standard access", () => {
   assert.deepEqual(packageAccessLayers("premium"), ["standard", "premium"]);

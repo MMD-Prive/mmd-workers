@@ -12,7 +12,7 @@ const env = {
   ADMIN_SESSION_SECRET: "payment-inbox-admin-session-secret",
 };
 
-test("credential login issues an admin actor usable by the payment review guard", async () => {
+test("credential login issues Per owner actor usable by the payment review guard", async () => {
   const login = await adminWorker.fetch(
     new Request("https://www.mmdbkk.com/internal/admin/login/session", {
       method: "POST",
@@ -45,7 +45,7 @@ test("credential login issues an admin actor usable by the payment review guard"
 
     assert.deepEqual(
       { id: actor?.id, role: actor?.role },
-      { id: "per", role: "admin" }
+      { id: "per", role: "owner" }
     );
   }
 

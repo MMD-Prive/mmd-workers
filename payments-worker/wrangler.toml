@@ -19,7 +19,7 @@ routes = [
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
-AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+AIRTABLE_TABLE_POINTS_LEDGER = "tbl5dfnwjUFMLbnWL"
 
 # Payments table field mappings for slip evidence writes.
 # Field IDs avoid hard-coded display-name drift in Airtable.

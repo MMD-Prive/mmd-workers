@@ -22,7 +22,7 @@ jobs:
       MODEL_DRIVE_DIRECTORY_URL: https://member-pages-worker.malemodel-bkk.workers.dev
       MODEL_DRIVE_DIRECTORY_SECRET: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
     steps:
-      - name: Verify production Drive directory auth and Book EI resolution
+      - name: Verify production Drive directory auth and approved-model resolution
         shell: bash
         run: |
           set -euo pipefail
@@ -34,15 +34,6 @@ jobs:
             const secret = String(process.env.MODEL_DRIVE_DIRECTORY_SECRET || '').trim();
             if (!base) throw new Error('MODEL_DRIVE_DIRECTORY_URL missing');
             if (!secret) throw new Error('MODEL_DRIVE_DIRECTORY_SECRET missing');
-
-            const search = new URL('/__internal/model-drive/search', base);
-            search.searchParams.set('q', 'Book El');
-            search.searchParams.set('lane', 'private');
-
-            const unauth = await fetch(search, { redirect: 'manual' });
-            if (unauth.status !== 403) {
-              throw new Error(`Unsigned model Drive directory request must fail 403; got ${unauth.status}`);
-            }
 
             async function signedFetch(url, { method = 'GET', body = '' } = {}) {
               const timestamp = String(Math.floor(Date.now() / 1000));
@@ -62,31 +53,71 @@ jobs:
               });
             }
 
+            // Auth boundary: workers.dev access must remain fail-closed.
+            const unauth = new URL('/__internal/model-drive/search', base);
+            unauth.searchParams.set('q', 'EMs16');
+            unauth.searchParams.set('lane', 'all');
+            const unauthResponse = await fetch(unauth, { redirect: 'manual' });
+            if (unauthResponse.status !== 403) {
+              throw new Error(`Unsigned model Drive directory request must fail 403; got ${unauthResponse.status}`);
+            }
+
+            // Use the current owner-reviewed Exclusive inventory fixture that is also
+            // validated inside Deploy member-pages-worker. This keeps infrastructure
+            // health separate from mutable legacy/model-specific folder placement.
+            const ems16Id = '1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t';
+            const ems16ReviewId = '1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd';
+            const expectedRoot = '1j1NRB44PboVQR91M8-17Vb8kcCTCLS97';
+            const expectedScope = `exclusive:drive:${ems16Id}`;
+
+            const search = new URL('/__internal/model-drive/search', base);
+            search.searchParams.set('q', 'EMs16');
+            search.searchParams.set('lane', 'all');
+
             const response = await signedFetch(search);
             const data = await response.json().catch(() => ({}));
             if (!response.ok || data.ok !== true || !Array.isArray(data.items)) {
               throw new Error(`Signed Drive search failed: HTTP ${response.status} ${JSON.stringify(data).slice(0, 300)}`);
             }
 
-            const book = data.items.find((item) => item?.drive_folder_id === '1vOpCc14Dhet1gwjr9ib81NFD2_j66yh_');
-            if (!book) {
-              throw new Error(`Book EI approved Drive folder was not resolved; count=${data.items.length}`);
+            const ems16 = data.items.find((item) => item?.drive_folder_id === ems16Id);
+            if (!ems16) throw new Error(`EMs16 approved Drive folder was not resolved; count=${data.items.length}`);
+            if (data.items.some((item) => item?.drive_folder_id === ems16ReviewId)) {
+              throw new Error('Nested Review EMs16 Gohan folder leaked into model candidates');
             }
-            if (book.folder_name !== 'Book EI') throw new Error(`Unexpected Book EI folder name: ${book.folder_name}`);
-            if (book.lane !== 'private') throw new Error(`Book EI must resolve as private; got ${book.lane}`);
-            if (book.source !== 'drive') throw new Error(`Book EI must resolve from Drive; got ${book.source}`);
-            if (!String(book.folder_path || '').includes('Book EI')) throw new Error('Book EI folder path missing');
+            if (ems16.folder_name !== 'EMs16 Gohan') throw new Error(`Unexpected EMs16 folder name: ${ems16.folder_name}`);
+            if (ems16.lane !== 'exclusive') throw new Error(`EMs16 must resolve as exclusive; got ${ems16.lane}`);
+            if (ems16.source !== 'drive') throw new Error(`EMs16 must resolve from Drive; got ${ems16.source}`);
+            if (ems16.approved_root_id !== expectedRoot) throw new Error(`EMs16 approved root mismatch: ${ems16.approved_root_id}`);
+            if (ems16.folder_scope_key !== expectedScope) throw new Error(`EMs16 scope mismatch: ${ems16.folder_scope_key}`);
 
             const resolve = new URL('/__internal/model-drive/resolve', base);
-            const body = JSON.stringify({ drive_folder_id: book.drive_folder_id });
+            const body = JSON.stringify({ drive_folder_id: ems16Id });
             const resolvedResponse = await signedFetch(resolve, { method: 'POST', body });
             const resolved = await resolvedResponse.json().catch(() => ({}));
-            if (!resolvedResponse.ok || resolved.ok !== true || resolved?.item?.drive_folder_id !== book.drive_folder_id) {
+            if (!resolvedResponse.ok || resolved.ok !== true || resolved?.item?.drive_folder_id !== ems16Id) {
               throw new Error(`Exact Drive re-resolution failed: HTTP ${resolvedResponse.status} ${JSON.stringify(resolved).slice(0, 300)}`);
             }
-            if (resolved?.item?.lane !== 'private') throw new Error('Exact Drive re-resolution lost private lane');
+            if (resolved?.item?.lane !== 'exclusive') throw new Error('Exact Drive re-resolution lost exclusive lane');
+            if (resolved?.item?.folder_scope_key !== expectedScope) throw new Error('Exact Drive re-resolution lost exclusive scope');
 
-            console.log('Model Drive Directory production smoke passed: unsigned fail-closed + signed search + exact Book EI re-resolution.');
+            // Book EI is still useful as inventory-drift visibility, but it is no
+            // longer a health gate for the entire Drive directory because its folder
+            // placement is mutable while the canonical Model remains in Airtable.
+            const bookSearch = new URL('/__internal/model-drive/search', base);
+            bookSearch.searchParams.set('q', 'Book El');
+            bookSearch.searchParams.set('lane', 'private');
+            const bookResponse = await signedFetch(bookSearch);
+            const bookData = await bookResponse.json().catch(() => ({}));
+            if (!bookResponse.ok || bookData.ok !== true || !Array.isArray(bookData.items)) {
+              throw new Error(`Book EI diagnostic search failed at API level: HTTP ${bookResponse.status} ${JSON.stringify(bookData).slice(0, 300)}`);
+            }
+            const book = bookData.items.find((item) => item?.drive_folder_id === '1vOpCc14Dhet1gwjr9ib81NFD2_j66yh_');
+            console.log(book
+              ? 'Book EI diagnostic: legacy approved folder still resolves.'
+              : `Book EI diagnostic: legacy Drive folder not in current approved search results; count=${bookData.items.length}. This is inventory drift, not directory-health failure.`);
+
+            console.log('Model Drive Directory production smoke passed: unsigned fail-closed + signed EMs16 search + exact approved re-resolution.');
           })().catch((error) => {
             console.error(error?.stack || error);
             process.exit(1);

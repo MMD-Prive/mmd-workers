@@ -202,3 +202,44 @@ test("decision mutation rejects cross-origin requests before Airtable writes", a
   assert.deepEqual(await response.json(), { ok: false, error: "forbidden_origin" });
   assert.equal(state.calls.length, 0);
 });
+
+test("Medical Professional policy is verified and brief-only before a public profile can be opened", async () => {
+  const state = createEnv();
+  const base = `https://mmdbkk.com/v1/admin/model-applications/${APP_ID}/role-policy`;
+  const request = (body) => new Request(base, {
+    method: "POST",
+    headers: { "content-type": "application/json", Origin: "https://mmdbkk.com" },
+    body: JSON.stringify(body),
+  });
+
+  let response = await handlePublicModelApplicationReviewRequest(request({
+    approved_roles: ["medical_professional"],
+    booking_mode: "curated",
+    public_profile_approved: false,
+    credential_status: "pending",
+  }), state.env, { id: "per" });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { ok: false, error: "medical_brief_only_required" });
+
+  response = await handlePublicModelApplicationReviewRequest(request({
+    approved_roles: ["medical_professional"],
+    booking_mode: "brief_only",
+    public_profile_approved: true,
+    credential_status: "pending",
+  }), state.env, { id: "per" });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { ok: false, error: "medical_credential_verification_required" });
+
+  response = await handlePublicModelApplicationReviewRequest(request({
+    approved_roles: ["medical_professional"],
+    booking_mode: "brief_only",
+    public_profile_approved: true,
+    credential_status: "verified",
+    credential_notes: "Verified internally",
+  }), state.env, { id: "per" });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(state.getApplication().fields[PUBLIC_MODEL_REVIEW_FIELDS.bookingMode], "brief_only");
+  assert.equal(state.getApplication().fields[PUBLIC_MODEL_REVIEW_FIELDS.credentialStatus], "verified");
+});

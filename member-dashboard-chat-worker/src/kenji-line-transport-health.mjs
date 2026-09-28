@@ -178,6 +178,8 @@ export async function inspectKenjiLineTransport(env = {}) {
   const base = {
     schema: "mmd.kenji_line_transport_health.v4",
     configured: secretPresent && tokenPresent,
+    first_contact_configured: text(env.LINE_FIRST_CONTACT_ENABLED).toLowerCase() === "true" && text(env.LINE_KENJI_AI_ENABLED).toLowerCase() === "true",
+    broad_auto_reply_configured: text(env.LINE_AUTO_REPLY_ENABLED).toLowerCase() === "true",
     signature_secret_present: secretPresent,
     access_token_present: tokenPresent,
     line_api_reachable: false,

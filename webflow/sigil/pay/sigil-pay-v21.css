@@ -1,0 +1,425 @@
+#sigil-pay-v21{
+  --sp21-bg:#0d0b0a;
+  --sp21-panel:rgba(18,15,13,.92);
+  --sp21-panel-strong:#16120f;
+  --sp21-panel-soft:rgba(255,248,238,.035);
+  --sp21-line:rgba(255,241,218,.15);
+  --sp21-line-strong:rgba(227,189,124,.42);
+  --sp21-text:#fff8ee;
+  --sp21-body:#eee2d4;
+  --sp21-muted:#bdae9f;
+  --sp21-gold:#e3bd7c;
+  --sp21-gold-deep:#b98b4e;
+  --sp21-danger:#e09a93;
+  --sp21-success:#c7d5b2;
+  min-height:100dvh;
+  width:100%;
+  background:
+    radial-gradient(circle at 15% -10%,rgba(227,189,124,.08),transparent 31rem),
+    linear-gradient(180deg,#0d0b0a 0%,#090807 100%);
+  color:var(--sp21-text);
+  font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  padding:12px 12px calc(34px + env(safe-area-inset-bottom));
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+#sigil-pay-v21 *,
+#sigil-pay-v21 *::before,
+#sigil-pay-v21 *::after{box-sizing:border-box}
+#sigil-pay-v21 [hidden]{display:none!important}
+#sigil-pay-v21 h1,
+#sigil-pay-v21 h2,
+#sigil-pay-v21 h3,
+#sigil-pay-v21 p,
+#sigil-pay-v21 dl,
+#sigil-pay-v21 dt,
+#sigil-pay-v21 dd{margin:0}
+#sigil-pay-v21 button,
+#sigil-pay-v21 input,
+#sigil-pay-v21 textarea{font:inherit}
+#sigil-pay-v21 button{color:inherit}
+#sigil-pay-v21 a{color:inherit;text-decoration:none}
+#sigil-pay-v21 .sp21__shell{width:min(100%,820px);margin:0 auto}
+#sigil-pay-v21 .sp21__topbar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:42px;padding:2px 1px 10px
+}
+#sigil-pay-v21 .sp21__brand{display:flex;align-items:center;gap:9px;min-width:0}
+#sigil-pay-v21 .sp21__mark{
+  display:grid;place-items:center;width:31px;height:31px;flex:0 0 31px;
+  border:1px solid var(--sp21-line-strong);border-radius:50%;
+  color:var(--sp21-gold);font:700 12px/1 Georgia,serif
+}
+#sigil-pay-v21 .sp21__brand-copy{display:grid;min-width:0;line-height:1.18}
+#sigil-pay-v21 .sp21__brand-copy strong{font-size:12px;letter-spacing:.18em}
+#sigil-pay-v21 .sp21__brand-copy small{
+  margin-top:2px;color:var(--sp21-muted);font-size:8px;letter-spacing:.025em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+#sigil-pay-v21 .sp21__private{
+  display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+  padding:6px 9px;border:1px solid var(--sp21-line);border-radius:999px;
+  color:var(--sp21-muted);font-size:8px;font-weight:700;letter-spacing:.11em
+}
+#sigil-pay-v21 .sp21__private::before{
+  content:"";width:5px;height:5px;border-radius:50%;background:var(--sp21-gold)
+}
+#sigil-pay-v21 .sp21__state{
+  display:flex;align-items:flex-start;gap:11px;
+  padding:14px;border:1px solid var(--sp21-line);border-radius:16px;
+  background:var(--sp21-panel)
+}
+#sigil-pay-v21 .sp21__state--error{border-color:rgba(224,154,147,.34)}
+#sigil-pay-v21 .sp21__spinner{
+  width:22px;height:22px;flex:0 0 22px;border-radius:50%;
+  border:2px solid var(--sp21-line);border-top-color:var(--sp21-gold);
+  animation:sp21spin .72s linear infinite
+}
+@keyframes sp21spin{to{transform:rotate(360deg)}}
+#sigil-pay-v21 .sp21__state-icon{
+  display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;
+  border-radius:50%;background:rgba(224,154,147,.12);color:var(--sp21-danger);
+  font-weight:800
+}
+#sigil-pay-v21 .sp21__state strong{display:block;font-size:13px;line-height:1.35}
+#sigil-pay-v21 .sp21__state p{
+  margin-top:4px;color:var(--sp21-muted);font-size:10px;line-height:1.6
+}
+#sigil-pay-v21 .sp21__state-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+#sigil-pay-v21 .sp21__content{display:grid;gap:10px}
+#sigil-pay-v21 .sp21__summary{
+  position:relative;overflow:hidden;
+  padding:17px;border:1px solid var(--sp21-line);border-radius:19px;
+  background:
+    linear-gradient(145deg,rgba(35,28,21,.96),rgba(13,11,9,.98));
+  box-shadow:inset 0 1px rgba(255,255,255,.025)
+}
+#sigil-pay-v21 .sp21__summary::after{
+  content:"";position:absolute;right:-70px;top:-90px;width:190px;height:190px;
+  border-radius:50%;background:radial-gradient(circle,rgba(227,189,124,.1),transparent 68%);
+  pointer-events:none
+}
+#sigil-pay-v21 .sp21__summary-head{
+  position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:12px
+}
+#sigil-pay-v21 .sp21__eyebrow,
+#sigil-pay-v21 .sp21__kicker{
+  color:var(--sp21-gold);font-size:8px;font-weight:800;letter-spacing:.14em
+}
+#sigil-pay-v21 .sp21__title{
+  margin-top:6px;font-size:clamp(23px,7.5vw,31px);line-height:1.14;letter-spacing:-.035em
+}
+#sigil-pay-v21 .sp21__status{
+  position:relative;z-index:1;display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+  max-width:42%;padding:6px 8px;border:1px solid var(--sp21-line-strong);
+  border-radius:999px;background:rgba(227,189,124,.06);
+  color:var(--sp21-gold);font-size:8px;font-weight:700;line-height:1.2;text-align:center
+}
+#sigil-pay-v21 .sp21__amount-wrap{position:relative;z-index:1;margin-top:20px}
+#sigil-pay-v21 .sp21__amount-label{color:var(--sp21-muted);font-size:9px}
+#sigil-pay-v21 .sp21__amount{
+  display:flex;align-items:flex-start;gap:5px;margin-top:4px;line-height:1
+}
+#sigil-pay-v21 .sp21__currency{margin-top:8px;color:var(--sp21-gold);font-size:18px;font-weight:700}
+#sigil-pay-v21 .sp21__amount strong{
+  font-size:clamp(46px,15vw,64px);font-weight:750;letter-spacing:-.06em
+}
+#sigil-pay-v21 .sp21__stage{margin-top:5px;color:var(--sp21-muted);font-size:9px}
+#sigil-pay-v21 .sp21__summary-bottom{
+  position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(255,241,218,.09)
+}
+#sigil-pay-v21 .sp21__summary-bottom p{color:var(--sp21-body);font-size:10px;line-height:1.45}
+#sigil-pay-v21 .sp21__summary-bottom a{flex:0 0 auto;color:var(--sp21-gold);font-size:9px;font-weight:700}
+#sigil-pay-v21 .sp21__card{
+  padding:16px;border:1px solid var(--sp21-line);border-radius:17px;
+  background:linear-gradient(180deg,rgba(23,19,16,.96),rgba(13,11,9,.98))
+}
+#sigil-pay-v21 .sp21__section-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px
+}
+#sigil-pay-v21 .sp21__section-head h2{
+  margin-top:5px;font-size:19px;line-height:1.25;letter-spacing:-.02em
+}
+#sigil-pay-v21 .sp21__body{
+  margin-top:6px;color:var(--sp21-muted);font-size:10px;line-height:1.68
+}
+#sigil-pay-v21 .sp21__model{
+  display:flex;align-items:center;gap:11px;margin-top:14px;padding:12px;
+  border:1px solid var(--sp21-line);border-radius:14px;background:var(--sp21-panel-soft)
+}
+#sigil-pay-v21 .sp21__avatar{
+  display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;
+  border-radius:13px;background:linear-gradient(145deg,var(--sp21-gold),var(--sp21-gold-deep));
+  color:#17110b;font-size:15px;font-weight:800
+}
+#sigil-pay-v21 .sp21__model-copy{min-width:0}
+#sigil-pay-v21 .sp21__model-copy small{display:block;color:var(--sp21-muted);font-size:7px;letter-spacing:.13em}
+#sigil-pay-v21 .sp21__model-copy strong{
+  display:block;margin-top:2px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+#sigil-pay-v21 .sp21__model-copy p{margin-top:2px;color:var(--sp21-muted);font-size:9px}
+#sigil-pay-v21 .sp21__facts{
+  display:grid;grid-template-columns:1fr;gap:0;margin-top:11px;
+  border-top:1px solid rgba(255,241,218,.08)
+}
+#sigil-pay-v21 .sp21__fact{
+  display:grid;grid-template-columns:72px minmax(0,1fr);gap:10px;
+  padding:10px 0;border-bottom:1px solid rgba(255,241,218,.08)
+}
+#sigil-pay-v21 .sp21__fact dt{color:var(--sp21-muted);font-size:9px}
+#sigil-pay-v21 .sp21__fact dd{
+  min-width:0;color:var(--sp21-body);font-size:11px;font-weight:600;word-break:break-word
+}
+#sigil-pay-v21 .sp21__fact a{
+  display:inline-block;margin-top:3px;color:var(--sp21-gold);font-size:9px;font-weight:700
+}
+#sigil-pay-v21 .sp21__pricing{
+  display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px
+}
+#sigil-pay-v21 .sp21__price{
+  min-width:0;padding:10px;border:1px solid var(--sp21-line);border-radius:11px;
+  background:rgba(255,255,255,.018)
+}
+#sigil-pay-v21 .sp21__price span{display:block;color:var(--sp21-muted);font-size:8px}
+#sigil-pay-v21 .sp21__price strong,
+#sigil-pay-v21 .sp21__price del{
+  display:block;margin-top:3px;color:var(--sp21-body);font-size:12px;font-weight:700
+}
+#sigil-pay-v21 .sp21__price--accent{border-color:rgba(227,189,124,.25);background:rgba(227,189,124,.045)}
+#sigil-pay-v21 .sp21__price--accent strong{color:var(--sp21-gold);font-size:14px}
+#sigil-pay-v21 .sp21__refs{
+  margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,241,218,.08)
+}
+#sigil-pay-v21 .sp21__refs summary{
+  color:var(--sp21-muted);font-size:8px;cursor:pointer;list-style:none
+}
+#sigil-pay-v21 .sp21__refs summary::-webkit-details-marker{display:none}
+#sigil-pay-v21 .sp21__refs div{display:grid;gap:4px;margin-top:7px}
+#sigil-pay-v21 .sp21__refs code{
+  display:block;max-width:100%;padding:5px 7px;border-radius:8px;
+  background:#0a0807;color:var(--sp21-muted);font:500 8px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+#sigil-pay-v21 .sp21__methods-state{
+  display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 11px;
+  border:1px solid var(--sp21-line);border-radius:12px;color:var(--sp21-muted);
+  background:rgba(255,255,255,.018);font-size:9px;line-height:1.45
+}
+#sigil-pay-v21 .sp21__mini-spinner{
+  width:14px;height:14px;flex:0 0 14px;border-radius:50%;
+  border:2px solid var(--sp21-line);border-top-color:var(--sp21-gold);
+  animation:sp21spin .72s linear infinite
+}
+#sigil-pay-v21 .sp21__methods{
+  display:grid;grid-template-columns:1fr;gap:7px;margin-top:12px
+}
+#sigil-pay-v21 .sp21__method{
+  display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;
+  width:100%;min-height:60px;padding:10px;border:1px solid var(--sp21-line);
+  border-radius:13px;background:rgba(255,255,255,.02);text-align:left;cursor:pointer;
+  transition:border-color .16s ease,background-color .16s ease,transform .16s ease
+}
+#sigil-pay-v21 .sp21__method:active{transform:scale(.99)}
+#sigil-pay-v21 .sp21__method-icon{
+  display:grid;place-items:center;width:34px;height:34px;border-radius:10px;
+  background:rgba(227,189,124,.09);color:var(--sp21-gold);font-size:10px;font-weight:800
+}
+#sigil-pay-v21 .sp21__method-copy{min-width:0}
+#sigil-pay-v21 .sp21__method-copy strong{display:block;font-size:11px}
+#sigil-pay-v21 .sp21__method-copy small{
+  display:block;margin-top:2px;color:var(--sp21-muted);font-size:8px;line-height:1.35
+}
+#sigil-pay-v21 .sp21__chev{color:var(--sp21-muted);font-size:18px;font-style:normal;transition:transform .16s ease}
+#sigil-pay-v21 .sp21__method.is-active{
+  border-color:var(--sp21-line-strong);background:rgba(227,189,124,.07)
+}
+#sigil-pay-v21 .sp21__method.is-active .sp21__chev{color:var(--sp21-gold);transform:rotate(90deg)}
+#sigil-pay-v21 .sp21__panel{
+  margin-top:8px;padding:13px;border:1px solid var(--sp21-line-strong);
+  border-radius:14px;background:rgba(227,189,124,.035)
+}
+#sigil-pay-v21 .sp21__panel-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:10px
+}
+#sigil-pay-v21 .sp21__panel-head small{
+  display:block;color:var(--sp21-gold);font-size:7px;font-weight:800;letter-spacing:.12em
+}
+#sigil-pay-v21 .sp21__panel-head strong{display:block;margin-top:3px;font-size:11px}
+#sigil-pay-v21 .sp21__badge{
+  flex:0 0 auto;padding:5px 7px;border:1px solid var(--sp21-line-strong);border-radius:999px;
+  color:var(--sp21-gold);font-size:7px;font-weight:800
+}
+#sigil-pay-v21 .sp21__qr{
+  display:grid;place-items:center;gap:8px;margin-top:12px;text-align:center
+}
+#sigil-pay-v21 .sp21__qr img{
+  width:min(68vw,220px);aspect-ratio:1;object-fit:contain;padding:8px;
+  border-radius:14px;background:#fff
+}
+#sigil-pay-v21 .sp21__qr-ref{color:var(--sp21-muted);font-size:8px}
+#sigil-pay-v21 .sp21__qr-ref strong{color:var(--sp21-body);font-size:10px}
+#sigil-pay-v21 .sp21__qr-fallback{
+  width:100%;padding:15px;border:1px dashed var(--sp21-line-strong);border-radius:12px
+}
+#sigil-pay-v21 .sp21__qr-fallback small{display:block;color:var(--sp21-muted);font-size:8px}
+#sigil-pay-v21 .sp21__qr-fallback strong{display:block;margin-top:3px;font-size:18px}
+#sigil-pay-v21 .sp21__hint{
+  margin-top:9px;color:var(--sp21-muted);font-size:9px;line-height:1.55
+}
+#sigil-pay-v21 .sp21__bank,
+#sigil-pay-v21 .sp21__fee{
+  display:grid;margin-top:10px;border:1px solid var(--sp21-line);border-radius:11px;overflow:hidden
+}
+#sigil-pay-v21 .sp21__bank-row,
+#sigil-pay-v21 .sp21__fee-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 10px;border-bottom:1px solid rgba(255,241,218,.08)
+}
+#sigil-pay-v21 .sp21__bank-row:last-child,
+#sigil-pay-v21 .sp21__fee-row:last-child{border-bottom:0}
+#sigil-pay-v21 .sp21__bank-row span,
+#sigil-pay-v21 .sp21__fee-row span{color:var(--sp21-muted);font-size:8px}
+#sigil-pay-v21 .sp21__bank-row strong,
+#sigil-pay-v21 .sp21__fee-row strong{
+  max-width:65%;color:var(--sp21-body);font-size:10px;text-align:right;word-break:break-word
+}
+#sigil-pay-v21 .sp21__fee-row--total{background:rgba(227,189,124,.05)}
+#sigil-pay-v21 .sp21__fee-row--total strong{color:var(--sp21-gold);font-size:14px}
+#sigil-pay-v21 .sp21__actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+#sigil-pay-v21 .sp21__btn{
+  display:inline-flex;align-items:center;justify-content:center;min-height:42px;
+  padding:0 12px;border:1px solid transparent;border-radius:11px;background:none;
+  cursor:pointer;font-size:10px;font-weight:750;text-align:center
+}
+#sigil-pay-v21 .sp21__btn--ghost{border-color:var(--sp21-line);background:rgba(255,255,255,.025)}
+#sigil-pay-v21 .sp21__btn--gold{
+  background:linear-gradient(135deg,#f0d694,#c4924d);color:#17110b!important
+}
+#sigil-pay-v21 .sp21__btn--wide{width:100%;margin-top:10px}
+#sigil-pay-v21 .sp21__btn:disabled{opacity:.38;cursor:not-allowed}
+#sigil-pay-v21 .sp21__upload{
+  display:grid;place-items:center;text-align:center;gap:4px;margin-top:12px;padding:18px 12px;
+  border:1px dashed rgba(227,189,124,.4);border-radius:13px;
+  background:rgba(227,189,124,.035);cursor:pointer
+}
+#sigil-pay-v21 .sp21__upload input{display:none}
+#sigil-pay-v21 .sp21__upload-plus{
+  display:grid;place-items:center;width:32px;height:32px;border-radius:50%;
+  background:rgba(227,189,124,.12);color:var(--sp21-gold);font-size:18px
+}
+#sigil-pay-v21 .sp21__upload strong{font-size:12px}
+#sigil-pay-v21 .sp21__upload small{color:var(--sp21-muted);font-size:8px}
+#sigil-pay-v21 .sp21__file{
+  display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:9px;
+  margin-top:9px;padding:8px;border:1px solid var(--sp21-line);border-radius:11px
+}
+#sigil-pay-v21 .sp21__preview{
+  display:grid;place-items:center;width:44px;height:44px;border-radius:8px;
+  background:#0b0908;color:var(--sp21-muted);font-size:8px;overflow:hidden
+}
+#sigil-pay-v21 .sp21__preview img{width:100%;height:100%;object-fit:cover}
+#sigil-pay-v21 .sp21__file-copy{min-width:0}
+#sigil-pay-v21 .sp21__file-copy strong,
+#sigil-pay-v21 .sp21__file-copy small{
+  display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+#sigil-pay-v21 .sp21__file-copy strong{font-size:9px}
+#sigil-pay-v21 .sp21__file-copy small{margin-top:2px;color:var(--sp21-muted);font-size:7px}
+#sigil-pay-v21 .sp21__file button{border:0;background:none;color:var(--sp21-gold);font-size:9px;cursor:pointer}
+#sigil-pay-v21 .sp21__field{display:block;margin-top:10px}
+#sigil-pay-v21 .sp21__field span{font-size:9px}
+#sigil-pay-v21 .sp21__field em{color:var(--sp21-muted);font-style:normal}
+#sigil-pay-v21 .sp21__field textarea{
+  width:100%;min-height:76px;margin-top:5px;padding:10px;border:1px solid var(--sp21-line);
+  border-radius:10px;background:#0b0908;color:var(--sp21-text);resize:vertical;outline:none;
+  font-size:10px;line-height:1.55
+}
+#sigil-pay-v21 .sp21__field textarea:focus{border-color:var(--sp21-line-strong);box-shadow:0 0 0 3px rgba(227,189,124,.07)}
+#sigil-pay-v21 .sp21__consent{
+  display:flex;align-items:flex-start;gap:8px;margin-top:10px;
+  color:var(--sp21-muted);font-size:8px;line-height:1.55
+}
+#sigil-pay-v21 .sp21__consent input{margin-top:2px}
+#sigil-pay-v21 .sp21__submit-status{min-height:15px;margin-top:7px;color:var(--sp21-muted);font-size:8px}
+#sigil-pay-v21 .sp21__proof-state{
+  margin-top:11px;padding:12px;border:1px solid var(--sp21-line-strong);border-radius:11px;
+  background:rgba(227,189,124,.045);color:var(--sp21-body);font-size:10px;line-height:1.6
+}
+#sigil-pay-v21 .sp21__after{
+  display:grid;grid-template-columns:1fr;gap:7px
+}
+#sigil-pay-v21 .sp21__after-card{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;
+  border:1px solid var(--sp21-line);border-radius:13px;background:rgba(18,15,13,.78)
+}
+#sigil-pay-v21 .sp21__after-card div{min-width:0}
+#sigil-pay-v21 .sp21__after-card strong{display:block;font-size:10px}
+#sigil-pay-v21 .sp21__after-card small{
+  display:block;margin-top:2px;color:var(--sp21-muted);font-size:8px;line-height:1.4
+}
+#sigil-pay-v21 .sp21__after-card a{flex:0 0 auto;color:var(--sp21-gold);font-size:9px;font-weight:700}
+#sigil-pay-v21 .sp21__footer{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:4px 2px;color:var(--sp21-muted);font-size:7px
+}
+#sigil-pay-v21 .sp21__footer strong{color:var(--sp21-gold);letter-spacing:.16em}
+#sigil-pay-v21 :is(button,a,input,textarea,summary):focus-visible{
+  outline:2px solid var(--sp21-gold);outline-offset:3px
+}
+@media(min-width:560px){
+  #sigil-pay-v21{padding:18px 16px 40px}
+  #sigil-pay-v21 .sp21__summary,#sigil-pay-v21 .sp21__card{padding:20px}
+  #sigil-pay-v21 .sp21__facts{grid-template-columns:1fr 1fr}
+  #sigil-pay-v21 .sp21__fact:nth-child(odd){padding-right:14px}
+  #sigil-pay-v21 .sp21__fact:nth-child(even){padding-left:14px;border-left:1px solid rgba(255,241,218,.08)}
+  #sigil-pay-v21 .sp21__pricing{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #sigil-pay-v21 .sp21__after{grid-template-columns:1fr 1fr}
+}
+@media(min-width:720px){
+  #sigil-pay-v21 .sp21__methods{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #sigil-pay-v21 .sp21__method{grid-template-columns:1fr;align-content:start;min-height:86px}
+  #sigil-pay-v21 .sp21__method-icon{width:30px;height:30px}
+  #sigil-pay-v21 .sp21__chev{display:none}
+  #sigil-pay-v21 .sp21__actions{max-width:390px}
+}
+@media(max-width:360px){
+  #sigil-pay-v21 .sp21__pricing{grid-template-columns:1fr}
+  #sigil-pay-v21 .sp21__fact{grid-template-columns:64px minmax(0,1fr)}
+  #sigil-pay-v21 .sp21__actions{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  #sigil-pay-v21 *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+/* FINAL MMD CONTRAST SAFETY LAYER — keep last */
+#sigil-pay-v21 .sp21__title,
+#sigil-pay-v21 .sp21__section-head h2,
+#sigil-pay-v21 .sp21__state strong,
+#sigil-pay-v21 .sp21__model-copy strong,
+#sigil-pay-v21 .sp21__method-copy strong,
+#sigil-pay-v21 .sp21__panel-head strong,
+#sigil-pay-v21 .sp21__after-card strong{
+  color:var(--sp21-text)!important;
+  -webkit-text-fill-color:var(--sp21-text)!important;
+  background:none!important;
+  background-image:none!important
+}
+#sigil-pay-v21 .sp21__eyebrow,
+#sigil-pay-v21 .sp21__kicker,
+#sigil-pay-v21 .sp21__status,
+#sigil-pay-v21 .sp21__gold,
+#sigil-pay-v21 .sp21__price--accent strong{
+  color:var(--sp21-gold)!important;
+  -webkit-text-fill-color:var(--sp21-gold)!important
+}
+#sigil-pay-v21 .sp21__body,
+#sigil-pay-v21 .sp21__fact dd{
+  color:var(--sp21-body)!important;
+  -webkit-text-fill-color:var(--sp21-body)!important
+}
+#sigil-pay-v21 .sp21__amount strong{
+  color:var(--sp21-text)!important;
+  -webkit-text-fill-color:var(--sp21-text)!important;
+  background:none!important;
+  background-image:none!important
+}

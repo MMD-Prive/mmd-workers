@@ -1,0 +1,88 @@
+name: Private Teaser real-member production E2E
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/private-teaser-real-member-production-e2e.yml"
+      - "scripts/private-teaser-real-member-readiness.mjs"
+      - "scripts/private-teaser-real-member-e2e.mjs"
+  workflow_dispatch:
+    inputs:
+      model_slug:
+        description: "Approved model slug with an active teaser-safe asset"
+        required: true
+        default: "toto"
+        type: string
+      preview_kind:
+        description: "One-use teaser media kind"
+        required: true
+        default: "private_pic"
+        type: choice
+        options:
+          - private_pic
+          - private_clip
+      work_lane:
+        description: "Offer lane used for eligibility"
+        required: true
+        default: "companion"
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: private-teaser-real-member-production-e2e
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate readiness runner syntax
+        run: node --check scripts/private-teaser-real-member-readiness.mjs
+      - name: Inspect production readiness without business mutation
+        run: node scripts/private-teaser-real-member-readiness.mjs
+
+  e2e:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ORIGIN: https://www.mmdbkk.com
+      MODEL_SLUG: ${{ inputs.model_slug }}
+      PREVIEW_KIND: ${{ inputs.preview_kind }}
+      WORK_LANE: ${{ inputs.work_lane }}
+      REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      GITHUB_TOKEN: ${{ github.token }}
+      CLIENTS_TABLE: tblVv58TCbwh5j1fS
+      ENTITLEMENTS_TABLE: tblNImdF9PKAxhXGi
+      GRANTS_TABLE: tblbP1csaTYfffS01
+      MEDIA_TABLE: tblrpQXhHnbTU9RhW
+      CONSUMPTION_TABLE: tblcjjCW0pXvlhNQQ
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate E2E runner syntax
+        run: node --check scripts/private-teaser-real-member-e2e.mjs
+      - name: Run first real-member grant and consume acceptance
+        run: node scripts/private-teaser-real-member-e2e.mjs

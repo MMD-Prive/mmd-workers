@@ -2,10 +2,13 @@ export const PUBLIC_MODEL_APPLY_PATH = "/v1/public-model/apply";
 export const PUBLIC_MODEL_UPLOAD_URL_PATH = "/v1/public-model/upload-url";
 export const PUBLIC_MODEL_SERVICE = "mmd_public_model_apply";
 export const PUBLIC_MODEL_UPLOAD_SERVICE = "mmd_public_model_upload_url";
+export const PUBLIC_MODEL_FORM_VERSIONS = new Set(["public-model-apply-v8", "public-model-apply-v12"]);
 
 const APPLY_BODY_LIMIT = 64 * 1024;
 const UPLOAD_META_BODY_LIMIT = 16 * 1024;
-export const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+export const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const PUBLIC_MODEL_MAX_PHOTOS = 8;
+export const PUBLIC_MODEL_MAX_CLIPS = 1;
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const UPLOAD_STATE_PREFIX = "sigil:public-model:upload:v1:";
@@ -16,6 +19,7 @@ const R2_BUCKET_NAME = "mmd-private-public-model-uploads";
 
 const CONTACT_FIELDS = ["phone", "email", "line", "line_id", "telegram", "social_url", "instagram"];
 export const PUBLIC_MODEL_PHOTO_ROLES = new Set(["front_face", "half_body", "full_body", "lifestyle", "sport_activity", "body_presentation", "other_photo"]);
+export const PUBLIC_MODEL_CLIP_ROLES = new Set(["introduction", "body_presentation", "sport_activity", "other_clip"]);
 export const PUBLIC_MODEL_DOCUMENT_ROLES = new Set([
   "trainer_certificate",
   "medical_or_therapeutic_license",
@@ -25,7 +29,8 @@ export const PUBLIC_MODEL_DOCUMENT_ROLES = new Set([
   "professional_certificate",
   "other_document",
 ]);
-export const PUBLIC_MODEL_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+export const PUBLIC_MODEL_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+export const PUBLIC_MODEL_CLIP_MIME_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 export const PUBLIC_MODEL_DOCUMENT_MIME_TYPES = new Set(["application/pdf", ...PUBLIC_MODEL_PHOTO_MIME_TYPES]);
 export const PUBLIC_MODEL_ALLOWED_WORK_TYPES = new Set([
   "Modeling",
@@ -36,6 +41,20 @@ export const PUBLIC_MODEL_ALLOWED_WORK_TYPES = new Set([
   "Conversation / Hosting",
   "Private Review Only",
 ]);
+export const PUBLIC_MODEL_ROLE_KEYS = new Set([
+  "everyday_companion",
+  "driver_companion",
+  "culinary_companion",
+  "social_appearance",
+  "bangkok_companion",
+  "sport_activity",
+  "wellness_companion",
+  "business_companion",
+  "nightlife_companion",
+  "creative_companion",
+  "medical_professional",
+]);
+export const PUBLIC_MODEL_PROMO_CONSENT_VERSION = "mmd-public-promo-consent-v1-20260922";
 const FORBIDDEN_FIELDS = new Set([
   "airtable_record_id",
   "application_id",
@@ -97,6 +116,14 @@ const APPLICATION_FIELDS = Object.freeze({
   consentAt: "fldr8KtcsLD6a1NCh",
   payloadHash: "fldqaQb5BMoCGF7XE",
   intakeStatus: "fldHk2h9Rf6g5UlZw",
+  requestedRoles: "fldYsWJXXuXzt7I2N",
+  nonMemberImageConsent: "fldUMJEUVK3GNmomA",
+  nonMemberPromoRoles: "fldQgqdiVPTMRfawj",
+  publicPromoConsentStatus: "fldsD2K6T1UGyggvp",
+  publicPromoConsentAt: "fld8M8tXWQsDpsouB",
+  publicPromoConsentVersion: "fldbI0gUNjwtIUXd2",
+  publicPromoConsentRevokedAt: "fld1A7uvWaJIhwjOg",
+  publicPromoConsentSource: "fldB5TqIGAOvF01uj",
   duplicateKey: "flddQezHdP6zdvQuZ",
   requestFingerprint: "fldcpQbNo9G0BAvlF",
   uploadSessionId: "fldg2EOpp5GEhHUdI",
@@ -487,8 +514,9 @@ async function handleUploadPut(request, env, corsHeaders) {
   if (!constantTimeEqual(signature, expected)) return errorResponse("invalid_upload_authorization", 403, corsHeaders);
 
   const contentType = normalizeMime(request.headers.get("content-type"));
-  const contentLength = Number(request.headers.get("content-length"));
-  if (contentType !== metadata.contentType || !Number.isFinite(contentLength) || contentLength !== metadata.fileSize || contentLength > PUBLIC_MODEL_MAX_UPLOAD_BYTES || !request.body) {
+  const declaredLength = request.headers.get("content-length");
+  const contentLength = declaredLength === null ? null : Number(declaredLength);
+  if (contentType !== metadata.contentType || (contentLength !== null && (!Number.isFinite(contentLength) || contentLength !== metadata.fileSize || contentLength > PUBLIC_MODEL_MAX_UPLOAD_BYTES)) || !request.body) {
     return errorResponse("upload_metadata_mismatch", 400, corsHeaders);
   }
 
@@ -501,9 +529,15 @@ async function handleUploadPut(request, env, corsHeaders) {
 
   let persistedUpload = null;
   try {
-    await env.PUBLIC_MODEL_UPLOADS_R2.put(metadata.objectKey, request.body, {
-      httpMetadata: { contentType: metadata.contentType },
-      customMetadata: { upload_session_id: metadata.sessionId, upload_ref: metadata.uploadRef, kind: metadata.kind, role: metadata.role },
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength !== metadata.fileSize) throw Object.assign(new Error('upload_size_mismatch'), { publicStatus: 400 });
+    if (!validUploadBytes(bytes, metadata.contentType)) throw Object.assign(new Error('upload_content_type_mismatch'), { publicStatus: 415 });
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+    await env.PUBLIC_MODEL_UPLOADS_R2.put(metadata.objectKey, bytes, {
+      onlyIf: { etagDoesNotMatch: '*' },
+      httpMetadata: { contentType: metadata.contentType, cacheControl: 'private, no-store' },
+      customMetadata: { upload_session_id: metadata.sessionId, upload_ref: metadata.uploadRef, kind: metadata.kind, role: metadata.role, sha256 },
     });
 
     const uploadedAt = new Date().toISOString();
@@ -537,6 +571,7 @@ async function handleUploadPut(request, env, corsHeaders) {
     if (!persistedUpload) await env.PUBLIC_MODEL_UPLOADS_R2.delete(metadata.objectKey);
     await coordinatorRequest(env, uploadScope, "/upload/release", {}).catch(() => {});
     console.error(JSON.stringify({ event: "public_model_upload_airtable_failed", error: safeError(error) }));
+    if (error?.publicStatus) return errorResponse(error.message, error.publicStatus, corsHeaders);
     return errorResponse("upload_persistence_failed", 503, corsHeaders);
   }
 }
@@ -550,11 +585,34 @@ function validateApplicationPayload(body) {
     if (body[field] !== undefined && body[field] !== null && body[field] !== "" && !nonEmptyString(body[field], 500)) fields[field] = "must be a nonempty string";
   }
   if (!CONTACT_FIELDS.some((field) => nonEmptyString(body[field], 500))) fields.contact = "one contact channel is required";
-  if (body.form_version !== undefined && body.form_version !== "public-model-apply-v8") fields.form_version = "unsupported form version";
+  if (body.form_version !== undefined && !PUBLIC_MODEL_FORM_VERSIONS.has(body.form_version)) fields.form_version = "unsupported form version";
   if (nonEmptyString(body.company, 200)) fields.company = "must be empty";
   const workTypes = body.work_types ?? body.interested_work_types ?? body.workTypes;
   const workTypeError = validateWorkTypes(workTypes);
   if (workTypeError) fields.work_types = workTypeError;
+  const requestedRoles = body.mmd_requested_public_roles ?? body.requested_roles;
+  const roleError = validatePublicRoles(requestedRoles);
+  if (roleError) fields.requested_roles = roleError;
+
+  const imageConsent = body.mmd_nonmember_profile_image_consent === true;
+  const promoRoles = body.mmd_nonmember_promo_roles;
+  if (body.mmd_nonmember_profile_image_consent !== undefined && typeof body.mmd_nonmember_profile_image_consent !== "boolean") {
+    fields.mmd_nonmember_profile_image_consent = "must be boolean";
+  }
+  if (imageConsent) {
+    const promoRoleError = validatePublicRoles(promoRoles);
+    if (promoRoleError) fields.mmd_nonmember_promo_roles = promoRoleError;
+    const requestedSet = new Set(Array.isArray(requestedRoles) ? requestedRoles : []);
+    if (Array.isArray(promoRoles) && promoRoles.some((role) => !requestedSet.has(role))) {
+      fields.mmd_nonmember_promo_roles = "must be a subset of requested_roles";
+    }
+    if (body.mmd_public_promo_consent_version !== PUBLIC_MODEL_PROMO_CONSENT_VERSION) {
+      fields.mmd_public_promo_consent_version = "unsupported consent version";
+    }
+  } else if (Array.isArray(promoRoles) && promoRoles.length) {
+    fields.mmd_nonmember_promo_roles = "must be empty without image consent";
+  }
+
   const forbidden = findForbiddenField(body);
   if (forbidden) fields.forbidden_field = "contains server-controlled or raw upload field";
   const refs = validateUploadRefs(body);
@@ -580,7 +638,7 @@ function validateUploadMetadata(body) {
   if (typeof rawName !== "string") fields.file_name = "must be a string";
   if (body.upload_session_id !== undefined && typeof body.upload_session_id !== "string") fields.upload_session_id = "must be a string";
   if (body.source_path !== undefined && typeof body.source_path !== "string") fields.source_path = "must be a string";
-  if (!["photo", "document"].includes(kind)) fields.kind = "unsupported kind";
+  if (!["photo", "clip", "document"].includes(kind)) fields.kind = "unsupported kind";
   if (!roleAllowed(kind, role)) fields.role = "unsupported role for kind";
   if (!mimeAllowed(kind, mime)) fields.content_type = "unsupported content type for kind";
   if (!Number.isFinite(size) || size <= 0 || size > PUBLIC_MODEL_MAX_UPLOAD_BYTES) fields.file_size = "must be positive and within the approved size limit";
@@ -596,14 +654,20 @@ function validateUploadRefs(body) {
   if (sessionId !== undefined && !validRef(sessionId, "pmu")) return "invalid upload_session_id";
   if (refs === undefined) return "";
   if (!Array.isArray(refs)) return "must be an array";
-  if (refs.length > 12) return "too many upload refs";
+  if (refs.length > 18) return "too many upload refs";
+  let photoCount = 0;
+  let clipCount = 0;
   for (const item of refs) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return "contains invalid upload ref";
     const uploadRef = item.upload_ref ?? item.uploadRef;
     if (typeof uploadRef !== "string" || !validRef(uploadRef, "pmu_ref")) return "contains invalid upload_ref";
     if (typeof item.kind !== "string" || typeof item.role !== "string" || !roleAllowed(normalizeToken(item.kind), normalizeToken(item.role))) return "contains unsupported kind or role";
+    if (normalizeToken(item.kind) === "photo") photoCount += 1;
+    if (normalizeToken(item.kind) === "clip") clipCount += 1;
     if (findForbiddenField(item)) return "contains unsupported upload field";
   }
+  if (photoCount > PUBLIC_MODEL_MAX_PHOTOS) return "too many photos";
+  if (clipCount > PUBLIC_MODEL_MAX_CLIPS) return "too many clips";
   return "";
 }
 
@@ -617,10 +681,21 @@ function validateWorkTypes(value) {
   return "";
 }
 
+function validatePublicRoles(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (!Array.isArray(value)) return "must be an array";
+  if (value.length < 1) return "select at least one role";
+  if (value.length > PUBLIC_MODEL_ROLE_KEYS.size) return "too many selected roles";
+  for (const item of value) {
+    if (typeof item !== "string" || !PUBLIC_MODEL_ROLE_KEYS.has(item.trim())) return "contains unsupported role";
+  }
+  return "";
+}
+
 async function verifyUploads(body, env, applicationId) {
   const refs = body.uploads ?? body.upload_refs ?? body.uploadRefs ?? [];
   const required = flagEnabled(env.PUBLIC_MODEL_UPLOAD_REQUIRED);
-  if (!refs.length) return required ? { ok: false, error: "at least 7 verified applicant photos are required" } : { ok: true, items: [] };
+  if (!refs.length) return required ? { ok: false, error: "at least one verified applicant photo is required" } : { ok: true, items: [] };
   if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR) return { ok: false, error: "upload verification is not configured" };
   const sessionId = body.upload_session_id;
   const items = [];
@@ -639,8 +714,11 @@ async function verifyUploads(body, env, applicationId) {
     items.push(metadata);
   }
   const photos = items.filter((item) => item.kind === "photo");
+  const clips = items.filter((item) => item.kind === "clip");
   const bodyPhotos = photos.filter((item) => item.role === "body_presentation");
-  if (required && (photos.length < 7 || photos.length > 10)) return { ok: false, error: "requires 7 to 10 verified applicant photos" };
+  if (required && photos.length < 1) return { ok: false, error: "at least one verified applicant photo is required" };
+  if (photos.length > PUBLIC_MODEL_MAX_PHOTOS) return { ok: false, error: "too many applicant photos" };
+  if (clips.length > PUBLIC_MODEL_MAX_CLIPS) return { ok: false, error: "too many applicant clips" };
   if (bodyPhotos.length > 3) return { ok: false, error: "too many body presentation photos" };
 
   const reserved = [];
@@ -723,6 +801,24 @@ function applicationAirtableFields(body, normalized, uploads, context) {
   assign(fields, APPLICATION_FIELDS.intro, boundedString(body.intro || body.story, 4000));
   assign(fields, APPLICATION_FIELDS.experience, boundedString(body.experience || body.occupation_detail, 4000));
   assign(fields, APPLICATION_FIELDS.workType, boundedString(body.service_job_preference || body.work_type, 500));
+  const requestedRoles = body.mmd_requested_public_roles ?? body.requested_roles;
+  if (Array.isArray(requestedRoles) && requestedRoles.length) {
+    fields[APPLICATION_FIELDS.requestedRoles] = [...new Set(requestedRoles.map((item) => boundedString(item, 80)).filter((item) => PUBLIC_MODEL_ROLE_KEYS.has(item)))];
+  }
+
+  const imageConsent = body.mmd_nonmember_profile_image_consent === true;
+  const promoRoles = imageConsent && Array.isArray(body.mmd_nonmember_promo_roles)
+    ? [...new Set(body.mmd_nonmember_promo_roles.map((item) => boundedString(item, 80)).filter((item) => PUBLIC_MODEL_ROLE_KEYS.has(item)))]
+    : [];
+  fields[APPLICATION_FIELDS.nonMemberImageConsent] = imageConsent;
+  fields[APPLICATION_FIELDS.publicPromoConsentStatus] = imageConsent ? "granted" : "not_granted";
+  if (promoRoles.length) fields[APPLICATION_FIELDS.nonMemberPromoRoles] = promoRoles;
+  if (imageConsent) {
+    fields[APPLICATION_FIELDS.publicPromoConsentAt] = context.now;
+    fields[APPLICATION_FIELDS.publicPromoConsentVersion] = PUBLIC_MODEL_PROMO_CONSENT_VERSION;
+    fields[APPLICATION_FIELDS.publicPromoConsentSource] = "/apply/public-model";
+  }
+
   assign(fields, APPLICATION_FIELDS.privacyLevel, boundedString(body.privacy_level, 160));
   assign(fields, APPLICATION_FIELDS.experienceMonths, numberOrUndefined(body.mmd_experience_months, 0, 11));
   assign(fields, APPLICATION_FIELDS.experienceYears, numberOrUndefined(body.mmd_experience_years, 0, 80));
@@ -742,6 +838,20 @@ function normalizeApplication(body) {
   output.application_type = "public_model";
   output.form_version = boundedString(body.form_version || "public-model-apply-v8", 80);
   output.nickname = boundedString(body.nickname, 120);
+
+  const imageConsent = body.mmd_nonmember_profile_image_consent === true;
+  output.mmd_nonmember_profile_image_consent = imageConsent;
+  output.mmd_public_promo_consent_status = imageConsent ? "granted" : "not_granted";
+  if (imageConsent) {
+    output.mmd_nonmember_promo_roles = [...new Set((body.mmd_nonmember_promo_roles || []).filter((role) => PUBLIC_MODEL_ROLE_KEYS.has(role)))];
+    output.mmd_public_promo_consent_version = PUBLIC_MODEL_PROMO_CONSENT_VERSION;
+    output.mmd_public_promo_consent_source = "/apply/public-model";
+  } else {
+    delete output.mmd_nonmember_promo_roles;
+    delete output.mmd_public_promo_consent_version;
+    delete output.mmd_public_promo_consent_source;
+  }
+
   return output;
 }
 
@@ -879,16 +989,27 @@ function originAllowed(request, env) {
 }
 
 function roleAllowed(kind, role) {
-  return kind === "photo" ? PUBLIC_MODEL_PHOTO_ROLES.has(role) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_ROLES.has(role) : false;
+  return kind === "photo" ? PUBLIC_MODEL_PHOTO_ROLES.has(role) : kind === "clip" ? PUBLIC_MODEL_CLIP_ROLES.has(role) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_ROLES.has(role) : false;
 }
 
 function mimeAllowed(kind, mime) {
-  return kind === "photo" ? PUBLIC_MODEL_PHOTO_MIME_TYPES.has(mime) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_MIME_TYPES.has(mime) : false;
+  return kind === "photo" ? PUBLIC_MODEL_PHOTO_MIME_TYPES.has(mime) : kind === "clip" ? PUBLIC_MODEL_CLIP_MIME_TYPES.has(mime) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_MIME_TYPES.has(mime) : false;
+}
+
+function validUploadBytes(bytes, mime) {
+  const ascii = (start, end) => String.fromCharCode(...bytes.slice(start, end));
+  if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+  if (mime === 'image/png') return bytes.length >= 8 && [...bytes.slice(0, 8)].join(',') === '137,80,78,71,13,10,26,10';
+  if (mime === 'image/webp') return bytes.length >= 12 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
+  if (['image/heic', 'image/heif', 'video/mp4', 'video/quicktime'].includes(mime)) return bytes.length >= 16 && ascii(4, 8) === 'ftyp';
+  if (mime === 'video/webm') return bytes.length >= 4 && [...bytes.slice(0, 4)].join(',') === '26,69,223,163';
+  if (mime === 'application/pdf') return bytes.length >= 5 && ascii(0, 5) === '%PDF-';
+  return false;
 }
 
 function objectKeyFor(sessionId, uploadRef, contentType) {
   const now = new Date();
-  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" }[contentType];
+  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif", "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "application/pdf": "pdf" }[contentType];
   return `public-model/v1/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${String(now.getUTCDate()).padStart(2, "0")}/${sessionId}/${uploadRef}.${ext}`;
 }
 
@@ -1052,6 +1173,10 @@ export const publicModelTestInternals = {
   APPLICATION_FIELDS,
   UPLOAD_FIELDS,
   MAX_UPLOAD_BYTES: PUBLIC_MODEL_MAX_UPLOAD_BYTES,
+  MAX_PHOTOS: PUBLIC_MODEL_MAX_PHOTOS,
+  MAX_CLIPS: PUBLIC_MODEL_MAX_CLIPS,
+  PROMO_CONSENT_VERSION: PUBLIC_MODEL_PROMO_CONSENT_VERSION,
   validateApplicationPayload,
   validateUploadMetadata,
+  applicationAirtableFields,
 };

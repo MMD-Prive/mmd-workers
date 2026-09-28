@@ -38,11 +38,19 @@ assert.equal(points.cta_route, "https://mmdbkk.com/my-mmd/points");
 assert.match(points.text, /My MMD > Points/);
 
 const signup = applyKenjiNextAction({
-  text: "สมัครสมาชิกได้ที่นี่ครับ → https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+  text: "สมัครสมาชิกได้ที่นี่ครับ → https://mmdbkk.com/pay/membership?source=line",
   intent: "membership_signup",
 }, { continuity: {} });
 assert.equal(signup.cta_type, "open_action_route");
-assert.equal(signup.cta_route, "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup");
+assert.equal(signup.cta_route, "https://mmdbkk.com/pay/membership?source=line");
+
+const privateSignup = applyKenjiNextAction({
+  text: "สมัคร Private Membership ได้ที่นี่ครับ → https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+  intent: "private_membership_signup",
+}, { continuity: {} });
+assert.equal(privateSignup.cta_type, "open_action_route");
+assert.equal(privateSignup.cta_route, "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup");
+assert.match(privateSignup.text, /Private Membership/);
 assert.equal(signup.cta_appended, false);
 
 const renewal = applyKenjiNextAction({

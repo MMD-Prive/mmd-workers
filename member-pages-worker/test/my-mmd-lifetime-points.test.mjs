@@ -5,23 +5,24 @@ import {
   patchLifetimePointsPayload,
 } from "../src/my-mmd-lifetime-points.js";
 
-test("lifetime points count old posted records and ignore expiry in phase 1", () => {
+test("points expire per lot and redemption consumes the nearest expiry first", () => {
   const summary = summarizeLifetimePoints([
     { id: "rec1", fields: { points: 200, transaction_status: "posted", posted_at: "2026-08-01", expires_at: "2026-09-01", idempotency_key: "a" } },
     { id: "rec2", fields: { points: 999, transaction_status: "posted", posted_at: "2021-08-01", expires_at: "2022-08-01", idempotency_key: "b" } },
     { id: "rec3", fields: { points: -25, transaction_status: "completed", posted_at: "2022-01-01", idempotency_key: "c" } },
     { id: "rec4", fields: { points: 200, transaction_status: "posted", posted_at: "2026-08-01", idempotency_key: "a" } },
     { id: "rec5", fields: { points: 500, transaction_status: "pending", posted_at: "2026-08-01", idempotency_key: "d" } },
-  ]);
-  assert.equal(summary.confirmedBalance, 1174);
+  ], new Date("2026-08-15T00:00:00Z"));
+  assert.equal(summary.confirmedBalance, 200);
   assert.equal(summary.earnedTotal, 1199);
   assert.equal(summary.redeemedTotal, 25);
   assert.equal(summary.recordsCount, 3);
-  assert.equal(summary.pointsExpire, false);
-  assert.equal(summary.nearestExpiry, null);
+  assert.equal(summary.pointsExpire, true);
+  assert.equal(summary.nearestExpiry, "2026-09-01T00:00:00.000Z");
+  assert.equal(summary.expiredPoints, 974);
 });
 
-test("points endpoint is patched to lifetime total without removing ledger history", () => {
+test("points endpoint is patched with expiring-lot policy without removing ledger history", () => {
   const payload = {
     state: "resolved",
     summary: { confirmedBalance: 200, currencyLabel: "MMD Points" },
@@ -32,14 +33,19 @@ test("points endpoint is patched to lifetime total without removing ledger histo
     earnedTotal: 1199,
     redeemedTotal: 25,
     recordsCount: 3,
+    lifetimeServiceSpendThb: 150000,
+    serviceSpend365dThb: 25000,
+    completedServiceCount: 4,
   });
   assert.equal(patched.summary.confirmedBalance, 1174);
-  assert.equal(patched.summary.pointsExpire, false);
+  assert.equal(patched.summary.pointsExpire, true);
+  assert.equal(patched.summary.lifetimeServiceSpendThb, 150000);
+  assert.equal(patched.summary.serviceSpend365dThb, 25000);
   assert.equal(patched.ledger.length, 1);
-  assert.deepEqual(patched.pointsPolicy, { expires: false, mode: "lifetime_total", phase: 1 });
+  assert.deepEqual(patched.pointsPolicy, { expires: true, mode: "expiring_lots", ttlDays: 365 });
 });
 
-test("profile and dashboard receive the same lifetime points total", () => {
+test("profile and dashboard receive the same expiring points total", () => {
   const summary = {
     confirmedBalance: 325,
     earnedTotal: 350,
@@ -48,7 +54,7 @@ test("profile and dashboard receive the same lifetime points total", () => {
   };
   const profile = patchLifetimePointsPayload("/api/member/app/profile", { points_confirmed: 10 }, summary);
   assert.equal(profile.points_confirmed, 325);
-  assert.equal(profile.points_expire, false);
+  assert.equal(profile.points_expire, true);
 
   const dashboard = patchLifetimePointsPayload("/api/member/dashboard", {
     ok: true,
@@ -57,4 +63,55 @@ test("profile and dashboard receive the same lifetime points total", () => {
   assert.equal(dashboard.data.points.value, 325);
   assert.equal(dashboard.data.points.expiring_points, 0);
   assert.equal(dashboard.data.points.nearest_expiry, null);
+});
+
+
+test("dashboard never finalizes temporary zero while history recovery is still pending", () => {
+  const patched = patchLifetimePointsPayload("/api/member/app/dashboard", {
+    points: { confirmedBalance: 0, earnedTotal: 0, redeemedTotal: 0 },
+    pointsRecoveryPending: false,
+  }, {
+    state: "checking",
+    recoveryState: "in_progress",
+    pointsRecoveryPending: true,
+  });
+
+  assert.equal(patched.points.confirmedBalance, null);
+  assert.equal(patched.points.earnedTotal, null);
+  assert.equal(patched.points.redeemedTotal, null);
+  assert.equal(patched.pointsRecoveryPending, true);
+});
+
+test("real zero is final only after history is reconciled", () => {
+  const reconciled = patchLifetimePointsPayload("/api/member/app/dashboard", {
+    points: { confirmedBalance: null },
+    pointsRecoveryPending: true,
+  }, {
+    state: "resolved",
+    recoveryState: "reconciled",
+    pointsRecoveryPending: false,
+    confirmedBalance: 0,
+    earnedTotal: 0,
+    redeemedTotal: 0,
+    recordsCount: 0,
+  });
+  assert.equal(reconciled.points.confirmedBalance, 0);
+  assert.equal(reconciled.pointsRecoveryPending, false);
+
+  const needsReview = patchLifetimePointsPayload("/api/member/app/dashboard", {
+    points: { confirmedBalance: 0, earnedTotal: 0, redeemedTotal: 0 },
+    pointsRecoveryPending: false,
+  }, {
+    state: "resolved",
+    recoveryState: "review_required",
+    pointsRecoveryPending: false,
+    confirmedBalance: 0,
+    earnedTotal: 0,
+    redeemedTotal: 0,
+    recordsCount: 0,
+  });
+  assert.equal(needsReview.points.confirmedBalance, null);
+  assert.equal(needsReview.points.earnedTotal, null);
+  assert.equal(needsReview.points.redeemedTotal, null);
+  assert.equal(needsReview.pointsRecoveryPending, true);
 });

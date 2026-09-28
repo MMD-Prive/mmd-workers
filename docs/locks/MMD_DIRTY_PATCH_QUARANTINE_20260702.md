@@ -1,5 +1,8 @@
 # MMD Dirty Patch Quarantine - 2026-07-02
 
+> **2026-09-19 Public/Private lane override:** `/pay/membership` is the canonical Public Membership entry for Member / Elite / Red Card. `/sigil/member/membership` is the canonical Private Membership selection / renewal / upgrade entry. `/member/payments` is payment status/history navigation. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes; they render no payment or renewal fallback UI. Signed Public checkout is `/pay/checkout?t=...`; signed Private/Service payment is `/sigil/pay?t=...`.
+
+
 ## Context
 
 PR #128 merged the route governance connector lock into `main`.
@@ -18,12 +21,14 @@ Dirty patch file:
 
 ## Current Route Lock
 
-- `/sigil/member/membership` is the canonical membership selection / signup / renewal / upgrade entry.
+- `/pay/membership` is the canonical Public Membership selection entry for MMD Member / Elite / Red Card; it is selection UI only and never payment authority.
+- `/sigil/member/membership` is the canonical Private Membership selection / signup / renewal / upgrade entry for Standard / Premium and private access.
 - signed `/sigil/pay?t=...` is the canonical exact payment + proof surface after a backend-owned payment intent exists.
 - `/member/payments` is payment history/status/navigation only.
-- `/sigil/pay/membership` and `/pay/membership` are compatibility bridges only; neither is a payment authority.
-- `/sigil/pay/renewal` and `/pay/renewal` are manual legacy renewal evidence routes.
-- `/sigil/pay/renew` is a compatibility alias to `/sigil/pay/renewal`.
+- `/pay/membership` is the canonical Public Membership selection UI and is never payment authority.
+- `/sigil/pay/membership` is a Private legacy compatibility bridge only and is never payment authority.
+- `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes: signed `t` -> `/sigil/pay?t=...`; unsigned -> `/sigil/member/membership?intent=renew`; no fallback UI.
+- `/sigil/pay/renew` is a compatibility alias: signed `t` -> `/sigil/pay?t=<same token>`; unsigned -> `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/payment` is a retired generic payment alias.
 - Membership aliases must never be treated as renewal evidence or redirected into `/sigil/pay/renewal` by generic route logic.
 - Unknown routes must never redirect to `/default`, `/autodirect`, or `/sigil/pay/renewal`.

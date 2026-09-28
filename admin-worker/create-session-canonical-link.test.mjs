@@ -319,3 +319,22 @@ test("updates existing Job by session_id instead of creating a duplicate", async
     globalThis.fetch = originalFetch;
   }
 });
+
+test('canonical create asks Partner authority to freeze agreement using only the linked Session ID', async () => {
+  const originalFetch=globalThis.fetch,mock=makeFetch(),calls=[];globalThis.fetch=mock.fetch;
+  try {
+    const env={...ENV,PARTNERS_WORKER:{async fetch(request){calls.push(request);return json({ok:true,partner_managed:true});}}};
+    const response=await handleCanonicalLinkedJobCreate(request(linkedBody({commission_percent:99})),env,{}, {async fetch(){return json({ok:true,session_id:'sess_001'});}});
+    assert.equal((await response.json()).linkage.partner_agreement,'captured');assert.equal(calls.length,1);
+    assert.equal(calls[0].url,'https://partners-worker.internal/v1/partner/admin/agreement/capture');
+    assert.deepEqual(await calls[0].json(),{session_record_id:SESSION_RECORD_ID});
+  } finally {globalThis.fetch=originalFetch;}
+});
+test('created job surfaces agreement reconciliation instead of claiming financial capture succeeded', async () => {
+  const originalFetch=globalThis.fetch,mock=makeFetch();globalThis.fetch=mock.fetch;
+  try {
+    const env={...ENV,PARTNERS_WORKER:{async fetch(){return json({ok:false,error:{code:'historical_agreement_required'}},409);}}};
+    const response=await handleCanonicalLinkedJobCreate(request(linkedBody()),env,{}, {async fetch(){return json({ok:true,session_id:'sess_001'});}});
+    const result=await response.json();assert.equal(result.linkage.session_linked,true);assert.equal(result.linkage.partner_agreement,'review_required');assert.equal(result.linkage.partner_warning,'historical_agreement_required');
+  } finally {globalThis.fetch=originalFetch;}
+});

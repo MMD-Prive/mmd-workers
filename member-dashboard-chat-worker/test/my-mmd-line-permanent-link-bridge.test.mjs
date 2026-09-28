@@ -19,16 +19,15 @@ for (const url of [
   "https://mmdbkk.com/member/liff?liff.state=%3Fintent%3Dstatus",
   "https://mmdbkk.com/member/liff?liff_state=%2F%3Fintent%3Dstatus",
 ]) {
-  test(`LINE status bridge covers legacy dark UI for ${url}`, async () => {
+  test(`LINE status entry stays on the Worker LIFF surface for ${url}`, async () => {
     const response = await worker.fetch(new Request(url), runtimeWithDarkLegacyShell());
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-    assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-    assert.match(html, /id="mmd-status-bridge-veil"/);
-    assert.match(html, /\/my-mmd-assets\/hype\.webp/);
-    assert.match(html, /background:#fbf9f5/);
-    assert.match(html, /const target = "\/my-mmd\/"/);
+    assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+    assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+    assert.match(html, /LEGACY DARK MEMBER DASHBOARD/);
+    assert.doesNotMatch(html, /mmd-status-bridge-veil/);
+    assert.doesNotMatch(html, /const target = "\/my-mmd\/"/);
   });
 }

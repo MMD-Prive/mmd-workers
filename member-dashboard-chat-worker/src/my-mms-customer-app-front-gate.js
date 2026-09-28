@@ -311,7 +311,7 @@ function bookingFromRequest(record) {
     paymentState: "checking",
     amountSummary: null,
     nextAction: needsAttention
-      ? { kind: "contact_support", label: "ติดต่อทีมงาน Male Massage", url: "https://line.me/R/ti/p/%40malemassage" }
+      ? { kind: "contact_support", label: "ติดต่อทีมงาน Male Massage", url: "https://lin.ee/NkfXMu7" }
       : null,
     needsAttention,
   };

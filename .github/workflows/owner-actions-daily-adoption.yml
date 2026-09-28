@@ -1,0 +1,493 @@
+name: Owner Actions Daily Adoption
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-actions-daily-adoption
+  cancel-in-progress: false
+
+jobs:
+  live-review:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL }}
+
+    steps:
+      - name: Review live Owner Actions and write adoption receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const origin = process.env.ORIGIN;
+          const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || "").trim();
+          if (!credential) throw new Error("ADMIN_LOGIN_CREDENTIAL is required for Owner Actions adoption");
+
+          const canon = Object.freeze({
+            payment_review: {
+              href: "/internal/admin/payments",
+              authority: "payments-worker",
+            },
+            historical_recovery: {
+              href: "/internal/admin/payments/historical-backfill",
+              authority: "historical-slip-backfill-runtime",
+            },
+            finance_reconciliation: {
+              href: "/internal/admin/partners",
+              authority: "canonical_finance_timeline",
+            },
+            job_reconfirm_overdue: {
+              href: "/internal/admin/jobs",
+              authority: "canonical_sessions_and_reconfirm",
+            },
+            availability_exception_review: {
+              href: "/internal/admin/calendar",
+              authority: "sigil_availability_snapshot_v1",
+            },
+            finance_payout_hold: {
+              href: "/internal/admin/partners",
+              authority: "canonical_finance_timeline",
+            },
+            job_reconfirm_pending: {
+              href: "/internal/admin/jobs",
+              authority: "canonical_sessions_and_reconfirm",
+            },
+            mms_prebooking_coordination: {
+              href: "/internal/admin/mms",
+              authority: "mms-worker",
+            },
+            membership_review: {
+              href: "/internal/admin/member-intelligence",
+              authority: "my_mmd_entitlement_resolver_v1",
+            },
+            hype_entitlement_notification_overdue: {
+              href: "/internal/admin/member-intelligence",
+              authority: "my_mmd_entitlement_resolver_v1",
+            },
+            hype_recovery_unassigned_overdue: {
+              href: "/internal/admin/recovery?assignment=unassigned",
+              authority: "recovery_queue_operational_metadata",
+            },
+            hype_coupon_manual_review_overdue: {
+              href: "/internal/admin/member-intelligence",
+              authority: "care_back_claim_policy",
+            },
+            hype_telegram_bind_overdue: {
+              href: "/internal/admin/control-room",
+              authority: "telegram_identity_bind_authority",
+            },
+            hype_operational_watch: {
+              href: "/internal/admin/control-room",
+              authority: "hype_coordinator_read_only",
+            },
+            owner_exception: {
+              href: "/internal/admin/control-room",
+              authority: "owner_review",
+            },
+          });
+
+          const allowedHosts = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
+
+          async function loginOwner() {
+            const response = await fetch(`${origin}/internal/admin/login/session`, {
+              method: "POST",
+              headers: {
+                Origin: origin,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-MMD-Login-Fetch": "1",
+              },
+              body: new URLSearchParams({
+                credential,
+                next: "/internal/admin/control-room",
+              }).toString(),
+              redirect: "manual",
+            });
+            const payload = await response.clone().json().catch(() => null);
+            if (response.status !== 200 || payload?.ok !== true || payload?.role !== "owner") {
+              throw new Error(`Owner login failed or did not mint owner role: ${response.status}`);
+            }
+            const cookie = (response.headers.get("set-cookie") || "").split(";", 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookie)) throw new Error("Owner session cookie missing");
+            return cookie;
+          }
+
+          async function readJson(path, cookie) {
+            const response = await fetch(`${origin}${path}`, {
+              headers: {
+                Origin: origin,
+                Cookie: cookie,
+                Accept: "application/json",
+              },
+              cache: "no-store",
+              redirect: "manual",
+            });
+            const payload = await response.json().catch(() => null);
+            return { response, payload };
+          }
+
+          async function verifySourcePage(path, cookie) {
+            let url = new URL(path, origin);
+            for (let hop = 0; hop < 4; hop += 1) {
+              const response = await fetch(url, {
+                headers: {
+                  Cookie: cookie,
+                  Accept: "text/html,application/xhtml+xml",
+                },
+                cache: "no-store",
+                redirect: "manual",
+              });
+
+              if ([301, 302, 303, 307, 308].includes(response.status)) {
+                const location = response.headers.get("location") || "";
+                if (!location) throw new Error(`Source redirect missing location for ${path}`);
+                const next = new URL(location, url);
+                if (!allowedHosts.has(next.hostname) || !next.pathname.startsWith("/internal/admin/")) {
+                  throw new Error(`Unsafe source redirect for ${path}: ${next.href}`);
+                }
+                if (next.pathname.startsWith("/internal/admin/login")) {
+                  throw new Error(`Owner session lost while opening source page ${path}`);
+                }
+                url = next;
+                continue;
+              }
+
+              if (response.status !== 200) {
+                throw new Error(`Source page ${path} returned ${response.status}`);
+              }
+              if (!allowedHosts.has(url.hostname) || !url.pathname.startsWith("/internal/admin/")) {
+                throw new Error(`Source page escaped admin surface: ${url.href}`);
+              }
+              const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+              if (!contentType.includes("text/html")) {
+                throw new Error(`Source page ${path} did not return HTML`);
+              }
+              return {
+                requested_href: path,
+                final_href: url.pathname,
+                status: response.status,
+              };
+            }
+            throw new Error(`Too many redirects while opening source page ${path}`);
+          }
+
+          (async () => {
+            const cookie = await loginOwner();
+            const { response: queueResponse, payload: queue } = await readJson(
+              "/v1/admin/dashboard/owner-actions",
+              cookie,
+            );
+
+            if (queueResponse.status !== 200 || queue?.ok !== true) {
+              throw new Error(`Owner Actions queue read failed: ${queueResponse.status}`);
+            }
+            if (queue?.contract !== "mmd_owner_actions_queue_v1" || queue?.mode !== "owner_review_only") {
+              throw new Error("Owner Actions queue contract mismatch");
+            }
+            if (queue?.send_allowed !== false || queue?.mutation_allowed !== false) {
+              throw new Error("Owner Actions queue must remain read-only");
+            }
+
+            const actions = Array.isArray(queue?.actions) ? queue.actions : [];
+            const actionKeys = actions.map((item) => String(item?.action_key || ""));
+            if (new Set(actionKeys).size !== actionKeys.length) {
+              throw new Error("Duplicate action_key found in live Owner Actions queue");
+            }
+            if (actionKeys.includes("mms_application_review")) {
+              throw new Error("Routine MMS application review must stay on the MMS source surface");
+            }
+
+            const sourceChecks = [];
+            for (const action of actions) {
+              const key = String(action?.action_key || "");
+              const expected = canon[key];
+              if (!expected) throw new Error(`Unknown live Owner Action: ${key || "(blank)"}`);
+              if (action?.href !== expected.href) throw new Error(`${key} href drifted from canon`);
+              if (action?.authority !== expected.authority) throw new Error(`${key} authority drifted from canon`);
+              if (action?.detail_href !== `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(key)}`) {
+                throw new Error(`${key} detail_href drifted from canon`);
+              }
+              if (action?.review_required !== true || action?.send_allowed !== false || action?.mutation_allowed !== false) {
+                throw new Error(`${key} violated review-only guardrails`);
+              }
+              if (!Number.isInteger(Number(action?.count)) || Number(action.count) <= 0) {
+                throw new Error(`${key} has invalid aggregate count`);
+              }
+              const slo = action?.slo && typeof action.slo === "object" ? action.slo : null;
+              if (!slo || slo.schema !== "mmd_owner_action_slo_v1") {
+                throw new Error(`${key} workload SLO contract missing`);
+              }
+              if (!["due_now", "due_today", "breached"].includes(String(slo.state || ""))) {
+                throw new Error(`${key} workload SLO state invalid`);
+              }
+              const expectedTarget = action.urgency === "urgent" ? 240 : 1440;
+              if (Number(slo.target_minutes) !== expectedTarget) {
+                throw new Error(`${key} workload SLO target drifted`);
+              }
+              if (slo.state === "breached" && slo.source_breached !== true) {
+                throw new Error(`${key} breached SLO must be source-backed`);
+              }
+
+              const detailPath = `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(key)}`;
+              const { response: detailResponse, payload: detail } = await readJson(detailPath, cookie);
+              if (detailResponse.status !== 200 || detail?.ok !== true) {
+                throw new Error(`${key} detail read failed: ${detailResponse.status}`);
+              }
+              if (detail?.contract !== "mmd_owner_action_detail_v1" || detail?.mode !== "owner_review_only") {
+                throw new Error(`${key} detail contract mismatch`);
+              }
+              if (detail?.action?.action_key !== key || detail?.drilldown?.action_key !== key) {
+                throw new Error(`${key} detail identity mismatch`);
+              }
+              if (detail?.drilldown?.authority !== expected.authority || detail?.drilldown?.source_surface !== expected.href) {
+                throw new Error(`${key} detail authority/source mismatch`);
+              }
+              for (const field of [
+                "records_exposed",
+                "personal_data_exposed",
+                "payment_reference_exposed",
+                "raw_notes_exposed",
+                "send_allowed",
+                "mutation_allowed",
+              ]) {
+                if (detail?.drilldown?.[field] !== false) {
+                  throw new Error(`${key} unsafe detail flag: ${field}`);
+                }
+              }
+
+              sourceChecks.push({
+                action_key: key,
+                count: Number(action.count),
+                authority: expected.authority,
+                ...(await verifySourcePage(expected.href, cookie)),
+              });
+            }
+
+            const coverage = Array.isArray(queue?.source_coverage) ? queue.source_coverage : [];
+            const coverageNames = coverage.map((item) => String(item?.source || ""));
+            if (new Set(coverageNames).size !== coverageNames.length) {
+              throw new Error("Duplicate source coverage row found");
+            }
+            for (const item of coverage) {
+              if (!["connected", "partial", "unavailable"].includes(String(item?.state || ""))) {
+                throw new Error(`Invalid source coverage state for ${item?.source || "unknown"}`);
+              }
+              if (item?.read_only !== true) throw new Error(`Source coverage must remain read-only: ${item?.source || "unknown"}`);
+              if (!Number.isInteger(Number(item?.routine_count || 0)) || Number(item?.routine_count || 0) < 0) {
+                throw new Error(`Invalid routine source count: ${item?.source || "unknown"}`);
+              }
+              if (item?.source === "mms" && item?.state === "connected" && item?.operating_model !== "bau_exception_only_v1") {
+                throw new Error("Connected MMS coverage must use BAU exception-only mode");
+              }
+              if (!String(item?.href || "").startsWith("/internal/admin/")) {
+                throw new Error(`Unsafe source coverage href: ${item?.source || "unknown"}`);
+              }
+            }
+
+            const unauth = await fetch(`${origin}/v1/admin/dashboard/owner-actions`, {
+              headers: { Origin: origin, Accept: "application/json" },
+              redirect: "manual",
+              cache: "no-store",
+            });
+            if (unauth.status !== 401) {
+              throw new Error(`Unauthenticated Owner Actions must fail closed, got ${unauth.status}`);
+            }
+
+            const unavailableSources = Array.isArray(queue?.unavailable_sources)
+              ? queue.unavailable_sources.map(String)
+              : [];
+            const queueHealth = queue?.queue_health && typeof queue.queue_health === "object"
+              ? queue.queue_health
+              : null;
+            if (!queueHealth || queueHealth?.schema !== "mmd_owner_actions_queue_health_v1") {
+              throw new Error("Owner Actions queue health contract missing");
+            }
+            if (queueHealth?.operating_model !== "bau_exception_only_v1") {
+              throw new Error("Owner Actions BAU operating model missing");
+            }
+            if (queueHealth?.business_truth_mutated !== false) {
+              throw new Error("Owner Actions queue health must remain read-only");
+            }
+            const workloadSlo = queueHealth?.workload_slo && typeof queueHealth.workload_slo === "object"
+              ? queueHealth.workload_slo
+              : null;
+            if (!workloadSlo || workloadSlo.schema !== "mmd_owner_workload_slo_v1") {
+              throw new Error("Owner workload SLO contract missing");
+            }
+            if (!["clear", "due_now", "due_today", "breached", "source_attention"].includes(String(workloadSlo.state || ""))) {
+              throw new Error("Owner workload SLO state invalid");
+            }
+            if (workloadSlo.projection_only !== true) {
+              throw new Error("Owner workload SLO must remain projection-only");
+            }
+            if (Number(workloadSlo.urgent_review_target_minutes) !== 240 ||
+                Number(workloadSlo.attention_review_target_minutes) !== 1440 ||
+                Number(workloadSlo.breached_carry_over_target) !== 0) {
+              throw new Error("Owner workload SLO policy drifted");
+            }
+            if (Number(queueHealth?.unknown_hype_overdue || 0) > 0 && !actions.some((item) => item?.action_key === "hype_operational_watch")) {
+              throw new Error("Unknown HYPE overdue must remain visible through fail-closed fallback");
+            }
+
+            const adoptionState = unavailableSources.length
+              ? "PARTIAL"
+              : Number(queueHealth?.unknown_hype_overdue || 0) > 0
+                ? "CLASSIFICATION_REVIEW"
+                : workloadSlo.state === "breached"
+                  ? "SLO_BREACHED"
+                  : actions.length
+                    ? "REVIEW_REQUIRED"
+                    : "CLEAR";
+
+            const receipt = {
+              schema: "mmd.owner_actions_adoption_receipt.v1",
+              checked_at: new Date().toISOString(),
+              environment: "production",
+              owner_session: "per_credential",
+              contract: queue.contract,
+              mode: queue.mode,
+              adoption_state: adoptionState,
+              action_count: actions.length,
+              actions: actions.map((item) => ({
+                action_key: item.action_key,
+                count: Number(item.count),
+                urgency: item.urgency,
+                slo_state: item.slo?.state || "",
+                slo_target_minutes: Number(item.slo?.target_minutes || 0),
+                source_breached: item.slo?.source_breached === true,
+                authority: item.authority,
+                href: item.href,
+              })),
+              source_checks: sourceChecks,
+              source_coverage: coverage.map((item) => ({
+                source: item.source,
+                state: item.state,
+                authority: item.authority,
+                href: item.href,
+                action_count: Number(item.action_count || 0),
+                routine_count: Number(item.routine_count || 0),
+                operating_model: item.operating_model || "",
+                read_only: item.read_only === true,
+              })),
+              unavailable_sources: unavailableSources,
+              queue_health: {
+                schema: queueHealth.schema,
+                operating_model: queueHealth.operating_model,
+                action_classes: Number(queueHealth.action_classes || 0),
+                active_owner_decisions: Number(queueHealth.active_owner_decisions || 0),
+                routine_source_records: Number(queueHealth.routine_source_records || 0),
+                unknown_hype_overdue: Number(queueHealth.unknown_hype_overdue || 0),
+                stale_terminal_records: Number(queueHealth.stale_terminal_records || 0),
+                stale_terminal_by_kind: queueHealth.stale_terminal_by_kind || {},
+                classification_complete: queueHealth.classification_complete === true,
+                source_coverage_complete: queueHealth.source_coverage_complete === true,
+                phase_5_closure_ready: queueHealth.phase_5_closure_ready === true,
+                phase_6_bau_ready: queueHealth.phase_6_bau_ready === true,
+                phase_6b_slo_ready: queueHealth.phase_6b_slo_ready === true,
+                workload_slo: {
+                  schema: workloadSlo.schema,
+                  timezone: workloadSlo.timezone,
+                  state: workloadSlo.state,
+                  active_decisions: Number(workloadSlo.active_decisions || 0),
+                  breached_decisions: Number(workloadSlo.breached_decisions || 0),
+                  breached_classes: Number(workloadSlo.breached_classes || 0),
+                  due_now_decisions: Number(workloadSlo.due_now_decisions || 0),
+                  due_now_classes: Number(workloadSlo.due_now_classes || 0),
+                  due_today_decisions: Number(workloadSlo.due_today_decisions || 0),
+                  due_today_classes: Number(workloadSlo.due_today_classes || 0),
+                  urgent_review_target_minutes: Number(workloadSlo.urgent_review_target_minutes || 0),
+                  attention_review_target_minutes: Number(workloadSlo.attention_review_target_minutes || 0),
+                  breached_carry_over_target: Number(workloadSlo.breached_carry_over_target || 0),
+                  burn_down_remaining: Number(workloadSlo.burn_down_remaining || 0),
+                  burn_down_target: Number(workloadSlo.burn_down_target || 0),
+                  slo_met: workloadSlo.slo_met === true,
+                  projection_only: workloadSlo.projection_only === true,
+                },
+                business_truth_mutated: queueHealth.business_truth_mutated,
+                business_truth_unchanged: queueHealth.business_truth_mutated === false,
+              },
+              guardrails: {
+                queue_read_only: queue?.send_allowed === false && queue?.mutation_allowed === false,
+                detail_safe_projection: true,
+                source_page_authenticated: true,
+                no_duplicate_action_key: true,
+                unauthenticated_fail_closed: true,
+                business_truth_mutated: false,
+                routine_bau_stays_in_source: !actionKeys.includes("mms_application_review"),
+                workload_slo_projection_only: workloadSlo.projection_only === true,
+              },
+            };
+
+            const receiptPath = `${process.env.GITHUB_WORKSPACE}/owner-actions-adoption-receipt.json`;
+            fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+
+            const actionRows = receipt.actions.length
+              ? receipt.actions.map((item) => `| ${item.action_key} | ${item.count} | ${item.urgency} | ${item.slo_state} | ${item.authority} | ${item.href} |`).join("\n")
+              : "| — | 0 | — | clear | — | Queue clear |";
+            const coverageRows = receipt.source_coverage.length
+              ? receipt.source_coverage.map((item) => `| ${item.source} | ${item.state} | ${item.action_count} | ${item.authority} |`).join("\n")
+              : "| — | — | 0 | — |";
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+              "## Phase 6B — Exception Burn-Down & Daily Owner Workload SLO",
+              "",
+              `- State: **${receipt.adoption_state}**`,
+              `- Checked at: \`${receipt.checked_at}\``,
+              `- Live exception classes: **${receipt.action_count}**`,
+              `- Active owner decisions: **${receipt.queue_health.active_owner_decisions}**`,
+              `- Workload SLO: **${receipt.queue_health.workload_slo.state.toUpperCase()}**`,
+              `- SLO breached decisions: **${receipt.queue_health.workload_slo.breached_decisions}**`,
+              `- Due now (≤4h): **${receipt.queue_health.workload_slo.due_now_decisions}**`,
+              `- Due today (≤24h): **${receipt.queue_health.workload_slo.due_today_decisions}**`,
+              `- Burn-down remaining: **${receipt.queue_health.workload_slo.burn_down_remaining} → ${receipt.queue_health.workload_slo.burn_down_target}**`,
+              `- Routine records kept in source: **${receipt.queue_health.routine_source_records}**`,
+              `- Unavailable sources: **${receipt.unavailable_sources.length}**`,
+              `- Unknown HYPE overdue: **${receipt.queue_health.unknown_hype_overdue}**`,
+              `- Stale terminal diagnostics: **${receipt.queue_health.stale_terminal_records}**`,
+              `- Phase 5 closure ready: **${receipt.queue_health.phase_5_closure_ready ? "YES" : "NO"}**`,
+              `- Phase 6 BAU ready: **${receipt.queue_health.phase_6_bau_ready ? "YES" : "NO"}**`,
+              `- Phase 6B SLO ready: **${receipt.queue_health.phase_6b_slo_ready ? "YES" : "NO"}**`,
+              "- Session: dedicated Per Owner credential",
+              "- Authority: read-only queue/detail; decisions remain on source pages",
+              "- Mutation: none",
+              "",
+              "| Action | Count | Urgency | SLO | Authority | Source |",
+              "| --- | ---: | --- | --- | --- | --- |",
+              actionRows,
+              "",
+              "| Coverage source | State | Actions | Authority |",
+              "| --- | --- | ---: | --- |",
+              coverageRows,
+              "",
+              "Guardrails: no auto-send · no approval · no business-truth mutation · unauthenticated fail-closed.",
+              "",
+            ].join("\n"));
+
+            console.log(JSON.stringify(receipt, null, 2));
+          })().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Upload adoption receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-actions-adoption-receipt
+          path: owner-actions-adoption-receipt.json
+          if-no-files-found: error
+          retention-days: 30

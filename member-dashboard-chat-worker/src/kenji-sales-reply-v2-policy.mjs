@@ -15,7 +15,8 @@ export const SALES_CARD_IDS = Object.freeze({
 });
 export const SALES_ROUTES = Object.freeze({
   status: "https://mmdbkk.com/my-mmd/",
-  signup: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+  signup: "https://mmdbkk.com/pay/membership?source=line",
+  privateSignup: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
   renewal: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
   membership: "https://mmdbkk.com/sigil/member/membership",
   payment: "https://mmdbkk.com/member/payments",
@@ -55,7 +56,8 @@ export function refineKenjiSalesIntent(raw = "", prior = "") {
   // Do not reclassify a receipt or protected payment discussion as acquisition.
   if (proof || ["payment_status", "payment_dispute"].includes(intent)) return intent;
   if (/ต่ออายุ|renewal|\brenew\b/i.test(text)) return "membership_renewal";
-  if (/สมัครสมาชิก|สมัคร\s*(?:private|public|standard|premium)/i.test(text)) return "membership_signup";
+  if (/(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(text)) return "private_membership_signup";
+  if (/สมัครสมาชิก|(?:สมัคร|join).{0,16}(?:public\s*membership|public|mmd\s*member|elite|red\s*card|เรด\s*การ์ด)/i.test(text)) return "membership_signup";
   return intent;
 }
 
@@ -63,7 +65,7 @@ export function salesCardKey(intent = "") {
   const value = clean(intent);
   if (value === "promotion_overview") return "promotion_overview";
   if (value === "double_moment") return "double_moment";
-  if (value === "membership_signup") return "signup";
+  if (["membership_signup", "private_membership_signup"].includes(value)) return "signup";
   if (["membership", "membership_renewal"].includes(value)) return "renewal";
   if (value === "care_back_coupon_wish") return "coupon";
   if (value === "care_back_payment_points") return "payment";

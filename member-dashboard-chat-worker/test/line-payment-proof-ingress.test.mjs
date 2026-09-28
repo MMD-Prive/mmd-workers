@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
-import { classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind } from "../src/payment-proof-intelligence.mjs";
+import { classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind, servicePaymentCandidates } from "../src/payment-proof-intelligence.mjs";
 
 const {
   alertsOpsThreadId,
@@ -109,6 +109,101 @@ test("service purpose fails closed when two sessions match equally", () => {
   assert.equal(result.ambiguous, true);
 });
 
+test("service candidates project operator-safe canonical job context", () => {
+  const candidates = servicePaymentCandidates({
+    amount_thb: 7500,
+    sessions: [{
+      id: "rec-session",
+      fields: {
+        session_id: "sess-001",
+        job_id: "MMD-JOB-001",
+        client_name: "แม่ไก่",
+        model_name: "Gohan",
+        job_type: "Private",
+        job_date: "2026-09-22",
+        start_time: "2026-09-22T19:00:00.000+07:00",
+        end_time: "2026-09-22T20:30:00.000+07:00",
+        location_name: "Ever Green",
+        final_price_thb: 15000,
+        paid_received_sum: 0,
+        session_state: "pending",
+      },
+    }],
+  });
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].job_id, "MMD-JOB-001");
+  assert.equal(candidates[0].model_name, "Gohan");
+  assert.equal(candidates[0].job_date, "2026-09-22");
+  assert.equal(candidates[0].location_name, "Ever Green");
+  assert.equal(candidates[0].match_stage, "deposit");
+});
+
+test("Payment Confirm message shows exact job context instead of a bare slip", async () => {
+  const h = telegramHarness();
+  const result = await notifyPaymentProofOps(h.env, {
+    proofId: "line_job_context_1",
+    sourceType: "user",
+    sourceContext: "direct_user_payment_followup",
+    paymentContextText: "โอนมัดจำแล้ว",
+    payerName: "แม่ไก่",
+    analysis: {
+      extraction: { amount_thb: 7500 },
+      payment_intelligence: { inferred_label: "ค่าจอง / มัดจำ", tracking_kind: "job_deposit" },
+      ops_route: { topic: "payment", reason: "service_payment", should_alert: false },
+      customer: { display_name: "แม่ไก่" },
+      job_correlation: {
+        status: "exact",
+        reason: "deposit_ratio_50",
+        candidate_count: 1,
+        selected: {
+          job_id: "MMD-JOB-001",
+          session_id: "sess-001",
+          model_name: "Gohan",
+          job_date: "2026-09-22",
+          start_time: "19:00",
+          end_time: "20:30",
+          location_name: "Ever Green",
+        },
+      },
+    },
+  }, { deduped: false });
+  assert.equal(result.thread_id, 22);
+  assert.equal(h.messages.length, 1);
+  assert.match(h.messages[0].text, /Customer: แม่ไก่/);
+  assert.match(h.messages[0].text, /Job Match: ✅ exact canonical match/);
+  assert.match(h.messages[0].text, /Job: MMD-JOB-001/);
+  assert.match(h.messages[0].text, /Model: Gohan/);
+  assert.match(h.messages[0].text, /Ever Green/);
+});
+
+test("Payment Confirm shows bounded candidates when the slip matches multiple jobs", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_job_ambiguous_1",
+    sourceType: "user",
+    sourceContext: "direct_user_payment_followup",
+    payerName: "แม่ไก่",
+    analysis: {
+      extraction: { amount_thb: 5000 },
+      payment_intelligence: { inferred_label: "ต้องตรวจประเภทเงิน", tracking_kind: "unresolved_payment" },
+      ops_route: { topic: "payment", reason: "service_payment", should_alert: false },
+      job_correlation: {
+        status: "ambiguous",
+        reason: "multiple_session_candidates",
+        candidate_count: 2,
+        candidates: [
+          { job_id: "JOB-A", model_name: "A", job_date: "2026-09-22", location_name: "Thonglor" },
+          { job_id: "JOB-B", model_name: "B", job_date: "2026-09-23", location_name: "Sathorn" },
+        ],
+      },
+    },
+  }, { deduped: false });
+  assert.match(h.messages[0].text, /ambiguous · 2 candidates/);
+  assert.match(h.messages[0].text, /JOB-A/);
+  assert.match(h.messages[0].text, /JOB-B/);
+  assert.match(h.messages[0].text, /Do not guess/);
+});
+
 test("tracking kind separates membership, job deposit, and job final payment", () => {
   assert.equal(paymentTrackingKind({ inferred_stage: "membership", inferred_intent: "renewal" }), "membership_renewal");
   assert.equal(paymentTrackingKind({ inferred_stage: "deposit" }), "job_deposit");
@@ -118,7 +213,7 @@ test("tracking kind separates membership, job deposit, and job final payment", (
 
 test("Telegram payment topic helpers keep Membership, Confirm and Alerts separate", () => {
   assert.equal(membershipOpsThreadId({}), 20);
-  assert.equal(paymentOpsThreadId({}), 21);
+  assert.equal(paymentOpsThreadId({}), 22);
   assert.equal(alertsOpsThreadId({}), 9);
   assert.equal(membershipOpsThreadId({ TELEGRAM_MEMBERSHIP_THREAD_ID: "120" }), 120);
   assert.equal(paymentOpsThreadId({ TELEGRAM_PAYMENT_THREAD_ID: "121" }), 121);
@@ -134,27 +229,80 @@ test("LINE membership or renewal proof routes to Membership topic 20", async () 
   assert.equal(h.messages.length, 1);
   assert.equal(h.messages[0].flow, "membership");
   assert.equal(h.messages[0].message_thread_id, 20);
-  assert.match(h.messages[0].text, /Membership Payment Proof/);
+  assert.match(h.messages[0].text, /สลิปค่าสมาชิก/);
 });
 
-test("LINE generic transfer proof stays in Payments Confirm topic 21", async () => {
+test("Telegram clearly labels four LINE slip categories and does not verify from classification alone", async () => {
+  const cases = [
+    { kind: "membership_signup", context: "สมัครสมาชิก", label: "ค่าสมาชิก", thread: 20 },
+    { kind: "membership_renewal", context: "ต่ออายุสมาชิก", label: "ค่าต่อสมาชิก", thread: 20 },
+    { kind: "job_deposit", context: "โอนมัดจำงาน", label: "ค่ามัดจำ", thread: 22 },
+    { kind: "job_final", context: "โอนยอดคงเหลืองาน", label: "ค่าจบงาน", thread: 22 },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const h = telegramHarness();
+    const result = await notifyPaymentProofOps(h.env, {
+      proofId: `line_four_types_${index}`,
+      sourceType: "user",
+      sourceContext: "direct_user_payment_followup",
+      paymentContextText: item.context,
+      analysis: {
+        extraction: { amount_thb: item.kind === "membership_renewal" ? 1000 : 7500 },
+        payment_intelligence: { tracking_kind: item.kind },
+      },
+    }, { deduped: false });
+    assert.equal(result.thread_id, item.thread, item.kind);
+    assert.match(h.messages[0].text, new RegExp(`ประเภท: ${item.label}`), item.kind);
+    assert.match(h.messages[0].text, /สถานะ: รอตรวจสอบ/, item.kind);
+    assert.doesNotMatch(h.messages[0].text, /verified|ยืนยันแล้วจากระบบรับเงิน/i, item.kind);
+  }
+});
+
+test("Telegram confirms membership only after settlement reports materialized", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_membership_materialized_1",
+    sourceType: "user",
+    paymentContextText: "ต่ออายุสมาชิก",
+    analysis: { payment_intelligence: { tracking_kind: "membership_renewal" } },
+  }, { deduped: false, settlement: { status: "materialized" } });
+  assert.match(h.messages[0].text, /สถานะ: ยืนยันแล้วจากระบบรับเงิน/);
+});
+
+test("Telegram review-required membership asks the operator to inspect the proof", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_membership_review_required_1",
+    sourceType: "user",
+    paymentContextText: "ต่ออายุสมาชิก",
+    analysis: {
+      extraction: { amount_thb: 1000 },
+      payment_intelligence: { tracking_kind: "membership_renewal" },
+    },
+  }, { deduped: false, settlement: { status: "review_required" } });
+  assert.match(h.messages[0].text, /สถานะ: ต้องตรวจสอบ/);
+  assert.match(h.messages[0].text, /เปิดกล่องตรวจรับเงินเพื่อตรวจตัวตน แพ็กเกจ และสลิปด้วยคน/);
+  assert.doesNotMatch(h.messages[0].text, /รอระบบรับเงินยืนยันตัวตน/);
+});
+
+test("LINE generic transfer proof stays in Payments Confirm topic 22", async () => {
   const h = telegramHarness();
   const result = await notifyPaymentProofOps(h.env, { proofId: "line_payment_1", sourceType: "user", sourceContext: "direct_user_payment_followup", paymentContextText: "โอนแล้วครับ ส่งสลิปให้" }, { deduped: false });
   assert.equal(result.topic, "payment");
-  assert.equal(result.thread_id, 21);
+  assert.equal(result.thread_id, 22);
   assert.equal(h.messages.length, 1);
   assert.equal(h.messages[0].flow, "payment_proof");
-  assert.equal(h.messages[0].message_thread_id, 21);
+  assert.equal(h.messages[0].message_thread_id, 22);
 });
 
 test("LINE conflicting membership/service wording stays in Confirm and also raises Alerts", async () => {
   const h = telegramHarness();
   const result = await notifyPaymentProofOps(h.env, { proofId: "line_conflict_1", sourceType: "user", sourceContext: "direct_user_payment_followup", paymentContextText: "ค่าสมาชิก Premium แต่ยอดนี้เป็นมัดจำงาน" }, { deduped: false });
   assert.equal(result.topic, "payment");
-  assert.equal(result.thread_id, 21);
+  assert.equal(result.thread_id, 22);
   assert.equal(result.alert_sent, true);
   assert.equal(h.messages.length, 2);
-  assert.equal(h.messages[0].message_thread_id, 21);
+  assert.equal(h.messages[0].message_thread_id, 22);
   assert.equal(h.messages[1].flow, "alert");
   assert.equal(h.messages[1].message_thread_id, 9);
 });

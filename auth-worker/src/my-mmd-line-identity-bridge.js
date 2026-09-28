@@ -1,10 +1,16 @@
 import currentWorker from "./my-mmd-runtime-index.js";
+import {
+  fastTrustHasCanonicalClient,
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
 
 const STATUS_PATH = "/__internal/member-status/resolve";
 const PROFILE_PATH = "/__internal/member-profile/read";
 const MEMBER_TABLE = "Members";
 const CLIENT_TABLE = "Clients";
-const STAGING_TABLE = "LINE OFC Client Import Staging";
+const LEGACY_STAGING_TABLE = "LINE OFC Client Import Staging";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 const COMMITTED_LINE_MATCH_TYPE = "line_user_id_exact";
 const COMMITTED_LINE_DECISION = "link_existing_client";
@@ -13,6 +19,7 @@ const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
 const FAST_TRUST_LABEL = { vip: "VIP", svip: "SVIP", black_card: "Black Card" };
 const FAST_TRUST_DURATION_YEARS = 2;
+const MY_MMD_ALERT_FLOW = "my_mmd_resolution_alert";
 
 export default {
   async fetch(request, env = {}, ctx) {
@@ -44,6 +51,48 @@ export default {
     // and generic legacy parsing never enter this branch.
     const fastTrust = await resolveLineOaFastTrust(env, lineUserId);
     if (fastTrust.tier) {
+      const upstreamGuest = firstPayload.data.member_exists === false;
+      if (upstreamGuest) {
+        console.error({
+          event: "my_mmd_impossible_guest_state_prevented",
+          severity: "critical",
+          alert: true,
+          component: "auth-worker",
+          route: path,
+          protected_tier: fastTrust.tier,
+          lookup_reason: fastTrust.reason,
+        });
+        console.warn({
+          event: "protected_member_recovery",
+          component: "auth-worker",
+          route: path,
+          protected_tier: fastTrust.tier,
+          recovery_reason: "protected_marker_guest_prevented",
+        });
+        if (path === STATUS_PATH) {
+          const alertTask = notifyImpossibleGuestAlert(env, {
+            route: path,
+            tier: fastTrust.tier,
+            reason: fastTrust.reason,
+          }).then((result) => {
+            if (!result.ok) {
+              console.warn({
+                event: "my_mmd_impossible_guest_alert_failed",
+                component: "auth-worker",
+                failure_class: safeFailure(result.reason || result.error || "alert_failed"),
+              });
+            }
+          }).catch((error) => {
+            console.warn({
+              event: "my_mmd_impossible_guest_alert_failed",
+              component: "auth-worker",
+              failure_class: safeFailure(error),
+            });
+          });
+          if (ctx?.waitUntil) ctx.waitUntil(alertTask);
+          else await alertTask;
+        }
+      }
       if (path === STATUS_PATH) {
         return fastTrustStatusResponse(firstResponse, firstPayload, fastTrust);
       }
@@ -100,18 +149,21 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
   if (!lineId) return { tier: null, reason: "invalid_line_identity" };
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return { tier: null, reason: "airtable_unavailable" };
 
-  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || STAGING_TABLE).trim();
+  const source = resolveFastTrustAirtableSource(env);
+  const filterByFormula = fastTrustLineFormula(lineId, source);
+  if (!source.table || !filterByFormula) return { tier: null, reason: "fast_trust_source_invalid", lookupUnavailable: true };
   try {
-    const records = await airtableList(env, stagingTable, {
-      filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
+    const records = await airtableList(env, source.table, {
+      filterByFormula,
       maxRecords: 20,
     });
+    const knownCanonicalClient = records.some((record) => fastTrustHasCanonicalClient(record, source));
     const candidates = records.flatMap((record) => {
-      const renamedName = String(record?.fields?.line_renamed_name || "").trim();
+      const renamedName = fastTrustRenamedName(record, source);
       const tier = trustedTierFromRenamedName(renamedName);
       return tier ? [{ tier, renamedName }] : [];
     });
-    if (!candidates.length) return { tier: null, reason: "fast_trust_marker_missing" };
+    if (!candidates.length) return { tier: null, reason: "fast_trust_marker_missing", knownCanonicalClient };
 
     // Rename history can contain more than one MMD-authored recognition marker.
     // Per policy, do not downgrade a trusted holder while history is backfilled;
@@ -127,11 +179,56 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
       membershipStart: todayDate(),
       membershipExpiresAt: addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
       reason: "trusted_line_oa_renamed_name",
+      knownCanonicalClient,
     };
   } catch (error) {
-    console.warn({ event: "my_mmd_fast_trust_lookup_failed", failure_class: safeFailure(error) });
-    return { tier: null, reason: "fast_trust_lookup_unavailable" };
+    console.warn({ event: "fast_trust_lookup_error", component: "auth-worker", failure_class: safeFailure(error) });
+    return { tier: null, reason: "fast_trust_lookup_unavailable", lookupUnavailable: true };
   }
+}
+
+export async function notifyImpossibleGuestAlert(env = {}, input = {}) {
+  const secret = String(env.AUTH_SERVICE_AUTH_TO_TELEGRAM || "").trim();
+  const service = env.TELEGRAM_ACCESS_RECONCILER;
+  const chatId = String(env.MY_MMD_ALERT_CHAT_ID || "").trim();
+  const threadId = Number(env.MY_MMD_ALERT_THREAD_ID || 0);
+  if (!secret || !service?.fetch || !chatId) {
+    return { ok: false, reason: "my_mmd_alert_not_configured" };
+  }
+
+  const tier = String(input.tier || "protected").replace(/[^a-z0-9_-]+/gi, "_").slice(0, 40);
+  const route = String(input.route || "").replace(/[\r\n]/g, "").slice(0, 160);
+  const reason = String(input.reason || "").replace(/[^a-z0-9_-]+/gi, "_").slice(0, 80);
+  const text = [
+    "🚨 MY MMD impossible Guest state prevented",
+    "Invariant: LINE verified + protected marker must never resolve to Guest.",
+    `Tier: ${tier || "protected"}`,
+    `Route: ${route || "unknown"}`,
+    `Reason: ${reason || "protected_marker_guest_prevented"}`,
+    "Action: response was recovered automatically; review resolver trace and Fast Trust evidence.",
+  ].join("\n");
+
+  const response = await service.fetch(new Request("https://telegram-worker/telegram/internal/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      flow: MY_MMD_ALERT_FLOW,
+      chat_id: chatId,
+      ...(Number.isInteger(threadId) && threadId > 0 ? { message_thread_id: threadId } : {}),
+      text,
+    }),
+  }));
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.telegram?.ok !== true) {
+    return {
+      ok: false,
+      reason: String(body?.error || body?.telegram?.error || `telegram_http_${response.status}`).slice(0, 160),
+    };
+  }
+  return { ok: true };
 }
 
 async function fastTrustStatusResponse(firstResponse, firstPayload, fastTrust) {
@@ -249,7 +346,7 @@ export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
 
   const memberTable = String(env.AIRTABLE_TABLE_MEMBERS || MEMBER_TABLE);
   const clientTable = String(env.AIRTABLE_TABLE_CLIENTS || CLIENT_TABLE);
-  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || STAGING_TABLE);
+  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || LEGACY_STAGING_TABLE);
   const entitlementTable = String(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || ENTITLEMENT_TABLE);
   const memberLineField = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_id").trim();
   const memberEmailField = String(env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email").trim();
@@ -257,9 +354,20 @@ export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
   const clientEmailFields = csvFields(env.AIRTABLE_CLIENTS_EMAIL_FIELDS || "Contact Email,email");
   const entitlementLineField = String(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || "line_user_id").trim();
   const entitlementEmailField = String(env.AIRTABLE_ENTITLEMENT_MEMBER_EMAIL_FIELD || "member_email").trim();
+  const canonicalStagingSource = resolveFastTrustAirtableSource(env);
+  const canonicalStagingFormula = fastTrustLineFormula(lineId, canonicalStagingSource);
 
   try {
-    const [clients, entitlements, committed] = await Promise.all([
+    const canonicalStagingRead = !canonicalStagingSource.table || !canonicalStagingFormula
+      ? Promise.resolve({ state: "unavailable", records: [] })
+      : airtableList(env, canonicalStagingSource.table, {
+        filterByFormula: canonicalStagingFormula,
+        maxRecords: 20,
+      }).then((records) => ({ state: "resolved", records })).catch((error) => {
+        console.warn({ event: "my_mmd_canonical_staging_link_lookup_failed", failure_class: safeFailure(error) });
+        return { state: "unavailable", records: [] };
+      });
+    const [clients, entitlements, committed, canonicalStaging] = await Promise.all([
       airtableList(env, clientTable, {
         filterByFormula: `{${clientLineField}}=${formulaString(lineId)}`,
         maxRecords: 2,
@@ -272,6 +380,7 @@ export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
         filterByFormula: `AND({line_user_id}=${formulaString(lineId)},{match_type}=${formulaString(COMMITTED_LINE_MATCH_TYPE)},{decision}=${formulaString(COMMITTED_LINE_DECISION)},{review_status}=${formulaString(COMMITTED_LINE_REVIEW_STATUS)})`,
         maxRecords: 3,
       }),
+      canonicalStagingRead,
     ]);
 
     if (clients.length > 1) return { linked: false, reason: "client_line_ambiguous" };
@@ -280,25 +389,35 @@ export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
     if (clients.length === 1) addClientEmails(candidateEmails, clients[0], clientEmailFields);
     for (const entitlement of entitlements) addEmail(candidateEmails, entitlement?.fields?.[entitlementEmailField]);
 
+    const canonicalClientIds = canonicalStagingClientRecordIds(canonicalStaging.records, lineId, canonicalStagingSource);
+    if (canonicalClientIds.invalid) return { linked: false, reason: "canonical_staging_client_invalid" };
+    if (canonicalClientIds.ambiguous) return { linked: false, reason: "canonical_staging_client_ambiguous" };
     const committedClientIds = committedClientRecordIds(committed, lineId);
     if (committedClientIds.ambiguous) return { linked: false, reason: "committed_line_ambiguous" };
-    if (committedClientIds.id) {
-      if (clients[0]?.id && String(clients[0].id) !== committedClientIds.id) {
+    if (canonicalClientIds.id && committedClientIds.id && canonicalClientIds.id !== committedClientIds.id) {
+      return { linked: false, reason: "canonical_staging_client_conflict" };
+    }
+    const linkedClientId = canonicalClientIds.id || committedClientIds.id;
+    if (linkedClientId) {
+      if (clients[0]?.id && String(clients[0].id) !== linkedClientId) {
         return { linked: false, reason: "client_line_conflict" };
       }
       const linkedClients = await airtableList(env, clientTable, {
-        filterByFormula: `RECORD_ID()=${formulaString(committedClientIds.id)}`,
+        filterByFormula: `RECORD_ID()=${formulaString(linkedClientId)}`,
         maxRecords: 2,
       });
-      if (linkedClients.length !== 1 || String(linkedClients[0]?.id || "") !== committedClientIds.id) {
-        return { linked: false, reason: "committed_client_missing" };
+      if (linkedClients.length !== 1 || String(linkedClients[0]?.id || "") !== linkedClientId) {
+        return { linked: false, reason: canonicalClientIds.id ? "canonical_staging_client_missing" : "committed_client_missing" };
       }
       const linkedLine = String(linkedClients[0]?.fields?.[clientLineField] || "").trim();
-      if (linkedLine && linkedLine !== lineId) return { linked: false, reason: "committed_client_line_conflict" };
+      if (linkedLine && linkedLine !== lineId) {
+        return { linked: false, reason: canonicalClientIds.id ? "canonical_staging_client_line_conflict" : "committed_client_line_conflict" };
+      }
       addClientEmails(candidateEmails, linkedClients[0], clientEmailFields);
     }
 
     if (candidateEmails.size !== 1) {
+      if (canonicalStaging.state !== "resolved") return { linked: false, reason: "canonical_staging_unavailable" };
       return { linked: false, reason: candidateEmails.size > 1 ? "canonical_email_ambiguous" : "canonical_email_missing" };
     }
     const email = candidateEmails.values().next().value;
@@ -341,6 +460,35 @@ function committedClientRecordIds(records, lineUserId) {
   }
   if (ids.size > 1) return { id: "", ambiguous: true };
   return { id: ids.values().next().value || "", ambiguous: false };
+}
+
+// The canonical staging projection is already tied to the verified LINE
+// subject. It may supply one exact Client link, which lets us recover the
+// matching Member without falling back to customer-entered identifiers.
+function canonicalStagingClientRecordIds(records, lineUserId, source) {
+  const ids = new Set();
+  let invalid = false;
+  for (const record of Array.isArray(records) ? records : []) {
+    const fields = record?.fields || {};
+    if (String(fields[source?.lineUserIdField] || "").trim() !== lineUserId) continue;
+    const rawLink = fields[source?.canonicalClientField];
+    if (!fastTrustHasCanonicalClient(record, source)) continue;
+    const linked = Array.isArray(rawLink)
+      ? rawLink
+      : Array.isArray(rawLink?.linkedRecordIds)
+        ? rawLink.linkedRecordIds
+        : [rawLink];
+    if (linked.length !== 1) return { id: "", ambiguous: true, invalid: false };
+    const candidate = linked[0] && typeof linked[0] === "object" ? linked[0].id : linked[0];
+    const id = safeRecordId(candidate);
+    if (!id) {
+      invalid = true;
+      continue;
+    }
+    ids.add(id);
+  }
+  if (ids.size > 1) return { id: "", ambiguous: true, invalid: false };
+  return { id: ids.values().next().value || "", ambiguous: false, invalid };
 }
 
 function addClientEmails(set, record, fields) {

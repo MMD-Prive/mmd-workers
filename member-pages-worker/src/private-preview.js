@@ -37,7 +37,7 @@ export async function handlePrivatePreview(request, env = {}) {
     if (!grant.ok) return json({ ok:false, error:{ code:grant.code } }, grant.status);
     // Record ID, rather than a mutable display identifier, is the one-use key.
     const gate = gateStub(env, grant.recordId);
-    const asset = await readAsset(env, grant.mediaRecordId, grant.kind, grant.modelId);
+    const asset = await readAsset(env, grant.mediaRecordId, grant.kind, grant.modelId, grant.accessLane);
 
     if (path.endsWith("/status")) {
       const gateState = await gate.fetch("https://private-preview.internal/status");
@@ -50,6 +50,7 @@ export async function handlePrivatePreview(request, env = {}) {
         consumeOn:grant.kind === "private_pic" ? "open" : "play_start",
         watermark:grant.watermark,
         expiresAt:grant.expiresAt,
+        accessLane:grant.accessLane,
       }});
     }
 
@@ -131,16 +132,21 @@ async function resolveGrant(env, token, clientId) {
   if (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now()) return { ok:false, status:410, code:"PREVIEW_EXPIRED" };
   if (f.view_limit !== 1 || !Number.isInteger(f.view_count) || f.view_count !== 0) return { ok:false, status:410, code:"PREVIEW_CONSUMED" };
   const payload = parse(f.payload_json);
+  const accessLane = payload.access_lane === "private_teaser" ? "private_teaser" : "private_preview";
   const kind = ["private_pic","private_clip"].includes(payload.preview_kind) ? payload.preview_kind : "";
   if (!kind) return { ok:false, status:409, code:"PREVIEW_POLICY_MISSING" };
   const mediaIds = links(f["Media Asset"] || f.media_asset), models = links(f.Model);
   if (mediaIds.length !== 1 || models.length !== 1 || !clean(f.grant_id,160)) return { ok:false, status:409, code:"PREVIEW_POLICY_MISSING" };
-  return { ok:true, recordId:record.id, grantId:clean(f.grant_id,160), kind, expiresAt, watermark:clean(f.watermark_code,120), mediaRecordId:mediaIds[0], modelId:models[0] };
+  return { ok:true, recordId:record.id, grantId:clean(f.grant_id,160), kind, expiresAt, watermark:clean(f.watermark_code,120), mediaRecordId:mediaIds[0], modelId:models[0], accessLane };
 }
-async function readAsset(env, id, kind, modelId) {
+async function readAsset(env, id, kind, modelId, accessLane = "private_preview") {
   const record = await get(env, env.AIRTABLE_TABLE_MODEL_MEDIA_ASSETS || env.AIRTABLE_TABLE_MODEL_MEDIA || DEFAULT_MEDIA, id);
   const f = record?.fields || {};
   if (links(f.Model).length !== 1 || f.Model[0] !== modelId) throw new Error("media_model_mismatch");
+  if (accessLane === "private_teaser") {
+    if (f.review_status !== "approved" || f.teaser_safe !== true) throw new Error("teaser_media_not_approved");
+    return assertPrivateObject(env, record, false, kind);
+  }
   return assertPrivateObject(env, record, true, kind);
 }
 async function markConsumed(env, id) {
@@ -156,7 +162,7 @@ async function logConsumption(env, grant, clientId, mediaSha256) {
   const id = `consumption_${crypto.randomUUID()}`;
   const response = await airtable(env, env.AIRTABLE_TABLE_PRIVATE_MEDIA_CONSUMPTION_LOG || "tblcjjCW0pXvlhNQQ", "", {
     method:"POST", headers:{"content-type":"application/json"},
-    body:JSON.stringify({fields:{consumption_id:id,Grant:[grant.recordId],"Media Asset":[grant.mediaRecordId],Client:[clientId],Model:[grant.modelId],media_kind:grant.kind,outcome:"consumed",consumed_at:new Date().toISOString(),duration_sec:grant.kind === "private_pic" ? 3 : 0,reason:"consumed_before_delivery",payload_json:JSON.stringify({media_sha256:mediaSha256,gate:"durable_one_use_v1"})},typecast:false}),
+    body:JSON.stringify({fields:{consumption_id:id,Grant:[grant.recordId],"Media Asset":[grant.mediaRecordId],Client:[clientId],Model:[grant.modelId],media_kind:grant.kind,outcome:"consumed",consumed_at:new Date().toISOString(),duration_sec:grant.kind === "private_pic" ? 3 : 0,reason:"consumed_before_delivery",payload_json:JSON.stringify({media_sha256:mediaSha256,gate:"durable_one_use_v1",access_lane:grant.accessLane})},typecast:false}),
   });
   if (!response.ok) throw new Error("consumption_audit_failed");
   const result = await response.json();

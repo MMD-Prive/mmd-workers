@@ -23,12 +23,16 @@ assert.ok(
   "active worker must import Per Rename enrichment",
 );
 assert.ok(
-  activeWorker.includes("response = await enrichLineageWithPerRename(perRenameRequest, response, env)"),
-  "active worker must run Per Rename enrichment after the canonical lineage response",
+  activeWorker.includes("response = await enrichLineageWithPerRename(perRenameRequest, response, runtimeEnv)"),
+  "active worker must run Per Rename enrichment after the canonical lineage response using the canonical runtime env",
 );
 assert.ok(
   activeWorker.includes('const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup"'),
   "active worker must keep lineage lookup path explicit",
+);
+assert.ok(
+  activeWorker.includes("const runtimeEnv = modelMoneyRuntimeEnv(env)"),
+  "active worker must derive one canonical runtime env before delegated handlers",
 );
 assert.ok(
   legacyWrapper.includes('export { default } from "./admin-login-hero-worker.js"'),

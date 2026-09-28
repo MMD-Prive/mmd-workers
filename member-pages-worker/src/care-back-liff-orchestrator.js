@@ -114,9 +114,8 @@ export async function handleCanonicalCareBackLinkWish(request, env = {}, ctx, de
   const session = await readVerifiedMemberSession(request, env);
   if (!session.ok) return session.response;
 
-  // A verified customer without a Member row can link a saved Wish for the
-  // customer wall. A verified LINE identity can claim the personal CARE BACK
-  // coupon immediately; membership evaluation remains separate.
+  // A verified LINE identity without a Member row can link the saved Wish for
+  // recovery, but the Wish stays private and no member coupon is issued.
   if (!session.memberId) {
     return (deps.linkWishHandler || handleLinkWish)(request, env);
   }
@@ -370,7 +369,7 @@ function validWishLinkToken(value) {
 
 function safeCouponState(value) {
   const state = String(value || "").trim();
-  return ["ready", "wish_required", "renewal_required", "verification_required", "used", "expired", "revoked", "invalid"].includes(state)
+  return ["ready", "wish_required", "renewal_required", "verification_required", "not_eligible", "used", "expired", "revoked", "invalid"].includes(state)
     ? state
     : "verification_required";
 }

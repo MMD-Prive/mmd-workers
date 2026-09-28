@@ -1,0 +1,323 @@
+<section
+  id="sigil-pay-v21"
+  data-sigil-pay-v21
+  data-api-base="https://sigil.mmdbkk.com"
+  data-details-path="/v1/confirm/details"
+  data-instructions-path="/v1/confirm/payment-instructions"
+  data-proof-path="/v1/pay/slip/evidence"
+  data-payments-url="/member/payments"
+  data-help-url="https://lin.ee/xRqsALs"
+  aria-busy="true"
+>
+  <div class="sp21__shell">
+    <header class="sp21__topbar">
+      <a class="sp21__brand" href="/my-mmd/" aria-label="กลับ My MMD">
+        <span class="sp21__mark" aria-hidden="true">M</span>
+        <span class="sp21__brand-copy">
+          <strong>SĪGIL</strong>
+          <small>MMD Privé · Private Payment</small>
+        </span>
+      </a>
+      <span class="sp21__private">PRIVATE</span>
+    </header>
+
+    <section class="sp21__state" data-sp21-loading aria-live="polite">
+      <span class="sp21__spinner" aria-hidden="true"></span>
+      <div>
+        <strong>กำลังเปิดรายละเอียดรายการครับ</strong>
+        <p>MMD กำลังเตรียมยอด รายละเอียดงาน และช่องทางชำระเงินให้ตรงกับรายการนี้</p>
+      </div>
+    </section>
+
+    <section class="sp21__state sp21__state--error" data-sp21-error hidden aria-live="assertive">
+      <span class="sp21__state-icon" aria-hidden="true">!</span>
+      <div>
+        <strong data-sp21-error-title>เปิดรายการนี้ไม่ได้ครับ</strong>
+        <p data-sp21-error-message>กรุณาเปิดจากลิงก์ล่าสุดที่ MMD ส่งให้</p>
+        <div class="sp21__state-actions">
+          <button type="button" class="sp21__btn sp21__btn--ghost" data-sp21-retry>ลองอีกครั้ง</button>
+          <a class="sp21__btn sp21__btn--ghost" href="https://lin.ee/xRqsALs">ติดต่อ MMD</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="sp21__content" data-sp21-content hidden>
+      <section class="sp21__summary" aria-labelledby="sp21-title">
+        <div class="sp21__summary-head">
+          <div>
+            <p class="sp21__eyebrow">MMD · PRIVATE PAYMENT</p>
+            <h1 class="sp21__title" id="sp21-title">ตรวจรายการ แล้วเลือกวิธีชำระได้เลยครับ</h1>
+          </div>
+          <span class="sp21__status" data-sp21-status>รอการชำระเงิน</span>
+        </div>
+
+        <div class="sp21__amount-wrap">
+          <p class="sp21__amount-label">ยอดที่ชำระครั้งนี้</p>
+          <div class="sp21__amount">
+            <span class="sp21__currency">฿</span>
+            <strong data-sp21-amount>—</strong>
+          </div>
+          <p class="sp21__stage" data-sp21-stage>ยอดที่ต้องชำระ</p>
+        </div>
+
+        <div class="sp21__summary-bottom">
+          <p>เช็ก Model · วันเวลา · สถานที่ · ยอด ก่อนชำระครับ</p>
+          <a href="#sp21-payment">เลือกช่องทาง ↓</a>
+        </div>
+      </section>
+
+      <section class="sp21__card" id="sp21-details">
+        <div class="sp21__section-head">
+          <div>
+            <p class="sp21__kicker">01 · DETAILS</p>
+            <h2>รายละเอียดรายการ</h2>
+          </div>
+        </div>
+        <p class="sp21__body">ข้อมูลด้านล่างผูกกับรายการนี้โดยตรง หากมีจุดไหนไม่ตรง ทัก MMD ก่อนชำระได้เลยครับ</p>
+
+        <div class="sp21__model">
+          <span class="sp21__avatar" data-sp21-model-initial>M</span>
+          <div class="sp21__model-copy">
+            <small>MODEL</small>
+            <strong data-sp21-model>MMD กำลังยืนยัน</strong>
+            <p data-sp21-service>Private Session</p>
+          </div>
+        </div>
+
+        <dl class="sp21__facts">
+          <div class="sp21__fact">
+            <dt>ลูกค้า</dt>
+            <dd data-sp21-client>MMD กำลังยืนยัน</dd>
+          </div>
+          <div class="sp21__fact">
+            <dt>วันที่</dt>
+            <dd data-sp21-date>MMD กำลังยืนยัน</dd>
+          </div>
+          <div class="sp21__fact">
+            <dt>เวลา</dt>
+            <dd data-sp21-time>MMD กำลังยืนยัน</dd>
+          </div>
+          <div class="sp21__fact">
+            <dt>สถานที่</dt>
+            <dd>
+              <span data-sp21-location>MMD กำลังยืนยัน</span>
+              <a data-sp21-map href="#" target="_blank" rel="noopener noreferrer" hidden>เปิดแผนที่ ↗</a>
+            </dd>
+          </div>
+        </dl>
+
+        <div class="sp21__pricing">
+          <div class="sp21__price" data-sp21-full-row hidden>
+            <span>ราคาปกติ</span>
+            <del data-sp21-full>—</del>
+          </div>
+          <div class="sp21__price" data-sp21-discount-row hidden>
+            <span>ส่วนลด</span>
+            <strong class="sp21__gold" data-sp21-discount>—</strong>
+          </div>
+          <div class="sp21__price">
+            <span>ราคาที่ตกลง</span>
+            <strong data-sp21-net>—</strong>
+          </div>
+          <div class="sp21__price sp21__price--accent">
+            <span>ชำระครั้งนี้</span>
+            <strong data-sp21-due>—</strong>
+          </div>
+          <div class="sp21__price" data-sp21-balance-row hidden>
+            <span>คงเหลือหลังยอดนี้</span>
+            <strong data-sp21-balance>—</strong>
+          </div>
+        </div>
+
+        <details class="sp21__refs">
+          <summary>ดูเลขอ้างอิงรายการ</summary>
+          <div>
+            <code data-sp21-payment-ref>—</code>
+            <code data-sp21-session-id>—</code>
+          </div>
+        </details>
+      </section>
+
+      <section class="sp21__card" id="sp21-payment">
+        <div class="sp21__section-head">
+          <div>
+            <p class="sp21__kicker">02 · PAYMENT</p>
+            <h2>เลือกช่องทางชำระเงิน</h2>
+          </div>
+        </div>
+        <p class="sp21__body">เลือก QR, โอนธนาคาร หรือบัตรได้จากรายการเดียวกันครับ</p>
+
+        <div class="sp21__methods-state" data-sp21-method-state aria-live="polite">
+          <span class="sp21__mini-spinner" aria-hidden="true"></span>
+          <span>กำลังเตรียม 3 ช่องทางชำระเงินครับ</span>
+        </div>
+
+        <div class="sp21__methods" role="tablist" aria-label="ช่องทางชำระเงิน" data-sp21-tabs hidden>
+          <button type="button" class="sp21__method" role="tab" data-sp21-method="promptpay" aria-selected="false">
+            <span class="sp21__method-icon">QR</span>
+            <span class="sp21__method-copy">
+              <strong>QR PromptPay</strong>
+              <small>สแกนจากแอปธนาคาร</small>
+            </span>
+            <i class="sp21__chev">›</i>
+          </button>
+
+          <button type="button" class="sp21__method" role="tab" data-sp21-method="bank_transfer" aria-selected="false">
+            <span class="sp21__method-icon">BK</span>
+            <span class="sp21__method-copy">
+              <strong>โอนธนาคาร</strong>
+              <small>ดูข้อมูลบัญชีเมื่อพร้อมโอน</small>
+            </span>
+            <i class="sp21__chev">›</i>
+          </button>
+
+          <button type="button" class="sp21__method" role="tab" data-sp21-method="paypal_card" aria-selected="false">
+            <span class="sp21__method-icon">CC</span>
+            <span class="sp21__method-copy">
+              <strong>Credit / Debit Card</strong>
+              <small>PayPal · ค่าดำเนินการตามระบบ</small>
+            </span>
+            <i class="sp21__chev">›</i>
+          </button>
+        </div>
+
+        <div class="sp21__panel" data-sp21-panel="promptpay" role="tabpanel" hidden>
+          <div class="sp21__panel-head">
+            <div>
+              <small>PROMPTPAY</small>
+              <strong>สแกน QR สำหรับยอดนี้</strong>
+            </div>
+            <span class="sp21__badge">แนะนำ</span>
+          </div>
+          <div class="sp21__qr">
+            <img data-sp21-qr src="" alt="PromptPay QR สำหรับรายการนี้" hidden>
+            <div class="sp21__qr-fallback" data-sp21-qr-fallback hidden>
+              <small>PromptPay</small>
+              <strong data-sp21-promptpay-ref>—</strong>
+            </div>
+            <div class="sp21__qr-ref">
+              พร้อมเพย์ <strong data-sp21-promptpay-ref-inline>—</strong>
+            </div>
+          </div>
+          <p class="sp21__hint">เช็กยอดในแอปธนาคารให้ตรงกับ “ยอดที่ชำระครั้งนี้” ก่อนยืนยันครับ</p>
+        </div>
+
+        <div class="sp21__panel" data-sp21-panel="bank_transfer" role="tabpanel" hidden>
+          <div class="sp21__panel-head">
+            <div>
+              <small>BANK TRANSFER</small>
+              <strong data-sp21-bank-name>โอนเข้าบัญชีธนาคาร</strong>
+            </div>
+          </div>
+          <div class="sp21__bank">
+            <div class="sp21__bank-row">
+              <span>ชื่อบัญชี</span>
+              <strong data-sp21-account-name>—</strong>
+            </div>
+            <div class="sp21__bank-row">
+              <span>เลขบัญชี</span>
+              <strong data-sp21-account-number>••••••••••</strong>
+            </div>
+          </div>
+          <div class="sp21__actions">
+            <button type="button" class="sp21__btn sp21__btn--ghost" data-sp21-bank-reveal>ดูเลขบัญชี</button>
+            <button type="button" class="sp21__btn sp21__btn--ghost" data-sp21-bank-copy disabled>คัดลอกเลขบัญชี</button>
+          </div>
+        </div>
+
+        <div class="sp21__panel" data-sp21-panel="paypal_card" role="tabpanel" hidden>
+          <div class="sp21__panel-head">
+            <div>
+              <small>CREDIT / DEBIT CARD</small>
+              <strong>ชำระผ่าน PayPal</strong>
+            </div>
+            <span class="sp21__badge" data-sp21-card-rate>+4%</span>
+          </div>
+          <div class="sp21__fee">
+            <div class="sp21__fee-row">
+              <span>ยอดบริการ</span>
+              <strong data-sp21-card-base>—</strong>
+            </div>
+            <div class="sp21__fee-row">
+              <span>ค่าดำเนินการบัตร</span>
+              <strong data-sp21-card-fee>—</strong>
+            </div>
+            <div class="sp21__fee-row sp21__fee-row--total">
+              <span>ยอดชำระผ่านบัตร</span>
+              <strong data-sp21-card-total>—</strong>
+            </div>
+          </div>
+          <p class="sp21__hint">ค่าดำเนินการบัตรคิดแยกจากค่าบริการ และยอดรวมจะแสดงก่อนกดไป PayPal ครับ</p>
+          <a class="sp21__btn sp21__btn--gold sp21__btn--wide" data-sp21-paypal href="#" target="_blank" rel="noopener noreferrer">ชำระด้วยบัตร / PayPal ↗</a>
+        </div>
+      </section>
+
+      <section class="sp21__card" id="sp21-proof">
+        <div class="sp21__section-head">
+          <div>
+            <p class="sp21__kicker">03 · PAYMENT PROOF</p>
+            <h2>ชำระแล้ว ส่งสลิปที่นี่ครับ</h2>
+          </div>
+        </div>
+        <p class="sp21__body">ส่งครั้งเดียวพอครับ MMD จะผูกหลักฐานกับรายการนี้ และสถานะจะเป็น “กำลังตรวจสอบ” จนกว่าจะยืนยันยอดเรียบร้อย</p>
+
+        <div data-sp21-proof-form>
+          <label class="sp21__upload" for="sp21-file">
+            <input id="sp21-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-sp21-file>
+            <span class="sp21__upload-plus">＋</span>
+            <strong>เลือกสลิป</strong>
+            <small>JPG · PNG · WEBP · PDF / ไม่เกิน 10 MB</small>
+          </label>
+
+          <div class="sp21__file" data-sp21-file-card hidden>
+            <div class="sp21__preview" data-sp21-preview>FILE</div>
+            <div class="sp21__file-copy">
+              <strong data-sp21-file-name>—</strong>
+              <small data-sp21-file-size>—</small>
+            </div>
+            <button type="button" data-sp21-file-remove>เปลี่ยน</button>
+          </div>
+
+          <label class="sp21__field">
+            <span>หมายเหตุเพิ่มเติม <em>ไม่บังคับ</em></span>
+            <textarea rows="3" maxlength="500" placeholder="เช่น โอนจากชื่อบัญชีอื่น" data-sp21-note></textarea>
+          </label>
+
+          <label class="sp21__consent">
+            <input type="checkbox" data-sp21-consent>
+            <span>ตรวจสอบยอดแล้ว และส่งหลักฐานนี้ให้ MMD ใช้ตรวจสอบการชำระเงิน</span>
+          </label>
+
+          <button type="button" class="sp21__btn sp21__btn--gold sp21__btn--wide" data-sp21-submit disabled>
+            <span data-sp21-submit-label>ส่งสลิปให้ MMD</span>
+          </button>
+          <p class="sp21__submit-status" data-sp21-submit-status aria-live="polite"></p>
+        </div>
+
+        <div class="sp21__proof-state" data-sp21-proof-state hidden></div>
+      </section>
+
+      <div class="sp21__after">
+        <section class="sp21__after-card">
+          <div>
+            <strong>ติดตามสถานะต่อใน My MMD</strong>
+            <small>หลังส่งสลิปแล้ว ไม่ต้องส่งซ้ำครับ</small>
+          </div>
+          <a href="/member/payments">ดูสถานะ ↗</a>
+        </section>
+        <section class="sp21__after-card">
+          <div>
+            <strong>อยากให้ MMD ช่วยเช็กก่อนชำระ</strong>
+            <small>ส่งข้อความหาเราได้จาก LINE</small>
+          </div>
+          <a href="https://lin.ee/xRqsALs">LINE ↗</a>
+        </section>
+      </div>
+
+      <footer class="sp21__footer">
+        <strong>SĪGIL</strong>
+        <span>MMD verifies every payment before confirmation.</span>
+      </footer>
+    </div>
+  </div>
+</section>

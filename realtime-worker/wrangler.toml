@@ -2,8 +2,10 @@ name = "realtime-worker"
 main = "src/index.js"
 compatibility_date = "2026-01-27"
 
-# Implementation owner is intentionally workers.dev-only until /v1/rt/* custom-host
-# route acceptance is explicitly proven. Do not add mmdbkk.com routes here casually.
+# Phase 1 route-owner lock: realtime-worker is the canonical production owner
+# for /v1/rt/*. Custom-host routes are synchronized by the deploy workflow
+# through the dedicated zone Routes API so Worker code deploy credentials do
+# not need zone-route mutation permission.
 workers_dev = true
 # preview_urls = false
 

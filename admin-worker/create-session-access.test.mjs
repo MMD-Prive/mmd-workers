@@ -17,6 +17,46 @@ const env = {
   AIRTABLE_TABLE_CLIENTS: "clients",
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_ACCESS_LOG: "access_log",
+  AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE: "fast_trust_staging",
+  MODEL_DRIVE_DIRECTORY: {
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/__internal/model-drive/search") {
+        const q = String(url.searchParams.get("q") || "").toLowerCase();
+        if (q.includes("film j")) {
+          return jsonResponse({
+            ok: true,
+            items: [{
+              drive_folder_id: "1FilmJDriveFolder001",
+              drive_folder_url: "https://drive.google.com/drive/folders/1FilmJDriveFolder001",
+              folder_name: "Film J",
+              folder_path: "MMD Public Models/MMD Travel Models/Straight/Film J",
+              folder_scope_key: "public:travel:straight:film-j",
+              lane: "public",
+            }],
+          });
+        }
+        return jsonResponse({ ok: true, items: [] });
+      }
+      if (url.pathname === "/__internal/model-drive/resolve") {
+        const body = await request.json();
+        if (body.drive_folder_id === "1FilmJDriveFolder001") {
+          return jsonResponse({
+            ok: true,
+            item: {
+              drive_folder_id: "1FilmJDriveFolder001",
+              drive_folder_url: "https://drive.google.com/drive/folders/1FilmJDriveFolder001",
+              folder_name: "Film J",
+              folder_path: "MMD Public Models/MMD Travel Models/Straight/Film J",
+              folder_scope_key: "public:travel:straight:film-j",
+              lane: "public",
+            },
+          });
+        }
+      }
+      return jsonResponse({ ok: false, error: "not_found" }, 404);
+    },
+  },
 };
 
 const future = "2099-01-01";
@@ -32,6 +72,20 @@ const tables = {
         "MMD — Member Entitlements": ["recEntSvip000001XX"],
       },
     },
+    {
+      id: "recClientFastSvip01",
+      fields: {
+        "Client Name": "PM",
+        line_user_id: "U61cd65864c63533673f67a6e6e6ed407",
+      },
+    },
+    {
+      id: "recClientFastMismatch01",
+      fields: {
+        "Client Name": "Mismatch",
+        line_user_id: "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+    },
   ],
   members: [
     member("recMemStandard0001", "client_standard", "mem_standard", "standard@example.test"),
@@ -45,6 +99,24 @@ const tables = {
   ],
   member_entitlements: [
     entitlement("recEntSvip000001XX", "mem_svip", "svip", future),
+  ],
+  fast_trust_staging: [
+    {
+      id: "recFastTrustPee001",
+      fields: {
+        "LINE User ID": "U61cd65864c63533673f67a6e6e6ed407",
+        "Current LINE Rename": "พี - SVIP -",
+        "Canonical Client": ["recClientFastSvip01"],
+      },
+    },
+    {
+      id: "recFastTrustMismatch",
+      fields: {
+        "LINE User ID": "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "Current LINE Rename": "Mismatch - SVIP -",
+        "Canonical Client": ["recSomeOtherClient01"],
+      },
+    },
   ],
   member_packages: [
     pkg("recPkgStandard001", "standard@example.test", "Standard", future),
@@ -161,13 +233,21 @@ function model(id, name, accessFolder, lane) {
 
 function installAirtableMock() {
   const calls = [];
-  globalThis.fetch = async (input) => {
+  let createdModelSeq = 0;
+  globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     calls.push(url);
     const parts = url.pathname.split("/").filter(Boolean);
     const table = decodeURIComponent(parts[2] || "");
     const id = parts[3] ? decodeURIComponent(parts[3]) : "";
     const records = tables[table] || [];
+
+    if ((init.method || "GET").toUpperCase() === "POST") {
+      const payload = JSON.parse(String(init.body || "{}"));
+      const record = { id: `recCreatedDrive${String(++createdModelSeq).padStart(6, "0")}`, fields: payload.fields || {} };
+      records.push(record);
+      return jsonResponse(record, 200);
+    }
 
     if (id) {
       const record = records.find((item) => item.id === id);
@@ -182,17 +262,20 @@ function installAirtableMock() {
 }
 
 function formulaMatches(fields, formula) {
-  const search = formula.match(/SEARCH\("([^"]*)",\s*\{([^}]+)\}/i);
-  if (search) {
-    const needle = String(search[1] || "").toLowerCase();
-    const field = String(search[2] || "");
-    return String(fields[field] ?? "").toLowerCase().includes(needle);
+  const searches = [...formula.matchAll(/SEARCH\("([^"]*)",\s*\{([^}]+)\}/gi)];
+  if (searches.length) {
+    return searches.some(([, needle, field]) =>
+      String(fields[String(field || "")] ?? "").toLowerCase().includes(String(needle || "").toLowerCase())
+    );
   }
-  const equals = [...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g)];
+  const equals = [
+    ...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g),
+    ...formula.matchAll(/\{([^}]+)\}=\s*'([^']*)'/g),
+  ];
   if (equals.length > 1 || /^AND\(/i.test(formula)) {
     return equals.every(([, field, value]) => String(fields[field] ?? "") === value);
   }
-  const value = (formula.match(/=\s*"([^"]*)"/) || [])[1] || "";
+  const value = (formula.match(/=\s*"([^"]*)"/) || formula.match(/=\s*'([^']*)'/) || [])[1] || "";
   const field = (formula.match(/\{([^}]+)\}/) || [])[1] || "";
   if (!field) return true;
   const actual = String(fields[field] ?? "");
@@ -267,6 +350,29 @@ assert.equal(svipByCanonicalClient.tier, "black_card");
 assert.equal(svipByCanonicalClient.entitlement_authority, "my_mmd_entitlement_resolver_v1");
 assert.equal(svipByCanonicalClient.canonical_client_record_id, "recClientQue00001");
 assert.deepEqual(svipByCanonicalClient.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+const fastTrustSvip = await resolveAuthoritativeMemberAccess(env, { client_id: "recClientFastSvip01" });
+assert.equal(fastTrustSvip.resolved, true);
+assert.equal(fastTrustSvip.tier, "black_card");
+assert.equal(fastTrustSvip.package_code, "svip");
+assert.equal(fastTrustSvip.fast_trust, true);
+assert.equal(fastTrustSvip.entitlement_recovery_source, "line_oa_renamed_name_fast_trust");
+assert.equal(fastTrustSvip.canonical_client_record_id, "recClientFastSvip01");
+assert.deepEqual(fastTrustSvip.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+{
+  const fastTrustCreate = await enforcePrivateCreateAccess(
+    env,
+    privateBody("recClientFastSvip01", "premium", "recPremiumModel001"),
+  );
+  assert.equal(fastTrustCreate.memberAccess.fast_trust, true);
+  assert.equal(fastTrustCreate.memberAccess.package_code, "svip");
+  assert.equal(fastTrustCreate.ownerJobGrant, null);
+}
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("recClientFastMismatch01", "premium", "recPremiumModel001")),
+  "AUTHORITATIVE_MEMBER_NOT_FOUND",
+);
 
 await rejectsWithCode(
   enforcePrivateCreateAccess(env, privateBody("client_standard", "premium", "recPremiumModel001", { forgedAccessLevel: "black_card" })),
@@ -363,6 +469,17 @@ assert.equal((await routeRes.json()).ok, true);
 
 const publicSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&selected_access_folder=travel"));
 assert.deepEqual(publicSearch.items.map((item) => item.model_name), ["Public Travel"]);
+
+const publicDriveSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&booking_visibility=public&customer_lane=straight&selected_access_folder=travel&q=Film%20J"));
+assert.equal(publicDriveSearch.layer, "owner_discovery");
+assert.equal(publicDriveSearch.owner_discovery, true);
+assert.deepEqual(publicDriveSearch.items.map((item) => item.model_name), ["Film J"]);
+assert.deepEqual(publicDriveSearch.items[0].folders, ["travel"]);
+assert.equal(publicDriveSearch.items[0].orientation, "straight");
+assert.equal(publicDriveSearch.items[0].drive_materialized, true);
+
+const publicDriveSearchAgain = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&booking_visibility=public&customer_lane=straight&selected_access_folder=travel&q=film%20j"));
+assert.deepEqual(publicDriveSearchAgain.items.map((item) => item.model_name), ["Film J"]);
 
 {
   const result = await enforcePrivateCreateAccess(

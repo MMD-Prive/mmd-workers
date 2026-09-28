@@ -15,6 +15,7 @@ const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const DEFAULT_ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const DEFAULT_CREDITS_TABLE = "tblKvhl2zZm9yYBmT";
 const BANGKOK_TZ = "Asia/Bangkok";
+const STANDARD_BOOKING_MIN_DURATION_HOURS = 1.5;
 
 const CREDIT = Object.freeze({
   originalAmount: "fldTEoh5lolc9xn9y",
@@ -134,6 +135,7 @@ async function airtableList(env, table, { formula = "", maxRecords = 100, return
 
 function canonicalClientProjection(record = {}, fallback = {}) {
   const fields = record?.fields || {};
+  const gender = explicitCanonicalCustomerGender(fields);
   return {
     canonical_client_id: recId(record?.id || fallback.client_id),
     display_name: firstText(
@@ -148,9 +150,52 @@ function canonicalClientProjection(record = {}, fallback = {}) {
     email: normalizeEmail(firstText(fallback.member_email, fields["Contact Email"], fields.email)),
     line_user_id: lineId(firstText(fallback.line_user_id, fields.line_user_id, fields["LINE User ID"])),
     telegram_user_id: telegramId(firstText(fallback.telegram_user_id, fields.telegram_user_id, fields["Telegram User ID"])),
+    customer_gender: gender.value,
+    customer_gender_source: gender.source,
     per_rename: firstText(fallback.per_rename, fallback.remembered_name),
     source: fallback.per_rename_authoritative === true ? "per_rename_authoritative" : "canonical_client",
   };
+}
+
+function explicitCanonicalCustomerGender(fields = {}) {
+  const directCandidates = [
+    fields["Customer Gender"],
+    fields["Client Gender"],
+    fields["Gender"],
+    fields.gender,
+    fields["Sex"],
+    fields.sex,
+    fields["เพศ"],
+  ];
+  for (const candidate of directCandidates) {
+    const normalized = normalizeCustomerGender(candidate);
+    if (normalized) return { value: normalized, source: "canonical_field" };
+  }
+
+  const note = firstText(
+    fields["LINE OFC Notes"],
+    fields["Client Notes"],
+    fields["Notes"],
+    fields.notes,
+  );
+  if (note) {
+    const match = note.match(/(?:^|\n)\s*(?:gender|sex|เพศ)\s*[:=]\s*([^\n,;|]+)/i);
+    const normalized = normalizeCustomerGender(match?.[1]);
+    if (normalized) return { value: normalized, source: "explicit_labeled_note" };
+  }
+
+  return { value: "unknown", source: "not_recorded" };
+}
+
+function normalizeCustomerGender(value) {
+  const raw = clean(value, 80).normalize("NFKC").toLowerCase().replace(/\s+/g, " ");
+  if (!raw) return "";
+  if (["male", "man", "m", "ชาย", "ผู้ชาย"].includes(raw)) return "male";
+  if (["female", "woman", "f", "หญิง", "ผู้หญิง"].includes(raw)) return "female";
+  if (["nonbinary", "non-binary", "non binary", "nb", "นอนไบนารี"].includes(raw)) return "nonbinary";
+  if (["other", "อื่น", "อื่นๆ"].includes(raw)) return "other";
+  if (["prefer not to say", "prefer_not_to_say", "ไม่ระบุ", "ไม่ประสงค์ระบุ"].includes(raw)) return "prefer_not_to_say";
+  return "";
 }
 
 export async function resolveLiveCanonicalClient(env = {}, input = {}) {
@@ -161,14 +206,36 @@ export async function resolveLiveCanonicalClient(env = {}, input = {}) {
     return { status: "resolved", client: canonicalClientProjection(record, input) };
   }
 
-  const query = firstText(input.per_rename, input.client_query, input.display_name, input.line_user_id, input.line_display_name);
+  const stableTelegramUserId = telegramId(input.telegram_user_id);
+  if (stableTelegramUserId) {
+    const table = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS, 120) || DEFAULT_CLIENTS_TABLE;
+    const records = await airtableList(env, table, {
+      formula: `AND({telegram_user_id}="${escapeFormula(stableTelegramUserId)}",LOWER({telegram_verification_status}&"")="verified")`,
+      maxRecords: 2,
+    });
+    if (records.length === 1) {
+      return {
+        status: "resolved",
+        client: canonicalClientProjection(records[0], { ...input, telegram_user_id: stableTelegramUserId }),
+      };
+    }
+    if (records.length > 1) return { status: "unresolved", reason: "telegram_identity_conflict" };
+    return { status: "unresolved", reason: "telegram_identity_not_linked" };
+  }
+
+  const stableLineUserId = lineId(input.line_user_id);
+  const query = firstText(input.per_rename, input.client_query, input.display_name, stableLineUserId, input.line_display_name);
   if (!query) return { status: "unresolved", reason: "identity_input_required" };
 
-  const resolved = await resolvePerRenameAlias(env, query);
+  const resolved = await resolvePerRenameAlias(env, query, { line_user_id: stableLineUserId });
   if (resolved.state !== "resolved" || !resolved.record?.client_id) {
     return {
       status: "unresolved",
-      reason: resolved.state === "multiple" ? "per_rename_multiple_clients" : resolved.state === "ambiguous" ? "per_rename_ambiguous" : "per_rename_not_resolved",
+      reason: resolved.state === "multiple"
+        ? "per_rename_multiple_clients"
+        : resolved.state === "ambiguous"
+          ? (resolved.reason || "per_rename_ambiguous")
+          : "per_rename_not_resolved",
       choices: Array.isArray(resolved.records) ? resolved.records.slice(0, 12).map((item) => ({ client_id: recId(item.client_id), display_name: clean(item.client_name, 120) })) : [],
     };
   }
@@ -290,20 +357,47 @@ function bangkokDate(input = {}) {
 }
 
 function endAtFromIntent(input = {}) {
-  const direct = clean(input.end_at, 80);
-  if (direct) return direct;
   const date = clean(input.date || input.date_label, 10);
   const start = clean(input.time || input.time_label, 5);
+  const startAt = clean(input.start_at, 80);
+  const startMs = Number.isFinite(Date.parse(startAt))
+    ? Date.parse(startAt)
+    : (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(start)
+      ? Date.parse(`${date}T${start}:00+07:00`)
+      : NaN);
+  const suppliedDuration = number(input.duration_hours, 0);
+  const minimumDurationHours = Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, suppliedDuration || 0);
+  const minimumEndMs = Number.isFinite(startMs)
+    ? startMs + Math.round(minimumDurationHours * 60 * 60 * 1000)
+    : NaN;
+
+  const direct = clean(input.end_at, 80);
+  if (direct) {
+    const directMs = Date.parse(direct);
+    if (Number.isFinite(startMs) && Number.isFinite(directMs) && directMs - startMs < STANDARD_BOOKING_MIN_DURATION_HOURS * 60 * 60 * 1000) {
+      return new Date(minimumEndMs).toISOString();
+    }
+    return direct;
+  }
+
   const end = clean(input.end_time, 5);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(end)) return "";
-  const startMinutes = /^\d{2}:\d{2}$/.test(start) ? Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) : -1;
-  const endMinutes = Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5));
-  const base = new Date(`${date}T12:00:00+07:00`);
-  if (startMinutes >= 0 && endMinutes <= startMinutes) base.setUTCDate(base.getUTCDate() + 1);
-  const endDate = new Intl.DateTimeFormat("en-CA", {
-    timeZone: BANGKOK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(base);
-  return `${endDate}T${end}:00+07:00`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(end)) {
+    const startMinutes = /^\d{2}:\d{2}$/.test(start) ? Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) : -1;
+    const endMinutes = Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5));
+    let spanMinutes = startMinutes >= 0 ? endMinutes - startMinutes : 0;
+    if (startMinutes >= 0 && spanMinutes <= 0) spanMinutes += 24 * 60;
+    if (startMinutes >= 0 && spanMinutes < STANDARD_BOOKING_MIN_DURATION_HOURS * 60 && Number.isFinite(minimumEndMs)) {
+      return new Date(minimumEndMs).toISOString();
+    }
+    const base = new Date(`${date}T12:00:00+07:00`);
+    if (startMinutes >= 0 && endMinutes <= startMinutes) base.setUTCDate(base.getUTCDate() + 1);
+    const endDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: BANGKOK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(base);
+    return `${endDate}T${end}:00+07:00`;
+  }
+
+  return Number.isFinite(minimumEndMs) ? new Date(minimumEndMs).toISOString() : "";
 }
 
 function normalizeIntent(input = {}) {
@@ -319,7 +413,14 @@ function normalizeIntent(input = {}) {
     start_at: clean(input.start_at, 80),
     end_at: endAtFromIntent(input),
     end_time: clean(input.end_time, 40),
-    duration_hours: number(input.duration_hours, 0),
+    duration_hours: (clean(input.time || input.time_label, 40) || clean(input.start_at, 80))
+      ? Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, number(input.duration_hours, 0) || 0)
+      : number(input.duration_hours, 0),
+    duration_source: (clean(input.time || input.time_label, 40) || clean(input.start_at, 80))
+      && !clean(input.end_time || input.end_at, 80)
+      && number(input.duration_hours, 0) < STANDARD_BOOKING_MIN_DURATION_HOURS
+      ? (number(input.duration_hours, 0) > 0 ? "mmd_standard_minimum_90m_floor" : "mmd_standard_minimum_90m_default")
+      : clean(input.duration_source, 80),
     location: clean(input.location || input.location_area || input.zone, 160),
     amount_thb: number(input.amount_thb, 0),
     deposit_amount_thb: number(input.deposit_amount_thb, 0),
@@ -552,6 +653,8 @@ export function buildKenjiLv5LiveFanInProjection({
       status: resolved ? "resolved" : "unresolved",
       canonical_client_id: canonicalClientId,
       display_name: clean(client.display_name, 120),
+      customer_gender: clean(client.customer_gender, 40) || "unknown",
+      customer_gender_source: clean(client.customer_gender_source, 80) || "not_recorded",
       relationship_context: clean(client360?.data?.relationship?.relationship_state || client360?.data?.relationship?.summary, 160),
     },
     entitlement: entitlementProjected,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { runInNewContext } from "node:vm";
 
 const tmp = await mkdtemp(join(tmpdir(), "control-room-v4-"));
 const outfile = join(tmp, "control-room-v4.mjs");
@@ -32,7 +33,7 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
   assert.equal(response.headers.get("x-mmd-control-room-customer-data-route"), "/internal/admin/customer-data");
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
-  assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
+  assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "unified-router-health-v1-read-only");
   assert.equal(response.headers.get("x-mmd-control-room-typography"), "sf-first-local");
   assert.equal(response.headers.get("x-mmd-control-room-operator-object"), "job");
   assert.equal(response.headers.get("x-mmd-control-room-create-route"), "/internal/admin/jobs/create-job");
@@ -105,10 +106,80 @@ try {
   assert.doesNotMatch(body, /href="\/male-massage\/therapists\/me"/);
   assert.match(body, /payments-worker · Money Truth/);
   assert.match(body, /my_mmd_entitlement_resolver_v1/);
-  assert.match(body, /Telegram alerts · Partial \/ Drive observed/);
-  assert.match(body, /Partial Alerts/);
+  assert.match(body, /Telegram alerts · Unified Router Health V1 \/ Drive observed/);
+  assert.match(body, /Telegram \/ Google Drive · Router Health Read-only/);
   assert.match(body, /data-audit-cta/);
   assert.match(body, /\/v1\/admin\/auth\/me/);
+
+  assert.equal(response.headers.get('x-mmd-control-room-mmd-flow'), '20260922');
+  assert.equal(response.headers.get('x-mmd-control-room-v2'), 'system-health-v1');
+  assert.equal(response.headers.get('x-mmd-owner-analytics'), 'intent-truth-v1');
+  assert.equal(response.headers.get('x-mmd-control-room-phase1'), 'closed');
+  assert.equal(response.headers.get('x-mmd-owner-actions'), 'queue-detail-read-only-v1');
+  assert.match(body, /data-mmd-owner-actions="v1"/);
+  assert.match(body, /OWNER ACTIONS · READ ONLY/);
+  assert.match(body, /วันนี้ควรเคลียร์อะไร/);
+  assert.match(body, /fetch\('\/v1\/admin\/dashboard\/owner-actions'/);
+  assert.match(body, /detail_href/);
+  assert.match(body, /unavailable\.length\?'PARTIAL':'CLEAR'/);
+  assert.match(body, /detailSeq=0/);
+  assert.match(body, /seq!==detailSeq/);
+  assert.match(body, /data-oaq-coverage/);
+  assert.match(body, /renderCoverage/);
+  assert.match(body, /source_coverage/);
+  assert.match(body, /ไม่มีการส่งข้อความ · ไม่มีการอนุมัติหรือเปลี่ยน Business Truth/);
+
+  assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);
+  assert.match(body, /SYSTEM HEALTH · V2/);
+  assert.match(body, /Production truth at a glance/);
+  assert.match(body, /HYPE \/ STUCK \/ SLA/);
+  assert.match(body, /mmd:control-room:dashboard/);
+  assert.match(body, /window\.__mmdControlRoomDashboard/);
+  assert.match(body, /data-v2-open-ai/);
+  assert.match(body, /data-mmd-owner-analytics="v1"/);
+  assert.match(body, /ANALYTICS · OWNER/);
+  assert.match(body, /Intent ≠ Business Truth/);
+  assert.match(body, /Business Truth/);
+  assert.match(body, /Authority Health/);
+  assert.match(body, /fetch\('\/v1\/admin\/dashboard\/analytics'/);
+  assert.match(body, /Unobserved event = — · ไม่ตีความเป็น 0/);
+  assert.match(body, /READ SCOPE NEEDED/);
+  assert.doesNotMatch(body, /cross_layer_person_conversion\s*[:=]\s*true/);
+  assert.match(body, /data-mmd-workflow="20260922"/);
+  assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
+  assert.match(body, /หาจากงานล่าสุด/);
+  assert.match(body, /Slip Intake/);
+  // Owner actions remain route handoffs, never generic customer confirmation links.
+  const flow = body.match(/<section class="mmd-workflow"[\s\S]*?<\/section>/)[0];
+  assert.equal((flow.match(/<li>/g) || []).length, 5);
+  assert.doesNotMatch(flow, /<form|<script|href="\/sigil\/(?:pay|confirm)/);
+  for (const route of [...flow.matchAll(/href="([^"]+)"/g)].map(m => m[1])) {
+    assert.ok(['/internal/admin/jobs/all', '/internal/admin/customer-data',
+      '/internal/ceo/payment-slip-inbox', '/internal/admin/payments',
+      '/internal/admin/jobs/create-job'].includes(route), route);
+  }
+
+  // Exercise the actual dashboard consumer: unknown counts must not become zero.
+  const dashboardScript = [...body.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(m => m[1]).find(s => s.includes("fetch('/v1/admin/dashboard'"));
+  for (const value of [undefined, null, '', ' ', false, {}, [], -1, 1.5, 0, '0', 12]) {
+    const values = Object.fromEntries(['customer', 'payment', 'model', 'access'].map(k => [k, { textContent: '—' }]));
+    const status = { textContent: '' };
+    const root = {
+      querySelectorAll(selector) {
+        const match = selector.match(/^\[data-count="([^"]+)"\]$/);
+        return match ? [values[match[1]]] : [];
+      },
+      querySelector() { return { classList: { add() {}, remove() {} }, querySelector() { return status; } }; },
+    };
+    runInNewContext(dashboardScript, {
+      document: { getElementById() { return root; } },
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({ queues: { payments: value } }) }),
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(values.payment.textContent, value === 0 || value === '0' ? '0' : value === 12 ? '12' : '—');
+    assert.equal(values.customer.textContent, '—');
+  }
 
   assert.doesNotMatch(body, /href="\/male-massage\/therapists\/login"/);
   assert.doesNotMatch(body, /WORKER-RENDERED INTERNAL PAGES/);
