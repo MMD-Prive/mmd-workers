@@ -559,7 +559,7 @@ async function handleJobShortLink(request, env, path) {
 
 async function findLegacyJobByShortCode(env, code) {
   const listed = await env.PUBLIC_ACCESS_EVIDENCE.list({ prefix: `${STORE_PREFIX}/jobs/`, limit: 1000 });
-  const suffix = `-${code}.json`;
+  const suffix = `-${code}.JSON`;
   const matches = (listed.objects || []).filter((item) => String(item.key || "").toUpperCase().endsWith(suffix));
   if (matches.length !== 1) return null;
   const job = await getJson(env, matches[0].key);
