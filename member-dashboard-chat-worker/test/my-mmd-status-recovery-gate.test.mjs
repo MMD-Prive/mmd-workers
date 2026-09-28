@@ -88,6 +88,23 @@ test("TMIB return-to-origin fails closed inside LIFF for external, privileged, o
   }
 });
 
+
+test("signed customer job confirmation enters through LIFF and returns only to the canonical confirmation page", () => {
+  const target = "/sigil/confirm/job-confirmation?t=abc.DEF_123";
+  const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+  assert.equal(I.statusReturnTarget(request), target);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), target);
+
+  for (const hostile of [
+    "/sigil/confirm/job-confirmation?t=abc&next=/internal/admin",
+    "/sigil/confirm/job-confirmation?next=/internal/admin",
+    "/internal/admin?t=abc.DEF_123",
+  ]) {
+    const bad = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(hostile)}`);
+    assert.equal(I.statusReturnTarget(bad), "");
+  }
+});
+
 test("LINE liff.state status launch stays in the worker-rendered LIFF dashboard", () => {
   const state = encodeURIComponent("/member/liff?intent=status");
   const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
