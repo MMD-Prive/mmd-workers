@@ -36,7 +36,7 @@ test("CARE BACK pending-Wish response cookies are shared across apex and www", (
   assert.match(response.headers.get("set-cookie") || "", /Domain=mmdbkk\.com/i);
 });
 
-test("direct customer status stays in native LIFF and bypasses the old auth-bridge recovery wrapper", async () => {
+test("direct customer status uses a bounded LIFF verification bridge before Lovable MY MMD", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -50,13 +50,13 @@ test("direct customer status stays in native LIFF and bypasses the old auth-brid
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
-  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), "hard-timeout-v3-single-surface-one-retry");
+  assert.equal(response.headers.get("x-mmd-liff-session-check"), "status-v1");
   assert.match(html, /MY MMD LIFF DIGITAL/);
-  assert.doesNotMatch(html, /mmd-status-hard-timeout-gate/);
-  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
-  assert.doesNotMatch(html, /window\.location\.replace\("\/my-mmd\/"\)/);
+  assert.match(html, /mmd-status-hard-timeout-gate/);
+  assert.match(html, /mmd-status-bridge-veil/);
 });
 
 test("My MMD serves the pending public-Wish coupon bridge as same-origin behavior code", async () => {
