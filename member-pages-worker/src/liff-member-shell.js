@@ -185,6 +185,35 @@ function renderShell(config, nonce) {
     @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
     @media(min-width:700px){.welcome-hero{min-height:188px}.welcome-letter{width:min(100%,760px);margin:0 auto}}
     body.context-resolving .intro-screen{visibility:visible}
+
+    /* Worker-rendered MY MMD LIFF Digital Home v1. Lovable is intentionally not involved. */
+    body.app-entered:not(.signup-mode){--digital-bg:#080907;--digital-surface:#151712;--digital-line:#454331;--digital-gold:#e7cc89;--digital-cream:#f6f1e3;--digital-muted:#a7a899;min-height:100svh;padding:0;background:var(--digital-bg);color:var(--digital-cream)}
+    body.app-entered:not(.signup-mode) main{width:min(100%,520px);min-height:100svh;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 18px calc(90px + env(safe-area-inset-bottom));border:0;border-radius:0;background:radial-gradient(ellipse 90% 34% at 50% 11%,rgba(80,64,34,.42),transparent 82%),linear-gradient(155deg,#11120e,#080907 62%);box-shadow:none}
+    body.app-entered:not(.signup-mode) .intro-screen,body.app-entered:not(.signup-mode) .member-nav{display:none!important}
+    body.app-entered:not(.signup-mode) #app-status{min-height:0;margin:0;color:#8d8e83;font-size:10px;text-align:right}
+    body.app-entered:not(.signup-mode) .actions{margin:8px 0 0}
+    body.app-entered:not(.signup-mode) .profile{display:block!important;margin:0}
+    body.app-entered:not(.signup-mode) .section-rail{display:block;overflow:visible;padding:0}
+    body.app-entered:not(.signup-mode) .panel{display:none;min-height:0;gap:10px}
+    body.app-entered:not(.signup-mode) .panel[data-active="true"]{display:flex}
+    body.app-entered:not(.signup-mode) .card{border:1px solid rgba(231,204,137,.22);border-radius:15px;background:linear-gradient(145deg,#22231c,#12140f 82%);box-shadow:none}
+    body.app-entered:not(.signup-mode) .value{font-size:18px}
+    body.app-entered:not(.signup-mode) .label{color:#a49b84}
+    body.app-entered:not(.signup-mode) .empty{color:var(--digital-muted)}
+    .digital-home{position:relative}
+    .digital-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.digital-brand{font-size:13px;font-weight:850;letter-spacing:.18em}.digital-brand small{display:block;margin-top:3px;color:var(--digital-gold);font-size:9px;letter-spacing:.19em}.digital-session{border:1px solid rgba(231,204,137,.3);border-radius:999px;padding:7px 9px;color:var(--digital-gold);background:#191a14;font-size:9px}
+    .digital-hello{margin-top:18px}.digital-eyebrow{margin:0 0 5px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.16em}.digital-hello h1{margin:0 0 4px;color:var(--digital-cream);font-size:27px;line-height:1.12;letter-spacing:-.04em}.digital-sub{margin:0;color:var(--digital-muted);font-size:11px;line-height:1.5}
+    .digital-snapshot{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid rgba(231,204,137,.3);border-radius:15px;background:#202019}.digital-snapshot-icon{font-size:20px;color:var(--digital-gold)}.digital-snapshot strong{display:block;color:var(--digital-cream);font-size:12px}.digital-snapshot p{margin:3px 0 0;color:var(--digital-muted);font-size:10px}.digital-points{color:var(--digital-gold)!important;font-size:19px!important;text-align:right}
+    .digital-kenji{display:grid;grid-template-columns:72px 1fr;align-items:center;gap:13px;margin:10px 0;padding:10px;border-radius:16px;background:linear-gradient(145deg,#1e1f19,#11130f)}.digital-orb{position:relative;width:66px;height:66px;display:grid;place-items:center;border-radius:50%;background:radial-gradient(circle,rgba(229,199,133,.28),rgba(88,66,29,.14) 42%,transparent 72%)}.digital-orb::before,.digital-orb::after{content:"";position:absolute;border-radius:50%}.digital-orb::before{inset:5px;border:1px solid rgba(231,204,137,.65);border-left-color:transparent}.digital-orb::after{inset:15px;border:1px dashed rgba(201,158,88,.62)}.digital-core{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff5cf,#e5bd6e 48%,#4d3618);box-shadow:0 0 20px rgba(223,185,102,.55)}.digital-kenji strong{display:block;font-size:13px}.digital-kenji p{margin:3px 0 8px;color:var(--digital-muted);font-size:10px;line-height:1.5}.digital-kenji a{display:inline-block;border:1px solid rgba(209,183,117,.48);border-radius:99px;padding:7px 10px;color:var(--digital-gold);background:#27251b;font-size:10px;font-weight:700;text-decoration:none}
+    .digital-needs[hidden]{display:none!important}.digital-needs{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-radius:14px;background:#d8bb7f;color:#17140d}.digital-needs b{display:block;font-size:11px}.digital-needs span{font-size:10px;color:#514330}.digital-needs button{width:auto;flex:none;border:1px solid #725a30;border-radius:99px;padding:7px 10px;background:#201b13;color:#f4dfa9;font-size:10px}
+    .digital-sectionline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}.digital-sectionline h2{margin:0;color:var(--digital-cream);font-size:22px}.digital-sectionline h2 small{display:block;margin-bottom:3px;color:var(--digital-gold);font-size:8px;letter-spacing:.15em}.digital-unread{border:1px solid rgba(231,204,137,.3);border-radius:99px;padding:5px 7px;color:var(--digital-gold);font-size:9px}
+    .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid rgba(231,204,137,.28);border-radius:14px;background:#202019;color:var(--digital-cream);text-align:left}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
+    .digital-quick{margin-top:4px}.digital-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.digital-quick button{min-height:64px;padding:8px 2px;border:1px solid rgba(231,204,137,.25);border-radius:13px;background:#191b15;color:var(--digital-cream);font-size:9px;text-align:center}.digital-quick button i{display:block;margin-bottom:4px;color:var(--digital-gold);font-size:16px;font-style:normal}
+    .digital-data-cache{display:none!important}
+    .digital-dock{position:fixed;z-index:10;bottom:0;left:50%;width:min(100%,520px);transform:translateX(-50%);display:none;grid-template-columns:repeat(4,1fr);padding:7px 9px calc(7px + env(safe-area-inset-bottom));border-top:1px solid rgba(142,120,91,.34);background:rgba(17,18,15,.94);backdrop-filter:blur(18px)}
+    body.app-entered:not(.signup-mode) .digital-dock{display:grid}.digital-dock button,.digital-dock a{min-height:44px;border:0;background:none;color:#999f94;font-size:9px;text-align:center;text-decoration:none}.digital-dock button[aria-current="page"]{color:var(--digital-gold);font-weight:800}.digital-dock i{display:block;margin-bottom:2px;font-size:17px;font-style:normal}
+    body.app-entered:not(.signup-mode) #status{margin:18px 0 0;color:#77796f;font-size:9px;text-align:center}
+    @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode " : "context-resolving "}world-${config.world}" data-world="${config.world}">
@@ -234,20 +263,19 @@ function renderShell(config, nonce) {
   </nav>
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
-    <section id="home" class="panel" aria-label="Home">
-    <div class="card"><span class="label" data-copy="memberLabel">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
-    <div class="card"><span class="label" data-copy="contactLabel">Contact</span><div class="detail-grid"><div><span class="label" data-copy="emailLabel">Email</span><strong id="profile-email" class="value">—</strong></div><div><span class="label" data-copy="phoneLabel">Phone</span><strong id="profile-phone" class="value">—</strong></div></div></div>
-    <div class="summary">
-      <div class="card"><span class="label" data-copy="tierLabel">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
-      <div id="points-card" class="card"><span class="label" data-copy="pointsLabel">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
+    <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
+    <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · LIFF HOME</small></div><span class="digital-session" id="digital-session">● LINE VERIFIED</span></header>
+    <section class="digital-hello"><p class="digital-eyebrow">YOUR PRIVATE SPACE</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
+    <section class="digital-snapshot" aria-label="Verified member snapshot"><span class="digital-snapshot-icon">◇</span><div><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div><strong id="profile-points" class="digital-points">—</strong></section>
+    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji-ai-20">เปิด Kenji ↗</a></div></section>
+    <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
+    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE UPDATES</small>MMD NEWS</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบข่าวล่าสุด</div></div></section>
+    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">LIFF</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
+    <div class="digital-data-cache" aria-hidden="true">
+      <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
+      <div id="member-details"><div id="expiry-card"><strong id="profile-expiry">—</strong></div><div id="payment-card"><strong id="profile-payment">—</strong></div></div>
+      <div id="points-card"></div><strong id="home-package">—</strong><p id="home-package-note"></p><div id="next-job"></div><div id="history"></div>
     </div>
-    <div id="member-details" class="detail-grid hidden">
-      <div id="expiry-card" class="card hidden"><span class="label" data-copy="expiryLabel">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
-      <div id="payment-card" class="card hidden"><span class="label" data-copy="paymentLabel">Payment status</span><strong id="profile-payment" class="value payment-status">—</strong></div>
-    </div>
-    <div class="card"><span class="label" data-copy="packageTitle">Current package</span><strong id="home-package" class="value">—</strong><p id="home-package-note" class="sub"></p></div>
-    <div class="card"><span class="label" data-copy="jobsTitle">Next job</span><div id="next-job" class="history"></div></div>
-    <div class="card"><span class="label" data-copy="historyLabel">History · Last 1 Year</span><div id="history" class="history"></div></div>
     </section>
     <section id="points" class="panel" aria-label="Points">
       <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
@@ -303,7 +331,8 @@ function renderShell(config, nonce) {
     </section>
     </div>
   </section>
-  <div id="status" class="status">MMD Privé</div>
+  <nav class="digital-dock" aria-label="เมนู MY MMD LIFF"><button type="button" data-view="home" aria-current="page"><i>⌂</i>หน้าแรก</button><button type="button" data-view="jobs" aria-current="false"><i>▤</i>งาน</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>Wallet</button><a href="/member/kenji-ai-20"><i>✦</i>Kenji</a></nav>
+  <div id="status" class="status">MMD Privé · LIFF Digital Home</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
 <script nonce="${nonce}">
@@ -328,9 +357,9 @@ function renderShell(config, nonce) {
   const yourRequestStatus = document.getElementById("your-request-status");
   const locale = CONFIG.language || "th";
   const copy = {
-    th: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"ผมเตรียมข้อมูลสมาชิกของคุณไว้ใน LINE อย่างเรียบง่ายและเป็นส่วนตัวครับ", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
-    en: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"Your member information in LINE, simply and privately.", navProfile:"Overview", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"Member", contactLabel:"Contact", emailLabel:"Email", phoneLabel:"Phone", tierLabel:"Member tier", pointsLabel:"Active points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"Points history", packageTitle:"📦 Package", packageHistoryLabel:"Package history", jobsTitle:"💼 Jobs", requestsLabel:"Recent requests", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"Payment history", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"We will check CARE BACK first. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your confirmed information is ready.", checking:"We are checking your information.", checkingPoints:"Your points are being checked.", pointsRate:"Every THB 100 = 1 point", expiring:"Points expiring soon", empty:"No confirmed activity is available here yet.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
-    zh: { mark:"MMD Privé · Member Dashboard", title:"我的 MMD", subtitle:"在 LINE 内简单、私密地查看您的会员信息。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", contactLabel:"联系方式", emailLabel:"邮箱", phoneLabel:"电话", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐历史", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
+    th: { mark:"MMD Privé · MY MMD LIFF", title:"My MMD", subtitle:"พื้นที่สมาชิกแบบดิจิทัลใน LINE ของ MMD", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
+    en: { mark:"MMD Privé · MY MMD LIFF", title:"My MMD", subtitle:"Your digital member space inside LINE.", navProfile:"Overview", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"Member", contactLabel:"Contact", emailLabel:"Email", phoneLabel:"Phone", tierLabel:"Member tier", pointsLabel:"Active points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"Points history", packageTitle:"📦 Package", packageHistoryLabel:"Package history", jobsTitle:"💼 Jobs", requestsLabel:"Recent requests", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"Payment history", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"We will check CARE BACK first. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your confirmed information is ready.", checking:"We are checking your information.", checkingPoints:"Your points are being checked.", pointsRate:"Every THB 100 = 1 point", expiring:"Points expiring soon", empty:"No confirmed activity is available here yet.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
+    zh: { mark:"MMD Privé · MY MMD LIFF", title:"我的 MMD", subtitle:"在 LINE 内使用您的数字会员空间。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", contactLabel:"联系方式", emailLabel:"邮箱", phoneLabel:"电话", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐历史", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
   Object.assign(copy, ({
     th:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 คูปองของฉัน",couponWalletEmpty:"ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ",pointsLabel:"คะแนนสะสมทั้งหมด",pointsNoExpiry:"Points สะสมตลอดอายุ · ยังไม่ตัด 365 วัน",serviceSpendLabel:"ยอดใช้บริการที่ยืนยันแล้ว",lifetimeSpendLabel:"ยอดสะสมทั้งหมด",spend365Label:"ย้อนหลัง 365 วัน"},
@@ -424,14 +453,19 @@ function renderShell(config, nonce) {
   wishText.placeholder = copy.wishPlaceholder || wishText.placeholder;
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
   const initialView = CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
-  for (const item of document.querySelectorAll("[data-view]")) item.setAttribute("aria-current", String(item.getAttribute("data-view") === initialView));
+  function showView(view, smooth = true) {
+    const targetId = view === "history" ? "history-panel" : view;
+    const target = document.getElementById(targetId) || document.getElementById("home");
+    for (const panel of document.querySelectorAll(".section-rail > .panel")) panel.setAttribute("data-active", String(panel === target));
+    for (const item of document.querySelectorAll("[data-view]")) {
+      const active = item.getAttribute("data-view") === (target.id === "history-panel" ? "history" : target.id);
+      item.setAttribute("aria-current", active ? "page" : "false");
+    }
+    if (smooth) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  showView(initialView, false);
   for (const button of document.querySelectorAll("[data-view]")) {
-    button.addEventListener("click", () => {
-      const view = button.getAttribute("data-view");
-      for (const item of document.querySelectorAll("[data-view]")) item.setAttribute("aria-current", String(item === button));
-      const target = document.getElementById(view === "history" ? "history-panel" : view);
-      target?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
-    });
+    button.addEventListener("click", () => showView(button.getAttribute("data-view")));
   }
 
   function show(text) {
@@ -762,6 +796,74 @@ function renderShell(config, nonce) {
     }
   }
 
+  function digitalDate(value) {
+    const date = new Date(String(value || ""));
+    return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH", { year:"numeric", month:"short", day:"numeric" }).format(date);
+  }
+
+  function renderDigitalNews(items, unreadCount = 0) {
+    const feed = document.getElementById("digital-news-feed");
+    const unread = document.getElementById("digital-unread");
+    if (!feed || !unread) return;
+    const safe = Array.isArray(items) ? items.slice(0, 5) : [];
+    unread.hidden = !(Number.isInteger(unreadCount) && unreadCount > 0);
+    if (!unread.hidden) unread.textContent = locale === "en" ? `NEW ${unreadCount}` : locale === "zh" ? `新 ${unreadCount}` : `ใหม่ ${unreadCount}`;
+    feed.replaceChildren();
+    if (!safe.length) {
+      const quiet = document.createElement("div"); quiet.className = "digital-quiet"; quiet.textContent = locale === "en" ? "No new updates right now." : locale === "zh" ? "目前没有新的更新。" : "ตอนนี้ยังไม่มีอัปเดตใหม่";
+      feed.append(quiet); return;
+    }
+    for (const item of safe) {
+      const title = String(item?.title || item?.headline || "").trim();
+      if (!title) continue;
+      const card = document.createElement("article"); card.className = "digital-news-card";
+      const meta = document.createElement("div"); meta.className = "meta";
+      const category = document.createElement("span"); category.textContent = String(item?.category || item?.tag || "MMD UPDATE").trim().toUpperCase();
+      const date = document.createElement("span"); date.textContent = digitalDate(item?.published_at || item?.publishedAt || item?.date);
+      meta.append(category, date);
+      const heading = document.createElement("h3"); heading.textContent = title;
+      const excerpt = document.createElement("p"); excerpt.textContent = String(item?.excerpt || item?.summary || "").trim();
+      card.append(meta, heading, excerpt); feed.append(card);
+    }
+    if (!feed.children.length) {
+      const quiet = document.createElement("div"); quiet.className = "digital-quiet"; quiet.textContent = "ตอนนี้ยังไม่มีอัปเดตใหม่"; feed.append(quiet);
+    }
+  }
+
+  async function hydrateDigitalHome(profileData = {}) {
+    const greeting = document.getElementById("digital-greeting");
+    const needs = document.getElementById("digital-needs");
+    const needsLabel = document.getElementById("digital-needs-label");
+    const needsAction = document.getElementById("digital-needs-action");
+    const name = String(profileData?.customer_360?.member?.display_name || profileData?.display_name || "").trim();
+    if (greeting) greeting.textContent = name ? (locale === "en" ? `Hello ${name}` : locale === "zh" ? `你好 ${name}` : `สวัสดี ${name}`) : "MY MMD";
+
+    try {
+      const response = await fetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const body = await response.json().catch(() => null);
+      if (response.ok && body && typeof body === "object") {
+        const action = body.nextAction || body.next_action || body.membership?.nextAction || body.membership?.next_action || null;
+        const allowed = { signup:"package", renew:"package", care_back_wish:"care" };
+        const target = action && allowed[String(action.kind || "").trim()];
+        if (target && String(action.label || "").trim()) {
+          needsLabel.textContent = String(action.label).trim();
+          needsAction.onclick = () => showView(target);
+          needs.hidden = false;
+        } else {
+          needs.hidden = true;
+        }
+      }
+    } catch { needs.hidden = true; }
+
+    try {
+      const response = await fetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const body = await response.json().catch(() => null);
+      const items = Array.isArray(body?.items) ? body.items : Array.isArray(body?.news) ? body.news : [];
+      const unread = Number(body?.unread_count ?? body?.unreadCount ?? 0);
+      renderDigitalNews(response.ok ? items : [], Number.isInteger(unread) ? unread : 0);
+    } catch { renderDigitalNews([], 0); }
+  }
+
   function renderProfile(data, authority = "") {
     applyWorldTheme(data, authority);
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
@@ -774,6 +876,7 @@ function renderShell(config, nonce) {
     profile.classList.remove("hidden");
     document.getElementById("profile-name").textContent = String(member.display_name || data.display_name || "สมาชิก MMD");
     document.getElementById("profile-tier").textContent = String(member.tier || data.tier || "Member");
+    void hydrateDigitalHome(data);
     const contact = data.contactProfile || data.contact_profile || {};
     document.getElementById("profile-email").textContent = String(contact.email || "—");
     document.getElementById("profile-phone").textContent = String(contact.phone || "—");
@@ -792,8 +895,8 @@ function renderShell(config, nonce) {
     renderJobs(jobs, view.requests || {}, view.mms || {});
     renderHistory(historyView, payments);
     show(copy.ready || "ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ");
-    if (CONFIG.view && CONFIG.view !== "home") document.getElementById(CONFIG.view === "history" ? "history-panel" : CONFIG.view)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
-    if (CONFIG.intent === "promo") document.getElementById("care")?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    if (CONFIG.intent === "promo") showView("care", false);
+    else showView(CONFIG.view || "home", false);
   }
 
   function legacyCustomerView(data) {
