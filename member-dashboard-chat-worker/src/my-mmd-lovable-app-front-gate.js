@@ -504,8 +504,8 @@ function injectStatusBridgeSkin(html) {
   if (!output.includes('id="mmd-status-bridge-skin"') && output.includes("</head>")) {
     output = output.replace("</head>", `${statusBridgeSkin()}</head>`);
   }
-  if (!output.includes('id="mmd-status-bridge-veil"') && output.includes("<body>")) {
-    output = output.replace("<body>", `<body>${statusBridgeMarkup()}`);
+  if (!output.includes('id="mmd-status-bridge-veil"') && /<body\b[^>]*>/i.test(output)) {
+    output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>${statusBridgeMarkup()}`);
   }
   if (nonceMatch && !output.includes('id="mmd-status-bridge-recovery-observer"') && output.includes("</body>")) {
     output = output.replace("</body>", `${statusBridgeRecoveryObserver(nonceMatch[1])}</body>`);
