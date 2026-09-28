@@ -243,9 +243,20 @@ function defaultMatrix({ conversationHash = "", clientRecordId = "", relationshi
   });
 }
 
-function deriveEffectiveIntent(resolution = {}, matrix = {}, currentIntent = "") {
+function deriveEffectiveIntent(resolution = {}, matrix = {}, currentIntent = "", message = "") {
   const current = text(currentIntent).toLowerCase();
   const previous = text(matrix.last_customer_intent).toLowerCase();
+  const activeModel = parseObject(matrix?.payload_json)?.active_model_v1;
+  const hasActiveModel = activeModel && typeof activeModel === "object" &&
+    text(activeModel.model_code) && text(activeModel.working_name);
+
+  if (hasActiveModel && WEAK_INTENTS.has(current)) {
+    const raw = text(message).normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+    if (/^(?:คืนนี้|วันนี้|พรุ่งนี้|ว่าง|ว่างไหม|เช็กคิว|เช็คคิว|ดูคิว|คิว)/.test(raw)) return "availability_request";
+    if (/^(?:ราคา|เรท|เท่าไร|เท่าไหร่|กี่บาท|price|rate)/i.test(raw)) return "pricing_review";
+    if (/^(?:จองเลย|จองคนนี้|เอาคนนี้|ขอคนนี้|book|booking)/i.test(raw)) return "mmd_companion";
+  }
+
   const continuationLike = ["continuation", "stale_refresh"].includes(text(resolution.decision));
   if (!continuationLike) return current;
   if (!WEAK_INTENTS.has(current)) return current;
@@ -306,7 +317,7 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
     current_intent: current,
     now: stamp,
   });
-  const effectiveIntent = deriveEffectiveIntent(resolution, matrix, current);
+  const effectiveIntent = deriveEffectiveIntent(resolution, matrix, current, eventText(event));
   return {
     ...resolution,
     effective_intent: effectiveIntent,
@@ -495,6 +506,13 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
   const openingState = delivered && decision.first_contact_state
     ? { ...parseObject(priorPayload.first_contact_v2), ...decision.first_contact_state, updated_at: matrix.state_updated_at }
     : null;
+  const activeModelState = delivered && decision.model_context && typeof decision.model_context === "object"
+    ? {
+        model_code: text(decision.model_context.model_code).slice(0, 80),
+        working_name: text(decision.model_context.working_name).slice(0, 120),
+        updated_at: matrix.state_updated_at,
+      }
+    : null;
   return {
     [F.MATRIX_ID]: matrix.matrix_id,
     ...(clientRecordId ? { [F.MATRIX_CLIENT]: [clientRecordId] } : {}),
@@ -531,6 +549,7 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
     [F.MATRIX_PAYLOAD]: JSON.stringify({
       ...priorPayload,
       ...(openingState ? { first_contact_v2: openingState } : {}),
+      ...(activeModelState?.model_code && activeModelState?.working_name ? { active_model_v1: activeModelState } : {}),
       runtime_schema: "mmd.kenji_line_continuity_runtime.v1",
       continuity_schema: text(continuity.schema),
       continuity_decision: text(continuity.decision),
