@@ -56,7 +56,7 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
 
     const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
     const recoveryState = normalizeToken(recoveryStatus?.state);
-    if (["checking", "in_progress"].includes(recoveryState)) {
+    if (["checking", "in_progress", "review_required"].includes(recoveryState)) {
       return { state: "checking", recoveryState, pointsRecoveryPending: true };
     }
     if (recoveryState === "blocked") {
@@ -156,7 +156,7 @@ export function summarizeLifetimePoints(records = [], now = new Date()) {
 }
 
 export function patchLifetimePointsPayload(path, payload, summary) {
-  if (summary?.pointsRecoveryPending === true || ["checking", "in_progress"].includes(normalizeToken(summary?.recoveryState))) {
+  if (summary?.pointsRecoveryPending === true || ["checking", "in_progress", "review_required"].includes(normalizeToken(summary?.recoveryState))) {
     return patchPendingLifetimePointsPayload(path, payload);
   }
   if (normalizeToken(summary?.recoveryState) === "blocked" || summary?.state === "blocked") {
