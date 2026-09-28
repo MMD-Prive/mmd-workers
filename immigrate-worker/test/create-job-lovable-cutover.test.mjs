@@ -70,9 +70,12 @@ try {
     assert.match(html, /Create กระดานข่าว/);
     assert.match(html, /fetch\('\/v1\/admin\/job-board\/publish'/);
     assert.match(html, /Publish \+ Copy Link/);
-    assert.match(html, /data-mmd-create-job-client-autosearch="v1"/);
+    assert.match(html, /data-mmd-create-job-client-search="v2"/);
     assert.match(html, /aria-label="Search client"/);
+    assert.match(html, /aria-label\^="ค้นหาลูกค้า —"/);
+    assert.match(html, /setReactValue/);
     assert.match(html, /KeyboardEvent\('keydown'/);
+    assert.match(html, /section\[aria-labelledby="step-client-heading"\]/);
     assert.doesNotMatch(html, /new MutationObserver/);
     assert.doesNotMatch(html, /window\.fetch\s*=/);
 
@@ -97,7 +100,7 @@ try {
     assert.doesNotMatch(decorated, /Creation blocked/);
     assert.match(decorated, /data-mmd-create-job-static-copy="v1"/);
     assert.match(decorated, /data-mmd-job-board-panel="v1"/);
-    assert.match(decorated, /data-mmd-create-job-client-autosearch="v1"/);
+    assert.match(decorated, /data-mmd-create-job-client-search="v2"/);
   } finally {
     globalThis.fetch = originalFetch;
   }
