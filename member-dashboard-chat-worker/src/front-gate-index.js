@@ -104,7 +104,7 @@ function liffAuthReturnTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
-  if (intent === "status") return "/member/my-mmd";
+  if (intent === "status") return "";
   if (intent === "continue_payment") return "/member/payments";
   return "";
 }
@@ -241,6 +241,8 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
 }
 
 async function maybeReturnStatusLiffToMyMmd(request, response) {
+  // Direct MY MMD status stays in the Worker-rendered LIFF Digital Home.
+  // Only bounded specialized intents may use LIFF as a return bridge.
   const target = liffAuthReturnTarget(request);
   if (!target || request.method === "HEAD" || !response.ok) return response;
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
