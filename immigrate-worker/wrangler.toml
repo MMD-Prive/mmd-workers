@@ -142,6 +142,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/dashboard*"
 zone_name = "mmdbkk.com"
 
+# Fast App Runtime owner snapshot. This is a lightweight read-only projection of
+# the canonical dashboard, not a new business-truth source.
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/owner/snapshot*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/owner/snapshot*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup*"
 zone_name = "mmdbkk.com"
