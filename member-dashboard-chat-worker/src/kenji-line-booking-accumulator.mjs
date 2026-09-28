@@ -185,6 +185,18 @@ export function missingKenjiBookingFields(draft = {}) {
   });
 }
 
+function guidedModelCandidate(raw = "") {
+  const value = text(raw, 120)
+    .replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "")
+    .trim();
+  if (!value || value.length > 48) return "";
+  if (/^(?:วันนี้|คืนนี้|พรุ่งนี้|มะรืน|ราคา|เรท|เท่าไร|เท่าไหร่|กี่บาท|จอง|จองเลย|ว่าง|ว่างไหม|โอเค|ได้|ครับ|ค่ะ|คะ)$/i.test(value)) return "";
+  if (/^[A-Za-z][A-Za-z0-9._-]{1,31}(?:\s+[A-Za-z][A-Za-z0-9._-]{1,31})?$/.test(value)) return value;
+  if (/^(?:EMs?|GWs?)[-_]?\d{1,4}$/i.test(value)) return value;
+  if (/^[ก-๙]{2,12}$/.test(value)) return value;
+  return "";
+}
+
 function newDraftId(conversationHash = "", sourceEventId = "") {
   const a = text(conversationHash, 80).slice(0, 16);
   const b = text(sourceEventId, 80).slice(-24) || "event";
@@ -302,9 +314,34 @@ export async function accumulateKenjiLineBookingDraft({
     currentIntent,
     now: now.toISOString(),
   });
-  const prior = object(continuity?.matrix?.payload_json)?.booking_draft_v1 || {};
+  const payload = object(continuity?.matrix?.payload_json);
+  const prior = payload.booking_draft_v1 || {};
   const priorActive = activeDraft(prior, now);
-  const fragment = parseKenjiBookingFragment(event, currentIntent, { now, priorActive });
+  const effectiveIntent = text(continuity?.effective_intent, 120) || currentIntent;
+  let fragment = parseKenjiBookingFragment(event, effectiveIntent, { now, priorActive });
+
+  const activeModel = object(payload.active_model_v1);
+  if (!text(fragment.model_name, 120) && ["mmd_companion", "availability_request"].includes(token(effectiveIntent)) &&
+      text(activeModel.model_code, 80) && text(activeModel.working_name, 120)) {
+    fragment = {
+      ...fragment,
+      model_name: text(activeModel.model_code, 80),
+      model_working_name_hint: text(activeModel.working_name, 120),
+    };
+  }
+
+  const priorMissing = priorActive ? missingKenjiBookingFields(prior) : [];
+  if (!text(fragment.model_name, 120) && priorMissing[0] === "model_name") {
+    const candidate = guidedModelCandidate(fragment.raw);
+    if (candidate) {
+      fragment = {
+        ...fragment,
+        model_name: candidate,
+        location: "",
+      };
+    }
+  }
+
   const merged = mergeKenjiBookingDraftV1({
     prior,
     fragment,
@@ -320,6 +357,7 @@ export async function accumulateKenjiLineBookingDraft({
       continuity,
       fragment,
       draft: prior,
+      resolved_intent: effectiveIntent,
       merged_intent: priorActive ? mergedIntent(prior, eventText(event)) : null,
       action_allowed: false,
     };
@@ -342,6 +380,7 @@ export async function accumulateKenjiLineBookingDraft({
     continuity,
     fragment,
     draft: merged.draft,
+    resolved_intent: effectiveIntent,
     merged_intent: mergedIntent(merged.draft, eventText(event)),
     action_allowed: merged.draft.ready === true && merged.locked !== true && token(merged.draft.action_state) !== "executed",
     locked: merged.locked === true,
@@ -403,5 +442,6 @@ export const KENJI_BOOKING_ACCUMULATOR_INTERNALS = Object.freeze({
   extractModelCodeName,
   extractDiscountFromAmount,
   looseLocationBesideTime,
+  guidedModelCandidate,
   mergedIntent,
 });
