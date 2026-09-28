@@ -9,9 +9,6 @@ const CUSTOMER_PAGE = "/internal/admin/customer-data";
 const CUSTOMER_QUEUE = "/v1/admin/customer-data/queue";
 const CLIENT_INTELLIGENCE = "/v1/admin/clients/intelligence";
 const CREATE_JOB_PAGE = "/internal/admin/jobs/create-job";
-const MODEL_LOGIN_PAGE = "/sigil/model/login";
-const MODEL_LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq";
-const JOB_BOARD_URL = "https://sigil.mmdbkk.com/public/api/jobs";
 const CANONICAL_PUBLIC_ORIGIN = "https://mmdbkk.com";
 const DEFAULT_LOVABLE_ORIGIN = "https://mmd-os.lovable.app";
 const WORKERS_DEV_SUFFIX = ".workers.dev";
@@ -27,61 +24,6 @@ export function resolveRequestedClientId(searchParams: URLSearchParams): string 
 function normalizePath(value: string): string {
   const path = String(value || "/").replace(/\/{2,}/g, "/");
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
-}
-
-function safeLanguage(url: URL): string {
-  const raw = String(url.searchParams.get("lang") || "th").trim().toLowerCase();
-  if (raw === "en" || raw.startsWith("en-")) return "en";
-  if (raw === "zh" || raw.startsWith("zh-") || raw === "cn" || raw.startsWith("cn-")) return "zh";
-  return "th";
-}
-
-function safeJobId(value: string | null): string {
-  const text = String(value || "").trim();
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(text) ? text : "";
-}
-
-function safeJobBoardNext(value: string | null, jobId: string): string {
-  const fallback = jobId ? `${JOB_BOARD_URL}/${encodeURIComponent(jobId)}` : JOB_BOARD_URL;
-  const raw = String(value || "").trim();
-  if (!raw) return fallback;
-  try {
-    const next = new URL(raw);
-    const path = normalizePath(next.pathname);
-    const allowed = next.protocol === "https:"
-      && next.origin === "https://sigil.mmdbkk.com"
-      && (path === "/public/api/jobs" || /^\/public\/api\/jobs\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(path))
-      && !next.username
-      && !next.password
-      && !next.hash;
-    if (!allowed) return fallback;
-    next.search = "";
-    return next.toString();
-  } catch {
-    return fallback;
-  }
-}
-
-function modelLoginLineEntry(request: Request): Response {
-  const sourceUrl = new URL(request.url);
-  const target = new URL(`${MODEL_LIFF_URL}/`);
-  target.searchParams.set("lang", safeLanguage(sourceUrl));
-
-  if (sourceUrl.searchParams.get("intent") === "job_board") {
-    const jobId = safeJobId(sourceUrl.searchParams.get("job_id"));
-    const source = String(sourceUrl.searchParams.get("source") || "line_model_group").trim();
-    const campaignId = String(sourceUrl.searchParams.get("campaign_id") || "").trim();
-    target.searchParams.set("intent", "job_board");
-    target.searchParams.set("return_to", "public_job_board");
-    target.searchParams.set("source", /^[A-Za-z0-9._:-]{1,80}$/.test(source) ? source : "line_model_group");
-    target.searchParams.set("next", safeJobBoardNext(sourceUrl.searchParams.get("next"), jobId));
-    if (jobId) target.searchParams.set("job_id", jobId);
-    if (/^[A-Za-z0-9._:-]{1,128}$/.test(campaignId)) target.searchParams.set("campaign_id", campaignId);
-  } else {
-    target.searchParams.set("source", "model_login");
-  }
-
-  return Response.redirect(target.toString(), 302);
 }
 
 function workersDevCanonicalHandoff(url: URL, path: string): Response | null {
@@ -143,10 +85,6 @@ export default {
       ? workersDevCanonicalHandoff(url, path)
       : null;
     if (publicHandoff) return publicHandoff;
-
-    if ((method === "GET" || method === "HEAD") && path === MODEL_LOGIN_PAGE) {
-      return modelLoginLineEntry(request);
-    }
 
     const response = await canonicalWorker.fetch(request, env);
     if ((method === "GET" || method === "HEAD") && path === CREATE_JOB_PAGE) {
