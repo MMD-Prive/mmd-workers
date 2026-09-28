@@ -939,7 +939,33 @@ function renderShell(config, nonce) {
       const response = await fetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
       if (response.ok && body && typeof body === "object") {
-        const action = body.nextAction || body.next_action || body.membership?.nextAction || body.membership?.next_action || null;
+        // Digital Home display truth comes from the canonical member-app dashboard.
+        // The LIFF profile is intentionally privacy-filtered and may collapse protected
+        // tiers (for example SVIP) to a generic Member label. Do not let that stale
+        // presentation override an owner-approved canonical entitlement.
+        const dashboard = body.data && typeof body.data === "object" ? body.data : body;
+        const membership = dashboard.membership && typeof dashboard.membership === "object" ? dashboard.membership : {};
+        const tierLabels = { public_member:"Member", elite:"Elite", red_card:"Red Card", trial_7d:"7 Days", standard:"Standard", premium:"Premium", vip:"VIP", svip:"SVIP", black_card:"Black Card" };
+        const level = String(membership.level || "").trim().toLowerCase();
+        const tierNode = document.getElementById("profile-tier");
+        const statusNode = document.getElementById("profile-status");
+        const pointsNode = document.getElementById("profile-points");
+        if (tierNode && membership.levelVerified === true && tierLabels[level]) tierNode.textContent = tierLabels[level];
+        if (statusNode) {
+          const status = String(membership.status || membership.lifecycle || "").trim();
+          if (status) {
+            const expiry = safeDate(membership.expiresAt || membership.renewalDueAt);
+            statusNode.textContent = membershipStatus(status) + (expiry ? " · ถึง " + shortDate(expiry) : "");
+          }
+        }
+        if (pointsNode) {
+          const confirmed = dashboard.points?.confirmedBalance;
+          pointsNode.textContent = Number.isInteger(confirmed) && confirmed >= 0
+            ? new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(confirmed)
+            : "—";
+        }
+
+        const action = dashboard.nextAction || dashboard.next_action || membership.nextAction || membership.next_action || null;
         const allowed = { signup:"package", renew:"package", care_back_wish:"care" };
         const target = action && allowed[String(action.kind || "").trim()];
         if (target && String(action.label || "").trim()) {
