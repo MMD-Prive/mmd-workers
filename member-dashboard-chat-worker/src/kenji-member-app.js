@@ -1,5 +1,6 @@
 const PAGE_PATHS = new Set(["/member/kenji", "/member/kenji/"]);
 const CHAT_PATHS = new Set(["/api/member/kenji/chat", "/api/member/kenji/chat/"]);
+const LEGACY_PATHS = new Set(["/member/kenji-ai-20", "/member/kenji-ai-20/"]);
 const AI_CHAT_URL = "https://ai-worker.local/v1/ai/kenji/member-chat";
 const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/member-session-truth";
 const MAX_MESSAGE = 800;
@@ -19,6 +20,11 @@ export function isKenjiMemberPage(request) {
 
 export function isKenjiMemberChat(request) {
   return request instanceof Request && request.method === "POST" && CHAT_PATHS.has(normalizePath(request));
+}
+
+export function isKenjiMemberSurfacePath(request) {
+  const path = normalizePath(request);
+  return path.startsWith("/member/kenji") || path.startsWith("/api/member/kenji/");
 }
 
 function json(payload, status = 200) {
@@ -195,6 +201,12 @@ form.addEventListener("submit",e=>{e.preventDefault();ask(input.value)});documen
 }
 
 export async function handleKenjiMemberSurface(request, env = {}) {
+  const path = normalizePath(request);
+  if (request.method === "GET" && LEGACY_PATHS.has(path)) {
+    const url = new URL(request.url);
+    url.pathname = "/member/kenji";
+    return Response.redirect(url.toString(), 308);
+  }
   if (isKenjiMemberPage(request)) return renderKenjiMemberPage();
   if (isKenjiMemberChat(request)) return handleKenjiMemberChat(request, env);
   return json({ ok: false, error: "not_found" }, 404);
