@@ -137,6 +137,10 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     urgent: todos.length + boss.length,
     payments: paymentQueue.length,
     payment_review: ownerPaymentReview.length,
+    // Additive owner-surface aliases for compact Internal/Lovable task cards.
+    // These are projections of the same canonical Payment Review queue, not new truth.
+    payment_slips_pending: ownerPaymentReview.length,
+    payments_review_pending: ownerPaymentReview.length,
     historical_recovery: historicalPending.length,
     jobs: jobs.length,
     jobs_need_confirm: Number(reconfirm.pending || 0) + Number(reconfirm.overdue || 0),
@@ -212,6 +216,10 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     focus,
     counts,
     queues,
+    shortcut_counts: {
+      payment_slip_inbox: ownerPaymentReview.length,
+      money_control: ownerPaymentReview.length,
+    },
     todos,
     jobs,
     money,
