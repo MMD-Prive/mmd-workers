@@ -644,7 +644,7 @@ async function validateModelHandoff(env, tokenValue) {
   if (!env.MODEL_AUTH?.fetch) throw httpError(503, "model_auth_unavailable");
   const response = await env.MODEL_AUTH.fetch(new Request("https://model-auth.internal/__internal/model-job-board/validate", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-internal-token": clean(env.INTERNAL_TOKEN, 500) },
+    headers: { "content-type": "application/json", "x-mmd-service-caller": "public-access-worker" },
     body: JSON.stringify({ token: tokenValue }),
   }));
   const data = await response.json().catch(() => ({}));
