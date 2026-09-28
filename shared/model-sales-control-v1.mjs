@@ -1,7 +1,9 @@
 export const MODEL_SALES_POLICY_VERSION = "model_sales_control_v1_20260921";
 export const MODEL_SALES_TIME_ZONE = "Asia/Bangkok";
+export const HISTORICAL_PER_QUOTE_MAX_THB = 20000;
 
 const ACTIVE_STATES = new Set(["active", "approved", "live", "published"]);
+const HISTORICAL_REVIEWED_STATES = new Set(["inactive", "expired", "superseded", "archived", "replaced", "closed"]);
 const PRICE_VISIBLE_STATES = new Set([
   "show",
   "visible",
@@ -22,11 +24,15 @@ export function resolveModelSalesOffer(input = {}) {
   if (!modelId && !modelKey) return blocked("model_identity_required");
 
   const rules = Array.isArray(input.rules) ? input.rules : [];
-  const normalized = rules
+  const allNormalized = rules
     .map((rule, index) => normalizeRule(rule, index))
     .filter((rule) => rule && ruleMatchesModel(rule, modelId, modelKey))
+    .filter((rule) => ruleMatchesLane(rule, input.work_lane || input.workLane));
+  const historicalQuote =
+    normalizeHistoricalPerQuote(input, modelId, modelKey) ||
+    historicalPerQuoteFromNormalizedRules(input, allNormalized);
+  const normalized = allNormalized
     .filter((rule) => ACTIVE_STATES.has(rule.status))
-    .filter((rule) => ruleMatchesLane(rule, input.work_lane || input.workLane))
     .filter((rule) => scheduleMatches(rule, requestedAt));
 
   const candidates = normalized
@@ -38,7 +44,18 @@ export function resolveModelSalesOffer(input = {}) {
     .filter((candidate) => candidate.specificity > 0)
     .filter((candidate) => candidate.audienceMatched);
 
-  if (!candidates.length) return blocked("no_matching_active_rule");
+  if (!candidates.length) {
+    const result = blocked("no_matching_active_rule");
+    return historicalQuote
+      ? {
+          ...result,
+          reason_code: "historical_baseline_only_no_current_rule",
+          historical_baseline_rate_thb: historicalQuote.amount_thb,
+          historical_baseline_verified: true,
+          historical_source_ref: historicalQuote.source_ref,
+        }
+      : result;
+  }
 
   candidates.sort(compareCandidates);
   const winner = candidates[0];
@@ -74,6 +91,20 @@ export function resolveModelSalesOffer(input = {}) {
     rule.default_rate_thb,
   );
   const canExposeRate = rate != null && priceMayBeExposed(rule.price_visibility);
+  const specificity = specificityName(winner.specificity);
+  const exactClientCurrentRule =
+    specificity === "exact_client" &&
+    rule.reviewed_by === "per" &&
+    Boolean(parseIso(rule.reviewed_at));
+  const historicalCeilingApplied = Boolean(
+    historicalQuote &&
+    canExposeRate &&
+    rate > historicalQuote.amount_thb &&
+    !exactClientCurrentRule
+  );
+  const customerRate = canExposeRate
+    ? (historicalCeilingApplied ? historicalQuote.amount_thb : rate)
+    : null;
 
   return {
     ok: true,
@@ -84,13 +115,26 @@ export function resolveModelSalesOffer(input = {}) {
     matched_rule_id: rule.record_id || null,
     matched_rule_key: rule.offer_rule_key || null,
     audience_scope: [...rule.audience_scope],
-    customer_rate_thb: canExposeRate ? rate : null,
+    customer_rate_thb: customerRate,
     price_visible: canExposeRate,
     term_summary: scheduleSummary(rule),
     requires_per_approval: rule.requires_per_approval,
-    reason_code: canExposeRate ? "matched_active_rule" : "matched_rate_hidden",
+    reason_code: historicalCeilingApplied
+      ? "historical_per_quote_ceiling_applied"
+      : canExposeRate
+        ? "matched_active_rule"
+        : "matched_rate_hidden",
     rule_version: rule.version,
-    specificity: specificityName(winner.specificity),
+    specificity,
+    ...(historicalQuote ? {
+      historical_baseline_rate_thb: historicalQuote.amount_thb,
+      historical_baseline_verified: true,
+      historical_source_ref: historicalQuote.source_ref,
+      historical_ceiling_applied: historicalCeilingApplied,
+      historical_override_authority: exactClientCurrentRule && canExposeRate && rate > historicalQuote.amount_thb
+        ? "exact_client_current_rule"
+        : "",
+    } : {}),
   };
 }
 
@@ -131,8 +175,88 @@ function normalizeRule(record, index) {
     priority: integer(fields.priority, 0),
     status: token(selectName(fields.status)),
     requires_per_approval: yes(fields.requires_per_approval),
+    reviewed_by: token(fields.reviewed_by || fields.approved_by || fields.updated_by),
+    reviewed_at: clean(fields.reviewed_at || fields.approved_at, 100),
     version: Math.max(1, integer(fields.version, 1)),
     updated_at: clean(fields.updated_at || fields.reviewed_at, 100),
+  };
+}
+
+function historicalPerQuoteFromNormalizedRules(input = {}, rules = []) {
+  const candidates = (Array.isArray(rules) ? rules : [])
+    .filter((rule) => rule && HISTORICAL_REVIEWED_STATES.has(rule.status))
+    .filter((rule) => specificityFor(rule, input) === 4)
+    .filter((rule) => rule.reviewed_by === "per")
+    .map((rule) => {
+      const amount = firstFinite(
+        rule.customer_sell_rate_thb,
+        rule.customer_specific_rate_thb,
+        rule.default_rate_thb,
+      );
+      const reviewedAt = parseIso(rule.reviewed_at || rule.updated_at);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > HISTORICAL_PER_QUOTE_MAX_THB || !reviewedAt) return null;
+      return {
+        amount_thb: Math.trunc(amount),
+        client_id: clean(input.client_id || input.clientId, 100),
+        client_identity_key: clean(input.client_identity_key || input.clientIdentityKey, 180).toLowerCase(),
+        model_id: rule.model_ids[0] || clean(input.model_id || input.modelId, 100),
+        model_key: rule.model_key || clean(input.model_key || input.modelKey, 160).toLowerCase(),
+        reviewed_at: reviewedAt.toISOString(),
+        source_ref: rule.record_id,
+        version: rule.version,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) =>
+      Date.parse(b.reviewed_at) - Date.parse(a.reviewed_at) ||
+      b.version - a.version ||
+      String(a.source_ref).localeCompare(String(b.source_ref))
+    );
+
+  return candidates[0] || null;
+}
+
+export function normalizeHistoricalPerQuote(input = {}, modelId = "", modelKey = "") {
+  const raw = input.historical_per_quote || input.historicalPerQuote;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+
+  const amount = finite(raw.amount_thb ?? raw.rate_thb ?? raw.quoted_price_thb);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > HISTORICAL_PER_QUOTE_MAX_THB) return null;
+
+  const approvedBy = token(raw.approved_by || raw.reviewed_by || raw.quoted_by);
+  const reviewStatus = token(raw.review_status || raw.status || raw.decision);
+  const sourceRef = clean(raw.source_ref || raw.evidence_ref || raw.quote_ref, 240);
+  const reviewedAt = parseIso(raw.reviewed_at || raw.quoted_at || raw.created_at);
+  if (approvedBy !== "per") return null;
+  if (!["approved", "reviewed", "verified", "confirmed"].includes(reviewStatus)) return null;
+  if (!sourceRef || !reviewedAt) return null;
+
+  const inputClientId = clean(input.client_id || input.clientId, 100);
+  const inputClientKey = clean(input.client_identity_key || input.clientIdentityKey, 180).toLowerCase();
+  const quoteClientId = clean(raw.client_id || raw.clientId, 100);
+  const quoteClientKey = clean(raw.client_identity_key || raw.clientIdentityKey, 180).toLowerCase();
+  const clientMatched = Boolean(
+    (inputClientId && quoteClientId && inputClientId === quoteClientId) ||
+    (inputClientKey && quoteClientKey && inputClientKey === quoteClientKey)
+  );
+  if (!clientMatched) return null;
+
+  const quoteModelId = clean(raw.model_id || raw.modelId, 100);
+  const quoteModelKey = clean(raw.model_key || raw.modelKey, 160).toLowerCase();
+  const modelMatched = Boolean(
+    (modelId && quoteModelId && modelId === quoteModelId) ||
+    (modelKey && quoteModelKey && modelKey === quoteModelKey)
+  );
+  if (!modelMatched) return null;
+
+  return {
+    amount_thb: Math.trunc(amount),
+    client_id: quoteClientId,
+    client_identity_key: quoteClientKey,
+    model_id: quoteModelId,
+    model_key: quoteModelKey,
+    reviewed_at: reviewedAt.toISOString(),
+    source_ref: sourceRef,
   };
 }
 

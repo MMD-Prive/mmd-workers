@@ -348,6 +348,10 @@ function projectBookingSalesControl(model, context, requestContext = {}) {
       term_summary: str(offer.term_summary),
       matched_rule_key: str(offer.matched_rule_key) || null,
       rule_version: offer.rule_version ?? null,
+      historical_baseline_rate_thb: Number.isFinite(offer.historical_baseline_rate_thb) ? offer.historical_baseline_rate_thb : null,
+      historical_ceiling_applied: offer.historical_ceiling_applied === true,
+      historical_source_ref: str(offer.historical_source_ref) || null,
+      historical_override_authority: str(offer.historical_override_authority) || null,
     },
   };
 }

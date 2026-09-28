@@ -185,3 +185,233 @@ test("canonical Per approval only and Never automatic remain hidden", () => {
     assert.equal(result.reason_code, "matched_rate_hidden");
   }
 });
+
+
+
+function historicalQuote(amount = 18000, overrides = {}) {
+  return {
+    amount_thb: amount,
+    client_id: "recCLIENT00000001",
+    model_key: "ems21-jdye",
+    approved_by: "Per",
+    review_status: "Approved",
+    reviewed_at: "2026-09-10T12:00:00.000Z",
+    source_ref: "line-ofc:reviewed-quote-001",
+    ...overrides,
+  };
+}
+
+test("reviewed historical Per quote at or below 20k caps a higher non-exact current rule", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    historical_per_quote: historicalQuote(18000),
+    rules: [rule("premium-current", {
+      audience_scope: ["Premium"],
+      customer_sell_rate_thb: 20000,
+    })],
+  });
+  assert.equal(result.sellable, true);
+  assert.equal(result.customer_rate_thb, 18000);
+  assert.equal(result.reason_code, "historical_per_quote_ceiling_applied");
+  assert.equal(result.historical_baseline_rate_thb, 18000);
+  assert.equal(result.historical_ceiling_applied, true);
+});
+
+test("current lower rule stays lower than the reviewed historical quote", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    historical_per_quote: historicalQuote(18000),
+    rules: [rule("premium-current", {
+      audience_scope: ["Premium"],
+      customer_sell_rate_thb: 17000,
+    })],
+  });
+  assert.equal(result.customer_rate_thb, 17000);
+  assert.equal(result.reason_code, "matched_active_rule");
+  assert.equal(result.historical_ceiling_applied, false);
+});
+
+test("exact Client current rule is the only current pricing rule allowed to exceed historical ceiling", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    historical_per_quote: historicalQuote(18000),
+    rules: [rule("client-current", {
+      Client: ["recCLIENT00000001"],
+      customer_sell_rate_thb: 22000,
+      priority: 1,
+      reviewed_by: "Per",
+      reviewed_at: "2026-09-21T10:00:00.000Z",
+    })],
+  });
+  assert.equal(result.customer_rate_thb, 22000);
+  assert.equal(result.specificity, "exact_client");
+  assert.equal(result.historical_ceiling_applied, false);
+  assert.equal(result.historical_override_authority, "exact_client_current_rule");
+});
+
+test("reviewed historical quote without a current rule is baseline-only and never becomes a final sellable quote", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    historical_per_quote: historicalQuote(18000),
+    rules: [],
+  });
+  assert.equal(result.sellable, false);
+  assert.equal(result.price_visible, false);
+  assert.equal(result.customer_rate_thb, null);
+  assert.equal(result.historical_baseline_rate_thb, 18000);
+  assert.equal(result.reason_code, "historical_baseline_only_no_current_rule");
+});
+
+test("history above 20k or without exact reviewed Per evidence is ignored", () => {
+  const cases = [
+    historicalQuote(22000),
+    historicalQuote(18000, { approved_by: "Kenji" }),
+    historicalQuote(18000, { review_status: "Draft" }),
+    historicalQuote(18000, { client_id: "recOTHERCLIENT0001" }),
+    historicalQuote(18000, { model_key: "other-model" }),
+    historicalQuote(18000, { source_ref: "" }),
+  ];
+  for (const evidence of cases) {
+    const result = resolveModelSalesOffer({
+      model_key: "EMs21-JDye",
+      client_id: "recCLIENT00000001",
+      requested_at: at,
+      entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+      historical_per_quote: evidence,
+      rules: [rule("premium-current", {
+        audience_scope: ["Premium"],
+        customer_sell_rate_thb: 20000,
+      })],
+    });
+    assert.equal(result.customer_rate_thb, 20000);
+    assert.equal(result.historical_baseline_rate_thb, undefined);
+    assert.equal(result.reason_code, "matched_active_rule");
+  }
+});
+
+
+test("reviewed inactive exact-client rule is reused automatically as historical baseline", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    rules: [
+      rule("old-client-quote", {
+        Client: ["recCLIENT00000001"],
+        status: "Superseded",
+        customer_sell_rate_thb: 18000,
+        reviewed_by: "Per",
+        reviewed_at: "2026-09-10T12:00:00.000Z",
+        version: 1,
+      }),
+      rule("current-premium", {
+        audience_scope: ["Premium"],
+        status: "Active",
+        customer_sell_rate_thb: 20000,
+        version: 2,
+      }),
+    ],
+  });
+  assert.equal(result.sellable, true);
+  assert.equal(result.customer_rate_thb, 18000);
+  assert.equal(result.historical_baseline_rate_thb, 18000);
+  assert.equal(result.historical_source_ref, "old-client-quote");
+  assert.equal(result.reason_code, "historical_per_quote_ceiling_applied");
+});
+
+test("draft or non-Per exact-client history never becomes a historical baseline", () => {
+  for (const oldRule of [
+    rule("draft-client-quote", {
+      Client: ["recCLIENT00000001"],
+      status: "Draft",
+      customer_sell_rate_thb: 18000,
+      reviewed_by: "Per",
+      reviewed_at: "2026-09-10T12:00:00.000Z",
+    }),
+    rule("other-reviewer-client-quote", {
+      Client: ["recCLIENT00000001"],
+      status: "Superseded",
+      customer_sell_rate_thb: 18000,
+      reviewed_by: "Partner",
+      reviewed_at: "2026-09-10T12:00:00.000Z",
+    }),
+  ]) {
+    const result = resolveModelSalesOffer({
+      model_key: "EMs21-JDye",
+      client_id: "recCLIENT00000001",
+      requested_at: at,
+      entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+      rules: [
+        oldRule,
+        rule("current-premium", {
+          audience_scope: ["Premium"],
+          status: "Active",
+          customer_sell_rate_thb: 20000,
+          version: 2,
+        }),
+      ],
+    });
+    assert.equal(result.customer_rate_thb, 20000);
+    assert.equal(result.historical_baseline_rate_thb, undefined);
+  }
+});
+
+test("reviewed historical rule above 20k is ignored even for exact Client", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    rules: [
+      rule("old-client-quote", {
+        Client: ["recCLIENT00000001"],
+        status: "Superseded",
+        customer_sell_rate_thb: 22000,
+        reviewed_by: "Per",
+        reviewed_at: "2026-09-10T12:00:00.000Z",
+      }),
+      rule("current-premium", {
+        audience_scope: ["Premium"],
+        status: "Active",
+        customer_sell_rate_thb: 25000,
+        version: 2,
+      }),
+    ],
+  });
+  assert.equal(result.customer_rate_thb, 25000);
+  assert.equal(result.historical_baseline_rate_thb, undefined);
+});
+
+
+test("unreviewed exact-client current rule cannot raise a reviewed historical ceiling", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    historical_per_quote: historicalQuote(18000),
+    rules: [rule("client-current-unreviewed", {
+      Client: ["recCLIENT00000001"],
+      customer_sell_rate_thb: 22000,
+      priority: 1,
+      reviewed_by: "",
+      reviewed_at: "",
+    })],
+  });
+  assert.equal(result.specificity, "exact_client");
+  assert.equal(result.customer_rate_thb, 18000);
+  assert.equal(result.historical_ceiling_applied, true);
+  assert.equal(result.historical_override_authority, "");
+});
