@@ -43,6 +43,8 @@ export function handleLiffMemberShell(request, env = {}) {
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     couponWalletEndpoint: "/member/api/liff/care-back/wallet",
     creditWalletEndpoint: "/api/member/app/credits",
+    historyEndpoint: "/api/member/app/history",
+    historyRecoveryEndpoint: "/api/member/app/history/recovery",
     customerRequestsEndpoint: "/member/api/liff/customer-requests",
     customerRequestEvidenceEndpoint: "/member/api/liff/customer-request-evidence",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
@@ -591,6 +593,93 @@ function renderShell(config, nonce) {
     return payload.data || {};
   }
 
+  function normalizeCanonicalHistory(payload) {
+    const rows = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.items) ? payload.items : [];
+    const state = Array.isArray(payload)
+      ? "resolved"
+      : String(payload?.state || (rows.length ? "resolved" : "checking")).trim().toLowerCase();
+    return {
+      state: state === "resolved" ? "resolved" : "checking",
+      items: rows.slice(0, 100).map((item) => ({
+        date: item?.occurredAt || item?.occurred_at || item?.date || null,
+        title: String(item?.title || "MMD").slice(0, 160),
+        status: item?.statusLabel || item?.status_label || item?.state || "verified",
+        type: item?.kind || item?.type || "service",
+        detail: item?.detail || null,
+      })),
+    };
+  }
+
+  function renderCanonicalHistory(payload, recoveryState = "") {
+    const historyView = normalizeCanonicalHistory(payload);
+    const checking = historyView.state !== "resolved";
+    const home = document.getElementById("history");
+    const detail = document.getElementById("v2-history");
+    if (!home || !detail) return;
+
+    home.replaceChildren();
+    detail.replaceChildren();
+
+    if (checking) {
+      const review = recoveryState === "review_required"
+        ? "ประวัติบางรายการอยู่ระหว่างการตรวจสอบโดย MMD"
+        : (copy.checking || "กำลังตรวจสอบข้อมูลของคุณครับ");
+      appendEmpty(home, review);
+      appendEmpty(detail, review);
+      return;
+    }
+
+    if (!historyView.items.length) {
+      appendEmpty(home, copy.empty);
+      appendEmpty(detail, copy.empty);
+      return;
+    }
+
+    for (const item of historyView.items.slice(0, 3)) {
+      home.append(eventRow(item.date, item.title, item.status, item.detail || item.type));
+    }
+    for (const item of historyView.items) {
+      detail.append(eventRow(item.date, item.title, item.status, item.detail || item.type));
+    }
+  }
+
+  async function readCanonicalHistory() {
+    try {
+      const response = await fetch(CONFIG.historyEndpoint, {
+        method:"GET",
+        credentials:"same-origin",
+        cache:"no-store",
+        headers:{accept:"application/json"},
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload === null) return null;
+
+      let recoveryState = "";
+      const normalized = normalizeCanonicalHistory(payload);
+      if (normalized.state !== "resolved") {
+        try {
+          const recoveryResponse = await fetch(CONFIG.historyRecoveryEndpoint, {
+            method:"GET",
+            credentials:"same-origin",
+            cache:"no-store",
+            headers:{accept:"application/json"},
+          });
+          const recoveryPayload = await recoveryResponse.json().catch(() => null);
+          if (recoveryResponse.ok && recoveryPayload?.ok === true) {
+            recoveryState = String(recoveryPayload?.history_recovery?.state || "").trim().toLowerCase();
+          }
+        } catch {}
+      }
+
+      renderCanonicalHistory(payload, recoveryState);
+      return payload;
+    } catch {
+      return null;
+    }
+  }
+
   async function readProfile() {
     const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     const payload = await response.json().catch(() => null);
@@ -599,6 +688,7 @@ function renderShell(config, nonce) {
     renderCustomerContact(payload.data || {});
     await readCouponWallet();
     await readCreditWallet();
+    await readCanonicalHistory();
     await readCustomerRequests();
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
