@@ -195,6 +195,52 @@ function isDepositBookingIntent(modelGate = {}) {
     && text(modelGate?.parsed?.trigger, 40) === "deposit";
 }
 
+function shouldCaptureIncompleteDepositDraft(accumulator = null) {
+  const draft = accumulator?.draft || {};
+  const intent = accumulator?.merged_intent || {};
+  const revision = Math.max(0, Number(draft.revision) || 0);
+  const capturedRevision = Math.max(0, Number(draft.capture_revision) || 0);
+  return accumulator?.active === true
+    && draft?.ready !== true
+    && text(draft?.draft_id, 80)
+    && text(intent?.type, 40) === "booking"
+    && text(intent?.trigger, 40) === "deposit"
+    && revision > capturedRevision;
+}
+
+async function captureIncompleteDepositDraft(env = {}, event = {}, currentIntent = "", accumulator = null) {
+  if (!shouldCaptureIncompleteDepositDraft(accumulator)) {
+    return { attempted: false, executed: false, status: "not_required" };
+  }
+  const canonical = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => null);
+  if (canonical?.resolved !== true || !/^rec[A-Za-z0-9]+$/.test(text(canonical?.client_record_id, 80))) {
+    return { attempted: true, executed: false, status: "canonical_client_recheck_failed" };
+  }
+
+  const result = await executeKenjiLv5LineBookingAction({
+    env,
+    event,
+    modelGate: {
+      required: false,
+      status: "not_required",
+      parsed: accumulator.merged_intent,
+    },
+    decision: {},
+    canonicalClientId: text(canonical.client_record_id, 80),
+  });
+
+  await recordKenjiBookingAccumulatorAction({
+    env,
+    event,
+    currentIntent,
+    draft: accumulator.draft,
+    actionResult: result,
+  }).catch(() => null);
+
+  return result;
+}
+
+
 async function applyP4Action(env, event, modelGate, decision, accumulator = null) {
   if (accumulator?.active === true && accumulator?.action_allowed !== true) {
     const status = accumulator?.locked === true ? "matrix_booking_already_actioned" : "matrix_booking_incomplete";
@@ -248,8 +294,22 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
     || accumulator?.active === true;
   if (!operationalCandidate) return null;
 
-  const guidedDecision = guidedBookingDecision(currentIntent, accumulator);
+  const preCapture = await captureIncompleteDepositDraft(env, event, currentIntent, accumulator)
+    .catch(() => ({ attempted: true, executed: false, status: "booking_intent_capture_failed" }));
+
+  let guidedDecision = guidedBookingDecision(currentIntent, accumulator);
   if (guidedDecision) {
+    if (preCapture.attempted === true) {
+      guidedDecision = {
+        ...guidedDecision,
+        operational: {
+          ...(guidedDecision.operational || {}),
+          booking_intent_capture_attempted: true,
+          booking_intent_capture_executed: preCapture.executed === true,
+          booking_intent_capture_status: text(preCapture.status, 80),
+        },
+      };
+    }
     const delivery = replyAllowed
       ? await sendReply(env, replyToken(event), guidedDecision.text)
       : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
@@ -259,7 +319,7 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
         ok: true,
         route: "line_webhook",
         operational: "lv5_p2",
-        action_executed: false,
+        action_executed: preCapture.executed === true,
         delivered: delivery.ok === true,
         reply_suppressed: delivery.suppressed === true,
       }), {
@@ -316,6 +376,9 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
       matrix_booking_ready: accumulator?.draft?.ready === true,
       matrix_booking_missing: Array.isArray(accumulator?.draft?.missing_fields) ? accumulator.draft.missing_fields : [],
       matrix_booking_revision: Number(accumulator?.draft?.revision || 0),
+      booking_intent_capture_attempted: preCapture.attempted === true,
+      booking_intent_capture_executed: preCapture.executed === true,
+      booking_intent_capture_status: text(preCapture.status, 80),
     },
   };
 
@@ -363,4 +426,4 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   };
 }
 
-export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, canonicalizeVerifiedModelIntent, guidedBookingDecision, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, canonicalizeVerifiedModelIntent, guidedBookingDecision, isPreparedBookingDecision, isDepositBookingIntent, shouldCaptureIncompleteDepositDraft, isLineReplyAllowed });
