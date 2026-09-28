@@ -197,6 +197,38 @@ function guidedModelCandidate(raw = "") {
   return "";
 }
 
+function enrichBookingFragmentWithContext({
+  fragment = {},
+  prior = {},
+  priorActive = false,
+  effectiveIntent = "",
+  payload = {},
+} = {}) {
+  let next = { ...fragment };
+  const activeModel = object(payload.active_model_v1);
+  if (!text(next.model_name, 120) && ["mmd_companion", "availability_request"].includes(token(effectiveIntent)) &&
+      text(activeModel.model_code, 80) && text(activeModel.working_name, 120)) {
+    next = {
+      ...next,
+      model_name: text(activeModel.model_code, 80),
+      model_working_name_hint: text(activeModel.working_name, 120),
+    };
+  }
+
+  const priorMissing = priorActive ? missingKenjiBookingFields(prior) : [];
+  if (!text(next.model_name, 120) && priorMissing[0] === "model_name") {
+    const candidate = guidedModelCandidate(next.raw);
+    if (candidate) {
+      next = {
+        ...next,
+        model_name: candidate,
+        location: "",
+      };
+    }
+  }
+  return next;
+}
+
 function newDraftId(conversationHash = "", sourceEventId = "") {
   const a = text(conversationHash, 80).slice(0, 16);
   const b = text(sourceEventId, 80).slice(-24) || "event";
@@ -320,27 +352,13 @@ export async function accumulateKenjiLineBookingDraft({
   const effectiveIntent = text(continuity?.effective_intent, 120) || currentIntent;
   let fragment = parseKenjiBookingFragment(event, effectiveIntent, { now, priorActive });
 
-  const activeModel = object(payload.active_model_v1);
-  if (!text(fragment.model_name, 120) && ["mmd_companion", "availability_request"].includes(token(effectiveIntent)) &&
-      text(activeModel.model_code, 80) && text(activeModel.working_name, 120)) {
-    fragment = {
-      ...fragment,
-      model_name: text(activeModel.model_code, 80),
-      model_working_name_hint: text(activeModel.working_name, 120),
-    };
-  }
-
-  const priorMissing = priorActive ? missingKenjiBookingFields(prior) : [];
-  if (!text(fragment.model_name, 120) && priorMissing[0] === "model_name") {
-    const candidate = guidedModelCandidate(fragment.raw);
-    if (candidate) {
-      fragment = {
-        ...fragment,
-        model_name: candidate,
-        location: "",
-      };
-    }
-  }
+  fragment = enrichBookingFragmentWithContext({
+    fragment,
+    prior,
+    priorActive,
+    effectiveIntent,
+    payload,
+  });
 
   const merged = mergeKenjiBookingDraftV1({
     prior,
@@ -443,5 +461,6 @@ export const KENJI_BOOKING_ACCUMULATOR_INTERNALS = Object.freeze({
   extractDiscountFromAmount,
   looseLocationBesideTime,
   guidedModelCandidate,
+  enrichBookingFragmentWithContext,
   mergedIntent,
 });
