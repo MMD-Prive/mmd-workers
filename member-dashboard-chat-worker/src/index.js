@@ -869,7 +869,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}บอกเรื่องที่ต้องการได้เลยครับ เดี๋ยวผมช่วยดูและพาไปขั้นตอนที่ตรงกับบัญชีนี้ให้ครับ`;
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé บอกเรื่องที่ต้องการได้เลยครับ เดี๋ยวผมช่วยดูและพาไปขั้นตอนที่ตรงกับบัญชีนี้ให้ครับ`;
   }
 
   if (intent === "privacy_request") {
