@@ -92,7 +92,10 @@ export function resolveModelSalesOffer(input = {}) {
   );
   const canExposeRate = rate != null && priceMayBeExposed(rule.price_visibility);
   const specificity = specificityName(winner.specificity);
-  const exactClientCurrentRule = specificity === "exact_client";
+  const exactClientCurrentRule =
+    specificity === "exact_client" &&
+    rule.reviewed_by === "per" &&
+    Boolean(parseIso(rule.reviewed_at));
   const historicalCeilingApplied = Boolean(
     historicalQuote &&
     canExposeRate &&
@@ -179,7 +182,7 @@ function normalizeRule(record, index) {
   };
 }
 
-export function historicalPerQuoteFromRules(input = {}, rules = []) {
+function historicalPerQuoteFromNormalizedRules(input = {}, rules = []) {
   const candidates = (Array.isArray(rules) ? rules : [])
     .filter((rule) => rule && HISTORICAL_REVIEWED_STATES.has(rule.status))
     .filter((rule) => specificityFor(rule, input) === 4)
