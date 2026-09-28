@@ -39,7 +39,7 @@ The following surfaces are Worker/LIFF-native and must not require Lovable to re
 5. New-model Phase A onboarding.
 6. Fail-closed unavailable/retry states.
 
-Authenticated dashboard presentation may evolve separately, but the LIFF entry chain must remain self-sufficient.
+Authenticated dashboard presentation is now part of the same Worker-rendered LIFF direction for this phase. Lovable remains a reference/rollback source only and is not the default presentation dependency.
 
 ## Model-side role lock
 
@@ -82,5 +82,19 @@ Target application architecture:
 
 - LIFF bootstrap pages receive the digital MMD APP shell.
 - Phase A onboarding receives the same digital shell and tokens.
+- Authenticated `/sigil/model/dashboard*` renders a Worker-native Digital Workspace instead of fetching Lovable.
+- The UI is intentionally composed from two inputs:
+  1. the live Model Dashboard capabilities/contracts already in production; and
+  2. the strongest compact Digital Home interaction pattern from the Worker-rendered MY MMD LIFF dashboard.
+- Primary dock: `HOME / JOBS / CONSOLE / YOU`.
+- HOME preserves verified profile/session state, backend-owned NEEDS YOU, active-job routing, ETA gating, availability and profile readiness.
+- JOBS shows only backend-confirmed current work.
+- CONSOLE remains canonical `/sigil/model/console`; active-job mutations are not duplicated in Dashboard.
+- YOU contains profile/settings links plus model-safe work history and payout summaries.
+- `GET /v1/model/history` is rendered with historical fee and paid-confirmed values as separate metrics; they are never added together.
+- Media remains on the existing Worker upload/review contracts.
 - Existing LIFF IDs, query preservation, session cookies, Worker endpoints, validation, submission payloads and fail-closed behavior stay unchanged.
 - No production deploy is implied by this document.
+
+See also:
+- `docs/architecture/MMD_APP_MODEL_HISTORY_OWNER_CANON_20260927.md`
