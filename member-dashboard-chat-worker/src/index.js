@@ -753,6 +753,8 @@ function buildKenjiModelAccessReply(model = {}) {
 }
 
 function buildKenjiModelAccessDecision(access = {}, options = {}) {
+  const clearOnFailure = options.clearOnFailure === true;
+  const failureContext = clearOnFailure ? { clear_model_context: true } : {};
   const base = {
     fallback: false,
     model_attempted: false,
@@ -777,6 +779,7 @@ function buildKenjiModelAccessDecision(access = {}, options = {}) {
   if (access.status === "restricted_category" && ["gws", "ems"].includes(access.category)) {
     return {
       ...base,
+      ...failureContext,
       text: "รายการนี้อยู่ในกลุ่มจำกัดสิทธิ์ครับ เดี๋ยวเปอร์ขอตรวจสิทธิ์ของบัญชีนี้และการอนุญาตของรายนั้นก่อนนะครับ ถ้าเปิดให้ดูได้ เปอร์จะส่งรายละเอียดที่อนุญาตให้ต่อครับ",
       reply_source: "model_access_restricted_category",
       guard_blocked: false,
@@ -784,11 +787,12 @@ function buildKenjiModelAccessDecision(access = {}, options = {}) {
     };
   }
   if (access.status === "clarification") {
-    return { ...base, text: "ขอชื่อที่ใช้ทำงานหรือรหัส Model ให้ครบอีกนิดครับ", reply_source: "model_access_clarification", guard_blocked: false, guard_reason: "" };
+    return { ...base, ...failureContext, text: "ขอชื่อที่ใช้ทำงานหรือรหัส Model ให้ครบอีกนิดครับ", reply_source: "model_access_clarification", guard_blocked: false, guard_reason: "" };
   }
   if (access.status === "verification_required" && options.pendingStored === true) {
     return {
       ...base,
+      ...failureContext,
       text: "ขออีเมล Google ที่เคยแจ้งเปอร์ไว้สำหรับเข้าถึงแฟ้ม Premium Model หรือ Standard Models ครับ",
       reply_source: "model_access_verification",
       guard_blocked: false,
@@ -798,13 +802,14 @@ function buildKenjiModelAccessDecision(access = {}, options = {}) {
   if (access.status === "renewal") {
     return {
       ...base,
+      ...failureContext,
       text: `คุยเรื่องนายแบบและส่งบรีฟให้เปอร์ช่วยดูต่อได้ครับ ส่งวัน เวลา สถานที่ และรูปแบบงานคร่าว ๆ มาได้เลยครับ ก่อนยืนยันงานหรือเปิดข้อมูลใหม่ที่ต้องใช้สิทธิ์ Private เปอร์จะช่วยเช็กการต่ออายุสมาชิกให้ครับ → ${MEMBER_RENEWAL_URL}`,
       reply_source: "model_access_renewal",
       guard_blocked: false,
       guard_reason: "",
     };
   }
-  return { ...base, text: "", reply_source: "silent", guard_blocked: true, guard_reason: "model_access_silent" };
+  return { ...base, ...failureContext, text: "", reply_source: "silent", guard_blocked: true, guard_reason: "model_access_silent" };
 }
 
 function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
@@ -832,7 +837,12 @@ function modelBrowsePreferenceLabel(value = "") {
 }
 
 function activeModelContext(options = {}) {
-  const raw = options?.continuity?.matrix?.payload_json?.active_model_v1;
+  const continuity = options?.continuity || {};
+  const matrix = continuity?.matrix || {};
+  if (asString(continuity.decision) === "stale_refresh" || asString(matrix.matrix_status) === "stale") return null;
+  const expiresAt = Date.parse(asString(matrix.state_expires_at));
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return null;
+  const raw = matrix?.payload_json?.active_model_v1;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const modelCode = asString(raw.model_code).slice(0, 80);
   const workingName = asString(raw.working_name).slice(0, 120);
@@ -1169,26 +1179,26 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const modelAccessAllowed = options.modelAccessAllowed !== false;
 
   if (!modelAccessAllowed && (intent === "model_access_verification" || intent === "model_lookup")) {
-    return buildKenjiModelAccessDecision({ status: "silent" });
+    return buildKenjiModelAccessDecision({ status: "silent" }, { clearOnFailure: true });
   }
 
   if (intent === "model_access_verification") {
     const lineUserId = getLineUserId({ event });
     const verificationEmail = extractKenjiModelVerificationEmail(eventText);
     const pending = await modelAccessPending(env, lineUserId, "get");
-    if (!pending.ok || pending.found !== true || !asString(pending.query)) return buildKenjiModelAccessDecision({ status: "silent" });
+    if (!pending.ok || pending.found !== true || !asString(pending.query)) return buildKenjiModelAccessDecision({ status: "silent" }, { clearOnFailure: true });
     const access = await requestKenjiModelAccess(env, lineUserId, pending.query, verificationEmail);
     await modelAccessPending(env, lineUserId, "delete");
-    return buildKenjiModelAccessDecision(access);
+    return buildKenjiModelAccessDecision(access, { clearOnFailure: true });
   }
 
   if (intent === "model_lookup") {
     const query = extractKenjiModelLookupQuery(eventText);
     const lineUserId = getLineUserId({ event });
     const access = await requestKenjiModelAccess(env, lineUserId, query);
-    if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access);
+    if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access, { clearOnFailure: true });
     const pending = await modelAccessPending(env, lineUserId, "put", query);
-    return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
+    return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true, clearOnFailure: true });
   }
 
   const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
