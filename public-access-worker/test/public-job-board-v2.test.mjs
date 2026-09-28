@@ -132,21 +132,22 @@ test("runtime fails closed without durable R2 or a strong signing secret", async
   assert.equal((await response.json()).error, "public_job_board_signing_unavailable");
 });
 
-test("owner output uses branded short link and resolves it into LIFF Login V2", async () => {
+test("owner short link renders a compact job-first landing and skips generic Welcome", async () => {
   const testEnv = env();
   const created = await ownerCreate(testEnv, { id: "JOB-20261001-A1B2C3D4E5F6" });
   assert.equal(created.job.broadcast_url, "https://mmdbkk.com/j/A1B2C3D4E5F6");
 
   const short = await worker.fetch(new Request(created.job.broadcast_url), testEnv);
-  assert.equal(short.status, 302);
-  assert.equal(short.headers.get("x-mmd-job-short-link"), "v1");
-  const broadcast = new URL(short.headers.get("location"));
-  assert.equal(broadcast.origin, "https://www.mmdbkk.com");
-  assert.equal(broadcast.pathname, "/sigil/model/login");
-  assert.equal(broadcast.searchParams.get("intent"), "job_board");
-  assert.equal(broadcast.searchParams.get("return_to"), "public_job_board");
-  assert.equal(broadcast.searchParams.get("job_id"), created.job.id);
-  assert.equal(broadcast.searchParams.get("next"), `https://sigil.mmdbkk.com/public/api/jobs/${created.job.id}`);
+  assert.equal(short.status, 200);
+  assert.equal(short.headers.get("x-mmd-job-short-link"), "v2");
+  const page = await short.text();
+  assert.match(page, /PRIVATE JOB · งานลับ/);
+  assert.match(page, /เปิดงานลับนี้ผ่าน LINE/);
+  assert.match(page, /https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
+  assert.match(page, /intent=job_board/);
+  assert.match(page, new RegExp(created.job.id));
+  assert.doesNotMatch(page, /MMD APP \| Welcome|สวัสดีครับ|ยินดีที่ได้รู้จัก/);
+  assert.doesNotMatch(page, /og:image/i);
 
   const direct = await call(testEnv, "/public/api/jobs");
   assert.equal(direct.status, 302);
@@ -156,7 +157,7 @@ test("owner output uses branded short link and resolves it into LIFF Login V2", 
   assert.equal(login.searchParams.get("intent"), "job_board");
 });
 
-test("branded short link resolves an existing canonical job created before aliases existed", async () => {
+test("branded short link renders an existing canonical job created before aliases existed", async () => {
   const testEnv = env();
   const job = createJobRecord({
     id: "JOB-20260928-3DE86201F471",
@@ -169,10 +170,12 @@ test("branded short link resolves an existing canonical job created before alias
   );
 
   const response = await worker.fetch(new Request("https://mmdbkk.com/j/3DE86201F471"), testEnv);
-  assert.equal(response.status, 302);
-  const login = new URL(response.headers.get("location"));
-  assert.equal(login.pathname, "/sigil/model/login");
-  assert.equal(login.searchParams.get("job_id"), "JOB-20260928-3DE86201F471");
+  assert.equal(response.status, 200);
+  const page = await response.text();
+  assert.match(page, /JOB-20260928-3DE86201F471/);
+  assert.match(page, /สุขุมวิท/);
+  assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);
+  assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);
 });
 
 test("public welcome uses approved copy and hides internal identity language", async () => {
