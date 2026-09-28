@@ -87,14 +87,34 @@ async function call(path, init = {}, envOverrides = {}) {
   return { response, writes, commits };
 }
 
-test("GET /sigil/apply renders a dedicated Private Model form", async () => {
-  const { response } = await call(PRIVATE_MODEL_PAGE_PATH);
+test("GET /sigil/apply proxies the Webflow presentation while sigil-worker keeps route ownership", async () => {
+  const { response } = await call(PRIVATE_MODEL_PAGE_PATH, {}, {
+    PRIVATE_MODEL_PAGE_FETCH: async (url) => {
+      assert.match(url, /^https:\/\/mmdprive\.webflow\.io\/sigil\/apply/);
+      return new Response("<!doctype html><html><body><main id=\"pmc1\">MMD Private Model UI</main></body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    },
+  });
   const html = await response.text();
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "sigil-worker");
+  assert.equal(response.headers.get("x-mmd-presentation-owner"), "webflow");
+  assert.match(html, /MMD Private Model UI/);
+  assert.doesNotMatch(html, /TarT Private Review/);
+});
+
+test("GET /sigil/apply fails soft to the emergency worker renderer if Webflow presentation is unavailable", async () => {
+  const { response } = await call(PRIVATE_MODEL_PAGE_PATH, {}, {
+    PRIVATE_MODEL_PAGE_FETCH: async () => new Response("upstream unavailable", { status: 503 }),
+  });
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-presentation-owner"), "emergency-fallback");
   assert.match(html, /Private Model Application/);
   assert.match(html, new RegExp(PRIVATE_MODEL_APPLY_PATH.replaceAll("/", "\\/")));
   assert.match(html, new RegExp(PRIVATE_MODEL_UPLOAD_URL_PATH.replaceAll("/", "\\/")));
-  assert.doesNotMatch(html, /membership_review|partner_request|private_access/);
 });
 
 test("Private Model application validation fails closed for wrong application_type", async () => {

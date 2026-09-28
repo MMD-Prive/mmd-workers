@@ -142,10 +142,7 @@ export async function handlePrivateModelRequest(request, env = {}) {
   const corsHeaders = corsFor(request, env);
 
   if ((url.pathname === PRIVATE_MODEL_PAGE_PATH || url.pathname === `${PRIVATE_MODEL_PAGE_PATH}/`) && ["GET", "HEAD"].includes(request.method)) {
-    const response = html(renderApplyPage(env), 200, corsHeaders);
-    response.headers.set("x-mmd-page", "sigil-private-model-apply");
-    response.headers.set("x-mmd-route-owner", "sigil-worker");
-    return request.method === "HEAD" ? new Response(null, { status: 200, headers: response.headers }) : response;
+    return fetchPrivateModelPresentation(request, env, corsHeaders);
   }
 
   if ((url.pathname === PRIVATE_MODEL_RECEIVED_PATH || url.pathname === `${PRIVATE_MODEL_RECEIVED_PATH}/`) && ["GET", "HEAD"].includes(request.method)) {
@@ -188,6 +185,57 @@ export async function handlePrivateModelRequest(request, env = {}) {
   if (!validation.ok) return invalidPayload(PRIVATE_MODEL_UPLOAD_SERVICE, validation.fields, corsHeaders);
   if (!flagEnabled(env.PRIVATE_MODEL_UPLOAD_ENABLED)) return readinessUpload(corsHeaders);
   return handleProductionUploadUrl(request, parsed.value, env, corsHeaders);
+}
+
+async function fetchPrivateModelPresentation(request, env, corsHeaders) {
+  const incoming = new URL(request.url);
+  const presentationBase = boundedString(
+    env.PRIVATE_MODEL_PRESENTATION_URL || "https://mmdprive.webflow.io/sigil/apply",
+    500,
+  );
+  const presentation = new URL(presentationBase);
+  presentation.search = incoming.search;
+
+  try {
+    const pageFetch = typeof env.PRIVATE_MODEL_PAGE_FETCH === "function"
+      ? env.PRIVATE_MODEL_PAGE_FETCH
+      : fetch;
+    const upstream = await pageFetch(presentation.toString(), {
+      method: request.method,
+      headers: {
+        accept: request.headers.get("accept") || "text/html,application/xhtml+xml",
+        "user-agent": request.headers.get("user-agent") || "MMD-SIGIL-Apply-Proxy",
+      },
+      redirect: "follow",
+    });
+
+    if (!upstream.ok) throw new Error(`presentation_http_${upstream.status}`);
+
+    const headers = new Headers(upstream.headers);
+    headers.set("cache-control", "no-store");
+    headers.set("x-mmd-page", "sigil-private-model-apply");
+    headers.set("x-mmd-route-owner", "sigil-worker");
+    headers.set("x-mmd-presentation-owner", "webflow");
+    for (const [key, value] of corsHeaders.entries()) {
+      if (key.startsWith("access-control-") || key === "vary") headers.set(key, value);
+    }
+
+    return request.method === "HEAD"
+      ? new Response(null, { status: 200, headers })
+      : new Response(upstream.body, { status: 200, headers });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "private_model_presentation_fallback",
+      error: safeError(error),
+    }));
+    const response = html(renderApplyPage(env), 200, corsHeaders);
+    response.headers.set("x-mmd-page", "sigil-private-model-apply");
+    response.headers.set("x-mmd-route-owner", "sigil-worker");
+    response.headers.set("x-mmd-presentation-owner", "emergency-fallback");
+    return request.method === "HEAD"
+      ? new Response(null, { status: 200, headers: response.headers })
+      : response;
+  }
 }
 
 export async function probePrivateModelReadiness(env = {}) {
