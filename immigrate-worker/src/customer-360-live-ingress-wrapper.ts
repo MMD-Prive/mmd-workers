@@ -137,17 +137,38 @@ export async function serveLovableCreateJobPage(request: Request, gateResponse: 
     headers.set("x-mmd-presentation-source", "lovable");
     headers.set("x-mmd-presentation-version", "internal-lovable-v1");
     headers.set("x-mmd-page", "create-job");
-    headers.set("x-mmd-create-job-worker-guide", "disabled-white-screen-hotfix");
+    headers.set("x-mmd-create-job-worker-guide", "static-copy-hotfix-v1");
 
     if (request.method.toUpperCase() === "HEAD") return new Response(null, { status: 200, headers });
 
-    const html = (await upstream.text())
+    const html = applyCreateJobStaticCopy((await upstream.text())
       .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
-      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
+      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`));
     return new Response(html, { status: 200, headers });
   } catch {
     return gateResponse;
   }
+}
+
+export function applyCreateJobStaticCopy(html: string): string {
+  const rewritten = html
+    .replace(/\bBLOCKED\b/g, "กำลังเตรียม")
+    .replace(/Creation blocked/g, "ขั้นตอนถัดไป")
+    .replace(/No client selected\./g, "เริ่มจากค้นหาลูกค้าก่อน")
+    .replace(/Canonical client not selected/g, "ค้นหาและเลือก canonical client")
+    .replace(/Work type not selected/g, "เลือก Public หรือ Private")
+    .replace(/Canonical model not selected/g, "เลือกโมเดล")
+    .replace(/Date and start time required/g, "ใส่วันและเวลา")
+    .replace(/Duration required/g, "ใส่ระยะเวลา")
+    .replace(/Location required/g, "ใส่สถานที่")
+    .replace(/Amount THB required/g, "ใส่ยอด THB");
+  const style = `<style data-mmd-create-job-static-copy="v1">
+/* Copy-only hotfix. No injected JS and no DOM mutation, so Lovable hydration stays intact. */
+body::after{content:"เริ่มจากค้นหาลูกค้าก่อน — ไม่ต้องรู้ Client ID หรือ Session ID";position:fixed;z-index:2147483647;left:calc(50% - 260px);bottom:18px;max-width:520px;padding:10px 14px;border:1px solid rgba(216,180,94,.38);border-radius:999px;background:rgba(16,12,8,.92);color:#d8c29a;font:500 13px/1.45 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 14px 40px rgba(0,0,0,.28);pointer-events:none}
+@media(max-width:720px){body::after{left:12px;right:12px;bottom:12px;max-width:none;border-radius:16px;text-align:center}}
+</style>`;
+  if (rewritten.includes("data-mmd-create-job-static-copy=\"v1\"")) return rewritten;
+  return rewritten.includes("</head>") ? rewritten.replace("</head>", `${style}</head>`) : `${style}${rewritten}`;
 }
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
