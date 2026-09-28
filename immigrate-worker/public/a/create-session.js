@@ -695,8 +695,23 @@
         Array.isArray(data.records) ? data.records :
         []
       ).map(normalizeModel);
-      renderModels();
-      setStatus(`Loaded ${state.models.length} eligible model${state.models.length === 1 ? "" : "s"}.`, "ok");
+
+      const normalizedLookup = lookupKey.toLowerCase();
+      const exactMatches = normalizedLookup
+        ? state.models.filter((model) => {
+            const name = String(model.model_name || "").trim().toLowerCase();
+            const key = String(model.lookup_key || "").trim().toLowerCase();
+            return name === normalizedLookup || key === normalizedLookup;
+          })
+        : [];
+
+      if (exactMatches.length === 1 || (lookupKey && state.models.length === 1)) {
+        selectModel(exactMatches[0] || state.models[0]);
+        setStatus(`Selected ${(exactMatches[0] || state.models[0]).model_name}.`, "ok");
+      } else {
+        renderModels();
+        setStatus(`Loaded ${state.models.length} eligible model${state.models.length === 1 ? "" : "s"}.`, "ok");
+      }
       setHook("models", "ok");
     } catch (error) {
       state.models = [];
@@ -1203,8 +1218,19 @@
       button.addEventListener("click", () => selectWorkType(button.dataset.opWorkType));
     });
     el.refreshModels?.addEventListener("click", loadModels);
+    let modelLookupTimer = 0;
+    el.modelLookupKey?.addEventListener("input", () => {
+      window.clearTimeout(modelLookupTimer);
+      const q = val(el.modelLookupKey).trim();
+      if (q.length < 2) return;
+      modelLookupTimer = window.setTimeout(loadModels, 260);
+    });
     el.modelLookupKey?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") loadModels();
+      if (event.key === "Enter") {
+        event.preventDefault();
+        window.clearTimeout(modelLookupTimer);
+        loadModels();
+      }
     });
     el.modelSelect?.addEventListener("change", () => {
       const index = Number(val(el.modelSelect));
