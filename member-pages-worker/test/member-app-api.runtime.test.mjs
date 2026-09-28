@@ -191,6 +191,80 @@ test("dashboard adapter preserves verified display facts but never infers actual
   }]);
 });
 
+test("dashboard exposes a bounded FOR YOU feed item only from verified customer-safe history", async () => {
+  const upstream = delegate({
+    "/api/member/dashboard": {
+      ok: true,
+      data: {
+        member: {
+          display_name: "คุณทดสอบ",
+          tier: { value: "Premium", status: "verified" },
+          membership_status: { value: "active", status: "verified" },
+        },
+        points: { value: 40, status: "verified", records_count: 1 },
+        history: {
+          status: "verified",
+          events: [
+            {
+              type: "service",
+              date: "2026-09-27",
+              title: "Dinner Companion",
+              description: "รายการล่าสุดของคุณ",
+              status: "completed",
+              internal_note: "must-not-pass",
+            },
+            {
+              type: "membership",
+              date: "2026-09-20",
+              title: "Membership updated",
+              status: "verified",
+            },
+          ],
+        },
+        payment_history: { status: "empty", records: [] },
+      },
+    },
+  });
+
+  const response = await handleMemberAppApi(request("/api/member/app/dashboard"), {}, upstream);
+  const payload = await response.json();
+
+  assert.equal(payload.homeFeed.authority, "member_app_dashboard_v1");
+  assert.equal(payload.homeFeed.state, "resolved");
+  assert.equal(payload.homeFeed.items.length, 1);
+  assert.equal(payload.homeFeed.items[0].category, "FOR YOU");
+  assert.equal(payload.homeFeed.items[0].title, "Dinner Companion");
+  assert.equal(payload.homeFeed.items[0].excerpt, "รายการล่าสุดของคุณ");
+  assert.equal(payload.homeFeed.items[0].view, "history");
+  assert.equal(payload.homeFeed.items[0].source, "verified_member_history");
+  assert.doesNotMatch(JSON.stringify(payload.homeFeed), /internal_note|must-not-pass/);
+});
+
+test("dashboard personalized feed fails closed while history is unresolved", async () => {
+  const upstream = delegate({
+    "/api/member/dashboard": {
+      ok: true,
+      data: {
+        member: {
+          tier: { value: "Premium", status: "verified" },
+          membership_status: { value: "active", status: "verified" },
+        },
+        history: {
+          status: "checking",
+          events: [{ type: "service", date: "2026-09-27", title: "Must stay hidden", status: "completed" }],
+        },
+        payment_history: { status: "checking", records: [] },
+      },
+    },
+  });
+
+  const payload = await (await handleMemberAppApi(request("/api/member/app/dashboard"), {}, upstream)).json();
+  assert.equal(payload.homeFeed.authority, "member_app_dashboard_v1");
+  assert.equal(payload.homeFeed.state, "checking");
+  assert.deepEqual(payload.homeFeed.items, []);
+  assert.doesNotMatch(JSON.stringify(payload.homeFeed), /Must stay hidden/);
+});
+
 test("profile adapter exposes only explicitly safe masked contact fields", async () => {
   const upstream = delegate({
     "/member/api/liff/profile": {

@@ -263,6 +263,31 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /sessionStorage\.setItem\([^\n]*(?:email|phone|telegram|line_user_id|entitlement|preferences)/i);
   });
 
+  it("renders MMD NOW personalization only from the bounded backend homeFeed projection", async () => {
+    const response = await shell("/member/liff?intent=status&view=home&lang=th");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /<small>PRIVATE FEED<\/small>MMD NOW/);
+    assert.match(html, /let digitalPersonalizedFeed = \[\]/);
+    assert.match(html, /homeFeed\.authority === "member_app_dashboard_v1"/);
+    assert.match(html, /homeFeed\.state === "resolved"/);
+    assert.match(html, /Array\.isArray\(homeFeed\.items\)/);
+    assert.match(html, /if \(personalized\) return "FOR YOU"/);
+    assert.match(html, /return "MMD UPDATE"/);
+    assert.match(html, /return "EDITORIAL"/);
+    assert.match(html, /const allowedViews = new Set\(\["history","package","care","jobs","points","credits","coupons"\]\)/);
+    assert.match(html, /renderDigitalNews\(digitalPersonalizedFeed, response\.ok \? items : \[\],/);
+    assert.match(html, /fetch\("\/api\/v1\/member\/updates\/list\?limit=10"/);
+    assert.match(html, /data-feed-view/);
+    assert.doesNotMatch(html, /internal_note|provider_transaction_id|slip_url/);
+
+    const nowIndex = html.indexOf("MMD NOW");
+    const quickIndex = html.indexOf("QUICK ACCESS", nowIndex);
+    const kenjiIndex = html.indexOf('class="digital-kenji"', quickIndex);
+    assert.ok(nowIndex >= 0 && quickIndex > nowIndex && kenjiIndex > quickIndex);
+  });
+
   it("keeps MY MMD welcome and request surfaces readable at the approved fixture breakpoints", async () => {
     const response = await shell("/member/liff");
     const html = await response.text();
