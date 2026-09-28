@@ -283,6 +283,38 @@ test("active model context maps a short tonight follow-up to guarded availabilit
   assert.equal(continuity.matrix.payload_json.active_model_v1.working_name, "Jasper");
 });
 
+test("expired Matrix never reuses an old active Model for a short follow-up", async () => {
+  const continuity = await withFetch(async (url) => {
+    const parsed = new URL(String(url));
+    const filter = parsed.searchParams.get("filterByFormula") || "";
+    const hash = filter.match(/=\"([^\"]+)/)?.[1] || "stored-hash";
+    const fields = {
+      ...storedFields(hash),
+      topic: "model_lookup",
+      last_customer_intent: "model_lookup",
+      conversation_stage: "in_progress",
+      awaiting_from: "none",
+      pending_action: "continue current conversation",
+      important_open_loops_json: "[]",
+      handoff_required: false,
+      handoff_owner: "none",
+      handoff_reason: "",
+      live_truth_required: false,
+      live_truth_domains: [],
+      state_expires_at: "2026-09-06T12:00:00.000Z",
+      payload_json: JSON.stringify({
+        active_model_v1: { model_code: "OLD17", working_name: "Old Model", updated_at: "2026-09-01T12:00:00.000Z" },
+      }),
+    };
+    return Response.json({ records: [{ id: "recMatrix", fields }] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event("คืนนี้"), currentIntent: "note_only", now: NOW }));
+
+  assert.equal(continuity.decision, "stale_refresh");
+  assert.notEqual(continuity.effective_intent, "availability_request");
+  assert.notEqual(continuity.effective_intent, "pricing_review");
+  assert.notEqual(continuity.effective_intent, "mmd_companion");
+});
+
 test("successful model access persists only bounded active model identity in Matrix", async () => {
   let posted = null;
   const prior = {
@@ -298,7 +330,9 @@ test("successful model access persists only bounded active model identity in Mat
       conversation_stage: "in_progress",
       version: 1,
     }),
-    payload_json: {},
+    payload_json: {
+      active_model_v1: { model_code: "OLD17", working_name: "Old Model", updated_at: "2026-09-06T12:00:00.000Z" },
+    },
   };
   const continuity = {
     schema: "mmd.kenji_continuity_resolver.v1",
@@ -343,6 +377,63 @@ test("successful model access persists only bounded active model identity in Mat
   assert.equal(Object.hasOwn(payload.active_model_v1, "availability"), false);
 });
 
+
+test("failed explicit Model switch clears prior active Model even when no reply is delivered", async () => {
+  let posted = null;
+  const prior = {
+    ...buildConversationMatrixV1({
+      matrix_id: "kcm1_line_model_clear",
+      client_record_id: "recClient",
+      conversation_id_hash: "modelclearhash",
+      channel: "line_ofc",
+      conversation_scope: "line:model-clear",
+      topic: "model_lookup",
+      relationship_context: "known_customer",
+      last_customer_intent: "model_lookup",
+      conversation_stage: "in_progress",
+      version: 2,
+    }),
+    payload_json: {
+      active_model_v1: { model_code: "MX17", working_name: "Jasper", updated_at: NOW },
+      keep_me: { safe: true },
+    },
+  };
+  const continuity = {
+    schema: "mmd.kenji_continuity_resolver.v1",
+    decision: "new_topic",
+    reason: "explicit_new_model_lookup",
+    topic: "model_lookup",
+    effective_intent: "model_lookup",
+    conversation_hash: "modelclearhash",
+    client_record_id: "recClient",
+    matrix_record_id: "recMatrix",
+    storage_status: "ready",
+    matrix: prior,
+  };
+
+  await withFetch(async (_url, init = {}) => {
+    posted = JSON.parse(init.body);
+    return Response.json({ records: [{ id: "recMatrix", fields: posted.records[0].fields }] });
+  }, () => writeKenjiLineMatrixTurn({
+    env: ENV,
+    continuity,
+    decision: {
+      intent: "model_lookup",
+      reply_source: "silent",
+      guard_blocked: true,
+      guard_reason: "model_access_silent",
+      clear_model_context: true,
+    },
+    delivered: false,
+    attempted: false,
+    lastEventId: "kai_line_model_clear",
+    now: NOW,
+  }));
+
+  const payload = JSON.parse(posted.records[0].fields.payload_json);
+  assert.equal(Object.hasOwn(payload, "active_model_v1"), false);
+  assert.deepEqual(payload.keep_me, { safe: true });
+});
 
 test("model browse preference maps explicit model gender without changing customer gender", async () => {
   const continuity = await withFetch(async (url) => {
