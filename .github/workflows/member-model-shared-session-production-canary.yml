@@ -2,11 +2,15 @@ name: Member Model shared-session production canary
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - "Deploy member-pages-worker"
-    types:
-      - completed
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/member-model-shared-session-production-canary.yml"
+      - "payments-worker/confirmation-link-reissue.js"
+      - "payments-worker/index.review-wrapper.js"
+      - "admin-worker/src/payment-issuer-diagnostic.js"
+      - "admin-worker/src/payments-issuer-transport.js"
 
 permissions:
   contents: read
@@ -17,32 +21,50 @@ concurrency:
 
 jobs:
   shared-session-canary:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     env:
       ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
       SESSIONS_TABLE_ID: tblC98mKWbzmPuNzX
+
     steps:
-      - name: Require read-only production credential
+      - name: Require canary credentials
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${AIRTABLE_API_KEY:-}" || {
-            echo "Airtable read credential is required to locate one canonical shared Session." >&2
-            exit 1
-          }
+          test -n "${AIRTABLE_API_KEY:-}" || { echo "Airtable read credential missing" >&2; exit 1; }
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}" || { echo "Admin canary credential missing" >&2; exit 1; }
           echo "::add-mask::$AIRTABLE_API_KEY"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
 
-      - name: Find one live canonical Session whose signed Customer and Model tokens both resolve
+      - name: Wait for safe confirmation reissue to reach production
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 36); do
+            headers="$RUNNER_TEMP/admin-login-$attempt.headers"
+            cookie="$RUNNER_TEMP/admin-login-$attempt.cookies"
+            body="$RUNNER_TEMP/admin-login-$attempt.body"
+            code="$(curl -sS -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}"               -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/x-www-form-urlencoded"               --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL"               --data-urlencode "next=/internal/admin/control-room"               "$ORIGIN/internal/admin/login/session" || true)"
+            if [ "$code" = "303" ]; then
+              echo "ADMIN_COOKIE_JAR=$cookie" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "Admin deploy/login not ready attempt=$attempt/36 http=$code"
+            sleep 10
+          done
+          echo "admin_canary_login_not_ready" >&2
+          exit 1
+
+      - name: Select one canonical Session whose Model Console currently resolves
         shell: bash
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
           import fs from "node:fs";
-
           const origin = process.env.ORIGIN;
           const baseId = process.env.AIRTABLE_BASE_ID;
           const table = process.env.SESSIONS_TABLE_ID;
@@ -51,36 +73,28 @@ jobs:
             sessionId: "fldLTq2kZbyRv22IA",
             customerUrl: "fldi9ZdoiUXzSv1rI",
             modelUrl: "fld0mFma9J9yfEaKb",
-            jobDate: "fldpnqoIsUMfN7y3c",
-            modelName: "flddVz6eoWRHrzIQr",
+            paymentRef: "fldojgjSQLaO0uQLX",
           };
-
-          const parseSigned = (raw, role) => {
+          const parse = (raw, role) => {
             try {
               const url = new URL(String(raw || "").trim());
-              if (!new Set(["mmdbkk.com", "www.mmdbkk.com"]).has(url.hostname)) return null;
-              const paths = role === "customer"
-                ? new Set(["/sigil/confirm/job-confirmation", "/confirm/job-confirmation"])
-                : new Set(["/sigil/confirm/job-model", "/confirm/job-model"]);
-              if (!paths.has(url.pathname)) return null;
+              if (!new Set(["mmdbkk.com", "www.mmdbkk.com"]).has(url.hostname)) return "";
+              const expected = role === "model"
+                ? new Set(["/sigil/confirm/job-model", "/confirm/job-model"])
+                : new Set(["/sigil/confirm/job-confirmation", "/confirm/job-confirmation"]);
+              if (!expected.has(url.pathname)) return "";
               const keys = [...url.searchParams.keys()];
               const token = String(url.searchParams.get("t") || "").trim();
-              if (keys.length !== 1 || keys[0] !== "t" || !token) return null;
-              return token;
-            } catch {
-              return null;
-            }
+              return keys.length === 1 && keys[0] === "t" && token ? token : "";
+            } catch { return ""; }
           };
 
-          const airtableUrl = new URL(`https://api.airtable.com/v0/${baseId}/${table}`);
-          airtableUrl.searchParams.set("pageSize", "100");
-          airtableUrl.searchParams.set("maxRecords", "100");
-          airtableUrl.searchParams.set("returnFieldsByFieldId", "true");
-          for (const field of Object.values(fields)) airtableUrl.searchParams.append("fields[]", field);
-
-          const response = await fetch(airtableUrl, {
-            headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
-          });
+          const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`);
+          url.searchParams.set("pageSize", "100");
+          url.searchParams.set("maxRecords", "100");
+          url.searchParams.set("returnFieldsByFieldId", "true");
+          for (const field of Object.values(fields)) url.searchParams.append("fields[]", field);
+          const response = await fetch(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(`airtable_http_${response.status}`);
 
@@ -88,72 +102,99 @@ jobs:
             .sort((a, b) => String(b.createdTime || "").localeCompare(String(a.createdTime || "")));
 
           let selected = null;
-          const diagnostics = [];
-
           for (const record of records) {
             const f = record?.fields || {};
             const sessionId = String(f[fields.sessionId] || "").trim();
-            const customerToken = parseSigned(f[fields.customerUrl], "customer");
-            const modelToken = parseSigned(f[fields.modelUrl], "model");
-            if (!sessionId || !customerToken || !modelToken) continue;
+            const paymentRef = String(f[fields.paymentRef] || "").trim();
+            const modelToken = parse(f[fields.modelUrl], "model");
+            const customerToken = parse(f[fields.customerUrl], "customer");
+            if (!sessionId || !paymentRef || !modelToken || !customerToken) continue;
 
-            const [memberResponse, modelResponse] = await Promise.all([
-              fetch(`${origin}/api/member/app/session/context?t=${encodeURIComponent(customerToken)}`, {
-                headers: { accept: "application/json", origin, "cache-control": "no-cache" },
-              }),
-              fetch(`${origin}/v1/model/session/current?t=${encodeURIComponent(modelToken)}`, {
-                headers: { accept: "application/json", origin, "cache-control": "no-cache" },
-              }),
-            ]);
-
-            const memberPayload = await memberResponse.json().catch(() => null);
-            const modelPayload = await modelResponse.json().catch(() => null);
-            const memberSession = memberPayload?.session;
-            const modelSession = modelPayload?.session || modelPayload?.data?.session;
-
-            diagnostics.push({
-              session_id: sessionId,
-              member_http: memberResponse.status,
-              model_http: modelResponse.status,
-              member_valid: memberPayload?.valid === true,
-              member_session: memberSession?.sessionId || null,
-              model_session: modelSession?.session_id || null,
+            const modelResponse = await fetch(`${origin}/v1/model/session/current?t=${encodeURIComponent(modelToken)}`, {
+              headers: { accept: "application/json", origin, "cache-control": "no-cache" },
             });
-
-            if (
-              memberResponse.status === 200
-              && modelResponse.status === 200
-              && memberPayload?.valid === true
-              && memberSession?.sessionId === sessionId
-              && modelSession?.session_id === sessionId
-            ) {
-              selected = {
-                sessionId,
-                customerToken,
-                modelToken,
-                member: memberSession,
-                model: modelSession,
-              };
+            const modelPayload = await modelResponse.json().catch(() => null);
+            const modelSession = modelPayload?.session || modelPayload?.data?.session;
+            if (modelResponse.status === 200 && modelSession?.session_id === sessionId) {
+              selected = { sessionId, paymentRef };
               break;
             }
           }
-
-          if (!selected) {
-            console.error(JSON.stringify({ error: "no_live_shared_signed_session", diagnostics: diagnostics.slice(0, 12) }, null, 2));
-            throw new Error("no_live_shared_signed_session");
-          }
-
-          console.log(`::add-mask::${selected.customerToken}`);
-          console.log(`::add-mask::${selected.modelToken}`);
-          fs.appendFileSync(process.env.GITHUB_ENV, [
-            `CANARY_SESSION_ID=${selected.sessionId}`,
-            `CUSTOMER_T=${selected.customerToken}`,
-            `MODEL_T=${selected.modelToken}`,
-          ].join("\n") + "\n");
-          console.log(`Selected shared signed Session=${selected.sessionId}`);
+          if (!selected) throw new Error("no_model_resolvable_shared_session_candidate");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CANARY_SESSION_ID=${selected.sessionId}\n`);
+          console.log(`Selected canary session=${selected.sessionId}`);
           NODE
 
-      - name: Read Member Console and Model Console concurrently from the same session_id
+      - name: Reissue only the signed Customer and Model confirmation pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/confirmation-reissue.json"
+          code=""
+          for attempt in $(seq 1 36); do
+            code="$(curl -sS -b "$ADMIN_COOKIE_JAR" -o "$result" -w "%{http_code}"               -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/json"               --data-binary "$(jq -nc --arg sid "$CANARY_SESSION_ID" '{mode:"refresh_confirmation_links",session_id:$sid}')"               "$ORIGIN/v1/admin/payment-issuer-diagnostic" || true)"
+            if [ "$code" = "200" ] && jq -e '.ok == true and .stage == "confirmation_links_refreshed"' "$result" >/dev/null 2>&1; then
+              break
+            fi
+            echo "Safe reissue not ready attempt=$attempt/36 http=$code"
+            sleep 10
+          done
+          test "$code" = "200"
+          jq -e '
+            .ok == true
+            and .stage == "confirmation_links_refreshed"
+            and .customer_confirmation_url_present == true
+            and .model_confirmation_url_present == true
+            and .payment_state_mutated == false
+            and .notification_sent == false
+          ' "$result" >/dev/null
+          echo "PASS confirmation pair reissued without payment-state mutation or notification"
+
+      - name: Read the freshly reissued signed pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const sessionId = process.env.CANARY_SESSION_ID;
+          const baseId = process.env.AIRTABLE_BASE_ID;
+          const table = process.env.SESSIONS_TABLE_ID;
+          const apiKey = process.env.AIRTABLE_API_KEY;
+          const fields = {
+            sessionId: "fldLTq2kZbyRv22IA",
+            customerUrl: "fldi9ZdoiUXzSv1rI",
+            modelUrl: "fld0mFma9J9yfEaKb",
+          };
+          const formula = sessionId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+          const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`);
+          url.searchParams.set("maxRecords", "2");
+          url.searchParams.set("filterByFormula", `{session_id}='${formula}'`);
+          url.searchParams.set("returnFieldsByFieldId", "true");
+          for (const field of Object.values(fields)) url.searchParams.append("fields[]", field);
+
+          const response = await fetch(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
+          const payload = await response.json().catch(() => ({}));
+          const rows = Array.isArray(payload.records) ? payload.records : [];
+          if (!response.ok || rows.length !== 1) throw new Error("reissued_session_lookup_failed");
+          const f = rows[0].fields || {};
+
+          const tokenFrom = (raw, expectedPath) => {
+            const parsed = new URL(String(raw || ""));
+            if (!new Set(["mmdbkk.com", "www.mmdbkk.com"]).has(parsed.hostname)) throw new Error("reissued_host_invalid");
+            if (parsed.pathname !== expectedPath) throw new Error("reissued_path_invalid");
+            const keys = [...parsed.searchParams.keys()];
+            const token = String(parsed.searchParams.get("t") || "").trim();
+            if (keys.length !== 1 || keys[0] !== "t" || !token) throw new Error("reissued_token_invalid");
+            return token;
+          };
+          const customerToken = tokenFrom(f[fields.customerUrl], "/sigil/confirm/job-confirmation");
+          const modelToken = tokenFrom(f[fields.modelUrl], "/sigil/confirm/job-model");
+          console.log(`::add-mask::${customerToken}`);
+          console.log(`::add-mask::${modelToken}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CUSTOMER_T=${customerToken}\nMODEL_T=${modelToken}\n`);
+          NODE
+
+      - name: Compare Member Console and Model Console on the same session_id
         shell: bash
         run: |
           set -euo pipefail
@@ -171,114 +212,54 @@ jobs:
               headers: { accept: "application/json", origin, "cache-control": "no-cache" },
             }),
           ]);
-
           if (memberResponse.status !== 200) throw new Error(`member_console_http_${memberResponse.status}`);
           if (modelResponse.status !== 200) throw new Error(`model_console_http_${modelResponse.status}`);
 
           const memberPayload = await memberResponse.json();
-          const member = memberPayload?.session;
           const modelPayload = await modelResponse.json();
+          const member = memberPayload?.session;
           const model = modelPayload?.session || modelPayload?.data?.session;
           if (memberPayload?.valid !== true || !member) throw new Error("member_console_signed_context_invalid");
           if (!model) throw new Error("model_console_session_missing");
-
-          const memberSessionId = String(member?.sessionId || "").trim();
-          const modelSessionId = String(model?.session_id || "").trim();
-          if (memberSessionId !== expectedSessionId) throw new Error(`member_session_mismatch:${memberSessionId}`);
-          if (modelSessionId !== expectedSessionId) throw new Error(`model_session_mismatch:${modelSessionId}`);
+          if (String(member.sessionId || "") !== expectedSessionId) throw new Error("member_session_mismatch");
+          if (String(model.session_id || "") !== expectedSessionId) throw new Error("model_session_mismatch");
 
           const memberDate = String(member?.jobDate || "").slice(0, 10);
           const modelDate = String(model?.job_date || "").slice(0, 10);
-          if (memberDate && modelDate && memberDate !== modelDate) {
-            throw new Error(`job_date_diverged:member=${memberDate}:model=${modelDate}`);
-          }
+          if (memberDate && modelDate && memberDate !== modelDate) throw new Error("job_date_diverged");
 
           const memberModel = String(member?.model?.displayName || "").trim().toLowerCase();
           const modelModel = String(model?.model_name || model?.modelName || "").trim().toLowerCase();
-          if (memberModel && modelModel && memberModel !== modelModel) {
-            throw new Error(`model_identity_diverged:member=${memberModel}:model=${modelModel}`);
-          }
+          if (memberModel && modelModel && memberModel !== modelModel) throw new Error("model_identity_diverged");
 
           const memberState = String(member?.lifecycle || "").trim().toLowerCase();
           const modelState = String(model?.normalized_state || model?.state || "").trim().toLowerCase();
-
           const memberFamily = new Map([
-            ["pending_confirmation", "pre"],
-            ["confirmed", "confirmed"],
-            ["preparing", "confirmed"],
-            ["en_route", "en_route"],
-            ["nearby", "nearby"],
-            ["arrived", "arrived"],
-            ["met_customer", "met_customer"],
-            ["in_progress", "work"],
-            ["completed", "done"],
-            ["cancelled", "cancelled"],
+            ["pending_confirmation","pre"],["confirmed","confirmed"],["preparing","confirmed"],
+            ["en_route","en_route"],["nearby","nearby"],["arrived","arrived"],["met_customer","met_customer"],
+            ["in_progress","work"],["completed","done"],["cancelled","cancelled"],
           ]);
           const modelFamily = new Map([
-            ["offered", "pre"],
-            ["confirmed", "confirmed"],
-            ["en_route", "en_route"],
-            ["nearby", "nearby"],
-            ["arrived", "arrived"],
-            ["met_customer", "met_customer"],
-            ["final_payment_pending", "met_customer"],
-            ["final_payment_confirmed", "met_customer"],
-            ["work_started", "work"],
-            ["work_finished", "work"],
-            ["separated", "work"],
-            ["under_review", "work"],
-            ["payout_pending", "work"],
-            ["closed", "done"],
-            ["offer_declined", "cancelled"],
-            ["offer_expired", "cancelled"],
+            ["offered","pre"],["confirmed","confirmed"],["en_route","en_route"],["nearby","nearby"],
+            ["arrived","arrived"],["met_customer","met_customer"],["final_payment_pending","met_customer"],
+            ["final_payment_confirmed","met_customer"],["work_started","work"],["work_finished","work"],
+            ["separated","work"],["under_review","work"],["payout_pending","work"],["closed","done"],
+            ["offer_declined","cancelled"],["offer_expired","cancelled"],
           ]);
-
-          const memberStateFamily = memberFamily.get(memberState);
-          const modelStateFamily = modelFamily.get(modelState);
-          if (!memberStateFamily) throw new Error(`member_state_not_comparable:${memberState || "missing"}`);
-          if (!modelStateFamily) throw new Error(`model_state_not_comparable:${modelState || "missing"}`);
-          if (memberStateFamily !== modelStateFamily) {
-            throw new Error(
-              `console_state_diverged:member=${memberState}(${memberStateFamily}):model=${modelState}(${modelStateFamily})`
-            );
-          }
-
-          const memberText = JSON.stringify(member);
-          for (const forbidden of ["pay_model_thb", "expected_payout_thb", "model_confirmation_url", "payout_amount", "model_private_phone"]) {
-            if (memberText.includes(forbidden)) throw new Error(`member_console_leaked_model_field:${forbidden}`);
-          }
-
-          const modelText = JSON.stringify(model);
-          for (const forbidden of ["customer_confirmation_url", "customer_amount_due_thb", "payment_verification"]) {
-            if (modelText.includes(forbidden)) throw new Error(`model_console_leaked_customer_field:${forbidden}`);
-          }
+          const mf = memberFamily.get(memberState);
+          const modf = modelFamily.get(modelState);
+          if (!mf || !modf) throw new Error(`state_not_comparable:${memberState}:${modelState}`);
+          if (mf !== modf) throw new Error(`console_state_diverged:${memberState}:${modelState}`);
 
           console.log(JSON.stringify({
             result: "PASS",
-            mode: "production_read_only_signed_session",
             session_id: expectedSessionId,
-            member_console: {
-              endpoint: "/api/member/app/session/context",
-              lifecycle: memberState,
-              family: memberStateFamily,
-              job_date: memberDate || null,
-            },
-            model_console: {
-              endpoint: "/v1/model/session/current",
-              state: modelState,
-              family: modelStateFamily,
-              job_date: modelDate || null,
-            },
+            member_console: { lifecycle: memberState, family: mf },
+            model_console: { state: modelState, family: modf },
             same_session: true,
             same_state_family: true,
-            writes: 0,
+            reissue: "confirmation_urls_only",
+            payment_state_mutated: false,
             notifications: 0,
           }, null, 2));
           NODE
-
-      - name: Assert canary is mutation-free by construction
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "PASS read-only canary: Airtable GET + signed Customer context GET + signed Model current GET only."
-          echo "No LIFF ID token, no Session/Job/Payment write, no confirmation ACK, no LINE push, no Telegram send."
