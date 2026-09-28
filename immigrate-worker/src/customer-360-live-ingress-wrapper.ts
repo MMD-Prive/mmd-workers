@@ -208,7 +208,7 @@ export async function enforceExactCanonicalClientScope(response: Response, reque
   if (!response.ok || !(response.headers.get("content-type") || "").includes("application/json")) return response;
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
   const identity = payload?.identity && typeof payload.identity === "object"
-    ? identity as Record<string, unknown>
+    ? payload.identity as Record<string, unknown>
     : null;
   if (!payload || String(payload.client_id || "").trim() !== requestedClientId || String(identity?.status || "").trim() !== "canonical") {
     return Response.json({ ok: false, error: "client_scope_unresolved" }, { status: 409, headers: { "cache-control": "no-store" } });
