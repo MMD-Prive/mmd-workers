@@ -146,6 +146,50 @@ function isPreparedBookingDecision(decision = {}, modelGate = {}) {
     && text(modelGate?.parsed?.type, 40) === "booking";
 }
 
+function guidedBookingDecision(currentIntent = "", accumulator = null) {
+  if (accumulator?.active !== true || !accumulator?.draft) return null;
+  const draft = accumulator.draft;
+  const missing = Array.isArray(draft.missing_fields) ? draft.missing_fields : [];
+  const next = missing.find((field) => ["model_name", "date", "time", "location"].includes(field));
+  if (!next) return null;
+
+  const model = text(draft.model_working_name_hint || draft.model_name, 120);
+  let reply = "";
+  if (next === "model_name") {
+    reply = "ได้ครับ สนใจนายแบบคนไหนครับ พิมพ์ชื่อหรือรหัสมาได้เลยครับ";
+  } else if (next === "date") {
+    reply = `${model ? `รับ ${model} ไว้แล้วครับ ` : ""}ต้องการวันไหนครับ`;
+  } else if (next === "time") {
+    reply = "รับวันที่ไว้แล้วครับ ต้องการเวลาไหนครับ";
+  } else if (next === "location") {
+    reply = "รับเวลาไว้แล้วครับ ขอพื้นที่หรือสถานที่ที่ต้องการใช้บริการด้วยครับ";
+  }
+  if (!reply) return null;
+
+  const intent = text(accumulator.resolved_intent || currentIntent, 120) || "mmd_companion";
+  return {
+    text: reply,
+    intent,
+    inferred_intent: intent,
+    reply_source: "lv5_booking_guided_intake",
+    handoff_required: false,
+    handoff_reason: "",
+    truth_authority: "",
+    truth_status: "collecting_customer_input",
+    live_truth_used: false,
+    live_truth_verified: false,
+    operational: {
+      phase: "P2_guided_booking_intake",
+      operational_intent: "booking",
+      matrix_booking_draft_id: text(draft.draft_id, 80),
+      matrix_booking_ready: draft.ready === true,
+      matrix_booking_missing: missing,
+      matrix_booking_revision: Number(draft.revision || 0),
+      awaiting_field: next,
+    },
+  };
+}
+
 function isDepositBookingIntent(modelGate = {}) {
   return text(modelGate?.parsed?.type, 40) === "booking"
     && text(modelGate?.parsed?.trigger, 40) === "deposit";
@@ -203,6 +247,38 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
     || accumulator?.accepted === true
     || accumulator?.active === true;
   if (!operationalCandidate) return null;
+
+  const guidedDecision = guidedBookingDecision(currentIntent, accumulator);
+  if (guidedDecision) {
+    const delivery = replyAllowed
+      ? await sendReply(env, replyToken(event), guidedDecision.text)
+      : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
+    return {
+      handled: true,
+      response: new Response(JSON.stringify({
+        ok: true,
+        route: "line_webhook",
+        operational: "lv5_p2",
+        action_executed: false,
+        delivered: delivery.ok === true,
+        reply_suppressed: delivery.suppressed === true,
+      }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "x-mmd-worker": "member-dashboard-chat-worker",
+          "x-mmd-kenji-operational": "lv5-p2",
+          "x-mmd-kenji-reply": delivery.suppressed === true ? "suppressed" : (delivery.ok === true ? "delivered" : "failed"),
+        },
+      }),
+      event,
+      decision: guidedDecision,
+      delivered: delivery.ok === true,
+      attempted: replyAllowed,
+      delivery_status: Number.isInteger(delivery.status) ? delivery.status : null,
+    };
+  }
 
   const accumulatedIntent = accumulator?.merged_intent || null;
   let modelGate = await resolveKenjiLv5LineModelGate({
@@ -287,4 +363,4 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   };
 }
 
-export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, canonicalizeVerifiedModelIntent, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, canonicalizeVerifiedModelIntent, guidedBookingDecision, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });
