@@ -1,4 +1,5 @@
 export const MODEL_JOB_BOARD_LOGIN_V2_URL = "https://www.mmdbkk.com/sigil/model/login";
+export const MODEL_JOB_BOARD_MINI_APP_URL = "https://miniapp.line.me/2010864854-N34SgCqq/";
 export const MODEL_JOB_BOARD_URL = "https://sigil.mmdbkk.com/public/api/jobs";
 
 const JOB_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -55,3 +56,12 @@ export function buildModelJobBoardBroadcastLink(input = {}) {
 
   return url.toString();
 }
+
+export function buildModelJobBoardMiniAppLink(input = {}) {
+  const login = new URL(buildModelJobBoardBroadcastLink(input));
+  const url = new URL(MODEL_JOB_BOARD_MINI_APP_URL);
+  for (const [key, value] of login.searchParams) url.searchParams.set(key, value);
+  return url.toString();
+}
+
+
