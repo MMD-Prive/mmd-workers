@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildKenjiLv5LiveFanInProjection } from "./src/kenji-lv5-live-context.js";
+import { buildKenjiLv5LiveFanInProjection, resolveLiveCanonicalClient } from "./src/kenji-lv5-live-context.js";
 
 function entitlement(overrides = {}) {
   return {
@@ -179,4 +179,70 @@ test("P2 keeps payment proof uncertainty out of paid-state and surfaces review",
   assert.equal(result.payment_live.review_required, true);
   assert.ok(result.next_actions.some((item) => item.action === "review_payment"));
   assert.ok(result.next_actions.some((item) => item.action === "notify_hype"));
+});
+
+
+test("LV5 canonical resolver carries LINE User ID into Per Rename guard", async () => {
+  const original = globalThis.fetch;
+  const expectedLine = "U64e58603b56a881f48da2236f8036b18";
+  const wrongLine = "U3c779cd79247ece116509ec78e3957fa";
+  globalThis.fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    const path = decodeURIComponent(url.pathname);
+    if (path.endsWith("/pre_session")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "recIndex",
+          fields: {
+            identity_key: "line_ofc_per_rename:u64e58603b56a881f48da2236f8036b18",
+            source_type: "line_ofc_staging",
+            source_record_id: "recSource",
+            preferred_name: "BOSS 28/09/26",
+            line_user_id: expectedLine,
+            line_display_name: "Boss",
+            linked_client: ["recClientBoss"],
+            resolution_status: "linked",
+            session_lookup_status: "canonical_ready",
+            confidence: "verified",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (path.endsWith("/clients/recClientBoss")) {
+      return new Response(JSON.stringify({
+        id: "recClientBoss",
+        fields: {
+          "Client Name": "Boss",
+          line_user_id: expectedLine,
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const env = {
+    AIRTABLE_API_KEY: "airtable-test",
+    AIRTABLE_BASE_ID: "base-test",
+    AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID: "pre_session",
+    AIRTABLE_TABLE_CLIENTS_ID: "clients",
+  };
+
+  try {
+    const resolved = await resolveLiveCanonicalClient(env, {
+      per_rename: "BOSS 28/09/26",
+      line_user_id: expectedLine,
+    });
+    assert.equal(resolved.status, "resolved");
+    assert.equal(resolved.client.canonical_client_id, "recClientBoss");
+    assert.equal(resolved.client.line_user_id, expectedLine);
+
+    const blocked = await resolveLiveCanonicalClient(env, {
+      per_rename: "BOSS 28/09/26",
+      line_user_id: wrongLine,
+    });
+    assert.equal(blocked.status, "unresolved");
+    assert.equal(blocked.reason, "per_rename_line_identity_mismatch");
+  } finally {
+    globalThis.fetch = original;
+  }
 });
