@@ -11,7 +11,7 @@ test("unified owner queue joins changes, availability and latest media", async (
     const url=new URL(input);
     const table=decodeURIComponent(url.pathname.split("/").pop());
     if(table==="MMD — Model Review Requests") return Response.json({records:[{id:"recReview000000001",fields:{request_id:"rq1",Model:["recModel000000001"],request_type:"model_self_service_update",request_status:"pending_review",requested_at:"2026-09-19T01:00:00.000Z",payload_json:JSON.stringify({changed_fields:[{field:"weight_kg",before:70,after:72}],availability:{available_now:true,availability_status:"available"}})}}]});
-    if(table==="MMD — Model Media Assets") return Response.json({records:[{id:"recMedia000000001",fields:{Model:["recModel000000001"],media_id:"media_1",media_type:"profile_photo",file_name:"new.webp",file_type:"image/webp",uploaded_at:"2026-09-19T01:05:00.000Z",review_status:"active",asset_role:"profile_candidate"}}]});
+    if(table==="MMD — Model Media Assets") return Response.json({records:[{id:"recMedia000000001",fields:{Model:["recModel000000001"],media_id:"media_1",media_type:"profile_photo",file_name:"new.webp",file_type:"image/webp",uploaded_at:"2026-09-19T01:05:00.000Z",review_status:"active",asset_role:"profile_candidate",r2_bucket:"mmd-models",private_original_key:"models/recModel000000001/public_gallery/media_1.webp"}}]});
     if(table==="Models") return Response.json({records:[{id:"recModel000000001",fields:{working_name:"Simba"}}]});
     return Response.json({}, {status:404});
   };
@@ -23,6 +23,7 @@ test("unified owner queue joins changes, availability and latest media", async (
     assert.equal(body.items[0].changed_fields[0].field,"weight_kg");
     assert.equal(body.items[0].availability.availability_status,"available");
     assert.equal(body.items[0].latest_media[0].media_id,"media_1");
+    assert.equal(body.items[0].latest_media[0].preview_url,"/v1/admin/models/review-queue/media/recMedia000000001");
   } finally { globalThis.fetch=original; }
 });
 
@@ -47,5 +48,49 @@ test("owner decision records actor, timestamp and status", async()=>{
     const body=await res.json();
     assert.equal(res.status,200); assert.equal(body.decision_by,"per"); assert.equal(body.request_status,"approved");
     assert.equal(patchBody.records[0].fields.decision_by,"per"); assert.ok(patchBody.records[0].fields.decision_at);
+  } finally {globalThis.fetch=original;}
+});
+
+
+test("owner can stream authenticated public-candidate media preview", async()=>{
+  const env={
+    AIRTABLE_API_KEY:"x",
+    AIRTABLE_BASE_ID:"appTest0000000000",
+    ADMIN_LOGIN_CREDENTIAL:"admin",
+    MMD_MODEL_ASSETS:{
+      get:async(key)=>key==="models/recModel000000001/public_gallery/media_1.webp"
+        ? {body:new Uint8Array([82,73,70,70]),httpMetadata:{contentType:"image/webp"}}
+        : null
+    }
+  };
+  const cookie="mmd_admin_gate_v1="+await createCredentialBoundAdminSession(new Request("https://mmdbkk.com"),{id:"per",role:"owner"},env);
+  const original=globalThis.fetch;
+  globalThis.fetch=async(input)=>{
+    const url=new URL(input);
+    if(url.pathname.endsWith("/recMedia000000001")) return Response.json({id:"recMedia000000001",fields:{
+      Model:["recModel000000001"],media_id:"media_1",media_type:"public_gallery",file_name:"one.webp",file_type:"image/webp",
+      r2_bucket:"mmd-models",private_original_key:"models/recModel000000001/public_gallery/media_1.webp"
+    }});
+    return Response.json({}, {status:404});
+  };
+  try{
+    const res=await handleModelOwnerReviewQueue(new Request("https://mmdbkk.com"+MODEL_OWNER_REVIEW_QUEUE_PATH+"/media/recMedia000000001",{headers:{cookie}}),env);
+    assert.equal(res.status,200);
+    assert.equal(res.headers.get("content-type"),"image/webp");
+    assert.equal(res.headers.get("cache-control"),"private, no-store");
+  } finally {globalThis.fetch=original;}
+});
+
+test("review media preview rejects non-public media types", async()=>{
+  const env={AIRTABLE_API_KEY:"x",AIRTABLE_BASE_ID:"appTest0000000000",ADMIN_LOGIN_CREDENTIAL:"admin",MMD_MODEL_ASSETS:{get:async()=>({body:new Uint8Array([1])})}};
+  const cookie="mmd_admin_gate_v1="+await createCredentialBoundAdminSession(new Request("https://mmdbkk.com"),{id:"per",role:"owner"},env);
+  const original=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({id:"recMedia000000001",fields:{
+    Model:["recModel000000001"],media_type:"private_teaser",file_type:"image/webp",r2_bucket:"mmd-models",
+    private_original_key:"models/recModel000000001/private/media_1.webp"
+  }});
+  try{
+    const res=await handleModelOwnerReviewQueue(new Request("https://mmdbkk.com"+MODEL_OWNER_REVIEW_QUEUE_PATH+"/media/recMedia000000001",{headers:{cookie}}),env);
+    assert.equal(res.status,404);
   } finally {globalThis.fetch=original;}
 });
