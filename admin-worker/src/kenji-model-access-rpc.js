@@ -22,6 +22,7 @@ const RENEWAL_DUE_LIFECYCLES = new Set(["grace", "expired"]);
 const BLOCKED_MODEL_STATUS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
 const MODEL_CODE_FIELDS = ["model_code", "model_lookup_key", "unique_key"];
 const MODEL_WORKING_NAME_FIELDS = ["working_name", "Working Name", "display_name", "Display Name"];
+const MODEL_RUN_NUMBER_FIELDS = ["run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number"];
 const PRIVATE_MODEL_DECISIONS_TABLE = "MMD — Private Model Access Decisions";
 const APPROVAL_MEMBER_FIELDS = ["member_record_id", "member_id", "member_email", "line_user_id"];
 
@@ -343,10 +344,11 @@ async function resolveExactModel(env, query, fetchImpl) {
   const table = clean(env.AIRTABLE_TABLE_MODELS || "models");
   const codeMatches = await queryAcrossFields(env, table, MODEL_CODE_FIELDS, query, fetchImpl, 5);
   const nameMatches = await queryAcrossFields(env, table, MODEL_WORKING_NAME_FIELDS, query, fetchImpl, 5);
+  const runMatches = await queryAcrossFields(env, table, MODEL_RUN_NUMBER_FIELDS, query, fetchImpl, 5);
   // Card text may be the Drive folder name rather than the model code or working name.
   // Match the canonical Models record exactly; folder location never grants access.
   const folderMatches = await queryAcrossFields(env, table, ["folder_name"], query, fetchImpl, 5);
-  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...folderMatches]);
+  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...runMatches, ...folderMatches]);
   if (directMatches.length) return { status: "resolved", records: directMatches };
 
   // Ad / Rich Menu entries reuse the published Keyword Profile aliases.

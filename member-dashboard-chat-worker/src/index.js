@@ -341,6 +341,8 @@ export function extractKenjiModelLookupQuery(text = "") {
   if (CARD_MODEL_ENTRY_NAMES.has(withoutPolite)) return withoutPolite;
   const exactCode = withoutPolite.match(/^([A-Za-z]{2,8}(?:[-_]?\d{1,4}))$/);
   if (exactCode) return exactCode[1];
+  const explicitRun = withoutPolite.match(/^(?:run(?:\s*(?:number|no\.?))?|รัน|เลข(?:\s*run|\s*รัน))\s*[:#-]?\s*(\d{1,6})$/i);
+  if (explicitRun) return explicitRun[1];
   const campaignEntry = withoutPolite.match(/^([A-Z][A-Z0-9_-]{3,31})$/);
   if (campaignEntry && !RESERVED_MODEL_ENTRY_TRIGGERS.has(campaignEntry[1])) return campaignEntry[1];
   const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
