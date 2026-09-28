@@ -130,10 +130,12 @@ test("deposit approval sends each confirmation URL to the correct verified LINE 
     assert.doesNotMatch(modelTelegram.body.text, /job-confirmation\?t=member-secret/);
     assert.equal(telegram.headers.get("x-internal-token"), "internal-test");
     assert.equal(telegram.body.message_thread_id, 22);
-    assert.match(telegram.body.text, /PAYMENT APPROVED · CONFIRMATION URLS/);
-    assert.match(telegram.body.text, /MEMBER URL: https:\/\/www\.mmdbkk\.com\/sigil\/confirm\/job-confirmation\?t=member-secret/);
-    assert.match(telegram.body.text, /MODEL URL: https:\/\/www\.mmdbkk\.com\/sigil\/confirm\/job-model\?t=model-secret/);
-    assert.match(telegram.body.text, /Manual confirm fallback/);
+    assert.match(telegram.body.text, /ชำระเงินผ่านแล้ว · 2 ลิงก์พร้อมใช้/);
+    assert.match(telegram.body.text, /ลิงก์ลูกค้า/);
+    assert.match(telegram.body.text, /https:\/\/www\.mmdbkk\.com\/sigil\/confirm\/job-confirmation\?t=member-secret/);
+    assert.match(telegram.body.text, /ลิงก์โมเดล/);
+    assert.match(telegram.body.text, /https:\/\/www\.mmdbkk\.com\/sigil\/confirm\/job-model\?t=model-secret/);
+    assert.match(telegram.body.text, /ส่งผิดคนไม่ได้/);
     assert.match(telegram.body.text, /Customer LINE: <b>sent<\/b>/);
     assert.match(telegram.body.text, /Model LINE: <b>sent<\/b>/);
     assert.match(telegram.body.text, /Customer Telegram: <b>sent<\/b>/);
