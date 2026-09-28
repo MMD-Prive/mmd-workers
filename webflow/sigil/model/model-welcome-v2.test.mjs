@@ -45,12 +45,12 @@ function fakeDocument() {
   };
 }
 
-async function boot(response) {
+async function boot(response, options = {}) {
   const document = fakeDocument();
   let redirects = 0;
   const context = {
     document,
-    window: {},
+    window: { innerWidth: options.desktop === true ? 1280 : 390 },
     module: { exports: {} },
     URL,
     AbortController,
@@ -63,6 +63,13 @@ async function boot(response) {
   for (let i = 0; i < 6; i++) await Promise.resolve();
   return { document, redirects, api: context.module.exports };
 }
+
+test("desktop keeps the existing Webflow page and does not mount Welcome V2", async () => {
+  const { document, redirects } = await boot({ status: 401 }, { desktop: true });
+  assert.equal(redirects, 0);
+  assert.equal(document.getElementById("mmd-model-welcome-v2"), undefined);
+  assert.equal(document.getElementById("mmd-model-welcome-v2-style"), undefined);
+});
 
 test("verified invited Private Model sees Per's Welcome before choosing Dashboard", async () => {
   const { document, redirects } = await boot({
