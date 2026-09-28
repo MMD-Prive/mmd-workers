@@ -223,14 +223,19 @@ export async function resolveLiveCanonicalClient(env = {}, input = {}) {
     return { status: "unresolved", reason: "telegram_identity_not_linked" };
   }
 
-  const query = firstText(input.per_rename, input.client_query, input.display_name, input.line_user_id, input.line_display_name);
+  const stableLineUserId = lineId(input.line_user_id);
+  const query = firstText(input.per_rename, input.client_query, input.display_name, stableLineUserId, input.line_display_name);
   if (!query) return { status: "unresolved", reason: "identity_input_required" };
 
-  const resolved = await resolvePerRenameAlias(env, query);
+  const resolved = await resolvePerRenameAlias(env, query, { line_user_id: stableLineUserId });
   if (resolved.state !== "resolved" || !resolved.record?.client_id) {
     return {
       status: "unresolved",
-      reason: resolved.state === "multiple" ? "per_rename_multiple_clients" : resolved.state === "ambiguous" ? "per_rename_ambiguous" : "per_rename_not_resolved",
+      reason: resolved.state === "multiple"
+        ? "per_rename_multiple_clients"
+        : resolved.state === "ambiguous"
+          ? (resolved.reason || "per_rename_ambiguous")
+          : "per_rename_not_resolved",
       choices: Array.isArray(resolved.records) ? resolved.records.slice(0, 12).map((item) => ({ client_id: recId(item.client_id), display_name: clean(item.client_name, 120) })) : [],
     };
   }
