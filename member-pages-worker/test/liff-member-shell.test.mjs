@@ -263,12 +263,13 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /sessionStorage\.setItem\([^\n]*(?:email|phone|telegram|line_user_id|entitlement|preferences)/i);
   });
 
-  it("renders MMD NOW personalization only from the bounded backend homeFeed projection", async () => {
+  it("renders MMD TODAY and MMD ROTATION while keeping personalization backend-bounded", async () => {
     const response = await shell("/member/liff?intent=status&view=home&lang=th");
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /<small>PRIVATE FEED<\/small>MMD NOW/);
+    assert.match(html, /<p class="digital-eyebrow">MMD TODAY<\/p>/);
+    assert.match(html, /<small>PRIVATE FEED<\/small>MMD ROTATION/);
     assert.match(html, /let digitalPersonalizedFeed = \[\]/);
     assert.match(html, /homeFeed\.authority === "member_app_dashboard_v1"/);
     assert.match(html, /homeFeed\.state === "resolved"/);
@@ -282,10 +283,36 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /data-feed-view/);
     assert.doesNotMatch(html, /internal_note|provider_transaction_id|slip_url/);
 
-    const nowIndex = html.indexOf("MMD NOW");
-    const quickIndex = html.indexOf("QUICK ACCESS", nowIndex);
+    const todayIndex = html.indexOf("MMD TODAY");
+    const missionIndex = html.indexOf("MMD MISSION", todayIndex);
+    const rotationIndex = html.indexOf("MMD ROTATION", missionIndex);
+    const quickIndex = html.indexOf("QUICK ACCESS", rotationIndex);
     const kenjiIndex = html.indexOf('class="digital-kenji"', quickIndex);
-    assert.ok(nowIndex >= 0 && quickIndex > nowIndex && kenjiIndex > quickIndex);
+    assert.ok(todayIndex >= 0 && missionIndex > todayIndex && rotationIndex > missionIndex && quickIndex > rotationIndex && kenjiIndex > quickIndex);
+  });
+
+  it("keeps MMD MISSION payment-gated, lifecycle-exact, and view-only", async () => {
+    const response = await shell("/member/liff?intent=status&view=home&lang=th");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /id="digital-mission" class="digital-mission"[^>]*hidden/);
+    assert.match(html, /<small>CURRENT JOB<\/small>MMD MISSION/);
+    assert.match(html, /fetch\("\/api\/member\/app\/session\/current"/);
+    assert.match(html, /session\?\.missionReady !== true/);
+    assert.match(html, /MISSION_VISIBLE_STATES = new Set\(\["confirmed","preparing","en_route","nearby","arrived","met_customer","final_payment_pending","final_payment_confirmed","work_started","in_progress","work_finished"\]\)/);
+    assert.match(html, /final_payment_pending:"PAYMENT CHECK"/);
+    assert.match(html, /final_payment_confirmed:"PAYMENT CONFIRMED"/);
+    assert.match(html, /work_started:"SESSION STARTED"/);
+    assert.match(html, /work_finished:"SESSION FINISHED"/);
+    assert.match(html, /missionToggle\.addEventListener\("click"/);
+    assert.match(html, /missionDetail\.hidden = expanded/);
+
+    const clickStart = html.indexOf('missionToggle.addEventListener("click"');
+    const hydrateStart = html.indexOf("async function hydrateDigitalMission", clickStart);
+    assert.ok(clickStart >= 0 && hydrateStart > clickStart);
+    const clickOnly = html.slice(clickStart, hydrateStart);
+    assert.doesNotMatch(clickOnly, /fetch\(|method:\s*"POST"|eta_minutes|acknowledge_reconfirm/);
   });
 
   it("keeps MY MMD welcome and request surfaces readable at the approved fixture breakpoints", async () => {
