@@ -161,6 +161,14 @@ async function signedWebhook(events, env = BASE_ENV) {
   });
 }
 
+test("greeting action keywords enter canonical intents", () => {
+  assert.equal(inferLineIntent("ดูนายแบบ", lineEvent("ดูนายแบบ")), "model_browse");
+  assert.equal(inferLineIntent("จองบริการ", lineEvent("จองบริการ")), "mmd_companion");
+  assert.equal(inferLineIntent("สิทธิ์ของฉัน", lineEvent("สิทธิ์ของฉัน")), "membership_status");
+  assert.equal(inferLineIntent("ชำระเงิน", lineEvent("ชำระเงิน")), "payment_slip");
+  assert.equal(inferLineIntent("ส่งสลิป", lineEvent("ส่งสลิป")), "payment_slip");
+});
+
 test("card triggers are campaign leads while neutral codes remain model lookups", () => {
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
