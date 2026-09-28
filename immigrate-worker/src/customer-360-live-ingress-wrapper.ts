@@ -241,6 +241,14 @@ function rewriteLovableAssetUrls(html: string, origin: string): string {
     .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
 }
 
+export function applyCreateJobClientAutoSearch(html: string): string {
+  if (html.includes('data-mmd-create-job-client-autosearch="v1"')) return html;
+  const script = `<script data-mmd-create-job-client-autosearch="v1">
+(()=>{let timer=0,last="";const selector='input[aria-label="Search client"],input[placeholder*="Client ID"]';document.addEventListener('input',(event)=>{const input=event.target instanceof HTMLInputElement&&event.target.matches(selector)?event.target:null;if(!input||event.isComposing)return;clearTimeout(timer);const value=input.value.trim();if(!value){last="";return}timer=setTimeout(()=>{const next=input.value.trim();if(!next||next===last)return;last=next;input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}))},380)},true);document.addEventListener('keydown',(event)=>{const input=event.target instanceof HTMLInputElement&&event.target.matches(selector)?event.target:null;if(!input||event.key!=='Enter')return;last=input.value.trim();clearTimeout(timer)},true)})();
+</script>`;
+  return html.includes("</body>") ? html.replace("</body>", `${script}</body>`) : `${html}${script}`;
+}
+
 export function applyCreateJobStaticCopy(html: string): string {
   const rewritten = html
     .replace(/\bBLOCKED\b/g, "กำลังเตรียม")
@@ -306,7 +314,9 @@ export function applyCreateJobBoardPublishPanel(html: string): string {
 }
 
 export function decorateCreateJobGuidance(html: string): string {
-  return applyCreateJobBoardPublishPanel(applyCreateJobStaticCopy(html));
+  return applyCreateJobClientAutoSearch(
+    applyCreateJobBoardPublishPanel(applyCreateJobStaticCopy(html)),
+  );
 }
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
