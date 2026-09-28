@@ -52,6 +52,8 @@ jobs:
           set -euo pipefail
           node --check public-access-worker/src/index.js
           grep -q 'sigil.mmdbkk.com/public/api/\*' public-access-worker/wrangler.toml
+          grep -q 'mmdbkk.com/j/\*' public-access-worker/wrangler.toml
+          grep -q 'www.mmdbkk.com/j/\*' public-access-worker/wrangler.toml
           grep -q 'AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"' public-access-worker/wrangler.toml
 
       - name: Upload public-access-worker version
@@ -92,7 +94,11 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
-          const pattern = "sigil.mmdbkk.com/public/api/*";
+          const patterns = [
+            "sigil.mmdbkk.com/public/api/*",
+            "mmdbkk.com/j/*",
+            "www.mmdbkk.com/j/*",
+          ];
           async function cf(path, options = {}) {
             const response = await fetch("https://api.cloudflare.com/client/v4" + path, {
               ...options,
@@ -112,15 +118,19 @@ jobs:
           }
           const routePath = "/zones/" + zoneId + "/workers/routes";
           const existing = await cf(routePath);
-          const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
-          if (conflict) throw new Error("route conflict " + pattern + " -> " + (conflict.script || "none"));
-          if (!existing.some((route) => route.pattern === pattern && route.script === worker)) {
-            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
-            console.log("created " + pattern + " -> " + worker);
+          for (const pattern of patterns) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error("route conflict " + pattern + " -> " + (conflict.script || "none"));
+            if (!existing.some((route) => route.pattern === pattern && route.script === worker)) {
+              await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+              console.log("created " + pattern + " -> " + worker);
+            }
           }
           const verified = await cf(routePath);
-          if (!verified.some((route) => route.pattern === pattern && route.script === worker)) {
-            throw new Error("Public Access route verification failed");
+          for (const pattern of patterns) {
+            if (!verified.some((route) => route.pattern === pattern && route.script === worker)) {
+              throw new Error("Public Access route verification failed for " + pattern);
+            }
+            console.log("verified " + pattern + " -> " + worker);
           }
-          console.log("verified " + pattern + " -> " + worker);
           NODE
