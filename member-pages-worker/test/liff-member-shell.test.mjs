@@ -205,6 +205,15 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /scroll-snap-type:x mandatory/);
     assert.match(html, /prefers-reduced-motion/);
     assert.match(html, /"LINE Seed Sans TH"/);
+    assert.match(html, /data-mmd-liff-digital="v3"/);
+    assert.match(html, /data-design-source="lovable-vnext"/);
+    assert.match(html, /--digital-surface:#1c1d1b/);
+    assert.match(html, /--digital-gold:#d8b26a/);
+    assert.match(html, /--digital-radius:8px/);
+    assert.match(html, /data-view="history" aria-current="false"><i>▤<\/i>HISTORY/);
+    assert.match(html, /id="digital-companion"[\s\S]*hidden/);
+    assert.match(html, /id="digital-tmib-story"[\s\S]*hidden/);
+    assert.doesNotMatch(html, /data-view="jobs" aria-current="false"><i>▤<\/i>งาน/);
     assert.match(html, /customer_360/);
     assert.match(html, /points\.status === "verified"/);
     assert.match(html, /id="points-lifetime-spend"/);
