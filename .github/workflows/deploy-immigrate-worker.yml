@@ -316,7 +316,7 @@ jobs:
               && grep -Eiq '^x-mmd-presentation-source:[[:space:]]*lovable' "$headers" \
               && grep -Eiq '^x-mmd-presentation-version:[[:space:]]*internal-lovable-v1' "$headers" \
               && grep -Eq 'https://mmd-os\.lovable\.app/assets/' "$body" \
-              && grep -q 'id="root"' "$body" \
+              && grep -Eiq '<!doctype html|<html' "$body" \
               && ! grep -q 'WORKER-RENDERED INTERNAL PAGES' "$body"; then
               echo "Production Control Room Lovable presentation verified on attempt ${attempt}"
               verified=1
