@@ -324,6 +324,14 @@ export function resolveLineCardCampaignTrigger(text = "") {
 }
 
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
+const PLAIN_MODEL_NAME_STOPWORDS = new Set([
+  "สวัสดี", "ดี", "ขอบคุณ", "โอเค", "ครับ", "ค่ะ", "คะ",
+  "คืนนี้", "วันนี้", "พรุ่งนี้", "ว่าง", "ว่างไหม", "เช็กคิว", "เช็คคิว",
+  "ราคา", "เรท", "เท่าไร", "เท่าไหร่", "กี่บาท", "จอง", "จองเลย",
+  "สมาชิก", "ชำระเงิน", "ส่งสลิป",
+  "hello", "hi", "hey", "thanks", "thankyou", "available", "availability",
+  "price", "rate", "booking", "book", "member", "payment",
+]);
 
 export function extractKenjiModelLookupQuery(text = "") {
   const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -335,9 +343,14 @@ export function extractKenjiModelLookupQuery(text = "") {
   const campaignEntry = withoutPolite.match(/^([A-Z][A-Z0-9_-]{3,31})$/);
   if (campaignEntry && !RESERVED_MODEL_ENTRY_TRIGGERS.has(campaignEntry[1])) return campaignEntry[1];
   const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
-  if (!explicit) return "";
-  const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
-  return query && query.length <= 48 ? query : "";
+  if (explicit) {
+    const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+    return query && query.length <= 48 ? query : "";
+  }
+  const plain = withoutPolite.match(/^([A-Za-z][A-Za-z'.]{1,23}(?:\s+[A-Za-z][A-Za-z'.]{1,23})?|[ก-๙]{2,20})$/);
+  const plainValue = asString(plain?.[1]);
+  if (plainValue && !PLAIN_MODEL_NAME_STOPWORDS.has(plainValue.toLowerCase())) return plainValue;
+  return "";
 }
 
 export function extractKenjiModelVerificationEmail(text = "") {
