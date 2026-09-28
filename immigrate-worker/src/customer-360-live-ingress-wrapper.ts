@@ -132,22 +132,51 @@ export async function serveLovableCreateJobPage(request: Request, gateResponse: 
     const headers = new Headers(upstream.headers);
     headers.delete("set-cookie");
     headers.delete("content-length");
+    headers.delete("content-security-policy");
+    headers.delete("content-security-policy-report-only");
+    headers.delete("cross-origin-embedder-policy");
+    headers.delete("cross-origin-opener-policy");
+    headers.delete("cross-origin-resource-policy");
     headers.set("cache-control", "no-store, no-cache, must-revalidate");
+    headers.set("content-security-policy", buildCreateJobContentSecurityPolicy(origin));
     headers.set("x-robots-tag", "noindex, nofollow, noarchive");
     headers.set("x-mmd-presentation-source", "lovable");
     headers.set("x-mmd-presentation-version", "internal-lovable-v1");
     headers.set("x-mmd-page", "create-job");
-    headers.set("x-mmd-create-job-worker-guide", "static-copy-hotfix-v1");
+    headers.set("x-mmd-create-job-worker-guide", "asset-csp-click-hotfix-v1");
 
     if (request.method.toUpperCase() === "HEAD") return new Response(null, { status: 200, headers });
 
-    const html = applyCreateJobStaticCopy((await upstream.text())
-      .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
-      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`));
+    const html = applyCreateJobStaticCopy(rewriteLovableAssetUrls(await upstream.text(), origin));
     return new Response(html, { status: 200, headers });
   } catch {
     return gateResponse;
   }
+}
+
+function buildCreateJobContentSecurityPolicy(origin: string): string {
+  // Lovable is rendered inside mmdbkk.com but its JS/CSS chunks still live on the
+  // Lovable origin. Do not forward Lovable's own CSP, because a strict self-only
+  // policy makes the page look loaded while click handlers never hydrate.
+  const connect = ["'self'", CANONICAL_PUBLIC_ORIGIN, "https://www.mmdbkk.com", origin].join(" ");
+  const assets = ["'self'", origin, "https:", "data:", "blob:"].join(" ");
+  return [
+    `default-src 'self' ${origin}`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${origin}`,
+    `style-src 'self' 'unsafe-inline' ${origin}`,
+    `connect-src ${connect}`,
+    `img-src ${assets}`,
+    `font-src ${assets}`,
+    `media-src ${assets}`,
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+  ].join("; ");
+}
+
+function rewriteLovableAssetUrls(html: string, origin: string): string {
+  return html
+    .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
+    .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
 }
 
 export function applyCreateJobStaticCopy(html: string): string {
@@ -170,6 +199,8 @@ body::after{content:"เริ่มจากค้นหาลูกค้า�
   if (rewritten.includes("data-mmd-create-job-static-copy=\"v1\"")) return rewritten;
   return rewritten.includes("</head>") ? rewritten.replace("</head>", `${style}</head>`) : `${style}${rewritten}`;
 }
+
+export const decorateCreateJobGuidance = applyCreateJobStaticCopy;
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
