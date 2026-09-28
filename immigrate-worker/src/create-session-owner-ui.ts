@@ -50,6 +50,9 @@ body{min-height:100vh}
 .mmd-cs-v14__modelBudget{margin-top:12px;padding:14px;border:1px solid rgba(212,181,106,.22);border-radius:18px;background:rgba(212,181,106,.035)}
 .mmd-cs-v14__modelBudget .mmd-cs-v14__field{margin:0}
 .mmd-cs-v14__modelBudget small{display:block;margin-top:6px;color:var(--text-dim);font-size:10px;line-height:1.45}
+.mmd-cs-v14__essentialPayment{margin-top:12px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.45fr);gap:10px}
+.mmd-cs-v14__essentialPayment .mmd-cs-v14__field{margin:0}
+@media(max-width:760px){.mmd-cs-v14__essentialPayment{grid-template-columns:1fr}}
 .mmd-cs-v14__runtimeCard{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.025)}
 .mmd-cs-v14 .mmdop__empty{min-height:92px;display:grid;place-items:center;text-align:center;padding:18px;border:1px dashed var(--line);border-radius:18px;background:rgba(255,255,255,.022);color:var(--text-dim)}
 .mmd-cs-v14 .mmdop__clientCard{width:100%;display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:20px;background:rgba(8,8,13,.55);color:var(--text);text-align:left;cursor:pointer}
@@ -236,7 +239,9 @@ function transformOwnerHtml(source: string): string {
 
   html = html.replace(
     '<div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n                <label class="mmd-cs-v14__field">\n                  <span>Google Map URL</span>',
-    `<input type="hidden" data-op-payment-type value="full" />
+    `<div class="mmd-cs-v14__essentialPayment">
+        <label class="mmd-cs-v14__field"><span>การเรียกเก็บ</span><select data-op-payment-type><option value="deposit">มัดจำ</option><option value="full">เต็มจำนวน</option></select></label>
+      </div>
       <input type="hidden" data-op-payment-method value="promptpay" />
       <input type="hidden" data-op-points-mode value="auto" />
       <input type="hidden" data-op-escalation-owner value="Boss Per" />
