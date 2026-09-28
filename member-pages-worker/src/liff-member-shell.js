@@ -218,6 +218,30 @@ function renderShell(config, nonce) {
     body.app-entered:not(.signup-mode) #credits .detail-grid>div:last-child,body.app-entered:not(.signup-mode) #points .detail-grid>div:last-child{padding-right:0}
     body.app-entered:not(.signup-mode) #credits .detail-grid .label,body.app-entered:not(.signup-mode) #points .detail-grid .label{display:block;overflow:hidden;font-size:9px;letter-spacing:.08em;text-overflow:ellipsis;white-space:nowrap}
     body.app-entered:not(.signup-mode) #credits .detail-grid .value,body.app-entered:not(.signup-mode) #points .detail-grid .value{font-size:16px}
+    body.app-entered:not(.signup-mode) .digital-care{gap:0;padding-top:4px}
+    body.app-entered:not(.signup-mode) .digital-care>.care{margin:0;padding:16px 0 20px;border:0;border-radius:0;background:transparent;box-shadow:none}
+    body.app-entered:not(.signup-mode) .digital-care>.care>h2{margin:5px 0 7px;color:var(--digital-cream);font-size:22px;line-height:1.2;letter-spacing:-.025em}
+    body.app-entered:not(.signup-mode) .digital-care #care-message{max-width:620px;color:var(--digital-muted);font-size:12px;line-height:1.6}
+    body.app-entered:not(.signup-mode) .digital-care .benefit-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}
+    body.app-entered:not(.signup-mode) .digital-care .benefit-card{padding:12px;border:1px solid rgba(216,189,137,.16);border-radius:var(--digital-radius);background:rgba(255,255,255,.025)}
+    body.app-entered:not(.signup-mode) .digital-care .care-code{margin:14px 0;padding:12px 0;border-top:1px solid rgba(216,189,137,.16);border-bottom:1px solid rgba(216,189,137,.16);border-radius:0;background:transparent}
+    body.app-entered:not(.signup-mode) .digital-care #care-button,body.app-entered:not(.signup-mode) .digital-care #wish-submit{min-height:46px;border:0;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d;font-weight:800;text-align:center}
+    body.app-entered:not(.signup-mode) .digital-care #wish-text{border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}
+    body.app-entered:not(.signup-mode) .digital-requests{gap:0;padding-top:4px}
+    body.app-entered:not(.signup-mode) .digital-requests>.card,body.app-entered:not(.signup-mode) .digital-requests>details.card{width:100%;margin:0;padding:15px 0;border:0;border-bottom:1px solid rgba(216,189,137,.18);border-radius:0;background:transparent;box-shadow:none}
+    body.app-entered:not(.signup-mode) .digital-request-block>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0;color:var(--digital-cream);list-style:none}
+    body.app-entered:not(.signup-mode) .digital-request-block>summary::-webkit-details-marker{display:none}
+    body.app-entered:not(.signup-mode) .digital-request-block>summary::after{content:"+";flex:none;color:var(--digital-gold);font-size:22px;font-weight:300}
+    body.app-entered:not(.signup-mode) .digital-request-block[open]>summary::after{content:"–"}
+    body.app-entered:not(.signup-mode) .digital-request-block>summary small{display:block;margin-bottom:4px;color:#a49b84;font-size:9px;font-weight:700;letter-spacing:.12em}
+    body.app-entered:not(.signup-mode) .digital-request-block>summary strong{display:block;color:var(--digital-cream);font-size:15px;line-height:1.35}
+    body.app-entered:not(.signup-mode) .digital-request-body{padding-top:14px}
+    body.app-entered:not(.signup-mode) .digital-requests .form-stack{gap:12px;margin-top:14px}
+    body.app-entered:not(.signup-mode) .digital-requests .form-stack label{gap:5px;color:var(--digital-muted);font-size:11px}
+    body.app-entered:not(.signup-mode) .digital-requests input,body.app-entered:not(.signup-mode) .digital-requests select,body.app-entered:not(.signup-mode) .digital-requests textarea{border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream)}
+    body.app-entered:not(.signup-mode) .digital-requests textarea{min-height:96px}
+    body.app-entered:not(.signup-mode) .digital-requests .form-stack button{min-height:46px;border:0;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d;font-weight:800;text-align:center}
+    body.app-entered:not(.signup-mode) .digital-requests>.card>.history{margin-top:8px}
     .digital-home{position:relative}
     .digital-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.digital-brand{font-size:13px;font-weight:850;letter-spacing:.18em}.digital-brand small{display:block;margin-top:3px;color:var(--digital-gold);font-size:9px;letter-spacing:.19em}.digital-session{border:1px solid rgba(231,204,137,.3);border-radius:999px;padding:7px 9px;color:var(--digital-gold);background:#191a14;font-size:9px}
     .digital-hello{margin-top:18px}.digital-eyebrow{margin:0 0 5px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.16em}.digital-hello h1{margin:0 0 4px;color:var(--digital-cream);font-size:27px;line-height:1.12;letter-spacing:-.04em}.digital-sub{margin:0;color:var(--digital-muted);font-size:11px;line-height:1.5}
@@ -323,7 +347,7 @@ function renderShell(config, nonce) {
       <div class="card"><h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
       <details class="card details"><summary data-copy="paymentHistoryLabel">Payment history</summary><div id="payment-history" class="stack"></div></details>
     </section>
-    <section id="care" class="panel" aria-label="Care"><div class="card care">
+    <section id="care" class="panel digital-care" aria-label="Care"><div class="card care">
       <span class="label" data-copy="careLabel">6 Years · Care Back</span><h2 data-copy="careTitle">Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
       <div id="care-benefits" class="benefit-grid hidden" aria-label="Personalized benefits"></div>
@@ -340,14 +364,20 @@ function renderShell(config, nonce) {
       <span class="label" data-copy="couponWalletLabel">MY MMD</span><h2 data-copy="couponWalletTitle">🎟 คูปองของฉัน</h2>
       <div id="coupon-wallet" class="stack"><p class="empty" data-copy="couponWalletEmpty">ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ</p></div>
     </div></section>
-    <section id="my-requests" class="panel" aria-label="My requests">
-      <div class="card"><span class="label">MY DETAILS</span><h2>ข้อมูลที่อยากให้ MMD ใช้ดูแลคุณ</h2><p class="form-note">ข้อมูลนี้ส่งให้ทีม MMD ตรวจสอบก่อนอัปเดต จึงไม่เปลี่ยนประวัติที่ยืนยันแล้วเอง</p>
-        <form id="customer-profile-form" class="form-stack"><label>อีเมล<input id="customer-email" type="email" maxlength="160" autocomplete="email"></label><label>เบอร์โทรศัพท์<input id="customer-phone" type="tel" maxlength="40" autocomplete="tel"></label><label>Telegram<input id="customer-telegram" type="text" maxlength="65" autocomplete="off" placeholder="username ไม่ต้องใส่ @"></label><label>ความชอบ / สเป็ก / สิ่งที่อยากให้ทีมรู้<textarea id="customer-preferences" maxlength="1200"></textarea></label><button type="submit">ส่งข้อมูลให้ MMD ตรวจสอบ</button></form>
-      </div>
-      <div class="card"><span class="label">YOUR REQUEST</span><h2>อยากให้ MMD ตามหาใคร</h2><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p>
-        <form id="your-request-form" class="form-stack"><label>ชื่อนายแบบ<input id="requested-model-name" type="text" maxlength="120" required></label><label>ลิงก์โซเชียล (ได้สูงสุด 3 ลิงก์)<textarea id="requested-model-social" maxlength="500" placeholder="https://..."></textarea></label><label>สนใจงานแบบไหน<select id="requested-model-audience"><option value="public">งานทั่วไป (Public)</option><option value="private">งาน Private</option></select></label><label>ทำไมอยากให้ MMD ตามหา<textarea id="requested-model-reason" maxlength="1800" required></textarea></label><label>รูปอ้างอิง (ไม่บังคับ)<input id="requested-model-evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><button type="submit">ส่ง Your Request</button></form>
-        <div id="your-request-status" class="form-note" role="status" aria-live="polite"></div>
-      </div>
+    <section id="my-requests" class="panel digital-requests" aria-label="My requests">
+      <details class="card details digital-request-block">
+        <summary><span><small>MY DETAILS</small><strong>ข้อมูลที่อยากให้ MMD ใช้ดูแลคุณ</strong></span></summary>
+        <div class="digital-request-body"><p class="form-note">ข้อมูลนี้ส่งให้ทีม MMD ตรวจสอบก่อนอัปเดต จึงไม่เปลี่ยนประวัติที่ยืนยันแล้วเอง</p>
+          <form id="customer-profile-form" class="form-stack"><label>อีเมล<input id="customer-email" type="email" maxlength="160" autocomplete="email"></label><label>เบอร์โทรศัพท์<input id="customer-phone" type="tel" maxlength="40" autocomplete="tel"></label><label>Telegram<input id="customer-telegram" type="text" maxlength="65" autocomplete="off" placeholder="username ไม่ต้องใส่ @"></label><label>ความชอบ / สเป็ก / สิ่งที่อยากให้ทีมรู้<textarea id="customer-preferences" maxlength="1200"></textarea></label><button type="submit">ส่งข้อมูลให้ MMD ตรวจสอบ</button></form>
+        </div>
+      </details>
+      <details class="card details digital-request-block">
+        <summary><span><small>YOUR REQUEST</small><strong>อยากให้ MMD ตามหาใคร</strong></span></summary>
+        <div class="digital-request-body"><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p>
+          <form id="your-request-form" class="form-stack"><label>ชื่อนายแบบ<input id="requested-model-name" type="text" maxlength="120" required></label><label>ลิงก์โซเชียล (ได้สูงสุด 3 ลิงก์)<textarea id="requested-model-social" maxlength="500" placeholder="https://..."></textarea></label><label>สนใจงานแบบไหน<select id="requested-model-audience"><option value="public">งานทั่วไป (Public)</option><option value="private">งาน Private</option></select></label><label>ทำไมอยากให้ MMD ตามหา<textarea id="requested-model-reason" maxlength="1800" required></textarea></label><label>รูปอ้างอิง (ไม่บังคับ)<input id="requested-model-evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><button type="submit">ส่ง Your Request</button></form>
+          <div id="your-request-status" class="form-note" role="status" aria-live="polite"></div>
+        </div>
+      </details>
       <div class="card"><span class="label">REQUEST STATUS</span><div id="customer-request-list" class="history"><p class="empty">กำลังตรวจสอบคำขอของคุณ</p></div></div>
       <div class="card"><span class="label">SAVED MODELS</span><div id="saved-model-list" class="history"><p class="empty">ยังไม่มีนายแบบที่บันทึกไว้</p></div></div>
     </section>
