@@ -206,7 +206,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /prefers-reduced-motion/);
     assert.match(html, /"LINE Seed Sans TH"/);
     assert.match(html, /data-mmd-liff-digital="v3"/);
-    assert.match(html, /data-design-source="lovable-vnext"/);
+    assert.doesNotMatch(html, /data-design-source|lovable/i);
     assert.match(html, /--digital-surface:#1c1d1b/);
     assert.match(html, /--digital-gold:#d8b26a/);
     assert.match(html, /--digital-radius:8px/);
@@ -227,8 +227,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /formatThb\(points\.lifetime_service_spend_thb\)/);
     assert.match(html, /navHome:"👤 HOME"/);
     assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
-    assert.match(html, /const LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
-    assert.match(html, /if \(view === "points"\) \{[\s\S]*window\.location\.assign\(LOVABLE_POINTS_PATH\);[\s\S]*return;[\s\S]*\}/);
+    assert.match(html, /const CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
+    assert.match(html, /if \(view === "points"\) \{[\s\S]*window\.location\.assign\(CANONICAL_POINTS_PATH\);[\s\S]*return;[\s\S]*\}/);
     assert.match(html, /const targetId = view === "history" \? "history-panel" : view/);
     assert.match(html, /"historyEndpoint":"\/api\/member\/app\/history"/);
     assert.match(html, /"historyRecoveryEndpoint":"\/api\/member\/app\/history\/recovery"/);
@@ -295,7 +295,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /@media\(min-width:700px\)\{[^}]*#profile[^}]*width:min\(100%,760px\);margin-left:auto;margin-right:auto/);
     assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) #status\{display:none!important;margin:0\}/);
-    assert.doesNotMatch(html, /Lovable design source|DESIGN PREVIEW/);
+    assert.doesNotMatch(html, /data-design-source|lovable|DESIGN PREVIEW/i);
     assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
     assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
   });
