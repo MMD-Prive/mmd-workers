@@ -69,6 +69,7 @@ async function ownerCreate(testEnv, overrides = {}) {
     body: {
       id: "JOB-20261001-DEMO01",
       status: "published",
+      world: "private",
       brief: "งาน กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์\nถ้าเป็นนายแบบ/นักแสดง มีโปรไฟล์ ได้บัทพิเศษ 🔐\n\n⏳ งาน 3 ชม.\n🏡 พฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n💰 10,000 ถึงตัว\n👤 ลูกค้า 1 ท่าน ร้านมีห้องส่วนตัว ไม่ล่วงเกิน\n\n🍌 ส่งด่วน รูปเดี่ยว 2 รูป",
       ...overrides,
     },
@@ -114,6 +115,18 @@ test("free-form Per brief maps to the Public Job Board V2 contract", () => {
   assert.equal(parsed.media_requirements.count, 8);
 });
 
+test("confidentiality does not turn a Public MMD job into SIGIL Private", () => {
+  const job = createJobRecord({
+    id: "JOB-20260928-PUBLIC-CONF",
+    status: "published",
+    world: "public",
+    confidentiality: true,
+    brief: "งานกินข้าว 🔐\n⏳ งาน 3 ชม.\n🏡 พฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n💰 12,000 ถึงตัว",
+  });
+  assert.equal(job.public.world, "public");
+  assert.equal(job.public.confidentiality, true);
+});
+
 test("explicit customer gender is structured without using orientation", () => {
   const male = parsePublicJobBriefV2("งานอีเวนต์\n👤 ลูกค้า 1 ท่าน ผู้ชาย\n💰 8,000 บาท\n🍌 รูปเดี่ยว 1 รูป");
   const female = parsePublicJobBriefV2("งานอีเวนต์\n👤 ลูกค้า 1 ท่าน ผู้หญิง\n💰 8,000 บาท\n🍌 รูปเดี่ยว 1 รูป");
@@ -134,15 +147,16 @@ test("runtime fails closed without durable R2 or a strong signing secret", async
 
 test("owner short link renders a compact job-first landing and skips generic Welcome", async () => {
   const testEnv = env();
-  const created = await ownerCreate(testEnv, { id: "JOB-20261001-A1B2C3D4E5F6" });
+  const created = await ownerCreate(testEnv, { id: "JOB-20261001-A1B2C3D4E5F6", world: "public", confidentiality: true });
   assert.equal(created.job.broadcast_url, "https://mmdbkk.com/j/A1B2C3D4E5F6");
 
   const short = await worker.fetch(new Request(created.job.broadcast_url), testEnv);
   assert.equal(short.status, 200);
   assert.equal(short.headers.get("x-mmd-job-short-link"), "v2");
   const page = await short.text();
-  assert.match(page, /PRIVATE JOB · งานลับ/);
-  assert.match(page, /เปิดงานลับนี้ผ่าน LINE/);
+  assert.match(page, /MMD JOB · CONFIDENTIAL/);
+  assert.match(page, /เปิดงานนี้ผ่าน LINE/);
+  assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.match(page, /https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
   assert.match(page, /intent=job_board/);
   assert.match(page, new RegExp(created.job.id));
@@ -175,6 +189,8 @@ test("branded short link renders an existing canonical job created before aliase
   assert.match(page, /JOB-20260928-3DE86201F471/);
   assert.match(page, /สุขุมวิท/);
   assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);
+  assert.match(page, /MMD JOB · CONFIDENTIAL/);
+  assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);
 });
 
@@ -225,7 +241,7 @@ test("job detail and intake expose approved applicant copy without internal stat
 test("Public and Private cards are separated and only owner-approved Private budget is exposed", async () => {
   const testEnv = env();
   await ownerCreate(testEnv, { budget_disclosure_approved: true, customer_gender: "male" });
-  await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC1", confidentiality: false, brief: "งานอีเวนต์ ขอคนมีโปรไฟล์\n⏳ งาน 4 ชม.\n🏡 ศ 2 ต.ค. 18:00 ย่านสาทร\n💰 6,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
+  await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC1", world: "public", confidentiality: false, brief: "งานอีเวนต์ ขอคนมีโปรไฟล์\n⏳ งาน 4 ชม.\n🏡 ศ 2 ต.ค. 18:00 ย่านสาทร\n💰 6,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
   const cookie = await anonymousCookie(testEnv);
   const response = await call(testEnv, "/public/api/jobs", { headers: { cookie } });
   const page = await response.text();
@@ -284,7 +300,7 @@ test("Private reveal token expires and returns to the redacted gate", async () =
 test("anonymous viewer summaries trigger owner alerts without storing direct identity and remain owner-controlled", async () => {
   const alerts = [];
   const testEnv = env({ PUBLIC_JOB_OWNER_ALERTS: { fetch: async (_url, init) => { alerts.push(JSON.parse(init.body)); return new Response(null, { status: 202 }); } } });
-  for (const id of ["JOB-20261001-PRIV01", "JOB-20261001-PRIV02", "JOB-20261001-PRIV03"]) await ownerCreate(testEnv, { id, confidentiality: true });
+  for (const id of ["JOB-20261001-PRIV01", "JOB-20261001-PRIV02", "JOB-20261001-PRIV03"]) await ownerCreate(testEnv, { id, world: "private", confidentiality: true });
   const cookie = await anonymousCookie(testEnv);
   for (const id of ["JOB-20261001-PRIV01", "JOB-20261001-PRIV02", "JOB-20261001-PRIV03"]) {
     const opened = await call(testEnv, `/public/api/jobs/${id}/reveal`, { method: "POST", headers: { cookie } });
@@ -315,7 +331,7 @@ test("anonymous viewer summaries trigger owner alerts without storing direct ide
 
 test("brief reading time and CTA signals are stored as bounded anonymous events", async () => {
   const testEnv = env();
-  await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC2", confidentiality: false });
+  await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC2", world: "public", confidentiality: false });
   const cookie = await anonymousCookie(testEnv);
   assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-PUBLIC2", { headers: { cookie } })).status, 200);
   const ping = await call(testEnv, "/public/api/jobs/events", { method: "POST", headers: { cookie }, body: { type: "read_ping", job_id: "JOB-20261001-PUBLIC2", read_seconds: 42 } });
@@ -483,18 +499,18 @@ test("owner UI requires a short-lived HttpOnly session and exposes create plus r
 
 test("owner can list jobs and update status privacy plus budget disclosure server-side", async () => {
   const testEnv = env();
-  await ownerCreate(testEnv, { confidentiality: false });
+  await ownerCreate(testEnv, { world: "public", confidentiality: false });
   const headers = { "x-internal-token": "owner-test-token" };
   let response = await call(testEnv, "/public/api/jobs/internal/jobs", { headers });
   let body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.jobs.length, 1);
-  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: true, budget_disclosure_approved: true, customer_gender: "female" } });
+  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { world: "private", confidentiality: true, budget_disclosure_approved: true, customer_gender: "female" } });
   body = await response.json();
   assert.equal(body.job.public.world, "private");
   assert.equal(body.job.public.budget_disclosure_approved, true);
   assert.equal(body.job.public.customer_gender, "female");
-  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: false, budget_disclosure_approved: true } });
+  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { world: "public", confidentiality: false, budget_disclosure_approved: true } });
   body = await response.json();
   assert.equal(body.job.public.world, "public");
   assert.equal(body.job.public.budget_disclosure_approved, false);
@@ -502,7 +518,7 @@ test("owner can list jobs and update status privacy plus budget disclosure serve
 
 test("viewer events honor seven-day retention and WATCH classification", async () => {
   const testEnv = env();
-  await ownerCreate(testEnv, { confidentiality: true });
+  await ownerCreate(testEnv, { world: "private", confidentiality: true });
   const cookie = await anonymousCookie(testEnv);
   const viewerKey = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((key) => key.includes("/viewers/"));
   const record = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(viewerKey).bytes));
@@ -518,7 +534,7 @@ test("viewer events honor seven-day retention and WATCH classification", async (
 
 test("responsive board contract is four cards on desktop and two on mobile", async () => {
   const testEnv = env();
-  await ownerCreate(testEnv, { confidentiality: false });
+  await ownerCreate(testEnv, { world: "public", confidentiality: false });
   const page = await (await call(testEnv, "/public/api/jobs")).text();
   assert.match(page, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(page, /@media\(max-width:640px\)[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
