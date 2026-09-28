@@ -3,6 +3,7 @@ export const MODEL_SALES_TIME_ZONE = "Asia/Bangkok";
 export const HISTORICAL_PER_QUOTE_MAX_THB = 20000;
 
 const ACTIVE_STATES = new Set(["active", "approved", "live", "published"]);
+const HISTORICAL_REVIEWED_STATES = new Set(["inactive", "expired", "superseded", "archived", "replaced", "closed"]);
 const PRICE_VISIBLE_STATES = new Set([
   "show",
   "visible",
@@ -22,13 +23,16 @@ export function resolveModelSalesOffer(input = {}) {
   const modelKey = clean(input.model_key || input.modelKey, 160).toLowerCase();
   if (!modelId && !modelKey) return blocked("model_identity_required");
 
-  const historicalQuote = normalizeHistoricalPerQuote(input, modelId, modelKey);
   const rules = Array.isArray(input.rules) ? input.rules : [];
-  const normalized = rules
+  const allNormalized = rules
     .map((rule, index) => normalizeRule(rule, index))
     .filter((rule) => rule && ruleMatchesModel(rule, modelId, modelKey))
+    .filter((rule) => ruleMatchesLane(rule, input.work_lane || input.workLane));
+  const historicalQuote =
+    normalizeHistoricalPerQuote(input, modelId, modelKey) ||
+    historicalPerQuoteFromNormalizedRules(input, allNormalized);
+  const normalized = allNormalized
     .filter((rule) => ACTIVE_STATES.has(rule.status))
-    .filter((rule) => ruleMatchesLane(rule, input.work_lane || input.workLane))
     .filter((rule) => scheduleMatches(rule, requestedAt));
 
   const candidates = normalized
@@ -168,9 +172,45 @@ function normalizeRule(record, index) {
     priority: integer(fields.priority, 0),
     status: token(selectName(fields.status)),
     requires_per_approval: yes(fields.requires_per_approval),
+    reviewed_by: token(fields.reviewed_by || fields.approved_by || fields.updated_by),
+    reviewed_at: clean(fields.reviewed_at || fields.approved_at, 100),
     version: Math.max(1, integer(fields.version, 1)),
     updated_at: clean(fields.updated_at || fields.reviewed_at, 100),
   };
+}
+
+export function historicalPerQuoteFromRules(input = {}, rules = []) {
+  const candidates = (Array.isArray(rules) ? rules : [])
+    .filter((rule) => rule && HISTORICAL_REVIEWED_STATES.has(rule.status))
+    .filter((rule) => specificityFor(rule, input) === 4)
+    .filter((rule) => rule.reviewed_by === "per")
+    .map((rule) => {
+      const amount = firstFinite(
+        rule.customer_sell_rate_thb,
+        rule.customer_specific_rate_thb,
+        rule.default_rate_thb,
+      );
+      const reviewedAt = parseIso(rule.reviewed_at || rule.updated_at);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > HISTORICAL_PER_QUOTE_MAX_THB || !reviewedAt) return null;
+      return {
+        amount_thb: Math.trunc(amount),
+        client_id: clean(input.client_id || input.clientId, 100),
+        client_identity_key: clean(input.client_identity_key || input.clientIdentityKey, 180).toLowerCase(),
+        model_id: rule.model_ids[0] || clean(input.model_id || input.modelId, 100),
+        model_key: rule.model_key || clean(input.model_key || input.modelKey, 160).toLowerCase(),
+        reviewed_at: reviewedAt.toISOString(),
+        source_ref: rule.record_id,
+        version: rule.version,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) =>
+      Date.parse(b.reviewed_at) - Date.parse(a.reviewed_at) ||
+      b.version - a.version ||
+      String(a.source_ref).localeCompare(String(b.source_ref))
+    );
+
+  return candidates[0] || null;
 }
 
 export function normalizeHistoricalPerQuote(input = {}, modelId = "", modelKey = "") {
