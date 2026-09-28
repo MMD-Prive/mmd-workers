@@ -66,7 +66,7 @@ test("verified membership truth renders natural status instead of reverification
   assert.match(decision.text, /Active/);
   assert.match(decision.text, /Public Service: ใช้ได้/);
   assert.match(decision.text, /Private visibility: SVIP/);
-  assert.match(decision.text, /Points: 88/);
+  assert.doesNotMatch(decision.text, /Points|แต้ม|คะแนน/i);
   assert.match(decision.text, /GWs\/EMs.*รายบุคคล/s);
   assert.match(decision.text, /ไม่ได้เปิดทั้งหมด/);
   assert.doesNotMatch(decision.text, /ยืนยันตัวตน|ต้องตรวจผ่าน My MMD/);
