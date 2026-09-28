@@ -42,4 +42,8 @@ test("onboarding markup offers separate self description, Public gender and cond
   for (const id of ["selfDescription", "publicGender", "privateOpt", "privateGender", "privateGenderBox"]) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(html, /if\(!privateOn\)\$\("privateGender"\)\.value=""/);
   assert.match(html, /step="1800"/);
+  assert.match(html, /data-mmd-app-digital="v1"/);
+  assert.match(html, /DIGITAL MODEL WORKSPACE/);
+  assert.match(html, /--mmd-bg:#080907/);
+  assert.doesNotMatch(html, /mw2-hero|background-image:url/i);
 });
