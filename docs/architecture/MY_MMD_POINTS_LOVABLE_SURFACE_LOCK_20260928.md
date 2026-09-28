@@ -39,9 +39,27 @@ MMD workers remain authoritative for:
 
 Lovable/browser must not calculate, grant, adjust, extend, or redeem Points.
 
-## History recovery
+## History recovery — existing system only
 
-Customer history recovery continues to use MMD-owned backend sources, especially LINE OFC history, and does not require old slip proof before reconstructing historical customer activity.
+Customer-history reconstruction stays on the existing MMD backend flow. It must **not** be routed through Lovable.
+
+Canonical path:
+
+```text
+LINE OFC / existing historical sources
+  -> member-history-recovery
+  -> member-history-preload / reconciliation
+  -> canonical MMD backend projection
+  -> Worker-rendered LIFF History / member APIs
+```
+
+Rules:
+- keep the existing automatic recovery started from the verified LIFF/member session
+- keep LINE OFC as the historical source path already used by the recovery worker
+- do not require old slip proof before reconstructing historical customer activity
+- do not redirect History to `/my-mmd/history`
+- do not let Lovable fetch, infer, reconcile, or become authority for customer history
+- Lovable receives only the Points presentation role described above
 
 Recovered Points still follow the active Points policy: each eligible lot expires 365 days from its entry/posting date.
 
@@ -52,4 +70,6 @@ A valid implementation must prove:
 - Points buttons/links route to `/my-mmd/points`
 - `/my-mmd/points` is served by the Lovable proxy route owner
 - Points data is still fetched through same-origin MMD APIs
-- no browser-side Points authority is introduced
+- History remains on the existing Worker/backend recovery path
+- History does not redirect to Lovable or `/my-mmd/history`
+- no browser-side Points or History authority is introduced
