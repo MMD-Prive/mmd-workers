@@ -206,6 +206,56 @@ test("model browse asks preference and never treats preference words as model na
   assert.equal(picked.model_browse_state.preferred_model_gender, "man");
 });
 
+test("model browse copy follows canonical private visibility without granting protected groups", async () => {
+  const memberPages = (membership) => ({
+    async fetch() {
+      return new Response(JSON.stringify({
+        ok: true,
+        authority: "my_mmd_entitlement_resolver_v1",
+        identity_status: "resolved",
+        canonical_client_id: "recClient",
+        display_name: "Test",
+        membership,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+
+  const privateEnv = {
+    ...BASE_ENV,
+    MEMBER_PAGES_WORKER: memberPages({
+      level: "private_premium",
+      lifecycle: "active",
+      private_visibility_envelope: "premium",
+      member_blocked: false,
+    }),
+  };
+  const privateStart = await resolveKenjiLineReply(lineEvent("ดูนายแบบ"), {}, privateEnv, {
+    continuity: { effective_intent: "model_browse", matrix: { payload_json: {} } },
+  });
+  assert.match(privateStart.text, /Public และ Private/);
+  assert.match(privateStart.text, /GWs \/ EMs/);
+  assert.match(privateStart.text, /รายคน/);
+
+  const publicEnv = {
+    ...BASE_ENV,
+    MEMBER_PAGES_WORKER: memberPages({
+      level: "public_member",
+      lifecycle: "active",
+      private_visibility_envelope: "none",
+      member_blocked: false,
+    }),
+  };
+  const publicPicked = await resolveKenjiLineReply(lineEvent("ผู้ชาย"), {}, publicEnv, {
+    continuity: {
+      effective_intent: "model_browse_gender",
+      matrix: { payload_json: { model_browse_v1: { awaiting: "model_gender" } } },
+    },
+  });
+  assert.match(publicPicked.text, /Public Models/);
+  assert.match(publicPicked.text, /Private \/ GWs \/ EMs/);
+  assert.doesNotMatch(publicPicked.text, /มี Private visibility อยู่ด้วย/);
+});
+
 test("standalone model names and short follow-ups keep guarded model context", () => {
   assert.equal(extractKenjiModelLookupQuery("Jasper"), "Jasper");
   assert.equal(inferLineIntent("Jasper", lineEvent("Jasper")), "model_lookup");
