@@ -278,6 +278,21 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
   });
 
+  it("keeps MY MMD signup shell full-screen without changing membership package sizing", async () => {
+    const response = await shell("/member/liff?intent=signup");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /body\.signup-mode\{[^}]*width:100%[^}]*max-width:100%[^}]*min-height:100dvh[^}]*padding:0[^}]*overflow-x:clip/);
+    assert.match(html, /body\.signup-mode main\{[^}]*width:100%[^}]*max-width:none[^}]*min-height:100dvh[^}]*margin:0/);
+    assert.match(html, /padding:calc\(26px \+ env\(safe-area-inset-top\)\) max\(18px,env\(safe-area-inset-right\)\) calc\(34px \+ env\(safe-area-inset-bottom\)\) max\(18px,env\(safe-area-inset-left\)\)/);
+    assert.match(html, /@media\(min-width:600px\)\{body\.signup-mode\{padding:0\}body\.signup-mode main\{[^}]*min-height:100dvh[^}]*border:0[^}]*border-radius:0/);
+    assert.match(html, /body\.signup-mode #signup[^}]*width:min\(100%,760px\);margin-left:auto;margin-right:auto/);
+    assert.doesNotMatch(html, /body\.signup-mode main\{[^}]*560px/);
+    assert.doesNotMatch(html, /body\.signup-mode\{padding:24px\}/);
+    assert.match(html, /body\.signup-mode \.signup-package\{position:relative;gap:10px;padding:18px;border-radius:16px/);
+  });
+
   it("keeps the entered MY MMD LIFF shell edge-to-edge with safe areas and unchanged member snapshot sizing", async () => {
     const response = await shell("/member/liff?intent=status&view=home");
     const html = await response.text();
