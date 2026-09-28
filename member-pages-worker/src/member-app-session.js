@@ -27,9 +27,10 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
   if (path === `${SESSION_PATH}context`) {
     const token = clean(new URL(request.url).searchParams.get("t"), 4096);
     if (!token) return json({ valid: false, session: null });
-    const context = await verifyCustomerToken(request, env, token);
-    const sessionId = contextSessionId(context);
-    if (!sessionId) return json({ valid: false, session: null });
+    const verification = await verifyCustomerToken(request, env, token);
+    if (!verification.ok) return json({ valid: false, session: null, diagnostic: verification.diagnostic });
+    const sessionId = contextSessionId(verification.payload);
+    if (!sessionId) return json({ valid: false, session: null, diagnostic: "confirm_context_session_id_missing" });
 
     const identity = await readSession(request, env);
     const record = identity?.lineUserId
@@ -52,8 +53,10 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
   if (!requestedId) return jsonError(400, "SESSION_ID_REQUIRED", "session_id is required.");
 
   if (token) {
-    const context = await verifyCustomerToken(request, env, token);
-    if (contextSessionId(context) !== requestedId) return jsonError(403, "SESSION_TOKEN_MISMATCH", "Session credential does not match this session.");
+    const verification = await verifyCustomerToken(request, env, token);
+    if (!verification.ok || contextSessionId(verification.payload) !== requestedId) {
+      return jsonError(403, "SESSION_TOKEN_MISMATCH", "Session credential does not match this session.");
+    }
   }
 
   const record = await findOwnedSessionById(env, identity, requestedId);
@@ -222,15 +225,39 @@ function lifecycleOf(fields = {}) {
 }
 
 async function verifyCustomerToken(request, env, token) {
-  if (!env.PAYMENTS_WORKER?.fetch) return null;
-  const target = new URL("/v1/confirm/context", request.url);
-  const response = await env.PAYMENTS_WORKER.fetch(new Request(target, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ t: token, expected_role: "customer" }),
-  }));
-  if (!response.ok) return null;
-  return response.json().catch(() => null);
+  if (!env.PAYMENTS_WORKER?.fetch) {
+    return { ok: false, payload: null, diagnostic: "payments_binding_missing" };
+  }
+
+  const sourceUrl = new URL(request.url);
+  const target = new URL("/v1/confirm/context", sourceUrl);
+  let response;
+  try {
+    response = await env.PAYMENTS_WORKER.fetch(new Request(target, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        origin: sourceUrl.origin,
+      },
+      body: JSON.stringify({ t: token, expected_role: "customer" }),
+    }));
+  } catch {
+    return { ok: false, payload: null, diagnostic: "confirm_context_unavailable" };
+  }
+
+  if (!response.ok) {
+    const boundedStatus = new Set([400, 401, 403, 404, 409, 410, 503]).has(response.status)
+      ? response.status
+      : "error";
+    return { ok: false, payload: null, diagnostic: `confirm_context_http_${boundedStatus}` };
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== "object") {
+    return { ok: false, payload: null, diagnostic: "confirm_context_payload_invalid" };
+  }
+  return { ok: true, payload, diagnostic: null };
 }
 
 function contextSessionId(payload) {
