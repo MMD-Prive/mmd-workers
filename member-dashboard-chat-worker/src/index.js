@@ -326,7 +326,7 @@ export function resolveLineCardCampaignTrigger(text = "") {
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
 const PLAIN_MODEL_NAME_STOPWORDS = new Set([
   "สวัสดี", "ดี", "ขอบคุณ", "โอเค", "ครับ", "ค่ะ", "คะ",
-  "แนะนำ", "ผู้หญิง", "ผู้ชาย", "หญิง", "ชาย", "ไม่ระบุ",
+  "แนะนำ", "ผู้หญิง", "ผู้ชาย", "หญิง", "ชาย", "ไม่ระบุ", "ทั้งคู่", "ชายหญิง", "ชญ",
   "คืนนี้", "วันนี้", "พรุ่งนี้", "ว่าง", "ว่างไหม", "เช็กคิว", "เช็คคิว",
   "ราคา", "เรท", "เท่าไร", "เท่าไหร่", "กี่บาท", "จอง", "จองเลย",
   "สมาชิก", "ชำระเงิน", "ส่งสลิป",
@@ -812,6 +812,21 @@ function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
+function parseModelBrowsePreference(value = "") {
+  const raw = asString(value).normalize("NFC").toLowerCase().replace(/\s+/g, "");
+  if (["ผู้ชาย", "ชาย", "นายแบบ", "man", "male"].includes(raw)) return "man";
+  if (["ผู้หญิง", "หญิง", "นางแบบ", "woman", "female"].includes(raw)) return "woman";
+  if (["ทั้งคู่", "ชายหญิง", "ชญ", "ทุกเพศ", "both", "any"].includes(raw)) return "any";
+  return "";
+}
+
+function modelBrowsePreferenceLabel(value = "") {
+  if (value === "man") return "ผู้ชาย";
+  if (value === "woman") return "ผู้หญิง";
+  if (value === "any") return "ทั้งผู้ชายและผู้หญิง";
+  return "";
+}
+
 function activeModelContext(options = {}) {
   const raw = options?.continuity?.matrix?.payload_json?.active_model_v1;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -1037,6 +1052,61 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       ? continuityIntent
       : inferredIntent
   );
+
+  if (intent === "model_browse") {
+    return {
+      text: "ได้ครับ อยากดูแบบไหนครับ — ผู้ชาย / ผู้หญิง / ทั้งคู่",
+      fallback: false,
+      reply_source: "model_browse_preference",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+      handoff_required: false,
+      handoff_reason: "",
+      model_browse_state: { awaiting: "model_gender" },
+    };
+  }
+
+  if (intent === "model_browse_gender") {
+    const preference = parseModelBrowsePreference(eventText);
+    if (!preference) {
+      return {
+        text: "เลือกได้เลยครับ — ผู้ชาย / ผู้หญิง / ทั้งคู่",
+        fallback: false,
+        reply_source: "model_browse_preference",
+        model_attempted: false,
+        model_success: false,
+        model_latency_ms: 0,
+        knowledge_hits: 0,
+        guard_blocked: false,
+        guard_reason: "",
+        handoff_required: false,
+        handoff_reason: "",
+        model_browse_state: { awaiting: "model_gender" },
+      };
+    }
+    const label = modelBrowsePreferenceLabel(preference);
+    return {
+      text: `รับทราบครับ เดี๋ยวดู${label}เป็นหลักนะครับ ดู Public Models ได้ที่ https://mmdbkk.com/profiles ถ้ามีคนที่สนใจ พิมพ์ชื่อหรือรหัสมาได้เลยครับ`,
+      fallback: false,
+      reply_source: "model_browse_preference",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+      handoff_required: false,
+      handoff_reason: "",
+      model_browse_state: {
+        awaiting: "model_name",
+        preferred_model_gender: preference,
+      },
+    };
+  }
 
   if (intent === "card_campaign_lead" || options.campaignBrief === true) {
     if (options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
