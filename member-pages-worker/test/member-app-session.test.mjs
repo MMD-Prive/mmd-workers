@@ -153,7 +153,21 @@ test("current returns 204 when no owned active Session exists", async () => {
   assert.equal(await response.text(), "");
 });
 
-test("context accepts a customer token only after canonical ownership matches", async () => {
+test("context accepts a valid signed customer token without a LIFF cookie and remains customer-safe", async () => {
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/context?t=valid-token"),
+    envWith(),
+    async () => null,
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.valid, true);
+  assert.equal(body.session.sessionId, "SESSION-001");
+  assert.equal(body.session.lifecycle, "confirmed");
+  assert.doesNotMatch(JSON.stringify(body), /private_phone|payout|9999|must-never-leak/i);
+});
+
+test("context still fails closed when an authenticated LIFF identity does not own the signed session", async () => {
   const response = await handleMemberAppSessionApi(request("/api/member/app/session/context?t=valid-token"), envWith(), readIdentity);
   const body = await response.json();
   assert.equal(body.valid, true);
@@ -162,6 +176,17 @@ test("context accepts a customer token only after canonical ownership matches", 
   const foreign = envWith(sessionRecord({ line_user_id: "Uffffffffffffffffffffffffffffffff", member_id: "recOther" }));
   const denied = await handleMemberAppSessionApi(request("/api/member/app/session/context?t=valid-token"), foreign, readIdentity);
   assert.deepEqual(await denied.json(), { valid: false, session: null });
+});
+
+test("current remains LIFF-session protected even though signed context is cookie-less", async () => {
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(),
+    async () => null,
+  );
+  assert.equal(response.status, 401);
+  const body = await response.json();
+  assert.equal(body.error.code, "MEMBER_SESSION_REQUIRED");
 });
 
 test("ack writes only customer_ack_at and returns refreshed projection", async () => {
