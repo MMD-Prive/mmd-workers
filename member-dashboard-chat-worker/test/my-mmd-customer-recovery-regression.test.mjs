@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import worker from "../src/my-mmd-lovable-app-front-gate.js";
 
-test("direct LINE status keeps the member recovery UI inside native LIFF", async () => {
+test("direct LINE status uses LIFF as the identity bridge before the Lovable MY MMD UI", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -17,11 +17,11 @@ test("direct LINE status keeps the member recovery UI inside native LIFF", async
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
   assert.match(html, /NATIVE MEMBER RECOVERY/);
   assert.match(html, /กำลังเชื่อมข้อมูลเดิมของคุณ/);
   assert.match(html, /\/api\/member\/app\/history/);
-  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
+  assert.match(html, /mmd-status-bridge-veil/);
 });
 
