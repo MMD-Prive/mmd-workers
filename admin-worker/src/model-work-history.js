@@ -209,7 +209,7 @@ function projectPaidPayout(row) {
     amount_basis: "verified_payout_ledger",
     payment_evidence: hasSlip(row) ? "paid_confirmed_with_slip" : "paid_confirmed_no_slip",
     slip_attached: hasSlip(row),
-    evidence_labels: [hasSlip(row) ? "จ่ายแล้ว · มีสลิป" : "จ่ายแล้ว · ไม่มีสลิปแนบ"],
+    evidence_labels: [hasSlip(row) ? "จ่ายแล้ว · MMD รับรอง" : "จ่ายแล้ว · MMD รับรอง"],
   };
 }
 
