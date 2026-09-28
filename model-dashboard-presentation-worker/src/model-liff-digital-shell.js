@@ -34,11 +34,13 @@ export function modelLiffDigitalBootstrapHtml({
   liffId,
   fallback,
   sdk,
+  returnTo = "",
   mode = "primary",
 } = {}) {
   const safeId = JSON.stringify(String(liffId || ""));
   const safeFallback = JSON.stringify(String(fallback || ""));
   const safeSdk = JSON.stringify(String(sdk || ""));
+  const safeReturnTo = JSON.stringify(String(returnTo || ""));
   const primary = mode === "primary";
   const title = primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP";
   const copy = primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน";
@@ -93,6 +95,7 @@ export function modelLiffDigitalBootstrapHtml({
     await window.liff.init(${initOptions});
     pill.textContent="LINE · VERIFIED";
     status.textContent=${JSON.stringify(success)};
+    if(${safeReturnTo}){ window.location.replace(${safeReturnTo}); return; }
   }catch(error){
     pill.textContent="LINE · RETRY";
     status.textContent=${JSON.stringify(fail)};
