@@ -82,21 +82,36 @@ test("dashboard never finalizes temporary zero while history recovery is still p
   assert.equal(patched.pointsRecoveryPending, true);
 });
 
-test("real zero is final only after reconciled or review_required", () => {
-  for (const recoveryState of ["reconciled", "review_required"]) {
-    const patched = patchLifetimePointsPayload("/api/member/app/dashboard", {
-      points: { confirmedBalance: null },
-      pointsRecoveryPending: true,
-    }, {
-      state: "resolved",
-      recoveryState,
-      pointsRecoveryPending: false,
-      confirmedBalance: 0,
-      earnedTotal: 0,
-      redeemedTotal: 0,
-      recordsCount: 0,
-    });
-    assert.equal(patched.points.confirmedBalance, 0);
-    assert.equal(patched.pointsRecoveryPending, false);
-  }
+test("real zero is final only after history is reconciled", () => {
+  const reconciled = patchLifetimePointsPayload("/api/member/app/dashboard", {
+    points: { confirmedBalance: null },
+    pointsRecoveryPending: true,
+  }, {
+    state: "resolved",
+    recoveryState: "reconciled",
+    pointsRecoveryPending: false,
+    confirmedBalance: 0,
+    earnedTotal: 0,
+    redeemedTotal: 0,
+    recordsCount: 0,
+  });
+  assert.equal(reconciled.points.confirmedBalance, 0);
+  assert.equal(reconciled.pointsRecoveryPending, false);
+
+  const needsReview = patchLifetimePointsPayload("/api/member/app/dashboard", {
+    points: { confirmedBalance: 0, earnedTotal: 0, redeemedTotal: 0 },
+    pointsRecoveryPending: false,
+  }, {
+    state: "resolved",
+    recoveryState: "review_required",
+    pointsRecoveryPending: false,
+    confirmedBalance: 0,
+    earnedTotal: 0,
+    redeemedTotal: 0,
+    recordsCount: 0,
+  });
+  assert.equal(needsReview.points.confirmedBalance, null);
+  assert.equal(needsReview.points.earnedTotal, null);
+  assert.equal(needsReview.points.redeemedTotal, null);
+  assert.equal(needsReview.pointsRecoveryPending, true);
 });
