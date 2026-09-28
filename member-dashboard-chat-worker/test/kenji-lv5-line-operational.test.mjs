@@ -77,6 +77,87 @@ test("strong booking request is operational even when legacy intent is mmd_compa
   assert.equal(isKenjiLv5LineOperationalCandidate(event("อยากรู้ว่ามีบริการอะไรบ้าง"), "service_guidance"), false);
 });
 
+test("guided booking asks exactly one missing customer field at a time", () => {
+  const base = {
+    active: true,
+    resolved_intent: "mmd_companion",
+    draft: {
+      draft_id: "kbd1_guided",
+      revision: 1,
+      ready: false,
+      missing_fields: ["model_name", "date", "time", "location", "amount_thb"],
+    },
+  };
+
+  const askModel = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("mmd_companion", base);
+  assert.match(askModel.text, /นายแบบคนไหน/);
+  assert.equal(askModel.operational.awaiting_field, "model_name");
+
+  const askDate = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("model_lookup", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      model_working_name_hint: "Jasper",
+      missing_fields: ["date", "time", "location", "amount_thb"],
+    },
+  });
+  assert.match(askDate.text, /Jasper/);
+  assert.match(askDate.text, /วันไหน/);
+  assert.doesNotMatch(askDate.text, /เวลาไหน|สถานที่/);
+
+  const askTime = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("note_only", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      date: "2026-09-20",
+      missing_fields: ["time", "location", "amount_thb"],
+    },
+  });
+  assert.match(askTime.text, /เวลาไหน/);
+  assert.doesNotMatch(askTime.text, /สถานที่/);
+
+  const askLocation = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("note_only", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      date: "2026-09-20",
+      time: "20:00",
+      missing_fields: ["location", "amount_thb"],
+    },
+  });
+  assert.match(askLocation.text, /พื้นที่หรือสถานที่/);
+
+  const noCustomerField = KENJI_LV5_LINE_REQUEST_INTERNALS.guidedBookingDecision("note_only", {
+    ...base,
+    draft: {
+      ...base.draft,
+      model_name: "MX17",
+      date: "2026-09-20",
+      time: "20:00",
+      location: "สุขุมวิท",
+      missing_fields: ["amount_thb"],
+    },
+  });
+  assert.equal(noCustomerField, null);
+});
+
+test("rate-only missing state is reviewed by Per instead of asking the customer to supply a rate", () => {
+  const reply = renderKenjiLv5LineReply({
+    ok: true,
+    client_360: { canonical_client_id: "recClient", display_name: "คุณเอ็ม" },
+    fan_in: { identity_resolution: "canonical" },
+    entitlement_live: { member_blocked: false },
+    missing: ["rate"],
+    next_actions: [{ action: "request_missing_input" }],
+  }, { type: "booking", model_name: "Rossi", date: "2026-09-20", time: "20:00", location: "สุขุมวิท" });
+  assert.match(reply, /เปอร์ตรวจเรท/);
+  assert.match(reply, /ไม่ต้องส่งข้อมูลเดิมซ้ำ/);
+  assert.doesNotMatch(reply, /ส่งเรทราคา/);
+});
+
 test("P3 asks only for missing booking inputs and preserves known inputs", () => {
   const reply = renderKenjiLv5LineReply({
     ok: true,
