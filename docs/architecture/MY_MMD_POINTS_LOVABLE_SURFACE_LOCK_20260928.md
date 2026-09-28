@@ -1,55 +1,91 @@
-# MY MMD Points Lovable Surface Lock — 2026-09-28
+# MY MMD Digital / Lovable data split — 2026-09-28
 
-Status: OWNER DIRECTION
+Status: OWNER DIRECTION — FINAL BOUNDARY
 
 ## Decision
 
-MY MMD V1 remains the Worker-rendered compact Digital LIFF Home for the default member status journey.
+MY MMD remains a **Worker-rendered Digital LIFF Home** for the default member journey.
 
-Do not reconnect the whole default LIFF status journey to Lovable in this phase.
+Do not hand the whole Digital Home to Lovable.
 
-Exception: **Points must use the Lovable MY MMD Points surface**.
+Lovable is still an approved customer presentation surface and **all customer data shown by Lovable must be obtained through the verified LIFF/member session and same-origin MMD member APIs**.
 
-## Route split
+The immediate UI exception is **Points**: Points opens the Lovable Points presentation at `/my-mmd/points`.
+
+## Data path for Lovable
+
+```text
+LINE / LIFF verification
+  -> verified same-site member session
+  -> /api/member/app/*
+  -> member-dashboard-chat-worker
+  -> MEMBER_PAGES_WORKER
+  -> member-pages-worker
+  -> canonical MMD backend data
+  -> Lovable presentation
+```
+
+Lovable may display customer-safe profile, membership, Points, coupons, history and other approved member data only through this path.
+
+Lovable/browser is **not** an auth, history-recovery, membership, entitlement, payment, Points-ledger or reconciliation authority.
+
+## Points route
 
 ```text
 /member/liff?intent=status
-  -> member-pages-worker LIFF shell
-  -> LINE / same-site session verification
-  -> Worker-rendered MY MMD Digital Home
+  -> Worker-rendered Digital Home
 
-Points entry inside Digital Home
+Digital Home Points
   -> /my-mmd/points
-  -> member-dashboard-chat-worker Lovable proxy
-  -> Lovable Points presentation
-  -> same-origin MMD member APIs for data truth
+  -> Lovable presentation
+  -> /api/member/app/points
+  -> verified LIFF/member session
+  -> canonical MMD Points backend
 ```
 
-## Boundaries
+Points policy remains 365-day expiring lots from entry/posting date.
 
-Lovable owns the Points presentation/pixels for this phase.
+## Customer history — existing system only
 
-MMD workers remain authoritative for:
-- LINE/session identity
-- customer-history recovery
-- Points ledger and balance
-- 365-day lot expiry policy
-- membership and entitlement
-- payment truth
+The system that **finds, reconstructs and reconciles** historical customer activity remains the existing MMD backend flow. It does not move to Lovable.
 
-Lovable/browser must not calculate, grant, adjust, extend, or redeem Points.
+```text
+LINE OFC / existing MMD historical sources
+  -> member-history-recovery
+  -> member-history-preload / reconciliation
+  -> canonical MMD backend projection
+  -> /member/api/liff/* and /api/member/app/history
+```
 
-## History recovery
+Rules:
+- keep automatic recovery from the verified LIFF/member session
+- keep LINE OFC / existing MMD historical sources as the recovery inputs
+- do not require old slip proof before historical reconstruction
+- Lovable must not crawl LINE OFC, infer history, reconcile history or create historical truth
+- Lovable may **display the recovered customer-safe history** only after it is exposed by the canonical MMD backend API
+- the Digital LIFF History panel remains on the existing Worker/backend path and does not need to redirect to Lovable
 
-Customer history recovery continues to use MMD-owned backend sources, especially LINE OFC history, and does not require old slip proof before reconstructing historical customer activity.
+## Ownership summary
 
-Recovered Points still follow the active Points policy: each eligible lot expires 365 days from its entry/posting date.
+| Layer | Owner |
+| --- | --- |
+| LINE identity / LIFF verification | MMD backend |
+| Same-site member session | MMD backend |
+| Historical source scan / recovery | Existing MMD history system |
+| History reconciliation / canonical projection | MMD backend |
+| Points ledger / expiry / balance | MMD backend |
+| Digital Home | Worker-rendered LIFF |
+| Lovable customer data access | Through verified LIFF/member APIs only |
+| Points presentation | Lovable |
+| Browser-side truth calculation | Not allowed |
 
 ## Acceptance
 
 A valid implementation must prove:
-- direct LIFF status remains Digital Home, not full Lovable handoff
-- Points buttons/links route to `/my-mmd/points`
-- `/my-mmd/points` is served by the Lovable proxy route owner
-- Points data is still fetched through same-origin MMD APIs
-- no browser-side Points authority is introduced
+- direct LIFF status stays in the Worker-rendered Digital Home
+- Points buttons/Quick Access open `/my-mmd/points`
+- `/my-mmd/points` is Lovable presentation only
+- Lovable customer data is read through the verified LIFF/member session and same-origin `/api/member/app/*`
+- History reconstruction stays on the existing MMD backend system
+- Digital LIFF History continues to use the existing backend projection
+- neither Lovable nor browser code becomes a second source of truth

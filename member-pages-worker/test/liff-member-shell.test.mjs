@@ -213,6 +213,9 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /formatThb\(points\.lifetime_service_spend_thb\)/);
     assert.match(html, /navHome:"👤 HOME"/);
     assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
+    assert.match(html, /const LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
+    assert.match(html, /if \(view === "points"\) \{[\s\S]*window\.location\.assign\(LOVABLE_POINTS_PATH\);[\s\S]*return;[\s\S]*\}/);
+    assert.match(html, /const targetId = view === "history" \? "history-panel" : view/);
     assert.match(html, /pointsTitle:"⭐ 积分"/);
     assert.doesNotMatch(html, /payment_ref|provider_transaction_id|line_user_id|telegram_user_id|Airtable|R2 key|slip_url/i);
     const scriptStart = html.lastIndexOf("<script nonce=");

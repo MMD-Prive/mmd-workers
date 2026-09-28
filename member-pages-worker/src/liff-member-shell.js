@@ -339,6 +339,7 @@ function renderShell(config, nonce) {
 (() => {
   "use strict";
   const CONFIG = ${safeConfig};
+  const LOVABLE_POINTS_PATH = "/my-mmd/points";
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
@@ -454,6 +455,10 @@ function renderShell(config, nonce) {
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
   const initialView = CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
   function showView(view, smooth = true) {
+    if (view === "points") {
+      window.location.assign(LOVABLE_POINTS_PATH);
+      return;
+    }
     const targetId = view === "history" ? "history-panel" : view;
     const target = document.getElementById(targetId) || document.getElementById("home");
     for (const panel of document.querySelectorAll(".section-rail > .panel")) panel.setAttribute("data-active", String(panel === target));
