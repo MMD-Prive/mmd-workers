@@ -326,6 +326,7 @@ export function resolveLineCardCampaignTrigger(text = "") {
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
 const PLAIN_MODEL_NAME_STOPWORDS = new Set([
   "สวัสดี", "ดี", "ขอบคุณ", "โอเค", "ครับ", "ค่ะ", "คะ",
+  "แนะนำ", "ผู้หญิง", "ผู้ชาย", "หญิง", "ชาย", "ไม่ระบุ",
   "คืนนี้", "วันนี้", "พรุ่งนี้", "ว่าง", "ว่างไหม", "เช็กคิว", "เช็คคิว",
   "ราคา", "เรท", "เท่าไร", "เท่าไหร่", "กี่บาท", "จอง", "จองเลย",
   "สมาชิก", "ชำระเงิน", "ส่งสลิป",
@@ -347,7 +348,7 @@ export function extractKenjiModelLookupQuery(text = "") {
     const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
     return query && query.length <= 48 ? query : "";
   }
-  const plain = withoutPolite.match(/^([A-Za-z][A-Za-z'.]{1,23}(?:\s+[A-Za-z][A-Za-z'.]{1,23})?|[ก-๙]{2,20})$/);
+  const plain = withoutPolite.match(/^([A-Za-z][A-Za-z'.]{1,23}(?:\s+[A-Za-z][A-Za-z'.]{1,23})?|[ก-๙]{2,8})$/);
   const plainValue = asString(plain?.[1]);
   if (plainValue && !PLAIN_MODEL_NAME_STOPWORDS.has(plainValue.toLowerCase())) return plainValue;
   return "";
@@ -400,7 +401,7 @@ export function inferLineIntent(text = "", event = {}) {
   // Greeting/Rich Menu action keywords are kept intentionally small and
   // deterministic. They enter the same canonical runtime as typed messages,
   // so there is no second "button-only" conversation system to maintain.
-  const actionKeyword = asString(text).normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  const actionKeyword = asString(text).normalize("NFC").toLowerCase().replace(/\s+/g, "");
   if (["ดูนายแบบ", "ดูmodel", "ดูโมเดล"].includes(actionKeyword)) return "model_browse";
   if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
   if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
