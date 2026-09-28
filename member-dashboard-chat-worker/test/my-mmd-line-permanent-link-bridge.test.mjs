@@ -14,29 +14,20 @@ function runtimeWithDarkLegacyShell() {
   };
 }
 
-test("generic LIFF entry without a status intent stays on the bounded LIFF surface", async () => {
-  const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff"), runtimeWithDarkLegacyShell());
-  const html = await response.text();
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
-  assert.match(html, /LEGACY DARK MEMBER DASHBOARD/);
-  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
-});
-
 for (const url of [
+  "https://mmdbkk.com/member/liff",
   "https://mmdbkk.com/member/liff?liff.state=%3Fintent%3Dstatus",
   "https://mmdbkk.com/member/liff?liff_state=%2F%3Fintent%3Dstatus",
 ]) {
-  test(`LINE status verifies in LIFF then hands presentation to Lovable for ${url}`, async () => {
+  test(`LINE status entry stays on the Worker LIFF surface for ${url}`, async () => {
     const response = await worker.fetch(new Request(url), runtimeWithDarkLegacyShell());
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-    assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+    assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+    assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
     assert.match(html, /LEGACY DARK MEMBER DASHBOARD/);
-    assert.match(html, /mmd-status-bridge-veil/);
+    assert.doesNotMatch(html, /mmd-status-bridge-veil/);
+    assert.doesNotMatch(html, /const target = "\/my-mmd\/"/);
   });
 }

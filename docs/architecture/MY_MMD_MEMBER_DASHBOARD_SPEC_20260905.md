@@ -1,5 +1,7 @@
 # MMD Memory — My MMD Member Dashboard Product Spec — 2026-09-05
 
+> **SUPERSEDED FOR DEFAULT MEMBER CONSOLE — 2026-09-28:** The current owner-approved default is the Worker-rendered MY MMD Digital LIFF Home. Direct `intent=status` must stay in LIFF. Lovable remains a secondary presentation surface and the Points presentation exception at `/my-mmd/points`; it is not the default whole-app handoff. Customer-history recovery remains MMD backend-owned. See `MY_MMD_LIFF_DIGITAL_HOME_V1_20260928.md`.
+
 Status: CANONICAL PRODUCT SPEC
 Decision owner: Per
 

@@ -286,12 +286,12 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("direct status LIFF verifies identity then hands the member to the Lovable MY MMD UI", async () => {
+test("direct status LIFF stays in the Worker-rendered Digital Home", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body class="context-resolving world-public"><main data-mmd-liff-digital="v2">NATIVE MY MMD LIFF</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd/"; const historyEndpoint = "/api/member/app/history";</script></body></html>`,
-        { headers: { "content-type": "text/html; charset=utf-8", "x-mmd-liff-stability":"real-line-v1" } },
+        `<!doctype html><html><head></head><body><main>MMD Privé · LIFF Digital Home</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const LOVABLE_POINTS_PATH = "/my-mmd/points"; const targetId = view === "history" ? "history-panel" : view;</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
   };
@@ -300,37 +300,12 @@ test("direct status LIFF verifies identity then hands the member to the Lovable 
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.match(html, /NATIVE MY MMD LIFF/);
-  assert.match(html, /\/api\/member\/app\/history/);
-  assert.match(html, /mmd-status-bridge-veil/);
-  assert.match(html, /กำลังยืนยันสมาชิก…/);
-});
-
-test("member history always stays on the same-origin Worker BFF even while Lovable remains available separately", async () => {
-  const calls = [];
-  const runtime = {
-    MEMBER_PAGES_WORKER: {
-      async fetch(request) {
-        calls.push({
-          path: new URL(request.url).pathname,
-          cookie: request.headers.get("cookie"),
-        });
-        return Response.json({ state:"resolved", items:[{ id:"h1", kind:"booking", title:"MMD service" }] });
-      },
-    },
-  };
-  const response = await worker.fetch(new Request("https://mmdbkk.com/api/member/app/history", {
-    headers: { cookie:"__Host-mmd_liff_session=current", accept:"application/json" },
-  }), runtime);
-  const body = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(calls, [{ path:"/api/member/app/history", cookie:"__Host-mmd_liff_session=current" }]);
-  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
-  assert.equal(body.state, "resolved");
-  assert.equal(body.items[0].id, "h1");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.match(html, /MMD Privé · LIFF Digital Home/);
+  assert.match(html, /LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
+  assert.match(html, /view === "history" \? "history-panel" : view/);
+  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
 });
 
 test("private_teaser LIFF verifies the member then returns only to the allowlisted MY MMD teaser model", async () => {

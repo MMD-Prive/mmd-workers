@@ -104,9 +104,8 @@ function liffAuthReturnTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
-  // LIFF verifies LINE/session; the actual MY MMD UI is the same-origin Lovable proxy.
-  if (intent === "status") return "/my-mmd/";
-  if (intent === "continue_payment") return "/my-mmd/payments";
+  if (intent === "status") return "";
+  if (intent === "continue_payment") return "/member/payments";
   return "";
 }
 
@@ -119,7 +118,7 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   const bridge = `<script nonce="${nonce}">
 (() => {
   const target = ${JSON.stringify(target)};
-  const statusEndpoint = "/member/api/liff/status";
+  const profileEndpoint = "/member/api/liff/profile";
   const telegramBindEndpoint = "/member/api/liff/telegram-bind";
   const maxAttempts = 20;
   let attempts = 0;
@@ -212,7 +211,7 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
     attempts += 1;
     setShellMessage(attempts === 1 ? "กำลังตรวจสอบ Member Session ครับ" : "กำลังตรวจสอบ Member Session อีกครั้งครับ");
     try {
-      const response = await fetch(statusEndpoint, {
+      const response = await fetch(profileEndpoint, {
         method: "GET",
         credentials: "same-origin",
         headers: { "accept": "application/json" }
@@ -242,6 +241,8 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
 }
 
 async function maybeReturnStatusLiffToMyMmd(request, response) {
+  // Direct MY MMD status stays in the Worker-rendered LIFF Digital Home.
+  // Only bounded specialized intents may use LIFF as a return bridge.
   const target = liffAuthReturnTarget(request);
   if (!target || request.method === "HEAD" || !response.ok) return response;
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();

@@ -36,12 +36,12 @@ test("CARE BACK pending-Wish response cookies are shared across apex and www", (
   assert.match(response.headers.get("set-cookie") || "", /Domain=mmdbkk\.com/i);
 });
 
-test("direct customer status uses a bounded LIFF verification bridge before Lovable MY MMD", async () => {
+test("direct customer status bypasses the old auth-only Lovable recovery layer", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main data-mmd-liff-digital="v2">MY MMD LIFF DIGITAL</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
-        { headers: { "content-type":"text/html; charset=utf-8" } },
+        `<!doctype html><html><head></head><body><main>MY MMD LIFF DIGITAL</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const historyEndpoint="/api/member/app/history"; const LOVABLE_POINTS_PATH="/my-mmd/points";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
   };
@@ -50,13 +50,15 @@ test("direct customer status uses a bounded LIFF verification bridge before Lova
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), "hard-timeout-v3-single-surface-one-retry");
-  assert.equal(response.headers.get("x-mmd-liff-session-check"), "status-v1");
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), null);
+  assert.equal(response.headers.get("x-mmd-liff-session-check"), null);
   assert.match(html, /MY MMD LIFF DIGITAL/);
-  assert.match(html, /mmd-status-hard-timeout-gate/);
-  assert.match(html, /mmd-status-bridge-veil/);
+  assert.match(html, /\/api\/member\/app\/history/);
+  assert.match(html, /LOVABLE_POINTS_PATH="\/my-mmd\/points"/);
+  assert.doesNotMatch(html, /mmd-status-hard-timeout-gate/);
+  assert.doesNotMatch(html, /mmd-status-single-surface-fix/);
 });
 
 test("My MMD serves the pending public-Wish coupon bridge as same-origin behavior code", async () => {
