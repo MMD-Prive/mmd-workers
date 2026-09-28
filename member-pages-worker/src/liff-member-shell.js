@@ -249,7 +249,7 @@ function renderShell(config, nonce) {
     .digital-kenji{display:grid;grid-template-columns:72px 1fr;align-items:center;gap:13px;margin:10px 0;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-raised)}.digital-orb{position:relative;width:66px;height:66px;display:grid;place-items:center;border-radius:50%;background:radial-gradient(circle,rgba(229,199,133,.28),rgba(88,66,29,.14) 42%,transparent 72%)}.digital-orb::before,.digital-orb::after{content:"";position:absolute;border-radius:50%}.digital-orb::before{inset:5px;border:1px solid rgba(231,204,137,.65);border-left-color:transparent}.digital-orb::after{inset:15px;border:1px dashed rgba(201,158,88,.62)}.digital-core{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff5cf,#e5bd6e 48%,#4d3618);box-shadow:0 0 20px rgba(223,185,102,.55)}.digital-kenji strong{display:block;font-size:13px}.digital-kenji p{margin:3px 0 8px;color:var(--digital-muted);font-size:10px;line-height:1.5}.digital-kenji a{display:inline-block;border:1px solid rgba(209,183,117,.48);border-radius:99px;padding:7px 10px;color:var(--digital-gold);background:#27251b;font-size:10px;font-weight:700;text-decoration:none}
     .digital-needs[hidden]{display:none!important}.digital-needs{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d}.digital-needs b{display:block;font-size:11px}.digital-needs span{font-size:10px;color:#514330}.digital-needs button{width:auto;flex:none;border:1px solid #725a30;border-radius:99px;padding:7px 10px;background:#201b13;color:#f4dfa9;font-size:10px}
     .digital-sectionline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}.digital-sectionline h2{margin:0;color:var(--digital-cream);font-size:20px}.digital-sectionline h2 small{display:block;margin-bottom:3px;color:var(--digital-gold);font-size:8px;letter-spacing:.15em}.digital-unread{border:1px solid rgba(231,204,137,.3);border-radius:99px;padding:5px 7px;color:var(--digital-gold);font-size:9px}
-    .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);text-align:left}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
+    .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);text-align:left}.digital-news-card.is-for-you{border-color:rgba(231,204,137,.5);background:linear-gradient(145deg,rgba(71,59,34,.58),var(--digital-surface))}.digital-news-card[data-feed-view]{cursor:pointer}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-feed-cta{display:block;margin-top:8px;color:var(--digital-gold);font-size:9px;font-weight:800}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
     .digital-quick{margin-top:4px}.digital-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.digital-quick button{min-height:64px;padding:8px 2px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);font-size:9px;text-align:center}.digital-quick button i{display:block;margin-bottom:4px;color:var(--digital-gold);font-size:16px;font-style:normal}
     .digital-data-cache{display:none!important}
     .digital-dock{position:fixed;z-index:10;bottom:0;left:0;right:0;width:100%;max-width:none;transform:none;display:none;grid-template-columns:repeat(4,1fr);padding:7px max(9px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(9px,env(safe-area-inset-left));border-top:1px solid var(--digital-line);background:rgba(8,9,7,.96);backdrop-filter:blur(18px)}
@@ -313,10 +313,10 @@ function renderShell(config, nonce) {
     <section class="digital-snapshot" aria-label="Verified member snapshot"><span class="digital-snapshot-icon">◇</span><div><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div><strong id="profile-points" class="digital-points">—</strong></section>
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
-    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji-ai-20">เปิด Kenji ↗</a></div></section>
-    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE UPDATES</small>MMD NEWS</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบข่าวล่าสุด</div></div></section>
+    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
+    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji-ai-20">เปิด Kenji ↗</a></div></section>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
       <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
@@ -421,6 +421,7 @@ function renderShell(config, nonce) {
   })[locale] || {});
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
+  let digitalPersonalizedFeed = [];
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
@@ -946,11 +947,23 @@ function renderShell(config, nonce) {
     return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH", { year:"numeric", month:"short", day:"numeric" }).format(date);
   }
 
-  function renderDigitalNews(items, unreadCount = 0) {
+  function digitalFeedCategory(item, personalized = false) {
+    if (personalized) return "FOR YOU";
+    const raw = String(item?.category || item?.tag || "").trim().toUpperCase();
+    if (/EDITORIAL|TMIB|CITY|ACADEMY|MMS|BEHIND/.test(raw)) return "EDITORIAL";
+    return "MMD UPDATE";
+  }
+
+  function renderDigitalNews(personalizedItems, updateItems, unreadCount = 0) {
     const feed = document.getElementById("digital-news-feed");
     const unread = document.getElementById("digital-unread");
     if (!feed || !unread) return;
-    const safe = Array.isArray(items) ? items.slice(0, 5) : [];
+    const personalized = Array.isArray(personalizedItems) ? personalizedItems.slice(0, 2) : [];
+    const updates = Array.isArray(updateItems) ? updateItems.slice(0, 5) : [];
+    const safe = [
+      ...personalized.map((item) => ({ item, personalized:true })),
+      ...updates.map((item) => ({ item, personalized:false })),
+    ].slice(0, 6);
     unread.hidden = !(Number.isInteger(unreadCount) && unreadCount > 0);
     if (!unread.hidden) unread.textContent = locale === "en" ? "NEW " + unreadCount : locale === "zh" ? "新 " + unreadCount : "ใหม่ " + unreadCount;
     feed.replaceChildren();
@@ -958,17 +971,30 @@ function renderShell(config, nonce) {
       const quiet = document.createElement("div"); quiet.className = "digital-quiet"; quiet.textContent = locale === "en" ? "No new updates right now." : locale === "zh" ? "目前没有新的更新。" : "ตอนนี้ยังไม่มีอัปเดตใหม่";
       feed.append(quiet); return;
     }
-    for (const item of safe) {
+    const allowedViews = new Set(["history","package","care","jobs","points","credits","coupons"]);
+    for (const entry of safe) {
+      const item = entry.item;
       const title = String(item?.title || item?.headline || "").trim();
       if (!title) continue;
-      const card = document.createElement("article"); card.className = "digital-news-card";
+      const requestedView = entry.personalized ? String(item?.view || "").trim() : "";
+      const targetView = allowedViews.has(requestedView) ? requestedView : "";
+      const card = document.createElement(targetView ? "button" : "article");
+      card.className = "digital-news-card" + (entry.personalized ? " is-for-you" : "");
+      if (targetView) {
+        card.type = "button";
+        card.dataset.feedView = targetView;
+        card.addEventListener("click", () => showView(targetView));
+      }
       const meta = document.createElement("div"); meta.className = "meta";
-      const category = document.createElement("span"); category.textContent = String(item?.category || item?.tag || "MMD UPDATE").trim().toUpperCase();
-      const date = document.createElement("span"); date.textContent = digitalDate(item?.published_at || item?.publishedAt || item?.date);
+      const category = document.createElement("span"); category.textContent = digitalFeedCategory(item, entry.personalized);
+      const date = document.createElement("span"); date.textContent = digitalDate(item?.occurredAt || item?.published_at || item?.publishedAt || item?.date);
       meta.append(category, date);
       const heading = document.createElement("h3"); heading.textContent = title;
-      const excerpt = document.createElement("p"); excerpt.textContent = String(item?.excerpt || item?.summary || "").trim();
-      card.append(meta, heading, excerpt); feed.append(card);
+      const excerptText = String(item?.excerpt || item?.summary || "").trim();
+      card.append(meta, heading);
+      if (excerptText) { const excerpt = document.createElement("p"); excerpt.textContent = excerptText; card.append(excerpt); }
+      if (targetView) { const cta = document.createElement("span"); cta.className = "digital-feed-cta"; cta.textContent = locale === "en" ? "OPEN →" : locale === "zh" ? "查看 →" : "ดูต่อ →"; card.append(cta); }
+      feed.append(card);
     }
     if (!feed.children.length) {
       const quiet = document.createElement("div"); quiet.className = "digital-quiet"; quiet.textContent = "ตอนนี้ยังไม่มีอัปเดตใหม่"; feed.append(quiet);
@@ -1013,6 +1039,14 @@ function renderShell(config, nonce) {
             : "—";
         }
 
+        const homeFeed = dashboard.homeFeed && typeof dashboard.homeFeed === "object" ? dashboard.homeFeed : null;
+        digitalPersonalizedFeed = homeFeed
+          && homeFeed.authority === "member_app_dashboard_v1"
+          && homeFeed.state === "resolved"
+          && Array.isArray(homeFeed.items)
+          ? homeFeed.items.slice(0, 2)
+          : [];
+
         const action = dashboard.nextAction || dashboard.next_action || membership.nextAction || membership.next_action || null;
         const allowed = { signup:"package", renew:"package", care_back_wish:"care" };
         const target = action && allowed[String(action.kind || "").trim()];
@@ -1024,15 +1058,15 @@ function renderShell(config, nonce) {
           needs.hidden = true;
         }
       }
-    } catch { needs.hidden = true; }
+    } catch { needs.hidden = true; digitalPersonalizedFeed = []; }
 
     try {
       const response = await fetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
       const items = Array.isArray(body?.items) ? body.items : Array.isArray(body?.news) ? body.news : [];
       const unread = Number(body?.unread_count ?? body?.unreadCount ?? 0);
-      renderDigitalNews(response.ok ? items : [], Number.isInteger(unread) ? unread : 0);
-    } catch { renderDigitalNews([], 0); }
+      renderDigitalNews(digitalPersonalizedFeed, response.ok ? items : [], Number.isInteger(unread) ? unread : 0);
+    } catch { renderDigitalNews(digitalPersonalizedFeed, [], 0); }
   }
 
   function renderProfile(data, authority = "") {
