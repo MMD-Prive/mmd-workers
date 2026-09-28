@@ -8,9 +8,13 @@ import type { Env } from "./types";
 const CUSTOMER_PAGE = "/internal/admin/customer-data";
 const CUSTOMER_QUEUE = "/v1/admin/customer-data/queue";
 const CLIENT_INTELLIGENCE = "/v1/admin/clients/intelligence";
+const CREATE_JOB_PAGE = "/internal/admin/jobs/create-job";
 const CANONICAL_PUBLIC_ORIGIN = "https://mmdbkk.com";
+const DEFAULT_LOVABLE_ORIGIN = "https://mmd-os.lovable.app";
 const WORKERS_DEV_SUFFIX = ".workers.dev";
 const SAFE_MEMBERSHIP_CONTEXT_KEYS = ["plan", "package", "tier", "code", "promo", "src", "campaign", "from"];
+
+type LovableEnv = Env & { INTERNAL_LOVABLE_ORIGIN?: string };
 
 export function resolveRequestedClientId(searchParams: URLSearchParams): string {
   const clientIds = searchParams.getAll("client_id");
@@ -83,6 +87,9 @@ export default {
     if (publicHandoff) return publicHandoff;
 
     const response = await canonicalWorker.fetch(request, env);
+    if ((method === "GET" || method === "HEAD") && path === CREATE_JOB_PAGE) {
+      return serveLovableCreateJobPage(request, response, env as LovableEnv);
+    }
     if (method === "GET" && path === CUSTOMER_PAGE) {
       return decorateCustomer360Page(response, resolveRequestedClientId(url.searchParams));
     }
@@ -101,6 +108,46 @@ export default {
     return response;
   },
 };
+
+export async function serveLovableCreateJobPage(request: Request, gateResponse: Response, env: LovableEnv): Promise<Response> {
+  // Preserve the canonical Worker gate. If the admin session is missing, expired,
+  // or forbidden, return that response exactly and do not fetch Lovable.
+  if (!gateResponse.ok || !(gateResponse.headers.get("content-type") || "").includes("text/html")) return gateResponse;
+
+  const origin = String(env.INTERNAL_LOVABLE_ORIGIN || DEFAULT_LOVABLE_ORIGIN).replace(/\/+$/, "");
+  const incoming = new URL(request.url);
+  const target = new URL(incoming.pathname + incoming.search, origin);
+
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: request.method.toUpperCase() === "HEAD" ? "HEAD" : "GET",
+      headers: { accept: request.headers.get("accept") || "text/html" },
+      redirect: "follow",
+    });
+    if (!upstream.ok) return gateResponse;
+
+    const type = String(upstream.headers.get("content-type") || "").toLowerCase();
+    if (!type.includes("text/html")) return gateResponse;
+
+    const headers = new Headers(upstream.headers);
+    headers.delete("set-cookie");
+    headers.delete("content-length");
+    headers.set("cache-control", "no-store, no-cache, must-revalidate");
+    headers.set("x-robots-tag", "noindex, nofollow, noarchive");
+    headers.set("x-mmd-presentation-source", "lovable");
+    headers.set("x-mmd-presentation-version", "internal-lovable-v1");
+    headers.set("x-mmd-page", "create-job");
+
+    if (request.method.toUpperCase() === "HEAD") return new Response(null, { status: 200, headers });
+
+    const html = (await upstream.text())
+      .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
+      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
+    return new Response(html, { status: 200, headers });
+  } catch {
+    return gateResponse;
+  }
+}
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
