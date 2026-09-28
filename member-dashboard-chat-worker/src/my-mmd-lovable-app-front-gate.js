@@ -103,6 +103,15 @@ function presentationUrlForAsset(request) {
   return upstream;
 }
 
+function myMmdFullscreenViewport() {
+  return `<style id="mmd-fullscreen-viewport-v1">
+html,body,#root{margin:0!important;padding:0!important;width:100%!important;min-width:0!important;min-height:100%!important}
+html,body{overflow-x:clip!important}
+body,#root{min-height:100vh!important;min-height:100dvh!important;max-width:none!important}
+#root{isolation:isolate}
+</style>`;
+}
+
 function publicExtensionSkin() {
   return `<style id="mmd-public-extension-v1-style">
 #mmd-public-extension-v1{margin:14px 16px 0;padding:16px;border:1px solid rgba(188,154,92,.28);border-radius:18px;background:#fffaf1;color:#2b2723;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;box-sizing:border-box}
@@ -305,6 +314,9 @@ function rewriteMyMmdHtml(html, path = "/my-mmd/") {
 
   // Lovable SSR renders root-relative app links. Before hydration, keep them inside /my-mmd/*.
   output = output.replace(/href=["']\/["']/g, `href="${MY_MMD_UI_PREFIX}/"`);
+  if (!output.includes('id="mmd-fullscreen-viewport-v1"') && output.includes("</head>")) {
+    output = output.replace("</head>", myMmdFullscreenViewport() + "</head>");
+  }
   for (const suffix of MY_MMD_ROUTE_SUFFIXES) {
     output = output.replace(new RegExp(`href=["']\\/${suffix}(?:\\/)?["']`, "g"), `href="${MY_MMD_UI_PREFIX}/${suffix}"`);
   }
