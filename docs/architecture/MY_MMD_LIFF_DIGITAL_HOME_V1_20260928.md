@@ -1,12 +1,19 @@
 # MY MMD LIFF Digital Home V1 — 2026-09-28
 
-Status: OWNER DIRECTION — IMPLEMENTED IN SOURCE, NOT YET MERGED/DEPLOYED
+Status: OWNER DIRECTION — CANONICAL FINAL BOUNDARY
 
 ## Decision
 
-During this phase, the member dashboard inside LINE remains a **Worker-rendered LIFF application**.
+The default MY MMD member experience remains a **Worker-rendered Digital LIFF Home**.
 
-Do **not** automatically hand direct `intent=status` traffic to Lovable yet.
+This is the final owner correction for the current architecture:
+- do **not** hand normal `intent=status` traffic to Lovable;
+- do **not** make Lovable the default Member Console;
+- Lovable remains an approved secondary presentation surface and the current exception for **Points** at `/my-mmd/points`;
+- customer-history scan/reconstruction/reconciliation remains on the existing MMD backend;
+- Lovable may read customer-safe data only through the verified LIFF/member session and same-origin MMD APIs.
+
+PRs #1915–#1918 attempted a whole-app Lovable handoff and are superseded by this owner correction.
 
 Current split:
 
@@ -18,8 +25,14 @@ Current split:
   -> same-origin MMD APIs only
 
 /my-mmd/
-  -> existing Lovable presentation remains a separate live route
-  -> not the automatic destination of direct LIFF status during this phase
+  -> separate Lovable presentation route remains available
+  -> not the automatic destination of direct LIFF status
+
+/my-mmd/points
+  -> Lovable Points presentation
+  -> same-origin /api/member/app/points
+  -> verified LIFF/member session
+  -> MMD backend Points authority
 ```
 
 Explicit safe `return_to` intents may still use LIFF as an identity bridge and continue to their strict allowlisted destination.
@@ -98,10 +111,6 @@ This change does not remove the existing Lovable app or its route.
 
 It only changes the default LIFF status journey so that the member can use a compact digital dashboard in LINE first.
 
-A future owner-approved phase may reconnect:
-```text
-LIFF identity/session
--> Lovable MY MMD presentation
-```
+Lovable must not become a second identity, history-recovery, entitlement, payment, booking, or Points authority.
 
-That future switch requires route ownership smoke, authenticated real-member acceptance and rollback evidence.
+Any future switch of the whole Member Console to Lovable requires a new explicit owner decision.
