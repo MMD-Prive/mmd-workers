@@ -254,6 +254,7 @@ export function extractOperationalLocation(raw = "", modelName = "") {
 
 function operationalType(currentIntent = "", raw = "") {
   const intent = token(currentIntent);
+  if (intent === "payment_center") return "";
   if (intent === "booking_status") return "booking_status";
   if (DEPOSIT_TRIGGER_RE.test(raw)) return "booking";
   if (["payment_status", "payment_slip", "payment_dispute", "care_back_payment_points"].includes(intent) || PAYMENT_SIGNAL_RE.test(raw)) return intent === "payment_slip" ? "payment_slip" : "payment";
@@ -293,6 +294,7 @@ export function parseKenjiLv5LineIntent(event = {}, currentIntent = "", now = ne
 export function isKenjiLv5LineOperationalCandidate(event = {}, currentIntent = "") {
   const raw = eventText(event);
   if (!raw || !lineUserId(event)) return false;
+  if (token(currentIntent) === "payment_center") return false;
   if (OPERATIONAL_INTENTS.has(token(currentIntent))) return true;
   if (token(currentIntent) === "mmd_companion" && BOOKING_SIGNAL_RE.test(raw)) return true;
   return BOOKING_STATUS_RE.test(raw) || PAYMENT_SIGNAL_RE.test(raw);
