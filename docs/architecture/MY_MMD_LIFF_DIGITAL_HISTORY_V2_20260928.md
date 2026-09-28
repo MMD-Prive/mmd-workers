@@ -1,4 +1,4 @@
-# MY MMD LIFF Digital History V2 — 2026-09-28
+# MY MMD LIFF → Lovable Presentation V3 — 2026-09-28
 
 Status: OWNER DIRECTION — SOURCE IMPLEMENTED, NOT YET PRODUCTION-ACCEPTED
 Owner: Per
@@ -6,34 +6,45 @@ Timezone: Asia/Bangkok
 
 ## Decision
 
-MY MMD customer runtime for this phase is the **Worker-rendered LINE LIFF Digital Home**.
+The normal MY MMD customer journey uses **LIFF for verified LINE/session establishment** and then hands the customer to the **same-origin Lovable MY MMD presentation**.
 
-Do not automatically hand a normal `/member/liff?intent=status` launch to Lovable.
-
-Canonical current path:
+Canonical path:
 
 ```text
 Rich Menu / LINE
-  -> /member/liff
+  -> /member/liff?intent=status
+  -> GET /member/api/liff/status when a same-host session may already exist
+  -> otherwise LINE LIFF verification
   -> POST /member/api/liff/start
-  -> verified same-site LIFF session
-  -> Worker-rendered MY MMD Digital Home
-  -> same-origin MMD APIs
+  -> verified __Host-mmd_liff_session
+  -> /my-mmd/
+  -> member-dashboard-chat-worker presentation proxy
+  -> Lovable presentation bytes with MMD credentials stripped upstream
+  -> same-origin /api/member/app/*
+  -> member-pages-worker / canonical backend truth
 ```
 
-Lovable remains a separate/future presentation surface at `/my-mmd/*`. It is not the default direct-LIFF dashboard during this phase.
+LIFF is not the final member dashboard for the normal status launch.
 
-## Latest source composition
+Lovable owns presentation only. It does not own identity, authentication, membership, entitlement, Points, payment truth, history reconstruction, booking truth, Private Media authority, or protected access.
 
-This V2 combines the current main branch after:
-- PR #1898 — rolling Points expiry / oldest-expiring-lot-first accounting;
-- PR #1911 — Worker-rendered MY MMD LIFF Digital Home.
+## Presentation source
 
-No rollback to an older member dashboard is intended.
+Production presentation origin used by the Worker:
+
+`https://my-mmd-member-profile.lovable.app`
+
+Customer-visible URLs remain on `mmdbkk.com` / `www.mmdbkk.com`.
+
+The Worker:
+- strips Cookie and Authorization before requesting Lovable;
+- republishes executable assets through `/my-mmd-assets/*`;
+- rewrites bounded app links into `/my-mmd/*`;
+- keeps all member reads on the same-origin MMD BFF.
 
 ## Customer history authority
 
-Native LIFF history must read explicitly from:
+Lovable history reads only:
 
 `GET /api/member/app/history`
 
@@ -43,95 +54,80 @@ Truth chain:
 verified LINE / LIFF session
   -> same-origin /api/member/app/history
   -> member-dashboard-chat-worker
-  -> MEMBER_PAGES_WORKER service binding
+  -> MEMBER_PAGES_WORKER
   -> member-pages-worker
   -> canonical customer/session/payment/history sources
 ```
 
-The browser does not select the customer and does not submit a Client ID, LINE user id, member id, payment ref, or history owner.
+The browser never selects the customer by Client ID, LINE user id, member id, payment ref, or other identity field.
 
-If history is unresolved/incomplete, UI stays in a neutral checking state. It must not infer an empty history.
+If history is unresolved, presentation remains checking/recovery-safe. It must not invent an empty history.
 
-## History recovery
-
-Recovery status remains Worker-owned:
-
+History recovery remains Worker-owned:
 - `GET /api/member/app/history/recovery`
-- `POST /api/member/app/history/refresh` only as an explicit bounded retry where supported.
-
-A LIFF login may trigger server-side recovery scheduling under the existing recovery contract. The UI observes/readbacks; it does not promote raw evidence into canonical history.
+- bounded `POST /api/member/app/history/refresh` where supported.
 
 ## Points
 
-The Points system keeps the PR #1898 policy:
+Keep the rolling-lot policy from PR #1898:
+- each approved Points lot expires 365 days from its own entry date;
+- redemption consumes the lot expiring first;
+- reserve / capture / release / refund remain backend operations;
+- UI may render backend-owned active balance, `expiring_points`, `nearest_expiry`, and per-lot `expires_at`;
+- browser code never calculates authoritative Points or membership.
 
-- each new or approved historical Points lot expires 365 days from its own entry date;
-- spending/redeeming consumes the lot expiring first;
-- reserve / capture / release / refund remain idempotent backend operations;
-- UI shows backend-owned active balance, `expiring_points`, `nearest_expiry`, and per-history-item `expires_at` where supplied;
-- browser code must never calculate membership or Points authority.
+## LIFF status bridge
 
-## Native LIFF Digital V2
+For `intent=status`:
 
-Primary dock:
-- Home
-- History
-- Wallet
-- Kenji
+1. Check `GET /member/api/liff/status` using same-origin credentials.
+2. If a verified same-host session exists, go directly to `/my-mmd/`.
+3. Otherwise initialize LIFF, verify the LINE ID token, and call `POST /member/api/liff/start`.
+4. Any successful verified session may enter `/my-mmd/` even when a canonical historical member row is still being recovered.
+5. Missing/failed verification stays fail-closed in the bounded LIFF recovery surface.
+6. Do not require the full member profile merely to establish the session bridge.
 
-Other verified screens remain available as native panels / Quick Access:
-- Member / Package
-- Points
-- Jobs
-- Coupons
-- CARE
-- Customer Requests
+The `__Host-` session remains host-only. A customer who established the session on the apex host stays on that host so the verified cookie is not lost during an unnecessary host redirect.
 
-Design:
-- mobile-first;
-- charcoal + champagne gold + ivory;
-- compact;
-- no oversized marketing hero after verification;
-- one screen / one job;
-- no horizontal-swipe dependency for the active digital state.
+## Specialized LIFF intents
+
+Bounded specialized flows may keep their current destination:
+- `private_teaser` -> exact allowed MY MMD private-preview route;
+- `continue_payment` -> `/my-mmd/payments`;
+- signup / promo / renew keep their dedicated LIFF/product flow unless separately changed.
+
+These exceptions do not create a second authority model.
 
 ## Lovable contract
 
-Lovable is not connected as the default runtime in this phase.
+The current My MMD Lovable project already uses same-origin MMD APIs:
+- Dashboard -> `/api/member/app/dashboard`
+- Profile -> `/api/member/app/profile`
+- Membership -> `/api/member/app/membership`
+- Points -> `/api/member/app/points`
+- Coupons -> `/api/member/app/coupons`
+- History -> `/api/member/app/history`
+- CARE -> `/api/member/app/care`
 
-If/when the Lovable MY MMD presentation is opened, customer history must use the exact same same-origin authority:
-
-`/api/member/app/history`
-
-It must never:
-- read customer history from Lovable storage;
-- invent local/mock history on canonical MMD hosts;
-- fall back to a browser-selected customer id;
-- use a separate history database or auth model.
-
-History recovery in Lovable must use only:
-- `/api/member/app/history/recovery`
-- `/api/member/app/history/refresh`
-
-The current My MMD Lovable live provider already maps `getHistory` to `/api/member/app/history`; this contract is now locked as the required future behavior.
-
-## Compatibility intents
-
-Explicit specialized routes may still bridge after LIFF verification where their current product flow requires it, for example:
-- `private_teaser`
-- `continue_payment`
-
-These exceptions do not make Lovable the default member dashboard.
+The presentation must never:
+- store or mint a parallel member identity;
+- use a Lovable-local customer history source;
+- infer access from browser state;
+- expose raw Airtable, R2, payment, or LINE identifiers;
+- calculate entitlement or money truth;
+- forward MMD member cookies or Authorization headers to the Lovable origin.
 
 ## Acceptance
 
-Do not call the authenticated customer UI production-accepted until a real LINE account proves:
+Do not call this production-accepted until a real LINE account proves:
 
-1. Rich Menu / LIFF opens the native Digital Home.
-2. Session is established by `/member/api/liff/start`.
-3. Direct `intent=status` does not redirect to Lovable.
-4. `/api/member/app/history` resolves the same signed-in customer.
-5. Historical customer records appear or stay checking without false empty-state claims.
-6. Points active balance, expiring Points and nearest expiry match backend truth.
-7. No raw LINE ID, Client ID, payment ref or internal evidence leaks to browser-visible history.
-8. Explicit compatibility intents still reach only their bounded destination.
+1. Rich Menu / status LIFF establishes the verified session.
+2. The status journey hands off to `/my-mmd/`.
+3. The host-only session survives that handoff.
+4. The customer sees the Lovable MY MMD UI while the browser URL remains on the MMD domain.
+5. `/api/member/app/history` resolves the signed-in customer or stays checking without false empty state.
+6. Points active balance and expiry fields match backend truth.
+7. No raw LINE ID, Client ID, payment ref, Airtable record ID, or backend credential leaks to the browser.
+8. Lovable-origin requests receive no MMD Cookie or Authorization header.
+9. Specialized intents remain bounded to their exact approved destinations.
+10. A failed verification remains on a clear recovery surface and does not loop indefinitely.
