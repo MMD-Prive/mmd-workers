@@ -19,6 +19,7 @@ import {
   hasModelSessionCookie,
   hasLineRedirectContext,
   modelMiniAppHandoffUrl,
+  resolveJobBoardContextFromRequest,
   shouldHandoffToMiniApp,
   resolveLiffEnvironmentFromRequest,
   hasLiffPrimaryBootstrapCookie,
@@ -187,6 +188,51 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
     "https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify&activation=signed.token",
   );
   assert.equal(response.headers.get("x-mmd-model-entry"), "line-miniapp-handoff-v1");
+});
+
+test("Job Board Mini App callback exchanges LINE session then opens the exact job instead of a blank dashboard", () => {
+  const jobId = "JOB-20260928-3DE86201F471";
+  const next = `https://sigil.mmdbkk.com/public/api/jobs/${jobId}`;
+  const entry = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?intent=job_board&source=line_model_group&return_to=public_job_board&next=${encodeURIComponent(next)}&job_id=${jobId}`,
+  );
+  const handoff = new URL(modelMiniAppHandoffUrl(entry));
+  assert.equal(handoff.origin, "https://miniapp.line.me");
+  assert.equal(handoff.pathname, "/2010864854-N34SgCqq/");
+  assert.equal(handoff.searchParams.get("intent"), "job_board");
+  assert.equal(handoff.searchParams.get("job_id"), jobId);
+  assert.equal(handoff.searchParams.get("next"), next);
+
+  const nested = new URLSearchParams({
+    intent: "job_board",
+    source: "line_model_group",
+    return_to: "public_job_board",
+    next,
+    job_id: jobId,
+  });
+  const callback = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?liff.state=${encodeURIComponent("?" + nested.toString())}&access_token=opaque`,
+  );
+  const context = resolveJobBoardContextFromRequest(callback);
+  assert.equal(context?.job_id, jobId);
+  assert.equal(context?.next, next);
+
+  const html = liffPrimaryBootstrapHtml(callback);
+  assert.match(html, /กำลังเปิดงาน MMD/);
+  assert.match(html, /\/v1\/model\/liff\/exchange/);
+  assert.match(html, /\/v1\/model\/job-board\/handoff/);
+  assert.match(html, /id_token_missing/);
+  assert.match(html, /JOB-20260928-3DE86201F471/);
+  assert.match(html, /https:\/\/sigil\.mmdbkk\.com\/public\/api\/jobs/);
+  assert.match(html, /window\.location\.replace\(destination\.toString\(\)\)/);
+});
+
+test("Job Board callback rejects a hostile next target and falls back to the canonical job URL", () => {
+  const callback = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?intent=job_board&job_id=JOB-20260928-3DE86201F471&next=https%3A%2F%2Fevil.example%2Fpwn",
+  );
+  const context = resolveJobBoardContextFromRequest(callback);
+  assert.equal(context?.next, "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260928-3DE86201F471");
 });
 
 test("approved Model job link enters the published Mini App before opening signed confirmation", () => {
