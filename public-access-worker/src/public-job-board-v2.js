@@ -1,6 +1,9 @@
 import { buildModelJobBoardBroadcastLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
 
 const PREFIX = "/public/api/jobs";
+const SHORT_PREFIX = "/j";
+const SHORT_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
+const SHORT_CODE_RE = /^[A-F0-9]{12}$/;
 const STORE_PREFIX = "public-job-board/v2";
 const JOB_STATUSES = new Set(["draft", "published", "paused", "closed", "expired"]);
 const OWNER_DECISIONS = new Set(["approve", "request_more_information", "reject", "bind_to_existing_model", "create_new_model_review"]);
@@ -27,8 +30,17 @@ export async function handlePublicJobBoardV2Request(request, env = {}) {
     requireStore(env);
     const input = await readJson(request);
     const job = createJobRecord({ ...input, status: input.status || "published" });
-    await putJson(env, jobKey(job.id), job, { onlyIfMissing: true });
+    await persistNewJob(env, job);
     return json({ ok: true, job: ownerJobView(job) }, 201);
+  }
+
+  if (SHORT_HOSTS.has(url.hostname) && (path === SHORT_PREFIX || path.startsWith(`${SHORT_PREFIX}/`))) {
+    try {
+      requireStore(env);
+      return await handleJobShortLink(request, env, path);
+    } catch (error) {
+      return json({ ok: false, error: safeCode(error) }, statusFor(error));
+    }
   }
 
   if (path !== PREFIX && !path.startsWith(`${PREFIX}/`)) return null;
@@ -79,7 +91,7 @@ async function handleOwnerRoute(request, env, parts) {
   if (request.method === "POST" && parts.length === 1 && parts[0] === "jobs") {
     const input = await readJson(request);
     const job = createJobRecord(input);
-    await putJson(env, jobKey(job.id), job, { onlyIfMissing: true });
+    await persistNewJob(env, job);
     return json({ ok: true, job: ownerJobView(job) }, 201);
   }
   if (request.method === "GET" && parts.length === 3 && parts[0] === "jobs" && parts[2] === "candidates") {
@@ -473,12 +485,112 @@ function jobCard(job) {
   return `<article class="job" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PUBLIC JOB</p><h2>${esc(job.title)}</h2><p>${esc(meta)}</p><p>${esc(job.required_appearance_profile)}</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">เลือกงานนี้</a></article>`;
 }
 
-function ownerJobView(job) {
-  const view = structuredClone(job);
-  view.broadcast_url = buildModelJobBoardBroadcastLink({
+async function persistNewJob(env, job) {
+  const reservation = await reserveShortCode(env, job.id);
+  job.short_code = reservation.code;
+  try {
+    await putJson(env, jobKey(job.id), job, { onlyIfMissing: true });
+  } catch (error) {
+    if (reservation.created && typeof env.PUBLIC_ACCESS_EVIDENCE?.delete === "function") {
+      await env.PUBLIC_ACCESS_EVIDENCE.delete(shortJobKey(reservation.code)).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+async function reserveShortCode(env, jobId) {
+  const preferred = canonicalShortCode(jobId);
+  const candidates = [preferred, makeShortCode(), makeShortCode(), makeShortCode(), makeShortCode()].filter(Boolean);
+  for (const code of candidates) {
+    try {
+      await putJson(env, shortJobKey(code), {
+        schema: "mmd_public_job_board_v2.short",
+        code,
+        job_id: jobId,
+        created_at: new Date().toISOString(),
+      }, { onlyIfMissing: true });
+      return { code, created: true };
+    } catch (error) {
+      if (String(error?.message || "") !== "record_already_exists") throw error;
+      const existing = await getJson(env, shortJobKey(code));
+      if (existing?.schema === "mmd_public_job_board_v2.short" && existing?.job_id === jobId) {
+        return { code, created: false };
+      }
+    }
+  }
+  throw httpError(503, "job_short_link_unavailable");
+}
+
+async function handleJobShortLink(request, env, path) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return json({ ok: false, error: "method_not_allowed" }, 405);
+  }
+  const rest = path.slice(SHORT_PREFIX.length).replace(/^\/+/, "");
+  if (!rest || rest.includes("/")) return json({ ok: false, error: "short_link_not_found" }, 404);
+  const code = normalizeShortCode(rest);
+  if (!code) return json({ ok: false, error: "short_link_not_found" }, 404);
+
+  let alias = await getJson(env, shortJobKey(code));
+  if (!alias) {
+    const legacyJob = await findLegacyJobByShortCode(env, code);
+    if (!legacyJob) return json({ ok: false, error: "short_link_not_found" }, 404);
+    alias = { schema: "mmd_public_job_board_v2.short", code, job_id: legacyJob.id };
+    await putJson(env, shortJobKey(code), alias, { onlyIfMissing: true }).catch(() => {});
+  }
+  if (alias?.schema !== "mmd_public_job_board_v2.short" || !alias?.job_id) {
+    return json({ ok: false, error: "short_link_not_found" }, 404);
+  }
+
+  const job = await requireJob(env, alias.job_id, { publicOnly: true });
+  const location = buildModelJobBoardBroadcastLink({
     source: "line_model_group",
     job_id: job.id,
   });
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location,
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex, nofollow",
+      "x-mmd-job-short-link": "v1",
+    },
+  });
+}
+
+async function findLegacyJobByShortCode(env, code) {
+  const listed = await env.PUBLIC_ACCESS_EVIDENCE.list({ prefix: `${STORE_PREFIX}/jobs/`, limit: 1000 });
+  const suffix = `-${code}.JSON`;
+  const matches = (listed.objects || []).filter((item) => String(item.key || "").toUpperCase().endsWith(suffix));
+  if (matches.length !== 1) return null;
+  const job = await getJson(env, matches[0].key);
+  if (!isOpenPublicJob(job) || canonicalShortCode(job.id) !== code) return null;
+  return job;
+}
+
+function normalizeShortCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  return SHORT_CODE_RE.test(code) ? code : "";
+}
+
+function canonicalShortCode(jobId) {
+  const match = /^JOB-\d{8}-([A-F0-9]{12})$/i.exec(String(jobId || "").trim());
+  return match ? match[1].toUpperCase() : "";
+}
+
+function makeShortCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+function ownerJobView(job) {
+  const view = structuredClone(job);
+  const code = normalizeShortCode(job.short_code) || canonicalShortCode(job.id);
+  view.broadcast_url = code
+    ? `https://mmdbkk.com/j/${code}`
+    : buildModelJobBoardBroadcastLink({
+        source: "line_model_group",
+        job_id: job.id,
+      });
   return view;
 }
 
@@ -768,6 +880,7 @@ async function putJson(env, key, value, { onlyIfMissing = false } = {}) {
 }
 
 function jobKey(id) { return id ? `${STORE_PREFIX}/jobs/${id}.json` : ""; }
+function shortJobKey(code) { return code ? `${STORE_PREFIX}/short/${code}.json` : ""; }
 function applicationKey(jobId, applicationRef) { return jobId && applicationRef ? `${STORE_PREFIX}/applications/${jobId}/${applicationRef}.json` : ""; }
 function dedupeKey(jobId, actorHash) { return `${STORE_PREFIX}/dedupe/${jobId}/${actorHash}.json`; }
 function mediaKey(jobId, applicationRef, slot, ext) { return `${STORE_PREFIX}/private-media/${jobId}/${applicationRef}/${slot}.${ext}`; }

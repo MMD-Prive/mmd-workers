@@ -3,7 +3,9 @@ main = "src/index.js"
 compatibility_date = "2026-07-18"
 
 routes = [
-  { pattern = "sigil.mmdbkk.com/public/api/*", zone_name = "mmdbkk.com" }
+  { pattern = "sigil.mmdbkk.com/public/api/*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/j/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/j/*", zone_name = "mmdbkk.com" }
 ]
 
 [[r2_buckets]]

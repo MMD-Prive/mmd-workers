@@ -132,11 +132,17 @@ test("runtime fails closed without durable R2 or a strong signing secret", async
   assert.equal((await response.json()).error, "public_job_board_signing_unavailable");
 });
 
-test("direct Job Board entry redirects to LIFF Login V2 and owner output never broadcasts the board URL", async () => {
+test("owner output uses branded short link and resolves it into LIFF Login V2", async () => {
   const testEnv = env();
-  const created = await ownerCreate(testEnv);
-  assert.match(created.job.broadcast_url, /^https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
-  const broadcast = new URL(created.job.broadcast_url);
+  const created = await ownerCreate(testEnv, { id: "JOB-20261001-A1B2C3D4E5F6" });
+  assert.equal(created.job.broadcast_url, "https://mmdbkk.com/j/A1B2C3D4E5F6");
+
+  const short = await worker.fetch(new Request(created.job.broadcast_url), testEnv);
+  assert.equal(short.status, 302);
+  assert.equal(short.headers.get("x-mmd-job-short-link"), "v1");
+  const broadcast = new URL(short.headers.get("location"));
+  assert.equal(broadcast.origin, "https://www.mmdbkk.com");
+  assert.equal(broadcast.pathname, "/sigil/model/login");
   assert.equal(broadcast.searchParams.get("intent"), "job_board");
   assert.equal(broadcast.searchParams.get("return_to"), "public_job_board");
   assert.equal(broadcast.searchParams.get("job_id"), created.job.id);
@@ -148,6 +154,25 @@ test("direct Job Board entry redirects to LIFF Login V2 and owner output never b
   assert.equal(login.origin, "https://www.mmdbkk.com");
   assert.equal(login.pathname, "/sigil/model/login");
   assert.equal(login.searchParams.get("intent"), "job_board");
+});
+
+test("branded short link resolves an existing canonical job created before aliases existed", async () => {
+  const testEnv = env();
+  const job = createJobRecord({
+    id: "JOB-20260928-3DE86201F471",
+    status: "published",
+    brief: "งานกินข้าว\n⏳ งาน 3 ชม.\n🏡 พฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n💰 12,000 ถึงตัว",
+  }, new Date("2026-09-28T12:00:00.000Z"));
+  await testEnv.PUBLIC_ACCESS_EVIDENCE.put(
+    "public-job-board/v2/jobs/JOB-20260928-3DE86201F471.json",
+    JSON.stringify(job),
+  );
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/j/3DE86201F471"), testEnv);
+  assert.equal(response.status, 302);
+  const login = new URL(response.headers.get("location"));
+  assert.equal(login.pathname, "/sigil/model/login");
+  assert.equal(login.searchParams.get("job_id"), "JOB-20260928-3DE86201F471");
 });
 
 test("public welcome uses approved copy and hides internal identity language", async () => {
