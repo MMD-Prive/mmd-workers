@@ -6,6 +6,8 @@ const SHORT_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 const SHORT_CODE_RE = /^[A-F0-9]{12}$/;
 const STORE_PREFIX = "public-job-board/v2";
 const JOB_STATUSES = new Set(["draft", "published", "paused", "closed", "expired"]);
+const JOB_WORLDS = new Set(["public", "private"]);
+const OWNER_CONFIRMED_PUBLIC_JOB_IDS = new Set(["JOB-20260928-3DE86201F471"]);
 const OWNER_DECISIONS = new Set(["approve", "request_more_information", "reject", "bind_to_existing_model", "create_new_model_review"]);
 const GENDERS = new Set(["male", "gay", "bisexual", "self_described", "unspecified"]);
 const CUSTOMER_SCOPES = new Set(["men", "women", "both"]);
@@ -107,10 +109,14 @@ async function handleOwnerRoute(request, env, parts) {
       if (!JOB_STATUSES.has(status)) throw httpError(400, "job_status_invalid");
       job.status = status;
     }
+    if (input.world !== undefined) {
+      const world = token(input.world);
+      if (!JOB_WORLDS.has(world)) throw httpError(400, "job_world_invalid");
+      job.public.world = world;
+      if (world !== "private") job.public.budget_disclosure_approved = false;
+    }
     if (typeof input.confidentiality === "boolean") {
       job.public.confidentiality = input.confidentiality;
-      job.public.world = input.confidentiality ? "private" : "public";
-      if (!input.confidentiality) job.public.budget_disclosure_approved = false;
     }
     if (typeof input.budget_disclosure_approved === "boolean") {
       job.public.budget_disclosure_approved = job.public.world === "private" && input.budget_disclosure_approved;
@@ -142,7 +148,8 @@ export function createJobRecord(input = {}, now = new Date()) {
   const id = cleanId(input.id) || makeRef("JOB", now);
   const mediaRequiredCount = boundedInt(input.media_requirements?.count ?? parsed.media_requirements.count, 1, MAX_MEDIA, 1);
   const confidentiality = Boolean(input.confidentiality ?? parsed.confidentiality);
-  const world = confidentiality ? "private" : "public";
+  const requestedWorld = token(input.world || input.job_visibility || "public");
+  const world = requestedWorld === "private" ? "private" : "public";
   return {
     schema: "mmd_public_job_board_v2.job",
     id,
@@ -419,16 +426,29 @@ async function resolveIdentity(request, env, input) {
   return { identity_class: "UNVERIFIED_CANDIDATE", workflow_status: "new_candidate", public_status: "received", verified_model_record_id: null, claim: null };
 }
 
+function applyOwnerConfirmedJobCorrections(job) {
+  if (!job || job.schema !== "mmd_public_job_board_v2.job") return job;
+  if (!OWNER_CONFIRMED_PUBLIC_JOB_IDS.has(String(job.id || ""))) return job;
+  const corrected = structuredClone(job);
+  corrected.public = {
+    ...corrected.public,
+    world: "public",
+    confidentiality: true,
+    budget_disclosure_approved: false,
+  };
+  return corrected;
+}
+
 async function listPublicJobs(env) {
   const listed = await env.PUBLIC_ACCESS_EVIDENCE.list({ prefix: `${STORE_PREFIX}/jobs/`, limit: 200 });
   const rows = await Promise.all((listed.objects || []).map((item) => getJson(env, item.key)));
-  return rows.filter(isOpenPublicJob).sort((a, b) => String(a.public.date || "9999").localeCompare(String(b.public.date || "9999"))).map(publicJobView);
+  return rows.map(applyOwnerConfirmedJobCorrections).filter(isOpenPublicJob).sort((a, b) => String(a.public.date || "9999").localeCompare(String(b.public.date || "9999"))).map(publicJobView);
 }
 
 async function listOwnerJobs(env) {
   const listed = await env.PUBLIC_ACCESS_EVIDENCE.list({ prefix: `${STORE_PREFIX}/jobs/`, limit: 500 });
   const rows = await Promise.all((listed.objects || []).map((item) => getJson(env, item.key)));
-  return rows.filter((job) => job?.schema === "mmd_public_job_board_v2.job").sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).map(ownerJobView);
+  return rows.map(applyOwnerConfirmedJobCorrections).filter((job) => job?.schema === "mmd_public_job_board_v2.job").sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).map(ownerJobView);
 }
 
 function isOpenPublicJob(job) {
@@ -441,8 +461,9 @@ async function listApplications(env, jobId) {
 }
 
 async function requireJob(env, jobId, { publicOnly }) {
-  const job = await getJson(env, jobKey(cleanId(jobId)));
-  if (!job || job.schema !== "mmd_public_job_board_v2.job") throw httpError(404, "job_not_found");
+  const stored = await getJson(env, jobKey(cleanId(jobId)));
+  if (!stored || stored.schema !== "mmd_public_job_board_v2.job") throw httpError(404, "job_not_found");
+  const job = applyOwnerConfirmedJobCorrections(stored);
   if (publicOnly && !isOpenPublicJob(job)) throw httpError(404, "job_not_open");
   return job;
 }
@@ -561,12 +582,17 @@ async function handleJobShortLink(request, env, path) {
 function shortJobLandingHtml(job, loginUrl) {
   const view = publicJobView(job, { detail: false });
   const privateJob = view.world === "private";
-  const label = privateJob ? "PRIVATE JOB · งานลับ 🔐" : "PUBLIC JOB";
+  const confidential = view.confidentiality === true;
+  const label = privateJob
+    ? "SIGIL · PRIVATE JOB"
+    : confidential
+      ? "MMD JOB · CONFIDENTIAL 🔐"
+      : "MMD · JOB BOARD";
   const title = privateJob ? categoryLabel(view.category) : (view.title || "งานที่เปิดรับ");
   const meta = [view.date, view.time, view.duration, view.area].filter(Boolean).join(" · ");
   const compensation = String(view.compensation || "").trim();
   const description = [meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับ MMD";
-  const button = privateJob ? "เปิดงานลับนี้ผ่าน LINE" : "เปิดงานนี้ผ่าน LINE";
+  const button = "เปิดงานนี้ผ่าน LINE";
 
   return `<!doctype html>
 <html lang="th">
