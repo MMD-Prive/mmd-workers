@@ -273,7 +273,7 @@ function renderShell(config, nonce) {
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">LIFF</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
-      <div id="member-details"><div id="expiry-card"><strong id="profile-expiry">—</strong></div><div id="payment-card"><strong id="profile-payment">—</strong></div></div>
+      <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
       <div id="points-card"></div><strong id="home-package">—</strong><p id="home-package-note"></p><div id="next-job"></div><div id="history"></div>
     </div>
     </section>
