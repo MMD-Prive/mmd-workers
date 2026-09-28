@@ -313,13 +313,33 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) \.digital-view>\.card[^}]*border-radius:0[^}]*background:transparent/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) #credits \.detail-grid\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) #points \.detail-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
-    assert.match(html, /id="care" class="panel"/);
-    assert.match(html, /id="my-requests" class="panel"/);
+    assert.match(html, /id="care" class="panel digital-care"/);
+    assert.match(html, /id="my-requests" class="panel digital-requests"/);
     assert.doesNotMatch(html, /id="care" class="panel digital-view"/);
     assert.doesNotMatch(html, /id="my-requests" class="panel digital-view"/);
     assert.match(html, /const CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
     assert.match(html, /data-view="history"/);
     assert.match(html, /data-view="credits"/);
+  });
+
+  it("keeps CARE BACK and My Requests compact without changing form or claim contracts", async () => {
+    const response = await shell("/member/liff?intent=status&view=my-requests");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /id="care" class="panel digital-care"/);
+    assert.match(html, /id="my-requests" class="panel digital-requests"/);
+    assert.match(html, /class="card details digital-request-block"/);
+    assert.match(html, /id="customer-profile-form" class="form-stack"/);
+    assert.match(html, /id="your-request-form" class="form-stack"/);
+    assert.match(html, /id="customer-request-list" class="history"/);
+    assert.match(html, /id="saved-model-list" class="history"/);
+    assert.match(html, /id="care-button"/);
+    assert.match(html, /id="wish-text"/);
+    assert.match(html, /id="wish-submit"/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) \.digital-care>\.care[^}]*border:0[^}]*background:transparent/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) \.digital-request-block>summary::after\{content:"\+"/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) \.digital-requests input[^}]*background:var\(--digital-surface\)/);
   });
 
   it("renders a verified-only Credit Wallet through the same-site credit API", async () => {
