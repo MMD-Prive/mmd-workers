@@ -100,16 +100,16 @@ test("My MMD asset proxy repairs stale LINE verify links without encoding the en
   assert.doesNotMatch(javascript, /member\/liff\/member\/liff/);
 });
 
-test("status LIFF shell becomes a verified bridge to the same-origin Lovable MY MMD UI", async () => {
+test("status LIFF shell returns to canonical My MMD only after the same-site profile verifies", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><body><main data-mmd-liff-digital="v2">NATIVE LIFF DASHBOARD</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const historyEndpoint="/api/member/app/history";</script></body></html>`,
+        `<!doctype html><html><body><main>LIFF bridge</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
         {
           headers: {
-            "content-type":"text/html; charset=utf-8",
-            "content-security-policy":"default-src 'self'; script-src 'self' 'nonce-abc123'",
-            "cache-control":"no-store",
+            "content-type": "text/html; charset=utf-8",
+            "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-abc123'",
+            "cache-control": "no-store",
           },
         },
       ),
@@ -121,19 +121,21 @@ test("status LIFF shell becomes a verified bridge to the same-origin Lovable MY 
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-liff-return-bridge"), "my-mmd-status-telegram-v2");
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.match(html, /NATIVE LIFF DASHBOARD/);
-  assert.match(html, /\/api\/member\/app\/history/);
-  assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
+  assert.match(html, /<script nonce="abc123">[\s\S]*\/member\/api\/liff\/profile/);
+  assert.match(html, /payload && payload\.ok === true/);
+  assert.match(html, /\/member\/api\/liff\/telegram-bind/);
+  assert.match(html, /Connect Telegram/);
+  assert.match(html, /เข้า MY MMD/);
   assert.match(html, /window\.location\.replace\(target\)/);
+  assert.match(html, /const target = "\/member\/my-mmd"/);
 });
 
-test("status LIFF fallback bridge verifies session status before entering MY MMD", async () => {
+test("status LIFF shell exposes recovery actions instead of ending silently after bounded retries", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><body><main>NATIVE LIFF</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
-        { headers:{ "content-type":"text/html; charset=utf-8" } },
+        `<!doctype html><html><body><main>LIFF bridge</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
   };
@@ -141,10 +143,9 @@ test("status LIFF fallback bridge verifies session status before entering MY MMD
   const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), runtime);
   const html = await response.text();
 
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
   assert.match(html, /const maxAttempts = 20/);
+  assert.match(html, /ยังยืนยัน Member Session ไม่สำเร็จครับ/);
+  assert.match(html, /ลองยืนยันอีกครั้ง/);
   assert.match(html, /กลับ My MMD/);
   assert.match(html, /renderRecovery\(\)/);
 });
