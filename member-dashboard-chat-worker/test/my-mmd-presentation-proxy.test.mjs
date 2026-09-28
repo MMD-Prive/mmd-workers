@@ -100,7 +100,7 @@ test("My MMD asset proxy repairs stale LINE verify links without encoding the en
   assert.doesNotMatch(javascript, /member\/liff\/member\/liff/);
 });
 
-test("status LIFF shell remains the native customer dashboard without a post-verification redirect", async () => {
+test("status LIFF shell becomes a verified bridge to the same-origin Lovable MY MMD UI", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -120,15 +120,15 @@ test("status LIFF shell remains the native customer dashboard without a post-ver
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-bridge"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-return-bridge"), "my-mmd-status-telegram-v2");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
   assert.match(html, /NATIVE LIFF DASHBOARD/);
   assert.match(html, /\/api\/member\/app\/history/);
-  assert.doesNotMatch(html, /window\.location\.replace\(target\)/);
-  assert.doesNotMatch(html, /Connect Telegram/);
+  assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
+  assert.match(html, /window\.location\.replace\(target\)/);
 });
 
-test("status LIFF does not inject the retired bounded redirect recovery controls", async () => {
+test("status LIFF fallback bridge verifies session status before entering MY MMD", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -142,9 +142,11 @@ test("status LIFF does not inject the retired bounded redirect recovery controls
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.doesNotMatch(html, /const maxAttempts = 20/);
-  assert.doesNotMatch(html, /กลับ My MMD/);
-  assert.doesNotMatch(html, /renderRecovery\(\)/);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+  assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
+  assert.match(html, /const maxAttempts = 20/);
+  assert.match(html, /กลับ My MMD/);
+  assert.match(html, /renderRecovery\(\)/);
 });
 
 test("CARE BACK promo LIFF shell is not auto-returned to My MMD", async () => {
