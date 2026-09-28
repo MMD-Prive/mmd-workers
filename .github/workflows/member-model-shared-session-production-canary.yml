@@ -1,0 +1,265 @@
+name: Member Model shared-session production canary
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/member-model-shared-session-production-canary.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: member-model-shared-session-production-canary
+  cancel-in-progress: false
+
+jobs:
+  shared-session-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      SESSIONS_TABLE_ID: tblC98mKWbzmPuNzX
+    steps:
+      - name: Require read-only production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${REAL_MEMBER_LIFF_ID_TOKEN:-}" || {
+            echo "MY_MMD_E2E_ID_TOKEN is required. Refusing to fake a Member Console identity." >&2
+            exit 1
+          }
+          test -n "${AIRTABLE_API_KEY:-}" || {
+            echo "Airtable read credential is required to bind the same canonical session to the Model token." >&2
+            exit 1
+          }
+          echo "::add-mask::$REAL_MEMBER_LIFF_ID_TOKEN"
+          echo "::add-mask::$AIRTABLE_API_KEY"
+
+      - name: Establish verified Member Console session
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/member-model-canary.cookies"
+          start_headers="$RUNNER_TEMP/member-model-liff-start.headers"
+          start_body="$RUNNER_TEMP/member-model-liff-start.json"
+
+          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$start_headers" -c "$jar" -o "$start_body" -w "%{http_code}"             -X POST "$ORIGIN/member/api/liff/start"             -H "Origin: $ORIGIN"             -H "Accept: application/json"             -H "Content-Type: application/json"             --data-binary "$(jq -nc --arg id_token "$REAL_MEMBER_LIFF_ID_TOKEN" '{id_token:$id_token,intent:"status",liff_intent:"status"}')")"
+
+          test "$code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$start_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$start_headers"
+          grep -q '__Host-mmd_liff_session' "$jar"
+          jq -e '.ok == true' "$start_body" >/dev/null
+
+          echo "COOKIE_JAR=$jar" >> "$GITHUB_ENV"
+
+      - name: Resolve one current Member Console session
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/member-current.json"
+          headers="$RUNNER_TEMP/member-current.headers"
+          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$headers" -b "$COOKIE_JAR" -c "$COOKIE_JAR"             -o "$body" -w "%{http_code}"             -H "Origin: $ORIGIN"             -H "Accept: application/json"             "$ORIGIN/api/member/app/session/current")"
+
+          if [ "$code" = "204" ]; then
+            echo "The configured E2E member has no current canonical session. Canary needs exactly one live shared session." >&2
+            exit 1
+          fi
+          test "$code" = "200"
+
+          node --input-type=module - "$body" <<'NODE'
+          import fs from "node:fs";
+          const file = process.argv[2];
+          const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+          const sessionId = String(payload?.sessionId || "").trim();
+          const lifecycle = String(payload?.lifecycle || "").trim();
+          const jobDate = String(payload?.jobDate || "").trim();
+          const modelName = String(payload?.model?.displayName || "").trim();
+          if (!/^sess_[A-Za-z0-9_.:-]+$/.test(sessionId)) throw new Error("member_session_id_missing_or_invalid");
+          if (!lifecycle) throw new Error("member_lifecycle_missing");
+          fs.appendFileSync(process.env.GITHUB_ENV, [
+            `CANARY_SESSION_ID=${sessionId}`,
+            `MEMBER_FIRST_STATE=${lifecycle}`,
+            `MEMBER_FIRST_JOB_DATE=${jobDate}`,
+            `MEMBER_FIRST_MODEL_NAME=${modelName.replace(/\n/g, " ")}`,
+          ].join("\n") + "\n");
+          console.log(`Member Console selected session=${sessionId} lifecycle=${lifecycle} job_date=${jobDate || "-"} model=${modelName || "-"}`);
+          NODE
+
+      - name: Resolve same-session signed Model credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const baseId = process.env.AIRTABLE_BASE_ID;
+          const table = process.env.SESSIONS_TABLE_ID;
+          const sessionId = process.env.CANARY_SESSION_ID;
+          const apiKey = process.env.AIRTABLE_API_KEY;
+          const fields = {
+            sessionId: "fldLTq2kZbyRv22IA",
+            modelUrl: "fld0mFma9J9yfEaKb",
+          };
+
+          const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`);
+          url.searchParams.set("maxRecords", "2");
+          url.searchParams.set("filterByFormula", `{session_id}="${sessionId.replace(/"/g, '\\"')}"`);
+          url.searchParams.set("returnFieldsByFieldId", "true");
+          url.searchParams.append("fields[]", fields.sessionId);
+          url.searchParams.append("fields[]", fields.modelUrl);
+
+          const response = await fetch(url, {
+            headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(`airtable_http_${response.status}`);
+          const records = Array.isArray(payload.records) ? payload.records : [];
+          if (records.length !== 1) throw new Error(`canonical_session_count_${records.length}`);
+          const f = records[0].fields || {};
+          if (String(f[fields.sessionId] || "") !== sessionId) throw new Error("canonical_session_id_mismatch");
+
+          const raw = String(f[fields.modelUrl] || "").trim();
+          const parsed = new URL(raw);
+          if (!new Set(["mmdbkk.com", "www.mmdbkk.com"]).has(parsed.hostname)) throw new Error("model_confirmation_host_invalid");
+          if (!new Set(["/sigil/confirm/job-model", "/confirm/job-model"]).has(parsed.pathname)) throw new Error("model_confirmation_path_invalid");
+          const token = String(parsed.searchParams.get("t") || "").trim();
+          if (!token || [...parsed.searchParams.keys()].some((key) => key !== "t")) throw new Error("model_confirmation_token_invalid");
+
+          console.log(`::add-mask::${token}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `MODEL_T=${token}\n`);
+          console.log(`Bound Model Console credential to the same canonical session=${sessionId}`);
+          NODE
+
+      - name: Read Member and Model Consoles concurrently and compare
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cookie_header="$(awk '
+            BEGIN { sep="" }
+            /^#HttpOnly_/ { sub(/^#HttpOnly_/, "", $1) }
+            /^#/ { next }
+            NF >= 7 { printf "%s%s=%s", sep, $6, $7; sep="; " }
+          ' "$COOKIE_JAR")"
+          test -n "$cookie_header"
+          echo "::add-mask::$cookie_header"
+
+          export MEMBER_COOKIE_HEADER="$cookie_header"
+
+          node --input-type=module <<'NODE'
+          const origin = process.env.ORIGIN;
+          const expectedSessionId = process.env.CANARY_SESSION_ID;
+          const cookie = process.env.MEMBER_COOKIE_HEADER;
+          const modelToken = process.env.MODEL_T;
+
+          const [memberResponse, modelResponse] = await Promise.all([
+            fetch(`${origin}/api/member/app/session/current`, {
+              headers: { accept: "application/json", origin, cookie, "cache-control": "no-cache" },
+            }),
+            fetch(`${origin}/v1/model/session/current?t=${encodeURIComponent(modelToken)}`, {
+              headers: { accept: "application/json", origin, "cache-control": "no-cache" },
+            }),
+          ]);
+
+          if (memberResponse.status !== 200) throw new Error(`member_console_http_${memberResponse.status}`);
+          if (modelResponse.status !== 200) throw new Error(`model_console_http_${modelResponse.status}`);
+
+          const member = await memberResponse.json();
+          const modelPayload = await modelResponse.json();
+          const model = modelPayload?.session || modelPayload?.data?.session;
+          if (!model) throw new Error("model_console_session_missing");
+
+          const memberSessionId = String(member?.sessionId || "").trim();
+          const modelSessionId = String(model?.session_id || "").trim();
+          if (memberSessionId !== expectedSessionId) throw new Error(`member_session_changed:${memberSessionId}`);
+          if (modelSessionId !== expectedSessionId) throw new Error(`model_session_mismatch:${modelSessionId}`);
+
+          const memberDate = String(member?.jobDate || "").slice(0, 10);
+          const modelDate = String(model?.job_date || "").slice(0, 10);
+          if (memberDate && modelDate && memberDate !== modelDate) {
+            throw new Error(`job_date_diverged:member=${memberDate}:model=${modelDate}`);
+          }
+
+          const memberModel = String(member?.model?.displayName || "").trim().toLowerCase();
+          const modelModel = String(model?.model_name || model?.modelName || "").trim().toLowerCase();
+          if (memberModel && modelModel && memberModel !== modelModel) {
+            throw new Error(`model_identity_diverged:member=${memberModel}:model=${modelModel}`);
+          }
+
+          const memberState = String(member?.lifecycle || "").trim().toLowerCase();
+          const modelState = String(model?.normalized_state || model?.state || "").trim().toLowerCase();
+
+          const memberFamily = new Map([
+            ["pending_confirmation", "pre"],
+            ["confirmed", "confirmed"],
+            ["preparing", "confirmed"],
+            ["en_route", "en_route"],
+            ["nearby", "nearby"],
+            ["arrived", "arrived"],
+            ["met_customer", "met_customer"],
+            ["in_progress", "work"],
+            ["completed", "done"],
+            ["cancelled", "cancelled"],
+          ]);
+          const modelFamily = new Map([
+            ["offered", "pre"],
+            ["confirmed", "confirmed"],
+            ["en_route", "en_route"],
+            ["nearby", "nearby"],
+            ["arrived", "arrived"],
+            ["met_customer", "met_customer"],
+            ["final_payment_pending", "met_customer"],
+            ["final_payment_confirmed", "met_customer"],
+            ["work_started", "work"],
+            ["work_finished", "work"],
+            ["separated", "work"],
+            ["under_review", "work"],
+            ["payout_pending", "work"],
+            ["closed", "done"],
+            ["offer_declined", "cancelled"],
+            ["offer_expired", "cancelled"],
+          ]);
+
+          const mf = memberFamily.get(memberState);
+          const modf = modelFamily.get(modelState);
+          if (!mf) throw new Error(`member_state_not_comparable:${memberState || "missing"}`);
+          if (!modf) throw new Error(`model_state_not_comparable:${modelState || "missing"}`);
+          if (mf !== modf) {
+            throw new Error(`console_state_diverged:member=${memberState}(${mf}):model=${modelState}(${modf})`);
+          }
+
+          const forbiddenMember = ["pay_model_thb", "expected_payout_thb", "model_confirmation_url"];
+          for (const key of forbiddenMember) {
+            if (Object.prototype.hasOwnProperty.call(member, key)) throw new Error(`member_console_leaked_model_field:${key}`);
+          }
+          const forbiddenModel = ["customer_confirmation_url", "customer_amount_due_thb", "payment_verification"];
+          for (const key of forbiddenModel) {
+            if (Object.prototype.hasOwnProperty.call(model, key)) throw new Error(`model_console_leaked_customer_field:${key}`);
+          }
+
+          console.log(JSON.stringify({
+            result: "PASS",
+            mode: "production_read_only",
+            session_id: expectedSessionId,
+            member_console: { lifecycle: memberState, family: mf, job_date: memberDate || null },
+            model_console: { state: modelState, family: modf, job_date: modelDate || null },
+            same_session: true,
+            same_state_family: true,
+            writes: 0,
+            notifications: 0,
+          }, null, 2));
+          NODE
+
+      - name: Assert canary is mutation-free by construction
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PASS read-only canary: GET Member Console + GET Model Console + Airtable GET only"
+          echo "No Job/Session/Payment mutation, no confirm action, no LINE push, no Telegram send."
