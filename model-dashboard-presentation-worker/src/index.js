@@ -549,7 +549,7 @@ function modelLineBriefsPageResponse(request) {
   });
   if (!["GET", "HEAD"].includes(request.method.toUpperCase())) return new Response(null, { status: 405, headers });
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD APP · Model briefs</title><link rel="stylesheet" href="${MODEL_LINE_BRIEFS_CSS_PATH}"></head><body style="background:#090909;margin:0"><script src="${MODEL_LINE_BRIEFS_JS_PATH}" defer></script></body></html>`;
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { status: 200, headers });
+  return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
 
 export function shouldServePhaseAAfterBootstrap(request) {
@@ -808,6 +808,13 @@ async function fetchUpstream(request, upstreamUrl, { runtime = false } = {}) {
 }
 
 function digitalDashboardResponse(request) {
+  const method = request.method.toUpperCase();
+  if (!new Set(["GET", "HEAD"]).has(method)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { allow: "GET, HEAD", "cache-control": "no-store", "x-mmd-worker": WORKER_NAME },
+    });
+  }
   const html = modelDigitalDashboardHtml(request, {
     mediaCssPath: MODEL_MEDIA_UPLOAD_CSS_PATH,
     mediaJsPath: MODEL_MEDIA_UPLOAD_JS_PATH,
