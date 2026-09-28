@@ -24,22 +24,26 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
   const allowed = path === `${SESSION_PATH}ack` ? "POST" : "GET";
   if (request.method !== allowed) return jsonError(405, "METHOD_NOT_ALLOWED", `${allowed} required.`, { allow: allowed });
 
-  const identity = await readSession(request, env);
-  if (!identity?.lineUserId) return jsonError(401, "MEMBER_SESSION_REQUIRED", "Open MY MMD through LINE and sign in again.");
-
-  if (path === `${SESSION_PATH}current`) {
-    const record = await findCurrentOwnedSession(env, identity);
-    return record ? json(await projectSession(record, env)) : new Response(null, { status: 204, headers: noStoreHeaders() });
-  }
-
   if (path === `${SESSION_PATH}context`) {
     const token = clean(new URL(request.url).searchParams.get("t"), 4096);
     if (!token) return json({ valid: false, session: null });
     const context = await verifyCustomerToken(request, env, token);
     const sessionId = contextSessionId(context);
     if (!sessionId) return json({ valid: false, session: null });
-    const record = await findOwnedSessionById(env, identity, sessionId);
+
+    const identity = await readSession(request, env);
+    const record = identity?.lineUserId
+      ? await findOwnedSessionById(env, identity, sessionId)
+      : await findSignedSessionById(env, sessionId);
     return record ? json({ valid: true, session: await projectSession(record, env) }) : json({ valid: false, session: null });
+  }
+
+  const identity = await readSession(request, env);
+  if (!identity?.lineUserId) return jsonError(401, "MEMBER_SESSION_REQUIRED", "Open MY MMD through LINE and sign in again.");
+
+  if (path === `${SESSION_PATH}current`) {
+    const record = await findCurrentOwnedSession(env, identity);
+    return record ? json(await projectSession(record, env)) : new Response(null, { status: 204, headers: noStoreHeaders() });
   }
 
   const body = await request.json().catch(() => null);
@@ -81,13 +85,17 @@ async function findCurrentOwnedSession(env, identity) {
   return candidates[0] || null;
 }
 
-async function findOwnedSessionById(env, identity, sessionId) {
+async function findSignedSessionById(env, sessionId) {
   const records = await airtableList(env, {
     filterByFormula: `{session_id}=${formulaString(sessionId)}`,
     maxRecords: 2,
   });
-  if (records.length !== 1) return null;
-  return owns(records[0], identity) ? records[0] : null;
+  return records.length === 1 ? records[0] : null;
+}
+
+async function findOwnedSessionById(env, identity, sessionId) {
+  const record = await findSignedSessionById(env, sessionId);
+  return record && owns(record, identity) ? record : null;
 }
 
 async function listOwnedSessions(env, identity) {
