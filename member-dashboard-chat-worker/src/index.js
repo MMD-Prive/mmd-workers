@@ -387,7 +387,7 @@ export function inferLineIntent(text = "", event = {}) {
   // Greeting/Rich Menu action keywords are kept intentionally small and
   // deterministic. They enter the same canonical runtime as typed messages,
   // so there is no second "button-only" conversation system to maintain.
-  const actionKeyword = compactLookup(text);
+  const actionKeyword = asString(text).normalize("NFKC").toLowerCase().replace(/\s+/g, "");
   if (["ดูนายแบบ", "ดูmodel", "ดูโมเดล"].includes(actionKeyword)) return "model_browse";
   if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
   if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
