@@ -1,6 +1,8 @@
+import { parsePerRenameDateSuffix } from "./per-rename-date-suffix.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v5-broad-per-name-choice";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v6-date-suffix";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
@@ -255,10 +257,15 @@ function authoritativeMatch(record, query) {
   else if (normalizedAliases.some((alias) => q.length >= 3 && alias.includes(q))) quality = 180;
   if (!quality) return null;
 
+  const parsedRename = parsePerRenameDateSuffix(perName);
   return {
     record_id: clean(record?.id),
     quality,
     per_name: perName,
+    per_name_base: parsedRename.base_name,
+    per_name_date_label: parsedRename.date_label,
+    per_name_date_iso: parsedRename.date_iso,
+    per_name_date_ms: parsedRename.date_ms,
     line_display_name: lineDisplay,
     line_user_id: lineUserId,
     source_record_id: firstText(fields.source_record_id),
@@ -288,6 +295,10 @@ function toCanonicalPerRenameRecord(record, match, query) {
     remembered_name: perName,
     current_line_rename: perName,
     per_rename: perName,
+    per_rename_base_name: firstText(match.per_name_base, perName),
+    per_rename_date_label: firstText(match.per_name_date_label),
+    per_rename_date_iso: firstText(match.per_name_date_iso),
+    per_rename_date_source: match.per_name_date_iso ? "per_rename_suffix" : "none",
     canonical_name: canonicalName,
     client_name: perName || canonicalName || query,
     aliases: unique([
@@ -331,6 +342,9 @@ function toCanonicalPerRenameRecord(record, match, query) {
 
 function compareMatches(a, b) {
   if (b.quality !== a.quality) return b.quality - a.quality;
+  if ((b.per_name_date_ms || 0) !== (a.per_name_date_ms || 0)) {
+    return (b.per_name_date_ms || 0) - (a.per_name_date_ms || 0);
+  }
   return a.per_name.localeCompare(b.per_name, "th");
 }
 
