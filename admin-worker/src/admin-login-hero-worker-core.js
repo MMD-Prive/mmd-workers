@@ -271,6 +271,17 @@ export default {
       return handleRecoveryControl(request, env, strictGate.actor);
     }
 
+    if ((method === "GET" || method === "HEAD") && path === "/internal/admin") {
+      const target = new URL("/internal/admin/control-room", request.url);
+      return new Response(null, {
+        status: 303,
+        headers: adminGateHeaders(request, env, {
+          location: target.toString(),
+          "x-mmd-admin-entry": "control-room",
+        }),
+      });
+    }
+
     if (isPublicModelApplicationReviewRequest(path)) {
       return handlePublicModelApplicationReviewRequest(request, env, strictGate.actor);
     }
