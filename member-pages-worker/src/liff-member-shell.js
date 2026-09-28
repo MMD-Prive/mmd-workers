@@ -189,7 +189,7 @@ function renderShell(config, nonce) {
     @media(min-width:700px){.welcome-hero{min-height:188px}.welcome-letter{width:min(100%,760px);margin:0 auto}}
     body.context-resolving .intro-screen{visibility:visible}
 
-    /* Worker-rendered MY MMD LIFF Digital Home v3. Runtime stays Worker-owned; visual system is ported from the Lovable vNext design lab. */
+    /* Worker-rendered MY MMD LIFF Digital Home v3. Runtime and presentation remain Worker-owned. */
     body.app-entered:not(.signup-mode){--digital-bg:#080907;--digital-surface:#1c1d1b;--digital-raised:#272825;--digital-line:#555248;--digital-gold:#d8b26a;--digital-cream:#f6f1e7;--digital-muted:#bcb6aa;--digital-radius:8px;min-height:100vh;min-height:100dvh;width:100%;max-width:100%;padding:0;overflow-x:clip;overflow-y:auto;background:var(--digital-bg);color:var(--digital-cream)}
     body.app-entered:not(.signup-mode) main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:calc(16px + env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));border:0;border-radius:0;background:radial-gradient(ellipse 90% 34% at 50% 11%,rgba(80,64,34,.42),transparent 82%),linear-gradient(155deg,#11120e,#080907 62%);box-shadow:none}
     body.app-entered:not(.signup-mode) .intro-screen,body.app-entered:not(.signup-mode) .member-nav{display:none!important}
@@ -221,7 +221,7 @@ function renderShell(config, nonce) {
     @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
   </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-design-source="lovable-vnext">
+<body class="${config.intent === "signup" ? "signup-mode " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -346,7 +346,7 @@ function renderShell(config, nonce) {
 (() => {
   "use strict";
   const CONFIG = ${safeConfig};
-  const LOVABLE_POINTS_PATH = "/my-mmd/points";
+  const CANONICAL_POINTS_PATH = "/my-mmd/points";
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
@@ -463,7 +463,7 @@ function renderShell(config, nonce) {
   const initialView = CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
   function showView(view, smooth = true) {
     if (view === "points") {
-      window.location.assign(LOVABLE_POINTS_PATH);
+      window.location.assign(CANONICAL_POINTS_PATH);
       return;
     }
     const targetId = view === "history" ? "history-panel" : view;
