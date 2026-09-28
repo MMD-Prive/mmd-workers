@@ -9,6 +9,7 @@ export function isModelOwnerReviewQueueRequest(request) {
     const path = u.pathname.replace(/\/+$/,"");
     const method = String(request.method||"GET").toUpperCase();
     if (path === MODEL_OWNER_REVIEW_QUEUE_PATH) return ["GET","HEAD"].includes(method);
+    if (/^\/v1\/admin\/models\/review-queue\/media\/[^/]+$/.test(path)) return method === "GET";
     if (/^\/v1\/admin\/models\/review-queue\/[^/]+\/decision$/.test(path)) return method === "POST";
     return false;
   } catch { return false; }
@@ -20,6 +21,11 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
   const actor = await readCredentialBoundAdminActor(request, env);
   if (!actor) return json({ok:false,error:"unauthorized"},401);
   if (!["owner","admin"].includes(actor.role)) return json({ok:false,error:"admin_required"},403);
+
+  const mediaMatch = url.pathname.replace(/\/+$/,"").match(/^\/v1\/admin\/models\/review-queue\/media\/([^/]+)$/);
+  if (mediaMatch && request.method.toUpperCase() === "GET") {
+    return serveReviewMedia(env, decodeURIComponent(mediaMatch[1]));
+  }
 
   const decisionMatch = url.pathname.replace(/\/+$/,"").match(/^\/v1\/admin\/models\/review-queue\/([^/]+)\/decision$/);
   if (decisionMatch && request.method.toUpperCase() === "POST") {
@@ -49,6 +55,9 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
       uploaded_at: String(record.fields?.uploaded_at || ""),
       review_status: String(record.fields?.review_status || ""),
       asset_role: String(record.fields?.asset_role || ""),
+      preview_url: publicReviewMediaCandidate(record)
+        ? `${MODEL_OWNER_REVIEW_QUEUE_PATH}/media/${encodeURIComponent(record.id)}`
+        : "",
     };
     const current = mediaByModel.get(modelId) || [];
     current.push(item);
@@ -98,6 +107,52 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
   return json(response,200);
 }
 
+
+function publicReviewMediaCandidate(record) {
+  const fields = record?.fields || {};
+  const mediaType = String(fields.media_type || "").trim().toLowerCase();
+  const modelId = Array.isArray(fields.Model) && fields.Model.length === 1 ? String(fields.Model[0] || "") : "";
+  const key = String(fields.private_original_key || "").trim();
+  return (
+    ["profile_photo","public_gallery","intro_video"].includes(mediaType) &&
+    /^rec[a-zA-Z0-9]+$/.test(modelId) &&
+    key.startsWith(`models/${modelId}/`) &&
+    !key.includes("..") &&
+    String(fields.r2_bucket || "") === "mmd-models"
+  );
+}
+
+async function serveReviewMedia(env, mediaAssetId) {
+  if (!/^rec[a-zA-Z0-9]+$/.test(String(mediaAssetId || ""))) return json({ok:false,error:"media_asset_id_invalid"},400);
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") return json({ok:false,error:"media_storage_unavailable"},503);
+
+  const loaded = await airtableRecordById(env, env.AIRTABLE_TABLE_MODEL_MEDIA || "MMD — Model Media Assets", mediaAssetId);
+  if (!loaded.ok) return json({ok:false,error:"media_lookup_unavailable"},503);
+  if (!loaded.record || !publicReviewMediaCandidate(loaded.record)) return json({ok:false,error:"media_preview_not_allowed"},404);
+
+  const fields = loaded.record.fields || {};
+  const key = String(fields.private_original_key || "").trim();
+  const object = await env.MMD_MODEL_ASSETS.get(key).catch(() => null);
+  if (!object?.body) return json({ok:false,error:"media_object_missing"},404);
+
+  const headers = new Headers(baseHeaders());
+  headers.set("content-type", String(fields.file_type || object.httpMetadata?.contentType || "application/octet-stream"));
+  headers.set("content-disposition","inline");
+  headers.set("cache-control","private, no-store");
+  return new Response(object.body,{status:200,headers});
+}
+
+async function airtableRecordById(env, table, recordId) {
+  const apiKey=String(env.AIRTABLE_API_KEY||"").trim(), baseId=String(env.AIRTABLE_BASE_ID||"").trim();
+  if(!apiKey||!baseId||!table||!recordId) return {ok:false,record:null};
+  try{
+    const res=await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`,{headers:{authorization:`Bearer ${apiKey}`}});
+    const data=await res.json().catch(()=>({}));
+    if(res.status===404) return {ok:true,record:null};
+    if(!res.ok) return {ok:false,record:null};
+    return {ok:true,record:data?.id?{id:data.id,fields:data.fields||{},createdTime:data.createdTime}:null};
+  }catch{return {ok:false,record:null};}
+}
 
 async function decideReview(request, env, actor, requestId) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return json({ok:false,error:"forbidden_origin"},403);
