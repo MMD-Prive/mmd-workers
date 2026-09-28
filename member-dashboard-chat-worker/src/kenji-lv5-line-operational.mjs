@@ -387,6 +387,9 @@ export function renderKenjiLv5LineReply(context = {}, parsedIntent = {}) {
   }
 
   const missing = Array.isArray(context.missing) ? context.missing : [];
+  if (missing.length === 1 && missing[0] === "rate") {
+    return `${name}รายละเอียดหลักครบแล้วครับ เดี๋ยวเปอร์ตรวจเรทที่ใช้กับงานนี้จากสิทธิ์และเงื่อนไขปัจจุบันก่อนตอบยืนยันครับ ไม่ต้องส่งข้อมูลเดิมซ้ำ`;
+  }
   if (missing.length || firstAction(context, ["request_missing_input"])) {
     const labels = missingLabels(missing);
     return `${name}ได้ครับ ส่ง${labels.join(" + ")}เพิ่มอีกนิดครับ ผมจะใช้ข้อมูลชุดเดิมต่อ ไม่ต้องเริ่มใหม่`;
