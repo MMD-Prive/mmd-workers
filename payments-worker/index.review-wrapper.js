@@ -13,6 +13,10 @@ import {
   handleCanonicalConfirmLink,
   isCanonicalConfirmLinkRequest,
 } from "./canonical-confirm-link.js";
+import {
+  handleConfirmationReissue,
+  isConfirmationReissueRequest,
+} from "./confirmation-link-reissue.js";
 import { canonicalizeConfirmLinkRequest } from "./confirm-route-canonicalizer.js";
 import {
   enforceSigilSessionServiceAmount,
@@ -170,6 +174,10 @@ export default {
       const canonicalRequest = await canonicalizeConfirmLinkRequest(request);
       const response = await handleCanonicalConfirmLink(canonicalRequest, env, ctx);
       return reconcileSigilConfirmLinkMoneyTruth(canonicalRequest, response, env);
+    }
+
+    if (isConfirmationReissueRequest(path, method)) {
+      return handleConfirmationReissue(request, env);
     }
 
     if (isUnifiedPaymentIntentRequest(path, method)) {
