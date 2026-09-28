@@ -278,6 +278,20 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
   });
 
+  it("keeps the entered MY MMD LIFF shell edge-to-edge on mobile", async () => {
+    const response = await shell("/member/liff?intent=status&view=home");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*width:100%[^}]*max-width:none[^}]*min-height:100dvh/);
+    assert.match(html, /padding-left:max\(16px,env\(safe-area-inset-left\)\)/);
+    assert.match(html, /padding-right:max\(16px,env\(safe-area-inset-right\)\)/);
+    assert.match(html, /\.digital-dock\{[^}]*left:0;right:0;[^}]*width:100%;[^}]*max-width:none;[^}]*transform:none/);
+    assert.match(html, /@media\(max-width:699px\)\{[^}]*width:100vw;max-width:100vw;min-height:100dvh/);
+    assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
+    assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
+  });
+
   it("renders a verified-only Credit Wallet through the same-site credit API", async () => {
     const response = await shell("/member/liff?intent=status&view=credits&lang=th");
     const html = await response.text();
