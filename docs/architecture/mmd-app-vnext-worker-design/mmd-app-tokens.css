@@ -1,0 +1,143 @@
+/*
+ * MMD APP Digital System vNext — Worker-rendered presentation tokens.
+ * Presentation only: no identity, entitlement, workflow, rate, or history logic.
+ */
+:root {
+  color-scheme: dark;
+  --mmd-bg: oklch(0.16 0.005 60);
+  --mmd-fg: oklch(0.95 0.008 85);
+  --mmd-surface: oklch(0.2 0.006 60);
+  --mmd-surface-raised: oklch(0.235 0.007 65);
+  --mmd-primary: oklch(0.82 0.078 82);
+  --mmd-primary-fg: oklch(0.19 0.02 70);
+  --mmd-muted: oklch(0.25 0.006 65);
+  --mmd-muted-fg: oklch(0.7 0.012 80);
+  --mmd-border: oklch(0.32 0.008 70 / 60%);
+  --mmd-success: oklch(0.75 0.11 155);
+  --mmd-pending: oklch(0.8 0.1 90);
+  --mmd-danger: oklch(0.6 0.16 25);
+  --mmd-radius-sm: 6px;
+  --mmd-radius-md: 8px;
+  --mmd-radius-lg: 12px;
+  --mmd-shadow-card: 0 1px 0 oklch(1 0 0 / 4%) inset, 0 12px 30px -24px oklch(0 0 0 / 90%);
+  --mmd-shadow-focus: 0 0 0 2px color-mix(in oklab, var(--mmd-primary) 55%, transparent);
+  --mmd-font: "LINE Seed Sans TH", "Noto Sans Thai", "Noto Sans SC", "Noto Sans", ui-sans-serif, system-ui, sans-serif;
+  --mmd-content-max: 520px;
+  --mmd-touch-min: 44px;
+  --mmd-dock-height: 64px;
+}
+
+.mmd-app {
+  min-height: 100svh;
+  margin: 0;
+  background: var(--mmd-bg);
+  color: var(--mmd-fg);
+  font-family: var(--mmd-font);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mmd-frame {
+  width: min(100%, var(--mmd-content-max));
+  margin-inline: auto;
+  padding: 16px 16px calc(var(--mmd-dock-height) + env(safe-area-inset-bottom) + 24px);
+}
+
+.mmd-surface {
+  overflow: hidden;
+  border: 1px solid var(--mmd-border);
+  border-radius: var(--mmd-radius-lg);
+  background: var(--mmd-surface);
+  box-shadow: var(--mmd-shadow-card);
+}
+
+.mmd-section-label,
+.mmd-status-label {
+  margin: 0 0 8px;
+  color: var(--mmd-muted-fg);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.mmd-status-label[data-tone="action"] { color: var(--mmd-primary); }
+.mmd-status-label[data-tone="review"] { color: var(--mmd-pending); }
+.mmd-status-label[data-tone="error"] { color: var(--mmd-danger); }
+
+.mmd-chip {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--mmd-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--mmd-surface-raised);
+  color: var(--mmd-muted-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mmd-chip[data-tone="verified"] { color: var(--mmd-primary); }
+.mmd-chip[data-tone="review"] { color: var(--mmd-pending); }
+.mmd-chip[data-tone="success"] { color: var(--mmd-success); }
+.mmd-chip[data-tone="error"] { color: var(--mmd-danger); }
+
+.mmd-primary-action,
+.mmd-secondary-action {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--mmd-radius-md);
+  padding-inline: 16px;
+  font: 650 15px/1 var(--mmd-font);
+  text-decoration: none;
+}
+
+.mmd-primary-action { background: var(--mmd-primary); color: var(--mmd-primary-fg); }
+.mmd-secondary-action { border: 1px solid var(--mmd-border); background: var(--mmd-surface-raised); color: var(--mmd-fg); }
+.mmd-primary-action:focus-visible,
+.mmd-secondary-action:focus-visible { outline: none; box-shadow: var(--mmd-shadow-focus); }
+
+.mmd-bottom-dock {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100%, var(--mmd-content-max));
+  min-height: calc(var(--mmd-dock-height) + env(safe-area-inset-bottom));
+  margin-inline: auto;
+  border-top: 1px solid var(--mmd-border);
+  padding: 4px 8px env(safe-area-inset-bottom);
+  background: color-mix(in oklab, var(--mmd-bg) 95%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.mmd-bottom-dock > a {
+  display: flex;
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  color: var(--mmd-muted-fg);
+  font-size: 10px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mmd-bottom-dock > a[aria-current="page"] { color: var(--mmd-primary); }
+
+@media (min-width: 480px) {
+  .mmd-frame { padding-inline: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
