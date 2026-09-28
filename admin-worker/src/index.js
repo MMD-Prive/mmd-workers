@@ -1240,7 +1240,9 @@ async function kenjiKnowledgeAdminShell(req, routeKind, env = {}) {
   // specialized handoffs are migrated individually.
   if (incoming.searchParams.has("view")) return kenjiKnowledgeLegacyShell(req, routeKind);
 
-  const origin = String(env.INTERNAL_LOVABLE_ORIGIN || "https://mmd-os.lovable.app").replace(/\/+$/, "");
+  const configuredOrigin = String(env.INTERNAL_LOVABLE_ORIGIN || "").trim();
+  if (!configuredOrigin) return kenjiKnowledgeLegacyShell(req, routeKind);
+  const origin = configuredOrigin.replace(/\/+$/, "");
   const target = new URL(KENJI_KNOWLEDGE_CANONICAL_PATH + incoming.search, origin);
   try {
     const upstream = await fetch(target.toString(), {
@@ -1261,6 +1263,7 @@ async function kenjiKnowledgeAdminShell(req, routeKind, env = {}) {
     headers.set("cache-control","no-store, no-cache, must-revalidate");
     headers.set("x-robots-tag","noindex, nofollow, noarchive");
     headers.set("x-mmd-route-owner","admin-worker");
+    headers.set("x-mmd-page","kenji-admin");
     headers.set("x-mmd-worker","admin-worker");
     headers.set("x-mmd-route-canonical",KENJI_KNOWLEDGE_CANONICAL_PATH);
     headers.set("x-mmd-route-kind",routeKind);
