@@ -405,6 +405,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (["ดูนายแบบ", "ดูmodel", "ดูโมเดล"].includes(actionKeyword)) return "model_browse";
   if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
   if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
+  if (["คุยกับเปอร์", "คุยกับper", "ถามเปอร์", "ติดต่อเปอร์"].includes(actionKeyword)) return "per_continuity";
   if (["ชำระเงิน", "payment", "paymentcenter", "ศูนย์ชำระเงิน"].includes(actionKeyword)) return "payment_center";
   if (["ส่งสลิป", "อัปโหลดสลิป", "uploadslip"].includes(actionKeyword)) return "payment_slip";
 
@@ -868,7 +869,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé\nผม HITO ครับ\n\nขออนุญาตตรวจสอบสถานะบัญชีผ่าน My MMD ก่อนนะครับ แล้วเปอร์จะช่วยต่อให้ตรงกับสิทธิ์ของบัญชีครับ`;
+    return `สวัสดีครับ ${prefix}บอกเรื่องที่ต้องการได้เลยครับ เดี๋ยวผมช่วยดูและพาไปขั้นตอนที่ตรงกับบัญชีนี้ให้ครับ`;
   }
 
   if (intent === "privacy_request") {
