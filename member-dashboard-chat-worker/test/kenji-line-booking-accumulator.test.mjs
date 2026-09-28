@@ -6,6 +6,7 @@ import {
   mergeKenjiBookingDraftV1,
   missingKenjiBookingFields,
   parseKenjiBookingFragment,
+  projectKenjiBookingAccumulatorAction,
 } from "../src/kenji-line-booking-accumulator.mjs";
 
 const NOW = new Date("2026-09-19T18:00:00+07:00");
@@ -190,4 +191,72 @@ test("an actioned Matrix draft is locked against duplicate action unless an expl
   assert.equal(next.locked, false);
   assert.notEqual(next.draft.draft_id, "kbd1_existing");
   assert.equal(next.draft.date, "2026-09-21");
+});
+
+
+test("partial deposit capture stays open for the next LINE fields instead of locking the Matrix", () => {
+  let state = merge({}, "p1", "มัดจำ งานนายแบบ Rossi", "payment_status");
+  assert.equal(state.draft.trigger, "deposit");
+  assert.equal(state.draft.ready, false);
+
+  const captured = projectKenjiBookingAccumulatorAction(state.draft, {
+    attempted: true,
+    executed: true,
+    status: "booking_intent_collected",
+    receipt: {
+      booking_ref: "kenji_partial_1",
+      booking_record_id: "recBookingPartial1",
+      final_confirmation: false,
+      payment_confirmed: false,
+    },
+  }, NOW);
+
+  assert.equal(captured.action_state, "captured");
+  assert.equal(captured.status, "collecting");
+  assert.equal(captured.capture_revision, state.draft.revision);
+
+  state = merge(captured, "p2", "วันที่ 20 ก.ย. เวลา 20:00", "unknown");
+  assert.equal(state.locked, false);
+  assert.equal(state.draft.date, "2026-09-20");
+  assert.equal(state.draft.time, "20:00");
+
+  state = merge(state.draft, "p3", "สุขุมวิท", "unknown");
+  assert.equal(state.locked, false);
+  assert.equal(state.draft.location, "สุขุมวิท");
+
+  state = merge(state.draft, "p4", "ราคา 9,000 บาท", "pricing_review");
+  assert.equal(state.locked, false);
+  assert.equal(state.draft.amount_thb, 9000);
+  assert.equal(state.draft.ready, true);
+});
+
+test("terminal Job creation locks the Matrix against duplicate action", () => {
+  const ready = {
+    schema: "mmd.kenji_booking_accumulator.v1",
+    draft_id: "kbd1_terminal",
+    action_id: "matrix:kbd1_terminal",
+    status: "ready",
+    action_state: "captured",
+    revision: 5,
+    model_name: "Rossi",
+    date: "2026-09-20",
+    time: "20:00",
+    location: "สุขุมวิท",
+    amount_thb: 9000,
+    missing_fields: [],
+    updated_at: NOW.toISOString(),
+  };
+  const done = projectKenjiBookingAccumulatorAction(ready, {
+    attempted: true,
+    executed: true,
+    status: "job_created",
+    receipt: { session_id: "sess_123", booking_ref: "kenji_terminal" },
+  }, NOW);
+
+  assert.equal(done.action_state, "executed");
+  assert.equal(done.status, "actioned");
+
+  const duplicate = merge(done, "p5", "โอเค", "unknown");
+  assert.equal(duplicate.locked, true);
+  assert.equal(duplicate.draft.draft_id, "kbd1_terminal");
 });
