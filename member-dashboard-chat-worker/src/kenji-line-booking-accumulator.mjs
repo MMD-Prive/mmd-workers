@@ -406,6 +406,47 @@ export async function accumulateKenjiLineBookingDraft({
   };
 }
 
+export function projectKenjiBookingAccumulatorAction(latest = {}, actionResult = {}, now = new Date()) {
+  const receipt = object(actionResult.receipt);
+  const status = token(actionResult.status);
+  const capturedOnly = actionResult.executed === true && status === "booking_intent_collected";
+  const terminalExecuted = actionResult.executed === true && !capturedOnly;
+  const attemptedFailure = actionResult.attempted === true && actionResult.executed !== true;
+  const currentReady = Array.isArray(latest.missing_fields) ? latest.missing_fields.length === 0 : latest.ready === true;
+
+  return {
+    ...latest,
+    updated_at: now.toISOString(),
+    action_state: capturedOnly
+      ? "captured"
+      : terminalExecuted
+        ? "executed"
+        : attemptedFailure
+          ? "failed"
+          : text(latest.action_state, 40) || "not_started",
+    status: capturedOnly
+      ? (currentReady ? "ready" : "collecting")
+      : terminalExecuted
+        ? "actioned"
+        : attemptedFailure
+          ? "action_failed"
+          : text(latest.status, 40),
+    ...(capturedOnly ? {
+      capture_revision: Math.max(0, Number(latest.revision) || 0),
+      capture_status: status,
+    } : {}),
+    action_result: {
+      status: text(actionResult.status, 80),
+      booking_ref: text(receipt.booking_ref, 80),
+      booking_record_id: text(receipt.booking_record_id, 80),
+      request_session_id: text(receipt.request_session_id, 120),
+      session_id: text(receipt.session_id, 120),
+      final_confirmation: receipt.final_confirmation === true,
+      payment_confirmed: receipt.payment_confirmed === true,
+    },
+  };
+}
+
 export async function recordKenjiBookingAccumulatorAction({
   env = {},
   event = {},
@@ -426,22 +467,7 @@ export async function recordKenjiBookingAccumulatorAction({
     return { skipped: true, reason: "booking_draft_changed" };
   }
 
-  const receipt = object(actionResult.receipt);
-  const next = {
-    ...latest,
-    updated_at: now.toISOString(),
-    action_state: actionResult.executed === true ? "executed" : actionResult.attempted === true ? "failed" : text(latest.action_state, 40) || "not_started",
-    status: actionResult.executed === true ? "actioned" : actionResult.attempted === true ? "action_failed" : text(latest.status, 40),
-    action_result: {
-      status: text(actionResult.status, 80),
-      booking_ref: text(receipt.booking_ref, 80),
-      booking_record_id: text(receipt.booking_record_id, 80),
-      request_session_id: text(receipt.request_session_id, 120),
-      session_id: text(receipt.session_id, 120),
-      final_confirmation: receipt.final_confirmation === true,
-      payment_confirmed: receipt.payment_confirmed === true,
-    },
-  };
+  const next = projectKenjiBookingAccumulatorAction(latest, actionResult, now);
 
   return writeKenjiLineBookingAccumulatorState({
     env,
