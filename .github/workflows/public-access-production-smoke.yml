@@ -67,6 +67,24 @@ jobs:
           test "$code" = "400"
           jq -e '.ok == false and .error == "public_access_intake_failed" and .message == "evidence_required"' "$body" >/dev/null
 
+      - name: Verify Model Job Board direct entry is gated by LIFF Login V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$RUNNER_TEMP/job-board-direct.headers"
+          code="$(curl -sS -D "$headers" -o /dev/null -w "%{http_code}" "$API_ORIGIN/public/api/jobs")"
+          echo "Job Board direct entry HTTP $code"
+          test "$code" = "302"
+          location="$(awk -F': ' 'tolower($1)=="location"{gsub("\r","",$2); print $2}' "$headers" | tail -n1)"
+          test -n "$location"
+          case "$location" in
+            https://www.mmdbkk.com/sigil/model/login\?*) ;;
+            *) echo "unexpected Job Board gate location: $location" >&2; exit 1 ;;
+          esac
+          printf '%s' "$location" | grep -q 'intent=job_board'
+          printf '%s' "$location" | grep -q 'return_to=public_job_board'
+          printf '%s' "$location" | grep -q 'next=https%3A%2F%2Fsigil.mmdbkk.com%2Fpublic%2Fapi%2Fjobs'
+
       - name: Verify unknown Public API subpath fails closed
         shell: bash
         run: |
