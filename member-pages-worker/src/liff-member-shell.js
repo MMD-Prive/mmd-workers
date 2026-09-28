@@ -339,7 +339,7 @@ function renderShell(config, nonce) {
     </div>
   </section>
   <nav class="digital-dock" aria-label="เมนู MY MMD LIFF"><button type="button" data-view="home" aria-current="page"><i>⌂</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>▤</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>WALLET</button><a href="/member/kenji-ai-20"><i>✦</i>KENJI</a></nav>
-  <div id="status" class="status">MMD Privé · LIFF Digital Home v3 · Lovable design source</div>
+  <div id="status" class="status">MY MMD</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
 <script nonce="${nonce}">
