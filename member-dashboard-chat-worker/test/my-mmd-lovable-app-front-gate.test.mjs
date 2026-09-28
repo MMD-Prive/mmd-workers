@@ -290,7 +290,7 @@ test("direct status LIFF verifies identity then hands the member to the Lovable 
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main data-mmd-liff-digital="v2">NATIVE MY MMD LIFF</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd/"; const historyEndpoint = "/api/member/app/history";</script></body></html>`,
+        `<!doctype html><html><head></head><body class="context-resolving world-public"><main data-mmd-liff-digital="v2">NATIVE MY MMD LIFF</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd/"; const historyEndpoint = "/api/member/app/history";</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8", "x-mmd-liff-stability":"real-line-v1" } },
       ),
     },
