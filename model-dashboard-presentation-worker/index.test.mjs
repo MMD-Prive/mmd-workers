@@ -327,9 +327,12 @@ test("authenticated dashboard is worker-rendered digital LIFF and does not fetch
     }));
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-ui-source"), "worker-rendered-liff-digital");
-    assert.equal(response.headers.get("x-mmd-ui-app"), "mmd-app-digital-v2");
+    assert.equal(response.headers.get("x-mmd-ui-app"), "mmd-app-digital-v3");
     const html = await response.text();
-    assert.match(html, /data-mmd-app-digital="v2"/);
+    assert.match(html, /data-mmd-app-digital="v3"/);
+    assert.match(html, /data-design-source="lovable-vnext"/);
+    assert.match(html, /--mmd-content-max:520px/);
+    assert.match(html, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
     assert.match(html, /HOME/);
     assert.match(html, /JOBS/);
     assert.match(html, /CONSOLE/);
