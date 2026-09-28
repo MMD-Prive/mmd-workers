@@ -367,7 +367,7 @@ jobs:
 
             legacy_code="$(curl -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}'               "$origin/internal/jobs/create-job?source=legacy-smoke")"
             test "$legacy_code" = "308"
-            expected="$origin/internal/admin/jobs/create-job?source=legacy-smoke"
+            expected="/internal/admin/jobs/create-job?source=legacy-smoke"
             grep -Fqi "location: $expected" "$legacy_headers"
           done
 
