@@ -137,7 +137,7 @@ function privateEnvelopeLabel(value = "") {
   return "";
 }
 
-function membershipRightsText(membership = {}, points = {}) {
+function membershipRightsText(membership = {}) {
   const lifecycle = safeLifecycle(membership.lifecycle);
   if (!["active", "expiring_soon", "grace"].includes(lifecycle) || membership.member_blocked === true) return "";
 
@@ -145,10 +145,6 @@ function membershipRightsText(membership = {}, points = {}) {
   parts.push(membership.public_service_access === true ? "Public Service: ใช้ได้" : "Public Service: ยังไม่เปิด");
   const privateLabel = privateEnvelopeLabel(membership.private_visibility_envelope);
   parts.push(privateLabel ? `Private visibility: ${privateLabel}` : "Private visibility: ยังไม่เปิด");
-
-  if (points?.status === "verified" && Number.isFinite(Number(points.active_points))) {
-    parts.push(`Points: ${Math.max(0, Math.floor(Number(points.active_points))).toLocaleString("th-TH")}`);
-  }
 
   return `\nสิทธิ์ที่ยืนยันได้ตอนนี้ — ${parts.join(" · ")}\nการเข้าถึง GWs/EMs และ Model รายบุคคลยังตรวจแยกตามสิทธิ์ของบัญชีและการอนุญาต ไม่ได้เปิดทั้งหมดจากระดับสมาชิกเพียงอย่างเดียวครับ`;
 }
@@ -164,7 +160,7 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
   if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY) {
     if (value === "membership_status") {
       return {
-        text: `${membershipStatusText(liveTruth.membership || {})}${membershipRightsText(liveTruth.membership || {}, liveTruth.points || {})}`,
+        text: `${membershipStatusText(liveTruth.membership || {})}${membershipRightsText(liveTruth.membership || {})}`,
         reply_source: "live_truth",
         guard_blocked: false,
         guard_reason: "",
