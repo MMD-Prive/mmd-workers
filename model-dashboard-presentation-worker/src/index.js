@@ -3,6 +3,7 @@ import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
 import { MODEL_LINE_BRIEFS_JS, MODEL_LINE_BRIEFS_CSS } from "./model-line-briefs.js";
 import { MODEL_MEDIA_UPLOAD_JS, MODEL_MEDIA_UPLOAD_CSS } from "./model-media-upload-presentation.js";
 import { modelLiffDigitalBootstrapHtml } from "./model-liff-digital-shell.js";
+import { modelDigitalDashboardHtml } from "./model-digital-dashboard.js";
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
@@ -13,6 +14,8 @@ const PRESENTATION_ORIGIN = "https://mmdmodel.lovable.app";
 const WISH_PRESENTATION_ORIGIN = "https://mmdprive.webflow.io";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
+const DIGITAL_UI_SOURCE = "worker-rendered-liff-digital";
+const DIGITAL_APP_MARKER = "mmd-app-digital-v2";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
 const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
@@ -804,6 +807,27 @@ async function fetchUpstream(request, upstreamUrl, { runtime = false } = {}) {
   return globalThis.fetch(new Request(upstreamUrl, init));
 }
 
+function digitalDashboardResponse(request) {
+  const html = modelDigitalDashboardHtml(request, {
+    mediaCssPath: MODEL_MEDIA_UPLOAD_CSS_PATH,
+    mediaJsPath: MODEL_MEDIA_UPLOAD_JS_PATH,
+    miniAppUrl: MODEL_LIFF_URL,
+  });
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-worker": WORKER_NAME,
+      "x-mmd-route-owner": WORKER_NAME,
+      "x-mmd-ui-source": DIGITAL_UI_SOURCE,
+      "x-mmd-ui-app": DIGITAL_APP_MARKER,
+      "x-mmd-model-entry": "line-liff-digital-v2",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
+
 async function proxyPage(request) {
   if (!new Set(["GET", "HEAD"]).has(request.method.toUpperCase())) {
     return new Response("Method Not Allowed", {
@@ -1053,7 +1077,7 @@ export default {
       const briefId = boundedParam(new URL(request.url), "brief_id");
       if ((path === `${UI_PREFIX}/briefs` || boundedParam(new URL(request.url), "briefs") === "1" || /^brf_[a-zA-Z0-9-]{10,70}$/.test(briefId)) && !isPwaLaunchRequest(request)) return modelLineBriefsPageResponse(request);
       if (shouldServePhaseAAfterBootstrap(request)) return modelOnboardingPhaseAResponse(request);
-      return proxyPage(request);
+      return digitalDashboardResponse(request);
     }
     return new Response("Not Found", {
       status: 404,
