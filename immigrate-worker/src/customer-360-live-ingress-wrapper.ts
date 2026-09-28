@@ -137,42 +137,17 @@ export async function serveLovableCreateJobPage(request: Request, gateResponse: 
     headers.set("x-mmd-presentation-source", "lovable");
     headers.set("x-mmd-presentation-version", "internal-lovable-v1");
     headers.set("x-mmd-page", "create-job");
-    headers.set("x-mmd-create-job-worker-guide", "v1");
+    headers.set("x-mmd-create-job-worker-guide", "disabled-white-screen-hotfix");
 
     if (request.method.toUpperCase() === "HEAD") return new Response(null, { status: 200, headers });
 
-    const html = decorateCreateJobGuidance((await upstream.text())
+    const html = (await upstream.text())
       .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
-      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`));
+      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
     return new Response(html, { status: 200, headers });
   } catch {
     return gateResponse;
   }
-}
-
-export function decorateCreateJobGuidance(html: string): string {
-  const rewritten = html
-    .replace(/\bBLOCKED\b/g, "กำลังเตรียม")
-    .replace(/Creation blocked/g, "ขั้นตอนถัดไป")
-    .replace(/No client selected\./g, "เริ่มจากค้นหาลูกค้าก่อน")
-    .replace(/Canonical client not selected/g, "ค้นหาและเลือก canonical client")
-    .replace(/Work type not selected/g, "เลือก Public หรือ Private")
-    .replace(/Canonical model not selected/g, "เลือกโมเดล")
-    .replace(/Date and start time required/g, "ใส่วันและเวลา")
-    .replace(/Duration required/g, "ใส่ระยะเวลา")
-    .replace(/Location required/g, "ใส่สถานที่")
-    .replace(/Amount THB required/g, "ใส่ยอด THB");
-  const guide = `<style data-mmd-create-job-worker-guide="v1">
-[data-mmd-worker-hidden="true"]{display:none!important}
-[data-mmd-worker-helper="create-job"]{margin:.75rem 0 0;color:#cbb89a;font-size:13px;line-height:1.55}
-</style><script data-mmd-create-job-worker-guide="v1">
-(()=>{const exact=(s,t)=>String(s||'').trim()===t;const has=(s,t)=>String(s||'').includes(t);function leaf(el){return el&&el.childElementCount===0}function calm(){document.body?.setAttribute('data-mmd-create-job-worker-guide','v1');for(const el of document.querySelectorAll('*')){const txt=String(el.textContent||'').trim();if(leaf(el)&&exact(txt,'BLOCKED'))el.textContent='กำลังเตรียม';if(leaf(el)&&exact(txt,'Creation blocked'))el.textContent='ขั้นตอนถัดไป';if(has(txt,'Canonical client not selected')&&has(txt,'Amount THB required')){(el.closest('[class]')||el).setAttribute('data-mmd-worker-hidden','true')}}const input=document.querySelector('input[placeholder*="ชื่อ"],input[placeholder*="LINE"],input');if(input&&!document.querySelector('[data-mmd-worker-helper="create-job"]')){const p=document.createElement('p');p.setAttribute('data-mmd-worker-helper','create-job');p.textContent='ไม่ต้องรู้ Client ID หรือ Session ID — ค้นจากชื่อ / LINE / โทร / Email ได้เลย';input.insertAdjacentElement('afterend',p)}}document.addEventListener('DOMContentLoaded',calm);new MutationObserver(calm).observe(document.documentElement,{childList:true,subtree:true});calm();})();
-</script>`;
-  return rewritten.includes("data-mmd-create-job-worker-guide=\"v1\"")
-    ? rewritten
-    : rewritten.includes("</body>")
-      ? rewritten.replace("</body>", `${guide}</body>`)
-      : `${rewritten}${guide}`;
 }
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
