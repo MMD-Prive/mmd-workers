@@ -296,6 +296,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) #status\{display:none!important;margin:0\}/);
     assert.doesNotMatch(html, /data-design-source|lovable|DESIGN PREVIEW/i);
+    assert.doesNotMatch(html, /LIFF HOME|Member LIFF|>LIFF</i);
+    assert.match(html, /MY MMD · MEMBER APP/);
     assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
     assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
   });
