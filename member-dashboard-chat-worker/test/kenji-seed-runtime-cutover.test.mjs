@@ -100,6 +100,44 @@ test("safe Seed Pack intents select the exact published V1 cards", async () => {
   }
 });
 
+test("fresh canonical availability snapshot answers status before legacy availability handoff copy", async () => {
+  const decision = await resolveKenjiSeedDecision(event("คืนนี้ว่างไหม"), BASE_ENV, {
+    currentIntent: "availability_request",
+    continuity: {
+      decision: "continuation",
+      effective_intent: "availability_request",
+      matrix: {
+        matrix_status: "active",
+        payload_json: {
+          active_model_v1: { model_code: "MX17", working_name: "Jasper" },
+        },
+      },
+    },
+    liveAvailability: {
+      ok: true,
+      status: "verified",
+      authority: "sigil_availability_snapshot_v1",
+      model: { model_code: "MX17", working_name: "Jasper" },
+      snapshot: {
+        state: "available_today",
+        confidence: "model_confirmed",
+        updated_at: "2026-09-28T11:59:00.000Z",
+        expires_at: "2026-09-28T12:14:00.000Z",
+      },
+    },
+  });
+
+  assert.equal(decision.intent, "availability_request");
+  assert.equal(decision.reply_source, "availability_live_truth");
+  assert.equal(decision.truth_authority, "sigil_availability_snapshot_v1");
+  assert.equal(decision.truth_status, "verified");
+  assert.equal(decision.live_truth_verified, true);
+  assert.equal(decision.handoff_required, true);
+  assert.match(decision.text, /Jasper \(MX17\).*ว่างวันนี้/s);
+  assert.match(decision.text, /ยังไม่ใช่การยืนยัน booking slot/);
+  assert.deepEqual(decision.selected_knowledge_ids, []);
+});
+
 test("Private Talent and protected payment/availability intents select handoff governance but never Seed auto reply", async () => {
   const cases = [
     ["หา private talent ด้านภาษา", "private_talent", SEED_HANDOFF_BY_INTENT.private_talent, "handoff_required", "high"],

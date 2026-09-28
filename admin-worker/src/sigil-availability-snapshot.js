@@ -18,7 +18,7 @@ const SIGIL_AVAILABILITY_ADOPTION_COHORT_TTL_SECONDS = 180 * 24 * 60 * 60;
 const MODELS_TABLE_ID = "tblI4B0bI446vp9GX";
 const MODEL_BLOCKED_STATES = new Set(["inactive", "blocked", "suspended", "paused", "archived", "retired"]);
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/i;
-const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker", "calendar-owner"]);
+const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker", "calendar-owner", "member-dashboard-chat-worker"]);
 
 function text(value) {
   return String(value == null ? "" : value).trim();
@@ -686,7 +686,9 @@ export async function handleSigilAvailabilityInternalRequest(request, env = {}) 
   }
 
   if (request.method.toUpperCase() === "GET") {
-    if (caller !== "model-console-worker") return json({ ok: false, error: "internal_auth_required" }, 401);
+    if (!["model-console-worker", "member-dashboard-chat-worker"].includes(caller)) {
+      return json({ ok: false, error: "internal_auth_required" }, 401);
+    }
     const modelKey = new URL(request.url).searchParams.get("model_key") || "";
     const result = await readSigilAvailabilitySnapshot(env, modelKey);
     const recovery = result.ok ? await readAdoptionRecoveryEvidence(env, modelKey) : null;
