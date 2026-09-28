@@ -170,6 +170,28 @@ test("greeting action keywords enter canonical intents", () => {
   assert.equal(inferLineIntent("ส่งสลิป", lineEvent("ส่งสลิป")), "payment_slip");
 });
 
+test("model browse asks preference and never treats preference words as model names", async () => {
+  for (const value of ["ผู้ชาย", "ผู้หญิง", "ทั้งคู่", "ชายหญิง", "ชญ"]) {
+    assert.equal(extractKenjiModelLookupQuery(value), "");
+  }
+
+  const start = await resolveKenjiLineReply(lineEvent("ดูนายแบบ"), {}, BASE_ENV, {
+    continuity: { effective_intent: "model_browse", matrix: { payload_json: {} } },
+  });
+  assert.match(start.text, /ผู้ชาย \/ ผู้หญิง \/ ทั้งคู่/);
+  assert.equal(start.model_browse_state.awaiting, "model_gender");
+
+  const picked = await resolveKenjiLineReply(lineEvent("ผู้ชาย"), {}, BASE_ENV, {
+    continuity: {
+      effective_intent: "model_browse_gender",
+      matrix: { payload_json: { model_browse_v1: { awaiting: "model_gender" } } },
+    },
+  });
+  assert.match(picked.text, /Public Models/);
+  assert.equal(picked.model_browse_state.awaiting, "model_name");
+  assert.equal(picked.model_browse_state.preferred_model_gender, "man");
+});
+
 test("standalone model names and short follow-ups keep guarded model context", () => {
   assert.equal(extractKenjiModelLookupQuery("Jasper"), "Jasper");
   assert.equal(inferLineIntent("Jasper", lineEvent("Jasper")), "model_lookup");
