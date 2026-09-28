@@ -120,6 +120,33 @@ test("Private Talent and protected payment/availability intents select handoff g
   }
 });
 
+test("canonical Seed runtime preserves explicit Model-context reset metadata", async () => {
+  const env = {
+    ...BASE_ENV,
+    LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+    LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+    ADMIN_WORKER: {
+      fetch: async (request) => {
+        const path = new URL(request.url).pathname;
+        if (path === "/v1/internal/kenji/model-access") {
+          return Response.json({ ok: true, status: "clarification", policy_version: "KENJI_MODEL_ACCESS_V1" });
+        }
+        return Response.json({
+          ok: true,
+          controls: {
+            line_oa_auto_reply: false,
+            model_keyword_auto_reply: false,
+            all_kenji_mutations: false,
+          },
+        });
+      },
+    },
+  };
+  const decision = await resolveKenjiSeedDecision(event("model ซิน"), env);
+  assert.equal(decision.reply_source, "model_access_clarification");
+  assert.equal(decision.clear_model_context, true);
+});
+
 test("missing, non-LINE, or unsafe Seed cards fall back deterministically", async () => {
   const cases = [
     null,

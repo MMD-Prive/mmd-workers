@@ -185,6 +185,7 @@ function withDecisionMetadata(base = {}, overrides = {}) {
     truth_status: text(base.truth_status),
     live_truth_used: base.live_truth_used === true,
     live_truth_verified: base.live_truth_verified === true,
+    clear_model_context: base.clear_model_context === true,
     model_context: base.model_context && typeof base.model_context === "object"
       ? {
           model_code: text(base.model_context.model_code).slice(0, 80),

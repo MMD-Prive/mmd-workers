@@ -243,13 +243,19 @@ function defaultMatrix({ conversationHash = "", clientRecordId = "", relationshi
   });
 }
 
-function deriveEffectiveIntent(resolution = {}, matrix = {}, currentIntent = "", message = "") {
+function deriveEffectiveIntent(resolution = {}, matrix = {}, currentIntent = "", message = "", now = "") {
   const current = text(currentIntent).toLowerCase();
   const previous = text(matrix.last_customer_intent).toLowerCase();
   const payload = parseObject(matrix?.payload_json);
   const browseState = parseObject(payload.model_browse_v1);
   const activeModel = payload.active_model_v1;
-  const hasActiveModel = activeModel && typeof activeModel === "object" &&
+  const stamp = Date.parse(text(now)) || Date.now();
+  const expiresAt = Date.parse(text(matrix.state_expires_at));
+  const activeModelCurrent =
+    text(resolution.decision) !== "stale_refresh" &&
+    text(matrix.matrix_status) !== "stale" &&
+    (!Number.isFinite(expiresAt) || expiresAt > stamp);
+  const hasActiveModel = activeModelCurrent && activeModel && typeof activeModel === "object" &&
     text(activeModel.model_code) && text(activeModel.working_name);
 
   if (text(browseState.awaiting) === "model_gender" && WEAK_INTENTS.has(current)) {
@@ -326,7 +332,7 @@ export async function resolveKenjiLineContinuity({ env = {}, event = {}, current
     current_intent: current,
     now: stamp,
   });
-  const effectiveIntent = deriveEffectiveIntent(resolution, matrix, current, eventText(event));
+  const effectiveIntent = deriveEffectiveIntent(resolution, matrix, current, eventText(event), stamp);
   return {
     ...resolution,
     effective_intent: effectiveIntent,
@@ -510,6 +516,8 @@ export function buildKenjiPostTurnMatrix({
 function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = false, attempted = false) {
   const clientRecordId = text(continuity.client_record_id || matrix.client_record_id);
   const priorPayload = parseObject(continuity?.matrix?.payload_json);
+  const payloadBase = { ...priorPayload };
+  if (decision.clear_model_context === true) delete payloadBase.active_model_v1;
   // The short opening context is written only after LINE confirms delivery.
   // It stays in the seven-day conversation matrix, never in canonical Clients.
   const openingState = delivered && decision.first_contact_state
@@ -563,7 +571,7 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
     [F.MATRIX_STATUS]: matrix.matrix_status,
     [F.MATRIX_VERSION]: matrix.version,
     [F.MATRIX_PAYLOAD]: JSON.stringify({
-      ...priorPayload,
+      ...payloadBase,
       ...(openingState ? { first_contact_v2: openingState } : {}),
       ...(activeModelState?.model_code && activeModelState?.working_name ? { active_model_v1: activeModelState } : {}),
       ...(modelBrowseState?.awaiting ? { model_browse_v1: modelBrowseState } : {}),
