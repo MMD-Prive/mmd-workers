@@ -15,10 +15,10 @@ function assertDirectReturn(output, target = "/my-mmd/") {
   assert.match(output, /if \(started\)/);
 }
 
-test("status LIFF shell becomes auth-only and returns directly to My MMD after verified start", () => {
+test("direct status LIFF stays in the worker-rendered member dashboard", () => {
   const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
-  assert.equal(I.statusReturnTarget(request), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+  assert.equal(I.statusReturnTarget(request), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
 });
 
 test("coupon status LIFF returns to the single /coupon entry after verified start", () => {
@@ -68,11 +68,11 @@ test("Rich Menu status LIFF fails closed for mismatched, privileged, or expanded
   ];
   for (const target of hostileTargets) {
     const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
-    assert.equal(I.statusReturnTarget(request), "/my-mmd/");
+    assert.equal(I.statusReturnTarget(request), "");
   }
 });
 
-test("TMIB return-to-origin fails closed for external, privileged, or malformed targets", () => {
+test("TMIB return-to-origin fails closed inside LIFF for external, privileged, or malformed targets", () => {
   const hostileTargets = [
     "https://evil.example/",
     "//evil.example/tmib/act-001",
@@ -83,16 +83,17 @@ test("TMIB return-to-origin fails closed for external, privileged, or malformed 
   ];
   for (const target of hostileTargets) {
     const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
-    assert.equal(I.statusReturnTarget(request), "/my-mmd/");
+    assert.equal(I.statusReturnTarget(request), "");
+    assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
   }
 });
 
-test("LINE liff.state status launch gets the same direct My MMD return", () => {
+test("LINE liff.state status launch stays in the worker-rendered LIFF dashboard", () => {
   const state = encodeURIComponent("/member/liff?intent=status");
   const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
   assert.equal(I.isStatusLiffShellRequest(request), true);
-  assert.equal(I.statusReturnTarget(request), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+  assert.equal(I.statusReturnTarget(request), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, request), STATUS_SHELL);
 });
 
 test("LINE liff.state carries the coupon return target without allowing arbitrary redirects", () => {
@@ -104,8 +105,8 @@ test("LINE liff.state carries the coupon return target without allowing arbitrar
 
   const hostileState = encodeURIComponent("/member/liff?intent=status&return_to=https://evil.example/");
   const hostileRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${hostileState}`);
-  assert.equal(I.statusReturnTarget(hostileRequest), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest));
+  assert.equal(I.statusReturnTarget(hostileRequest), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest), STATUS_SHELL);
 });
 
 test("LINE liff.state carries the bounded TMIB origin", () => {
