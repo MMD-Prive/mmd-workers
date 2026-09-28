@@ -104,6 +104,51 @@ test("current returns one customer-safe canonical Session projection", async () 
   assert.doesNotMatch(JSON.stringify(body), /private_phone|payout|9999|must-never-leak/i);
 });
 
+test("MISSION stays closed after model acceptance until customer payment is verified", async () => {
+  const pending = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(sessionRecord({ session_state: "confirmed", payment_status: "pending" })),
+    readIdentity,
+  );
+  const pendingBody = await pending.json();
+  assert.equal(pendingBody.lifecycle, "confirmed");
+  assert.equal(pendingBody.missionReady, false);
+
+  const paid = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(sessionRecord({ session_state: "confirmed", payment_status: "deposit_paid" })),
+    readIdentity,
+  );
+  const paidBody = await paid.json();
+  assert.equal(paidBody.lifecycle, "confirmed");
+  assert.equal(paidBody.missionReady, true);
+});
+
+test("MISSION preserves exact customer-safe lifecycle states instead of collapsing them", async () => {
+  for (const lifecycle of [
+    "en_route",
+    "nearby",
+    "arrived",
+    "met_customer",
+    "final_payment_pending",
+    "final_payment_confirmed",
+    "work_started",
+    "work_finished",
+    "separated",
+  ]) {
+    const response = await handleMemberAppSessionApi(
+      request("/api/member/app/session/current"),
+      envWith(sessionRecord({ session_state: lifecycle, payment_status: "deposit_paid" })),
+      readIdentity,
+    );
+    const body = await response.json();
+    assert.equal(response.status, 200, lifecycle);
+    assert.equal(body.lifecycle, lifecycle);
+    assert.equal(body.missionReady, true);
+    assert.doesNotMatch(JSON.stringify(body), /private_phone|payout_amount|must-never-leak/i);
+  }
+});
+
 test("MY MMD derives its ETA label from the newest active ETA event", async () => {
   const now = Date.now();
   const env = envWith(sessionRecord({ customer_eta_label: "legacy label must not win" }), {
