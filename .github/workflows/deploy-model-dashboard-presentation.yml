@@ -236,8 +236,10 @@ jobs:
             cat "$secondary_headers"
             test "$secondary_code" = "200"
             tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*worker-rendered-liff-digital
-            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-app:[[:space:]]*mmd-app-digital-v3
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*worker-rendered-liff-digital$'
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-app:[[:space:]]*mmd-app-digital-v3$'
+            grep -q 'data-mmd-app-digital="v3"' "$secondary_body"
+            grep -q 'data-design-source="lovable-vnext"' "$secondary_body"
 
             headers="$(mktemp)"
             body="$(mktemp)"
@@ -248,8 +250,10 @@ jobs:
             cat "$headers"
             test "$code" = "200"
             tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*worker-rendered-liff-digital
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-app:[[:space:]]*mmd-app-digital-v3
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*worker-rendered-liff-digital$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-app:[[:space:]]*mmd-app-digital-v3$'
+            grep -q 'data-mmd-app-digital="v3"' "$body"
+            grep -q 'data-design-source="lovable-vnext"' "$body"
             if grep -q 'mmd-model-home-v3' "$body"; then
               echo "Webflow fallback still owns $origin/sigil/model/dashboard" >&2
               exit 1
