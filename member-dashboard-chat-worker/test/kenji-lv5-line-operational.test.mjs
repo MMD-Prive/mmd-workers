@@ -72,6 +72,12 @@ test("P3 supports relative Bangkok dates and non-office-hour Thai time", () => {
   assert.equal(extractOperationalTime("บ่ายสอง"), "14:00");
 });
 
+test("Payment Center navigation is not consumed as payment-status truth", () => {
+  assert.equal(isKenjiLv5LineOperationalCandidate(event("ชำระเงิน"), "payment_center"), false);
+  assert.equal(parseKenjiLv5LineIntent(event("ชำระเงิน"), "payment_center", NOW), null);
+  assert.equal(isKenjiLv5LineOperationalCandidate(event("โอนแล้ว"), "payment_status"), true);
+});
+
 test("strong booking request is operational even when legacy intent is mmd_companion", () => {
   assert.equal(isKenjiLv5LineOperationalCandidate(event("จอง Rossi พรุ่งนี้ 20:00 ที่สุขุมวิท"), "mmd_companion"), true);
   assert.equal(isKenjiLv5LineOperationalCandidate(event("อยากรู้ว่ามีบริการอะไรบ้าง"), "service_guidance"), false);
