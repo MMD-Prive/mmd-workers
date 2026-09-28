@@ -184,6 +184,23 @@ test("LINE Per entry never introduces HITO or Kenji to the customer", () => {
   assert.doesNotMatch(aiAlias, /HITO|Kenji|เคนจิ/i);
 });
 
+test("explicit RUN number syntax enters model lookup while bare numbers stay non-model", () => {
+  assert.equal(extractKenjiModelLookupQuery("RUN 19"), "19");
+  assert.equal(extractKenjiModelLookupQuery("Run Number 19"), "19");
+  assert.equal(extractKenjiModelLookupQuery("run no. 19"), "19");
+  assert.equal(extractKenjiModelLookupQuery("รัน 19"), "19");
+  assert.equal(extractKenjiModelLookupQuery("เลขรัน 19"), "19");
+  assert.equal(extractKenjiModelLookupQuery("19"), "");
+  assert.equal(extractKenjiModelLookupQuery("19:00"), "");
+  assert.equal(extractKenjiModelLookupQuery("25000"), "");
+});
+
+test("plain conversational words remain blocked from standalone model lookup", () => {
+  for (const value of ["คืนนี้", "ราคา", "จอง", "สมาชิก", "ชำระเงิน", "ผู้ชาย", "ผู้หญิง", "ทั้งคู่", "ขอบคุณ"]) {
+    assert.equal(extractKenjiModelLookupQuery(value), "");
+  }
+});
+
 test("model browse asks preference and never treats preference words as model names", async () => {
   for (const value of ["ผู้ชาย", "ผู้หญิง", "ทั้งคู่", "ชายหญิง", "ชญ"]) {
     assert.equal(extractKenjiModelLookupQuery(value), "");
