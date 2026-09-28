@@ -342,3 +342,93 @@ test("successful model access persists only bounded active model identity in Mat
   assert.equal(Object.hasOwn(payload.active_model_v1, "rate"), false);
   assert.equal(Object.hasOwn(payload.active_model_v1, "availability"), false);
 });
+
+
+test("model browse preference maps explicit model gender without changing customer gender", async () => {
+  const continuity = await withFetch(async (url) => {
+    const parsed = new URL(String(url));
+    const filter = parsed.searchParams.get("filterByFormula") || "";
+    const hash = filter.match(/=\"([^\"]+)/)?.[1] || "stored-hash";
+    const fields = {
+      ...storedFields(hash),
+      topic: "model_browse",
+      last_customer_intent: "model_browse",
+      last_customer_action: "asked:model_browse",
+      conversation_stage: "in_progress",
+      awaiting_from: "customer",
+      pending_action: "continue current conversation",
+      important_open_loops_json: "[]",
+      handoff_required: false,
+      handoff_owner: "none",
+      handoff_reason: "",
+      live_truth_required: false,
+      live_truth_domains: [],
+      payload_json: JSON.stringify({
+        model_browse_v1: { awaiting: "model_gender", updated_at: NOW },
+      }),
+    };
+    return Response.json({ records: [{ id: "recMatrix", fields }] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event("ผู้ชาย"), currentIntent: "note_only", now: NOW }));
+
+  assert.equal(continuity.available, true);
+  assert.equal(continuity.effective_intent, "model_browse_gender");
+  assert.equal(continuity.matrix.payload_json.model_browse_v1.awaiting, "model_gender");
+});
+
+test("delivered model browse preference is stored separately from customer identity", async () => {
+  let posted = null;
+  const prior = {
+    ...buildConversationMatrixV1({
+      matrix_id: "kcm1_line_browse",
+      client_record_id: "recClient",
+      conversation_id_hash: "browsehash",
+      channel: "line_ofc",
+      conversation_scope: "line:browse",
+      topic: "model_browse",
+      relationship_context: "known_customer",
+      last_customer_intent: "model_browse",
+      conversation_stage: "in_progress",
+      version: 1,
+    }),
+    payload_json: {
+      first_contact_v2: { self_reported_gender: "woman", awaiting: "service" },
+      model_browse_v1: { awaiting: "model_gender", updated_at: NOW },
+    },
+  };
+  const continuity = {
+    schema: "mmd.kenji_continuity_resolver.v1",
+    decision: "ambiguous",
+    reason: "open_thread_but_message_not_specific_enough",
+    topic: "model_browse",
+    effective_intent: "model_browse_gender",
+    conversation_hash: "browsehash",
+    client_record_id: "recClient",
+    matrix_record_id: "recMatrix",
+    storage_status: "ready",
+    matrix: prior,
+  };
+
+  await withFetch(async (_url, init = {}) => {
+    posted = JSON.parse(init.body);
+    return Response.json({ records: [{ id: "recMatrix", fields: posted.records[0].fields }] });
+  }, () => writeKenjiLineMatrixTurn({
+    env: ENV,
+    continuity,
+    decision: {
+      intent: "model_browse_gender",
+      reply_source: "model_browse_preference",
+      handoff_required: false,
+      model_browse_state: { awaiting: "model_name", preferred_model_gender: "man" },
+    },
+    delivered: true,
+    attempted: true,
+    lastEventId: "kai_line_browse",
+    now: NOW,
+  }));
+
+  const payload = JSON.parse(posted.records[0].fields.payload_json);
+  assert.equal(payload.model_browse_v1.awaiting, "model_name");
+  assert.equal(payload.model_browse_v1.preferred_model_gender, "man");
+  assert.equal(payload.first_contact_v2.self_reported_gender, "woman");
+  assert.equal(Object.hasOwn(payload.model_browse_v1, "self_reported_gender"), false);
+});
