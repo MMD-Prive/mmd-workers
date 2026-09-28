@@ -19,6 +19,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/liff/exchange"
 zone_name = "mmdbkk.com"
 
+# LIFF Login V2 -> Model Job Board signed handoff. The Model session stays
+# host/path scoped; this endpoint issues a short-lived one-time-style bridge
+# after /v1/model/profile validates the existing Model session.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/job-board/handoff*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/job-board/handoff*"
+zone_name = "mmdbkk.com"
+
 # First-time Model Dashboard activation. A short-lived admin-issued invite plus
 # a real LINE ID token binds the canonical Models.line_user_id exactly once.
 [[routes]]
