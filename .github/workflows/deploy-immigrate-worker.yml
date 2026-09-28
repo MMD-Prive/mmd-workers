@@ -140,6 +140,10 @@ jobs:
             "www.mmdbkk.com/internal/admin/customer-data",
             "mmdbkk.com/internal/admin/customer-data*",
             "www.mmdbkk.com/internal/admin/customer-data*",
+            "mmdbkk.com/internal/admin/jobs/create-job*",
+            "www.mmdbkk.com/internal/admin/jobs/create-job*",
+            "mmdbkk.com/internal/jobs/create-job*",
+            "www.mmdbkk.com/internal/jobs/create-job*",
             "mmdbkk.com/internal/admin/jobs/create-session/core",
             "www.mmdbkk.com/internal/admin/jobs/create-session/core",
             "mmdbkk.com/a/create-session.js",
@@ -330,6 +334,42 @@ jobs:
             grep -Ei '^(x-mmd-control-room-ui|x-mmd-control-room-authority|server|cf-ray):' "$headers" || true
             exit 1
           fi
+
+      - name: Verify canonical Create Job and legacy compatibility route
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            legacy_headers="$(mktemp)"
+            trap 'rm -f "$body" "$headers" "$legacy_headers"' EXIT
+
+            verified=0
+            for attempt in 1 2 3 4 5 6 7 8; do
+              : > "$body"
+              : > "$headers"
+              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}'                 "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              if [ "$code" = "200" ]                 && grep -q 'id="job-board-text" maxlength="1000"' "$body"                 && grep -q 'id="job-customer-gender"' "$body"                 && grep -q 'id="job-budget-disclosure"' "$body"                 && grep -q '/v1/admin/job-board/publish' "$body"                 && grep -q 'https://www.mmdbkk.com/sigil/model/login?' "$body"; then
+                echo "Canonical Create Job verified for $origin on attempt $attempt"
+                verified=1
+                break
+              fi
+              echo "Create Job not ready for $origin (attempt $attempt, HTTP $code); retrying..."
+              sleep 2
+            done
+            if [ "$verified" != "1" ]; then
+              echo "Canonical Create Job production verification failed for $origin" >&2
+              head -c 500 "$body" >&2 || true
+              exit 1
+            fi
+
+            legacy_code="$(curl -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}'               "$origin/internal/jobs/create-job?source=legacy-smoke")"
+            test "$legacy_code" = "308"
+            expected="$origin/internal/admin/jobs/create-job?source=legacy-smoke"
+            grep -Fqi "location: $expected" "$legacy_headers"
+          done
 
       - name: Verify MMD Create Session Owner v14 in production
         shell: bash
