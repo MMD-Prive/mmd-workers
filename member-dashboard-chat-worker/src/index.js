@@ -1093,6 +1093,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       guard_reason: "",
       handoff_required: false,
       handoff_reason: "",
+      clear_model_context: true,
       model_browse_state: { awaiting: "model_gender" },
     };
   }
@@ -1112,6 +1113,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
         guard_reason: "",
         handoff_required: false,
         handoff_reason: "",
+        clear_model_context: true,
         model_browse_state: { awaiting: "model_gender" },
       };
     }
@@ -1133,6 +1135,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       guard_reason: "",
       handoff_required: false,
       handoff_reason: "",
+      clear_model_context: true,
       model_browse_state: {
         awaiting: "model_name",
         preferred_model_gender: preference,
@@ -1151,7 +1154,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
         const access = await requestKenjiModelAccess(env, getLineUserId({ event }), trigger.card_trigger);
         if (access.status === "restricted_category" &&
             (trigger.card_trigger.toLowerCase().startsWith(access.category))) {
-          const decision = buildKenjiModelAccessDecision(access);
+          const decision = buildKenjiModelAccessDecision(access, { clearOnFailure: true });
           if (decision.text) return { ...decision, reply_source: "line_card_model_access_restricted" };
         }
         if (access.status === "match" &&
@@ -1171,6 +1174,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       knowledge_hits: 0,
       guard_blocked: false,
       guard_reason: "",
+      ...(options.campaignBrief === true ? {} : { clear_model_context: true }),
     };
   }
 
