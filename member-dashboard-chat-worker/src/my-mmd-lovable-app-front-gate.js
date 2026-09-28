@@ -455,7 +455,7 @@ function liffAuthBridgeTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
-  if (!intent || intent === "unknown" || intent === "status") return "/my-mmd/";
+  if (!intent || intent === "unknown" || intent === "status") return "";
   if (intent === "continue_payment") return "/my-mmd/payments";
   return "";
 }
@@ -546,8 +546,8 @@ export default {
 
     // Identity, session, points, membership, entitlement, coupons, history,
     // CARE BACK and every authoritative calculation remain on MMD Workers.
-    // For intent=status, LIFF is only a verification bridge; /my-mmd/ is the
-    // single customer-facing dashboard surface.
+    // Direct intent=status stays in the Worker-rendered LIFF Digital Home.
+    // Lovable remains a secondary presentation surface; Points uses /my-mmd/points.
     const response = await currentWorker.fetch(request, env, ctx);
     return rewriteStatusReturnTarget(request, response);
   },
