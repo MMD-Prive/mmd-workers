@@ -105,8 +105,8 @@ test("LINE liff.state carries the coupon return target without allowing arbitrar
 
   const hostileState = encodeURIComponent("/member/liff?intent=status&return_to=https://evil.example/");
   const hostileRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${hostileState}`);
-  assert.equal(I.statusReturnTarget(hostileRequest), "/my-mmd/");
-  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest));
+  assert.equal(I.statusReturnTarget(hostileRequest), "");
+  assert.equal(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest), STATUS_SHELL);
 });
 
 test("LINE liff.state carries the bounded TMIB origin", () => {
