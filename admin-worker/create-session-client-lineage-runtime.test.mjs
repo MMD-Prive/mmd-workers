@@ -25,6 +25,8 @@ for (const mode of [{ canonical_only: true }, { allow_manual_fallback: false }, 
       assert.deepEqual(body.records, []);
       assert.deepEqual(body.items, []);
       assert.equal(body.count, 0);
+      assert.deepEqual(body.results, []);
+      assert.equal(body.no_canonical_match, true);
       assert.equal(body.manual_fallback, false);
       assert.equal(body.canonical_only, true);
       assert.ok(!body.lineage_warnings.includes("manual_public_only_pending_reconcile"));
@@ -207,6 +209,16 @@ function installAirtableMock({ failTable = "" } = {}) {
   };
 }
 
+test("query lookup reads independent Airtable sources concurrently", async () => {
+  const source = await readFile(join(here, "src/create-session-client-lineage-runtime.js"), "utf8");
+  const queryBlock = source.split("if (query) {")[1].split("} else {")[0];
+  assert.match(queryBlock, /Promise\.all\(\[/);
+  assert.match(queryBlock, /tables\.clients/);
+  assert.match(queryBlock, /tables\.members/);
+  assert.match(queryBlock, /tables\.entitlements/);
+  assert.match(queryBlock, /tables\.lineStaging/);
+});
+
 test("route predicate covers only real lineage lookup and recent", () => {
   assert.equal(isCreateSessionClientLineageRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, "POST"), true);
   assert.equal(isCreateSessionClientLineageRequest(CREATE_SESSION_CLIENT_RECENT_PATH, "GET"), true);
@@ -229,6 +241,9 @@ test("lineage lookup returns canonical client enriched by member, entitlement an
     const body = await response.json();
     assert.equal(body.ok, true);
     assert.equal(body.records.length, 1);
+    assert.deepEqual(body.results, body.records);
+    assert.deepEqual(body.degraded_sources, body.lineage_warnings);
+    assert.equal(body.no_canonical_match, false);
     const record = body.records[0];
     assert.equal(record.client_id, "recClient1");
     assert.equal(record.member_id, "perpm");
@@ -263,6 +278,8 @@ test("recent lineage enriches cards with Per manual rename before canonical name
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.records.length, 1);
+    assert.deepEqual(body.results, body.records);
+    assert.equal(body.no_canonical_match, false);
     assert.equal(body.records[0].client_id, "recClient1");
     assert.equal(body.records[0].remembered_name, "Per Premium");
     assert.equal(body.records[0].canonical_name, "Per Client");
