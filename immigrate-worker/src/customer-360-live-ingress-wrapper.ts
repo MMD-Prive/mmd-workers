@@ -143,11 +143,11 @@ export async function serveLovableCreateJobPage(request: Request, gateResponse: 
     headers.set("x-mmd-presentation-source", "lovable");
     headers.set("x-mmd-presentation-version", "internal-lovable-v1");
     headers.set("x-mmd-page", "create-job");
-    headers.set("x-mmd-create-job-worker-guide", "asset-csp-click-hotfix-v1");
+    headers.set("x-mmd-create-job-worker-guide", "job-board-panel-v1");
 
     if (request.method.toUpperCase() === "HEAD") return new Response(null, { status: 200, headers });
 
-    const html = applyCreateJobStaticCopy(rewriteLovableAssetUrls(await upstream.text(), origin));
+    const html = decorateCreateJobGuidance(rewriteLovableAssetUrls(await upstream.text(), origin));
     return new Response(html, { status: 200, headers });
   } catch {
     return gateResponse;
@@ -200,7 +200,52 @@ body::after{content:"เริ่มจากค้นหาลูกค้า�
   return rewritten.includes("</head>") ? rewritten.replace("</head>", `${style}</head>`) : `${style}${rewritten}`;
 }
 
-export const decorateCreateJobGuidance = applyCreateJobStaticCopy;
+export function applyCreateJobBoardPublishPanel(html: string): string {
+  if (html.includes("data-mmd-job-board-panel=\"v1\"")) return html;
+  const panel = `<section data-mmd-job-board-panel="v1" aria-label="Create Job Board Broadcast">
+  <button type="button" data-mmd-board-toggle>กระดานข่าว</button>
+  <form data-mmd-board-form hidden>
+    <div class="mmdjb__head">
+      <strong>Create กระดานข่าว</strong>
+      <button type="button" data-mmd-board-close aria-label="Close">×</button>
+    </div>
+    <p>โพสต์รับสมัครลงกลุ่มบรอดงานก่อน ยังไม่ต้องเลือกโมเดล</p>
+    <input name="title" maxlength="160" placeholder="หัวข้อ เช่น งานกินข้าว · สุขุมวิท · งานลับ" />
+    <div class="mmdjb__row">
+      <select name="world"><option value="private">Private</option><option value="public">Public</option></select>
+      <input name="compensation" maxlength="120" placeholder="12,000 ถึงตัว" />
+    </div>
+    <div class="mmdjb__row">
+      <input name="date" maxlength="80" placeholder="วัน พฤ 1 ต.ค. 69" />
+      <input name="time" maxlength="80" placeholder="20:00" />
+    </div>
+    <div class="mmdjb__row">
+      <input name="duration" maxlength="80" placeholder="3 ชม." />
+      <input name="area" maxlength="120" placeholder="สุขุมวิท" />
+    </div>
+    <textarea name="board_text" maxlength="1000" required placeholder="วางข้อความบรอดงานที่นี่"></textarea>
+    <button type="submit" data-mmd-board-submit>Publish + Copy Link</button>
+    <output data-mmd-board-status>ยังไม่ได้ publish</output>
+  </form>
+</section>
+<style data-mmd-job-board-panel-style="v1">
+[data-mmd-job-board-panel]{position:fixed;z-index:2147483646;right:18px;bottom:78px;width:min(360px,calc(100vw - 24px));font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#f4ead6;pointer-events:none}
+[data-mmd-board-toggle]{pointer-events:auto;width:100%;border:1px solid rgba(216,180,94,.52);border-radius:999px;background:linear-gradient(135deg,#d9b75e,#8c6b33);color:#130f09;font-weight:800;padding:12px 16px;box-shadow:0 18px 44px rgba(0,0,0,.34);cursor:pointer}
+[data-mmd-board-form]{pointer-events:auto;margin-top:10px;border:1px solid rgba(216,180,94,.34);border-radius:22px;background:rgba(20,14,9,.97);box-shadow:0 24px 80px rgba(0,0,0,.46);padding:16px;display:flex;flex-direction:column;gap:10px}
+[data-mmd-board-form][hidden]{display:none}
+.mmdjb__head{display:flex;align-items:center;justify-content:space-between;gap:12px}.mmdjb__head strong{letter-spacing:.08em;color:#d9b75e}.mmdjb__head button{border:0;background:transparent;color:#d9b75e;font-size:24px;cursor:pointer}
+[data-mmd-board-form] p{margin:0;color:#b7aa94;font-size:13px;line-height:1.45}[data-mmd-board-form] input,[data-mmd-board-form] select,[data-mmd-board-form] textarea{width:100%;box-sizing:border-box;border:1px solid rgba(216,180,94,.22);border-radius:14px;background:#080604;color:#f4ead6;padding:10px 12px;font:500 13px/1.45 inherit;outline:none}[data-mmd-board-form] textarea{min-height:150px;resize:vertical}.mmdjb__row{display:grid;grid-template-columns:1fr 1fr;gap:8px}[data-mmd-board-submit]{border:0;border-radius:16px;background:#d9b75e;color:#130f09;font-weight:900;padding:12px 14px;cursor:pointer}[data-mmd-board-status]{min-height:18px;color:#d8c29a;font-size:12px;line-height:1.45;word-break:break-word}
+@media(max-width:720px){[data-mmd-job-board-panel]{left:12px;right:12px;bottom:70px;width:auto}.mmdjb__row{grid-template-columns:1fr}}
+</style>
+<script data-mmd-job-board-panel-script="v1">
+(()=>{const root=document.querySelector('[data-mmd-job-board-panel]');if(!root||root.dataset.ready==='1')return;root.dataset.ready='1';const form=root.querySelector('[data-mmd-board-form]'),toggle=root.querySelector('[data-mmd-board-toggle]'),close=root.querySelector('[data-mmd-board-close]'),status=root.querySelector('[data-mmd-board-status]'),submit=root.querySelector('[data-mmd-board-submit]'),text=form?.elements?.board_text;const setStatus=(msg)=>{if(status)status.textContent=msg};toggle?.addEventListener('click',()=>{form.hidden=!form.hidden;if(!form.hidden)setTimeout(()=>text?.focus(),30)});close?.addEventListener('click',()=>{form.hidden=true});form?.addEventListener('submit',async(event)=>{event.preventDefault();const data=new FormData(form);const boardText=String(data.get('board_text')||'').trim();if(!boardText){setStatus('กรุณาวางข้อความกระดานข่าวก่อน');return}submit.disabled=true;setStatus('กำลัง publish กระดานข่าว...');const world=String(data.get('world')||'private');const payload={world,title:String(data.get('title')||'').trim()||'กระดานข่าวงาน',category:'owner_broadcast',board_text:boardText,customer_gender:'unspecified',budget_disclosure_approved:world==='private',media_count:8,compensation:String(data.get('compensation')||'').trim()||undefined,date:String(data.get('date')||'').trim()||undefined,time:String(data.get('time')||'').trim()||undefined,duration:String(data.get('duration')||'').trim()||undefined,area:String(data.get('area')||'').trim()||undefined};try{const res=await fetch('/v1/admin/job-board/publish',{method:'POST',credentials:'include',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(payload)});const out=await res.json().catch(()=>null);if(!res.ok||!out?.broadcast_url)throw new Error(out?.error||'publish_failed');await navigator.clipboard?.writeText(out.broadcast_url).catch(()=>{});setStatus('Copy link แล้ว: '+out.broadcast_url)}catch(error){setStatus('ยังออกลิงก์ไม่ได้: '+(error?.message||error))}finally{submit.disabled=false}})})();
+</script>`;
+  return html.includes("</body>") ? html.replace("</body>", `${panel}</body>`) : `${html}${panel}`;
+}
+
+export function decorateCreateJobGuidance(html: string): string {
+  return applyCreateJobBoardPublishPanel(applyCreateJobStaticCopy(html));
+}
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
