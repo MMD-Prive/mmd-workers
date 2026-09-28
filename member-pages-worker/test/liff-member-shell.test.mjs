@@ -62,45 +62,6 @@ describe("same-site /member/liff shell", () => {
     assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, ""), "public");
   });
 
-  it("keeps the entered MY MMD shell full-screen, safe-area aware, and membership-card sizing unchanged", async () => {
-    const response = await shell("/member/liff?intent=status&view=home");
-    const html = await response.text();
-
-    assert.equal(response.status, 200);
-    assert.match(html, /html,body,#root\{margin:0;padding:0;width:100%;min-width:0;min-height:100%\}/);
-    assert.match(html, /body,#root\{min-height:100vh;min-height:100dvh;background:#090909\}/);
-    assert.match(html, /--digital-gutter:16px/);
-    assert.match(html, /--digital-reading-max:760px/);
-    assert.match(html, /--digital-shell-max:792px/);
-    assert.match(html, /padding:calc\(var\(--digital-gutter\) \+ env\(safe-area-inset-top\)\) 0 calc\(90px \+ env\(safe-area-inset-bottom\)\)/);
-    assert.match(html, /padding-left:max\(var\(--digital-gutter\),env\(safe-area-inset-left\)\)/);
-    assert.match(html, /padding-right:max\(var\(--digital-gutter\),env\(safe-area-inset-right\)\)/);
-    assert.match(html, /\.digital-dock\{[^}]*left:0;right:0;width:100%;max-width:none;min-width:0/);
-    assert.match(html, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-    assert.match(html, /padding:7px max\(16px,env\(safe-area-inset-right\)\) calc\(7px \+ env\(safe-area-inset-bottom\)\) max\(16px,env\(safe-area-inset-left\)\)/);
-    assert.doesNotMatch(html, /\.digital-dock\{[^}]*width:100vw/);
-    assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\),body\.app-entered:not\(\.signup-mode\) main\{width:100vw/);
-
-    // Membership snapshot dimensions are intentionally locked while the outer shell changes.
-    assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
-
-    const cases = [
-      { width: 360, left: 0, right: 0, expectedContent: 328 },
-      { width: 390, left: 0, right: 0, expectedContent: 358 },
-      { width: 430, left: 0, right: 0, expectedContent: 398 },
-      { width: 390, left: 20, right: 20, expectedContent: 350 },
-      { width: 1280, left: 0, right: 0, expectedContent: 760 },
-    ];
-    for (const item of cases) {
-      const shell = item.width >= 700 ? Math.min(item.width, 792) : item.width;
-      const content = shell - Math.max(16, item.left) - Math.max(16, item.right);
-      assert.equal(content, item.expectedContent, `viewport contract failed at ${item.width}px`);
-      assert.ok(content <= item.width, `horizontal overflow contract failed at ${item.width}px`);
-    }
-
-    assert.doesNotMatch(html, /\bDEMO\b|DEMO DATA|SAMPLE DATA|SOURCE LABEL/i);
-  });
-
   it("renders the dedicated published Member Dashboard LIFF ID", async () => {
     const response = await shell("/member/liff?intent=status&view=profile", {
       runtime: env({ LINE_LIFF_ID: "2010862595-yT4DCEMc" }),
@@ -391,19 +352,41 @@ describe("same-site /member/liff shell", () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /html,body\{margin:0;padding:0;width:100%;min-width:100%;min-height:100%;overflow-x:hidden\}/);
-    assert.match(html, /body\.app-entered:not\(\.signup-mode\)\{[^}]*min-height:100dvh[^}]*width:100%[^}]*max-width:100%[^}]*overflow-x:clip/);
-    assert.match(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*width:100%[^}]*max-width:none[^}]*min-height:100dvh/);
-    assert.match(html, /padding:calc\(16px \+ env\(safe-area-inset-top\)\) 16px calc\(90px \+ env\(safe-area-inset-bottom\)\)/);
-    assert.match(html, /padding-left:max\(16px,env\(safe-area-inset-left\)\)/);
-    assert.match(html, /padding-right:max\(16px,env\(safe-area-inset-right\)\)/);
-    assert.match(html, /\.digital-dock\{[^}]*left:0;right:0;[^}]*width:100%;[^}]*max-width:none;[^}]*transform:none/);
-    assert.match(html, /\.digital-dock\{[^}]*env\(safe-area-inset-right\)[^}]*env\(safe-area-inset-bottom\)[^}]*env\(safe-area-inset-left\)/);
-    assert.match(html, /@media\(max-width:699px\)\{[^}]*width:100vw;max-width:100vw;min-height:100dvh/);
-    assert.match(html, /@media\(min-width:700px\)\{[^}]*#profile[^}]*width:min\(100%,760px\);margin-left:auto;margin-right:auto/);
+    assert.match(html, /html,body,#root\{margin:0;padding:0;width:100%;min-width:0;min-height:100%\}/);
+    assert.match(html, /html,body\{overflow-x:clip\}/);
+    assert.match(html, /body,#root\{min-height:100vh;min-height:100dvh;background:#090909\}/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\)\{[^}]*--digital-gutter:16px[^}]*--digital-reading-max:760px[^}]*--digital-shell-max:792px[^}]*min-height:100dvh[^}]*width:100%[^}]*max-width:100%[^}]*overflow-x:clip/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*width:100%[^}]*max-width:none[^}]*min-width:0[^}]*min-height:100dvh/);
+    assert.match(html, /padding:calc\(var\(--digital-gutter\) \+ env\(safe-area-inset-top\)\) 0 calc\(90px \+ env\(safe-area-inset-bottom\)\)/);
+    assert.match(html, /padding-left:max\(var\(--digital-gutter\),env\(safe-area-inset-left\)\)/);
+    assert.match(html, /padding-right:max\(var\(--digital-gutter\),env\(safe-area-inset-right\)\)/);
+    assert.match(html, /\.digital-dock\{[^}]*left:0;right:0;width:100%;max-width:none;min-width:0[^}]*transform:none/);
+    assert.match(html, /\.digital-dock\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)[^}]*max\(16px,env\(safe-area-inset-right\)\)[^}]*env\(safe-area-inset-bottom\)[^}]*max\(16px,env\(safe-area-inset-left\)\)/);
+    assert.match(html, /@media\(max-width:699px\)\{body\.app-entered:not\(\.signup-mode\),body\.app-entered:not\(\.signup-mode\) main\{width:100%;max-width:100%;min-height:100dvh\}/);
+    assert.match(html, /@media\(min-width:700px\)\{body\.app-entered:not\(\.signup-mode\) #app-status,body\.app-entered:not\(\.signup-mode\) #actions,body\.app-entered:not\(\.signup-mode\) #profile,body\.app-entered:not\(\.signup-mode\) #status\{width:min\(100%,var\(--digital-shell-max\)\);margin-left:auto;margin-right:auto\}/);
+
+    // Membership snapshot dimensions remain byte-for-byte locked while only the shell viewport changes.
     assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) #status\{display:none!important;margin:0\}/);
-    assert.doesNotMatch(html, /data-design-source|lovable|DESIGN PREVIEW/i);
+
+    // Width contracts mirror the requested inspection breakpoints, including simulated iPhone side insets.
+    const cases = [
+      { width: 360, left: 0, right: 0, expectedContent: 328 },
+      { width: 390, left: 0, right: 0, expectedContent: 358 },
+      { width: 430, left: 0, right: 0, expectedContent: 398 },
+      { width: 390, left: 20, right: 20, expectedContent: 350 },
+      { width: 1280, left: 0, right: 0, expectedContent: 760 },
+    ];
+    for (const item of cases) {
+      const shellWidth = item.width >= 700 ? Math.min(item.width, 792) : item.width;
+      const contentWidth = shellWidth - Math.max(16, item.left) - Math.max(16, item.right);
+      assert.equal(contentWidth, item.expectedContent, `viewport contract failed at ${item.width}px`);
+      assert.ok(contentWidth <= item.width, `horizontal overflow contract failed at ${item.width}px`);
+    }
+
+    assert.doesNotMatch(html, /\.digital-dock\{[^}]*width:100vw/);
+    assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\),body\.app-entered:not\(\.signup-mode\) main\{width:100vw/);
+    assert.doesNotMatch(html, /data-design-source|lovable|DESIGN PREVIEW|\bDEMO\b|DEMO DATA|SAMPLE DATA|SOURCE LABEL/i);
     assert.doesNotMatch(html, /LIFF HOME|Member LIFF|>LIFF</i);
     assert.match(html, /MY MMD · MEMBER APP/);
     assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
