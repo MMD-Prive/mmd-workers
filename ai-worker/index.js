@@ -7,6 +7,7 @@ import { handleMemberContext } from "./src/routes/member-context.js";
 import { handleRecommend } from "./src/routes/recommend.js";
 import { handleKenjiCustomerReasoning } from "./src/routes/kenji-customer-reasoning.js";
 import { handleKenjiConversationMatrix } from "./src/routes/kenji-conversation-matrix.js";
+import { handleKenjiMemberChat } from "./src/routes/kenji-member-chat.js";
 
 export default {
   async fetch(request, env = {}, ctx) {
@@ -39,6 +40,9 @@ export default {
       }
       if (method === "POST" && path === "/v1/ai/kenji/conversation-matrix") {
         return handleKenjiConversationMatrix(req, env, ctx, await readJsonBody(request));
+      }
+      if (method === "POST" && path === "/v1/ai/kenji/member-chat") {
+        return handleKenjiMemberChat(req, env, ctx, await readJsonBody(request));
       }
 
       return notFound(req.requestId, "Route not found");
