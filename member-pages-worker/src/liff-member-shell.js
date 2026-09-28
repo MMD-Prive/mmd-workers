@@ -406,12 +406,13 @@ function renderShell(config, nonce) {
         statusBridgeStarted = false;
         return;
       }
-      await window.liff.init({ liffId: CONFIG.liffId });
-      if (!window.liff.isLoggedIn()) {
-        window.liff.login({ redirectUri: window.location.href });
+      const liff = window.liff;
+      await liff.init({ liffId: CONFIG.liffId });
+      if (!liff.isLoggedIn()) {
+        liff.login({ redirectUri: window.location.href });
         return;
       }
-      const idToken = window.liff.getIDToken();
+      const idToken = liff.getIDToken();
       if (!idToken) {
         show("ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD");
         statusBridgeStarted = false;
