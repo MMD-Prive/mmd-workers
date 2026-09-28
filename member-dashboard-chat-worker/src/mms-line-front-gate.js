@@ -53,7 +53,16 @@ function liffStateSearchParams(url) {
   return new URLSearchParams();
 }
 
-function tmibReturnTarget(value) {
+const RICH_MENU_RETURN_TARGETS = Object.freeze({
+  "/profiles": new Set(["rich_menu_guest_models", "rich_menu_public_models"]),
+  "/booking": new Set(["rich_menu_guest_booking", "rich_menu_public_booking"]),
+  "/services/companion": new Set(["rich_menu_guest_services"]),
+  "/tmib": new Set(["rich_menu_guest_stories"]),
+  "/member/private": new Set(["rich_menu_model_cards", "rich_menu_prive_update"]),
+  "/find": new Set(["rich_menu_private_booking"]),
+});
+
+function safeStatusReturnTarget(value) {
   const raw = String(value || "").trim();
   if (!raw || raw.length > 600 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) return "";
 
@@ -62,7 +71,8 @@ function tmibReturnTarget(value) {
   if (target.origin !== RETURN_TARGET_BASE) return "";
 
   const path = target.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
-  if (path === "/tmib" || path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
+  if (path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
+    if ([...target.searchParams.keys()].length) return "";
     return `${path}${target.hash || ""}`;
   }
 
@@ -74,7 +84,20 @@ function tmibReturnTarget(value) {
     return `/pay/tmib?episode=${encodeURIComponent(episode)}${target.hash || ""}`;
   }
 
-  return "";
+  const allowedEntries = RICH_MENU_RETURN_TARGETS[path];
+  if (!allowedEntries) return "";
+  const keys = [...target.searchParams.keys()];
+  if (keys.some((key) => key !== "source" && key !== "entry_route")) return "";
+  if (target.searchParams.get("source") !== "line") return "";
+  const entryRoute = String(target.searchParams.get("entry_route") || "").trim();
+  if (!allowedEntries.has(entryRoute)) return "";
+
+  const allowedHash = path === "/member/private"
+    ? new Set(["", "#detail-model", "#access"])
+    : new Set([""]);
+  if (!allowedHash.has(target.hash || "")) return "";
+
+  return `${path}?${target.searchParams.toString()}${target.hash || ""}`;
 }
 
 export function statusReturnTarget(request) {
@@ -83,7 +106,7 @@ export function statusReturnTarget(request) {
   const stateParams = liffStateSearchParams(url);
   const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim();
   if (returnTo.toLowerCase() === "coupon") return COUPON_STATUS_RETURN_TARGET;
-  return tmibReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
+  return safeStatusReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
 }
 
 export function isStatusLiffShellRequest(request) {
