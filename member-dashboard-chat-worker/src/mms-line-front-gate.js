@@ -8,6 +8,7 @@ const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
 const DEFAULT_STATUS_RETURN_TARGET = "";
+const MY_MMD_STATUS_RETURN_TARGET = "/my-mmd/";
 const COUPON_STATUS_RETURN_TARGET = "/my-mmd/coupons";
 const RETURN_TARGET_BASE = "https://www.mmdbkk.com";
 const TMIB_ACT_PATH = /^\/tmib\/act-\d{3}$/;
@@ -104,8 +105,15 @@ export function statusReturnTarget(request) {
   let url;
   try { url = new URL(request.url); } catch { return DEFAULT_STATUS_RETURN_TARGET; }
   const stateParams = liffStateSearchParams(url);
+  const intent = String(
+    url.searchParams.get("intent")
+      || url.searchParams.get("liff_intent")
+      || stateParams.get("intent")
+      || stateParams.get("liff_intent")
+      || "",
+  ).trim().toLowerCase();
   const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim();
-  if (!returnTo) return DEFAULT_STATUS_RETURN_TARGET;
+  if (!returnTo) return intent === "status" ? MY_MMD_STATUS_RETURN_TARGET : DEFAULT_STATUS_RETURN_TARGET;
   if (returnTo.toLowerCase() === "coupon") return COUPON_STATUS_RETURN_TARGET;
   return safeStatusReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
 }
@@ -157,7 +165,7 @@ export function stabilizeStatusShell(html, request) {
   let output = String(html || "");
   output = output.replace(
     /(^|\n)[ \t]*const existingProfile = await readProfile\(\);[ \t]*\n[ \t]*if \(existingProfile\) return;/m,
-    "$1      // Explicit return_to uses LIFF as an auth-only bridge. Direct status stays in the LIFF dashboard.\n      const existingProfile = null;",
+    "$1      // Verified status / explicit return_to use LIFF as an auth-only bridge.\n      const existingProfile = null;",
   );
   output = output.replace(
     /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,
