@@ -70,6 +70,11 @@ try {
     assert.match(html, /Create กระดานข่าว/);
     assert.match(html, /fetch\('\/v1\/admin\/job-board\/publish'/);
     assert.match(html, /Publish \+ Copy Link/);
+    assert.match(html, /data-mmd-create-job-client-autosearch="v1"/);
+    assert.match(html, /aria-label="Search client"/);
+    assert.match(html, /KeyboardEvent\('keydown'/);
+    assert.doesNotMatch(html, /new MutationObserver/);
+    assert.doesNotMatch(html, /window\.fetch\s*=/);
 
     const denied = await serveLovableCreateJobPage(
       new Request("https://mmdbkk.com/internal/admin/jobs/create-job"),
@@ -92,6 +97,7 @@ try {
     assert.doesNotMatch(decorated, /Creation blocked/);
     assert.match(decorated, /data-mmd-create-job-static-copy="v1"/);
     assert.match(decorated, /data-mmd-job-board-panel="v1"/);
+    assert.match(decorated, /data-mmd-create-job-client-autosearch="v1"/);
   } finally {
     globalThis.fetch = originalFetch;
   }
