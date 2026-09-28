@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  KENJI_BOOKING_ACCUMULATOR_INTERNALS,
   mergeKenjiBookingDraftV1,
   missingKenjiBookingFields,
   parseKenjiBookingFragment,
@@ -33,6 +34,49 @@ function merge(prior, id, message, currentIntent = "unknown") {
     now: NOW,
   });
 }
+
+test("guided booking reuses active model and accepts the prompted model reply without treating it as location", () => {
+  const active = KENJI_BOOKING_ACCUMULATOR_INTERNALS.enrichBookingFragmentWithContext({
+    fragment: {
+      raw: "จองเลย",
+      current_intent: "mmd_companion",
+      booking_signal: true,
+      model_name: "",
+      location: "",
+    },
+    prior: {},
+    priorActive: false,
+    effectiveIntent: "mmd_companion",
+    payload: {
+      active_model_v1: { model_code: "MX17", working_name: "Jasper" },
+    },
+  });
+  assert.equal(active.model_name, "MX17");
+  assert.equal(active.model_working_name_hint, "Jasper");
+
+  const prompted = KENJI_BOOKING_ACCUMULATOR_INTERNALS.enrichBookingFragmentWithContext({
+    fragment: {
+      raw: "Jasper",
+      current_intent: "model_lookup",
+      booking_signal: false,
+      model_name: "",
+      location: "Jasper",
+    },
+    prior: {
+      draft_id: "kbd1_prompted",
+      updated_at: NOW.toISOString(),
+      status: "collecting",
+      missing_fields: ["model_name", "date", "time", "location", "amount_thb"],
+    },
+    priorActive: true,
+    effectiveIntent: "model_lookup",
+    payload: {},
+  });
+  assert.equal(prompted.model_name, "Jasper");
+  assert.equal(prompted.location, "");
+
+  assert.equal(KENJI_BOOKING_ACCUMULATOR_INTERNALS.guidedModelCandidate("คืนนี้"), "");
+});
 
 test("Conversation Matrix accumulates model, price, date/time and location across separate LINE messages", () => {
   let state = merge({}, "m1", "จอง EMs16", "mmd_companion");
