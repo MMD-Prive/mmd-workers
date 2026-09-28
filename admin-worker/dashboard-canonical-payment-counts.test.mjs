@@ -143,6 +143,12 @@ test("dashboard reuses canonical payment-review and historical-recovery queues f
   assert.equal(dashboard.ok, true);
   assert.equal(dashboard.counts.payments, 1);
   assert.equal(dashboard.counts.payment_review, 1);
+  assert.equal(dashboard.counts.payment_slips_pending, 1);
+  assert.equal(dashboard.counts.payments_review_pending, 1);
+  assert.deepEqual(dashboard.shortcut_counts, {
+    payment_slip_inbox: 1,
+    money_control: 1,
+  });
   assert.equal(dashboard.counts.historical_recovery, 1);
   assert.equal(dashboard.counts.membership_review, 1);
 
