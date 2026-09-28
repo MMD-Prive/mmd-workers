@@ -286,11 +286,11 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ surface", async () => {
+test("direct status LIFF stays in the Worker-rendered Digital Home", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd/";</script></body></html>`,
+        `<!doctype html><html><head></head><body><main>MMD Privé · LIFF Digital Home</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const LOVABLE_POINTS_PATH = "/my-mmd/points"; const targetId = view === "history" ? "history-panel" : view;</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
@@ -300,14 +300,12 @@ test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ su
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-  assert.match(html, /const target = "\/my-mmd\/"/);
-  assert.match(html, /id="mmd-status-bridge-veil"/);
-  assert.match(html, /html,body\{background:#000!important\}/);
-  assert.match(html, /กำลังยืนยันสมาชิก…/);
-  assert.match(html, /\/my-mmd-assets\/hype-loading\.gif/);
-  assert.match(html, /\/member\/api\/liff\/profile/);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
+  assert.match(html, /MMD Privé · LIFF Digital Home/);
+  assert.match(html, /LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
+  assert.match(html, /view === "history" \? "history-panel" : view/);
+  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
 });
 
 test("private_teaser LIFF verifies the member then returns only to the allowlisted MY MMD teaser model", async () => {
