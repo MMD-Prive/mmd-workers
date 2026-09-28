@@ -392,7 +392,9 @@ jobs:
             "/v1/public/kenji/knowledge/published",
             "/v1/public/kenji/knowledge/published*",
             "/v1/admin/job/create",
+            "/v1/admin/job-board/publish",
             "/v1/admin/job/owner-grant",
+            "/v1/model/job-board/handoff*",
             "/v1/admin/clients/profile-photo/sync",
             "/v1/admin/kenji/control/memory*",
             "/v1/admin/kenji/control/conversations*",
@@ -491,6 +493,22 @@ jobs:
           cat "$body_file"
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
+
+          # Model Job Board owner publish and LIFF handoff must reach admin-worker
+          # on both public hosts and fail closed without the required sessions.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            publish_body="$(mktemp)"
+            publish_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS               -o "$publish_body" -w "%{http_code}"               -X POST -H "Origin: $origin" -H "Content-Type: application/json"               --data '{"board_text":"production ownership smoke"}'               "$origin/v1/admin/job-board/publish")"
+            cat "$publish_body"
+            test "$publish_code" = "401"
+            grep -q '"error":"owner_admin_session_required"' "$publish_body"
+
+            handoff_body="$(mktemp)"
+            handoff_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS               -o "$handoff_body" -w "%{http_code}"               "$origin/v1/model/job-board/handoff?next=https%3A%2F%2Fsigil.mmdbkk.com%2Fpublic%2Fapi%2Fjobs")"
+            cat "$handoff_body"
+            test "$handoff_code" = "401"
+            grep -q '"error":"model_session_required"' "$handoff_body"
+          done
 
           # Verify MMD Shop admin APIs are routed to admin-worker and remain session-gated.
           for path in /v1/admin/shop/orders /v1/admin/shop/inventory /v1/admin/shop/products; do
