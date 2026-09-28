@@ -209,7 +209,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /points\.status === "verified"/);
     assert.match(html, /id="points-lifetime-spend"/);
     assert.match(html, /id="points-365-spend"/);
-    assert.match(html, /Points สะสมตลอดอายุ · ยังไม่ตัด 365 วัน/);
+    assert.match(html, /Points มีอายุ 365 วัน · หมดอายุเป็นราย lot จากวันที่เข้าระบบ/);
     assert.match(html, /formatThb\(points\.lifetime_service_spend_thb\)/);
     assert.match(html, /navHome:"👤 HOME"/);
     assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
