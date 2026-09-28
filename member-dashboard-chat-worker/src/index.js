@@ -384,6 +384,15 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  // Greeting/Rich Menu action keywords are kept intentionally small and
+  // deterministic. They enter the same canonical runtime as typed messages,
+  // so there is no second "button-only" conversation system to maintain.
+  const actionKeyword = compactLookup(text);
+  if (["ดูนายแบบ", "ดูmodel", "ดูโมเดล"].includes(actionKeyword)) return "model_browse";
+  if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
+  if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
+  if (["ชำระเงิน", "ส่งสลิป", "payment"].includes(actionKeyword)) return "payment_slip";
+
   if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
   if (resolveLineCardCampaignTrigger(text)) return "card_campaign_lead";
@@ -799,6 +808,10 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (intent === "privacy_request") {
     return "ผมไม่สามารถเปิดเผยหรือค้นข้อมูลส่วนตัวของลูกค้าคนอื่นได้ครับ ถ้าต้องการดูข้อมูลของคุณเอง กรุณาใช้ช่องทางยืนยันตัวตนของ MMD ครับ";
+  }
+
+  if (intent === "model_browse") {
+    return "ดูนายแบบ Public ได้ที่ https://mmdbkk.com/profiles ครับ ถ้ามีชื่อคนที่สนใจ พิมพ์ชื่อหรือรหัสมาได้เลย เดี๋ยวเปอร์เช็กสิทธิ์ที่บัญชีนี้ดูได้ก่อนเปิดรายละเอียดเพิ่มเติมครับ";
   }
 
   if (intent === "availability_request") {
