@@ -37,6 +37,16 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 binding = "ADMIN_WORKER"
 service = "admin-worker"
 
+# Model Login is a canonical LINE Mini App entry. Keep this narrow route on the
+# Worker so Webflow page/script regressions cannot block model/job-board entry.
+[[routes]]
+pattern = "mmdbkk.com/sigil/model/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/model/login*"
+zone_name = "mmdbkk.com"
+
 # Customer 360 is Worker-owned in production. Keep both the rendered page and
 # its same-origin API family on immigrate-worker so the live UI cannot fall
 # through to Webflow 404s.
