@@ -64,13 +64,20 @@ const RICH_MENU_RETURN_TARGETS = Object.freeze({
 
 function safeStatusReturnTarget(value) {
   const raw = String(value || "").trim();
-  if (!raw || raw.length > 600 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) return "";
+  if (!raw || raw.length > 9000 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) return "";
 
   let target;
   try { target = new URL(raw, RETURN_TARGET_BASE); } catch { return ""; }
   if (target.origin !== RETURN_TARGET_BASE) return "";
 
   const path = target.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
+  if (path === "/sigil/confirm/job-confirmation" || path === "/confirm/job-confirmation") {
+    const keys = [...target.searchParams.keys()];
+    const tokenValue = String(target.searchParams.get("t") || "").trim();
+    if (keys.length !== 1 || keys[0] !== "t" || !tokenValue || tokenValue.length > 8000 || !/^[A-Za-z0-9._~-]+$/.test(tokenValue)) return "";
+    return `${path}?t=${encodeURIComponent(tokenValue)}`;
+  }
+  if (raw.length > 600) return "";
   if (path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
     if ([...target.searchParams.keys()].length) return "";
     return `${path}${target.hash || ""}`;

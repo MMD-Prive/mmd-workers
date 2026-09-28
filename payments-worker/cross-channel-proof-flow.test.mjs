@@ -21,7 +21,7 @@ async function fixture() {
       fldLTq2kZbyRv22IA: "sess-shared", fldojgjSQLaO0uQLX: paymentRef, fldhwC79ndbnEXSZz: 15000, fldvJowquu8RrsOMc: 7500, fldTY5lE6m0kQf72n: "pending",
     } }],
   };
-  const calls = { downstream: 0, proofCreates: 0, telegramDocuments: 0, telegramMessages: 0 };
+  const calls = { downstream: 0, proofCreates: 0, telegramDocuments: 0, telegramMessages: 0, telegramPayloads: [] };
   let telegramHealthy = true;
   const airtable = async (request) => {
     const url = new URL(request.url);
@@ -61,8 +61,14 @@ async function fixture() {
         calls.telegramDocuments++;
         const form = await request.formData();
         assert.equal(form.get("message_thread_id"), "22");
+        assert.match(String(form.get("caption") || ""), /สลิปลูกค้าเข้าแล้ว/);
+        assert.match(String(form.get("caption") || ""), /Official Verify/);
+        assert.match(String(form.get("caption") || ""), /ยังไม่ปล่อยลิงก์ลูกค้า \/ โมเดล/);
         assert.ok((await form.get("document").arrayBuffer()).byteLength);
-      } else calls.telegramMessages++;
+      } else {
+        calls.telegramMessages++;
+        calls.telegramPayloads.push(await request.clone().json().catch(() => ({})));
+      }
       return Response.json({ ok: telegramHealthy, message_id: telegramHealthy ? 42 : null }, { status: telegramHealthy ? 200 : 503 });
     } },
   };
@@ -165,6 +171,24 @@ test("Telegram failure retries the saved proof without recreating proof or payme
   await h.web();
   await drainWebProofNotifications(h.env, { now: Date.now() + 300000 });
   assert.equal(h.calls.telegramDocuments, 2);
+});
+
+test("signed web slip failure alerts Ops instead of failing silently", async () => {
+  const h = await fixture();
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init) => h.airtable(input instanceof Request ? input : new Request(input, init));
+  try {
+    const form = new FormData();
+    for (const [name, value] of Object.entries({ payment_ref: h.paymentRef, session_id: "sess-shared", payment_stage: "deposit", source_page: "sigil_pay_v22", t: h.token })) form.append(name, value);
+    form.append("file", new File(["synthetic proof"], "proof.png", { type: "image/png" }));
+    const response = await handleUnifiedSlipEvidence(new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", {
+      method: "POST", headers: { origin: "https://www.mmdbkk.com" }, body: form,
+    }), h.env, async () => Response.json({ ok: false, error: "synthetic_downstream_failure" }, { status: 503 }));
+    assert.equal(response.status, 503);
+    assert.equal(h.calls.telegramMessages, 1);
+    assert.match(String(h.calls.telegramPayloads[0]?.text || ""), /PAYMENT SLIP FLOW FAILED/);
+    assert.match(String(h.calls.telegramPayloads[0]?.text || ""), /ตรวจ Payment\/Proof ก่อนขอให้ลูกค้าส่งซ้ำ/);
+  } finally { globalThis.fetch = original; }
 });
 
 test("intake errors allow the configured website origin without broadening CORS", async () => {

@@ -458,6 +458,21 @@ export function shouldServePwaLiffBootstrap(request) {
   return true;
 }
 
+function safeModelConfirmationReturnTo(request) {
+  let source;
+  try { source = new URL(request.url); } catch { return ""; }
+  const raw = String(boundedParam(source, "return_to") || "").trim();
+  if (!raw || raw.length > 9000 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "";
+  let target;
+  try { target = new URL(raw, "https://mmdbkk.com"); } catch { return ""; }
+  if (target.origin !== "https://mmdbkk.com") return "";
+  if (!new Set(["/sigil/confirm/job-model", "/confirm/job-model"]).has(target.pathname)) return "";
+  const keys = [...target.searchParams.keys()];
+  const tokenValue = String(target.searchParams.get("t") || "").trim();
+  if (keys.length !== 1 || keys[0] !== "t" || !tokenValue || tokenValue.length > 8000 || !/^[A-Za-z0-9._~-]+$/.test(tokenValue)) return "";
+  return `${target.pathname}?t=${encodeURIComponent(tokenValue)}`;
+}
+
 function safeMiniAppUrlForBootstrap(request) {
   const source = new URL(request.url);
   const environment = resolveLiffEnvironmentFromRequest(request);
@@ -470,6 +485,8 @@ function safeMiniAppUrlForBootstrap(request) {
   if (boundedParam(source, "handoff") === "job-confirmed") params.set("handoff", "job-confirmed");
   const activation = boundedParam(source, "activation");
   if (activation && activation.length <= 4096) params.set("activation", activation);
+  const returnTo = safeModelConfirmationReturnTo(request);
+  if (returnTo) params.set("return_to", returnTo);
   return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
 }
 
@@ -479,6 +496,7 @@ export function liffPrimaryBootstrapHtml(request) {
     liffId: MODEL_LIFF_IDS[environment],
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
+    returnTo: safeModelConfirmationReturnTo(request),
     mode: "primary",
   });
 }
@@ -489,6 +507,7 @@ export function liffPwaBootstrapHtml(request) {
     liffId: MODEL_LIFF_IDS[environment],
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
+    returnTo: safeModelConfirmationReturnTo(request),
     mode: "pwa",
   });
 }
@@ -585,6 +604,9 @@ export function modelMiniAppHandoffUrl(request) {
 
   const activation = String(source.searchParams.get("activation") || "");
   if (activation && activation.length <= 4096) params.set("activation", activation);
+
+  const returnTo = safeModelConfirmationReturnTo(request);
+  if (returnTo) params.set("return_to", returnTo);
 
   const phaseAId = source.searchParams.get("flow") === "apply" && (env === "developing" || env === "review")
     ? MODEL_LIFF_IDS[env]

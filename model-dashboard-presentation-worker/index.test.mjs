@@ -189,6 +189,24 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
   assert.equal(response.headers.get("x-mmd-model-entry"), "line-miniapp-handoff-v1");
 });
 
+test("approved Model job link enters the published Mini App before opening signed confirmation", () => {
+  const target = "/sigil/confirm/job-model?t=abc.DEF_123";
+  const request = new Request(`https://mmdbkk.com/sigil/model/dashboard?return_to=${encodeURIComponent(target)}`);
+  const handoff = new URL(modelMiniAppHandoffUrl(request));
+  assert.equal(handoff.origin, "https://miniapp.line.me");
+  assert.equal(handoff.pathname, "/2010864854-N34SgCqq/");
+  assert.equal(handoff.searchParams.get("return_to"), target);
+
+  const lineRedirect = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?liff.state=${encodeURIComponent("?return_to=" + encodeURIComponent(target))}&access_token=opaque`,
+  );
+  const html = liffPrimaryBootstrapHtml(lineRedirect);
+  assert.ok(html.includes('window.location.replace("/sigil/confirm/job-model?t=abc.DEF_123")'));
+
+  const hostile = new Request("https://mmdbkk.com/sigil/model/dashboard?return_to=%2Finternal%2Fadmin%3Ft%3Dabc");
+  assert.equal(new URL(modelMiniAppHandoffUrl(hostile)).searchParams.has("return_to"), false);
+});
+
 test("LINE primary redirect is consumed before the SPA renders", async () => {
   const request = new Request(
     "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fflow%3Dverify%26lang%3Dth&access_token=opaque",

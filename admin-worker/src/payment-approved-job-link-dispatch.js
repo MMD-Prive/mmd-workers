@@ -35,6 +35,8 @@ const MODEL_FIELDS = Object.freeze({
 });
 
 const INITIAL_JOB_PAYMENT_STAGES = new Set(["deposit", "full"]);
+const CUSTOMER_LIFF_ID = "2010862595-yT4DCEMc";
+const MODEL_LIFF_ID = "2010864854-N34SgCqq";
 
 export async function retryExistingApprovedJobLinks(env, context) {
   return retryPaymentNotification({
@@ -106,10 +108,15 @@ async function deliverApprovedJobLinks(env, { session_id, payment_stage, payment
   if (["cancelled", "canceled", "rejected", "void"].includes(code(f[SESSION_FIELDS.sessionStatus]))) {
     return { status: "session_cancelled", dispatched: false, retryable: false, manual_delivery_required: true };
   }
-  const memberUrl = clean(f[SESSION_FIELDS.customerConfirmationUrl], 4000);
-  const modelUrl = clean(f[SESSION_FIELDS.modelConfirmationUrl], 4000);
-  if (!isCanonicalMemberUrl(memberUrl) || !isCanonicalModelUrl(modelUrl)) {
+  const memberConfirmUrl = clean(f[SESSION_FIELDS.customerConfirmationUrl], 4000);
+  const modelConfirmUrl = clean(f[SESSION_FIELDS.modelConfirmationUrl], 4000);
+  if (!isCanonicalMemberUrl(memberConfirmUrl) || !isCanonicalModelUrl(modelConfirmUrl)) {
     return { status: "links_not_ready", dispatched: false };
+  }
+  const memberUrl = customerLiffConfirmationUrl(memberConfirmUrl);
+  const modelUrl = modelLiffConfirmationUrl(modelConfirmUrl);
+  if (!memberUrl || !modelUrl) {
+    return { status: "liff_links_not_ready", dispatched: false };
   }
 
   const targets = await resolveNotificationTargets(env, f);
@@ -157,20 +164,23 @@ async function deliverApprovedJobLinks(env, { session_id, payment_stage, payment
     chat_id: clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120),
     message_thread_id: Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22),
     text: [
-      "✅ <b>PAYMENT APPROVED · CONFIRMATION URLS</b>",
-      `Client: <b>${escapeHtml(f[SESSION_FIELDS.clientName] || "-")}</b>`,
-      `Model: <b>${escapeHtml(f[SESSION_FIELDS.modelName] || "-")}</b>`,
-      `Type: <b>${escapeHtml(f[SESSION_FIELDS.jobType] || "-")}</b>`,
-      `Date: <b>${escapeHtml(f[SESSION_FIELDS.jobDate] || "-")}</b>`,
-      `Time: <b>${escapeHtml(f[SESSION_FIELDS.startTime] || "-")} - ${escapeHtml(f[SESSION_FIELDS.endTime] || "-")}</b>`,
-      `Location: <b>${escapeHtml(f[SESSION_FIELDS.locationName] || "-")}</b>`,
+      "✅ <b>ชำระเงินผ่านแล้ว · 2 ลิงก์พร้อมใช้</b>",
+      `ลูกค้า: <b>${escapeHtml(f[SESSION_FIELDS.clientName] || "-")}</b>`,
+      `โมเดล: <b>${escapeHtml(f[SESSION_FIELDS.modelName] || "-")}</b>`,
+      `งาน: <b>${escapeHtml(f[SESSION_FIELDS.jobType] || "-")}</b>`,
+      `วันที่: <b>${escapeHtml(f[SESSION_FIELDS.jobDate] || "-")}</b>`,
+      `เวลา: <b>${escapeHtml(f[SESSION_FIELDS.startTime] || "-")} - ${escapeHtml(f[SESSION_FIELDS.endTime] || "-")}</b>`,
+      `สถานที่: <b>${escapeHtml(f[SESSION_FIELDS.locationName] || "-")}</b>`,
+      "",
+      "👤 <b>ลิงก์ลูกค้า</b>",
+      escapeHtml(memberUrl),
+      "",
+      "🧑‍💼 <b>ลิงก์โมเดล</b>",
+      escapeHtml(modelUrl),
+      "",
+      "ส่งผิดคนไม่ได้: ลูกค้าใช้ลิงก์ลูกค้า · โมเดลใช้ลิงก์โมเดล",
       `Session: <code>${escapeHtml(sessionId)}</code>`,
       `Payment Ref: <code>${escapeHtml(payment_ref || "-")}</code>`,
-      "",
-      `MEMBER URL: ${escapeHtml(memberUrl)}`,
-      `MODEL URL: ${escapeHtml(modelUrl)}`,
-      "",
-      "<b>Manual confirm fallback:</b> MEMBER URL → ลูกค้า · MODEL URL → โมเดล",
       `Customer LINE: <b>${escapeHtml(customerLine.ok ? "sent" : customerLine.status || "not_sent")}</b>`,
       `Model LINE: <b>${escapeHtml(modelLine.ok ? "sent" : modelLine.status || "not_sent")}</b>`,
       `Customer Telegram: <b>${escapeHtml(customerTelegram.ok ? "sent" : customerTelegram.status || "not_sent")}</b>`,
@@ -390,6 +400,36 @@ async function sendTelegram(env, payload) {
   });
   const data = await response.json().catch(() => ({}));
   return { ok: response.ok && data?.ok !== false, status: response.status, data };
+}
+
+function confirmationReturnTo(value, allowedPaths) {
+  try {
+    const url = new URL(value);
+    if (!new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]).has(url.origin)) return "";
+    if (!allowedPaths.has(url.pathname)) return "";
+    const tokenValue = clean(url.searchParams.get("t"), 8000);
+    if (!tokenValue || [...url.searchParams.keys()].some((key) => key !== "t")) return "";
+    return `${url.pathname}?t=${encodeURIComponent(tokenValue)}`;
+  } catch {
+    return "";
+  }
+}
+
+function customerLiffConfirmationUrl(value) {
+  const returnTo = confirmationReturnTo(value, new Set(["/sigil/confirm/job-confirmation", "/confirm/job-confirmation"]));
+  if (!returnTo) return "";
+  const url = new URL(`https://miniapp.line.me/${CUSTOMER_LIFF_ID}/`);
+  url.searchParams.set("intent", "status");
+  url.searchParams.set("return_to", returnTo);
+  return url.toString();
+}
+
+function modelLiffConfirmationUrl(value) {
+  const returnTo = confirmationReturnTo(value, new Set(["/sigil/confirm/job-model", "/confirm/job-model"]));
+  if (!returnTo) return "";
+  const url = new URL(`https://miniapp.line.me/${MODEL_LIFF_ID}/`);
+  url.searchParams.set("return_to", returnTo);
+  return url.toString();
 }
 
 function isCanonicalMemberUrl(value) {

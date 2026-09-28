@@ -390,6 +390,34 @@ function threadId(value, fallback) {
   return Number.isInteger(numeric) && numeric > 0 ? numeric : fallback;
 }
 
+async function notifyTelegramSlipFailure(env, { paymentRef = "", sessionId = "", sourcePage = "", reason = "", status = 0 } = {}) {
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
+  const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120);
+  if (!service || typeof service.fetch !== "function" || !token) return { ok: false, skipped: true };
+  const response = await service.fetch(new Request("https://telegram-worker/telegram/internal/send", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      flow: "alert",
+      chat_id: chatId,
+      message_thread_id: threadId(env.TG_THREAD_ALERTS, 9),
+      text: [
+        "🚨 <b>PAYMENT SLIP FLOW FAILED</b>",
+        "ลูกค้าพยายามส่งสลิปจาก signed payment link แล้ว แต่ flow ยังไม่จบ",
+        paymentRef ? `Payment Ref: <code>${tgHtml(paymentRef)}</code>` : "",
+        sessionId ? `Session: <code>${tgHtml(sessionId)}</code>` : "",
+        sourcePage ? `Source: <code>${tgHtml(sourcePage)}</code>` : "",
+        status ? `HTTP: <b>${Number(status)}</b>` : "",
+        reason ? `Error: <code>${tgHtml(reason)}</code>` : "",
+        "Action: ตรวจ Payment/Proof ก่อนขอให้ลูกค้าส่งซ้ำ",
+      ].filter(Boolean).join("\n"),
+    }),
+    signal: AbortSignal.timeout(10000),
+  })).catch(() => null);
+  return { ok: response?.ok === true };
+}
+
 export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = "") {
   if (paymentProofLane(snapshot) === "mmd_shop") {
     const brand = SHOP_BRANDS[snapshot.canonical_shop_brand] || SHOP_BRANDS["mmd-shop"];
@@ -434,20 +462,23 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   form.append("parse_mode", "HTML");
   form.append("caption", [
     route.topic === "membership"
-      ? "<b>MEMBERSHIP PAYMENT PROOF · PENDING REVIEW</b>"
+      ? "<b>💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ</b>"
       : route.topic === "mmd_shop"
-        ? `<b>${tgHtml(route.shop_title)} PAYMENT PROOF · PENDING REVIEW</b>`
-        : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
-    `Proof: <code>${proofId}</code>`,
-    `Ref: <code>${paymentRef}</code>`,
-    snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
-    snapshot.payment_stage ? `Stage: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
-    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `Classified: <b>${tgHtml(route.shop_name)} Order</b>` : "",
+        ? `<b>💳 ${tgHtml(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ</b>`
+        : "<b>💳 สลิปลูกค้าเข้าแล้ว · รอเปอร์ตรวจ</b>",
+    snapshot.amount_thb ? `ยอด: <b>${snapshot.amount_thb} THB</b>` : "",
+    snapshot.payment_stage ? `รอบชำระ: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
     ...(route.topic === "membership" || route.topic === "mmd_shop"
       ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
       : webJobContextCaptionLines(jobContext)),
+    "",
+    "👉 <b>ขั้นต่อไป: ตรวจสลิปแล้วกด Official Verify</b>",
+    "ยังไม่ปล่อยลิงก์ลูกค้า / โมเดลจนกว่าจะอนุมัติ",
+    "",
+    `Payment Ref: <code>${paymentRef}</code>`,
+    `Proof: <code>${proofId}</code>`,
+    inferenceLabel ? `ประเภท: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "ประเภท: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `ประเภท: <b>${tgHtml(route.shop_name)} Order</b>` : "",
     `Routing: <code>${tgHtml(route.reason)}</code>`,
-    "Evidence only · Official Verify required",
   ].filter(Boolean).join("\n"));
   form.append("document", file, clean(file.name, 180) || "payment-proof");
 
@@ -684,6 +715,20 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
   const paymentRef = clean(form.get("payment_ref") || form.get("transaction_ref"), 220);
   if (!paymentRef) return downstream(request);
   const source = code(form.get("source_page") || "");
+  let authenticatedWeb = false;
+  let authenticatedSession = "";
+  const failAfterAuth = async (error, status) => {
+    if (authenticatedWeb) {
+      await notifyTelegramSlipFailure(env, {
+        paymentRef,
+        sessionId: authenticatedSession || clean(form.get("session_id"), 220),
+        sourcePage: source,
+        reason: clean(error, 300),
+        status,
+      }).catch(() => null);
+    }
+    return json({ ok: false, error, authority: "payments-worker", ...(paymentRef ? { payment_ref: paymentRef } : {}) }, status);
+  };
 
   try {
     if (CANONICAL_WEB_SOURCES.has(source)) {
@@ -699,19 +744,21 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
           authority: "payments-worker",
         }, 401);
       }
+      authenticatedWeb = true;
       const claimRef = clean(claims?.payment_ref, 220);
       const claimSession = clean(claims?.session_id, 220);
+      authenticatedSession = claimSession;
       const claimStage = code(claims?.payment_type);
       const formSession = clean(form.get("session_id"), 220);
       const formStage = code(form.get("payment_stage") || form.get("payment_type"));
       if (claimRef !== paymentRef) {
-        return json({ ok: false, error: "confirmation_payment_ref_mismatch", authority: "payments-worker" }, 409);
+        return await failAfterAuth("confirmation_payment_ref_mismatch", 409);
       }
       if (formSession && claimSession && formSession !== claimSession) {
-        return json({ ok: false, error: "confirmation_session_mismatch", authority: "payments-worker" }, 409);
+        return await failAfterAuth("confirmation_session_mismatch", 409);
       }
       if (formStage && claimStage && formStage !== claimStage) {
-        return json({ ok: false, error: "confirmation_payment_stage_mismatch", authority: "payments-worker" }, 409);
+        return await failAfterAuth("confirmation_payment_stage_mismatch", 409);
       }
     }
 
@@ -750,12 +797,12 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
 
       const payment = await findPayment(env, paymentRef);
       if (!payment && CANONICAL_WEB_SOURCES.has(source)) {
-        return json({ ok: false, error: "canonical_payment_not_found", payment_ref: paymentRef }, 409);
+        return await failAfterAuth("canonical_payment_not_found", 409);
       }
 
       const file = fileFromForm(form);
       if (CANONICAL_WEB_SOURCES.has(source) && !file) {
-        return json({ ok: false, error: "payment_proof_file_required" }, 400);
+        return await failAfterAuth("payment_proof_file_required", 400);
       }
 
       let proofBundle = null;
@@ -768,9 +815,21 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
       const downstreamHeaders = new Headers(request.headers);
       downstreamHeaders.set("x-mmd-unified-slip-evidence", "1");
       const downstreamResponse = await downstream(new Request(request, { headers: downstreamHeaders }));
-      if (!downstreamResponse.ok) return downstreamResponse;
+      if (!downstreamResponse.ok) {
+        await notifyTelegramSlipFailure(env, {
+          paymentRef, sessionId: authenticatedSession || proofBundle?.snapshot?.session_id || "",
+          sourcePage: source, reason: "downstream_proof_upload_failed", status: downstreamResponse.status,
+        }).catch(() => null);
+        return downstreamResponse;
+      }
       const downstreamData = await downstreamResponse.clone().json().catch(() => null);
-      if (!downstreamData || downstreamData.ok !== true) return downstreamResponse;
+      if (!downstreamData || downstreamData.ok !== true) {
+        await notifyTelegramSlipFailure(env, {
+          paymentRef, sessionId: authenticatedSession || proofBundle?.snapshot?.session_id || "",
+          sourcePage: source, reason: "downstream_proof_response_invalid", status: downstreamResponse.status,
+        }).catch(() => null);
+        return downstreamResponse;
+      }
 
       if (!proofBundle) return downstreamResponse;
       const created = await createProof(env, proofBundle.fields);
@@ -780,6 +839,15 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
         jobContext: proofBundle.jobContext,
       }).catch(() => ({ delivered: false, queued: false, status: "manual_review" }));
       const telegram = delivery.result || {};
+      if (authenticatedWeb && delivery.delivered !== true) {
+        await notifyTelegramSlipFailure(env, {
+          paymentRef,
+          sessionId: authenticatedSession || proofBundle?.snapshot?.session_id || "",
+          sourcePage: source,
+          reason: delivery.queued === true ? "telegram_proof_delivery_failed_retry_queued" : "telegram_proof_delivery_failed_manual_review",
+          status: Number(telegram.status || 0),
+        }).catch(() => null);
+      }
 
       return rebuildJson(downstreamResponse, {
         ...downstreamData,
@@ -804,11 +872,15 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
       });
     });
   } catch (error) {
-    return json({
-      ok: false,
-      error: clean(error?.message || error || "payment_proof_intake_failed", 300),
-      authority: "payments-worker",
-    }, Number(error?.status || 500));
+    const status = Number(error?.status || 500);
+    const reason = clean(error?.message || error || "payment_proof_intake_failed", 300);
+    if (authenticatedWeb) {
+      await notifyTelegramSlipFailure(env, {
+        paymentRef, sessionId: authenticatedSession || clean(form.get("session_id"), 220),
+        sourcePage: source, reason, status,
+      }).catch(() => null);
+    }
+    return json({ ok: false, error: reason, authority: "payments-worker" }, status);
   }
 }
 
