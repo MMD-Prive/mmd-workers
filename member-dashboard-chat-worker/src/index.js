@@ -1060,10 +1060,17 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       ? continuityIntent
       : inferredIntent
   );
+  const lineUserId = getLineUserId({ event });
+  const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
 
   if (intent === "model_browse") {
+    const privateAllowed = liveMemberContext?.identity_state === "matched" &&
+      ["active", "expiring_soon"].includes(asString(liveMemberContext?.membership_state)) &&
+      asString(liveMemberContext?.private_visibility_envelope) !== "none";
     return {
-      text: "ได้ครับ อยากดูแบบไหนครับ — ผู้ชาย / ผู้หญิง / ทั้งคู่",
+      text: privateAllowed
+        ? "ได้ครับ บัญชีนี้ดูได้ทั้ง Public และ Private ตามสิทธิ์ที่เปิดอยู่ครับ อยากดูแบบไหน — ผู้ชาย / ผู้หญิง / ทั้งคู่\n\nGWs / EMs และรายที่เป็น protected จะตรวจสิทธิ์เป็นรายคนอีกครั้งก่อนเปิดรายละเอียดครับ"
+        : "ได้ครับ เริ่มจาก Public Models ก่อนได้เลยครับ อยากดูแบบไหน — ผู้ชาย / ผู้หญิง / ทั้งคู่\n\nถ้าสนใจ Private หรือกลุ่ม protected เดี๋ยวเปอร์ตรวจสิทธิ์บัญชีนี้ก่อนเปิดรายละเอียดครับ",
       fallback: false,
       reply_source: "model_browse_preference",
       model_attempted: false,
@@ -1097,8 +1104,13 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       };
     }
     const label = modelBrowsePreferenceLabel(preference);
+    const privateAllowed = liveMemberContext?.identity_state === "matched" &&
+      ["active", "expiring_soon"].includes(asString(liveMemberContext?.membership_state)) &&
+      asString(liveMemberContext?.private_visibility_envelope) !== "none";
     return {
-      text: `รับทราบครับ เดี๋ยวดู${label}เป็นหลักนะครับ ดู Public Models ได้ที่ https://mmdbkk.com/profiles ถ้ามีคนที่สนใจ พิมพ์ชื่อหรือรหัสมาได้เลยครับ`,
+      text: privateAllowed
+        ? `รับทราบครับ เดี๋ยวดู${label}เป็นหลักนะครับ บัญชีนี้มี Private visibility อยู่ด้วย ดู Public Models ได้ที่ https://mmdbkk.com/profiles และพิมพ์ชื่อหรือรหัสคนที่สนใจมาได้เลยครับ เดี๋ยวผมตรวจสิทธิ์รายคนนั้นต่อให้ — GWs / EMs ยังไม่เปิดอัตโนมัติครับ`
+        : `รับทราบครับ เดี๋ยวดู${label}เป็นหลักนะครับ ดู Public Models ได้ที่ https://mmdbkk.com/profiles ถ้ามีคนที่สนใจ พิมพ์ชื่อหรือรหัสมาได้เลยครับ ถ้าเป็น Private / GWs / EMs จะตรวจสิทธิ์ก่อนเปิดรายละเอียดครับ`,
       fallback: false,
       reply_source: "model_browse_preference",
       model_attempted: false,
@@ -1150,8 +1162,6 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     };
   }
 
-  const lineUserId = getLineUserId({ event });
-  const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
   const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
   const modelAccessAllowed = options.modelAccessAllowed !== false;
