@@ -289,7 +289,7 @@ jobs:
                 -D "$asset_headers" -o /dev/null -w "%{http_code}" "$origin$asset")"
               cat "$asset_headers"
               test "$asset_code" = "200"
-              tr -d '\r' < "$asset_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              tr -d '\r' < "$asset_headers" | grep -i -q '^x-mmd-dashboard-addon:[[:space:]]*model-media-upload-v1$'
             fi
 
             api_body="$(mktemp)"
