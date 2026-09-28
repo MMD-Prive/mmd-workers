@@ -216,6 +216,11 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /data-view="jobs" aria-current="false"><i>▤<\/i>งาน/);
     assert.match(html, /customer_360/);
     assert.match(html, /points\.status === "verified"/);
+    assert.match(html, /membership\.levelVerified === true/);
+    assert.match(html, /svip:"SVIP"/);
+    assert.match(html, /dashboard\.points\?\.confirmedBalance/);
+    assert.match(html, /membershipStatus\(status\)/);
+    assert.match(html, /membership\.expiresAt \|\| membership\.renewalDueAt/);
     assert.match(html, /id="points-lifetime-spend"/);
     assert.match(html, /id="points-365-spend"/);
     assert.match(html, /Points มีอายุ 365 วัน · หมดอายุเป็นราย lot จากวันที่เข้าระบบ/);
