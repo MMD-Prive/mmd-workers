@@ -297,3 +297,97 @@ test("history above 20k or without exact reviewed Per evidence is ignored", () =
     assert.equal(result.reason_code, "matched_active_rule");
   }
 });
+
+
+test("reviewed inactive exact-client rule is reused automatically as historical baseline", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    rules: [
+      rule("old-client-quote", {
+        Client: ["recCLIENT00000001"],
+        status: "Superseded",
+        customer_sell_rate_thb: 18000,
+        reviewed_by: "Per",
+        reviewed_at: "2026-09-10T12:00:00.000Z",
+        version: 1,
+      }),
+      rule("current-premium", {
+        audience_scope: ["Premium"],
+        status: "Active",
+        customer_sell_rate_thb: 20000,
+        version: 2,
+      }),
+    ],
+  });
+  assert.equal(result.sellable, true);
+  assert.equal(result.customer_rate_thb, 18000);
+  assert.equal(result.historical_baseline_rate_thb, 18000);
+  assert.equal(result.historical_source_ref, "old-client-quote");
+  assert.equal(result.reason_code, "historical_per_quote_ceiling_applied");
+});
+
+test("draft or non-Per exact-client history never becomes a historical baseline", () => {
+  for (const oldRule of [
+    rule("draft-client-quote", {
+      Client: ["recCLIENT00000001"],
+      status: "Draft",
+      customer_sell_rate_thb: 18000,
+      reviewed_by: "Per",
+      reviewed_at: "2026-09-10T12:00:00.000Z",
+    }),
+    rule("other-reviewer-client-quote", {
+      Client: ["recCLIENT00000001"],
+      status: "Superseded",
+      customer_sell_rate_thb: 18000,
+      reviewed_by: "Partner",
+      reviewed_at: "2026-09-10T12:00:00.000Z",
+    }),
+  ]) {
+    const result = resolveModelSalesOffer({
+      model_key: "EMs21-JDye",
+      client_id: "recCLIENT00000001",
+      requested_at: at,
+      entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+      rules: [
+        oldRule,
+        rule("current-premium", {
+          audience_scope: ["Premium"],
+          status: "Active",
+          customer_sell_rate_thb: 20000,
+          version: 2,
+        }),
+      ],
+    });
+    assert.equal(result.customer_rate_thb, 20000);
+    assert.equal(result.historical_baseline_rate_thb, undefined);
+  }
+});
+
+test("reviewed historical rule above 20k is ignored even for exact Client", () => {
+  const result = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    client_id: "recCLIENT00000001",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    rules: [
+      rule("old-client-quote", {
+        Client: ["recCLIENT00000001"],
+        status: "Superseded",
+        customer_sell_rate_thb: 22000,
+        reviewed_by: "Per",
+        reviewed_at: "2026-09-10T12:00:00.000Z",
+      }),
+      rule("current-premium", {
+        audience_scope: ["Premium"],
+        status: "Active",
+        customer_sell_rate_thb: 25000,
+        version: 2,
+      }),
+    ],
+  });
+  assert.equal(result.customer_rate_thb, 25000);
+  assert.equal(result.historical_baseline_rate_thb, undefined);
+});
