@@ -461,7 +461,7 @@ export function shouldServePwaLiffBootstrap(request) {
 function safeModelConfirmationReturnTo(request) {
   let source;
   try { source = new URL(request.url); } catch { return ""; }
-  const raw = String(source.searchParams.get("return_to") || "").trim();
+  const raw = String(boundedParam(source, "return_to") || "").trim();
   if (!raw || raw.length > 9000 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "";
   let target;
   try { target = new URL(raw, "https://mmdbkk.com"); } catch { return ""; }
