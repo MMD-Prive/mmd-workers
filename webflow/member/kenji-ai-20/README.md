@@ -1,6 +1,6 @@
 # Kenji AI 2.0 — Member Concierge
 
-Member-facing Webflow source for `/member/kenji-ai-20`.
+Member-facing Webflow source shared by canonical `/member/kenji` and legacy compatibility `/member/kenji-ai-20`.
 
 ## Current build
 
@@ -81,4 +81,4 @@ Layout is mobile-first, removes the previous oversized mobile headline density, 
 
 ## Legacy files
 
-`kenji-member-concierge.js` and `kenji-safe-flow-knowledge-runtime-v21-5.js` remain repository history/compatibility assets. Do not load them together with the V23 runtime on `/member/kenji-ai-20`.
+`kenji-member-concierge.js` and `kenji-safe-flow-knowledge-runtime-v21-5.js` remain repository history/compatibility assets. Do not load them together with the V23 runtime on canonical `/member/kenji` or the legacy compatibility page `/member/kenji-ai-20`.
