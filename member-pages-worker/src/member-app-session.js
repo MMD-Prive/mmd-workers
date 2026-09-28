@@ -8,7 +8,8 @@ const ETA_MAX_MINUTES = 240;
 const MAX_EVENTS_JSON_LENGTH = 64_000;
 const DISPLAYABLE = new Set([
   "pending_confirmation", "confirmed", "preparing", "en_route", "nearby",
-  "arrived", "met_customer", "in_progress", "completed", "cancelled",
+  "arrived", "met_customer", "final_payment_pending", "final_payment_confirmed",
+  "work_started", "in_progress", "work_finished", "separated", "completed", "cancelled",
 ]);
 
 export function isMemberAppSessionPath(input) {
@@ -147,8 +148,23 @@ async function projectSession(record, env) {
     // ETA events are the live source of truth. The old Session label remains
     // only as a backwards-compatible fallback before an ETA event exists.
     etaLabel: eventEta.hasEvent ? eventEta.label : legacyEtaLabel,
+    missionReady: sessionPaymentConfirmed(fields),
     nextMessage: clean(fields.customer_next_message, 500) || null,
   };
+}
+
+function sessionPaymentConfirmed(fields = {}) {
+  const depositPaid = fields.deposit_paid === true ? "paid" : String(fields.deposit_paid ?? "");
+  const state = [
+    fields.payment_status,
+    fields["Payment Status"],
+    fields.deposit_status,
+    fields.verification_status,
+    fields["Verification Status"],
+    depositPaid,
+  ].map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean).join(" ");
+  return /official_verified|verified|deposit_paid|paid|confirmed|complete/.test(state)
+    && !/pending|unverified|rejected|failed|void/.test(state);
 }
 
 async function resolveCustomerEtaEvent(env, sessionId) {
