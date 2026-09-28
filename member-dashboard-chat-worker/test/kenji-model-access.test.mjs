@@ -211,6 +211,7 @@ test("model browse asks preference and never treats preference words as model na
   });
   assert.match(start.text, /ผู้ชาย \/ ผู้หญิง \/ ทั้งคู่/);
   assert.equal(start.model_browse_state.awaiting, "model_gender");
+  assert.equal(start.clear_model_context, true);
 
   const picked = await resolveKenjiLineReply(lineEvent("ผู้ชาย"), {}, BASE_ENV, {
     continuity: {
@@ -221,6 +222,7 @@ test("model browse asks preference and never treats preference words as model na
   assert.match(picked.text, /Public Models/);
   assert.equal(picked.model_browse_state.awaiting, "model_name");
   assert.equal(picked.model_browse_state.preferred_model_gender, "man");
+  assert.equal(picked.clear_model_context, true);
 });
 
 test("model browse copy follows canonical private visibility without granting protected groups", async () => {
@@ -752,6 +754,15 @@ test("Card aliases never reveal another Model profile", async () => {
   assert.equal(calls.length, 1);
   assert.equal(decision.reply_source, "line_card_campaign_lead");
   assert.doesNotMatch(decision.text, /Jaspal|Private|Jasper/i);
+});
+
+test("a new campaign Model subject clears any previously active Model context", async () => {
+  const decision = await resolveKenjiLineReply(lineEvent("EMs19"), {}, {
+    ...BASE_ENV,
+    LINE_CARD_21829530_MODEL_INFO_ENABLED: "false",
+  }, { campaignLeadQueued: true });
+  assert.equal(decision.reply_source, "line_card_campaign_lead");
+  assert.equal(decision.clear_model_context, true);
 });
 
 test("all seven active campaign triggers accept a generic brief without model resolution or rates", async () => {
