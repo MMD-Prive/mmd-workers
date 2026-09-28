@@ -546,15 +546,71 @@ async function handleJobShortLink(request, env, path) {
     source: "line_model_group",
     job_id: job.id,
   });
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location,
-      "cache-control": "no-store",
-      "x-robots-tag": "noindex, nofollow",
-      "x-mmd-job-short-link": "v1",
-    },
-  });
+  const body = shortJobLandingHtml(job, location);
+  const headers = {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-robots-tag": "noindex, nofollow",
+    "x-mmd-job-short-link": "v2",
+  };
+  return request.method === "HEAD"
+    ? new Response(null, { status: 200, headers })
+    : new Response(body, { status: 200, headers });
+}
+
+function shortJobLandingHtml(job, loginUrl) {
+  const view = publicJobView(job, { detail: false });
+  const privateJob = view.world === "private";
+  const label = privateJob ? "PRIVATE JOB · งานลับ 🔐" : "PUBLIC JOB";
+  const title = privateJob ? categoryLabel(view.category) : (view.title || "งานที่เปิดรับ");
+  const meta = [view.date, view.time, view.duration, view.area].filter(Boolean).join(" · ");
+  const compensation = String(view.compensation || "").trim();
+  const description = [meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับ MMD";
+  const button = privateJob ? "เปิดงานลับนี้ผ่าน LINE" : "เปิดงานนี้ผ่าน LINE";
+
+  return `<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MMD">
+<meta property="og:title" content="${esc("MMD · " + title)}">
+<meta property="og:description" content="${esc(description)}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${esc("MMD · " + title)}">
+<meta name="twitter:description" content="${esc(description)}">
+<title>${esc(title)} · MMD</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#090909;color:#f8f3ea}
+*{box-sizing:border-box}
+body{margin:0;min-height:100svh;background:radial-gradient(circle at 82% 0,rgba(206,170,97,.12),transparent 34%),#090909}
+main{width:min(100% - 24px,520px);min-height:100svh;margin:auto;display:grid;align-content:center;padding:24px 0 max(28px,env(safe-area-inset-bottom))}
+.card{border:1px solid rgba(220,185,112,.28);border-radius:24px;padding:24px;background:linear-gradient(160deg,rgba(28,25,20,.98),rgba(10,10,9,.98));box-shadow:0 24px 80px rgba(0,0,0,.42)}
+.eyebrow{margin:0 0 14px;color:#ddb970;font-size:11px;font-weight:850;letter-spacing:.15em}
+h1{margin:0;font-size:clamp(30px,9vw,44px);line-height:1.06;letter-spacing:-.035em}
+.meta{margin:18px 0 0;color:#d2c8ba;line-height:1.65}
+.money{margin:12px 0 0;color:#f0cf8a;font-size:22px;font-weight:850}
+.note{margin:20px 0 0;padding-top:18px;border-top:1px solid rgba(255,255,255,.09);color:#989087;font-size:12px;line-height:1.65}
+a{margin-top:22px;min-height:50px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:#dfbc73;color:#17120b;text-decoration:none;font-weight:850}
+small{display:block;margin-top:12px;color:#817b72;text-align:center;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+  <article class="card" data-job-id="${esc(job.id)}">
+    <p class="eyebrow">${esc(label)}</p>
+    <h1>${esc(title)}</h1>
+    ${meta ? `<p class="meta">${esc(meta)}</p>` : ""}
+    ${compensation ? `<p class="money">${esc(compensation)}</p>` : ""}
+    <p class="note">คุณกดมาจากลิงก์งานนี้โดยตรง · ยังไม่ต้องอ่าน Welcome หรือเริ่มใหม่</p>
+    <a href="${esc(loginUrl)}">${esc(button)} →</a>
+    <small>LINE ใช้ยืนยันตัวตน แล้วระบบจะพากลับมาที่งานนี้</small>
+  </article>
+</main>
+</body>
+</html>`;
 }
 
 async function findLegacyJobByShortCode(env, code) {
