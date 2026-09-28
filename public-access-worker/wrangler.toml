@@ -21,3 +21,8 @@ PUBLIC_ACCESS_ADMIN_URL = "https://sigil.mmdbkk.com/internal/admin/control-room"
 # TELEGRAM_INTERNAL_TOKEN
 # TELEGRAM_INTERNAL_SEND_URL
 # TELEGRAM_PUBLIC_ACCESS_CHAT_ID
+
+# Model Job Board LIFF V2 gate validation. The browser never sees service credentials.
+[[services]]
+binding = "MODEL_AUTH"
+service = "admin-worker"
