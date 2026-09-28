@@ -104,7 +104,9 @@ function liffAuthReturnTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
-  if (intent === "status") return "/member/my-mmd";
+  // Direct status is the native Worker-rendered MY MMD LIFF surface.
+  // Only explicit compatibility intents keep a post-verification bridge.
+  if (intent === "status") return "";
   if (intent === "continue_payment") return "/member/payments";
   return "";
 }
