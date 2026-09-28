@@ -313,25 +313,26 @@ jobs:
               "https://mmdbkk.com/internal/admin/control-room?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
-              && grep -Eiq '^x-mmd-control-room-ui:[[:space:]]*owner-desktop-v3-latest' "$headers" \
-              && grep -Eiq '^x-mmd-control-room-authority:[[:space:]]*canonical-backend' "$headers" \
-              && grep -q 'data-control-room-v3' "$body" \
-              && grep -q 'MMD PRIVÉ · OWNER CONTROL ROOM V3' "$body" \
-              && grep -q 'My MMD Entitlement Resolver' "$body" \
-              && grep -q 'Telegram / Google Drive' "$body" \
+              && grep -Eiq '^x-mmd-presentation-source:[[:space:]]*lovable' "$headers" \
+              && grep -Eiq '^x-mmd-presentation-version:[[:space:]]*internal-lovable-v1' "$headers" \
+              && grep -Eq 'https://mmd-os\.lovable\.app/assets/' "$body" \
+              && grep -Eq '<div[^>]+id=["'\'' ]*root["'\'' ]*' "$body" \
               && ! grep -q 'WORKER-RENDERED INTERNAL PAGES' "$body"; then
-              echo "Production Control Room owner v3 verified on attempt ${attempt}"
+              echo "Production Control Room Lovable presentation verified on attempt ${attempt}"
               verified=1
               break
             fi
 
-            echo "Control Room v3 not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
+            echo "Control Room Lovable presentation not ready yet (attempt ${attempt}, HTTP ${code}); retrying..."
+            grep -Ei '^(x-mmd-presentation-source|x-mmd-presentation-version|location:|server|cf-ray):' "$headers" || true
             sleep 2
           done
 
           if [ "$verified" != "1" ]; then
-            echo "Control Room v3 production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-control-room-ui|x-mmd-control-room-authority|server|cf-ray):' "$headers" || true
+            echo "Control Room Lovable production verification failed after bounded propagation retries" >&2
+            grep -Ei '^(x-mmd-presentation-source|x-mmd-presentation-version|location:|server|cf-ray):' "$headers" >&2 || true
+            head -c 320 "$body" >&2 || true
+            echo >&2
             exit 1
           fi
 
