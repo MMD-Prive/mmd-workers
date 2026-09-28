@@ -14,6 +14,10 @@ import {
   buildKenjiLiveTruthDecision,
   resolveKenjiLineLiveTruth,
 } from "./kenji-line-live-truth.mjs";
+import {
+  buildKenjiAvailabilityDecision,
+  resolveKenjiLineAvailability,
+} from "./kenji-line-availability-live.mjs";
 import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-policy.mjs";
 import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
@@ -248,10 +252,19 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
   const autoKnowledgeId = SEED_AUTO_REPLY_BY_INTENT[intent];
   const handoffKnowledgeId = SEED_HANDOFF_BY_INTENT[intent];
   const liveTruthDecision = buildKenjiLiveTruthDecision(intent, options.liveTruth || {}, options.continuity || {});
+  const availabilityDecision = buildKenjiAvailabilityDecision(intent, options.liveAvailability || {});
 
   if (liveTruthDecision) {
     return withDecisionMetadata({}, {
       ...liveTruthDecision,
+      ...continuityMeta,
+      intent,
+    });
+  }
+
+  if (availabilityDecision) {
+    return withDecisionMetadata({}, {
+      ...availabilityDecision,
       ...continuityMeta,
       intent,
     });
@@ -601,6 +614,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const liveTruth = !support && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
+    const liveAvailability = !support && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
+      effectiveIntent === "availability_request"
+      ? await resolveKenjiLineAvailability({ env, continuity })
+      : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
 
     const baseDecision = autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
@@ -608,6 +625,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           currentIntent,
           continuity,
           liveTruth,
+          liveAvailability,
         })
       : firstContactEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
         ? withDecisionMetadata({}, await decideKenjiFirstContactMembership(event, currentIntent, continuity, env))
