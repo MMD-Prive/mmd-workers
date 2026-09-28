@@ -160,6 +160,59 @@ test("model-console can read a sanitized fresh availability receipt", async () =
   assert.doesNotMatch(JSON.stringify(payload), /PRIVATE|payment_ref|customer_name/i);
 });
 
+test("member-dashboard-chat-worker may read sanitized availability but still cannot write", async () => {
+  const store = kv({
+    "availability:v1:mx17": JSON.stringify({
+      schema: "sigil_availability_snapshot_v1",
+      model_key: "mx17",
+      safe_availability_state: "available_now",
+      availability_bucket: "now",
+      city: "Bangkok",
+      zones: ["sukhumvit"],
+      operational_flags: { burn: false, mk: false, live: true },
+      confidence: "model_confirmed",
+      updated_at: "2099-01-01T00:00:00.000Z",
+      expires_at: "2099-01-01T00:15:00.000Z",
+      customer_name: "PRIVATE",
+    }),
+  });
+
+  const read = await handleSigilAvailabilityInternalRequest(new Request(
+    "https://admin-worker.local/v1/internal/sigil/availability-snapshot?model_key=mx17",
+    {
+      method: "GET",
+      headers: {
+        authorization: "Bearer secret",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+    },
+  ), { INTERNAL_TOKEN: "secret", SIGIL_AVAILABILITY_SNAPSHOTS: store });
+
+  assert.equal(read.status, 200);
+  const payload = await read.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.fresh, true);
+  assert.equal(payload.snapshot.safe_availability_state, "available_now");
+  assert.doesNotMatch(JSON.stringify(payload), /PRIVATE|customer_name/i);
+
+  const write = await handleSigilAvailabilityInternalRequest(new Request(
+    "https://admin-worker.local/v1/internal/sigil/availability-snapshot",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer secret",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: JSON.stringify({ model_key: "mx17", availability_state: "unavailable" }),
+    },
+  ), { INTERNAL_TOKEN: "secret", SIGIL_AVAILABILITY_SNAPSHOTS: store });
+
+  assert.equal(write.status, 401);
+});
+
 test("model-console read reports missing without inventing availability", async () => {
   const response = await handleSigilAvailabilityInternalRequest(new Request(
     "https://admin-worker.local/v1/internal/sigil/availability-snapshot?model_key=mdl_pri_str_missing",
