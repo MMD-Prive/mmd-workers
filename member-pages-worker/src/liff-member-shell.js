@@ -36,6 +36,7 @@ export function handleLiffMemberShell(request, env = {}) {
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
     profileEndpoint: "/member/api/liff/profile",
+    statusEndpoint: "/member/api/liff/status",
     welcomeContextEndpoint: "/member/api/liff/welcome-context",
     publicCatalogEndpoint: "/member/api/liff/public-membership/catalog",
     publicPurchaseEndpoint: "/member/api/liff/public-membership/purchase",
@@ -369,7 +370,70 @@ function renderShell(config, nonce) {
     zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。",navCredits:"💳 CREDIT",creditWalletLabel:"MY MMD CREDIT",creditWalletTitle:"💳 我的服务额度",creditChecking:"正在核实您的服务额度。",creditAvailableLabel:"可用",creditReservedLabel:"已预留",creditUsedLabel:"已使用",creditRecentLabel:"最近记录",creditEmpty:"此账户暂无已验证的服务额度。",creditVerified:"仅显示已验证额度。",creditExpiry:"有效期至",pointsLabel:"可用积分",pointsNoExpiry:"积分按每批入账日起 365 天到期",serviceSpendLabel:"已确认服务消费",lifetimeSpendLabel:"累计",spend365Label:"最近 365 天"},
   })[locale] || {});
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
+  const MY_MMD_TARGET = "/my-mmd/";
   let busy = false;
+  let statusBridgeStarted = false;
+
+  async function hasVerifiedLiffSession() {
+    try {
+      const response = await fetch(CONFIG.statusEndpoint, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { accept: "application/json" },
+      });
+      const payload = await response.json().catch(() => null);
+      return response.ok && payload && payload.ok === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function openMyMmdPresentation() {
+    window.location.replace(MY_MMD_TARGET);
+  }
+
+  async function bridgeStatusToMyMmd() {
+    if (statusBridgeStarted) return;
+    statusBridgeStarted = true;
+    try {
+      if (await hasVerifiedLiffSession()) {
+        openMyMmdPresentation();
+        return;
+      }
+      if (!CONFIG.liffId || !window.liff) {
+        show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+        statusBridgeStarted = false;
+        return;
+      }
+      await window.liff.init({ liffId: CONFIG.liffId });
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login({ redirectUri: window.location.href });
+        return;
+      }
+      const idToken = window.liff.getIDToken();
+      if (!idToken) {
+        show("ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD");
+        statusBridgeStarted = false;
+        return;
+      }
+      const response = await fetch(CONFIG.startEndpoint, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ id_token: idToken, liff_intent: "status" }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload && payload.ok === true) {
+        openMyMmdPresentation();
+        return;
+      }
+      show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
+    } catch {
+      show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
+    }
+    statusBridgeStarted = false;
+  }
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
@@ -1295,7 +1359,10 @@ function renderShell(config, nonce) {
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  // Welcome screen is user-led; LINE verification begins after Continue.
+  // Normal member status launches use LIFF only as the verified LINE/session bridge.
+  // The actual MY MMD customer UI is the same-origin Lovable presentation at /my-mmd/.
+  if (CONFIG.intent === "status") void bridgeStatusToMyMmd();
+  // Signup/promo/renew keep their bounded LIFF surfaces and user-led welcome flow.
 })();
 </script>
 </body>
