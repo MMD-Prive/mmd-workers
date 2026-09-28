@@ -118,9 +118,9 @@ test("create-session page loads an existing bundled create-session asset", async
   assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev/);
 });
 
-test("create-job page renders a required positive amount_thb input and payload field", async () => {
+test("canonical create-job page renders Job Board V2 controls and legacy route redirects", async () => {
   const calls = [];
-  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/jobs/create-job"), {
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-job"), {
     ADMIN_WORKER: adminWorkerBinding(calls),
     ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
   }));
@@ -129,12 +129,23 @@ test("create-job page renders a required positive amount_thb input and payload f
   assert.equal(response.status, 200);
   assert.equal(publicCalls, 0);
   assert.equal(calls.length, 1);
-  assert.match(html, /<span>Amount THB<\/span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required \/>/);
-  assert.match(html, /const amount=Number\(\$\("amount_thb"\)\?\.value\|\|""\);/);
-  assert.match(html, /amount_thb:amount/);
-  assert.match(html, /Number\.isFinite\(payload\.amount_thb\)\|\|payload\.amount_thb<=0/);
+  assert.match(html, /id="amount_thb" name="amount_thb" type="number" min="1" step="1" required/);
+  assert.match(html, /function amount\(\)/);
+  assert.match(html, /amount_thb:\s*amount\(\)/);
+  assert.match(html, /if \(!payload\.amount_thb\)/);
+  assert.match(html, /id="job-board-text" maxlength="1000"/);
+  assert.match(html, /id="job-customer-gender"/);
+  assert.match(html, /id="job-budget-disclosure"/);
+  assert.match(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
+  assert.match(html, /broadcastLink\.startsWith\("https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?"/);
   assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
   assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
+
+  const legacy = await handleInternalRoutes(request("/internal/jobs/create-job?source=legacy"), {
+    ADMIN_WORKER: adminWorkerBinding([]),
+  });
+  assert.equal(legacy.status, 308);
+  assert.equal(legacy.headers.get("location"), "/internal/admin/jobs/create-job?source=legacy");
 });
 
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {
@@ -362,6 +373,8 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     "www.mmdbkk.com/internal/admin/create-session*",
     "mmdbkk.com/internal/admin/jobs/create-session*",
     "www.mmdbkk.com/internal/admin/jobs/create-session*",
+    "mmdbkk.com/internal/admin/jobs/create-job*",
+    "www.mmdbkk.com/internal/admin/jobs/create-job*",
     "mmdbkk.com/internal/jobs/create-job*",
     "www.mmdbkk.com/internal/jobs/create-job*",
     "mmdbkk.com/a/create-session.js",
@@ -399,7 +412,7 @@ test("protected-page login redirects preserve only same-origin internal next pat
   const cases = [
     ["/internal/admin/control-room?tab=line-inbox", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room%3Ftab%3Dline-inbox"],
     ["/internal/admin/jobs/create-session?source=bridge", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fjobs%2Fcreate-session%3Fsource%3Dbridge"],
-    ["/internal/jobs/create-job?session=sess_public_safe", "/internal/admin/login?next=%2Finternal%2Fjobs%2Fcreate-job%3Fsession%3Dsess_public_safe"],
+    ["/internal/admin/jobs/create-job?source=job-board", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fjobs%2Fcreate-job%3Fsource%3Djob-board"],
   ];
 
   for (const [path, location] of cases) {

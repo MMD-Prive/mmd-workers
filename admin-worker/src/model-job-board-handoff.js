@@ -179,9 +179,9 @@ export async function handleModelJobBoardHandoff(request, env, coreFetch) {
 }
 
 export async function handleModelJobBoardValidate(request, env) {
-  const expected = clean(env.INTERNAL_TOKEN, 4096);
-  const supplied = clean(request.headers.get("x-internal-token"), 4096);
-  if (!expected || !supplied || !(await constantTimeEqual(expected, supplied))) {
+  const url = new URL(request.url);
+  const caller = clean(request.headers.get("x-mmd-service-caller"), 120);
+  if (url.hostname !== "model-auth.internal" || caller !== "public-access-worker") {
     return json({ ok: false, error: "service_auth_required" }, 403);
   }
 

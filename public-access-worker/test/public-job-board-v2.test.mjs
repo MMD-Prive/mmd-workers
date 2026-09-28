@@ -38,6 +38,9 @@ function env(extra = {}) {
         if (url.hostname !== "model-auth.internal" || url.pathname !== "/__internal/model-job-board/validate") {
           return Response.json({ ok: false, error: "not_found" }, { status: 404 });
         }
+        if (request.headers.get("x-mmd-service-caller") !== "public-access-worker") {
+          return Response.json({ ok: false, error: "service_auth_required" }, { status: 403 });
+        }
         const body = await request.json().catch(() => ({}));
         if (!body.token) return Response.json({ ok: false, error: "model_handoff_required" }, { status: 401 });
         return Response.json({ ok: true, model_record_id: "rec12345678901234" });
