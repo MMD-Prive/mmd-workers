@@ -61,6 +61,9 @@ async function fixture() {
         calls.telegramDocuments++;
         const form = await request.formData();
         assert.equal(form.get("message_thread_id"), "22");
+        assert.match(String(form.get("caption") || ""), /สลิปลูกค้าเข้าแล้ว/);
+        assert.match(String(form.get("caption") || ""), /Official Verify/);
+        assert.match(String(form.get("caption") || ""), /ยังไม่ปล่อยลิงก์ลูกค้า \/ โมเดล/);
         assert.ok((await form.get("document").arrayBuffer()).byteLength);
       } else calls.telegramMessages++;
       return Response.json({ ok: telegramHealthy, message_id: telegramHealthy ? 42 : null }, { status: telegramHealthy ? 200 : 503 });
