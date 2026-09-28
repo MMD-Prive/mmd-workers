@@ -278,6 +278,28 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
   });
 
+  it("keeps the entered MY MMD LIFF shell edge-to-edge with safe areas and unchanged member snapshot sizing", async () => {
+    const response = await shell("/member/liff?intent=status&view=home");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /html,body\{margin:0;padding:0;width:100%;min-width:100%;min-height:100%;overflow-x:hidden\}/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\)\{[^}]*min-height:100dvh[^}]*width:100%[^}]*max-width:100%[^}]*overflow-x:clip/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*width:100%[^}]*max-width:none[^}]*min-height:100dvh/);
+    assert.match(html, /padding:calc\(16px \+ env\(safe-area-inset-top\)\) 16px calc\(90px \+ env\(safe-area-inset-bottom\)\)/);
+    assert.match(html, /padding-left:max\(16px,env\(safe-area-inset-left\)\)/);
+    assert.match(html, /padding-right:max\(16px,env\(safe-area-inset-right\)\)/);
+    assert.match(html, /\.digital-dock\{[^}]*left:0;right:0;[^}]*width:100%;[^}]*max-width:none;[^}]*transform:none/);
+    assert.match(html, /\.digital-dock\{[^}]*env\(safe-area-inset-right\)[^}]*env\(safe-area-inset-bottom\)[^}]*env\(safe-area-inset-left\)/);
+    assert.match(html, /@media\(max-width:699px\)\{[^}]*width:100vw;max-width:100vw;min-height:100dvh/);
+    assert.match(html, /@media\(min-width:700px\)\{[^}]*#profile[^}]*width:min\(100%,760px\);margin-left:auto;margin-right:auto/);
+    assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) #status\{display:none!important;margin:0\}/);
+    assert.doesNotMatch(html, /Lovable design source|DESIGN PREVIEW/);
+    assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
+    assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
+  });
+
   it("renders a verified-only Credit Wallet through the same-site credit API", async () => {
     const response = await shell("/member/liff?intent=status&view=credits&lang=th");
     const html = await response.text();

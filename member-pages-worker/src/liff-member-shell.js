@@ -70,6 +70,7 @@ function renderShell(config, nonce) {
   <title>MMD Privé</title>
   <style>
     :root{color-scheme:dark;font-family:"LINE Seed Sans TH","LINE","Noto Sans Thai","Noto",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#090909;color:#f5f2eb}
+    html,body{margin:0;padding:0;width:100%;min-width:100%;min-height:100%;overflow-x:hidden}html{background:#090909}body{min-height:100vh;min-height:100dvh;background:#090909}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;background:#090909;padding:20px 16px 40px}
     main{width:min(100%,760px);margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
@@ -132,8 +133,8 @@ function renderShell(config, nonce) {
     body:not(.app-entered) .actions,body:not(.app-entered) .member-nav,body:not(.app-entered) #profile,body:not(.app-entered) #signup{display:none!important}
     .app-status{display:none;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);color:#bdb4ad;font-size:13px;line-height:1.55}.app-entered .app-status{display:block}
     body.app-entered .intro-screen{display:none}
-    body.app-entered.world-public main,body.app-entered.world-private main{width:min(100%,760px);min-height:auto;margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;display:block}
-    body.app-entered.world-public,body.app-entered.world-private{padding:20px 16px 40px;overflow:auto}
+    body.app-entered.world-public main,body.app-entered.world-private main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:0;border:0;border-radius:0;display:block;box-shadow:none}
+    body.app-entered.world-public,body.app-entered.world-private{min-height:100vh;min-height:100dvh;padding:0;overflow-x:clip;overflow-y:auto}
     @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
     /* MMD Memory theme locks: Bangkok ivory for Public, SIGIL Wall for Private. */
     body.world-public:not(.signup-mode){font-family:"Manrope","Noto Sans Thai","LINE Seed Sans TH",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% 110%,rgba(184,132,82,.22),transparent 48%),linear-gradient(180deg,#fffdf8 0%,#f6ede2 56%,#e7d8c7 100%);color:#2a2521}
@@ -189,8 +190,8 @@ function renderShell(config, nonce) {
     body.context-resolving .intro-screen{visibility:visible}
 
     /* Worker-rendered MY MMD LIFF Digital Home v3. Runtime stays Worker-owned; visual system is ported from the Lovable vNext design lab. */
-    body.app-entered:not(.signup-mode){--digital-bg:#080907;--digital-surface:#1c1d1b;--digital-raised:#272825;--digital-line:#555248;--digital-gold:#d8b26a;--digital-cream:#f6f1e7;--digital-muted:#bcb6aa;--digital-radius:8px;min-height:100svh;padding:0;background:var(--digital-bg);color:var(--digital-cream)}
-    body.app-entered:not(.signup-mode) main{width:min(100%,520px);min-height:100svh;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 18px calc(90px + env(safe-area-inset-bottom));border:0;border-radius:0;background:radial-gradient(ellipse 90% 34% at 50% 11%,rgba(80,64,34,.42),transparent 82%),linear-gradient(155deg,#11120e,#080907 62%);box-shadow:none}
+    body.app-entered:not(.signup-mode){--digital-bg:#080907;--digital-surface:#1c1d1b;--digital-raised:#272825;--digital-line:#555248;--digital-gold:#d8b26a;--digital-cream:#f6f1e7;--digital-muted:#bcb6aa;--digital-radius:8px;min-height:100vh;min-height:100dvh;width:100%;max-width:100%;padding:0;overflow-x:clip;overflow-y:auto;background:var(--digital-bg);color:var(--digital-cream)}
+    body.app-entered:not(.signup-mode) main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:calc(16px + env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));border:0;border-radius:0;background:radial-gradient(ellipse 90% 34% at 50% 11%,rgba(80,64,34,.42),transparent 82%),linear-gradient(155deg,#11120e,#080907 62%);box-shadow:none}
     body.app-entered:not(.signup-mode) .intro-screen,body.app-entered:not(.signup-mode) .member-nav{display:none!important}
     body.app-entered:not(.signup-mode) #app-status{min-height:0;margin:0;color:#8d8e83;font-size:10px;text-align:right}
     body.app-entered:not(.signup-mode) .actions{margin:8px 0 0}
@@ -212,9 +213,11 @@ function renderShell(config, nonce) {
     .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);text-align:left}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
     .digital-quick{margin-top:4px}.digital-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.digital-quick button{min-height:64px;padding:8px 2px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);font-size:9px;text-align:center}.digital-quick button i{display:block;margin-bottom:4px;color:var(--digital-gold);font-size:16px;font-style:normal}
     .digital-data-cache{display:none!important}
-    .digital-dock{position:fixed;z-index:10;bottom:0;left:50%;width:min(100%,520px);transform:translateX(-50%);display:none;grid-template-columns:repeat(4,1fr);padding:7px 9px calc(7px + env(safe-area-inset-bottom));border-top:1px solid var(--digital-line);background:rgba(8,9,7,.96);backdrop-filter:blur(18px)}
+    .digital-dock{position:fixed;z-index:10;bottom:0;left:0;right:0;width:100%;max-width:none;transform:none;display:none;grid-template-columns:repeat(4,1fr);padding:7px max(9px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(9px,env(safe-area-inset-left));border-top:1px solid var(--digital-line);background:rgba(8,9,7,.96);backdrop-filter:blur(18px)}
     body.app-entered:not(.signup-mode) .digital-dock{display:grid}.digital-dock button,.digital-dock a{min-height:44px;border:0;background:none;color:var(--digital-muted);font-size:9px;text-align:center;text-decoration:none}.digital-dock button[aria-current="page"]{color:var(--digital-gold);font-weight:800;background:var(--digital-surface);border-radius:var(--digital-radius)}.digital-dock i{display:block;margin-bottom:2px;font-size:17px;font-style:normal}
-    body.app-entered:not(.signup-mode) #status{margin:18px 0 0;color:#77796f;font-size:9px;text-align:center}.digital-design-slot[hidden]{display:none!important}.digital-design-slot{padding:16px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}.digital-design-slot .digital-eyebrow{display:block}.digital-design-slot p{margin:6px 0 0;color:var(--digital-muted);font-size:10px;line-height:1.5}
+    body.app-entered:not(.signup-mode) #status{display:none!important;margin:0}.digital-design-slot[hidden]{display:none!important}.digital-design-slot{padding:16px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}.digital-design-slot .digital-eyebrow{display:block}.digital-design-slot p{margin:6px 0 0;color:var(--digital-muted);font-size:10px;line-height:1.5}
+    @media(max-width:699px){body.app-entered:not(.signup-mode),body.app-entered:not(.signup-mode) main{width:100vw;max-width:100vw;min-height:100dvh}body.app-entered:not(.signup-mode) main{margin:0;border:0;border-radius:0}.digital-dock{width:100vw;max-width:100vw}}
+    @media(min-width:700px){body.app-entered:not(.signup-mode) #app-status,body.app-entered:not(.signup-mode) #actions,body.app-entered:not(.signup-mode) #profile,body.app-entered:not(.signup-mode) #status{width:min(100%,760px);margin-left:auto;margin-right:auto}}
     @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
   </style>
 </head>
@@ -336,7 +339,7 @@ function renderShell(config, nonce) {
     </div>
   </section>
   <nav class="digital-dock" aria-label="เมนู MY MMD LIFF"><button type="button" data-view="home" aria-current="page"><i>⌂</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>▤</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>WALLET</button><a href="/member/kenji-ai-20"><i>✦</i>KENJI</a></nav>
-  <div id="status" class="status">MMD Privé · LIFF Digital Home v3 · Lovable design source</div>
+  <div id="status" class="status">MY MMD</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
 <script nonce="${nonce}">
