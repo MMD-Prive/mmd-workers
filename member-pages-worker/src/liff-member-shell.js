@@ -323,7 +323,7 @@ function renderShell(config, nonce) {
     <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD ROTATION</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
-    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji-ai-20">เปิด Kenji ↗</a></div></section>
+    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji">เปิด Kenji ↗</a></div></section>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
       <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
@@ -390,7 +390,7 @@ function renderShell(config, nonce) {
     </section>
     </div>
   </section>
-  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>⌂</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>▤</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>WALLET</button><a href="/member/kenji-ai-20"><i>✦</i>KENJI</a></nav>
+  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>⌂</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>▤</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>WALLET</button><a href="/member/kenji"><i>✦</i>KENJI</a></nav>
   <div id="status" class="status">MY MMD</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>

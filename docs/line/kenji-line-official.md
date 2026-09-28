@@ -5,7 +5,7 @@ Kenji LINE OA is the member-facing concierge entry for MMD Privé. It is not the
 ## Surface Map
 
 - `/member/dashboard`: Member Home / Status Hub
-- `/member/kenji-ai-20`: Kenji AI member-facing concierge surface
+- `/member/kenji`: Kenji AI member-facing concierge surface
 - `/sigil/board`: internal system/admin/rules/control layer
 - LINE OA Kenji: member-facing conversational entry
 

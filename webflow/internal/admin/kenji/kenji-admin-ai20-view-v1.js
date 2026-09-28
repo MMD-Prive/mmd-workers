@@ -5,7 +5,7 @@
   if (!root || root.dataset.ai20ViewV1 === "1") return;
   root.dataset.ai20ViewV1 = "1";
 
-  var MEMBER_PREVIEW = "/member/kenji-ai-20?mode=admin-preview";
+  var MEMBER_PREVIEW = "/member/kenji?mode=admin-preview";
 
   var style = document.createElement("style");
   style.textContent = [
@@ -55,7 +55,7 @@
       '<div class="kai20-head"><div><span class="kai20-kicker">KENJI · AI 2.0</span><h2>ดู Kenji แบบที่ลูกค้าเจอจริง</h2><p>Preview member-facing Kenji AI 2.0 อยู่ใน Kenji Admin เดียวกัน เพื่อให้สอน Knowledge แล้วกลับมาดูผลใน customer surface ได้โดยไม่ต้องออกไปอีกห้อง</p></div>'
       + '<div class="kai20-actions"><button type="button" class="kai20-button is-primary" data-kai20-reload>Reload Preview</button><a class="kai20-button" href="'+MEMBER_PREVIEW+'" target="_blank" rel="noopener">Open Full Preview</a></div></div>'
       + '<div class="kai20-note"><b>Preview only</b> · หน้านี้ไม่ย้าย Money Truth, Membership/Access, Model eligibility หรือ publish authority เข้า browser. Kenji AI 2.0 ยังอ่าน published Knowledge จาก runtime เดิม และยังเป็นผู้ช่วยที่ guide / explain / classify / route เท่านั้น</div>'
-      + '<div class="kai20-frame-wrap"><div class="kai20-frame-bar"><span>Member-facing runtime</span><small>/member/kenji-ai-20 · mode=admin-preview</small></div><iframe class="kai20-frame" data-kai20-frame title="Kenji AI 2.0 admin preview" src="'+MEMBER_PREVIEW+'" loading="eager" referrerpolicy="same-origin" allow="clipboard-write"></iframe></div>';
+      + '<div class="kai20-frame-wrap"><div class="kai20-frame-bar"><span>Member-facing runtime</span><small>/member/kenji · mode=admin-preview</small></div><iframe class="kai20-frame" data-kai20-frame title="Kenji AI 2.0 admin preview" src="'+MEMBER_PREVIEW+'" loading="eager" referrerpolicy="same-origin" allow="clipboard-write"></iframe></div>';
     main.appendChild(panel);
   }
 

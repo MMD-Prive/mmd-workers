@@ -24,6 +24,10 @@ import {
   isKenjiLineMemberTruthRequest,
 } from "./kenji-line-member-truth.js";
 import {
+  handleKenjiMemberSessionTruth,
+  isKenjiMemberSessionTruthRequest,
+} from "./kenji-member-session-truth.js";
+import {
   handleHypeMemberWallet,
   isHypeMemberWalletRequest,
 } from "./hype-member-wallet-projection.js";
@@ -125,6 +129,9 @@ const worker = {
     }
     if (isKenjiLineMemberTruthRequest(request)) {
       return handleKenjiLineMemberTruth(request, env);
+    }
+    if (isKenjiMemberSessionTruthRequest(request)) {
+      return handleKenjiMemberSessionTruth(request, env);
     }
     if (isHypeMemberWalletRequest(request)) {
       return handleHypeMemberWallet(request, env);

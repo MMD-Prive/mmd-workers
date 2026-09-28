@@ -9,7 +9,7 @@
 
   var config={
     endpoint:root.dataset.profileEndpoint||"",
-    chat:root.dataset.chatUrl||"/member/kenji-ai-20",
+    chat:root.dataset.chatUrl||"/member/kenji",
     verify:root.dataset.verifyUrl||"/member/my-mmd",
     booking:root.dataset.bookingUrl||"/booking",
     recovery:root.dataset.recoveryUrl||"/recovery"

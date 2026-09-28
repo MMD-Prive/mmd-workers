@@ -3,7 +3,7 @@
 Status: active implementation lock
 Date: 2026-08-19
 Payment route amendment: 2026-09-11
-Customer/member surface: `/member/kenji-ai-20`
+Customer/member surface: `/member/kenji`
 Canonical owner admin preview: `/internal/admin/kenji?view=ai20`
 Runtime source endpoint: `/v1/internal/kenji/knowledge/published`
 Admin namespace: `/v1/admin/kenji/knowledge/*`
@@ -12,7 +12,7 @@ Admin namespace: `/v1/admin/kenji/knowledge/*`
 
 Kenji AI 2.0 must read published knowledge cards from the runtime endpoint first. If the endpoint or persisted store is unavailable, the page/chat must fallback to the static canonical route map only. The published runtime must not return an empty `cards: []` as the normal customer-facing state.
 
-The customer/member runtime remains `/member/kenji-ai-20`. For the single owner, the preview of that runtime is consolidated into `/internal/admin/kenji?view=ai20`; this is a preview surface only and does not create a second runtime, knowledge store, or authority layer.
+The canonical customer/member runtime is `/member/kenji`; `/member/kenji-ai-20` remains a compatibility surface. For the single owner, the preview of that runtime is consolidated into `/internal/admin/kenji?view=ai20`; this is a preview surface only and does not create a second runtime, knowledge store, or authority layer.
 
 For payment routing, `docs/knowledge/MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` and `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` are authoritative when older wording conflicts with this document.
 
@@ -34,8 +34,8 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 
 ## Route map
 
-- `/member/kenji-ai-20` — Kenji AI 2.0 page/chat runtime for customers/members.
-- `/member/kenji-ai-20?mode=admin-preview` — standalone owner preview source used by the canonical Kenji Admin AI 2.0 view.
+- `/member/kenji` — canonical Kenji page/chat runtime for customers/members.
+- `/member/kenji?mode=admin-preview` — standalone owner preview source used by the canonical Kenji Admin AI 2.0 view.
 - `/internal/admin/kenji?view=ai20` — canonical owner preview inside Kenji Admin.
 - `/internal/admin/kenji?view=knowledge` — canonical owner Knowledge view.
 - `/internal/admin/kenji?view=board` — canonical owner sanitized SIGIL Board view.
