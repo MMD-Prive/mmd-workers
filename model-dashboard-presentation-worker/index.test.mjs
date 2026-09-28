@@ -201,7 +201,7 @@ test("approved Model job link enters the published Mini App before opening signe
     `https://mmdbkk.com/sigil/model/dashboard?liff.state=${encodeURIComponent("?return_to=" + encodeURIComponent(target))}&access_token=opaque`,
   );
   const html = liffPrimaryBootstrapHtml(lineRedirect);
-  assert.match(html, /window\.location\.replace\("/sigil/confirm/job-model\?t=abc\.DEF_123"\)/);
+  assert.ok(html.includes('window.location.replace("/sigil/confirm/job-model?t=abc.DEF_123")'));
 
   const hostile = new Request("https://mmdbkk.com/sigil/model/dashboard?return_to=%2Finternal%2Fadmin%3Ft%3Dabc");
   assert.equal(new URL(modelMiniAppHandoffUrl(hostile)).searchParams.has("return_to"), false);
