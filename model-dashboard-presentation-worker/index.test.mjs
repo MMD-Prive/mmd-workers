@@ -489,8 +489,8 @@ test("serves the MMD APP history add-on with no customer-facing or raw-chat cont
   assert.equal(js.status, 200);
   const source = await js.text();
   assert.match(source, /\/v1\/model\/history/);
-  assert.match(source, /รายได้จากงานที่ยืนยัน/);
-  assert.match(source, /ไม่มีสลิปแนบ/);
+  assert.match(source, /ค่าตัวที่ยืนยันในระบบ/);
+  assert.match(source, /จ่ายแล้ว · MMD รับรอง/);
   assert.doesNotMatch(source, /client_name|location_name|raw_text|customer_reference/);
   const css = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-history-v1.css"));
   assert.equal(css.status, 200);
