@@ -458,6 +458,48 @@ export function shouldServePwaLiffBootstrap(request) {
   return true;
 }
 
+export function resolveJobBoardContextFromRequest(request) {
+  let source;
+  try { source = new URL(request.url); } catch { return null; }
+  if (String(boundedParam(source, "intent") || "").trim() !== "job_board") return null;
+
+  const rawJobId = String(boundedParam(source, "job_id") || "").trim();
+  const jobId = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(rawJobId) ? rawJobId : "";
+  const fallback = jobId
+    ? `https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(jobId)}`
+    : "https://sigil.mmdbkk.com/public/api/jobs";
+
+  let next = fallback;
+  const rawNext = String(boundedParam(source, "next") || "").trim();
+  if (rawNext) {
+    try {
+      const candidate = new URL(rawNext);
+      const path = normalizePath(candidate.pathname).replace(/\/+$/, "") || "/";
+      const allowed = candidate.protocol === "https:"
+        && candidate.origin === "https://sigil.mmdbkk.com"
+        && (path === "/public/api/jobs" || /^\/public\/api\/jobs\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(path))
+        && !candidate.username
+        && !candidate.password
+        && !candidate.hash;
+      if (allowed) {
+        candidate.search = "";
+        next = candidate.toString();
+      }
+    } catch {
+      next = fallback;
+    }
+  }
+
+  const rawSource = String(boundedParam(source, "source") || "line_model_group").trim();
+  return {
+    intent: "job_board",
+    return_to: "public_job_board",
+    source: /^[A-Za-z0-9._:-]{1,80}$/.test(rawSource) ? rawSource : "line_model_group",
+    job_id: jobId,
+    next,
+  };
+}
+
 function safeModelConfirmationReturnTo(request) {
   let source;
   try { source = new URL(request.url); } catch { return ""; }
@@ -485,29 +527,45 @@ function safeMiniAppUrlForBootstrap(request) {
   if (boundedParam(source, "handoff") === "job-confirmed") params.set("handoff", "job-confirmed");
   const activation = boundedParam(source, "activation");
   if (activation && activation.length <= 4096) params.set("activation", activation);
-  const returnTo = safeModelConfirmationReturnTo(request);
-  if (returnTo) params.set("return_to", returnTo);
+
+  const jobBoard = resolveJobBoardContextFromRequest(request);
+  if (jobBoard) {
+    params.set("intent", jobBoard.intent);
+    params.set("return_to", jobBoard.return_to);
+    params.set("source", jobBoard.source);
+    params.set("next", jobBoard.next);
+    if (jobBoard.job_id) params.set("job_id", jobBoard.job_id);
+  } else {
+    const returnTo = safeModelConfirmationReturnTo(request);
+    if (returnTo) params.set("return_to", returnTo);
+  }
   return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
 }
 
 export function liffPrimaryBootstrapHtml(request) {
   const environment = resolveLiffEnvironmentFromRequest(request);
+  const jobBoard = resolveJobBoardContextFromRequest(request);
   return modelLiffDigitalBootstrapHtml({
     liffId: MODEL_LIFF_IDS[environment],
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
-    returnTo: safeModelConfirmationReturnTo(request),
+    returnTo: jobBoard ? "" : safeModelConfirmationReturnTo(request),
+    jobBoard,
+    environment,
     mode: "primary",
   });
 }
 
 export function liffPwaBootstrapHtml(request) {
   const environment = resolveLiffEnvironmentFromRequest(request);
+  const jobBoard = resolveJobBoardContextFromRequest(request);
   return modelLiffDigitalBootstrapHtml({
     liffId: MODEL_LIFF_IDS[environment],
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
-    returnTo: safeModelConfirmationReturnTo(request),
+    returnTo: jobBoard ? "" : safeModelConfirmationReturnTo(request),
+    jobBoard,
+    environment,
     mode: "pwa",
   });
 }
@@ -605,8 +663,17 @@ export function modelMiniAppHandoffUrl(request) {
   const activation = String(source.searchParams.get("activation") || "");
   if (activation && activation.length <= 4096) params.set("activation", activation);
 
-  const returnTo = safeModelConfirmationReturnTo(request);
-  if (returnTo) params.set("return_to", returnTo);
+  const jobBoard = resolveJobBoardContextFromRequest(request);
+  if (jobBoard) {
+    params.set("intent", jobBoard.intent);
+    params.set("return_to", jobBoard.return_to);
+    params.set("source", jobBoard.source);
+    params.set("next", jobBoard.next);
+    if (jobBoard.job_id) params.set("job_id", jobBoard.job_id);
+  } else {
+    const returnTo = safeModelConfirmationReturnTo(request);
+    if (returnTo) params.set("return_to", returnTo);
+  }
 
   const phaseAId = source.searchParams.get("flow") === "apply" && (env === "developing" || env === "review")
     ? MODEL_LIFF_IDS[env]

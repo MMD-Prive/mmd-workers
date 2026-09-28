@@ -35,19 +35,45 @@ export function modelLiffDigitalBootstrapHtml({
   fallback,
   sdk,
   returnTo = "",
+  jobBoard = null,
+  environment = "published",
   mode = "primary",
 } = {}) {
   const safeId = JSON.stringify(String(liffId || ""));
   const safeFallback = JSON.stringify(String(fallback || ""));
   const safeSdk = JSON.stringify(String(sdk || ""));
   const safeReturnTo = JSON.stringify(String(returnTo || ""));
+  const safeEnvironment = JSON.stringify(String(environment || "published"));
+  const safeJobBoard = jobBoard && typeof jobBoard === "object"
+    ? {
+        job_id: String(jobBoard.job_id || ""),
+        next: String(jobBoard.next || ""),
+      }
+    : null;
+  const jobBoardScript = safeJobBoard ? `
+    var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
+    if(!idToken)throw new Error("id_token_missing");
+    status.textContent="ยืนยัน LINE แล้ว · กำลังเปิดงาน…";
+    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
+    var exchangeBody=await exchange.json().catch(function(){return null});
+    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    var handoffParams=new URLSearchParams();
+    ${safeJobBoard.job_id ? `handoffParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
+    ${safeJobBoard.next ? `handoffParams.set("next",${JSON.stringify(safeJobBoard.next)});` : ""}
+    var handoff=await fetch("/v1/model/job-board/handoff?"+handoffParams.toString(),{method:"GET",credentials:"include",cache:"no-store",headers:{accept:"application/json"}});
+    var handoffBody=await handoff.json().catch(function(){return null});
+    if(!handoff.ok||!handoffBody||handoffBody.ok!==true||!handoffBody.redirect_url)throw new Error(handoffBody&&handoffBody.error||"job_board_handoff_failed");
+    var destination=new URL(String(handoffBody.redirect_url));
+    if(destination.origin!=="https://sigil.mmdbkk.com"||!destination.pathname.startsWith("/public/api/jobs"))throw new Error("job_board_redirect_invalid");
+    window.location.replace(destination.toString());return;` : "";
   const returnScript = returnTo ? `window.location.replace(${safeReturnTo});return;` : "";
   const primary = mode === "primary";
-  const title = primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP";
-  const copy = primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน";
-  const success = primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…";
-  const fail = primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ";
-  const cta = primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE";
+  const jobBoardMode = Boolean(safeJobBoard);
+  const title = jobBoardMode ? "กำลังเปิดงาน MMD" : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
+  const copy = jobBoardMode ? "ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที" : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
+  const success = jobBoardMode ? "ยืนยัน LINE แล้ว · กำลังเปิดงาน…" : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
+  const fail = jobBoardMode ? "ยังเปิดงานผ่าน LINE ไม่สำเร็จ" : (primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ");
+  const cta = jobBoardMode ? "เปิดงานผ่าน LINE อีกครั้ง" : (primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE");
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
 
   return `<!doctype html>
@@ -96,6 +122,7 @@ export function modelLiffDigitalBootstrapHtml({
     await window.liff.init(${initOptions});
     pill.textContent="LINE · VERIFIED";
     status.textContent=${JSON.stringify(success)};
+    ${jobBoardScript}
     ${returnScript}
   }catch(error){
     pill.textContent="LINE · RETRY";
