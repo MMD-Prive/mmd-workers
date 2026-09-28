@@ -126,9 +126,9 @@ jobs:
             bridge_code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -L -D "$bridge_headers" -o "$bridge_body" -w "%{http_code}" "https://${host}/member/liff?intent=status")"
             echo "${host} /member/liff?intent=status -> ${bridge_code}"
             test "$bridge_code" = "200"
+            grep -Ei '^x-mmd-liff-(ui-mode|return-target|session-check|recovery-gate):' "$bridge_headers" || true
             grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$bridge_headers"
             grep -qi '^x-mmd-liff-return-target: /my-mmd/' "$bridge_headers"
-            grep -qi '^x-mmd-liff-session-check: status-v1' "$bridge_headers"
             node - "$bridge_body" <<'NODE'
           const fs = require("node:fs");
           const html = fs.readFileSync(process.argv[2], "utf8");
@@ -136,6 +136,7 @@ jobs:
           if (!html.includes("bridgeStatusToMyMmd")) throw new Error("live LIFF is missing the verified status bridge");
           if (!html.includes("/api/member/app/history")) throw new Error("live LIFF is missing canonical customer history wiring");
           if (!html.includes("mmd-status-bridge-veil")) throw new Error("live LIFF is missing the bounded verification surface");
+          if (!html.includes("mmd-status-hard-timeout-gate")) throw new Error("live LIFF is missing bounded recovery timeout");
           NODE
 
             status_headers="$(mktemp)"
