@@ -1,3 +1,5 @@
+import { buildModelJobBoardBroadcastLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
+
 const PREFIX = "/public/api/jobs";
 const STORE_PREFIX = "public-job-board/v2";
 const JOB_STATUSES = new Set(["draft", "published", "paused", "closed", "expired"]);
@@ -12,11 +14,23 @@ const VIEWER_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const VIEWER_RECORD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const VIEWER_ACTIONS = new Set(["restrict_private", "suspend_session", "ban_job_link", "unban"]);
 const PUBLIC_VIEWER_EVENTS = new Set(["read_ping", "cta_click"]);
+const MODEL_GATE_COOKIE = "mmd_pjb_model_v2";
+const MODEL_HANDOFF_PARAM = "mmd_job_board_handoff";
 const encoder = new TextEncoder();
 
 export async function handlePublicJobBoardV2Request(request, env = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
+
+  if (url.hostname === "public-job-board.internal" && path === "/__internal/job-board/publish") {
+    if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+    requireStore(env);
+    const input = await readJson(request);
+    const job = createJobRecord({ ...input, status: input.status || "published" });
+    await putJson(env, jobKey(job.id), job, { onlyIfMissing: true });
+    return json({ ok: true, job: ownerJobView(job) }, 201);
+  }
+
   if (path !== PREFIX && !path.startsWith(`${PREFIX}/`)) return null;
 
   try {
@@ -25,6 +39,9 @@ export async function handlePublicJobBoardV2Request(request, env = {}) {
     const parts = rest ? rest.split("/").map(decodeURIComponent) : [];
 
     if (parts[0] === "internal") return await handleOwnerRoute(request, env, parts.slice(1));
+
+    const gate = await enforceModelBoardGate(request, env, parts);
+    if (gate instanceof Response) return gate;
     if (request.method === "GET" && parts.length === 0) return await renderBoard(request, env);
     if (request.method === "GET" && parts.length === 1 && parts[0] === "data") return json({ ok: true, jobs: await listPublicJobs(env) });
     if (request.method === "POST" && parts.length === 1 && parts[0] === "events") return await receiveViewerEvent(request, env);
@@ -106,7 +123,7 @@ async function handleOwnerRoute(request, env, parts) {
 }
 
 export function createJobRecord(input = {}, now = new Date()) {
-  const brief = requiredMultiline(input.brief, "brief", 6000);
+  const brief = requiredMultiline(input.brief, "brief", 1000);
   const parsed = parsePublicJobBriefV2(brief);
   const status = token(input.status || "draft");
   if (!JOB_STATUSES.has(status)) throw httpError(400, "job_status_invalid");
@@ -122,6 +139,7 @@ export function createJobRecord(input = {}, now = new Date()) {
     updated_at: now.toISOString(),
     public: {
       title: clean(input.title || parsed.title, 160),
+      listing_description: sanitizePublicText(input.listing_description || input.brief || parsed.deeper_interest_detail, 1000),
       category: token(input.category || parsed.category || "other"),
       duration: clean(input.duration || parsed.duration, 80),
       date: clean(input.date || parsed.date, 80),
@@ -207,7 +225,7 @@ async function renderJobDetail(request, env, jobId) {
     return html(pageShell("งานลับ", `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail private-detail"><p class="eyebrow">งานลับ 🔐</p><h1>${esc(categoryLabel(view.category))}</h1><p>งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด</p><p>${esc([view.date, view.time, view.area].filter(Boolean).join(" · "))}</p><form method="post" action="${PREFIX}/${encodeURIComponent(job.id)}/reveal"><button class="primary" type="submit">ดูรายละเอียดงานลับ</button></form></article></main>`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
   }
   await recordViewerEvent(env, anon, { type: "brief_open", job_id: job.id, world: view.world });
-  return html(pageShell(view.title, `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail${view.world === "private" ? " private-detail" : ""}"><p class="eyebrow">${esc(view.world === "private" ? "งานลับ 🔐" : categoryLabel(view.category))}</p><h1>${esc(view.title)}</h1><p>งานนี้กำลังเปิดรับคนที่สนใจครับ</p><p>อ่านรายละเอียดให้ครบก่อนนะ ถ้าตรงกับคุณ กดส่งความสนใจได้เลย</p>${detailRows(view)}<p>${esc(view.safe_customer_description)}</p><p>${esc(view.required_appearance_profile)}</p><a class="primary" data-interest-cta href="${PREFIX}/${encodeURIComponent(job.id)}/apply">สนใจงานนี้</a></article></main>${viewerSignalScript(job.id)}`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
+  return html(pageShell(view.title, `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail${view.world === "private" ? " private-detail" : ""}"><p class="eyebrow">${esc(view.world === "private" ? "งานลับ 🔐" : categoryLabel(view.category))}</p><h1>${esc(view.title)}</h1><p>งานนี้กำลังเปิดรับคนที่สนใจครับ</p><p>อ่านรายละเอียดให้ครบก่อนนะ ถ้าตรงกับคุณ กดส่งความสนใจได้เลย</p>${view.listing_description ? `<p>${esc(view.listing_description)}</p>` : ""}${detailRows(view)}<p>${esc(view.safe_customer_description)}</p><p>${esc(view.required_appearance_profile)}</p><a class="primary" data-interest-cta href="${PREFIX}/${encodeURIComponent(job.id)}/apply">สนใจงานนี้</a></article></main>${viewerSignalScript(job.id)}`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
 }
 
 async function revealPrivateJob(request, env, jobId) {
@@ -255,7 +273,8 @@ async function createInterest(request, env, jobId) {
   const actorHash = await sha256(`${job.id}:${anon.id}`);
   const dedupe = await getJson(env, dedupeKey(job.id, actorHash));
   if (dedupe?.application_ref) throw httpError(409, "job_interest_already_exists");
-  const identity = await resolveIdentity(request, env, input);
+  const gate = await requireModelBoardGate(request, env);
+  const identity = { identity_class: "VERIFIED_LINE_MODEL", workflow_status: "existing_model_unbound", public_status: "received", verified_model_record_id: gate.model_record_id, claim: clean(input.existing_model_claim, 160) || null };
   const applicationRef = makeRef("APP");
   const now = new Date().toISOString();
   const application = {
@@ -455,7 +474,12 @@ function jobCard(job) {
 }
 
 function ownerJobView(job) {
-  return structuredClone(job);
+  const view = structuredClone(job);
+  view.broadcast_url = buildModelJobBoardBroadcastLink({
+    source: "line_model_group",
+    job_id: job.id,
+  });
+  return view;
 }
 
 function ownerApplicationView(application) {
@@ -588,7 +612,79 @@ function viewerSignalScript(jobId) {
 }
 
 function ownerPage() {
-  return `<main><section class="hero"><p class="eyebrow">MMD · OWNER</p><h1>Public Job Board</h1><p>วางบรีฟตามภาษาที่เปอร์ใช้ ระบบจะแยกข้อมูลสำหรับหน้า Public โดยเก็บบรีฟต้นฉบับไว้ในพื้นที่ส่วนตัว</p></section><section class="grid owner-grid"><article class="job"><p class="eyebrow">สร้างงาน</p><label>บรีฟงาน<textarea data-owner-brief placeholder="วางบรีฟงานที่นี่"></textarea></label><label>สถานะ<select data-owner-status><option value="draft">Draft</option><option value="published">Published</option><option value="paused">Paused</option></select></label><label>เพศลูกค้า<select data-owner-customer-gender><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่ ชาย/หญิง</option><option value="mixed">หลายเพศ</option></select></label><label><input data-owner-private type="checkbox"> งานลับ</label><label><input data-owner-budget type="checkbox"> อนุมัติให้แสดง budget บนปุ่ม</label><button class="primary" type="button" data-owner-create>บันทึกงาน</button><p data-owner-create-status role="status"></p></article><article class="job"><p class="eyebrow">รายการงาน</p><button class="primary" type="button" data-owner-jobs>โหลดรายการงาน</button><p data-owner-jobs-status role="status"></p><div data-owner-jobs-list></div></article><article class="job"><p class="eyebrow">ผู้สนใจต่อ Job</p><label>Job ID<input data-owner-job-id placeholder="JOB-..."></label><button class="primary" type="button" data-owner-load>ดูผู้สนใจ</button><p data-owner-review-status role="status"></p><div data-owner-candidates></div></article><article class="job"><p class="eyebrow">Anonymous viewer watch</p><button class="primary" type="button" data-owner-viewers>ดูรายการล่าสุด</button><p data-owner-viewer-status role="status"></p><div data-owner-viewer-list></div></article></section></main><script>(()=>{const q=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function api(path,opt={}){const r=await fetch('${PREFIX}/internal'+path,{credentials:'same-origin',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||('HTTP '+r.status));return d}q('[data-owner-create]').onclick=async()=>{const out=q('[data-owner-create-status]');try{out.textContent='กำลังบันทึก…';const d=await api('/jobs',{method:'POST',body:JSON.stringify({brief:q('[data-owner-brief]').value,status:q('[data-owner-status]').value,customer_gender:q('[data-owner-customer-gender]').value,confidentiality:q('[data-owner-private]').checked,budget_disclosure_approved:q('[data-owner-budget]').checked})});out.textContent='บันทึกแล้ว · '+d.job.id;q('[data-owner-job-id]').value=d.job.id;await loadJobs()}catch(e){out.textContent='ยังบันทึกไม่ได้ · '+e.message}};async function loadJobs(){const out=q('[data-owner-jobs-status]'),box=q('[data-owner-jobs-list]');try{const d=await api('/jobs');out.textContent=d.jobs.length+' งาน';box.innerHTML=d.jobs.map(j=>'<section class="owner-candidate" data-job="'+esc(j.id)+'"><strong>'+esc(j.public.title)+'</strong><p>'+esc(j.status)+' · '+esc(j.public.world)+' · budget '+(j.public.budget_disclosure_approved?'เปิด':'ปิด')+' · ลูกค้า '+esc(customerGenderLabel(j.public.customer_gender))+'</p><div class="owner-actions"><button data-job-status="published">Published</button><button data-job-status="paused">Paused</button><button data-job-status="closed">Closed</button><button data-job-private="true">Private</button><button data-job-private="false">Public</button><button data-job-budget="true">เปิด budget</button><button data-job-budget="false">ปิด budget</button></div></section>').join('')||'<p>ยังไม่มีงาน</p>';box.querySelectorAll('[data-job-status],[data-job-private],[data-job-budget]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-job]'),payload={status:btn.dataset.jobStatus||undefined,confidentiality:btn.dataset.jobPrivate===undefined?undefined:btn.dataset.jobPrivate==='true',budget_disclosure_approved:btn.dataset.jobBudget===undefined?undefined:btn.dataset.jobBudget==='true'};await api('/jobs/'+encodeURIComponent(section.dataset.job)+'/status',{method:'POST',body:JSON.stringify(payload)});await loadJobs()})}catch(e){out.textContent='โหลดไม่ได้ · '+e.message}}async function load(){const id=q('[data-owner-job-id]').value.trim(),out=q('[data-owner-review-status]'),box=q('[data-owner-candidates]');try{out.textContent='กำลังโหลด…';const d=await api('/jobs/'+encodeURIComponent(id)+'/candidates');out.textContent=d.candidates.length+' รายการ';box.innerHTML=d.candidates.map(a=>'<section class="owner-candidate" data-app="'+esc(a.application_ref)+'"><strong>'+esc(a.applicant?.nickname||'ยังไม่ส่งข้อมูล')+'</strong><p>'+esc(a.workflow_status)+' · '+esc(a.identity?.identity_class)+'</p><p>'+esc(a.applicant?.profile||'')+'</p><p>'+esc(a.applicant?.gender||'')+' · '+esc(a.applicant?.customer_scope||'')+' · '+esc(a.applicant?.work_scope||'')+' · ไม่รับ '+esc(a.applicant?.unavailable_scope||'')+'</p><p>รูป '+(a.uploads?.length||0)+' ไฟล์</p><div class="owner-actions"><button data-decision="approve">Approve</button><button data-decision="request_more_information">ขอข้อมูลเพิ่ม</button><button data-decision="reject">Reject</button><button data-decision="bind_to_existing_model">ผูก Model เดิม</button><button data-decision="create_new_model_review">สร้าง Model review</button></div></section>').join('')||'<p>ยังไม่มีผู้สนใจ</p>';box.querySelectorAll('[data-decision]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-app]'),decision=btn.dataset.decision,payload={decision};if(decision==='bind_to_existing_model'){const value=prompt('Model record ID');if(!value)return;payload.model_record_id=value}await api('/jobs/'+encodeURIComponent(id)+'/candidates/'+encodeURIComponent(section.dataset.app)+'/decision',{method:'POST',body:JSON.stringify(payload)});await load()})}catch(e){out.textContent='โหลดไม่ได้ · '+e.message;box.innerHTML=''}}async function loadViewers(){const out=q('[data-owner-viewer-status]'),box=q('[data-owner-viewer-list]');try{const d=await api('/viewers');out.textContent=d.viewers.length+' sessions';box.innerHTML=d.viewers.map(v=>'<section class="owner-candidate" data-viewer="'+esc(v.viewer_ref)+'"><strong>'+esc(v.display_label)+'</strong><p>'+esc(v.viewer_status)+' · '+esc(v.alert_level)+'</p><p>events '+v.events.length+' · '+esc(v.last_seen_at)+'</p><div class="owner-actions"><button data-viewer-action="restrict_private">จำกัด Private</button><button data-viewer-action="suspend_session">ระงับ 24 ชม.</button><button data-viewer-action="ban_job_link">แบน Job</button><button data-viewer-action="unban">ปลดข้อจำกัด</button></div></section>').join('')||'<p>ยังไม่มีรายการ</p>';box.querySelectorAll('[data-viewer-action]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-viewer]'),action=btn.dataset.viewerAction,payload={action};if(action==='ban_job_link'){const value=prompt('Job ID');if(!value)return;payload.job_id=value}await api('/viewers/'+encodeURIComponent(section.dataset.viewer)+'/action',{method:'POST',body:JSON.stringify(payload)});await loadViewers()})}catch(e){out.textContent='โหลดไม่ได้ · '+e.message}}q('[data-owner-jobs]').onclick=loadJobs;q('[data-owner-load]').onclick=load;q('[data-owner-viewers]').onclick=loadViewers})();</script>`;
+  return `<main><section class="hero"><p class="eyebrow">MMD · OWNER</p><h1>Public Job Board</h1><p>วางบรีฟตามภาษาที่เปอร์ใช้ ระบบจะแยกข้อมูลสำหรับหน้า Public โดยเก็บบรีฟต้นฉบับไว้ในพื้นที่ส่วนตัว</p></section><section class="grid owner-grid"><article class="job"><p class="eyebrow">สร้างงาน</p><label>บรีฟงาน<textarea data-owner-brief maxlength="1000" placeholder="รายละเอียดที่ Model จะเห็นบน Job Board · สูงสุด 1,000 ตัวอักษร"></textarea></label><label>สถานะ<select data-owner-status><option value="draft">Draft</option><option value="published">Published</option><option value="paused">Paused</option></select></label><label>เพศลูกค้า<select data-owner-customer-gender><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่ ชาย/หญิง</option><option value="mixed">หลายเพศ</option></select></label><label><input data-owner-private type="checkbox"> งานลับ</label><label><input data-owner-budget type="checkbox"> อนุมัติให้แสดง budget บนปุ่ม</label><button class="primary" type="button" data-owner-create>บันทึกงาน</button><p data-owner-create-status role="status"></p></article><article class="job"><p class="eyebrow">รายการงาน</p><button class="primary" type="button" data-owner-jobs>โหลดรายการงาน</button><p data-owner-jobs-status role="status"></p><div data-owner-jobs-list></div></article><article class="job"><p class="eyebrow">ผู้สนใจต่อ Job</p><label>Job ID<input data-owner-job-id placeholder="JOB-..."></label><button class="primary" type="button" data-owner-load>ดูผู้สนใจ</button><p data-owner-review-status role="status"></p><div data-owner-candidates></div></article><article class="job"><p class="eyebrow">Anonymous viewer watch</p><button class="primary" type="button" data-owner-viewers>ดูรายการล่าสุด</button><p data-owner-viewer-status role="status"></p><div data-owner-viewer-list></div></article></section></main><script>(()=>{const q=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function api(path,opt={}){const r=await fetch('${PREFIX}/internal'+path,{credentials:'same-origin',...opt,headers:{'content-type':'application/json',...(opt.headers||{})}}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||('HTTP '+r.status));return d}q('[data-owner-create]').onclick=async()=>{const out=q('[data-owner-create-status]');try{out.textContent='กำลังบันทึก…';const d=await api('/jobs',{method:'POST',body:JSON.stringify({brief:q('[data-owner-brief]').value,status:q('[data-owner-status]').value,customer_gender:q('[data-owner-customer-gender]').value,confidentiality:q('[data-owner-private]').checked,budget_disclosure_approved:q('[data-owner-budget]').checked})});out.textContent='บันทึกแล้ว · '+d.job.id;q('[data-owner-job-id]').value=d.job.id;await loadJobs()}catch(e){out.textContent='ยังบันทึกไม่ได้ · '+e.message}};async function loadJobs(){const out=q('[data-owner-jobs-status]'),box=q('[data-owner-jobs-list]');try{const d=await api('/jobs');out.textContent=d.jobs.length+' งาน';box.innerHTML=d.jobs.map(j=>'<section class="owner-candidate" data-job="'+esc(j.id)+'"><strong>'+esc(j.public.title)+'</strong><p>'+esc(j.status)+' · '+esc(j.public.world)+' · budget '+(j.public.budget_disclosure_approved?'เปิด':'ปิด')+' · ลูกค้า '+esc(customerGenderLabel(j.public.customer_gender))+'</p><div class="owner-actions"><button data-copy-broadcast type="button">Copy LIFF broadcast link</button><button data-job-status="published">Published</button><button data-job-status="paused">Paused</button><button data-job-status="closed">Closed</button><button data-job-private="true">Private</button><button data-job-private="false">Public</button><button data-job-budget="true">เปิด budget</button><button data-job-budget="false">ปิด budget</button></div></section>').join('')||'<p>ยังไม่มีงาน</p>';box.querySelectorAll('[data-copy-broadcast]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-job]'),job=d.jobs.find(x=>x.id===section.dataset.job),link=job&&job.broadcast_url;if(!link)return;await navigator.clipboard.writeText(link);out.textContent='คัดลอก LIFF Login V2 link แล้ว'});box.querySelectorAll('[data-job-status],[data-job-private],[data-job-budget]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-job]'),payload={status:btn.dataset.jobStatus||undefined,confidentiality:btn.dataset.jobPrivate===undefined?undefined:btn.dataset.jobPrivate==='true',budget_disclosure_approved:btn.dataset.jobBudget===undefined?undefined:btn.dataset.jobBudget==='true'};await api('/jobs/'+encodeURIComponent(section.dataset.job)+'/status',{method:'POST',body:JSON.stringify(payload)});await loadJobs()})}catch(e){out.textContent='โหลดไม่ได้ · '+e.message}}async function load(){const id=q('[data-owner-job-id]').value.trim(),out=q('[data-owner-review-status]'),box=q('[data-owner-candidates]');try{out.textContent='กำลังโหลด…';const d=await api('/jobs/'+encodeURIComponent(id)+'/candidates');out.textContent=d.candidates.length+' รายการ';box.innerHTML=d.candidates.map(a=>'<section class="owner-candidate" data-app="'+esc(a.application_ref)+'"><strong>'+esc(a.applicant?.nickname||'ยังไม่ส่งข้อมูล')+'</strong><p>'+esc(a.workflow_status)+' · '+esc(a.identity?.identity_class)+'</p><p>'+esc(a.applicant?.profile||'')+'</p><p>'+esc(a.applicant?.gender||'')+' · '+esc(a.applicant?.customer_scope||'')+' · '+esc(a.applicant?.work_scope||'')+' · ไม่รับ '+esc(a.applicant?.unavailable_scope||'')+'</p><p>รูป '+(a.uploads?.length||0)+' ไฟล์</p><div class="owner-actions"><button data-decision="approve">Approve</button><button data-decision="request_more_information">ขอข้อมูลเพิ่ม</button><button data-decision="reject">Reject</button><button data-decision="bind_to_existing_model">ผูก Model เดิม</button><button data-decision="create_new_model_review">สร้าง Model review</button></div></section>').join('')||'<p>ยังไม่มีผู้สนใจ</p>';box.querySelectorAll('[data-decision]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-app]'),decision=btn.dataset.decision,payload={decision};if(decision==='bind_to_existing_model'){const value=prompt('Model record ID');if(!value)return;payload.model_record_id=value}await api('/jobs/'+encodeURIComponent(id)+'/candidates/'+encodeURIComponent(section.dataset.app)+'/decision',{method:'POST',body:JSON.stringify(payload)});await load()})}catch(e){out.textContent='โหลดไม่ได้ · '+e.message;box.innerHTML=''}}async function loadViewers(){const out=q('[data-owner-viewer-status]'),box=q('[data-owner-viewer-list]');try{const d=await api('/viewers');out.textContent=d.viewers.length+' sessions';box.innerHTML=d.viewers.map(v=>'<section class="owner-candidate" data-viewer="'+esc(v.viewer_ref)+'"><strong>'+esc(v.display_label)+'</strong><p>'+esc(v.viewer_status)+' · '+esc(v.alert_level)+'</p><p>events '+v.events.length+' · '+esc(v.last_seen_at)+'</p><div class="owner-actions"><button data-viewer-action="restrict_private">จำกัด Private</button><button data-viewer-action="suspend_session">ระงับ 24 ชม.</button><button data-viewer-action="ban_job_link">แบน Job</button><button data-viewer-action="unban">ปลดข้อจำกัด</button></div></section>').join('')||'<p>ยังไม่มีรายการ</p>';box.querySelectorAll('[data-viewer-action]').forEach(btn=>btn.onclick=async()=>{const section=btn.closest('[data-viewer]'),action=btn.dataset.viewerAction,payload={action};if(action==='ban_job_link'){const value=prompt('Job ID');if(!value)return;payload.job_id=value}await api('/viewers/'+encodeURIComponent(section.dataset.viewer)+'/action',{method:'POST',body:JSON.stringify(payload)});await loadViewers()})}catch(e){out.textContent='โหลดไม่ได้ · '+e.message}}q('[data-owner-jobs]').onclick=loadJobs;q('[data-owner-load]').onclick=load;q('[data-owner-viewers]').onclick=loadViewers})();</script>`;
+}
+
+
+async function modelBoardGateFromCookie(request, env) {
+  const raw = cookieValue(request.headers.get("cookie") || "", MODEL_GATE_COOKIE);
+  if (!raw) return null;
+  try {
+    const payload = await verifyToken(env, raw, "model_gate");
+    const modelRecordId = cleanRecordId(payload.model_record_id);
+    if (!modelRecordId) return null;
+    return { model_record_id: modelRecordId, exp: payload.exp };
+  } catch {
+    return null;
+  }
+}
+
+async function requireModelBoardGate(request, env) {
+  const gate = await modelBoardGateFromCookie(request, env);
+  if (!gate) throw httpError(401, "model_login_required");
+  return gate;
+}
+
+function requestedBoardNext(url, parts = []) {
+  const jobId = parts[0] && !["data", "events", "internal"].includes(parts[0]) ? cleanId(parts[0]) : "";
+  return resolveModelJobBoardNext({ job_id: jobId });
+}
+
+async function validateModelHandoff(env, tokenValue) {
+  if (!env.MODEL_AUTH?.fetch) throw httpError(503, "model_auth_unavailable");
+  const response = await env.MODEL_AUTH.fetch(new Request("https://model-auth.internal/__internal/model-job-board/validate", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-internal-token": clean(env.INTERNAL_TOKEN, 500) },
+    body: JSON.stringify({ token: tokenValue }),
+  }));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok !== true || !cleanRecordId(data.model_record_id)) {
+    throw httpError(response.status === 401 || response.status === 403 ? 401 : 503, data?.error || "model_handoff_invalid");
+  }
+  return data;
+}
+
+async function enforceModelBoardGate(request, env, parts = []) {
+  const url = new URL(request.url);
+  const gate = await modelBoardGateFromCookie(request, env);
+  if (gate) return gate;
+
+  const handoff = clean(url.searchParams.get(MODEL_HANDOFF_PARAM), 4096);
+  if (handoff) {
+    const verified = await validateModelHandoff(env, handoff);
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60;
+    const tokenValue = await signToken(env, { typ: "model_gate", model_record_id: verified.model_record_id, exp });
+    url.searchParams.delete(MODEL_HANDOFF_PARAM);
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: url.toString(),
+        "set-cookie": `${MODEL_GATE_COOKIE}=${encodeURIComponent(tokenValue)}; Path=${PREFIX}; Max-Age=3600; HttpOnly; Secure; SameSite=Lax`,
+        "cache-control": "no-store",
+      },
+    });
+  }
+
+  const next = requestedBoardNext(url, parts);
+  const loginUrl = buildModelJobBoardBroadcastLink({
+    source: "job_board_guard",
+    job_id: parts[0] && !["data", "events"].includes(parts[0]) ? cleanId(parts[0]) : "",
+    next,
+  });
+  if (request.method === "GET" || request.method === "HEAD") {
+    return new Response(null, { status: 302, headers: { location: loginUrl, "cache-control": "no-store" } });
+  }
+  return json({ ok: false, error: "model_login_required", login_url: loginUrl }, 401);
 }
 
 async function ensureAnonymousSession(request, env) {

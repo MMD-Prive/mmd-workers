@@ -14,6 +14,7 @@
   if (location.pathname.replace(/\/+$/, "") !== "/sigil/model/login") return;
 
   const MODEL_LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq";
+  const JOB_BOARD_URL = "https://sigil.mmdbkk.com/public/api/jobs";
   const PROFILE_URL = "/v1/model/profile";
   const TELEGRAM_BIND_URL = "/v1/model/telegram/bind";
 
@@ -95,10 +96,60 @@
     return COPY[language()] || COPY.th;
   }
 
+  function safeJobId(value) {
+    const text = String(value || "").trim();
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(text) ? text : "";
+  }
+
+  function safeJobBoardNext(value, jobId) {
+    const fallback = jobId ? JOB_BOARD_URL + "/" + encodeURIComponent(jobId) : JOB_BOARD_URL;
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    try {
+      const next = new URL(raw);
+      const path = next.pathname.replace(/\/+$/, "") || "/";
+      const allowed = next.protocol === "https:" &&
+        next.origin === "https://sigil.mmdbkk.com" &&
+        (path === "/public/api/jobs" || /^\/public\/api\/jobs\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(path)) &&
+        !next.username && !next.password && !next.hash;
+      if (!allowed) return fallback;
+      next.search = "";
+      return next.toString();
+    } catch {
+      return fallback;
+    }
+  }
+
+  function jobBoardContext() {
+    const sourceUrl = new URL(location.href);
+    if (sourceUrl.searchParams.get("intent") !== "job_board") return null;
+    const jobId = safeJobId(sourceUrl.searchParams.get("job_id"));
+    const source = String(sourceUrl.searchParams.get("source") || "line_model_group").trim();
+    const campaignId = String(sourceUrl.searchParams.get("campaign_id") || "").trim();
+    return {
+      intent: "job_board",
+      return_to: "public_job_board",
+      source: /^[A-Za-z0-9._:-]{1,80}$/.test(source) ? source : "line_model_group",
+      job_id: jobId,
+      next: safeJobBoardNext(sourceUrl.searchParams.get("next"), jobId),
+      campaign_id: /^[A-Za-z0-9._:-]{1,128}$/.test(campaignId) ? campaignId : "",
+    };
+  }
+
   function target() {
     const url = new URL(`${MODEL_LIFF_URL}/`);
     url.searchParams.set("lang", language());
-    url.searchParams.set("source", "model_login");
+    const context = jobBoardContext();
+    if (!context) {
+      url.searchParams.set("source", "model_login");
+      return url.toString();
+    }
+    url.searchParams.set("intent", context.intent);
+    url.searchParams.set("source", context.source);
+    url.searchParams.set("return_to", context.return_to);
+    url.searchParams.set("next", context.next);
+    if (context.job_id) url.searchParams.set("job_id", context.job_id);
+    if (context.campaign_id) url.searchParams.set("campaign_id", context.campaign_id);
     return url.toString();
   }
 

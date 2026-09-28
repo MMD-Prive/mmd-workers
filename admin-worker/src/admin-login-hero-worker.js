@@ -51,6 +51,18 @@ import {
   handleClientProfilePhotoSync,
   isClientProfilePhotoSyncRequest,
 } from "./client-profile-photo-history.js";
+
+import {
+  handleModelJobBoardHandoff,
+  handleModelJobBoardValidate,
+  isModelJobBoardHandoffRequest,
+  isModelJobBoardValidateRequest,
+} from "./model-job-board-handoff.js";
+
+import {
+  handleAdminJobBoardPublish,
+  isAdminJobBoardPublishRequest,
+} from "./job-board-owner-publish.js";
 import {
   handleAdminShopOrdersApi,
   handleAdminShopOrdersPage,
@@ -218,6 +230,23 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (isModelJobBoardValidateRequest(normalizedPath, method)) {
+      return handleModelJobBoardValidate(request, runtimeEnv);
+    }
+
+    if (isModelJobBoardHandoffRequest(normalizedPath, method)) {
+      return handleModelJobBoardHandoff(
+        request,
+        runtimeEnv,
+        (profileRequest) => worker.fetch(profileRequest, runtimeEnv, ctx),
+      );
+    }
+
+    if (isAdminJobBoardPublishRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleAdminJobBoardPublish(request, runtimeEnv, actor);
     }
 
     // SIGIL Availability Snapshot is a service-only write boundary. It accepts

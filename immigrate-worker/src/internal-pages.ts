@@ -39,6 +39,7 @@ function topbar(subtitle: string): string {
   </a>
   <div style="display:flex;gap:10px;flex-wrap:wrap;">
     <a class="mmdop__ghost" href="/internal/admin/control-room">Control Room</a>
+    <a class="mmdop__ghost" href="/internal/admin/kenji">Kenji</a>
     <button class="mmdop__ghost" type="button" data-op-check-session>Check Session</button>
     <div class="mmdop__connection" data-op-connection><i></i><span>Checking</span></div>
   </div>
@@ -54,7 +55,7 @@ export function renderControlRoomPage(): Response {
     </section>
     <section class="admin-menu">
       <a href="/internal/admin/create-session"><strong>Create Session</strong><span>Canonical route: /internal/admin/create-session</span></a>
-      <a href="/internal/jobs/create-job"><strong>Create Job</strong><span>Canonical route: /internal/jobs/create-job</span></a>
+      <a href="/internal/admin/jobs/create-job"><strong>Create Job</strong><span>Canonical route: /internal/admin/jobs/create-job</span></a>
       <a href="/sigil/board"><strong>Campaigns</strong><span>Review campaigns in the private SIGIL Board</span></a>
     </section>
   </main></section>`);
@@ -83,9 +84,177 @@ export function renderCreateSessionPage(_env: InternalPageEnv): Response {
 }
 
 export function renderCreateJobPage(): Response {
-  return page("MMD SIGIL Create Job", `<section class="mmdop"><main class="mmdop__shell">
-    ${topbar("Create Job / Internal Jobs")}
-    <section class="mmdop__command"><div class="mmdop__commandLeft"><div class="mmdop__kicker">Worker-rendered Internal Page</div><h1>Create Job.</h1><p>หน้านี้คือ canonical route สำหรับ create-job: <code>/internal/jobs/create-job</code> ไม่ใช่ Webflow page และไม่ใช่ public form flow</p></div><aside class="mmdop__clientSearch"><div class="mmdop__panelTop"><div><span>Job Command</span><h2>Internal only</h2><p>ใช้หลัง admin gate session เท่านั้น</p></div></div></aside></section>
-    <section class="mmdop__panel" style="margin-top:16px;"><div class="mmdop__panelHead"><div><span>Create Job</span><h2>Job Builder</h2><p>ฟอร์มนี้เป็น worker-rendered และควรยิง backend ผ่าน internal/admin session เท่านั้น</p></div></div><div class="mmdop__section"><div class="mmdop__formGrid mmdop__formGrid--2"><label class="mmdop__field"><span>Session ID</span><input class="mmdop__input" id="job-session-id" placeholder="sess_..." /></label><label class="mmdop__field"><span>Job Visibility</span><select class="mmdop__input" id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label><label class="mmdop__field"><span>Job Date</span><input class="mmdop__input" id="job-date" type="date" /></label><label class="mmdop__field"><span>Start Time</span><input class="mmdop__input" id="job-start" type="time" /></label><label class="mmdop__field"><span>Location</span><input class="mmdop__input" id="job-location" placeholder="Hotel / private location" /></label><label class="mmdop__field"><span>Model Lookup Key</span><input class="mmdop__input" id="job-model-key" placeholder="TMIB-HITO-01" /></label></div><label class="mmdop__field" style="display:block;margin-top:12px;"><span>Internal Note</span><textarea class="mmdop__textarea" id="job-note" placeholder="รายละเอียดงาน / operation note"></textarea></label><div class="mmdop__copyRow" style="margin-top:16px;"><button class="mmdop__btn mmdop__btn--gold" id="create-job-button" type="button">Create Job</button><a class="mmdop__btn" href="/internal/admin/create-session">Back to Create Session</a></div><div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Ready.</div></div></section>
-  </main><script>(()=>{const $=(id)=>document.getElementById(id);const status=$("create-job-status");const button=$("create-job-button");function setStatus(message,bad){status.textContent=message;status.classList.remove("is-ok","is-bad");status.classList.add(bad?"is-bad":"is-ok")}button?.addEventListener("click",async()=>{const payload={session_id:$("job-session-id")?.value||"",job_visibility:$("job-visibility")?.value||"public",job_date:$("job-date")?.value||"",start_time:$("job-start")?.value||"",location_name:$("job-location")?.value||"",model_lookup_key:$("job-model-key")?.value||"",note:$("job-note")?.value||"",source:"worker_rendered_create_job"};if(!payload.session_id){setStatus("กรุณาใส่ Session ID ก่อน",true);return}button.disabled=true;setStatus("Creating job...",false);try{const res=await fetch("/v1/admin/create-job",{method:"POST",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});const data=await res.json().catch(()=>({}));if(!res.ok||data.ok===false)throw new Error(data.error||"create_job_failed");setStatus("Job created: "+(data.job_id||data.id||"OK"),false)}catch{setStatus("ยัง create job ไม่สำเร็จ ตรวจ backend /v1/admin/create-job",true)}finally{button.disabled=false}})})();</script></section>`);
+  return page("MMD Create Job", `<section class="mmdop"><main class="mmdop__shell">
+    ${topbar("Create Job / Job Board")}
+    <section class="mmdop__command">
+      <div class="mmdop__commandLeft">
+        <div class="mmdop__kicker">Owner Workspace · Worker-rendered</div>
+        <h1>Create Job.</h1>
+        <p>Canonical route: <code>/internal/admin/jobs/create-job</code> · สร้างงานปกติ หรือเปิดรับ Model แล้วลงกระดานกลางจากหน้าเดียว</p>
+      </div>
+      <aside class="mmdop__clientSearch"><div class="mmdop__panelTop"><div><span>Job Board Flow</span><h2>Publish → LIFF Login V2</h2><p>ลิงก์บรอดทุกใบเข้าหน้า Model Login ก่อนเสมอ · ไม่มี direct Board link</p></div></div></aside>
+    </section>
+
+    <section class="mmdop__panel" style="margin-top:16px;">
+      <div class="mmdop__panelHead"><div><span>Create Job</span><h2>Job Builder</h2><p>ข้อมูลธุรกิจจริงยังยึด backend / owner approval เดิม</p></div></div>
+      <div class="mmdop__section">
+        <div class="mmdop__formGrid mmdop__formGrid--2">
+          <label class="mmdop__field"><span>Session ID · งานที่มี Session แล้ว</span><input class="mmdop__input" id="job-session-id" placeholder="sess_..." /></label>
+          <label class="mmdop__field"><span>Public / Private</span><select class="mmdop__input" id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label>
+          <label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" type="number" min="1" step="1" placeholder="10000" /></label>
+          <label class="mmdop__field"><span>Job Date</span><input class="mmdop__input" id="job-date" type="date" /></label>
+          <label class="mmdop__field"><span>Start Time</span><input class="mmdop__input" id="job-start" type="time" /></label>
+          <label class="mmdop__field"><span>Duration</span><input class="mmdop__input" id="job-duration" placeholder="3 ชั่วโมง" /></label>
+          <label class="mmdop__field"><span>Area / Province</span><input class="mmdop__input" id="job-location" placeholder="สุขุมวิท / กรุงเทพฯ" /></label>
+          <label class="mmdop__field"><span>Model Lookup Key · เว้นได้ถ้าเปิดรับ Model</span><input class="mmdop__input" id="job-model-key" placeholder="TMIB-HITO-01" /></label>
+        </div>
+        <label class="mmdop__field" style="display:block;margin-top:12px;"><span>Internal Note</span><textarea class="mmdop__textarea" id="job-note" placeholder="รายละเอียด operation ภายใน"></textarea></label>
+        <div class="mmdop__copyRow" style="margin-top:16px;">
+          <button class="mmdop__btn mmdop__btn--gold" id="create-job-button" type="button">Create Job</button>
+          <a class="mmdop__btn" href="/internal/admin/jobs/create-session">Create Session · Compatibility</a>
+        </div>
+        <div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Ready.</div>
+      </div>
+    </section>
+
+    <section class="mmdop__panel" style="margin-top:16px;" id="job-board-panel">
+      <div class="mmdop__panelHead"><div><span>Model Job Board</span><h2>เปิดรับ Model / ลงกระดานงาน</h2><p>ข้อความนี้คือรายละเอียดที่ Model เห็นหลังผ่าน LIFF Login V2 · สูงสุด 1,000 ตัวอักษร</p></div></div>
+      <div class="mmdop__section">
+        <label class="mmdop__field" style="display:flex;grid-template-columns:auto 1fr;align-items:center;gap:10px;">
+          <input id="job-board-enabled" type="checkbox" style="width:20px;min-height:20px;" />
+          <span>เปิดรับ Model / ลงกระดานงาน</span>
+        </label>
+        <label class="mmdop__field" style="display:block;margin-top:12px;">
+          <span>รายละเอียดลงกระดาน · <b id="job-board-count">0 / 1000</b></span>
+          <textarea class="mmdop__textarea" id="job-board-text" maxlength="1000" placeholder="อธิบายงาน วันเวลา พื้นที่ สิ่งที่ต้องทำ และข้อมูล public-safe ที่ Model ควรรู้ก่อนกดสนใจ"></textarea>
+        </label>
+        <div class="mmdop__formGrid mmdop__formGrid--2" style="margin-top:12px;">
+          <label class="mmdop__field"><span>เพศลูกค้า · สำหรับ Private cover</span><select class="mmdop__input" id="job-customer-gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่ ชาย-หญิง</option><option value="mixed">หลายเพศ</option></select></label>
+          <label class="mmdop__field"><span>Budget บน Private cover</span><select class="mmdop__input" id="job-budget-disclosure"><option value="hidden">BUDGET · PRIVATE</option><option value="show">แสดงงบที่กรอกไว้</option></select></label>
+        </div>
+        <p style="margin:12px 0 0;color:var(--muted);font-size:13px;line-height:1.55;">เพศลูกค้าใช้ structured field นี้เท่านั้น · ไม่เดาจากชื่อ รสนิยม รูป หรือ Model preference</p>
+        <div class="mmdop__copyRow" style="margin-top:16px;">
+          <button class="mmdop__btn mmdop__btn--gold" id="publish-job-board" type="button">ลงกระดานงาน</button>
+          <button class="mmdop__btn" id="copy-job-board-link" type="button" disabled>Copy Broadcast Link</button>
+        </div>
+        <div class="mmdop__status" id="job-board-status" style="margin-top:16px;">ยังไม่ได้ publish · Broadcast Link จะออกเป็น LIFF Login V2 เท่านั้น</div>
+      </div>
+    </section>
+  </main>
+  <script>
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    const status = $("create-job-status");
+    const createButton = $("create-job-button");
+    const boardEnabled = $("job-board-enabled");
+    const boardText = $("job-board-text");
+    const boardCount = $("job-board-count");
+    const boardStatus = $("job-board-status");
+    const publishButton = $("publish-job-board");
+    const copyButton = $("copy-job-board-link");
+    let broadcastLink = "";
+
+    function setStatus(node, message, bad) {
+      node.textContent = message;
+      node.classList.remove("is-ok", "is-bad");
+      node.classList.add(bad ? "is-bad" : "is-ok");
+    }
+
+    function amount() {
+      const value = Number($("amount_thb")?.value || "");
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    }
+
+    function refreshBoardState() {
+      boardCount.textContent = String(boardText.value.length) + " / 1000";
+      publishButton.disabled = !boardEnabled.checked || !boardText.value.trim();
+    }
+    boardEnabled.addEventListener("change", refreshBoardState);
+    boardText.addEventListener("input", refreshBoardState);
+    refreshBoardState();
+
+    createButton?.addEventListener("click", async () => {
+      const payload = {
+        session_id: $("job-session-id")?.value || "",
+        amount_thb: amount(),
+        job_visibility: $("job-visibility")?.value || "public",
+        job_date: $("job-date")?.value || "",
+        start_time: $("job-start")?.value || "",
+        location_name: $("job-location")?.value || "",
+        model_lookup_key: $("job-model-key")?.value || "",
+        note: $("job-note")?.value || "",
+        source: "worker_rendered_create_job"
+      };
+      if (!payload.session_id) return setStatus(status, "กรุณาใส่ Session ID ก่อนสร้าง canonical Job", true);
+      if (!payload.amount_thb) return setStatus(status, "กรุณาใส่ Amount THB มากกว่า 0", true);
+      createButton.disabled = true;
+      setStatus(status, "Creating job...", false);
+      try {
+        const res = await fetch("/v1/admin/create-job", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "create_job_failed");
+        setStatus(status, "Job created: " + (data.job_id || data.session_id || data.id || "OK"), false);
+      } catch (error) {
+        setStatus(status, "ยัง create job ไม่สำเร็จ · " + String(error?.message || "backend unavailable"), true);
+      } finally {
+        createButton.disabled = false;
+      }
+    });
+
+    publishButton?.addEventListener("click", async () => {
+      if (!boardEnabled.checked || !boardText.value.trim()) return;
+      const visibility = $("job-visibility")?.value || "public";
+      const budget = amount();
+      const payload = {
+        board_text: boardText.value.trim(),
+        world: visibility,
+        job_date: $("job-date")?.value || "",
+        start_time: $("job-start")?.value || "",
+        duration: $("job-duration")?.value || "",
+        area: $("job-location")?.value || "",
+        compensation: budget ? budget.toLocaleString("en-US") + " บาท" : "",
+        customer_gender: $("job-customer-gender")?.value || "unspecified",
+        budget_disclosure_approved: visibility === "private" && $("job-budget-disclosure")?.value === "show",
+        owner_note: $("job-note")?.value || ""
+      };
+      publishButton.disabled = true;
+      copyButton.disabled = true;
+      broadcastLink = "";
+      setStatus(boardStatus, "กำลัง publish งานเข้ากระดาน...", false);
+      try {
+        const res = await fetch("/v1/admin/job-board/publish", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok !== true || !data.broadcast_url) throw new Error(data.error || "job_board_publish_failed");
+        broadcastLink = String(data.broadcast_url);
+        if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
+        copyButton.disabled = false;
+        setStatus(boardStatus, "Published · " + String(data.job_id || "") + " · พร้อม Copy LIFF Login V2 link", false);
+      } catch (error) {
+        setStatus(boardStatus, "ยังลงกระดานไม่สำเร็จ · " + String(error?.message || "backend unavailable"), true);
+      } finally {
+        refreshBoardState();
+      }
+    });
+
+    copyButton?.addEventListener("click", async () => {
+      if (!broadcastLink) return;
+      try {
+        await navigator.clipboard.writeText(broadcastLink);
+        setStatus(boardStatus, "คัดลอก Broadcast Link แล้ว · Model จะเข้า LIFF Login V2 ก่อน", false);
+      } catch {
+        setStatus(boardStatus, "คัดลอกลิงก์ไม่สำเร็จ", true);
+      }
+    });
+  })();
+  </script></section>`);
 }
