@@ -233,7 +233,7 @@ export default {
 
     if (isKenjiKnowledgeShellPath(path)) {
       if (method === "GET" || method === "HEAD") {
-        return kenjiKnowledgeAdminShell(req, "canonical");
+        return kenjiKnowledgeAdminShell(req, "canonical", env);
       }
       return methodNotAllowed(["GET", "HEAD"]);
     }
@@ -1217,7 +1217,7 @@ function json(data, status = 200) {
   });
 }
 
-function kenjiKnowledgeAdminShell(req, routeKind) {
+function kenjiKnowledgeLegacyShell(req, routeKind) {
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"><style>html,body{margin:0;min-height:100%;background:#080604;color:#fff0dc}#mmdKenjiAdminV1{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css"></head><body><div id="mmdKenjiAdminV1" aria-live="polite"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js"></script></body></html>`;
   return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
@@ -1232,6 +1232,53 @@ function kenjiKnowledgeAdminShell(req, routeKind) {
       "x-mmd-route-kind": routeKind,
     },
   });
+}
+
+async function kenjiKnowledgeAdminShell(req, routeKind, env = {}) {
+  const incoming = new URL(req.url);
+  // Keep explicit legacy compatibility views on the old shell until their
+  // specialized handoffs are migrated individually.
+  if (incoming.searchParams.has("view")) return kenjiKnowledgeLegacyShell(req, routeKind);
+
+  const configuredOrigin = String(env.INTERNAL_LOVABLE_ORIGIN || "").trim();
+  if (!configuredOrigin) return kenjiKnowledgeLegacyShell(req, routeKind);
+  const origin = configuredOrigin.replace(/\/+$/, "");
+  const target = new URL(KENJI_KNOWLEDGE_CANONICAL_PATH + incoming.search, origin);
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: req.method.toUpperCase() === "HEAD" ? "HEAD" : "GET",
+      headers: { accept: req.headers.get("accept") || "text/html" },
+      redirect: "follow",
+    });
+    const type = String(upstream.headers.get("content-type") || "").toLowerCase();
+    if (!upstream.ok || !type.includes("text/html")) return kenjiKnowledgeLegacyShell(req, routeKind);
+
+    const headers = new Headers(upstream.headers);
+    headers.delete("set-cookie");
+    headers.delete("content-length");
+    headers.delete("content-security-policy");
+    headers.delete("content-security-policy-report-only");
+    headers.delete("x-frame-options");
+    headers.set("content-type","text/html; charset=utf-8");
+    headers.set("cache-control","no-store, no-cache, must-revalidate");
+    headers.set("x-robots-tag","noindex, nofollow, noarchive");
+    headers.set("x-mmd-route-owner","admin-worker");
+    headers.set("x-mmd-page","kenji-admin");
+    headers.set("x-mmd-worker","admin-worker");
+    headers.set("x-mmd-route-canonical",KENJI_KNOWLEDGE_CANONICAL_PATH);
+    headers.set("x-mmd-route-kind",routeKind);
+    headers.set("x-mmd-presentation-source","lovable");
+    headers.set("x-mmd-presentation-version","internal-lovable-v1");
+
+    if (req.method.toUpperCase() === "HEAD") return new Response(null,{status:200,headers});
+
+    const html = (await upstream.text())
+      .replace(/(["'])\/assets\//g, `$1${origin}/assets/`)
+      .replace(/url\((["']?)\/assets\//g, `url($1${origin}/assets/`);
+    return new Response(html,{status:200,headers});
+  } catch {
+    return kenjiKnowledgeLegacyShell(req, routeKind);
+  }
 }
 
 function isKenjiKnowledgeShellPath(path) {

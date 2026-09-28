@@ -912,6 +912,7 @@ binding = "CAL_SYNC_WORKER"
 service = "cal-sync-worker"
 
 [vars]
+INTERNAL_LOVABLE_ORIGIN = "https://mmd-os.lovable.app"
 MODEL_CARD_AUTO_ENABLED = "false"
 MODEL_CARD_DAILY_LIMIT = "20"
 # Approved brand assets must exist before enabling generation. No public URLs.

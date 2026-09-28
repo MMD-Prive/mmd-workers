@@ -620,7 +620,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
   if (pathname === "/internal/admin/customer-data") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
-    return renderCustomer360Page();
+    return await renderLovableInternalPage(request, env, () => renderCustomer360Page());
   }
 
   if (pathname === "/internal/admin/jobs/create-session") {
