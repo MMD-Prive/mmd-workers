@@ -73,6 +73,19 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /2010298002-mbx9kqQn/);
   });
 
+  it("uses status LIFF only as a verified session bridge into the same-origin Lovable MY MMD UI", async () => {
+    const response = await shell("/member/liff?intent=status");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"statusEndpoint":"\/member\/api\/liff\/status"/);
+    assert.match(html, /const MY_MMD_TARGET = "\/my-mmd\/"/);
+    assert.match(html, /fetch\(CONFIG\.statusEndpoint/);
+    assert.match(html, /window\.location\.replace\(MY_MMD_TARGET\)/);
+    assert.match(html, /JSON\.stringify\(\{ id_token: idToken, liff_intent: "status" \}\)/);
+    assert.match(html, /if \(CONFIG\.intent === "status"\) void bridgeStatusToMyMmd\(\)/);
+  });
+
   it("serves a no-store same-site LIFF shell that bootstraps only through the LIFF start API", async () => {
     const response = await shell("/member/liff?intent=renew&code=KJ-PRV-ABC123");
     const html = await response.text();
