@@ -455,10 +455,10 @@ function liffAuthBridgeTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
-  // Direct status is the native Worker-rendered LIFF dashboard in this phase.
-  // Lovable remains an optional presentation surface and must never become the
-  // implicit destination of a normal LIFF member launch.
-  if (!intent || intent === "unknown" || intent === "status") return "";
+  // LIFF owns verified LINE/session establishment only for the normal member launch.
+  // The actual MY MMD customer UI is the same-origin Lovable presentation proxy.
+  if (intent === "status") return "/my-mmd/";
+  if (!intent || intent === "unknown") return "";
   if (intent === "continue_payment") return "/my-mmd/payments";
   return "";
 }
@@ -549,9 +549,9 @@ export default {
 
     // Identity, session, points, membership, entitlement, coupons, history,
     // CARE BACK and every authoritative calculation remain on MMD Workers.
-    // Direct intent=status stays in the Worker-rendered LIFF Digital Home.
-    // Only explicit compatibility intents such as continue_payment and
-    // private_teaser may bridge to their bounded /my-mmd destination.
+    // Direct intent=status establishes the verified LINE/session in LIFF and
+    // then hands presentation to the same-origin Lovable MY MMD app at /my-mmd/.
+    // Specialized compatibility intents remain bounded to their exact destinations.
     const response = await currentWorker.fetch(request, env, ctx);
     return rewriteStatusReturnTarget(request, response);
   },
