@@ -216,6 +216,14 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /const LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
     assert.match(html, /if \(view === "points"\) \{[\s\S]*window\.location\.assign\(LOVABLE_POINTS_PATH\);[\s\S]*return;[\s\S]*\}/);
     assert.match(html, /const targetId = view === "history" \? "history-panel" : view/);
+    assert.match(html, /"historyEndpoint":"\/api\/member\/app\/history"/);
+    assert.match(html, /"historyRecoveryEndpoint":"\/api\/member\/app\/history\/recovery"/);
+    assert.match(html, /async function readCanonicalHistory\(\)/);
+    assert.match(html, /fetch\(CONFIG\.historyEndpoint/);
+    assert.match(html, /fetch\(CONFIG\.historyRecoveryEndpoint/);
+    assert.match(html, /credentials:"same-origin"/);
+    assert.match(html, /await readCreditWallet\(\);\s*await readCanonicalHistory\(\);\s*await readCustomerRequests\(\);/);
+    assert.match(html, /recoveryPayload\?\.history_recovery\?\.state/);
     assert.match(html, /pointsTitle:"⭐ 积分"/);
     assert.doesNotMatch(html, /payment_ref|provider_transaction_id|line_user_id|telegram_user_id|Airtable|R2 key|slip_url/i);
     const scriptStart = html.lastIndexOf("<script nonce=");
