@@ -286,7 +286,7 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("direct status LIFF stays on the native digital member surface and does not bridge to Lovable", async () => {
+test("direct status LIFF verifies identity then hands the member to the Lovable MY MMD UI", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -300,12 +300,12 @@ test("direct status LIFF stays on the native digital member surface and does not
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
   assert.match(html, /NATIVE MY MMD LIFF/);
   assert.match(html, /\/api\/member\/app\/history/);
-  assert.doesNotMatch(html, /mmd-status-bridge-veil/);
-  assert.doesNotMatch(html, /กำลังยืนยันสมาชิก…/);
+  assert.match(html, /mmd-status-bridge-veil/);
+  assert.match(html, /กำลังยืนยันสมาชิก…/);
 });
 
 test("member history always stays on the same-origin Worker BFF even while Lovable remains available separately", async () => {
