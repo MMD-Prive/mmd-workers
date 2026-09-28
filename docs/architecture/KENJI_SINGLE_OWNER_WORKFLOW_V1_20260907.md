@@ -39,12 +39,12 @@ Canonical operator preview:
 
 Customer runtime remains:
 
-`/member/kenji-ai-20`
+`/member/kenji`
 
 Rules:
 
 - `view=ai20` is an owner preview view only. It does not move member runtime ownership, customer identity, money truth, entitlement truth, Model eligibility or publish authority into the admin browser.
-- The view reuses `/member/kenji-ai-20?mode=admin-preview` so Per can see the real member-facing Kenji AI 2.0 surface from inside Kenji Admin.
+- The view reuses `/member/kenji?mode=admin-preview` so Per can see the real member-facing Kenji AI 2.0 surface from inside Kenji Admin.
 - The existing lightweight `Try a question` Knowledge search may remain available as a teaching aid, but it is not equivalent to Kenji AI 2.0 runtime preview.
 - Kenji AI 2.0 continues to read published Knowledge from the existing runtime source and may guide, explain, classify and route only.
 - Payment verification, membership/access grants, private-model eligibility, booking guarantees and final approvals stay with their canonical backend/human authorities.
