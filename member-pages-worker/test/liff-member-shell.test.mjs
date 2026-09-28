@@ -284,7 +284,7 @@ describe("same-site /member/liff shell", () => {
 
     assert.equal(response.status, 200);
     assert.match(html, /html,body\{margin:0;padding:0;width:100%;min-width:100%;min-height:100%;overflow-x:hidden\}/);
-    assert.match(html, /body\.app-entered:not\(\.signup-mode\)\{[^}]*width:100%[^}]*max-width:100%[^}]*min-height:100dvh[^}]*overflow-x:clip/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\)\{[^}]*min-height:100dvh[^}]*width:100%[^}]*max-width:100%[^}]*overflow-x:clip/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*width:100%[^}]*max-width:none[^}]*min-height:100dvh/);
     assert.match(html, /padding:calc\(16px \+ env\(safe-area-inset-top\)\) 16px calc\(90px \+ env\(safe-area-inset-bottom\)\)/);
     assert.match(html, /padding-left:max\(16px,env\(safe-area-inset-left\)\)/);
