@@ -50,6 +50,7 @@ async function renderLovableInternalPage(request: Request, env: InternalRoutesEn
     headers.set("cache-control", "no-store, no-cache, must-revalidate");
     headers.set("x-robots-tag", "noindex, nofollow, noarchive");
     headers.set("x-mmd-presentation-source", "lovable");
+    headers.set("x-mmd-presentation-version", "internal-lovable-v1");
     if (request.method === "HEAD") return new Response(null, { status: 200, headers });
     const type = String(upstream.headers.get("content-type") || "").toLowerCase();
     if (!type.includes("text/html")) return fallback();
