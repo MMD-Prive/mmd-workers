@@ -39,9 +39,9 @@ test("verified Model session receives a short-lived sigil Job Board redirect", a
 
   const token = redirect.searchParams.get("mmd_job_board_handoff");
   const validated = await handleModelJobBoardValidate(
-    request("/__internal/model-job-board/validate", {
+    new Request("https://model-auth.internal/__internal/model-job-board/validate", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-internal-token": ENV.INTERNAL_TOKEN },
+      headers: { "content-type": "application/json", "x-mmd-service-caller": "public-access-worker" },
       body: JSON.stringify({ token }),
     }),
     ENV,
@@ -71,15 +71,21 @@ test("handoff rejects destinations outside the canonical Job Board", async () =>
   assert.equal((await response.json()).error, "job_board_next_invalid");
 });
 
-test("internal validator requires the shared server credential", async () => {
-  const response = await handleModelJobBoardValidate(
-    request("/__internal/model-job-board/validate", {
+test("internal validator requires the service-binding hostname and caller marker", async () => {
+  for (const req of [
+    new Request("https://mmdbkk.com/__internal/model-job-board/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mmd-service-caller": "public-access-worker" },
+      body: JSON.stringify({ token: "x.y" }),
+    }),
+    new Request("https://model-auth.internal/__internal/model-job-board/validate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: "x.y" }),
     }),
-    ENV,
-  );
-  assert.equal(response.status, 403);
-  assert.equal((await response.json()).error, "service_auth_required");
+  ]) {
+    const response = await handleModelJobBoardValidate(req, ENV);
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error, "service_auth_required");
+  }
 });
