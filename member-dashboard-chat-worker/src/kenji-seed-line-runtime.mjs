@@ -191,6 +191,12 @@ function withDecisionMetadata(base = {}, overrides = {}) {
           working_name: text(base.model_context.working_name).slice(0, 120),
         }
       : null,
+    model_browse_state: base.model_browse_state && typeof base.model_browse_state === "object"
+      ? {
+          awaiting: text(base.model_browse_state.awaiting).slice(0, 40),
+          preferred_model_gender: text(base.model_browse_state.preferred_model_gender).slice(0, 20),
+        }
+      : null,
     ...overrides,
   };
 }
