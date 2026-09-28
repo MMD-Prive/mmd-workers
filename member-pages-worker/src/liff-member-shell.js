@@ -248,6 +248,7 @@ function renderShell(config, nonce) {
     .digital-snapshot{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}.digital-snapshot-icon{font-size:20px;color:var(--digital-gold)}.digital-snapshot strong{display:block;color:var(--digital-cream);font-size:12px}.digital-snapshot p{margin:3px 0 0;color:var(--digital-muted);font-size:10px}.digital-points{color:var(--digital-gold)!important;font-size:19px!important;text-align:right}
     .digital-kenji{display:grid;grid-template-columns:72px 1fr;align-items:center;gap:13px;margin:10px 0;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-raised)}.digital-orb{position:relative;width:66px;height:66px;display:grid;place-items:center;border-radius:50%;background:radial-gradient(circle,rgba(229,199,133,.28),rgba(88,66,29,.14) 42%,transparent 72%)}.digital-orb::before,.digital-orb::after{content:"";position:absolute;border-radius:50%}.digital-orb::before{inset:5px;border:1px solid rgba(231,204,137,.65);border-left-color:transparent}.digital-orb::after{inset:15px;border:1px dashed rgba(201,158,88,.62)}.digital-core{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff5cf,#e5bd6e 48%,#4d3618);box-shadow:0 0 20px rgba(223,185,102,.55)}.digital-kenji strong{display:block;font-size:13px}.digital-kenji p{margin:3px 0 8px;color:var(--digital-muted);font-size:10px;line-height:1.5}.digital-kenji a{display:inline-block;border:1px solid rgba(209,183,117,.48);border-radius:99px;padding:7px 10px;color:var(--digital-gold);background:#27251b;font-size:10px;font-weight:700;text-decoration:none}
     .digital-needs[hidden]{display:none!important}.digital-needs{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d}.digital-needs b{display:block;font-size:11px}.digital-needs span{font-size:10px;color:#514330}.digital-needs button{width:auto;flex:none;border:1px solid #725a30;border-radius:99px;padding:7px 10px;background:#201b13;color:#f4dfa9;font-size:10px}
+    .digital-mission[hidden]{display:none!important}.digital-mission{padding:13px;border:1px solid rgba(231,204,137,.32);border-radius:var(--digital-radius);background:linear-gradient(145deg,rgba(55,46,28,.58),var(--digital-surface))}.digital-mission-state{border:1px solid rgba(231,204,137,.34);border-radius:99px;padding:5px 8px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.06em}.digital-mission-head{margin-top:10px}.digital-mission-head strong{display:block;color:var(--digital-cream);font-size:15px}.digital-mission-head p{margin:4px 0 0;color:var(--digital-muted);font-size:10px;line-height:1.45}.digital-mission-head #digital-mission-eta{color:var(--digital-gold);font-weight:800}.digital-mission-toggle{width:100%;margin-top:10px;border:1px solid rgba(231,204,137,.34);border-radius:99px;padding:9px 11px;background:#201b13;color:#f4dfa9;font-size:10px;font-weight:800;text-align:center}.digital-mission-detail[hidden]{display:none!important}.digital-mission-detail{margin-top:10px;padding-top:9px;border-top:1px solid var(--digital-line)}.digital-mission-timeline{display:grid;gap:6px;margin:0;padding:0;list-style:none}.digital-mission-step{display:grid;grid-template-columns:12px 1fr;gap:8px;align-items:center;color:#7f7972;font-size:9px}.digital-mission-step::before{content:"";width:7px;height:7px;border:1px solid rgba(231,204,137,.28);border-radius:50%;background:transparent}.digital-mission-step.is-done{color:#a59d91}.digital-mission-step.is-done::before{background:rgba(231,204,137,.34)}.digital-mission-step.is-current{color:var(--digital-gold);font-weight:900}.digital-mission-step.is-current::before{background:var(--digital-gold);box-shadow:0 0 10px rgba(231,204,137,.45)}
     .digital-sectionline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}.digital-sectionline h2{margin:0;color:var(--digital-cream);font-size:20px}.digital-sectionline h2 small{display:block;margin-bottom:3px;color:var(--digital-gold);font-size:8px;letter-spacing:.15em}.digital-unread{border:1px solid rgba(231,204,137,.3);border-radius:99px;padding:5px 7px;color:var(--digital-gold);font-size:9px}
     .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);text-align:left}.digital-news-card.is-for-you{border-color:rgba(231,204,137,.5);background:linear-gradient(145deg,rgba(71,59,34,.58),var(--digital-surface))}.digital-news-card[data-feed-view]{cursor:pointer}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-feed-cta{display:block;margin-top:8px;color:var(--digital-gold);font-size:9px;font-weight:800}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
     .digital-quick{margin-top:4px}.digital-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.digital-quick button{min-height:64px;padding:8px 2px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);font-size:9px;text-align:center}.digital-quick button i{display:block;margin-bottom:4px;color:var(--digital-gold);font-size:16px;font-style:normal}
@@ -309,11 +310,17 @@ function renderShell(config, nonce) {
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
     <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><span class="digital-session" id="digital-session">● LINE VERIFIED</span></header>
-    <section class="digital-hello"><p class="digital-eyebrow">YOUR PRIVATE SPACE</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
+    <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
     <section class="digital-snapshot" aria-label="Verified member snapshot"><span class="digital-snapshot-icon">◇</span><div><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div><strong id="profile-points" class="digital-points">—</strong></section>
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
-    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
+    <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>
+      <div class="digital-sectionline"><h2 id="digital-mission-title"><small>CURRENT JOB</small>MMD MISSION</h2><span class="digital-mission-state" id="digital-mission-state"></span></div>
+      <div class="digital-mission-head"><strong id="digital-mission-model">MMD</strong><p id="digital-mission-meta"></p><p id="digital-mission-eta" hidden></p></div>
+      <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">ดู MISSION ↗</button>
+      <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
+    </section>
+    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD ROTATION</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
     <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji-ai-20">เปิด Kenji ↗</a></div></section>
@@ -947,6 +954,94 @@ function renderShell(config, nonce) {
     return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH", { year:"numeric", month:"short", day:"numeric" }).format(date);
   }
 
+  const MISSION_VISIBLE_STATES = new Set(["confirmed","preparing","en_route","nearby","arrived","met_customer","final_payment_pending","final_payment_confirmed","work_started","in_progress","work_finished"]);
+  const MISSION_CANONICAL_SEQUENCE = ["confirmed","en_route","nearby","arrived","met_customer","final_payment_pending","final_payment_confirmed","work_started","work_finished","separated"];
+  const MISSION_LEGACY_SEQUENCE = ["confirmed","preparing","en_route","nearby","arrived","met_customer","in_progress"];
+
+  function missionStateLabel(value) {
+    const state = String(value || "").trim().toLowerCase();
+    const labels = {
+      confirmed:"CONFIRMED",
+      preparing:"PREPARING",
+      en_route:"ON THE WAY",
+      nearby:"NEARBY",
+      arrived:"ARRIVED",
+      met_customer:"MET",
+      final_payment_pending:"PAYMENT CHECK",
+      final_payment_confirmed:"PAYMENT CONFIRMED",
+      work_started:"SESSION STARTED",
+      in_progress:"IN SESSION",
+      work_finished:"SESSION FINISHED",
+      separated:"COMPLETED",
+    };
+    return labels[state] || state.replace(/_/g, " ").toUpperCase();
+  }
+
+  function missionTimelineSequence(state) {
+    return state === "preparing" || state === "in_progress" ? MISSION_LEGACY_SEQUENCE : MISSION_CANONICAL_SEQUENCE;
+  }
+
+  function renderDigitalMission(session) {
+    const mission = document.getElementById("digital-mission");
+    const missionState = document.getElementById("digital-mission-state");
+    const missionModel = document.getElementById("digital-mission-model");
+    const missionMeta = document.getElementById("digital-mission-meta");
+    const missionEta = document.getElementById("digital-mission-eta");
+    const missionToggle = document.getElementById("digital-mission-toggle");
+    const missionDetail = document.getElementById("digital-mission-detail");
+    const missionTimeline = document.getElementById("digital-mission-timeline");
+    if (!mission || !missionState || !missionModel || !missionMeta || !missionEta || !missionToggle || !missionDetail || !missionTimeline) return;
+    const state = String(session?.lifecycle || "").trim().toLowerCase();
+    if (session?.missionReady !== true || !MISSION_VISIBLE_STATES.has(state)) {
+      mission.hidden = true;
+      return;
+    }
+    missionState.textContent = missionStateLabel(state);
+    const modelName = session?.model?.displayAllowed === true ? String(session?.model?.displayName || "").trim() : "";
+    missionModel.textContent = modelName || "MMD";
+    const jobDate = safeDate(session?.jobDate);
+    missionMeta.textContent = [jobDate ? shortDate(jobDate) : "", String(session?.jobTimeLabel || "").trim(), String(session?.locationDisplay || "").trim()].filter(Boolean).join(" · ");
+    const eta = String(session?.etaLabel || "").trim();
+    missionEta.textContent = eta;
+    missionEta.hidden = !eta;
+    const sequence = missionTimelineSequence(state);
+    const currentIndex = sequence.indexOf(state);
+    missionTimeline.replaceChildren();
+    for (const [index, itemState] of sequence.entries()) {
+      const item = document.createElement("li");
+      item.className = "digital-mission-step" + (index < currentIndex ? " is-done" : index === currentIndex ? " is-current" : "");
+      item.textContent = missionStateLabel(itemState);
+      missionTimeline.append(item);
+    }
+    missionDetail.hidden = true;
+    missionToggle.setAttribute("aria-expanded", "false");
+    missionToggle.textContent = locale === "en" ? "VIEW MISSION ↗" : locale === "zh" ? "查看 MISSION ↗" : "ดู MISSION ↗";
+    if (missionToggle.dataset.bound !== "1") {
+      missionToggle.dataset.bound = "1";
+      missionToggle.addEventListener("click", () => {
+        const expanded = missionToggle.getAttribute("aria-expanded") === "true";
+        missionDetail.hidden = expanded;
+        missionToggle.setAttribute("aria-expanded", String(!expanded));
+        missionToggle.textContent = !expanded
+          ? (locale === "en" ? "HIDE MISSION ↑" : locale === "zh" ? "收起 MISSION ↑" : "ซ่อน MISSION ↑")
+          : (locale === "en" ? "VIEW MISSION ↗" : locale === "zh" ? "查看 MISSION ↗" : "ดู MISSION ↗");
+      });
+    }
+    mission.hidden = false;
+  }
+
+  async function hydrateDigitalMission() {
+    const mission = document.getElementById("digital-mission");
+    if (mission) mission.hidden = true;
+    try {
+      const response = await fetch("/api/member/app/session/current", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      if (response.status === 204) return;
+      const session = await response.json().catch(() => null);
+      if (!response.ok || !session || typeof session !== "object") return;
+      renderDigitalMission(session);
+    } catch {}
+  }
+
   function digitalFeedCategory(item, personalized = false) {
     if (personalized) return "FOR YOU";
     const raw = String(item?.category || item?.tag || "").trim().toUpperCase();
@@ -1008,6 +1103,7 @@ function renderShell(config, nonce) {
     const needsAction = document.getElementById("digital-needs-action");
     const name = String(profileData?.customer_360?.member?.display_name || profileData?.display_name || "").trim();
     if (greeting) greeting.textContent = name ? (locale === "en" ? "Hello " + name : locale === "zh" ? "你好 " + name : "สวัสดี " + name) : "MY MMD";
+    void hydrateDigitalMission();
 
     try {
       const response = await fetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
