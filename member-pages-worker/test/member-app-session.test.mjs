@@ -65,6 +65,7 @@ function envWith(record = sessionRecord(), { jobRecords = [] } = {}) {
     },
     PAYMENTS_WORKER: {
       async fetch(request) {
+        assert.equal(request.headers.get("origin"), "https://mmdbkk.com");
         const body = await request.json();
         if (body.t !== "valid-token" || body.expected_role !== "customer") {
           return Response.json({ ok: false }, { status: 403 });
@@ -165,6 +166,43 @@ test("context accepts a valid signed customer token without a LIFF cookie and re
   assert.equal(body.session.sessionId, "SESSION-001");
   assert.equal(body.session.lifecycle, "confirmed");
   assert.doesNotMatch(JSON.stringify(body), /private_phone|payout|9999|must-never-leak/i);
+});
+
+test("context returns only bounded diagnostics when confirmation verification fails", async () => {
+  const env = envWith();
+  env.PAYMENTS_WORKER.fetch = async (request) => {
+    assert.equal(request.headers.get("origin"), "https://mmdbkk.com");
+    return Response.json({ ok: false, error: "origin_not_allowed", token: "must-not-leak" }, { status: 403 });
+  };
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/context?t=sensitive-token"),
+    env,
+    async () => null,
+  );
+  const body = await response.json();
+  assert.deepEqual(body, {
+    valid: false,
+    session: null,
+    diagnostic: "confirm_context_http_403",
+  });
+  assert.doesNotMatch(JSON.stringify(body), /sensitive-token|must-not-leak|origin_not_allowed/);
+});
+
+test("context reports a missing payments binding without exposing the credential", async () => {
+  const env = envWith();
+  delete env.PAYMENTS_WORKER;
+  const response = await handleMemberAppSessionApi(
+    request("/api/member/app/session/context?t=sensitive-token"),
+    env,
+    async () => null,
+  );
+  const body = await response.json();
+  assert.deepEqual(body, {
+    valid: false,
+    session: null,
+    diagnostic: "payments_binding_missing",
+  });
+  assert.doesNotMatch(JSON.stringify(body), /sensitive-token/);
 });
 
 test("context still fails closed when an authenticated LIFF identity does not own the signed session", async () => {
