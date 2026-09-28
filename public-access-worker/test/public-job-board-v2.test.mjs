@@ -32,6 +32,17 @@ function env(extra = {}) {
     PUBLIC_JOB_BOARD_SIGNING_SECRET: "local-test-signing-secret-32-characters",
     INTERNAL_TOKEN: "owner-test-token",
     ALLOWED_ORIGINS: "https://sigil.mmdbkk.com",
+    MODEL_AUTH: {
+      fetch: async (request) => {
+        const url = new URL(request.url);
+        if (url.hostname !== "model-auth.internal" || url.pathname !== "/__internal/model-job-board/validate") {
+          return Response.json({ ok: false, error: "not_found" }, { status: 404 });
+        }
+        const body = await request.json().catch(() => ({}));
+        if (!body.token) return Response.json({ ok: false, error: "model_handoff_required" }, { status: 401 });
+        return Response.json({ ok: true, model_record_id: "rec12345678901234" });
+      },
+    },
     ...extra,
   };
 }
@@ -65,11 +76,15 @@ async function ownerCreate(testEnv, overrides = {}) {
 }
 
 async function anonymousCookie(testEnv) {
-  const response = await call(testEnv, "/public/api/jobs");
-  assert.equal(response.status, 200);
-  const raw = response.headers.get("set-cookie");
-  assert.ok(raw);
-  return raw.split(";", 1)[0];
+  const handoff = await call(testEnv, "/public/api/jobs?mmd_job_board_handoff=test-handoff");
+  assert.equal(handoff.status, 303, await handoff.text());
+  const modelCookie = handoff.headers.get("set-cookie")?.split(";", 1)[0];
+  assert.ok(modelCookie?.startsWith("mmd_pjb_model_v2="));
+  const board = await call(testEnv, "/public/api/jobs", { headers: { cookie: modelCookie } });
+  assert.equal(board.status, 200, await board.text());
+  const anonCookie = board.headers.get("set-cookie")?.split(";", 1)[0];
+  assert.ok(anonCookie?.startsWith("mmd_pjb="));
+  return `${modelCookie}; ${anonCookie}`;
 }
 
 async function interest(testEnv, cookie, body = {}) {
@@ -109,9 +124,27 @@ test("runtime fails closed without durable R2 or a strong signing secret", async
   let response = await call({ PUBLIC_JOB_BOARD_SIGNING_SECRET: "local-test-signing-secret-32-characters" }, "/public/api/jobs");
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, "public_job_board_store_unavailable");
-  response = await call({ PUBLIC_ACCESS_EVIDENCE: new MemoryR2(), PUBLIC_JOB_BOARD_SIGNING_SECRET: "short" }, "/public/api/jobs");
+  response = await call({ PUBLIC_ACCESS_EVIDENCE: new MemoryR2(), PUBLIC_JOB_BOARD_SIGNING_SECRET: "short", MODEL_AUTH: env().MODEL_AUTH }, "/public/api/jobs?mmd_job_board_handoff=test-handoff");
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, "public_job_board_signing_unavailable");
+});
+
+test("direct Job Board entry redirects to LIFF Login V2 and owner output never broadcasts the board URL", async () => {
+  const testEnv = env();
+  const created = await ownerCreate(testEnv);
+  assert.match(created.job.broadcast_url, /^https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
+  const broadcast = new URL(created.job.broadcast_url);
+  assert.equal(broadcast.searchParams.get("intent"), "job_board");
+  assert.equal(broadcast.searchParams.get("return_to"), "public_job_board");
+  assert.equal(broadcast.searchParams.get("job_id"), created.job.id);
+  assert.equal(broadcast.searchParams.get("next"), `https://sigil.mmdbkk.com/public/api/jobs/${created.job.id}`);
+
+  const direct = await call(testEnv, "/public/api/jobs");
+  assert.equal(direct.status, 302);
+  const login = new URL(direct.headers.get("location"));
+  assert.equal(login.origin, "https://www.mmdbkk.com");
+  assert.equal(login.pathname, "/sigil/model/login");
+  assert.equal(login.searchParams.get("intent"), "job_board");
 });
 
 test("public welcome uses approved copy and hides internal identity language", async () => {
@@ -120,7 +153,8 @@ test("public welcome uses approved copy and hides internal identity language", a
   assert.equal(created.job.public.title, "กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์");
   assert.equal(created.job.public.area, "สุขุมวิท");
   assert.equal(created.job.public.compensation, "10,000 ถึงตัว");
-  const response = await call(testEnv, "/public/api/jobs");
+  const cookie = await anonymousCookie(testEnv);
+  const response = await call(testEnv, "/public/api/jobs", { headers: { cookie } });
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.match(html, /ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD/);
@@ -161,7 +195,8 @@ test("Public and Private cards are separated and only owner-approved Private bud
   const testEnv = env();
   await ownerCreate(testEnv, { budget_disclosure_approved: true, customer_gender: "male" });
   await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC1", confidentiality: false, brief: "งานอีเวนต์ ขอคนมีโปรไฟล์\n⏳ งาน 4 ชม.\n🏡 ศ 2 ต.ค. 18:00 ย่านสาทร\n💰 6,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
-  const response = await call(testEnv, "/public/api/jobs");
+  const cookie = await anonymousCookie(testEnv);
+  const response = await call(testEnv, "/public/api/jobs", { headers: { cookie } });
   const page = await response.text();
   assert.match(page, /PUBLIC JOB/);
   assert.match(page, /PRIVATE JOB/);
@@ -173,10 +208,11 @@ test("Public and Private cards are separated and only owner-approved Private bud
 
   const hiddenEnv = env();
   await ownerCreate(hiddenEnv, { budget_disclosure_approved: false });
-  const hiddenPage = await (await call(hiddenEnv, "/public/api/jobs")).text();
+  const hiddenCookie = await anonymousCookie(hiddenEnv);
+  const hiddenPage = await (await call(hiddenEnv, "/public/api/jobs", { headers: { cookie: hiddenCookie } })).text();
   assert.match(hiddenPage, /BUDGET · PRIVATE/);
   assert.match(hiddenPage, /ลูกค้า · ไม่ระบุ/);
-  const data = await (await call(hiddenEnv, "/public/api/jobs/data")).json();
+  const data = await (await call(hiddenEnv, "/public/api/jobs/data", { headers: { cookie: hiddenCookie } })).json();
   assert.equal(data.jobs[0].compensation, "");
   assert.equal(data.jobs[0].title, "งานร่วมรับประทานอาหาร");
 });
@@ -260,7 +296,7 @@ test("brief reading time and CTA signals are stored as bounded anonymous events"
   assert.equal(event.job_id, "JOB-20261001-PUBLIC2");
 });
 
-test("unknown visitor becomes a new candidate and duplicate interest is rejected", async () => {
+test("LIFF-verified model interest stays verified and duplicate interest is rejected", async () => {
   const testEnv = env();
   await ownerCreate(testEnv);
   const cookie = await anonymousCookie(testEnv);
@@ -271,39 +307,28 @@ test("unknown visitor becomes a new candidate and duplicate interest is rejected
   assert.doesNotMatch(JSON.stringify(created), /candidate|identity|verify/i);
   const applicationKey = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((key) => key.includes("/applications/"));
   const application = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(applicationKey).bytes));
-  assert.equal(application.identity.identity_class, "UNVERIFIED_CANDIDATE");
-  assert.equal(application.workflow_status, "new_candidate");
+  assert.equal(application.identity.identity_class, "VERIFIED_LINE_MODEL");
+  assert.equal(application.identity.verified_model_record_id, "rec12345678901234");
+  assert.equal(application.workflow_status, "existing_model_unbound");
   const second = await interest(testEnv, cookie);
   assert.equal(second.status, 409);
   assert.equal((await second.json()).error, "job_interest_already_exists");
 });
 
-test("existing-model claim remains review-only while trusted LINE resolution stays unbound", async () => {
-  const untrustedEnv = env();
-  await ownerCreate(untrustedEnv);
-  let cookie = await anonymousCookie(untrustedEnv);
-  let response = await interest(untrustedEnv, cookie, { existing_model_claim: "MMD Model A" });
-  let body = await response.json();
-  assert.equal(body.status, "received");
-  const records = [...untrustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].filter((key) => key.includes("/applications/"));
-  const application = JSON.parse(new TextDecoder().decode(untrustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(records[0]).bytes));
-  assert.equal(application.workflow_status, "identity_review_required");
-  assert.equal(application.identity.verified_model_record_id, null);
-
-  const trustedEnv = env({
-    PUBLIC_JOB_IDENTITY_RESOLVER: {
-      fetch: async () => new Response(JSON.stringify({ verified: true, model_record_id: "rec12345678901234" }), { headers: { "content-type": "application/json" } }),
-    },
-  });
-  await ownerCreate(trustedEnv);
-  cookie = await anonymousCookie(trustedEnv);
-  response = await interest(trustedEnv, cookie);
-  body = await response.json();
-  assert.equal(body.status, "received");
-  const trustedKey = [...trustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((key) => key.includes("/applications/"));
-  const trustedApplication = JSON.parse(new TextDecoder().decode(trustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(trustedKey).bytes));
-  assert.equal(trustedApplication.workflow_status, "existing_model_unbound");
-  assert.equal(trustedApplication.controls.auto_bind, false);
+test("verified model gate is authoritative for interest while owner binding stays manual", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const response = await interest(testEnv, cookie, { existing_model_claim: "MMD Model A" });
+  const body = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(body));
+  const key = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((item) => item.includes("/applications/"));
+  const application = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(key).bytes));
+  assert.equal(application.identity.identity_class, "VERIFIED_LINE_MODEL");
+  assert.equal(application.identity.verified_model_record_id, "rec12345678901234");
+  assert.equal(application.workflow_status, "existing_model_unbound");
+  assert.equal(application.controls.auto_bind, false);
+  assert.equal(application.controls.auto_book, false);
 });
 
 test("upload grant is bound to job application slot and media remains private", async () => {
@@ -396,7 +421,8 @@ test("draft paused closed and expired jobs never appear on the public board", as
   }
   const testEnv = env();
   await ownerCreate(testEnv, { status: "paused" });
-  const html = await (await call(testEnv, "/public/api/jobs")).text();
+  const cookie = await anonymousCookie(testEnv);
+  const html = await (await call(testEnv, "/public/api/jobs", { headers: { cookie } })).text();
   assert.match(html, /ตอนนี้ยังไม่มีงานทั่วไปที่เปิดรับครับ/);
   assert.match(html, /ตอนนี้ยังไม่มีงานลับที่เปิดรับครับ/);
   assert.doesNotMatch(html, /JOB-20261001-DEMO01/);
