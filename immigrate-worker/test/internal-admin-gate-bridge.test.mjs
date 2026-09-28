@@ -66,15 +66,30 @@ async function withPublicFetchTrap(run) {
   }
 }
 
-test("protected apex admin page verifies auth/me through admin-worker binding with apex public host", async () => {
+test("protected apex admin page verifies auth/me through admin-worker binding and then loads Lovable presentation", async () => {
   const calls = [];
-  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/control-room"), {
-    ADMIN_WORKER: adminWorkerBinding(calls),
-    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
-  }));
+  const originalFetch = globalThis.fetch;
+  const presentationCalls = [];
+  globalThis.fetch = async (input) => {
+    presentationCalls.push(String(input));
+    return new Response('<!doctype html><script type="module" src="/assets/index-test.js"></script>', {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  };
+  let response;
+  try {
+    response = await handleInternalRoutes(request("/internal/admin/control-room"), {
+      ADMIN_WORKER: adminWorkerBinding(calls),
+      ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   assert.equal(response.status, 200);
-  assert.equal(publicCalls, 0);
+  assert.equal(presentationCalls.length, 1);
+  assert.equal(presentationCalls[0], "https://mmd-os.lovable.app/internal/admin/control-room");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/auth/me");
   assert.equal(calls[0].headers.get("accept"), "application/json");
@@ -84,6 +99,9 @@ test("protected apex admin page verifies auth/me through admin-worker binding wi
   assert.equal(calls[0].headers.get("x-mmd-public-host"), "mmdbkk.com");
   assert.equal(calls[0].headers.get("authorization"), null);
   assert.equal(calls[0].headers.get("x-forwarded-host"), null);
+  const html = await response.text();
+  assert.match(html, /https:\/\/mmd-os\.lovable\.app\/assets\/index-test\.js/);
+  assert.equal(response.headers.get("x-mmd-presentation-source"), "lovable");
 });
 
 test("protected www admin page verifies auth/me through admin-worker binding with www public host", async () => {
