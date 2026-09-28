@@ -299,6 +299,22 @@ test("standalone model names and short follow-ups keep guarded model context", (
   }), /Jasper \(MX17\)/);
 });
 
+test("stale active Model context is never reused in customer-facing follow-ups", () => {
+  const continuity = {
+    decision: "stale_refresh",
+    effective_intent: "pricing_review",
+    matrix: {
+      matrix_status: "stale",
+      state_expires_at: "2026-09-01T00:00:00.000Z",
+      payload_json: {
+        active_model_v1: { model_code: "OLD17", working_name: "Old Model" },
+      },
+    },
+  };
+  const reply = buildKenjiLineReply(lineEvent("ราคา"), {}, { continuity });
+  assert.doesNotMatch(reply, /Old Model|OLD17/);
+});
+
 test("card triggers are campaign leads while neutral codes remain model lookups", () => {
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
@@ -477,6 +493,7 @@ test("unlinked LINE asks one necessary Google email question and continues the p
   assert.match(question.text, /Premium Model|Standard Models/);
   assert.doesNotMatch(question.text, /malemodel\.bkk|airtable|record|token/i);
   assert.equal(question.reply_source, "model_access_verification");
+  assert.equal(question.clear_model_context, true);
 
   const answer = await resolveKenjiLineReply(lineEvent("customer.name@gmail.com"), {}, env);
   assert.match(answer.text, /น้องซิน.*MX17/s);
@@ -485,6 +502,7 @@ test("unlinked LINE asks one necessary Google email question and continues the p
     { line_user_id: LINE_USER_ID, query: "MX17", verification_email: "customer.name@gmail.com" },
   ]);
   assert.deepEqual(pendingCalls.map((item) => item.action), ["put", "get", "delete"]);
+  assert.equal(answer.clear_model_context, undefined);
 });
 
 test("email without a pending model lookup stays silent and never calls the access backend", async () => {
@@ -508,6 +526,7 @@ test("expired member may continue a brief without new private disclosure", async
   assert.match(decision.text, /sigil\/member\/membership\?source=line&intent=renew/);
   assert.doesNotMatch(decision.text, /MX17|น้องซิน|Private Model.*ชื่อ/i);
   assert.equal(decision.reply_source, "model_access_renewal");
+  assert.equal(decision.clear_model_context, true);
 });
 
 test("committed model-access flag off makes no RPC call and stays silent", async () => {
@@ -520,6 +539,7 @@ test("committed model-access flag off makes no RPC call and stays silent", async
   assert.equal(calls.length, 0);
   assert.equal(decision.text, "");
   assert.equal(decision.reply_source, "silent");
+  assert.equal(decision.clear_model_context, true);
 });
 
 test("authorized RPC match becomes one concise Per Voice reply without operational fields", async () => {
@@ -546,6 +566,7 @@ test("authorized RPC match becomes one concise Per Voice reply without operation
   assert.match(decision.text, /ครับ/);
   assert.doesNotMatch(decision.text, /0800000000|available|images\.example|ทีม|ระบบ/i);
   assert.equal(decision.reply_source, "model_access");
+  assert.equal(decision.clear_model_context, undefined);
 
   const request = calls[0];
   assert.equal(new URL(request.url).hostname, "admin-worker.local");
@@ -605,6 +626,7 @@ for (const [label, payload, status] of [
     });
     assert.equal(decision.text, "");
     assert.equal(decision.reply_source, "silent");
+    assert.equal(decision.clear_model_context, true);
     assert.doesNotMatch(decision.text, /เช็ก|ตรวจ|รอ|รับเรื่อง|ขอบคุณ|please wait|let me check/i);
   });
 }
@@ -617,6 +639,7 @@ test("ambiguous authorized result asks one necessary clarification without listi
   assert.match(decision.text, /ชื่อที่ใช้ทำงานหรือรหัส Model/);
   assert.doesNotMatch(decision.text, /รายชื่อ|MX17|folder|แพ็กเกจ|สิทธิ์/);
   assert.equal(decision.reply_source, "model_access_clarification");
+  assert.equal(decision.clear_model_context, true);
 });
 
 test("availability and manual-review messages never call the model access RPC", async () => {
