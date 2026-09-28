@@ -764,6 +764,65 @@ function historyFromDashboard(data) {
   return [...mapped, ...paymentMapped];
 }
 
+function homeFeedFromDashboard(data, historyItems) {
+  const history = asObject(data.history);
+  const state = asString(history.status, 48).toLowerCase().replace(/[\s-]+/g, "_");
+  if (!["verified", "empty"].includes(state)) {
+    return {
+      authority: "member_app_dashboard_v1",
+      state: "checking",
+      items: [],
+    };
+  }
+
+  if (state === "empty") {
+    return {
+      authority: "member_app_dashboard_v1",
+      state: "resolved",
+      items: [],
+    };
+  }
+
+  const allowedViews = {
+    booking: "history",
+    payment: "history",
+    membership: "package",
+    care: "care",
+  };
+  const candidates = (Array.isArray(historyItems) ? historyItems : [])
+    .filter((item) => String(item?.id || "").startsWith("history-") && Object.hasOwn(allowedViews, item?.kind))
+    .map((item) => {
+      const occurredAt = asString(item.occurredAt, 40);
+      const timestamp = Date.parse(occurredAt || "");
+      return { item, timestamp: Number.isFinite(timestamp) ? timestamp : 0 };
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  const latest = candidates[0]?.item || null;
+  if (!latest) {
+    return {
+      authority: "member_app_dashboard_v1",
+      state: "resolved",
+      items: [],
+    };
+  }
+
+  return {
+    authority: "member_app_dashboard_v1",
+    state: "resolved",
+    items: [{
+      id: `for-you-${asString(latest.id, 80) || "latest"}`,
+      category: "FOR YOU",
+      title: asString(latest.title, 160) || "อัปเดตของคุณ",
+      excerpt: asString(latest.detail, 180) || "อัปเดตจากประวัติที่ MMD ยืนยันแล้ว",
+      occurredAt: asString(latest.occurredAt, 40) || null,
+      view: allowedViews[latest.kind] || "history",
+      source: "verified_member_history",
+      priority: 20,
+    }],
+  };
+}
+
 function couponState(value) {
   const key = asString(value, 48).toLowerCase().replace(/[\s-]+/g, "_");
   if (["ready", "active", "coupon_ready", "issued"].includes(key)) return "issued";
@@ -859,6 +918,7 @@ async function adaptDashboard(request, env, delegate) {
       : points,
     pointsRecoveryPending,
     couponHighlight: null,
+    homeFeed: homeFeedFromDashboard(data, canonicalHistory),
   });
 }
 
