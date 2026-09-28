@@ -30,6 +30,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/job-board/handoff*"
 zone_name = "mmdbkk.com"
 
+# Owner-only Create Job -> Model Job Board publish bridge.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job-board/publish"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job-board/publish"
+zone_name = "mmdbkk.com"
+
 # First-time Model Dashboard activation. A short-lived admin-issued invite plus
 # a real LINE ID token binds the canonical Models.line_user_id exactly once.
 [[routes]]
@@ -855,6 +864,11 @@ zone_name = "mmdbkk.com"
 [[services]]
 binding = "MMS_WORKER"
 service = "mms-worker"
+
+# Internal-only owner publish bridge for Model Job Board listings.
+[[services]]
+binding = "PUBLIC_JOB_BOARD_WORKER"
+service = "public-access-worker"
 
 # ETA durability/timeline is events-worker-owned. Model Dashboard never writes ETA
 # business state directly from the browser.
