@@ -689,7 +689,12 @@
       const response = await fetch(url.toString(), { credentials: "same-origin", cache: "no-store" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
-      state.models = (Array.isArray(data.models) ? data.models : Array.isArray(data.records) ? data.records : []).map(normalizeModel);
+      state.models = (
+        Array.isArray(data.items) ? data.items :
+        Array.isArray(data.models) ? data.models :
+        Array.isArray(data.records) ? data.records :
+        []
+      ).map(normalizeModel);
       renderModels();
       setStatus(`Loaded ${state.models.length} eligible model${state.models.length === 1 ? "" : "s"}.`, "ok");
       setHook("models", "ok");
