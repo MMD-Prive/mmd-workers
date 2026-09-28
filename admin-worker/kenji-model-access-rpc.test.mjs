@@ -92,7 +92,7 @@ function keywordProfile(alias, model = privateModel(), overrides = {}) {
 
 const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
-  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "folder_name"]),
+  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number", "folder_name"]),
   approvals: new Set(["line_user_id"]),
   decisions: new Set(["line_user_id"]),
   profiles: new Set([]),
@@ -159,6 +159,54 @@ test("active canonical Standard entitlement sees Standard private model", async 
   const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData()) });
   assert.equal(result.status, "match");
   assert.equal(result.model.model_code, "MX17");
+});
+
+test("canonical RUN number resolves the exact Model but never widens access", async () => {
+  const model = privateModel("RUNMODEL19", "standard", { run_number: "19", working_name: "Run Model" });
+  const active = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "19" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+  );
+  assert.equal(active.status, "match");
+  assert.equal(active.model.model_code, "RUNMODEL19");
+
+  const publicOnly = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "19" },
+    { fetchImpl: airtableFetch(baseData([entitlement("public_member")], [model])) },
+  );
+  assert.equal(publicOnly.status, "silent");
+});
+
+test("duplicate RUN number across Models fails closed with clarification", async () => {
+  const first = privateModel("RUNA", "standard", { run_number: "19", working_name: "Run A" });
+  const second = privateModel("RUNB", "standard", { run_number: "19", working_name: "Run B" });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "19" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [first, second])) },
+  );
+  assert.equal(result.status, "clarification");
+});
+
+test("duplicate active alias across Models fails closed with clarification", async () => {
+  const first = privateModel("ALIASA", "standard", { working_name: "Alias A" });
+  const second = privateModel("ALIASB", "standard", { working_name: "Alias B" });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "JAY" },
+    {
+      fetchImpl: airtableFetch(baseData(
+        [entitlement("private_standard")],
+        [first, second],
+        [],
+        [],
+        [keywordProfile("JAY", first), keywordProfile("JAY", second)],
+      )),
+    },
+  );
+  assert.equal(result.status, "clarification");
 });
 
 test("published exact Keyword Profile alias resolves an Ad / Rich Menu trigger without widening access", async () => {
