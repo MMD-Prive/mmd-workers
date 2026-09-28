@@ -1,4 +1,4 @@
-import { buildModelJobBoardBroadcastLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
+import { buildModelJobBoardBroadcastLink, buildModelJobBoardMiniAppLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
 
 const PREFIX = "/public/api/jobs";
 const SHORT_PREFIX = "/j";
@@ -542,7 +542,7 @@ async function handleJobShortLink(request, env, path) {
   }
 
   const job = await requireJob(env, alias.job_id, { publicOnly: true });
-  const location = buildModelJobBoardBroadcastLink({
+  const location = buildModelJobBoardMiniAppLink({
     source: "line_model_group",
     job_id: job.id,
   });
