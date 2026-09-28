@@ -63,6 +63,53 @@ test("historical job and income totals include approved chat history while separ
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("Gaz-style owner-approved history keeps fee and paid totals separate without an old slip", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = await signedToken();
+  globalThis.fetch = async input => {
+    const url = new URL(input.url || input);
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) return Response.json({ records: [] });
+    if (url.pathname.endsWith("/tblMvsl7qYozD05e5")) {
+      return Response.json({ records: [payout("recRIlWBbhqC4rpas", "", 25000, { slip: false })] });
+    }
+    if (url.pathname.endsWith("/tbljrlOK5m4iBXgST")) {
+      return Response.json({ records: [
+        imported("recxHkkc9PKRMDlh7", "approved", {
+          amount: 25000,
+          source: "line_model_group",
+          paymentType: "payout",
+          linkedType: "historical_job",
+          linkedId: "LINEOA-0164-011296",
+          date: "2026-03-18",
+          workType: "MMD job",
+        }),
+      ] });
+    }
+    throw new Error(`unexpected Airtable request: ${url}`);
+  };
+  try {
+    const response = await handleModelWorkHistoryRequest(
+      new Request("https://mmdbkk.com/v1/model/history", {
+        headers: { cookie: `mmd_model_session_v1=${token}`, origin: "https://mmdbkk.com" },
+      }),
+      { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_API_KEY: "test", MODEL_SESSION_SIGNING_SECRET: SECRET },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.summary.completed_job_count, 1);
+    assert.equal(body.summary.earned_total_thb, 25000);
+    assert.equal(body.summary.paid_confirmed_total_thb, 25000);
+    assert.notEqual(body.summary.earned_total_thb + body.summary.paid_confirmed_total_thb, body.summary.earned_total_thb);
+    assert.equal(body.summary.payouts_without_slip_count, 1);
+    assert.equal(body.items[0].earned_amount_thb, 25000);
+    assert.equal(body.earnings.length, 1);
+    assert.equal(body.earnings[0].amount_thb, 25000);
+    assert.equal(body.earnings[0].payment_evidence, "paid_confirmed_no_slip");
+    assert.equal(JSON.stringify(body).includes("38000"), false);
+    assert.equal(JSON.stringify(body).includes("client_name"), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("session lookup matches linked record IDs, not Airtable display names", async () => {
   const originalFetch = globalThis.fetch;
   const token = await signedToken();

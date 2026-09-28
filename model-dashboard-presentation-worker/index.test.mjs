@@ -205,6 +205,10 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.doesNotMatch(html, /redirectUri/);
   assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
   assert.doesNotMatch(html, /tanstack|react/i);
+  assert.match(html, /data-mmd-app-digital="v1"/);
+  assert.match(html, /DIGITAL MODEL WORKSPACE/);
+  assert.match(html, /--mmd-bg:#080907/);
+  assert.match(html, /LINE · CHECKING/);
 
   const worker = (await import("./src/index.js")).default;
   const response = await worker.fetch(request);
@@ -307,6 +311,48 @@ test("dashboard stays on presentation when a Model session or real LINE redirect
   );
   assert.equal(hasLineRedirectContext(oauth), true);
   assert.equal(shouldHandoffToMiniApp(oauth), false);
+});
+
+test("authenticated dashboard is worker-rendered digital LIFF and does not fetch Lovable", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const originalFetch = globalThis.fetch;
+  let upstreamCalls = 0;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    throw new Error("unexpected_upstream_fetch");
+  };
+  try {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+      headers: { cookie: "mmd_model_session_v1=opaque-session" },
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-ui-source"), "worker-rendered-liff-digital");
+    assert.equal(response.headers.get("x-mmd-ui-app"), "mmd-app-digital-v2");
+    const html = await response.text();
+    assert.match(html, /data-mmd-app-digital="v2"/);
+    assert.match(html, /HOME/);
+    assert.match(html, /JOBS/);
+    assert.match(html, /CONSOLE/);
+    assert.match(html, /YOU/);
+    assert.match(html, /TART · MODEL GUIDE/);
+    assert.match(html, /\/v1\/model\/history/);
+    assert.match(html, /ค่าตัวที่ยืนยันในระบบ/);
+    assert.match(html, /จ่ายแล้วที่ MMD รับรอง/);
+    assert.doesNotMatch(html, /mmdmodel\.lovable\.app/);
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("native digital dashboard keeps non-GET methods blocked", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    method: "POST",
+    headers: { cookie: "mmd_model_session_v1=opaque-session" },
+  }));
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get("allow"), "GET, HEAD");
 });
 
 test("maps canonical dashboard route to current Model Hub root and preserves LINE callback query", () => {
@@ -443,8 +489,8 @@ test("serves the MMD APP history add-on with no customer-facing or raw-chat cont
   assert.equal(js.status, 200);
   const source = await js.text();
   assert.match(source, /\/v1\/model\/history/);
-  assert.match(source, /รายได้จากงานที่ยืนยัน/);
-  assert.match(source, /ไม่มีสลิปแนบ/);
+  assert.match(source, /ค่าตัวที่ยืนยันในระบบ/);
+  assert.match(source, /จ่ายแล้ว · MMD รับรอง/);
   assert.doesNotMatch(source, /client_name|location_name|raw_text|customer_reference/);
   const css = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-history-v1.css"));
   assert.equal(css.status, 200);

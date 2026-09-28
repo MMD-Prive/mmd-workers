@@ -9,8 +9,8 @@ export const MODEL_HISTORY_JS = String.raw`(() => {
   node.id = ID;
   node.className = "mmd-model-history-v1 is-loading";
   node.innerHTML = '<div class="mmd-model-history-v1__head"><div><small>WORK & EARNINGS</small><h2>ประวัติงานและรายได้กับ MMD</h2></div><button type="button" data-history-toggle aria-expanded="false">ดูประวัติ</button></div>' +
-    '<div class="mmd-model-history-v1__summary"><div><span>รายได้จากงานที่ยืนยัน</span><strong data-earned>กำลังโหลด…</strong></div><div><span>จ่ายแล้วที่ยืนยัน</span><strong data-paid>—</strong></div><div><span>งานที่ทำแล้ว</span><strong data-count>—</strong></div></div>' +
-    '<p class="mmd-model-history-v1__note" data-backfill hidden></p><div class="mmd-model-history-v1__details" data-details hidden></div>';
+    '<div class="mmd-model-history-v1__summary"><div><span>ค่าตัวที่ยืนยันในระบบ</span><strong data-earned>กำลังโหลด…</strong></div><div><span>จ่ายแล้วที่ MMD รับรอง</span><strong data-paid>—</strong></div><div><span>งานที่ยืนยันแล้ว</span><strong data-count>—</strong></div></div>' +
+    '<p class="mmd-model-history-v1__note">ค่าตัวและยอดจ่ายแล้วเป็นคนละสถานะของเงิน จึงไม่นำมาบวกกัน</p><p class="mmd-model-history-v1__note" data-backfill hidden></p><div class="mmd-model-history-v1__details" data-details hidden></div>';
   document.body.prepend(node);
   const details = node.querySelector("[data-details]");
   node.querySelector("[data-history-toggle]").addEventListener("click", event => {
@@ -39,7 +39,7 @@ export const MODEL_HISTORY_JS = String.raw`(() => {
       const jobs = Array.isArray(payload.items) ? payload.items : [];
       const earnings = Array.isArray(payload.earnings) ? payload.earnings : [];
       details.innerHTML = '<h3>งานที่ทำแล้ว</h3>' + (jobs.length ? '<div class="mmd-model-history-v1__list">' + jobs.map(item => '<article><div><b>' + esc(date(item.work_date)) + '</b><span>' + esc(item.work_type || "งานผ่าน MMD") + '</span></div><div><b>' + esc(money(item.earned_amount_thb)) + '</b><span>' + esc(item.payment_evidence === "paid_confirmed" ? "จ่ายแล้ว · ยืนยัน" : item.payment_evidence === "not_recorded" ? "ยังไม่มีบันทึกสถานะจ่าย" : "ตรวจจากบันทึก MMD") + '</span></div></article>').join("") + '</div>' : '<p>ยังไม่มีประวัติงานที่ยืนยันแล้ว</p>') +
-        '<h3>รายการรับเงินที่ยืนยัน</h3>' + (earnings.length ? '<div class="mmd-model-history-v1__list">' + earnings.map(item => '<article><div><b>' + esc(item.evidence_labels?.[0] || "รายการรายได้") + '</b><span>' + esc(item.work_date ? date(item.work_date) : "วันที่รับเงินยังไม่ระบุ") + '</span></div><div><b>' + esc(money(item.amount_thb)) + '</b><span>' + esc(item.payment_evidence === "paid_confirmed_no_slip" ? "ยืนยันจ่ายแล้ว · ไม่มีสลิปแนบ" : item.payment_evidence === "paid_confirmed_with_slip" ? "ยืนยันจ่ายแล้ว · มีสลิป" : "บันทึกย้อนหลังที่ MMD ตรวจแล้ว") + '</span></div></article>').join("") + '</div>' : '<p>ยังไม่มีรายการจ่ายที่ยืนยันแล้ว</p>');
+        '<h3>รายการรับเงินที่ยืนยัน</h3>' + (earnings.length ? '<div class="mmd-model-history-v1__list">' + earnings.map(item => '<article><div><b>' + esc(item.evidence_labels?.[0] || "รายการรายได้") + '</b><span>' + esc(item.work_date ? date(item.work_date) : "วันที่รับเงินยังไม่ระบุ") + '</span></div><div><b>' + esc(money(item.amount_thb)) + '</b><span>' + esc(item.payment_evidence === "paid_confirmed_no_slip" ? "จ่ายแล้ว · MMD รับรอง" : item.payment_evidence === "paid_confirmed_with_slip" ? "จ่ายแล้ว · MMD รับรอง" : "ประวัติที่ MMD รับรอง") + '</span></div></article>').join("") + '</div>' : '<p>ยังไม่มีรายการจ่ายที่ยืนยันแล้ว</p>');
       node.classList.remove("is-loading");
     }).catch(() => { node.remove(); });
 })();`;

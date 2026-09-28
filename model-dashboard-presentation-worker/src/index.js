@@ -2,6 +2,8 @@ import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentatio
 import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
 import { MODEL_LINE_BRIEFS_JS, MODEL_LINE_BRIEFS_CSS } from "./model-line-briefs.js";
 import { MODEL_MEDIA_UPLOAD_JS, MODEL_MEDIA_UPLOAD_CSS } from "./model-media-upload-presentation.js";
+import { modelLiffDigitalBootstrapHtml } from "./model-liff-digital-shell.js";
+import { modelDigitalDashboardHtml } from "./model-digital-dashboard.js";
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
@@ -12,6 +14,8 @@ const PRESENTATION_ORIGIN = "https://mmdmodel.lovable.app";
 const WISH_PRESENTATION_ORIGIN = "https://mmdprive.webflow.io";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
+const DIGITAL_UI_SOURCE = "worker-rendered-liff-digital";
+const DIGITAL_APP_MARKER = "mmd-app-digital-v2";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
 const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
@@ -471,90 +475,22 @@ function safeMiniAppUrlForBootstrap(request) {
 
 export function liffPrimaryBootstrapHtml(request) {
   const environment = resolveLiffEnvironmentFromRequest(request);
-  const liffId = MODEL_LIFF_IDS[environment];
-  const fallback = safeMiniAppUrlForBootstrap(request);
-  const safeId = JSON.stringify(liffId);
-  const safeFallback = JSON.stringify(fallback);
-  const safeSdk = JSON.stringify(LIFF_SDK_URL);
-  return `<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow">
-<title>MMD APP · LINE</title>
-<style>
-html,body{margin:0;min-height:100%;background:#0e0d0c;color:#f7f1e7;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
-main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
-section{max-width:420px;text-align:center}b{display:block;font-size:18px;margin-bottom:8px}p{opacity:.72;line-height:1.6}
-a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:block;margin-top:12px;opacity:.5;word-break:break-word}
-</style>
-<script src=${safeSdk}></script>
-</head>
-<body>
-<main><section><b>กำลังยืนยัน LINE สำหรับ MMD APP</b><p id="status">กำลังเปิดเซสชันที่ปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิด MMD APP ผ่าน LINE</a><small id="detail"></small></section></main>
-<script>
-(async function(){
-  var status=document.getElementById("status");
-  var fallback=document.getElementById("fallback");
-  var detail=document.getElementById("detail");
-  try{
-    if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
-    await window.liff.init({liffId:${safeId}});
-    status.textContent="ยืนยัน LINE แล้ว · LINE กำลังเปิด MMD APP…";
-  }catch(error){
-    status.textContent="ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ";
-    fallback.style.display="inline-block";
-    detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
-  }
-})();
-</script>
-</body>
-</html>`;
+  return modelLiffDigitalBootstrapHtml({
+    liffId: MODEL_LIFF_IDS[environment],
+    fallback: safeMiniAppUrlForBootstrap(request),
+    sdk: LIFF_SDK_URL,
+    mode: "primary",
+  });
 }
 
 export function liffPwaBootstrapHtml(request) {
   const environment = resolveLiffEnvironmentFromRequest(request);
-  const liffId = MODEL_LIFF_IDS[environment];
-  const fallback = safeMiniAppUrlForBootstrap(request);
-  const safeId = JSON.stringify(liffId);
-  const safeFallback = JSON.stringify(fallback);
-  const safeSdk = JSON.stringify(LIFF_SDK_URL);
-  return `<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow">
-<meta name="theme-color" content="#090909">
-<title>MMD APP</title>
-<style>
-html,body{margin:0;min-height:100%;background:#090909;color:#f7f1e7;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
-main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}section{max-width:420px;text-align:center}
-b{display:block;font-size:18px;margin-bottom:8px}p{opacity:.72;line-height:1.6}a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:block;margin-top:12px;opacity:.5;word-break:break-word}
-</style>
-<script src=${safeSdk}></script>
-</head>
-<body>
-<main><section><b>กำลังเปิด MMD APP</b><p id="status">กำลังยืนยัน LINE อย่างปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิดผ่าน LINE</a><small id="detail"></small></section></main>
-<script>
-(async function(){
-  var status=document.getElementById("status");
-  var fallback=document.getElementById("fallback");
-  var detail=document.getElementById("detail");
-  try{
-    if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
-    await window.liff.init({liffId:${safeId},withLoginOnExternalBrowser:true});
-    status.textContent="ยืนยัน LINE แล้ว · กำลังเปิด Dashboard…";
-  }catch(error){
-    status.textContent="ยังเปิด MMD APP ไม่สำเร็จ";
-    fallback.style.display="inline-block";
-    detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
-  }
-})();
-</script>
-</body>
-</html>`;
+  return modelLiffDigitalBootstrapHtml({
+    liffId: MODEL_LIFF_IDS[environment],
+    fallback: safeMiniAppUrlForBootstrap(request),
+    sdk: LIFF_SDK_URL,
+    mode: "pwa",
+  });
 }
 
 function liffPrimaryBootstrapResponse(request) {
@@ -613,7 +549,7 @@ function modelLineBriefsPageResponse(request) {
   });
   if (!["GET", "HEAD"].includes(request.method.toUpperCase())) return new Response(null, { status: 405, headers });
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD APP · Model briefs</title><link rel="stylesheet" href="${MODEL_LINE_BRIEFS_CSS_PATH}"></head><body style="background:#090909;margin:0"><script src="${MODEL_LINE_BRIEFS_JS_PATH}" defer></script></body></html>`;
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { status: 200, headers });
+  return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
 
 export function shouldServePhaseAAfterBootstrap(request) {
@@ -871,6 +807,34 @@ async function fetchUpstream(request, upstreamUrl, { runtime = false } = {}) {
   return globalThis.fetch(new Request(upstreamUrl, init));
 }
 
+function digitalDashboardResponse(request) {
+  const method = request.method.toUpperCase();
+  if (!new Set(["GET", "HEAD"]).has(method)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { allow: "GET, HEAD", "cache-control": "no-store", "x-mmd-worker": WORKER_NAME },
+    });
+  }
+  const html = modelDigitalDashboardHtml(request, {
+    mediaCssPath: MODEL_MEDIA_UPLOAD_CSS_PATH,
+    mediaJsPath: MODEL_MEDIA_UPLOAD_JS_PATH,
+    miniAppUrl: MODEL_LIFF_URL,
+  });
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-worker": WORKER_NAME,
+      "x-mmd-route-owner": WORKER_NAME,
+      "x-mmd-ui-source": DIGITAL_UI_SOURCE,
+      "x-mmd-ui-app": DIGITAL_APP_MARKER,
+      "x-mmd-model-entry": "line-liff-digital-v2",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
+
 async function proxyPage(request) {
   if (!new Set(["GET", "HEAD"]).has(request.method.toUpperCase())) {
     return new Response("Method Not Allowed", {
@@ -1120,7 +1084,7 @@ export default {
       const briefId = boundedParam(new URL(request.url), "brief_id");
       if ((path === `${UI_PREFIX}/briefs` || boundedParam(new URL(request.url), "briefs") === "1" || /^brf_[a-zA-Z0-9-]{10,70}$/.test(briefId)) && !isPwaLaunchRequest(request)) return modelLineBriefsPageResponse(request);
       if (shouldServePhaseAAfterBootstrap(request)) return modelOnboardingPhaseAResponse(request);
-      return proxyPage(request);
+      return digitalDashboardResponse(request);
     }
     return new Response("Not Found", {
       status: 404,
