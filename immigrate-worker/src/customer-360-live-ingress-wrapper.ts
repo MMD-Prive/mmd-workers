@@ -88,7 +88,11 @@ export default {
 
     const response = await canonicalWorker.fetch(request, env);
     if ((method === "GET" || method === "HEAD") && path === CREATE_JOB_PAGE) {
-      return serveLovableCreateJobPage(request, response, env as LovableEnv);
+      // Incident hotfix 2026-09-28: restore the canonical Worker-rendered Create Job
+      // surface. The Lovable presentation cutover introduced production usability
+      // regressions shortly after 18:00 Asia/Bangkok. Keep the admin gate and
+      // canonical create flow intact by returning the canonical Worker response.
+      return response;
     }
     if (method === "GET" && path === CUSTOMER_PAGE) {
       return decorateCustomer360Page(response, resolveRequestedClientId(url.searchParams));
