@@ -64,6 +64,11 @@ test("verified membership truth renders natural status instead of reverification
   assert.equal(decision.handoff_required, false);
   assert.match(decision.text, /SVIP/);
   assert.match(decision.text, /Active/);
+  assert.match(decision.text, /Public Service: ใช้ได้/);
+  assert.match(decision.text, /Private visibility: SVIP/);
+  assert.match(decision.text, /Points: 88/);
+  assert.match(decision.text, /GWs\/EMs.*รายบุคคล/s);
+  assert.match(decision.text, /ไม่ได้เปิดทั้งหมด/);
   assert.doesNotMatch(decision.text, /ยืนยันตัวตน|ต้องตรวจผ่าน My MMD/);
 });
 
@@ -87,4 +92,23 @@ test("verified Points truth renders only the canonical value", () => {
   });
   assert.equal(decision.reply_source, "live_truth");
   assert.equal(decision.text, "ตอนนี้มี 88 Points ครับ");
+});
+
+
+test("expired membership status does not advertise stale access as currently open", () => {
+  const decision = buildKenjiLiveTruthDecision("membership_status", truthPayload({
+    membership: {
+      level: "private_premium",
+      label: "Premium",
+      lifecycle: "expired",
+      expire_at: "2026-09-01",
+      public_service_access: true,
+      private_visibility_envelope: "premium",
+      member_blocked: false,
+    },
+  }), { client_record_id: "recKnownCustomer" });
+
+  assert.match(decision.text, /หมดอายุแล้ว/);
+  assert.doesNotMatch(decision.text, /Public Service: ใช้ได้/);
+  assert.doesNotMatch(decision.text, /Private visibility: Private Premium/);
 });

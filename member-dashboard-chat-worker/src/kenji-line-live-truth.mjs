@@ -127,6 +127,32 @@ function membershipStatusText(membership = {}) {
   return "ตอนนี้ยังไม่พบสิทธิ์สมาชิกที่ Active อยู่ครับ";
 }
 
+function privateEnvelopeLabel(value = "") {
+  const envelope = safeEnvelope(value);
+  if (envelope === "standard") return "Private Standard";
+  if (envelope === "premium") return "Private Premium";
+  if (envelope === "vip") return "VIP";
+  if (envelope === "svip") return "SVIP";
+  if (envelope === "black_card") return "Black Card";
+  return "";
+}
+
+function membershipRightsText(membership = {}, points = {}) {
+  const lifecycle = safeLifecycle(membership.lifecycle);
+  if (!["active", "expiring_soon", "grace"].includes(lifecycle) || membership.member_blocked === true) return "";
+
+  const parts = [];
+  parts.push(membership.public_service_access === true ? "Public Service: ใช้ได้" : "Public Service: ยังไม่เปิด");
+  const privateLabel = privateEnvelopeLabel(membership.private_visibility_envelope);
+  parts.push(privateLabel ? `Private visibility: ${privateLabel}` : "Private visibility: ยังไม่เปิด");
+
+  if (points?.status === "verified" && Number.isFinite(Number(points.active_points))) {
+    parts.push(`Points: ${Math.max(0, Math.floor(Number(points.active_points))).toLocaleString("th-TH")}`);
+  }
+
+  return `\nสิทธิ์ที่ยืนยันได้ตอนนี้ — ${parts.join(" · ")}\nการเข้าถึง GWs/EMs และ Model รายบุคคลยังตรวจแยกตามสิทธิ์ของบัญชีและการอนุญาต ไม่ได้เปิดทั้งหมดจากระดับสมาชิกเพียงอย่างเดียวครับ`;
+}
+
 function knownIdentity(continuity = {}) {
   return Boolean(text(continuity.client_record_id || continuity?.matrix?.client_record_id));
 }
@@ -138,7 +164,7 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
   if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY) {
     if (value === "membership_status") {
       return {
-        text: membershipStatusText(liveTruth.membership || {}),
+        text: `${membershipStatusText(liveTruth.membership || {})}${membershipRightsText(liveTruth.membership || {}, liveTruth.points || {})}`,
         reply_source: "live_truth",
         guard_blocked: false,
         guard_reason: "",

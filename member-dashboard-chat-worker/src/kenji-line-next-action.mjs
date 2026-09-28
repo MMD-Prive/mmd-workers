@@ -161,6 +161,15 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
       customer_text: `ถ้าจะดูยอดล่าสุด เปิด My MMD > Points ตรงนี้ได้เลยครับ → ${ROUTES.points}`,
       reason: "points_status_has_safe_self_service_next_step",
     };
+  } else if (value === "payment_center") {
+    action = {
+      schema: "mmd.kenji_next_action.v1",
+      type: "open_action_route",
+      label: "เปิด Payment Center",
+      route: ROUTES.payments,
+      customer_text: `เปิด Payment Center ของบัญชีนี้ได้เลยครับ → ${ROUTES.payments}`,
+      reason: "payment_center_is_navigation_not_payment_confirmation",
+    };
   } else if (["payment_slip", "payment_status"].includes(value)) {
     action = paymentStatusAction(continuity);
   } else if (value === "booking_status") {

@@ -405,7 +405,8 @@ export function inferLineIntent(text = "", event = {}) {
   if (["ดูนายแบบ", "ดูmodel", "ดูโมเดล"].includes(actionKeyword)) return "model_browse";
   if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
   if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
-  if (["ชำระเงิน", "ส่งสลิป", "payment"].includes(actionKeyword)) return "payment_slip";
+  if (["ชำระเงิน", "payment", "paymentcenter", "ศูนย์ชำระเงิน"].includes(actionKeyword)) return "payment_center";
+  if (["ส่งสลิป", "อัปโหลดสลิป", "uploadslip"].includes(actionKeyword)) return "payment_slip";
 
   if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
@@ -948,6 +949,12 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
   if (intent === "care_back_personal_status") {
     return `${prefix}ผมยังยืนยันจากข้อความนี้ไม่ได้ว่าคุณอยู่กลุ่มไหน ได้สิทธิ์ใด หรือมียอดเท่าไรครับ ต้องตรวจสถานะสมาชิก วันหมดอายุ ประวัติบริการ และรายการชำระที่ยืนยันแล้วของคุณก่อน`;
+  }
+
+  if (intent === "payment_center") {
+    return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → https://mmdbkk.com/member/payments
+
+ถ้ามีรายการเดิมอยู่แล้ว ให้ใช้รายการเดิมครับ ระบบจะไม่ถือว่าชำระสำเร็จจนกว่าสถานะทางการจะอัปเดต`;
   }
 
   if (intent === "payment_slip") {
