@@ -321,6 +321,67 @@
     return card;
   }
 
+  function isMobileWelcome() {
+    return Boolean(window.matchMedia && window.matchMedia("(max-width: 759px)").matches);
+  }
+
+  function ensureMobileWelcomeStyles() {
+    if (document.getElementById("mmd-model-welcome-mobile-v2-style")) return;
+    const style = document.createElement("style");
+    style.id = "mmd-model-welcome-mobile-v2-style";
+    style.textContent = [
+      "@media(max-width:759px){",
+      "html:has(#mmd-model-welcome-mobile-v2),body:has(#mmd-model-welcome-mobile-v2){margin:0!important;width:100%!important;min-height:100%!important;background:#080807!important;overflow:hidden!important}",
+      "#mmd-model-welcome-mobile-v2{position:fixed;inset:0;z-index:2147483000;min-height:100dvh;padding:max(18px,env(safe-area-inset-top)) 18px max(18px,env(safe-area-inset-bottom));display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:radial-gradient(circle at 80% 0%,rgba(155,35,54,.16),transparent 34%),radial-gradient(circle at 10% 90%,rgba(216,178,106,.10),transparent 36%),#080807;color:#f7f1e7;font-family:'LINE Seed Sans TH','Noto Sans Thai',system-ui,sans-serif}",
+      "#mmd-model-welcome-mobile-v2 *{box-sizing:border-box}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-top{display:flex;align-items:center;justify-content:space-between;gap:12px}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-brand{display:grid;gap:2px}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-brand b{font:700 14px/1 Georgia,serif;letter-spacing:.16em;color:#e3c37a}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-brand span{font-size:8px;font-weight:800;letter-spacing:.18em;color:#77736b}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-chip{min-height:28px;padding:0 9px;display:inline-flex;align-items:center;border:1px solid rgba(227,195,122,.20);border-radius:999px;color:#b9b2a6;background:rgba(255,255,255,.02);font-size:8px;font-weight:850;letter-spacing:.10em}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-main{display:flex;flex-direction:column;justify-content:center;padding:26px 0 18px}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-kicker{margin:0 0 11px;color:#c52d48;font-size:9px;font-weight:900;letter-spacing:.15em}",
+      "#mmd-model-welcome-mobile-v2 h1{max-width:340px;margin:0;color:#f7f1e7;font:500 clamp(39px,12vw,58px)/1.02 'LINE Seed Sans TH','Noto Sans Thai',sans-serif;letter-spacing:-.045em}",
+      "#mmd-model-welcome-mobile-v2 p{max-width:340px;margin:16px 0 0;color:#aaa398;font-size:13.5px;line-height:1.65}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-meta{margin-top:18px;display:flex;gap:7px;flex-wrap:wrap}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-meta span{padding:7px 9px;border:1px solid rgba(255,255,255,.08);border-radius:999px;color:#77736b;background:rgba(255,255,255,.018);font-size:9px;font-weight:750}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-action{width:100%;min-height:54px;border:0;border-radius:14px;background:#8f2135;color:#fff8ed;font-size:13px;font-weight:900;letter-spacing:.02em;box-shadow:0 16px 38px rgba(143,33,53,.22)}",
+      "#mmd-model-welcome-mobile-v2 .mwv2-note{margin:8px auto 0;color:#5e5a54;font-size:9px;line-height:1.4;text-align:center}",
+      "}",
+    ].join("");
+    document.head.appendChild(style);
+  }
+
+  function ensureMobileWelcome() {
+    if (!isMobileWelcome() || document.getElementById("mmd-model-welcome-mobile-v2")) return;
+    ensureMobileWelcomeStyles();
+
+    const context = jobBoardContext();
+    const root = document.createElement("main");
+    root.id = "mmd-model-welcome-mobile-v2";
+    root.dataset.intent = context ? "job_board" : "model_entry";
+
+    const title = context ? "สนใจงานนี้อยู่ใช่ไหม?" : "เริ่มจากข้อมูลสั้น ๆ ก่อน";
+    const body = context
+      ? "กรอกข้อมูลสั้น ๆ ในขั้นตอนถัดไป เพื่อดูรายละเอียดและไปต่อได้เลย"
+      : "บอกข้อมูลพื้นฐานในขั้นตอนถัดไป แล้ว MMD จะพาคุณไปต่อ";
+    const chip = context ? "JOB BOARD" : "MMD APP";
+    const meta = context
+      ? "<span>เก็บงานเดิมไว้ให้</span><span>ไปต่อจากจุดเดิม</span>"
+      : "<span>ใช้เวลาไม่นาน</span><span>ข้อมูลเท่าที่จำเป็น</span>";
+
+    root.innerHTML =
+      '<div class="mwv2-top"><div class="mwv2-brand"><b>MMD PRIVÉ</b><span>MODEL APP</span></div><span class="mwv2-chip">' + chip + '</span></div>' +
+      '<div class="mwv2-main"><p class="mwv2-kicker">MMD APP · WELCOME</p><h1>' + title + '</h1><p>' + body + '</p><div class="mwv2-meta">' + meta + '</div></div>' +
+      '<div><button class="mwv2-action" type="button">ไปต่อ</button><p class="mwv2-note">ขั้นตอนถัดไปจะพาคุณไปยังข้อมูลที่เกี่ยวข้อง</p></div>';
+
+    root.querySelector(".mwv2-action").addEventListener("click", () => {
+      location.assign(target());
+    });
+
+    document.body.prepend(root);
+  }
+
   function patch() {
     document.documentElement.dataset.modelLoginLang = language();
 
@@ -334,6 +395,7 @@
 
     const card = ensureTelegramCard() || document.querySelector("[data-model-telegram]");
     if (card) applyTelegramStaticCopy(card);
+    ensureMobileWelcome();
   }
 
   patch();
