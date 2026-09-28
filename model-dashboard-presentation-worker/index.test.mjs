@@ -205,6 +205,10 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.doesNotMatch(html, /redirectUri/);
   assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
   assert.doesNotMatch(html, /tanstack|react/i);
+  assert.match(html, /data-mmd-app-digital="v1"/);
+  assert.match(html, /DIGITAL MODEL WORKSPACE/);
+  assert.match(html, /--mmd-bg:#080907/);
+  assert.match(html, /LINE · CHECKING/);
 
   const worker = (await import("./src/index.js")).default;
   const response = await worker.fetch(request);
