@@ -167,6 +167,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       ? [...snapshot.warnings, "manual_public_only_pending_reconcile"]
       : snapshot.warnings;
 
+    const noCanonicalMatch = records.every((record) => !/^rec[A-Za-z0-9]{6,}$/.test(clean(record?.client_id)));
     return json({
       ok: true,
       source: "canonical_client_lineage",
@@ -175,10 +176,14 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       lookup_chain: CUSTOMER_LOOKUP_CHAIN,
       lookup_priority: CUSTOMER_LOOKUP_PRIORITY,
       records,
-      // Compatibility for SIGIL Jobs V10/V11 consumers. Same records, no extra authority.
+      // Compatibility aliases for every live Create Job generation.
+      // results is the current MMD OS contract; items is retained for V10/V11.
+      results: records,
       items: records,
       count: records.length,
       lineage_warnings: lineageWarnings,
+      degraded_sources: lineageWarnings,
+      no_canonical_match: noCanonicalMatch,
       manual_fallback: useManualFallback,
       ...(canonicalOnly ? { canonical_only: true, line_candidates: snapshot.lineCandidates } : {}),
     });
@@ -228,17 +233,20 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const tables = tableNames(env);
   const warnings = [];
 
-  // Clients are the canonical selectable inventory and are the only required read.
-  // Enrichment must never make Find Client unavailable.
-  const clients = await airtableList(env, tables.clients, CLIENT_FIELDS, 500);
-  const members = await optionalAirtableList(env, tables.members, MEMBER_FIELDS, 160, warnings, "members");
-  const entitlements = await optionalAirtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 240, warnings, "entitlements");
+  // Find Client sits on the owner's hot path. Independent Airtable reads run
+  // together so typing a remembered name does not pay serial round trips.
+  // Authority and matching semantics remain unchanged.
+  let clients;
+  let members;
+  let entitlements;
+  let staging;
 
-  // LINE staging contains Per's remembered/manual rename and historical aliases.
-  // It is identity evidence only and never an entitlement source. Recent cards
-  // deliberately enrich only the candidate clients that can actually render.
-  const staging = query
-    ? await optionalAirtableList(
+  if (query) {
+    [clients, members, entitlements, staging] = await Promise.all([
+      airtableList(env, tables.clients, CLIENT_FIELDS, 500),
+      optionalAirtableList(env, tables.members, MEMBER_FIELDS, 160, warnings, "members"),
+      optionalAirtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 240, warnings, "entitlements"),
+      optionalAirtableList(
         env,
         tables.lineStaging,
         LINE_STAGING_FIELDS,
@@ -246,8 +254,15 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
         warnings,
         "line_staging",
         { filterByFormula: stagingSearchFormula(query) },
-      )
-    : recent
+      ),
+    ]);
+  } else {
+    [clients, members, entitlements] = await Promise.all([
+      airtableList(env, tables.clients, CLIENT_FIELDS, 500),
+      optionalAirtableList(env, tables.members, MEMBER_FIELDS, 160, warnings, "members"),
+      optionalAirtableList(env, tables.entitlements, ENTITLEMENT_FIELDS, 240, warnings, "entitlements"),
+    ]);
+    staging = recent
       ? await optionalAirtableList(
           env,
           tables.lineStaging,
@@ -258,6 +273,7 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
           { filterByFormula: stagingRecentFormula(clients, limit) },
         )
       : [];
+  }
 
   const memberIndexes = buildMemberIndexes(members);
   const entitlementIndexes = buildEntitlementIndexes(entitlements);
