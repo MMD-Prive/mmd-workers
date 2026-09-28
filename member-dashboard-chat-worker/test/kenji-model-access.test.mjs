@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import worker, {
+  buildKenjiLineReply,
   createLineSignature,
   extractKenjiModelLookupQuery,
   extractKenjiModelVerificationEmail,
@@ -160,6 +161,40 @@ async function signedWebhook(events, env = BASE_ENV) {
     body: raw,
   });
 }
+
+test("greeting action keywords enter canonical intents", () => {
+  assert.equal(inferLineIntent("ดูนายแบบ", lineEvent("ดูนายแบบ")), "model_browse");
+  assert.equal(inferLineIntent("จองบริการ", lineEvent("จองบริการ")), "mmd_companion");
+  assert.equal(inferLineIntent("สิทธิ์ของฉัน", lineEvent("สิทธิ์ของฉัน")), "membership_status");
+  assert.equal(inferLineIntent("ชำระเงิน", lineEvent("ชำระเงิน")), "payment_slip");
+  assert.equal(inferLineIntent("ส่งสลิป", lineEvent("ส่งสลิป")), "payment_slip");
+});
+
+test("standalone model names and short follow-ups keep guarded model context", () => {
+  assert.equal(extractKenjiModelLookupQuery("Jasper"), "Jasper");
+  assert.equal(inferLineIntent("Jasper", lineEvent("Jasper")), "model_lookup");
+  assert.equal(extractKenjiModelLookupQuery("บุค"), "บุค");
+  assert.equal(inferLineIntent("บุค", lineEvent("บุค")), "model_lookup");
+  assert.equal(extractKenjiModelLookupQuery("คืนนี้"), "");
+  assert.notEqual(inferLineIntent("คืนนี้", lineEvent("คืนนี้")), "model_lookup");
+
+  const continuity = {
+    decision: "ambiguous",
+    effective_intent: "availability_request",
+    matrix: {
+      payload_json: {
+        active_model_v1: { model_code: "MX17", working_name: "Jasper" },
+      },
+    },
+  };
+  assert.match(buildKenjiLineReply(lineEvent("คืนนี้"), {}, { continuity }), /Jasper \(MX17\)/);
+  assert.match(buildKenjiLineReply(lineEvent("เท่าไหร่"), {}, {
+    continuity: { ...continuity, effective_intent: "pricing_review" },
+  }), /Jasper \(MX17\)/);
+  assert.match(buildKenjiLineReply(lineEvent("จองเลย"), {}, {
+    continuity: { ...continuity, effective_intent: "mmd_companion" },
+  }), /Jasper \(MX17\)/);
+});
 
 test("card triggers are campaign leads while neutral codes remain model lookups", () => {
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");

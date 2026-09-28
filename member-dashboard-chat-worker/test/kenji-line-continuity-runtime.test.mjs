@@ -246,3 +246,99 @@ test("opening profile is stored in chat context only after LINE delivery", async
   assert.equal(writes[1].first_contact_v2.preferred_style, "สุภาพ");
   assert.equal(writes[1].first_contact_v2.updated_at, NOW);
 });
+
+
+test("active model context maps a short tonight follow-up to guarded availability", async () => {
+  const continuity = await withFetch(async (url) => {
+    const parsed = new URL(String(url));
+    const filter = parsed.searchParams.get("filterByFormula") || "";
+    const hash = filter.match(/=\"([^\"]+)/)?.[1] || "stored-hash";
+    const fields = {
+      ...storedFields(hash),
+      topic: "model_lookup",
+      last_customer_intent: "model_lookup",
+      last_customer_action: "asked:model_lookup",
+      conversation_stage: "in_progress",
+      awaiting_from: "none",
+      pending_action: "continue current conversation",
+      important_open_loops_json: "[]",
+      handoff_required: false,
+      handoff_owner: "none",
+      handoff_reason: "",
+      live_truth_required: false,
+      live_truth_domains: [],
+      payload_json: JSON.stringify({
+        active_model_v1: { model_code: "MX17", working_name: "Jasper", updated_at: NOW },
+      }),
+    };
+    return new Response(JSON.stringify({ records: [{ id: "recMatrix", fields }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event("คืนนี้"), currentIntent: "note_only", now: NOW }));
+
+  assert.equal(continuity.available, true);
+  assert.equal(continuity.effective_intent, "availability_request");
+  assert.equal(continuity.matrix.payload_json.active_model_v1.model_code, "MX17");
+  assert.equal(continuity.matrix.payload_json.active_model_v1.working_name, "Jasper");
+});
+
+test("successful model access persists only bounded active model identity in Matrix", async () => {
+  let posted = null;
+  const prior = {
+    ...buildConversationMatrixV1({
+      matrix_id: "kcm1_line_model",
+      client_record_id: "recClient",
+      conversation_id_hash: "modelhash",
+      channel: "line_ofc",
+      conversation_scope: "line:model",
+      topic: "model_lookup",
+      relationship_context: "known_customer",
+      last_customer_intent: "model_lookup",
+      conversation_stage: "in_progress",
+      version: 1,
+    }),
+    payload_json: {},
+  };
+  const continuity = {
+    schema: "mmd.kenji_continuity_resolver.v1",
+    decision: "new_topic",
+    reason: "no_open_thread",
+    topic: "model_lookup",
+    effective_intent: "model_lookup",
+    conversation_hash: "modelhash",
+    client_record_id: "recClient",
+    matrix_record_id: "recMatrix",
+    storage_status: "ready",
+    matrix: prior,
+  };
+
+  await withFetch(async (_url, init = {}) => {
+    posted = JSON.parse(init.body);
+    return new Response(JSON.stringify({ records: [{ id: "recMatrix", fields: posted.records[0].fields }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }, () => writeKenjiLineMatrixTurn({
+    env: ENV,
+    continuity,
+    decision: {
+      intent: "model_lookup",
+      reply_source: "model_access",
+      handoff_required: false,
+      model_context: { model_code: "MX17", working_name: "Jasper", rate: 999999, availability: "invented" },
+    },
+    delivered: true,
+    attempted: true,
+    lastEventId: "kai_line_model",
+    now: NOW,
+  }));
+
+  const payload = JSON.parse(posted.records[0].fields.payload_json);
+  assert.deepEqual(
+    { model_code: payload.active_model_v1.model_code, working_name: payload.active_model_v1.working_name },
+    { model_code: "MX17", working_name: "Jasper" },
+  );
+  assert.equal(Object.hasOwn(payload.active_model_v1, "rate"), false);
+  assert.equal(Object.hasOwn(payload.active_model_v1, "availability"), false);
+});

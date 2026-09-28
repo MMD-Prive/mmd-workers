@@ -324,6 +324,15 @@ export function resolveLineCardCampaignTrigger(text = "") {
 }
 
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
+const PLAIN_MODEL_NAME_STOPWORDS = new Set([
+  "สวัสดี", "ดี", "ขอบคุณ", "โอเค", "ครับ", "ค่ะ", "คะ",
+  "แนะนำ", "ผู้หญิง", "ผู้ชาย", "หญิง", "ชาย", "ไม่ระบุ",
+  "คืนนี้", "วันนี้", "พรุ่งนี้", "ว่าง", "ว่างไหม", "เช็กคิว", "เช็คคิว",
+  "ราคา", "เรท", "เท่าไร", "เท่าไหร่", "กี่บาท", "จอง", "จองเลย",
+  "สมาชิก", "ชำระเงิน", "ส่งสลิป",
+  "hello", "hi", "hey", "thanks", "thankyou", "available", "availability",
+  "price", "rate", "booking", "book", "member", "payment",
+]);
 
 export function extractKenjiModelLookupQuery(text = "") {
   const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -335,9 +344,14 @@ export function extractKenjiModelLookupQuery(text = "") {
   const campaignEntry = withoutPolite.match(/^([A-Z][A-Z0-9_-]{3,31})$/);
   if (campaignEntry && !RESERVED_MODEL_ENTRY_TRIGGERS.has(campaignEntry[1])) return campaignEntry[1];
   const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
-  if (!explicit) return "";
-  const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
-  return query && query.length <= 48 ? query : "";
+  if (explicit) {
+    const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+    return query && query.length <= 48 ? query : "";
+  }
+  const plain = withoutPolite.match(/^([A-Za-z][A-Za-z'.]{1,23}(?:\s+[A-Za-z][A-Za-z'.]{1,23})?|[ก-๙]{2,8})$/);
+  const plainValue = asString(plain?.[1]);
+  if (plainValue && !PLAIN_MODEL_NAME_STOPWORDS.has(plainValue.toLowerCase())) return plainValue;
+  return "";
 }
 
 export function extractKenjiModelVerificationEmail(text = "") {
@@ -383,6 +397,15 @@ export function inferLineIntent(text = "", event = {}) {
     if (event?.type === "postback") return "postback";
     return "line_event";
   }
+
+  // Greeting/Rich Menu action keywords are kept intentionally small and
+  // deterministic. They enter the same canonical runtime as typed messages,
+  // so there is no second "button-only" conversation system to maintain.
+  const actionKeyword = asString(text).normalize("NFC").toLowerCase().replace(/\s+/g, "");
+  if (["ดูนายแบบ", "ดูmodel", "ดูโมเดล"].includes(actionKeyword)) return "model_browse";
+  if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
+  if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
+  if (["ชำระเงิน", "ส่งสลิป", "payment"].includes(actionKeyword)) return "payment_slip";
 
   if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
@@ -735,7 +758,17 @@ function buildKenjiModelAccessDecision(access = {}, options = {}) {
   };
   if (access.status === "match") {
     const answer = buildKenjiModelAccessReply(access.model);
-    if (answer) return { ...base, text: answer, reply_source: "model_access", guard_blocked: false, guard_reason: "" };
+    if (answer) return {
+      ...base,
+      text: answer,
+      reply_source: "model_access",
+      guard_blocked: false,
+      guard_reason: "",
+      model_context: {
+        model_code: asString(access.model?.model_code).slice(0, 80),
+        working_name: asString(access.model?.working_name).slice(0, 120),
+      },
+    };
   }
   if (access.status === "restricted_category" && ["gws", "ems"].includes(access.category)) {
     return {
@@ -779,9 +812,34 @@ function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
+function activeModelContext(options = {}) {
+  const raw = options?.continuity?.matrix?.payload_json?.active_model_v1;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const modelCode = asString(raw.model_code).slice(0, 80);
+  const workingName = asString(raw.working_name).slice(0, 120);
+  if (!modelCode || !workingName) return null;
+  return { model_code: modelCode, working_name: workingName };
+}
+
+function contextualModelForTurn(eventText = "", intent = "", options = {}) {
+  const model = activeModelContext(options);
+  if (!model) return null;
+  const raw = asString(eventText).normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  if (asString(options?.continuity?.decision) === "continuation") return model;
+  if (intent === "availability_request" && /^(?:ว่าง|ว่างไหม|เช็กคิว|เช็คคิว|ดูคิว|คิว|คืนนี้|วันนี้|พรุ่งนี้)/.test(raw)) return model;
+  if (intent === "pricing_review" && /^(?:ราคา|เรท|เท่าไร|เท่าไหร่|กี่บาท|price|rate)/i.test(raw)) return model;
+  if (intent === "mmd_companion" && /^(?:จองเลย|จองคนนี้|เอาคนนี้|ขอคนนี้|book|booking)/i.test(raw)) return model;
+  return null;
+}
+
 export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const text = getLineEventText(event);
-  const intent = inferLineIntent(text, event);
+  const inferredIntent = inferLineIntent(text, event);
+  const continuityIntent = asString(options?.continuity?.effective_intent);
+  const intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
+    ? continuityIntent
+    : inferredIntent;
+  const activeModel = contextualModelForTurn(text, intent, options);
   const name = asString(profile?.displayName).split(/\s+/).filter(Boolean)[0] || "";
   const prefix = name ? `คุณ${name} ` : "";
 
@@ -801,7 +859,12 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return "ผมไม่สามารถเปิดเผยหรือค้นข้อมูลส่วนตัวของลูกค้าคนอื่นได้ครับ ถ้าต้องการดูข้อมูลของคุณเอง กรุณาใช้ช่องทางยืนยันตัวตนของ MMD ครับ";
   }
 
+  if (intent === "model_browse") {
+    return "ดูนายแบบ Public ได้ที่ https://mmdbkk.com/profiles ครับ ถ้ามีชื่อคนที่สนใจ พิมพ์ชื่อหรือรหัสมาได้เลย เดี๋ยวเปอร์เช็กสิทธิ์ที่บัญชีนี้ดูได้ก่อนเปิดรายละเอียดเพิ่มเติมครับ";
+  }
+
   if (intent === "availability_request") {
+    if (activeModel) return `รับเรื่องเช็กคิว ${activeModel.working_name} (${activeModel.model_code}) ครับ ส่งวัน เวลา และพื้นที่ที่ต้องการมาได้เลย แล้ว MMD จะตรวจความพร้อมจากข้อมูลปัจจุบันก่อนยืนยันครับ`;
     return "ผมยังยืนยันคิวหรือความพร้อมของ Companion จากข้อความนี้ไม่ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้ แล้ว MMD จะตรวจความพร้อมก่อนยืนยันครับ";
   }
 
@@ -931,6 +994,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "mmd_companion") {
+    if (activeModel) return `${prefix}รับ request สำหรับ ${activeModel.working_name} (${activeModel.model_code}) ครับ ส่งวัน เวลา พื้นที่ ระยะเวลา และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจคิวและเงื่อนไขปัจจุบันก่อนยืนยันครับ`;
     return `${prefix}รับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยันครับ`;
   }
 
@@ -939,6 +1003,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "pricing_review") {
+    if (activeModel) return `${prefix}ถ้าหมายถึงเรทของ ${activeModel.working_name} (${activeModel.model_code}) ส่งวัน เวลา โซน ระยะเวลา และรูปแบบงานมาได้เลยครับ เดี๋ยวเปอร์ตรวจเรทที่ใช้กับงานนี้ก่อนตอบยืนยันครับ`;
     return `${prefix}เรื่องราคา เดี๋ยวเปอร์ขอดูรายละเอียดที่เหมาะก่อนนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
   }
 
@@ -966,7 +1031,12 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
     : "";
-  const intent = postbackIntent || inferredIntent;
+  const continuityIntent = asString(options?.continuity?.effective_intent);
+  const intent = postbackIntent || (
+    ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
+      ? continuityIntent
+      : inferredIntent
+  );
 
   if (intent === "card_campaign_lead" || options.campaignBrief === true) {
     if (options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
