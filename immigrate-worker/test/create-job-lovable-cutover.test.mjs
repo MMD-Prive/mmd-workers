@@ -19,7 +19,7 @@ try {
     target: "es2022",
   });
 
-  const { serveLovableCreateJobPage } = await import(pathToFileURL(outfile).href);
+  const { serveLovableCreateJobPage, decorateCreateJobGuidance } = await import(pathToFileURL(outfile).href);
 
   let fetchCalls = 0;
   const originalFetch = globalThis.fetch;
@@ -27,7 +27,7 @@ try {
     fetchCalls += 1;
     assert.equal(String(url), "https://mmd-os.lovable.app/internal/admin/jobs/create-job?x=1");
     assert.equal(init.method, "GET");
-    return new Response('<html><head><link href="/assets/app.css"></head><body><main>Create Job Lovable</main></body></html>', {
+    return new Response('<html><head><link href="/assets/app.css"></head><body><main>Create Job Lovable <b>BLOCKED</b><section>Creation blocked<ul><li>Canonical client not selected</li><li>Amount THB required</li></ul></section><input placeholder="ชื่อที่เปอร์เรียก / LINE" /></main></body></html>', {
       status: 200,
       headers: {
         "content-type": "text/html; charset=utf-8",
@@ -49,8 +49,15 @@ try {
     assert.equal(cutover.headers.get("x-mmd-presentation-source"), "lovable");
     assert.equal(cutover.headers.get("x-mmd-presentation-version"), "internal-lovable-v1");
     assert.equal(cutover.headers.get("x-mmd-page"), "create-job");
+    assert.equal(cutover.headers.get("x-mmd-create-job-worker-guide"), "v1");
     assert.match(html, /Create Job Lovable/);
     assert.match(html, /https:\/\/mmd-os\.lovable\.app\/assets\/app\.css/);
+    assert.doesNotMatch(html, /\bBLOCKED\b/);
+    assert.doesNotMatch(html, /Creation blocked/);
+    assert.match(html, /กำลังเตรียม/);
+    assert.match(html, /ขั้นตอนถัดไป/);
+    assert.match(html, /ไม่ต้องรู้ Client ID หรือ Session ID/);
+    assert.match(html, /data-mmd-create-job-worker-guide="v1"/);
 
     const denied = await serveLovableCreateJobPage(
       new Request("https://mmdbkk.com/internal/admin/jobs/create-job"),
@@ -67,6 +74,11 @@ try {
       { INTERNAL_LOVABLE_ORIGIN: "https://mmd-os.lovable.app" },
     );
     assert.equal(await fallback.text(), "legacy fallback");
+
+    const decorated = decorateCreateJobGuidance("<html><body><b>BLOCKED</b><p>Creation blocked</p></body></html>");
+    assert.doesNotMatch(decorated, /\bBLOCKED\b/);
+    assert.doesNotMatch(decorated, /Creation blocked/);
+    assert.match(decorated, /data-mmd-create-job-worker-guide="v1"/);
   } finally {
     globalThis.fetch = originalFetch;
   }
