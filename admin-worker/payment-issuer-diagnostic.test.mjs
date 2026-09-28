@@ -5,7 +5,7 @@ import worker from './src/admin-login-hero-worker.js';
 import paymentsWorker from '../payments-worker/index.review-wrapper.js';
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 import { callPaymentsCreateLink } from './src/index.js';
-import { PAYMENT_ISSUER_DIAGNOSTIC_PATH as PATH, ISSUE_EXISTING_SESSION_MODE, REISSUE_EXISTING_SESSION_MODE } from './src/payment-issuer-diagnostic.js';
+import { PAYMENT_ISSUER_DIAGNOSTIC_PATH as PATH, ISSUE_EXISTING_SESSION_MODE, REISSUE_EXISTING_SESSION_MODE, REFRESH_CONFIRMATION_LINKS_MODE } from './src/payment-issuer-diagnostic.js';
 
 function setup({ upstreamSecret = 'service-test', binding } = {}) {
   const calls = [];
@@ -142,6 +142,39 @@ test('diagnostic refuses arbitrary caller payloads', async () => {
     assert.equal((await response.json()).error, 'diagnostic_empty_object_required');
   }
   assert.equal(h.calls.length, 0);
+});
+
+test('owner confirmation refresh delegates to the safe reissue endpoint without leaking signed URLs', async () => {
+  const h = setup({ binding: async req => {
+    assert.equal(new URL(req.url).pathname, '/v1/internal/confirm/reissue');
+    assert.equal(req.headers.get('x-internal-token'), 'service-test');
+    assert.deepEqual(await req.json(), { session_id: 'sess_fixture' });
+    return Response.json({
+      ok: true,
+      session_id: 'sess_fixture',
+      payment_ref: 'pay_fixture',
+      payment_type: 'deposit',
+      expires_at: 1790000000,
+      customer_confirmation_url_present: true,
+      model_confirmation_url_present: true,
+      payment_state_mutated: false,
+      notification_sent: false,
+    });
+  } });
+  const response = await worker.fetch(await request(h.env, { body: {
+    mode: REFRESH_CONFIRMATION_LINKS_MODE,
+    session_id: 'sess_fixture',
+  } }), h.env, {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.stage, 'confirmation_links_refreshed');
+  assert.equal(body.session_id, 'sess_fixture');
+  assert.equal(body.payment_state_mutated, false);
+  assert.equal(body.notification_sent, false);
+  assert.equal(body.customer_confirmation_url, undefined);
+  assert.equal(body.model_confirmation_url, undefined);
+  assert.equal(h.calls.length, 1);
 });
 
 test('owner existing-session issuance builds deposit pricing server-side and never returns signed URLs', async () => {
