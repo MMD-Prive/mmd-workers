@@ -73,6 +73,19 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /2010298002-mbx9kqQn/);
   });
 
+  it("uses status LIFF only as a verified session bridge into the same-origin Lovable MY MMD UI", async () => {
+    const response = await shell("/member/liff?intent=status");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"statusEndpoint":"\/member\/api\/liff\/status"/);
+    assert.match(html, /const MY_MMD_TARGET = "\/my-mmd\/"/);
+    assert.match(html, /fetch\(CONFIG\.statusEndpoint/);
+    assert.match(html, /window\.location\.replace\(MY_MMD_TARGET\)/);
+    assert.match(html, /JSON\.stringify\(\{ id_token: idToken, liff_intent: "status" \}\)/);
+    assert.match(html, /if \(CONFIG\.intent === "status"\) void bridgeStatusToMyMmd\(\)/);
+  });
+
   it("serves a no-store same-site LIFF shell that bootstraps only through the LIFF start API", async () => {
     const response = await shell("/member/liff?intent=renew&code=KJ-PRV-ABC123");
     const html = await response.text();
@@ -205,6 +218,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /scroll-snap-type:x mandatory/);
     assert.match(html, /prefers-reduced-motion/);
     assert.match(html, /"LINE Seed Sans TH"/);
+    assert.match(html, /MY MMD LIFF Digital Home v2/);
     assert.match(html, /customer_360/);
     assert.match(html, /points\.status === "verified"/);
     assert.match(html, /id="points-lifetime-spend"/);
@@ -213,8 +227,15 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /formatThb\(points\.lifetime_service_spend_thb\)/);
     assert.match(html, /navHome:"👤 HOME"/);
     assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
-    assert.match(html, /const LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
-    assert.match(html, /if \(view === "points"\) \{[\s\S]*window\.location\.assign\(LOVABLE_POINTS_PATH\);[\s\S]*return;[\s\S]*\}/);
+    assert.doesNotMatch(html, /LOVABLE_POINTS_PATH|window\.location\.assign\("\/my-mmd\/points"\)/);
+    assert.match(html, /"historyEndpoint":"\/api\/member\/app\/history"/);
+    assert.match(html, /"historyRecoveryEndpoint":"\/api\/member\/app\/history\/recovery"/);
+    assert.match(html, /await readCanonicalHistory\(\)/);
+    assert.match(html, /credentials:"same-origin", cache:"no-store"/);
+    assert.match(html, /points\.expiring_points/);
+    assert.match(html, /points\.nearest_expiry/);
+    assert.match(html, /item\?\.expires_at/);
+    assert.match(html, /data-view="history" aria-current="false"><i>▤<\/i>ประวัติ/);
     assert.match(html, /const targetId = view === "history" \? "history-panel" : view/);
     assert.match(html, /pointsTitle:"⭐ 积分"/);
     assert.doesNotMatch(html, /payment_ref|provider_transaction_id|line_user_id|telegram_user_id|Airtable|R2 key|slip_url/i);

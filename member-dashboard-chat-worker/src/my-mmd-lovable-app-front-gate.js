@@ -455,7 +455,10 @@ function liffAuthBridgeTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
-  if (!intent || intent === "unknown" || intent === "status") return "/my-mmd/";
+  // LIFF owns verified LINE/session establishment only for the normal member launch.
+  // The actual MY MMD customer UI is the same-origin Lovable presentation proxy.
+  if (intent === "status") return "/my-mmd/";
+  if (!intent || intent === "unknown") return "";
   if (intent === "continue_payment") return "/my-mmd/payments";
   return "";
 }
@@ -501,8 +504,8 @@ function injectStatusBridgeSkin(html) {
   if (!output.includes('id="mmd-status-bridge-skin"') && output.includes("</head>")) {
     output = output.replace("</head>", `${statusBridgeSkin()}</head>`);
   }
-  if (!output.includes('id="mmd-status-bridge-veil"') && output.includes("<body>")) {
-    output = output.replace("<body>", `<body>${statusBridgeMarkup()}`);
+  if (!output.includes('id="mmd-status-bridge-veil"') && /<body\b[^>]*>/i.test(output)) {
+    output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>${statusBridgeMarkup()}`);
   }
   if (nonceMatch && !output.includes('id="mmd-status-bridge-recovery-observer"') && output.includes("</body>")) {
     output = output.replace("</body>", `${statusBridgeRecoveryObserver(nonceMatch[1])}</body>`);
@@ -546,8 +549,9 @@ export default {
 
     // Identity, session, points, membership, entitlement, coupons, history,
     // CARE BACK and every authoritative calculation remain on MMD Workers.
-    // For intent=status, LIFF is only a verification bridge; /my-mmd/ is the
-    // single customer-facing dashboard surface.
+    // Direct intent=status establishes the verified LINE/session in LIFF and
+    // then hands presentation to the same-origin Lovable MY MMD app at /my-mmd/.
+    // Specialized compatibility intents remain bounded to their exact destinations.
     const response = await currentWorker.fetch(request, env, ctx);
     return rewriteStatusReturnTarget(request, response);
   },

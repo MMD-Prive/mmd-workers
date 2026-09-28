@@ -3,12 +3,12 @@ import { test } from "node:test";
 
 import worker from "../src/my-mmd-lovable-app-front-gate.js";
 
-test("LINE status bridge keeps recovery copy visible when recovery actions exist", async () => {
+test("direct LINE status uses LIFF as the identity bridge before the Lovable MY MMD UI", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>LEGACY MEMBER SURFACE</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
-        { headers: { "content-type": "text/html; charset=utf-8" } },
+        `<!doctype html><html><head></head><body><main data-mmd-liff-digital="v2">NATIVE MEMBER RECOVERY</main><div id="message">กำลังเชื่อมข้อมูลเดิมของคุณ</div><div id="actions"></div><script nonce="abc123">const historyEndpoint = "/api/member/app/history";</script></body></html>`,
+        { headers: { "content-type":"text/html; charset=utf-8" } },
       ),
     },
   };
@@ -17,11 +17,11 @@ test("LINE status bridge keeps recovery copy visible when recovery actions exist
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.match(html, /body #message\{display:none!important\}/);
-  assert.match(html, /body:has\(#actions:not\(:empty\)\) #message\{display:block!important/);
-  assert.match(html, /body:has\(#actions:not\(:empty\)\) #mmd-status-bridge-veil \.t\{display:none!important\}/);
-  assert.match(html, /id="actions"/);
-  assert.match(html, /id="message"/);
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
   assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
+  assert.match(html, /NATIVE MEMBER RECOVERY/);
+  assert.match(html, /กำลังเชื่อมข้อมูลเดิมของคุณ/);
+  assert.match(html, /\/api\/member\/app\/history/);
+  assert.match(html, /mmd-status-bridge-veil/);
 });
+
