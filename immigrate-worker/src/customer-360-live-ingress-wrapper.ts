@@ -242,11 +242,26 @@ function rewriteLovableAssetUrls(html: string, origin: string): string {
 }
 
 export function applyCreateJobClientAutoSearch(html: string): string {
-  if (html.includes('data-mmd-create-job-client-autosearch="v1"')) return html;
-  const script = `<script data-mmd-create-job-client-autosearch="v1">
-(()=>{let timer=0,last="";const selector='input[aria-label="Search client"],input[placeholder*="Client ID"]';document.addEventListener('input',(event)=>{const input=event.target instanceof HTMLInputElement&&event.target.matches(selector)?event.target:null;if(!input||event.isComposing)return;clearTimeout(timer);const value=input.value.trim();if(!value){last="";return}timer=setTimeout(()=>{const next=input.value.trim();if(!next||next===last)return;last=next;input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}))},380)},true);document.addEventListener('keydown',(event)=>{const input=event.target instanceof HTMLInputElement&&event.target.matches(selector)?event.target:null;if(!input||event.key!=='Enter')return;last=input.value.trim();clearTimeout(timer)},true)})();
+  if (html.includes('data-mmd-create-job-client-search="v2"')) return html;
+  const bridge = `<style data-mmd-create-job-client-search-style="v2">
+/* On Create Job, the header search is the Client search. Keep the React input mounted
+   for state ownership, but remove the duplicate visible field from Step 01. */
+section[aria-labelledby="step-client-heading"] > div:has(> input[aria-label="Search client"]){position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important}
+section[aria-labelledby="step-client-heading"] > div:has(> input[aria-label="Search client"]) + p{display:none!important}
+</style>
+<script data-mmd-create-job-client-search="v2">
+(()=>{if(window.__mmdCreateJobHeaderSearchV2)return;window.__mmdCreateJobHeaderSearchV2=true;
+const headerSelector='input[aria-label^="ค้นหาลูกค้า —"]';
+const clientSelector='input[aria-label="Search client"]';
+let timer=0,last="";
+const setReactValue=(input,value)=>{const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(setter)setter.call(input,value);else input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}))};
+const submitClient=(value)=>{const q=String(value||'').trim(),client=document.querySelector(clientSelector);if(!client||!q||q===last)return;last=q;setReactValue(client,q);client.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}))};
+document.addEventListener('input',(event)=>{const input=event.target instanceof HTMLInputElement&&event.target.matches(headerSelector)?event.target:null;if(!input||event.isComposing)return;clearTimeout(timer);const value=input.value.trim();if(!value){last='';const client=document.querySelector(clientSelector);if(client)setReactValue(client,'');return}timer=setTimeout(()=>submitClient(input.value),320)},true);
+document.addEventListener('keydown',(event)=>{const input=event.target instanceof HTMLInputElement&&event.target.matches(headerSelector)?event.target:null;if(!input||event.key!=='Enter')return;event.preventDefault();event.stopPropagation();clearTimeout(timer);last='';submitClient(input.value)},true);
+document.addEventListener('submit',(event)=>{const form=event.target instanceof HTMLFormElement?event.target:null;const input=form?.querySelector(headerSelector);if(!input)return;event.preventDefault();event.stopPropagation();clearTimeout(timer);last='';submitClient(input.value)},true);
+})();
 </script>`;
-  return html.includes("</body>") ? html.replace("</body>", `${script}</body>`) : `${html}${script}`;
+  return html.includes("</body>") ? html.replace("</body>", `${bridge}</body>`) : `${html}${bridge}`;
 }
 
 export function applyCreateJobStaticCopy(html: string): string {
