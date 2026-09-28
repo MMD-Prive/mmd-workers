@@ -166,12 +166,22 @@ test("greeting action keywords enter canonical intents", () => {
   assert.equal(inferLineIntent("ดูนายแบบ", lineEvent("ดูนายแบบ")), "model_browse");
   assert.equal(inferLineIntent("จองบริการ", lineEvent("จองบริการ")), "mmd_companion");
   assert.equal(inferLineIntent("สิทธิ์ของฉัน", lineEvent("สิทธิ์ของฉัน")), "membership_status");
+  assert.equal(inferLineIntent("คุยกับเปอร์", lineEvent("คุยกับเปอร์")), "per_continuity");
+  assert.equal(inferLineIntent("ถามเปอร์", lineEvent("ถามเปอร์")), "per_continuity");
   assert.equal(inferLineIntent("ชำระเงิน", lineEvent("ชำระเงิน")), "payment_center");
   assert.equal(inferLineIntent("payment", lineEvent("payment")), "payment_center");
   assert.equal(inferLineIntent("ส่งสลิป", lineEvent("ส่งสลิป")), "payment_slip");
   assert.match(buildKenjiLineReply(lineEvent("ชำระเงิน")), /Payment Center/);
   assert.match(buildKenjiLineReply(lineEvent("ชำระเงิน")), /member\/payments/);
   assert.doesNotMatch(buildKenjiLineReply(lineEvent("ชำระเงิน")), /ส่งสลิปหรือหลักฐาน/);
+});
+
+test("LINE Per entry never introduces HITO or Kenji to the customer", () => {
+  const direct = buildKenjiLineReply(lineEvent("คุยกับเปอร์"));
+  const aiAlias = buildKenjiLineReply(lineEvent("Hi Per"));
+  assert.match(direct, /อยู่ครับ|บอกผมได้เลย/);
+  assert.doesNotMatch(direct, /HITO|Kenji|เคนจิ/i);
+  assert.doesNotMatch(aiAlias, /HITO|Kenji|เคนจิ/i);
 });
 
 test("model browse asks preference and never treats preference words as model names", async () => {
