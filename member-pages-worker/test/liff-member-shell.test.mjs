@@ -270,6 +270,8 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     assert.match(html, /<p class="digital-eyebrow">MMD TODAY<\/p>/);
     assert.match(html, /<small>PRIVATE FEED<\/small>MMD ROTATION/);
+    assert.match(html, /href="\/member\/kenji"/);
+    assert.doesNotMatch(html, /href="\/member\/kenji-ai-20"/);
     assert.match(html, /let digitalPersonalizedFeed = \[\]/);
     assert.match(html, /homeFeed\.authority === "member_app_dashboard_v1"/);
     assert.match(html, /homeFeed\.state === "resolved"/);
