@@ -434,20 +434,23 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   form.append("parse_mode", "HTML");
   form.append("caption", [
     route.topic === "membership"
-      ? "<b>MEMBERSHIP PAYMENT PROOF · PENDING REVIEW</b>"
+      ? "<b>💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ</b>"
       : route.topic === "mmd_shop"
-        ? `<b>${tgHtml(route.shop_title)} PAYMENT PROOF · PENDING REVIEW</b>`
-        : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
-    `Proof: <code>${proofId}</code>`,
-    `Ref: <code>${paymentRef}</code>`,
-    snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
-    snapshot.payment_stage ? `Stage: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
-    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `Classified: <b>${tgHtml(route.shop_name)} Order</b>` : "",
+        ? `<b>💳 ${tgHtml(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ</b>`
+        : "<b>💳 สลิปลูกค้าเข้าแล้ว · รอเปอร์ตรวจ</b>",
+    snapshot.amount_thb ? `ยอด: <b>${snapshot.amount_thb} THB</b>` : "",
+    snapshot.payment_stage ? `รอบชำระ: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
     ...(route.topic === "membership" || route.topic === "mmd_shop"
       ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
       : webJobContextCaptionLines(jobContext)),
+    "",
+    "👉 <b>ขั้นต่อไป: ตรวจสลิปแล้วกด Official Verify</b>",
+    "ยังไม่ปล่อยลิงก์ลูกค้า / โมเดลจนกว่าจะอนุมัติ",
+    "",
+    `Payment Ref: <code>${paymentRef}</code>`,
+    `Proof: <code>${proofId}</code>`,
+    inferenceLabel ? `ประเภท: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "ประเภท: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `ประเภท: <b>${tgHtml(route.shop_name)} Order</b>` : "",
     `Routing: <code>${tgHtml(route.reason)}</code>`,
-    "Evidence only · Official Verify required",
   ].filter(Boolean).join("\n"));
   form.append("document", file, clean(file.name, 180) || "payment-proof");
 
