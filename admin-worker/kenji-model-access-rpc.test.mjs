@@ -7,6 +7,8 @@ import {
   isKenjiModelAccessRpcRequest,
   KENJI_MODEL_ACCESS_POLICY_VERSION,
   KENJI_MODEL_ACCESS_RPC_PATH,
+  PRIVATE_CAMPAIGN_INTERNAL_GROUPS,
+  privateCampaignInternalGroup,
   projectKenjiSafeModel,
   resolveKenjiModelAccess,
 } from "./src/kenji-model-access-rpc.js";
@@ -128,6 +130,13 @@ function rpcRequest(body, overrides = {}) {
     body: method === "POST" ? JSON.stringify(body) : undefined,
   });
 }
+
+test("GWs and EMs internal groups are policy signals only", () => {
+  assert.deepEqual(PRIVATE_CAMPAIGN_INTERNAL_GROUPS, { gws: "1200", ems: "2500" });
+  assert.equal(privateCampaignInternalGroup("GWs"), "1200");
+  assert.equal(privateCampaignInternalGroup("EMs"), "2500");
+  assert.equal(privateCampaignInternalGroup("public"), "");
+});
 
 test("compatibility package classifier remains non-authoritative", () => {
   assert.deepEqual(classifyKenjiModelPackage("Standard"), { cohort: "standard", mode: "package", folders: ["standard"] });
@@ -420,6 +429,7 @@ test("GWs and EMs require one current Per approval for this exact client and Mod
   const model = privateModel("EMs19", "exclusive", { working_name: "Private Name" });
   const decision = record("rec-decision", {
     line_user_id: LINE_USER_ID, Model: [model.id], model_key: "EMs19", category: "EMs",
+    eligibility_group: "2500",
     decision_status: "Approved", allow_profile: true, approved_by: "Per",
     approved_at: "2026-09-27T12:00:00Z", expires_at: "2099-12-31T23:59:59Z",
     source_ref: "owner-review-1",
@@ -429,12 +439,35 @@ test("GWs and EMs require one current Per approval for this exact client and Mod
   const allowed = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, { fetchImpl });
   assert.equal(allowed.status, "match");
   assert.equal(allowed.model.model_code, "EMs19");
-  for (const patch of [{ allow_profile: false }, { Model: ["rec-other"] }, { decision_status: "Draft" }, { expires_at: "2020-01-01T00:00:00Z" }]) {
+  for (const patch of [
+    { allow_profile: false },
+    { Model: ["rec-other"] },
+    { decision_status: "Draft" },
+    { expires_at: "2020-01-01T00:00:00Z" },
+    { eligibility_group: "1200" },
+  ]) {
     const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
       fetchImpl: airtableFetch(baseData([member], [model], [], [], [], [record("rec-decision", { ...decision.fields, ...patch })])),
     });
     assert.deepEqual(denied, { status: "restricted_category", category: "ems" });
   }
+});
+
+test("Per manual override can allow an exact EMs model even when the internal group differs", async () => {
+  const model = privateModel("EMs19", "exclusive", { working_name: "Private Name" });
+  const decision = record("rec-decision", {
+    line_user_id: LINE_USER_ID, Model: [model.id], model_key: "EMs19", category: "EMs",
+    eligibility_group: "1200",
+    owner_override: true,
+    decision_status: "Approved", allow_profile: true, approved_by: "Per",
+    approved_at: "2026-09-27T12:00:00Z", expires_at: "2099-12-31T23:59:59Z",
+    source_ref: "owner-override-1",
+  });
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], [], [], [decision])),
+  });
+  assert.equal(result.status, "match");
+  assert.equal(result.model.model_code, "EMs19");
 });
 
 test("legacy unique key never bypasses the EMs per-model approval", async () => {
