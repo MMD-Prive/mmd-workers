@@ -1,9 +1,10 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
-import { paymentIssuerTransport, requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
+import { paymentIssuerTransport, requestPaymentsConfirmLink, requestPaymentsConfirmationReissue } from "./payments-issuer-transport.js";
 
 export const PAYMENT_ISSUER_DIAGNOSTIC_PATH = "/v1/admin/payment-issuer-diagnostic";
 export const ISSUE_EXISTING_SESSION_MODE = "issue_existing_session";
 export const REISSUE_EXISTING_SESSION_MODE = "reissue_existing_session";
+export const REFRESH_CONFIRMATION_LINKS_MODE = "refresh_confirmation_links";
 const ADMIN_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -55,6 +56,41 @@ export async function handlePaymentIssuerDiagnostic(request, env = {}) {
   if (Object.keys(body).length === 0) return handleEmptyDiagnostic(env);
   if (body.mode === ISSUE_EXISTING_SESSION_MODE || body.mode === REISSUE_EXISTING_SESSION_MODE) {
     return handleIssueExistingSession(env, body);
+  }
+  if (body.mode === REFRESH_CONFIRMATION_LINKS_MODE) {
+    const allowedKeys = new Set(["mode", "session_id"]);
+    if (Object.keys(body).some((key) => !allowedKeys.has(key))) return json({ ok: false, error: "unsupported_issue_field" }, 400);
+    const sessionId = clean(body.session_id, 200);
+    if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
+    let response;
+    try {
+      response = await requestPaymentsConfirmationReissue(env, { session_id: sessionId });
+    } catch (error) {
+      const configurationError = ["missing_AUTH_SERVICE_ADMIN_TO_PAYMENTS", "invalid_PAYMENTS_BASE_URL"].includes(error?.message);
+      return json({ ok: false, stage: configurationError ? "configuration" : "transport",
+        error: configurationError ? error.message : "payments_worker_unreachable" }, 503);
+    }
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok !== true) {
+      return json({
+        ok: false,
+        stage: "confirmation_reissue",
+        upstream_status: response.status,
+        error: clean(data?.error || "confirmation_reissue_failed", 160),
+      }, response.status >= 500 ? 503 : response.status || 502);
+    }
+    return json({
+      ok: true,
+      stage: "confirmation_links_refreshed",
+      session_id: sessionId,
+      payment_ref: clean(data.payment_ref, 200),
+      payment_type: clean(data.payment_type, 80),
+      expires_at: Number(data.expires_at || 0) || null,
+      customer_confirmation_url_present: data.customer_confirmation_url_present === true,
+      model_confirmation_url_present: data.model_confirmation_url_present === true,
+      payment_state_mutated: data.payment_state_mutated === true,
+      notification_sent: data.notification_sent === true,
+    });
   }
   return json({ ok: false, error: "diagnostic_empty_object_required" }, 400);
 }
