@@ -101,7 +101,7 @@ export function renderCreateJobPage(): Response {
         <div class="mmdop__formGrid mmdop__formGrid--2">
           <label class="mmdop__field"><span>Session ID · งานที่มี Session แล้ว</span><input class="mmdop__input" id="job-session-id" placeholder="sess_..." /></label>
           <label class="mmdop__field"><span>Public / Private</span><select class="mmdop__input" id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label>
-          <label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" type="number" min="1" step="1" placeholder="10000" /></label>
+          <label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required placeholder="10000" /></label>
           <label class="mmdop__field"><span>Job Date</span><input class="mmdop__input" id="job-date" type="date" /></label>
           <label class="mmdop__field"><span>Start Time</span><input class="mmdop__input" id="job-start" type="time" /></label>
           <label class="mmdop__field"><span>Duration</span><input class="mmdop__input" id="job-duration" placeholder="3 ชั่วโมง" /></label>
