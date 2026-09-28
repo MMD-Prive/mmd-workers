@@ -126,20 +126,16 @@ jobs:
             bridge_code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -L -D "$bridge_headers" -o "$bridge_body" -w "%{http_code}" "https://${host}/member/liff?intent=status")"
             echo "${host} /member/liff?intent=status -> ${bridge_code}"
             test "$bridge_code" = "200"
-            if grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$bridge_headers"; then
-              echo "direct status still uses retired auth-bridge-only mode on ${host}" >&2
-              exit 1
-            fi
-            if grep -qi '^x-mmd-liff-return-target:' "$bridge_headers"; then
-              echo "direct status unexpectedly returns away from native LIFF on ${host}" >&2
-              exit 1
-            fi
+            grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$bridge_headers"
+            grep -qi '^x-mmd-liff-return-target: /my-mmd/' "$bridge_headers"
+            grep -qi '^x-mmd-liff-session-check: status-v1' "$bridge_headers"
             node - "$bridge_body" <<'NODE'
           const fs = require("node:fs");
           const html = fs.readFileSync(process.argv[2], "utf8");
-          if (!html.includes("MY MMD LIFF Digital Home v2")) throw new Error("live LIFF is not the Digital Home v2");
-          if (!html.includes("/api/member/app/history")) throw new Error("live LIFF is missing canonical customer history endpoint");
-          if (html.includes("LOVABLE_POINTS_PATH")) throw new Error("live LIFF still hands Points to Lovable");
+          if (!html.includes('const MY_MMD_TARGET = "/my-mmd/"')) throw new Error("live LIFF is missing the canonical MY MMD handoff");
+          if (!html.includes("bridgeStatusToMyMmd")) throw new Error("live LIFF is missing the verified status bridge");
+          if (!html.includes("/api/member/app/history")) throw new Error("live LIFF is missing canonical customer history wiring");
+          if (!html.includes("mmd-status-bridge-veil")) throw new Error("live LIFF is missing the bounded verification surface");
           NODE
 
             status_headers="$(mktemp)"
@@ -186,4 +182,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD + LIFF MEMBERSHIP VERIFICATION ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- canonical My MMD + LIFF route set: 14/14 verified on apex + www\n- Direct LIFF status UI: \`worker-rendered Digital Home v2\` (no Lovable auto-handoff)\n- Customer history: same-origin \`/api/member/app/history\` through verified LIFF session\n- Lovable remains separate presentation only; not default LIFF runtime\n- same-origin member API ownership verified\n- no membership, entitlement, payment, or customer records mutated by this recovery"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD + LIFF MEMBERSHIP VERIFICATION ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- canonical My MMD + LIFF route set: 14/14 verified on apex + www\n- Direct LIFF status: \`auth-bridge-only → /my-mmd/\`\n- MY MMD presentation: same-origin Lovable proxy; MMD credentials stripped upstream\n- Customer history: same-origin \`/api/member/app/history\` through verified LIFF session\n- same-origin member API ownership verified\n- no membership, entitlement, payment, or customer records mutated by this recovery"
