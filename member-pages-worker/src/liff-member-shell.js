@@ -203,6 +203,21 @@ function renderShell(config, nonce) {
     body.app-entered:not(.signup-mode) .value{font-size:18px}
     body.app-entered:not(.signup-mode) .label{color:#a49b84}
     body.app-entered:not(.signup-mode) .empty{color:var(--digital-muted)}
+    body.app-entered:not(.signup-mode) .digital-view{gap:0;padding-top:4px}
+    body.app-entered:not(.signup-mode) .digital-view>.card,body.app-entered:not(.signup-mode) .digital-view>details.card{width:100%;margin:0;padding:16px 0;border:0;border-bottom:1px solid rgba(216,189,137,.18);border-radius:0;background:transparent;box-shadow:none}
+    body.app-entered:not(.signup-mode) .digital-view>.card:first-child{padding-top:8px}
+    body.app-entered:not(.signup-mode) .digital-view h2{margin:0 0 6px;color:var(--digital-cream);font-size:20px;line-height:1.25;letter-spacing:-.02em}
+    body.app-entered:not(.signup-mode) .digital-view .history,body.app-entered:not(.signup-mode) .digital-view .stack{margin-top:10px;gap:0}
+    body.app-entered:not(.signup-mode) .digital-view .details{padding-top:14px}
+    body.app-entered:not(.signup-mode) .digital-view .details summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 0;color:var(--digital-cream);font-size:12px;font-weight:700}
+    body.app-entered:not(.signup-mode) #credits .detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+    body.app-entered:not(.signup-mode) #points .detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    body.app-entered:not(.signup-mode) #credits .detail-grid,body.app-entered:not(.signup-mode) #points .detail-grid{gap:0;margin-top:14px;padding:10px 0;border-top:1px solid rgba(216,189,137,.14);border-bottom:1px solid rgba(216,189,137,.14)}
+    body.app-entered:not(.signup-mode) #credits .detail-grid>div,body.app-entered:not(.signup-mode) #points .detail-grid>div{min-width:0;padding:0 10px;border-left:1px solid rgba(216,189,137,.14)}
+    body.app-entered:not(.signup-mode) #credits .detail-grid>div:first-child,body.app-entered:not(.signup-mode) #points .detail-grid>div:first-child{padding-left:0;border-left:0}
+    body.app-entered:not(.signup-mode) #credits .detail-grid>div:last-child,body.app-entered:not(.signup-mode) #points .detail-grid>div:last-child{padding-right:0}
+    body.app-entered:not(.signup-mode) #credits .detail-grid .label,body.app-entered:not(.signup-mode) #points .detail-grid .label{display:block;overflow:hidden;font-size:9px;letter-spacing:.08em;text-overflow:ellipsis;white-space:nowrap}
+    body.app-entered:not(.signup-mode) #credits .detail-grid .value,body.app-entered:not(.signup-mode) #points .detail-grid .value{font-size:16px}
     .digital-home{position:relative}
     .digital-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.digital-brand{font-size:13px;font-weight:850;letter-spacing:.18em}.digital-brand small{display:block;margin-top:3px;color:var(--digital-gold);font-size:9px;letter-spacing:.19em}.digital-session{border:1px solid rgba(231,204,137,.3);border-radius:999px;padding:7px 9px;color:var(--digital-gold);background:#191a14;font-size:9px}
     .digital-hello{margin-top:18px}.digital-eyebrow{margin:0 0 5px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.16em}.digital-hello h1{margin:0 0 4px;color:var(--digital-cream);font-size:27px;line-height:1.12;letter-spacing:-.04em}.digital-sub{margin:0;color:var(--digital-muted);font-size:11px;line-height:1.5}
@@ -284,27 +299,27 @@ function renderShell(config, nonce) {
       <div id="points-card"></div><strong id="home-package">—</strong><p id="home-package-note"></p><div id="next-job"></div><div id="history"></div>
     </div>
     </section>
-    <section id="points" class="panel" aria-label="Points">
+    <section id="points" class="panel digital-view" aria-label="Points">
       <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
       <div class="card"><span id="service-spend-label" class="label">Service spend</span><div class="detail-grid"><div><span id="lifetime-spend-label" class="label">Lifetime</span><strong id="points-lifetime-spend" class="value">—</strong></div><div><span id="spend-365-label" class="label">Last 365 days</span><strong id="points-365-spend" class="value">—</strong></div></div></div>
       <div class="card"><span class="label" data-copy="pointsHistoryLabel">Points history</span><div id="points-history" class="history"></div></div>
     </section>
-    <section id="credits" class="panel" aria-label="Service Credit Wallet">
+    <section id="credits" class="panel digital-view" aria-label="Service Credit Wallet">
       <div class="card"><span class="label" data-copy="creditWalletLabel">MY MMD CREDIT</span><h2 data-copy="creditWalletTitle">💳 เครดิตบริการของฉัน</h2><p id="credit-wallet-message" class="sub" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p>
         <div class="detail-grid"><div><span class="label" data-copy="creditAvailableLabel">ใช้ได้</span><strong id="credit-available" class="value">—</strong></div><div><span class="label" data-copy="creditReservedLabel">จองไว้</span><strong id="credit-reserved" class="value">—</strong></div><div><span class="label" data-copy="creditUsedLabel">ใช้แล้ว</span><strong id="credit-used" class="value">—</strong></div></div>
       </div>
       <div class="card"><span class="label" data-copy="creditRecentLabel">รายการล่าสุด</span><div id="credit-wallet" class="history"><p class="empty" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p></div></div>
     </section>
-    <section id="package" class="panel" aria-label="Package">
+    <section id="package" class="panel digital-view" aria-label="Package">
       <div class="card"><h2 data-copy="packageTitle">📦 Package</h2><div id="current-package" class="stack"></div></div>
       <details class="card details"><summary data-copy="packageHistoryLabel">Package history</summary><div id="package-history" class="stack"></div></details>
     </section>
-    <section id="jobs" class="panel" aria-label="Jobs">
+    <section id="jobs" class="panel digital-view" aria-label="Jobs">
       <div class="card"><h2 data-copy="jobsTitle">💼 Jobs</h2><div id="jobs-groups" class="stack"></div></div>
       <details class="card details"><summary data-copy="requestsLabel">Recent requests</summary><div id="requests" class="stack"></div></details>
       <details class="card details"><summary data-copy="mmsLabel">MMS prebookings</summary><div id="mms" class="stack"></div></details>
     </section>
-    <section id="history-panel" class="panel" aria-label="History">
+    <section id="history-panel" class="panel digital-view" aria-label="History">
       <div class="card"><h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
       <details class="card details"><summary data-copy="paymentHistoryLabel">Payment history</summary><div id="payment-history" class="stack"></div></details>
     </section>
@@ -321,7 +336,7 @@ function renderShell(config, nonce) {
         <div id="wish-result" class="wish-result hidden" role="status" aria-live="polite"></div>
       </div>
     </div></section>
-    <section id="coupons" class="panel" aria-label="Coupon Wallet"><div class="card">
+    <section id="coupons" class="panel digital-view" aria-label="Coupon Wallet"><div class="card">
       <span class="label" data-copy="couponWalletLabel">MY MMD</span><h2 data-copy="couponWalletTitle">🎟 คูปองของฉัน</h2>
       <div id="coupon-wallet" class="stack"><p class="empty" data-copy="couponWalletEmpty">ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ</p></div>
     </div></section>

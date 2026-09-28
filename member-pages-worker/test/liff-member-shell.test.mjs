@@ -302,6 +302,26 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
   });
 
+  it("keeps inner member views compact and native to the digital shell without changing their routes", async () => {
+    const response = await shell("/member/liff?intent=status&view=history");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    for (const id of ["points", "credits", "package", "jobs", "history-panel", "coupons"]) {
+      assert.match(html, new RegExp('id="' + id + '" class="panel digital-view"'));
+    }
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) \.digital-view>\.card[^}]*border-radius:0[^}]*background:transparent/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) #credits \.detail-grid\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}/);
+    assert.match(html, /body\.app-entered:not\(\.signup-mode\) #points \.detail-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
+    assert.match(html, /id="care" class="panel"/);
+    assert.match(html, /id="my-requests" class="panel"/);
+    assert.doesNotMatch(html, /id="care" class="panel digital-view"/);
+    assert.doesNotMatch(html, /id="my-requests" class="panel digital-view"/);
+    assert.match(html, /const CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
+    assert.match(html, /data-view="history"/);
+    assert.match(html, /data-view="credits"/);
+  });
+
   it("renders a verified-only Credit Wallet through the same-site credit API", async () => {
     const response = await shell("/member/liff?intent=status&view=credits&lang=th");
     const html = await response.text();
@@ -309,7 +329,7 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     assert.match(html, /"creditWalletEndpoint":"\/api\/member\/app\/credits"/);
     assert.match(html, /data-view="credits"/);
-    assert.match(html, /id="credits" class="panel"/);
+    assert.match(html, /id="credits" class="panel digital-view"/);
     assert.match(html, /id="credit-available"/);
     assert.match(html, /id="credit-reserved"/);
     assert.match(html, /id="credit-used"/);
