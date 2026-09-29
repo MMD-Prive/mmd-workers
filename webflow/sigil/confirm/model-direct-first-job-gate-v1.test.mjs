@@ -16,7 +16,7 @@ test("confirmation details are intercepted behind canonical direct-job gate",()=
 
 test("Job Day acknowledgement returns only to exact signed model confirmation path",()=>{
   assert.match(jobDay,/\/v1\/model\/direct-job-gate\/ack/);
-  assert.match(jobDay,/source\) !== "direct_first_job"/);
+  assert.match(jobDay,/params\.get\("source"\) !== "direct_first_job"/);
   assert.match(jobDay,/u\.pathname !== "\/sigil\/confirm\/job-model"/);
   assert.match(jobDay,/ฉันอ่านและเข้าใจแล้ว/);
   assert.match(jobDay,/เปิดรายละเอียดงาน/);
