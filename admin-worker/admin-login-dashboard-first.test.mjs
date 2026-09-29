@@ -83,3 +83,22 @@ test("non-login responses are untouched", async () => {
   assert.equal(output, input);
   assert.equal(await output.text(), "ok");
 });
+
+
+test("owner login resumes exact Refund Ops task instead of dashboard-first", async () => {
+  const refundNext = "/internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload";
+  const input = new Response(null, {
+    status: 303,
+    headers: {
+      ...sessionHeaders("owner"),
+      "x-mmd-admin-next": refundNext,
+      location: refundNext,
+    },
+  });
+
+  const output = await enforceOwnerDashboardFirst(loginRequest(), input);
+  assert.equal(output.status, 303);
+  assert.equal(output.headers.get("location"), "https://mmdbkk.com" + refundNext);
+  assert.equal(output.headers.get("x-mmd-admin-next"), refundNext);
+  assert.equal(output.headers.get("x-mmd-admin-post-login"), "resume-refund-ops");
+});
