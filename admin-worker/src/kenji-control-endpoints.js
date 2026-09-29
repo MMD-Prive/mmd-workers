@@ -89,6 +89,8 @@ const MATRIX_FIELDS = [
   "version",
 ];
 const CONSOLE_FIELDS = ["inbox_id", "created_at", "created_by", "source", "intent", "status"];
+const HISTORY_CONSOLE_FIELDS = ["inbox_id", "line_id", "created_at", "source", "admin_note", "payload_json", "status", "line_user_id"];
+const HISTORY_AI_FIELDS = ["event_id", "created_at", "channel", "line_user_id", "generated_reply", "response_mode", "final_status", "payload_json"];
 const MODEL_REVIEW_FIELDS = [
   "request_id",
   "request_type",
@@ -121,9 +123,9 @@ export async function handleKenjiControlRequest(request, env) {
       return json(await readMemory(url.searchParams, env));
     }
     if (path === KENJI_CONTROL_ENDPOINTS.conversations) {
-      if (clean(url.searchParams.get("view")).toLowerCase() === "matrix") {
-        return json(await readMatrix(url.searchParams, env));
-      }
+      const view = clean(url.searchParams.get("view")).toLowerCase();
+      if (view === "matrix") return json(await readMatrix(url.searchParams, env));
+      if (view === "history") return json(await readConversationHistory(url.searchParams, env));
       return json(await readConversations(url.searchParams, env, limit));
     }
     return json(await readApprovals(url.searchParams, env, limit));
@@ -193,6 +195,131 @@ async function readConversations(params, env, limit) {
     data_status: records.length ? "live" : "empty",
     count: records.length,
     conversations: records.map(projectConversation),
+    privacy: "internal_admin_projection",
+  };
+}
+
+
+function parseObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(clean(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function boundedHistoryText(value, max = 1200) {
+  return clean(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").slice(0, max);
+}
+
+function historyTurnFromConsole(record) {
+  const fields = record?.fields || {};
+  const payload = parseObject(fields.payload_json);
+  const source = clean(fields.source).toLowerCase();
+  const outbound = source === "line_ofc_outbound" || clean(payload.direction).toLowerCase() === "outbound";
+  const actuallySent = payload.actual_sent === true
+    || clean(payload.delivery_status).toLowerCase() === "sent"
+    || clean(fields.status).toLowerCase() === "done";
+  if (outbound && !actuallySent) return null;
+  const content = outbound
+    ? boundedHistoryText(payload.sent_text || payload.reply_text || payload.actual_text || fields.admin_note)
+    : boundedHistoryText(payload.raw_text || fields.admin_note);
+  if (!content) return null;
+  return {
+    role: outbound ? "assistant" : "customer",
+    content,
+    occurred_at: clean(payload.sent_at || payload.received_at || fields.created_at || record.createdTime),
+    evidence: outbound ? "actual_sent" : "customer_received",
+    source_event_id: clean(payload.source_event_id || payload.source_message_id || fields.line_id || fields.inbox_id),
+  };
+}
+
+function historyTurnFromAi(record) {
+  const fields = record?.fields || {};
+  const payload = parseObject(fields.payload_json);
+  const finalStatus = clean(fields.final_status).toLowerCase();
+  const channel = clean(fields.channel).toUpperCase();
+  const delivered = payload.line_delivery_succeeded === true
+    || (payload.line_delivery_attempted === true && Number(payload.line_delivery_status) >= 200 && Number(payload.line_delivery_status) < 300);
+  if (channel !== "LINE_OFC" || finalStatus !== "sent" || !delivered) return null;
+  const content = boundedHistoryText(fields.generated_reply || payload.sent_text || payload.reply_text);
+  if (!content) return null;
+  return {
+    role: "assistant",
+    content,
+    occurred_at: clean(fields.created_at || record.createdTime),
+    evidence: "line_delivery_succeeded",
+    source_event_id: clean(fields.event_id).replace(/^kai_line_/, ""),
+  };
+}
+
+function dedupeHistoryTurns(turns = []) {
+  const seen = new Set();
+  return turns.filter((turn) => {
+    if (!turn || !turn.content) return false;
+    const key = turn.source_event_id
+      ? `${turn.role}|event:${turn.source_event_id}`
+      : `${turn.role}|${turn.occurred_at}|${turn.content}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function readConversationHistory(params, env) {
+  requireIdentity(params);
+  const client = await resolveClient(params, env);
+  if (!client) {
+    return { ok: true, data_status: "empty", count: 0, turns: [], memory: null, context_only: true, live_truth_wins: true, privacy: "internal_admin_projection" };
+  }
+  const clientFields = client.fields || {};
+  const lineUserId = firstNonEmpty(params.get("line_user_id"), clientFields.line_user_id);
+  if (!lineUserId) {
+    return { ok: true, data_status: "empty", count: 0, turns: [], memory: { display_name: safeValue(clientFields, ["Client Name", "mmd_client_name", "nickname", "username"]) }, context_only: true, live_truth_wins: true, privacy: "internal_admin_projection" };
+  }
+
+  const [consoleRows, aiRows, matrixProjection] = await Promise.all([
+    listRecords(env, tableName(env, "consoleInbox"), [{ field: "line_user_id", value: lineUserId }], 25, HISTORY_CONSOLE_FIELDS, "created_at"),
+    listRecords(env, tableName(env, "aiMessageEvents"), [{ field: "line_user_id", value: lineUserId }], 25, HISTORY_AI_FIELDS, "created_at"),
+    readMatrix(params, env),
+  ]);
+
+  const query = clean(params.get("q")).toLowerCase();
+  const requested = Number(params.get("history_limit") || params.get("limit") || 40);
+  const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.floor(requested))) : 40;
+  const turns = dedupeHistoryTurns([
+    ...consoleRows.map(historyTurnFromConsole),
+    ...aiRows.map(historyTurnFromAi),
+  ])
+    .sort((a, b) => String(a.occurred_at || "").localeCompare(String(b.occurred_at || "")))
+    .filter((turn) => !query || turn.content.toLowerCase().includes(query))
+    .slice(-limit);
+
+  return {
+    ok: true,
+    data_status: turns.length ? "live" : "empty",
+    count: turns.length,
+    turns,
+    memory: {
+      display_name: safeValue(clientFields, ["Client Name", "mmd_client_name", "nickname", "username"]),
+      last_contact_at: safeValue(clientFields, ["Last Contacted"]),
+      continuity_summary: matrixProjection?.matrix?.continuity_summary || "",
+      important_open_loops: matrixProjection?.matrix?.important_open_loops || [],
+      do_not_ask_again: matrixProjection?.matrix?.do_not_ask_again || [],
+      latest_topic: matrixProjection?.matrix?.topic || "",
+      latest_subtopic: matrixProjection?.matrix?.subtopic || "",
+    },
+    coverage: {
+      source: "Console Inbox + delivered AI Message Events",
+      max_console_records: 25,
+      max_ai_records: 25,
+      max_returned_turns: 50,
+      full_legacy_line_archive: false,
+    },
+    context_only: true,
+    live_truth_wins: true,
     privacy: "internal_admin_projection",
   };
 }
