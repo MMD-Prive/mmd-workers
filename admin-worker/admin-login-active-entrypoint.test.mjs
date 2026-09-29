@@ -142,3 +142,63 @@ test("duplicate invalid admin cookies still fail closed", async () => {
   );
   assert.equal(response.status, 401);
 });
+
+
+test("Refund Ops uses the active admin gate once and survives duplicate stale cookies", async () => {
+  const env = {
+    ADMIN_BEARER: "owner_admin_bearer",
+    ADMIN_LOGIN_CREDENTIAL: "dedicated_browser_code",
+    ADMIN_SESSION_SECRET: "dedicated_session_secret",
+    AIRTABLE_BASE_ID: "appTest",
+    AIRTABLE_API_KEY: "airtable-test-token",
+    AT_CONSOLE_INBOX: "tblConsoleInbox",
+  };
+  const loginResponse = await login("dedicated_browser_code", env);
+  assert.equal(loginResponse.status, 303);
+  const validCookie = cookiePair(loginResponse);
+  const Cookie = `mmd_admin_gate_v1=legacy-host-only-stale-session; ${validCookie}`;
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.airtable.com") {
+      return Response.json({
+        records:[{
+          id:"recRefund",
+          fields:{
+            inbox_id:"refund_manual_man_20260929_pay_mulcs8o4",
+            member_name:"แมน",
+            status:"new",
+            payload_json:JSON.stringify({
+              purpose:"refund",
+              bank_name:"กรุงไทย",
+              account_number_masked:"715-1-42993-2",
+              owner_refund_amount:"3150",
+              refund_currency:"THB",
+            }),
+          },
+        }],
+      });
+    }
+    return originalFetch(input, init);
+  };
+
+  try {
+    const response = await worker.fetch(
+      new Request(
+        "https://mmdbkk.com/internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload",
+        { headers:{ Cookie } },
+      ),
+      runtimeEnv(env),
+      {},
+    );
+    const body = await response.text();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-refund-error-boundary"), null);
+    assert.match(body, /อัปโหลดสลิปคืน/);
+    assert.match(body, /แมน/);
+    assert.match(body, /3150/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
