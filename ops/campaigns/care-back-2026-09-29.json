@@ -1,0 +1,12 @@
+{
+  "schema": "mmd.care_back_campaign_execution.v1",
+  "window_end": "2026-10-31T23:59:59+07:00",
+  "status": "pending_execution",
+  "tasks": {
+    "telegram_preview_post": {"status": "pending", "evidence": ""},
+    "testimonial_ad": {"status": "pending", "evidence": ""},
+    "my_mmd_cta_verified": {"status": "pending", "evidence": ""},
+    "customer_copy_reviewed": {"status": "pending", "evidence": ""},
+    "post_result_logged": {"status": "pending", "evidence": ""}
+  }
+}
