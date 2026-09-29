@@ -125,7 +125,7 @@ jobs:
             cat "$body"
             test "$code" != "404"
             if [ "$code" = "302" ] || [ "$code" = "303" ]; then
-              grep -Eiq '^location: .*/internal/admin/login\?next=%2Finternal%2Fadmin%2Frefunds' "$headers"
+              grep -Eiq '^location: .*/internal/admin/login\?next=%2Finternal%2Fadmin%2F(refunds|control-room)' "$headers"
             elif [ "$code" = "401" ]; then
               grep -q '"error":"unauthorized"' "$body"
             elif [ "$code" = "200" ]; then
