@@ -634,8 +634,8 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
     return redirect(withQuery("/internal/admin/jobs/create-job", url), 308);
   }
 
-  if (pathname === "/internal/admin/jobs/job-board") {
-    return redirect(withQuery("/internal/admin/job-board", url), 308);
+  if (pathname === "/internal/admin/job-board") {
+    return redirect(withQuery("/internal/admin/jobs/job-board", url), 308);
   }
 
   if (pathname === "/internal/admin/jobs/create-job") {
@@ -644,7 +644,7 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
     return renderCreateJobPage();
   }
 
-  if (pathname === "/internal/admin/job-board") {
+  if (pathname === "/internal/admin/jobs/job-board") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
     return renderJobBoardPage();

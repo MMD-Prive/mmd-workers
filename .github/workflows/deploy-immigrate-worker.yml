@@ -359,7 +359,7 @@ jobs:
               : > "$create_body"
               : > "$create_headers"
               create_code="$(curl -sS -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
-              if [ "$create_code" = "200" ]                 && grep -q 'id="job-client-query"' "$create_body"                 && grep -q 'id="job-model-query"' "$create_body"                 && grep -q 'data-cj-job-board-handoff="separate-v1"' "$create_body"                 && grep -q 'href="/internal/admin/job-board"' "$create_body"                 && ! grep -q 'id="job-board-form"' "$create_body"                 && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
+              if [ "$create_code" = "200" ]                 && grep -q 'id="job-client-query"' "$create_body"                 && grep -q 'id="job-model-query"' "$create_body"                 && grep -q 'data-cj-job-board-handoff="separate-v1"' "$create_body"                 && grep -q 'href="/internal/admin/jobs/job-board"' "$create_body"                 && ! grep -q 'id="job-board-form"' "$create_body"                 && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
                 echo "Separated Create Job verified for $origin on attempt $attempt"
                 create_verified=1
                 break
@@ -377,7 +377,7 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$board_body"
               : > "$board_headers"
-              board_code="$(curl -sS -D "$board_headers" -o "$board_body" -w '%{http_code}' "$origin/internal/admin/job-board?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              board_code="$(curl -sS -D "$board_headers" -o "$board_body" -w '%{http_code}' "$origin/internal/admin/jobs/job-board?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$board_code" = "200" ]                 && grep -q 'data-job-board-owner="separate-v1"' "$board_body"                 && grep -q 'id="job-board-form"' "$board_body"                 && grep -q 'name="board_text" maxlength="1000"' "$board_body"                 && grep -q 'name="customer_gender"' "$board_body"                 && grep -q 'name="budget_disclosure_approved"' "$board_body"                 && grep -q '/v1/admin/job-board/publish' "$board_body"                 && ! grep -q 'id="job-client-query"' "$board_body"                 && ! grep -q 'id="job-model-query"' "$board_body"; then
                 echo "Separate Job Board verified for $origin on attempt $attempt"
                 board_verified=1
@@ -396,9 +396,9 @@ jobs:
             test "$legacy_code" = "308"
             grep -Fqi "location: /internal/admin/jobs/create-job?source=legacy-smoke" "$legacy_headers"
 
-            board_alias_code="$(curl -sS -D "$board_alias_headers" -o /dev/null -w '%{http_code}' "$origin/internal/admin/jobs/job-board?source=legacy-smoke")"
+            board_alias_code="$(curl -sS -D "$board_alias_headers" -o /dev/null -w '%{http_code}' "$origin/internal/admin/job-board?source=legacy-smoke")"
             test "$board_alias_code" = "308"
-            grep -Fqi "location: /internal/admin/job-board?source=legacy-smoke" "$board_alias_headers"
+            grep -Fqi "location: /internal/admin/jobs/job-board?source=legacy-smoke" "$board_alias_headers"
           done
 
       - name: Verify MMD Create Session Owner v14 in production

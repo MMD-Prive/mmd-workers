@@ -167,7 +167,7 @@ test("Create Job stays isolated from Job Board and legacy route redirects", asyn
 
 test("Job Board is a separate authenticated composer with no Client or Model lookup", async () => {
   const calls = [];
-  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/job-board"), {
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/job-board"), {
     ADMIN_WORKER: adminWorkerBinding(calls),
     ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
   }));
@@ -188,11 +188,11 @@ test("Job Board is a separate authenticated composer with no Client or Model loo
   assert.doesNotMatch(html, /\/v1\/admin\/clients\/lineage-lookup/);
   assert.doesNotMatch(html, /\/v1\/admin\/models\/search/);
 
-  const alias = await handleInternalRoutes(request("/internal/admin/jobs/job-board?source=compat"), {
+  const alias = await handleInternalRoutes(request("/internal/admin/job-board?source=compat"), {
     ADMIN_WORKER: adminWorkerBinding([]),
   });
   assert.equal(alias.status, 308);
-  assert.equal(alias.headers.get("location"), "/internal/admin/job-board?source=compat");
+  assert.equal(alias.headers.get("location"), "/internal/admin/jobs/job-board?source=compat");
 });
 
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {

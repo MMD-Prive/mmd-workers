@@ -8,8 +8,8 @@ const pagesUrl = new URL("../src/internal-pages.ts", import.meta.url);
 
 test("outer immigrate router bridges both canonical and compatibility Job Board routes", async () => {
   const source = await readFile(sourceUrl, "utf8");
-  assert.match(source, /jobBoard:\s*"\/internal\/admin\/job-board"/);
-  assert.match(source, /jobBoardAlias:\s*"\/internal\/admin\/jobs\/job-board"/);
+  assert.match(source, /jobBoard:\s*"\/internal\/admin\/jobs\/job-board"/);
+  assert.match(source, /jobBoardAlias:\s*"\/internal\/admin\/job-board"/);
   assert.match(source, /pathname === JOBS\.jobBoard/);
   assert.match(source, /pathname === JOBS\.jobBoardAlias/);
 });
@@ -19,7 +19,7 @@ test("Job Board route is authenticated and separate from Create Job", async () =
   assert.match(routes, /pathname === "\/internal\/admin\/job-board"/);
   assert.match(routes, /return renderJobBoardPage\(\)/);
   assert.match(routes, /pathname === "\/internal\/admin\/jobs\/job-board"/);
-  assert.match(routes, /redirect\(withQuery\("\/internal\/admin\/job-board"/);
+  assert.match(routes, /redirect\(withQuery\("\/internal\/admin\/jobs\/job-board"/);
 });
 
 test("Create Job contains only a link to Job Board while Job Board owns publish controls", async () => {
@@ -30,7 +30,7 @@ test("Create Job contains only a link to Job Board while Job Board owns publish 
   assert.ok(createStart > boardRenderStart);
   assert.ok(boardRenderStart > boardScriptStart);
   const createSource = pages.slice(createStart);
-  assert.match(createSource, /href="\/internal\/admin\/job-board"/);
+  assert.match(createSource, /href="\/internal\/admin\/jobs\/job-board"/);
   assert.doesNotMatch(createSource, /id="job-board-form"/);
   assert.doesNotMatch(createSource, /fetch\("\/v1\/admin\/job-board\/publish"/);
 

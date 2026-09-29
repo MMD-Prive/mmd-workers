@@ -98,7 +98,7 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-job*"
 zone_name = "mmdbkk.com"
 
-# Separate owner Job Board composer: no Client lookup and no Create Job state.
+# Compatibility alias for the separate owner Job Board composer.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/job-board*"
 zone_name = "mmdbkk.com"
@@ -107,7 +107,7 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/job-board*"
 zone_name = "mmdbkk.com"
 
-# Compatibility alias only; internal route redirects to /internal/admin/job-board.
+# Canonical separate owner Job Board composer: no Client lookup and no Create Job state.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/jobs/job-board*"
 zone_name = "mmdbkk.com"
