@@ -118,13 +118,24 @@ test("deposit may be any amount at or above 30 percent and not above the service
   assert.equal(okPayload.pricing_breakdown.balance_thb, 3500);
 
   const below = envWithAirtableRecorder();
-  const tooLow = await handleCanonicalConfirmLink(post({
+  const under = await handleCanonicalConfirmLink(post({
     client_name: "Client", model_name: "Model", job_type: "companion", job_date: "2026-09-29",
     start_time: "20:00", end_time: "22:00", location_name: "Bangkok",
-    amount_thb: 10000, payment_type: "deposit", deposit_amount_thb: 2999,
+    amount_thb: 10000, payment_type: "deposit", deposit_amount_thb: 2000,
   }), below.env);
-  assert.equal(tooLow.status, 400);
-  assert.equal((await tooLow.json()).error, "deposit_below_minimum_30_percent");
+  assert.equal(under.status, 200);
+  const underPayload = await under.json();
+  assert.equal(underPayload.pricing_breakdown.deposit_minimum_percent, 30);
+  assert.equal(underPayload.pricing_breakdown.deposit_minimum_thb, 3000);
+  assert.equal(underPayload.pricing_breakdown.deposit_due_thb, 2000);
+  assert.equal(underPayload.pricing_breakdown.deposit_percent, 20);
+  assert.equal(underPayload.pricing_breakdown.deposit_below_minimum, true);
+  assert.equal(underPayload.pricing_breakdown.deposit_shortfall_thb, 1000);
+  const underPayment = below.calls.find((call) => call.method === "POST" && call.url.pathname.endsWith("/tblWGGJJOx5eBvBZJ"));
+  assert.ok(underPayment);
+  assert.equal(underPayment.body.records[0].fields.fldvCSwrUW8OMAooS, 2000);
+  assert.equal(underPayment.body.records[0].fields.fld42LJQsJZgnbNnL, true);
+  assert.equal(underPayment.body.records[0].fields.fldD0mQWTfdmyBAeT, "under_minimum_review");
 });
 
 test("canonical confirm-link writes only real Sessions/Payments schema fields", async () => {
