@@ -1259,3 +1259,13 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/refunds*"
 zone_name = "mmdbkk.com"
+
+# Short-lived signed customer view for owner-uploaded refund receipts.
+# The R2 object remains private; only HMAC-signed URLs reach this route.
+[[routes]]
+pattern = "mmdbkk.com/refund-receipt/media*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/refund-receipt/media*"
+zone_name = "mmdbkk.com"
