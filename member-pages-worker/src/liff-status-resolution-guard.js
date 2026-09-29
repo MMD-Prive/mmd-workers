@@ -1,8 +1,28 @@
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
 
+const STATUS_UNRESOLVED_COPY = [
+  "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ",
+  "ถ้าเคยเป็นสมาชิก MMD จะตรวจจาก Per name / LINE OFC / ประวัติงานก่อนเปิดสิทธิ์ให้ใช้งาน",
+  "ระหว่างตรวจสอบ ระบบจะไม่เดา Tier, Points, Wallet, ประวัติงาน หรือ Private Access ให้เอง เพื่อกันสิทธิ์ผิดบัญชีครับ",
+].join("\n");
+
+const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
+  line_verified: true,
+  member_resolved: false,
+  member_display_state: "review_required",
+  entitlement_display_state: "review_required",
+  points_display_state: "pending_backend",
+  wallet_display_state: "pending_backend",
+  history_display_state: "pending_backend",
+  access_display_state: "fail_closed",
+  private_access_state: "fail_closed",
+  payment_truth_state: "pending_backend",
+  browser_authority: "presentation_only",
+});
+
 const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   key: "status_unresolved",
-  copy: "ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ หากเคยเป็นสมาชิก กรุณาติดต่อ HYPE เพื่อเชื่อมข้อมูลก่อนใช้งาน My MMD หากยังไม่เคยเป็นสมาชิก สามารถเริ่มสมัครสมาชิกได้ด้านล่างครับ",
+  copy: STATUS_UNRESOLVED_COPY,
   actions: [
     {
       id: "signup",
@@ -49,6 +69,7 @@ export async function rewritePendingStatusStartResponse(request, response, trace
   const unresolvedScreen = refs
     ? { ...STATUS_UNRESOLVED_SCREEN, copy: `${STATUS_UNRESOLVED_SCREEN.copy}\nRef: ${refs}` }
     : STATUS_UNRESOLVED_SCREEN;
+  const safeState = unresolvedSafeState();
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
@@ -59,12 +80,24 @@ export async function rewritePendingStatusStartResponse(request, response, trace
       ...(safeTrace ? { liff_trace_id: safeTrace } : {}),
       next_screen_key: unresolvedScreen.key,
       screen: unresolvedScreen,
+      my_mmd_safe_state: safeState,
+      member_display_state: safeState.member_display_state,
+      entitlement_display_state: safeState.entitlement_display_state,
+      points_display_state: safeState.points_display_state,
+      wallet_display_state: safeState.wallet_display_state,
+      history_display_state: safeState.history_display_state,
+      private_access_state: safeState.private_access_state,
+      payment_truth_state: safeState.payment_truth_state,
     },
   }), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function unresolvedSafeState() {
+  return { ...STATUS_UNRESOLVED_SAFE_STATE };
 }
 
 function isSameOriginDiagnosticRequest(request) {
