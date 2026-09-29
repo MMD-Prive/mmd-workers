@@ -57,6 +57,7 @@ const NEVER_AUTOREPLY_INTENTS = new Set([
   "payment_slip",
   "payment_status",
   "payment_dispute",
+  "refund_request",
   "availability_request",
   "pricing_review",
   "internal_access",

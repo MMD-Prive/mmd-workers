@@ -181,6 +181,13 @@ test("LINE refund wording routes to protected refund intent", () => {
   }
 });
 
+test("refund follow-up asks a bounded clarification using continuity", () => {
+  const event = lineTextEvent("ยังไม่ตอบอีก");
+  const reply = buildKenjiLineReply(event, {}, { continuity: { effective_intent: "refund_request", matrix: { last_customer_intent: "refund_request" } } });
+  assert.match(reply, /คืนเงิน/);
+  assert.match(reply, /รูปบัญชี/);
+});
+
 test("Kenji 2.0 recognizes booking status and Aftercare without inventing protected truth", () => {
   const cases = [
     ["จองถึงไหนแล้ว", "booking_status", /My MMD > History/],
