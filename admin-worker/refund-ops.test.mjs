@@ -460,7 +460,7 @@ test("targeted refund page renders native upload form immediately and permits it
 
     const body = await response.text();
     assert.match(body, /data-direct-refund/);
-    assert.match(body, /<form method="post" enctype="multipart\/form-data" action="\/internal\/admin\/refunds">/);
+    assert.match(body, /<form method="post" enctype="multipart\/form-data" action="\/internal\/admin\/refunds\?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&amp;action=upload">/);
     assert.match(body, /name="inbox_id" value="refund_manual_man_20260929_pay_mulcs8o4"/);
     assert.match(body, /name="file" type="file" accept="image\/jpeg,image\/png,image\/webp" required/);
     assert.match(body, />อัปโหลดสลิปคืน<\/button>/);
@@ -555,6 +555,79 @@ test("masked manual account does not bypass private detail storage", async () =>
     );
     assert.equal(response.status, 404);
     assert.equal((await response.json()).error, "private_detail_missing");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("targeted native refund POST keeps the case URL on the result page", async () => {
+  const originalFetch = globalThis.fetch;
+  const objects = new Map();
+  const record = {
+    id:"recRefundNativePost",
+    fields:{
+      inbox_id:"refund_manual_man_20260929_pay_mulcs8o4",
+      line_user_id:LINE_ID,
+      member_name:"แมน",
+      status:"new",
+      payload_json:JSON.stringify({
+        schema:"mmd_refund_bank_detail_v1",
+        purpose:"refund",
+        job_id:"JOB-8B799C2387-C1BC84",
+        refund_amount_due:"3150",
+        refund_currency:"THB",
+      }),
+    },
+  };
+  const bucket = {
+    async put(key, value, options = {}) {
+      const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value);
+      objects.set(key, { bytes, options });
+    },
+    async get(key) {
+      const found = objects.get(key);
+      if (!found) return null;
+      return { body:found.bytes, size:found.bytes.byteLength, httpMetadata:{ contentType:"image/jpeg" } };
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    if (method === "PATCH") {
+      const body = JSON.parse(init.body || "{}");
+      Object.assign(record.fields, body.fields || {});
+      return Response.json({ id:record.id, fields:record.fields });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+
+  try {
+    const form = new FormData();
+    form.append("inbox_id", "refund_manual_man_20260929_pay_mulcs8o4");
+    form.append("refund_amount", "3150");
+    form.append("refund_currency", "THB");
+    form.append("refund_note", "คืนยอดหลังหัก 30%");
+    form.append("refund_reference", "KTB-20260929-MAN");
+    form.append("file", new File([new Uint8Array([7,1,5])], "refund.jpg", { type:"image/jpeg" }));
+
+    const response = await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload", {
+        method:"POST",
+        body:form,
+      }),
+      env({ LINE_SLIP_EVIDENCE:bucket }),
+      { isAuthed:async () => true },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    assert.match(body, /อัปโหลดสลิปสำเร็จ/);
+    assert.match(
+      body,
+      /href="\/internal\/admin\/refunds\?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&amp;action=upload">กลับ Refund เคสนี้<\/a>/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
