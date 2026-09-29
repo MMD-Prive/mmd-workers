@@ -170,7 +170,7 @@ function mapWorkType(value, text, confirmed) {
   const raw = `${clean(value, 120)} ${text}`;
   if (/\btravel\b|เดินทาง|ทริป/i.test(raw)) return "travel";
   if (/\bextreme\b/i.test(raw)) return "extreme";
-  if (/(?:^|\W)pn(?:\W|$)/i.test(raw)) return "pn";
+  if (/(?:^|\W)(?:pn|np)(?:\W|$)/i.test(raw)) return "pn";
   if (/(?:^|\W)vip(?:\W|$)/i.test(raw)) return "vip";
   return confirmed ? "other" : "needs_review";
 }
