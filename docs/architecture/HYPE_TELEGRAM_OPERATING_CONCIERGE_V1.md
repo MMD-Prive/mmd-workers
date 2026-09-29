@@ -116,7 +116,7 @@ HYPE knows the current CARE BACK Phase 2 customer flow and may route to:
 
 `/promotion/6-years-care-back`
 
-Phase 2 remains CARE BACK CONTINUES (1–30 September 2026), uses the same benefit policy as Phase 1, and must not create duplicate claims/coupons/Points bonuses.
+Phase 2 remains CARE BACK CONTINUES (1 September–31 October 2026), uses the same benefit policy as Phase 1, and must not create duplicate claims/coupons/Points bonuses.
 
 Identity verification alone does not open the coupon. A Birthday Wish must be saved before personal coupon activation/display, and pre-verification customer copy is limited to "ส่วนลดสูงสุด 10%" / "UP TO 10% OFF".
 
