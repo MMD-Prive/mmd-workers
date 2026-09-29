@@ -2653,6 +2653,36 @@ function buildRefundReceiptCustomerText({ customerName = "", jobId = "", session
   ].filter(Boolean).join("\n");
 }
 
+async function readLineMessageQuota(env = {}) {
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!token) return { ok:false, error:"line_token_missing" };
+  const headers = { authorization:`Bearer ${token}` };
+  try {
+    const [quotaResponse, consumptionResponse] = await Promise.all([
+      fetch("https://api.line.me/v2/bot/message/quota", { method:"GET", headers }),
+      fetch("https://api.line.me/v2/bot/message/quota/consumption", { method:"GET", headers }),
+    ]);
+    const quota = await quotaResponse.json().catch(() => ({}));
+    const consumption = await consumptionResponse.json().catch(() => ({}));
+    const type = asString(quota?.type);
+    const value = Number(quota?.value);
+    const totalUsage = Number(consumption?.totalUsage);
+    const finiteValue = Number.isFinite(value) && value >= 0 ? value : null;
+    const finiteUsage = Number.isFinite(totalUsage) && totalUsage >= 0 ? totalUsage : null;
+    return {
+      ok:quotaResponse.ok && consumptionResponse.ok,
+      quota_type:type || null,
+      quota_value:finiteValue,
+      total_usage:finiteUsage,
+      monthly_exhausted:type === "limited" && finiteValue !== null && finiteUsage !== null && finiteUsage >= finiteValue,
+      quota_http_status:quotaResponse.status,
+      consumption_http_status:consumptionResponse.status,
+    };
+  } catch (_) {
+    return { ok:false, error:"line_quota_lookup_failed" };
+  }
+}
+
 async function handleServiceBoundRefundReceipt(request, env) {
   if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
@@ -2701,6 +2731,17 @@ async function handleServiceBoundRefundReceipt(request, env) {
     body:JSON.stringify({ to:lineUserId, messages }),
   });
 
+  if (response.status === 429) {
+    const quota = await readLineMessageQuota(env);
+    return json({
+      ok:false,
+      error:"line_push_rate_limited",
+      status:429,
+      mode:"image",
+      quota,
+    }, 502);
+  }
+
   if (!response.ok && imageEligible) {
     const fallbackText = buildRefundReceiptCustomerText({
       customerName,
@@ -2730,6 +2771,17 @@ async function handleServiceBoundRefundReceipt(request, env) {
         money_truth_mutated:false,
       });
     }
+    if (fallbackResponse.status === 429) {
+      const quota = await readLineMessageQuota(env);
+      return json({
+        ok:false,
+        error:"line_push_rate_limited",
+        status:429,
+        initial_status:response.status,
+        mode:"secure_link_fallback",
+        quota,
+      }, 502);
+    }
     return json({
       ok:false,
       error:"line_push_failed",
@@ -2740,6 +2792,10 @@ async function handleServiceBoundRefundReceipt(request, env) {
   }
 
   if (!response.ok) {
+    if (response.status === 429) {
+      const quota = await readLineMessageQuota(env);
+      return json({ ok:false, error:"line_push_rate_limited", status:429, mode:"secure_link", quota }, 502);
+    }
     return json({ ok:false, error:"line_push_failed", status:response.status, mode:"secure_link" }, 502);
   }
   return json({
