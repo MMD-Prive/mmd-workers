@@ -1,0 +1,29 @@
+name: Refund Ops Upload Session Recovery Acceptance
+
+on:
+  push:
+    branches:
+      - diag/refund-upload-session-recovery-20260929
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require owner smoke credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+      - name: Verify expired upload POST resumes exact Refund Ops case
+        run: node scripts/refund-upload-session-recovery-production.mjs
