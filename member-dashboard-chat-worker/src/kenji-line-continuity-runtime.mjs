@@ -272,6 +272,14 @@ function deriveEffectiveIntent(resolution = {}, matrix = {}, currentIntent = "",
     if (/^(?:จองเลย|จองคนนี้|เอาคนนี้|ขอคนนี้|book|booking)/i.test(raw)) return "mmd_companion";
   }
 
+  const refundThreadCurrent =
+    previous === "refund_request" &&
+    WEAK_INTENTS.has(current) &&
+    text(resolution.decision) !== "stale_refresh" &&
+    text(matrix.matrix_status) !== "stale" &&
+    (!Number.isFinite(expiresAt) || expiresAt > stamp);
+  if (refundThreadCurrent) return "refund_request";
+
   const continuationLike = ["continuation", "stale_refresh"].includes(text(resolution.decision));
   if (!continuationLike) return current;
   if (!WEAK_INTENTS.has(current)) return current;
