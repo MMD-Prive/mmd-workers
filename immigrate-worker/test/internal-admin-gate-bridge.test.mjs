@@ -150,7 +150,7 @@ test("Create Job stays isolated from Job Board and legacy route redirects", asyn
   assert.match(html, /id="job-client-query"/);
   assert.match(html, /id="job-model-query"/);
   assert.match(html, /id="amount_thb" name="amount_thb" type="number" min="1" step="1" required/);
-  assert.match(html, /href="\/internal\/admin\/job-board"/);
+  assert.match(html, /href="\/internal\/admin\/jobs\/job-board"/);
   assert.match(html, /data-cj-job-board-handoff="separate-v1"/);
   assert.doesNotMatch(html, /id="job-board-form"/);
   assert.doesNotMatch(html, /id="job-board-text"/);
