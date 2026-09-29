@@ -37,7 +37,7 @@ import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecor
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
 import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
-import { handleRefundOpsRequest, REFUND_OPS_PAGE_PATH, REFUND_OPS_API_PREFIX, REFUND_OPS_INTERNAL_INTAKE } from "./refund-ops.js";
+import { handleRefundOpsRequest, REFUND_OPS_PAGE_PATH, REFUND_OPS_API_PREFIX, REFUND_OPS_INTERNAL_INTAKE, REFUND_RECEIPT_MEDIA_PATH } from "./refund-ops.js";
 import {
   handleCreateSessionClientLineageRequest,
   isCreateSessionClientLineageRequest,
@@ -217,7 +217,8 @@ export default {
     if (
       path === REFUND_OPS_PAGE_PATH ||
       path.startsWith(`${REFUND_OPS_API_PREFIX}/`) ||
-      path === REFUND_OPS_INTERNAL_INTAKE
+      path === REFUND_OPS_INTERNAL_INTAKE ||
+      path === REFUND_RECEIPT_MEDIA_PATH
     ) {
       const refundOps = await handleRefundOpsRequest(req, env, { isAuthed });
       if (refundOps) return refundOps;
