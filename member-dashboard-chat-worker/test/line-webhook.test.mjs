@@ -519,9 +519,10 @@ test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
   }
 });
 
-test("Per Voice replies do not expose internal markers or the hidden Kenji identity", () => {
+test("Per Voice replies stay short and do not expose internal markers or the hidden Kenji identity", () => {
   const reply = buildKenjiLineReply(lineTextEvent("Hi Per"), { displayName: "Test User" });
-  assert.match(reply, /MMD Privé/);
+  assert.equal(reply, "ครับ คุณTest พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ");
+  assert.doesNotMatch(reply, /สวัสดี|ยินดีต้อนรับ|MMD Privé/);
   assert.doesNotMatch(reply, /kenji|เคนจิ|ทีม(?:งาน)?|ระบบ|airtable|record_id|secret|token|authorization|bearer|telegram|gmail|r2|kv/i);
 });
 
