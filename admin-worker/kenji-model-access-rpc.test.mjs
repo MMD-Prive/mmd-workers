@@ -518,7 +518,7 @@ test("approved EMs alias lookup projects the canonical campaign code, not a Driv
     { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], [], [], [decision])) },
   );
   assert.equal(result.status, "match");
-  assert.equal(result.model.model_code, "EMS19");
+  assert.equal(result.model.model_code, "EMs19");
   assert.equal(result.model.working_name, "EMs19 - Sprite");
   assert.doesNotMatch(JSON.stringify(result), /drive:private-source/i);
 });
