@@ -15,8 +15,20 @@ jobs:
   synthetic-smoke:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prove Kenji model-access bridge stays resolver-owned and safe
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test member-dashboard-chat-worker/test/kenji-model-access-smoke.test.mjs
+
       - name: Prove published Seed Pack selection without LINE delivery
         shell: bash
         run: |
