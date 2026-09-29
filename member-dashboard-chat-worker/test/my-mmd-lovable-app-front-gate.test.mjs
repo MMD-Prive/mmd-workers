@@ -316,7 +316,7 @@ test("direct status LIFF stays in the Worker-rendered Digital Home", async () =>
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>MMD Privé · LIFF Digital Home</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const LOVABLE_POINTS_PATH = "/my-mmd/points"; const targetId = view === "history" ? "history-panel" : view;</script></body></html>`,
+        `<!doctype html><html><head></head><body><main>MMD Privé · LIFF Digital Home</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const CANONICAL_POINTS_PATH = "/my-mmd/points"; const targetId = view === "history" ? "history-panel" : view;</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
