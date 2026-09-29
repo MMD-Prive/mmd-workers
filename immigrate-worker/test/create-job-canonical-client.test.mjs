@@ -82,6 +82,45 @@ test('shared SIGIL form explicitly holds a name-only Client and displays held su
   assert.equal(h.state.created.confirmations_held, true);
 });
 
+test('Create Job keeps exact typed Model as pending_model_link when canonical lookup cannot resolve it', async () => {
+  const h = harness('/internal/admin/jobs/create-job');
+  h.selectClient({ ...canonical, client_id: 'recCLIENT00000001' });
+  h.state.workType = 'public';
+  h.state.modelFolder = 'travel';
+  h.state.models = [];
+  h.state.selectedModel = null;
+  h.state.modelLookupState = 'empty';
+  h.state.modelLookupQuery = 'Film J';
+  h.el.modelLookupKey.value = 'Film J';
+  h.el.date.value = '2026-10-11';
+  h.el.start.value = '19:30';
+  h.el.duration.value = '01:00';
+  h.el.location.value = 'Bangkok';
+  h.el.amount.value = '4500';
+  h.respond(() => Response.json({
+    ok: true,
+    session_id: 'fixture-pending-model',
+    operational_status: 'pending_model_link',
+    confirmations_held: true,
+    customer_confirmation_url: null,
+    model_confirmation_url: null,
+  }));
+
+  await h.createSession();
+  assert.equal(h.calls.length, 1);
+  const payload = JSON.parse(h.calls[0].options.body);
+  assert.equal(payload.operational_create_mode, 'pending_model_link');
+  assert.equal(payload.client.client_id, 'recCLIENT00000001');
+  assert.equal(payload.model.model_id, '');
+  assert.equal(payload.model.model_name, 'Film J');
+  assert.equal(payload.model.lookup_key, 'Film J');
+  assert.equal(payload.model.identity_status, 'pending_reconcile');
+  assert.equal(payload.model.snapshot_source, 'owner_typed_exact');
+  assert.equal(payload.gates.model_identity_pending, true);
+  assert.equal(payload.gates.private_telegram_ready, false);
+  assert.equal(h.state.created.confirmations_held, true);
+});
+
 test('Create Job rejects manual, staging ID and pending records before Work/Model/create', async () => {
   const h = harness();
   h.updateAll();
