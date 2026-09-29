@@ -2,6 +2,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 export const REFUND_OPS_PAGE_PATH = "/internal/admin/refunds";
 export const REFUND_OPS_API_PREFIX = "/v1/admin/refunds";
 export const REFUND_OPS_INTERNAL_INTAKE = "/v1/internal/refund-ops/intake";
+export const REFUND_RECEIPT_MEDIA_PATH = "/refund-receipt/media";
 
 const clean = (value, max = 2000) => String(value ?? "").trim().slice(0, max);
 const html = (value) => clean(value, 5000).replace(/[&<>"']/g, (ch) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[ch]));
@@ -65,10 +66,14 @@ function publicItem(record = {}) {
     bank_name: clean(p.bank_name || "", 120),
     account_name: clean(p.account_name_masked || "", 160),
     account_number_masked: clean(p.account_number_masked || "", 80),
+    account_changed: p.account_changed === true,
+    account_change_review_required: p.account_change_review_required === true,
     linked_session_id: clean(p.session_id || "", 120),
     linked_job_id: clean(p.job_id || "", 120),
     receipt_uploaded: Boolean(p.receipt_r2_key),
     receipt_uploaded_at: clean(p.receipt_uploaded_at || "", 80),
+    customer_receipt_delivery_status: clean(p.customer_receipt_delivery_status || "", 80),
+    customer_receipt_delivery_mode: clean(p.customer_receipt_delivery_mode || "", 80),
   };
 }
 
@@ -88,6 +93,32 @@ async function findByInboxId(env, inboxId) {
   const payload = await airtable(env, `?${params.toString()}`);
   const rows = Array.isArray(payload.records) ? payload.records : [];
   return rows.length === 1 ? rows[0] : null;
+}
+
+function escapeFormula(value, max = 200) {
+  return clean(value, max).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function findPriorRefundAccount(env, { lineUserId = "", jobId = "", sessionId = "", currentInboxId = "" } = {}) {
+  const lineId = clean(lineUserId, 120);
+  const job = clean(jobId, 120);
+  const session = clean(sessionId, 120);
+  if (!lineId || (!job && !session)) return null;
+  const formula = `AND({line_user_id}='${escapeFormula(lineId)}',OR({intent}='refund_bank_detail',{intent}='bank_detail_ops'))`;
+  const params = new URLSearchParams({ maxRecords:"20", filterByFormula:formula });
+  params.set("sort[0][field]", "created_at");
+  params.set("sort[0][direction]", "desc");
+  const payload = await airtable(env, `?${params.toString()}`);
+  const rows = Array.isArray(payload.records) ? payload.records : [];
+  for (const row of rows) {
+    if (clean(row?.fields?.inbox_id, 160) === clean(currentInboxId, 160)) continue;
+    const prior = parsePayload(row);
+    if (job && clean(prior.job_id, 120) !== job) continue;
+    if (!job && session && clean(prior.session_id, 120) !== session) continue;
+    const fingerprint = clean(prior.account_fingerprint, 80).toLowerCase();
+    if (/^[a-f0-9]{64}$/.test(fingerprint)) return { record:row, payload:prior, fingerprint };
+  }
+  return null;
 }
 
 function privateBucket(env = {}) {
@@ -129,16 +160,33 @@ export async function handleRefundOpsInternalIntake(request, env = {}) {
   const existing = await findByInboxId(env, inboxId).catch(() => null);
   if (existing?.id) return json({ ok:true, deduped:true, record_id:existing.id });
 
+  const accountFingerprint = clean(body.account_fingerprint, 80).toLowerCase();
+  const jobId = clean(body.job_id, 120);
+  const sessionId = clean(body.session_id, 120);
+  const prior = /^[a-f0-9]{64}$/.test(accountFingerprint)
+    ? await findPriorRefundAccount(env, {
+        lineUserId: body.line_user_id,
+        jobId,
+        sessionId,
+        currentInboxId: inboxId,
+      }).catch(() => null)
+    : null;
+  const accountChanged = Boolean(prior?.fingerprint && prior.fingerprint !== accountFingerprint);
+
   const payload = {
     schema: "mmd_refund_bank_detail_v1",
     purpose: clean(body.purpose || "unknown", 40),
     bank_name: clean(body.bank_name, 120),
     account_name_masked: clean(body.account_name_masked, 160),
     account_number_masked: clean(body.account_number_masked, 80),
+    account_fingerprint: /^[a-f0-9]{64}$/.test(accountFingerprint) ? accountFingerprint : null,
+    account_changed: accountChanged,
+    account_change_review_required: accountChanged,
+    previous_account_inbox_id: accountChanged ? clean(prior?.record?.fields?.inbox_id, 160) || null : null,
     private_detail_key: clean(body.private_detail_key, 500),
     source_image_key: clean(body.source_image_key, 500),
-    session_id: clean(body.session_id, 120) || null,
-    job_id: clean(body.job_id, 120) || null,
+    session_id: sessionId || null,
+    job_id: jobId || null,
     customer_name: clean(body.customer_name, 160) || null,
     money_truth_mutated: false,
     payment_proof_created: false,
@@ -150,19 +198,136 @@ export async function handleRefundOpsInternalIntake(request, env = {}) {
     intent: payload.purpose === "refund" ? "refund_bank_detail" : "bank_detail_ops",
     member_name: payload.customer_name || "",
     line_user_id: clean(body.line_user_id, 120),
-    admin_note: payload.purpose === "refund"
-      ? `Refund account received · ${payload.bank_name || "bank"} · ${payload.account_number_masked || "masked"}`
-      : `Bank detail received · ${payload.bank_name || "bank"} · ${payload.account_number_masked || "masked"}`,
+    admin_note: payload.account_changed
+      ? `ACCOUNT CHANGED · Refund account received as separate evidence · ${payload.bank_name || "bank"} · ${payload.account_number_masked || "masked"}`
+      : payload.purpose === "refund"
+        ? `Refund account received · ${payload.bank_name || "bank"} · ${payload.account_number_masked || "masked"}`
+        : `Bank detail received · ${payload.bank_name || "bank"} · ${payload.account_number_masked || "masked"}`,
     payload_json: JSON.stringify(payload),
     status: "new",
     error_message: "",
   };
   const created = await airtable(env, "", { method:"POST", body:JSON.stringify({ fields }) });
-  return json({ ok:true, deduped:false, record_id:created.id || null });
+  return json({
+    ok:true,
+    deduped:false,
+    record_id:created.id || null,
+    account_changed:accountChanged,
+    account_change_review_required:accountChanged,
+    previous_account_inbox_id:accountChanged ? clean(prior?.record?.fields?.inbox_id, 160) || null : null,
+  });
 }
 
 async function patchRecord(env, record, fields) {
   return airtable(env, `/${encodeURIComponent(record.id)}`, { method:"PATCH", body:JSON.stringify({ fields }) });
+}
+
+function receiptSigningSecret(env = {}) {
+  return clean(env.REFUND_RECEIPT_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN, 500);
+}
+
+async function hmacHex(secret, value) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(clean(secret, 500)),
+    { name:"HMAC", hash:"SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(String(value || "")));
+  return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqual(left, right) {
+  const a = clean(left, 200);
+  const b = clean(right, 200);
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function signedReceiptMediaUrl(env, inboxId, now = Date.now()) {
+  const secret = receiptSigningSecret(env);
+  if (!secret) return "";
+  const expires = Math.floor(now / 1000) + 7 * 24 * 60 * 60;
+  const subject = `refund_receipt_v1|${clean(inboxId, 160)}|${expires}`;
+  const signature = await hmacHex(secret, subject);
+  const url = new URL(`https://www.mmdbkk.com${REFUND_RECEIPT_MEDIA_PATH}`);
+  url.searchParams.set("i", clean(inboxId, 160));
+  url.searchParams.set("e", String(expires));
+  url.searchParams.set("s", signature);
+  return url.toString();
+}
+
+async function handleReceiptMedia(request, env) {
+  const url = new URL(request.url);
+  const inboxId = clean(url.searchParams.get("i"), 160);
+  const expires = Number(url.searchParams.get("e"));
+  const signature = clean(url.searchParams.get("s"), 200).toLowerCase();
+  const secret = receiptSigningSecret(env);
+  const now = Math.floor(Date.now() / 1000);
+  if (!secret || !inboxId || !Number.isInteger(expires) || expires <= now || expires > now + 8 * 24 * 60 * 60 || !/^[a-f0-9]{64}$/.test(signature)) {
+    return json({ ok:false, error:"invalid_or_expired_receipt_link" }, 403);
+  }
+  const expected = await hmacHex(secret, `refund_receipt_v1|${inboxId}|${expires}`);
+  if (!timingSafeEqual(expected, signature)) return json({ ok:false, error:"invalid_or_expired_receipt_link" }, 403);
+
+  const record = await findByInboxId(env, inboxId);
+  if (!record) return json({ ok:false, error:"refund_task_not_found" }, 404);
+  const payload = parsePayload(record);
+  const key = clean(payload.receipt_r2_key, 500);
+  const bucket = privateBucket(env);
+  if (!key || !bucket) return json({ ok:false, error:"refund_receipt_missing" }, 404);
+  const object = await bucket.get(key);
+  if (!object) return json({ ok:false, error:"refund_receipt_missing" }, 404);
+  const mime = clean(object?.httpMetadata?.contentType || payload.receipt_mime_type || "application/octet-stream", 120);
+  const headers = new Headers({
+    "content-type": mime,
+    "cache-control": "private, no-store, max-age=0",
+    "content-disposition": "inline",
+    "x-content-type-options": "nosniff",
+    "x-mmd-route-owner": "admin-worker",
+  });
+  if (Number.isFinite(Number(object?.size))) headers.set("content-length", String(Number(object.size)));
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : object.body, { status:200, headers });
+}
+
+async function notifyRefundReceiptToLine(env, record, payload, mediaUrl, file) {
+  const service = env.MEMBER_DASHBOARD_CHAT_WORKER;
+  const lineUserId = clean(record?.fields?.line_user_id, 120);
+  if (!lineUserId) return { ok:false, skipped:true, reason:"line_user_id_missing" };
+  if (!mediaUrl) return { ok:false, skipped:true, reason:"receipt_signing_unavailable" };
+  if (!service || typeof service.fetch !== "function") return { ok:false, skipped:true, reason:"member_dashboard_binding_missing" };
+
+  const response = await service.fetch(new Request("https://member-dashboard-chat-worker.local/__internal/line/refund-receipt-notify", {
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-mmd-internal-call":"true",
+      "x-mmd-service-binding":"admin-worker",
+    },
+    body:JSON.stringify({
+      line_user_id: lineUserId,
+      customer_name: clean(record?.fields?.member_name || payload.customer_name, 160),
+      inbox_id: clean(record?.fields?.inbox_id, 160),
+      job_id: clean(payload.job_id, 120),
+      session_id: clean(payload.session_id, 120),
+      receipt_url: mediaUrl,
+      mime_type: clean(file?.type, 120),
+      byte_size: Number(file?.size) || 0,
+      money_truth_mutated: false,
+    }),
+  }));
+  const body = await response.json().catch(() => ({}));
+  return {
+    ok: response.ok && body?.ok === true,
+    skipped: body?.skipped === true,
+    reason: clean(body?.reason || body?.error, 120) || null,
+    mode: clean(body?.mode, 80) || null,
+    status: response.status,
+  };
 }
 
 async function handleReceiptUpload(request, env) {
@@ -191,6 +356,7 @@ async function handleReceiptUpload(request, env) {
   payload.receipt_r2_key = key;
   payload.receipt_uploaded_at = now.toISOString();
   payload.receipt_mime_type = file.type;
+  payload.receipt_byte_size = file.size;
   payload.refund_completed_by = "owner";
   payload.money_truth_mutated = false;
   await patchRecord(env, record, {
@@ -198,7 +364,37 @@ async function handleReceiptUpload(request, env) {
     payload_json:JSON.stringify(payload),
     admin_note:`${clean(record.fields?.admin_note, 1200)} · Refund receipt uploaded ${now.toISOString()}`.slice(0,1800),
   });
-  return json({ ok:true, inbox_id:inboxId, status:"completed", uploaded_at:now.toISOString() });
+
+  let notification = { ok:false, skipped:true, reason:"not_attempted", mode:null };
+  try {
+    const mediaUrl = await signedReceiptMediaUrl(env, inboxId, now.getTime());
+    notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, file);
+  } catch {
+    notification = { ok:false, skipped:false, reason:"line_notification_failed", mode:null };
+  }
+  payload.customer_receipt_delivery_status = notification.ok ? "sent" : (notification.skipped ? "skipped" : "failed");
+  payload.customer_receipt_delivery_mode = notification.mode || null;
+  payload.customer_receipt_delivery_at = new Date().toISOString();
+  payload.customer_receipt_delivery_reason = notification.reason || null;
+  await patchRecord(env, record, {
+    status:"completed",
+    payload_json:JSON.stringify(payload),
+    admin_note:`${clean(record.fields?.admin_note, 1200)} · Refund receipt uploaded ${now.toISOString()} · LINE ${payload.customer_receipt_delivery_status}`.slice(0,1800),
+  }).catch(() => null);
+
+  return json({
+    ok:true,
+    inbox_id:inboxId,
+    status:"completed",
+    uploaded_at:now.toISOString(),
+    line_notification:{
+      sent:notification.ok === true,
+      skipped:notification.skipped === true,
+      reason:notification.reason || null,
+      mode:notification.mode || null,
+    },
+    money_truth_mutated:false,
+  });
 }
 
 function pageHtml() {
@@ -210,7 +406,7 @@ function pageHtml() {
     'async function copy(v){await navigator.clipboard.writeText(v)}' +
     'async function detail(id,btn){const box=document.querySelector("[data-detail=\\""+CSS.escape(id)+"\\"]");if(box.dataset.loaded==="1"){box.classList.toggle("open");return}btn.disabled=true;try{const p=await api("/detail?inbox_id="+encodeURIComponent(id));box.innerHTML="<div class=\\"muted\\">"+esc(p.detail.bank_name||"")+"</div><div>"+esc(p.detail.account_name||"")+"</div><div class=\\"num\\">"+esc(p.detail.account_number||"")+"</div><div class=\\"actions\\"><button data-copy-name>Copy ชื่อ</button><button class=\\"primary\\" data-copy-number>Copy เลขบัญชี</button></div>";box.querySelector("[data-copy-name]").onclick=()=>copy(p.detail.account_name||"");box.querySelector("[data-copy-number]").onclick=()=>copy(p.detail.account_number||"");box.dataset.loaded="1";box.classList.add("open")}finally{btn.disabled=false}}' +
     'async function upload(id,file,card){if(!file)return;const fd=new FormData();fd.append("inbox_id",id);fd.append("file",file);card.querySelector("[data-up-status]").textContent="กำลังอัปโหลด…";try{await api("/receipt",{method:"POST",body:fd});card.classList.add("done");card.querySelector("[data-up-status]").textContent="อัปโหลดสลิปแล้ว ✓"}catch(e){card.querySelector("[data-up-status]").textContent="อัปโหลดไม่สำเร็จ · "+e.message}}' +
-    'function cardHtml(x){const cls=x.receipt_uploaded?"done":"";const state=x.receipt_uploaded?"DONE":"NEEDS YOU";const source=x.linked_job_id?("Job "+x.linked_job_id):x.linked_session_id?("Session "+x.linked_session_id):"จาก LINE OA";const uploadState=x.receipt_uploaded?"อัปโหลดสลิปแล้ว ✓":"หลังโอน อัปโหลดสลิปตรงนี้";return "<article class=\\"card "+cls+"\\" data-card=\\""+esc(x.inbox_id)+"\\"><div class=\\"row\\"><span class=\\"tag\\">"+esc((x.purpose||"UNKNOWN").toUpperCase())+"</span><strong>"+esc(x.customer_name||"LINE customer")+"</strong><span class=\\"status muted\\">"+state+"</span></div><div class=\\"bank\\">"+esc(x.bank_name||"Bank detail")+" · "+esc(x.account_number_masked||"••••")+"</div><div class=\\"muted\\">"+esc(source)+"</div><div class=\\"actions\\"><button data-open>เปิดเลขบัญชี</button><label class=\\"btn primary upload\\">อัปโหลดสลิปคืน<input data-file type=\\"file\\" accept=\\"image/jpeg,image/png,image/webp\\"></label></div><div class=\\"muted\\" data-up-status>"+uploadState+"</div><div class=\\"detail\\" data-detail=\\""+esc(x.inbox_id)+"\\"></div></article>"}' +
+    'function cardHtml(x){const cls=x.receipt_uploaded?"done":"";const state=x.receipt_uploaded?"DONE":"NEEDS YOU";const source=x.linked_job_id?("Job "+x.linked_job_id):x.linked_session_id?("Session "+x.linked_session_id):"จาก LINE OA";const uploadState=x.receipt_uploaded?(x.customer_receipt_delivery_status==="sent"?"อัปโหลดสลิปแล้ว · ส่ง LINE แล้ว ✓":"อัปโหลดสลิปแล้ว ✓"):"หลังโอน อัปโหลดสลิปตรงนี้";const changed=x.account_changed?"<span class=\\\"tag\\\">ACCOUNT CHANGED</span>":"";return "<article class=\\"card "+cls+"\\" data-card=\\""+esc(x.inbox_id)+"\\"><div class=\\"row\\"><span class=\\"tag\\">"+esc((x.purpose||"UNKNOWN").toUpperCase())+"</span>"+changed+"<strong>"+esc(x.customer_name||"LINE customer")+"</strong><span class=\\"status muted\\">"+state+"</span></div><div class=\\"bank\\">"+esc(x.bank_name||"Bank detail")+" · "+esc(x.account_number_masked||"••••")+"</div><div class=\\"muted\\">"+esc(source)+"</div><div class=\\"actions\\"><button data-open>เปิดเลขบัญชี</button><label class=\\"btn primary upload\\">อัปโหลดสลิปคืน<input data-file type=\\"file\\" accept=\\"image/jpeg,image/png,image/webp\\"></label></div><div class=\\"muted\\" data-up-status>"+uploadState+"</div><div class=\\"detail\\" data-detail=\\""+esc(x.inbox_id)+"\\"></div></article>"}' +
     'async function load(){const p=await api("/list");const root=document.getElementById("list");root.innerHTML=p.items.length?p.items.map(cardHtml).join(""):"<div class=\\"empty\\">ยังไม่มี Refund Account ที่ต้องทำ</div>";root.querySelectorAll("[data-card]").forEach(card=>{const id=card.dataset.card;card.querySelector("[data-open]").onclick=e=>detail(id,e.currentTarget);card.querySelector("[data-file]").onchange=e=>upload(id,e.target.files?.[0],card)})}' +
     'load().catch(e=>document.getElementById("list").innerHTML="<div class=\\"empty\\">โหลดไม่สำเร็จ · "+esc(e.message)+"</div>");' +
     '</script></body></html>';
@@ -222,6 +418,7 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
   const method = request.method.toUpperCase();
 
   if (path === REFUND_OPS_INTERNAL_INTAKE && method === "POST") return handleRefundOpsInternalIntake(request, env);
+  if (path === REFUND_RECEIPT_MEDIA_PATH && (method === "GET" || method === "HEAD")) return handleReceiptMedia(request, env);
 
   const authed = typeof isAuthed === "function" ? await isAuthed(request, env) : false;
   if (!authed) {
