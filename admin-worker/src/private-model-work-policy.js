@@ -167,7 +167,21 @@ export async function guardPrivateJobCreateWork(request, env) {
   if (!requestedWork || (visibility && visibility !== "private")) return null;
 
   const modelId = clean(body?.model?.model_id || body?.model_record_id || body?.model_id);
+  const holdMode = normalizeToken(body?.operational_create_mode);
+  const typedSnapshot = clean(
+    body?.model?.model_name ||
+    body?.model_name ||
+    body?.model?.lookup_key ||
+    body?.model_lookup_key
+  );
+  const pendingModelHold = ["pending model link", "pending identity link"].includes(holdMode);
   if (!/^rec[A-Za-z0-9]+$/.test(modelId)) {
+    if (pendingModelHold && typedSnapshot) {
+      // Identity remains fail-closed: the downstream pending-identity wrapper
+      // records only the owner-typed snapshot and withholds confirmation,
+      // dispatch and entitlement until a canonical Model is reconciled.
+      return null;
+    }
     return policyError(409, "canonical_model_required_for_private_work", "Private work requires a canonical Model record.");
   }
 

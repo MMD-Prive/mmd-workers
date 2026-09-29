@@ -43,6 +43,8 @@
     modelFolder: "",
     models: [],
     selectedModel: null,
+    modelLookupState: "idle",
+    modelLookupQuery: "",
     draftId: "",
     created: null,
     creating: false,
@@ -554,6 +556,8 @@
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
+    state.modelLookupState = "idle";
+    state.modelLookupQuery = "";
     renderClients(state.clients);
     renderSelectedClient();
     renderFolders();
@@ -571,6 +575,8 @@
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
+    state.modelLookupState = "idle";
+    state.modelLookupQuery = "";
     renderSelectedClient();
     renderFolders();
     renderModels();
@@ -588,6 +594,8 @@
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
+    state.modelLookupState = "idle";
+    state.modelLookupQuery = "";
     $$(`[data-op-work-type]`).forEach((button) => {
       button.classList.toggle("is-selected", button.dataset.opWorkType === type);
     });
@@ -689,6 +697,10 @@
 
   async function loadModels() {
     if (!clientReady() || !state.modelFolder) return;
+    const lookupKey = val(el.modelLookupKey).trim();
+    state.modelLookupQuery = lookupKey;
+    state.modelLookupState = "searching";
+    updateAll();
     setStatus("Loading entitlement-aware model pool…", "warn");
     setHook("models", "warn");
     if (config.mock) {
@@ -704,7 +716,6 @@
       if (state.selectedClient.member_id) url.searchParams.set("member_id", state.selectedClient.member_id);
       url.searchParams.set("work_type", state.workType);
       url.searchParams.set("folder", state.modelFolder);
-      const lookupKey = val(el.modelLookupKey).trim();
       if (lookupKey) url.searchParams.set("q", lookupKey);
       const response = await fetch(url.toString(), { credentials: "same-origin", cache: "no-store" });
       const data = await response.json().catch(() => ({}));
@@ -725,18 +736,27 @@
           })
         : [];
 
+      state.modelLookupState = state.models.length ? "resolved" : "empty";
       if (exactMatches.length === 1 || (lookupKey && state.models.length === 1)) {
         selectModel(exactMatches[0] || state.models[0]);
         setStatus(`Selected ${(exactMatches[0] || state.models[0]).model_name}.`, "ok");
       } else {
         renderModels();
-        setStatus(`Loaded ${state.models.length} eligible model${state.models.length === 1 ? "" : "s"}.`, "ok");
+        updateAll();
+        setStatus(state.models.length
+          ? `Loaded ${state.models.length} eligible model${state.models.length === 1 ? "" : "s"}.`
+          : (canonicalOnly && lookupKey ? `ไม่พบ Canonical Model สำหรับ “${lookupKey}” · สามารถบันทึกงานแบบรอ Link Model ได้` : "No eligible models found."),
+          state.models.length ? "ok" : "warn");
       }
       setHook("models", "ok");
     } catch (error) {
       state.models = [];
+      state.modelLookupState = "error";
       renderModels();
-      setStatus(`Model pool unavailable: ${error.message}`, "bad");
+      updateAll();
+      setStatus(canonicalOnly && lookupKey
+        ? `Model lookup unavailable · จะบันทึก “${lookupKey}” เป็น snapshot และรอ Link Model`
+        : `Model pool unavailable: ${error.message}`, canonicalOnly && lookupKey ? "warn" : "bad");
       setHook("models", "bad");
     }
   }
@@ -744,6 +764,8 @@
   function selectModel(model) {
     if (!model) return;
     state.selectedModel = normalizeModel(model);
+    state.modelLookupState = "resolved";
+    state.modelLookupQuery = state.selectedModel.lookup_key || state.selectedModel.model_name || "";
     setVal(el.modelTelegram, state.selectedModel.telegram_username);
     setVal(el.modelTelegramStatus, state.selectedModel.telegram_status || "missing");
     renderModelPreview();
@@ -751,11 +773,27 @@
     scrollToNode($("#gate-panel"));
   }
 
+  function typedModelSnapshot() {
+    if (!canonicalOnly || state.selectedModel || !state.modelFolder) return "";
+    const typed = val(el.modelLookupKey).trim();
+    if (typed.length < 2 || typed.length > 80) return "";
+    if (!["empty", "error"].includes(state.modelLookupState)) return "";
+    if (state.modelLookupQuery !== typed) return "";
+    return typed;
+  }
+
+  function modelReady() {
+    return Boolean(state.selectedModel || typedModelSnapshot());
+  }
+
   function renderModelPreview() {
     const model = state.selectedModel;
     if (!el.modelPreview) return;
     if (!model) {
-      el.modelPreview.innerHTML = '<div class="mmdop__empty">No model selected yet.</div>';
+      const snapshot = typedModelSnapshot();
+      el.modelPreview.innerHTML = snapshot
+        ? `<div class="mmdop__empty"><strong>${esc(snapshot)}</strong><span>Exact owner-typed snapshot · รอ Link Canonical Model ก่อน Confirmation / Dispatch</span></div>`
+        : '<div class="mmdop__empty">No model selected yet.</div>';
       return;
     }
     el.modelPreview.innerHTML = `
@@ -771,17 +809,21 @@
     const modelStatus = val(el.modelTelegramStatus);
     const clientOk = ["linked", "verified"].includes(clientStatus);
     const modelOk = ["linked", "verified"].includes(modelStatus);
+    const snapshot = typedModelSnapshot();
     return {
-      ok: Boolean(state.selectedClient && state.modelFolder && state.selectedModel),
-      label: modelOk ? "Model Telegram connected" : "Model Telegram pending",
-      copy: [
-        clientOk
-          ? "Member Telegram connected · optional secondary channel."
-          : "Member Telegram not connected · optional and does not block Create Job.",
-        modelOk
-          ? "Model Telegram connected."
-          : "Model Telegram is not verified yet · Create Job may continue, but Model must connect Telegram before Ready to Work."
-      ].join(" ")
+      ok: Boolean(state.selectedClient && state.modelFolder && modelReady()),
+      model_identity_pending: Boolean(snapshot),
+      label: snapshot ? "Model identity pending" : (modelOk ? "Model Telegram connected" : "Model Telegram pending"),
+      copy: snapshot
+        ? `Model “${snapshot}” ยังไม่พบ Canonical match · งานจะถูกบันทึกแบบ Hold และยังไม่ออก Confirmation / Dispatch จน Link Model สำเร็จ`
+        : [
+            clientOk
+              ? "Member Telegram connected · optional secondary channel."
+              : "Member Telegram not connected · optional and does not block Create Job.",
+            modelOk
+              ? "Model Telegram connected."
+              : "Model Telegram is not verified yet · Create Job may continue, but Model must connect Telegram before Ready to Work."
+          ].join(" ")
     };
   }
 
@@ -791,7 +833,7 @@
       clientReady() &&
       state.workType &&
       state.modelFolder &&
-      state.selectedModel &&
+      modelReady() &&
       val(el.date) &&
       val(el.start) &&
       val(el.duration) &&
@@ -821,10 +863,13 @@
   function buildPayload() {
     computeEndTime();
     const gate = deriveGate();
+    const modelSnapshot = typedModelSnapshot();
     const payload = {
       canonical_only: canonicalOnly,
       create_context: canonicalOnly ? "internal_create_job" : "create_session",
-      operational_create_mode: !canonicalOnly && !state.selectedClient?.client_id ? "pending_client_link" : undefined,
+      operational_create_mode: canonicalOnly && modelSnapshot
+        ? "pending_model_link"
+        : (!canonicalOnly && !state.selectedClient?.client_id ? "pending_client_link" : undefined),
       client: {
         client_id: state.selectedClient?.client_id || "",
         member_id: state.selectedClient?.member_id || "",
@@ -861,8 +906,10 @@
       model_folder: state.modelFolder,
       model: {
         model_id: state.selectedModel?.model_id || "",
-        model_name: state.selectedModel?.model_name || "",
-        lookup_key: state.selectedModel?.lookup_key || "",
+        model_name: state.selectedModel?.model_name || modelSnapshot,
+        lookup_key: state.selectedModel?.lookup_key || modelSnapshot,
+        identity_status: modelSnapshot ? "pending_reconcile" : "linked",
+        snapshot_source: modelSnapshot ? "owner_typed_exact" : "canonical_model",
         telegram_username: val(el.modelTelegram),
         telegram_status: val(el.modelTelegramStatus)
       },
@@ -892,7 +939,9 @@
         internal: val(el.note)
       },
       gates: {
-        private_telegram_ready: gate.ok,
+        create_ready: gate.ok,
+        model_identity_pending: gate.model_identity_pending === true,
+        private_telegram_ready: gate.ok && gate.model_identity_pending !== true,
         private_telegram_label: gate.label
       },
       source: "mmd-internal-create-session-v2"
@@ -909,7 +958,7 @@
     text(el.statFolder, state.modelFolder || "-");
     text(el.railFolder, state.modelFolder || "No folder selected");
     text(el.railFolderCopy, state.modelFolder ? `Folder ${state.modelFolder}` : "Select public/private folder after client selection.");
-    text(el.statModel, state.selectedModel?.model_name || "-");
+    text(el.statModel, state.selectedModel?.model_name || typedModelSnapshot() || "-");
     const gate = deriveGate();
     text(el.statGate, gate.ok ? "Ready" : "Pending");
     text(el.statStatus, requiredReady() ? "Ready" : "Not ready");
@@ -930,9 +979,11 @@
     } else if (state.workType && !state.modelFolder) {
       next = "Choose model folder";
       copy = "Pick Travel / Extreme or the allowed Private folder.";
-    } else if (state.modelFolder && !state.selectedModel) {
+    } else if (state.modelFolder && !modelReady()) {
       next = "Select model";
-      copy = "Choose one model from the entitlement-aware pool.";
+      copy = state.modelLookupState === "searching"
+        ? "กำลังค้นหา Canonical Model…"
+        : "เลือก Canonical Model หรือค้นหาด้วยชื่อ/รหัสให้จบก่อน ถ้าไม่พบ ระบบจะเก็บ exact typed snapshot แบบ Hold.";
     } else if (!requiredReady()) {
       next = "Complete job details";
       copy = "Add schedule, location and amount before create.";
@@ -1081,8 +1132,13 @@
       }
       renderCreated(data);
       const review = data.linkage?.status === "review_required" || data.notification_status === "failed";
-      const held = data.operational_status === "pending_client_link";
-      setStatus(held ? "บันทึกงานแล้ว · รอ Link Client ก่อนออก Payment Link" : review ? "สร้างงานแล้ว · Payment Link พร้อม แต่มีจุดที่ต้องตรวจเพิ่ม กรุณาอย่าสร้างซ้ำ" : "สร้างงานแล้ว · ส่ง Customer Payment Link ได้เลย", held || review ? "warn" : "ok");
+      const held = ["pending_client_link", "pending_model_link", "pending_identity_link"].includes(data.operational_status);
+      const heldCopy = data.operational_status === "pending_model_link"
+        ? "บันทึกงานแล้ว · รอ Link Model ก่อนออก Confirmation / Dispatch"
+        : data.operational_status === "pending_identity_link"
+          ? "บันทึกงานแล้ว · รอ Link Client + Model ก่อนออก Confirmation / Dispatch"
+          : "บันทึกงานแล้ว · รอ Link Client ก่อนออก Payment Link";
+      setStatus(held ? heldCopy : review ? "สร้างงานแล้ว · Payment Link พร้อม แต่มีจุดที่ต้องตรวจเพิ่ม กรุณาอย่าสร้างซ้ำ" : "สร้างงานแล้ว · ส่ง Customer Payment Link ได้เลย", held || review ? "warn" : "ok");
       setHook("create", "ok");
     } catch (error) {
       state.creationUncertain = !error.safeToRetry;
@@ -1160,6 +1216,8 @@
     state.modelFolder = "";
     state.models = [];
     state.selectedModel = null;
+    state.modelLookupState = "idle";
+    state.modelLookupQuery = "";
     state.draftId = "";
     state.created = null;
     state.creationUncertain = false;
@@ -1244,6 +1302,11 @@
     el.modelLookupKey?.addEventListener("input", () => {
       window.clearTimeout(modelLookupTimer);
       const q = val(el.modelLookupKey).trim();
+      state.selectedModel = null;
+      state.modelLookupQuery = q;
+      state.modelLookupState = q.length >= 2 ? "searching" : "idle";
+      renderModelPreview();
+      updateAll();
       if (q.length < 2) return;
       modelLookupTimer = window.setTimeout(loadModels, 260);
     });
