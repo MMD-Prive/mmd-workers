@@ -202,3 +202,40 @@ test("Refund Ops uses the active admin gate once and survives duplicate stale co
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("active Refund Ops converts downstream exceptions to controlled 503 instead of Cloudflare 1101", async () => {
+  const env = {
+    ADMIN_BEARER:"owner_admin_bearer",
+    ADMIN_LOGIN_CREDENTIAL:"dedicated_browser_code",
+    ADMIN_SESSION_SECRET:"dedicated_session_secret",
+    AIRTABLE_BASE_ID:"appTest",
+    AIRTABLE_API_KEY:"airtable-test-token",
+    AIRTABLE_TABLE_CONSOLE_INBOX_ID:"tblConsoleInbox",
+  };
+  const loginResponse = await login("dedicated_browser_code", env);
+  const Cookie = cookiePair(loginResponse);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.airtable.com") {
+      return Response.json({ error:"forced" }, { status:500 });
+    }
+    return originalFetch(input);
+  };
+  try {
+    const response = await worker.fetch(
+      new Request("https://mmdbkk.com/v1/admin/refunds/detail?inbox_id=refund_failure_boundary", {
+        headers:{ Cookie, Origin:"https://mmdbkk.com" },
+      }),
+      runtimeEnv(env),
+      {},
+    );
+    const body = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("x-mmd-refund-error-boundary"), "active-v2");
+    assert.equal(body.error, "refund_ops_unavailable");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
