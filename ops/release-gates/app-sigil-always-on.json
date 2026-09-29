@@ -18,7 +18,7 @@
     },
     "mmd_app_job_handoff": {
       "status": "pending",
-      "evidence": ""
+      "evidence": "Must be closed only by the APP SIGIL final gate verifier workflow artifact after a real production post-LIFF handoff writes a durable privacy-safe receipt for the exact handoff_model_record_id and handoff_job_id. Unit tests, placeholders, and raw handoff tokens are not acceptable evidence."
     },
     "sigil_search_approved_public_media": {
       "status": "pass",
@@ -30,7 +30,7 @@
     },
     "campaign_destination_smoke": {
       "status": "pending",
-      "evidence": ""
+      "evidence": "Must be closed only by the APP SIGIL final gate verifier workflow artifact after the real ad entry URL returns a non-404/non-5xx response and preserves the intended job_board campaign destination into the MMD APP surface."
     }
   },
   "notes": [
@@ -41,6 +41,8 @@
     "Always-on APP campaign remains disabled until every gate is pass and evidence is recorded.",
     "Owner-confirmed contract: /sigil/booking may discover private-lane Models through scope=booking using public-safe media only; generic public search remains public-only and scope=private remains entitlement-gated.",
     "MMD APP Job handoff remains pending until one genuine production post-LIFF handoff mint+validate event writes a privacy-safe durable receipt.",
-    "Validated Model Job Board handoffs now persist a privacy-safe durable receipt after token validation; no LINE ID, cookie, handoff token, payment, or customer payload is stored."
+    "Validated Model Job Board handoffs now persist a privacy-safe durable receipt after token validation; no LINE ID, cookie, handoff token, payment, or customer payload is stored.",
+    "The final two gates must be verified by workflow APP SIGIL final gate verifier, which reads /public/api/jobs/internal/handoffs with an internal owner token and smoke-tests the real campaign destination URL.",
+    "After the workflow passes, paste the app-sigil-final-gate-evidence artifact into this manifest before changing decision=ready or campaign_enabled=true."
   ]
 }
