@@ -375,7 +375,7 @@ html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inhe
 
   const style=document.createElement("style");
   style.id="mmd-global-member-control-v1-style";
-  style.textContent=\`
+  style.textContent=`
   #mmd-global-member-control-v1{position:fixed;z-index:2147479000;top:max(10px,env(safe-area-inset-top));right:10px;max-width:min(46vw,210px);height:38px;padding:0 11px;display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(216,184,111,.22);border-radius:999px;background:rgba(12,11,10,.88);color:#fff8ed;text-decoration:none;box-shadow:0 10px 28px rgba(0,0,0,.22);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font:800 9px/1.15 Inter,"Noto Sans Thai",system-ui,sans-serif;letter-spacing:.05em}
   #mmd-global-member-control-v1 .mmd-gm-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#8d8479;box-shadow:0 0 0 3px rgba(255,255,255,.04)}
   #mmd-global-member-control-v1 .mmd-gm-copy{min-width:0;display:grid;gap:2px}
@@ -388,7 +388,7 @@ html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inhe
   html[data-mmd-world="public"] #mmd-global-member-control-v1 .mmd-gm-copy strong{color:#25181b}
   html[data-mmd-world="public"] #mmd-global-member-control-v1 .mmd-gm-copy span{color:#7c6f72}
   @media(max-width:767px){#mmd-global-member-control-v1{top:max(8px,env(safe-area-inset-top));right:8px;height:36px;max-width:44vw;padding:0 10px}}
-  \`;
+  `;
   document.head.appendChild(style);
 
   const chip=document.createElement("a");
