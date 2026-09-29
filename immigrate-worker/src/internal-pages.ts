@@ -20,7 +20,7 @@ function page(title: string, body: string): Response {
 <meta name="robots" content="noindex,nofollow" />
 <title>${esc(title)}</title>
 <style>
-:root{color-scheme:dark;--bg:#050403;--panel:#12100d;--soft:rgba(255,255,255,.055);--line:rgba(214,170,69,.24);--line2:rgba(255,255,255,.12);--text:#fff8e8;--muted:rgba(255,248,232,.66);--gold:#d6aa45;--gold2:#ffe08b;--red:#ff8d8d;--green:#8ed5a9;--font:Inter,"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 16% 0%,rgba(214,170,69,.14),transparent 30%),linear-gradient(135deg,#050403,#0b0907 56%,#000);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}.mmdop{min-height:100vh;padding:18px}.mmdop__shell{width:min(1480px,100%);margin:0 auto}.mmdop__topbar,.mmdop__panel,.mmdop__clientSearch,.mmdop__commandLeft,.mmdop__railCard,.mmdop__status{border:1px solid var(--line);border-radius:26px;background:linear-gradient(145deg,rgba(18,15,11,.92),rgba(0,0,0,.78));box-shadow:0 22px 64px rgba(0,0,0,.42)}.mmdop__topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px}.mmdop__brand{display:flex;gap:12px;align-items:center}.mmdop__logo{width:48px;height:48px;border-radius:17px;display:grid;place-items:center;border:1px solid rgba(214,170,69,.35);background:rgba(214,170,69,.08)}.mmdop__logo img{width:38px}.mmdop__brand strong,.mmdop__kicker,.mmdop__panelHead span,.mmdop__step,.mmdop__field span,.mmdop__railCard span{color:var(--gold);letter-spacing:.13em;text-transform:uppercase;font-size:11px;font-weight:950}.mmdop__brand small{display:block;color:var(--muted);margin-top:2px}.mmdop__ghost,.mmdop__btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.045);color:var(--text);font-weight:900;cursor:pointer}.mmdop__btn--gold{border-color:rgba(255,224,139,.58);background:linear-gradient(135deg,#ffe48b,#c99937 58%,#f8d876);color:#0b0703}.mmdop__btn--soft{border-color:rgba(214,170,69,.32);color:var(--gold2);background:rgba(214,170,69,.08)}.mmdop__btn:disabled{opacity:.42;cursor:not-allowed}.mmdop__command{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.72fr);gap:16px;margin-top:16px}.mmdop__commandLeft,.mmdop__clientSearch{padding:clamp(22px,3vw,34px)}h1{margin:14px 0 0;font-size:clamp(42px,5.2vw,76px);line-height:.92;letter-spacing:-.055em}h2{margin:6px 0 6px;font-size:clamp(26px,2.6vw,38px);line-height:1;letter-spacing:-.035em}p{color:var(--muted);line-height:1.68}.mmdop__flowMini,.mmdop__progress,.mmdop__summary,.mmdop__layout,.mmdop__formGrid,.mmdop__searchBar,.mmdop__copyRow{display:grid;gap:12px}.mmdop__flowMini{grid-template-columns:repeat(6,1fr);margin-top:22px}.mmdop__step,.mmdop__summary article{border:1px solid var(--line2);border-radius:16px;background:rgba(255,255,255,.035);padding:12px}.mmdop__step.is-active{color:#090704;background:linear-gradient(135deg,#ffe48b,#c99937);border-color:rgba(255,224,139,.58)}.mmdop__summary{grid-template-columns:repeat(5,1fr);margin-top:14px}.mmdop__summary strong{display:block;margin-top:7px;font-size:18px;word-break:break-word}.mmdop__layout{grid-template-columns:minmax(0,1fr) 320px;margin-top:16px;align-items:start}.mmdop__main,.mmdop__rail{display:grid;gap:14px}.mmdop__rail{position:sticky;top:16px}.mmdop__railCard{padding:18px}.mmdop__railCard strong{display:block;margin-top:8px;font-size:24px;line-height:1.08;letter-spacing:-.03em}.mmdop__panel{overflow:hidden}.mmdop__panelHead{display:flex;justify-content:space-between;gap:14px;padding:20px 22px;border-bottom:1px solid var(--line2)}.mmdop__section{padding:20px 22px}.mmdop__formGrid--2{grid-template-columns:repeat(2,1fr)}.mmdop__formGrid--3{grid-template-columns:repeat(3,1fr)}.mmdop__formGrid--4{grid-template-columns:repeat(4,1fr)}.mmdop__searchBar{grid-template-columns:1fr auto auto}.mmdop__input,.mmdop__textarea{width:100%;min-height:49px;border-radius:15px;border:1px solid var(--line2);background:rgba(0,0,0,.42);color:var(--text);padding:0 14px;outline:none}.mmdop__input--big{min-height:56px;font-size:16px}.mmdop__textarea{min-height:116px;padding:13px 14px;resize:vertical;line-height:1.6}.mmdop__field span{display:block;margin-bottom:7px}.mmdop__empty{min-height:92px;display:grid;place-items:center;text-align:center;border:1px dashed var(--line2);border-radius:18px;color:var(--muted);background:rgba(255,255,255,.025);padding:14px}.mmdop__clientResults{display:grid;gap:10px;margin-top:14px}.mmdop__clientCard{width:100%;display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:14px;border-radius:20px;border:1px solid var(--line2);background:rgba(0,0,0,.36);color:inherit;text-align:left;cursor:pointer}.mmdop__clientCard.is-selected{border-color:rgba(255,224,139,.58);background:rgba(214,170,69,.09)}.mmdop__avatar{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;color:var(--gold2);border:1px solid rgba(214,170,69,.25);background:rgba(214,170,69,.08);font-weight:950}.mmdop__tag{display:inline-flex;margin:3px 5px 0 0;border-radius:999px;border:1px solid var(--line2);padding:3px 8px;color:var(--muted);font-size:11px;font-weight:850}.mmdop__copyRow{grid-template-columns:repeat(3,max-content);display:flex;gap:10px;flex-wrap:wrap}.mmdop__status{padding:15px 17px}.is-ok{border-color:rgba(142,213,169,.34)!important;color:rgba(224,255,236,.95)!important;background:rgba(142,213,169,.075)!important}.is-bad{border-color:rgba(255,141,141,.34)!important;color:rgba(255,222,222,.96)!important;background:rgba(255,141,141,.075)!important}.mmdop__secondary{border-color:rgba(255,255,255,.1);opacity:.96}.mmdop__secondary .mmdop__panelHead span{color:rgba(255,224,139,.72)}@media(max-width:1040px){.mmdop__command,.mmdop__layout{grid-template-columns:1fr}.mmdop__rail{position:static;grid-template-columns:repeat(2,1fr)}.mmdop__summary{grid-template-columns:repeat(2,1fr)}.mmdop__flowMini{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.mmdop{padding:12px}.mmdop__topbar,.mmdop__panelHead{flex-direction:column;align-items:flex-start}.mmdop__searchBar,.mmdop__formGrid--2,.mmdop__formGrid--3,.mmdop__formGrid--4,.mmdop__rail{grid-template-columns:1fr}.mmdop__clientCard{grid-template-columns:52px 1fr}.mmdop__clientCard .mmdop__btn{grid-column:1/-1}.mmdop__btn,.mmdop__ghost{width:100%}}
+:root{color-scheme:dark;--bg:#050403;--panel:#12100d;--soft:rgba(255,255,255,.055);--line:rgba(214,170,69,.24);--line2:rgba(255,255,255,.12);--text:#fff8e8;--muted:rgba(255,248,232,.66);--gold:#d6aa45;--gold2:#ffe08b;--red:#ff8d8d;--green:#8ed5a9;--font:Inter,"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 16% 0%,rgba(214,170,69,.14),transparent 30%),linear-gradient(135deg,#050403,#0b0907 56%,#000);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}.mmdop{min-height:100vh;padding:18px}.mmdop__shell{width:min(1320px,100%);margin:0 auto}.mmdop__topbar,.mmdop__panel,.mmdop__clientSearch,.mmdop__commandLeft,.mmdop__railCard,.mmdop__status,.mmdop__tapGuide article{border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(18,15,11,.92),rgba(0,0,0,.78));box-shadow:0 18px 52px rgba(0,0,0,.38)}.mmdop__topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 15px}.mmdop__brand{display:flex;gap:12px;align-items:center}.mmdop__logo{width:46px;height:46px;border-radius:16px;display:grid;place-items:center;border:1px solid rgba(214,170,69,.35);background:rgba(214,170,69,.08)}.mmdop__logo img{width:36px}.mmdop__brand strong,.mmdop__kicker,.mmdop__panelHead span,.mmdop__step,.mmdop__field span,.mmdop__railCard span,.mmdop__tapGuide b{color:var(--gold);letter-spacing:.13em;text-transform:uppercase;font-size:11px;font-weight:950}.mmdop__brand small{display:block;color:var(--muted);margin-top:2px}.mmdop__ghost,.mmdop__btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.045);color:var(--text);font-weight:900;cursor:pointer}.mmdop__btn--gold{border-color:rgba(255,224,139,.58);background:linear-gradient(135deg,#ffe48b,#c99937 58%,#f8d876);color:#0b0703}.mmdop__btn--soft{border-color:rgba(214,170,69,.32);color:var(--gold2);background:rgba(214,170,69,.08)}.mmdop__btn:disabled{opacity:.42;cursor:not-allowed}.mmdop__command{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.72fr);gap:16px;margin-top:16px}.mmdop__commandLeft,.mmdop__clientSearch{padding:clamp(20px,2.7vw,30px)}h1{margin:12px 0 0;font-size:clamp(40px,4.8vw,68px);line-height:.94;letter-spacing:-.05em}h2{margin:6px 0 6px;font-size:clamp(24px,2.4vw,36px);line-height:1;letter-spacing:-.035em}p{color:var(--muted);line-height:1.66}code{color:var(--gold2);background:rgba(214,170,69,.08);border:1px solid rgba(214,170,69,.18);border-radius:8px;padding:1px 6px}.mmdop__flowMini,.mmdop__summary,.mmdop__layout,.mmdop__formGrid,.mmdop__searchBar,.mmdop__copyRow,.mmdop__tapGuide{display:grid;gap:12px}.mmdop__flowMini{grid-template-columns:repeat(6,1fr);margin-top:20px}.mmdop__step,.mmdop__summary article{border:1px solid var(--line2);border-radius:16px;background:rgba(255,255,255,.035);padding:11px}.mmdop__step.is-active{color:#090704;background:linear-gradient(135deg,#ffe48b,#c99937);border-color:rgba(255,224,139,.58)}.mmdop__tapGuide{grid-template-columns:repeat(3,1fr);margin-top:14px}.mmdop__tapGuide article{padding:14px;display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center}.mmdop__tapGuide i{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#ffe48b,#c99937);color:#0b0703;font-style:normal;font-weight:950}.mmdop__tapGuide strong{display:block;font-size:17px;line-height:1.15}.mmdop__tapGuide p{margin:3px 0 0;font-size:13px;line-height:1.45}.mmdop__summary{grid-template-columns:repeat(5,1fr);margin-top:14px}.mmdop__summary strong{display:block;margin-top:7px;font-size:17px;word-break:break-word}.mmdop__layout{grid-template-columns:minmax(0,1fr) 300px;margin-top:16px;align-items:start}.mmdop__main,.mmdop__rail{display:grid;gap:14px}.mmdop__rail{position:sticky;top:16px}.mmdop__railCard{padding:17px}.mmdop__railCard strong{display:block;margin-top:8px;font-size:22px;line-height:1.08;letter-spacing:-.03em}.mmdop__panel{overflow:hidden}.mmdop__panelHead{display:flex;justify-content:space-between;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line2)}.mmdop__section{padding:18px 20px}.mmdop__formGrid--2{grid-template-columns:repeat(2,1fr)}.mmdop__formGrid--3{grid-template-columns:repeat(3,1fr)}.mmdop__formGrid--4{grid-template-columns:repeat(4,1fr)}.mmdop__searchBar{grid-template-columns:1fr auto auto}.mmdop__input,.mmdop__textarea{width:100%;min-height:49px;border-radius:15px;border:1px solid var(--line2);background:rgba(0,0,0,.42);color:var(--text);padding:0 14px;outline:none}.mmdop__input--big{min-height:56px;font-size:16px}.mmdop__textarea{min-height:110px;padding:13px 14px;resize:vertical;line-height:1.6}.mmdop__field span{display:block;margin-bottom:7px}.mmdop__empty{min-height:88px;display:grid;place-items:center;text-align:center;border:1px dashed var(--line2);border-radius:18px;color:var(--muted);background:rgba(255,255,255,.025);padding:14px}.mmdop__clientResults{display:grid;gap:10px;margin-top:14px}.mmdop__clientCard{width:100%;display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:14px;border-radius:20px;border:1px solid var(--line2);background:rgba(0,0,0,.36);color:inherit;text-align:left;cursor:pointer}.mmdop__clientCard.is-selected{border-color:rgba(255,224,139,.58);background:rgba(214,170,69,.09)}.mmdop__avatar{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;color:var(--gold2);border:1px solid rgba(214,170,69,.25);background:rgba(214,170,69,.08);font-weight:950}.mmdop__tag{display:inline-flex;margin:3px 5px 0 0;border-radius:999px;border:1px solid var(--line2);padding:3px 8px;color:var(--muted);font-size:11px;font-weight:850}.mmdop__copyRow{grid-template-columns:repeat(3,max-content);display:flex;gap:10px;flex-wrap:wrap}.mmdop__status{padding:14px 16px}.is-ok{border-color:rgba(142,213,169,.34)!important;color:rgba(224,255,236,.95)!important;background:rgba(142,213,169,.075)!important}.is-bad{border-color:rgba(255,141,141,.34)!important;color:rgba(255,222,222,.96)!important;background:rgba(255,141,141,.075)!important}.mmdop__secondary{border-color:rgba(255,255,255,.1);opacity:.96}.mmdop__secondary .mmdop__panelHead span{color:rgba(255,224,139,.72)}@media(max-width:1040px){.mmdop__command,.mmdop__layout{grid-template-columns:1fr}.mmdop__rail{position:static;grid-template-columns:repeat(2,1fr)}.mmdop__summary{grid-template-columns:repeat(2,1fr)}.mmdop__flowMini{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){body{background:#040302}.mmdop{min-height:100svh;padding:10px}.mmdop__shell{width:100%}.mmdop__topbar{border-radius:18px;padding:10px;box-shadow:none}.mmdop__logo{width:38px;height:38px;border-radius:13px}.mmdop__logo img{width:30px}.mmdop__brand small,.mmdop__commandLeft p{display:none}.mmdop__ghost{min-height:34px;padding:0 11px;font-size:12px}.mmdop__command{display:block;margin-top:10px}.mmdop__commandLeft,.mmdop__clientSearch,.mmdop__panel,.mmdop__railCard,.mmdop__status,.mmdop__tapGuide article{border-radius:18px;box-shadow:0 10px 28px rgba(0,0,0,.28)}.mmdop__commandLeft,.mmdop__clientSearch{padding:14px}.mmdop__clientSearch{margin-top:10px}h1{font-size:30px;letter-spacing:-.04em;margin:7px 0 0}h2{font-size:23px}.mmdop__flowMini{grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}.mmdop__step{padding:8px 5px;border-radius:12px;font-size:10px;text-align:center;letter-spacing:.08em}.mmdop__tapGuide{grid-template-columns:1fr;margin-top:10px;gap:8px}.mmdop__tapGuide article{grid-template-columns:34px 1fr;padding:11px;gap:9px}.mmdop__tapGuide i{width:34px;height:34px;border-radius:12px}.mmdop__tapGuide strong{font-size:15px}.mmdop__tapGuide p{font-size:12px}.mmdop__summary{grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}.mmdop__summary article{padding:10px;border-radius:14px}.mmdop__summary article:last-child{grid-column:1/-1}.mmdop__summary strong{font-size:14px}.mmdop__layout{display:block;margin-top:10px}.mmdop__main{gap:10px}.mmdop__panel{margin-top:10px}.mmdop__panelHead{padding:12px;display:block}.mmdop__panelHead p{font-size:12px;margin:4px 0 0}.mmdop__section{padding:12px}.mmdop__searchBar,.mmdop__formGrid--2,.mmdop__formGrid--3,.mmdop__formGrid--4,.mmdop__rail{grid-template-columns:1fr}.mmdop__searchBar{gap:8px}.mmdop__input,.mmdop__textarea{min-height:45px;border-radius:13px}.mmdop__clientCard{grid-template-columns:44px 1fr;padding:11px;border-radius:16px}.mmdop__avatar{width:44px;height:44px;border-radius:14px}.mmdop__clientCard .mmdop__btn{grid-column:1/-1}.mmdop__btn,.mmdop__ghost{width:100%}.mmdop__copyRow{display:grid;grid-template-columns:1fr}.mmdop__rail{display:none}#job-board-panel{opacity:.88}#job-board-panel .mmdop__panelHead h2{font-size:18px}.mmdop__status{font-size:13px;line-height:1.45}}
 </style>
 </head>
 <body>${body}</body>
@@ -50,7 +50,7 @@ export function renderCreateSessionPage(_env: InternalPageEnv): Response {
 }
 
 export function renderCreateJobPage(): Response {
-  return page("MMD Create Job", `<section class="mmdop" data-cj-flow="customer-first"><main class="mmdop__shell">
+  return page("MMD Create Job", `<section class="mmdop" data-cj-flow="customer-first-digital"><main class="mmdop__shell">
     ${topbar("Create Job · Customer First")}
     <section class="mmdop__command">
       <div class="mmdop__commandLeft">
@@ -67,9 +67,15 @@ export function renderCreateJobPage(): Response {
         </div>
       </div>
       <aside class="mmdop__clientSearch" id="client-search" data-cj-primary-flow="customer-search">
-        <div><span>First Action</span><h2>Customer Search</h2><p>ค้นจาก Per name, LINE, เบอร์, username, package, tier หรือ note ย้อนหลัง</p></div>
-        <div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" id="job-client-query" placeholder="เช่น Shane, Book EI, line user id, เบอร์, VIP" autocomplete="off" /><button class="mmdop__btn mmdop__btn--gold" id="search-client-button" type="button">ค้นลูกค้า</button><button class="mmdop__btn" id="load-recent-clients" type="button">Recent</button></div>
+        <div><span>First Action</span><h2>1. ค้นลูกค้า</h2><p>พิมพ์ Per name / LINE / เบอร์ / package แล้วกดค้น หรือกด Recent ก่อน</p></div>
+        <div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" id="job-client-query" placeholder="เช่น Shane, Book EI, line user id, เบอร์, VIP" autocomplete="off" /><button class="mmdop__btn mmdop__btn--gold" id="search-client-button" type="button">1 ค้นลูกค้า</button><button class="mmdop__btn" id="load-recent-clients" type="button">Recent</button></div>
       </aside>
+    </section>
+
+    <section class="mmdop__tapGuide" aria-label="Mobile digital guide">
+      <article><i>1</i><div><b>Tap first</b><strong>ค้นลูกค้า / Recent</strong><p>เริ่มจากช่องนี้ก่อนเสมอ</p></div></article>
+      <article><i>2</i><div><b>Then</b><strong>เลือกลูกค้า 1 คน</strong><p>ระบบจะเติม context ให้</p></div></article>
+      <article><i>3</i><div><b>Finish</b><strong>ใส่งาน + ราคา</strong><p>Create Job แล้วส่ง Payment URL</p></div></article>
     </section>
 
     <section class="mmdop__summary" aria-label="Create Job summary">
@@ -83,8 +89,8 @@ export function renderCreateJobPage(): Response {
     <section class="mmdop__layout">
       <div class="mmdop__main">
         <section class="mmdop__panel" id="client-results" data-cj-step-panel="customer">
-          <div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าก่อนสร้างงาน</h2><p>ถ้าไม่เจอลูกค้า ให้ค้นด้วยชื่อที่ Per ใช้, LINE OFC, เบอร์, package หรือ note ก่อน ไม่ต้องจำ Session ID เอง</p></div><button class="mmdop__btn" id="clear-client" type="button">Clear</button></div>
-          <div class="mmdop__section"><div class="mmdop__clientResults" id="client-result-list"><div class="mmdop__empty">ค้นหาลูกค้าก่อนสร้างงาน — หน้านี้ไม่เริ่มจาก Model แล้วค่ะ</div></div></div>
+          <div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าก่อนสร้างงาน</h2><p>ไม่ต้องจำ Session ID เอง ถ้าไม่เจอให้ลอง Recent หรือค้นด้วยชื่อ LINE / Per name / เบอร์</p></div><button class="mmdop__btn" id="clear-client" type="button">Clear</button></div>
+          <div class="mmdop__section"><div class="mmdop__clientResults" id="client-result-list"><div class="mmdop__empty">Step 1: กด Recent หรือพิมพ์ชื่อลูกค้าแล้วกด “1 ค้นลูกค้า”</div></div></div>
         </section>
 
         <section class="mmdop__panel" id="selected-client-panel" data-cj-step-panel="lineage">
@@ -113,7 +119,7 @@ export function renderCreateJobPage(): Response {
             </div>
             <label class="mmdop__field" style="display:block;margin-top:12px;"><span>Internal Note</span><textarea class="mmdop__textarea" id="job-note" placeholder="รายละเอียด operation ภายใน / ข้อควรระวัง / brief"></textarea></label>
             <div class="mmdop__copyRow" style="margin-top:16px;"><button class="mmdop__btn mmdop__btn--gold" id="create-job-button" type="button">Create Job</button><a class="mmdop__btn" href="/internal/admin/jobs/create-session">Open full lineage workspace</a></div>
-            <div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Ready · เริ่มจากค้นลูกค้า</div>
+            <div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Step 1: กด Recent หรือค้นลูกค้าก่อน</div>
           </div>
         </section>
 
@@ -129,7 +135,7 @@ export function renderCreateJobPage(): Response {
           </div>
         </section>
       </div>
-      <aside class="mmdop__rail"><div class="mmdop__railCard"><span>Next Action</span><strong id="next-action">Find Customer</strong><p id="next-copy">ค้นลูกค้าก่อน แล้วระบบจะค่อยไป scope/model/details</p></div><div class="mmdop__railCard"><span>Rule</span><strong>Payment first</strong><p>หลัง Create Job ส่งได้เฉพาะ Customer Payment URL ก่อน Official Verify</p></div></aside>
+      <aside class="mmdop__rail"><div class="mmdop__railCard"><span>Next Action</span><strong id="next-action">Find Customer</strong><p id="next-copy">กด Recent หรือค้นลูกค้าก่อน แล้วค่อยไป scope/model/details</p></div><div class="mmdop__railCard"><span>Rule</span><strong>Payment first</strong><p>หลัง Create Job ส่งได้เฉพาะ Customer Payment URL ก่อน Official Verify</p></div></aside>
     </section>
   </main>
   <script>
@@ -154,13 +160,22 @@ export function renderCreateJobPage(): Response {
     function text(value) { return String(value || "").trim(); }
     function setStatus(node, message, bad) { node.textContent = message; node.classList.remove("is-ok", "is-bad"); node.classList.add(bad ? "is-bad" : "is-ok"); }
     function amount() { const value = Number($("amount_thb")?.value || ""); return Number.isFinite(value) && value > 0 ? value : 0; }
-    function escapeHtml(value) { return String(value || "").replace(/[&<>\"']/g, function(c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;","'":"&#39;"}[c] || c; }); }
+    function escapeHtml(value) { return String(value || "").replace(/[&<>\"']/g, function(c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c; }); }
     function first(value) { return String(value || "?").trim().slice(0, 1).toUpperCase() || "?"; }
     function pickRows(data) { return data.clients || data.results || data.records || data.items || data.rows || []; }
     function clientName(row) { return text(row.per_name || row.client_name || row.name || row.display_name || row.nickname || row.line_display_name || row.username || row.id || row.record_id); }
     function clientId(row) { return text(row.client_id || row.record_id || row.id || row.airtable_id || row.line_record_id); }
     function clientSession(row) { return text(row.session_id || row.latest_session_id || row.last_session_id); }
     function clientMeta(row) { return [row.package, row.tier, row.membership_status, row.line_display_name, row.username].filter(Boolean).map(text).join(" · "); }
+    function niceError(error) { const raw = String(error || ""); if (raw === "not_found") return "ไม่พบผลจากคำนี้ · ลอง Recent, Per name, LINE display, เบอร์ หรือ package"; return raw || "backend unavailable"; }
+
+    async function apiJson(path, init) {
+      const res = await fetch(path, Object.assign({ credentials: "include", headers: { accept: "application/json" } }, init || {}));
+      const data = await res.json().catch(function() { return {}; });
+      if (res.status === 404 || data.error === "not_found") return { ok: true, records: [], lookup_empty: true };
+      if (!res.ok || data.ok === false) throw new Error(niceError(data.error || "client_lookup_failed"));
+      return data;
+    }
 
     function selectClient(row) {
       selectedClient = row || null;
@@ -171,13 +186,14 @@ export function renderCreateJobPage(): Response {
       if (session) $("job-session-id").value = session;
       $("summary-client").textContent = name || "ยังไม่เลือก";
       $("next-action").textContent = name ? "Fill job details" : "Find Customer";
-      $("next-copy").textContent = name ? "ใส่ scope/model/details ต่อได้เลย" : "ค้นลูกค้าก่อน แล้วระบบจะค่อยไป scope/model/details";
+      $("next-copy").textContent = name ? "ใส่ scope/model/details ต่อได้เลย" : "กด Recent หรือค้นลูกค้าก่อน แล้วค่อยไป scope/model/details";
+      setStatus(status, name ? "เลือกลูกค้าแล้ว · ต่อไปใส่ scope/model/details" : "Step 1: กด Recent หรือค้นลูกค้าก่อน", false);
       renderClientRows(resultList.__rows || []);
     }
 
     function renderClientRows(rows) {
       resultList.__rows = rows;
-      if (!rows.length) { resultList.innerHTML = '<div class="mmdop__empty">ยังไม่เจอลูกค้า ลองค้นด้วย Per name, LINE, เบอร์ หรือ package</div>'; return; }
+      if (!rows.length) { resultList.innerHTML = '<div class="mmdop__empty">ยังไม่เจอลูกค้า · ลองกด Recent หรือค้นด้วย Per name / LINE / เบอร์ / package</div>'; return; }
       resultList.innerHTML = rows.map(function(row, index) {
         const id = clientId(row);
         const name = clientName(row);
@@ -191,20 +207,19 @@ export function renderCreateJobPage(): Response {
 
     async function loadClients(kind) {
       const q = text(clientQuery.value);
-      if (kind !== "recent" && !q) { setStatus(status, "พิมพ์ชื่อลูกค้า / LINE / เบอร์ / package ก่อนค้นหา", true); return; }
+      if (kind !== "recent" && !q) { setStatus(status, "พิมพ์ชื่อลูกค้า / LINE / เบอร์ / package ก่อนค้นหา หรือกด Recent", true); return; }
       resultList.innerHTML = '<div class="mmdop__empty">กำลังค้นลูกค้า...</div>';
       setStatus(status, kind === "recent" ? "กำลังโหลดลูกค้าล่าสุด..." : "กำลังค้นลูกค้า...", false);
       try {
-        const path = kind === "recent" ? "/v1/admin/clients/recent" : "/v1/admin/clients/lineage-lookup?q=" + encodeURIComponent(q);
-        const res = await fetch(path, { credentials: "include", headers: { accept: "application/json" } });
-        const data = await res.json().catch(function() { return {}; });
-        if (!res.ok || data.ok === false) throw new Error(data.error || "client_lookup_failed");
+        const data = kind === "recent"
+          ? await apiJson("/v1/admin/clients/recent")
+          : await apiJson("/v1/admin/clients/lineage-lookup", { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ query: q, canonical_only: false, allow_manual_fallback: true, source: "create_job_customer_first" }) });
         const rows = pickRows(data);
         renderClientRows(rows);
-        setStatus(status, rows.length ? "เจอลูกค้า " + rows.length + " รายการ · เลือก 1 คนเพื่อสร้างงาน" : "ไม่เจอลูกค้าในผลค้นหา", rows.length === 0);
+        setStatus(status, rows.length ? "เจอลูกค้า " + rows.length + " รายการ · แตะเลือก 1 คน" : "ไม่เจอลูกค้า · ลอง Recent หรือค้นด้วย Per name / LINE / เบอร์", rows.length === 0);
       } catch (error) {
-        resultList.innerHTML = '<div class="mmdop__empty">ค้นลูกค้าไม่สำเร็จ · '+escapeHtml(error && error.message || 'backend unavailable')+'</div>';
-        setStatus(status, "ค้นลูกค้าไม่สำเร็จ · " + String(error && error.message || "backend unavailable"), true);
+        resultList.innerHTML = '<div class="mmdop__empty">ค้นลูกค้าไม่สำเร็จ · '+escapeHtml(niceError(error && error.message))+'</div>';
+        setStatus(status, "ค้นลูกค้าไม่สำเร็จ · " + niceError(error && error.message), true);
       }
     }
 
@@ -214,7 +229,7 @@ export function renderCreateJobPage(): Response {
     searchClientButton.addEventListener("click", function() { loadClients("search"); });
     recentClientButton.addEventListener("click", function() { loadClients("recent"); });
     clientQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadClients("search"); });
-    clearClientButton.addEventListener("click", function() { selectedClient = null; $("job-client-id").value = ""; $("job-client-name").value = ""; $("job-session-id").value = ""; $("summary-client").textContent = "ยังไม่เลือก"; renderClientRows(resultList.__rows || []); setStatus(status, "ล้างลูกค้าแล้ว · ค้นหาใหม่ได้เลย", false); });
+    clearClientButton.addEventListener("click", function() { selectedClient = null; $("job-client-id").value = ""; $("job-client-name").value = ""; $("job-session-id").value = ""; $("summary-client").textContent = "ยังไม่เลือก"; renderClientRows(resultList.__rows || []); setStatus(status, "ล้างลูกค้าแล้ว · กด Recent หรือค้นหาใหม่", false); });
     ["job-visibility", "job-model-key", "amount_thb"].forEach(function(id) { $(id).addEventListener("input", refreshSummary); $(id).addEventListener("change", refreshSummary); });
     boardEnabled.addEventListener("change", refreshBoardState);
     boardText.addEventListener("input", refreshBoardState);
