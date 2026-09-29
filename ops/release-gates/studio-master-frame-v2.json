@@ -4,12 +4,59 @@
   "decision": "hold",
   "auto_generation_enabled": false,
   "gates": {
-    "webflow_studio_v2_published": {"status": "pending", "evidence": ""},
-    "studio_page_smoke": {"status": "pending", "evidence": ""},
-    "profile_main_selected": {"status": "pending", "evidence": ""},
-    "exactly_one_generation_job": {"status": "pending", "evidence": ""},
-    "studio_preview_received": {"status": "pending", "evidence": ""},
-    "identity_and_stats_review": {"status": "pending", "evidence": ""},
-    "finished_png_returned": {"status": "pending", "evidence": ""}
-  }
+    "webflow_studio_v2_published": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "studio_page_smoke": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "profile_main_selected": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "exactly_one_generation_job": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "studio_preview_received": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "identity_and_stats_review": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "finished_png_returned": {
+      "status": "pending",
+      "evidence": ""
+    }
+  },
+  "pilot": {
+    "display_name": "Gaz",
+    "aliases": [
+      "Gazz"
+    ],
+    "canonical_model_record_id": null,
+    "status": "selected_waiting_self_onboard",
+    "selection_evidence": "Owner-selected real pilot. Historical MMD evidence confirms Gaz/Gazz as one person with one completed 2026 job for an SVIP client. Model-safe payout was 25,000 THB and is owner-attested paid. History import recxHkkc9PKRMDlh7 and payout ledger recRIlWBbhqC4rpas are the canonical historical evidence. Canonical Airtable Models record and Model Media Assets are not materialized yet.",
+    "next_required_action": "Gaz opens MMD APP through published LINE/LIFF. Resolve or create exactly one canonical Gaz Model record, then bind the existing history import and payout evidence to that verified record. After Gaz selects or uploads one approved profile_main, allow exactly one controlled card generation.",
+    "historical_evidence": {
+      "history_import_record_id": "recxHkkc9PKRMDlh7",
+      "payout_evidence_record_id": "recRIlWBbhqC4rpas",
+      "job_date": "2026-03-18",
+      "customer_class": "SVIP",
+      "model_payout_thb": 25000,
+      "payout_status": "paid_owner_attested",
+      "bind_after_real_liff_identity": true
+    }
+  },
+  "notes": [
+    "Do not substitute Book EI or Atom IX while Gaz is the selected pilot.",
+    "Do not fabricate Gaz identity, LINE subject, height/weight, category, or media to satisfy the production gate.",
+    "Treat Gaz and Gazz as one person. Do not create a duplicate historical job or duplicate the 25,000 THB payout.",
+    "The 25,000 THB figure is Gaz's model payout and is already paid by owner attestation.",
+    "MODEL_CARD_AUTO_ENABLED remains false until controlled Gaz E2E evidence is complete."
+  ]
 }
