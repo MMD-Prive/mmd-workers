@@ -29,3 +29,14 @@ The release evidence is recorded in ops/release-gates/studio-master-frame-v2.jso
 - Do not synthesize a Model record, LINE identity, dimensions, category, or profile media for acceptance.
 - After canonical identity exists, Gaz selects/uploads one approved `profile_main`; Studio then runs exactly one controlled card draft for review.
 - Book EI and Atom IX are not substitutes for this pilot unless the owner explicitly changes the pilot again.
+
+### Gaz historical binding evidence
+
+- Existing historical identity: Gaz / Gazz are the same person.
+- Completed MMD job: 18 March 2026 with client class SVIP.
+- Model-safe payout: **25,000 THB**, owner-attested paid; historical slip is not required.
+- Canonical historical records: `recxHkkc9PKRMDlh7` (Model History Imports) and `recRIlWBbhqC4rpas` (Payout Evidence).
+- Source candidate: `LINEOA-0164-011296`.
+- This is one job and one payout only. Do not double count the history import and payout ledger.
+- Customer-facing pricing remains private and is not part of the Model card/pilot surface.
+- Bind these historical records only after Gaz enters through real Model LIFF and the canonical Model record is resolved.
