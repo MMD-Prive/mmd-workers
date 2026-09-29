@@ -303,13 +303,15 @@ const LINE_CARD_21829530_TRIGGERS = Object.freeze({
   "BOOK EI": { display_intent: "", action_type: "text" },
   EMs11: { display_intent: "", action_type: "text" },
   GWs19: { display_intent: "", action_type: "text" },
-  EMs19: { display_intent: "", action_type: "text" },
+  TAH: { display_intent: "Tah", action_type: "text" },
 });
 const CARD_MODEL_ENTRY_NAMES = new Set(Object.keys(LINE_CARD_21829530_TRIGGERS));
 
 export function resolveLineCardCampaignTrigger(text = "") {
-  const cardTrigger = asString(text).normalize("NFKC").trim();
-  if (!Object.hasOwn(LINE_CARD_21829530_TRIGGERS, cardTrigger)) return null;
+  const rawTrigger = asString(text).normalize("NFKC").trim();
+  const cardTrigger = Object.keys(LINE_CARD_21829530_TRIGGERS)
+    .find((key) => key.toLowerCase() === rawTrigger.toLowerCase());
+  if (!cardTrigger) return null;
   const config = LINE_CARD_21829530_TRIGGERS[cardTrigger];
   return {
     card_id: LINE_CARD_21829530_ID,

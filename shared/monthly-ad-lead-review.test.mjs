@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { reviewMonthlyAdLead } from "./monthly-ad-lead-review.mjs";
 
-const event = { card_id: "21829530", trigger: "EMs19", line_user_id: "U0123456789abcdef0123456789abcdef" };
+const event = { card_id: "21829530", trigger: "TAH", line_user_id: "U0123456789abcdef0123456789abcdef" };
 function readers(overrides = {}) {
   const calls = [];
   const wrap = (name, value) => async () => { calls.push(name); return value; };

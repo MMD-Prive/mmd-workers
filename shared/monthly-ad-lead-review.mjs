@@ -1,6 +1,6 @@
 // The inbound review order is deliberate. This module prepares Per's review;
 // the caller owns authorization, the durable LINE receipt and any reply.
-const TRIGGERS = new Set(["JASPER", "NANO", "EMs01", "BOOK EI", "EMs11", "GWs19", "EMs19"]);
+const TRIGGERS = new Set(["JASPER", "NANO", "EMs01", "BOOK EI", "EMs11", "GWs19", "TAH"]);
 
 function safeAddress(rename) {
   const first = String(rename || "").split(/\s+[-–—|]\s+/u)[0].trim();
