@@ -108,10 +108,14 @@ export async function handleAdminJobBoardPublish(request, env, actor) {
     }, upstream.status >= 400 ? upstream.status : 502);
   }
 
-  const broadcastUrl = buildModelJobBoardBroadcastLink({
+  const fallbackBroadcastUrl = buildModelJobBoardBroadcastLink({
     source: "line_model_group",
     job_id: data.job.id,
   });
+  const upstreamBroadcastUrl = clean(data.job.broadcast_url, 300);
+  const broadcastUrl = /^https:\/\/(?:www\.)?mmdbkk\.com\/j\/[A-F0-9]{12}$/i.test(upstreamBroadcastUrl)
+    ? upstreamBroadcastUrl
+    : fallbackBroadcastUrl;
 
   return json({
     ok: true,
