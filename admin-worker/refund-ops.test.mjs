@@ -368,7 +368,7 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
     assert.match(payload.customer_confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
-    assert.match(payload.admin_job_url, /^https:\/\/www\.mmdbkk\.com\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-20260929$/);
+    assert.match(payload.admin_job_url, /^https:\/\/www\.mmdbkk\.com\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-20260929&session_id=sess_film_j$/);
     assert.match(payload.model_job_app_url, /^https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
     assert.match(payload.model_job_app_url, /intent=job_board/);
     assert.match(payload.model_job_app_url, /job_id=JOB-FILM-J-20260929/);

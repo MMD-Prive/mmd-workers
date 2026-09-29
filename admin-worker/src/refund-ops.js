@@ -408,9 +408,9 @@ function adminJobUrl(payload = {}) {
   const jobId = clean(payload.job_id, 120);
   const sessionId = clean(payload.session_id, 120);
   const url = new URL("https://www.mmdbkk.com/internal/admin/jobs/all");
+  if (!jobId && !sessionId) return "https://www.mmdbkk.com/internal/admin/refunds";
   if (jobId) url.searchParams.set("job_id", jobId);
-  else if (sessionId) url.searchParams.set("session_id", sessionId);
-  else return "https://www.mmdbkk.com/internal/admin/refunds";
+  if (sessionId) url.searchParams.set("session_id", sessionId);
   return url.toString();
 }
 
