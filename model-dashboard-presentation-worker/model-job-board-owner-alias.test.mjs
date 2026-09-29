@@ -42,3 +42,21 @@ test("job board LINE shell uses owner alias copy, not apply copy", () => {
   assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
   assert.match(html, /model_alias/);
 });
+
+
+test("public job board entry is Welcome V2 application copy", () => {
+  const html = modelLiffDigitalBootstrapHtml({
+    liffId: "2010864854-N34SgCqq",
+    fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",
+    sdk: "https://static.line-scdn.net/liff/edge/2/sdk.js",
+    jobBoard: {
+      job_id: "JOB-20260929-05F8B7666EC7",
+      next: "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-05F8B7666EC7",
+    },
+  });
+  assert.match(html, /WELCOME V2 · สมัครงานนี้กับ MMD/);
+  assert.match(html, /เปิด MMD APP เพื่อสมัครงานนี้/);
+  assert.match(html, /งานที่คุณกดมาจะถูกเก็บไว้/);
+  assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
+  assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
+});
