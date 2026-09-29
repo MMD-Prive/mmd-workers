@@ -20,6 +20,13 @@ export { ModelCardCoordinator } from "./model-card-automation.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 import {
+  handleRefundOpsRequest,
+  REFUND_OPS_PAGE_PATH,
+  REFUND_OPS_API_PREFIX,
+  REFUND_OPS_INTERNAL_INTAKE,
+  REFUND_RECEIPT_MEDIA_PATH,
+} from "./refund-ops.js";
+import {
   handleKenjiModelAccessRpc,
   KENJI_MODEL_ACCESS_RPC_PATH,
 } from "./kenji-model-access-rpc.js";
@@ -255,6 +262,22 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+
+    // Refund Ops is owned by the active credential-bound admin gate.
+    // Do not delegate authenticated browser/API traffic back to legacy index.js,
+    // which would perform a second cookie/session auth pass and can strand a
+    // valid owner browser in the Refund Ops error boundary.
+    if (
+      path === REFUND_OPS_PAGE_PATH ||
+      path.startsWith(`${REFUND_OPS_API_PREFIX}/`) ||
+      path === REFUND_OPS_INTERNAL_INTAKE ||
+      path === REFUND_RECEIPT_MEDIA_PATH
+    ) {
+      const refundOps = await handleRefundOpsRequest(request, env, {
+        isAuthed: async () => true,
+      });
+      if (refundOps) return refundOps;
+    }
 
     if (path === PAYMENT_ISSUER_DIAGNOSTIC_PATH) {
       return handlePaymentIssuerDiagnostic(request, env);
