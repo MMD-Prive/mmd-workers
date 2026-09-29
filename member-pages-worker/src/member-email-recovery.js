@@ -12,7 +12,7 @@ const APPROVED_ORIGINS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
-const BODY_KEYS = new Set(["email", "member_id_candidate"]);
+const BODY_KEYS = new Set(["email", "member_id_candidate", "phone", "telegram_username"]);
 const BROWSER_IDENTITY_FIELDS = new Set([
   "line_user_id",
   "lineUserId",
@@ -63,14 +63,22 @@ export async function handleMemberEmailRecovery(request, env = {}) {
 
   const email = normalizeEmail(parsed.body.email);
   const memberIdCandidate = normalizeMemberId(parsed.body.member_id_candidate);
-  if (!email && !memberIdCandidate) {
-    return json({ ok: false, error: { code: "RECOVERY_IDENTITY_REQUIRED", message: "กรอกอีเมลเดิมหรือ Member ID เพื่อให้ MMD ช่วยค้นข้อมูลเดิมครับ" } }, 400);
+  const phone = normalizePhone(parsed.body.phone);
+  const telegramUsername = normalizeTelegramUsername(parsed.body.telegram_username);
+  if (!email && !memberIdCandidate && !phone && !telegramUsername) {
+    return json({ ok: false, error: { code: "RECOVERY_IDENTITY_REQUIRED", message: "กรอกอีเมลเดิม เบอร์โทร Telegram หรือ Member ID เพื่อให้ MMD ช่วยค้นข้อมูลเดิมครับ" } }, 400);
   }
   if (parsed.body.email && !email) {
     return json({ ok: false, error: { code: "RECOVERY_EMAIL_INVALID", message: "อีเมลไม่ถูกต้องครับ" } }, 400);
   }
   if (parsed.body.member_id_candidate && !memberIdCandidate) {
     return json({ ok: false, error: { code: "RECOVERY_MEMBER_ID_INVALID", message: "Member ID ไม่ถูกต้องครับ" } }, 400);
+  }
+  if (parsed.body.phone && !phone) {
+    return json({ ok: false, error: { code: "RECOVERY_PHONE_INVALID", message: "เบอร์โทรไม่ถูกต้องครับ" } }, 400);
+  }
+  if (parsed.body.telegram_username && !telegramUsername) {
+    return json({ ok: false, error: { code: "RECOVERY_TELEGRAM_INVALID", message: "Telegram username ไม่ถูกต้องครับ" } }, 400);
   }
 
   const auth = await authenticateAndRotate(request, env);
@@ -91,11 +99,13 @@ export async function handleMemberEmailRecovery(request, env = {}) {
   if (!lineUserId) return commitError(env, auth, "RECOVERY_LINE_IDENTITY_MISSING", "เปิดหน้านี้ใหม่ผ่าน LINE ของ MMD เพื่อยืนยันตัวตนครับ", 409);
 
   try {
-    const result = await inspectRecoveryEvidence(env, { lineUserId, email, memberIdCandidate });
+    const result = await inspectRecoveryEvidence(env, { lineUserId, email, memberIdCandidate, phone, telegramUsername });
     const merge = await persistMergeRequest(env, {
       lineUserId,
       email,
       memberIdCandidate,
+      phone,
+      telegramUsername,
       result,
       sessionRecordId: safeRecordId(auth.session.gateway_record_id || auth.session.renewal_session_record_id),
     });
@@ -103,7 +113,7 @@ export async function handleMemberEmailRecovery(request, env = {}) {
     auth.session.identity_recovery_state = result.state;
     auth.session.identity_recovery_request_id = merge.merge_request_id;
     auth.session.identity_recovery_checked_at = new Date().toISOString();
-    if (result.state === "known_identity") auth.session.next_screen_key = "renew_member_lookup";
+    if (result.state === "known_identity") auth.session.next_screen_key = email ? "renew_member_lookup" : "manual_review";
     if (result.state === "review_required") auth.session.next_screen_key = "manual_review";
 
     return commitJson(env, auth, {
@@ -111,14 +121,12 @@ export async function handleMemberEmailRecovery(request, env = {}) {
       data: {
         state: result.state,
         merge_request_id: merge.merge_request_id,
-        verification_required: result.state === "known_identity",
+        verification_required: result.state === "known_identity" && Boolean(email),
         verification_channel: result.state === "known_identity" && email ? "email" : null,
         verification_available: false,
-        next_action: result.state === "known_identity"
+        next_action: result.state === "known_identity" && email
           ? "email_verification_pending"
-          : result.state === "review_required"
-            ? "manual_review"
-            : "manual_review",
+          : "manual_review",
         grants: noGrants(),
       },
     }, 200);
@@ -128,12 +136,14 @@ export async function handleMemberEmailRecovery(request, env = {}) {
   }
 }
 
-export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = "", memberIdCandidate = "" } = {}) {
+export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = "", memberIdCandidate = "", phone = "", telegramUsername = "" } = {}) {
   const lineId = canonicalLineId(lineUserId);
   if (!lineId) throw new Error("invalid_line_identity");
   const normalizedEmail = normalizeEmail(email);
   const memberHint = normalizeMemberId(memberIdCandidate);
-  if (!normalizedEmail && !memberHint) throw new Error("recovery_identity_required");
+  const normalizedPhone = normalizePhone(phone);
+  const normalizedTelegramUsername = normalizeTelegramUsername(telegramUsername);
+  if (!normalizedEmail && !memberHint && !normalizedPhone && !normalizedTelegramUsername) throw new Error("recovery_identity_required");
 
   const memberTable = tableName(env.AIRTABLE_TABLE_MEMBERS, TABLES.members);
   const clientTable = tableName(env.AIRTABLE_TABLE_CLIENTS, TABLES.clients);
@@ -144,14 +154,20 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
   const memberEmailField = String(env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email").trim();
   const memberIdField = String(env.AIRTABLE_MEMBERS_MEMBER_ID_FIELD || "member_id").trim();
   const clientEmailFields = csvFields(env.AIRTABLE_CLIENTS_EMAIL_FIELDS || "Contact Email,email");
+  const clientPhoneFields = csvFields(env.AIRTABLE_CLIENTS_PHONE_FIELDS || "Phone Number,phone");
+  const clientTelegramFields = csvFields(env.AIRTABLE_CLIENTS_TELEGRAM_FIELDS || "telegram_username,Telegram Username");
   const accessEvidenceEmailField = String(env.AIRTABLE_CLIENT_ACCESS_EVIDENCE_EMAIL_FIELD || "identity_email").trim();
   const accessEvidenceClientField = String(env.AIRTABLE_CLIENT_ACCESS_EVIDENCE_CLIENT_FIELD || "client").trim();
   const accessEvidenceReviewStatusField = String(env.AIRTABLE_CLIENT_ACCESS_EVIDENCE_REVIEW_STATUS_FIELD || "review_status").trim();
+  const lineOfcPhoneFields = csvFields(env.AIRTABLE_LINE_OFC_PHONE_FIELDS || "phone_candidate,Phone");
+  const lineOfcTelegramFields = csvFields(env.AIRTABLE_LINE_OFC_TELEGRAM_FIELDS || "telegram_username_candidate,telegram_username,Telegram Username");
 
   const queries = [];
   queries.push(normalizedEmail
     ? airtableList(env, memberTable, { filterByFormula: `LOWER({${memberEmailField}})=${formulaString(normalizedEmail)}`, maxRecords: 3 })
-    : airtableList(env, memberTable, { filterByFormula: `{${memberIdField}}=${formulaString(memberHint)}`, maxRecords: 3 }));
+    : memberHint
+      ? airtableList(env, memberTable, { filterByFormula: `{${memberIdField}}=${formulaString(memberHint)}`, maxRecords: 3 })
+      : Promise.resolve([]));
   queries.push(normalizedEmail
     ? airtableList(env, clientTable, { filterByFormula: emailFormula(clientEmailFields, normalizedEmail), maxRecords: 3 })
     : Promise.resolve([]));
@@ -164,8 +180,30 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
   queries.push(normalizedEmail
     ? airtableList(env, lineOfcTable, { filterByFormula: `LOWER({email_candidate})=${formulaString(normalizedEmail)}`, maxRecords: 6 })
     : Promise.resolve([]));
+  queries.push(normalizedPhone
+    ? airtableListOptional(env, clientTable, { filterByFormula: phoneFormula(clientPhoneFields, normalizedPhone), maxRecords: 3 })
+    : Promise.resolve([]));
+  queries.push(normalizedTelegramUsername
+    ? airtableListOptional(env, clientTable, { filterByFormula: exactTextFormula(clientTelegramFields, normalizedTelegramUsername), maxRecords: 3 })
+    : Promise.resolve([]));
+  queries.push(normalizedPhone
+    ? airtableListOptional(env, lineOfcTable, { filterByFormula: phoneFormula(lineOfcPhoneFields, normalizedPhone), maxRecords: 6 })
+    : Promise.resolve([]));
+  queries.push(normalizedTelegramUsername
+    ? airtableListOptional(env, lineOfcTable, { filterByFormula: exactTextFormula(lineOfcTelegramFields, normalizedTelegramUsername), maxRecords: 6 })
+    : Promise.resolve([]));
 
-  const [members, clients, preSession, rawAccessEvidence, lineOfc] = await Promise.all(queries);
+  const [
+    members,
+    clients,
+    preSession,
+    rawAccessEvidence,
+    lineOfc,
+    clientsPhone,
+    clientsTelegram,
+    lineOfcPhone,
+    lineOfcTelegram,
+  ] = await Promise.all(queries);
   const accessEvidence = approvedLinkedAccessEvidence(rawAccessEvidence, normalizedEmail, {
     emailField: accessEvidenceEmailField,
     clientField: accessEvidenceClientField,
@@ -182,12 +220,23 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
 
   const memberIds = recordIds(members);
   const directClientIds = recordIds(clients);
+  const phoneClientIds = recordIds(clientsPhone);
+  const telegramClientIds = recordIds(clientsTelegram);
   const accessClientIds = accessEvidenceClientIds(accessEvidence, accessEvidenceClientField);
-  const clientIds = uniqueRecordIds([...directClientIds, ...accessClientIds]);
+  const clientIds = uniqueRecordIds([...directClientIds, ...phoneClientIds, ...telegramClientIds, ...accessClientIds]);
   const memberHintIds = recordIds(memberHintMatches);
   const canonicalAmbiguous = memberIds.length > 1 || clientIds.length > 1 || memberHintIds.length > 1;
   const hintConflict = memberIds.length === 1 && memberHintIds.length === 1 && memberIds[0] !== memberHintIds[0];
-  const known = members.length + clients.length + preSession.length + accessEvidence.length + lineOfc.length + memberHintMatches.length > 0;
+  const known = members.length
+    + clients.length
+    + preSession.length
+    + accessEvidence.length
+    + lineOfc.length
+    + memberHintMatches.length
+    + clientsPhone.length
+    + clientsTelegram.length
+    + lineOfcPhone.length
+    + lineOfcTelegram.length > 0;
 
   if (canonicalAmbiguous || hintConflict) {
     return {
@@ -197,7 +246,7 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
       candidateMemberIds: uniqueRecordIds([...memberIds, ...memberHintIds]).slice(0, 2),
       candidateClientIds: clientIds.slice(0, 2),
       preSessionIds: recordIds(preSession).slice(0, 2),
-      evidenceSources: evidenceSources({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches }),
+      evidenceSources: evidenceSources({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches, clientsPhone, clientsTelegram, lineOfcPhone, lineOfcTelegram }),
     };
   }
 
@@ -213,7 +262,7 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
     };
   }
 
-  const match = strongestMatch({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches });
+  const match = strongestMatch({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches, clientsPhone, clientsTelegram, lineOfcPhone, lineOfcTelegram });
   return {
     state: "known_identity",
     match_type: match.type,
@@ -221,13 +270,13 @@ export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = ""
     candidateMemberIds: uniqueRecordIds([...memberIds, ...memberHintIds]).slice(0, 1),
     candidateClientIds: clientIds.slice(0, 1),
     preSessionIds: recordIds(preSession).slice(0, 1),
-    evidenceSources: evidenceSources({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches }),
+    evidenceSources: evidenceSources({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches, clientsPhone, clientsTelegram, lineOfcPhone, lineOfcTelegram }),
   };
 }
 
-async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, result, sessionRecordId = "" }) {
+async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, phone = "", telegramUsername = "", result, sessionRecordId = "" }) {
   const table = tableName(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS, TABLES.mergeRequests);
-  const idempotencyKey = await keyedDigest(env, `identity-recovery:${lineUserId}:${email || "-"}:${memberIdCandidate || "-"}`);
+  const idempotencyKey = await keyedDigest(env, `identity-recovery:${lineUserId}:${email || "-"}:${memberIdCandidate || "-"}:${phone || "-"}:${telegramUsername || "-"}`);
   const mergeRequestId = `IMR-${idempotencyKey.slice(0, 20).toUpperCase()}`;
   const existing = await airtableList(env, table, {
     filterByFormula: `{idempotency_key}=${formulaString(idempotencyKey)}`,
@@ -258,6 +307,8 @@ async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, 
       match_confidence: result.confidence,
       evidence_sources: result.evidenceSources,
       email_hash: email ? (await keyedDigest(env, `email:${email}`)).slice(0, 24) : null,
+      phone_hash: phone ? (await keyedDigest(env, `phone:${phone}`)).slice(0, 24) : null,
+      telegram_username_hash: telegramUsername ? (await keyedDigest(env, `telegram:${telegramUsername}`)).slice(0, 24) : null,
       member_id_hint_tail: memberIdCandidate ? memberIdCandidate.slice(-4) : null,
       access_mutated: false,
       points_mutated: false,
@@ -267,6 +318,8 @@ async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, 
     updated_at: now,
   };
   if (email) fields.identity_email = email;
+  if (phone) fields.identity_phone = phone;
+  if (telegramUsername) fields.telegram_username = telegramUsername;
   if (sessionRecordId) fields["LIFF Renewal Session"] = [sessionRecordId];
   if (result.preSessionIds.length) fields["Pre-Session Candidate"] = result.preSessionIds;
   if (result.candidateClientIds.length) fields["Candidate Client"] = result.candidateClientIds;
@@ -276,22 +329,31 @@ async function persistMergeRequest(env, { lineUserId, email, memberIdCandidate, 
   return { merge_request_id: mergeRequestId, record_id: created.id, resumed: false };
 }
 
-function strongestMatch({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches }) {
+function strongestMatch({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches, clientsPhone = [], clientsTelegram = [], lineOfcPhone = [], lineOfcTelegram = [] }) {
   if (members.length || memberHintMatches.length) return { type: "exact_member_email", confidence: 100 };
   if (clients.length) return { type: "exact_client_email", confidence: 95 };
+  if (clientsPhone.length) return { type: "exact_client_phone", confidence: 92 };
+  if (clientsTelegram.length) return { type: "exact_client_telegram", confidence: 92 };
   if (accessEvidence.length) return { type: "client_access_evidence", confidence: 90 };
   if (preSession.length) return { type: "pre_session_email", confidence: 85 };
-  return { type: "line_ofc_email", confidence: 80 };
+  if (lineOfc.length) return { type: "line_ofc_email", confidence: 80 };
+  if (lineOfcPhone.length) return { type: "line_ofc_phone", confidence: 78 };
+  if (lineOfcTelegram.length) return { type: "line_ofc_telegram", confidence: 78 };
+  return { type: "manual_review_hint", confidence: 0 };
 }
 
-function evidenceSources({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches }) {
+function evidenceSources({ members, clients, preSession, accessEvidence, lineOfc, memberHintMatches, clientsPhone = [], clientsTelegram = [], lineOfcPhone = [], lineOfcTelegram = [] }) {
   const sources = [];
   if (members.length) sources.push("members_email");
   if (memberHintMatches.length) sources.push("members_member_id");
   if (clients.length) sources.push("clients_email");
+  if (clientsPhone.length) sources.push("clients_phone");
+  if (clientsTelegram.length) sources.push("clients_telegram_username");
   if (preSession.length) sources.push("pre_session_identity_seed");
   if (accessEvidence.length) sources.push("client_access_evidence");
   if (lineOfc.length) sources.push("line_ofc_email_candidate");
+  if (lineOfcPhone.length) sources.push("line_ofc_phone_candidate");
+  if (lineOfcTelegram.length) sources.push("line_ofc_telegram_candidate");
   return sources;
 }
 
@@ -321,6 +383,14 @@ function emailFormula(fields, email) {
   const checks = fields.map((field) => `LOWER({${field}})=${formulaString(email)}`);
   return checks.length > 1 ? `OR(${checks.join(",")})` : checks[0] || "FALSE()";
 }
+function phoneFormula(fields, phone) {
+  const checks = fields.map((field) => `REGEX_REPLACE({${field}}&"","[^0-9]","")=${formulaString(phone)}`);
+  return checks.length > 1 ? `OR(${checks.join(",")})` : checks[0] || "FALSE()";
+}
+function exactTextFormula(fields, value) {
+  const checks = fields.map((field) => `LOWER({${field}}&"")=${formulaString(String(value || "").toLowerCase())}`);
+  return checks.length > 1 ? `OR(${checks.join(",")})` : checks[0] || "FALSE()";
+}
 function recordIds(records) { return uniqueRecordIds((Array.isArray(records) ? records : []).map((record) => safeRecordId(record?.id))); }
 function uniqueRecordIds(ids) { return [...new Set((Array.isArray(ids) ? ids : []).map(safeRecordId).filter(Boolean))]; }
 function safeRecordId(value) { const id = String(value || "").trim(); return /^rec[A-Za-z0-9]{6,32}$/.test(id) ? id : ""; }
@@ -328,6 +398,12 @@ function tableName(value, fallback) { return String(value || fallback).trim() ||
 function csvFields(value) { return String(value || "").split(",").map((item) => item.trim()).filter(Boolean); }
 function normalizeEmail(value) { const email = String(value || "").trim().toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254 ? email : ""; }
 function normalizeMemberId(value) { const id = String(value || "").trim(); return id && id.length <= 160 && /^[A-Za-z0-9._~-]+$/.test(id) ? id : ""; }
+function normalizePhone(value) { const phone = String(value || "").replace(/[^0-9]/g, ""); return phone.length >= 7 && phone.length <= 15 ? phone : ""; }
+function normalizeTelegramUsername(value) {
+  let username = String(value || "").trim().toLowerCase();
+  username = username.replace(/^https?:\/\/(?:www\.)?t\.me\//, "").replace(/^@/, "").split(/[\s/?#]/)[0];
+  return /^[a-z0-9_]{5,32}$/.test(username) ? username : "";
+}
 function canonicalLineId(value) { const id = String(value || "").trim(); return /^U[0-9a-f]{32}$/i.test(id) ? id : ""; }
 function formulaString(value) { return `'${String(value || "").replace(/'/g, "\\'")}'`; }
 function normalizePath(pathname) { return String(pathname || "/").toLowerCase().replace(/\/{2,}/g, "/"); }
@@ -392,6 +468,14 @@ async function airtableList(env, tableNameValue, params = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(data.records)) throw new Error(`airtable_${response.status || "malformed"}`);
   return data.records;
+}
+async function airtableListOptional(env, tableNameValue, params = {}) {
+  try {
+    return await airtableList(env, tableNameValue, params);
+  } catch (error) {
+    if (String(error?.message || "").includes("airtable_422")) return [];
+    throw error;
+  }
 }
 async function airtableCreate(env, tableNameValue, fields) {
   const url = `https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableNameValue)}`;
