@@ -8,18 +8,20 @@ function fixture() {
   const tables = {
     Proofs: [{ id: "recProof", fields: { proof_id: "proof-1", payment_ref: "pay-1", amount_thb: 7500, payment: ["recPayment"], status: "pending" } }],
     Payments: [{ id: "recPayment", fields: { payment_ref: "pay-1", session_id: "sess-1", amount_thb: 7500, payment_stage: "deposit" } }],
-    Sessions: [{ id: "recSession", fields: { session_id: "sess-1", fldi9ZdoiUXzSv1rI: "https://www.mmdbkk.com/sigil/confirm/job-confirmation?t=customer", fld0mFma9J9yfEaKb: "https://www.mmdbkk.com/sigil/confirm/job-model?t=model" } }],
+    Sessions: [{ id: "recSession", fields: { session_id: "sess-1", amount_thb: 25000, fldi9ZdoiUXzSv1rI: "https://www.mmdbkk.com/sigil/confirm/job-confirmation?t=customer", fld0mFma9J9yfEaKb: "https://www.mmdbkk.com/sigil/confirm/job-model?t=model" } }],
     Audit: [],
   };
   let settlements = 0;
+  let lastSettlementBody = null;
   let paymentAccepted = true;
   const env = {
     AIRTABLE_BASE_ID: "app-test", AIRTABLE_API_KEY: "test",
     AIRTABLE_TABLE_PAYMENT_PROOFS: "Proofs", AIRTABLE_TABLE_PAYMENTS: "Payments", AIRTABLE_TABLE_SESSIONS: "Sessions", AIRTABLE_TABLE_ACCESS_LOG: "Audit",
     AUTH_SERVICE_ADMIN_TO_PAYMENTS: "test", TELEGRAM_INTERNAL_SEND_URL: "https://telegram.example/internal/send", INTERNAL_TOKEN: "test",
     LINE_SLIP_EVIDENCE: memoryR2(),
-    PAYMENTS_WORKER: { async fetch() {
+    PAYMENTS_WORKER: { async fetch(request) {
       settlements++;
+      lastSettlementBody = await request.clone().json();
       if (!paymentAccepted) return Response.json({ ok: false, error: "review_failed" }, { status: 409 });
       tables.Proofs[0].fields.status = "verified";
       return Response.json({ ok: true, payment_ref: "pay-1", payment_stage: "deposit" });
@@ -42,7 +44,7 @@ function fixture() {
     } },
   };
   return {
-    env, tables, settlements: () => settlements, rejectPayment() { paymentAccepted = false; },
+    env, tables, settlements: () => settlements, lastSettlementBody: () => lastSettlementBody, rejectPayment() { paymentAccepted = false; },
     async review(overrides = {}) {
       return handlePaymentReviewRequest(new Request("https://www.mmdbkk.com/v1/admin/payments/review", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -80,6 +82,31 @@ test("same review key recovers failed notifications after approval without anoth
     assert.equal((await h.review({ proof_id: "different-proof" })).status, 409);
     assert.equal(sends, 2);
   } finally { globalThis.fetch = original; }
+});
+
+test("deposit below 30 percent is accepted for owner review instead of rejected", async () => {
+  const h = fixture();
+  h.tables.Proofs[0].fields.amount_thb = 2000;
+  h.tables.Payments[0].fields.amount_thb = 3000;
+  h.tables.Sessions[0].fields.amount_thb = 10000;
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ ok: true }, { status: 200 });
+  try {
+    const response = await h.review({ idempotency_key: "review-under-30" });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.money_truth_changed, true);
+    assert.equal(payload.deposit_review.standard_minimum_percent, 30);
+    assert.equal(payload.deposit_review.standard_minimum_thb, 3000);
+    assert.equal(payload.deposit_review.received_thb, 2000);
+    assert.equal(payload.deposit_review.received_percent, 20);
+    assert.equal(payload.deposit_review.shortfall_thb, 1000);
+    assert.equal(payload.deposit_review.under_standard, true);
+    assert.equal(h.lastSettlementBody().amount_thb, 2000);
+    assert.equal(h.lastSettlementBody().payment_stage, "deposit");
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test("failed Official Verify never enqueues or dispatches confirmation links", async () => {
