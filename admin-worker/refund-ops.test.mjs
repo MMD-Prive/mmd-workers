@@ -280,3 +280,19 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("refund owner page renders a clickable upload trigger and well-formed reference field", async () => {
+  const response = await handleRefundOpsRequest(
+    new Request("https://www.mmdbkk.com/internal/admin/refunds"),
+    env(),
+    { isAuthed:async () => true },
+  );
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  assert.match(body, /data-refund-ref placeholder="optional" value="[^"]*">/);
+  assert.match(body, /data-upload-trigger>อัปโหลดสลิปคืน<\/button>/);
+  assert.match(body, /data-file type="file" accept="image\/jpeg,image\/png,image\/webp"/);
+  assert.match(body, /trigger\.onclick=\(\)=>file\.click\(\)/);
+  assert.doesNotMatch(body, /data-refund-ref placeholder="optional" value="[^"]*>\<\/div>/);
+});
