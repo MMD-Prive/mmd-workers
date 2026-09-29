@@ -4,12 +4,48 @@
   "decision": "hold",
   "auto_generation_enabled": false,
   "gates": {
-    "webflow_studio_v2_published": {"status": "pending", "evidence": ""},
-    "studio_page_smoke": {"status": "pending", "evidence": ""},
-    "profile_main_selected": {"status": "pending", "evidence": ""},
-    "exactly_one_generation_job": {"status": "pending", "evidence": ""},
-    "studio_preview_received": {"status": "pending", "evidence": ""},
-    "identity_and_stats_review": {"status": "pending", "evidence": ""},
-    "finished_png_returned": {"status": "pending", "evidence": ""}
-  }
+    "webflow_studio_v2_published": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "studio_page_smoke": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "profile_main_selected": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "exactly_one_generation_job": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "studio_preview_received": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "identity_and_stats_review": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "finished_png_returned": {
+      "status": "pending",
+      "evidence": ""
+    }
+  },
+  "pilot": {
+    "display_name": "Gaz",
+    "aliases": [
+      "Gazz"
+    ],
+    "canonical_model_record_id": null,
+    "status": "selected_waiting_self_onboard",
+    "selection_evidence": "Owner-selected real pilot. Historical MMD_2022 row confirms Gazz as an existing MMD model identity; canonical Airtable Models record and Model Media Assets are not materialized yet.",
+    "next_required_action": "Gaz opens MMD APP through published LINE/LIFF, resolves or creates the canonical Model record, and selects/uploads one approved main profile photo before exactly one controlled card generation is allowed."
+  },
+  "notes": [
+    "Do not substitute Book EI or Atom IX while Gaz is the selected pilot.",
+    "Do not fabricate Gaz identity, LINE subject, height/weight, category, or media to satisfy the production gate.",
+    "MODEL_CARD_AUTO_ENABLED remains false until controlled Gaz E2E evidence is complete."
+  ]
 }
