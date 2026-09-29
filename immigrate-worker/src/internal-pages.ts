@@ -16,10 +16,11 @@ function page(title: string, body: string): Response {
 <html lang="th">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="robots" content="noindex,nofollow" />
 <title>${esc(title)}</title>
 <style>
-:root{color-scheme:dark;--bg:#030303;--panel:rgba(13,11,9,.9);--line:rgba(214,170,69,.22);--line2:rgba(255,255,255,.12);--text:rgba(255,248,231,.96);--muted:rgba(255,248,231,.64);--gold:#d6aa45;--gold2:#ffe08b;--green:#8ed5a9;--red:#ff8d8d;--font:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 14% 0%,rgba(214,170,69,.16),transparent 28%),radial-gradient(circle at 88% 18%,rgba(214,170,69,.1),transparent 32%),linear-gradient(135deg,#040302,#090706 48%,#000);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}.mmdop{min-height:100vh;padding:18px}.mmdop__shell{width:min(1680px,100%);margin:0 auto}.mmdop__topbar{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--line);border-radius:26px;background:rgba(0,0,0,.55);backdrop-filter:blur(18px);box-shadow:0 28px 80px rgba(0,0,0,.42)}.mmdop__brand{display:flex;align-items:center;gap:14px}.mmdop__logo{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;border:1px solid rgba(214,170,69,.34);background:rgba(214,170,69,.08)}.mmdop__logo img{width:40px;height:auto;display:block}.mmdop__brand strong,.mmdop__kicker,.mmdop__panelTop span,.mmdop__panelHead span,.mmdop__sectionHead span,.mmdop__choice span,.mmdop__folder span,.mmdop__progress div,.mmdop__summary span,.mmdop__railCard span{color:var(--gold);letter-spacing:.16em;text-transform:uppercase;font-size:11px;font-weight:950}.mmdop__brand span{display:block;margin-top:4px;color:var(--muted);font-size:13px}.mmdop__ghost,.mmdop__connection,.mmdop__btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.045);color:var(--text);font-weight:900;cursor:pointer}.mmdop__connection{color:var(--muted)}.mmdop__connection i{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.36)}.is-ok{border-color:rgba(142,213,169,.32)!important;color:rgba(224,255,236,.92)!important;background:rgba(142,213,169,.07)!important}.is-warn{border-color:rgba(214,170,69,.32)!important;color:var(--gold2)!important;background:rgba(214,170,69,.07)!important}.is-bad{border-color:rgba(255,141,141,.32)!important;color:rgba(255,220,220,.94)!important;background:rgba(255,141,141,.07)!important}.mmdop__command{display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,.84fr);gap:16px;margin-top:16px}.mmdop__commandLeft,.mmdop__clientSearch,.mmdop__panel,.mmdop__gate,.mmdop__railCard,.mmdop__summary article,.mmdop__status{border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,rgba(18,15,11,.88),rgba(0,0,0,.76));box-shadow:0 24px 72px rgba(0,0,0,.48);overflow:hidden}.mmdop__commandLeft,.mmdop__clientSearch{padding:clamp(22px,3vw,38px)}h1{margin:16px 0 0;font-size:clamp(46px,5.2vw,84px);line-height:.88;letter-spacing:-.06em}h2{margin:8px 0 8px;font-size:clamp(28px,2.8vw,42px);line-height:.98;letter-spacing:-.045em}p{color:var(--muted);line-height:1.68}code{color:var(--gold2);background:rgba(214,170,69,.08);border:1px solid rgba(214,170,69,.18);border-radius:8px;padding:1px 6px}.mmdop__flowMini,.mmdop__progress,.mmdop__summary,.mmdop__layout,.mmdop__formGrid,.mmdop__choiceGrid,.mmdop__folderGrid,.mmdop__lineageGrid,.mmdop__gateGrid,.mmdop__outputGrid{display:grid;gap:12px}.mmdop__flowMini{grid-template-columns:repeat(5,1fr);margin-top:24px}.mmdop__flowMini div,.mmdop__progress div,.mmdop__summary article{border:1px solid var(--line2);border-radius:18px;background:rgba(255,255,255,.035);padding:14px}.mmdop__flowMini div.is-active,.mmdop__progress div.is-active{color:#090704;background:linear-gradient(135deg,#ffe48b,#c99937);border-color:rgba(255,224,139,.52)}.mmdop__progress{grid-template-columns:repeat(8,1fr);margin-top:16px}.mmdop__summary{grid-template-columns:repeat(7,1fr);margin-top:16px}.mmdop__summary strong{display:block;margin-top:8px;font-size:18px;word-break:break-word}.mmdop__layout{grid-template-columns:minmax(0,1fr) 330px;margin-top:16px;align-items:start}.mmdop__main{display:grid;gap:16px;min-width:0}.mmdop__rail{position:sticky;top:16px;display:grid;gap:12px}.mmdop__railCard{padding:18px}.mmdop__railCard strong{display:block;margin-top:8px;font-size:24px;line-height:1.05;letter-spacing:-.04em}.mmdop__hookList{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:10px}.mmdop__hookList li{display:grid;grid-template-columns:10px 1fr;gap:9px;color:var(--muted)}.mmdop__hookList i{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.32);margin-top:5px}.mmdop__panelHead,.mmdop__panelTop,.mmdop__gateTop,.mmdop__sectionHead,.mmdop__createDock{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.mmdop__panelHead{padding:22px;border-bottom:1px solid var(--line2)}.mmdop__section,.mmdop__clientResults{padding:22px}.mmdop__lineageGrid{grid-template-columns:repeat(4,1fr);padding:16px 22px 22px}.mmdop__formGrid--2{grid-template-columns:repeat(2,1fr)}.mmdop__formGrid--4{grid-template-columns:repeat(4,1fr)}.mmdop__searchBar{display:grid;grid-template-columns:1fr auto auto;gap:10px;margin-top:18px}.mmdop__quickFilters,.mmdop__actions,.mmdop__copyRow{display:flex;gap:10px;flex-wrap:wrap}.mmdop__quickFilters{margin-top:12px}.mmdop__quickFilters button{min-height:34px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.045);color:var(--muted);padding:0 12px;font-weight:850;cursor:pointer}.mmdop__btn--gold{color:#090704;border-color:rgba(255,224,139,.58);background:linear-gradient(135deg,#ffe48b,#c99937 55%,#f8d876)}.mmdop__btn--soft{color:var(--gold2);border-color:rgba(214,170,69,.3);background:rgba(214,170,69,.08)}.mmdop__btn:disabled{opacity:.46;cursor:not-allowed}.mmdop__input,.mmdop__textarea{width:100%;min-height:49px;border-radius:15px;border:1px solid var(--line2);background:rgba(0,0,0,.42);color:var(--text);padding:0 14px;outline:none}.mmdop__input--big{min-height:56px;font-size:16px}.mmdop__textarea{min-height:104px;padding:13px 14px;resize:vertical;line-height:1.6}.mmdop__textarea--message{min-height:142px}.mmdop__field span,.mmdop__gateGrid label span{display:block;margin-bottom:7px;color:var(--muted);font-size:12px;font-weight:850}.mmdop__field em{color:var(--gold);font-style:normal}.mmdop__empty{min-height:150px;display:grid;place-items:center;text-align:center;color:var(--muted);border:1px dashed var(--line2);border-radius:20px;background:rgba(255,255,255,.025);padding:18px}.mmdop__empty--small{min-height:88px}.mmdop__clientCard,.mmdop__selectedClient,.mmdop__modelCard{width:100%;display:grid;grid-template-columns:54px 1fr auto;gap:14px;align-items:center;padding:16px;border-radius:22px;border:1px solid var(--line2);background:rgba(0,0,0,.42);color:inherit;text-align:left}.mmdop__clientCard.is-selected{border-color:rgba(255,224,139,.5);background:rgba(214,170,69,.08)}.mmdop__avatar,.mmdop__clientAvatar,.mmdop__modelIcon{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;color:var(--gold2);border:1px solid rgba(214,170,69,.25);background:rgba(214,170,69,.08);font-weight:950}.mmdop__tags{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:6px}.mmdop__tag{min-height:25px;display:inline-flex;align-items:center;border-radius:999px;border:1px solid var(--line2);padding:0 9px;color:var(--muted);font-size:11px;font-weight:850}.mmdop__tag--gold{color:var(--gold2);border-color:rgba(214,170,69,.3);background:rgba(214,170,69,.08)}.mmdop__tag--green{color:rgba(224,255,236,.92);border-color:rgba(142,213,169,.28);background:rgba(142,213,169,.08)}.mmdop__choiceGrid,.mmdop__folderGrid{grid-template-columns:repeat(2,1fr);padding:22px}.mmdop__choice,.mmdop__folder{min-height:170px;padding:20px;border-radius:24px;border:1px solid var(--line2);background:radial-gradient(circle at 90% 0%,rgba(214,170,69,.14),transparent 36%),rgba(255,255,255,.035);color:inherit;text-align:left;cursor:pointer}.mmdop__choice.is-selected,.mmdop__folder.is-selected{border-color:rgba(255,224,139,.58);background:rgba(214,170,69,.09)}.mmdop__choice strong,.mmdop__folder strong{display:block;margin-top:12px;font-size:34px;line-height:.98;letter-spacing:-.045em}.mmdop__choice em,.mmdop__folder em{display:inline-flex;margin-top:14px;color:var(--gold2);font-style:normal;font-size:12px;font-weight:950;letter-spacing:.12em;text-transform:uppercase}.mmdop__gate{padding:20px}.mmdop__gateGrid{grid-template-columns:repeat(4,1fr)}.mmdop__notice{margin:12px 22px 22px;padding:13px 14px;border:1px solid var(--line2);border-radius:16px;background:rgba(255,255,255,.035);color:var(--muted)}.mmdop__gate .mmdop__notice{margin:12px 0 0}.mmdop__createDock{position:sticky;bottom:12px;z-index:3;margin:0 18px 18px;padding:16px 18px;border-radius:22px;border:1px solid rgba(214,170,69,.25);background:rgba(0,0,0,.82);backdrop-filter:blur(18px)}.mmdop__debug pre{white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;padding:18px;color:var(--muted)}.mmdop__outputGrid{grid-template-columns:repeat(4,1fr);padding:22px}.mmdop__outputGrid div{padding:16px;border-radius:18px;border:1px solid var(--line2);background:rgba(255,255,255,.035)}.mmdop__status{padding:16px 18px}.admin-menu{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:16px}.admin-menu a{padding:24px;border-radius:28px;border:1px solid var(--line);background:linear-gradient(145deg,rgba(18,15,11,.88),rgba(0,0,0,.76));box-shadow:0 24px 72px rgba(0,0,0,.48)}.admin-menu strong{display:block;font-size:34px;line-height:1;letter-spacing:-.04em}.admin-menu span{display:block;margin-top:10px;color:var(--muted);line-height:1.6}@media(max-width:1180px){.mmdop__command,.mmdop__layout{grid-template-columns:1fr}.mmdop__rail{position:static;grid-template-columns:repeat(2,1fr)}.mmdop__summary{grid-template-columns:repeat(3,1fr)}.mmdop__progress{grid-template-columns:repeat(4,1fr)}.mmdop__lineageGrid,.mmdop__gateGrid,.mmdop__outputGrid{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.mmdop{padding:12px}.mmdop__topbar,.mmdop__panelHead,.mmdop__createDock,.mmdop__gateTop{flex-direction:column;align-items:flex-start}.mmdop__flowMini,.mmdop__progress,.mmdop__summary,.mmdop__rail,.mmdop__choiceGrid,.mmdop__folderGrid,.mmdop__lineageGrid,.mmdop__gateGrid,.mmdop__outputGrid,.mmdop__formGrid--2,.mmdop__formGrid--4,.mmdop__searchBar,.admin-menu{grid-template-columns:1fr}.mmdop__clientCard,.mmdop__selectedClient,.mmdop__modelCard{grid-template-columns:54px 1fr}.mmdop__tags{grid-column:1/-1;justify-content:flex-start}.mmdop__btn,.mmdop__ghost,.mmdop__connection{width:100%}}
+:root{color-scheme:dark;--bg:#050403;--panel:#12100d;--soft:rgba(255,255,255,.055);--line:rgba(214,170,69,.24);--line2:rgba(255,255,255,.12);--text:#fff8e8;--muted:rgba(255,248,232,.66);--gold:#d6aa45;--gold2:#ffe08b;--red:#ff8d8d;--green:#8ed5a9;--font:Inter,"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 16% 0%,rgba(214,170,69,.14),transparent 30%),linear-gradient(135deg,#050403,#0b0907 56%,#000);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}.mmdop{min-height:100vh;padding:18px}.mmdop__shell{width:min(1480px,100%);margin:0 auto}.mmdop__topbar,.mmdop__panel,.mmdop__clientSearch,.mmdop__commandLeft,.mmdop__railCard,.mmdop__status{border:1px solid var(--line);border-radius:26px;background:linear-gradient(145deg,rgba(18,15,11,.92),rgba(0,0,0,.78));box-shadow:0 22px 64px rgba(0,0,0,.42)}.mmdop__topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px}.mmdop__brand{display:flex;gap:12px;align-items:center}.mmdop__logo{width:48px;height:48px;border-radius:17px;display:grid;place-items:center;border:1px solid rgba(214,170,69,.35);background:rgba(214,170,69,.08)}.mmdop__logo img{width:38px}.mmdop__brand strong,.mmdop__kicker,.mmdop__panelHead span,.mmdop__step,.mmdop__field span,.mmdop__railCard span{color:var(--gold);letter-spacing:.13em;text-transform:uppercase;font-size:11px;font-weight:950}.mmdop__brand small{display:block;color:var(--muted);margin-top:2px}.mmdop__ghost,.mmdop__btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.045);color:var(--text);font-weight:900;cursor:pointer}.mmdop__btn--gold{border-color:rgba(255,224,139,.58);background:linear-gradient(135deg,#ffe48b,#c99937 58%,#f8d876);color:#0b0703}.mmdop__btn--soft{border-color:rgba(214,170,69,.32);color:var(--gold2);background:rgba(214,170,69,.08)}.mmdop__btn:disabled{opacity:.42;cursor:not-allowed}.mmdop__command{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.72fr);gap:16px;margin-top:16px}.mmdop__commandLeft,.mmdop__clientSearch{padding:clamp(22px,3vw,34px)}h1{margin:14px 0 0;font-size:clamp(42px,5.2vw,76px);line-height:.92;letter-spacing:-.055em}h2{margin:6px 0 6px;font-size:clamp(26px,2.6vw,38px);line-height:1;letter-spacing:-.035em}p{color:var(--muted);line-height:1.68}.mmdop__flowMini,.mmdop__progress,.mmdop__summary,.mmdop__layout,.mmdop__formGrid,.mmdop__searchBar,.mmdop__copyRow{display:grid;gap:12px}.mmdop__flowMini{grid-template-columns:repeat(6,1fr);margin-top:22px}.mmdop__step,.mmdop__summary article{border:1px solid var(--line2);border-radius:16px;background:rgba(255,255,255,.035);padding:12px}.mmdop__step.is-active{color:#090704;background:linear-gradient(135deg,#ffe48b,#c99937);border-color:rgba(255,224,139,.58)}.mmdop__summary{grid-template-columns:repeat(5,1fr);margin-top:14px}.mmdop__summary strong{display:block;margin-top:7px;font-size:18px;word-break:break-word}.mmdop__layout{grid-template-columns:minmax(0,1fr) 320px;margin-top:16px;align-items:start}.mmdop__main,.mmdop__rail{display:grid;gap:14px}.mmdop__rail{position:sticky;top:16px}.mmdop__railCard{padding:18px}.mmdop__railCard strong{display:block;margin-top:8px;font-size:24px;line-height:1.08;letter-spacing:-.03em}.mmdop__panel{overflow:hidden}.mmdop__panelHead{display:flex;justify-content:space-between;gap:14px;padding:20px 22px;border-bottom:1px solid var(--line2)}.mmdop__section{padding:20px 22px}.mmdop__formGrid--2{grid-template-columns:repeat(2,1fr)}.mmdop__formGrid--3{grid-template-columns:repeat(3,1fr)}.mmdop__formGrid--4{grid-template-columns:repeat(4,1fr)}.mmdop__searchBar{grid-template-columns:1fr auto auto}.mmdop__input,.mmdop__textarea{width:100%;min-height:49px;border-radius:15px;border:1px solid var(--line2);background:rgba(0,0,0,.42);color:var(--text);padding:0 14px;outline:none}.mmdop__input--big{min-height:56px;font-size:16px}.mmdop__textarea{min-height:116px;padding:13px 14px;resize:vertical;line-height:1.6}.mmdop__field span{display:block;margin-bottom:7px}.mmdop__empty{min-height:92px;display:grid;place-items:center;text-align:center;border:1px dashed var(--line2);border-radius:18px;color:var(--muted);background:rgba(255,255,255,.025);padding:14px}.mmdop__clientResults{display:grid;gap:10px;margin-top:14px}.mmdop__clientCard{width:100%;display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:14px;border-radius:20px;border:1px solid var(--line2);background:rgba(0,0,0,.36);color:inherit;text-align:left;cursor:pointer}.mmdop__clientCard.is-selected{border-color:rgba(255,224,139,.58);background:rgba(214,170,69,.09)}.mmdop__avatar{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;color:var(--gold2);border:1px solid rgba(214,170,69,.25);background:rgba(214,170,69,.08);font-weight:950}.mmdop__tag{display:inline-flex;margin:3px 5px 0 0;border-radius:999px;border:1px solid var(--line2);padding:3px 8px;color:var(--muted);font-size:11px;font-weight:850}.mmdop__copyRow{grid-template-columns:repeat(3,max-content);display:flex;gap:10px;flex-wrap:wrap}.mmdop__status{padding:15px 17px}.is-ok{border-color:rgba(142,213,169,.34)!important;color:rgba(224,255,236,.95)!important;background:rgba(142,213,169,.075)!important}.is-bad{border-color:rgba(255,141,141,.34)!important;color:rgba(255,222,222,.96)!important;background:rgba(255,141,141,.075)!important}.mmdop__secondary{border-color:rgba(255,255,255,.1);opacity:.96}.mmdop__secondary .mmdop__panelHead span{color:rgba(255,224,139,.72)}@media(max-width:1040px){.mmdop__command,.mmdop__layout{grid-template-columns:1fr}.mmdop__rail{position:static;grid-template-columns:repeat(2,1fr)}.mmdop__summary{grid-template-columns:repeat(2,1fr)}.mmdop__flowMini{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.mmdop{padding:12px}.mmdop__topbar,.mmdop__panelHead{flex-direction:column;align-items:flex-start}.mmdop__searchBar,.mmdop__formGrid--2,.mmdop__formGrid--3,.mmdop__formGrid--4,.mmdop__rail{grid-template-columns:1fr}.mmdop__clientCard{grid-template-columns:52px 1fr}.mmdop__clientCard .mmdop__btn{grid-column:1/-1}.mmdop__btn,.mmdop__ghost{width:100%}}
 </style>
 </head>
 <body>${body}</body>
@@ -31,119 +32,114 @@ function page(title: string, body: string): Response {
   });
 }
 
-function topbar(subtitle: string): string {
-  return `<header class="mmdop__topbar">
-  <a class="mmdop__brand" href="/internal/admin/control-room" aria-label="MMD SIGIL Control Room">
-    <div class="mmdop__logo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e9d25e264799b7c277e309_MMD%20SIGIL%20Trans%20no%20SIGIL.png" alt="MMD SIGIL" /></div>
-    <div><strong>MMD SIGIL</strong><span>${esc(subtitle)}</span></div>
-  </a>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;">
-    <a class="mmdop__ghost" href="/internal/admin/control-room">Control Room</a>
-    <a class="mmdop__ghost" href="/internal/admin/kenji">Kenji</a>
-    <button class="mmdop__ghost" type="button" data-op-check-session>Check Session</button>
-    <div class="mmdop__connection" data-op-connection><i></i><span>Checking</span></div>
-  </div>
-</header>`;
+function topbar(title: string): string {
+  return `<header class="mmdop__topbar"><div class="mmdop__brand"><div class="mmdop__logo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/68f881dc4d79c18ac98c4140_MMD%20PRIVE%20Logo.png" alt="MMD"></div><div><strong>${esc(title)}</strong><small>Boss Per operator surface</small></div></div><a class="mmdop__ghost" href="/internal/admin/control-room">Control Room</a></header>`;
 }
 
-export function renderControlRoomPage(): Response {
-  return page("MMD SIGIL Control Room", `<section class="mmdop"><main class="mmdop__shell">
-    ${topbar("Internal Admin / Control Room")}
-    <section class="mmdop__command">
-      <div class="mmdop__commandLeft"><div class="mmdop__kicker">Worker-rendered Internal Pages</div><h1>Control Room.</h1><p>หน้านี้เป็นทางเข้าไปยัง Worker routes เท่านั้น ไม่ใช่ Webflow page tree และไม่ duplicate UI ใน Webflow</p></div>
-      <aside class="mmdop__clientSearch"><div class="mmdop__panelTop"><div><span>Primary Routes</span><h2>Internal Links</h2><p>ใช้ route จริงด้านล่างนี้เป็น canonical</p></div></div></aside>
-    </section>
-    <section class="admin-menu">
-      <a href="/internal/admin/create-session"><strong>Create Session</strong><span>Canonical route: /internal/admin/create-session</span></a>
-      <a href="/internal/admin/jobs/create-job"><strong>Create Job</strong><span>Canonical route: /internal/admin/jobs/create-job</span></a>
-      <a href="/sigil/board"><strong>Campaigns</strong><span>Review campaigns in the private SIGIL Board</span></a>
-    </section>
-  </main></section>`);
-}
+const createSessionConfig = `window.MMD_CREATE_SESSION_CONFIG={adminBase:"",mock:new URLSearchParams(location.search).has("mock"),debug:new URLSearchParams(location.search).has("debug"),endpoints:{authMe:"/v1/admin/auth/me",ping:"/v1/admin/ping",clientLookup:"/v1/admin/clients/lineage-lookup",recentClients:"/v1/admin/clients/recent",modelSearch:"/v1/admin/models/search",saveDraft:"/v1/admin/job/draft",createSession:"/v1/admin/create-session",pushLine:"/v1/admin/line/push"}};`;
 
 export function renderCreateSessionPage(_env: InternalPageEnv): Response {
   return page("MMD SIGIL Create Session", `<section class="mmdop" data-mmd-create-session-pro data-admin-base=""><main class="mmdop__shell">
     ${topbar("Create Session / Client Lineage")}
     <section class="mmdop__command">
-      <div class="mmdop__commandLeft"><div class="mmdop__kicker">Operator Surface · Worker-rendered</div><h1>Find client. Verify lineage. Create session.</h1><p>ค้นลูกค้าจาก package / member / LINE lineage ก่อน แล้วค่อยเลือก Public หรือ Private, เลือกแฟ้ม Model, ตรวจ Telegram Gate และให้ backend คืนลิงก์พร้อม <code>?t=</code></p><div class="mmdop__flowMini"><div class="is-active" data-op-mini="client"><span>01</span><strong>Client</strong></div><div data-op-mini="work"><span>02</span><strong>Work</strong></div><div data-op-mini="model"><span>03</span><strong>Model</strong></div><div data-op-mini="gate"><span>04</span><strong>Gate</strong></div><div data-op-mini="create"><span>05</span><strong>Create</strong></div></div></div>
-      <aside class="mmdop__clientSearch" id="client-search"><div class="mmdop__panelTop"><div><span>First Action</span><h2>Client Lineage Search</h2><p>ค้นจากชื่อเล่น / username / เบอร์ / LINE / package / legacy tag</p></div><b data-op-search-mode>Cloud</b></div><div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" type="text" placeholder="เช่น รัช VIP, man 24, line_user_id, #purchased, premium" data-op-client-query /><button class="mmdop__btn mmdop__btn--gold" type="button" data-op-search-client>Search</button><button class="mmdop__btn" type="button" data-op-demo-client>Demo</button></div><div class="mmdop__quickFilters"><button type="button" data-op-quick-query="#purchased">#purchased</button><button type="button" data-op-quick-query="-vip-">VIP</button><button type="button" data-op-quick-query="premium">Premium</button><button type="button" data-op-quick-query="telegram missing">TG Missing</button></div></aside>
+      <div class="mmdop__commandLeft"><div class="mmdop__kicker">Operator Surface · Worker-rendered</div><h1>Find client. Verify lineage. Create session.</h1><p>ค้นลูกค้าจาก package / member / LINE lineage ก่อน แล้วค่อยเลือก Public หรือ Private, เลือกแฟ้ม Model, ตรวจ Telegram Gate และให้ backend คืนลิงก์พร้อม <code>?t=</code></p><div class="mmdop__flowMini"><div class="mmdop__step is-active">01 Client</div><div class="mmdop__step">02 Work</div><div class="mmdop__step">03 Model</div><div class="mmdop__step">04 Gate</div><div class="mmdop__step">05 Create</div><div class="mmdop__step">06 Output</div></div></div>
+      <aside class="mmdop__clientSearch"><div><span>First Action</span><h2>Client Lineage Search</h2><p>ค้นจากชื่อเล่น / username / เบอร์ / LINE / package / legacy tag</p></div><div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" type="text" placeholder="เช่น รัช VIP, line_user_id, premium" data-op-client-query /><button class="mmdop__btn mmdop__btn--gold" type="button" data-op-search-client>Search</button><button class="mmdop__btn" type="button" data-op-load-recent>Recent</button></div></aside>
     </section>
-    <section class="mmdop__progress"><div class="is-active" data-op-step="client">1. Find Client</div><div data-op-step="lineage">2. Verify Lineage</div><div data-op-step="work">3. Work Type</div><div data-op-step="folder">4. Model Folder</div><div data-op-step="model">5. Model</div><div data-op-step="gate">6. Telegram</div><div data-op-step="details">7. Details</div><div data-op-step="output">8. Output</div></section>
-    <section class="mmdop__summary"><article><span>Client</span><strong data-op-stat-client>-</strong></article><article><span>Package</span><strong data-op-stat-package>-</strong></article><article><span>Work</span><strong data-op-stat-work>-</strong></article><article><span>Folder</span><strong data-op-stat-folder>-</strong></article><article><span>Model</span><strong data-op-stat-model>-</strong></article><article><span>Gate</span><strong data-op-stat-gate>Waiting</strong></article><article><span>Status</span><strong data-op-stat-status>Not ready</strong></article></section>
-    <section class="mmdop__layout"><div class="mmdop__main">
-      <section class="mmdop__panel" id="client-results"><div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าจาก lineage</h2><p>ผลลัพธ์ควรขุดจาก package signup, member record, client record, LINE identity และ legacy tags</p></div><div class="mmdop__actions"><button class="mmdop__btn mmdop__btn--soft" type="button" data-op-load-recent>Recent</button><button class="mmdop__btn" type="button" data-op-clear-client>Clear</button></div></div><div class="mmdop__clientResults" data-op-client-results><div class="mmdop__empty">ค้นหาลูกค้าก่อนสร้าง session — หน้านี้ไม่เริ่มจาก Model แล้วค่ะ</div></div></section>
-      <section class="mmdop__panel" id="lineage-panel"><div class="mmdop__panelHead"><div><span>Step 02</span><h2>Verify Lineage</h2><p>ตรวจ package, tier, membership, LINE identity และ tag ก่อนส่งเข้า session</p></div><div class="mmdop__lineageBadge" data-op-lineage-badge>Not selected</div></div><div class="mmdop__selectedClient"><div class="mmdop__avatar" data-op-client-initial>C</div><div><span>Selected Client</span><strong data-op-selected-client-name>-</strong><small data-op-selected-client-meta>-</small></div><b data-op-selected-confidence>-</b></div><div class="mmdop__lineageGrid"><label class="mmdop__field"><span>Client Name</span><input class="mmdop__input" type="text" data-op-client-name /></label><label class="mmdop__field"><span>Username</span><input class="mmdop__input" type="text" data-op-username readonly /></label><label class="mmdop__field"><span>Package / Tier</span><input class="mmdop__input" type="text" data-op-package readonly /></label><label class="mmdop__field"><span>Membership Status</span><input class="mmdop__input" type="text" data-op-membership-status readonly /></label><label class="mmdop__field"><span>LINE Display Name</span><input class="mmdop__input" type="text" data-op-line-display readonly /></label><label class="mmdop__field"><span>LINE User ID</span><input class="mmdop__input" type="text" data-op-line-user-id readonly /></label><label class="mmdop__field"><span>LINE Record ID</span><input class="mmdop__input" type="text" data-op-line-record-id readonly /></label><label class="mmdop__field"><span>Legacy Tags</span><input class="mmdop__input" type="text" data-op-legacy-tags readonly /></label></div><div class="mmdop__notice" data-op-lineage-notice>ยังไม่ได้เลือกลูกค้า</div></section>
-      <section class="mmdop__panel" id="work-panel"><div class="mmdop__panelHead"><div><span>Step 03</span><h2>เลือกประเภทงาน</h2><p>Public / Private คือ work type หลัก ส่วน Travel / Extreme / VIP / PN คือแฟ้ม Model</p></div></div><div class="mmdop__choiceGrid"><button class="mmdop__choice" type="button" data-op-work-type="public"><span>PUBLIC WORK</span><strong>Public Work</strong><p>ใช้แฟ้ม Travel Model หรือ Extreme Model และอนุญาต Telegram pending ได้ก่อน final readiness</p><em>Choose Public</em></button><button class="mmdop__choice" type="button" data-op-work-type="private"><span>PRIVATE WORK</span><strong>Private Work</strong><p>ใช้แฟ้ม VIP หรือ PN และต้องผ่าน Telegram hard gate ก่อน activate</p><em>Choose Private</em></button></div></section>
-      <section class="mmdop__panel" id="model-panel"><div class="mmdop__panelHead"><div><span>Step 04 / 05</span><h2>แฟ้ม Model และตัว Model</h2><p data-op-folder-helper>เลือก work type ก่อน ระบบจะแสดงแฟ้มที่ถูกต้อง</p></div><div class="mmdop__actions"><button class="mmdop__btn mmdop__btn--soft" type="button" data-op-refresh-models>Refresh Models</button></div></div><div class="mmdop__folderGrid" data-op-folder-grid><div class="mmdop__empty">เลือก Public Work หรือ Private Work ก่อน</div></div><div class="mmdop__section"><div class="mmdop__sectionHead"><span>Model Selection</span><b data-op-model-rule>-</b></div><div class="mmdop__formGrid mmdop__formGrid--2"><label class="mmdop__field"><span>Model</span><select class="mmdop__input" data-op-model-select><option value="">เลือกแฟ้ม Model ก่อน</option></select></label><label class="mmdop__field"><span>Model Lookup Key</span><input class="mmdop__input" type="text" data-op-model-lookup-key readonly /></label><label class="mmdop__field"><span>Model Pool</span><input class="mmdop__input" type="text" data-op-model-pool readonly /></label></div><div class="mmdop__modelPreview" data-op-model-preview><div class="mmdop__empty mmdop__empty--small">ยังไม่ได้เลือก Model</div></div></div></section>
-      <section class="mmdop__gate" id="gate-panel"><div class="mmdop__gateTop"><div><span>Step 06</span><strong>Telegram Gate</strong><p>Telegram เป็นช่องทางเสริม: Member optional · Model ต้อง verified ก่อน Ready to Work แต่ไม่ block Create Job</p></div><b data-op-gate-label>Waiting</b></div><div class="mmdop__gateGrid"><label><span>Customer Telegram</span><input class="mmdop__input" type="text" placeholder="@username" data-op-customer-telegram /></label><label><span>Customer Status</span><select class="mmdop__input" data-op-customer-telegram-status><option value="missing">missing</option><option value="invited">invited</option><option value="linked">linked</option><option value="verified">verified</option></select></label><label><span>Model Telegram</span><input class="mmdop__input" type="text" placeholder="@model" data-op-model-telegram /></label><label><span>Model Status</span><select class="mmdop__input" data-op-model-telegram-status><option value="missing">missing</option><option value="invited">invited</option><option value="linked">linked</option><option value="verified">verified</option></select></label></div><div class="mmdop__notice" data-op-gate-notice>เลือกประเภทงานก่อน ระบบจะประเมิน Telegram Gate ให้</div></section>
-      <section class="mmdop__panel" id="details-panel"><div class="mmdop__panelHead"><div><span>Step 07</span><h2>Job Details</h2><p>กรอกข้อมูลที่จำเป็น แล้วให้ backend สร้าง session / token / return links</p></div><div class="mmdop__actions"><button class="mmdop__btn mmdop__btn--soft" type="button" data-op-save-draft>Save Cloud Draft</button><button class="mmdop__btn" type="button" data-op-fill-demo-job>Fill Demo</button></div></div><div class="mmdop__section"><div class="mmdop__sectionHead"><span>Schedule</span><b>Time & Location</b></div><div class="mmdop__formGrid mmdop__formGrid--4"><label class="mmdop__field"><span>Date</span><input class="mmdop__input" type="date" data-op-date /></label><label class="mmdop__field"><span>Start</span><input class="mmdop__input" type="time" data-op-start /></label><label class="mmdop__field"><span>Duration</span><select class="mmdop__input" data-op-duration></select></label><label class="mmdop__field"><span>End</span><input class="mmdop__input" type="text" data-op-end readonly /></label></div><div class="mmdop__formGrid mmdop__formGrid--2" style="margin-top:12px;"><label class="mmdop__field"><span>Location</span><input class="mmdop__input" type="text" placeholder="Hotel / private location" data-op-location /></label><label class="mmdop__field"><span>Google Map URL</span><input class="mmdop__input" type="url" placeholder="https://maps.app.goo.gl/..." data-op-map /></label></div></div><div class="mmdop__section"><div class="mmdop__sectionHead"><span>Payment</span><b>Session Ledger</b></div><div class="mmdop__formGrid mmdop__formGrid--4"><label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" type="number" min="0" step="1" placeholder="8000" data-op-amount /></label><label class="mmdop__field"><span>Payment Type</span><select class="mmdop__input" data-op-payment-type><option value="full">full</option><option value="deposit">deposit</option><option value="final">final</option><option value="tips">tips</option></select></label><label class="mmdop__field"><span>Payment Method</span><select class="mmdop__input" data-op-payment-method><option value="promptpay">PromptPay</option><option value="bank_transfer">Bank Transfer</option><option value="paypal_card">Credit Card / PayPal</option><option value="cash">Cash</option></select></label><label class="mmdop__field"><span>Points Mode</span><select class="mmdop__input" data-op-points-mode><option value="auto">Auto</option><option value="none">No points</option><option value="manual">Manual review</option></select></label></div></div><div class="mmdop__section"><div class="mmdop__sectionHead"><span>Human Support</span><b>Back-office</b></div><div class="mmdop__formGrid mmdop__formGrid--2"><label class="mmdop__field"><span>Human Assistant</span><select class="mmdop__input" data-op-human-assistant><option value="Ewvon">Ewvon</option><option value="Per">Per</option><option value="Unassigned">Assign later</option></select></label><label class="mmdop__field"><span>Escalation Owner</span><select class="mmdop__input" data-op-escalation-owner><option value="Boss Per">Boss Per</option><option value="Per">Per</option></select></label></div><label class="mmdop__field" style="display:block;margin-top:12px;"><span>Handling Note <em>required for Private Work</em></span><textarea class="mmdop__textarea" placeholder="Private handling / caution / follow-up note" data-op-handling-note></textarea></label><label class="mmdop__field" style="display:block;margin-top:12px;"><span>Operation Note</span><textarea class="mmdop__textarea" placeholder="รายละเอียดงาน / request / สิ่งที่ต้องตามต่อ" data-op-note></textarea></label></div><div class="mmdop__createDock"><div><strong data-op-ready-label>Find client first</strong><span data-op-ready-copy>ระบบจะสร้าง session ผ่าน backend เท่านั้น</span></div><div class="mmdop__actions"><button class="mmdop__btn" type="button" data-op-debug-toggle hidden>System Details</button><button class="mmdop__btn mmdop__btn--gold" type="button" data-op-create disabled>Create Session</button></div></div><details class="mmdop__debug" data-op-debug-panel hidden><summary>System Payload</summary><pre data-op-payload>{}</pre></details></section>
-      <section class="mmdop__panel mmdop__output" data-op-output hidden><div class="mmdop__panelHead"><div><span>Step 08</span><h2>Session Created</h2><p>คัดลอกลิงก์ ส่งข้อความ หรือ push กลับ LINE</p></div><div class="mmdop__actions"><button class="mmdop__btn" type="button" data-op-new>New Session</button></div></div><div class="mmdop__outputGrid"><div><span>Session ID</span><strong data-op-out-session-id>-</strong></div><div><span>Payment Ref</span><strong data-op-out-payment-ref>-</strong></div><div><span>LINE</span><strong data-op-out-line-status>Not sent</strong></div><div><span>Telegram</span><strong data-op-out-telegram-status>Pending</strong></div></div><div class="mmdop__section"><div class="mmdop__sectionHead"><span>Backend Links</span><b>Tokenized with ?t=</b></div><div class="mmdop__formGrid mmdop__formGrid--2"><label class="mmdop__field"><span>Customer Payment URL</span><input class="mmdop__input" type="text" data-op-out-customer-url readonly /></label><label class="mmdop__field"><span>Model URL · after Payment Approve</span><input class="mmdop__input" type="text" data-op-out-model-url readonly /></label><label class="mmdop__field"><span>Member URL · after Payment Approve</span><input class="mmdop__input" type="text" data-op-out-member-url readonly /></label><label class="mmdop__field"><span>Model URL · after Payment Approve</span><input class="mmdop__input" type="text" data-op-out-model-return-url readonly /></label></div><div class="mmdop__copyRow" style="margin-top:14px;"><button class="mmdop__btn mmdop__btn--soft" type="button" data-op-copy-customer-link>Copy Payment Link</button><button class="mmdop__btn mmdop__btn--soft" type="button" data-op-copy-model-link>Model URL after approve</button><button class="mmdop__btn mmdop__btn--gold" type="button" data-op-push-line>Push LINE</button></div></div><div class="mmdop__section"><div class="mmdop__sectionHead"><span>Messages</span><b>Copy-ready</b></div><label class="mmdop__field"><span>Customer Message</span><textarea class="mmdop__textarea mmdop__textarea--message" data-op-out-customer-message readonly></textarea></label><label class="mmdop__field" style="display:block;margin-top:12px;"><span>Model Message</span><textarea class="mmdop__textarea mmdop__textarea--message" data-op-out-model-message readonly></textarea></label><div class="mmdop__copyRow" style="margin-top:14px;"><button class="mmdop__btn" type="button" data-op-copy-customer-msg>Copy Customer Message</button><button class="mmdop__btn" type="button" data-op-copy-model-msg>Copy Model Message</button></div></div></section>
-      <div class="mmdop__status" data-op-status>Ready.</div>
-    </div><aside class="mmdop__rail"><div class="mmdop__railCard"><span>Next Action</span><strong data-op-next-action>Find Client</strong><p data-op-next-copy>ค้นจาก package / member / LINE lineage ก่อน</p></div><div class="mmdop__railCard"><span>System Hooks</span><ul class="mmdop__hookList"><li><i data-op-hook="auth"></i><b>Auth cookie</b><small>/v1/admin/auth/me</small></li><li><i data-op-hook="lineage"></i><b>Client lineage</b><small>/v1/admin/clients/lineage-lookup</small></li><li><i data-op-hook="models"></i><b>Model pool</b><small>/v1/admin/models/search</small></li><li><i data-op-hook="create"></i><b>Create session</b><small>/v1/admin/create-session</small></li><li><i data-op-hook="push"></i><b>LINE push</b><small>/v1/admin/line/push</small></li></ul></div><div class="mmdop__railCard"><span>Model Folder Rule</span><strong data-op-rail-folder>Not selected</strong><p data-op-rail-folder-copy>Public = Travel / Extreme · Private = VIP / PN</p></div></aside></section>
-  </main><script>window.MMD_CREATE_SESSION_CONFIG={adminBase:"",mock:new URLSearchParams(location.search).has("mock"),debug:new URLSearchParams(location.search).has("debug"),endpoints:{authMe:"/v1/admin/auth/me",ping:"/v1/admin/ping",clientLookup:"/v1/admin/clients/lineage-lookup",recentClients:"/v1/admin/clients/recent",modelSearch:"/v1/admin/models/search",saveDraft:"/v1/admin/job/draft",createSession:"/v1/admin/create-session",pushLine:"/v1/admin/line/push"}};</script><script src="/a/create-session.js"></script></section>`);
+    <section class="mmdop__panel" style="margin-top:16px;"><div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าจาก lineage</h2><p>หน้านี้ยังใช้ create-session.js เดิมสำหรับ compatibility</p></div></div><div class="mmdop__section"><div class="mmdop__empty">ค้นหาลูกค้าก่อนสร้าง session</div></div></section>
+  </main><script>${createSessionConfig}</script><script src="/a/create-session.js"></script></section>`);
 }
 
 export function renderCreateJobPage(): Response {
-  return page("MMD Create Job", `<section class="mmdop"><main class="mmdop__shell">
-    ${topbar("Create Job / Job Board")}
+  return page("MMD Create Job", `<section class="mmdop" data-cj-flow="customer-first"><main class="mmdop__shell">
+    ${topbar("Create Job · Customer First")}
     <section class="mmdop__command">
       <div class="mmdop__commandLeft">
-        <div class="mmdop__kicker">Owner Workspace · Worker-rendered</div>
+        <div class="mmdop__kicker">Owner Workspace · Canonical route</div>
         <h1>Create Job.</h1>
-        <p>Canonical route: <code>/internal/admin/jobs/create-job</code> · สร้างงานปกติ หรือเปิดรับ Model แล้วลงกระดานกลางจากหน้าเดียว</p>
+        <p><code>/internal/admin/jobs/create-job</code> ต้องเริ่มจากลูกค้าก่อน ไม่เริ่มจาก Model หรือ Job Board</p>
+        <div class="mmdop__flowMini" aria-label="Create Job flow">
+          <div class="mmdop__step is-active" data-cj-step="customer">01 Customer</div>
+          <div class="mmdop__step" data-cj-step="scope">02 Scope</div>
+          <div class="mmdop__step" data-cj-step="model">03 Model</div>
+          <div class="mmdop__step" data-cj-step="details">04 Details</div>
+          <div class="mmdop__step" data-cj-step="payment">05 Payment</div>
+          <div class="mmdop__step" data-cj-step="output">06 Output</div>
+        </div>
       </div>
-      <aside class="mmdop__clientSearch"><div class="mmdop__panelTop"><div><span>Job Board Flow</span><h2>Publish → LIFF Login V2</h2><p>ลิงก์บรอดทุกใบเข้าหน้า Model Login ก่อนเสมอ · ไม่มี direct Board link</p></div></div></aside>
+      <aside class="mmdop__clientSearch" id="client-search" data-cj-primary-flow="customer-search">
+        <div><span>First Action</span><h2>Customer Search</h2><p>ค้นจาก Per name, LINE, เบอร์, username, package, tier หรือ note ย้อนหลัง</p></div>
+        <div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" id="job-client-query" placeholder="เช่น Shane, Book EI, line user id, เบอร์, VIP" autocomplete="off" /><button class="mmdop__btn mmdop__btn--gold" id="search-client-button" type="button">ค้นลูกค้า</button><button class="mmdop__btn" id="load-recent-clients" type="button">Recent</button></div>
+      </aside>
     </section>
 
-    <section class="mmdop__panel" style="margin-top:16px;">
-      <div class="mmdop__panelHead"><div><span>Create Job</span><h2>Job Builder</h2><p>ข้อมูลธุรกิจจริงยังยึด backend / owner approval เดิม</p></div></div>
-      <div class="mmdop__section">
-        <div class="mmdop__formGrid mmdop__formGrid--2">
-          <label class="mmdop__field"><span>Session ID · งานที่มี Session แล้ว</span><input class="mmdop__input" id="job-session-id" placeholder="sess_..." /></label>
-          <label class="mmdop__field"><span>Public / Private</span><select class="mmdop__input" id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label>
-          <label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required placeholder="10000" /></label>
-          <label class="mmdop__field"><span>Job Date</span><input class="mmdop__input" id="job-date" type="date" /></label>
-          <label class="mmdop__field"><span>Start Time</span><input class="mmdop__input" id="job-start" type="time" /></label>
-          <label class="mmdop__field"><span>Duration</span><input class="mmdop__input" id="job-duration" placeholder="3 ชั่วโมง" /></label>
-          <label class="mmdop__field"><span>Area / Province</span><input class="mmdop__input" id="job-location" placeholder="สุขุมวิท / กรุงเทพฯ" /></label>
-          <label class="mmdop__field"><span>Model Lookup Key · เว้นได้ถ้าเปิดรับ Model</span><input class="mmdop__input" id="job-model-key" placeholder="TMIB-HITO-01" /></label>
-        </div>
-        <label class="mmdop__field" style="display:block;margin-top:12px;"><span>Internal Note</span><textarea class="mmdop__textarea" id="job-note" placeholder="รายละเอียด operation ภายใน"></textarea></label>
-        <div class="mmdop__copyRow" style="margin-top:16px;">
-          <button class="mmdop__btn mmdop__btn--gold" id="create-job-button" type="button">Create Job</button>
-          <a class="mmdop__btn" href="/internal/admin/jobs/create-session">Create Session · Compatibility</a>
-        </div>
-        <div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Ready.</div>
-      </div>
+    <section class="mmdop__summary" aria-label="Create Job summary">
+      <article><span>Customer</span><strong id="summary-client">ยังไม่เลือก</strong></article>
+      <article><span>Scope</span><strong id="summary-scope">Public</strong></article>
+      <article><span>Model</span><strong id="summary-model">รอเลือก</strong></article>
+      <article><span>Payment</span><strong id="summary-payment">0 THB</strong></article>
+      <article><span>Output</span><strong>Payment URL first</strong></article>
     </section>
 
-    <section class="mmdop__panel" style="margin-top:16px;" id="job-board-panel">
-      <div class="mmdop__panelHead"><div><span>Model Job Board</span><h2>เปิดรับ Model / ลงกระดานงาน</h2><p>ข้อความนี้คือรายละเอียดที่ Model เห็นหลังผ่าน LIFF Login V2 · สูงสุด 1,000 ตัวอักษร</p></div></div>
-      <div class="mmdop__section">
-        <label class="mmdop__field" style="display:flex;grid-template-columns:auto 1fr;align-items:center;gap:10px;">
-          <input id="job-board-enabled" type="checkbox" style="width:20px;min-height:20px;" />
-          <span>เปิดรับ Model / ลงกระดานงาน</span>
-        </label>
-        <label class="mmdop__field" style="display:block;margin-top:12px;">
-          <span>รายละเอียดลงกระดาน · <b id="job-board-count">0 / 1000</b></span>
-          <textarea class="mmdop__textarea" id="job-board-text" maxlength="1000" placeholder="อธิบายงาน วันเวลา พื้นที่ สิ่งที่ต้องทำ และข้อมูล public-safe ที่ Model ควรรู้ก่อนกดสนใจ"></textarea>
-        </label>
-        <div class="mmdop__formGrid mmdop__formGrid--2" style="margin-top:12px;">
-          <label class="mmdop__field"><span>เพศลูกค้า · สำหรับ Private cover</span><select class="mmdop__input" id="job-customer-gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่ ชาย-หญิง</option><option value="mixed">หลายเพศ</option></select></label>
-          <label class="mmdop__field"><span>Budget บน Private cover</span><select class="mmdop__input" id="job-budget-disclosure"><option value="hidden">BUDGET · PRIVATE</option><option value="show">แสดงงบที่กรอกไว้</option></select></label>
-        </div>
-        <p style="margin:12px 0 0;color:var(--muted);font-size:13px;line-height:1.55;">เพศลูกค้าใช้ structured field นี้เท่านั้น · ไม่เดาจากชื่อ รสนิยม รูป หรือ Model preference</p>
-        <div class="mmdop__copyRow" style="margin-top:16px;">
-          <button class="mmdop__btn mmdop__btn--gold" id="publish-job-board" type="button">ลงกระดานงาน</button>
-          <button class="mmdop__btn" id="copy-job-board-link" type="button" disabled>Copy Broadcast Link</button>
-        </div>
-        <div class="mmdop__status" id="job-board-status" style="margin-top:16px;">ยังไม่ได้ publish · Broadcast Link จะออกเป็น LIFF Login V2 เท่านั้น</div>
+    <section class="mmdop__layout">
+      <div class="mmdop__main">
+        <section class="mmdop__panel" id="client-results" data-cj-step-panel="customer">
+          <div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าก่อนสร้างงาน</h2><p>ถ้าไม่เจอลูกค้า ให้ค้นด้วยชื่อที่ Per ใช้, LINE OFC, เบอร์, package หรือ note ก่อน ไม่ต้องจำ Session ID เอง</p></div><button class="mmdop__btn" id="clear-client" type="button">Clear</button></div>
+          <div class="mmdop__section"><div class="mmdop__clientResults" id="client-result-list"><div class="mmdop__empty">ค้นหาลูกค้าก่อนสร้างงาน — หน้านี้ไม่เริ่มจาก Model แล้วค่ะ</div></div></div>
+        </section>
+
+        <section class="mmdop__panel" id="selected-client-panel" data-cj-step-panel="lineage">
+          <div class="mmdop__panelHead"><div><span>Step 02</span><h2>Customer lineage</h2><p>ข้อมูลลูกค้าที่เลือกจะถูกส่งไปกับ create job payload เพื่อให้ backend resolve ต่อแบบ fail-closed</p></div></div>
+          <div class="mmdop__section">
+            <div class="mmdop__formGrid mmdop__formGrid--3">
+              <label class="mmdop__field"><span>Client ID</span><input class="mmdop__input" id="job-client-id" readonly placeholder="เลือกจากผลค้นหา" /></label>
+              <label class="mmdop__field"><span>Client / Per Name</span><input class="mmdop__input" id="job-client-name" placeholder="ชื่อลูกค้า" /></label>
+              <label class="mmdop__field"><span>Session ID · optional</span><input class="mmdop__input" id="job-session-id" placeholder="ถ้ามี session เดิม ระบบจะเติมให้" /></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="mmdop__panel" data-cj-step-panel="scope-model-details">
+          <div class="mmdop__panelHead"><div><span>Steps 03-05</span><h2>สร้างงานแบบไม่งง</h2><p>เลือก scope → ใส่โมเดล → วันเวลา/พื้นที่ → ราคา แล้วค่อย Create Job</p></div></div>
+          <div class="mmdop__section">
+            <div class="mmdop__formGrid mmdop__formGrid--4">
+              <label class="mmdop__field"><span>Public / Private</span><select class="mmdop__input" id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label>
+              <label class="mmdop__field"><span>Model Lookup Key</span><input class="mmdop__input" id="job-model-key" placeholder="JASPER / EMs01 / rec..." /></label>
+              <label class="mmdop__field"><span>Job Date</span><input class="mmdop__input" id="job-date" type="date" /></label>
+              <label class="mmdop__field"><span>Start Time</span><input class="mmdop__input" id="job-start" type="time" /></label>
+              <label class="mmdop__field"><span>Duration</span><input class="mmdop__input" id="job-duration" placeholder="3 ชั่วโมง / overnight" /></label>
+              <label class="mmdop__field"><span>Area / Province</span><input class="mmdop__input" id="job-location" placeholder="สุขุมวิท / กรุงเทพฯ" /></label>
+              <label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required placeholder="10000" /></label>
+              <label class="mmdop__field"><span>Payment mode</span><select class="mmdop__input" id="job-payment-mode"><option value="full">เต็มจำนวน</option><option value="deposit">มัดจำ</option><option value="final">ส่วนที่เหลือ</option></select></label>
+            </div>
+            <label class="mmdop__field" style="display:block;margin-top:12px;"><span>Internal Note</span><textarea class="mmdop__textarea" id="job-note" placeholder="รายละเอียด operation ภายใน / ข้อควรระวัง / brief"></textarea></label>
+            <div class="mmdop__copyRow" style="margin-top:16px;"><button class="mmdop__btn mmdop__btn--gold" id="create-job-button" type="button">Create Job</button><a class="mmdop__btn" href="/internal/admin/jobs/create-session">Open full lineage workspace</a></div>
+            <div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Ready · เริ่มจากค้นลูกค้า</div>
+          </div>
+        </section>
+
+        <section class="mmdop__panel mmdop__secondary" id="job-board-panel" data-cj-secondary-flow="model-job-board">
+          <div class="mmdop__panelHead"><div><span>Optional</span><h2>Model Job Board / ลงกระดานงาน</h2><p>ใช้เฉพาะเมื่อยังไม่เลือกโมเดล · เป็น flow รองหลังจากรู้ customer/scope แล้ว</p></div></div>
+          <div class="mmdop__section">
+            <label class="mmdop__field" style="display:flex;align-items:center;gap:10px;"><input id="job-board-enabled" type="checkbox" style="width:20px;min-height:20px;" /><span>เปิดรับ Model / ลงกระดานงาน</span></label>
+            <label class="mmdop__field" style="display:block;margin-top:12px;"><span>รายละเอียดลงกระดาน · <b id="job-board-count">0 / 1000</b></span><textarea id="job-board-text" maxlength="1000" class="mmdop__textarea" placeholder="อธิบายงาน วันเวลา พื้นที่ สิ่งที่ต้องทำ และข้อมูล public-safe ที่ Model ควรรู้ก่อนกดสนใจ"></textarea></label>
+            <div class="mmdop__formGrid mmdop__formGrid--2" style="margin-top:12px;"><label class="mmdop__field"><span>เพศลูกค้า · สำหรับ Private cover</span><select class="mmdop__input" id="job-customer-gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่ ชาย-หญิง</option><option value="mixed">หลายเพศ</option></select></label><label class="mmdop__field"><span>Budget บน Private cover</span><select class="mmdop__input" id="job-budget-disclosure"><option value="hidden">BUDGET · PRIVATE</option><option value="show">แสดงงบที่กรอกไว้</option></select></label></div>
+            <p style="margin:12px 0 0;color:var(--muted);font-size:13px;line-height:1.55;">เพศลูกค้าใช้ structured field นี้เท่านั้น · ไม่เดาจากชื่อ รสนิยม รูป หรือ Model preference</p>
+            <div class="mmdop__copyRow" style="margin-top:16px;"><button class="mmdop__btn mmdop__btn--soft" id="publish-job-board" type="button">ลงกระดานงาน</button><button class="mmdop__btn" id="copy-job-board-link" type="button" disabled>Copy Broadcast Link</button></div>
+            <div class="mmdop__status" id="job-board-status" style="margin-top:16px;">ยังไม่ได้ publish · Broadcast Link จะออกเป็น LIFF Login V2 เท่านั้น</div>
+          </div>
+        </section>
       </div>
+      <aside class="mmdop__rail"><div class="mmdop__railCard"><span>Next Action</span><strong id="next-action">Find Customer</strong><p id="next-copy">ค้นลูกค้าก่อน แล้วระบบจะค่อยไป scope/model/details</p></div><div class="mmdop__railCard"><span>Rule</span><strong>Payment first</strong><p>หลัง Create Job ส่งได้เฉพาะ Customer Payment URL ก่อน Official Verify</p></div></aside>
     </section>
   </main>
   <script>
   (() => {
     const $ = (id) => document.getElementById(id);
+    const clientQuery = $("job-client-query");
+    const resultList = $("client-result-list");
+    const searchClientButton = $("search-client-button");
+    const recentClientButton = $("load-recent-clients");
+    const clearClientButton = $("clear-client");
     const status = $("create-job-status");
     const createButton = $("create-job-button");
     const boardEnabled = $("job-board-enabled");
@@ -152,53 +148,105 @@ export function renderCreateJobPage(): Response {
     const boardStatus = $("job-board-status");
     const publishButton = $("publish-job-board");
     const copyButton = $("copy-job-board-link");
+    let selectedClient = null;
     let broadcastLink = "";
 
-    function setStatus(node, message, bad) {
-      node.textContent = message;
-      node.classList.remove("is-ok", "is-bad");
-      node.classList.add(bad ? "is-bad" : "is-ok");
+    function text(value) { return String(value || "").trim(); }
+    function setStatus(node, message, bad) { node.textContent = message; node.classList.remove("is-ok", "is-bad"); node.classList.add(bad ? "is-bad" : "is-ok"); }
+    function amount() { const value = Number($("amount_thb")?.value || ""); return Number.isFinite(value) && value > 0 ? value : 0; }
+    function escapeHtml(value) { return String(value || "").replace(/[&<>\"']/g, function(c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;","'":"&#39;"}[c] || c; }); }
+    function first(value) { return String(value || "?").trim().slice(0, 1).toUpperCase() || "?"; }
+    function pickRows(data) { return data.clients || data.results || data.records || data.items || data.rows || []; }
+    function clientName(row) { return text(row.per_name || row.client_name || row.name || row.display_name || row.nickname || row.line_display_name || row.username || row.id || row.record_id); }
+    function clientId(row) { return text(row.client_id || row.record_id || row.id || row.airtable_id || row.line_record_id); }
+    function clientSession(row) { return text(row.session_id || row.latest_session_id || row.last_session_id); }
+    function clientMeta(row) { return [row.package, row.tier, row.membership_status, row.line_display_name, row.username].filter(Boolean).map(text).join(" · "); }
+
+    function selectClient(row) {
+      selectedClient = row || null;
+      const name = selectedClient ? clientName(selectedClient) : "";
+      $("job-client-id").value = selectedClient ? clientId(selectedClient) : "";
+      $("job-client-name").value = name;
+      const session = selectedClient ? clientSession(selectedClient) : "";
+      if (session) $("job-session-id").value = session;
+      $("summary-client").textContent = name || "ยังไม่เลือก";
+      $("next-action").textContent = name ? "Fill job details" : "Find Customer";
+      $("next-copy").textContent = name ? "ใส่ scope/model/details ต่อได้เลย" : "ค้นลูกค้าก่อน แล้วระบบจะค่อยไป scope/model/details";
+      renderClientRows(resultList.__rows || []);
     }
 
-    function amount() {
-      const value = Number($("amount_thb")?.value || "");
-      return Number.isFinite(value) && value > 0 ? value : 0;
+    function renderClientRows(rows) {
+      resultList.__rows = rows;
+      if (!rows.length) { resultList.innerHTML = '<div class="mmdop__empty">ยังไม่เจอลูกค้า ลองค้นด้วย Per name, LINE, เบอร์ หรือ package</div>'; return; }
+      resultList.innerHTML = rows.map(function(row, index) {
+        const id = clientId(row);
+        const name = clientName(row);
+        const meta = clientMeta(row) || "LINE / package evidence pending";
+        const selected = selectedClient && clientId(selectedClient) === id;
+        const tag = text(row.match_type || row.source || row.status || "candidate");
+        return '<button type="button" class="mmdop__clientCard '+(selected ? 'is-selected' : '')+'" data-client-index="'+index+'"><div class="mmdop__avatar">'+escapeHtml(first(name))+'</div><div><strong>'+escapeHtml(name || id || 'Unnamed client')+'</strong><p>'+escapeHtml(meta)+'</p><span class="mmdop__tag">'+escapeHtml(tag)+'</span></div><b class="mmdop__btn mmdop__btn--soft">เลือก</b></button>';
+      }).join("");
+      resultList.querySelectorAll("[data-client-index]").forEach(function(button) { button.addEventListener("click", function() { selectClient(rows[Number(button.dataset.clientIndex)]); }); });
     }
 
-    function refreshBoardState() {
-      boardCount.textContent = String(boardText.value.length) + " / 1000";
-      publishButton.disabled = !boardEnabled.checked || !boardText.value.trim();
+    async function loadClients(kind) {
+      const q = text(clientQuery.value);
+      if (kind !== "recent" && !q) { setStatus(status, "พิมพ์ชื่อลูกค้า / LINE / เบอร์ / package ก่อนค้นหา", true); return; }
+      resultList.innerHTML = '<div class="mmdop__empty">กำลังค้นลูกค้า...</div>';
+      setStatus(status, kind === "recent" ? "กำลังโหลดลูกค้าล่าสุด..." : "กำลังค้นลูกค้า...", false);
+      try {
+        const path = kind === "recent" ? "/v1/admin/clients/recent" : "/v1/admin/clients/lineage-lookup?q=" + encodeURIComponent(q);
+        const res = await fetch(path, { credentials: "include", headers: { accept: "application/json" } });
+        const data = await res.json().catch(function() { return {}; });
+        if (!res.ok || data.ok === false) throw new Error(data.error || "client_lookup_failed");
+        const rows = pickRows(data);
+        renderClientRows(rows);
+        setStatus(status, rows.length ? "เจอลูกค้า " + rows.length + " รายการ · เลือก 1 คนเพื่อสร้างงาน" : "ไม่เจอลูกค้าในผลค้นหา", rows.length === 0);
+      } catch (error) {
+        resultList.innerHTML = '<div class="mmdop__empty">ค้นลูกค้าไม่สำเร็จ · '+escapeHtml(error && error.message || 'backend unavailable')+'</div>';
+        setStatus(status, "ค้นลูกค้าไม่สำเร็จ · " + String(error && error.message || "backend unavailable"), true);
+      }
     }
+
+    function refreshBoardState() { boardCount.textContent = String(boardText.value.length) + " / 1000"; publishButton.disabled = !boardEnabled.checked || !boardText.value.trim(); }
+    function refreshSummary() { $("summary-scope").textContent = $("job-visibility").value === "private" ? "Private" : "Public"; $("summary-model").textContent = text($("job-model-key").value) || "รอเลือก"; $("summary-payment").textContent = amount().toLocaleString("en-US") + " THB"; }
+
+    searchClientButton.addEventListener("click", function() { loadClients("search"); });
+    recentClientButton.addEventListener("click", function() { loadClients("recent"); });
+    clientQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadClients("search"); });
+    clearClientButton.addEventListener("click", function() { selectedClient = null; $("job-client-id").value = ""; $("job-client-name").value = ""; $("job-session-id").value = ""; $("summary-client").textContent = "ยังไม่เลือก"; renderClientRows(resultList.__rows || []); setStatus(status, "ล้างลูกค้าแล้ว · ค้นหาใหม่ได้เลย", false); });
+    ["job-visibility", "job-model-key", "amount_thb"].forEach(function(id) { $(id).addEventListener("input", refreshSummary); $(id).addEventListener("change", refreshSummary); });
     boardEnabled.addEventListener("change", refreshBoardState);
     boardText.addEventListener("input", refreshBoardState);
     refreshBoardState();
+    refreshSummary();
 
     createButton?.addEventListener("click", async () => {
       const payload = {
+        client_id: $("job-client-id")?.value || "",
+        client_name: $("job-client-name")?.value || "",
+        client_lookup_key: clientQuery?.value || "",
         session_id: $("job-session-id")?.value || "",
         amount_thb: amount(),
         job_visibility: $("job-visibility")?.value || "public",
         job_date: $("job-date")?.value || "",
         start_time: $("job-start")?.value || "",
+        duration: $("job-duration")?.value || "",
         location_name: $("job-location")?.value || "",
         model_lookup_key: $("job-model-key")?.value || "",
+        payment_mode: $("job-payment-mode")?.value || "full",
         note: $("job-note")?.value || "",
-        source: "worker_rendered_create_job"
+        source: "worker_rendered_create_job_customer_first"
       };
-      if (!payload.session_id) return setStatus(status, "กรุณาใส่ Session ID ก่อนสร้าง canonical Job", true);
+      if (!payload.client_id && !payload.session_id && !payload.client_name) return setStatus(status, "กรุณาค้นหาและเลือกลูกค้าก่อนสร้างงาน", true);
       if (!payload.amount_thb) return setStatus(status, "กรุณาใส่ Amount THB มากกว่า 0", true);
       createButton.disabled = true;
       setStatus(status, "Creating job...", false);
       try {
-        const res = await fetch("/v1/admin/create-job", {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload)
-        });
+        const res = await fetch("/v1/admin/create-job", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data.ok === false) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "create_job_failed");
-        setStatus(status, "Job created: " + (data.job_id || data.session_id || data.id || "OK"), false);
+        setStatus(status, "Job created · ส่ง Customer Payment URL ก่อน: " + (data.job_id || data.session_id || data.id || "OK"), false);
       } catch (error) {
         setStatus(status, "ยัง create job ไม่สำเร็จ · " + String(error?.message || "backend unavailable"), true);
       } finally {
@@ -210,29 +258,13 @@ export function renderCreateJobPage(): Response {
       if (!boardEnabled.checked || !boardText.value.trim()) return;
       const visibility = $("job-visibility")?.value || "public";
       const budget = amount();
-      const payload = {
-        board_text: boardText.value.trim(),
-        world: visibility,
-        job_date: $("job-date")?.value || "",
-        start_time: $("job-start")?.value || "",
-        duration: $("job-duration")?.value || "",
-        area: $("job-location")?.value || "",
-        compensation: budget ? budget.toLocaleString("en-US") + " บาท" : "",
-        customer_gender: $("job-customer-gender")?.value || "unspecified",
-        budget_disclosure_approved: visibility === "private" && $("job-budget-disclosure")?.value === "show",
-        owner_note: $("job-note")?.value || ""
-      };
+      const payload = { board_text: boardText.value.trim(), world: visibility, job_date: $("job-date")?.value || "", start_time: $("job-start")?.value || "", duration: $("job-duration")?.value || "", area: $("job-location")?.value || "", compensation: budget ? budget.toLocaleString("en-US") + " บาท" : "", customer_gender: $("job-customer-gender")?.value || "unspecified", budget_disclosure_approved: visibility === "private" && $("job-budget-disclosure")?.value === "show", owner_note: $("job-note")?.value || "" };
       publishButton.disabled = true;
       copyButton.disabled = true;
       broadcastLink = "";
       setStatus(boardStatus, "กำลัง publish งานเข้ากระดาน...", false);
       try {
-        const res = await fetch("/v1/admin/job-board/publish", {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json", accept: "application/json" },
-          body: JSON.stringify(payload)
-        });
+        const res = await fetch("/v1/admin/job-board/publish", { method: "POST", credentials: "include", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data.ok !== true || !data.broadcast_url) throw new Error(data.error || "job_board_publish_failed");
         broadcastLink = String(data.broadcast_url);
@@ -246,15 +278,7 @@ export function renderCreateJobPage(): Response {
       }
     });
 
-    copyButton?.addEventListener("click", async () => {
-      if (!broadcastLink) return;
-      try {
-        await navigator.clipboard.writeText(broadcastLink);
-        setStatus(boardStatus, "คัดลอก Broadcast Link แล้ว · Model จะเข้า LIFF Login V2 ก่อน", false);
-      } catch {
-        setStatus(boardStatus, "คัดลอกลิงก์ไม่สำเร็จ", true);
-      }
-    });
+    copyButton?.addEventListener("click", async () => { if (!broadcastLink) return; try { await navigator.clipboard.writeText(broadcastLink); setStatus(boardStatus, "คัดลอก Broadcast Link แล้ว · Model จะเข้า LIFF Login V2 ก่อน", false); } catch { setStatus(boardStatus, "คัดลอกลิงก์ไม่สำเร็จ", true); } });
   })();
   </script></section>`);
 }
