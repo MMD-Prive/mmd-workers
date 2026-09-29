@@ -2747,12 +2747,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
     let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
-      const takeover = await getLineOwnerTakeoverState(env, lineUserId);
-      campaignLeadClaim = takeover.ok !== true
-        ? { ok: false, claimed: false, reason: takeover.reason }
-        : takeover.active === true
-          ? { ok: true, claimed: false, reason: "owner_takeover_active" }
-          : await claimLineCardCampaignLead(env, event, "claim");
+      campaignLeadClaim = await claimLineCardCampaignLead(env, event, "claim");
       if (campaignLeadClaim.claimed === true) {
         try {
           campaignLeadRecord = await writeLineCardCampaignEventToConsoleInbox(
@@ -2816,7 +2811,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (campaignBrief && campaignContextResult.claimed === true && !campaignLeadQueued) {
       await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token });
     }
-    const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(autoReplyEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
     const needsModelPreflight = Boolean(!campaignEvent && !isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
@@ -2826,16 +2821,49 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const supplierRegistration = isSupplierRegistration && canRegisterSupplier
       ? await registerHimaiSupplier(event, env, supplierRegistrationName)
       : null;
-    const replyDecision = campaignContextUnavailable
-      ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "campaign_context_unavailable" }
-      : isSupplierRegistration
-        ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
-      : ((canGenerateReply || (campaignEvent && campaignCanReply)) && !modelPreflight.deduped
-        ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt, campaignLeadQueued, campaignBrief })
-        : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
+    const replyDecision = ownerReplyBlocked
+      ? {
+          text: "",
+          fallback: false,
+          reply_source: "silent",
+          model_attempted: false,
+          model_success: false,
+          model_latency_ms: 0,
+          knowledge_hits: 0,
+          guard_blocked: true,
+          guard_reason: ownerTakeover.active === true ? "owner_takeover_active" : "owner_takeover_state_unavailable",
+          handoff_required: true,
+          handoff_reason: ownerTakeover.reason || "owner_takeover",
+        }
+      : campaignContextUnavailable
+        ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "campaign_context_unavailable" }
+        : isSupplierRegistration
+          ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+        : ((canGenerateReply || (campaignEvent && campaignCanReply)) && !modelPreflight.deduped
+          ? await resolveKenjiLineReply(event, {}, env, {
+              forceReply: autoReplyEnabled,
+              modelEligible: modelPreflight.eligible,
+              modelAccessAllowed: !runtimeModelKill,
+              deadlineAt: modelDeadlineAt,
+              campaignLeadQueued,
+              campaignBrief,
+              continuity,
+              modelIntent,
+            })
+          : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
-    const postQueueTakeover = campaignLeadQueued ? await getLineOwnerTakeoverState(env, lineUserId) : null;
-    const shouldReply = Boolean((autoReplyEnabled || (campaignEvent && campaignCanReply)) && eventMode !== "standby" && replyText && getReplyToken(event) && (!campaignEvent || (postQueueTakeover?.ok === true && postQueueTakeover.active !== true && options.suppressCampaignReply !== true)));
+    const postDecisionTakeover = lineUserId && replyText
+      ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
+      : ownerTakeover;
+    const takeoverClear = !lineUserId || (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true);
+    const shouldReply = Boolean(
+      (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
+      eventMode !== "standby" &&
+      replyText &&
+      getReplyToken(event) &&
+      takeoverClear &&
+      (!campaignEvent || options.suppressCampaignReply !== true)
+    );
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
     const afterReply = campaignEvent
