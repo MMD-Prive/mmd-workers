@@ -1,5 +1,5 @@
 const WORKER = "member-pages-worker";
-const VERSION = "20260801-sigil-member-membership-v3";
+const VERSION = "20260929-member-profile-digital-v1";
 const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
 const LEGACY_MEMBERSHIP_PATH = "/member/membership";
 
