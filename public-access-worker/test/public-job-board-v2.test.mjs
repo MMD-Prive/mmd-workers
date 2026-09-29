@@ -129,6 +129,34 @@ test("validated exact-job model handoff writes a durable privacy-safe receipt", 
   assert.equal(ownerBody.handoffs[0].receipt_ref, receipt.receipt_ref);
 });
 
+test("validated handoff mirrors a safe audit row when Airtable is configured", async () => {
+  let captured = null;
+  const testEnv = env({
+    AIRTABLE_API_KEY: "pat-test",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_HTTP: {
+      fetch: async (url, init) => {
+        captured = { url: String(url), body: JSON.parse(init.body), authorization: init.headers.authorization };
+        return Response.json({ id: "recAudit" }, { status: 200 });
+      },
+    },
+  });
+
+  const response = await call(testEnv, "/public/api/jobs/JOB-20261001-AUDIT1?mmd_job_board_handoff=real-signed-token-placeholder");
+  assert.equal(response.status, 303, await response.text());
+  assert.ok(captured);
+  assert.match(captured.url, /System%20%E2%80%94%20Access%20Log$/);
+  assert.equal(captured.authorization, "Bearer pat-test");
+  assert.equal(captured.body.typecast, false);
+  assert.equal(captured.body.fields.Action, "model_job_board_handoff_validated");
+  assert.equal(captured.body.fields.Target, "JOB-20261001-AUDIT1");
+  assert.equal(captured.body.fields.Result, "success");
+  assert.equal(captured.body.fields.Actor, "public_access_worker");
+  assert.equal(captured.body.fields["Identity Ref"], "rec12345678901234");
+  assert.match(captured.body.fields["Event ID"], /^handoff_[a-f0-9]{24}$/);
+  assert.doesNotMatch(JSON.stringify(captured.body), /real-signed-token-placeholder|line_user_id|cookie/i);
+});
+
 test("handoff receipt write failure never blocks an already validated Model", async () => {
   const testEnv = env();
   const originalPut = testEnv.PUBLIC_ACCESS_EVIDENCE.put.bind(testEnv.PUBLIC_ACCESS_EVIDENCE);
