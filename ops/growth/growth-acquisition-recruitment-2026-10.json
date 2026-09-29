@@ -1,0 +1,12 @@
+{
+  "schema": "mmd.growth_acquisition_recruitment.v1",
+  "period": "2026-10",
+  "status": "planning",
+  "funnels": {
+    "new_customer_to_my_mmd": {"status": "pending", "owner": "Per", "evidence": ""},
+    "worker_recruitment_to_mmd_app": {"status": "pending", "owner": "Per", "evidence": ""},
+    "telegram_preview_travel_rotation": {"status": "pending", "owner": "Per", "evidence": ""},
+    "pr_operator_sourcing": {"status": "pending", "owner": "Per", "evidence": ""},
+    "weekly_review": {"status": "pending", "owner": "Per", "evidence": ""}
+  }
+}
