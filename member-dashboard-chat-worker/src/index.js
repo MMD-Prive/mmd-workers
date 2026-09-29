@@ -11,6 +11,7 @@ import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowledge-runtime.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
@@ -524,12 +525,31 @@ async function fetchPublishedLineKnowledge(env = {}, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getKenjiKnowledgeTable(env);
-  if (!apiKey || !baseId || !table) return [];
+  const key = `${baseId || "canonical"}:${table || "default"}`;
 
-  const key = `${baseId}:${table}`;
   if (lineKnowledgeCache.key === key && lineKnowledgeCache.expiresAt > Date.now()) {
     return lineKnowledgeCache.cards;
   }
+
+  const normalizeRuntimeCards = (items = []) => (Array.isArray(items) ? items : [])
+    .map((card) => withKnowledgeLifecycleMetadata(card?.fields || card || {}))
+    .filter((fields) => (
+      ["active", "approved", "published"].includes(asString(fields.status).toLowerCase()) &&
+      asString(fields.response_mode).toLowerCase() === "auto_reply_allowed" &&
+      hasLineKnowledgeChannel(fields.allowed_channels)
+    ));
+
+  // Canonical path: all approved surfaces read the governed Published Knowledge
+  // runtime owned by admin-worker. This keeps LINE from becoming a second
+  // knowledge database. The direct Airtable reader below is compatibility only.
+  const canonical = await fetchKenjiCanonicalPublishedKnowledge(env, options);
+  if (canonical.ok) {
+    const cards = normalizeRuntimeCards(canonical.cards);
+    lineKnowledgeCache = { key, expiresAt: Date.now() + LINE_KNOWLEDGE_TTL_MS, cards };
+    return cards;
+  }
+
+  if (!apiKey || !baseId || !table) return [];
 
   try {
     const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
@@ -547,13 +567,7 @@ async function fetchPublishedLineKnowledge(env = {}, options = {}) {
     if (!response.ok) return [];
 
     const payload = await response.json().catch(() => ({}));
-    const cards = (Array.isArray(payload?.records) ? payload.records : [])
-      .map((record) => withKnowledgeLifecycleMetadata(record?.fields || {}))
-      .filter((fields) => (
-        asString(fields.status).toLowerCase() === "active" &&
-        asString(fields.response_mode).toLowerCase() === "auto_reply_allowed" &&
-        hasLineKnowledgeChannel(fields.allowed_channels)
-      ));
+    const cards = normalizeRuntimeCards((Array.isArray(payload?.records) ? payload.records : []).map((record) => record?.fields || {}));
 
     lineKnowledgeCache = { key, expiresAt: Date.now() + LINE_KNOWLEDGE_TTL_MS, cards };
     return cards;
@@ -2485,7 +2499,9 @@ async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, ken
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
   const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);
-  const knowledgePromise = kenjiEnabled ? fetchPublishedLineKnowledge(env) : Promise.resolve([]);
+  const knowledgePromise = kenjiEnabled && isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
+    ? fetchPublishedLineKnowledge(env)
+    : Promise.resolve([]);
   const [profile] = await Promise.all([profilePromise, knowledgePromise]);
   return writeLineEventToConsoleInbox(env, event, profile, intent);
 }
