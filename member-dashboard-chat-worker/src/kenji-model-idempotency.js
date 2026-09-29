@@ -607,6 +607,7 @@ export class KenjiModelIdempotency {
     const quotas = await this.state.storage.list({ prefix: "quota:" });
     const campaignLeads = await this.state.storage.list({ prefix: "campaign-lead:" });
     const pending = await this.state.storage.get(MODEL_ACCESS_PENDING_KEY);
+    const turnBuffer = await this.state.storage.get(LINE_TURN_BUFFER_KEY);
     const expired = [];
     let nextAlarm = 0;
     for (const [key, value] of claims) {
@@ -627,6 +628,9 @@ export class KenjiModelIdempotency {
     const pendingExpiresAt = Number(pending?.expires_at) || 0;
     if (pending && pendingExpiresAt <= now) expired.push(MODEL_ACCESS_PENDING_KEY);
     else if (pendingExpiresAt && (!nextAlarm || pendingExpiresAt < nextAlarm)) nextAlarm = pendingExpiresAt;
+    const turnBufferExpiresAt = Number(turnBuffer?.expires_at) || 0;
+    if (turnBuffer && turnBufferExpiresAt <= now) expired.push(LINE_TURN_BUFFER_KEY);
+    else if (turnBufferExpiresAt && (!nextAlarm || turnBufferExpiresAt < nextAlarm)) nextAlarm = turnBufferExpiresAt;
     if (expired.length) await this.state.storage.delete(expired);
     const currentIngress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
     // Processing retains its earlier queue time; scheduling that past value
