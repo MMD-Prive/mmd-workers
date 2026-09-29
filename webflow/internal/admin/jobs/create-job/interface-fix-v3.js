@@ -102,14 +102,14 @@ function paymentOutputSafety(){
     customer.setAttribute('aria-label','Customer Payment URL');
     customer.placeholder='Customer Payment URL จะขึ้นหลังสร้างงาน';
     ensureCaption(customer,'customer-payment','Customer Payment URL / ลิงก์ชำระเงินลูกค้า');
-    ensureHint(customer,'customer-payment','ส่งลิงก์นี้ให้ลูกค้าชำระเงินก่อน ระบบจะปล่อย Member + Model URLs หลัง Official Verify เท่านั้น');
+    ensureHint(customer,'customer-payment','ส่งลิงก์นี้ให้ลูกค้าชำระเงินก่อน ทั้งงานที่สร้างเองและงานจากกระดานข่าว ระบบจะปล่อย Member + Model URLs หลัง Official Verify เท่านั้น');
   }
   if(model){
     model.dataset.cjUrlRole='model-held';
     model.setAttribute('aria-label','Model URL held until Official Verify');
     model.placeholder='Held until Official Verify';
     ensureCaption(model,'model-held','Model URL / ออกหลัง Official Verify');
-    ensureHint(model,'model-held','หน้า Create Job ไม่ปล่อย Model URL ก่อนสลิปผ่าน เพื่อกันส่งงานผิดลำดับ');
+    ensureHint(model,'model-held','หน้า Create Job ไม่ปล่อย Model URL ก่อนสลิปผ่าน รวมถึงงานจาก Job Board / กระดานข่าว เพื่อกันส่งงานผิดลำดับ');
     if(!model.value&&customer?.value)model.setAttribute('aria-disabled','true');
   }
 }
