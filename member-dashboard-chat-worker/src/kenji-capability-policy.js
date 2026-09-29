@@ -46,6 +46,7 @@ const INTENT_DOMAIN = Object.freeze({
   payment_status: "payment",
   payment_slip: "payment",
   payment_dispute: "payment",
+  refund_request: "human_handoff",
   care_back_payment_points: "payment",
   membership_status: "membership",
   membership: "membership",
