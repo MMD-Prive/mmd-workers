@@ -26,6 +26,9 @@ jobs:
           from pathlib import Path
           import re
 
+          def lines(*items):
+              return "\n".join(items) + "\n"
+
           def read(path):
               return Path(path).read_text(encoding="utf-8")
 
@@ -53,182 +56,198 @@ jobs:
                   raise SystemExit(f"{label} not found in {path}")
               write(path, next_src)
 
-          replace_regex(
-              "admin-worker/src/refund-ops.js",
-              r"function modelJobAppUrl\(payload = \{\}\) \{.*?\n\}\n\nfunction telegramChatId",
-              '''function modelJobAppUrl(payload = {}) {
-  const jobId = clean(payload.job_id, 120);
-  if (!jobId) return "";
-  const next = new URL(`https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(jobId)}`);
-  const url = new URL("https://miniapp.line.me/2010864854-N34SgCqq/");
-  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "Film J", 160);
-  const modelRecordId = clean(payload.model_record_id || payload.model_id || payload.model_airtable_id || "", 120);
-  url.searchParams.set("intent", "job_board");
-  url.searchParams.set("source", "refund_completed_pack");
-  url.searchParams.set("return_to", "public_job_board");
-  url.searchParams.set("job_id", jobId);
-  url.searchParams.set("next", next.toString());
-  url.searchParams.set("lang", "th");
-  if (modelAlias) url.searchParams.set("model_alias", modelAlias);
-  if (modelRecordId) url.searchParams.set("model_record_id", modelRecordId);
-  return url.toString();
-}
-
-function telegramChatId''',
-              "refund modelJobAppUrl",
-          )
+          refund_fn = lines(
+              "function modelJobAppUrl(payload = {}) {",
+              "  const jobId = clean(payload.job_id, 120);",
+              "  if (!jobId) return \"\";",
+              "  const next = new URL(`https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(jobId)}`);",
+              "  const url = new URL(\"https://miniapp.line.me/2010864854-N34SgCqq/\");",
+              "  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || \"Film J\", 160);",
+              "  const modelRecordId = clean(payload.model_record_id || payload.model_id || payload.model_airtable_id || \"\", 120);",
+              "  url.searchParams.set(\"intent\", \"job_board\");",
+              "  url.searchParams.set(\"source\", \"refund_completed_pack\");",
+              "  url.searchParams.set(\"return_to\", \"public_job_board\");",
+              "  url.searchParams.set(\"job_id\", jobId);",
+              "  url.searchParams.set(\"next\", next.toString());",
+              "  url.searchParams.set(\"lang\", \"th\");",
+              "  if (modelAlias) url.searchParams.set(\"model_alias\", modelAlias);",
+              "  if (modelRecordId) url.searchParams.set(\"model_record_id\", modelRecordId);",
+              "  return url.toString();",
+              "}",
+              "",
+              "function telegramChatId",
+          ).rstrip("\n")
+          replace_regex("admin-worker/src/refund-ops.js", r"function modelJobAppUrl\(payload = \{\}\) \{.*?\n\}\n\nfunction telegramChatId", refund_fn, "refund modelJobAppUrl")
 
           replace_exact(
               "webflow/sigil/model/model-login-miniapp-entry-v1.js",
-              '''    const campaignId = String(sourceUrl.searchParams.get("campaign_id") || "").trim();
-    return {
-      intent: "job_board",
-      return_to: "public_job_board",
-      source: /^[A-Za-z0-9._:-]{1,80}$/.test(source) ? source : "line_model_group",
-      job_id: jobId,
-      next: safeJobBoardNext(sourceUrl.searchParams.get("next"), jobId),
-      campaign_id: /^[A-Za-z0-9._:-]{1,128}$/.test(campaignId) ? campaignId : "",
-    };
-''',
-              '''    const campaignId = String(sourceUrl.searchParams.get("campaign_id") || "").trim();
-    const modelAlias = String(sourceUrl.searchParams.get("model_alias") || "").trim().slice(0, 160);
-    const modelRecordId = String(sourceUrl.searchParams.get("model_record_id") || "").trim();
-    return {
-      intent: "job_board",
-      return_to: "public_job_board",
-      source: /^[A-Za-z0-9._:-]{1,80}$/.test(source) ? source : "line_model_group",
-      job_id: jobId,
-      next: safeJobBoardNext(sourceUrl.searchParams.get("next"), jobId),
-      campaign_id: /^[A-Za-z0-9._:-]{1,128}$/.test(campaignId) ? campaignId : "",
-      model_alias: modelAlias,
-      model_record_id: /^[A-Za-z0-9._:-]{1,120}$/.test(modelRecordId) ? modelRecordId : "",
-    };
-''',
+              lines(
+                  "    const campaignId = String(sourceUrl.searchParams.get(\"campaign_id\") || \"\").trim();",
+                  "    return {",
+                  "      intent: \"job_board\",",
+                  "      return_to: \"public_job_board\",",
+                  "      source: /^[A-Za-z0-9._:-]{1,80}$/.test(source) ? source : \"line_model_group\",",
+                  "      job_id: jobId,",
+                  "      next: safeJobBoardNext(sourceUrl.searchParams.get(\"next\"), jobId),",
+                  "      campaign_id: /^[A-Za-z0-9._:-]{1,128}$/.test(campaignId) ? campaignId : \"\",",
+                  "    };",
+              ),
+              lines(
+                  "    const campaignId = String(sourceUrl.searchParams.get(\"campaign_id\") || \"\").trim();",
+                  "    const modelAlias = String(sourceUrl.searchParams.get(\"model_alias\") || \"\").trim().slice(0, 160);",
+                  "    const modelRecordId = String(sourceUrl.searchParams.get(\"model_record_id\") || \"\").trim();",
+                  "    return {",
+                  "      intent: \"job_board\",",
+                  "      return_to: \"public_job_board\",",
+                  "      source: /^[A-Za-z0-9._:-]{1,80}$/.test(source) ? source : \"line_model_group\",",
+                  "      job_id: jobId,",
+                  "      next: safeJobBoardNext(sourceUrl.searchParams.get(\"next\"), jobId),",
+                  "      campaign_id: /^[A-Za-z0-9._:-]{1,128}$/.test(campaignId) ? campaignId : \"\",",
+                  "      model_alias: modelAlias,",
+                  "      model_record_id: /^[A-Za-z0-9._:-]{1,120}$/.test(modelRecordId) ? modelRecordId : \"\",",
+                  "    };",
+              ),
               "model login context owner alias",
           )
           replace_exact(
               "webflow/sigil/model/model-login-miniapp-entry-v1.js",
-              '''    if (context.job_id) url.searchParams.set("job_id", context.job_id);
-    if (context.campaign_id) url.searchParams.set("campaign_id", context.campaign_id);
-    return url.toString();
-''',
-              '''    if (context.job_id) url.searchParams.set("job_id", context.job_id);
-    if (context.campaign_id) url.searchParams.set("campaign_id", context.campaign_id);
-    if (context.model_alias) url.searchParams.set("model_alias", context.model_alias);
-    if (context.model_record_id) url.searchParams.set("model_record_id", context.model_record_id);
-    return url.toString();
-''',
+              lines(
+                  "    if (context.job_id) url.searchParams.set(\"job_id\", context.job_id);",
+                  "    if (context.campaign_id) url.searchParams.set(\"campaign_id\", context.campaign_id);",
+                  "    return url.toString();",
+              ),
+              lines(
+                  "    if (context.job_id) url.searchParams.set(\"job_id\", context.job_id);",
+                  "    if (context.campaign_id) url.searchParams.set(\"campaign_id\", context.campaign_id);",
+                  "    if (context.model_alias) url.searchParams.set(\"model_alias\", context.model_alias);",
+                  "    if (context.model_record_id) url.searchParams.set(\"model_record_id\", context.model_record_id);",
+                  "    return url.toString();",
+              ),
               "model login target preserves alias",
           )
 
           replace_exact(
               "model-dashboard-presentation-worker/src/index.js",
-              '''  const rawSource = String(boundedParam(source, "source") || "line_model_group").trim();
-  return {
-    intent: "job_board",
-    return_to: "public_job_board",
-    source: /^[A-Za-z0-9._:-]{1,80}$/.test(rawSource) ? rawSource : "line_model_group",
-    job_id: jobId,
-    next,
-  };
-}
-''',
-              '''  const rawSource = String(boundedParam(source, "source") || "line_model_group").trim();
-  const rawModelAlias = String(boundedParam(source, "model_alias") || "").trim().slice(0, 160);
-  const rawModelRecordId = String(boundedParam(source, "model_record_id") || "").trim();
-  return {
-    intent: "job_board",
-    return_to: "public_job_board",
-    source: /^[A-Za-z0-9._:-]{1,80}$/.test(rawSource) ? rawSource : "line_model_group",
-    job_id: jobId,
-    next,
-    model_alias: rawModelAlias,
-    model_record_id: /^[A-Za-z0-9._:-]{1,120}$/.test(rawModelRecordId) ? rawModelRecordId : "",
-  };
-}
-''',
+              lines(
+                  "  const rawSource = String(boundedParam(source, \"source\") || \"line_model_group\").trim();",
+                  "  return {",
+                  "    intent: \"job_board\",",
+                  "    return_to: \"public_job_board\",",
+                  "    source: /^[A-Za-z0-9._:-]{1,80}$/.test(rawSource) ? rawSource : \"line_model_group\",",
+                  "    job_id: jobId,",
+                  "    next,",
+                  "  };",
+                  "}",
+              ),
+              lines(
+                  "  const rawSource = String(boundedParam(source, \"source\") || \"line_model_group\").trim();",
+                  "  const rawModelAlias = String(boundedParam(source, \"model_alias\") || \"\").trim().slice(0, 160);",
+                  "  const rawModelRecordId = String(boundedParam(source, \"model_record_id\") || \"\").trim();",
+                  "  return {",
+                  "    intent: \"job_board\",",
+                  "    return_to: \"public_job_board\",",
+                  "    source: /^[A-Za-z0-9._:-]{1,80}$/.test(rawSource) ? rawSource : \"line_model_group\",",
+                  "    job_id: jobId,",
+                  "    next,",
+                  "    model_alias: rawModelAlias,",
+                  "    model_record_id: /^[A-Za-z0-9._:-]{1,120}$/.test(rawModelRecordId) ? rawModelRecordId : \"\",",
+                  "  };",
+                  "}",
+              ),
               "dashboard job board context alias",
           )
           replace_exact_count(
               "model-dashboard-presentation-worker/src/index.js",
-              '''    if (jobBoard.job_id) params.set("job_id", jobBoard.job_id);
-  } else {
-''',
-              '''    if (jobBoard.job_id) params.set("job_id", jobBoard.job_id);
-    if (jobBoard.model_alias) params.set("model_alias", jobBoard.model_alias);
-    if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
-  } else {
-''',
+              lines(
+                  "    if (jobBoard.job_id) params.set(\"job_id\", jobBoard.job_id);",
+                  "  } else {",
+              ),
+              lines(
+                  "    if (jobBoard.job_id) params.set(\"job_id\", jobBoard.job_id);",
+                  "    if (jobBoard.model_alias) params.set(\"model_alias\", jobBoard.model_alias);",
+                  "    if (jobBoard.model_record_id) params.set(\"model_record_id\", jobBoard.model_record_id);",
+                  "  } else {",
+              ),
               2,
               "miniapp/bootstrap alias params",
           )
           replace_exact(
               "model-dashboard-presentation-worker/src/index.js",
-              '''    && !boundedParam(url, "return_to")
-    && !boundedParam(url, "handoff")
-    && !boundedParam(url, "flow");
-}
-''',
-              '''    && boundedParam(url, "intent") !== "job_board"
-    && !boundedParam(url, "return_to")
-    && !boundedParam(url, "handoff")
-    && !boundedParam(url, "flow");
-}
-''',
+              lines(
+                  "    && !boundedParam(url, \"return_to\")",
+                  "    && !boundedParam(url, \"handoff\")",
+                  "    && !boundedParam(url, \"flow\");",
+                  "}",
+              ),
+              lines(
+                  "    && boundedParam(url, \"intent\") !== \"job_board\"",
+                  "    && !boundedParam(url, \"return_to\")",
+                  "    && !boundedParam(url, \"handoff\")",
+                  "    && !boundedParam(url, \"flow\");",
+                  "}",
+              ),
               "prevent job board phase a fallback",
           )
           replace_exact(
               "model-dashboard-presentation-worker/src/index.js",
-              '''  if (context.job_id) params.set("job_id", context.job_id);
-  if (context.next) params.set("next", context.next);
-  const endpoint = `/v1/model/job-board/handoff?${params.toString()}`;
-''',
-              '''  if (context.job_id) params.set("job_id", context.job_id);
-  if (context.next) params.set("next", context.next);
-  if (context.model_alias) params.set("model_alias", context.model_alias);
-  if (context.model_record_id) params.set("model_record_id", context.model_record_id);
-  const endpoint = `/v1/model/job-board/handoff?${params.toString()}`;
-''',
+              lines(
+                  "  if (context.job_id) params.set(\"job_id\", context.job_id);",
+                  "  if (context.next) params.set(\"next\", context.next);",
+                  "  const endpoint = `/v1/model/job-board/handoff?${params.toString()}`;",
+              ),
+              lines(
+                  "  if (context.job_id) params.set(\"job_id\", context.job_id);",
+                  "  if (context.next) params.set(\"next\", context.next);",
+                  "  if (context.model_alias) params.set(\"model_alias\", context.model_alias);",
+                  "  if (context.model_record_id) params.set(\"model_record_id\", context.model_record_id);",
+                  "  const endpoint = `/v1/model/job-board/handoff?${params.toString()}`;",
+              ),
               "authenticated resume alias params",
           )
 
           replace_exact(
               "model-dashboard-presentation-worker/src/model-liff-digital-shell.js",
-              '''        job_id: String(jobBoard.job_id || ""),
-        next: String(jobBoard.next || ""),
-      }
-''',
-              '''        job_id: String(jobBoard.job_id || ""),
-        next: String(jobBoard.next || ""),
-        model_alias: String(jobBoard.model_alias || ""),
-        model_record_id: String(jobBoard.model_record_id || ""),
-      }
-''',
+              lines(
+                  "        job_id: String(jobBoard.job_id || \"\"),",
+                  "        next: String(jobBoard.next || \"\"),",
+                  "      }",
+              ),
+              lines(
+                  "        job_id: String(jobBoard.job_id || \"\"),",
+                  "        next: String(jobBoard.next || \"\"),",
+                  "        model_alias: String(jobBoard.model_alias || \"\"),",
+                  "        model_record_id: String(jobBoard.model_record_id || \"\"),",
+                  "      }",
+              ),
               "digital shell safe jobboard alias",
           )
           replace_exact(
               "model-dashboard-presentation-worker/src/model-liff-digital-shell.js",
-              '''    ${safeJobBoard.next ? `handoffParams.set("next",${JSON.stringify(safeJobBoard.next)});` : ""}
-    var handoff=await fetch("/v1/model/job-board/handoff?"+handoffParams.toString(),{method:"GET",credentials:"include",cache:"no-store",headers:{accept:"application/json"}});
-''',
-              '''    ${safeJobBoard.next ? `handoffParams.set("next",${JSON.stringify(safeJobBoard.next)});` : ""}
-    ${safeJobBoard.model_alias ? `handoffParams.set("model_alias",${JSON.stringify(safeJobBoard.model_alias)});` : ""}
-    ${safeJobBoard.model_record_id ? `handoffParams.set("model_record_id",${JSON.stringify(safeJobBoard.model_record_id)});` : ""}
-    var handoff=await fetch("/v1/model/job-board/handoff?"+handoffParams.toString(),{method:"GET",credentials:"include",cache:"no-store",headers:{accept:"application/json"}});
-''',
+              lines(
+                  "    ${safeJobBoard.next ? `handoffParams.set(\"next\",${JSON.stringify(safeJobBoard.next)});` : \"\"}",
+                  "    var handoff=await fetch(\"/v1/model/job-board/handoff?\"+handoffParams.toString(),{method:\"GET\",credentials:\"include\",cache:\"no-store\",headers:{accept:\"application/json\"}});",
+              ),
+              lines(
+                  "    ${safeJobBoard.next ? `handoffParams.set(\"next\",${JSON.stringify(safeJobBoard.next)});` : \"\"}",
+                  "    ${safeJobBoard.model_alias ? `handoffParams.set(\"model_alias\",${JSON.stringify(safeJobBoard.model_alias)});` : \"\"}",
+                  "    ${safeJobBoard.model_record_id ? `handoffParams.set(\"model_record_id\",${JSON.stringify(safeJobBoard.model_record_id)});` : \"\"}",
+                  "    var handoff=await fetch(\"/v1/model/job-board/handoff?\"+handoffParams.toString(),{method:\"GET\",credentials:\"include\",cache:\"no-store\",headers:{accept:\"application/json\"}});",
+              ),
               "digital shell handoff alias params",
           )
           replace_exact(
               "model-dashboard-presentation-worker/src/model-liff-digital-shell.js",
-              '''  const title = jobBoardMode ? "กำลังเปิดงาน MMD" : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
-  const copy = jobBoardMode ? "ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที" : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
-  const success = jobBoardMode ? "ยืนยัน LINE แล้ว · กำลังเปิดงาน…" : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
-''',
-              '''  const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : "";
-  const title = jobBoardMode ? (ownerAlias ? "ยืนยันตัวตนสำหรับงาน " + ownerAlias : "กำลังเปิดงาน MMD") : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
-  const copy = jobBoardMode ? "ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที" : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
-  const success = jobBoardMode ? (ownerAlias ? "ยืนยัน LINE แล้ว · กำลังเปิดงาน " + ownerAlias + "…" : "ยืนยัน LINE แล้ว · กำลังเปิดงาน…") : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
-''',
+              lines(
+                  "  const title = jobBoardMode ? \"กำลังเปิดงาน MMD\" : (primary ? \"ยืนยัน LINE สำหรับ MMD APP\" : \"เปิด MMD APP\");",
+                  "  const copy = jobBoardMode ? \"ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที\" : (primary ? \"กำลังสร้างเซสชันโมเดลที่ปลอดภัย\" : \"กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน\");",
+                  "  const success = jobBoardMode ? \"ยืนยัน LINE แล้ว · กำลังเปิดงาน…\" : (primary ? \"ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…\" : \"ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…\");",
+              ),
+              lines(
+                  "  const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : \"\";",
+                  "  const title = jobBoardMode ? (ownerAlias ? \"ยืนยันตัวตนสำหรับงาน \" + ownerAlias : \"กำลังเปิดงาน MMD\") : (primary ? \"ยืนยัน LINE สำหรับ MMD APP\" : \"เปิด MMD APP\");",
+                  "  const copy = jobBoardMode ? \"ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที\" : (primary ? \"กำลังสร้างเซสชันโมเดลที่ปลอดภัย\" : \"กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน\");",
+                  "  const success = jobBoardMode ? (ownerAlias ? \"ยืนยัน LINE แล้ว · กำลังเปิดงาน \" + ownerAlias + \"…\" : \"ยืนยัน LINE แล้ว · กำลังเปิดงาน…\") : (primary ? \"ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…\" : \"ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…\");",
+              ),
               "digital shell owner alias copy",
           )
 
@@ -249,51 +268,53 @@ function telegramChatId''',
               )
               test_path.write_text(test, encoding="utf-8")
 
-          Path("model-dashboard-presentation-worker/model-job-board-owner-alias.test.mjs").write_text('''import assert from "node:assert/strict";
-import { test } from "node:test";
-
-import {
-  modelMiniAppHandoffUrl,
-  resolveJobBoardContextFromRequest,
-  shouldServePhaseAAfterBootstrap,
-} from "./src/index.js";
-import { modelLiffDigitalBootstrapHtml } from "./src/model-liff-digital-shell.js";
-
-test("job board handoff preserves owner assigned model alias", () => {
-  const request = new Request("https://www.mmdbkk.com/sigil/model/dashboard?intent=job_board&source=refund_completed_pack&job_id=JOB-FILM-J-20260929&model_alias=Film%20J&model_record_id=recFilmJ&next=https%3A%2F%2Fsigil.mmdbkk.com%2Fpublic%2Fapi%2Fjobs%2FJOB-FILM-J-20260929");
-  const context = resolveJobBoardContextFromRequest(request);
-  assert.equal(context.model_alias, "Film J");
-  assert.equal(context.model_record_id, "recFilmJ");
-  const handoff = new URL(modelMiniAppHandoffUrl(request));
-  assert.equal(handoff.origin, "https://miniapp.line.me");
-  assert.equal(handoff.searchParams.get("model_alias"), "Film J");
-  assert.equal(handoff.searchParams.get("model_record_id"), "recFilmJ");
-});
-
-test("job board after LIFF bootstrap cannot fall into apply onboarding", () => {
-  const request = new Request("https://www.mmdbkk.com/sigil/model/dashboard?intent=job_board&job_id=JOB-FILM-J-20260929", {
-    headers: { cookie: "mmd_liff_boot=1" },
-  });
-  assert.equal(shouldServePhaseAAfterBootstrap(request), false);
-});
-
-test("job board LINE shell uses owner alias copy, not apply copy", () => {
-  const html = modelLiffDigitalBootstrapHtml({
-    liffId: "2010864854-N34SgCqq",
-    fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",
-    sdk: "https://static.line-scdn.net/liff/edge/2/sdk.js",
-    jobBoard: {
-      job_id: "JOB-FILM-J-20260929",
-      next: "https://sigil.mmdbkk.com/public/api/jobs/JOB-FILM-J-20260929",
-      model_alias: "Film J",
-      model_record_id: "recFilmJ",
-    },
-  });
-  assert.match(html, /ยืนยันตัวตนสำหรับงาน Film J/);
-  assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
-  assert.match(html, /model_alias/);
-});
-''', encoding="utf-8")
+          guard_lines = [
+              'import assert from "node:assert/strict";',
+              'import { test } from "node:test";',
+              '',
+              'import {',
+              '  modelMiniAppHandoffUrl,',
+              '  resolveJobBoardContextFromRequest,',
+              '  shouldServePhaseAAfterBootstrap,',
+              '} from "./src/index.js";',
+              'import { modelLiffDigitalBootstrapHtml } from "./src/model-liff-digital-shell.js";',
+              '',
+              'test("job board handoff preserves owner assigned model alias", () => {',
+              '  const request = new Request("https://www.mmdbkk.com/sigil/model/dashboard?intent=job_board&source=refund_completed_pack&job_id=JOB-FILM-J-20260929&model_alias=Film%20J&model_record_id=recFilmJ&next=https%3A%2F%2Fsigil.mmdbkk.com%2Fpublic%2Fapi%2Fjobs%2FJOB-FILM-J-20260929");',
+              '  const context = resolveJobBoardContextFromRequest(request);',
+              '  assert.equal(context.model_alias, "Film J");',
+              '  assert.equal(context.model_record_id, "recFilmJ");',
+              '  const handoff = new URL(modelMiniAppHandoffUrl(request));',
+              '  assert.equal(handoff.origin, "https://miniapp.line.me");',
+              '  assert.equal(handoff.searchParams.get("model_alias"), "Film J");',
+              '  assert.equal(handoff.searchParams.get("model_record_id"), "recFilmJ");',
+              '});',
+              '',
+              'test("job board after LIFF bootstrap cannot fall into apply onboarding", () => {',
+              '  const request = new Request("https://www.mmdbkk.com/sigil/model/dashboard?intent=job_board&job_id=JOB-FILM-J-20260929", {',
+              '    headers: { cookie: "mmd_liff_boot=1" },',
+              '  });',
+              '  assert.equal(shouldServePhaseAAfterBootstrap(request), false);',
+              '});',
+              '',
+              'test("job board LINE shell uses owner alias copy, not apply copy", () => {',
+              '  const html = modelLiffDigitalBootstrapHtml({',
+              '    liffId: "2010864854-N34SgCqq",',
+              '    fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",',
+              '    sdk: "https://static.line-scdn.net/liff/edge/2/sdk.js",',
+              '    jobBoard: {',
+              '      job_id: "JOB-FILM-J-20260929",',
+              '      next: "https://sigil.mmdbkk.com/public/api/jobs/JOB-FILM-J-20260929",',
+              '      model_alias: "Film J",',
+              '      model_record_id: "recFilmJ",',
+              '    },',
+              '  });',
+              '  assert.match(html, /ยืนยันตัวตนสำหรับงาน Film J/);',
+              '  assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);',
+              '  assert.match(html, /model_alias/);',
+              '});',
+          ]
+          Path("model-dashboard-presentation-worker/model-job-board-owner-alias.test.mjs").write_text("\n".join(guard_lines) + "\n", encoding="utf-8")
 
           Path(".github/workflows/patch-refund-model-miniapp-direct.yml").unlink()
           PY
