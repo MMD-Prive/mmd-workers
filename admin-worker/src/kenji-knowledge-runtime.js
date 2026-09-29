@@ -78,6 +78,20 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
       "CTA MAP 2026-09-29: Public /hall, /find, /profiles, /services/companion, /booking, /tmib, /tmib/stories, /pay/membership, /rules/customer; /public/access only for explicit access/identity context. Website member control: guest -> /member/login, verified -> /member/profile. Direct LINE MY MMD status -> https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status and remains in LIFF. Web MY MMD app-specific routes: /my-mmd/, /my-mmd/profile, /my-mmd/membership, /my-mmd/points, /my-mmd/history, /my-mmd/coupons, /my-mmd/payments, /my-mmd/orders; requests -> /member/requests; generic payment-status fallback -> /member/payments. Private: /sigil/start, /sigil/member/membership, renewal /sigil/member/membership?source=line&intent=renew, /sigil/booking, /sigil/recovery, /blackcard/black-card, exact backend /sigil/pay?t=.... MMS: /male-massage/home, /male-massage/how-to-use, /male-massage/member/mms-booking, /male-massage/therapists/relax-spa, /apply/mms-therapist. Partner: /partner, /partner/apply and partner_type lanes, /partner/model/recommend-model-apply?source=model-to-model, /sigil/model/dashboard/partner-login, /partner/terms, /partner/dashboard. Model: /apply/public-model, /apply/public-model/onboarding, /sigil/model/dashboard, /rules/model. Shop: /mmd-shop, /mmd-shop/order, /mmd-shop/rules, /my-mmd/orders. Care Back: /promotion/6-years-care-back, /promotion/6-years-care-back/wish, /my-mmd/coupons. Never invent URL/payment_ref; never use CTA click as business truth. Avoid fresh /sigil/pay/renew, /sigil/pay/renewal, /pay/renewal, default /confirm/payment-proof, stale /recovery or legacy /member/membership.",
   },
   {
+    id: "kenji_tmib_story_canon_v1",
+    title: "Kenji — TMIB Character + Episode Canon",
+    category: "faq",
+    language: "th",
+    status: "active",
+    response_mode: "auto_reply_allowed",
+    risk_level: "medium",
+    source_path: "member-pages-worker/src/tmib-episode-catalog.js",
+    customer_answer:
+      "ตอนนี้ TMIB มีเรื่องที่ Live แล้ว 1 ตอนครับ — ACT 001 · Four Strangers, One Summer\n\nตัวหลักคือ HITO, HIEI, HIRO และ HIMA: HITO ตรงและเป็นหลักของกลุ่ม, HIEI เงียบแต่สังเกตเก่ง, HIRO นิ่งและอบอุ่น, HIMA สดใสขี้เล่นแต่มีมุมอ่อนไหว\n\nดู TMIB → https://mmdbkk.com/tmib\nดู Stories → https://mmdbkk.com/tmib/stories\nACT 001 → https://mmdbkk.com/tmib/act-001",
+    internal_instruction:
+      "TMIB CANON 2026-09-29. Current live episode catalog has exactly 1 episode: ACT 001, title Four Strangers, One Summer; Thai private-reader title ก่อนที่ทั้งสี่จะเรียกกันว่าเพื่อน. HITO = direct/organized/caring anchor; HIEI = quiet/observant/action-oriented support; HIRO = calm/warm/grounding base; HIMA = lively/playful/lightens mood with a sensitive side. Keep descriptions spoiler-light. Browse /tmib; stories /tmib/stories; story /tmib/act-001. Single episode price is 299 THB; eligible verified membership is included, but access/payment entitlement is backend truth. Never claim ACT 002+ exists until the server-owned episode catalog does.",
+  },
+  {
     id: "kenji_20_008_membership_intake_catalog",
     title: "Kenji AI 2.0 — Public + Private Membership Catalog",
     category: "membership",
