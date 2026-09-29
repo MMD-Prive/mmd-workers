@@ -861,7 +861,7 @@ test("/start preview requires verification and never issues a code or writes pre
     assert.equal(body.code_status, "verification_required");
     assert.deepEqual(kvCalls, []);
     assert.match(telegramBody.text, /PHASE 2/);
-    assert.match(telegramBody.text, /1–30 กันยายน 2026/);
+    assert.match(telegramBody.text, /1 กันยายน–31 ตุลาคม 2026/);
     assert.match(telegramBody.text, /Birthday Wish/);
     assert.match(telegramBody.text, /ส่วนลดสูงสุด 10%/);
     assert.match(telegramBody.text, /ไม่ได้สร้างสิทธิ์ซ้ำ/);
