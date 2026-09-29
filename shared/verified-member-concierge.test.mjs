@@ -7,39 +7,46 @@ assert.equal(canonicalRichMenuIntent({intent:"human_handoff"}), "human_handoff")
 
 for (const level of ["guest","public","private"]) {
   const r=generateSafeReply({level,identity_state:"matched",membership_state:"active",intent:"support",display_name:"Kenji"});
-  assert.equal(r.level,level); assert.equal(r.source,"verified_member_concierge_v1");
+  assert.equal(r.level,level);
+  assert.equal(r.source,"verified_member_concierge_v1");
+  assert.equal(r.text,"");
+  assert.equal(r.silent,true);
+  assert.equal(r.next_action,"manual_silent");
 }
 assert.equal(resolveReplyPolicy({level:"public",identity_state:"needs_review",membership_state:"active"}).blocked,true);
 assert.equal(generateSafeReply({level:"private",identity_state:"blocked",membership_state:"active",intent:"booking"}).next_action,"verify_identity");
 assert.equal(generateSafeReply({level:"private",identity_state:"matched",membership_state:"active",intent:"payment"}).next_action,"verify_payment");
 
-const guest = generateSafeReply({level:"guest",identity_state:"matched",membership_state:"active",intent:"support",display_name:"Guest"});
+const guest = generateSafeReply({level:"guest",identity_state:"matched",membership_state:"active",intent:"membership",display_name:"Guest"});
 assert.match(guest.text,/HITO/);
 assert.match(guest.text,/Public Package/);
 assert.doesNotMatch(guest.text,/Kenji|Private|VIP|SVIP|Black/i);
 
 const publicMember = generateSafeReply({level:"public",identity_state:"matched",membership_state:"active",intent:"support",display_name:"Public"});
-assert.match(publicMember.text,/เปอร์/);
-assert.doesNotMatch(publicMember.text,/สมัครสมาชิก|ต่ออายุ|Kenji/i);
+assert.equal(publicMember.text,"");
+assert.equal(publicMember.silent,true);
+assert.equal(publicMember.next_action,"manual_silent");
 
 for (const canonicalLevel of ["private_standard","private_premium","vip","svip","black_card"]) {
   const active = generateSafeReply({level:"private",identity_state:"matched",membership_state:"active",canonical_membership_level:canonicalLevel,intent:"support",display_name:"Member"});
-  assert.match(active.text,/เปอร์/);
-  assert.doesNotMatch(active.text,/สมัครสมาชิก|ต่ออายุ|Public Package/i);
+  assert.equal(active.text,"");
+  assert.equal(active.silent,true);
+  assert.equal(active.next_action,"manual_silent");
 }
 
 const expiring = generateSafeReply({level:"private",identity_state:"matched",membership_state:"expiring_soon",intent:"renewal",display_name:"Expiring"});
 assert.equal(expiring.next_action,"renew_membership");
 assert.match(expiring.text,/ต่ออายุ/);
 
-const expired = generateSafeReply({level:"private",identity_state:"matched",membership_state:"expired",intent:"support",display_name:"Expired"});
+const expired = generateSafeReply({level:"private",identity_state:"matched",membership_state:"expired",intent:"renewal",display_name:"Expired"});
 assert.equal(expired.next_action,"renew_membership");
 assert.match(expired.text,/ต่ออายุ/);
-assert.match(expired.text,/ยังไม่เปิดรายการ Private/);
+assert.doesNotMatch(expired.text,/สมัครสมาชิก|Public Package|วันนี้ให้เปอร์ช่วย/);
 
 const activeRenewal = generateSafeReply({level:"private",identity_state:"matched",membership_state:"active",intent:"renewal",display_name:"Active"});
-assert.notEqual(activeRenewal.next_action,"renew_membership");
-assert.doesNotMatch(activeRenewal.text,/ต่ออายุ/);
+assert.equal(activeRenewal.text,"");
+assert.equal(activeRenewal.silent,true);
+assert.equal(activeRenewal.next_action,"manual_silent");
 
 const privateKenji = generateSafeReply({level:"private",identity_state:"matched",membership_state:"active",intent:"kenji_ai"});
 assert.match(privateKenji.text,/Kenji/);

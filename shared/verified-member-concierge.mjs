@@ -76,6 +76,12 @@ export function generateSafeReply(input = {}) {
     return { text: "", silent: true, intent, level: policy.level, next_action: "preserve_existing_intent", source: "verified_member_concierge_v1" };
   }
 
+  // Generic greetings/support must not create unsolicited customer replies.
+  // Keep the turn silent for Per/manual handling until the customer makes a clear request.
+  if (intent === "support") {
+    return { text: "", silent: true, intent, level: policy.level, next_action: "manual_silent", source: "verified_member_concierge_v1" };
+  }
+
   // Guest acquisition is deliberately Public-only and is spoken by HITO.
   if (policy.level === "guest") {
     const guestText = `${greeting}\nผม HITO ครับ\n\nถ้าอยากเริ่มใช้ MMD แบบเป็นสมาชิก Public ผมช่วยแนะนำขั้นตอนที่เหมาะกับคุณได้ครับ\nสมัคร Public Package เพื่อเปิดการเข้าถึงข้อมูลสมาชิกและบริการของ MMD ได้เลยครับ`;
@@ -110,12 +116,13 @@ export function generateSafeReply(input = {}) {
     return { text: `${greeting}\nKenji อยู่ตรงนี้ครับ บอกได้เลยว่าอยากให้ช่วยเรื่องนัดหมาย รายการที่สนใจ หรือขั้นตอนต่อไปแบบไหน แล้วผมจะประสานต่อให้ถูกสิทธิ์ครับ`, silent: false, intent, level: policy.level, next_action: "kenji_private_assist", source: "verified_member_concierge_v1" };
   }
 
+  // No broad catch-all customer message. Unhandled safe intents stay manual/silent.
   return {
-    text: `${greeting}\nวันนี้ให้เปอร์ช่วยเรื่องงาน การนัดหมาย การเข้าถึงรายการที่เหมาะกับบัญชี หรือประสานเรื่องส่วนตัวได้เลยครับ`,
-    silent: false,
+    text: "",
+    silent: true,
     intent,
     level: policy.level,
-    next_action: "continue",
+    next_action: "manual_silent",
     source: "verified_member_concierge_v1",
   };
 }
