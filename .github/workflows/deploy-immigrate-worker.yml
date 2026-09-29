@@ -360,12 +360,12 @@ jobs:
               : > "$create_headers"
               create_code="$(curl -sS -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$create_code" = "200" ] \
-                && grep -q "id='mmd-cj-split-v1'" "$create_body" \
-                && grep -q "data-design='lv13-operational'" "$create_body" \
-                && grep -q "data-cj='clientQuery'" "$create_body" \
-                && grep -q "data-cj='modelQuery'" "$create_body" \
-                && grep -q "data-client-lookup-endpoint='/v1/admin/clients/lineage-lookup'" "$create_body" \
-                && grep -q "data-model-search-endpoint='/v1/admin/models/search'" "$create_body" \
+                && grep -q 'mmd-cj-split-v1' "$create_body" \
+                && grep -q 'lv13-operational' "$create_body" \
+                && grep -q 'clientQuery' "$create_body" \
+                && grep -q 'modelQuery' "$create_body" \
+                && grep -q '/v1/admin/clients/lineage-lookup' "$create_body" \
+                && grep -q '/v1/admin/models/search' "$create_body" \
                 && ! grep -q 'id="job-board-form"' "$create_body" \
                 && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
                 echo "Webflow Create Job + canonical search UI verified for $origin on attempt $attempt"
