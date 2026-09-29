@@ -99,8 +99,7 @@ test("unresolved status shell stays before the app and renders recovery form fie
   assert.match(html, /body\.recovery-mode:not\(\.signup-mode\) #actions\{display:grid!important/);
   assert.match(html, /function renderStatusUnresolved\(screen\)/);
   assert.match(html, /screen\.key === "status_unresolved"/);
-  assert.match(html, /name = "nickname"|name = "nickname"/);
-  assert.match(html, /ชื่อเล่นหรือนามแฝง/);
+  assert.match(html, /makeInput\("nickname", "ชื่อเล่นหรือนามแฝง"/);
   assert.match(html, /fetch\(endpoint, \{/);
   assert.match(html, /show\("กำลังตรวจสอบข้อมูลสมาชิกเดิม"\)/);
   assert.match(html, /if \(started\.member_resolved\) \{\n\s+appEntered = true;/);
