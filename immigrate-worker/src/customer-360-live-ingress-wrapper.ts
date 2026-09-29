@@ -228,7 +228,7 @@ body::after{content:"เริ่มจากค้นหาลูกค้า�
 }
 
 export function applyCreateJobBoardPublishPanel(html: string): string {
-  // Job Board is intentionally a separate owner surface at /internal/admin/job-board.
+  // Job Board is intentionally a separate owner surface at /internal/admin/jobs/job-board.
   // Keep this export as a no-op for compatibility with older tests/imports so a
   // future Lovable cutover cannot silently re-inject Job Board into Create Job.
   return html;
