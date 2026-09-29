@@ -5,7 +5,7 @@ import {
 import { buildKenjiLineConversationHistory } from "./kenji-line-conversation-history.mjs";
 import { observeKenjiLineContextualUnderstandingShadow } from "./kenji-line-contextual-understanding-shadow.mjs";
 
-const AI_MATRIX_URL = "https://ai-worker.local/v1/ai/kenji/conversation-matrix";
+const AI_MATRIX_URL = "https://mmd-kenji-ai.local/v1/ai/kenji/conversation-matrix";
 const BRIDGE_ENV = "KENJI_AI_WORKER_BRIDGE_ENABLED";
 const CREW_SOURCE_IDS_ENV = "KENJI_LINE_CREW_SOURCE_IDS";
 const MAX_EVENTS_PER_WEBHOOK = 50;
@@ -135,7 +135,8 @@ function safeBridgeResult(overrides = {}) {
 
 export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuilder = buildKenjiLineCanonicalContext } = {}) {
   if (!enabled(env[BRIDGE_ENV])) return safeBridgeResult({ reason: "bridge_disabled" });
-  if (!env.AI_WORKER?.fetch) return safeBridgeResult({ reason: "ai_worker_binding_missing" });
+  const aiBinding = env.KENJI_AI_WORKER?.fetch ? env.KENJI_AI_WORKER : env.AI_WORKER;
+  if (!aiBinding?.fetch) return safeBridgeResult({ reason: "ai_worker_binding_missing" });
   if (!event || typeof event !== "object" || event?.deliveryContext?.isRedelivery === true) {
     return safeBridgeResult({ reason: event?.deliveryContext?.isRedelivery === true ? "line_redelivery_skipped" : "invalid_event" });
   }
@@ -197,13 +198,14 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
   }
 
   try {
-    response = await env.AI_WORKER.fetch(new Request(AI_MATRIX_URL, {
+    response = await aiBinding.fetch(new Request(AI_MATRIX_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-mmd-internal-call": "true",
         "x-mmd-service-binding": "member-dashboard-chat-worker",
         "x-service-name": "member-dashboard-chat-worker",
+        ...(env.INTERNAL_TOKEN ? { authorization: `Bearer ${env.INTERNAL_TOKEN}` } : {}),
       },
       body: JSON.stringify({
         actor: { role: "system" },
