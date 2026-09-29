@@ -124,7 +124,7 @@ test("direct status LIFF remains the Worker-rendered member console", async () =
   assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
   assert.match(html, /NATIVE LIFF DASHBOARD/);
   assert.match(html, /\/api\/member\/app\/history/);
-  assert.match(html, /LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
+  assert.match(html, /CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
   assert.doesNotMatch(html, /window\.location\.replace\(target\)/);
 });
 
