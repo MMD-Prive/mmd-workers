@@ -8,6 +8,8 @@ const proof = { proof_id:'proof-a', customer_name:'คิว - SVIP -', customer
 const confirmation={ok:true,session_id:'sess-a',payment_ref:'pay-a',payment_stage:'full',money_truth_changed:false,confirmation:{delivery_status:'pending',retry_available:true,retry_queued:true,dispatched:false,customer_line_sent:true,customer_acknowledged_at:'2026-09-21T09:00:00Z',model_acknowledged_at:null}};
 const job = { ...proof, session_record_id:'rec-a', payments:[{payment_ref:'pay-a',payment_stage:'full',expected_amount_thb:30000,state:'proof_pending',proof_ids:['proof-a']}] };
 const waiting = { ...job, session_record_id:'rec-b', session_id:'sess-b', customer_name:'เชน - SVIP -',customer_aliases:['shane'],model_name:'Model B',model_aliases:['MODEL02'], payments:[{payment_ref:'pay-b',payment_stage:'deposit',expected_amount_thb:7500,state:'waiting_proof',proof_ids:[]}] };
+const underDeposit = { ...proof, proof_id:'proof-under', payment_ref:'pay-under', session_id:'sess-under', payment_stage:'deposit', evidence_amount_thb:2000, expected_amount_thb:3000, service_total_thb:10000, deposit_standard_percent:30, deposit_standard_minimum_thb:3000, deposit_received_percent:20, deposit_shortfall_thb:1000, deposit_review_state:'under_standard_owner_review', owner_attention_required:true, review_flags:['deposit_amount_differs_from_intent','deposit_under_standard'] };
+const underDepositJob = { ...underDeposit, session_record_id:'rec-under', payments:[{payment_ref:'pay-under',payment_stage:'deposit',expected_amount_thb:3000,state:'proof_pending',proof_ids:['proof-under']}] };
 const tick = () => new Promise(resolve=>setImmediate(resolve));
 function setup(options={}) {
   const calls=[];
@@ -46,6 +48,28 @@ test('canonical approval errors stay specific instead of blaming pairing generic
 
 test('exact proof reload, image and both checks are mandatory before approval',async()=>{
  const h=setup({items:[]});try{await tick();await tick();await h.open();assert.ok(h.calls.some(x=>x.url.includes('proof_id=proof-a')));assert.equal(h.q('[data-pf-approve]').disabled,true);h.image();h.q('[data-pf-match]').click();assert.equal(h.q('[data-pf-approve]').disabled,true);h.q('[data-pf-bank]').click();assert.equal(h.q('[data-pf-approve]').disabled,false);h.q('[data-pf-evidence] img').onerror();assert.equal(h.q('[data-pf-approve]').disabled,true);assert.equal(h.calls.filter(x=>x.opts.method==='POST').length,0);
+ }finally{h.dom.window.close()}
+});
+
+test('deposit below 30 percent stays reviewable but requires explicit owner acceptance',async()=>{
+ let posted=null;
+ const h=setup({items:[underDeposit],jobs:[underDepositJob],exact:[underDeposit],fetch:async(_url,opts)=>{
+   if(opts.method==='POST'){posted=JSON.parse(opts.body);return{ok:true,status:200,json:async()=>({ok:true,money_truth_changed:true,payment_stage:'deposit',deposit_review:{standard_minimum_percent:30,standard_minimum_thb:3000,received_thb:2000,received_percent:20,shortfall_thb:1000,under_standard:true},job_link_dispatch:{dispatched:false}})}}
+ }});
+ try{
+   await tick();await tick();await h.open();h.image();
+   assert.match(h.q('[data-pf-review]').textContent,/ต่ำกว่า 30%/);
+   assert.match(h.q('[data-pf-review]').textContent,/20%/);
+   assert.match(h.q('[data-pf-review]').textContent,/ขาดจากมาตรฐาน 1,000 บาท/);
+   assert.doesNotMatch(h.q('[data-pf-review]').textContent,/สลิปตรงกับลูกค้า งาน และยอดนี้/);
+   h.q('[data-pf-match]').click();h.q('[data-pf-bank]').click();
+   assert.equal(h.q('[data-pf-approve]').disabled,true,'owner exception is still required');
+   h.q('[data-pf-deposit-exception]').click();
+   assert.equal(h.q('[data-pf-approve]').disabled,false);
+   h.q('[data-pf-approve]').click();await tick();
+   assert.equal(posted.decision,'approve');
+   assert.match(posted.admin_reason,/ต่ำกว่ามาตรฐาน 30%/);
+   assert.match(h.q('[data-pf-receipt]').textContent,/Owner Review/);
  }finally{h.dom.window.close()}
 });
 
