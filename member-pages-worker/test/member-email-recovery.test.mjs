@@ -55,7 +55,7 @@ test("one exact existing Member email wins as canonical identity evidence withou
   assert.deepEqual(result.candidateMemberIds, ["recMemberABC12345"]);
 });
 
-test("one exact Client phone match is treated as known prior identity without granting rights", async () => {
+test("one exact Client phone match is treated as known prior identity without changing rights", async () => {
   const env = envWith({
     Clients: [
       { id: "recClientPhone123", fields: { "Phone Number": "081 234 5678" } },
@@ -74,23 +74,42 @@ test("one exact Client phone match is treated as known prior identity without gr
   assert.deepEqual(result.evidenceSources, ["clients_phone"]);
 });
 
-test("LINE OFC Telegram username candidate is queued as known prior identity evidence", async () => {
+test("one exact Client nickname match is treated as review evidence without changing rights", async () => {
   const env = envWith({
-    "LINE OFC Client Import Staging": [
-      { id: "recLineOfcTg123", fields: { telegram_username_candidate: "perclient" } },
+    Clients: [
+      { id: "recClientNick123", fields: { nickname: "บอส" } },
     ],
   });
 
   const result = await inspectRecoveryEvidence(env, {
     lineUserId: LINE_ID,
-    telegramUsername: "@PerClient",
+    nickname: " บอส ",
   });
 
   assert.equal(result.state, "known_identity");
-  assert.equal(result.match_type, "line_ofc_telegram");
-  assert.equal(result.confidence, 78);
+  assert.equal(result.match_type, "exact_client_nickname");
+  assert.equal(result.confidence, 70);
+  assert.deepEqual(result.candidateClientIds, ["recClientNick123"]);
+  assert.deepEqual(result.evidenceSources, ["clients_nickname"]);
+});
+
+test("LINE OFC nickname candidate is queued as manual review evidence", async () => {
+  const env = envWith({
+    "LINE OFC Client Import Staging": [
+      { id: "recLineOfcNick123", fields: { normalized_name: "book" } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    nickname: "Book",
+  });
+
+  assert.equal(result.state, "known_identity");
+  assert.equal(result.match_type, "line_ofc_nickname");
+  assert.equal(result.confidence, 60);
   assert.deepEqual(result.candidateClientIds, []);
-  assert.deepEqual(result.evidenceSources, ["line_ofc_telegram_candidate"]);
+  assert.deepEqual(result.evidenceSources, ["line_ofc_nickname_candidate"]);
 });
 
 test("ambiguous canonical Member email fails closed to manual review", async () => {
@@ -104,6 +123,24 @@ test("ambiguous canonical Member email fails closed to manual review", async () 
   const result = await inspectRecoveryEvidence(env, {
     lineUserId: LINE_ID,
     email: "dup@example.com",
+  });
+
+  assert.equal(result.state, "review_required");
+  assert.equal(result.match_type, "ambiguous");
+  assert.equal(result.confidence, 0);
+});
+
+test("ambiguous nickname evidence fails closed to manual review", async () => {
+  const env = envWith({
+    Clients: [
+      { id: "recClientNickABC1", fields: { nickname: "บอส" } },
+      { id: "recClientNickXYZ1", fields: { nickname: "บอส" } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    nickname: "บอส",
   });
 
   assert.equal(result.state, "review_required");
@@ -186,7 +223,7 @@ test("a claimed old account with no exact evidence is review_required, never aut
   const result = await inspectRecoveryEvidence(envWith(), {
     lineUserId: LINE_ID,
     phone: "0991234567",
-    telegramUsername: "missinguser",
+    nickname: "missing",
   });
 
   assert.equal(result.state, "review_required");
