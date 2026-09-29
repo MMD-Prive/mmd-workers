@@ -138,6 +138,12 @@ function isEnabled(value) {
   return ["1", "true", "yes", "on"].includes(asString(value).toLowerCase());
 }
 
+export function kenjiLineModelOnlyAllowsReply({ intent = "", modelIntent = {} } = {}) {
+  const canonicalIntent = asString(intent);
+  if (canonicalIntent === "model_lookup" || canonicalIntent === "model_access_verification") return true;
+  return Boolean(modelIntent?.campaign_trigger && asString(modelIntent?.query));
+}
+
 function parseHashAllowlist(value) {
   const raw = asString(value);
   if (!raw) return { valid: true, hashes: new Set() };
@@ -2650,6 +2656,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED) && !runtimeLineKill;
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
   const lineBrainEnabled = isEnabled(env.KENJI_LINE_BRAIN_V1_ENABLED);
+  const modelOnlyMode = isEnabled(env.KENJI_LINE_MODEL_ONLY_ENABLED);
   const saved = [];
 
   for (const prepared of preparedEvents) {
@@ -2762,6 +2769,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const campaignCanReply = Boolean(
       kenjiEnabled && !runtimeLineKill && !ownerReplyBlocked && eventMode !== "standby" &&
+      (!modelOnlyMode || Boolean(campaignTrigger)) &&
       event?.type === "message" && event?.message?.type === "text" &&
       event?.source?.type === "user" && getReplyToken(event)
     );
@@ -2786,6 +2794,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const campaignItem = campaignTrigger || campaignContextResult.context || null;
     const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
     const intent = campaignBrief ? "card_campaign_brief" : effectiveIntent;
+    const modelOnlyAllowed = !modelOnlyMode || kenjiLineModelOnlyAllowsReply({ intent, modelIntent });
     const campaignLeadEnabled = Boolean(
       !ownerReplyBlocked &&
       !campaignContextUnavailable &&
@@ -2879,9 +2888,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (campaignBrief && campaignContextResult.claimed === true && !campaignLeadQueued) {
       await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token });
     }
-    const canRegisterSupplier = Boolean(autoReplyEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(!modelOnlyMode && autoReplyEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(!campaignEvent && !isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(modelOnlyAllowed && !campaignEvent && !isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
@@ -2905,6 +2914,8 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         }
       : campaignContextUnavailable
         ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "campaign_context_unavailable" }
+        : !modelOnlyAllowed
+          ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "owner_model_only_mode" }
         : isSupplierRegistration
           ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
         : ((canGenerateReply || (campaignEvent && campaignCanReply)) && !modelPreflight.deduped
@@ -2931,6 +2942,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true) ||
       (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
     const shouldReply = Boolean(
+      modelOnlyAllowed &&
       (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
       eventMode !== "standby" &&
       replyText &&
@@ -3030,6 +3042,8 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       runtime_model_kill: runtimeModelKill,
       runtime_all_kill: runtimeAllKill,
       line_brain_v1_enabled: lineBrainEnabled,
+      model_only_mode: modelOnlyMode,
+      model_only_allowed: modelOnlyAllowed,
       reply_token_present: Boolean(getReplyToken(event)),
       inbox_deduped: Boolean(record?.deduped),
       reply_candidate: Boolean(replyText),

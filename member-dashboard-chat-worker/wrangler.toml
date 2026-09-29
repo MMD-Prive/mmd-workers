@@ -392,10 +392,13 @@ zone_name = "mmdbkk.com"
 # reviewed Seed Pack / deterministic live-truth routes and the runtime kill switch.
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
-# First Contact V2 takes over whenever the reviewed broad Seed Pack has no safe
-# answer, and remains the bounded fallback if that broad lane is deliberately muted.
-# LINE OA owns the add-friend greeting; Runtime Controls can stop all delivery immediately.
-LINE_FIRST_CONTACT_ENABLED = "true"
+# Owner lock 2026-09-29: customer-facing LINE may autonomously reply only to
+# direct Model name/code lookup (plus the bounded verification continuation
+# required by that lookup). All ordinary payment, membership, service, browse,
+# confirmation and free-conversation text stays silent for Per/manual handling.
+KENJI_LINE_MODEL_ONLY_ENABLED = "true"
+# First Contact is disabled while the owner model-only lock is active.
+LINE_FIRST_CONTACT_ENABLED = "false"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
