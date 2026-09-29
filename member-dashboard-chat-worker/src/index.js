@@ -421,6 +421,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
   if (/(?:หา|เช็ก|ดู|ขอ).{0,16}(?:model|นายแบบ).{0,20}(?:คืนนี้|วันนี้|พรุ่งนี้|ว่าง|คิว|ตาราง)|(?:model|นายแบบ).{0,20}(?:ว่าง|พร้อม|availability|schedule|ตารางงาน)|(?:ว่างไหม|เช็กคิว|ดูคิว)/i.test(normalized)) return "availability_request";
+  if (/(?:ขอ|อยาก|ต้องการ|รบกวน|ช่วย)?\s*(?:คืนเงิน|โอนคืน)|(?:refund|money\s*back)/i.test(normalized)) return "refund_request";
   if (/(?:จ่าย|ชำระ|โอน|ยอด|เงิน|สลิป|payment|paid).{0,40}(?:ไม่มีใครแก้|ยังไม่แก้|หลายวัน|โต้แย้ง|dispute)|(?:ไม่มีใครแก้|ยังไม่แก้|หลายวัน|โต้แย้ง|dispute).{0,40}(?:จ่าย|ชำระ|โอน|ยอด|เงิน|สลิป|payment|paid)/i.test(normalized)) return "payment_dispute";
   if (/(ร้องเรียน|complaint|ไม่พอใจ|ไม่โอเค|บริการแย่|แย่มาก|มีปัญหา|เรื่องด่วน|อยากให้เปอร์จัดการเอง|escalat|กู้คืน|recover account|บัญชีหาย|เข้าไม่ได้)/i.test(normalized)) return "complaint_escalation";
   if (/(ระบบหลังบ้าน|internal|admin|แอดมิน|สิทธิ์เข้าถึง|ขอ access|access request|token|secret|api key|ฐานข้อมูล|airtable|cloudflare|worker|prompt|คำสั่งระบบ)/i.test(normalized)) return "internal_access";
