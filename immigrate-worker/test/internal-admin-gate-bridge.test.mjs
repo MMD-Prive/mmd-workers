@@ -136,27 +136,16 @@ test("create-session page loads an existing bundled create-session asset", async
   assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev/);
 });
 
-test("Create Job stays isolated from Job Board and legacy route redirects", async () => {
+test("canonical Create Job falls through to Webflow while legacy route redirects", async () => {
   const calls = [];
-  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-job"), {
+  const { result: canonical, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-job"), {
     ADMIN_WORKER: adminWorkerBinding(calls),
     ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
   }));
-  const html = await response.text();
 
-  assert.equal(response.status, 200);
+  assert.equal(canonical, null);
   assert.equal(publicCalls, 0);
-  assert.equal(calls.length, 1);
-  assert.match(html, /id="job-client-query"/);
-  assert.match(html, /id="job-model-query"/);
-  assert.match(html, /id="amount_thb" name="amount_thb" type="number" min="1" step="1" required/);
-  assert.match(html, /href="\/internal\/admin\/jobs\/job-board"/);
-  assert.match(html, /data-cj-job-board-handoff="separate-v1"/);
-  assert.doesNotMatch(html, /id="job-board-form"/);
-  assert.doesNotMatch(html, /id="job-board-text"/);
-  assert.doesNotMatch(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
-  assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
-  assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
+  assert.equal(calls.length, 0);
 
   const legacy = await handleInternalRoutes(request("/internal/jobs/create-job?source=legacy"), {
     ADMIN_WORKER: adminWorkerBinding([]),
