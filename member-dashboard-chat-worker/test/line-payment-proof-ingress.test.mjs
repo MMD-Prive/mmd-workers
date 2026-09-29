@@ -11,6 +11,8 @@ const {
   captureDirectUserImageEvidence,
   membershipOpsThreadId,
   notifyPaymentProofOps,
+  notifyDirectCustomerPaymentEvidence,
+  buildDirectPaymentAcknowledgement,
   paymentOpsThreadId,
   promoteDirectUserCandidate,
   resolveDirectPayerContext,
@@ -283,6 +285,81 @@ test("Telegram review-required membership asks the operator to inspect the proof
   assert.match(h.messages[0].text, /สถานะ: ต้องตรวจสอบ/);
   assert.match(h.messages[0].text, /เปิดกล่องตรวจรับเงินเพื่อตรวจตัวตน แพ็กเกจ และสลิปด้วยคน/);
   assert.doesNotMatch(h.messages[0].text, /รอระบบรับเงินยืนยันตัวตน/);
+});
+
+
+test("direct LINE customer receives pending acknowledgement without claiming payment truth", async () => {
+  const calls = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (request.url === "https://api.line.me/v2/bot/message/push") {
+      calls.push(await request.json());
+      return new Response("", { status: 200 });
+    }
+    throw new Error(`unexpected_fetch:${request.url}`);
+  };
+  try {
+    const evidence = {
+      proofId: "line_direct_ack_1",
+      sourceType: "user",
+      paymentContextText: "โอนมัดจำแล้ว",
+      analysis: {
+        payment_intelligence: { tracking_kind: "job_deposit" },
+        ops_route: { topic: "payment", reason: "service_payment", should_alert: false },
+        job_correlation: {
+          status: "exact",
+          selected: {
+            model_name: "Film J",
+            job_date: "2026-10-11",
+            start_time: "19:30",
+            end_time: "20:30",
+          },
+        },
+      },
+    };
+    const result = await notifyDirectCustomerPaymentEvidence(
+      { LINE_CHANNEL_ACCESS_TOKEN: "line-token" },
+      evidence,
+      { deduped: false, settlement: { status: "deduped" } },
+      "U1234567890abcdef1234567890abcdef",
+    );
+    assert.equal(result.sent, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].to, "U1234567890abcdef1234567890abcdef");
+    assert.match(calls[0].messages[0].text, /ได้รับหลักฐานค่ามัดจำแล้วครับ/);
+    assert.match(calls[0].messages[0].text, /Film J/);
+    assert.match(calls[0].messages[0].text, /อยู่ระหว่างตรวจสอบ/);
+    assert.match(calls[0].messages[0].text, /ยังไม่ใช่การยืนยันรับเงิน/);
+    assert.doesNotMatch(calls[0].messages[0].text, /ยืนยัน.*เรียบร้อย/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("direct LINE customer confirmation is only rendered after authoritative materialization", () => {
+  const text = buildDirectPaymentAcknowledgement({
+    sourceType: "user",
+    paymentContextText: "ต่ออายุสมาชิก",
+    analysis: {
+      payment_intelligence: { tracking_kind: "membership_renewal" },
+      ops_route: { topic: "membership", reason: "membership", should_alert: false },
+      extraction: { amount_thb: 1000 },
+    },
+  }, { settlement: { status: "materialized" } });
+  assert.match(text, /ได้รับและยืนยันค่าต่อสมาชิกเรียบร้อยแล้วครับ/);
+  assert.match(text, /ระบบอัปเดตสถานะรายการให้แล้วครับ/);
+});
+
+test("group payment evidence never pushes a direct customer acknowledgement", async () => {
+  const result = await notifyDirectCustomerPaymentEvidence(
+    { LINE_CHANNEL_ACCESS_TOKEN: "line-token" },
+    { sourceType: "group", analysis: {} },
+    { deduped: false },
+    "U1234567890abcdef1234567890abcdef",
+  );
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, "not_direct_user");
 });
 
 test("LINE generic transfer proof stays in Payments Confirm topic 22", async () => {
