@@ -10,6 +10,7 @@ export const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
 export const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
 export const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
 export const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
+export const KENJI_KNOWLEDGE_RETRIEVE_PATH = "/v1/admin/kenji/knowledge/retrieve";
 export const KENJI_KNOWLEDGE_DETAIL_PREFIX = "/v1/admin/kenji/knowledge/";
 
 const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
@@ -184,6 +185,7 @@ export function isKenjiKnowledgeRequest(path, method = "GET") {
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_META_PATH) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
+  if ((normalizedMethod === "POST" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_RETRIEVE_PATH) return true;
   if ((normalizedMethod === "POST" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
   if (isKenjiKnowledgeWorkflowRequest(path, normalizedMethod)) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && isKnowledgeDetailPath(path)) return true;
@@ -196,6 +198,7 @@ export function isKenjiKnowledgePath(path) {
     path === KENJI_KNOWLEDGE_LIST_PATH ||
     path === KENJI_KNOWLEDGE_DRAFT_PATH ||
     path === KENJI_KNOWLEDGE_PUBLISHED_PATH ||
+    path === KENJI_KNOWLEDGE_RETRIEVE_PATH ||
     isKenjiKnowledgeWorkflowRequest(path, "GET") ||
     isKenjiKnowledgeWorkflowRequest(path, "POST") ||
     isKnowledgeDetailPath(path);
@@ -252,6 +255,7 @@ export async function handleKenjiKnowledgeRequest(request, env = {}, options = {
         detail: true,
         draft_persist: storage.persisted,
         published_runtime: true,
+        internal_published_retrieval: true,
         fallback_static_cards: true,
       },
       static_count: STATIC_CANONICAL_CARDS.length,
@@ -289,6 +293,44 @@ export async function handleKenjiKnowledgeRequest(request, env = {}, options = {
       count: result.cards.length,
       total: result.cards.length,
       has_more: false,
+    }, result.status), cors);
+  }
+
+  if (path === KENJI_KNOWLEDGE_RETRIEVE_PATH) {
+    if (method === "HEAD") {
+      return withCors(jsonForMethod(request, {
+        ok: true,
+        source: "admin-worker",
+        mode: "kenji_internal_published_retrieval",
+      }), cors);
+    }
+    const parsed = await parseJsonObject(request);
+    if (!parsed.ok) return withCors(json({ ok: false, error: "invalid_json" }, 400, request), cors);
+    const queryText = clean(parsed.data.query || parsed.data.text || parsed.data.customer_message);
+    if (!queryText) return withCors(json({ ok: false, error: "query_required" }, 400, request), cors);
+    const result = await loadKnowledgeCards(env, {
+      publishedOnly: true,
+      language: clean(parsed.data.language || "th") || "th",
+      limit: 100,
+    });
+    const matches = rankKenjiKnowledgeForInternalDraft(result.cards, {
+      query: queryText,
+      category: parsed.data.category,
+      limit: parsed.data.limit || 6,
+    });
+    return withCors(json({
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_internal_published_retrieval",
+      data_status: matches.length ? result.data_status : "empty",
+      context_only: true,
+      live_truth_wins: true,
+      customer_delivery_allowed: false,
+      storage: result.storage,
+      query: queryText,
+      matches,
+      items: matches,
+      count: matches.length,
     }, result.status), cors);
   }
 
@@ -545,6 +587,122 @@ function filterCards(cards, query = {}) {
     result = result.filter((card) => JSON.stringify(card).toLowerCase().includes(needle));
   }
   return result.slice(0, clampLimit(query.limit || 100));
+}
+
+
+export function rankKenjiKnowledgeForInternalDraft(cards = [], input = {}) {
+  const query = normalizeRetrievalText(input.query || input.text || input.customer_message);
+  if (!query) return [];
+  const category = clean(input.category).toLowerCase();
+  const limit = Math.max(1, Math.min(20, Number(input.limit) || 6));
+
+  return (Array.isArray(cards) ? cards : [])
+    .filter(isPublishedRetrievalCard)
+    .map((card) => {
+      const payload = card?.payload_json && typeof card.payload_json === "object" && !Array.isArray(card.payload_json)
+        ? card.payload_json
+        : {};
+      const correction = payload?.per_correction && typeof payload.per_correction === "object" && !Array.isArray(payload.per_correction)
+        ? payload.per_correction
+        : {};
+      const correctionEligible =
+        clean(correction.learning_rule) === "prefer_current_owner_correction_when_context_matches" &&
+        correction.protected_truth_override === false &&
+        Boolean(clean(correction.customer_example)) &&
+        Boolean(clean(correction.corrected_answer));
+      const genericHaystack = [
+        card.title,
+        card.knowledge_id,
+        card.id,
+        card.customer_answer,
+        card.answer,
+        card.internal_instruction,
+        card.category,
+      ].map(normalizeRetrievalText).filter(Boolean).join(" ");
+      const genericScore = retrievalTextScore(genericHaystack, query);
+      const correctionMatch = correctionEligible
+        ? retrievalTextScore(normalizeRetrievalText(correction.customer_example), query)
+        : 0;
+      let score = genericScore;
+      let matchReason = genericScore > 0 ? "published_knowledge" : "";
+      if (correctionMatch > 0) {
+        score += 60 + correctionMatch;
+        matchReason = "published_per_correction";
+      }
+      if (category && clean(card.category).toLowerCase() === category) score += 8;
+      if (!score) return null;
+      const ownerCorrection = matchReason === "published_per_correction";
+      return {
+        knowledge_id: clean(card.knowledge_id || card.id),
+        title: clean(card.title),
+        category: clean(card.category),
+        language: clean(card.language || "th"),
+        customer_answer: clean(card.customer_answer || card.answer),
+        response_mode: clean(card.response_mode),
+        risk_level: clean(card.risk_level),
+        workflow_stage: clean(card.workflow_stage || "published"),
+        workflow_version: Number(card.workflow_version || 1),
+        source_path: clean(card.source_path),
+        source_ref: clean(card.source_ref),
+        score,
+        match_reason: matchReason,
+        owner_correction: ownerCorrection,
+        correction_policy: ownerCorrection ? "prefer_current_owner_correction_when_context_matches" : null,
+        protected_truth_override: false,
+        context_only: true,
+        live_truth_wins: true,
+        customer_delivery_allowed: false,
+        requires_live_truth: ["critical", "high"].includes(clean(card.risk_level).toLowerCase()) ||
+          ["payment", "membership", "booking", "model", "admin_policy"].includes(clean(card.category).toLowerCase()),
+        updated_at: clean(card.workflow_updated_at || card.updated_at),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
+    .slice(0, limit);
+}
+
+function isPublishedRetrievalCard(card = {}) {
+  const status = clean(card.status).toLowerCase();
+  const stage = clean(card.workflow_stage || card?.payload_json?.workflow?.stage).toLowerCase();
+  if (stage && stage !== "published") return false;
+  return ["active", "approved", "published"].includes(status) || stage === "published";
+}
+
+function normalizeRetrievalText(value) {
+  return clean(value)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function retrievalTextScore(haystack, query) {
+  if (!haystack || !query) return 0;
+  const h = normalizeRetrievalText(haystack);
+  const q = normalizeRetrievalText(query);
+  if (!h || !q) return 0;
+  const hc = h.replace(/\s+/g, "");
+  const qc = q.replace(/\s+/g, "");
+  let score = 0;
+  if (h === q) score += 36;
+  else if (hc === qc) score += 32;
+  else if (h.includes(q) || q.includes(h)) score += 20;
+  else if (hc.includes(qc) || qc.includes(hc)) score += 16;
+
+  const tokens = Array.from(new Set(q.split(/\s+/).filter((token) => token.length > 1)));
+  let hits = 0;
+  for (const token of tokens) {
+    if (h.includes(token)) {
+      hits += 1;
+      score += token.length >= 4 ? 4 : 2;
+    }
+  }
+  if (tokens.length && hits === tokens.length) score += 8;
+  else if (tokens.length > 1 && hits / tokens.length >= 0.6) score += 4;
+  return score;
 }
 
 function parseListQuery(params) {
