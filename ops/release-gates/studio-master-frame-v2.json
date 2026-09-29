@@ -1,0 +1,15 @@
+{
+  "schema": "mmd.studio_master_frame_v2_release_gate.v1",
+  "updated_at": "2026-09-29",
+  "decision": "hold",
+  "auto_generation_enabled": false,
+  "gates": {
+    "webflow_studio_v2_published": {"status": "pending", "evidence": ""},
+    "studio_page_smoke": {"status": "pending", "evidence": ""},
+    "profile_main_selected": {"status": "pending", "evidence": ""},
+    "exactly_one_generation_job": {"status": "pending", "evidence": ""},
+    "studio_preview_received": {"status": "pending", "evidence": ""},
+    "identity_and_stats_review": {"status": "pending", "evidence": ""},
+    "finished_png_returned": {"status": "pending", "evidence": ""}
+  }
+}
