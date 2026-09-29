@@ -14,6 +14,8 @@ import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from
 import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowledge-runtime.mjs";
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
+import { buildKenjiLineConversationHistory, recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
+import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-understanding-shadow.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
@@ -1321,12 +1323,37 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     const deadlineAt = Number(options.deadlineAt) || (Date.now() + KENJI_TOTAL_DEADLINE_MS);
     const grounding = await getModelGrounding(env, eventText, deadlineAt);
     knowledgeHits = grounding.length;
+    const history = await buildKenjiLineConversationHistory({ env, event }).catch(() => ({
+      enabled: true,
+      available: false,
+      turns: [],
+      memory: {},
+      coverage: { customer_messages: 0, confirmed_assistant_messages: 0, reply_history_complete: false },
+      reason: "history_runtime_error",
+    }));
+    const contextual = KENJI_CONTEXTUAL_SHADOW_INTERNALS.fallbackUnderstanding({ history, event });
+    const matrix = options?.continuity?.matrix || {};
     model = await generateKenjiModelReply({
       text: eventText,
       knowledge: grounding,
       env,
       deadline_at: deadlineAt,
       capability: capabilityDecision.capability,
+      conversation_context: {
+        turns: Array.isArray(history?.turns) ? history.turns.slice(-6) : [],
+        relation: asString(contextual?.relation) || "standalone",
+        contextual_relation: asString(contextual?.relation) || "standalone",
+        referent_state: asString(contextual?.referent_state),
+        needs_clarification: contextual?.needs_clarification === true,
+        continuity_summary: asString(matrix?.continuity_summary || options?.continuity?.continuity_summary).slice(0, 500),
+        important_open_loops: Array.isArray(matrix?.important_open_loops)
+          ? matrix.important_open_loops.slice(0, 4)
+          : Array.isArray(options?.continuity?.important_open_loops)
+            ? options.continuity.important_open_loops.slice(0, 4)
+            : [],
+        history_available: history?.available === true,
+        reply_history_complete: history?.coverage?.reply_history_complete === true,
+      },
       validation_context: {
         inferred_capability: capabilityDecision.capability,
         requested_domain: capabilityDecision.requested_domain,
@@ -2866,6 +2893,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       (!campaignEvent || options.suppressCampaignReply !== true)
     );
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+    const outboundHistoryPromise = replyResult?.ok === true
+      ? recordDeliveredKenjiLineReply({ env, event: rawEvent, replyText }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
+      : Promise.resolve({ skipped: true, reason: "reply_not_delivered" });
 
     const historyMetadata = {
       turn_aggregation: {
@@ -2923,6 +2953,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         })]),
         historyAssessmentPromise,
         matrixWritePromise,
+        outboundHistoryPromise,
       ]);
       ctx.waitUntil(backgroundWork);
     } else {
@@ -2933,7 +2964,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
           record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
         }
       }
-      [historyAssessmentResult, matrixWriteResult] = await Promise.all([historyAssessmentPromise, matrixWritePromise]);
+      [historyAssessmentResult, matrixWriteResult] = await Promise.all([historyAssessmentPromise, matrixWritePromise, outboundHistoryPromise]);
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
