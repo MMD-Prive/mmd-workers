@@ -18,11 +18,11 @@ Coupon Canon V2.2 supersedes earlier rules that treated 10% as a fixed guarantee
 | Phase | Customer-facing name | Period | Rule |
 | --- | --- | --- | --- |
 | 01 | MMD Birthday CARE BACK | Today–31 August 2026 | Birthday window |
-| 02 | CARE BACK CONTINUES | 1–30 September 2026 | Continuation for customers who saw the campaign or registration window late |
+| 02 | CARE BACK CONTINUES | 1 September–31 October 2026 | Continuation for customers who saw the campaign or registration window late |
 
-Both phases use **one identical benefit policy**. September is not a second promotion and does not create a second coupon, second point bonus, or duplicate membership extension.
+Both phases use **one identical benefit policy**. The continuation period is not a second promotion and does not create a second coupon, second point bonus, or duplicate membership extension.
 
-After 30 September 2026, the system must not create a new CARE BACK claim. A verified claim that already exists may resume its approved workflow and status checks.
+After 31 October 2026, the system must not create a new CARE BACK claim. A verified claim that already exists may resume its approved workflow and status checks.
 
 ## 3. Required customer flow
 

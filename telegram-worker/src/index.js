@@ -3965,7 +3965,7 @@ function hypeCanonicalRouteText(command) {
   }
   return [
     "<b>6 YEARS CARE BACK · PHASE 2</b>",
-    "CARE BACK CONTINUES · 1–30 กันยายน 2026",
+    "CARE BACK CONTINUES · 1 กันยายน–31 ตุลาคม 2026",
     "",
     "ใช้ policy เดียวกับ Phase 1 และไม่สร้าง claim / coupon / Points bonus ซ้ำครับ",
     "ยืนยันผ่าน LINE/LIFF → MMD ตรวจสถานะและประวัติ → Birthday Wish saved → จึงเปิดคูปองส่วนตัว “ส่วนลดสูงสุด 10%” ตามสิทธิ์ที่ตรวจสอบได้",
@@ -4410,7 +4410,7 @@ async function postPreviewChannelCta(body, env) {
 function previewVerificationRequiredText() {
   return [
     "6 YEARS CARE BACK · PHASE 2 — CARE BACK CONTINUES",
-    "เปิด 1–30 กันยายน 2026 ครับ",
+    "เปิด 1 กันยายน–31 ตุลาคม 2026 ครับ",
     "",
     "HYPE จะพาคุณยืนยันผ่าน LINE/LIFF และให้ MMD ตรวจสถานะสมาชิก ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบได้ก่อนครับ",
     "Phase 2 ใช้สิทธิ์ชุดเดียวกับ Phase 1 ไม่ได้สร้างสิทธิ์ซ้ำ",
