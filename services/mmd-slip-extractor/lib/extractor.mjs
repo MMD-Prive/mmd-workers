@@ -19,6 +19,9 @@ const EMPTY_RESULT = Object.freeze({
   sender_bank: "",
   receiver_bank: "",
   provider: "",
+  account_number: "",
+  account_name: "",
+  account_bank: "",
   confidence_score: 0,
 });
 
@@ -113,9 +116,19 @@ export function normalizeOcrText(text, confidence = 0) {
   result.payer_name = firstMatch(raw, [/(?:จาก|ผู้โอน|ชื่อผู้โอน|sender|from)\s*[:：]?\s*([^\n]{2,80})/i]);
   result.sender_bank = firstMatch(raw, [/(?:ธนาคารผู้โอน|sender\s*bank|from\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]);
   result.receiver_bank = firstMatch(raw, [/(?:ธนาคารผู้รับ|receiver\s*bank|to\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]);
+  result.account_number = firstMatch(raw, [
+    /(?:เลข(?:ที่)?บัญชี|account\s*(?:no\.?|number)|a\/c)\s*[:：#]?\s*([0-9][0-9\s-]{7,24}[0-9])/i,
+    /(?:บัญชี)\s*[:：#]?\s*([0-9][0-9\s-]{7,24}[0-9])/i,
+  ]).replace(/\s+/g, "");
+  result.account_name = firstMatch(raw, [
+    /(?:ชื่อบัญชี|account\s*name|ชื่อผู้รับ)\s*[:：]?\s*([^\n]{2,80})/i,
+  ]);
+  result.account_bank = firstMatch(raw, [
+    /(?:ธนาคาร|bank)\s*[:：]?\s*([^\n]{2,60})/i,
+  ]);
   result.paid_at = firstMatch(raw, [/(20\d{2}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?)/]);
   result.provider = /พร้อมเพย์|promptpay/i.test(raw) ? "promptpay" : "bank_transfer";
-  const useful = [result.payment_ref, result.amount_thb, result.paid_at, result.payer_name].filter(Boolean).length;
+  const useful = [result.payment_ref, result.amount_thb, result.paid_at, result.payer_name, result.account_number, result.account_name].filter(Boolean).length;
   result.confidence_score = useful ? clamp((Number(confidence) / 100) * Math.min(1, 0.55 + useful * 0.12)) : 0;
   return result;
 }

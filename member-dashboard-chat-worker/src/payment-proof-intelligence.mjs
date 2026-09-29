@@ -27,6 +27,9 @@ function normalizeExtraction(payload, method) {
     sender_bank: clean(source.sender_bank),
     receiver_bank: clean(source.receiver_bank),
     provider: clean(source.provider || source.bank),
+    account_number: clean(source.account_number),
+    account_name: clean(source.account_name),
+    account_bank: clean(source.account_bank),
     confidence_score: confidence,
     extraction_method: method,
     extraction_error: "",
@@ -73,6 +76,7 @@ export async function extractPaymentEvidence(env = {}, image = {}) {
 
   return {
     payment_ref: "", amount_thb: null, paid_at: "", payer_name: "", sender_bank: "", receiver_bank: "", provider: "",
+    account_number: "", account_name: "", account_bank: "",
     confidence_score: 0,
     extraction_method: ocr.ok ? "ocr" : qr.ok ? "qr" : "none",
     extraction_error: [qr.error, ocr.error].filter(Boolean).join(","),
@@ -85,11 +89,15 @@ export function classifyPaymentImageEvidence(extraction = {}) {
   const hasTime = Boolean(clean(extraction.paid_at));
   const hasBank = Boolean(clean(extraction.sender_bank || extraction.receiver_bank || extraction.provider));
   const hasPayer = Boolean(clean(extraction.payer_name));
-  const hasUseful = hasRef || hasAmount || hasTime || hasBank || hasPayer;
+  const hasAccountNumber = Boolean(clean(extraction.account_number));
+  const hasAccountName = Boolean(clean(extraction.account_name));
+  const hasAccountBank = Boolean(clean(extraction.account_bank));
+  const hasUseful = hasRef || hasAmount || hasTime || hasBank || hasPayer || hasAccountNumber || hasAccountName || hasAccountBank;
 
   if (hasRef && hasAmount) return { image_class: "bank_transfer_slip", gate: "accept", is_payment_evidence: true, confidence: Math.max(0.96, Number(extraction.confidence_score) || 0), reason: "payment_ref_and_amount" };
   if (hasRef && (hasTime || hasBank || hasPayer)) return { image_class: "bank_transfer_slip", gate: "accept", is_payment_evidence: true, confidence: 0.93, reason: "payment_ref_plus_transfer_signal" };
   if (hasAmount && hasTime && (hasBank || hasPayer)) return { image_class: "bank_transfer_slip", gate: "accept", is_payment_evidence: true, confidence: 0.88, reason: "amount_time_transfer_signal" };
+  if (hasAccountNumber && !hasRef && !hasAmount && !hasTime) return { image_class: "bank_account_detail", gate: "reject", is_payment_evidence: false, confidence: 0.96, reason: "bank_account_detail_not_payment_proof" };
   if (clean(extraction.extraction_method) === "qr" && hasAmount && !hasRef) return { image_class: "payment_qr_request", gate: "reject", is_payment_evidence: false, confidence: 0.95, reason: "payment_request_not_completed_transfer" };
   if (!hasUseful && clean(extraction.extraction_error)) return { image_class: "uncertain", gate: "hold", is_payment_evidence: false, confidence: 0, reason: "extractor_unavailable_or_failed" };
   if (!hasUseful) return { image_class: "non_payment_image", gate: "reject", is_payment_evidence: false, confidence: 0.92, reason: "no_transaction_evidence_detected" };

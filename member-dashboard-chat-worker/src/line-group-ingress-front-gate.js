@@ -18,6 +18,7 @@ const DEFAULT_PAYMENT_CONTEXT_LOOKBACK_HOURS = 48;
 const PAYMENT_CONTEXT_RE = /(?:สลิป|หลักฐาน(?:การ)?(?:โอน|ชำระ)|โอน|จ่าย|ชำระ|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|payment(?:\s+proof)?|transfer(?:\s+(?:slip|proof|done))?|bank\s*transfer|renew(?:al)?|membership|promptpay|พร้อมเพย์)/i;
 const PAYMENT_FOLLOWUP_RE = /(?:ขอ\s*เข้า\s*กลุ่ม|เข้า\s*กลุ่ม|access|drive|เข้าแล้ว|โอน|จ่าย|ชำระ|สลิป|หลักฐาน|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|renew(?:al)?|payment|transfer|สมาชิก|member)/i;
 const MEMBERSHIP_PAYMENT_CONTEXT_RE = /(?:สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|membership|member\s*(?:fee|renewal)?|renew(?:al)?)/i;
+const BANK_DETAIL_CONTEXT_RE = /(?:คืนเงิน|โอนคืน|refund|ยกเลิก(?:งาน|รายการ)?|เลขบัญชี|บัญชี(?:สำหรับ)?(?:รับ|คืน)|ส่งบัญชี)/i;
 
 function asString(value) { return String(value || "").trim(); }
 function bytesToBase64(buffer) { const bytes = new Uint8Array(buffer); let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary); }
@@ -67,6 +68,126 @@ async function downloadLineImage(env = {}, messageId = "") {
   const body = await response.arrayBuffer();
   if (!body.byteLength || body.byteLength > limit) throw new Error(body.byteLength ? "line_image_too_large" : "line_image_empty");
   return { body, mimeType, extension: IMAGE_TYPES.get(mimeType), byteSize: body.byteLength, sha256: await sha256Hex(body) };
+}
+
+
+function maskAccountNumber(value = "") {
+  const raw = asString(value).replace(/\s+/g, "");
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 4) return "••••";
+  return `•••• ${digits.slice(-4)}`;
+}
+
+function maskAccountName(value = "") {
+  const name = asString(value);
+  if (!name) return "";
+  if (name.length <= 2) return name.slice(0, 1) + "•";
+  return name.slice(0, 2) + "•••";
+}
+
+function bankDetailPurpose(contextText = "") {
+  return /(?:คืนเงิน|โอนคืน|refund|ยกเลิก(?:งาน|รายการ)?)/i.test(asString(contextText)) ? "refund" : "unknown";
+}
+
+async function recentDirectBankOpsContext(env = {}, lineUserId = "") {
+  const userId = asString(lineUserId);
+  if (!userId) return { found: false, text: "", purpose: "unknown", sessionId: "", jobId: "" };
+  const params = new URLSearchParams();
+  params.set("maxRecords", "12");
+  params.set("filterByFormula", `{line_user_id}='${formulaValue(userId)}'`);
+  params.set("sort[0][field]", "created_at");
+  params.set("sort[0][direction]", "desc");
+  const payload = await airtableRequest(env, `${encodeURIComponent(consoleInboxTable(env))}?${params.toString()}`).catch(() => ({}));
+  for (const record of Array.isArray(payload.records) ? payload.records : []) {
+    const text = recordContextText(record);
+    if (!BANK_DETAIL_CONTEXT_RE.test(text)) continue;
+    let meta = {};
+    try { meta = JSON.parse(asString(record?.fields?.payload_json) || "{}"); } catch (_) {}
+    return {
+      found: true,
+      text,
+      purpose: bankDetailPurpose(text),
+      sessionId: asString(meta?.session_id || meta?.sessionId || meta?.linked_session || ""),
+      jobId: asString(meta?.job_id || meta?.jobId || ""),
+    };
+  }
+  return { found: false, text: "", purpose: "unknown", sessionId: "", jobId: "" };
+}
+
+async function persistBankDetailOps(env = {}, input = {}) {
+  const image = input.image;
+  const analysis = input.analysis || {};
+  const extraction = analysis.extraction || {};
+  const userId = asString(input.lineUserId);
+  const proofId = asString(input.proofId);
+  if (!image?.body || !proofId || !userId) return { captured: false, reason: "bank_detail_input_incomplete" };
+  if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") return { captured: false, reason: "private_bucket_missing" };
+
+  const recent = await recentDirectBankOpsContext(env, userId);
+  const contextText = [asString(input.contextText), recent.text].filter(Boolean).join("\n");
+  const purpose = bankDetailPurpose(contextText);
+  const accountNumber = asString(extraction.account_number);
+  const accountName = asString(extraction.account_name);
+  const bankName = asString(extraction.account_bank || extraction.receiver_bank || extraction.sender_bank);
+  if (!accountNumber) return { captured: false, reason: "account_number_missing" };
+
+  const now = new Date();
+  const base = `line-ofc/bank-details/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${proofId}`;
+  const sourceImageKey = `${base}/original.${image.extension}`;
+  const privateDetailKey = `${base}/detail.json`;
+  const customer = await resolveDirectPayerContext(env, userId);
+
+  await env.LINE_SLIP_EVIDENCE.put(sourceImageKey, image.body, {
+    httpMetadata: { contentType: image.mimeType },
+    customMetadata: { schema: "mmd_bank_detail_image_v1", source: "line_direct_user", proof_id: proofId },
+  });
+  await env.LINE_SLIP_EVIDENCE.put(privateDetailKey, JSON.stringify({
+    schema: "mmd_bank_detail_private_v1",
+    bank_name: bankName,
+    account_name: accountName,
+    account_number: accountNumber,
+    purpose,
+    source_image_key: sourceImageKey,
+    received_at: now.toISOString(),
+  }), {
+    httpMetadata: { contentType: "application/json" },
+    customMetadata: { schema: "mmd_bank_detail_private_v1", proof_id: proofId, purpose },
+  });
+
+  const service = env.ADMIN_WORKER;
+  if (!service || typeof service.fetch !== "function") {
+    return { captured: true, queued: false, reason: "admin_worker_binding_missing", purpose };
+  }
+  const response = await service.fetch(new Request("https://admin-worker.internal/v1/internal/refund-ops/intake", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-internal-call": "true",
+      "x-mmd-service-binding": "member-dashboard-chat-worker",
+    },
+    body: JSON.stringify({
+      inbox_id: `refund_${proofId}`,
+      line_user_id: userId,
+      customer_name: customer.payerName || "",
+      purpose,
+      bank_name: bankName,
+      account_name_masked: maskAccountName(accountName),
+      account_number_masked: maskAccountNumber(accountNumber),
+      private_detail_key: privateDetailKey,
+      source_image_key: sourceImageKey,
+      session_id: recent.sessionId || "",
+      job_id: recent.jobId || "",
+    }),
+  }));
+  const payload = await response.json().catch(() => ({}));
+  return {
+    captured: true,
+    queued: response.ok && payload?.ok === true,
+    deduped: payload?.deduped === true,
+    purpose,
+    imageClass: "bank_account_detail",
+    reason: response.ok ? "bank_detail_ops_created" : "bank_detail_ops_queue_failed",
+  };
 }
 
 async function airtableRequest(env = {}, path = "", init = {}) {
@@ -574,6 +695,15 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
   };
   if (!analysis.accepted) {
     const gate = analysis.classification?.gate;
+    if (source === "user" && analysis.classification?.image_class === "bank_account_detail") {
+      return persistBankDetailOps(env, {
+        proofId,
+        image,
+        analysis,
+        lineUserId: userId,
+        contextText,
+      });
+    }
     if (gate !== "hold") {
       return {
         captured: false,
@@ -815,7 +945,7 @@ async function observeSignedLineEvents(request, env = {}) {
       if (source === "group" && type === "image") result = await captureGroupImageEvidence(env, event);
       else if (source === "user" && type === "image") result = await captureDirectUserImageEvidence(env, event);
       else if (source === "user" && type === "text") result = await promoteDirectUserCandidate(env, event);
-      if (result && (type === "image" || result.captured || result.ignored || result.held)) console.log(JSON.stringify({ line_payment_ingress: result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, verified: result.verified === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
+      if (result && (type === "image" || result.captured || result.ignored || result.held)) console.log(JSON.stringify({ line_payment_ingress: result.imageClass === "bank_account_detail" ? "bank_detail_ops" : result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, verified: result.verified === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
     } catch (error) { console.log(JSON.stringify({ line_payment_ingress: "capture_failed", source_type: source, message_type: type, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
   }
   // Opportunistic recovery on live traffic. The hourly cron remains the floor
@@ -858,6 +988,8 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   notifyPaymentProofOps,
   notifyDirectCustomerPaymentEvidence,
   buildDirectPaymentAcknowledgement,
+  persistBankDetailOps,
+  recentDirectBankOpsContext,
   paymentNotificationPurpose,
   persistAcceptedEvidence,
   runLineSlipEvidenceMaintenance,

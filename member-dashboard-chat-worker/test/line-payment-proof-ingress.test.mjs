@@ -56,6 +56,22 @@ test("payment follow-up recognizes access and Drive after payment image", () => 
   assert.equal(hasPaymentFollowupContext("วันนี้ว่างไหม"), false);
 });
 
+test("visual gate routes bank account detail outside payment proof", () => {
+  assert.deepEqual(classifyPaymentImageEvidence({
+    extraction_method: "ocr",
+    account_number: "123-4-56789-0",
+    account_name: "นาย ทดสอบ ระบบ",
+    account_bank: "กสิกรไทย",
+    confidence_score: 0.92,
+  }), {
+    image_class: "bank_account_detail",
+    gate: "reject",
+    is_payment_evidence: false,
+    confidence: 0.96,
+    reason: "bank_account_detail_not_payment_proof",
+  });
+});
+
 test("visual gate rejects ordinary images with no transaction evidence", () => {
   assert.deepEqual(classifyPaymentImageEvidence({ extraction_method: "ocr", confidence_score: 0 }), {
     image_class: "non_payment_image",

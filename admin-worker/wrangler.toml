@@ -1241,3 +1241,21 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/partners/*"
 zone_name = "mmdbkk.com"
+
+
+# Owner refund operations workspace.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/refunds*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/refunds*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/refunds*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/refunds*"
+zone_name = "mmdbkk.com"

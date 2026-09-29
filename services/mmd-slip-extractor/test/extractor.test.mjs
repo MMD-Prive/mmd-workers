@@ -59,7 +59,24 @@ test("OCR adapter is replaceable, terminates its worker, and returns normalized 
 
 test("normalized contract contains no payment decision fields", () => {
   const response = normalizedResponse({ payment_ref: "R", confidence_score: 2 });
-  assert.deepEqual(Object.keys(response.result), ["payment_ref", "amount_thb", "paid_at", "payer_name", "sender_bank", "receiver_bank", "provider", "confidence_score"]);
+  assert.deepEqual(Object.keys(response.result), ["payment_ref", "amount_thb", "paid_at", "payer_name", "sender_bank", "receiver_bank", "provider", "account_number", "account_name", "account_bank", "confidence_score"]);
   assert.equal(response.result.confidence_score, 1);
   assert.equal(Object.hasOwn(response.result, "status"), false);
+  assert.equal(Object.hasOwn(response.result, "paid"), false);
+  assert.equal(Object.hasOwn(response.result, "verified"), false);
+  assert.equal(Object.hasOwn(response.result, "decision"), false);
+});
+
+
+test("account detail OCR extracts bank, name, and account number", () => {
+  const result = normalizeOcrText(`
+ธนาคาร กสิกรไทย
+ชื่อบัญชี นาย ทดสอบ ระบบ
+เลขที่บัญชี 123-4-56789-0
+`, 94);
+  assert.equal(result.account_bank, "กสิกรไทย");
+  assert.equal(result.account_name, "นาย ทดสอบ ระบบ");
+  assert.equal(result.account_number, "123-4-56789-0");
+  assert.equal(result.amount_thb, null);
+  assert.equal(result.payment_ref, "");
 });
