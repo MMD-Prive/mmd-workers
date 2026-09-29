@@ -338,7 +338,7 @@
 
   function historyIdentityQuery(identity) {
     var raw = String(identity || "").trim();
-    if (/^U[0-9a-f]{32}$/i.test(raw)) return "line_user_id=" + encodeURIComponent(raw);
+    if (/^U[A-Za-z0-9_-]{16,64}$/i.test(raw)) return "line_user_id=" + encodeURIComponent(raw);
     return "client_id=" + encodeURIComponent(raw);
   }
 
