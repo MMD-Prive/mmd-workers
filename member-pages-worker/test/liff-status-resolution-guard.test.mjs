@@ -30,11 +30,20 @@ test("rewrites unresolved status start into explicit final state", async () => {
   assert.equal(payload.data.next_screen_key, "status_unresolved");
   assert.equal(payload.data.screen.key, "status_unresolved");
   assert.match(payload.data.screen.copy, /ยังไม่พบข้อมูลสมาชิก/);
-  assert.deepEqual(payload.data.screen.actions, [{
-    id: "signup",
-    label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
-    endpoint: "/member/api/liff/intent",
-  }]);
+  assert.deepEqual(payload.data.screen.actions, [
+    {
+      id: "recovery_evidence",
+      label: "เคยเป็นสมาชิก · กรอกอีเมลเดิม / Member ID",
+      endpoint: "/member/api/liff/recovery",
+      method: "POST",
+      fields: ["email", "member_id_candidate"],
+    },
+    {
+      id: "signup",
+      label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
+      endpoint: "/member/api/liff/intent",
+    },
+  ]);
 });
 
 test("debug unresolved status renders only the bounded Drive bootstrap reference", async () => {
