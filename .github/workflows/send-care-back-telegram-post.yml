@@ -1,0 +1,54 @@
+name: Send CARE BACK Telegram post
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build payload only; do not send to Telegram"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: send-care-back-telegram-post
+  cancel-in-progress: false
+
+jobs:
+  send-care-back-post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_INTERNAL_SEND_URL: ${{ secrets.TELEGRAM_INTERNAL_SEND_URL }}
+      TELEGRAM_INTERNAL_TOKEN: ${{ secrets.TELEGRAM_INTERNAL_TOKEN }}
+      INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate CARE BACK post pack
+        run: |
+          set -euo pipefail
+          node --check ops/campaigns/send-care-back-telegram-post.mjs
+          node --test ops/campaigns/send-care-back-telegram-post.test.mjs
+
+      - name: Send or dry-run CARE BACK post
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            node ops/campaigns/send-care-back-telegram-post.mjs --dry-run | tee "$RUNNER_TEMP/care-back-telegram-post-result.json"
+          else
+            node ops/campaigns/send-care-back-telegram-post.mjs | tee "$RUNNER_TEMP/care-back-telegram-post-result.json"
+          fi
+
+      - name: Upload CARE BACK post result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: care-back-telegram-post-result
+          path: ${{ runner.temp }}/care-back-telegram-post-result.json
+          if-no-files-found: ignore
