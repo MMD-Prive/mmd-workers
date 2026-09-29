@@ -219,7 +219,9 @@ test("Job Board Mini App callback exchanges LINE session then opens the exact jo
   assert.equal(context?.next, next);
 
   const html = liffPrimaryBootstrapHtml(callback);
-  assert.match(html, /กำลังเปิดงาน MMD/);
+  assert.match(html, /WELCOME V2 · สมัครงานนี้กับ MMD/);
+  assert.match(html, /เปิด MMD APP เพื่อสมัครงานนี้/);
+  assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
   assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.match(html, /\/v1\/model\/job-board\/handoff/);
   assert.match(html, /id_token_missing/);

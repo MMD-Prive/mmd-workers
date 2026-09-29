@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { handleAdminJobBoardPublish } from "../src/job-board-owner-publish.js";
 
-test("admin job board publish returns LIFF Login V2 as broadcast URL", async () => {
+test("admin job board publish preserves the short broadcast URL", async () => {
   const upstreamBroadcast = "https://mmdbkk.com/j/ABCDEF123456";
   const env = {
     PUBLIC_JOB_BOARD_WORKER: {
@@ -37,16 +37,8 @@ test("admin job board publish returns LIFF Login V2 as broadcast URL", async () 
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.ok, true);
-  assert.notEqual(data.broadcast_url, upstreamBroadcast);
-  assert.equal(data.job.broadcast_url, data.broadcast_url);
-
-  const url = new URL(data.broadcast_url);
-  assert.equal(url.origin, "https://www.mmdbkk.com");
-  assert.equal(url.pathname, "/sigil/model/login");
-  assert.equal(url.searchParams.get("intent"), "job_board");
-  assert.equal(url.searchParams.get("source"), "line_model_group");
-  assert.equal(url.searchParams.get("return_to"), "public_job_board");
-  assert.equal(url.searchParams.get("job_id"), "JOB-20260929-ABCDEF123456");
-  assert.equal(url.searchParams.get("next"), "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-ABCDEF123456");
-  assert.ok(!data.broadcast_url.startsWith("https://mmdbkk.com/j/"));
+  assert.equal(data.broadcast_url, upstreamBroadcast);
+  assert.equal(data.job.broadcast_url, upstreamBroadcast);
+  assert.equal(data.board_destination, "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-ABCDEF123456");
+  assert.match(data.broadcast_url, /^https:\/\/mmdbkk\.com\/j\/ABCDEF123456$/);
 });

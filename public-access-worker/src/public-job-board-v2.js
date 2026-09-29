@@ -602,7 +602,7 @@ function shortJobLandingHtml(job, loginUrl) {
   const meta = [view.date, view.time, view.duration, view.area].filter(Boolean).join(" · ");
   const compensation = String(view.compensation || "").trim();
   const description = [meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับ MMD";
-  const button = "เปิดงานนี้ผ่าน LINE";
+  const button = "สมัครงานนี้ใน MMD APP";
 
   return `<!doctype html>
 <html lang="th">

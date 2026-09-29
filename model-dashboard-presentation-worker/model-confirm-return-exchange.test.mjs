@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { modelLiffDigitalBootstrapHtml } from "./src/model-liff-digital-shell.js";
 
-test("model confirm return_to creates model session before returning", () => {
+test("signed model-confirm return is a selected-job flow and creates session before returning", () => {
   const html = modelLiffDigitalBootstrapHtml({
     liffId: "2010864854-N34SgCqq",
     fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",
@@ -13,6 +13,11 @@ test("model confirm return_to creates model session before returning", () => {
   });
   assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.match(html, /model_session_exchange_failed/);
-  assert.match(html, /กำลังเชื่อมตัวตนงาน/);
+  assert.match(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
+  assert.match(html, /ไม่ใช่หน้าสมัครงาน/);
+  assert.match(html, /กำลังเปิดรายละเอียดงาน/);
+  assert.match(html, /เปิดรายละเอียดงานนี้/);
+  assert.doesNotMatch(html, /สมัครงานนี้กับ MMD/);
+  assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
   assert.match(html, /window\.location\.replace\("\/sigil\/confirm\/job-model\?t=model-token"\)/);
 });
