@@ -274,7 +274,33 @@ function renderMemberDashboard(request) {
 
 function renderProfile(request) {
   const url = new URL(request.url);
-  return page(request, "member-profile", `${nav(url.search)}<section class="hero"><div class="panel hero-panel"><p class="eyebrow">Member Profile</p><h1>Member Status</h1><p class="lead">หน้านี้แสดงสถานะสมาชิกหลังตรวจสอบจาก ledger และระบบจริง</p><p class="actions"><a class="btn" href="${attr(appendQuery("/member/dashboard", url.search))}">Dashboard</a><a class="btn ghost" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Membership</a></p></div></section>`);
+  return page(request, "member-profile", `<section class="profile-shell" aria-label="MMD member profile">
+    <header class="profile-topbar">
+      <a class="profile-brand" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">MMD PRIVÉ <span>MY MMD</span></a>
+      <span class="profile-mode">MEMBER PROFILE</span>
+    </header>
+
+    <div class="profile-content">
+      <div class="profile-copy">
+        <p class="profile-kicker"><span aria-hidden="true"></span> MEMBER SYSTEM</p>
+        <h1>MY<br>PROFILE</h1>
+        <p class="profile-lead">สถานะสมาชิกและสิทธิ์ของคุณ<br>อ้างอิงข้อมูลที่ระบบ MMD ยืนยันแล้ว</p>
+      </div>
+
+      <aside class="profile-console" aria-label="Member profile actions">
+        <div class="profile-console-head">
+          <div><span>ACCOUNT / MEMBER</span><strong>PROFILE ACCESS</strong></div>
+          <b>SYSTEM</b>
+        </div>
+        <p>ดูสถานะสมาชิกและข้อมูลบัญชีต่อได้จากระบบสมาชิก โดยหน้านี้ไม่เปลี่ยนสถานะหรือสิทธิ์จากข้อมูลที่ยังไม่ยืนยัน</p>
+        <div class="profile-actions">
+          <a class="profile-primary" href="${attr(appendQuery("/member/dashboard", url.search))}">Member Dashboard <span aria-hidden="true">↗</span></a>
+          <a class="profile-secondary" href="${attr(appendQuery(CANONICAL_MEMBERSHIP_PATH, url.search))}">Membership</a>
+        </div>
+        <div class="profile-meta"><span>PRIVATE SESSION</span><span>VERIFIED DATA ONLY</span></div>
+      </aside>
+    </div>
+  </section>`);
 }
 
 function renderBlackCardPaymentBlocked(request) {
@@ -293,7 +319,7 @@ function nav(query = "") {
 }
 
 function page(request, slug, body) {
-  const output = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | ${html(slug)}</title><style>${styles()}</style></head><body><main data-mmd-page="${attr(slug)}" data-mmd-version="${VERSION}">${body}<footer>Payment proof is evidence only. Verification opens access. Member ledger is the source of truth. Auto renewal routing is disabled.</footer></main></body></html>`;
+  const output = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD Privé | ${html(slug)}</title><style>${styles()}${slug === "member-profile" ? profileStyles() : ""}</style></head><body><main data-mmd-page="${attr(slug)}" data-mmd-version="${VERSION}">${body}<footer>Payment proof is evidence only. Verification opens access. Member ledger is the source of truth. Auto renewal routing is disabled.</footer></main></body></html>`;
   return new Response(request.method.toUpperCase() === "HEAD" ? null : output, { status: 200, headers: { ...headers("text/html; charset=utf-8"), "x-mmd-page": slug, "x-mmd-version": VERSION, "x-mmd-auto-renewal-route": "disabled", "cache-control": "no-store, no-cache, must-revalidate, max-age=0" } });
 }
 
@@ -329,3 +355,265 @@ function html(value) { return String(value || "").replace(/&/g, "&amp;").replace
 function attr(value) { return html(value).replace(/"/g, "&quot;"); }
 function paymentScript(stage = "membership") { return `(function(){var f=document.getElementById("payform"),r=document.getElementById("payresult");if(!f||!r)return;function out(t){r.hidden=false;r.textContent=t;}function sid(){return "mem_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10);}f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),api=f.getAttribute("data-api"),plan=f.getAttribute("data-plan"),amount=Number(f.getAttribute("data-amount")||0),sessionId=String(d.get("session_id")||"").trim()||sid();var payload={session_id:sessionId,payment_stage:${JSON.stringify(stage)},payment_type:${JSON.stringify(stage)},package_code:plan,amount:amount,member_email:String(d.get("member_email")||"").trim(),receipt_url:String(d.get("receipt_url")||"").trim(),notes:String(d.get("notes")||"").trim(),payment_method:"promptpay"};out("กำลังส่งหลักฐานเข้าระบบตรวจสอบ...");fetch(api+"/v1/pay/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(x){return x.json().catch(function(){return{}}).then(function(j){return{ok:x.ok,json:j}})}).then(function(o){if(!o.ok||!o.json||o.json.ok===false)throw new Error(o.json&&(o.json.error||o.json.message)||"payment_submit_failed");var ref=o.json.payment_ref||o.json.transaction_ref||"";var next=new URL("/pay/pending-verification",location.origin);new URLSearchParams(location.search||"").forEach(function(v,k){next.searchParams.set(k,v)});next.searchParams.set("status","pending_verification");next.searchParams.set("plan",plan);next.searchParams.set("amount",String(amount));next.searchParams.set("session_id",sessionId);if(ref)next.searchParams.set("payment_ref",ref);location.href=next.toString();}).catch(function(err){out("ส่งหลักฐานไม่สำเร็จ: "+(err&&err.message||err));});});})();`; }
 function styles() { return `:root{color-scheme:dark;--bg:#050403;--ink:#fffaf0;--muted:#c9c1b5;--soft:#a69d90;--gold:#f3d47d;--gold2:#b9852d;--line:rgba(243,212,125,.22);--panel:rgba(13,10,7,.88)}*{box-sizing:border-box}html{background:var(--bg);scroll-behavior:smooth}body{margin:0;min-height:100vh;background:radial-gradient(circle at 8% 0,rgba(137,82,18,.26),transparent 34rem),radial-gradient(circle at 90% 18%,rgba(107,28,46,.12),transparent 28rem),linear-gradient(135deg,#090704 0,#050403 52%,#020201 100%);color:var(--ink);font-family:"LINE Seed Sans TH","Noto Sans Thai","Segoe UI",Arial,sans-serif;-webkit-font-smoothing:antialiased}main{width:min(1240px,calc(100% - 32px));margin:0 auto;padding:18px 0 max(84px,env(safe-area-inset-bottom))}nav{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:8px 0 24px}nav a{color:var(--ink);text-decoration:none;font-size:14px;font-weight:750}nav a:hover{color:var(--gold)}.brand{color:var(--gold);letter-spacing:.14em}nav span{display:flex;gap:18px;flex-wrap:wrap}.hero{display:grid;gap:16px;margin:0 0 18px}.panel{border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,rgba(19,14,10,.94),rgba(8,6,5,.88));box-shadow:0 24px 80px rgba(0,0,0,.34);backdrop-filter:blur(18px);padding:clamp(22px,4vw,44px)}.hero-panel h1{max-width:850px;margin:0 0 20px;font-size:clamp(48px,9vw,100px);line-height:.91;letter-spacing:-.058em}.hero-panel h1 br{display:block}.eyebrow{margin:0 0 13px;color:var(--gold);font-size:12px;font-weight:850;letter-spacing:.17em;text-transform:uppercase}.lead{max-width:760px;margin:0;color:#e8e0d4;font-size:clamp(17px,2vw,20px);line-height:1.72}p{line-height:1.72;color:var(--muted)}.steps,.summary{display:grid;gap:9px;margin-top:24px}.steps span,.summary span,.summary b{min-width:0;padding:12px 14px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.045)}.steps span{display:flex;gap:10px;align-items:center;color:#f5eee3}.steps b{color:var(--gold);font-size:11px;letter-spacing:.08em}.summary b{color:var(--gold)}.proof-note{margin:18px 0 0;color:#b9b0a4}.side-card{display:flex;flex-direction:column;justify-content:center}.side-card h2{margin:4px 0 14px;font-size:clamp(28px,3.2vw,42px);line-height:1.16;letter-spacing:-.03em}.blackcard-note{background:radial-gradient(circle at 100% 0,rgba(199,151,62,.13),transparent 50%),linear-gradient(145deg,rgba(19,14,10,.95),rgba(7,5,4,.93))}.stacked-actions{align-items:flex-start;flex-direction:column}.text-link{color:#f3e4b3;text-decoration:none;font-weight:750}.text-link:hover{color:#fff}.packages-section{padding:clamp(40px,7vw,76px) 0 18px}.section-heading{display:grid;gap:12px;align-items:end;margin-bottom:22px}.section-heading h2{margin:0;font-size:clamp(32px,5vw,58px);line-height:1.08;letter-spacing:-.04em}.section-heading>p{max-width:520px;margin:0}.package-grid{display:grid;gap:14px}.membership-card{min-height:390px;display:flex;flex-direction:column;justify-content:space-between;transition:transform .22s ease,border-color .22s ease,background .22s ease}.membership-card:hover{transform:translateY(-4px);border-color:rgba(243,212,125,.48);background:linear-gradient(145deg,rgba(25,18,11,.98),rgba(9,7,5,.92))}.membership-card.selected{border-color:rgba(243,212,125,.72);box-shadow:0 24px 80px rgba(108,69,13,.24)}.membership-card h3{margin:4px 0 16px;color:#fffaf0;font-size:clamp(27px,3vw,36px);line-height:1.12;letter-spacing:-.035em}.membership-card p{margin-top:0}.package-footer{padding-top:26px}.price{margin:0;color:#fff;font-size:14px;font-weight:750;letter-spacing:.04em}.price span{font-size:34px;letter-spacing:-.035em}.fine{color:var(--soft);font-size:13px}.assurance-strip{display:grid;gap:1px;margin-top:16px;overflow:hidden;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.08)}.assurance-strip span{padding:16px 18px;background:#0c0907;color:#d9d0c3;font-size:13px;font-weight:750;text-align:center}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.btn,button.btn{min-height:50px;display:inline-flex;align-items:center;justify-content:center;gap:14px;border:1px solid var(--gold2);border-radius:999px;padding:0 20px;color:#171005;background:linear-gradient(135deg,#ffe9a8,#bd8630);font-weight:850;text-decoration:none;cursor:pointer}.btn:hover{filter:brightness(1.06)}.btn.ghost{color:var(--ink);background:rgba(255,255,255,.055)}label{display:grid;gap:7px;margin:12px 0;color:#e6ddd0;font-weight:750}input,textarea{width:100%;border:1px solid rgba(255,255,255,.13);border-radius:16px;background:rgba(0,0,0,.3);color:#fffaf0;padding:13px 14px;outline:none}.notice{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:16px;color:var(--gold)}footer{padding:34px 0 0;color:#8e8579;font-size:12px;text-align:center}@media(max-width:639px){main{width:min(100% - 22px,1240px);padding-top:10px}nav{align-items:flex-start;padding-bottom:16px}nav span{justify-content:flex-end;gap:10px}nav span a:nth-child(2){display:none}.panel{border-radius:23px}.hero-panel h1{font-size:clamp(48px,16vw,70px)}.membership-card{min-height:0}.btn{width:100%}.stacked-actions{align-items:stretch}.text-link{padding:8px 2px}.assurance-strip{grid-template-columns:1fr}}@media(min-width:640px){.assurance-strip{grid-template-columns:repeat(3,1fr)}}@media(min-width:760px){.hero{grid-template-columns:minmax(0,1.48fr) minmax(300px,.72fr);align-items:stretch}.package-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.steps,.summary{grid-template-columns:repeat(3,minmax(0,1fr))}.section-heading{grid-template-columns:minmax(0,1fr) minmax(280px,.65fr)}}`; }
+
+
+function profileStyles() {
+  return `
+main[data-mmd-page="member-profile"]{
+  --profile-bg:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5a18f82474c1d26946c355_Profiles%20Hero%20Desk.webp");
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  width:min(1440px,calc(100% - 32px));
+  min-height:min(900px,calc(100svh - 32px));
+  margin:16px auto 0;
+  padding:0;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:32px;
+  background:#070707 var(--profile-bg) center center/cover no-repeat;
+  color:#fff;
+  box-shadow:0 30px 90px rgba(0,0,0,.42);
+  font-family:"LINE Seed Sans TH","Noto Sans Thai",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+}
+main[data-mmd-page="member-profile"]::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  background:
+    linear-gradient(90deg,rgba(3,4,5,.88) 0%,rgba(3,4,5,.64) 38%,rgba(3,4,5,.22) 68%,rgba(3,4,5,.5) 100%),
+    linear-gradient(180deg,rgba(0,0,0,.18),rgba(0,0,0,.45));
+}
+main[data-mmd-page="member-profile"]>footer{display:none}
+.profile-shell{
+  min-height:inherit;
+  display:flex;
+  flex-direction:column;
+  padding:clamp(22px,3vw,38px);
+}
+.profile-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+}
+.profile-brand{
+  color:#fff;
+  text-decoration:none;
+  font-size:14px;
+  font-weight:900;
+  letter-spacing:.16em;
+}
+.profile-brand span{
+  display:block;
+  margin-top:5px;
+  color:rgba(255,255,255,.62);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.19em;
+}
+.profile-mode{
+  display:inline-flex;
+  align-items:center;
+  min-height:30px;
+  padding:0 12px;
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:999px;
+  background:rgba(6,7,8,.36);
+  color:rgba(255,255,255,.82);
+  backdrop-filter:blur(14px);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.14em;
+}
+.profile-content{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(330px,410px);
+  gap:clamp(28px,5vw,76px);
+  align-items:end;
+  margin-top:auto;
+}
+.profile-copy{padding:clamp(40px,9vh,104px) 0 4px}
+.profile-kicker{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  margin:0 0 18px;
+  color:rgba(255,255,255,.78);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.18em;
+}
+.profile-kicker span{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#e8c76c;
+  box-shadow:0 0 18px rgba(232,199,108,.75);
+}
+.profile-copy h1{
+  margin:0;
+  max-width:760px;
+  color:#fff;
+  font-size:clamp(68px,9vw,138px);
+  font-weight:900;
+  line-height:.78;
+  letter-spacing:-.075em;
+  text-shadow:0 8px 34px rgba(0,0,0,.34);
+}
+.profile-lead{
+  margin:28px 0 0;
+  max-width:420px;
+  color:rgba(255,255,255,.78);
+  font-size:clamp(15px,1.4vw,18px);
+  font-weight:600;
+  line-height:1.65;
+}
+.profile-console{
+  align-self:end;
+  padding:20px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:24px;
+  background:linear-gradient(180deg,rgba(8,10,12,.72),rgba(8,10,12,.9));
+  box-shadow:0 22px 70px rgba(0,0,0,.3);
+  backdrop-filter:blur(22px) saturate(115%);
+}
+.profile-console-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  padding-bottom:16px;
+  border-bottom:1px solid rgba(255,255,255,.12);
+}
+.profile-console-head div{display:grid;gap:5px}
+.profile-console-head div span,
+.profile-meta,
+.profile-console-head b{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.14em;
+}
+.profile-console-head div span{color:rgba(255,255,255,.5)}
+.profile-console-head strong{
+  color:#fff;
+  font-size:20px;
+  font-weight:850;
+  letter-spacing:-.025em;
+}
+.profile-console-head b{
+  display:inline-flex;
+  min-height:26px;
+  align-items:center;
+  padding:0 9px;
+  border:1px solid rgba(232,199,108,.35);
+  border-radius:999px;
+  color:#f0d98f;
+  background:rgba(232,199,108,.08);
+}
+.profile-console>p{
+  margin:16px 0 18px;
+  color:rgba(255,255,255,.66);
+  font-size:13px;
+  line-height:1.65;
+}
+.profile-actions{display:grid;grid-template-columns:1fr auto;gap:9px}
+.profile-primary,.profile-secondary{
+  min-height:48px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  border-radius:14px;
+  padding:0 16px;
+  text-decoration:none;
+  font-size:13px;
+  font-weight:850;
+}
+.profile-primary{
+  color:#0d0e0f;
+  background:#f2ead8;
+  box-shadow:0 12px 30px rgba(0,0,0,.2);
+}
+.profile-primary span{font-size:15px}
+.profile-secondary{
+  border:1px solid rgba(255,255,255,.16);
+  color:#fff;
+  background:rgba(255,255,255,.06);
+}
+.profile-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:14px;
+  color:rgba(255,255,255,.36);
+}
+@media(max-width:639px){
+  body{overflow-x:hidden;background:#050607}
+  main[data-mmd-page="member-profile"]{
+    --profile-bg:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a5a18f95153d2e545639d72_Profiles%20Hero%20Mob.webp");
+    width:100%;
+    min-height:100svh;
+    margin:0;
+    border:0;
+    border-radius:0;
+    background-position:center top;
+    box-shadow:none;
+  }
+  main[data-mmd-page="member-profile"]::before{
+    background:
+      linear-gradient(180deg,rgba(2,3,4,.08) 0%,rgba(2,3,4,.12) 28%,rgba(2,3,4,.32) 48%,rgba(3,4,5,.88) 72%,#050607 100%),
+      linear-gradient(90deg,rgba(0,0,0,.14),rgba(0,0,0,.02));
+  }
+  .profile-shell{
+    min-height:100svh;
+    padding:max(16px,env(safe-area-inset-top)) 14px max(16px,env(safe-area-inset-bottom));
+  }
+  .profile-topbar{align-items:flex-start}
+  .profile-brand{font-size:12px}
+  .profile-mode{min-height:28px;padding:0 10px;font-size:8px;background:rgba(5,6,7,.28)}
+  .profile-content{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    align-items:stretch;
+    margin-top:auto;
+  }
+  .profile-copy{padding:0}
+  .profile-kicker{margin-bottom:11px;font-size:8px}
+  .profile-copy h1{
+    max-width:330px;
+    font-size:clamp(52px,15vw,70px);
+    line-height:.8;
+    letter-spacing:-.067em;
+  }
+  .profile-lead{
+    margin-top:16px;
+    max-width:300px;
+    color:rgba(255,255,255,.76);
+    font-size:13px;
+    line-height:1.58;
+  }
+  .profile-console{
+    padding:16px;
+    border-radius:21px;
+    background:linear-gradient(180deg,rgba(7,9,10,.67),rgba(5,6,7,.94));
+    backdrop-filter:blur(18px) saturate(120%);
+  }
+  .profile-console-head{padding-bottom:13px}
+  .profile-console-head strong{font-size:17px}
+  .profile-console>p{margin:13px 0 14px;font-size:12px;line-height:1.55}
+  .profile-actions{grid-template-columns:1fr 112px}
+  .profile-primary,.profile-secondary{min-height:45px;border-radius:13px;padding:0 12px;font-size:12px}
+  .profile-meta{margin-top:12px;font-size:7px}
+}
+@media(min-width:640px) and (max-width:900px){
+  .profile-content{grid-template-columns:1fr 340px}
+  .profile-copy h1{font-size:clamp(64px,10vw,100px)}
+}
+`;
+}
