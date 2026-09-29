@@ -56,7 +56,7 @@ try {
     assert.equal(cutover.headers.get("x-mmd-presentation-source"), "lovable");
     assert.equal(cutover.headers.get("x-mmd-presentation-version"), "internal-lovable-v1");
     assert.equal(cutover.headers.get("x-mmd-page"), "create-job");
-    assert.equal(cutover.headers.get("x-mmd-create-job-worker-guide"), "job-board-panel-v1");
+    assert.equal(cutover.headers.get("x-mmd-create-job-worker-guide"), "separate-job-board-v1");
     assert.match(html, /Create Job Lovable/);
     assert.match(html, /https:\/\/mmd-os\.lovable\.app\/assets\/app\.css/);
     assert.match(html, /https:\/\/mmd-os\.lovable\.app\/assets\/app\.js/);
@@ -66,14 +66,8 @@ try {
     assert.match(html, /ขั้นตอนถัดไป/);
     assert.match(html, /ไม่ต้องรู้ Client ID หรือ Session ID/);
     assert.match(html, /data-mmd-create-job-static-copy="v1"/);
-    assert.match(html, /data-mmd-job-board-panel="v1"/);
-    assert.match(html, /Create กระดานข่าว/);
-    assert.match(html, /Public · MMD/);
-    assert.match(html, /Private · SIGIL/);
-    assert.match(html, /name="confidentiality"/);
-    assert.match(html, /data\.get\('world'\)\|\|'public'/);
-    assert.match(html, /fetch\('\/v1\/admin\/job-board\/publish'/);
-    assert.match(html, /Publish \+ Copy Link/);
+    assert.doesNotMatch(html, /data-mmd-job-board-panel="v1"/);
+    assert.doesNotMatch(html, /\/v1\/admin\/job-board\/publish/);
     assert.match(html, /data-mmd-create-job-client-search="v2"/);
     assert.match(html, /aria-label="Search client"/);
     assert.match(html, /aria-label\^="ค้นหาลูกค้า —"/);
@@ -103,7 +97,7 @@ try {
     assert.doesNotMatch(decorated, /\bBLOCKED\b/);
     assert.doesNotMatch(decorated, /Creation blocked/);
     assert.match(decorated, /data-mmd-create-job-static-copy="v1"/);
-    assert.match(decorated, /data-mmd-job-board-panel="v1"/);
+    assert.doesNotMatch(decorated, /data-mmd-job-board-panel="v1"/);
     assert.match(decorated, /data-mmd-create-job-client-search="v2"/);
   } finally {
     globalThis.fetch = originalFetch;
