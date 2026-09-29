@@ -119,7 +119,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /welcomeContextPromise = resolveInitialWelcomeContext\(\)/);
     assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
     assert.doesNotMatch(html, /MMD PRIVÉ · LINE MEMBERSHIP|สมัครสมาชิก MMD|เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE/);
-    assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("await readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
+    assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("void readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
     assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
   });
 
