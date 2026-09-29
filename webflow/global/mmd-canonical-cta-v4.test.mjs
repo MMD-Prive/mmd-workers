@@ -6,7 +6,7 @@ const source = await readFile(new URL("./mmd-canonical-cta-v4.js", import.meta.u
 
 test("routes member login to coupon or canonical My MMD without direct LIFF hop", () => {
   assert.match(source, /const MY_MMD_CANONICAL = "\/my-mmd\/"/);
-  assert.match(source, /const COUPON_ENTRY = "\/coupon"/);
+  assert.match(source, /const COUPON_ENTRY = "\/my-mmd\/coupons"/);
   assert.match(source, /function memberLoginTarget\(\)/);
   assert.match(source, /params\.get\("return_to"\) === "coupon" \? COUPON_ENTRY : MY_MMD_CANONICAL/);
   assert.match(source, /if \(path === "\/member\/login"\)/);
@@ -82,4 +82,16 @@ test("keeps dynamic Webflow content patched after injection", () => {
   assert.match(source, /new MutationObserver/);
   assert.match(source, /childList: true/);
   assert.doesNotThrow(() => new Function(source));
+});
+
+
+test("global member control uses verified profile and routes to canonical member profile", () => {
+  assert.match(source, /mmd-global-member-control-v1/);
+  assert.match(source, /\/member\/api\/liff\/profile/);
+  assert.match(source, /const PROFILE_PATH="\/member\/profile"/);
+  assert.match(source, /dataset\.state="online"/);
+});
+
+test("coupon login continuation uses canonical MY MMD coupons route", () => {
+  assert.match(source, /const COUPON_ENTRY = "\/my-mmd\/coupons"/);
 });
