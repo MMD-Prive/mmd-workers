@@ -102,6 +102,45 @@ function visibleText(html) {
   return String(html).replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+test("validated exact-job model handoff writes a durable privacy-safe receipt", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { id: "JOB-20261001-HANDOFF1", world: "public", confidentiality: false });
+
+  const response = await call(testEnv, "/public/api/jobs/JOB-20261001-HANDOFF1?mmd_job_board_handoff=real-signed-token-placeholder");
+  assert.equal(response.status, 303, await response.text());
+
+  const receiptKeys = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].filter((key) => key.includes("/handoffs/"));
+  assert.equal(receiptKeys.length, 1);
+  const receipt = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(receiptKeys[0]).bytes));
+  assert.equal(receipt.schema, "mmd_public_job_board_v2.model_handoff_receipt");
+  assert.equal(receipt.model_record_id, "rec12345678901234");
+  assert.equal(receipt.job_id, "JOB-20261001-HANDOFF1");
+  assert.equal(receipt.target_path, "/public/api/jobs/JOB-20261001-HANDOFF1");
+  assert.match(receipt.receipt_ref, /^handoff_[a-f0-9]{24}$/);
+  assert.equal(JSON.stringify(receipt).includes("real-signed-token-placeholder"), false);
+  assert.equal(JSON.stringify(receipt).includes("line_user_id"), false);
+
+  const owner = await call(testEnv, "/public/api/jobs/internal/handoffs?model_record_id=rec12345678901234&job_id=JOB-20261001-HANDOFF1", {
+    headers: { "x-internal-token": "owner-test-token" },
+  });
+  const ownerBody = await owner.json();
+  assert.equal(owner.status, 200, JSON.stringify(ownerBody));
+  assert.equal(ownerBody.handoffs.length, 1);
+  assert.equal(ownerBody.handoffs[0].receipt_ref, receipt.receipt_ref);
+});
+
+test("handoff receipt write failure never blocks an already validated Model", async () => {
+  const testEnv = env();
+  const originalPut = testEnv.PUBLIC_ACCESS_EVIDENCE.put.bind(testEnv.PUBLIC_ACCESS_EVIDENCE);
+  testEnv.PUBLIC_ACCESS_EVIDENCE.put = async (key, value, options) => {
+    if (key.includes("/handoffs/")) throw new Error("audit_store_unavailable");
+    return originalPut(key, value, options);
+  };
+  const response = await call(testEnv, "/public/api/jobs?mmd_job_board_handoff=real-signed-token-placeholder");
+  assert.equal(response.status, 303, await response.text());
+  assert.ok(response.headers.get("set-cookie")?.includes("mmd_pjb_model_v2="));
+});
+
 test("free-form Per brief maps to the Public Job Board V2 contract", () => {
   const parsed = parsePublicJobBriefV2("งาน กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์\n⏳ งาน 3 ชม.\n🏡 พฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n💰 10,000 ถึงตัว\n👤 ลูกค้า 1 ท่าน ร้านมีห้องส่วนตัว ไม่ล่วงเกิน 🔐\n🍌 ส่งด่วน รูปเดี่ยว 8 รูป");
   assert.equal(parsed.category, "dining");
