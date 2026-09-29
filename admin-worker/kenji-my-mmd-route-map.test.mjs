@@ -16,15 +16,20 @@ describe("Kenji MY MMD route map", () => {
     assert.ok(card);
     assert.equal(card.response_mode, "auto_reply_allowed");
     assert.equal(card.risk_level, "medium");
-    assert.equal(card.source_path, "/sigil/member/membership");
+    assert.equal(card.source_path, "/pay/membership");
+    assert.match(card.customer_answer, /690 บาท \/ 1 ปี/);
+    assert.match(card.customer_answer, /4,990 บาท \/ 2 ปี/);
+    assert.match(card.customer_answer, /11,499 บาท \/ 1 ปี/);
     assert.match(card.customer_answer, /https:\/\/mmdbkk\.com\/pay\/membership/);
-    assert.match(card.customer_answer, /https:\/\/mmdbkk\.com\/sigil\/member\/membership/);
-    assert.match(card.customer_answer, /intent=renew/);
-    assert.match(card.customer_answer, /https:\/\/mmdbkk\.com\/member\/payments/);
-    assert.match(card.customer_answer, /\/pay\/checkout\?t=/);
-    assert.match(card.customer_answer, /\/sigil\/pay\?t=/);
-    assert.doesNotMatch(card.customer_answer, /\/sigil\/pay\/renewal/);
-    assert.doesNotMatch(card.customer_answer, /\/pay\/renewal/);
+    assert.match(card.customer_answer, /https:\/\/mmdbkk\.com\/tmib/);
+    assert.doesNotMatch(card.customer_answer, /Black Card.*11,499/i);
+
+    const cta = payload.cards.find((item) => item.id === "kenji_20_002_route_map");
+    assert.ok(cta);
+    assert.equal(cta.response_mode, "auto_reply_allowed");
+    assert.equal(cta.source_path, "docs/knowledge/KENJI_WEBSITE_CTA_MAP_V1_20260929.md");
+    assert.match(cta.customer_answer, /หา Model/);
+    assert.match(cta.customer_answer, /TMIB/);
 
     const payment = payload.cards.find((item) => item.id === "kenji_20_006_payment_proof");
     assert.ok(payment);
