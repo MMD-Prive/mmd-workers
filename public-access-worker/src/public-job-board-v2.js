@@ -799,6 +799,39 @@ async function listModelHandoffReceipts(env, { modelRecordId = "", jobId = "" } 
     .map((row) => structuredClone(row));
 }
 
+async function mirrorModelHandoffAccessLog(env, receipt) {
+  const apiKey = clean(env.AIRTABLE_API_KEY, 1000);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 80);
+  if (!apiKey || !baseId || !receipt?.receipt_ref) return false;
+
+  const table = clean(env.AIRTABLE_TABLE_ACCESS_LOG || "System — Access Log", 160);
+  const endpoint = `https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`;
+  const fields = {
+    "Event ID": receipt.receipt_ref,
+    Action: "model_job_board_handoff_validated",
+    Target: receipt.job_id || "public_job_board",
+    Result: "success",
+    "Created At (ISO)": receipt.verified_at,
+    "Source Ref": `model-job-board:${receipt.receipt_ref}`,
+    Actor: "public_access_worker",
+    "Identity Ref": receipt.model_record_id,
+  };
+  const http = env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP : { fetch: globalThis.fetch.bind(globalThis) };
+  const response = await http.fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ fields, typecast: false }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw httpError(502, `handoff_access_log_${response.status}_${body.slice(0, 80)}`);
+  }
+  return true;
+}
+
 async function updateViewerControl(request, env, ref) {
   if (!/^[a-f0-9]{64}$/.test(ref)) throw httpError(400, "viewer_ref_invalid");
   const record = await getJson(env, viewerKey(ref));
@@ -903,7 +936,7 @@ async function enforceModelBoardGate(request, env, parts = []) {
       modelRecordId: verified.model_record_id,
       jobId: requestedJobId,
       targetPath: url.pathname,
-    }).catch((error) => {
+    }).then((receipt) => mirrorModelHandoffAccessLog(env, receipt)).catch((error) => {
       console.warn(JSON.stringify({ event: "model_job_board_handoff_receipt_failed", code: safeCode(error) }));
     });
     const exp = Math.floor(Date.now() / 1000) + 60 * 60;
