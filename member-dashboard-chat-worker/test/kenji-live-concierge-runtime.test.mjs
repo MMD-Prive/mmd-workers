@@ -51,13 +51,13 @@ test("expiring SVIP may receive renewal guidance", async () => {
   assert.doesNotMatch(reply.text, /สมัครสมาชิก|Public Package|HITO/);
 });
 
-test("expired Private fails closed and does not expose active-member access", async () => {
+test("expired Private receives bounded renewal guidance without a signup or broad greeting", async () => {
   const reply = await resolveKenjiLineReply({
     type: "message", source: { type: "user", userId },
     message: { type: "text", text: "ขอต่ออายุสมาชิก" },
   }, {}, truthEnv("private_premium", "expired"));
   assert.match(reply.text, /ต่ออายุ/);
-  assert.match(reply.text, /ยังไม่เปิดรายการ Private/);
+  assert.doesNotMatch(reply.text, /สมัครสมาชิก|Public Package|วันนี้ให้เปอร์ช่วย|ประสานเรื่องส่วนตัว/);
 });
 
 test("privacy guard survives canonical member resolution", async () => {
