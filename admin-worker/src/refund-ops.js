@@ -593,11 +593,12 @@ function directRefundUploadHtml(item = null) {
   const amount = html(item.refund_amount_due || "");
   const note = html(item.owner_refund_note || "");
   const ref = html(item.owner_refund_reference || "");
+  const casePath = `${REFUND_OPS_PAGE_PATH}?inbox_id=${encodeURIComponent(item.inbox_id)}&action=upload`;
   return `<article class="card" data-direct-refund>
     <div class="row"><span class="tag">${html((item.purpose || "refund").toUpperCase())}</span><strong>${html(item.customer_name || "LINE customer")}</strong><span class="status muted">READY</span></div>
     <div class="bank">${html(item.bank_name || "Bank detail")} · ${html(item.account_number_masked || "••••")}</div>
     <div class="muted">ฟอร์มตรงสำหรับเคสนี้ · ไม่ต้องรอรายการทั้งหมดโหลด</div>
-    <form method="post" enctype="multipart/form-data" action="${REFUND_OPS_PAGE_PATH}">
+    <form method="post" enctype="multipart/form-data" action="${html(casePath)}">
       <input type="hidden" name="inbox_id" value="${html(item.inbox_id)}">
       <div class="owner-fields">
         <label>ยอดคืน</label><input name="refund_amount" inputmode="decimal" placeholder="เช่น 4500" value="${amount}" required>
@@ -621,7 +622,7 @@ function refundPageHeaders() {
   };
 }
 
-function refundUploadResultHtml(payload = {}, status = 200) {
+function refundUploadResultHtml(payload = {}, status = 200, returnPath = REFUND_OPS_PAGE_PATH) {
   const ok = payload?.ok === true;
   const title = ok ? "อัปโหลดสลิปสำเร็จ" : "อัปโหลดไม่สำเร็จ";
   const customerUrl = clean(payload?.customer_confirmation_url || payload?.confirmation_url, 1000);
@@ -634,7 +635,7 @@ function refundUploadResultHtml(payload = {}, status = 200) {
        ${modelUrl ? `<p><strong>Model Job/App URL</strong><br><a href="${html(modelUrl)}">${html(modelUrl)}</a></p>` : ""}`
     : `<p class="danger">${html(payload?.error || "upload_failed")}</p>`;
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Refund Ops</title><style>
-  body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.55 system-ui;padding:24px}.wrap{max-width:720px;margin:auto}.card{border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:18px}a{color:#f7e7c3;word-break:break-all}.btn{display:inline-block;margin-top:12px;border:1px solid #6f6048;background:#d5b36b;color:#15110b;border-radius:12px;padding:10px 14px;font-weight:800;text-decoration:none}.danger{color:#ffbd9e}</style></head><body><main class="wrap"><section class="card"><h1>${title}</h1>${detail}<a class="btn" href="${REFUND_OPS_PAGE_PATH}">กลับ Refund Ops</a></section></main></body></html>`;
+  body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.55 system-ui;padding:24px}.wrap{max-width:720px;margin:auto}.card{border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:18px}a{color:#f7e7c3;word-break:break-all}.btn{display:inline-block;margin-top:12px;border:1px solid #6f6048;background:#d5b36b;color:#15110b;border-radius:12px;padding:10px 14px;font-weight:800;text-decoration:none}.danger{color:#ffbd9e}</style></head><body><main class="wrap"><section class="card"><h1>${title}</h1>${detail}<a class="btn" href="${html(returnPath)}">กลับ Refund เคสนี้</a></section></main></body></html>`;
 }
 
 function pageHtml(initialItem = null) {
@@ -672,9 +673,13 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
   }
 
   if (path === REFUND_OPS_PAGE_PATH && method === "POST") {
+    const inboxId = clean(url.searchParams.get("inbox_id"), 160);
+    const returnPath = inboxId
+      ? `${REFUND_OPS_PAGE_PATH}?inbox_id=${encodeURIComponent(inboxId)}&action=upload`
+      : REFUND_OPS_PAGE_PATH;
     const uploadResponse = await handleReceiptUpload(request, env);
     const payload = await uploadResponse.clone().json().catch(() => ({ ok:false, error:"upload_failed" }));
-    return new Response(refundUploadResultHtml(payload, uploadResponse.status), {
+    return new Response(refundUploadResultHtml(payload, uploadResponse.status, returnPath), {
       status:uploadResponse.ok ? 200 : uploadResponse.status,
       headers:refundPageHeaders(),
     });
