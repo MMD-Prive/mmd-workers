@@ -142,3 +142,51 @@ test("small image refund receipt retries as secure link when LINE rejects image 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("refund receipt 429 reads LINE monthly quota and does not immediately push fallback again", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ href, init });
+    if (href === "https://api.line.me/v2/bot/message/push") {
+      return new Response(JSON.stringify({ message:"Too Many Requests" }), {
+        status:429,
+        headers:{ "content-type":"application/json" },
+      });
+    }
+    if (href === "https://api.line.me/v2/bot/message/quota") {
+      return Response.json({ type:"limited", value:1000 });
+    }
+    if (href === "https://api.line.me/v2/bot/message/quota/consumption") {
+      return Response.json({ totalUsage:1000 });
+    }
+    throw new Error("unexpected URL " + href);
+  };
+  try {
+    const response = await worker.fetch(internalRequest({
+      line_user_id: LINE_ID,
+      customer_name: "แมน",
+      job_id: "JOB-FILM-J-001",
+      receipt_url: RECEIPT,
+      mime_type: "image/jpeg",
+      byte_size: 420000,
+    }), { LINE_CHANNEL_ACCESS_TOKEN:"line-token" }, { waitUntil() {} });
+
+    const payload = await response.json();
+    assert.equal(response.status, 502);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "line_push_rate_limited");
+    assert.equal(payload.status, 429);
+    assert.equal(payload.mode, "image");
+    assert.equal(payload.quota.ok, true);
+    assert.equal(payload.quota.quota_type, "limited");
+    assert.equal(payload.quota.quota_value, 1000);
+    assert.equal(payload.quota.total_usage, 1000);
+    assert.equal(payload.quota.monthly_exhausted, true);
+    assert.equal(calls.filter((x) => x.href === "https://api.line.me/v2/bot/message/push").length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

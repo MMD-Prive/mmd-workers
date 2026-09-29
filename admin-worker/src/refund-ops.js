@@ -384,6 +384,7 @@ async function notifyRefundReceiptToLine(env, record, payload, mediaUrl, file) {
   }));
   const body = await response.json().catch(() => ({}));
   const upstreamStatus = Number(body?.status);
+  const quota = body?.quota && typeof body.quota === "object" ? body.quota : null;
   return {
     ok: response.ok && body?.ok === true,
     skipped: body?.skipped === true,
@@ -391,6 +392,15 @@ async function notifyRefundReceiptToLine(env, record, payload, mediaUrl, file) {
     mode: clean(body?.mode, 80) || null,
     status: Number.isFinite(upstreamStatus) && upstreamStatus > 0 ? upstreamStatus : response.status,
     transport_status: response.status,
+    quota:quota ? {
+      ok:quota.ok === true,
+      quota_type:clean(quota.quota_type, 40) || null,
+      quota_value:Number.isFinite(Number(quota.quota_value)) ? Number(quota.quota_value) : null,
+      total_usage:Number.isFinite(Number(quota.total_usage)) ? Number(quota.total_usage) : null,
+      monthly_exhausted:quota.monthly_exhausted === true,
+      quota_http_status:Number(quota.quota_http_status) || null,
+      consumption_http_status:Number(quota.consumption_http_status) || null,
+    } : null,
   };
 }
 
@@ -546,6 +556,7 @@ async function handleReceiptUpload(request, env) {
   payload.customer_receipt_delivery_reason = notification.reason || null;
   payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
   payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
+  payload.customer_receipt_line_quota = notification.quota || null;
   payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
   payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
   payload.customer_confirmation_url = mediaUrl || null;
@@ -723,6 +734,7 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   payload.customer_receipt_delivery_reason = notification.reason || null;
   payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
   payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
+  payload.customer_receipt_line_quota = notification.quota || null;
   payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
   payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
   payload.customer_confirmation_url = mediaUrl || null;
@@ -773,6 +785,7 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
       mode:notification.mode || null,
       status:Number(notification.status) || null,
       transport_status:Number(notification.transport_status) || null,
+      quota:notification.quota || null,
     },
     owner_telegram:{
       sent:telegram.ok === true,
