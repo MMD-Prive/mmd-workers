@@ -27,6 +27,7 @@ test("model-only gate accepts a model name/code and rejects ordinary keyword tex
   assert.equal(isKenjiModelNameOnlyTextEvent(event("CARE BACK")), false);
   assert.equal(isKenjiModelNameOnlyTextEvent(event("เช็กสถานะสมาชิก")), false);
   assert.equal(isKenjiModelNameOnlyTextEvent(event("ดูนายแบบ")), false);
+  assert.equal(isKenjiModelNameOnlyTextEvent(event("ยืนยันนัด")), false);
 });
 
 test("non-model customer text is acknowledged silently before any LINE auto-reply path", async () => {
@@ -50,6 +51,7 @@ test("non-model customer text is acknowledged silently before any LINE auto-repl
     });
     const response = await handleKenjiSeedLineRequestWithRedeliveryRecovery(request, {
       LINE_CHANNEL_SECRET: SECRET,
+      LINE_KENJI_MODEL_NAME_ONLY_MODE: "true",
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
