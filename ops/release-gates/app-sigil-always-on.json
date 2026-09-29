@@ -13,8 +13,8 @@
       "evidence": "Airtable MMD — Model LINE Identity Claims record rec1PqbLAdYrKQ8ZA: source=mmd_model_liff_exchange, verification_version=model_liff_identity_first_v1, line_environment=published, claim_status=linked, verified_at=linked_at=2026-09-29T01:29:07.026Z, linked to canonical Atom IX reccoIEmIticuALwb."
     },
     "my_mmd_history_points_customer_requests": {
-      "status": "pending",
-      "evidence": ""
+      "status": "pass",
+      "evidence": "Owner-confirmed lightweight history threshold 2026-09-29: one strong LINE OFC evidence item is enough, maximum two, and no full historical crawl is required. Airtable MMD — Customer History Reviews record recuYqZNVRZ3qVmIL / hist_em_20240831_pn_man_v1 is a materialized approved LINE OFC note for Client recWvkmwiNDuZ44mu (คุณ เอ็ม): LINE OFC Note dated 2024-08-31 12:56 BKK, MMD Confirmation, model Man, PN, 16:00–17:30, THE LINE Phahonyothin Park, total/deposit 20,000, balance none; payment_review_status=approved, payment_coverage_status=complete, approved_payment_amount_thb=20000. Airtable MMD — Client Lifecycle Reconciliation record rec7ptYMQ9kkwJmwF for client:recWvkmwiNDuZ44mu read back schema=my_mmd_batch_preload_v1, completed_service_count=3, lifetime_service_spend_thb=60000, current_points_confirmed=600, points_earned_lifetime_projected=600, preload_state=ready, identity_state=ready."
     },
     "mmd_app_job_handoff": {
       "status": "pending",
@@ -35,10 +35,12 @@
   },
   "notes": [
     "Real-event gates require genuine production evidence. Synthetic/unit/staging evidence cannot mark them pass.",
+    "Source priority for MMD evidence: LINE OFC snapshots first, owner-provided/owner-confirmed evidence second, customer historical notes third, model group/album day-window evidence fourth.",
+    "Owner-confirmed history evidence threshold: one strong LINE OFC item is enough for historical readback acceptance; use at most two items and do not require a full backfill crawl before closing the gate.",
     "SIGIL Search must have approved public-safe media linked to the exact returned Models before this gate can become ready.",
     "Always-on APP campaign remains disabled until every gate is pass and evidence is recorded.",
     "Owner-confirmed contract: /sigil/booking may discover private-lane Models through scope=booking using public-safe media only; generic public search remains public-only and scope=private remains entitlement-gated.",
-    "MMD APP Job handoff remains pending because the 5-minute mmd_job_board_handoff token is intentionally not persisted; acceptance still requires one genuine post-LIFF handoff mint+validate event.",
+    "MMD APP Job handoff remains pending until one genuine production post-LIFF handoff mint+validate event writes a privacy-safe durable receipt.",
     "Validated Model Job Board handoffs now persist a privacy-safe durable receipt after token validation; no LINE ID, cookie, handoff token, payment, or customer payload is stored."
   ]
 }
