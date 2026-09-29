@@ -1135,7 +1135,8 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
-  const inferredIntent = inferLineIntent(eventText, event);
+  const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
+  const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
     : "";
@@ -1222,9 +1223,9 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     // profile whose model code exactly matches this campaign text.
     if (options.campaignBrief !== true && options.modelAccessAllowed !== false &&
         isEnabled(env.LINE_CARD_21829530_MODEL_INFO_ENABLED)) {
-      const trigger = resolveLineCardCampaignTrigger(eventText);
-      if (trigger) {
-        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), trigger.card_trigger);
+      const trigger = resolvedModelIntent.campaign_trigger;
+      if (trigger && resolvedModelIntent.query) {
+        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), resolvedModelIntent.query);
         if (access.status === "restricted_category" &&
             (trigger.card_trigger.toLowerCase().startsWith(access.category))) {
           const decision = buildKenjiModelAccessDecision(access, { clearOnFailure: true });
@@ -1270,7 +1271,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   }
 
   if (intent === "model_lookup") {
-    const query = extractKenjiModelLookupQuery(eventText);
+    const query = resolvedModelIntent.query || extractKenjiModelLookupQuery(eventText);
     const lineUserId = getLineUserId({ event });
     const access = await requestKenjiModelAccess(env, lineUserId, query);
     if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access, { clearOnFailure: true });
