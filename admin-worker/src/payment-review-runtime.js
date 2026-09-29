@@ -244,6 +244,7 @@ async function commitReview(request, env, actor) {
     operator_context: approval.operator_context || null,
     membership_write_through: safeMembershipWriteThrough(payload.membership_write_through),
     manual_membership_review_required: payload.manual_membership_review_required === true,
+    deposit_review: approval.deposit_review,
   }).then((value) => ({ ...value, ok: true })).catch((error) => ({
     ok: false,
     event_id: "",
@@ -284,6 +285,7 @@ async function commitReview(request, env, actor) {
     membership_expire_at: isoOrText(payload.membership_expire_at) || null,
     membership_write_through: safeMembershipWriteThrough(payload.membership_write_through),
     money_truth_changed: true,
+    deposit_review: approval.deposit_review,
     job_link_dispatch: jobLinkDispatch,
   });
 }
@@ -332,18 +334,47 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
 
   const expectedRef = safeText(paymentFields.payment_ref || paymentFields["Payment Reference"], 180);
   const expectedAmount = positiveAmount(paymentFields.amount_thb ?? paymentFields.amount ?? paymentFields["Amount"]);
-  if (expectedRef && expectedRef !== paymentRef) throw httpError(409, "canonical_payment_reference_mismatch");
-  if (expectedAmount != null && Math.abs(expectedAmount - amountThb) > 0.009) throw httpError(409, "canonical_payment_amount_mismatch");
-
   const paymentStage = normalizeStage(
     paymentFields.payment_stage || paymentFields.payment_type || fields.payment_stage || fields.payment_type || item.payment_stage || ""
   );
   const sessionId = safeText(paymentFields.session_id || fields.session_id || item.session_id, 180);
+  if (expectedRef && expectedRef !== paymentRef) throw httpError(409, "canonical_payment_reference_mismatch");
+  if (expectedAmount != null && Math.abs(expectedAmount - amountThb) > 0.009 && paymentStage !== "deposit") {
+    throw httpError(409, "canonical_payment_amount_mismatch");
+  }
   const memberEmail = normalizeEmail(paymentFields.member_email || fields.member_email || item.member_email);
   const packageCode = canonicalPackageCode(paymentFields.package_code || fields.package_code);
   if (["deposit", "final", "tips", "full"].includes(paymentStage) && !sessionId) {
     throw httpError(409, "canonical_session_context_missing");
   }
+
+  let depositReview = null;
+  if (paymentStage === "deposit") {
+    const session = await findSessionBySessionId(env, sessionId);
+    if (!session) throw httpError(409, "canonical_session_context_missing");
+    const serviceTotalThb = positiveAmount(
+      session.fields?.amount_thb ??
+      session.fields?.Amount ??
+      session.fields?.["Amount"]
+    );
+    if (serviceTotalThb == null) throw httpError(409, "canonical_service_amount_missing");
+    if (amountThb - serviceTotalThb > 0.009) throw httpError(409, "deposit_exceeds_service_total");
+    const minimumThb = Math.ceil(serviceTotalThb * 0.30);
+    const receivedPercent = Number(((amountThb / serviceTotalThb) * 100).toFixed(2));
+    depositReview = {
+      policy: "soft_minimum_30_owner_review",
+      service_total_thb: serviceTotalThb,
+      standard_minimum_percent: 30,
+      standard_minimum_thb: minimumThb,
+      received_thb: amountThb,
+      received_percent: receivedPercent,
+      shortfall_thb: Math.max(0, minimumThb - amountThb),
+      under_standard: amountThb < minimumThb,
+      amount_differs_from_intent: expectedAmount != null && Math.abs(expectedAmount - amountThb) > 0.009,
+      full_amount_received: amountThb >= serviceTotalThb,
+    };
+  }
+
   if (paymentStage === "membership" && !memberEmail) throw httpError(409, "canonical_member_context_missing");
   if (paymentStage === "membership" && !packageCode) throw httpError(409, "canonical_package_context_missing");
 
@@ -360,6 +391,7 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
     context_source: contextSource,
     renewal_session_id: renewalSessionId || null,
     operator_context: operatorContextAudit,
+    deposit_review: depositReview,
   };
 }
 
@@ -650,6 +682,18 @@ async function loadProof(env, proofId) {
   return records[0] || null;
 }
 
+async function findSessionBySessionId(env, sessionId) {
+  const value = safeText(sessionId, 180);
+  if (!value) return null;
+  const table = discoveryTables(env).sessions;
+  const records = await airtableList(env, table, {
+    filterByFormula: `{session_id}='${formulaValue(value)}'`,
+    maxRecords: 2,
+  });
+  if (records.length > 1) throw httpError(409, "canonical_session_context_ambiguous");
+  return records[0] || null;
+}
+
 async function findPaymentByRef(env, paymentRef) {
   for (const field of ["payment_ref", "Payment Reference"]) {
     try {
@@ -686,6 +730,7 @@ async function findReviewAudit(env, idempotencyKey) {
     membership_write_through: safeMembershipWriteThrough(after.membership_write_through),
     manual_membership_review_required: after.manual_membership_review_required === true,
     money_truth_changed: after.money_truth_changed === true,
+    deposit_review: after.deposit_review && typeof after.deposit_review === "object" ? after.deposit_review : null,
   };
 }
 
@@ -717,6 +762,7 @@ async function writeAudit(env, input) {
       payment_stage: input.payment_stage || null,
       membership_write_through: input.membership_write_through || null,
       manual_membership_review_required: input.manual_membership_review_required === true,
+      deposit_review: input.deposit_review || null,
       money_truth_changed: input.decision === "approve" && input.authority === "payments-worker",
     }),
     Actor: input.actor.id,
