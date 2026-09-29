@@ -137,7 +137,7 @@ jobs:
           const html = fs.readFileSync(process.argv[2], "utf8");
           if (!html.includes("LIFF Digital Home")) throw new Error("live direct status is missing the Worker-rendered Digital Home");
           if (!html.includes('/api/member/app/history')) throw new Error("live Digital Home is missing canonical History wiring");
-          if (!html.includes('const LOVABLE_POINTS_PATH = "/my-mmd/points"')) throw new Error("live Digital Home is missing the Lovable Points exception");
+          if (!html.includes('const CANONICAL_POINTS_PATH = "/my-mmd/points"')) throw new Error("live Digital Home is missing the Lovable Points exception");
           if (!html.includes('view === "history" ? "history-panel" : view')) throw new Error("live Digital Home no longer keeps History inside Worker LIFF");
           if (html.includes("mmd-status-bridge-veil")) throw new Error("live direct status still contains the whole-app Lovable bridge veil");
           NODE
