@@ -471,6 +471,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
   if (/(black\s*card|แบล็คการ์ด|บัตรดำ)/i.test(normalized)) return "black_card";
   if (/(vip|วีไอพี)/i.test(normalized)) return "vip";
+  if (/(?:\btmib\b|hito|hiei|hima|hiro|four\s+strangers|act\s*0*01|mmd\s*stories|เรื่อง\s*tmib|ตอน\s*tmib)/i.test(normalized)) return "tmib_story";
   if (/(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i.test(normalized)) return "booking_status";
   if (/(massage|male massage|นวด|คลายกล้าม|recovery|wellness|therapist|เทอราปิส)/i.test(normalized)) return "mms_wellness";
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
@@ -502,6 +503,7 @@ const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   mms_wellness: "kenji_20_002_route_map",
   partner_venue: "kenji_20_002_route_map",
   private_talent: "kenji_20_002_route_map",
+  tmib_story: "kenji_tmib_story_canon_v1",
 });
 
 let lineKnowledgeCache = { key: "", expiresAt: 0, cards: [] };
