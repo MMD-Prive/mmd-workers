@@ -27,6 +27,7 @@ test("Models core keeps the dedicated Worker adapter and safe fields", () => {
     "expected_profile_version",
     "folder_name",
     "working_name",
+    "private_real_name",
     "search_aliases",
     "customer_safe_info",
     "positive_sensitive_description",
@@ -95,7 +96,7 @@ test("single-owner layer is task-oriented and hides multi-admin review UI by def
 
 test("single-owner Knowledge flow is Teach -> Summary -> Use Live while Worker keeps review and QA gates", () => {
   assert.match(friendly, /API \+ "\/draft"/);
-  assert.match(friendly, /source_ref: "single-owner-friendly-v4"/);
+  assert.match(friendly, /source_ref: "single-owner-friendly-v5"/);
   assert.match(friendly, /function advanceKnowledge/);
   assert.match(friendly, /command\(id, "review"/);
   assert.match(friendly, /command\(id, "qa"/);
@@ -126,6 +127,37 @@ test("single-owner Model flow saves draft then auto-runs review QA publish after
   assert.match(friendly, /source_checked: sourceOk/);
   assert.match(friendly, /privacy_checked: true/);
   assert.match(friendly, /data-kso-model-sensitive/);
+});
+
+test("Internal Kenji Knowledge has a Per Correction learning loop backed by the existing publish gates", () => {
+  assert.match(friendly, /data-kso-mode="correction"/);
+  assert.match(friendly, /id="ksoPreviousAnswer"/);
+  assert.match(friendly, /id="ksoCorrectionReason"/);
+  assert.match(friendly, /per_correction/);
+  assert.match(friendly, /previous_answer/);
+  assert.match(friendly, /corrected_answer/);
+  assert.match(friendly, /prefer_current_owner_correction_when_context_matches/);
+  assert.match(friendly, /protected_truth_override: false/);
+  assert.match(friendly, /single-owner-friendly-v5/);
+});
+
+test("Internal Kenji can inspect bounded customer memory and conversation history for teaching", () => {
+  assert.match(friendly, /id="ksoHistoryIdentity"/);
+  assert.match(friendly, /view=history&history_limit=50/);
+  assert.match(friendly, /view=matrix/);
+  assert.match(friendly, /\/v1\/admin\/kenji\/control\/memory/);
+  assert.match(friendly, /data-kso-history-use/);
+  assert.match(friendly, /context only/);
+  assert.match(friendly, /Live Truth/);
+});
+
+test("Internal Kenji Model keeps owner-reviewed real-name identity separate from customer-facing access", () => {
+  assert.match(js, /kaModelPrivateRealName/);
+  assert.match(js, /private_real_name/);
+  assert.match(friendly, /\/identity/);
+  assert.match(friendly, /savePendingModelIdentity/);
+  assert.match(friendly, /ชื่อจริงภายใน/);
+  assert.match(friendly, /ไม่ customer-facing/);
 });
 
 test("friendly preview is discovery-only and never calls a generative reply endpoint", () => {

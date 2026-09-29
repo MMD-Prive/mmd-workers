@@ -193,7 +193,7 @@
     var q=((search&&search.value)||"").trim().toLowerCase();
     var filter=root.dataset.modelFilter||"all";
     var models=state.models.filter(function(model){
-      var hay=[model.model_key,model.working_name].concat(model.search_aliases||[]).join(" ").toLowerCase();
+      var hay=[model.model_key,model.working_name,model.private_real_name].concat(model.search_aliases||[]).join(" ").toLowerCase();
       return (!q||hay.includes(q))&&(filter==="all"||modelTierForFilter(model)===filter);
     });
     node.innerHTML=models.length?models.map(function(model){
@@ -221,6 +221,7 @@
       model_key:"",
       folder_name:"",
       working_name:"",
+      private_real_name:"",
       search_aliases:[],
       customer_safe_info:"",
       positive_sensitive_description:"",
@@ -313,6 +314,7 @@
     node.innerHTML='<div class="ka__recordHead"><span>MODEL KEYWORD PROFILE</span><h3>'+esc(model.working_name||"New Model Draft")+'</h3><p>'+(model.keyword_profile_id?'Profile '+esc(model.keyword_profile_id)+' · ':'')+(model.model_id?'Model '+esc(model.model_id)+' · ':'')+esc(profileState)+' · v'+esc(model.profile_version||1)+' · ทุกการแก้ไขจะเข้า Review ก่อน</p></div>'
       +adminMedia
       +'<div class="ka__modelGrid"><label>Model Key<input id="kaModelKey" value="'+attr(model.model_key)+'" placeholder="ems04-sin-m" autocomplete="off"></label><label>Working Name<input id="kaModelName" value="'+attr(model.working_name)+'" placeholder="ชื่อที่ใช้ภายใน"></label></div>'
+      +'<div class="ka__modelGrid"><label>ชื่อจริงภายใน · Owner reviewed<input id="kaModelPrivateRealName" value="'+attr(model.private_real_name||"")+'" placeholder="เว้นว่างถ้ายังไม่ยืนยัน"></label><div class="ka__notice"><b>Identity memory</b><br>ใช้ให้ Kenji จำว่า code / นามแฝง / working name / ชื่อจริงคือคนเดียวกันเท่านั้น · ชื่อจริงไม่ออกไปหาลูกค้าและไม่เพิ่มสิทธิ์ access.</div></div>'
       +'<label>Folder Name<input id="kaModelFolder" value="'+attr(model.folder_name||model.access_folder)+'" placeholder="EMs04 - Sin M / folder reference"></label>'
       +'<label>Ad / Rich Menu Trigger + Alias<small style="display:block;margin:4px 0 6px;color:#8f8377;font-weight:500;line-height:1.45">ใส่ข้อความที่ LINE จะส่งจากโฆษณาหรือการ์ด เช่น JASPAL และชื่อเรียกอื่นได้ · 1 บรรทัดต่อคำ</small><textarea id="kaModelAliases" placeholder="JASPAL&#10;Jaspal OP&#10;ชื่อเรียกอื่น">'+esc((model.search_aliases||[]).join("\n"))+'</textarea></label>'+'<div class="ka__notice"><b>Ad / Rich Menu entry</b><br>หลัง Publish แล้ว Trigger ที่ตรงแบบ exact จะชี้เข้า Model นี้ก่อน จากนั้นระบบยังตรวจ entitlement / visibility ตามปกติ · Trigger ไม่สามารถเพิ่มสิทธิ์การเห็น Model ได้</div>'
       +'<label>Customer-safe Info<textarea id="kaModelSafeInfo" placeholder="ข้อมูลที่ Kenji พูดกับลูกค้าได้หลังผ่าน Review">'+esc(model.customer_safe_info||"")+'</textarea></label>'
@@ -322,6 +324,7 @@
       +'<div class="ka__scopeBlock"><b>Allowed customer scope · Keyword Profile</b><div class="ka__chips">'+chip("kaModelScope","All Active Members","All Active Members",scopes.includes("All Active Members"))+chip("kaModelScope","VIP","VIP",scopes.includes("VIP"))+chip("kaModelScope","SVIP","SVIP",scopes.includes("SVIP"))+chip("kaModelScope","Black Card","Black Card",scopes.includes("Black Card"))+chip("kaModelScope","#Potential","#Potential",scopes.includes("#Potential"))+chip("kaModelScope","Per Review","Per Review",scopes.includes("Per Review"))+'</div></div>'
       +'<div class="ka__modelGrid"><label>Photo Visibility Policy<select id="kaModelPhotoPolicy">'+option("Active eligible only","Active eligible only",photoPolicy)+option("VIP/SVIP/Black Card only","VIP/SVIP/Black Card only",photoPolicy)+option("No photo","No photo",photoPolicy)+option("Per review","Per review",photoPolicy)+'</select></label><label>Deposit Preview Gate<select id="kaModelDepositGate">'+option("None","None",depositGate)+option("Verified deposit + Per approval","Verified deposit + Per approval",depositGate)+option("Per approval","Per approval",depositGate)+'</select></label></div>'
       +'<div class="ka__modelGrid"><label>Source Ref<input id="kaModelSourceRef" value="'+attr(model.source_ref)+'" placeholder="internal source reference"></label><div class="ka__scopeBlock"><b>Public Kenji proposal</b><div class="ka__chips">'+chip("kaModelPublicKenji","include","Include in public Kenji",!!model.include_in_public_kenji)+'</div></div></div>'
+      +'<div class="ka__notice"><b>Kenji identity memory</b><br>รู้จัก '+esc(model.model_key||"no-key")+' · '+esc(model.working_name||"no working name")+(model.private_real_name?' · ชื่อจริงภายในถูกยืนยันแล้ว':' · ยังไม่มีชื่อจริงที่ยืนยัน')+' · aliases '+esc((model.search_aliases||[]).length)+'. การจำตัวตนไม่เท่ากับสิทธิ์เปิดเผยข้อมูล.</div>'
       +'<div class="ka__notice"><b>Current Model access</b><br>Identity tier: '+esc(model.identity_tier||"—")+' · access filter: '+esc(modelTierForFilter(model))+' · current visibility: '+esc(model.booking_visibility||"—")+'. ค่าเหล่านี้มาจาก Models และไม่ถูกเขียนทับจาก Keyword Profile editor.</div>'
       +'<div class="ka__notice"><b>Safety lock</b><br>หน้านี้ไม่รับราคา, availability/คิว, เบอร์ติดต่อ, LINE/Telegram, private asset หรือ R2 key. Access visibility และ Public Kenji เป็น proposal สำหรับ Review และยังไม่เปลี่ยน Production Profile.</div>'
       +'<div class="ka__notice"><b>Media / Compcard</b><br>ภาพและ Compcard ยังใช้ Model Console media review เดิม ไม่อัปโหลดตรงจาก browser ใน Model Keyword Studio.</div>'

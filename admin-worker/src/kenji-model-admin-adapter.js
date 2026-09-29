@@ -8,6 +8,7 @@ export const KENJI_MODEL_ADMIN_BASE_PATH = "/v1/admin/kenji/models";
 export const KENJI_MODEL_ADMIN_DRAFT_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/draft`;
 export const KENJI_MODEL_SALES_RESOLVE_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/resolve`;
 export const KENJI_MODEL_SALES_RULES_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/rules`;
+const KENJI_MODEL_IDENTITY_PATH = /^\/v1\/admin\/kenji\/models\/(rec[A-Za-z0-9]{14,24})\/identity$/;
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MAX_LIST_SCAN = 500;
@@ -183,6 +184,7 @@ export function projectKenjiAdminModelRecord(record = {}) {
     model_id: modelId,
     model_key: clean(firstField(fields, ["unique_key", "model_code", "model_lookup_key"]), 80),
     working_name: clean(firstField(fields, ["working_name", "Working Name", "display_name", "Display Name", "name", "Name"]), 120),
+    private_real_name: clean(firstField(fields, ["private_real_name"]), 160),
     identity_tier: clean(firstField(fields, ["model_tier", "tier"]), 40),
     model_status: clean(firstField(fields, ["status", "model_status"]), 40),
     booking_visibility: clean(firstField(fields, ["approved_client_visibility", "visibility", "client_visibility_status"]), 40),
@@ -236,6 +238,7 @@ function mergeIdentityAndProfile(identity = {}, profile = null) {
     profile_version: profile?.profile_version || 1,
     model_key: profile?.model_key || identity.model_key || "",
     working_name: profile?.working_name || identity.working_name || "",
+    private_real_name: identity.private_real_name || "",
     search_aliases: profile?.search_aliases || [],
     customer_safe_info: profile?.customer_safe_info || "",
     positive_sensitive_description: profile?.positive_sensitive_description || "",
@@ -262,7 +265,7 @@ function mergeIdentityAndProfile(identity = {}, profile = null) {
 }
 
 function searchableText(model = {}) {
-  return [model.model_key, model.working_name, ...(model.search_aliases || [])].join(" ").toLowerCase();
+  return [model.model_key, model.working_name, model.private_real_name, ...(model.search_aliases || [])].join(" ").toLowerCase();
 }
 
 function rankModel(model, query) {
@@ -505,6 +508,60 @@ async function findReviewByRequestId(env, requestId, fetchImpl) {
   const result = await airtableFetch(env, config.reviewTable, { method: "GET" }, params, fetchImpl);
   if (!result.ok) return result;
   return { ok: true, record: result.data?.records?.[0] || null };
+}
+
+
+function privateRealName(value) {
+  const name = clean(value, 160).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!name) return { ok: true, value: "" };
+  if (name.length < 2 || /https?:\/\/|\b(?:bearer|authorization|token|secret)\b|sk-[A-Za-z0-9_-]{6,}|(?:^|\s)(?:rec|tbl|app)[A-Za-z0-9]{10,}/i.test(name)) {
+    return { ok: false, error: "invalid_private_real_name" };
+  }
+  return { ok: true, value: name };
+}
+
+async function updateModelPrivateIdentity(request, env, modelId, options, fetchImpl) {
+  const idempotencyKey = clean(request.headers.get("Idempotency-Key"), 180);
+  if (!idempotencyKey || idempotencyKey.length < 8) return json({ ok: false, error: "idempotency_key_required" }, 400);
+  let body;
+  try { body = await request.json(); }
+  catch (_) { return json({ ok: false, error: "invalid_json" }, 400); }
+
+  const parsed = privateRealName(body?.private_real_name);
+  if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+
+  const config = airtableConfig(env);
+  if (!config.apiKey || !config.baseId) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const actor = clean(options?.actor?.id || options?.actor || request.headers.get("x-mmd-admin-actor") || "admin", 100) || "admin";
+  const url = `${AIRTABLE_API}/${encodeURIComponent(config.baseId)}/${encodeURIComponent(config.modelsTable)}/${encodeURIComponent(modelId)}`;
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ fields: { private_real_name: parsed.value } }),
+    });
+  } catch (_) {
+    return json({ ok: false, error: "model_identity_source_unavailable" }, 503);
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return json({ ok: false, error: response.status === 422 ? "model_private_real_name_field_unavailable" : "model_identity_update_failed" }, response.status === 422 ? 503 : 502);
+  }
+  return json({
+    ok: true,
+    model_id: modelId,
+    private_real_name: clean(payload?.fields?.private_real_name, 160),
+    identity_scope: "internal_owner_reviewed",
+    customer_facing: false,
+    access_authority: false,
+    updated_by: actor,
+    production_mutated: true,
+  });
 }
 
 async function createDraft(request, env, options, fetchImpl) {
@@ -792,6 +849,7 @@ export function isKenjiModelAdminRequest(path, method = "GET") {
   const normalized = (clean(path, 500).replace(/\/+$/g, "") || "/");
   const verb = clean(method, 10).toUpperCase();
   if (isKenjiModelWorkflowRequest(normalized, verb)) return true;
+  if (KENJI_MODEL_IDENTITY_PATH.test(normalized)) return verb === "POST";
   return (
     (normalized === KENJI_MODEL_ADMIN_BASE_PATH && verb === "GET") ||
     (normalized === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST") ||
@@ -806,6 +864,8 @@ export async function handleKenjiModelAdminRequest(request, env = {}, options = 
   if (!isKenjiModelAdminRequest(path, method)) return json({ ok: false, error: "not_found" }, 404);
   if (isKenjiModelWorkflowRequest(path, method)) return handleKenjiModelWorkflowRequest(request, env, options);
   const fetchImpl = options.fetchImpl || fetch;
+  const identityMatch = path.match(KENJI_MODEL_IDENTITY_PATH);
+  if (identityMatch) return updateModelPrivateIdentity(request, env, identityMatch[1], options, fetchImpl);
   if (path === KENJI_MODEL_ADMIN_BASE_PATH) return listModels(request, env, fetchImpl);
   if (path === KENJI_MODEL_SALES_RESOLVE_PATH) return resolveSalesOffer(request, env, fetchImpl);
   if (path === KENJI_MODEL_SALES_RULES_PATH) {
