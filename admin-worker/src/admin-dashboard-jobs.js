@@ -28,8 +28,13 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
   }
 
   const sessionId = String(url.searchParams.get("session_id") || "").trim();
-  if (url.searchParams.getAll("session_id").length > 1 || (url.searchParams.has("session_id") && !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/.test(sessionId))) {
+  if (url.searchParams.getAll("session_id").length > 1 || (url.searchParams.has("session_id") && !isSafeLookupToken(sessionId, 119))) {
     return jobsJson({ ok: false, error: "invalid_session_id" }, 400);
+  }
+
+  const jobId = String(url.searchParams.get("job_id") || "").trim();
+  if (url.searchParams.getAll("job_id").length > 1 || (url.searchParams.has("job_id") && !isSafeLookupToken(jobId, 139))) {
+    return jobsJson({ ok: false, error: "invalid_job_id" }, 400);
   }
 
   const page = positiveInt(url.searchParams.get("page"), 1);
@@ -44,6 +49,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       pageSize,
       jobDate,
       sessionId,
+      jobId,
     });
 
     const body = {
@@ -55,6 +61,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       filters: {
         job_date: jobDate || null,
         session_id: sessionId || null,
+        job_id: jobId || null,
       },
       pagination: result.pagination,
       counts: result.counts,
@@ -81,8 +88,14 @@ export function buildJobsPage(records, options = {}) {
   const pageSize = clamp(positiveInt(options.pageSize, DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE);
   const jobDate = normalizeDateOnly(options.jobDate || "");
   const sessionId = String(options.sessionId || "").trim();
+  const jobId = String(options.jobId || "").trim();
   const allItems = projectJobs(records, now);
-  const filtered = allItems.filter((item) => (!jobDate || item.job_date === jobDate) && (!sessionId || item.id === sessionId));
+  const filtered = allItems.filter((item) => {
+    const dateMatch = !jobDate || item.job_date === jobDate;
+    const sessionMatch = !sessionId || item.id === sessionId || item.session_id === sessionId;
+    const jobMatch = !jobId || item.job_id === jobId || item.id === jobId;
+    return dateMatch && sessionMatch && jobMatch;
+  });
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
@@ -113,7 +126,8 @@ export function buildJobsPage(records, options = {}) {
 export function projectJobs(records, now = new Date()) {
   const items = (Array.isArray(records) ? records : []).map((record) => {
     const fields = record?.fields || {};
-    const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record?.id);
+    const jobId = firstText(fields.job_id, fields.jobId, fields["Job ID"], fields["Job Ref"], fields.job_ref);
+    const sessionId = firstText(fields.session_id, fields.sid, fields["Session ID"], fields.session_ref, jobId, record?.id);
     const model = firstText(
       fields.model_name,
       fields["Assigned Model"],
@@ -131,14 +145,20 @@ export function projectJobs(records, now = new Date()) {
     const dateLabel = jobDateLabel(jobDate || jobDateSource || scheduleSource);
     const timeOnly = timeLabel(startTimeSource);
     const when = compactJoin([dateLabel, timeOnly], " · ") || "ยังไม่มีวันเวลา";
+    const detailQuery = new URLSearchParams(jobId ? { job_id: jobId } : { session_id: sessionId }).toString();
 
     return {
       id: sessionId,
+      session_id: sessionId,
+      job_id: jobId,
+      model_name: model,
+      customer_name: customer,
       title: `${model} · ${customer}`,
       text: compactJoin([
         rawStatus,
         firstText(fields.service_type, fields.package_code, fields["Session Type"], fields.work_type, ""),
       ], " · "),
+      raw_status: rawStatus,
       job_date: jobDate,
       date_label: dateLabel,
       start_time: firstText(fields.start_time, fields["Start Time"]),
@@ -147,7 +167,7 @@ export function projectJobs(records, now = new Date()) {
       when,
       status: thaiStatus(rawStatus),
       progress: progressFromStatus(rawStatus),
-      href: `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}`,
+      href: `/internal/admin/jobs/all?${detailQuery}`,
     };
   });
 
@@ -223,7 +243,7 @@ function thaiStatus(value) {
   if (/travel|en_route|on_the_way/.test(text)) return "กำลังเดินทาง";
   if (/arrived/.test(text)) return "ถึงแล้ว";
   if (/working|live/.test(text)) return "กำลังทำงาน";
-  if (/finished|done|closed/.test(text)) return "เสร็จแล้ว";
+  if (/finished|done|closed|completed/.test(text)) return "เสร็จแล้ว";
   return str(value) || "กำลังดำเนินการ";
 }
 
@@ -234,7 +254,7 @@ function progressFromStatus(value) {
   if (/travel|en_route|on_the_way/.test(text)) return 58;
   if (/arrived/.test(text)) return 72;
   if (/working|live/.test(text)) return 86;
-  if (/finished|done|closed/.test(text)) return 100;
+  if (/finished|done|closed|completed/.test(text)) return 100;
   return 35;
 }
 
@@ -331,6 +351,11 @@ function lower(value) {
 
 function str(value) {
   return String(value == null ? "" : value).trim();
+}
+
+function isSafeLookupToken(value, max = 139) {
+  const text = str(value);
+  return text.length > 0 && text.length <= max && /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(text);
 }
 
 function jobsJson(data, status = 200) {
