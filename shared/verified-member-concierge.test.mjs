@@ -41,7 +41,7 @@ assert.match(expiring.text,/ต่ออายุ/);
 const expired = generateSafeReply({level:"private",identity_state:"matched",membership_state:"expired",intent:"renewal",display_name:"Expired"});
 assert.equal(expired.next_action,"renew_membership");
 assert.match(expired.text,/ต่ออายุ/);
-assert.match(expired.text,/ยังไม่เปิดรายการ Private/);
+assert.doesNotMatch(expired.text,/สมัครสมาชิก|Public Package|วันนี้ให้เปอร์ช่วย/);
 
 const activeRenewal = generateSafeReply({level:"private",identity_state:"matched",membership_state:"active",intent:"renewal",display_name:"Active"});
 assert.equal(activeRenewal.text,"");
