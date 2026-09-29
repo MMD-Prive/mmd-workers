@@ -1,0 +1,13 @@
+{
+  "schema": "mmd.vendor_billing_review.v1",
+  "vendor": "Lovable",
+  "status": "prepared_not_submitted",
+  "support_destination": "support@lovable.dev",
+  "private_evidence_location": "Notion: Lovable Credit Refund / Billing Review — 28 Sep 2026",
+  "tasks": {
+    "human_review_request_sent": {"status": "pending", "evidence": ""},
+    "ticket_id_recorded": {"status": "pending", "evidence": ""},
+    "vendor_response_recorded": {"status": "pending", "evidence": ""},
+    "credit_adjustment_result_recorded": {"status": "pending", "evidence": ""}
+  }
+}
