@@ -31,12 +31,11 @@ test("rewrites unresolved status start into explicit final state", async () => {
   assert.equal(payload.data.screen.key, "status_unresolved");
   assert.deepEqual(payload.data.screen.copy.split("\n"), [
     "ยืนยัน LINE สำเร็จแล้ว",
-    "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
+    "กรอก 1–2 อย่างที่เคยให้ไว้: อีเมล / เบอร์ / ชื่อเล่นหรือนามแฝง แล้วกด Verify",
   ]);
   assert.deepEqual(payload.data.screen.actions, [
     {
       id: "recovery_evidence",
-      label: "ยืนยันข้อมูลสมาชิกเดิม",
       label: "Verify",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
