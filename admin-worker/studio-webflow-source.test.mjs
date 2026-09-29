@@ -60,3 +60,18 @@ test("Studio Webflow embed snippets are paste-ready, noindex where internal, and
     assert.doesNotMatch(html, /r2_required_keys|r2_key|storage_key|bucket_name|public_url|presigned/i, file);
   }
 });
+
+
+test("Studio model-card selector mirrors Master Frame V2 without legacy public labels", async () => {
+  const source = await readFile(new URL("studio-compcard-template-selector.js", SOURCE_DIR), "utf8");
+
+  assert.match(source, /MASTER FRAME V2/);
+  assert.match(source, /BLUE EDGE CUE · NO TRAVEL LABEL/);
+  assert.match(source, /RED EDGE CUE · NO EXTREME LABEL/);
+  assert.match(source, /mmd-sigil-card-frame-outer/);
+  assert.match(source, /data-master-frame/);
+  assert.match(source, /template_version:\s*"mmd-master-frame-v2"/);
+  assert.match(source, /model_name:\s*values\.model/);
+  assert.doesNotMatch(source, /collection:\s*"TRAVEL MODELS"|collection:\s*"EXTREME MODELS"/);
+  assert.doesNotMatch(source, /PRIVATE SIGIL \/|PUBLIC COLLECTION/);
+});
