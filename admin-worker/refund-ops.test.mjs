@@ -632,3 +632,144 @@ test("targeted native refund POST keeps the case URL on the result page", async 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("refund receipt upload writes Airtable Console Inbox status done, never unsupported completed", async () => {
+  const originalFetch = globalThis.fetch;
+  const record = {
+    id:"recRefundStatus",
+    fields:{
+      inbox_id:"refund_status_done",
+      line_user_id:"",
+      member_name:"แมน",
+      status:"new",
+      admin_note:"Refund account received",
+      payload_json:JSON.stringify({
+        schema:"mmd_refund_bank_detail_v1",
+        purpose:"refund",
+        job_id:"JOB-STATUS-DONE",
+        refund_amount_due:"3150",
+        refund_currency:"THB",
+      }),
+    },
+  };
+  const bucket = {
+    async put() {},
+    async get() { return null; },
+  };
+  const patchStatuses = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    if (method === "PATCH") {
+      const body = JSON.parse(init.body || "{}");
+      patchStatuses.push(body.fields?.status || "");
+      if (body.fields?.status === "completed") {
+        return Response.json({ error:{ type:"INVALID_MULTIPLE_CHOICE_OPTIONS" } }, { status:422 });
+      }
+      Object.assign(record.fields, body.fields || {});
+      return Response.json({ id:record.id, fields:record.fields });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  try {
+    const form = new FormData();
+    form.append("inbox_id", "refund_status_done");
+    form.append("refund_amount", "3150");
+    form.append("refund_currency", "THB");
+    form.append("file", new File([new Uint8Array([1,2])], "refund.jpg", { type:"image/jpeg" }));
+    const response = await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/v1/admin/refunds/receipt", { method:"POST", body:form }),
+      env({ LINE_SLIP_EVIDENCE:bucket }),
+      { isAuthed:async () => true },
+    );
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.deepEqual(patchStatuses, ["done", "done"]);
+    assert.equal(record.fields.status, "done");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Refund Ops recovery completes an orphan R2 receipt without asking owner to upload again", async () => {
+  const originalFetch = globalThis.fetch;
+  const inboxId = "refund_manual_man_20260929_pay_mulcs8o4";
+  const record = {
+    id:"recRefundRecover",
+    createdTime:"2026-09-29T05:42:38.000Z",
+    fields:{
+      inbox_id:inboxId,
+      line_user_id:"",
+      member_name:"แมน",
+      status:"new",
+      admin_note:"Refund account received",
+      payload_json:JSON.stringify({
+        schema:"mmd_refund_bank_detail_v1",
+        purpose:"refund",
+        job_id:"JOB-8B799C2387-C1BC84",
+        session_id:"sess_mulcs8o4_26939b8b799c2387",
+        customer_name:"แมน",
+        owner_refund_amount:"3150",
+        refund_currency:"THB",
+        refund_note:"คืนยอดหลังหัก 30%",
+      }),
+    },
+  };
+  const key = `owner-refund-receipts/2026/09/${encodeURIComponent(inboxId)}/receipt.jpg`;
+  const bucket = {
+    async put() {},
+    async get(candidate) {
+      if (candidate !== key) return null;
+      return {
+        body:new Uint8Array([3,1,5,0]),
+        size:4,
+        uploaded:new Date("2026-09-29T09:06:03.000Z"),
+        httpMetadata:{ contentType:"image/jpeg" },
+      };
+    },
+  };
+  const patchStatuses = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    if (method === "PATCH") {
+      const body = JSON.parse(init.body || "{}");
+      patchStatuses.push(body.fields?.status || "");
+      Object.assign(record.fields, body.fields || {});
+      return Response.json({ id:record.id, fields:record.fields });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  try {
+    const response = await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/v1/admin/refunds/recover", {
+        method:"POST",
+        headers:{ "content-type":"application/json" },
+        body:JSON.stringify({ inbox_id:inboxId }),
+      }),
+      env({ LINE_SLIP_EVIDENCE:bucket }),
+      { isAuthed:async () => true },
+    );
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.recovered, true);
+    assert.equal(payload.refund_amount, "3150");
+    assert.deepEqual(patchStatuses, ["done", "done"]);
+    assert.equal(record.fields.status, "done");
+    const stored = JSON.parse(record.fields.payload_json);
+    assert.equal(stored.receipt_r2_key, key);
+    assert.equal(stored.receipt_mime_type, "image/jpeg");
+    assert.equal(stored.receipt_byte_size, 4);
+    assert.equal(stored.refund_completed_by, "owner_recovery");
+    assert.equal(stored.money_truth_mutated, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

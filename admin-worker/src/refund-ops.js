@@ -1,6 +1,7 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const REFUND_OPS_PAGE_PATH = "/internal/admin/refunds";
 export const REFUND_OPS_API_PREFIX = "/v1/admin/refunds";
+export const REFUND_OPS_RECOVER_PATH = `${REFUND_OPS_API_PREFIX}/recover`;
 export const REFUND_OPS_INTERNAL_INTAKE = "/v1/internal/refund-ops/intake";
 export const REFUND_RECEIPT_MEDIA_PATH = "/refund-receipt/media";
 
@@ -521,7 +522,7 @@ async function handleReceiptUpload(request, env) {
   payload.refund_completed_by = "owner";
   payload.money_truth_mutated = false;
   await patchRecord(env, record, {
-    status:"completed",
+    status:"done",
     payload_json:JSON.stringify(payload),
     admin_note:`${clean(record.fields?.admin_note, 1200)} · Refund receipt uploaded ${now.toISOString()}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""}`.slice(0,1800),
   });
@@ -556,7 +557,7 @@ async function handleReceiptUpload(request, env) {
   payload.owner_telegram_delivery_reason = telegram.reason || null;
   payload.owner_telegram_message_id = telegram.message_id || null;
   await patchRecord(env, record, {
-    status:"completed",
+    status:"done",
     payload_json:JSON.stringify(payload),
     admin_note:`${clean(record.fields?.admin_note, 1200)} · Refund receipt uploaded ${now.toISOString()}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""} · LINE ${payload.customer_receipt_delivery_status} · Telegram ${payload.owner_telegram_delivery_status}`.slice(0,1800),
   }).catch(() => null);
@@ -586,6 +587,186 @@ async function handleReceiptUpload(request, env) {
     },
     money_truth_mutated:false,
   });
+}
+
+
+function receiptRecoveryMonthKeys(inboxId, record = {}, now = new Date()) {
+  const months = new Set();
+  const addMonth = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(date.getTime())) return;
+    months.add(`${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  };
+  addMonth(now);
+  addMonth(record?.fields?.created_at || record?.createdTime || "");
+  addMonth(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)));
+  const safeInbox = encodeURIComponent(clean(inboxId, 160));
+  const out = [];
+  for (const month of months) {
+    for (const ext of ["jpg", "png", "webp"]) {
+      out.push(`owner-refund-receipts/${month}/${safeInbox}/receipt.${ext}`);
+    }
+  }
+  return out;
+}
+
+async function findRecoverableReceipt(env, record, inboxId) {
+  const bucket = privateBucket(env);
+  if (!bucket) return null;
+  const payload = parsePayload(record);
+  const knownKey = clean(payload.receipt_r2_key, 500);
+  const candidates = [
+    ...(knownKey ? [knownKey] : []),
+    ...receiptRecoveryMonthKeys(inboxId, record),
+  ];
+  const seen = new Set();
+  for (const key of candidates) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const object = await bucket.get(key).catch(() => null);
+    if (!object) continue;
+    const fallbackType = key.endsWith(".png")
+      ? "image/png"
+      : key.endsWith(".webp")
+        ? "image/webp"
+        : "image/jpeg";
+    return {
+      key,
+      object,
+      mime: clean(object?.httpMetadata?.contentType || fallbackType, 120),
+      size: Number(object?.size) || 0,
+      uploadedAt: object?.uploaded instanceof Date && Number.isFinite(object.uploaded.getTime())
+        ? object.uploaded.toISOString()
+        : new Date().toISOString(),
+    };
+  }
+  return null;
+}
+
+async function completeRecoveredReceipt(env, record, inboxId, recovered) {
+  const payload = parsePayload(record);
+  if (clean(record?.fields?.status, 80) === "done" && clean(payload.receipt_r2_key, 500)) {
+    return {
+      ok:true,
+      recovered:false,
+      already_completed:true,
+      inbox_id:inboxId,
+      status:"completed",
+      line_notification:{
+        sent:payload.customer_receipt_delivery_status === "sent",
+        skipped:payload.customer_receipt_delivery_status === "skipped",
+        reason:payload.customer_receipt_delivery_reason || null,
+      },
+      owner_telegram:{
+        sent:payload.owner_telegram_delivery_status === "sent",
+        skipped:payload.owner_telegram_delivery_status === "skipped",
+        reason:payload.owner_telegram_delivery_reason || null,
+        message_id:payload.owner_telegram_message_id || null,
+      },
+      money_truth_mutated:false,
+    };
+  }
+
+  const ownerRefundAmount = payloadRefundAmount(payload);
+  const ownerRefundCurrency = currencyText(payload.owner_refund_currency || payload.refund_currency || "THB");
+  payload.receipt_r2_key = recovered.key;
+  payload.receipt_uploaded_at = clean(payload.receipt_uploaded_at || recovered.uploadedAt, 80);
+  payload.receipt_mime_type = recovered.mime;
+  payload.receipt_byte_size = recovered.size;
+  payload.owner_refund_amount = ownerRefundAmount || null;
+  payload.owner_refund_currency = ownerRefundCurrency;
+  payload.refund_completed_by = "owner_recovery";
+  payload.money_truth_mutated = false;
+
+  await patchRecord(env, record, {
+    status:"done",
+    payload_json:JSON.stringify(payload),
+    admin_note:`${clean(record.fields?.admin_note, 1200)} · Recovered owner refund receipt ${payload.receipt_uploaded_at}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""}`.slice(0,1800),
+  });
+
+  let notification = { ok:false, skipped:true, reason:"not_attempted", mode:null };
+  let telegram = { ok:false, skipped:true, reason:"not_attempted" };
+  let mediaUrl = "";
+  const adminUrl = adminJobUrl(payload);
+  const modelUrl = modelJobAppUrl(payload);
+  try {
+    mediaUrl = await signedReceiptMediaUrl(env, inboxId, Date.now());
+    notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, {
+      type:recovered.mime,
+      size:recovered.size,
+    });
+  } catch {
+    notification = { ok:false, skipped:false, reason:"line_notification_failed", mode:null };
+  }
+  payload.customer_receipt_delivery_status = notification.ok ? "sent" : (notification.skipped ? "skipped" : "failed");
+  payload.customer_receipt_delivery_mode = notification.mode || null;
+  payload.customer_receipt_delivery_at = new Date().toISOString();
+  payload.customer_receipt_delivery_reason = notification.reason || null;
+  payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
+  payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
+  payload.customer_confirmation_url = mediaUrl || null;
+  payload.admin_job_url = adminUrl || null;
+  payload.model_job_app_url = modelUrl || null;
+
+  try {
+    telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
+  } catch {
+    telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
+  }
+  payload.owner_telegram_delivery_status = telegram.ok ? "sent" : (telegram.skipped ? "skipped" : "failed");
+  payload.owner_telegram_delivery_at = new Date().toISOString();
+  payload.owner_telegram_delivery_reason = telegram.reason || null;
+  payload.owner_telegram_message_id = telegram.message_id || null;
+
+  await patchRecord(env, record, {
+    status:"done",
+    payload_json:JSON.stringify(payload),
+    admin_note:`${clean(record.fields?.admin_note, 1200)} · Recovered owner refund receipt ${payload.receipt_uploaded_at}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""} · LINE ${payload.customer_receipt_delivery_status} · Telegram ${payload.owner_telegram_delivery_status}`.slice(0,1800),
+  }).catch(() => null);
+
+  return {
+    ok:true,
+    recovered:true,
+    inbox_id:inboxId,
+    status:"completed",
+    refund_amount:ownerRefundAmount || null,
+    refund_currency:ownerRefundCurrency,
+    confirmation_url:mediaUrl || null,
+    customer_confirmation_url:mediaUrl || null,
+    admin_job_url:adminUrl || null,
+    model_job_app_url:modelUrl || null,
+    line_notification:{
+      sent:notification.ok === true,
+      skipped:notification.skipped === true,
+      reason:notification.reason || null,
+      mode:notification.mode || null,
+    },
+    owner_telegram:{
+      sent:telegram.ok === true,
+      skipped:telegram.skipped === true,
+      reason:telegram.reason || null,
+      message_id:telegram.message_id || null,
+    },
+    money_truth_mutated:false,
+  };
+}
+
+async function handleReceiptRecovery(request, env) {
+  let body = {};
+  const contentType = clean(request.headers.get("content-type"), 160).toLowerCase();
+  if (contentType.includes("application/json")) {
+    body = await request.json().catch(() => ({}));
+  } else {
+    const form = await request.formData().catch(() => null);
+    if (form) body = Object.fromEntries(form.entries());
+  }
+  const inboxId = clean(body.inbox_id, 160);
+  if (!inboxId) return json({ ok:false, error:"inbox_id_required" }, 400);
+  const record = await findByInboxId(env, inboxId);
+  if (!record) return json({ ok:false, error:"refund_task_not_found" }, 404);
+  const recovered = await findRecoverableReceipt(env, record, inboxId);
+  if (!recovered) return json({ ok:false, error:"orphan_receipt_not_found" }, 404);
+  return json(await completeRecoveredReceipt(env, record, inboxId, recovered));
 }
 
 function directRefundUploadHtml(item = null) {
@@ -724,5 +905,6 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
     return json({ ok:true, detail });
   }
   if (path === `${REFUND_OPS_API_PREFIX}/receipt` && method === "POST") return handleReceiptUpload(request, env);
+  if (path === REFUND_OPS_RECOVER_PATH && method === "POST") return handleReceiptRecovery(request, env);
   return null;
 }

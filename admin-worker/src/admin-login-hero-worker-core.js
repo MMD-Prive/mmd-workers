@@ -273,10 +273,35 @@ export default {
       path === REFUND_OPS_INTERNAL_INTAKE ||
       path === REFUND_RECEIPT_MEDIA_PATH
     ) {
-      const refundOps = await handleRefundOpsRequest(request, env, {
-        isAuthed: async () => true,
-      });
-      if (refundOps) return refundOps;
+      try {
+        const refundOps = await handleRefundOpsRequest(request, env, {
+          isAuthed: async () => true,
+        });
+        if (refundOps) return refundOps;
+      } catch (error) {
+        console.error("refund_ops_active_unhandled", {
+          path,
+          method,
+          name:String(error?.name || "Error").slice(0, 80),
+          message:String(error?.message || "refund_ops_unavailable").slice(0, 240),
+        });
+        if (path === REFUND_OPS_PAGE_PATH) {
+          return new Response(
+            "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Refund Ops</title></head><body style=\"background:#0b0a09;color:#f4efe6;font:16px system-ui;padding:24px\"><main style=\"max-width:680px;margin:auto\"><h1>Refund Ops ขัดข้องชั่วคราว</h1><p>ระบบหยุดแบบปลอดภัยและยังไม่ยืนยันการคืนเงิน กรุณาอย่ากดส่งซ้ำ</p></main></body></html>",
+            {
+              status:503,
+              headers:{
+                "content-type":"text/html; charset=utf-8",
+                "cache-control":"no-store, private",
+                "x-mmd-refund-error-boundary":"active-v2",
+              },
+            },
+          );
+        }
+        return strictJson(request, env, { ok:false, error:"refund_ops_unavailable" }, 503, {
+          "x-mmd-refund-error-boundary":"active-v2",
+        });
+      }
     }
 
     if (path === PAYMENT_ISSUER_DIAGNOSTIC_PATH) {
