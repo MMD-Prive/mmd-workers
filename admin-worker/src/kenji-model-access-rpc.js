@@ -22,6 +22,7 @@ const RENEWAL_DUE_LIFECYCLES = new Set(["grace", "expired"]);
 const BLOCKED_MODEL_STATUS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
 const MODEL_CODE_FIELDS = ["model_code", "model_lookup_key", "unique_key"];
 const MODEL_WORKING_NAME_FIELDS = ["working_name", "Working Name", "display_name", "Display Name"];
+const MODEL_ALIAS_FIELDS = ["nickname", "username", "folder_name"];
 const MODEL_RUN_NUMBER_FIELDS = ["run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number"];
 const PRIVATE_MODEL_DECISIONS_TABLE = "MMD — Private Model Access Decisions";
 const APPROVAL_MEMBER_FIELDS = ["member_record_id", "member_id", "member_email", "line_user_id"];
@@ -67,6 +68,61 @@ function fieldList(fields = {}, names = [], maxItems = 40) {
     return [...new Set(raw.map((item) => clean(item?.id || item?.name || item, 120)).filter(Boolean))].slice(0, maxItems);
   }
   return [];
+}
+
+
+function normalizedAlias(value) {
+  return clean(value, 160).toLowerCase().normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+function campaignCodeFromText(value = "") {
+  const raw = clean(value, 240);
+  const match = raw.match(/(?:^|[^a-z0-9])(gws|ems)[\s_-]*0*(\d{1,3})(?=$|[^a-z0-9])/i);
+  if (!match) return "";
+  const prefix = match[1].toLowerCase() === "gws" ? "GWs" : "EMs";
+  return `${prefix}${String(Number(match[2])).padStart(2, "0")}`;
+}
+
+function campaignIdentity(record = {}) {
+  const fields = record.fields || {};
+  const sourceValues = [
+    ...MODEL_CODE_FIELDS.map((name) => fieldValue(fields, [name])),
+    ...MODEL_WORKING_NAME_FIELDS.map((name) => fieldValue(fields, [name])),
+    ...MODEL_ALIAS_FIELDS.map((name) => fieldValue(fields, [name])),
+  ].filter(Boolean);
+  const code = sourceValues.map(campaignCodeFromText).find(Boolean) || "";
+  const declared = token(fieldValue(fields, ["recognition_class", "exclusive_group"]));
+  const category = code
+    ? (code.toLowerCase().startsWith("gws") ? "gws" : "ems")
+    : (["gws", "ems"].includes(declared) ? declared : "");
+
+  const aliases = new Set();
+  const add = (value) => {
+    const alias = normalizedAlias(value);
+    if (alias && alias.length <= 160) aliases.add(alias);
+  };
+  if (code) {
+    add(code);
+    add(code.replace(/^(GWS|EMS)(\d+)$/i, "$1-$2"));
+  }
+  for (const value of sourceValues) {
+    add(value);
+    if (!category) continue;
+    const stripped = clean(value, 240)
+      .replace(/(?:^|[^a-z0-9])(?:gws|ems)[\s_-]*0*\d{1,3}(?=$|[^a-z0-9])/i, " ")
+      .replace(/^[\s\-–—_|:]+|[\s\-–—_|:]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (stripped && stripped !== value) add(stripped);
+  }
+  return { category, code, aliases: [...aliases] };
+}
+
+function exactCampaignAliasMatch(record = {}, query = "") {
+  const wanted = normalizedAlias(query);
+  if (!wanted) return false;
+  const identity = campaignIdentity(record);
+  return Boolean(identity.category && identity.aliases.includes(wanted));
 }
 
 function formulaString(value) {
@@ -115,8 +171,9 @@ export function projectKenjiSafeModel(record = {}) {
   const fields = record.fields || {};
   const workingName = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
   const canonicalCode = fieldValue(fields, MODEL_CODE_FIELDS);
-  const modelCode = /^(?:gws|ems)[0-9]+$/i.test(workingName) &&
-    !/^(?:gws|ems)[0-9]+$/i.test(canonicalCode) ? workingName : canonicalCode;
+  const campaign = campaignIdentity(record);
+  const modelCode = campaign.code || (/^(?:gws|ems)[0-9]+$/i.test(workingName) &&
+    !/^(?:gws|ems)[0-9]+$/i.test(canonicalCode) ? workingName : canonicalCode);
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isCustomerSafeText(workingName, 120)) return null;
   const projected = { model_code: modelCode, working_name: workingName };
   const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
@@ -259,11 +316,7 @@ async function resolveCuratedApproval(env, identity, cohort, fetchImpl) {
 }
 
 function privateCampaignCategory(record = {}) {
-  const fields = record.fields || {};
-  const canonical = fieldValue(fields, MODEL_CODE_FIELDS);
-  const name = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
-  const code = /^(?:gws|ems)[0-9]+$/i.test(canonical) ? canonical : name;
-  return /^gws[0-9]+$/i.test(code) ? "gws" : /^ems[0-9]+$/i.test(code) ? "ems" : "";
+  return campaignIdentity(record).category;
 }
 
 export function privateCampaignInternalGroup(value) {
@@ -290,9 +343,10 @@ async function hasPerModelApproval(env, lineUserId, model, snapshot, fetchImpl) 
   const table = clean(env.AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS || PRIVATE_MODEL_DECISIONS_TABLE);
   const decisions = await airtableQueryExact(env, table, "line_user_id", lineUserId, fetchImpl, 100);
   const fields = model.fields || {};
+  const campaign = campaignIdentity(model);
   const canonical = fieldValue(fields, MODEL_CODE_FIELDS);
-  const code = (/^(?:gws|ems)[0-9]+$/i.test(canonical)
-    ? canonical : fieldValue(fields, MODEL_WORKING_NAME_FIELDS)).toLowerCase();
+  const code = clean(campaign.code || (/^(?:gws|ems)[0-9]+$/i.test(canonical)
+    ? canonical : fieldValue(fields, MODEL_WORKING_NAME_FIELDS))).toLowerCase();
   const matched = decisions.filter((row) => {
     const fields = row.fields || {};
     const linked = fieldList(fields, ["Model"], 2);
@@ -347,9 +401,17 @@ async function resolveExactModel(env, query, fetchImpl) {
   const runMatches = await queryAcrossFields(env, table, MODEL_RUN_NUMBER_FIELDS, query, fetchImpl, 5);
   // Card text may be the Drive folder name rather than the model code or working name.
   // Match the canonical Models record exactly; folder location never grants access.
-  const folderMatches = await queryAcrossFields(env, table, ["folder_name"], query, fetchImpl, 5);
-  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...runMatches, ...folderMatches]);
+  const directAliasMatches = await queryAcrossFields(env, table, MODEL_ALIAS_FIELDS, query, fetchImpl, 5);
+  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...runMatches, ...directAliasMatches]);
   if (directMatches.length) return { status: "resolved", records: directMatches };
+
+  // GWs/EMs names are identity aliases, not customer-facing authority. Resolve
+  // exact aliases dynamically from canonical Models so a code, working name,
+  // nickname, username, folder label, or code-prefixed display name can refer
+  // to one record without copying a private identity map into prompt text.
+  const canonicalModels = await airtableListRecords(env, table, fetchImpl, 500);
+  const campaignAliasMatches = uniqueRecords(canonicalModels.filter((record) => exactCampaignAliasMatch(record, query)));
+  if (campaignAliasMatches.length) return { status: "resolved", records: campaignAliasMatches };
 
   // Ad / Rich Menu entries reuse the published Keyword Profile aliases.
   // Alias matching is exact and only Active profiles participate. The alias
@@ -367,7 +429,7 @@ async function resolveExactModel(env, query, fetchImpl) {
 
   const linkedIds = new Set(matchedProfiles.flatMap((record) => fieldList(record?.fields || {}, ["Model"], 8)));
   const linkedKeys = new Set(matchedProfiles.map((record) => fieldValue(record?.fields || {}, ["model_key"]).toLowerCase()).filter(Boolean));
-  const canonical = await airtableListRecords(env, table, fetchImpl, 500);
+  const canonical = canonicalModels;
   const aliasMatches = canonical.filter((record) => {
     if (linkedIds.has(clean(record?.id, 80))) return true;
     const key = fieldValue(record?.fields || {}, MODEL_CODE_FIELDS).toLowerCase();

@@ -92,7 +92,7 @@ function keywordProfile(alias, model = privateModel(), overrides = {}) {
 
 const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
-  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number", "folder_name"]),
+  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "nickname", "username", "run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number", "folder_name"]),
   approvals: new Set(["line_user_id"]),
   decisions: new Set(["line_user_id"]),
   profiles: new Set([]),
@@ -462,6 +462,65 @@ test("exact denied GWs and EMs return only their broad category", async () => {
     assert.deepEqual(result, { status: "restricted_category", category });
     assert.doesNotMatch(JSON.stringify(result), /Private Name|exclusive|image|summary/i);
   }
+});
+
+
+test("GWs real/working name resolves internally to the restricted GWs identity without leaking it", async () => {
+  const model = privateModel("mdl_exc_oth_peet", "exclusive", {
+    working_name: "Peet K",
+    nickname: "Peet",
+    exclusive_group: "GWs",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "Peet" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+  );
+  assert.deepEqual(result, { status: "restricted_category", category: "gws" });
+  assert.doesNotMatch(JSON.stringify(result), /Peet|mdl_exc_oth_peet/i);
+});
+
+test("EMs code-prefixed display names resolve code, alias and real/working name to one canonical identity", async () => {
+  const model = privateModel("drive:private-source", "exclusive", {
+    working_name: "EMs20 - Rossi",
+    nickname: "",
+    folder_name: "EMs20 - Rossi",
+    exclusive_group: "EMs",
+  });
+  for (const query of ["EMs20", "EMs-20", "Rossi", "EMs20 - Rossi"]) {
+    const result = await resolveKenjiModelAccess(
+      ENV,
+      { line_user_id: LINE_USER_ID, query },
+      { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+    );
+    assert.deepEqual(result, { status: "restricted_category", category: "ems" });
+    assert.doesNotMatch(JSON.stringify(result), /Rossi|private-source/i);
+  }
+});
+
+test("approved EMs alias lookup projects the canonical campaign code, not a Drive identity key", async () => {
+  const model = privateModel("drive:private-source", "exclusive", {
+    working_name: "EMs19 - Sprite",
+    nickname: "Sprite",
+    folder_name: "EMs19 - Sprite",
+    exclusive_group: "EMs",
+  });
+  const decision = record("rec-decision-alias", {
+    line_user_id: LINE_USER_ID, Model: [model.id], model_key: "EMs19", category: "EMs",
+    eligibility_group: "2500",
+    decision_status: "Approved", allow_profile: true, approved_by: "Per",
+    approved_at: "2026-09-29T01:00:00Z", expires_at: "2099-12-31T23:59:59Z",
+    source_ref: "owner-alias-review",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "Sprite" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], [], [], [decision])) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.model_code, "EMs19");
+  assert.equal(result.model.working_name, "EMs19 - Sprite");
+  assert.doesNotMatch(JSON.stringify(result), /drive:private-source/i);
 });
 
 test("unknown or inactive GWs and EMs never produce an access promotion", async () => {
