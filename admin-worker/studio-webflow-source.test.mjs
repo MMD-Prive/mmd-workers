@@ -70,6 +70,8 @@ test("Studio model-card selector mirrors Master Frame V2 without legacy public l
   assert.match(source, /RED EDGE CUE · NO EXTREME LABEL/);
   assert.match(source, /mmd-sigil-card-frame-outer/);
   assert.match(source, /data-master-frame/);
+  assert.match(source, /template_version:\s*"mmd-master-frame-v2"/);
+  assert.match(source, /model_name:\s*values\.model/);
   assert.doesNotMatch(source, /collection:\s*"TRAVEL MODELS"|collection:\s*"EXTREME MODELS"/);
   assert.doesNotMatch(source, /PRIVATE SIGIL \/|PUBLIC COLLECTION/);
 });
