@@ -1,7 +1,7 @@
 import { KENJI_CAPABILITIES, KENJI_PROTECTED_DOMAINS } from "./kenji-capability-policy.js";
 import { buildKenjiCanonicalVoiceDirective } from "./kenji-canonical-brain.mjs";
 
-export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v5-canonical-brain";
+export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v6-adaptive-context";
 export const DEFAULT_KENJI_MODEL = "gpt-5.6";
 export const KENJI_TOTAL_DEADLINE_MS = 3500;
 export const KENJI_MODEL_REASONING_EFFORT = "low";
@@ -69,6 +69,42 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
+function safeContextText(value, max = 500) {
+  const result = clean(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").slice(0, max);
+  if (INTERNAL_OUTPUT_RE.test(result) || /(?:authorization|bearer\s+|password|secret|api[_ -]?key|token|sk-[A-Za-z0-9_-]{8,})/i.test(result)) return "";
+  return result;
+}
+
+export function selectKenjiReasoningEffort({ text = "", conversation_context = {}, validation_context = {} } = {}) {
+  const relation = clean(conversation_context?.relation || conversation_context?.contextual_relation).toLowerCase();
+  const turns = Array.isArray(conversation_context?.turns) ? conversation_context.turns.length : 0;
+  const loops = Array.isArray(conversation_context?.important_open_loops) ? conversation_context.important_open_loops.length : 0;
+  const complexRelation = ["correction", "comparison", "referential_followup", "clarification_needed", "continuation"].includes(relation);
+  const protectedHint = validation_context?.protected_context === true;
+  const longInput = clean(text).length > 260;
+  return (complexRelation || turns >= 4 || loops >= 2 || longInput || protectedHint) ? "medium" : KENJI_MODEL_REASONING_EFFORT;
+}
+
+function buildConversationContextText(context = {}) {
+  const parts = [];
+  const summary = safeContextText(context?.continuity_summary, 500);
+  if (summary) parts.push(`Continuity summary: ${summary}`);
+  const relation = safeContextText(context?.relation || context?.contextual_relation, 80);
+  if (relation) parts.push(`Conversation relation: ${relation}`);
+  const loops = (Array.isArray(context?.important_open_loops) ? context.important_open_loops : [])
+    .map((item) => safeContextText(item, 100)).filter(Boolean).slice(0, 4);
+  if (loops.length) parts.push(`Open loops: ${loops.join(", ")}`);
+  const turns = (Array.isArray(context?.turns) ? context.turns : []).slice(-6)
+    .map((turn) => {
+      const role = clean(turn?.role) === "assistant" ? "MMD" : "Customer";
+      const content = safeContextText(turn?.content, 500);
+      return content ? `${role}: ${content}` : "";
+    })
+    .filter(Boolean);
+  if (turns.length) parts.push(`Recent proven conversation:\n${turns.join("\n")}`);
+  return parts.join("\n");
+}
+
 function extractOutputText(payload = {}) {
   if (typeof payload.output_text === "string") return payload.output_text;
   for (const item of Array.isArray(payload.output) ? payload.output : []) {
@@ -104,7 +140,7 @@ export function guardKenjiModelOutput(value, options = {}) {
   return { ok: true, reason: "", text };
 }
 
-export async function generateKenjiModelReply({ text, knowledge = [], env = {}, fetchImpl = fetch, deadline_at = 0, trusted_authority_domains = [], capability, validation_context = {} } = {}) {
+export async function generateKenjiModelReply({ text, knowledge = [], env = {}, fetchImpl = fetch, deadline_at = 0, trusted_authority_domains = [], capability, validation_context = {}, conversation_context = {} } = {}) {
   const startedAt = Date.now();
   if (capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION) {
     return { text: "", attempted: false, success: false, latency_ms: 0, guard_blocked: true, guard_reason: "model_capability_not_allowed" };
@@ -132,12 +168,18 @@ export async function generateKenjiModelReply({ text, knowledge = [], env = {}, 
 
   const userText = clean(text).slice(0, 800);
   const grounding = approvedFacts || "No approved business fact is available for this message. Answer only safe general conversation or ask one concise clarification.";
+  const contextText = buildConversationContextText(conversation_context);
+  const reasoningEffort = selectKenjiReasoningEffort({ text: userText, conversation_context, validation_context });
   const payload = {
     model: clean(env.OPENAI_MODEL) || DEFAULT_KENJI_MODEL,
     instructions: buildKenjiSystemPrompt(userText),
-    input: `Approved MMD grounding:\n${grounding}\n\nCustomer message:\n${userText}`,
+    input: [
+      `Approved MMD grounding:\n${grounding}`,
+      contextText ? `Conversation context (context only; never protected truth):\n${contextText}` : "",
+      `Customer message:\n${userText}`,
+    ].filter(Boolean).join("\n\n"),
     max_output_tokens: 320,
-    reasoning: { effort: KENJI_MODEL_REASONING_EFFORT },
+    reasoning: { effort: reasoningEffort },
     text: {
       format: {
         type: "json_schema",

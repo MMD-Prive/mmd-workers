@@ -11,6 +11,7 @@ const CAMPAIGN_INGRESS_MAX_ATTEMPTS = 6;
 const CAMPAIGN_INGRESS_ALERT_RETRY_MS = 15 * 60 * 1000;
 const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
 const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
+const LINE_TURN_BUFFER_KEY = "line-turn-buffer:v1";
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -158,6 +159,60 @@ export class KenjiModelIdempotency {
     }
 
     const path = new URL(request.url).pathname;
+    if (path === "/line-turn-buffer") {
+      const action = String(input?.action || "");
+      const eventId = String(input?.event_id || "");
+      const windowMs = Math.min(5_000, Math.max(500, Number(input?.window_ms) || 2_200));
+      const maxMessages = Math.min(8, Math.max(2, Number(input?.max_messages) || 4));
+      if (!["put", "claim"].includes(action) || !/^[A-Za-z0-9._:-]{3,120}$/.test(eventId)) {
+        return json({ ok: false, error: "invalid_turn_buffer_request" }, 400);
+      }
+      const now = Date.now();
+      if (action === "put") {
+        const messageText = String(input?.text || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 2400);
+        const count = Math.min(8, Math.max(1, Number(input?.count) || 1));
+        if (!messageText) return json({ ok: false, error: "turn_text_required" }, 400);
+        const result = await this.state.storage.transaction(async (txn) => {
+          const existing = await txn.get(LINE_TURN_BUFFER_KEY);
+          const entries = Array.isArray(existing?.entries) ? existing.entries : [];
+          const fresh = entries.filter((entry) => now - Number(entry.received_at || 0) <= windowMs * 2);
+          const duplicate = fresh.some((entry) => entry.event_id === eventId);
+          const nextEntries = duplicate
+            ? fresh
+            : [...fresh, { event_id: eventId, text: messageText, count, received_at: Number(input?.received_at) || now }]
+                .sort((a, b) => Number(a.received_at || 0) - Number(b.received_at || 0))
+                .slice(-maxMessages);
+          await txn.put(LINE_TURN_BUFFER_KEY, { entries: nextEntries, expires_at: now + windowMs * 3 });
+          await this.state.storage.setAlarm(now + windowMs * 3);
+          return { duplicate, size: nextEntries.length };
+        });
+        return json({ ok: true, stored: true, duplicate: result.duplicate, size: result.size });
+      }
+
+      const result = await this.state.storage.transaction(async (txn) => {
+        const existing = await txn.get(LINE_TURN_BUFFER_KEY);
+        const entries = (Array.isArray(existing?.entries) ? existing.entries : [])
+          .filter((entry) => now - Number(entry.received_at || 0) <= windowMs)
+          .sort((a, b) => Number(a.received_at || 0) - Number(b.received_at || 0))
+          .slice(-maxMessages);
+        if (!entries.length) {
+          await txn.delete(LINE_TURN_BUFFER_KEY);
+          return { should_reply: true, aggregate_text: "", count: 1, superseded: false };
+        }
+        const latest = entries[entries.length - 1];
+        if (latest.event_id !== eventId) {
+          return { should_reply: false, aggregate_text: "", count: 0, superseded: true };
+        }
+        await txn.delete(LINE_TURN_BUFFER_KEY);
+        return {
+          should_reply: true,
+          aggregate_text: entries.map((entry) => entry.text).filter(Boolean).join("\n").slice(0, 2400),
+          count: entries.reduce((sum, entry) => sum + Math.max(1, Number(entry.count) || 1), 0),
+          superseded: false,
+        };
+      });
+      return json({ ok: true, ...result });
+    }
     if (path === "/campaign-lead/message-alias") {
       const action = String(input?.action || "bind");
       const messageId = String(input?.message_id || "");
@@ -552,6 +607,7 @@ export class KenjiModelIdempotency {
     const quotas = await this.state.storage.list({ prefix: "quota:" });
     const campaignLeads = await this.state.storage.list({ prefix: "campaign-lead:" });
     const pending = await this.state.storage.get(MODEL_ACCESS_PENDING_KEY);
+    const turnBuffer = await this.state.storage.get(LINE_TURN_BUFFER_KEY);
     const expired = [];
     let nextAlarm = 0;
     for (const [key, value] of claims) {
@@ -572,6 +628,9 @@ export class KenjiModelIdempotency {
     const pendingExpiresAt = Number(pending?.expires_at) || 0;
     if (pending && pendingExpiresAt <= now) expired.push(MODEL_ACCESS_PENDING_KEY);
     else if (pendingExpiresAt && (!nextAlarm || pendingExpiresAt < nextAlarm)) nextAlarm = pendingExpiresAt;
+    const turnBufferExpiresAt = Number(turnBuffer?.expires_at) || 0;
+    if (turnBuffer && turnBufferExpiresAt <= now) expired.push(LINE_TURN_BUFFER_KEY);
+    else if (turnBufferExpiresAt && (!nextAlarm || turnBufferExpiresAt < nextAlarm)) nextAlarm = turnBufferExpiresAt;
     if (expired.length) await this.state.storage.delete(expired);
     const currentIngress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
     // Processing retains its earlier queue time; scheduling that past value

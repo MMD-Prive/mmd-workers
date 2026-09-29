@@ -12,6 +12,10 @@ import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowledge-runtime.mjs";
+import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
+import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
+import { buildKenjiLineConversationHistory, recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
+import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-understanding-shadow.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
@@ -69,6 +73,7 @@ const KENJI_MODEL_ACCESS_TIMEOUT_MS = 900;
 const KENJI_RUNTIME_STATUS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/control/runtime/status";
 const KENJI_RUNTIME_STATUS_TIMEOUT_MS = 700;
 const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
+const KENJI_CONVERSATION_CONTROLS_TABLE_FALLBACK = "tblfyuNIB4BWThHSf";
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -359,6 +364,24 @@ export function extractKenjiModelLookupQuery(text = "") {
   return "";
 }
 
+export function resolveKenjiModelIntent(text = "") {
+  const campaign = resolveLineCardCampaignTrigger(text);
+  if (campaign) {
+    return {
+      matched: true,
+      intent: "model_lookup",
+      query: campaign.card_trigger,
+      source: "campaign_trigger",
+      campaign_trigger: campaign,
+      campaign_key: campaign.campaign_key,
+    };
+  }
+  const query = extractKenjiModelLookupQuery(text);
+  return query
+    ? { matched: true, intent: "model_lookup", query, source: "model_lookup", campaign_trigger: null, campaign_key: "" }
+    : { matched: false, intent: "", query: "", source: "none", campaign_trigger: null, campaign_key: "" };
+}
+
 export function extractKenjiModelVerificationEmail(text = "") {
   const value = asString(text).trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254 ? value : "";
@@ -416,7 +439,8 @@ export function inferLineIntent(text = "", event = {}) {
 
   if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
-  if (resolveLineCardCampaignTrigger(text)) return "card_campaign_lead";
+  const modelIntent = resolveKenjiModelIntent(text);
+  if (modelIntent.campaign_trigger) return "card_campaign_lead";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
@@ -482,7 +506,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
-  if (extractKenjiModelLookupQuery(text)) return "model_lookup";
+  if (modelIntent.matched) return "model_lookup";
   if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
     return "service_guidance";
   }
@@ -1113,7 +1137,8 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
-  const inferredIntent = inferLineIntent(eventText, event);
+  const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
+  const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
     : "";
@@ -1200,9 +1225,9 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     // profile whose model code exactly matches this campaign text.
     if (options.campaignBrief !== true && options.modelAccessAllowed !== false &&
         isEnabled(env.LINE_CARD_21829530_MODEL_INFO_ENABLED)) {
-      const trigger = resolveLineCardCampaignTrigger(eventText);
-      if (trigger) {
-        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), trigger.card_trigger);
+      const trigger = resolvedModelIntent.campaign_trigger;
+      if (trigger && resolvedModelIntent.query) {
+        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), resolvedModelIntent.query);
         if (access.status === "restricted_category" &&
             (trigger.card_trigger.toLowerCase().startsWith(access.category))) {
           const decision = buildKenjiModelAccessDecision(access, { clearOnFailure: true });
@@ -1248,7 +1273,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
   }
 
   if (intent === "model_lookup") {
-    const query = extractKenjiModelLookupQuery(eventText);
+    const query = resolvedModelIntent.query || extractKenjiModelLookupQuery(eventText);
     const lineUserId = getLineUserId({ event });
     const access = await requestKenjiModelAccess(env, lineUserId, query);
     if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access, { clearOnFailure: true });
@@ -1298,12 +1323,37 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     const deadlineAt = Number(options.deadlineAt) || (Date.now() + KENJI_TOTAL_DEADLINE_MS);
     const grounding = await getModelGrounding(env, eventText, deadlineAt);
     knowledgeHits = grounding.length;
+    const history = await buildKenjiLineConversationHistory({ env, event }).catch(() => ({
+      enabled: true,
+      available: false,
+      turns: [],
+      memory: {},
+      coverage: { customer_messages: 0, confirmed_assistant_messages: 0, reply_history_complete: false },
+      reason: "history_runtime_error",
+    }));
+    const contextual = KENJI_CONTEXTUAL_SHADOW_INTERNALS.fallbackUnderstanding({ history, event });
+    const matrix = options?.continuity?.matrix || {};
     model = await generateKenjiModelReply({
       text: eventText,
       knowledge: grounding,
       env,
       deadline_at: deadlineAt,
       capability: capabilityDecision.capability,
+      conversation_context: {
+        turns: Array.isArray(history?.turns) ? history.turns.slice(-6) : [],
+        relation: asString(contextual?.relation) || "standalone",
+        contextual_relation: asString(contextual?.relation) || "standalone",
+        referent_state: asString(contextual?.referent_state),
+        needs_clarification: contextual?.needs_clarification === true,
+        continuity_summary: asString(matrix?.continuity_summary || options?.continuity?.continuity_summary).slice(0, 500),
+        important_open_loops: Array.isArray(matrix?.important_open_loops)
+          ? matrix.important_open_loops.slice(0, 4)
+          : Array.isArray(options?.continuity?.important_open_loops)
+            ? options.continuity.important_open_loops.slice(0, 4)
+            : [],
+        history_available: history?.available === true,
+        reply_history_complete: history?.coverage?.reply_history_complete === true,
+      },
       validation_context: {
         inferred_capability: capabilityDecision.capability,
         requested_domain: capabilityDecision.requested_domain,
@@ -1563,24 +1613,79 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", optio
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
 }
 
-async function getLineOwnerTakeoverState(env = {}, lineUserId = "") {
+async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
-  const table = getAirtableTable(env);
-  if (!apiKey || !baseId || !table || !lineUserId) return { ok: false, active: false, reason: "takeover_lookup_unconfigured" };
-  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-  url.searchParams.set("pageSize", "1");
-  url.searchParams.set("filterByFormula", `AND({line_user_id}=\"${encodeFormulaValue(lineUserId)}\",{status}=\"processing\")`);
+  const inboxTable = getAirtableTable(env);
+  if (!apiKey || !baseId || !inboxTable || !lineUserId) {
+    return { ok: false, active: false, reason: "takeover_lookup_unconfigured", source: "none" };
+  }
+
+  const canonicalControls = options?.canonical !== false;
+  const matrix = canonicalControls ? (continuity?.matrix || {}) : {};
+  const matrixStage = asString(matrix?.conversation_stage).toLowerCase();
+  const matrixReason = asString(matrix?.handoff_reason).toLowerCase();
+  const matrixHandoff = matrix?.handoff_required === true &&
+    /^(?:per|owner|human|mmd_review)$/i.test(asString(matrix?.handoff_owner)) &&
+    (
+      /^(?:human_takeover|awaiting_human|handoff_per|paused)$/.test(matrixStage) ||
+      /(?:owner_takeover|human_takeover|per_is_speaking|manual_takeover)/.test(matrixReason)
+    );
+
+  const inboxUrl = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(inboxTable)}`);
+  inboxUrl.searchParams.set("pageSize", "1");
+  inboxUrl.searchParams.set("filterByFormula", `AND({line_user_id}="${encodeFormulaValue(lineUserId)}",{status}="processing")`);
+
+  const candidates = [
+    asString(matrix?.matrix_id),
+    asString(continuity?.conversation_hash),
+    asString(matrix?.conversation_scope),
+  ].filter(Boolean).slice(0, 3);
+  const controlsTable = canonicalControls ? asString(env.AIRTABLE_TABLE_KENJI_CONVERSATION_CONTROLS_ID || KENJI_CONVERSATION_CONTROLS_TABLE_FALLBACK) : "";
+  const controlsUrl = candidates.length && controlsTable
+    ? new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(controlsTable)}`)
+    : null;
+  if (controlsUrl) {
+    controlsUrl.searchParams.set("pageSize", "3");
+    controlsUrl.searchParams.set("maxRecords", "3");
+    controlsUrl.searchParams.set(
+      "filterByFormula",
+      candidates.length === 1
+        ? `{conversation_id}="${encodeFormulaValue(candidates[0])}"`
+        : `OR(${candidates.map((value) => `{conversation_id}="${encodeFormulaValue(value)}"`).join(",")})`,
+    );
+    controlsUrl.searchParams.set("sort[0][field]", "updated_at");
+    controlsUrl.searchParams.set("sort[0][direction]", "desc");
+    ["conversation_id", "control_status", "action", "version", "updated_at"].forEach((field) => controlsUrl.searchParams.append("fields[]", field));
+  }
+
   try {
-    const response = await fetch(url.toString(), { method: "GET", headers: { authorization: `Bearer ${apiKey}` } });
-    if (!response.ok) return { ok: false, active: false, reason: "takeover_lookup_failed" };
-    const payload = await response.json().catch(() => ({}));
-    return { ok: true, active: Array.isArray(payload?.records) && payload.records.length > 0, reason: "" };
+    const headers = { authorization: `Bearer ${apiKey}` };
+    const [inboxResponse, controlsResponse] = await Promise.all([
+      fetch(inboxUrl.toString(), { method: "GET", headers }),
+      controlsUrl ? fetch(controlsUrl.toString(), { method: "GET", headers }) : Promise.resolve(null),
+    ]);
+    if (!inboxResponse.ok || (controlsResponse && !controlsResponse.ok)) {
+      return { ok: false, active: matrixHandoff, reason: "takeover_lookup_failed", source: matrixHandoff ? "matrix_handoff" : "lookup_failed" };
+    }
+
+    const inboxPayload = await inboxResponse.json().catch(() => ({}));
+    const inboxActive = Array.isArray(inboxPayload?.records) && inboxPayload.records.length > 0;
+    if (inboxActive) return { ok: true, active: true, reason: "console_processing", source: "console_inbox" };
+    if (matrixHandoff) return { ok: true, active: true, reason: "matrix_handoff", source: "conversation_matrix" };
+
+    if (controlsResponse) {
+      const controlsPayload = await controlsResponse.json().catch(() => ({}));
+      const latest = Array.isArray(controlsPayload?.records) ? controlsPayload.records[0] : null;
+      const status = asString(latest?.fields?.control_status).toLowerCase();
+      if (["active", "paused"].includes(status)) return { ok: true, active: true, reason: `control_${status}`, source: "conversation_control" };
+      if (["released", "resumed"].includes(status)) return { ok: true, active: false, reason: `control_${status}`, source: "conversation_control" };
+    }
+    return { ok: true, active: false, reason: "", source: "none" };
   } catch (_) {
-    return { ok: false, active: false, reason: "takeover_lookup_failed" };
+    return { ok: false, active: matrixHandoff, reason: "takeover_lookup_failed", source: matrixHandoff ? "matrix_handoff" : "lookup_failed" };
   }
 }
-
 function getStableLineMessageId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId);
 }
@@ -2498,7 +2603,7 @@ async function handleServiceBoundShopShipping(request, env) {
   }, result.ok === true ? 200 : 502);
 }
 
-async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled) {
+async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata = null) {
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
   const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);
@@ -2506,7 +2611,7 @@ async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, ken
     ? fetchPublishedLineKnowledge(env)
     : Promise.resolve([]);
   const [profile] = await Promise.all([profilePromise, knowledgePromise]);
-  return writeLineEventToConsoleInbox(env, event, profile, intent);
+  return writeLineEventToConsoleInbox(env, event, profile, intent, metadata);
 }
 
 async function handleLineWebhook(request, env, ctx = null, options = {}) {
@@ -2527,6 +2632,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
+  const preparedEvents = prepareKenjiLineWebhookBatch(events);
   const runtimeStatus = await requestKenjiRuntimeStatus(env);
   const runtimeControls = runtimeStatus.controls || {};
   const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
@@ -2534,19 +2640,119 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const runtimeModelKill = runtimeAllKill || runtimeControls.model_keyword_auto_reply === true;
   const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED) && !runtimeLineKill;
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
+  const lineBrainEnabled = isEnabled(env.KENJI_LINE_BRAIN_V1_ENABLED);
   const saved = [];
 
-  for (const event of events) {
+  for (const prepared of preparedEvents) {
+    const rawEvent = prepared.raw_event || prepared.turn_event || {};
+    if (prepared.suppressed === true) {
+      const rawText = getLineEventText(rawEvent);
+      const rawIntent = inferLineIntent(rawText, rawEvent);
+      const persist = syncLineEventAfterReply(env, rawEvent, rawIntent, autoReplyEnabled, kenjiEnabled, {
+        turn_aggregation: {
+          source: prepared.aggregation_source || "webhook_batch",
+          suppressed: true,
+          aggregate_count: Number(prepared.aggregate_count) || 1,
+        },
+      }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(persist);
+      const record = typeof ctx?.waitUntil === "function" ? { pending: true, deduped: false } : await persist;
+      saved.push({
+        ok: true,
+        type: rawEvent?.type || "",
+        intent: rawIntent,
+        aggregate_suppressed: true,
+        aggregate_count: Number(prepared.aggregate_count) || 1,
+        replied: false,
+        deduped: Boolean(record?.deduped),
+        recorded: Boolean(record?.id),
+        record_pending: Boolean(record?.pending),
+        message_id: getLineEventId(rawEvent),
+      });
+      continue;
+    }
+
+    const aggregateResult = await aggregateKenjiLineTurn({
+      env,
+      event: prepared.turn_event || rawEvent,
+      batchCount: Number(prepared.aggregate_count) || 1,
+    });
+    if (aggregateResult.should_reply !== true) {
+      const rawText = getLineEventText(rawEvent);
+      const rawIntent = inferLineIntent(rawText, rawEvent);
+      const persist = syncLineEventAfterReply(env, rawEvent, rawIntent, autoReplyEnabled, kenjiEnabled, {
+        turn_aggregation: {
+          source: aggregateResult.source || "burst_superseded",
+          suppressed: true,
+          aggregate_count: 1,
+        },
+      }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(persist);
+      const record = typeof ctx?.waitUntil === "function" ? { pending: true, deduped: false } : await persist;
+      saved.push({
+        ok: true,
+        type: rawEvent?.type || "",
+        intent: rawIntent,
+        aggregate_suppressed: true,
+        aggregation_source: aggregateResult.source || "burst_superseded",
+        replied: false,
+        deduped: Boolean(record?.deduped),
+        recorded: Boolean(record?.id),
+        record_pending: Boolean(record?.pending),
+        message_id: getLineEventId(rawEvent),
+      });
+      continue;
+    }
+
+    const event = aggregateResult.event || prepared.turn_event || rawEvent;
     const text = getLineEventText(event);
     const lineUserId = getLineUserId({ event });
-    const inferredIntent = inferLineIntent(text, event);
-    const campaignTrigger = resolveLineCardCampaignTrigger(text);
+    const modelIntent = resolveKenjiModelIntent(text);
+    const inferredIntent = modelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(text, event);
+    const continuity = lineBrainEnabled
+      ? await resolveKenjiLineContinuity({
+          env,
+          event,
+          currentIntent: inferredIntent,
+          now: new Date().toISOString(),
+        }).catch(() => ({
+          decision: "unavailable",
+          reason: "continuity_resolver_failed",
+          effective_intent: inferredIntent,
+          matrix: {},
+          conversation_hash: "",
+          client_record_id: "",
+          storage_status: "unavailable",
+          available: false,
+        }))
+      : {
+          decision: "disabled",
+          reason: "line_brain_v1_disabled",
+          effective_intent: inferredIntent,
+          matrix: {},
+          conversation_hash: "",
+          client_record_id: "",
+          storage_status: "disabled",
+          available: false,
+        };
+    const effectiveIntent = asString(continuity?.effective_intent) || inferredIntent;
+    const ownerTakeover = lineBrainEnabled && lineUserId
+      ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
+      : { ok: true, active: false, reason: "", source: lineBrainEnabled ? "not_applicable" : "line_brain_v1_disabled" };
+    const ownerReplyBlocked = Boolean(
+      lineUserId &&
+      (
+        ownerTakeover.active === true ||
+        (ownerTakeover.ok !== true && ownerTakeover.reason !== "takeover_lookup_unconfigured")
+      )
+    );
+    const campaignTrigger = modelIntent.campaign_trigger || null;
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const supplierRegistrationName = matchHimaiSupplierRegistration(text);
     const isSupplierRegistration = supplierRegistrationName !== null;
-    const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const campaignCanReply = Boolean(
-      kenjiEnabled && !runtimeLineKill && eventMode !== "standby" &&
+      kenjiEnabled && !runtimeLineKill && !ownerReplyBlocked && eventMode !== "standby" &&
       event?.type === "message" && event?.message?.type === "text" &&
       event?.source?.type === "user" && getReplyToken(event)
     );
@@ -2570,8 +2776,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     );
     const campaignItem = campaignTrigger || campaignContextResult.context || null;
     const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
-    const intent = campaignBrief ? "card_campaign_brief" : inferredIntent;
+    const intent = campaignBrief ? "card_campaign_brief" : effectiveIntent;
     const campaignLeadEnabled = Boolean(
+      !ownerReplyBlocked &&
       !campaignContextUnavailable &&
       campaignEvent &&
       campaignCanReply &&
@@ -2592,10 +2799,12 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
     let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
-      const takeover = await getLineOwnerTakeoverState(env, lineUserId);
-      campaignLeadClaim = takeover.ok !== true
-        ? { ok: false, claimed: false, reason: takeover.reason }
-        : takeover.active === true
+      const campaignTakeover = lineBrainEnabled
+        ? ownerTakeover
+        : await getLineOwnerTakeoverState(env, lineUserId, {}, { canonical: false });
+      campaignLeadClaim = campaignTakeover.ok !== true
+        ? { ok: false, claimed: false, reason: campaignTakeover.reason }
+        : campaignTakeover.active === true
           ? { ok: true, claimed: false, reason: "owner_takeover_active" }
           : await claimLineCardCampaignLead(env, event, "claim");
       if (campaignLeadClaim.claimed === true) {
@@ -2661,7 +2870,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (campaignBrief && campaignContextResult.claimed === true && !campaignLeadQueued) {
       await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token });
     }
-    const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(autoReplyEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
     const needsModelPreflight = Boolean(!campaignEvent && !isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
@@ -2671,27 +2880,98 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const supplierRegistration = isSupplierRegistration && canRegisterSupplier
       ? await registerHimaiSupplier(event, env, supplierRegistrationName)
       : null;
-    const replyDecision = campaignContextUnavailable
-      ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "campaign_context_unavailable" }
-      : isSupplierRegistration
-        ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
-      : ((canGenerateReply || (campaignEvent && campaignCanReply)) && !modelPreflight.deduped
-        ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt, campaignLeadQueued, campaignBrief })
-        : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
+    const replyDecision = ownerReplyBlocked
+      ? {
+          text: "",
+          fallback: false,
+          reply_source: "silent",
+          model_attempted: false,
+          model_success: false,
+          model_latency_ms: 0,
+          knowledge_hits: 0,
+          guard_blocked: true,
+          guard_reason: ownerTakeover.active === true ? "owner_takeover_active" : "owner_takeover_state_unavailable",
+          handoff_required: true,
+          handoff_reason: ownerTakeover.reason || "owner_takeover",
+        }
+      : campaignContextUnavailable
+        ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "campaign_context_unavailable" }
+        : isSupplierRegistration
+          ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+        : ((canGenerateReply || (campaignEvent && campaignCanReply)) && !modelPreflight.deduped
+          ? await resolveKenjiLineReply(event, {}, env, {
+              forceReply: autoReplyEnabled,
+              modelEligible: modelPreflight.eligible,
+              modelAccessAllowed: !runtimeModelKill,
+              deadlineAt: modelDeadlineAt,
+              campaignLeadQueued,
+              campaignBrief,
+              continuity,
+              modelIntent,
+            })
+          : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
-    const postQueueTakeover = campaignLeadQueued ? await getLineOwnerTakeoverState(env, lineUserId) : null;
-    const shouldReply = Boolean((autoReplyEnabled || (campaignEvent && campaignCanReply)) && eventMode !== "standby" && replyText && getReplyToken(event) && (!campaignEvent || (postQueueTakeover?.ok === true && postQueueTakeover.active !== true && options.suppressCampaignReply !== true)));
+    const postDecisionTakeover = lineUserId && replyText
+      ? (lineBrainEnabled
+          ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
+          : campaignEvent
+            ? await getLineOwnerTakeoverState(env, lineUserId, {}, { canonical: false })
+            : { ok: true, active: false, reason: "", source: "line_brain_v1_disabled" })
+      : ownerTakeover;
+    const takeoverClear = !lineUserId ||
+      (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true) ||
+      (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
+    const shouldReply = Boolean(
+      (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
+      eventMode !== "standby" &&
+      replyText &&
+      getReplyToken(event) &&
+      takeoverClear &&
+      (!campaignEvent || options.suppressCampaignReply !== true)
+    );
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+    const outboundHistoryPromise = lineBrainEnabled && replyResult?.ok === true
+      ? recordDeliveredKenjiLineReply({ env, event: rawEvent, replyText }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
+      : Promise.resolve({ skipped: true, reason: lineBrainEnabled ? "reply_not_delivered" : "line_brain_v1_disabled" });
 
+    const historyMetadata = {
+      turn_aggregation: {
+        source: aggregateResult.source || prepared.aggregation_source || "single",
+        suppressed: false,
+        aggregate_count: Number(aggregateResult.count) || Number(prepared.aggregate_count) || 1,
+      },
+      continuity: {
+        decision: asString(continuity?.decision),
+        effective_intent: intent,
+      },
+    };
     const afterReply = campaignEvent
       ? Promise.resolve(campaignLeadRecord || { skipped: true, reason: "campaign_lead_not_processed", deduped: false })
-      : syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
-    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event }).catch(() => ({
+      : syncLineEventAfterReply(env, rawEvent, intent, autoReplyEnabled, kenjiEnabled, historyMetadata);
+    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event: rawEvent }).catch(() => ({
       enabled: false,
       eligible: false,
       persisted: false,
       reason: "assessment_runtime_error",
     }));
+    const matrixDecision = {
+      ...replyDecision,
+      intent,
+      handoff_required: replyDecision.handoff_required === true || ownerReplyBlocked,
+      handoff_reason: asString(replyDecision.handoff_reason || (ownerReplyBlocked ? ownerTakeover.reason : "")),
+    };
+    const matrixWritePromise = lineBrainEnabled
+      ? writeKenjiLineMatrixTurn({
+          env,
+          continuity,
+          decision: matrixDecision,
+          delivered: replyResult?.ok === true,
+          attempted: shouldReply,
+          lastEventId: getLineEventId(rawEvent),
+          now: new Date().toISOString(),
+        }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
+      : Promise.resolve({ skipped: true, reason: "line_brain_v1_disabled" });
+
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = campaignEvent ? await afterReply : { pending: canDefer, deduped: false };
     let historyAssessmentResult = {
@@ -2700,27 +2980,30 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       persisted: false,
       reason: canDefer ? "assessment_pending" : "assessment_not_run",
     };
-    if (canDefer && !campaignEvent) {
+    let matrixWriteResult = { pending: canDefer, skipped: false, reason: canDefer ? "matrix_write_pending" : "" };
+    if (canDefer) {
       const backgroundWork = Promise.all([
-        afterReply.catch(() => {
+        ...(campaignEvent ? [] : [afterReply.catch(() => {
           console.log(JSON.stringify({
             line_webhook: "background_sync_failed",
-            event_type: asString(event?.type) || "unknown",
+            event_type: asString(rawEvent?.type) || "unknown",
             intent,
           }));
-        }),
+        })]),
         historyAssessmentPromise,
+        matrixWritePromise,
+        outboundHistoryPromise,
       ]);
       ctx.waitUntil(backgroundWork);
-    } else if (!campaignEvent) {
-      try {
-        record = await afterReply;
-      } catch (_) {
-        record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
+    } else {
+      if (!campaignEvent) {
+        try {
+          record = await afterReply;
+        } catch (_) {
+          record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
+        }
       }
-      historyAssessmentResult = await historyAssessmentPromise;
-    } else if (!canDefer) {
-      historyAssessmentResult = await historyAssessmentPromise;
+      [historyAssessmentResult, matrixWriteResult] = await Promise.all([historyAssessmentPromise, matrixWritePromise, outboundHistoryPromise]);
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
@@ -2737,6 +3020,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       runtime_line_kill: runtimeLineKill,
       runtime_model_kill: runtimeModelKill,
       runtime_all_kill: runtimeAllKill,
+      line_brain_v1_enabled: lineBrainEnabled,
       reply_token_present: Boolean(getReplyToken(event)),
       inbox_deduped: Boolean(record?.deduped),
       reply_candidate: Boolean(replyText),
@@ -2770,6 +3054,16 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       history_assessment_eligible: historyAssessmentResult.eligible === true,
       history_assessment_persisted: historyAssessmentResult.persisted === true,
       history_assessment_reason: asString(historyAssessmentResult.reason).slice(0, 80) || null,
+      aggregation_source: asString(aggregateResult.source || prepared.aggregation_source || "single").slice(0, 40),
+      aggregate_count: Number(aggregateResult.count) || Number(prepared.aggregate_count) || 1,
+      continuity_decision: asString(continuity?.decision).slice(0, 40) || null,
+      continuity_effective_intent: asString(continuity?.effective_intent).slice(0, 80) || null,
+      continuity_available: continuity?.available === true,
+      owner_takeover_active: ownerReplyBlocked,
+      owner_takeover_source: asString(ownerTakeover?.source).slice(0, 40) || null,
+      matrix_write_pending: matrixWriteResult?.pending === true,
+      matrix_write_persisted: Boolean(matrixWriteResult?.id),
+      matrix_write_reason: asString(matrixWriteResult?.reason).slice(0, 80) || null,
     }));
 
     saved.push({
@@ -2790,7 +3084,25 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       runtime_model_kill: runtimeModelKill,
       runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
-      message_id: getLineEventId(event),
+      message_id: getLineEventId(rawEvent),
+      aggregation: {
+        source: asString(aggregateResult.source || prepared.aggregation_source || "single").slice(0, 40),
+        count: Number(aggregateResult.count) || Number(prepared.aggregate_count) || 1,
+      },
+      continuity: {
+        decision: asString(continuity?.decision).slice(0, 40),
+        effective_intent: asString(continuity?.effective_intent).slice(0, 80),
+        available: continuity?.available === true,
+      },
+      owner_takeover: {
+        active: ownerReplyBlocked,
+        source: asString(ownerTakeover?.source).slice(0, 40),
+      },
+      matrix_write: {
+        pending: matrixWriteResult?.pending === true,
+        persisted: Boolean(matrixWriteResult?.id),
+        reason: asString(matrixWriteResult?.reason).slice(0, 80),
+      },
       history_assessment: {
         enabled: historyAssessmentResult.enabled === true,
         eligible: historyAssessmentResult.eligible === true,
