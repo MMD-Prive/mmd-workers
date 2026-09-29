@@ -1,10 +1,11 @@
 name = "payments-worker"
-main = "index.slip-evidence-clean.js"
+main = "index.slip-evidence-file-forward.js"
 compatibility_date = "2026-03-12"
 workers_dev = true
 
 # Production entrypoint:
-# - index.slip-evidence-clean.js handles /v1/pay/slip/evidence first.
+# - index.slip-evidence-file-forward.js forwards uploaded slip files to Telegram first.
+# - index.slip-evidence-clean.js keeps the evidence-only Airtable/payment route contract.
 # - All other payment routes are delegated back to index.js.
 
 # Production API routes for SIGIL payment flows.
@@ -44,10 +45,10 @@ WEB_BASE_URL = "https://mmdbkk.com"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 PAY_SESSIONS_TTL_DAYS = "30"
 
-# Slip evidence route stays evidence-only.
+# Slip evidence route stays evidence-only. The uploaded file is forwarded to Telegram for owner review.
 SLIP_EVIDENCE_ROUTE = "/v1/pay/slip/evidence"
 SLIP_EVIDENCE_MODE = "evidence_only"
-SLIP_EVIDENCE_BINARY_STORAGE = "metadata_only_not_persisted"
+SLIP_EVIDENCE_BINARY_STORAGE = "telegram_file_forwarded_metadata_in_airtable"
 SLIP_EVIDENCE_OFFICIAL_VERIFICATION_REQUIRED = "true"
 SLIP_EVIDENCE_PAYMENT_STATUS = "pending"
 SLIP_EVIDENCE_VERIFICATION_STATUS = "pending"
