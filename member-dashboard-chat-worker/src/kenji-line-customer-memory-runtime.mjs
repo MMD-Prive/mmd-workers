@@ -152,7 +152,15 @@ async function findPerRename(env = {}, lineUserId = "", clientRecordId = "") {
   if (!rename) return { status: "not_found" };
   // The suffix may contain Per's private notes or historical tier labels.
   // Keep those out of customer-facing names and current entitlement claims.
-  const name = rename.split(/\s+[-–—|]\s+/u)[0].trim();
+  const withoutPrivateSuffix = rename.split(/\s+[-–—|]\s+/u)[0].trim();
+  // Per Rename may carry a signup/reference date after the customer's name
+  // (for example "แมม 17 มีค 69"). That date is internal context only.
+  // Customer-facing speech must address the person by name, never by the
+  // appended date or historical metadata.
+  const name = withoutPrivateSuffix
+    .replace(/\s+(?:\d{1,2})\s*(?:ม\.?ค\.?|ก\.?พ\.?|มี\.?ค\.?|เม\.?ย\.?|พ\.?ค\.?|มิ\.?ย\.?|ก\.?ค\.?|ส\.?ค\.?|ก\.?ย\.?|ต\.?ค\.?|พ\.?ย\.?|ธ\.?ค\.?)\s*(?:\d{2,4})?\s*$/iu, "")
+    .replace(/\s+\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?\s*$/u, "")
+    .trim();
   const safeName = /^[\p{L}\p{M} .]{2,40}$/u.test(name) ? name : "";
   return { status: "matched", safe_name: safeName };
 }

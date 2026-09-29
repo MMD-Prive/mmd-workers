@@ -72,6 +72,15 @@ test("P3 supports relative Bangkok dates and non-office-hour Thai time", () => {
   assert.equal(extractOperationalTime("บ่ายสอง"), "14:00");
 });
 
+test("customer asking whether full payment is required gets the 30 percent deposit policy", () => {\n  const parsed = parseKenjiLv5LineIntent(event("จ่ายเต็มเลยเหรอครับ"), "payment_status", NOW);\n  assert.equal(parsed.type, "payment_terms");\n  const reply = renderKenjiLv5LineReply({}, parsed);\n  assert.match(reply, /มัดจำ 30%/);\n  assert.match(reply, /ยอดคงเหลือ/);\n  assert.doesNotMatch(reply, /ส่งสลิป|ยังไม่พบสถานะชำระเงิน/);\n});\n\ntest("customer asking whether full payment is required gets the minimum-deposit policy", () => {
+  const parsed = parseKenjiLv5LineIntent(event("จ่ายเต็มเลยเหรอครับ"), "payment_status", NOW);
+  assert.equal(parsed.type, "payment_terms");
+  const reply = renderKenjiLv5LineReply({}, parsed);
+  assert.match(reply, /มัดจำขั้นต่ำ 30%/);
+  assert.match(reply, /มากกว่า 30%/);
+  assert.doesNotMatch(reply, /ส่งสลิป|ยังไม่พบสถานะชำระเงิน/);
+});
+
 test("Payment Center navigation is not consumed as payment-status truth", () => {
   assert.equal(isKenjiLv5LineOperationalCandidate(event("ชำระเงิน"), "payment_center"), false);
   assert.equal(parseKenjiLv5LineIntent(event("ชำระเงิน"), "payment_center", NOW), null);

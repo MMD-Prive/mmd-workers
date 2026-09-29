@@ -47,18 +47,20 @@ const PAYMENT_FIELDS = Object.freeze({
   createdAt: "flduxcPpowBxEZSLu",
   paymentStage: "fldrr9g8ZZjqAbdKQ",
   paymentType: "fldydUWHhqVLMkNSC",
+  needsBillingReview: "fld42LJQsJZgnbNnL",
+  depositStatus: "fldD0mQWTfdmyBAeT",
 });
 
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
 const PAYMENT_TYPES = new Set(["deposit", "final", "tips", "full"]);
 const CUSTOMER_DEPOSIT_PERCENT = 30;
-const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 500;
+const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 1;
 
 export function computeFixedCustomerDeposit(serviceAmountThb) {
   const total = Number(serviceAmountThb);
   if (!Number.isFinite(total) || total <= 0) return 0;
   const raw = (total * CUSTOMER_DEPOSIT_PERCENT) / 100;
-  return Math.min(total, Math.ceil(raw / CUSTOMER_DEPOSIT_ROUND_STEP_THB) * CUSTOMER_DEPOSIT_ROUND_STEP_THB);
+  return Math.min(total, Math.ceil(raw));
 }
 
 export function isCanonicalConfirmLinkRequest(path, method) {
@@ -108,7 +110,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
       "pay_model_thb",
     );
-    const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "full");
+    const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "deposit");
     const paymentMethod = canonicalPaymentMethod(body.payment_method || "promptpay");
     // Keep machine-readable membership markers on their own lines.
     const note = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").slice(0, 4000);
@@ -117,16 +119,29 @@ export async function handleCanonicalConfirmLink(request, env) {
     if (body.service_amount_thb != null && positiveNumber(body.service_amount_thb, "service_amount_thb") !== serviceAmountThb) {
       throw httpError(400, "service_amount_component_mismatch");
     }
-    const fixedDepositThb = computeFixedCustomerDeposit(serviceAmountThb);
-    const fixedBalanceThb = Math.max(0, serviceAmountThb - fixedDepositThb);
+    const minimumDepositThb = computeFixedCustomerDeposit(serviceAmountThb);
+    let selectedDepositThb = minimumDepositThb;
     if (paymentStage === "deposit") {
-      if (body.deposit_percent != null && Number(body.deposit_percent) !== CUSTOMER_DEPOSIT_PERCENT) {
-        throw httpError(400, "deposit_percent_must_be_30");
+      if (body.deposit_percent != null) {
+        const requestedPercent = Number(body.deposit_percent);
+        if (!Number.isFinite(requestedPercent) || requestedPercent <= 0 || requestedPercent > 100) {
+          throw httpError(400, "invalid_deposit_percent");
+        }
+        if (body.deposit_amount_thb == null) {
+          selectedDepositThb = Math.min(serviceAmountThb, Math.max(1, Math.ceil((serviceAmountThb * requestedPercent) / 100)));
+        }
       }
-      if (body.deposit_amount_thb != null && Number(body.deposit_amount_thb) !== fixedDepositThb) {
-        throw httpError(400, "deposit_amount_mismatch");
+      if (body.deposit_amount_thb != null) {
+        selectedDepositThb = positiveNumber(body.deposit_amount_thb, "deposit_amount_thb");
       }
+      if (selectedDepositThb > serviceAmountThb) throw httpError(400, "deposit_exceeds_service_amount");
     }
+    const selectedDepositPercent = paymentStage === "deposit"
+      ? Number(((selectedDepositThb / serviceAmountThb) * 100).toFixed(2))
+      : null;
+    const depositBelowMinimum = paymentStage === "deposit" && selectedDepositThb < minimumDepositThb;
+    const depositShortfallThb = depositBelowMinimum ? Math.max(0, minimumDepositThb - selectedDepositThb) : 0;
+    const selectedBalanceThb = Math.max(0, serviceAmountThb - selectedDepositThb);
     const pricing = paymentStage === "deposit"
       ? {
           full_price_thb: Math.max(originalAmountThb, serviceAmountThb),
@@ -135,12 +150,16 @@ export async function handleCanonicalConfirmLink(request, env) {
           discount_thb: discountMode === "amount" ? discountThb : 0,
           net_price_thb: serviceAmountThb,
           deposit_basis_thb: serviceAmountThb,
-          deposit_percent: CUSTOMER_DEPOSIT_PERCENT,
-          deposit_due_thb: fixedDepositThb,
+          deposit_minimum_percent: CUSTOMER_DEPOSIT_PERCENT,
+          deposit_minimum_thb: minimumDepositThb,
+          deposit_percent: selectedDepositPercent,
+          deposit_due_thb: selectedDepositThb,
           deposit_received_thb: 0,
-          balance_thb: fixedBalanceThb,
+          deposit_below_minimum: depositBelowMinimum,
+          deposit_shortfall_thb: depositShortfallThb,
+          balance_thb: selectedBalanceThb,
           deposit_round_step_thb: CUSTOMER_DEPOSIT_ROUND_STEP_THB,
-          deposit_rounding: "ceil",
+          deposit_rounding: "ceil_to_baht",
         }
       : null;
     const pricingMarker = pricing ? `[SIGIL Pricing v1] ${JSON.stringify(pricing)}` : "";
@@ -238,7 +257,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       // Combined membership renewal keeps its separately itemized full
       // customer payment contract. Ordinary jobs store only the fixed rounded
       // service deposit as the initial Payment intent.
-      [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: paymentStage === "deposit" && !components ? fixedDepositThb : amountThb,
+      [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: paymentStage === "deposit" && !components ? selectedDepositThb : amountThb,
       [field(env.AT_PAYMENTS__PAYMENT_STATUS, PAYMENT_FIELDS.paymentStatus)]: "Pending",
       [field(env.AT_PAYMENTS__PAYMENT_METHOD, PAYMENT_FIELDS.paymentMethod)]: paymentMethod,
       [field(env.AT_PAYMENTS__NOTES, PAYMENT_FIELDS.notes)]: note || undefined,
@@ -247,6 +266,10 @@ export async function handleCanonicalConfirmLink(request, env) {
       [field(env.AT_PAYMENTS__CREATED_AT, PAYMENT_FIELDS.createdAt)]: createdAt,
       [PAYMENT_FIELDS.paymentStage]: paymentStage,
       [PAYMENT_FIELDS.paymentType]: PAYMENT_TYPES.has(paymentStage) ? paymentStage : undefined,
+      [field(env.AT_PAYMENTS__NEEDS_BILLING_REVIEW, PAYMENT_FIELDS.needsBillingReview)]: depositBelowMinimum || undefined,
+      [field(env.AT_PAYMENTS__DEPOSIT_STATUS, PAYMENT_FIELDS.depositStatus)]: paymentStage === "deposit"
+        ? (depositBelowMinimum ? "under_minimum_review" : "minimum_met")
+        : undefined,
     });
 
     // Payment Reference is canonical. Never write the read-only compatibility
@@ -272,7 +295,8 @@ export async function handleCanonicalConfirmLink(request, env) {
         `Model: <b>${escapeHtml(modelName)}</b>`,
         `Type: <b>${escapeHtml(jobType)}</b>`,
         `Amount: <b>${Number(amountThb)} THB</b>`,
-        paymentStage === "deposit" ? `Deposit 30% (rounded): <b>${Number(fixedDepositThb)} THB</b>` : "",
+        paymentStage === "deposit" ? `Deposit received/expected: <b>${Number(selectedDepositThb)} THB</b> (${selectedDepositPercent}%)` : "",
+        depositBelowMinimum ? `⚠️ <b>UNDER 30% — OWNER REVIEW</b> · minimum ${Number(minimumDepositThb)} THB · short ${Number(depositShortfallThb)} THB` : "",
         payModelThb != null ? `Pay Model: <b>${Number(payModelThb)} THB</b>` : "",
       ].filter(Boolean).join("\n"));
     } catch (_) {}

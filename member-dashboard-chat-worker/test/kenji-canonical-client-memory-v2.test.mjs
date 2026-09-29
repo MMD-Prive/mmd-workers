@@ -33,7 +33,7 @@ globalThis.fetch = async (url, init = {}) => {
   if (method === "GET" && href.includes("MMD%20%E2%80%94%20LINE%20OFC%20Client%20Import%20Staging")) {
     return Response.json({ records: [{ id: "recLineOFC", fields: {
       "LINE User ID": LINE_USER_ID,
-      "Current LINE Rename": "พี่โจ้ - VIP - เบอร์ส่วนตัวห้ามพูด",
+      "Current LINE Rename": "พี่โจ้ 17 มีค 69 - VIP - เบอร์ส่วนตัวห้ามพูด",
       "Canonical Client": [renameClientId],
     } }] });
   }
@@ -110,6 +110,7 @@ try {
   assert.equal(context.client_record_id, CLIENT_ID);
   assert.equal(context.per_rename_status, "matched");
   assert.equal(context.safe_context.display_name_for_kenji, "พี่โจ้");
+  assert.doesNotMatch(context.safe_context.display_name_for_kenji, /17|มีค|69/);
   assert.doesNotMatch(JSON.stringify(context), /เบอร์ส่วนตัวห้ามพูด/);
   assert.equal(context.relationship_context, "svip_relationship");
   assert.equal(context.voice_context.voice_profile, "per_voice_concierge");

@@ -188,7 +188,7 @@ function scoreSession(record, amountThb, explicitTip) {
   if (total != null && total > 0 && near(amount, total) && received <= 0.01) return { stage: "full", label: "จ่ายเต็ม", confidence: Math.min(0.985, 0.955 + boost), basis: "amount_matches_session_total", session_id: sessionId, job_id: jobId };
   if (total != null && total > 0 && received <= 0.01) {
     const ratio = amount / total;
-    if ([0.2, 0.25, 0.3, 0.5].some((target) => Math.abs(ratio - target) <= 0.015)) return { stage: "deposit", label: "ค่าจอง / มัดจำ", confidence: Math.min(0.94, 0.89 + boost), basis: `deposit_ratio_${Math.round(ratio * 100)}`, session_id: sessionId, job_id: jobId };
+    if (ratio >= 0.3 && ratio < 1) return { stage: "deposit", label: "ค่าจอง / มัดจำ", confidence: Math.min(0.94, 0.89 + boost), basis: `deposit_ratio_${Math.round(ratio * 100)}`, session_id: sessionId, job_id: jobId };
   }
   return null;
 }

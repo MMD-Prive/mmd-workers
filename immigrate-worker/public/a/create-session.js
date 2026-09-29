@@ -879,7 +879,7 @@
       },
       payment: {
         amount_thb: Number(val(el.amount)) || 0,
-        payment_type: String(val(el.paymentType) || "full"),
+        payment_type: String(val(el.paymentType) || "deposit"),
         payment_method: String(val(el.paymentMethod) || "promptpay"),
         points_mode: String(val(el.pointsMode) || "auto")
       },
