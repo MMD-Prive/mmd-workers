@@ -1,0 +1,41 @@
+{
+  "schema": "mmd.app_sigil_always_on_release_gate.v1",
+  "updated_at": "2026-09-29",
+  "decision": "hold",
+  "campaign_enabled": false,
+  "gates": {
+    "production_route_smoke": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "real_line_liff_session_chain": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "my_mmd_history_points_customer_requests": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "mmd_app_job_handoff": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "sigil_search_approved_public_media": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "sigil_search_no_private_media_leak": {
+      "status": "pending",
+      "evidence": ""
+    },
+    "campaign_destination_smoke": {
+      "status": "pending",
+      "evidence": ""
+    }
+  },
+  "notes": [
+    "Real-event gates require genuine production evidence. Synthetic/unit/staging evidence cannot mark them pass.",
+    "SIGIL Search must have approved public-safe media linked to the exact returned Models before this gate can become ready.",
+    "Always-on APP campaign remains disabled until every gate is pass and evidence is recorded."
+  ]
+}
