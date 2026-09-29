@@ -222,7 +222,7 @@ test("owner short link renders a compact job-first landing and skips generic Wel
   assert.equal(short.headers.get("x-mmd-job-short-link"), "v2");
   const page = await short.text();
   assert.match(page, /MMD JOB · CONFIDENTIAL/);
-  assert.match(page, /เปิดงานนี้ผ่าน LINE/);
+  assert.match(page, /สมัครงานนี้ใน MMD APP/);\n  assert.match(page, /Welcome V2 สำหรับสมัครงานนี้/);\n  assert.doesNotMatch(page, /LINE ใช้ยืนยันตัวตน/);
   assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.match(page, /https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
   assert.match(page, /intent=job_board/);
