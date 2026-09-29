@@ -1,7 +1,7 @@
 import { KENJI_CAPABILITIES, KENJI_PROTECTED_DOMAINS } from "./kenji-capability-policy.js";
 import { buildKenjiCanonicalVoiceDirective } from "./kenji-canonical-brain.mjs";
 
-export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v5-canonical-brain";
+export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v6-adaptive-context";
 export const DEFAULT_KENJI_MODEL = "gpt-5.6";
 export const KENJI_TOTAL_DEADLINE_MS = 3500;
 export const KENJI_MODEL_REASONING_EFFORT = "low";
