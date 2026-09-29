@@ -398,6 +398,7 @@ jobs:
             "/v1/admin/job-board/publish",
             "/v1/admin/job/owner-grant",
             "/v1/model/job-board/handoff*",
+            "/v1/model/direct-job-gate/*",
             "/v1/admin/clients/profile-photo/sync",
             "/v1/admin/kenji/control/memory*",
             "/v1/admin/kenji/control/conversations*",
@@ -511,6 +512,19 @@ jobs:
             cat "$handoff_body"
             test "$handoff_code" = "401"
             grep -q '"error":"model_session_required"' "$handoff_body"
+
+            # First Direct Private Job rules gate is Model-session-only. The
+            # unauthenticated POST must reach admin-worker on both public hosts,
+            # not Webflow, and fail before reading any signed job detail.
+            direct_gate_body="$(mktemp)"
+            direct_gate_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+              -o "$direct_gate_body" -w "%{http_code}" \
+              -X POST -H "Origin: $origin" -H "Content-Type: application/json" \
+              --data '{}' \
+              "$origin/v1/model/direct-job-gate/status")"
+            cat "$direct_gate_body"
+            test "$direct_gate_code" = "401"
+            grep -q '"error":"model_session_required"' "$direct_gate_body"
           done
 
           # Verify MMD Shop admin APIs are routed to admin-worker and remain session-gated.
