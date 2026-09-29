@@ -157,6 +157,18 @@ test("disabled feature creates no background jobs", async (t) => {
   assert.deepEqual(await enqueuePrimaryCard(h.env, modelId, mediaId), { enabled: false, job: null });
   assert.equal(h.instances.size, 0); assert.equal(h.calls.images, 0);
 });
+test("pilot allowlist prevents non-pilot models from creating a card job", async (t) => {
+  const h = harness(t);
+  h.env.MODEL_CARD_PILOT_MODEL_IDS = "recOther000000001";
+  assert.deepEqual(await enqueuePrimaryCard(h.env, modelId, mediaId), { enabled: true, pilot_eligible: false, job: null });
+  assert.equal(h.instances.size, 0);
+  assert.equal(h.calls.images, 0);
+  h.env.MODEL_CARD_PILOT_MODEL_IDS = modelId;
+  const allowed = await enqueuePrimaryCard(h.env, modelId, mediaId);
+  assert.equal(allowed.enabled, true);
+  assert.equal(allowed.job.state, "queued");
+  assert.equal(h.calls.images, 0);
+});
 test("concurrent selections and retries result in one job, one paid generation and exact PNG", async (t) => {
   const h = harness(t);
   const results = await Promise.all(Array.from({ length: 8 }, () => enqueuePrimaryCard(h.env, modelId, mediaId)));

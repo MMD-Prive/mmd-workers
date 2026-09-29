@@ -10,6 +10,11 @@ const RECORD = /^rec[A-Za-z0-9]{14,24}$/;
 const SAFE_STATES = new Set(["queued", "preparing", "waiting_profile", "waiting_configuration", "generating", "rendering", "awaiting_owner_review", "source_changed", "needs_review", "paused"]);
 const clean = (x) => String(x ?? "").trim();
 const enabled = (env) => env.MODEL_CARD_AUTO_ENABLED === "true";
+const pilotModels = (env) => new Set(clean(env.MODEL_CARD_PILOT_MODEL_IDS).split(/[\s,]+/).filter((id) => RECORD.test(id)));
+const pilotAllowed = (env, modelId) => {
+  const ids = pilotModels(env);
+  return ids.size === 0 || ids.has(clean(modelId));
+};
 const json = (body, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const fail = (code, state = "needs_review", missing = []) => Object.assign(new Error(code), { code, state, missing });
 
@@ -90,6 +95,7 @@ function stub(env, modelId) {
 // generation failure never rolls back or misreports a successful profile save.
 export async function enqueuePrimaryCard(env, modelId, mediaRecordId) {
   if (!enabled(env)) return { enabled: false, job: null };
+  if (!pilotAllowed(env, modelId)) return { enabled: true, pilot_eligible: false, job: null };
   try {
     const response = await stub(env, modelId).fetch(new Request("https://card.internal/enqueue", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -138,6 +144,7 @@ export class ModelCardCoordinator {
     if (path === "/enqueue") {
       if (!enabled(this.env)) return json({ ok: false, error: "card_automation_disabled" }, 503);
       if (!RECORD.test(input.model_record_id) || !RECORD.test(input.media_record_id)) return json({ ok: false, error: "invalid_record_id" }, 400);
+      if (!pilotAllowed(this.env, input.model_record_id)) return json({ ok: false, error: "card_pilot_model_not_allowed" }, 403);
       let duplicate = false;
       const job = await this.ctx.storage.transaction(async (tx) => {
         const existing = await tx.get("job");
