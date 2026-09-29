@@ -850,6 +850,34 @@ function activeModelContext(options = {}) {
   return { model_code: modelCode, working_name: workingName };
 }
 
+function existingTransactionContext(options = {}) {
+  const continuity = options?.continuity || {};
+  const matrix = continuity?.matrix || {};
+  if (asString(continuity.decision) === "stale_refresh" || asString(matrix.matrix_status) === "stale") return null;
+  const expiresAt = Date.parse(asString(matrix.state_expires_at));
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return null;
+
+  const haystack = [
+    matrix.topic,
+    matrix.subtopic,
+    matrix.conversation_stage,
+    matrix.pending_action,
+    matrix.pending_reference,
+    matrix.continuity_summary,
+    ...(Array.isArray(matrix.important_open_loops) ? matrix.important_open_loops : []),
+  ].map(asString).filter(Boolean).join(" ").toLowerCase();
+
+  const transactionLike = /payment|private payment|sigil\/pay|pay\?t=|ชำระ|ยอด|invoice|checkout|payment link/.test(haystack);
+  const continuationLike = ["continuation", "ambiguous"].includes(asString(continuity.decision)) ||
+    asString(matrix.conversation_stage) === "awaiting_payment_verification";
+  if (!transactionLike || !continuationLike) return null;
+
+  return {
+    stage: asString(matrix.conversation_stage),
+    reference: asString(matrix.pending_reference),
+  };
+}
+
 function contextualModelForTurn(eventText = "", intent = "", options = {}) {
   const model = activeModelContext(options);
   if (!model) return null;
@@ -1038,6 +1066,10 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "pricing_review") {
+    const transaction = existingTransactionContext(options);
+    if (transaction) {
+      return `${prefix}ถ้าหมายถึงรายการที่ส่งไว้ด้านบน กด Private Payment เดิมได้เลยครับ รายละเอียดและยอดของรายการนี้อยู่ในลิงก์นั้นแล้ว ไม่ต้องส่งวัน เวลา โซน หรือระยะเวลาใหม่ครับ`;
+    }
     if (activeModel) return `${prefix}ถ้าหมายถึงเรทของ ${activeModel.working_name} (${activeModel.model_code}) ส่งวัน เวลา โซน ระยะเวลา และรูปแบบงานมาได้เลยครับ เดี๋ยวเปอร์ตรวจเรทที่ใช้กับงานนี้ก่อนตอบยืนยันครับ`;
     return `${prefix}เรื่องราคา เดี๋ยวเปอร์ขอดูรายละเอียดที่เหมาะก่อนนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
   }
