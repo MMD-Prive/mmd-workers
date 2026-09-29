@@ -8,6 +8,7 @@ import { runPaymentObserverHealth } from "./payment-observer-health.mjs";
 import { resolveLineCanonicalPayment, withPaymentEvidenceLock } from "../../shared/canonical-payment-evidence.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
+const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_PAYMENT_PROOFS_TABLE = "tblfJfM4Sqag9zrLi";
@@ -379,6 +380,82 @@ function paymentProofCategory(trackingKind, isMembership) {
   return labels[trackingKind] || (isMembership ? "ค่าสมาชิก · รอตรวจประเภท" : "ค่างาน · รอตรวจประเภท");
 }
 
+
+function directPaymentJobLabel(analysis = {}) {
+  const selected = analysis?.job_correlation?.status === "exact" ? analysis?.job_correlation?.selected : null;
+  if (!selected) return "";
+  const parts = [
+    asString(selected.model_name),
+    compactOpsWhen(selected),
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function buildDirectPaymentAcknowledgement(evidence = {}, result = {}) {
+  const analysis = evidence.analysis || {};
+  const trackingKind = asString(analysis.payment_intelligence?.tracking_kind) || "unresolved_payment";
+  const route = analysis.ops_route || evidence.paymentOpsRoute || {};
+  const policyVerified = membershipPaymentAcceptedByOwnerPolicy({
+    route,
+    extraction: analysis.extraction || {},
+    contextText: evidence.paymentContextText,
+  });
+  const isMembership = route.topic === "membership" || (policyVerified && hasMembershipPaymentContext(evidence.paymentContextText));
+  const category = paymentProofCategory(trackingKind, isMembership);
+  const settlement = result?.settlement || null;
+  const jobLabel = !isMembership ? directPaymentJobLabel(analysis) : "";
+
+  if (settlement?.status === "materialized") {
+    return [
+      `ได้รับและยืนยัน${category}เรียบร้อยแล้วครับ`,
+      jobLabel ? `งาน: ${jobLabel}` : "",
+      "ระบบอัปเดตสถานะรายการให้แล้วครับ",
+    ].filter(Boolean).join("\n");
+  }
+
+  return [
+    `ได้รับหลักฐาน${category}แล้วครับ`,
+    jobLabel ? `งาน: ${jobLabel}` : "",
+    settlement?.status === "review_required"
+      ? "รายการนี้ต้องตรวจสอบเพิ่มเติม เดี๋ยวเปอร์เช็กให้ครับ"
+      : "ตอนนี้รายการอยู่ระหว่างตรวจสอบครับ",
+    "ข้อความนี้เป็นการรับหลักฐาน ยังไม่ใช่การยืนยันรับเงินจนกว่าระบบจะตรวจเรียบร้อยครับ",
+  ].filter(Boolean).join("\n");
+}
+
+async function notifyDirectCustomerPaymentEvidence(env = {}, evidence = {}, result = {}, lineUserId = "") {
+  if (result?.deduped === true) return { skipped: true, reason: "deduped" };
+  if (asString(evidence.sourceType) !== "user") return { skipped: true, reason: "not_direct_user" };
+  const to = asString(lineUserId);
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!to) return { skipped: true, reason: "line_user_id_missing" };
+  if (!token) return { skipped: true, reason: "line_token_missing" };
+
+  const text = buildDirectPaymentAcknowledgement(evidence, result);
+  if (!text) return { skipped: true, reason: "message_empty" };
+
+  try {
+    const response = await fetch(LINE_PUSH_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        to,
+        messages: [{ type: "text", text }],
+      }),
+    });
+    if (!response.ok) return { sent: false, status: response.status, reason: `line_push_${response.status}` };
+    return { sent: true, status: response.status };
+  } catch (error) {
+    return {
+      sent: false,
+      reason: asString(error?.message || error || "line_push_failed").replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
+    };
+  }
+}
+
 async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   if (result?.deduped === true) return { skipped: true, reason: "deduped" };
   const chatId = paymentOpsChatId(env);
@@ -591,12 +668,43 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
   const result = { ...proof, settlement };
   let delivery = null;
   try { delivery = await notifyPaymentProofOps(env, evidence, result); } catch (error) { console.log(JSON.stringify({ line_payment_alert: "failed", proof_id: proofId, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
+
+  let lineCustomerNotification = null;
+  try {
+    lineCustomerNotification = await notifyDirectCustomerPaymentEvidence(env, evidence, result, userId);
+  } catch (error) {
+    lineCustomerNotification = { sent: false, reason: "line_customer_notify_failed" };
+    console.log(JSON.stringify({
+      line_payment_customer_notification: "failed",
+      proof_id: proofId,
+      error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
+    }));
+  }
+
   const verified = settlement.status === "materialized"
     ? true
     : settlement.status === "review_required"
       ? false
       : proof.verified === true;
-  return { captured: true, deduped: proof.deduped, verified, proofId, recordId: proof.id, imageClass: analysis.classification?.image_class, paymentStage: analysis.payment_intelligence?.inferred_stage, trackingKind: analysis.payment_intelligence?.tracking_kind, settlementStatus: settlement.status, customerMatch: analysis.customer?.status, opsDelivery: delivery ? { delivered: delivery.sent === true, queued: delivery.queued === true, status: asString(delivery.delivery_status) || null } : null };
+  return {
+    captured: true,
+    deduped: proof.deduped,
+    verified,
+    proofId,
+    recordId: proof.id,
+    imageClass: analysis.classification?.image_class,
+    paymentStage: analysis.payment_intelligence?.inferred_stage,
+    trackingKind: analysis.payment_intelligence?.tracking_kind,
+    settlementStatus: settlement.status,
+    customerMatch: analysis.customer?.status,
+    opsDelivery: delivery ? { delivered: delivery.sent === true, queued: delivery.queued === true, status: asString(delivery.delivery_status) || null } : null,
+    lineCustomerNotification: lineCustomerNotification ? {
+      sent: lineCustomerNotification.sent === true,
+      skipped: lineCustomerNotification.skipped === true,
+      status: Number(lineCustomerNotification.status) || null,
+      reason: asString(lineCustomerNotification.reason) || null,
+    } : null,
+  };
 }
 
 // Bounded recovery sweep: retry undelivered Ops notifications and reprocess
@@ -748,6 +856,8 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   messageType,
   notifyHeldEvidenceReview,
   notifyPaymentProofOps,
+  notifyDirectCustomerPaymentEvidence,
+  buildDirectPaymentAcknowledgement,
   paymentNotificationPurpose,
   persistAcceptedEvidence,
   runLineSlipEvidenceMaintenance,
