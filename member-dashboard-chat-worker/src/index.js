@@ -2499,7 +2499,9 @@ async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, ken
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
   const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);
-  const knowledgePromise = kenjiEnabled ? fetchPublishedLineKnowledge(env) : Promise.resolve([]);
+  const knowledgePromise = kenjiEnabled && isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
+    ? fetchPublishedLineKnowledge(env)
+    : Promise.resolve([]);
   const [profile] = await Promise.all([profilePromise, knowledgePromise]);
   return writeLineEventToConsoleInbox(env, event, profile, intent);
 }
