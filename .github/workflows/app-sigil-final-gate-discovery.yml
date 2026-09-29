@@ -1,0 +1,95 @@
+name: APP SIGIL final gate discovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/release-gates/app-sigil-final-gate-discovery-trigger.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-sigil-final-gate-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://sigil.mmdbkk.com
+      PUBLIC_ACCESS_INTERNAL_TOKEN: ${{ secrets.PUBLIC_ACCESS_INTERNAL_TOKEN }}
+      INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Discover real handoff receipts and smoke campaign destination
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="${PUBLIC_ACCESS_INTERNAL_TOKEN:-${INTERNAL_TOKEN:-}}"
+          test -n "$token"
+
+          handoffs_file="$RUNNER_TEMP/handoffs.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/json" \
+            -H "x-internal-token: $token" \
+            "$BASE_URL/public/api/jobs/internal/handoffs" > "$handoffs_file"
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { verifyCampaignDestination } from "./ops/release-gates/app-sigil-final-gate-verifier.mjs";
+
+          const handoffBody = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/handoffs.json", "utf8"));
+          if (handoffBody?.ok !== true || !Array.isArray(handoffBody.handoffs)) {
+            throw new Error("handoff_discovery_body_invalid");
+          }
+
+          const safe = handoffBody.handoffs
+            .filter((row) => row?.schema === "mmd_public_job_board_v2.model_handoff_receipt")
+            .filter((row) => row?.source === "validated_model_handoff")
+            .filter((row) => /^handoff_[a-f0-9]{24}$/.test(String(row?.receipt_ref || "")))
+            .filter((row) => /^rec[A-Za-z0-9]{14}$/.test(String(row?.model_record_id || "")))
+            .filter((row) => /^[A-Za-z0-9][A-Za-z0-9_-]{2,99}$/.test(String(row?.job_id || "")))
+            .map((row) => ({
+              receipt_ref: row.receipt_ref,
+              model_record_id: row.model_record_id,
+              job_id: row.job_id,
+              target_path: row.target_path,
+              verified_at: row.verified_at,
+              source: row.source,
+            }))
+            .sort((a,b) => String(b.verified_at).localeCompare(String(a.verified_at)))
+            .slice(0,20);
+
+          const campaign = await verifyCampaignDestination({
+            campaignId: "app-sigil-always-on-20260929",
+            source: "x_campaign",
+            jobId: safe[0]?.job_id || "",
+          });
+
+          const out = {
+            schema: "mmd.app_sigil_final_gate_discovery.v1",
+            generated_at: new Date().toISOString(),
+            handoff_count: safe.length,
+            latest_handoff: safe[0] || null,
+            handoffs: safe,
+            campaign_destination_smoke: campaign,
+          };
+          fs.writeFileSync(process.env.RUNNER_TEMP + "/app-sigil-final-gate-discovery.json", JSON.stringify(out, null, 2));
+          console.log(JSON.stringify(out, null, 2));
+          NODE
+
+      - name: Upload discovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-sigil-final-gate-discovery
+          path: ${{ runner.temp }}/app-sigil-final-gate-discovery.json
+          if-no-files-found: ignore
