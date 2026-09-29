@@ -1,6 +1,7 @@
 import { KENJI_CAPABILITIES, KENJI_PROTECTED_DOMAINS } from "./kenji-capability-policy.js";
+import { buildKenjiCanonicalVoiceDirective } from "./kenji-canonical-brain.mjs";
 
-export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v4-compositional-authority";
+export const KENJI_MODEL_POLICY_VERSION = "kenji-line-production-v5-canonical-brain";
 export const DEFAULT_KENJI_MODEL = "gpt-5.6";
 export const KENJI_TOTAL_DEADLINE_MS = 3500;
 export const KENJI_MODEL_REASONING_EFFORT = "low";
@@ -8,7 +9,7 @@ export const KENJI_MODEL_REASONING_EFFORT = "low";
 export const KENJI_SYSTEM_PROMPT_V2 = `You are the MMD Privé LINE concierge speaking in Per Voice.
 
 Voice:
-- Thai first; adapt naturally to the customer's language.
+- Match the customer's language. Canonical Per Voice supports Thai, English, and Simplified Chinese as first-class voice corpora.
 - Speak in Per Voice: warm, direct, premium, slightly informal, and confident.
 - Answer the customer's actual question first. Do not add a ceremonial greeting, brand introduction, or menu before the answer.
 - Default to 1–2 short LINE lines. Expand only when the answer genuinely needs it.
@@ -38,6 +39,10 @@ Authority and privacy:
 - If exact current system truth is required but not supplied, say what information is missing or direct the customer to the official MMD check without pretending to know.
 
 Return only the requested JSON object.`;
+
+export function buildKenjiSystemPrompt(customerText = "") {
+  return `${KENJI_SYSTEM_PROMPT_V2}\n\n${buildKenjiCanonicalVoiceDirective(customerText)}`;
+}
 
 const INTERNAL_OUTPUT_RE = /(?:\bkenji\b|เคนจิ|\b(?:cloudflare|worker|airtable|wrangler|internal[_\s-]?token|openai_api_key|authorization|bearer|system prompt|admin route|risk[_\s-]?label)\b|\b(?:rec|tbl|app)[a-zA-Z0-9]{10,})/i;
 const AUTOMATED_HOLDING_OUTPUT_RE = /(?:ขอ(?:เวลา)?(?:ผม|เปอร์)?\s*(?:เช็ก|ตรวจ(?:สอบ)?|ดู)(?:ข้อมูล|รายละเอียด|เรื่องนี้)?(?:ก่อน)?|เดี๋ยว(?:ผม|เปอร์|mmd)?\s*(?:ขอ)?\s*(?:เช็ก|ตรวจ(?:สอบ)?|ดู)|(?:ผม|เปอร์|mmd)?\s*กำลัง(?:เช็ก|ตรวจ(?:สอบ)?|ดู)|รอ(?:สัก)?(?:ครู่|แป๊บ|แปบ)|(?:ผม|เปอร์)(?:จะ)?กลับมาแจ้ง|รับทราบ(?:ครับ|ค่ะ)?|รับข้อความ(?:แล้ว)?(?:ครับ|ค่ะ)?|รับเรื่อง(?:แล้ว)?(?:ครับ|ค่ะ)?|ขอบคุณสำหรับ(?:ข้อความ|ข้อมูล)|(?:let\s+me|i(?:'|’)ll)\s+(?:check|review|look\s+into)|please\s+wait|one\s+moment|i(?:'|’)ll\s+get\s+back\s+to\s+you|looking\s+into\s+this|message\s+received)/i;
@@ -129,7 +134,7 @@ export async function generateKenjiModelReply({ text, knowledge = [], env = {}, 
   const grounding = approvedFacts || "No approved business fact is available for this message. Answer only safe general conversation or ask one concise clarification.";
   const payload = {
     model: clean(env.OPENAI_MODEL) || DEFAULT_KENJI_MODEL,
-    instructions: KENJI_SYSTEM_PROMPT_V2,
+    instructions: buildKenjiSystemPrompt(userText),
     input: `Approved MMD grounding:\n${grounding}\n\nCustomer message:\n${userText}`,
     max_output_tokens: 320,
     reasoning: { effort: KENJI_MODEL_REASONING_EFFORT },
