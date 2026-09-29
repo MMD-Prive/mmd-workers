@@ -29,8 +29,12 @@
       "evidence": "APP SIGIL production search acceptance run 36528126495 completed success; both Atom IX and Book EI reported no_private_media_leak=true and public media route checks passed."
     },
     "campaign_destination_smoke": {
+      "status": "pass",
+      "evidence": "APP SIGIL final-gate discovery run 36546363628 completed successfully against production: campaign destination returned HTTP 200, preserved intent=job_board, and resolved JOB-20260928-3DE86201F471."
+    },
+    "direct_private_first_job_rules_ack": {
       "status": "pending",
-      "evidence": "Must be closed only by the APP SIGIL final gate verifier workflow artifact after the real ad entry URL returns a non-404/non-5xx response and preserves the intended job_board campaign destination into the MMD APP surface."
+      "evidence": "Canonical backend and Airtable ledger are being introduced for Direct Private first-job acknowledgement. Close only after one genuine production model identity opens a direct private job, acknowledges rules_version=job-day-v2 at /rules/model/private/job-day, and then reaches the job details without changing Job/Session/payment state."
     }
   },
   "notes": [
@@ -43,6 +47,7 @@
     "MMD APP Job handoff remains pending until one genuine production post-LIFF handoff mint+validate event writes a privacy-safe durable receipt.",
     "Validated Model Job Board handoffs now persist a privacy-safe durable receipt after token validation; no LINE ID, cookie, handoff token, payment, or customer payload is stored.",
     "The final two gates must be verified by workflow APP SIGIL final gate verifier, which reads /public/api/jobs/internal/handoffs with an internal owner token and smoke-tests the real campaign destination URL.",
-    "After the workflow passes, paste the app-sigil-final-gate-evidence artifact into this manifest before changing decision=ready or campaign_enabled=true."
+    "After the workflow passes, paste the app-sigil-final-gate-evidence artifact into this manifest before changing decision=ready or campaign_enabled=true.",
+    "Direct Private first-job rules acknowledgement is a separate fail-closed acceptance gate: verified Model identity first, /rules/model/private/job-day acknowledgement second, then job details. It applies only to direct private_model Sessions and skips partner-managed/private and public_model work."
   ]
 }
