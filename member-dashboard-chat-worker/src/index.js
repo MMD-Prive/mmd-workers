@@ -12,6 +12,8 @@ import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
 import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowledge-runtime.mjs";
+import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
+import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
@@ -359,6 +361,24 @@ export function extractKenjiModelLookupQuery(text = "") {
   return "";
 }
 
+export function resolveKenjiModelIntent(text = "") {
+  const campaign = resolveLineCardCampaignTrigger(text);
+  if (campaign) {
+    return {
+      matched: true,
+      intent: "model_lookup",
+      query: campaign.card_trigger,
+      source: "campaign_trigger",
+      campaign_trigger: campaign,
+      campaign_key: campaign.campaign_key,
+    };
+  }
+  const query = extractKenjiModelLookupQuery(text);
+  return query
+    ? { matched: true, intent: "model_lookup", query, source: "model_lookup", campaign_trigger: null, campaign_key: "" }
+    : { matched: false, intent: "", query: "", source: "none", campaign_trigger: null, campaign_key: "" };
+}
+
 export function extractKenjiModelVerificationEmail(text = "") {
   const value = asString(text).trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254 ? value : "";
@@ -416,7 +436,8 @@ export function inferLineIntent(text = "", event = {}) {
 
   if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
-  if (resolveLineCardCampaignTrigger(text)) return "card_campaign_lead";
+  const modelIntent = resolveKenjiModelIntent(text);
+  if (modelIntent.campaign_trigger) return "card_campaign_lead";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
@@ -482,7 +503,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
-  if (extractKenjiModelLookupQuery(text)) return "model_lookup";
+  if (modelIntent.matched) return "model_lookup";
   if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
     return "service_guidance";
   }
