@@ -32,34 +32,17 @@ jobs:
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
           echo "::add-mask::$CLOUDFLARE_API_TOKEN"
-      - name: Tail admin-worker and hit authenticated Refund Ops
+      - name: Tail admin-worker and probe authenticated Refund Ops
         shell: bash
         run: |
           set -euo pipefail
-          cookie="$RUNNER_TEMP/refund.cookies"
-          headers="$RUNNER_TEMP/refund.headers"
-          body="$RUNNER_TEMP/refund.body"
           tail_log="$RUNNER_TEMP/refund-tail.log"
-
           timeout 45s npx --yes wrangler@4.142.0 tail admin-worker --format json --status error >"$tail_log" 2>&1 &
           tail_pid=$!
           sleep 8
-
-          login_code="$(curl -sS -D "$headers" -o /dev/null -c "$cookie" -w "%{http_code}"             -X POST             -H "Origin: $ORIGIN"             -H "Content-Type: application/x-www-form-urlencoded"             --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL"             --data-urlencode "next=/internal/admin/refunds"             "$ORIGIN/internal/admin/login/session" || true)"
-          echo "login_http=$login_code"
-          test "$login_code" = "303"
-
-          : > "$headers"
-          page_code="$(curl -sS -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" "$ORIGIN$TARGET" || true)"
-          echo "refund_http=$page_code"
-          echo "refund_content_type=$(grep -i '^content-type:' "$headers" | tail -1 | tr -d '\r' || true)"
-          echo "refund_cf_ray=$(grep -i '^cf-ray:' "$headers" | tail -1 | tr -d '\r' || true)"
-          echo "refund_route_owner=$(grep -i '^x-mmd-route-owner:' "$headers" | tail -1 | tr -d '\r' || true)"
-          echo "refund_body_prefix=$(head -c 180 "$body" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g')"
-
+          node scripts/refund-ops-production-probe.mjs
           sleep 8
           kill "$tail_pid" 2>/dev/null || true
           wait "$tail_pid" 2>/dev/null || true
-
           echo "--- cloudflare error tail ---"
           cat "$tail_log"
