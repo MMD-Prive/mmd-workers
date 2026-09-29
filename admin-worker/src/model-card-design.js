@@ -53,59 +53,7 @@ export function projectCardDesign(record, env = {}) {
   const rawName = scalar(f.working_name);
   let title = rawName;
   if (["GWs", "EMs"].includes(field)) {
-    const match = rawName.match(new RegExp(`^${field}\\s*(\\d{1,6})// Card-only projection. Never changes model classification or visibility.
-export const CARD_VERSION = "mmd-primary-v2";
-export const CARD_SIZE = Object.freeze({ width: 1322, height: 1200 });
-export const CARD_STYLES = Object.freeze({
-  ST: { accent: "#a7adb4", world: "private", scene: "quiet architectural lounge, brushed silver reflections" },
-  GY: { accent: "#d96aa8", world: "private", scene: "contemporary charcoal interior, soft dusty rose reflected light" },
-  FR: { accent: "#45bd7a", world: "private", scene: "modern shadowed interior, subtle emerald reflected light" },
-  EN: { accent: "#4aa9d8", world: "public", scene: "airy travel editorial, daylight, pale stone and restrained sky blue reflections" },
-  EX: { accent: "#d83a48", world: "public", scene: "bright contemporary sports editorial, off-white architecture, subtle red reflections" },
-  GWs: { accent: "#36c4c7", world: "private", scene: "dark modern interior, soft teal reflections on textured glass" },
-  EMs: { accent: "#d3b45c", world: "private", scene: "cinematic dark lounge, restrained champagne gold reflected light" },
-});
-const scalar = (v) => String(v?.name ?? v ?? "").trim();
-const lower = (v) => scalar(v).toLowerCase();
-const exclusive = (v) => ({ gws: "GWs", ems: "EMs" })[lower(v)] || "";
-
-function displayNameWithoutSuffix(rawName, suffix) {
-  const name = scalar(rawName);
-  const code = scalar(suffix).toUpperCase();
-  if (!name) return "";
-  if (/^[A-Z]{2}$/.test(code) && name.toUpperCase().endsWith(" " + code)) {
-    return name.slice(0, -(code.length + 1)).trim();
-  }
-  return name;
-}
-
-export function projectCardDesign(record, env = {}) {
-  const f = record?.fields || {};
-  const missing = [];
-  const scope = lower(f.folder_scope_key).split(":")[0];
-  const sales = lower(f.sales_layer);
-  const world = sales === "both"
-    ? ({ public: "public", private: "private", exclusive: "private" })[scope]
-    : ["public", "private"].includes(sales) ? sales : "";
-  if (!world) missing.push("sales_layer");
-  const recognition = exclusive(f.recognition_class);
-  const legacyRecognition = exclusive(f.exclusive_group);
-  if (recognition && legacyRecognition && recognition !== legacyRecognition) missing.push("recognition_conflict");
-  let field = "";
-  if (world === "public") {
-    field = ({ travel: "EN", extreme: "EX" })[lower(f["MMD Public Category"])] || "";
-    // Exclusive identity protection applies regardless of the sales channel.
-    if (recognition || legacyRecognition) missing.push("exclusive_public_direction_required");
-  } else if (world === "private") {
-    field = recognition || legacyRecognition;
-    if (!field) {
-      const group = lower(f.catalog_group);
-      field = ({ fr: "FR", farang: "FR", foreigner: "FR" })[group] ||
-        ({ straight: "ST", gay: "GY" })[lower(f.orientation_label)] || "";
-    }
-  }
-  if (!field) missing.push("card_category");
-, "i"));
+    const match = rawName.match(new RegExp(`^${field}\\s*(\\d{1,6})$`, "i"));
     title = match ? `${field}${match[1]}` : "";
     if (!title) missing.push("assigned_run_number");
   } else {
