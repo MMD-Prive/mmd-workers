@@ -71,6 +71,7 @@ const KENJI_MODEL_ACCESS_TIMEOUT_MS = 900;
 const KENJI_RUNTIME_STATUS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/control/runtime/status";
 const KENJI_RUNTIME_STATUS_TIMEOUT_MS = 700;
 const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
+const KENJI_CONVERSATION_CONTROLS_TABLE_FALLBACK = "tblfyuNIB4BWThHSf";
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -1584,24 +1585,73 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", optio
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
 }
 
-async function getLineOwnerTakeoverState(env = {}, lineUserId = "") {
+async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
-  const table = getAirtableTable(env);
-  if (!apiKey || !baseId || !table || !lineUserId) return { ok: false, active: false, reason: "takeover_lookup_unconfigured" };
-  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-  url.searchParams.set("pageSize", "1");
-  url.searchParams.set("filterByFormula", `AND({line_user_id}=\"${encodeFormulaValue(lineUserId)}\",{status}=\"processing\")`);
+  const inboxTable = getAirtableTable(env);
+  if (!apiKey || !baseId || !inboxTable || !lineUserId) {
+    return { ok: false, active: false, reason: "takeover_lookup_unconfigured", source: "none" };
+  }
+
+  const matrix = continuity?.matrix || {};
+  const matrixHandoff = matrix?.handoff_required === true &&
+    /^(?:per|owner|human|mmd_review)$/i.test(asString(matrix?.handoff_owner)) &&
+    !/^(?:resolved|released|resumed)$/i.test(asString(matrix?.conversation_stage));
+
+  const inboxUrl = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(inboxTable)}`);
+  inboxUrl.searchParams.set("pageSize", "1");
+  inboxUrl.searchParams.set("filterByFormula", `AND({line_user_id}="${encodeFormulaValue(lineUserId)}",{status}="processing")`);
+
+  const candidates = [
+    asString(matrix?.matrix_id),
+    asString(continuity?.conversation_hash),
+    asString(matrix?.conversation_scope),
+  ].filter(Boolean).slice(0, 3);
+  const controlsTable = asString(env.AIRTABLE_TABLE_KENJI_CONVERSATION_CONTROLS_ID || KENJI_CONVERSATION_CONTROLS_TABLE_FALLBACK);
+  const controlsUrl = candidates.length && controlsTable
+    ? new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(controlsTable)}`)
+    : null;
+  if (controlsUrl) {
+    controlsUrl.searchParams.set("pageSize", "3");
+    controlsUrl.searchParams.set("maxRecords", "3");
+    controlsUrl.searchParams.set(
+      "filterByFormula",
+      candidates.length === 1
+        ? `{conversation_id}="${encodeFormulaValue(candidates[0])}"`
+        : `OR(${candidates.map((value) => `{conversation_id}="${encodeFormulaValue(value)}"`).join(",")})`,
+    );
+    controlsUrl.searchParams.set("sort[0][field]", "updated_at");
+    controlsUrl.searchParams.set("sort[0][direction]", "desc");
+    ["conversation_id", "control_status", "action", "version", "updated_at"].forEach((field) => controlsUrl.searchParams.append("fields[]", field));
+  }
+
   try {
-    const response = await fetch(url.toString(), { method: "GET", headers: { authorization: `Bearer ${apiKey}` } });
-    if (!response.ok) return { ok: false, active: false, reason: "takeover_lookup_failed" };
-    const payload = await response.json().catch(() => ({}));
-    return { ok: true, active: Array.isArray(payload?.records) && payload.records.length > 0, reason: "" };
+    const headers = { authorization: `Bearer ${apiKey}` };
+    const [inboxResponse, controlsResponse] = await Promise.all([
+      fetch(inboxUrl.toString(), { method: "GET", headers }),
+      controlsUrl ? fetch(controlsUrl.toString(), { method: "GET", headers }) : Promise.resolve(null),
+    ]);
+    if (!inboxResponse.ok || (controlsResponse && !controlsResponse.ok)) {
+      return { ok: false, active: matrixHandoff, reason: "takeover_lookup_failed", source: matrixHandoff ? "matrix_handoff" : "lookup_failed" };
+    }
+
+    const inboxPayload = await inboxResponse.json().catch(() => ({}));
+    const inboxActive = Array.isArray(inboxPayload?.records) && inboxPayload.records.length > 0;
+    if (inboxActive) return { ok: true, active: true, reason: "console_processing", source: "console_inbox" };
+    if (matrixHandoff) return { ok: true, active: true, reason: "matrix_handoff", source: "conversation_matrix" };
+
+    if (controlsResponse) {
+      const controlsPayload = await controlsResponse.json().catch(() => ({}));
+      const latest = Array.isArray(controlsPayload?.records) ? controlsPayload.records[0] : null;
+      const status = asString(latest?.fields?.control_status).toLowerCase();
+      if (["active", "paused"].includes(status)) return { ok: true, active: true, reason: `control_${status}`, source: "conversation_control" };
+      if (["released", "resumed"].includes(status)) return { ok: true, active: false, reason: `control_${status}`, source: "conversation_control" };
+    }
+    return { ok: true, active: false, reason: "", source: "none" };
   } catch (_) {
-    return { ok: false, active: false, reason: "takeover_lookup_failed" };
+    return { ok: false, active: matrixHandoff, reason: "takeover_lookup_failed", source: matrixHandoff ? "matrix_handoff" : "lookup_failed" };
   }
 }
-
 function getStableLineMessageId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId);
 }
