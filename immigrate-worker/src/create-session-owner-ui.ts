@@ -238,14 +238,14 @@ function transformOwnerHtml(source: string): string {
   html = html.replace('<div class="mmd-cs-v14__inlinePicked">', '<div class="mmd-cs-v14__inlinePicked" data-op-model-preview>');
 
   html = html.replace(
-    '<input id="csAssignedPerson" type="hidden" value="Boss Per" />',
+    /<input id="csAssignedPerson"(?=[\s>])/,
     `<div class="mmd-cs-v14__essentialPayment">
         <label class="mmd-cs-v14__field"><span>การเรียกเก็บ</span><select data-op-payment-type><option value="deposit">มัดจำ</option><option value="full">เต็มจำนวน</option></select></label>
       </div>
       <input type="hidden" data-op-payment-method value="promptpay" />
       <input type="hidden" data-op-points-mode value="auto" />
       <input type="hidden" data-op-escalation-owner value="Boss Per" />
-      <input id="csAssignedPerson" type="hidden" value="Boss Per" />`
+      <input id="csAssignedPerson"`
   );
 
   html = html.replace(
