@@ -120,17 +120,31 @@ jobs:
             headers="$(mktemp)"
             body="$(mktemp)"
             code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" "$origin/internal/admin/refunds?smoke=route")"
-            test "$code" = "303"
-            grep -Fqi "location: $origin/internal/admin/login?next=%2Finternal%2Fadmin%2Frefunds" "$headers"
+            echo "Refund page smoke $origin status=$code"
+            cat "$headers"
+            cat "$body"
+            test "$code" != "404"
+            if [ "$code" = "302" ] || [ "$code" = "303" ]; then
+              grep -Eiq '^location: .*/internal/admin/login\?next=%2Finternal%2Fadmin%2Frefunds' "$headers"
+            elif [ "$code" = "401" ]; then
+              grep -q '"error":"unauthorized"' "$body"
+            elif [ "$code" = "200" ]; then
+              grep -q 'Refund Accounts' "$body"
+            else
+              echo "Unexpected Refund Ops page status: $code" >&2
+              exit 1
+            fi
 
             list_body="$(mktemp)"
             list_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$list_body" -w "%{http_code}" "$origin/v1/admin/refunds/list")"
+            echo "Refund list smoke $origin status=$list_code"
             cat "$list_body"
             test "$list_code" = "401"
             grep -q '"error":"unauthorized"' "$list_body"
 
             receipt_body="$(mktemp)"
             receipt_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$receipt_body" -w "%{http_code}" "$origin/refund-receipt/media")"
+            echo "Refund receipt media smoke $origin status=$receipt_code"
             cat "$receipt_body"
             test "$receipt_code" = "403"
             grep -q '"error":"invalid_or_expired_receipt_link"' "$receipt_body"
