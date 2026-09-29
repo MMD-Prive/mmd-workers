@@ -19,11 +19,31 @@ Real-event gates must use genuine production evidence. Unit tests, staging fixtu
 
 Record each proof in `ops/release-gates/app-sigil-always-on.json`. A `pass` row must include an evidence reference. The checker rejects a ready/enabled decision if any required proof is missing.
 
+## Final gate verifier
+
+Use the manual workflow `APP SIGIL final gate verifier` to close only the two remaining final gates:
+
+- `mmd_app_job_handoff` passes only when the workflow reads a production durable receipt from `https://sigil.mmdbkk.com/public/api/jobs/internal/handoffs` for the exact `handoff_model_record_id` and `handoff_job_id`. The receipt must be schema `mmd_public_job_board_v2.model_handoff_receipt`, source `validated_model_handoff`, and must not expose the raw handoff token, LINE ID, cookies, authorization, payment, or customer payload.
+- `campaign_destination_smoke` passes only when the same workflow smoke-tests the actual ad entry URL. If an exact URL is not supplied, the workflow builds the canonical MMD APP Job Board campaign URL through `/sigil/model/login?intent=job_board&return_to=public_job_board&next=https://sigil.mmdbkk.com/public/api/jobs`.
+
+The workflow writes an artifact named `app-sigil-final-gate-evidence`. Copy that artifact evidence into `ops/release-gates/app-sigil-always-on.json` before changing the manifest to `ready` or `campaign_enabled=true`.
+
+Required workflow inputs:
+
+- `handoff_model_record_id`: canonical Model record ID from the real post-LIFF handoff.
+- `handoff_job_id`: exact Job ID reached by that handoff.
+- `campaign_destination_url`: optional exact ad URL; leave blank to use the canonical generated MMD APP Job Board URL.
+- `campaign_id` and `campaign_source`: campaign metadata for the destination smoke.
+
+Required workflow secret:
+
+- `PUBLIC_ACCESS_INTERNAL_TOKEN` preferred, or `INTERNAL_TOKEN` fallback, matching the production public-access-worker internal owner token.
+
 ## Current status
 
 `HOLD`.
 
-The historical SIGIL Search hardening work proved renderer/privacy behavior but did not itself attach approved public-safe media to the currently returned Models. That data condition must be resolved with owner-reviewed media before the campaign is called ready.
+The historical SIGIL Search hardening work proved renderer/privacy behavior but did not itself attach approved public-safe media to the currently returned Models. That data condition has since been addressed for the currently accepted Atom IX and Book EI production search path, but the final always-on decision still requires the real MMD APP Job handoff receipt and real ad destination smoke evidence.
 
 ## Non-goals
 
