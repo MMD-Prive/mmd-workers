@@ -552,16 +552,7 @@ async function handleReceiptUpload(request, env) {
   payload.admin_job_url = adminUrl || null;
   payload.model_job_app_url = modelUrl || null;
   try {
-    if (needsTelegramDelivery) {
-      telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
-    } else {
-      telegram = {
-        ok:true,
-        skipped:true,
-        reason:"already_sent",
-        message_id:payload.owner_telegram_message_id || null,
-      };
-    }
+    telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
   } catch {
     telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
   }
@@ -730,6 +721,8 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   payload.customer_receipt_delivery_mode = notification.mode || null;
   payload.customer_receipt_delivery_at = new Date().toISOString();
   payload.customer_receipt_delivery_reason = notification.reason || null;
+  payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
+  payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
   payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
   payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
   payload.customer_confirmation_url = mediaUrl || null;
@@ -737,7 +730,16 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   payload.model_job_app_url = modelUrl || null;
 
   try {
-    telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
+    if (needsTelegramDelivery) {
+      telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
+    } else {
+      telegram = {
+        ok:true,
+        skipped:true,
+        reason:"already_sent",
+        message_id:payload.owner_telegram_message_id || null,
+      };
+    }
   } catch {
     telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
   }
@@ -769,6 +771,8 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
       skipped:notification.skipped === true,
       reason:notification.reason || null,
       mode:notification.mode || null,
+      status:Number(notification.status) || null,
+      transport_status:Number(notification.transport_status) || null,
     },
     owner_telegram:{
       sent:telegram.ok === true,
