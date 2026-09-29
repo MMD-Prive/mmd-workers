@@ -391,7 +391,7 @@ zone_name = "mmdbkk.com"
 # Owner-authorized customer conversation lane. Delivery stays bounded to the
 # reviewed Seed Pack / deterministic live-truth routes and the runtime kill switch.
 LINE_AUTO_REPLY_ENABLED = "true"
-LINE_KENJI_AI_ENABLED = "true"
+# Owner lock: customer-facing DM auto-reply is limited to direct Model name/code lookup.\nLINE_KENJI_MODEL_NAME_ONLY_MODE = "true"\nLINE_KENJI_AI_ENABLED = "true"
 # First Contact V2 takes over whenever the reviewed broad Seed Pack has no safe
 # answer, and remains the bounded fallback if that broad lane is deliberately muted.
 # LINE OA owns the add-friend greeting; Runtime Controls can stop all delivery immediately.
