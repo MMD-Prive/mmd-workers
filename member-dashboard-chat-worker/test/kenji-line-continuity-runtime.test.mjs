@@ -85,6 +85,19 @@ test("follow-up on renewal payment thread resolves to payment_status", async () 
   assert.ok(continuity.live_truth_domains.includes("payment"));
 });
 
+test("refund follow-up preserves refund context", async () => {
+  const continuity = await withFetch(async (url) => {
+    const parsed = new URL(String(url));
+    const filter = parsed.searchParams.get("filterByFormula") || "";
+    const hash = filter.match(/="([^"]+)/)?.[1] || "stored-hash";
+    const fields = { ...storedFields(hash), topic: "refund", last_customer_intent: "refund_request", conversation_stage: "handoff", awaiting_from: "mmd_review", pending_action: "continue human review/handoff", important_open_loops_json: JSON.stringify(["refund_request"]), handoff_required: true, handoff_owner: "Per", handoff_reason: "refund_request:protected_truth", live_truth_required: true, live_truth_domains: ["payment"] };
+    return Response.json({ records: [{ id: "recMatrix", fields }] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event("follow up"), currentIntent: "note_only", now: NOW }));
+  assert.equal(continuity.available, true);
+  assert.equal(continuity.effective_intent, "refund_request");
+  assert.equal(continuity.matrix.last_customer_intent, "refund_request");
+});
+
 test("post-turn matrix keeps open payment state without claiming verification", () => {
   const prior = buildConversationMatrixV1({
     matrix_id: "kcm1_line_test",
