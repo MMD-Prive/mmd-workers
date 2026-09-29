@@ -107,6 +107,8 @@ const JOBS = {
   root: "/internal/jobs",
   createJob: "/internal/admin/jobs/create-job",
   createJobLegacy: "/internal/jobs/create-job",
+  jobBoard: "/internal/admin/job-board",
+  jobBoardAlias: "/internal/admin/jobs/job-board",
   createLinks: "/internal/jobs/create-links",
   createInvite: "/internal/jobs/create-invite-link",
   customerConfirm: "/internal/jobs/customer-confirm",
@@ -2420,7 +2422,9 @@ function shouldUseInternalRoutesBridge(pathname: string): boolean {
     pathname === ADMIN_JOBS.createSession ||
     pathname === ADMIN_JOBS.createSessionLegacy ||
     pathname === JOBS.createJob ||
-    pathname === JOBS.createJobLegacy
+    pathname === JOBS.createJobLegacy ||
+    pathname === JOBS.jobBoard ||
+    pathname === JOBS.jobBoardAlias
   );
 }
 
