@@ -9,7 +9,9 @@ test("Create Job output labels payment URL before held Model URL", async () => {
   assert.match(js, /Customer Payment URL \/ ลิงก์ชำระเงินลูกค้า/);
   assert.match(js, /Model URL \/ ออกหลัง Official Verify/);
   assert.match(js, /ส่งลิงก์นี้ให้ลูกค้าชำระเงินก่อน/);
+  assert.match(js, /ทั้งงานที่สร้างเองและงานจากกระดานข่าว/);
   assert.match(js, /หน้า Create Job ไม่ปล่อย Model URL ก่อนสลิปผ่าน/);
+  assert.match(js, /รวมถึงงานจาก Job Board \/ กระดานข่าว/);
 });
 
 test("Create Job success copy no longer says customer and model URLs are both ready", async () => {
