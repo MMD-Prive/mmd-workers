@@ -914,7 +914,7 @@ service = "cal-sync-worker"
 [vars]
 INTERNAL_LOVABLE_ORIGIN = "https://mmd-os.lovable.app"
 MODEL_CARD_AUTO_ENABLED = "false"
-MODEL_CARD_DAILY_LIMIT = "20"
+# Optional comma/space-separated canonical Airtable Model record IDs for a controlled production pilot. Empty means no additional allowlist.\nMODEL_CARD_PILOT_MODEL_IDS = ""\nMODEL_CARD_DAILY_LIMIT = "20"
 # Approved brand assets must exist before enabling generation. No public URLs.
 MODEL_CARD_MMD_LOGO_KEY = "studio-card-brand/mmd-approved.png"
 MODEL_CARD_SIGIL_LOGO_KEY = "studio-card-brand/sigil-v4.webp"
