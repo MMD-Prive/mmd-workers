@@ -39,11 +39,38 @@ export async function enrichPaymentReviewContext(items, proofs, { list, payments
     const linkedSessions = ids(proof.session || proof.Session);
     const clientIds = [...new Set([...ids(proof.client || proof.Client), ...ids(p.Client), ...ids(s.Client)])];
     const expected = amount(p.amount_thb ?? p.Amount);
+    const serviceTotal = amount(s.amount_thb ?? s.Amount ?? s["Amount"]);
+    const evidenceAmount = amount(item.evidence_amount_thb);
+    const minimumDeposit = stage === "deposit" && serviceTotal !== null ? Math.ceil(serviceTotal * 0.30) : null;
+    const depositPercent = stage === "deposit" && serviceTotal !== null && evidenceAmount !== null
+      ? Number(((evidenceAmount / serviceTotal) * 100).toFixed(2))
+      : null;
+    const depositShortfall = minimumDeposit !== null && evidenceAmount !== null && evidenceAmount < minimumDeposit
+      ? minimumDeposit - evidenceAmount
+      : 0;
+    const depositReviewState = stage !== "deposit" || evidenceAmount === null || serviceTotal === null
+      ? null
+      : evidenceAmount > serviceTotal
+        ? "over_service_total"
+        : evidenceAmount >= serviceTotal
+          ? "full_amount_received"
+          : evidenceAmount < minimumDeposit
+            ? "under_standard_owner_review"
+            : "standard_met";
+    const reviewFlags = [];
     const issues = [];
     if (clientIds.length > 1) issues.push("canonical_client_link_ambiguous");
     if (!stage) issues.push("canonical_payment_stage_missing");
     if (expected === null) issues.push("canonical_payment_amount_missing");
-    else if (item.evidence_amount_thb != null && Math.abs(expected - item.evidence_amount_thb) > 0.009) issues.push("payment_amount_mismatch");
+    if (stage === "deposit") {
+      if (serviceTotal === null) issues.push("canonical_service_amount_missing");
+      if (expected !== null && evidenceAmount !== null && Math.abs(expected - evidenceAmount) > 0.009) reviewFlags.push("deposit_amount_differs_from_intent");
+      if (depositReviewState === "under_standard_owner_review") reviewFlags.push("deposit_under_standard");
+      if (depositReviewState === "full_amount_received") reviewFlags.push("deposit_full_amount_received");
+      if (depositReviewState === "over_service_total") issues.push("deposit_exceeds_service_total");
+    } else if (expected !== null && evidenceAmount !== null && Math.abs(expected - evidenceAmount) > 0.009) {
+      issues.push("payment_amount_mismatch");
+    }
     if (serviceStages.has(stage) && !session) issues.push("canonical_session_context_missing");
     if (linkedSessions.length > 1 || (session && linkedSessions.length === 1 && linkedSessions[0] !== session.id)) issues.push("payment_context_mismatch");
     const status = text(p["Payment Status"] || p.status).toLowerCase();
@@ -65,6 +92,14 @@ export async function enrichPaymentReviewContext(items, proofs, { list, payments
       session_id: sessionId,
       payment_stage: stage,
       expected_amount_thb: expected,
+      service_total_thb: serviceTotal,
+      deposit_standard_percent: stage === "deposit" ? 30 : null,
+      deposit_standard_minimum_thb: minimumDeposit,
+      deposit_received_percent: depositPercent,
+      deposit_shortfall_thb: depositShortfall,
+      deposit_review_state: depositReviewState,
+      owner_attention_required: reviewFlags.length > 0,
+      review_flags: reviewFlags,
       payment_status: status,
       settlement_recovery: settlementRecovery,
       package_code: text(p.package_code),
