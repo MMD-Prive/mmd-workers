@@ -136,7 +136,7 @@ VIP ไม่ใช่แพ็กเกจที่ซื้อได้ แล
 
 ## 10. CARE BACK 2026 — Final Lock (19 August 2026)
 
-CARE BACK เป็นสิทธิ์ดูแลกลับ ไม่ใช่ mass discount, membership package หรือ automatic approval เส้นทาง canonical คือ `/promotion/6-years-care-back` และใช้ policy เดียวกันตลอด Birthday window ถึง 31 สิงหาคมและ CARE BACK CONTINUES ตั้งแต่ 1–30 กันยายน 2026 หลัง 30 กันยายนห้ามสร้าง claim ใหม่ แต่ claim เดิมที่ตรวจสอบแล้ว resume ต่อได้
+CARE BACK เป็นสิทธิ์ดูแลกลับ ไม่ใช่ mass discount, membership package หรือ automatic approval เส้นทาง canonical คือ `/promotion/6-years-care-back` และใช้ policy เดียวกันตลอด Birthday window ถึง 31 สิงหาคมและ CARE BACK CONTINUES ตั้งแต่ 1 กันยายน–31 ตุลาคม 2026 หลัง 31 ตุลาคมห้ามสร้าง claim ใหม่ แต่ claim เดิมที่ตรวจสอบแล้ว resume ต่อได้
 
 ลำดับที่ Kenji ต้องอธิบาย:
 
