@@ -250,6 +250,7 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
     assert.match(payload.confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
     assert.equal(payload.money_truth_mutated, false);
     assert.equal(payload.line_notification.sent, true);
+    assert.equal(payload.owner_telegram.skipped, true);
     assert.equal(lineCalls.length, 1);
     assert.equal(lineCalls[0].url, "https://member-dashboard-chat-worker.local/__internal/line/refund-receipt-notify");
     assert.equal(lineCalls[0].headers["x-mmd-service-binding"], "admin-worker");
@@ -269,6 +270,10 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
     assert.equal(stored.customer_receipt_delivery_status, "sent");
     assert.equal(stored.customer_receipt_delivery_mode, "image");
     assert.equal(stored.customer_receipt_confirmation_url_issued, true);
+    assert.match(stored.customer_confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
+    assert.match(stored.admin_job_url, /\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-001$/);
+    assert.match(stored.model_job_app_url, /\/sigil\/model\/login\?/);
+    assert.equal(stored.owner_telegram_delivery_status, "skipped");
     assert.equal(stored.money_truth_mutated, false);
 
     const media = await handleRefundOpsRequest(new Request(lineCalls[0].body.receipt_url), e, { isAuthed:async () => false });
@@ -276,6 +281,120 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
     assert.equal(media.headers.get("content-type"), "image/jpeg");
     assert.match(media.headers.get("cache-control"), /no-store/);
     assert.deepEqual([...new Uint8Array(await media.arrayBuffer())], [1,2,3,4]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("refund receipt upload sends owner Telegram completed pack with customer, admin, and model URLs", async () => {
+  const originalFetch = globalThis.fetch;
+  const objects = new Map();
+  const telegramCalls = [];
+  const record = {
+    id:"recRefundTelegram",
+    fields:{
+      inbox_id:"refund_telegram_pack",
+      line_user_id:LINE_ID,
+      member_name:"คุณ SVIP",
+      status:"new",
+      admin_note:"Refund account received",
+      payload_json:JSON.stringify({
+        schema:"mmd_refund_bank_detail_v1",
+        purpose:"refund",
+        job_id:"JOB-FILM-J-20260929",
+        session_id:"sess_film_j",
+        model_name:"Film J",
+        customer_name:"คุณ SVIP",
+        refund_amount_due:"4500",
+        refund_currency:"THB",
+        money_truth_mutated:false,
+      }),
+    },
+  };
+  const bucket = {
+    async put(key, value, options = {}) {
+      const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value);
+      objects.set(key, { bytes, options });
+    },
+    async get(key) {
+      const found = objects.get(key);
+      if (!found) return null;
+      return {
+        body:found.bytes,
+        size:found.bytes.byteLength,
+        httpMetadata:{ contentType:found.options?.httpMetadata?.contentType || "application/octet-stream" },
+      };
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (url.hostname === "api.telegram.org") {
+      const body = JSON.parse(init.body || "{}");
+      telegramCalls.push({ url:String(input), body });
+      return Response.json({ ok:true, result:{ message_id:99 } });
+    }
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    if (method === "PATCH") {
+      const body = JSON.parse(init.body || "{}");
+      Object.assign(record.fields, body.fields || {});
+      return Response.json({ id:record.id, fields:record.fields });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+
+  const e = env({
+    LINE_SLIP_EVIDENCE:bucket,
+    TELEGRAM_BOT_TOKEN:"123:telegram-token",
+    TELEGRAM_CHAT_ID:"-1003546439681",
+    TG_THREAD_REFUNDS:"22",
+  });
+
+  try {
+    const form = new FormData();
+    form.append("inbox_id", "refund_telegram_pack");
+    form.append("refund_amount", "4500");
+    form.append("refund_currency", "THB");
+    form.append("refund_note", "คืนยอดจากงานที่ยกเลิก");
+    form.append("refund_reference", "KTB-20260929-FILMJ");
+    form.append("file", new File([new Uint8Array([9,9])], "receipt.jpg", { type:"image/jpeg" }));
+
+    const response = await handleRefundOpsRequest(new Request("https://www.mmdbkk.com/v1/admin/refunds/receipt", {
+      method:"POST",
+      body:form,
+    }), e, { isAuthed:async () => true });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.match(payload.customer_confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
+    assert.match(payload.admin_job_url, /^https:\/\/www\.mmdbkk\.com\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-20260929$/);
+    assert.match(payload.model_job_app_url, /^https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
+    assert.match(payload.model_job_app_url, /intent=job_board/);
+    assert.match(payload.model_job_app_url, /job_id=JOB-FILM-J-20260929/);
+    assert.equal(payload.owner_telegram.sent, true);
+    assert.equal(payload.owner_telegram.message_id, 99);
+    assert.equal(telegramCalls.length, 1);
+    const sent = telegramCalls[0].body;
+    assert.equal(sent.chat_id, "-1003546439681");
+    assert.equal(sent.message_thread_id, 22);
+    assert.match(sent.text, /HYPE · REFUND COMPLETED/);
+    assert.match(sent.text, /Customer receipt URL/);
+    assert.match(sent.text, /Admin job URL/);
+    assert.match(sent.text, /Model job\/app URL for Film J/);
+    assert.match(sent.text, /ส่งเฉพาะ Model job\/app URL ให้น้อง/);
+    assert.doesNotMatch(sent.text, /ส่ง.*URL สลิปลูกค้า/);
+    assert.equal(sent.reply_markup.inline_keyboard.length, 3);
+    assert.equal(sent.reply_markup.inline_keyboard[0][0].text, "Customer receipt");
+    assert.equal(sent.reply_markup.inline_keyboard[1][0].text, "Open admin job");
+    assert.equal(sent.reply_markup.inline_keyboard[2][0].text, "Send to Film J");
+    const stored = JSON.parse(record.fields.payload_json);
+    assert.equal(stored.owner_telegram_delivery_status, "sent");
+    assert.equal(stored.owner_telegram_message_id, 99);
+    assert.equal(stored.customer_confirmation_url, payload.customer_confirmation_url);
+    assert.equal(stored.admin_job_url, payload.admin_job_url);
+    assert.equal(stored.model_job_app_url, payload.model_job_app_url);
+    assert.equal(stored.money_truth_mutated, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -294,5 +413,6 @@ test("refund owner page renders a clickable upload trigger and well-formed refer
   assert.match(body, /data-upload-trigger>อัปโหลดสลิปคืน<\/button>/);
   assert.match(body, /data-file type="file" accept="image\/jpeg,image\/png,image\/webp"/);
   assert.match(body, /trigger\.onclick=\(\)=>file\.click\(\)/);
+  assert.match(body, /Model Job\/App URL/);
   assert.doesNotMatch(body, /data-refund-ref placeholder="optional" value="[^"]*>\<\/div>/);
 });
