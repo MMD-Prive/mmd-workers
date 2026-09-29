@@ -5,7 +5,7 @@ export const KENJI_LV5_LIVE_RPC_PATH = "/v1/internal/kenji/operational-context/l
 
 const BOOKING_SIGNAL_RE = /(จอง|book|booking|reserve|นัด|คิว|ว่าง|available|availability|เช็กคิว|เช็คคิว|รับงาน)/i;
 const BOOKING_STATUS_RE = /(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i;
-const PAYMENT_SIGNAL_RE = /(สลิป|โอน|จ่าย|ชำระ|payment|paid|deposit|มัดจำ|เครดิต|credit)/i;
+const PAYMENT_SIGNAL_RE = /(สลิป|โอน|จ่าย|ชำระ|payment|paid|deposit|มัดจำ|เครดิต|credit)/i;\nconst PAYMENT_TERMS_RE = /(?:จ่าย|ชำระ).{0,16}(?:เต็ม(?:จำนวน)?|ทั้งหมด)|(?:เต็ม(?:จำนวน)?).{0,16}(?:เลย|ไหม|มั้ย|หรือ|เหรอ|หรอ|ต้อง)|full\\s*payment/i;
 const DEPOSIT_TRIGGER_RE = /(?:มัดจำ|deposit)/i;
 const LOCATION_PREFIX_RE = /(?:^|[\s,])(?:โซน|แถว|สถานที่|ที่)\s*[:：-]?\s*([^,\n]{2,80})/i;
 const DATE_WORDS_RE = /(วันนี้|คืนนี้|พรุ่งนี้|มะรืน|วันที่|วัน\s*(?:จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์|อาทิตย์)|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)/i;
