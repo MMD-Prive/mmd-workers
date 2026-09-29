@@ -881,3 +881,113 @@ test("recovery retries failed LINE delivery without sending duplicate HYPE Teleg
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("recovery persists LINE 429 quota diagnosis without duplicating HYPE", async () => {
+  const originalFetch = globalThis.fetch;
+  const inboxId = "refund_retry_quota";
+  const key = `owner-refund-receipts/2026/09/${encodeURIComponent(inboxId)}/receipt.jpg`;
+  const record = {
+    id:"recRetryQuota",
+    createdTime:"2026-09-29T05:42:38.000Z",
+    fields:{
+      inbox_id:inboxId,
+      line_user_id:LINE_ID,
+      member_name:"แมน",
+      status:"done",
+      admin_note:"Refund receipt already recovered",
+      payload_json:JSON.stringify({
+        purpose:"refund",
+        job_id:"JOB-8B799C2387-C1BC84",
+        owner_refund_amount:"3150",
+        owner_refund_currency:"THB",
+        receipt_r2_key:key,
+        receipt_uploaded_at:"2026-09-29T09:06:02.950Z",
+        receipt_mime_type:"image/jpeg",
+        receipt_byte_size:420000,
+        customer_receipt_delivery_status:"failed",
+        owner_telegram_delivery_status:"sent",
+        owner_telegram_message_id:3235,
+      }),
+    },
+  };
+  const bucket = {
+    async get(candidate) {
+      if (candidate !== key) return null;
+      return {
+        body:new Uint8Array([1,2,3]),
+        size:420000,
+        uploaded:new Date("2026-09-29T09:06:02.950Z"),
+        httpMetadata:{ contentType:"image/jpeg" },
+      };
+    },
+    async put() {},
+  };
+  let telegramCalls=0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (url.hostname === "api.telegram.org") {
+      telegramCalls += 1;
+      return Response.json({ ok:true, result:{ message_id:9999 } });
+    }
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    if (method === "PATCH") {
+      const body = JSON.parse(init.body || "{}");
+      Object.assign(record.fields, body.fields || {});
+      return Response.json({ id:record.id, fields:record.fields });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  const e=env({
+    LINE_SLIP_EVIDENCE:bucket,
+    MEMBER_DASHBOARD_CHAT_WORKER:{
+      async fetch() {
+        return Response.json({
+          ok:false,
+          error:"line_push_rate_limited",
+          status:429,
+          mode:"image",
+          quota:{
+            ok:true,
+            quota_type:"limited",
+            quota_value:1000,
+            total_usage:1000,
+            monthly_exhausted:true,
+            quota_http_status:200,
+            consumption_http_status:200,
+          },
+        }, { status:502 });
+      },
+    },
+    TELEGRAM_BOT_TOKEN:"123:telegram-token",
+    TELEGRAM_CHAT_ID:"-1003546439681",
+  });
+  try {
+    const response=await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/v1/admin/refunds/recover",{
+        method:"POST",
+        headers:{ "content-type":"application/json" },
+        body:JSON.stringify({ inbox_id:inboxId }),
+      }),
+      e,
+      { isAuthed:async()=>true },
+    );
+    const payload=await response.json();
+    assert.equal(response.status,200);
+    assert.equal(payload.ok,true);
+    assert.equal(payload.line_notification.sent,false);
+    assert.equal(payload.line_notification.status,429);
+    assert.equal(payload.line_notification.quota.monthly_exhausted,true);
+    assert.equal(payload.owner_telegram.reason,"already_sent");
+    assert.equal(payload.owner_telegram.message_id,3235);
+    assert.equal(telegramCalls,0);
+    const stored=JSON.parse(record.fields.payload_json);
+    assert.equal(stored.customer_receipt_delivery_http_status,429);
+    assert.equal(stored.customer_receipt_line_quota.monthly_exhausted,true);
+    assert.equal(stored.owner_telegram_message_id,3235);
+  } finally {
+    globalThis.fetch=originalFetch;
+  }
+});
