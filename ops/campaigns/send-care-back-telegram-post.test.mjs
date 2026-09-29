@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   DEFAULT_INTERNAL_SEND_URL,
+  TELEGRAM_TOKEN_ENV_KEYS,
   buildCareBackTelegramPayload,
   resolveCareBackTelegramRuntimeEnv,
   sendCareBackTelegramPost,
@@ -49,6 +50,14 @@ test("keeps TELEGRAM_INTERNAL_TOKEN as highest-priority runtime token", () => {
   });
   assert.equal(runtime.endpoint, "https://telegram-worker.override/telegram/internal/send");
   assert.equal(runtime.token, "telegram-token");
+});
+
+test("accepts service-to-telegram token aliases when primary secrets are absent", () => {
+  for (const alias of TELEGRAM_TOKEN_ENV_KEYS.slice(3)) {
+    const runtime = resolveCareBackTelegramRuntimeEnv({ [alias]: `${alias.toLowerCase()}-token` });
+    assert.equal(runtime.endpoint, DEFAULT_INTERNAL_SEND_URL);
+    assert.equal(runtime.token, `${alias.toLowerCase()}-token`);
+  }
 });
 
 test("dry-run returns payload without network", async () => {
