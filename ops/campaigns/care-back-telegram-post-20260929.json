@@ -1,0 +1,22 @@
+{
+  "schema": "mmd.care_back_telegram_post.v1",
+  "campaign_id": "care-back-telegram-20260929",
+  "status": "ready_to_send",
+  "destination": {
+    "worker_url": "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send",
+    "flow": "care_back",
+    "topic": "MMD • Payments (Membership)",
+    "disable_web_page_preview": false
+  },
+  "copy": {
+    "parse_mode": "HTML",
+    "text": "<b>MMD PRIVÉ · CARE BACK</b>\n\nสำหรับสมาชิกที่เคยอยู่กับ MMD มาก่อน ตอนนี้สามารถกลับมาเช็กสิทธิ์และเขียน Care Back ได้ผ่าน MY MMD ครับ\n\nสิ่งที่ทำได้ตอนนี้:\n• เช็กสถานะสมาชิกจากข้อมูลที่ระบบยืนยันแล้ว\n• เขียน Care Back / Wish เพื่อให้ MMD ดูแลต่อ\n• รับสิทธิ์ Care Back ตามเงื่อนไขที่ระบบตรวจได้\n• ไปต่อที่ Verify / Membership / Payment Center ได้จากหน้าเดียว\n\n<b>เริ่มที่ MY MMD</b>\nhttps://www.mmdbkk.com/member/login\n\nหมายเหตุ: สิทธิ์สมาชิก คูปอง การชำระเงิน และสถานะบัญชี จะอ้างอิงข้อมูลที่ MMD ตรวจสอบในระบบเท่านั้นครับ"
+  },
+  "safety": {
+    "does_not_grant_membership": true,
+    "does_not_confirm_payment": true,
+    "does_not_expose_private_profiles": true,
+    "requires_internal_token": true,
+    "owner_reviewed_for_public_channel": true
+  }
+}
