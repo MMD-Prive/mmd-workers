@@ -41,13 +41,12 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.ok, true);
   assert.equal(payload.data.next_screen_key, "status_unresolved");
   assert.equal(payload.data.screen.key, "status_unresolved");
-  assert.match(payload.data.screen.copy, /ยืนยัน LINE สำเร็จแล้ว/);
-  assert.match(payload.data.screen.copy, /อีเมลเดิม เบอร์โทร Telegram หรือ Member ID/);
-  assert.match(payload.data.screen.copy, /โน้ตเดิมของ Per/);
-  assert.match(payload.data.screen.copy, /LINE OFC note \/ Per note \/ Console Inbox note/);
-  assert.match(payload.data.screen.copy, /วันที่ล่าสุดที่ Per ทับไว้ในโน้ต/);
-  assert.match(payload.data.screen.copy, /ไม่เดา Tier, Points, Wallet/);
-  assert.doesNotMatch(payload.data.screen.copy, /Guest/);
+  assert.deepEqual(payload.data.screen.copy.split("\n"), [
+    "ยืนยัน LINE สำเร็จแล้ว",
+    "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
+  ]);
+  assert.match(payload.data.screen.copy, /Verify/);
+  assert.doesNotMatch(payload.data.screen.copy, /Per note|LINE OFC note|Console Inbox|Tier|Points|Wallet|Private Access|Guest/);
 
   assert.deepEqual(payload.data.my_mmd_safe_state, {
     line_verified: true,
@@ -76,7 +75,7 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal("membership_date_customer_input_authority" in payload.data, false);
 });
 
-test("unmatched status exposes recovery evidence action before signup using the live backend fields", async () => {
+test("unmatched status exposes compact Verify action before signup using the live backend fields", async () => {
   const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
   const response = jsonResponse({
     ok: true,
@@ -93,12 +92,16 @@ test("unmatched status exposes recovery evidence action before signup using the 
 
   assert.deepEqual(payload.data.screen.actions[0], {
     id: "recovery_evidence",
-    label: "เคยเป็นสมาชิก · กรอกอีเมล / เบอร์ / Telegram / Member ID",
+    label: "Verify",
     endpoint: "/member/api/liff/recovery",
     method: "POST",
     fields: RECOVERY_REQUIRED_FIELDS,
   });
-  assert.equal(payload.data.screen.actions[1].id, "signup");
+  assert.deepEqual(payload.data.screen.actions[1], {
+    id: "signup",
+    label: "สมัครสมาชิก",
+    endpoint: "/member/api/liff/intent",
+  });
 });
 
 test("resolved MY MMD status is not overwritten by safe pending state", async () => {
