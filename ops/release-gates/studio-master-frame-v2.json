@@ -49,7 +49,10 @@
       "customer_class": "SVIP",
       "model_payout_thb": 25000,
       "payout_status": "paid_owner_attested",
-      "bind_after_real_liff_identity": true
+      "bind_after_real_liff_identity": true,
+      "historical_work_label": "NP",
+      "normalized_work_type": "PN",
+      "alias_rule": "NP = PN"
     }
   },
   "notes": [
@@ -57,6 +60,7 @@
     "Do not fabricate Gaz identity, LINE subject, height/weight, category, or media to satisfy the production gate.",
     "Treat Gaz and Gazz as one person. Do not create a duplicate historical job or duplicate the 25,000 THB payout.",
     "The 25,000 THB figure is Gaz's model payout and is already paid by owner attestation.",
-    "MODEL_CARD_AUTO_ENABLED remains false until controlled Gaz E2E evidence is complete."
+    "MODEL_CARD_AUTO_ENABLED remains false until controlled Gaz E2E evidence is complete.",
+    "Historical MMD work label NP is an alias of PN and must normalize to PN."
   ]
 }
