@@ -21,7 +21,7 @@ const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBERSHIP_SIGNUP_URL = "/sigil/member/membership?source=line&intent=signup";
 const MEMBERSHIP_RENEW_URL = "/sigil/member/membership?source=line&intent=renew";
 const CARE_BACK_WISH_URL = "/promotion/6-years-care-back/wish";
-const CARE_BACK_CONTINUATION_END_AT = "2026-09-30T16:59:59.999Z";
+const CARE_BACK_CONTINUATION_END_AT = "2026-10-31T16:59:59.999Z";
 
 const ROUTES = new Set([
   `${API_PREFIX}dashboard`,
