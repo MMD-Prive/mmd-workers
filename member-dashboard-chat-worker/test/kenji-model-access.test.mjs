@@ -1310,3 +1310,43 @@ test("unknown Model and disabled campaign never send the access promotion", asyn
   assert.equal(disabled.text, "");
   assert.equal(calls.length, 1);
 });
+
+
+test("active Private Payment context wins over fresh pricing intake", () => {
+  const continuity = {
+    decision: "continuation",
+    effective_intent: "pricing_review",
+    matrix: {
+      matrix_status: "active",
+      conversation_stage: "awaiting_payment_verification",
+      topic: "payment",
+      pending_action: "continue payment",
+      pending_reference: "payment_abc",
+      continuity_summary: "Private Payment link already sent for this booking",
+      payload_json: {
+        active_model_v1: { model_code: "MX17", working_name: "Jasper" },
+      },
+    },
+  };
+  const reply = buildKenjiLineReply(lineEvent("เท่าไหร่"), {}, { continuity });
+  assert.match(reply, /Private Payment/);
+  assert.match(reply, /ไม่ต้องส่งวัน เวลา โซน หรือระยะเวลาใหม่/);
+  assert.doesNotMatch(reply, /ถ้าหมายถึงเรทของ Jasper/);
+});
+
+test("stale payment context never overrides normal pricing intake", () => {
+  const continuity = {
+    decision: "stale_refresh",
+    effective_intent: "pricing_review",
+    matrix: {
+      matrix_status: "stale",
+      conversation_stage: "awaiting_payment_verification",
+      topic: "payment",
+      pending_action: "continue payment",
+      continuity_summary: "Private Payment link already sent",
+    },
+  };
+  const reply = buildKenjiLineReply(lineEvent("เท่าไหร่"), {}, { continuity });
+  assert.doesNotMatch(reply, /Private Payment เดิม/);
+  assert.match(reply, /วัน เวลา โซน และระยะเวลา/);
+});
