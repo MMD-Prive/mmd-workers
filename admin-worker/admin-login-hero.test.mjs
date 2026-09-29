@@ -77,6 +77,15 @@ test("admin login preserves selected internal work through the return path", asy
   assert.equal(normalizeNext("/internal/admin/jobs/all?token=secret"), "/internal/admin/control-room");
 });
 
+test("admin login preserves Refund Ops return path and exact case query", () => {
+  const refund = "/internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload";
+  assert.equal(normalizeNext(refund), refund);
+  assert.equal(
+    normalizeNext("/internal/admin/refunds?token=secret"),
+    "/internal/admin/control-room",
+  );
+});
+
 test("admin login next route fails closed", () => {
   assert.equal(normalizeNext("https://evil.example/internal/admin/control-room"), "/internal/admin/control-room");
   assert.equal(normalizeNext("//evil.example/internal/admin/control-room"), "/internal/admin/control-room");

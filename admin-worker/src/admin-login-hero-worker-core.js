@@ -123,6 +123,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/mmd-review",
   MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
+  "/internal/admin/refunds",
   "/internal/admin/payments/historical-backfill",
   "/internal/admin/shop/orders",
   "/internal/admin/jobs/create-session",
