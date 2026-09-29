@@ -164,6 +164,9 @@ test("friendly preview is discovery-only and never calls a generative reply endp
   assert.match(friendly, /ลองถามก่อนสอนซ้ำ/);
   assert.match(friendly, /function score/);
   assert.match(friendly, /customer_answer/);
+  assert.match(friendly, /API \+ "\/retrieve"/);
+  assert.match(friendly, /published_per_correction/);
+  assert.match(friendly, /knowledgeStage\(card\) === "published"/);
   assert.doesNotMatch(friendly, /\/v1\/internal\/kenji\/reply|\/chat\/completion|openai/i);
 });
 

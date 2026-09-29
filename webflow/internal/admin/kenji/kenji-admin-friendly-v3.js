@@ -13,7 +13,7 @@
   var ALL_AUDIENCES = ["Guest", "Standard", "Premium", "Red Card", "VIP", "SVIP", "Black Card", "Inactive / Expired"];
   var MEMBER_AUDIENCES = ["Standard", "Premium", "Red Card", "VIP", "SVIP", "Black Card"];
   var PRIVATE_AUDIENCES = ["VIP", "SVIP", "Black Card"];
-  var state = { cards: [], teachMode: "answer", pendingKnowledge: null, pendingKnowledgeMeta: null, pendingModel: null, pendingModelIdentity: null, busy: false, previewTimer: null, historyTurns: [], historyMemory: null };
+  var state = { cards: [], teachMode: "answer", pendingKnowledge: null, pendingKnowledgeMeta: null, pendingModel: null, pendingModelIdentity: null, busy: false, previewTimer: null, previewSeq: 0, historyTurns: [], historyMemory: null };
 
   var style = document.createElement("style");
   style.textContent = [
@@ -401,8 +401,74 @@
 
   function loadKnowledge() { return request(API + "/list?limit=100").then(function (data) { state.cards = data.cards || data.items || []; renderCounts(); var input = root.querySelector("#ksoPreviewInput"); if (input && input.value.trim()) renderPreview(input.value); }).catch(function () { state.cards = []; renderCounts(); }); }
   function renderCounts() { var draft = 0, live = 0; state.cards.forEach(function (card) { if (knowledgeStage(card) === "published") live += 1; else draft += 1; }); setText("ksoDraftCount", String(draft)); setText("ksoLiveCount", String(live)); }
-  function renderPreview(query) { var node = root.querySelector("#ksoPreviewResults"); if (!node) return; var q = String(query || "").trim().toLowerCase(); if (!q) { node.innerHTML = '<div class="ka__empty">พิมพ์คำถามเพื่อค้น Knowledge</div>'; return; } var items = state.cards.map(function (card) { return { card: card, score: score(card, q) }; }).filter(function (item) { return item.score > 0; }).sort(function (a,b) { return b.score-a.score; }).slice(0,6); node.innerHTML = items.length ? items.map(function (item) { var card=item.card,id=card.knowledge_id||card.id||""; return '<article class="kso-result"><b>'+esc(card.title||id)+'</b><span>'+esc(card.category||"knowledge")+' · '+esc(knowledgeStage(card))+'</span><p>'+esc(card.customer_answer||card.answer||"ยังไม่มี customer answer")+'</p><button type="button" data-kso-open-knowledge="'+attr(id)+'">เปิดดูรายละเอียด</button></article>'; }).join("") : '<div class="ka__empty">ยังไม่พบ Knowledge ที่ใกล้เคียง · สอนได้เลย</div>'; }
-  function score(card,q) { var hay=[card.title,card.knowledge_id,card.id,card.customer_answer,card.answer,card.internal_instruction,card.category,JSON.stringify(card.payload_json||{})].join(" ").toLowerCase(),tokens=q.split(/\s+/).filter(Boolean),result=hay.includes(q)?8:0; tokens.forEach(function (token) { if (hay.includes(token)) result += token.length>3?3:1; }); return result; }
+  function renderPreview(query) {
+    var node = root.querySelector("#ksoPreviewResults");
+    if (!node) return;
+    var q = String(query || "").trim();
+    if (!q) { node.innerHTML = '<div class="ka__empty">พิมพ์คำถามเพื่อค้น Knowledge</div>'; return; }
+    var seq = ++state.previewSeq;
+    node.innerHTML = '<div class="ka__empty">กำลังค้นเฉพาะ Knowledge ที่ Publish แล้ว…</div>';
+    request(API + "/retrieve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: q, language: "th", limit: 6 })
+    }).then(function (data) {
+      if (seq !== state.previewSeq) return;
+      renderPreviewItems(node, data.matches || data.items || [], false);
+    }).catch(function () {
+      if (seq !== state.previewSeq) return;
+      var items = state.cards
+        .filter(function (card) { return knowledgeStage(card) === "published"; })
+        .map(function (card) { return { card: card, score: score(card, q) }; })
+        .filter(function (item) { return item.score > 0; })
+        .sort(function (a,b) { return b.score-a.score; })
+        .slice(0,6)
+        .map(function (item) {
+          var card = item.card;
+          return {
+            knowledge_id: card.knowledge_id || card.id || "",
+            title: card.title || "",
+            category: card.category || "knowledge",
+            customer_answer: card.customer_answer || card.answer || "",
+            workflow_stage: knowledgeStage(card),
+            score: item.score,
+            match_reason: correctionMeta(card).eligible ? "published_per_correction" : "published_knowledge",
+            owner_correction: correctionMeta(card).eligible
+          };
+        });
+      renderPreviewItems(node, items, true);
+    });
+  }
+
+  function renderPreviewItems(node, items, fallback) {
+    node.innerHTML = items.length ? items.map(function (item) {
+      var id = item.knowledge_id || item.id || "";
+      var correction = item.owner_correction === true || item.match_reason === "published_per_correction";
+      var label = (item.category || "knowledge") + " · " + (item.workflow_stage || "published") + (correction ? " · Per Correction" : "") + (fallback ? " · local fallback" : "");
+      return '<article class="kso-result"><b>'+esc(item.title||id)+'</b><span>'+esc(label)+'</span><p>'+esc(item.customer_answer||item.answer||"ยังไม่มี customer answer")+'</p><button type="button" data-kso-open-knowledge="'+attr(id)+'">เปิดดูรายละเอียด</button></article>';
+    }).join("") : '<div class="ka__empty">ยังไม่พบ Knowledge ที่ Publish แล้วและใกล้เคียง · สอนได้เลย</div>';
+  }
+
+  function correctionMeta(card) {
+    var payload = card && card.payload_json && typeof card.payload_json === "object" ? card.payload_json : {};
+    var correction = payload && payload.per_correction && typeof payload.per_correction === "object" ? payload.per_correction : {};
+    return {
+      eligible: correction.learning_rule === "prefer_current_owner_correction_when_context_matches" && correction.protected_truth_override === false && Boolean(correction.customer_example) && Boolean(correction.corrected_answer),
+      customerExample: String(correction.customer_example || "")
+    };
+  }
+
+  function score(card,q) {
+    var meta = correctionMeta(card), query = String(q || "").toLowerCase(), correction = meta.customerExample.toLowerCase();
+    var hay=[card.title,card.knowledge_id,card.id,card.customer_answer,card.answer,card.internal_instruction,card.category].join(" ").toLowerCase(),tokens=query.split(/\s+/).filter(Boolean),result=hay.includes(query)?8:0;
+    tokens.forEach(function (token) { if (hay.includes(token)) result += token.length>3?3:1; });
+    if (meta.eligible && correction) {
+      if (correction === query) result += 96;
+      else if (correction.includes(query) || query.includes(correction)) result += 72;
+      else tokens.forEach(function (token) { if (token.length > 1 && correction.includes(token)) result += 8; });
+    }
+    return result;
+  }
   function openKnowledge(id) { showTab("knowledge"); setTimeout(function () { var button=root.querySelector('[data-id="'+cssEscape(id)+'"]'); if(button)button.click(); },80); }
 
   function softenExistingUi() {
