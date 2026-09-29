@@ -14,6 +14,16 @@ const scalar = (v) => String(v?.name ?? v ?? "").trim();
 const lower = (v) => scalar(v).toLowerCase();
 const exclusive = (v) => ({ gws: "GWs", ems: "EMs" })[lower(v)] || "";
 
+function displayNameWithoutSuffix(rawName, suffix) {
+  const name = scalar(rawName);
+  const code = scalar(suffix).toUpperCase();
+  if (!name) return "";
+  if (/^[A-Z]{2}$/.test(code) && name.toUpperCase().endsWith(" " + code)) {
+    return name.slice(0, -(code.length + 1)).trim();
+  }
+  return name;
+}
+
 export function projectCardDesign(record, env = {}) {
   const f = record?.fields || {};
   const missing = [];
@@ -59,6 +69,16 @@ const scalar = (v) => String(v?.name ?? v ?? "").trim();
 const lower = (v) => scalar(v).toLowerCase();
 const exclusive = (v) => ({ gws: "GWs", ems: "EMs" })[lower(v)] || "";
 
+function displayNameWithoutSuffix(rawName, suffix) {
+  const name = scalar(rawName);
+  const code = scalar(suffix).toUpperCase();
+  if (!name) return "";
+  if (/^[A-Z]{2}$/.test(code) && name.toUpperCase().endsWith(" " + code)) {
+    return name.slice(0, -(code.length + 1)).trim();
+  }
+  return name;
+}
+
 export function projectCardDesign(record, env = {}) {
   const f = record?.fields || {};
   const missing = [];
@@ -89,9 +109,9 @@ export function projectCardDesign(record, env = {}) {
     title = match ? `${field}${match[1]}` : "";
     if (!title) missing.push("assigned_run_number");
   } else {
-    // Standard, Premium, Foreign, Travel and Extreme print the canonical Model ID/name
-    // exactly as stored in working_name. Do not replace it with a template/category label,
-    // synthesize a suffix, or strip a suffix/letter that is part of the real Model ID.
+    // Standard, Premium, Foreign, Travel and Extreme use the canonical Model ID/name
+    // exactly as stored in working_name. Do not substitute a template/category label,
+    // synthesize a suffix, or strip a letter that belongs to the real Model ID.
     title = rawName;
   }
   if (!title || title.length > 40 || /[\r\n\u0000-\u001f]/.test(title)) missing.push("working_name");
