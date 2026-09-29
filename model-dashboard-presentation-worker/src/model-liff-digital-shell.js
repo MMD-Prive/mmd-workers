@@ -52,10 +52,14 @@ export function modelLiffDigitalBootstrapHtml({
         model_record_id: String(jobBoard.model_record_id || ""),
       }
     : null;
+  const directAssignedModel = Boolean(safeJobBoard && safeJobBoard.model_record_id);
+  const directConfirmedJob = Boolean(returnTo);
+  const publicJobApplicant = Boolean(safeJobBoard && !directAssignedModel);
+  const selectedJobMode = directAssignedModel || directConfirmedJob;
   const jobBoardScript = safeJobBoard ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
-    status.textContent="กำลังเปิดงานที่คุณสนใจ…";
+    status.textContent="กำลังเปิดรายละเอียดงาน…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
@@ -73,7 +77,7 @@ export function modelLiffDigitalBootstrapHtml({
   const returnScript = returnTo ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
-    status.textContent="กำลังเชื่อมงานนี้กับ MMD APP…";
+    status.textContent="กำลังเปิดรายละเอียดงาน…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
@@ -81,41 +85,41 @@ export function modelLiffDigitalBootstrapHtml({
   const primary = mode === "primary";
   const jobBoardMode = Boolean(safeJobBoard);
   const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : "";
-  const title = publicJobApplicant
-    ? "WELCOME V2 · สมัครงานนี้กับ MMD"
-    : jobBoardMode
-      ? (ownerAlias ? "กำลังเปิดงาน " + ownerAlias : "กำลังเปิดงาน MMD")
+  const title = selectedJobMode
+    ? "ลูกค้าเลือกคุณสำหรับงานนี้"
+    : publicJobApplicant
+      ? "WELCOME V2 · สมัครงานนี้กับ MMD"
       : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
-  const copy = publicJobApplicant
-    ? "คุณเข้ามาจากลิงก์งานแล้ว · MMD APP จะพาไปดูงานนี้และส่งความสนใจต่อ"
-    : jobBoardMode
-      ? "กำลังเชื่อมงานนี้กับ MMD APP"
+  const copy = selectedJobMode
+    ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MMD APP" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MMD APP")
+    : publicJobApplicant
+      ? "คุณเข้ามาจากลิงก์งานแล้ว · MMD APP จะพาไปดูงานนี้และส่งความสนใจต่อ"
       : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
-  const success = publicJobApplicant
-    ? "Welcome พร้อม · กำลังเปิดงานที่คุณสนใจ…"
-    : jobBoardMode
-      ? (ownerAlias ? "กำลังเปิดงาน " + ownerAlias + "…" : "กำลังเปิดงาน…")
+  const success = selectedJobMode
+    ? "กำลังเปิดรายละเอียดงานที่เลือกคุณไว้…"
+    : publicJobApplicant
+      ? "Welcome พร้อม · กำลังเปิดงานที่คุณสนใจ…"
       : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
-  const fail = publicJobApplicant
-    ? "ยังเปิดหน้าสมัครงานนี้ไม่สำเร็จ"
-    : jobBoardMode
-      ? "ยังเปิดงานนี้ไม่สำเร็จ"
+  const fail = selectedJobMode
+    ? "ยังเปิดงานที่เลือกคุณไว้ไม่สำเร็จ"
+    : publicJobApplicant
+      ? "ยังเปิดหน้าสมัครงานนี้ไม่สำเร็จ"
       : (primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ");
-  const cta = publicJobApplicant
-    ? "เปิด MMD APP เพื่อสมัครงานนี้"
-    : jobBoardMode
-      ? "เปิดงานนี้อีกครั้ง"
+  const cta = selectedJobMode
+    ? "เปิดรายละเอียดงานนี้"
+    : publicJobApplicant
+      ? "เปิด MMD APP เพื่อสมัครงานนี้"
       : (primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE");
-  const initialPill = publicJobApplicant ? "MMD APP · WELCOME V2" : jobBoardMode ? "MMD APP · JOB" : "LINE · CHECKING";
-  const readyPill = publicJobApplicant ? "WELCOME V2 · READY" : jobBoardMode ? "MMD APP · READY" : "LINE · VERIFIED";
-  const kicker = publicJobApplicant ? "WELCOME V2 · JOB ENTRY" : "SECURE ENTRY";
-  const statusLead = publicJobApplicant ? "กำลังเตรียมงานนี้" : jobBoardMode ? "กำลังเชื่อมงาน" : "กำลังตรวจสอบตัวตน";
-  const statusHelp = publicJobApplicant
-    ? "งานที่คุณกดมาจะถูกเก็บไว้ แล้ว MMD APP จะพาไปหน้าสมัครงานนี้ต่อ"
-    : jobBoardMode
-      ? "กำลังเตรียมข้อมูลงานนี้ใน MMD APP"
+  const initialPill = selectedJobMode ? "MMD APP · SELECTED JOB" : publicJobApplicant ? "MMD APP · WELCOME V2" : "LINE · CHECKING";
+  const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "WELCOME V2 · READY" : "LINE · VERIFIED";
+  const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "WELCOME V2 · JOB ENTRY" : "SECURE ENTRY";
+  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "กำลังเตรียมงานนี้" : "กำลังตรวจสอบตัวตน";
+  const statusHelp = selectedJobMode
+    ? "นี่คืองานที่ลูกค้าเลือกคุณแล้ว · ไม่ใช่หน้าสมัครงาน และไม่ต้องสมัครเป็นโมเดลใหม่"
+    : publicJobApplicant
+      ? "งานที่คุณกดมาจะถูกเก็บไว้ แล้ว MMD APP จะพาไปหน้าสมัครงานนี้ต่อ"
       : "ข้อมูลสิทธิ์ งาน และโปรไฟล์จะอ่านจากระบบ MMD หลังยืนยันตัวตนเท่านั้น";
-  const pageTitle = publicJobApplicant ? "MMD APP · สมัครงาน" : "MMD APP · LINE";
+  const pageTitle = selectedJobMode ? "MMD APP · งานที่เลือกคุณ" : publicJobApplicant ? "MMD APP · สมัครงาน" : "MMD APP · LINE";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
 
   return `<!doctype html>
@@ -166,7 +170,7 @@ export function modelLiffDigitalBootstrapHtml({
     ${jobBoardScript}
     ${returnScript}
   }catch(error){
-    pill.textContent=${JSON.stringify(publicJobApplicant ? "WELCOME V2 · RETRY" : jobBoardMode ? "MMD APP · RETRY" : "LINE · RETRY")};
+    pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "WELCOME V2 · RETRY" : "LINE · RETRY")};
     status.textContent=${JSON.stringify(fail)};
     fallback.hidden=false;
     detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
