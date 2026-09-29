@@ -1281,19 +1281,19 @@ test("owner takeover that starts after queue commit suppresses the LINE acknowle
   }
 });
 
-test("verified restricted-category denial stays generic and does not introduce Points", async () => {
+test("verified EMs restricted-category denial stays generic and does not introduce Points", async () => {
   const calls = [];
   const env = {
     ...BASE_ENV,
     LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
     ADMIN_WORKER: adminBinding({ ok: true, status: "restricted_category", category: "ems" }, 200, calls),
   };
-  const decision = await resolveKenjiLineReply(lineEvent("Tah"), {}, env, { campaignLeadQueued: true });
+  const decision = await resolveKenjiLineReply(lineEvent("EMs11"), {}, env, { campaignLeadQueued: true });
   assert.equal(decision.reply_source, "line_card_model_access_restricted");
   assert.match(decision.text, /กลุ่มจำกัดสิทธิ์/);
   assert.match(decision.text, /ตรวจสิทธิ์ของบัญชีนี้และการอนุญาตของรายนั้น/);
   assert.doesNotMatch(decision.text, /points?|แต้ม|คะแนน|1,200|2,500|120,000|250,000|Black Card|35,000|member\/liff\?view=points/i);
-  assert.doesNotMatch(decision.text, /Sprite|Tah|รูปภาพของ|25000/);
+  assert.doesNotMatch(decision.text, /Sprite|EMs11|รูปภาพของ|25000/);
   assert.equal(calls.length, 1);
 });
 
