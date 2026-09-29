@@ -48,9 +48,9 @@ test('Per Rename follows pagination and reports unavailable names instead of sil
   assert.equal(partial.customer_name, 'Old Name');
 });
 
-const session = (id, clientId = 'client-a') => ({ id, fields: { session_id: 'sess-'+id, Client: [clientId], 'Canonical Model': ['model-a'], client_name: 'Old Name', model_name: 'MODEL01', job_date: '2026-10-04', created_at: '2026-09-21', customer_confirmation_url: 'private-token', pay_model_thb: 22500 } });
+const session = (id, clientId = 'client-a') => ({ id, fields: { session_id: 'sess-'+id, job_id: 'JOB-'+id, Client: [clientId], 'Canonical Model': ['model-a'], client_name: 'Old Name', model_name: 'MODEL01', job_date: '2026-10-04', start_time: '2026-10-04T09:00:00.000Z', location_name: 'Test Hotel', amount_thb: 30000, created_at: '2026-09-21', customer_confirmation_url: 'private-token', pay_model_thb: 22500 } });
 const payment = (id, sid, status = 'Pending') => ({ id, fields: { 'Payment Reference': 'pay-'+id, session_id: 'sess-'+sid, Client: ['client-a'], Amount: 30000, 'Payment Status': status, payment_stage: 'full' } });
-const proof = (id, payId, sid) => ({ id, fields: { proof_id: id, payment_ref: 'pay-'+payId, status: 'pending', payment: [payId], session: [sid], client: ['client-a'] } });
+const proof = (id, payId, sid, amount = 30000) => ({ id, createdTime: '2026-09-21T10:00:00.000Z', fields: { proof_id: id, payment_ref: 'pay-'+payId, amount_thb: amount, channel: 'web_pay', status: 'pending', payment: [payId], session: [sid], Client: ['client-a'] } });
 async function jobs(sessions, payments, proofs = []) {
   const options = names();
   return recentPaymentJobs({ ...options, paymentsTable: 'payments', proofsTable: 'proofs', list: async (table, params) => {
@@ -67,9 +67,34 @@ test('recent jobs include missing slips and keep multiple jobs/payments separate
   assert.equal(result[0].payments[0].state, 'waiting_proof');
   assert.equal(result[1].payments[0].state, 'proof_pending');
   assert.deepEqual(result[1].payments[0].proof_ids, ['proof-b']);
+  assert.equal(result[1].payments[0].received_amount_thb, 30000);
+  assert.equal(result[1].payments[0].auto_match_source, 'exact_record_links');
+  assert.equal(result[1].service_amount_thb, 30000);
+  assert.equal(result[1].job_id, 'JOB-job-b');
   assert.equal(result[1].payments[1].state, 'paid');
   assert.deepEqual(result[2].payments, []);
   assert.doesNotMatch(JSON.stringify(result), /private-token|22500|confirmation_url|pay_model_thb/);
+});
+
+test('proof-aware job projection returns the actual transfer against the exact newly opened job', async () => {
+  const s = session('new-job');
+  s.fields.client_name = 'แมน 17 มีค 69';
+  s.fields.model_name = 'Film J';
+  s.fields.amount_thb = 4500;
+  s.fields.job_date = '2026-10-11';
+  s.fields.start_time = '2026-10-11T12:30:00.000Z';
+  s.fields.location_name = 'โรงแรม แซม อี แบงค็อก สาทร';
+  const p = payment('latest', 'new-job');
+  p.fields.Amount = 4500;
+  p.fields.payment_stage = 'full';
+  const [result] = await jobs([s], [p], [proof('proof-latest', 'latest', 'new-job', 4500)]);
+  assert.equal(result.customer_name, 'ลูกค้าไทย SVIP');
+  assert.equal(result.model_name, 'Film J');
+  assert.equal(result.service_amount_thb, 4500);
+  assert.equal(result.payments[0].received_amount_thb, 4500);
+  assert.equal(result.payments[0].auto_match_source, 'exact_record_links');
+  assert.equal(result.payments[0].state, 'proof_pending');
+  assert.equal(result.location_name, 'โรงแรม แซม อี แบงค็อก สาทร');
 });
 
 test('mismatched proof/client, duplicate payment ref, cancelled and unknown states cannot expose an approval shortcut', async () => {

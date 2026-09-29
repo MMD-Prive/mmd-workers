@@ -1,3 +1,15 @@
+## Flexible service deposit owner review — 2026-09-29
+
+The service deposit rule is a soft operational standard, not an automatic rejection rule.
+
+- Standard deposit target is 30% of the canonical Session service amount.
+- Any positive amount actually paid remains payment evidence. A deposit below 30% is kept in the review queue and requires explicit owner acceptance before Official Verify; it is never rejected only because the percentage is low.
+- The review workspace shows service total, 30% standard amount, actual received amount, received percentage, shortfall to 30%, and remaining balance.
+- Deposits above 30% are valid up to the canonical service total. A proof amount different from the original deposit intent is not a blocking mismatch for deposit.
+- An amount above the service total remains fail-closed and is routed to Payment Correction/manual review.
+- Non-deposit stages retain exact amount mismatch protection.
+- Official Verify records the actual reviewed amount. Payment receipt does not itself advance the booking/model lifecycle.
+
 ## Before-job follow-through — 2026-09-22
 
 Build `payment-job-readiness-20260922` continues the paid-job panel into preparation and day-of-work tracking.

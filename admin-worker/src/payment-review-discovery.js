@@ -72,7 +72,7 @@ export async function enrichDiscoveryNames(items, { list, page, tables }) {
 export async function recentPaymentJobs({ list, page, tables, paymentsTable, proofsTable, limit = 100 }) {
   const sessions = await list(tables.sessions, {
     maxRecords: limit, sort: [{ field: "created_at", direction: "desc" }],
-    fields: ["session_id", "Client", "Canonical Model", "client_name", "model_name", "created_at", "job_date", "start_time", "end_time", "location_name", "Session Status"],
+    fields: ["session_id", "job_id", "Client", "Canonical Model", "client_name", "model_name", "created_at", "job_date", "start_time", "end_time", "location_name", "amount_thb", "Total Amount", "Session Status"],
   });
   const payments = await exactRows((table, params) => list(table, { ...params, fields: stageFields }), paymentsTable, "session_id", sessions.map(row => text(row.fields?.session_id)));
   const proofs = await exactRows(list, proofsTable, "payment_ref", payments.map(row => text(row.fields?.["Payment Reference"] || row.fields?.payment_ref)));
@@ -90,11 +90,20 @@ export async function recentPaymentJobs({ list, page, tables, paymentsTable, pro
         if (/mmd_historical_slip_backfill_v1/.test(String(f.note || ""))) return false;
         const conflict = ids(f.payment).length > 1 || (one(f.payment) && one(f.payment) !== payment.id)
           || ids(f.session).length > 1 || (one(f.session) && one(f.session) !== row.id)
-          || ids(f.client).length > 1 || (one(f.client) && one(s.Client) && one(f.client) !== one(s.Client));
+          || ids(f.client || f.Client).length > 1 || (one(f.client || f.Client) && one(s.Client) && one(f.client || f.Client) !== one(s.Client));
         if (conflict) { inconsistentProof = true; return false; }
         return text(f.proof_id) && pending.has(text(f.status || "pending").toLowerCase());
       });
       const status = text(p["Payment Status"]).toLowerCase();
+      const singleProof = reviewProofs.length === 1 ? reviewProofs[0] : null;
+      const proofFields = singleProof?.fields || {};
+      const proofClient = one(proofFields.client || proofFields.Client);
+      const exactRecordLinks = Boolean(
+        singleProof &&
+        one(proofFields.payment) === payment.id &&
+        one(proofFields.session) === row.id &&
+        (!one(s.Client) || proofClient === one(s.Client))
+      );
       const state = mismatch || inconsistentProof || !ref || positive(p.Amount) === null ? "needs_review"
         : cancelled.has(status) ? "cancelled"
         : paid.has(status) ? "paid"
@@ -102,14 +111,20 @@ export async function recentPaymentJobs({ list, page, tables, paymentsTable, pro
         : reviewProofs.length ? "proof_pending" : "waiting_proof";
       return {
         payment_ref: ref, payment_stage: text(p.payment_stage || p.payment_type).toLowerCase(),
-        expected_amount_thb: positive(p.Amount), payment_status: status, state,
+        expected_amount_thb: positive(p.Amount),
+        received_amount_thb: singleProof ? positive(proofFields.amount_thb ?? proofFields.amount) : null,
+        proof_channel: singleProof ? text(proofFields.channel) : "",
+        proof_created_at: singleProof ? text(proofFields.created_at || singleProof.createdTime) : "",
+        auto_match_source: singleProof ? (exactRecordLinks ? "exact_record_links" : "payment_ref_context") : null,
+        payment_status: status, state,
         proof_ids: state === "proof_pending" ? unique(reviewProofs.map(proof => proof.fields.proof_id)) : [],
       };
     });
     return {
-      session_record_id: row.id, session_id: sessionId,
+      session_record_id: row.id, session_id: sessionId, job_id: text(s.job_id),
       client_record_id: one(s.Client), model_record_id: one(s["Canonical Model"]),
       customer_name: text(s.client_name), model_name: text(s.model_name),
+      service_amount_thb: positive(s.amount_thb ?? s["Total Amount"]),
       job_date: text(s.job_date), start_time: text(s.start_time), end_time: text(s.end_time), location_name: text(s.location_name),
       created_at: text(s.created_at || row.createdTime),
       cancelled: cancelled.has(text(s["Session Status"]).toLowerCase()),
