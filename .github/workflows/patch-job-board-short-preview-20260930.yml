@@ -1,0 +1,109 @@
+name: Patch job board short preview
+
+on:
+  push:
+    branches:
+      - fix/job-board-short-preview-20260930
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch short link and preview behavior
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          function read(path){ return fs.readFileSync(path, 'utf8'); }
+          function write(path, content){ fs.writeFileSync(path, content); }
+          function replaceOnce(path, from, to){
+            const source = read(path);
+            if (!source.includes(from)) throw new Error(`${path}: missing pattern`);
+            write(path, source.replace(from, to));
+          }
+
+          replaceOnce('admin-worker/src/job-board-owner-publish.js',
+`  const broadcastUrl = buildModelJobBoardBroadcastLink({
+    source: "line_model_group",
+    job_id: data.job.id,
+  });`,
+`  const fallbackBroadcastUrl = buildModelJobBoardBroadcastLink({
+    source: "line_model_group",
+    job_id: data.job.id,
+  });
+  const upstreamBroadcastUrl = clean(data.job.broadcast_url, 300);
+  const broadcastUrl = /^https:\\/\\/(?:www\\.)?mmdbkk\\.com\\/j\\/[A-F0-9]{12}$/i.test(upstreamBroadcastUrl)
+    ? upstreamBroadcastUrl
+    : fallbackBroadcastUrl;`);
+
+          replaceOnce('admin-worker/test/job-board-owner-publish.test.mjs',
+'test("admin job board publish returns LIFF Login V2 as broadcast URL", async () => {',
+'test("admin job board publish preserves the short broadcast URL", async () => {');
+          replaceOnce('admin-worker/test/job-board-owner-publish.test.mjs',
+`  assert.notEqual(data.broadcast_url, upstreamBroadcast);
+  assert.equal(data.job.broadcast_url, data.broadcast_url);
+
+  const url = new URL(data.broadcast_url);
+  assert.equal(url.origin, "https://www.mmdbkk.com");
+  assert.equal(url.pathname, "/sigil/model/login");
+  assert.equal(url.searchParams.get("intent"), "job_board");
+  assert.equal(url.searchParams.get("source"), "line_model_group");
+  assert.equal(url.searchParams.get("return_to"), "public_job_board");
+  assert.equal(url.searchParams.get("job_id"), "JOB-20260929-ABCDEF123456");
+  assert.equal(url.searchParams.get("next"), "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-ABCDEF123456");
+  assert.ok(!data.broadcast_url.startsWith("https://mmdbkk.com/j/"));`,
+`  assert.equal(data.broadcast_url, upstreamBroadcast);
+  assert.equal(data.job.broadcast_url, upstreamBroadcast);
+  assert.equal(data.board_destination, "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-ABCDEF123456");
+  assert.match(data.broadcast_url, /^https:\\/\\/mmdbkk\\.com\\/j\\/ABCDEF123456$/);`);
+
+          replaceOnce('public-access-worker/src/public-job-board-v2.js',
+`const SHORT_CODE_RE = /^[A-F0-9]{12}$/;`,
+`const SHORT_CODE_RE = /^[A-F0-9]{12}$/;
+const JOB_BOARD_PREVIEW_IMAGE_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abb912c94dd2bbb082d620e_HYPE%20Private%20Job.webp";`);
+          replaceOnce('public-access-worker/src/public-job-board-v2.js',
+`  const description = [meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับ MMD";
+  const button = "เปิดงานนี้ผ่าน LINE";`,
+`  const description = [meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับ MMD";
+  const previewTitle = privateJob ? "SIGIL · PRIVATE JOB" : confidential ? "MMD JOB · CONFIDENTIAL" : "MMD JOB BOARD";
+  const previewDescription = "เปิดงานนี้ผ่าน MMD APP เพื่อดูรายละเอียดและส่งความสนใจ";
+  const button = "เปิดงานนี้ผ่าน LINE";`);
+          replaceOnce('public-access-worker/src/public-job-board-v2.js',
+`<meta property="og:title" content="${esc("MMD · " + title)}">
+<meta property="og:description" content="${esc(description)}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${esc("MMD · " + title)}">
+<meta name="twitter:description" content="${esc(description)}">`,
+`<meta property="og:title" content="${esc(previewTitle)}">
+<meta property="og:description" content="${esc(previewDescription)}">
+<meta property="og:image" content="${esc(JOB_BOARD_PREVIEW_IMAGE_URL)}">
+<meta property="og:image:secure_url" content="${esc(JOB_BOARD_PREVIEW_IMAGE_URL)}">
+<meta property="og:image:type" content="image/webp">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(previewTitle)}">
+<meta name="twitter:description" content="${esc(previewDescription)}">
+<meta name="twitter:image" content="${esc(JOB_BOARD_PREVIEW_IMAGE_URL)}">`);
+
+          replaceOnce('public-access-worker/test/public-job-board-v2.test.mjs',
+`  assert.doesNotMatch(page, /og:image/i);`,
+`  assert.match(page, /property="og:image"/i);
+  assert.match(page, /summary_large_image/i);
+  assert.match(page, /HYPE%20Private%20Job\.webp/);
+  assert.match(page, /property="og:title" content="MMD JOB · CONFIDENTIAL"/);`);
+          NODE
+      - name: Commit patch
+        run: |
+          git config user.name "MMD Privé"
+          git config user.email "malemodel.bkk@gmail.com"
+          git add admin-worker/src/job-board-owner-publish.js admin-worker/test/job-board-owner-publish.test.mjs public-access-worker/src/public-job-board-v2.js public-access-worker/test/public-job-board-v2.test.mjs
+          git commit -m "fix(job-board): restore short link preview" || exit 0
+          git push
