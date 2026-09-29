@@ -1,9 +1,47 @@
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
 
+const STATUS_UNRESOLVED_COPY = [
+  "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ",
+  "ถ้าเคยเป็นสมาชิก MMD ให้กรอกอีเมลเดิม หรือ Member ID ที่เคยให้ MMD ไว้ก่อนสมัครใหม่",
+  "ตอนนี้ระบบกู้ข้อมูลสมาชิกเดิมรับเฉพาะอีเมลเดิมหรือ Member ID; เบอร์โทรหรือ Telegram ให้แจ้ง Per/HYPE เพื่อบันทึกเข้าคิวตรวจจากโน้ตเดิม",
+  "แหล่งตรวจหลักคือ LINE OFC note / Per note / Console Inbox note และวันที่สมาชิกให้ยึดวันที่ล่าสุดที่ Per ทับไว้ในโน้ต ไม่ใช่วันที่ลูกค้ากรอกใหม่",
+  "ระหว่างตรวจสอบ ระบบจะไม่เดา Tier, Points, Wallet, ประวัติงาน หรือ Private Access ให้เอง เพื่อกันสิทธิ์ผิดบัญชีครับ",
+].join("\n");
+
+const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
+  line_verified: true,
+  member_resolved: false,
+  member_display_state: "review_required",
+  entitlement_display_state: "review_required",
+  points_display_state: "pending_backend",
+  wallet_display_state: "pending_backend",
+  history_display_state: "pending_backend",
+  access_display_state: "fail_closed",
+  private_access_state: "fail_closed",
+  payment_truth_state: "pending_backend",
+  browser_authority: "presentation_only",
+  recovery_required_fields: ["email", "member_id_candidate"],
+  recovery_match_evidence: [
+    "members_email",
+    "members_member_id",
+    "clients_email",
+    "pre_session_identity_seed",
+    "client_access_evidence",
+    "line_ofc_email_candidate",
+  ],
+});
+
 const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   key: "status_unresolved",
-  copy: "ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ หากเคยเป็นสมาชิก กรุณาติดต่อ HYPE เพื่อเชื่อมข้อมูลก่อนใช้งาน My MMD หากยังไม่เคยเป็นสมาชิก สามารถเริ่มสมัครสมาชิกได้ด้านล่างครับ",
+  copy: STATUS_UNRESOLVED_COPY,
   actions: [
+    {
+      id: "recovery_evidence",
+      label: "เคยเป็นสมาชิก · กรอกอีเมลเดิม / Member ID",
+      endpoint: "/member/api/liff/recovery",
+      method: "POST",
+      fields: ["email", "member_id_candidate"],
+    },
     {
       id: "signup",
       label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
@@ -49,6 +87,7 @@ export async function rewritePendingStatusStartResponse(request, response, trace
   const unresolvedScreen = refs
     ? { ...STATUS_UNRESOLVED_SCREEN, copy: `${STATUS_UNRESOLVED_SCREEN.copy}\nRef: ${refs}` }
     : STATUS_UNRESOLVED_SCREEN;
+  const safeState = unresolvedSafeState();
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
@@ -59,12 +98,26 @@ export async function rewritePendingStatusStartResponse(request, response, trace
       ...(safeTrace ? { liff_trace_id: safeTrace } : {}),
       next_screen_key: unresolvedScreen.key,
       screen: unresolvedScreen,
+      my_mmd_safe_state: safeState,
+      member_display_state: safeState.member_display_state,
+      entitlement_display_state: safeState.entitlement_display_state,
+      points_display_state: safeState.points_display_state,
+      wallet_display_state: safeState.wallet_display_state,
+      history_display_state: safeState.history_display_state,
+      private_access_state: safeState.private_access_state,
+      payment_truth_state: safeState.payment_truth_state,
+      recovery_required_fields: safeState.recovery_required_fields,
+      recovery_match_evidence: safeState.recovery_match_evidence,
     },
   }), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function unresolvedSafeState() {
+  return { ...STATUS_UNRESOLVED_SAFE_STATE };
 }
 
 function isSameOriginDiagnosticRequest(request) {
