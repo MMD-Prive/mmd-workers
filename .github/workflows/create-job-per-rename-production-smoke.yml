@@ -161,14 +161,14 @@ jobs:
             grep -q 'id="job-client-query"' "$create_page"
             grep -q 'id="job-model-query"' "$create_page"
             grep -q 'data-cj-job-board-handoff="separate-v1"' "$create_page"
-            grep -q 'href="/internal/admin/job-board"' "$create_page"
+            grep -q 'href="/internal/admin/jobs/job-board"' "$create_page"
             ! grep -q 'id="job-board-form"' "$create_page"
             ! grep -q '/v1/admin/job-board/publish' "$create_page"
             echo "PASS: $origin Create Job is isolated from Job Board"
 
             board_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
               -o "$board_page" -b "$cookie" -w "%{http_code}" \
-              "$origin/internal/admin/job-board?smoke=separate-job-board")"
+              "$origin/internal/admin/jobs/job-board?smoke=separate-job-board")"
             test "$board_code" = "200"
             grep -q 'data-job-board-owner="separate-v1"' "$board_page"
             grep -q 'id="job-board-form"' "$board_page"
