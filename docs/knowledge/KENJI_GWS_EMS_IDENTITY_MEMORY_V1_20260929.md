@@ -13,6 +13,7 @@ Supported internal identity inputs:
 - approved/current `working_name`
 - `nickname`
 - `username`
+- owner-reviewed internal `private_real_name`
 - exact `folder_name`
 - exact Active `MMD — Model Keyword Profiles.search_aliases`
 - a name stripped from a code-prefixed display/folder label, e.g. `EMs20 - Rossi` -> `Rossi`
@@ -40,7 +41,7 @@ Rules:
 - availability, rates and booking remain separate protected truth;
 - exact current Per approval remains required for GWs/EMs profile reveal under the current model-access policy.
 
-If a legal/real name is not present in a canonical reviewed field, Kenji must not invent it from notes, social media, folder inference or chat gossip.
+`Models.private_real_name` is the dedicated owner-reviewed internal real/legal-name field. It is never customer-facing and never grants access. Blank means unknown/unverified. If a legal/real name is not present there (or another explicitly reviewed canonical identity field), Kenji must not invent it from notes, social media, folder inference or chat gossip.
 
 ## LINE conversation history: current production boundary
 
