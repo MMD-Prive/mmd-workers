@@ -1,3 +1,5 @@
+import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
+
 export const ADMIN_JOB_BOARD_PUBLISH_PATH = "/v1/admin/job-board/publish";
 const CUSTOMER_GENDERS = new Set(["male", "female", "couple", "mixed", "unspecified"]);
 
@@ -106,11 +108,19 @@ export async function handleAdminJobBoardPublish(request, env, actor) {
     }, upstream.status >= 400 ? upstream.status : 502);
   }
 
+  const broadcastUrl = buildModelJobBoardBroadcastLink({
+    source: "line_model_group",
+    job_id: data.job.id,
+  });
+
   return json({
     ok: true,
-    job: data.job,
+    job: {
+      ...data.job,
+      broadcast_url: broadcastUrl,
+    },
     job_id: data.job.id,
-    broadcast_url: data.job.broadcast_url,
+    broadcast_url: broadcastUrl,
     board_destination: `https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(data.job.id)}`,
     authority: {
       listing: "public-access-worker",
