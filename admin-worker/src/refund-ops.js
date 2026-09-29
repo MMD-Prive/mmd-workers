@@ -5,6 +5,13 @@ export const REFUND_OPS_RECOVER_PATH = `${REFUND_OPS_API_PREFIX}/recover`;
 export const REFUND_OPS_INTERNAL_INTAKE = "/v1/internal/refund-ops/intake";
 export const REFUND_RECEIPT_MEDIA_PATH = "/refund-receipt/media";
 
+const DEFAULT_CONSOLE_INBOX_TABLE = "tblFHmfpB2TTrzO2e";
+const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
+const SESSION_FIELDS = Object.freeze({
+  customerUrl: "fldi9ZdoiUXzSv1rI",
+  modelUrl: "fld0mFma9J9yfEaKb",
+});
+
 const clean = (value, max = 2000) => String(value ?? "").trim().slice(0, max);
 const html = (value) => clean(value, 5000).replace(/[&<>"']/g, (ch) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
 
@@ -21,7 +28,11 @@ function payloadRefundAmount(payload = {}) {
 }
 
 function tableId(env = {}) {
-  return clean(env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || "tblFHmfpB2TTrzO2e", 120);
+  return clean(env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || DEFAULT_CONSOLE_INBOX_TABLE, 120);
+}
+
+function sessionsTableId(env = {}) {
+  return clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE, 160);
 }
 
 function airtableEnv(env = {}) {
@@ -32,13 +43,14 @@ function airtableEnv(env = {}) {
   };
 }
 
-async function airtable(env, suffix = "", init = {}) {
+async function airtableTable(env, table, suffix = "", init = {}) {
   const cfg = airtableEnv(env);
-  if (!cfg.baseId || !cfg.token || !cfg.table) throw new Error("airtable_env_missing");
+  const targetTable = clean(table, 160);
+  if (!cfg.baseId || !cfg.token || !targetTable) throw new Error("airtable_env_missing");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`${AIRTABLE_API}/${cfg.baseId}/${encodeURIComponent(cfg.table)}${suffix}`, {
+    const response = await fetch(`${AIRTABLE_API}/${cfg.baseId}/${encodeURIComponent(targetTable)}${suffix}`, {
       ...init,
       signal: init.signal || controller.signal,
       headers: {
@@ -58,6 +70,10 @@ async function airtable(env, suffix = "", init = {}) {
   }
 }
 
+async function airtable(env, suffix = "", init = {}) {
+  return airtableTable(env, tableId(env), suffix, init);
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -66,7 +82,7 @@ function json(data, status = 200) {
 }
 
 function parsePayload(record = {}) {
-  const raw = clean(record?.fields?.payload_json, 20000);
+  const raw = clean(record?.fields?.payload_json, 30000);
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
@@ -104,6 +120,8 @@ function publicItem(record = {}) {
     customer_receipt_delivery_status: clean(p.customer_receipt_delivery_status || "", 80),
     customer_receipt_delivery_mode: clean(p.customer_receipt_delivery_mode || "", 80),
     owner_telegram_delivery_status: clean(p.owner_telegram_delivery_status || "", 80),
+    customer_receipt_url: clean(p.customer_receipt_url || p.customer_confirmation_url || "", 1000),
+    customer_job_confirm_url: clean(p.customer_job_confirm_url || "", 1200),
     admin_job_url: clean(p.admin_job_url || "", 500),
     model_job_app_url: clean(p.model_job_app_url || "", 800),
   };
@@ -318,6 +336,39 @@ async function signedReceiptMediaUrl(env, inboxId, now = Date.now()) {
   return url.toString();
 }
 
+function safeCustomerJobConfirmUrl(value = "") {
+  const raw = clean(value, 1400);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (!/^https?:$/.test(url.protocol)) return "";
+    if (!url.pathname.endsWith("/sigil/confirm/job-confirmation")) return "";
+    if (url.pathname.includes("/refund-receipt/")) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+async function resolveCustomerJobConfirmUrl(env, payload = {}) {
+  for (const candidate of [payload.customer_job_confirm_url, payload.customer_job_confirmation_url, payload.customer_job_url, payload.job_confirmation_url]) {
+    const safe = safeCustomerJobConfirmUrl(candidate);
+    if (safe) return safe;
+  }
+  const sessionId = clean(payload.session_id, 160);
+  if (!sessionId) return "";
+  const params = new URLSearchParams({
+    maxRecords:"2",
+    filterByFormula:`{session_id}='${escapeFormula(sessionId, 160)}'`,
+    returnFieldsByFieldId:"true",
+  });
+  const data = await airtableTable(env, sessionsTableId(env), `?${params.toString()}`);
+  const rows = Array.isArray(data.records) ? data.records : [];
+  if (rows.length !== 1) return "";
+  const fields = rows[0]?.fields || {};
+  return safeCustomerJobConfirmUrl(fields[SESSION_FIELDS.customerUrl] || fields.customer_confirmation_url || fields.Customer_confirmation_url || fields["Customer confirmation URL"] || "");
+}
+
 async function handleReceiptMedia(request, env) {
   const url = new URL(request.url);
   const inboxId = clean(url.searchParams.get("i"), 160);
@@ -439,7 +490,7 @@ function telegramThreadId(env = {}) {
   return 0;
 }
 
-async function notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl = "", adminUrl = "", modelUrl = "" } = {}) {
+async function notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl = "", customerJobUrl = "", adminUrl = "", modelUrl = "" } = {}) {
   const botToken = clean(env.TELEGRAM_BOT_TOKEN, 3000);
   const chatId = telegramChatId(env);
   if (!botToken) return { ok:false, skipped:true, reason:"telegram_bot_token_missing" };
@@ -465,13 +516,16 @@ async function notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl 
     note ? `Note: ${html(note)}` : "",
     "",
     mediaUrl ? `Customer receipt URL:\n${html(mediaUrl)}` : "Customer receipt URL: unavailable",
-    adminUrl ? `Admin job URL:\n${html(adminUrl)}` : "",
+    customerJobUrl ? `Customer job/confirm URL:\n${html(customerJobUrl)}` : "Customer job/confirm URL: unavailable",
+    adminUrl ? `Admin job URL:\n${html(adminUrl)}` : "Admin job URL: unavailable",
     modelUrl ? `Model job/app URL for ${html(modelName)}:\n${html(modelUrl)}` : `Model job/app URL for ${html(modelName)}: unavailable until job_id exists`,
     "",
+    "สำหรับลูกค้า: ส่ง Customer job/confirm URL ให้ลูกค้าเอง ไม่ใช่ URL สลิปคืนเงิน",
     "สำหรับโมเดล: ส่งเฉพาะ Model job/app URL ให้น้อง ไม่ใช่ URL สลิปลูกค้า",
   ].filter(Boolean);
   const keyboard = [];
   if (mediaUrl) keyboard.push([{ text:"Customer receipt", url:mediaUrl }]);
+  if (customerJobUrl) keyboard.push([{ text:"Customer job/confirm", url:customerJobUrl }]);
   if (adminUrl) keyboard.push([{ text:"Open admin job", url:adminUrl }]);
   if (modelUrl) keyboard.push([{ text:`Send to ${modelName}`, url:modelUrl }]);
   const body = {
@@ -492,6 +546,63 @@ async function notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl 
     return { ok:false, skipped:false, status:response.status, reason:clean(data?.description || data?.error || "telegram_send_failed", 160) };
   }
   return { ok:true, skipped:false, status:response.status, message_id:data?.result?.message_id || null };
+}
+
+async function persistReceiptAndNotify(env, record, inboxId, payload, mediaUrl, file, { ownerRefundAmount, ownerRefundCurrency, recovered = null, retryLine = true, retryTelegram = true } = {}) {
+  const adminUrl = adminJobUrl(payload);
+  const modelUrl = modelJobAppUrl(payload);
+  const customerJobUrl = await resolveCustomerJobConfirmUrl(env, payload).catch(() => "");
+  let notification = { ok:false, skipped:true, reason:"not_attempted", mode:null };
+  let telegram = { ok:false, skipped:true, reason:"not_attempted" };
+
+  try {
+    if (retryLine) {
+      notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, file);
+    } else {
+      notification = { ok:true, skipped:true, reason:"already_sent", mode:clean(payload.customer_receipt_delivery_mode, 80) || null, status:Number(payload.customer_receipt_delivery_http_status) || null };
+    }
+  } catch {
+    notification = { ok:false, skipped:false, reason:"line_notification_failed", mode:null };
+  }
+
+  payload.customer_receipt_delivery_status = notification.ok ? "sent" : (notification.skipped ? "skipped" : "failed");
+  payload.customer_receipt_delivery_mode = notification.mode || null;
+  payload.customer_receipt_delivery_at = new Date().toISOString();
+  payload.customer_receipt_delivery_reason = notification.reason || null;
+  payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
+  payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
+  payload.customer_receipt_line_quota = notification.quota || null;
+  payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
+  payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
+  payload.customer_receipt_url = mediaUrl || null;
+  payload.customer_confirmation_url = mediaUrl || null;
+  payload.customer_job_confirm_url = customerJobUrl || null;
+  payload.admin_job_url = adminUrl || null;
+  payload.model_job_app_url = modelUrl || null;
+
+  try {
+    if (retryTelegram) {
+      telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, customerJobUrl, adminUrl, modelUrl });
+    } else {
+      telegram = { ok:true, skipped:true, reason:"already_sent", message_id:payload.owner_telegram_message_id || null };
+    }
+  } catch {
+    telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
+  }
+  payload.owner_telegram_delivery_status = telegram.ok ? "sent" : (telegram.skipped ? "skipped" : "failed");
+  payload.owner_telegram_delivery_at = new Date().toISOString();
+  payload.owner_telegram_delivery_reason = telegram.reason || null;
+  payload.owner_telegram_message_id = telegram.message_id || null;
+
+  const action = recovered ? "Recovered owner refund receipt" : "Refund receipt uploaded";
+  const stampedAt = recovered?.uploadedAt || payload.receipt_uploaded_at || new Date().toISOString();
+  await patchRecord(env, record, {
+    status:"done",
+    payload_json:JSON.stringify(payload),
+    admin_note:`${clean(record.fields?.admin_note, 1200)} · ${action} ${stampedAt}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""} · LINE ${payload.customer_receipt_delivery_status} · Telegram ${payload.owner_telegram_delivery_status}`.slice(0,1800),
+  }).catch(() => null);
+
+  return { notification, telegram, adminUrl, modelUrl, customerJobUrl };
 }
 
 async function handleReceiptUpload(request, env) {
@@ -539,43 +650,9 @@ async function handleReceiptUpload(request, env) {
     admin_note:`${clean(record.fields?.admin_note, 1200)} · Refund receipt uploaded ${now.toISOString()}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""}`.slice(0,1800),
   });
 
-  let notification = { ok:false, skipped:true, reason:"not_attempted", mode:null };
-  let telegram = { ok:false, skipped:true, reason:"not_attempted" };
   let mediaUrl = "";
-  const adminUrl = adminJobUrl(payload);
-  const modelUrl = modelJobAppUrl(payload);
-  try {
-    mediaUrl = await signedReceiptMediaUrl(env, inboxId, now.getTime());
-    notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, file);
-  } catch {
-    notification = { ok:false, skipped:false, reason:"line_notification_failed", mode:null };
-  }
-  payload.customer_receipt_delivery_status = notification.ok ? "sent" : (notification.skipped ? "skipped" : "failed");
-  payload.customer_receipt_delivery_mode = notification.mode || null;
-  payload.customer_receipt_delivery_at = new Date().toISOString();
-  payload.customer_receipt_delivery_reason = notification.reason || null;
-  payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
-  payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
-  payload.customer_receipt_line_quota = notification.quota || null;
-  payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
-  payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
-  payload.customer_confirmation_url = mediaUrl || null;
-  payload.admin_job_url = adminUrl || null;
-  payload.model_job_app_url = modelUrl || null;
-  try {
-    telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
-  } catch {
-    telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
-  }
-  payload.owner_telegram_delivery_status = telegram.ok ? "sent" : (telegram.skipped ? "skipped" : "failed");
-  payload.owner_telegram_delivery_at = new Date().toISOString();
-  payload.owner_telegram_delivery_reason = telegram.reason || null;
-  payload.owner_telegram_message_id = telegram.message_id || null;
-  await patchRecord(env, record, {
-    status:"done",
-    payload_json:JSON.stringify(payload),
-    admin_note:`${clean(record.fields?.admin_note, 1200)} · Refund receipt uploaded ${now.toISOString()}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""} · LINE ${payload.customer_receipt_delivery_status} · Telegram ${payload.owner_telegram_delivery_status}`.slice(0,1800),
-  }).catch(() => null);
+  try { mediaUrl = await signedReceiptMediaUrl(env, inboxId, now.getTime()); } catch { mediaUrl = ""; }
+  const { notification, telegram, adminUrl, modelUrl, customerJobUrl } = await persistReceiptAndNotify(env, record, inboxId, payload, mediaUrl, file, { ownerRefundAmount, ownerRefundCurrency });
 
   return json({
     ok:true,
@@ -586,6 +663,8 @@ async function handleReceiptUpload(request, env) {
     refund_currency:ownerRefundCurrency,
     confirmation_url:mediaUrl || null,
     customer_confirmation_url:mediaUrl || null,
+    customer_receipt_url:mediaUrl || null,
+    customer_job_confirm_url:customerJobUrl || null,
     admin_job_url:adminUrl || null,
     model_job_app_url:modelUrl || null,
     line_notification:{
@@ -593,6 +672,9 @@ async function handleReceiptUpload(request, env) {
       skipped:notification.skipped === true,
       reason:notification.reason || null,
       mode:notification.mode || null,
+      status:Number(notification.status) || null,
+      transport_status:Number(notification.transport_status) || null,
+      quota:notification.quota || null,
     },
     owner_telegram:{
       sent:telegram.ok === true,
@@ -603,7 +685,6 @@ async function handleReceiptUpload(request, env) {
     money_truth_mutated:false,
   });
 }
-
 
 function receiptRecoveryMonthKeys(inboxId, record = {}, now = new Date()) {
   const months = new Set();
@@ -618,9 +699,7 @@ function receiptRecoveryMonthKeys(inboxId, record = {}, now = new Date()) {
   const safeInbox = encodeURIComponent(clean(inboxId, 160));
   const out = [];
   for (const month of months) {
-    for (const ext of ["jpg", "png", "webp"]) {
-      out.push(`owner-refund-receipts/${month}/${safeInbox}/receipt.${ext}`);
-    }
+    for (const ext of ["jpg", "png", "webp"]) out.push(`owner-refund-receipts/${month}/${safeInbox}/receipt.${ext}`);
   }
   return out;
 }
@@ -630,29 +709,20 @@ async function findRecoverableReceipt(env, record, inboxId) {
   if (!bucket) return null;
   const payload = parsePayload(record);
   const knownKey = clean(payload.receipt_r2_key, 500);
-  const candidates = [
-    ...(knownKey ? [knownKey] : []),
-    ...receiptRecoveryMonthKeys(inboxId, record),
-  ];
+  const candidates = [...(knownKey ? [knownKey] : []), ...receiptRecoveryMonthKeys(inboxId, record)];
   const seen = new Set();
   for (const key of candidates) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     const object = await bucket.get(key).catch(() => null);
     if (!object) continue;
-    const fallbackType = key.endsWith(".png")
-      ? "image/png"
-      : key.endsWith(".webp")
-        ? "image/webp"
-        : "image/jpeg";
+    const fallbackType = key.endsWith(".png") ? "image/png" : key.endsWith(".webp") ? "image/webp" : "image/jpeg";
     return {
       key,
       object,
       mime: clean(object?.httpMetadata?.contentType || fallbackType, 120),
       size: Number(object?.size) || 0,
-      uploadedAt: object?.uploaded instanceof Date && Number.isFinite(object.uploaded.getTime())
-        ? object.uploaded.toISOString()
-        : new Date().toISOString(),
+      uploadedAt: object?.uploaded instanceof Date && Number.isFinite(object.uploaded.getTime()) ? object.uploaded.toISOString() : new Date().toISOString(),
     };
   }
   return null;
@@ -664,27 +734,7 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   const needsLineDelivery = payload.customer_receipt_delivery_status !== "sent";
   const needsTelegramDelivery = payload.owner_telegram_delivery_status !== "sent";
   if (alreadyCompleted && !needsLineDelivery && !needsTelegramDelivery) {
-    return {
-      ok:true,
-      recovered:false,
-      delivery_retried:false,
-      already_completed:true,
-      inbox_id:inboxId,
-      status:"completed",
-      line_notification:{
-        sent:true,
-        skipped:true,
-        reason:"already_sent",
-        mode:payload.customer_receipt_delivery_mode || null,
-      },
-      owner_telegram:{
-        sent:true,
-        skipped:true,
-        reason:"already_sent",
-        message_id:payload.owner_telegram_message_id || null,
-      },
-      money_truth_mutated:false,
-    };
+    return { ok:true, recovered:false, delivery_retried:false, already_completed:true, inbox_id:inboxId, status:"completed", line_notification:{ sent:true, skipped:true, reason:"already_sent", mode:payload.customer_receipt_delivery_mode || null }, owner_telegram:{ sent:true, skipped:true, reason:"already_sent", message_id:payload.owner_telegram_message_id || null }, money_truth_mutated:false };
   }
 
   const ownerRefundAmount = payloadRefundAmount(payload);
@@ -704,67 +754,16 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
     admin_note:`${clean(record.fields?.admin_note, 1200)} · Recovered owner refund receipt ${payload.receipt_uploaded_at}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""}`.slice(0,1800),
   });
 
-  let notification = { ok:false, skipped:true, reason:"not_attempted", mode:null };
-  let telegram = { ok:false, skipped:true, reason:"not_attempted" };
   let mediaUrl = "";
-  const adminUrl = adminJobUrl(payload);
-  const modelUrl = modelJobAppUrl(payload);
-  try {
-    mediaUrl = await signedReceiptMediaUrl(env, inboxId, Date.now());
-    if (needsLineDelivery) {
-      notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, {
-        type:recovered.mime,
-        size:recovered.size,
-      });
-    } else {
-      notification = {
-        ok:true,
-        skipped:true,
-        reason:"already_sent",
-        mode:clean(payload.customer_receipt_delivery_mode, 80) || null,
-        status:Number(payload.customer_receipt_delivery_http_status) || null,
-      };
-    }
-  } catch {
-    notification = { ok:false, skipped:false, reason:"line_notification_failed", mode:null };
-  }
-  payload.customer_receipt_delivery_status = notification.ok ? "sent" : (notification.skipped ? "skipped" : "failed");
-  payload.customer_receipt_delivery_mode = notification.mode || null;
-  payload.customer_receipt_delivery_at = new Date().toISOString();
-  payload.customer_receipt_delivery_reason = notification.reason || null;
-  payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
-  payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
-  payload.customer_receipt_line_quota = notification.quota || null;
-  payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
-  payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
-  payload.customer_confirmation_url = mediaUrl || null;
-  payload.admin_job_url = adminUrl || null;
-  payload.model_job_app_url = modelUrl || null;
-
-  try {
-    if (needsTelegramDelivery) {
-      telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
-    } else {
-      telegram = {
-        ok:true,
-        skipped:true,
-        reason:"already_sent",
-        message_id:payload.owner_telegram_message_id || null,
-      };
-    }
-  } catch {
-    telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
-  }
-  payload.owner_telegram_delivery_status = telegram.ok ? "sent" : (telegram.skipped ? "skipped" : "failed");
-  payload.owner_telegram_delivery_at = new Date().toISOString();
-  payload.owner_telegram_delivery_reason = telegram.reason || null;
-  payload.owner_telegram_message_id = telegram.message_id || null;
-
-  await patchRecord(env, record, {
-    status:"done",
-    payload_json:JSON.stringify(payload),
-    admin_note:`${clean(record.fields?.admin_note, 1200)} · Recovered owner refund receipt ${payload.receipt_uploaded_at}${ownerRefundAmount ? ` · amount ${ownerRefundAmount} ${ownerRefundCurrency}` : ""} · LINE ${payload.customer_receipt_delivery_status} · Telegram ${payload.owner_telegram_delivery_status}`.slice(0,1800),
-  }).catch(() => null);
+  try { mediaUrl = await signedReceiptMediaUrl(env, inboxId, Date.now()); } catch { mediaUrl = ""; }
+  const file = { type:recovered.mime, size:recovered.size };
+  const { notification, telegram, adminUrl, modelUrl, customerJobUrl } = await persistReceiptAndNotify(env, record, inboxId, payload, mediaUrl, file, {
+    ownerRefundAmount,
+    ownerRefundCurrency,
+    recovered,
+    retryLine:needsLineDelivery,
+    retryTelegram:needsTelegramDelivery,
+  });
 
   return {
     ok:true,
@@ -776,23 +775,12 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
     refund_currency:ownerRefundCurrency,
     confirmation_url:mediaUrl || null,
     customer_confirmation_url:mediaUrl || null,
+    customer_receipt_url:mediaUrl || null,
+    customer_job_confirm_url:customerJobUrl || null,
     admin_job_url:adminUrl || null,
     model_job_app_url:modelUrl || null,
-    line_notification:{
-      sent:notification.ok === true,
-      skipped:notification.skipped === true,
-      reason:notification.reason || null,
-      mode:notification.mode || null,
-      status:Number(notification.status) || null,
-      transport_status:Number(notification.transport_status) || null,
-      quota:notification.quota || null,
-    },
-    owner_telegram:{
-      sent:telegram.ok === true,
-      skipped:telegram.skipped === true,
-      reason:telegram.reason || null,
-      message_id:telegram.message_id || null,
-    },
+    line_notification:{ sent:notification.ok === true, skipped:notification.skipped === true, reason:notification.reason || null, mode:notification.mode || null, status:Number(notification.status) || null, transport_status:Number(notification.transport_status) || null, quota:notification.quota || null },
+    owner_telegram:{ sent:telegram.ok === true, skipped:telegram.skipped === true, reason:telegram.reason || null, message_id:telegram.message_id || null },
     money_truth_mutated:false,
   };
 }
@@ -800,9 +788,8 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
 async function handleReceiptRecovery(request, env) {
   let body = {};
   const contentType = clean(request.headers.get("content-type"), 160).toLowerCase();
-  if (contentType.includes("application/json")) {
-    body = await request.json().catch(() => ({}));
-  } else {
+  if (contentType.includes("application/json")) body = await request.json().catch(() => ({}));
+  else {
     const form = await request.formData().catch(() => null);
     if (form) body = Object.fromEntries(form.entries());
   }
@@ -852,12 +839,14 @@ function refundPageHeaders() {
 function refundUploadResultHtml(payload = {}, status = 200, returnPath = REFUND_OPS_PAGE_PATH) {
   const ok = payload?.ok === true;
   const title = ok ? "อัปโหลดสลิปสำเร็จ" : "อัปโหลดไม่สำเร็จ";
-  const customerUrl = clean(payload?.customer_confirmation_url || payload?.confirmation_url, 1000);
+  const receiptUrl = clean(payload?.customer_receipt_url || payload?.customer_confirmation_url || payload?.confirmation_url, 1000);
+  const customerJobUrl = clean(payload?.customer_job_confirm_url, 1200);
   const adminUrl = clean(payload?.admin_job_url, 1000);
   const modelUrl = clean(payload?.model_job_app_url, 1200);
   const detail = ok
-    ? `<p>ระบบบันทึกสลิปแล้ว และทำ LINE / HYPE Telegram ต่อจาก backend แล้วค่ะ</p>
-       ${customerUrl ? `<p><strong>Customer URL</strong><br><a href="${html(customerUrl)}">${html(customerUrl)}</a></p>` : ""}
+    ? `<p>ระบบบันทึกสลิปแล้ว และส่ง HYPE pack ให้เปอร์พร้อมลิงก์ที่ต้องส่งเอง</p>
+       ${receiptUrl ? `<p><strong>Customer receipt URL</strong><br><a href="${html(receiptUrl)}">${html(receiptUrl)}</a></p>` : ""}
+       ${customerJobUrl ? `<p><strong>Customer job/confirm URL</strong><br><a href="${html(customerJobUrl)}">${html(customerJobUrl)}</a></p>` : ""}
        ${adminUrl ? `<p><strong>Admin Job URL</strong><br><a href="${html(adminUrl)}">${html(adminUrl)}</a></p>` : ""}
        ${modelUrl ? `<p><strong>Model Job/App URL</strong><br><a href="${html(modelUrl)}">${html(modelUrl)}</a></p>` : ""}`
     : `<p class="danger">${html(payload?.error || "upload_failed")}</p>`;
@@ -870,85 +859,15 @@ function pageHtml(initialItem = null) {
   const loadingLabel = initialItem ? "กำลังโหลดข้อมูลเสริม…" : "กำลังโหลด…";
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Refund Ops · MMD</title><style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:960px;margin:auto;padding:24px 16px 80px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:20px}.top h1{margin:0;font-size:26px}.sub{color:#a99e8e}.grid{display:grid;gap:12px}.card{border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:16px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.tag{font-size:12px;border:1px solid #514737;border-radius:999px;padding:4px 8px;color:#dec89b}.bank{font-size:20px;font-weight:800;margin:10px 0}.muted{color:#a99e8e}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}button,.btn{appearance:none;border:1px solid #6f6048;background:#211d17;color:#f7e7c3;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer;text-decoration:none}.primary{background:#d5b36b;color:#15110b;border-color:#d5b36b}.done{opacity:.62}.empty{padding:36px;text-align:center;color:#968b7c}.detail,.owner-fields,.confirm{margin-top:10px;padding:12px;background:#0f0e0c;border-radius:12px}.detail{display:none}.detail.open{display:block}.num{font:700 19px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace}.status{font-size:12px;margin-left:auto}.upload-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}.owner-fields{display:grid;grid-template-columns:160px 1fr;gap:8px}.owner-fields label{font-size:11px;color:#a99e8e;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.owner-fields input,.owner-fields textarea{width:100%;border:1px solid #3b3328;background:#0b0a09;color:#f4efe6;border-radius:10px;padding:10px;font:14px/1.4 inherit}.owner-fields textarea{min-height:42px;resize:vertical}.confirm a{word-break:break-all;color:#f7e7c3}.danger{color:#ffbd9e}@media(max-width:600px){.top{align-items:flex-start}.card{border-radius:16px}.status{width:100%;margin-left:0}.actions button,.actions .btn{flex:1 1 46%}.owner-fields{grid-template-columns:1fr}}
-</style></head><body><main class="wrap"><div class="top"><div><div class="sub">OWNER OPS</div><h1>Refund Accounts</h1><div class="sub">รูปบัญชีจาก LINE → ใส่ยอดคืน → Copy → โอน → อัปโหลดสลิปกลับ → ส่ง confirmation ให้ลูกค้า + Telegram pack ให้เปอร์</div></div><a class="btn" href="/internal/admin/control-room">Control Room</a></div>${directUpload}<div id="list" class="grid"><div class="empty">${loadingLabel}</div></div></main><script>
+</style></head><body><main class="wrap"><div class="top"><div><div class="sub">OWNER OPS</div><h1>Refund Accounts</h1><div class="sub">รูปบัญชีจาก LINE → ใส่ยอดคืน → Copy → โอน → อัปโหลดสลิปกลับ → HYPE รวมลิงก์พร้อมส่งให้เปอร์</div></div><a class="btn" href="/internal/admin/control-room">Control Room</a></div>${directUpload}<div id="list" class="grid"><div class="empty">${loadingLabel}</div></div></main><script>
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=v=>{const n=Number(String(v||'').replace(/,/g,''));return Number.isFinite(n)&&n>0?n.toLocaleString('th-TH')+' บาท':'ยังไม่ระบุยอดคืน'};
 async function api(path,opts={}){const c=new AbortController();const t=setTimeout(()=>c.abort(),10000);try{const r=await fetch('/v1/admin/refunds'+path,{credentials:'include',cache:'no-store',...opts,signal:opts.signal||c.signal});const p=await r.json().catch(()=>({}));if(!r.ok||p.ok===false)throw new Error(p.error||r.status);return p}catch(e){if(e?.name==='AbortError')throw new Error('หมดเวลารอข้อมูล กรุณากดโหลดใหม่');throw e}finally{clearTimeout(t)}}
 async function copy(v){await navigator.clipboard.writeText(v)}
-async function detail(id,btn){
-  const box=document.querySelector('[data-detail="'+CSS.escape(id)+'"]');
-  if(!box)return;
-  if(box.dataset.loaded==='1'){box.classList.toggle('open');return}
-  btn.disabled=true;
-  try{
-    const p=await api('/detail?inbox_id='+encodeURIComponent(id));
-    box.innerHTML='<div class="muted">'+esc(p.detail.bank_name||'')+'</div><div>'+esc(p.detail.account_name||'')+'</div><div class="num">'+esc(p.detail.account_number||'')+'</div><div class="actions"><button data-copy-name>Copy ชื่อ</button><button class="primary" data-copy-number>Copy เลขบัญชี</button><button data-copy-all>Copy พร้อมยอด</button></div>';
-    box.querySelector('[data-copy-name]').onclick=()=>copy(p.detail.account_name||'');
-    box.querySelector('[data-copy-number]').onclick=()=>copy(p.detail.account_number||'');
-    box.querySelector('[data-copy-all]').onclick=()=>{
-      const card=box.closest('[data-card]');
-      const amount=card.querySelector('[data-refund-amount]').value.trim();
-      copy(['โอนคืนลูกค้า','ธนาคาร: '+(p.detail.bank_name||''),'ชื่อบัญชี: '+(p.detail.account_name||''),'เลขบัญชี: '+(p.detail.account_number||''),amount?'ยอดคืน: '+money(amount):''].filter(Boolean).join("\\n"));
-    };
-    box.dataset.loaded='1';
-    box.classList.add('open');
-  }finally{btn.disabled=false}
-}
-async function upload(id,file,card){
-  if(!file)return;
-  const amount=card.querySelector('[data-refund-amount]').value.trim();
-  const note=card.querySelector('[data-refund-note]').value.trim();
-  const ref=card.querySelector('[data-refund-ref]').value.trim();
-  if(!amount){card.querySelector('[data-up-status]').innerHTML='<span class="danger">กรุณาใส่ยอดคืนก่อนอัปโหลดสลิป</span>';return}
-  const fd=new FormData();
-  fd.append('inbox_id',id);
-  fd.append('file',file);
-  fd.append('refund_amount',amount);
-  fd.append('refund_currency','THB');
-  fd.append('refund_note',note);
-  fd.append('refund_reference',ref);
-  card.querySelector('[data-up-status]').textContent='กำลังอัปโหลด…';
-  try{
-    const p=await api('/receipt',{method:'POST',body:fd});
-    card.classList.add('done');
-    card.querySelector('[data-up-status]').textContent='อัปโหลดสลิปแล้ว ✓';
-    const url=p.confirmation_url||'';
-    const admin=p.admin_job_url||'';
-    const model=p.model_job_app_url||'';
-    if(url||admin||model){
-      card.querySelector('[data-confirm]').innerHTML=[
-        url?'<strong>Customer Confirmation URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(url)+'">'+esc(url)+'</a>':'',
-        admin?'<br><strong>Admin Job URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(admin)+'">'+esc(admin)+'</a>':'',
-        model?'<br><strong>Model Job/App URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(model)+'">'+esc(model)+'</a>':'',
-        '<div class="actions"><button data-copy-confirm>Copy Customer URL</button><button data-copy-model>Copy Model URL</button></div>'
-      ].join('');
-      const cc=card.querySelector('[data-copy-confirm]');if(cc)cc.onclick=()=>copy(url);
-      const cm=card.querySelector('[data-copy-model]');if(cm)cm.onclick=()=>copy(model);
-    }
-  }catch(e){card.querySelector('[data-up-status]').textContent='อัปโหลดไม่สำเร็จ · '+e.message}
-}
-function cardHtml(x){
-  const cls=x.receipt_uploaded?'done':'';
-  const state=x.receipt_uploaded?'DONE':'NEEDS YOU';
-  const source=x.linked_job_id?('Job '+x.linked_job_id):x.linked_session_id?('Session '+x.linked_session_id):'จาก LINE OA';
-  const uploadState=x.receipt_uploaded?(x.customer_receipt_delivery_status==='sent'?'อัปโหลดสลิปแล้ว · ส่ง LINE แล้ว ✓':'อัปโหลดสลิปแล้ว ✓'):'หลังโอน อัปโหลดสลิปตรงนี้';
-  const changed=x.account_changed?'<span class="tag">ACCOUNT CHANGED</span>':'';
-  return '<article class="card '+cls+'" data-card="'+esc(x.inbox_id)+'"><div class="row"><span class="tag">'+esc((x.purpose||'UNKNOWN').toUpperCase())+'</span>'+changed+'<strong>'+esc(x.customer_name||'LINE customer')+'</strong><span class="status muted">'+state+'</span></div><div class="bank">'+esc(x.bank_name||'Bank detail')+' · '+esc(x.account_number_masked||'••••')+'</div><div class="muted">'+esc(source)+' · '+esc(money(x.refund_amount_due))+'</div><div class="owner-fields"><label>ยอดคืน</label><input data-refund-amount inputmode="decimal" placeholder="เช่น 4500" value="'+esc(x.refund_amount_due||'')+'"><label>หมายเหตุลูกค้า</label><textarea data-refund-note placeholder="เช่น คืนยอดจากงานที่ยกเลิก">'+esc(x.owner_refund_note||'')+'</textarea><label>Ref/วันที่โอน</label><input data-refund-ref placeholder="optional" value="'+esc(x.owner_refund_reference||'')+'"></div><div class="actions"><button type="button" data-open>เปิดเลขบัญชี</button><button type="button" class="btn primary" data-upload-trigger>อัปโหลดสลิปคืน</button><input class="upload-file" data-file type="file" accept="image/jpeg,image/png,image/webp" aria-label="เลือกสลิปคืนเงิน"></div><div class="muted" data-up-status>'+uploadState+'</div><div class="detail" data-detail="'+esc(x.inbox_id)+'"></div><div class="confirm" data-confirm></div></article>';
-}
-async function load(){
-  const target=new URLSearchParams(location.search).get('inbox_id')||'';
-  const p=await api('/list'+(target?'?inbox_id='+encodeURIComponent(target):''));
-  const root=document.getElementById('list');
-  root.innerHTML=p.items.length?p.items.map(cardHtml).join(''):'<div class="empty">ยังไม่มี Refund Account ที่ต้องทำ</div>';
-  root.querySelectorAll('[data-card]').forEach(card=>{
-    const id=card.dataset.card;
-    const file=card.querySelector('[data-file]');
-    const trigger=card.querySelector('[data-upload-trigger]');
-    card.querySelector('[data-open]').onclick=e=>detail(id,e.currentTarget);
-    trigger.onclick=()=>file.click();
-    file.onchange=e=>upload(id,e.target.files?.[0],card);
-  });
-}
+async function detail(id,btn){const box=document.querySelector('[data-detail="'+CSS.escape(id)+'"]');if(!box)return;if(box.dataset.loaded==='1'){box.classList.toggle('open');return}btn.disabled=true;try{const p=await api('/detail?inbox_id='+encodeURIComponent(id));box.innerHTML='<div class="muted">'+esc(p.detail.bank_name||'')+'</div><div>'+esc(p.detail.account_name||'')+'</div><div class="num">'+esc(p.detail.account_number||'')+'</div><div class="actions"><button data-copy-name>Copy ชื่อ</button><button class="primary" data-copy-number>Copy เลขบัญชี</button><button data-copy-all>Copy พร้อมยอด</button></div>';box.querySelector('[data-copy-name]').onclick=()=>copy(p.detail.account_name||'');box.querySelector('[data-copy-number]').onclick=()=>copy(p.detail.account_number||'');box.querySelector('[data-copy-all]').onclick=()=>{const card=box.closest('[data-card]');const amount=card.querySelector('[data-refund-amount]').value.trim();copy(['โอนคืนลูกค้า','ธนาคาร: '+(p.detail.bank_name||''),'ชื่อบัญชี: '+(p.detail.account_name||''),'เลขบัญชี: '+(p.detail.account_number||''),amount?'ยอดคืน: '+money(amount):''].filter(Boolean).join("\n"));};box.dataset.loaded='1';box.classList.add('open');}finally{btn.disabled=false}}
+async function upload(id,file,card){if(!file)return;const amount=card.querySelector('[data-refund-amount]').value.trim();const note=card.querySelector('[data-refund-note]').value.trim();const ref=card.querySelector('[data-refund-ref]').value.trim();if(!amount){card.querySelector('[data-up-status]').innerHTML='<span class="danger">กรุณาใส่ยอดคืนก่อนอัปโหลดสลิป</span>';return}const fd=new FormData();fd.append('inbox_id',id);fd.append('file',file);fd.append('refund_amount',amount);fd.append('refund_currency','THB');fd.append('refund_note',note);fd.append('refund_reference',ref);card.querySelector('[data-up-status]').textContent='กำลังอัปโหลด…';try{const p=await api('/receipt',{method:'POST',body:fd});card.classList.add('done');card.querySelector('[data-up-status]').textContent='อัปโหลดสลิปแล้ว ✓';const receipt=p.customer_receipt_url||p.confirmation_url||'';const customer=p.customer_job_confirm_url||'';const admin=p.admin_job_url||'';const model=p.model_job_app_url||'';if(receipt||customer||admin||model){card.querySelector('[data-confirm]').innerHTML=[receipt?'<strong>Customer receipt URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(receipt)+'">'+esc(receipt)+'</a>':'',customer?'<br><strong>Customer job/confirm URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(customer)+'">'+esc(customer)+'</a>':'',admin?'<br><strong>Admin Job URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(admin)+'">'+esc(admin)+'</a>':'',model?'<br><strong>Model Job/App URL</strong><br><a target="_blank" rel="noreferrer" href="'+esc(model)+'">'+esc(model)+'</a>':'','<div class="actions"><button data-copy-confirm>Copy Customer URL</button><button data-copy-model>Copy Model URL</button></div>'].join('');const cc=card.querySelector('[data-copy-confirm]');if(cc)cc.onclick=()=>copy(customer||receipt);const cm=card.querySelector('[data-copy-model]');if(cm)cm.onclick=()=>copy(model);}}catch(e){card.querySelector('[data-up-status]').textContent='อัปโหลดไม่สำเร็จ · '+e.message}}
+function cardHtml(x){const cls=x.receipt_uploaded?'done':'';const state=x.receipt_uploaded?'DONE':'NEEDS YOU';const source=x.linked_job_id?('Job '+x.linked_job_id):x.linked_session_id?('Session '+x.linked_session_id):'จาก LINE OA';const uploadState=x.receipt_uploaded?(x.customer_receipt_delivery_status==='sent'?'อัปโหลดสลิปแล้ว · ส่ง LINE แล้ว ✓':'อัปโหลดสลิปแล้ว ✓'):'หลังโอน อัปโหลดสลิปตรงนี้';const changed=x.account_changed?'<span class="tag">ACCOUNT CHANGED</span>':'';return '<article class="card '+cls+'" data-card="'+esc(x.inbox_id)+'"><div class="row"><span class="tag">'+esc((x.purpose||'UNKNOWN').toUpperCase())+'</span>'+changed+'<strong>'+esc(x.customer_name||'LINE customer')+'</strong><span class="status muted">'+state+'</span></div><div class="bank">'+esc(x.bank_name||'Bank detail')+' · '+esc(x.account_number_masked||'••••')+'</div><div class="muted">'+esc(source)+' · '+esc(money(x.refund_amount_due))+'</div><div class="owner-fields"><label>ยอดคืน</label><input data-refund-amount inputmode="decimal" placeholder="เช่น 4500" value="'+esc(x.refund_amount_due||'')+'"><label>หมายเหตุลูกค้า</label><textarea data-refund-note placeholder="เช่น คืนยอดจากงานที่ยกเลิก">'+esc(x.owner_refund_note||'')+'</textarea><label>Ref/วันที่โอน</label><input data-refund-ref placeholder="optional" value="'+esc(x.owner_refund_reference||'')+'"></div><div class="actions"><button type="button" data-open>เปิดเลขบัญชี</button><button type="button" class="btn primary" data-upload-trigger>อัปโหลดสลิปคืน</button><input class="upload-file" data-file type="file" accept="image/jpeg,image/png,image/webp" aria-label="เลือกสลิปคืนเงิน"></div><div class="muted" data-up-status>'+uploadState+'</div><div class="detail" data-detail="'+esc(x.inbox_id)+'"></div><div class="confirm" data-confirm></div></article>'}
+async function load(){const target=new URLSearchParams(location.search).get('inbox_id')||'';const p=await api('/list'+(target?'?inbox_id='+encodeURIComponent(target):''));const root=document.getElementById('list');root.innerHTML=p.items.length?p.items.map(cardHtml).join(''):'<div class="empty">ยังไม่มี Refund Account ที่ต้องทำ</div>';root.querySelectorAll('[data-card]').forEach(card=>{const id=card.dataset.card;const file=card.querySelector('[data-file]');const trigger=card.querySelector('[data-upload-trigger]');card.querySelector('[data-open]').onclick=e=>detail(id,e.currentTarget);trigger.onclick=()=>file.click();file.onchange=e=>upload(id,e.target.files?.[0],card);});}
 load().catch(e=>document.getElementById('list').innerHTML='<div class="empty">โหลดไม่สำเร็จ · '+esc(e.message)+'<div class="actions" style="justify-content:center"><button onclick="location.reload()">ลองใหม่</button></div></div>');
 </script></body></html>`;
 }
@@ -963,23 +882,16 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
 
   const authed = typeof isAuthed === "function" ? await isAuthed(request, env) : false;
   if (!authed) {
-    if (path === REFUND_OPS_PAGE_PATH) {
-      return new Response(null, { status:303, headers:{ location:`/internal/admin/login?next=${encodeURIComponent(REFUND_OPS_PAGE_PATH)}`, "cache-control":"no-store" } });
-    }
+    if (path === REFUND_OPS_PAGE_PATH) return new Response(null, { status:303, headers:{ location:`/internal/admin/login?next=${encodeURIComponent(REFUND_OPS_PAGE_PATH)}`, "cache-control":"no-store" } });
     return json({ ok:false, error:"unauthorized" }, 401);
   }
 
   if (path === REFUND_OPS_PAGE_PATH && method === "POST") {
     const inboxId = clean(url.searchParams.get("inbox_id"), 160);
-    const returnPath = inboxId
-      ? `${REFUND_OPS_PAGE_PATH}?inbox_id=${encodeURIComponent(inboxId)}&action=upload`
-      : REFUND_OPS_PAGE_PATH;
+    const returnPath = inboxId ? `${REFUND_OPS_PAGE_PATH}?inbox_id=${encodeURIComponent(inboxId)}&action=upload` : REFUND_OPS_PAGE_PATH;
     const uploadResponse = await handleReceiptUpload(request, env);
     const payload = await uploadResponse.clone().json().catch(() => ({ ok:false, error:"upload_failed" }));
-    return new Response(refundUploadResultHtml(payload, uploadResponse.status, returnPath), {
-      status:uploadResponse.ok ? 200 : uploadResponse.status,
-      headers:refundPageHeaders(),
-    });
+    return new Response(refundUploadResultHtml(payload, uploadResponse.status, returnPath), { status:uploadResponse.ok ? 200 : uploadResponse.status, headers:refundPageHeaders() });
   }
 
   if (path === REFUND_OPS_PAGE_PATH && (method === "GET" || method === "HEAD")) {
@@ -989,14 +901,9 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
       try {
         const record = await findByInboxId(env, inboxId);
         if (record) initialItem = publicItem(record);
-      } catch {
-        // The client-side API still has a bounded retry/error state.
-      }
+      } catch {}
     }
-    return new Response(method === "HEAD" ? null : pageHtml(initialItem), {
-      status:200,
-      headers:refundPageHeaders(),
-    });
+    return new Response(method === "HEAD" ? null : pageHtml(initialItem), { status:200, headers:refundPageHeaders() });
   }
   if (path === `${REFUND_OPS_API_PREFIX}/list` && method === "GET") {
     const inboxId = clean(url.searchParams.get("inbox_id"), 160);
@@ -1007,10 +914,7 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
       }
       return json({ ok:true, items:await listItems(env) });
     } catch (error) {
-      return json({
-        ok:false,
-        error:error?.message === "airtable_timeout" ? "refund_list_timeout" : "refund_list_unavailable",
-      }, 503);
+      return json({ ok:false, error:error?.message === "airtable_timeout" ? "refund_list_timeout" : "refund_list_unavailable" }, 503);
     }
   }
   if (path === `${REFUND_OPS_API_PREFIX}/detail` && method === "GET") {
