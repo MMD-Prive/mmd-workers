@@ -9,19 +9,7 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
-const RECOVERY_REQUIRED_FIELDS = ["email", "phone", "telegram_username", "member_id_candidate"];
-const RECOVERY_EVIDENCE_SOURCES = [
-  "members_email",
-  "members_member_id",
-  "clients_email",
-  "clients_phone",
-  "clients_telegram_username",
-  "pre_session_identity_seed",
-  "client_access_evidence",
-  "line_ofc_email_candidate",
-  "line_ofc_phone_candidate",
-  "line_ofc_telegram_candidate",
-];
+const RECOVERY_REQUIRED_FIELDS = ["email", "phone", "nickname"];
 
 test("unmatched LINE-verified MY MMD status returns safe pending state, not guest data", async () => {
   const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
@@ -41,6 +29,15 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.ok, true);
   assert.equal(payload.data.next_screen_key, "status_unresolved");
   assert.equal(payload.data.screen.key, "status_unresolved");
+  assert.match(payload.data.screen.copy, /ยืนยัน LINE สำเร็จแล้ว/);
+  assert.match(payload.data.screen.copy, /1–2 อย่าง/);
+  assert.match(payload.data.screen.copy, /อีเมล \/ เบอร์ \/ ชื่อเล่นหรือนามแฝง/);
+  assert.match(payload.data.screen.copy, /โน้ตเดิมของ Per/);
+  assert.doesNotMatch(payload.data.screen.copy, /Guest/);
+  assert.doesNotMatch(payload.data.screen.copy, /Telegram/);
+  assert.doesNotMatch(payload.data.screen.copy, /Member ID/);
+  assert.doesNotMatch(payload.data.screen.copy, /LINE OFC note/);
+  assert.doesNotMatch(payload.data.screen.copy, /Tier, Points, Wallet/);
   assert.deepEqual(payload.data.screen.copy.split("\n"), [
     "ยืนยัน LINE สำเร็จแล้ว",
     "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
@@ -61,7 +58,6 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
     payment_truth_state: "pending_backend",
     browser_authority: "presentation_only",
     recovery_required_fields: RECOVERY_REQUIRED_FIELDS,
-    recovery_match_evidence: RECOVERY_EVIDENCE_SOURCES,
   });
   assert.equal(payload.data.entitlement_display_state, "review_required");
   assert.equal(payload.data.points_display_state, "pending_backend");
@@ -70,11 +66,12 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.data.private_access_state, "fail_closed");
   assert.equal(payload.data.payment_truth_state, "pending_backend");
   assert.deepEqual(payload.data.recovery_required_fields, RECOVERY_REQUIRED_FIELDS);
-  assert.deepEqual(payload.data.recovery_match_evidence, RECOVERY_EVIDENCE_SOURCES);
+  assert.equal("recovery_match_evidence" in payload.data, false);
   assert.equal("membership_date_authority" in payload.data, false);
   assert.equal("membership_date_customer_input_authority" in payload.data, false);
 });
 
+test("unmatched status exposes a lightweight recovery action before signup", async () => {
 test("unmatched status exposes compact Verify action before signup using the live backend fields", async () => {
   const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
   const response = jsonResponse({
@@ -92,6 +89,7 @@ test("unmatched status exposes compact Verify action before signup using the liv
 
   assert.deepEqual(payload.data.screen.actions[0], {
     id: "recovery_evidence",
+    label: "ยืนยันข้อมูลสมาชิกเดิม",
     label: "Verify",
     endpoint: "/member/api/liff/recovery",
     method: "POST",

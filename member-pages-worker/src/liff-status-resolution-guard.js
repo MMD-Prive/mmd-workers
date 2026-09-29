@@ -17,19 +17,7 @@ const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
   private_access_state: "fail_closed",
   payment_truth_state: "pending_backend",
   browser_authority: "presentation_only",
-  recovery_required_fields: ["email", "phone", "telegram_username", "member_id_candidate"],
-  recovery_match_evidence: [
-    "members_email",
-    "members_member_id",
-    "clients_email",
-    "clients_phone",
-    "clients_telegram_username",
-    "pre_session_identity_seed",
-    "client_access_evidence",
-    "line_ofc_email_candidate",
-    "line_ofc_phone_candidate",
-    "line_ofc_telegram_candidate",
-  ],
+  recovery_required_fields: ["email", "phone", "nickname"],
 });
 
 const STATUS_UNRESOLVED_SCREEN = Object.freeze({
@@ -38,10 +26,11 @@ const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   actions: [
     {
       id: "recovery_evidence",
+      label: "ยืนยันข้อมูลสมาชิกเดิม",
       label: "Verify",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
-      fields: ["email", "phone", "telegram_username", "member_id_candidate"],
+      fields: ["email", "phone", "nickname"],
     },
     {
       id: "signup",
@@ -108,7 +97,6 @@ export async function rewritePendingStatusStartResponse(request, response, trace
       private_access_state: safeState.private_access_state,
       payment_truth_state: safeState.payment_truth_state,
       recovery_required_fields: safeState.recovery_required_fields,
-      recovery_match_evidence: safeState.recovery_match_evidence,
     },
   }), {
     status: response.status,
