@@ -65,6 +65,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/session/action"
 zone_name = "mmdbkk.com"
 
+# First Direct Private Job rules gate. Model identity must already be bound through
+# the canonical MMD MODEL session; the gate never changes Session/Job/payment state.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/direct-job-gate/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/direct-job-gate/*"
+zone_name = "mmdbkk.com"
+
 # Model Dashboard self-service profile routes. Query-safe companion stays on the
 # same Worker; runtime pathname matching remains exact.
 [[routes]]
@@ -986,6 +996,7 @@ AIRTABLE_TABLE_MODELS = "models"
 AIRTABLE_TABLE_MODEL_OFFER_RULES_ID = "tblSbxUGTFqd2CgPy"
 AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS = "tblrwsAdzFhtmknlF"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_MODEL_JOB_DAY_RULES_ACKS = "tblw74EqVYMHb5fbr"
 AT_SESSIONS__SESSION_ID = "session_id"
 AT_SESSIONS__PAYMENT_REF = "payment_ref"
 AT_SESSIONS__STATE = "session_state"
