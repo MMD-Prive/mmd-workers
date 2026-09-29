@@ -409,8 +409,6 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     "www.mmdbkk.com/internal/admin/create-session*",
     "mmdbkk.com/internal/admin/jobs/create-session*",
     "www.mmdbkk.com/internal/admin/jobs/create-session*",
-    "mmdbkk.com/internal/admin/jobs/create-job*",
-    "www.mmdbkk.com/internal/admin/jobs/create-job*",
     "mmdbkk.com/internal/jobs/create-job*",
     "www.mmdbkk.com/internal/jobs/create-job*",
     "mmdbkk.com/a/create-session.js",
@@ -439,6 +437,8 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     assert.match(wrangler, new RegExp(`pattern = "${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
   }
 
+  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/jobs\/create-job\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/jobs\/create-job\*"/);
   assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/\*"/);
   assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/\*"/);
   assert.match(wrangler, /binding = "ADMIN_WORKER"/);
@@ -448,7 +448,6 @@ test("protected-page login redirects preserve only same-origin internal next pat
   const cases = [
     ["/internal/admin/control-room?tab=line-inbox", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room%3Ftab%3Dline-inbox"],
     ["/internal/admin/jobs/create-session?source=bridge", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fjobs%2Fcreate-session%3Fsource%3Dbridge"],
-    ["/internal/admin/jobs/create-job?source=job-board", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fjobs%2Fcreate-job%3Fsource%3Djob-board"],
   ];
 
   for (const [path, location] of cases) {
