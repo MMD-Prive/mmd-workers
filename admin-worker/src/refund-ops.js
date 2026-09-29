@@ -383,12 +383,14 @@ async function notifyRefundReceiptToLine(env, record, payload, mediaUrl, file) {
     }),
   }));
   const body = await response.json().catch(() => ({}));
+  const upstreamStatus = Number(body?.status);
   return {
     ok: response.ok && body?.ok === true,
     skipped: body?.skipped === true,
     reason: clean(body?.reason || body?.error, 120) || null,
     mode: clean(body?.mode, 80) || null,
-    status: response.status,
+    status: Number.isFinite(upstreamStatus) && upstreamStatus > 0 ? upstreamStatus : response.status,
+    transport_status: response.status,
   };
 }
 
@@ -542,13 +544,24 @@ async function handleReceiptUpload(request, env) {
   payload.customer_receipt_delivery_mode = notification.mode || null;
   payload.customer_receipt_delivery_at = new Date().toISOString();
   payload.customer_receipt_delivery_reason = notification.reason || null;
+  payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
+  payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
   payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
   payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
   payload.customer_confirmation_url = mediaUrl || null;
   payload.admin_job_url = adminUrl || null;
   payload.model_job_app_url = modelUrl || null;
   try {
-    telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
+    if (needsTelegramDelivery) {
+      telegram = await notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl, adminUrl, modelUrl });
+    } else {
+      telegram = {
+        ok:true,
+        skipped:true,
+        reason:"already_sent",
+        message_id:payload.owner_telegram_message_id || null,
+      };
+    }
   } catch {
     telegram = { ok:false, skipped:false, reason:"telegram_notification_failed" };
   }
@@ -645,22 +658,27 @@ async function findRecoverableReceipt(env, record, inboxId) {
 
 async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   const payload = parsePayload(record);
-  if (clean(record?.fields?.status, 80) === "done" && clean(payload.receipt_r2_key, 500)) {
+  const alreadyCompleted = clean(record?.fields?.status, 80) === "done" && Boolean(clean(payload.receipt_r2_key, 500));
+  const needsLineDelivery = payload.customer_receipt_delivery_status !== "sent";
+  const needsTelegramDelivery = payload.owner_telegram_delivery_status !== "sent";
+  if (alreadyCompleted && !needsLineDelivery && !needsTelegramDelivery) {
     return {
       ok:true,
       recovered:false,
+      delivery_retried:false,
       already_completed:true,
       inbox_id:inboxId,
       status:"completed",
       line_notification:{
-        sent:payload.customer_receipt_delivery_status === "sent",
-        skipped:payload.customer_receipt_delivery_status === "skipped",
-        reason:payload.customer_receipt_delivery_reason || null,
+        sent:true,
+        skipped:true,
+        reason:"already_sent",
+        mode:payload.customer_receipt_delivery_mode || null,
       },
       owner_telegram:{
-        sent:payload.owner_telegram_delivery_status === "sent",
-        skipped:payload.owner_telegram_delivery_status === "skipped",
-        reason:payload.owner_telegram_delivery_reason || null,
+        sent:true,
+        skipped:true,
+        reason:"already_sent",
         message_id:payload.owner_telegram_message_id || null,
       },
       money_truth_mutated:false,
@@ -691,10 +709,20 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   const modelUrl = modelJobAppUrl(payload);
   try {
     mediaUrl = await signedReceiptMediaUrl(env, inboxId, Date.now());
-    notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, {
-      type:recovered.mime,
-      size:recovered.size,
-    });
+    if (needsLineDelivery) {
+      notification = await notifyRefundReceiptToLine(env, record, payload, mediaUrl, {
+        type:recovered.mime,
+        size:recovered.size,
+      });
+    } else {
+      notification = {
+        ok:true,
+        skipped:true,
+        reason:"already_sent",
+        mode:clean(payload.customer_receipt_delivery_mode, 80) || null,
+        status:Number(payload.customer_receipt_delivery_http_status) || null,
+      };
+    }
   } catch {
     notification = { ok:false, skipped:false, reason:"line_notification_failed", mode:null };
   }
@@ -726,7 +754,8 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
 
   return {
     ok:true,
-    recovered:true,
+    recovered:!alreadyCompleted,
+    delivery_retried:alreadyCompleted,
     inbox_id:inboxId,
     status:"completed",
     refund_amount:ownerRefundAmount || null,
