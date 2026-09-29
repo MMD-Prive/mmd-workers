@@ -108,7 +108,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
       "pay_model_thb",
     );
-    const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "full");
+    const paymentStage = normalizeStage(body.payment_type || body.payment_stage || "deposit");
     const paymentMethod = canonicalPaymentMethod(body.payment_method || "promptpay");
     // Keep machine-readable membership markers on their own lines.
     const note = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").slice(0, 4000);
