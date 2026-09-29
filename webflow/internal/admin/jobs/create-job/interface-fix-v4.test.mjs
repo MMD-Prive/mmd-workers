@@ -19,3 +19,9 @@ test("Create Job success copy no longer says customer and model URLs are both re
   assert.match(js, /Customer Payment URL พร้อมส่ง · Model URL จะออกหลัง Official Verify/);
   assert.doesNotMatch(js, /มี URL ลูกค้าและนายแบบด้านล่าง','/);
 });
+
+test("Create Job does not release thumbnail preview or detail pages before Official Verify", async () => {
+  const js = await readFile(patchPath, "utf8");
+  assert.match(js, /ห้ามปล่อย thumbnail\/preview\/detail page ก่อน Official Verify/);
+  assert.match(js, /ไม่ปล่อย thumbnail page หรือหน้า preview แทน Model URL/);
+});

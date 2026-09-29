@@ -8,6 +8,10 @@ The active route is `POST /v1/admin/job/create` through the credential-bound adm
 | SIGIL explicit `pending_client_link`, no canonical Client | Name snapshot allowed | Session and Job saved; no Payment, confirmation token, notification or reconfirm schedule |
 | Linked private job | Canonical identity plus authoritative private-access gate | Existing access policy remains authoritative |
 
+The payment gate applies to manual Create Job, Job Board / กระดานข่าว sourced jobs, and Job Board handoff / candidate flows. Before Official Verify, the only customer-facing output that may be sent is the Customer Payment URL. Do not release Member URLs, Model URLs, thumbnail pages, preview pages, detail pages, or any alternate model/app handoff page before Official Verify.
+
+Link previews for held jobs must be privacy-safe and generic. They must not expose customer name, model name, time, place, price, PN, job token, thumbnail page content, or any job detail that would let a model/customer bypass the payment gate.
+
 Strict lookup returns no canonical records when only a manual or staging candidate exists. LINE suggestions are separate evidence requiring an operator Link/Reconcile decision. Names never auto-link a Client.
 
 Pending creation sends a `held_job` envelope to the issuer. An older issuer sees no required top-level client fields and rejects before writing. The new issuer persists a hold marker in Session notes and returns `payment_ref: null`. This makes staggered admin/payments deployments fail safely. It does not automatically release an existing held job when a Client is later linked; release must separately validate identity and applicable access before issuing links.
