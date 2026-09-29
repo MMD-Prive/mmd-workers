@@ -31,7 +31,7 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.data.screen.key, "status_unresolved");
   assert.match(payload.data.screen.copy, /ยืนยัน LINE สำเร็จแล้ว/);
   assert.match(payload.data.screen.copy, /1–2 อย่าง/);
-  assert.match(payload.data.screen.copy, /อีเมล \/ เบอร์ \/ ชื่อเล่น/);
+  assert.match(payload.data.screen.copy, /อีเมล \/ เบอร์ \/ ชื่อเล่นหรือนามแฝง/);
   assert.match(payload.data.screen.copy, /โน้ตเดิมของ Per/);
   assert.doesNotMatch(payload.data.screen.copy, /Guest/);
   assert.doesNotMatch(payload.data.screen.copy, /Telegram/);
