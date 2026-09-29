@@ -38,7 +38,7 @@ test("job board LINE shell uses owner alias copy, not apply copy", () => {
       model_record_id: "recFilmJ",
     },
   });
-  assert.match(html, /ยืนยันตัวตนสำหรับงาน Film J/);
+  assert.match(html, /กำลังเปิดงาน Film J/);\n  assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
   assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
   assert.match(html, /model_alias/);
 });
