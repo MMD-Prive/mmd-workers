@@ -227,6 +227,16 @@ test("canonical personal payment, membership, and points status fail closed dete
   }
 });
 
+test("TMIB questions resolve to approved public story knowledge", () => {
+  for (const text of ["TMIB ตอนนี้ออกมากี่ตอน", "HITO เป็นคนยังไง", "ACT 001 ชื่ออะไร", "Four Strangers, One Summer"]) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), "tmib_story", text);
+    const capability = decideKenjiCapability({ text, intent: "tmib_story" });
+    assert.equal(capability.capability, "approved_public_knowledge", text);
+    assert.equal(capability.requires_truth, false, text);
+  }
+});
+
 test("membership signup and renewal webhooks reply once without model use", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];

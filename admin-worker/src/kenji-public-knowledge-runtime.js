@@ -57,6 +57,18 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
       "บอกได้เลยครับว่าต้องการ หา Model / จอง / สมัครสมาชิก / MY MMD / ชำระเงิน / MMS / TMIB / Partner / Shop แบบไหน ผมจะส่งลิงก์หน้าเว็บที่ตรงให้ครับ ถ้าเป็นเรื่องที่มีสถานะเฉพาะบัญชี เช่น Payment, Membership, คิว หรือสิทธิ์ ผมจะยึดหน้าที่ระบบส่งให้และไม่เดาสถานะแทนครับ",
   },
   {
+    id: "kenji_tmib_story_canon_v1",
+    title: "Kenji — TMIB Character + Episode Canon",
+    category: "faq",
+    language: "th",
+    status: "active",
+    response_mode: "auto_reply_allowed",
+    risk_level: "medium",
+    source_path: "member-pages-worker/src/tmib-episode-catalog.js",
+    customer_answer:
+      "ตอนนี้ TMIB มีเรื่องที่ Live แล้ว 1 ตอนครับ — ACT 001 · Four Strangers, One Summer\n\nตัวหลักคือ HITO, HIEI, HIRO และ HIMA: HITO ตรงและเป็นหลักของกลุ่ม, HIEI เงียบแต่สังเกตเก่ง, HIRO นิ่งและอบอุ่น, HIMA สดใสขี้เล่นแต่มีมุมอ่อนไหว\n\nดู TMIB → https://mmdbkk.com/tmib\nดู Stories → https://mmdbkk.com/tmib/stories\nACT 001 → https://mmdbkk.com/tmib/act-001",
+  },
+  {
     id: "kenji_20_008_membership_intake_catalog",
     title: "Kenji AI 2.0 — Public + Private Membership Catalog",
     category: "membership",

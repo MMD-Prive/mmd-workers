@@ -92,7 +92,7 @@ function keywordProfile(alias, model = privateModel(), overrides = {}) {
 
 const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
-  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "nickname", "username", "run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number", "folder_name"]),
+  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "nickname", "username", "private_real_name", "run_number", "Run Number", "run_no", "Run No", "model_run_number", "Model Run Number", "folder_name"]),
   approvals: new Set(["line_user_id"]),
   decisions: new Set(["line_user_id"]),
   profiles: new Set([]),
@@ -479,6 +479,24 @@ test("GWs real/working name resolves internally to the restricted GWs identity w
   assert.deepEqual(result, { status: "restricted_category", category: "gws" });
   assert.doesNotMatch(JSON.stringify(result), /Peet|mdl_exc_oth_peet/i);
 });
+
+test("owner-reviewed private real name resolves GWs/EMs internally but is never projected", async () => {
+  const model = privateModel("drive:private-gws", "exclusive", {
+    working_name: "Public Alias",
+    nickname: "Alias",
+    private_real_name: "Verified Private Name",
+    exclusive_group: "GWs",
+    folder_name: "GWs19 - Public Alias",
+  });
+  const denied = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "Verified Private Name" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+  );
+  assert.deepEqual(denied, { status: "restricted_category", category: "gws" });
+  assert.doesNotMatch(JSON.stringify(denied), /Verified Private Name|Public Alias|private-gws/i);
+});
+
 
 test("EMs code-prefixed display names resolve code, alias and real/working name to one canonical identity", async () => {
   const model = privateModel("drive:private-source", "exclusive", {
