@@ -946,7 +946,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "care_back_dates") {
-    return `${prefix}CARE BACK Phase 1 สิ้นสุดวันที่ 31 สิงหาคม 2026 และ Phase 2 เปิดวันที่ 1–30 กันยายน 2026 ครับ ทั้งสองช่วงใช้นโยบายสิทธิ์เดียวกัน และการเข้าร่วมในเดือนกันยายนไม่สร้างสิทธิ์ซ้ำครับ`;
+    return `${prefix}CARE BACK Phase 1 สิ้นสุดวันที่ 31 สิงหาคม 2026 และ Phase 2 เปิดวันที่ 1 กันยายน–31 ตุลาคม 2026 ครับ ทั้งสองช่วงใช้นโยบายสิทธิ์เดียวกัน และการเข้าร่วมในช่วงต่อเวลาไม่สร้างสิทธิ์ซ้ำครับ`;
   }
 
   if (intent === "care_back_current_member") {
