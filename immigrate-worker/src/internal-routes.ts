@@ -638,12 +638,6 @@ export async function handleInternalRoutes(request: Request, env: InternalRoutes
     return redirect(withQuery("/internal/admin/jobs/job-board", url), 308);
   }
 
-  if (pathname === "/internal/admin/jobs/create-job") {
-    const gate = await requireAdminGate(request, env);
-    if (gate) return gate;
-    return renderCreateJobPage();
-  }
-
   if (pathname === "/internal/admin/jobs/job-board") {
     const gate = await requireAdminGate(request, env);
     if (gate) return gate;
