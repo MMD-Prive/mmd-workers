@@ -2569,7 +2569,7 @@ async function handleServiceBoundShopShipping(request, env) {
   }, result.ok === true ? 200 : 502);
 }
 
-async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled) {
+async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata = null) {
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
   const profilePromise = shouldFetchProfile ? fetchLineProfile(env, lineUserId) : Promise.resolve(null);
@@ -2577,7 +2577,7 @@ async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, ken
     ? fetchPublishedLineKnowledge(env)
     : Promise.resolve([]);
   const [profile] = await Promise.all([profilePromise, knowledgePromise]);
-  return writeLineEventToConsoleInbox(env, event, profile, intent);
+  return writeLineEventToConsoleInbox(env, event, profile, intent, metadata);
 }
 
 async function handleLineWebhook(request, env, ctx = null, options = {}) {
