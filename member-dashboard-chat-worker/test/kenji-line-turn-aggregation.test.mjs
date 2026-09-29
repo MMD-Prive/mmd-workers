@@ -89,13 +89,12 @@ test("turn buffer makes only the latest event answer and joins the bounded burst
     return response.json();
   };
 
-  assert.equal((await call({ action: "put", event_id: "msg-1", text: "คืนนี้", received_at: 1000, window_ms: 2200, max_messages: 4 })).stored, true);
-  assert.equal((await call({ action: "put", event_id: "msg-1", text: "คืนนี้", received_at: 1000, window_ms: 2200, max_messages: 4 })).duplicate, true);
-  assert.equal((await call({ action: "put", event_id: "msg-2", text: "คนเดิมครับ", received_at: 1100, window_ms: 2200, max_messages: 4 })).stored, true);
-
   const originalNow = Date.now;
   Date.now = () => 1200;
   try {
+    assert.equal((await call({ action: "put", event_id: "msg-1", text: "คืนนี้", received_at: 1000, window_ms: 2200, max_messages: 4 })).stored, true);
+    assert.equal((await call({ action: "put", event_id: "msg-1", text: "คืนนี้", received_at: 1000, window_ms: 2200, max_messages: 4 })).duplicate, true);
+    assert.equal((await call({ action: "put", event_id: "msg-2", text: "คนเดิมครับ", received_at: 1100, window_ms: 2200, max_messages: 4 })).stored, true);
     const first = await call({ action: "claim", event_id: "msg-1", window_ms: 2200, max_messages: 4 });
     assert.equal(first.should_reply, false);
     assert.equal(first.superseded, true);
