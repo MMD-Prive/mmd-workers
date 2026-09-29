@@ -197,14 +197,28 @@ async function notifyOwnerBankDetailReady(env = {}, {
     refundAmountThb,
     accountNumberMasked,
   });
-  return sendOpsMessage(env, {
+  const threadId = alertsOpsThreadId(env);
+  const delivery = await sendOpsMessage(env, {
     chatId,
-    threadId: alertsOpsThreadId(env),
+    threadId,
     flow: "alert",
     text,
     eventKey: asString(proofId),
     purpose: eventType,
   });
+  return {
+    sent: delivery.delivered === true,
+    queued: delivery.durable === true && delivery.delivered !== true,
+    duplicate: delivery.duplicate === true,
+    delivery_status: asString(delivery.status) || null,
+    delivery_attempts: Number(delivery.attempts) || 0,
+    delivery_durable: delivery.durable === true,
+    delivery_reason: asString(delivery.reason) || null,
+    notification_id: asString(delivery.id) || null,
+    topic: "alerts",
+    thread_id: threadId,
+    delivered: delivery.delivered === true,
+  };
 }
 
 async function persistBankDetailOps(env = {}, input = {}) {
