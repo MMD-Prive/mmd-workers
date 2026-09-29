@@ -272,7 +272,7 @@ test("owner receipt upload requires amount, completes task, calls LINE notifier,
     assert.equal(stored.customer_receipt_confirmation_url_issued, true);
     assert.match(stored.customer_confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
     assert.match(stored.admin_job_url, /\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-001$/);
-    assert.match(stored.model_job_app_url, /\/sigil\/model\/login\?/);
+    assert.match(stored.model_job_app_url, /^https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
     assert.equal(stored.owner_telegram_delivery_status, "skipped");
     assert.equal(stored.money_truth_mutated, false);
 
@@ -369,9 +369,11 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     assert.equal(payload.ok, true);
     assert.match(payload.customer_confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
     assert.match(payload.admin_job_url, /^https:\/\/www\.mmdbkk\.com\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-20260929&session_id=sess_film_j$/);
-    assert.match(payload.model_job_app_url, /^https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
+    assert.match(payload.model_job_app_url, /^https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
     assert.match(payload.model_job_app_url, /intent=job_board/);
     assert.match(payload.model_job_app_url, /job_id=JOB-FILM-J-20260929/);
+    assert.match(payload.model_job_app_url, /model_alias=Film\+J/);
+    assert.match(payload.model_job_app_url, /lang=th/);
     assert.equal(payload.owner_telegram.sent, true);
     assert.equal(payload.owner_telegram.message_id, 99);
     assert.equal(telegramCalls.length, 1);

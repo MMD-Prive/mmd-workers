@@ -469,12 +469,17 @@ function modelJobAppUrl(payload = {}) {
   const jobId = clean(payload.job_id, 120);
   if (!jobId) return "";
   const next = new URL(`https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(jobId)}`);
-  const url = new URL("https://www.mmdbkk.com/sigil/model/login");
+  const url = new URL("https://miniapp.line.me/2010864854-N34SgCqq/");
+  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "Film J", 160);
+  const modelRecordId = clean(payload.model_record_id || payload.model_id || payload.model_airtable_id || "", 120);
   url.searchParams.set("intent", "job_board");
   url.searchParams.set("source", "refund_completed_pack");
   url.searchParams.set("return_to", "public_job_board");
   url.searchParams.set("job_id", jobId);
   url.searchParams.set("next", next.toString());
+  url.searchParams.set("lang", "th");
+  if (modelAlias) url.searchParams.set("model_alias", modelAlias);
+  if (modelRecordId) url.searchParams.set("model_record_id", modelRecordId);
   return url.toString();
 }
 

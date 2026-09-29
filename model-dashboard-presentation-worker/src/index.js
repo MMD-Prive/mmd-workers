@@ -491,12 +491,16 @@ export function resolveJobBoardContextFromRequest(request) {
   }
 
   const rawSource = String(boundedParam(source, "source") || "line_model_group").trim();
+  const rawModelAlias = String(boundedParam(source, "model_alias") || "").trim().slice(0, 160);
+  const rawModelRecordId = String(boundedParam(source, "model_record_id") || "").trim();
   return {
     intent: "job_board",
     return_to: "public_job_board",
     source: /^[A-Za-z0-9._:-]{1,80}$/.test(rawSource) ? rawSource : "line_model_group",
     job_id: jobId,
     next,
+    model_alias: rawModelAlias,
+    model_record_id: /^[A-Za-z0-9._:-]{1,120}$/.test(rawModelRecordId) ? rawModelRecordId : "",
   };
 }
 
@@ -535,6 +539,8 @@ function safeMiniAppUrlForBootstrap(request) {
     params.set("source", jobBoard.source);
     params.set("next", jobBoard.next);
     if (jobBoard.job_id) params.set("job_id", jobBoard.job_id);
+    if (jobBoard.model_alias) params.set("model_alias", jobBoard.model_alias);
+    if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
   } else {
     const returnTo = safeModelConfirmationReturnTo(request);
     if (returnTo) params.set("return_to", returnTo);
@@ -636,6 +642,7 @@ export function shouldServePhaseAAfterBootstrap(request) {
     && !hasModelSessionCookie(request)
     && !isPwaLaunchRequest(request)
     && !boundedParam(url, "activation")
+    && boundedParam(url, "intent") !== "job_board"
     && !boundedParam(url, "return_to")
     && !boundedParam(url, "handoff")
     && !boundedParam(url, "flow");
@@ -670,6 +677,8 @@ export function modelMiniAppHandoffUrl(request) {
     params.set("source", jobBoard.source);
     params.set("next", jobBoard.next);
     if (jobBoard.job_id) params.set("job_id", jobBoard.job_id);
+    if (jobBoard.model_alias) params.set("model_alias", jobBoard.model_alias);
+    if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
   } else {
     const returnTo = safeModelConfirmationReturnTo(request);
     if (returnTo) params.set("return_to", returnTo);
@@ -713,6 +722,8 @@ export function authenticatedJobBoardResumeHtml(request) {
   const params = new URLSearchParams();
   if (context.job_id) params.set("job_id", context.job_id);
   if (context.next) params.set("next", context.next);
+  if (context.model_alias) params.set("model_alias", context.model_alias);
+  if (context.model_record_id) params.set("model_record_id", context.model_record_id);
   const endpoint = `/v1/model/job-board/handoff?${params.toString()}`;
   const endpointJson = JSON.stringify(endpoint);
   const fallbackJson = JSON.stringify(fallback);
