@@ -331,7 +331,7 @@ test("direct LINE customer receives pending acknowledgement without claiming pay
     assert.match(calls[0].messages[0].text, /Film J/);
     assert.match(calls[0].messages[0].text, /อยู่ระหว่างตรวจสอบ/);
     assert.match(calls[0].messages[0].text, /ยังไม่ใช่การยืนยันรับเงิน/);
-    assert.doesNotMatch(calls[0].messages[0].text, /ยืนยัน.*เรียบร้อย/);
+    assert.doesNotMatch(calls[0].messages[0].text, /ได้รับและยืนยัน.*เรียบร้อย/);
   } finally {
     globalThis.fetch = previousFetch;
   }
