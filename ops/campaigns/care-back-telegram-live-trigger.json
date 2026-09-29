@@ -2,8 +2,8 @@
   "trigger": "care_back_telegram_live_post",
   "confirm": "SEND_CARE_BACK_TELEGRAM_LIVE",
   "requested_by": "Boss Per",
-  "requested_at": "2026-09-29T15:00:00+07:00",
+  "requested_at": "2026-09-29T15:05:00+07:00",
   "dry_run": false,
   "source": "ChatGPT GitHub connector",
-  "notes": "Retry live CARE BACK Telegram workflow after token fallback patch. This file exists only to trigger the guarded push workflow on main."
+  "notes": "Retry live CARE BACK Telegram workflow after service-token alias patch. This file exists only to trigger the guarded push workflow on main."
 }
