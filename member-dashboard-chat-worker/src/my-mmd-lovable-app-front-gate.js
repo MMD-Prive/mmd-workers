@@ -343,6 +343,22 @@ function rewriteMyMmdStylesheet(source) {
   return String(source || "").replaceAll("/assets/", MY_MMD_ASSET_PREFIX);
 }
 
+function isVersionedPresentationAsset(pathname = "") {
+  const name = String(pathname || "").split("/").pop() || "";
+  return /(?:^|[-._])[A-Za-z0-9_-]{8,}\.(?:js|css|mjs|woff2?|png|jpe?g|webp|svg|gif)$/i.test(name);
+}
+
+function applyPresentationAssetCache(headers, pathname = "") {
+  if (isVersionedPresentationAsset(pathname)) {
+    headers.set("cache-control", "public, max-age=31536000, immutable");
+    headers.set("x-mmd-asset-cache", "versioned-immutable");
+  } else if (!headers.has("cache-control")) {
+    headers.set("cache-control", "public, max-age=300, stale-while-revalidate=86400");
+    headers.set("x-mmd-asset-cache", "short-browser-cache");
+  }
+  return headers;
+}
+
 async function proxyLovablePage(request) {
   if (!new Set(["GET", "HEAD"]).has(request.method)) {
     return new Response("Method Not Allowed", {
@@ -409,7 +425,10 @@ async function proxyLovableAsset(request) {
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
   const isJavascript = contentType.includes("javascript") || upstreamUrl.pathname.endsWith(".js");
   const isStylesheet = contentType.includes("text/css") || upstreamUrl.pathname.endsWith(".css");
-  const headers = presentationResponseHeaders(upstream.headers, { rewritten: isJavascript || isStylesheet });
+  const headers = applyPresentationAssetCache(
+    presentationResponseHeaders(upstream.headers, { rewritten: isJavascript || isStylesheet }),
+    normalizedPath(request),
+  );
 
   if (request.method === "HEAD") {
     return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
