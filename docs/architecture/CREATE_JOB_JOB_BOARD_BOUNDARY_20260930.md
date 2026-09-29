@@ -27,9 +27,9 @@ Job Board controls must not be embedded into Create Job. Recruitment UI changes 
 
 ### Job Board
 
-Canonical route: `/internal/admin/job-board`
+Canonical route: `/internal/admin/jobs/job-board`
 
-Compatibility alias: `/internal/admin/jobs/job-board` -> 308 to canonical route.
+Compatibility alias: `/internal/admin/job-board` -> 308 to canonical route.
 
 Purpose: recruitment / open opportunity before a Model is selected.
 
