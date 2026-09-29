@@ -1,9 +1,9 @@
-name: Diagnose Refund Ops 1101
+name: Diagnose Refund Ops 503
 
 on:
   push:
     branches:
-      - diag/refund-1101-20260929
+      - diag/refund-503-20260929
 
 permissions:
   contents: read
@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           tail_log="$RUNNER_TEMP/refund-tail.log"
-          timeout 45s npx --yes wrangler@4.142.0 tail admin-worker --format json --status error >"$tail_log" 2>&1 &
+          timeout 45s npx --yes wrangler@4.142.0 tail admin-worker --format json >"$tail_log" 2>&1 &
           tail_pid=$!
           sleep 8
           node scripts/refund-ops-production-probe.mjs
