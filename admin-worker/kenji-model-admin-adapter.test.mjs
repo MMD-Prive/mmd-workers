@@ -38,6 +38,8 @@ test("recognizes only the exact Kenji model admin routes", () => {
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RESOLVE_PATH, "POST"), true);
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RULES_PATH, "GET"), true);
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RULES_PATH, "POST"), true);
+  assert.equal(isKenjiModelAdminRequest("/v1/admin/kenji/models/rec12345678901234/identity", "POST"), true);
+  assert.equal(isKenjiModelAdminRequest("/v1/admin/kenji/models/rec12345678901234/identity", "GET"), false);
   assert.equal(isKenjiModelAdminRequest("/v1/admin/kenji/models/publish", "POST"), false);
   assert.equal(isKenjiModelAdminRequest("/v1/admin/models/upsert", "POST"), false);
 });
@@ -48,6 +50,7 @@ test("projects canonical Models identity without private notes, contacts, rates,
     fields: {
       unique_key: "ems07-demo",
       working_name: "EMs07 Demo",
+      private_real_name: "Owner Verified Name",
       model_tier: "premium",
       status: "active",
       approved_client_visibility: "premium",
@@ -64,6 +67,7 @@ test("projects canonical Models identity without private notes, contacts, rates,
 
   assert.equal(projected.model_key, "ems07-demo");
   assert.equal(projected.working_name, "EMs07 Demo");
+  assert.equal(projected.private_real_name, "Owner Verified Name");
   assert.equal(projected.identity_tier, "premium");
   assert.equal(projected.model_status, "active");
   assert.equal(projected.booking_visibility, "premium");
@@ -191,6 +195,97 @@ test("list fails closed when canonical Keyword Profiles cannot be read", async (
   );
   assert.equal(result.status, 503);
   assert.equal((await bodyOf(result)).error, "keyword_profile_source_unavailable");
+});
+
+test("internal Model list can search owner-reviewed private real name without widening customer scope", async () => {
+  const fetchImpl = async (url) => {
+    const decoded = decodeURIComponent(url);
+    if (decoded.includes("tblModelsCanonical")) {
+      return response({ records: [{
+        id: "rec12345678901234",
+        fields: {
+          unique_key: "gws19-public-alias",
+          working_name: "Public Alias",
+          private_real_name: "Verified Private Name",
+          model_tier: "exclusive",
+          status: "active",
+          approved_client_visibility: "curated",
+        },
+      }] });
+    }
+    if (decoded.includes("tblKeywordProfilesCanonical")) return response({ records: [] });
+    throw new Error(`unexpected table call: ${url}`);
+  };
+  const result = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models?q=Verified%20Private%20Name"),
+    ENV,
+    { fetchImpl }
+  );
+  const body = await bodyOf(result);
+  assert.equal(result.status, 200);
+  assert.equal(body.count, 1);
+  assert.equal(body.items[0].private_real_name, "Verified Private Name");
+  assert.equal(body.items[0].include_in_public_kenji, false);
+});
+
+test("owner can save private real-name identity only through the dedicated internal endpoint", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    assert.ok(decodeURIComponent(String(url)).includes("tblModelsCanonical/rec12345678901234"));
+    assert.equal(init.method, "PATCH");
+    const payload = JSON.parse(init.body);
+    assert.deepEqual(payload, { fields: { private_real_name: "Verified Private Name" } });
+    return response({ id: "rec12345678901234", fields: { private_real_name: "Verified Private Name" } });
+  };
+  const result = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/rec12345678901234/identity", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "private-identity-owner-001",
+        "x-mmd-admin-actor": "per",
+      },
+      body: JSON.stringify({ private_real_name: "Verified Private Name" }),
+    }),
+    ENV,
+    { fetchImpl }
+  );
+  const body = await bodyOf(result);
+  assert.equal(result.status, 200);
+  assert.equal(body.private_real_name, "Verified Private Name");
+  assert.equal(body.identity_scope, "internal_owner_reviewed");
+  assert.equal(body.customer_facing, false);
+  assert.equal(body.access_authority, false);
+  assert.equal(body.updated_by, "per");
+  assert.equal(body.production_mutated, true);
+  assert.equal(calls.length, 1);
+});
+
+test("private real-name identity endpoint requires idempotency and rejects secret-like values", async () => {
+  const missing = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/rec12345678901234/identity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ private_real_name: "Verified Private Name" }),
+    }),
+    ENV,
+    { fetchImpl: async () => { throw new Error("must not fetch"); } }
+  );
+  assert.equal(missing.status, 400);
+  assert.equal((await bodyOf(missing)).error, "idempotency_key_required");
+
+  const unsafe = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/rec12345678901234/identity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": "private-identity-unsafe-001" },
+      body: JSON.stringify({ private_real_name: "Bearer secret-token" }),
+    }),
+    ENV,
+    { fetchImpl: async () => { throw new Error("must not fetch"); } }
+  );
+  assert.equal(unsafe.status, 400);
+  assert.equal((await bodyOf(unsafe)).error, "invalid_private_real_name");
 });
 
 test("draft write requires an idempotency key", async () => {
