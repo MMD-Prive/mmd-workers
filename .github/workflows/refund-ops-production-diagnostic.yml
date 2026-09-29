@@ -1,0 +1,48 @@
+name: Diagnose Refund Ops 1101
+
+on:
+  push:
+    branches:
+      - diag/refund-1101-20260929
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORIGIN: https://www.mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      TARGET: /internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require diagnostic credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+      - name: Tail admin-worker and probe authenticated Refund Ops
+        shell: bash
+        run: |
+          set -euo pipefail
+          tail_log="$RUNNER_TEMP/refund-tail.log"
+          timeout 45s npx --yes wrangler@4.142.0 tail admin-worker --format json --status error >"$tail_log" 2>&1 &
+          tail_pid=$!
+          sleep 8
+          node scripts/refund-ops-production-probe.mjs
+          sleep 8
+          kill "$tail_pid" 2>/dev/null || true
+          wait "$tail_pid" 2>/dev/null || true
+          echo "--- cloudflare error tail ---"
+          cat "$tail_log"
