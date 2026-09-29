@@ -2,6 +2,18 @@ import fs from "node:fs";
 
 const DEFAULT_POST_PACK = "ops/campaigns/care-back-telegram-post-20260929.json";
 export const DEFAULT_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send";
+export const TELEGRAM_TOKEN_ENV_KEYS = [
+  "TELEGRAM_INTERNAL_TOKEN",
+  "INTERNAL_API_TOKEN",
+  "INTERNAL_TOKEN",
+  "AUTH_SERVICE_LINE_TO_TELEGRAM",
+  "AUTH_SERVICE_BOOKING_TO_TELEGRAM",
+  "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
+  "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
+  "AUTH_SERVICE_AUTH_TO_TELEGRAM",
+  "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM",
+  "TELEGRAM_DEPLOY_CONTROL_TOKEN",
+];
 const SENSITIVE_RE = /(?:line_user_id|cookie|authorization|bearer\s+[a-z0-9._-]+|AIRTABLE_API_KEY|TELEGRAM_BOT_TOKEN|private_original_key)/i;
 
 function clean(value = "", max = 5000) {
@@ -9,9 +21,10 @@ function clean(value = "", max = 5000) {
 }
 
 export function resolveCareBackTelegramRuntimeEnv(env = process.env) {
+  const token = TELEGRAM_TOKEN_ENV_KEYS.map((key) => clean(env[key], 5000)).find(Boolean) || "";
   return {
     endpoint: clean(env.TELEGRAM_INTERNAL_SEND_URL || DEFAULT_INTERNAL_SEND_URL, 500),
-    token: clean(env.TELEGRAM_INTERNAL_TOKEN || env.INTERNAL_API_TOKEN || env.INTERNAL_TOKEN, 5000),
+    token,
   };
 }
 
