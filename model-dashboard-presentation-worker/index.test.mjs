@@ -258,7 +258,7 @@ test("existing Model session Job Board resume keeps hostile next targets on cano
   );
   const html = authenticatedJobBoardResumeHtml(request);
   assert.doesNotMatch(html, /evil\.example/);
-  assert.match(html, /https:\/\/sigil\.mmdbkk\.com\/public\/api\/jobs\/JOB-20260928-3DE86201F471/);
+  assert.match(html, /next=https%3A%2F%2Fsigil\.mmdbkk\.com%2Fpublic%2Fapi%2Fjobs%2FJOB-20260928-3DE86201F471/);
 });
 
 test("Job Board callback rejects a hostile next target and falls back to the canonical job URL", () => {
