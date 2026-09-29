@@ -1,0 +1,72 @@
+name: Patch Model Confirm LIFF Exchange
+
+on:
+  push:
+    branches:
+      - fix/model-confirm-liff-session-exchange-20260929
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: fix/model-confirm-liff-session-exchange-20260929
+
+      - name: Patch confirm return exchange
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          shell = Path('model-dashboard-presentation-worker/src/model-liff-digital-shell.js')
+          src = shell.read_text(encoding='utf-8')
+          old = '  const returnScript = returnTo ? `window.location.replace(${safeReturnTo});return;` : "";\n'
+          new = '''  const returnScript = returnTo ? `
+    var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
+    if(!idToken)throw new Error("id_token_missing");
+    status.textContent="ยืนยัน LINE แล้ว · กำลังเชื่อมตัวตนงาน…";
+    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
+    var exchangeBody=await exchange.json().catch(function(){return null});
+    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    window.location.replace(${safeReturnTo});return;` : "";
+'''
+          if old not in src:
+              raise SystemExit('returnScript target not found')
+          src = src.replace(old, new, 1)
+          shell.write_text(src, encoding='utf-8')
+
+          test = Path('model-dashboard-presentation-worker/model-confirm-return-exchange.test.mjs')
+          test.write_text('''import assert from "node:assert/strict";\nimport { test } from "node:test";\n\nimport { modelLiffDigitalBootstrapHtml } from "./src/model-liff-digital-shell.js";\n\ntest("model confirm return_to creates model session before returning", () => {\n  const html = modelLiffDigitalBootstrapHtml({\n    liffId: "2010864854-N34SgCqq",\n    fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",\n    sdk: "https://static.line-scdn.net/liff/edge/2/sdk.js",\n    returnTo: "/sigil/confirm/job-model?t=model-token",\n    environment: "published",\n  });\n  assert.match(html, /\\/v1\\/model\\/liff\\/exchange/);\n  assert.match(html, /model_session_exchange_failed/);\n  assert.match(html, /กำลังเชื่อมตัวตนงาน/);\n  assert.match(html, /window\\.location\\.replace\\(\\"\\/sigil\\/confirm\\/job-model\\?t=model-token\\"\\)/);\n});\n''', encoding='utf-8')
+
+          wf = Path('.github/workflows/patch-model-confirm-liff-exchange.yml')
+          if wf.exists():
+              wf.unlink()
+          PY
+
+      - name: Validate focused files
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check model-dashboard-presentation-worker/src/model-liff-digital-shell.js
+          node --test model-dashboard-presentation-worker/model-confirm-return-exchange.test.mjs
+
+      - name: Commit patched files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add model-dashboard-presentation-worker/src/model-liff-digital-shell.js model-dashboard-presentation-worker/model-confirm-return-exchange.test.mjs .github/workflows/patch-model-confirm-liff-exchange.yml
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "Ensure model confirm return creates session"
+          git push
