@@ -1,0 +1,72 @@
+name: Studio Master Frame V2 final verifier
+
+on:
+  workflow_dispatch:
+    inputs:
+      studio_page_url:
+        description: "Published Studio page URL that contains the auto-card inbox"
+        required: false
+        default: "https://www.mmdbkk.com/studio"
+      studio_api_base_url:
+        description: "Origin for Studio model-cards API"
+        required: false
+        default: "https://www.mmdbkk.com"
+      gaz_model_record_id:
+        description: "Canonical Gaz/Gazz Model record ID from real MMD APP/LIFF identity"
+        required: true
+      gaz_card_job_id:
+        description: "Exact generated card job ID from the controlled Gaz draft"
+        required: true
+      gaz_expected_name:
+        description: "Expected visible identity tokens"
+        required: false
+        default: "Gaz|Gazz"
+      owner_identity_stats_review_ref:
+        description: "Owner review reference confirming identity + stats on the preview"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-master-frame-v2-final-verifier
+  cancel-in-progress: false
+
+jobs:
+  verify-studio-master-frame-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      STUDIO_PAGE_URL: ${{ inputs.studio_page_url }}
+      STUDIO_API_BASE_URL: ${{ inputs.studio_api_base_url }}
+      GAZ_MODEL_RECORD_ID: ${{ inputs.gaz_model_record_id }}
+      GAZ_CARD_JOB_ID: ${{ inputs.gaz_card_job_id }}
+      GAZ_EXPECTED_NAME: ${{ inputs.gaz_expected_name }}
+      OWNER_IDENTITY_STATS_REVIEW_REF: ${{ inputs.owner_identity_stats_review_ref }}
+      STUDIO_INTERNAL_TOKEN: ${{ secrets.STUDIO_INTERNAL_TOKEN }}
+      INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate verifier syntax and unit contract
+        run: |
+          set -euo pipefail
+          node --check ops/release-gates/studio-master-frame-v2-final-verifier.mjs
+          node --test ops/release-gates/studio-master-frame-v2-final-verifier.test.mjs
+
+      - name: Verify real Studio Master Frame V2 final gates
+        run: |
+          set -euo pipefail
+          node ops/release-gates/studio-master-frame-v2-final-verifier.mjs | tee "$RUNNER_TEMP/studio-master-frame-v2-final-evidence.json"
+
+      - name: Upload Studio final evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-master-frame-v2-final-evidence
+          path: ${{ runner.temp }}/studio-master-frame-v2-final-evidence.json
+          if-no-files-found: ignore
