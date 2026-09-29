@@ -1,0 +1,147 @@
+name: APP SIGIL production search acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/app-sigil-production-search-acceptance.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  real-production-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify exact returned Models and public-safe media
+        shell: bash
+        env:
+          BASE_URL: https://sigil.mmdbkk.com
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const cases = [
+            { q: "Atom IX", modelId: "reccoIEmIticuALwb", minMedia: 8 },
+            { q: "Book EI", modelId: "recj1SiBHrrGOBr8K", minMedia: 4 },
+          ];
+
+          const allowedMediaTypes = new Set(["profile_photo", "public_gallery", "intro_video"]);
+          const forbiddenRole = /private|flash|sensitive/i;
+
+          for (const testCase of cases) {
+            const url = new URL("/sigil/api/models/search", process.env.BASE_URL);
+            url.searchParams.set("q", testCase.q);
+            url.searchParams.set("scope", "public");
+
+            const response = await fetch(url, {
+              headers: {
+                Origin: "https://mmdbkk.com",
+                Accept: "application/json",
+                "User-Agent": "mmd-app-sigil-production-acceptance/1",
+              },
+            });
+
+            const text = await response.text();
+            if (response.status !== 200) {
+              throw new Error(`${testCase.q}: search HTTP ${response.status}: ${text.slice(0, 500)}`);
+            }
+
+            const body = JSON.parse(text);
+            if (body?.ok !== true) throw new Error(`${testCase.q}: ok=true required`);
+            const models = Array.isArray(body.items) ? body.items : [];
+            const model = models.find((item) =>
+              item?.model_id === testCase.modelId || item?.model_record_id === testCase.modelId
+            ) || (body?.model?.model_id === testCase.modelId ? body.model : null);
+
+            if (!model) {
+              throw new Error(`${testCase.q}: canonical model ${testCase.modelId} not returned`);
+            }
+
+            if (!/^media_[a-f0-9-]{32,36}$/i.test(String(model.primary_media_id || ""))) {
+              throw new Error(`${testCase.q}: approved primary_media_id missing`);
+            }
+
+            const storageKeys = ["r2_key", "r2_prefix", "primary_image_key"];
+            for (const key of storageKeys) {
+              if (String(model[key] || "") !== "") {
+                throw new Error(`${testCase.q}: storage key leaked via ${key}`);
+              }
+            }
+
+            const media = [
+              ...(model.primary_media_id ? [{
+                media_id: model.primary_media_id,
+                media_type: String(model.primary_image_url || "").includes("/models/media/") ? "profile_photo" : "",
+                asset_role: "profile_main",
+                url: model.primary_image_url || model.public_image_url || model.cover_url || "",
+              }] : []),
+              ...(Array.isArray(model.additional_images) ? model.additional_images : []),
+              ...(Array.isArray(model.clips) ? model.clips : []),
+            ];
+
+            const uniqueMedia = new Map();
+            for (const asset of media) {
+              if (asset?.media_id) uniqueMedia.set(asset.media_id, asset);
+            }
+
+            if (uniqueMedia.size < testCase.minMedia) {
+              throw new Error(`${testCase.q}: expected at least ${testCase.minMedia} public media assets, got ${uniqueMedia.size}`);
+            }
+
+            for (const asset of uniqueMedia.values()) {
+              const mediaType = String(asset.media_type || "");
+              const role = String(asset.asset_role || "");
+              const assetUrl = String(asset.url || "");
+
+              if (mediaType && !allowedMediaTypes.has(mediaType)) {
+                throw new Error(`${testCase.q}: non-public media_type leaked: ${mediaType}`);
+              }
+              if (forbiddenRole.test(role)) {
+                throw new Error(`${testCase.q}: private/sensitive role leaked: ${role}`);
+              }
+              if (!assetUrl.startsWith(process.env.BASE_URL + "/sigil/api/models/media/")) {
+                throw new Error(`${testCase.q}: media URL is not the public media route`);
+              }
+              if (/private_original_key|private_candidate|pending_review/i.test(JSON.stringify(asset))) {
+                throw new Error(`${testCase.q}: private/pending metadata leaked in media projection`);
+              }
+            }
+
+            const serialized = JSON.stringify(model);
+            if (/"private_original_key"\s*:/i.test(serialized)) {
+              throw new Error(`${testCase.q}: private_original_key field leaked`);
+            }
+            if (/"review_status"\s*:\s*"pending_review"/i.test(serialized)) {
+              throw new Error(`${testCase.q}: pending_review media leaked`);
+            }
+            if (/"media_visibility"\s*:\s*"private_candidate"/i.test(serialized)) {
+              throw new Error(`${testCase.q}: private_candidate media leaked`);
+            }
+
+            const primaryUrl = String(model.primary_image_url || model.public_image_url || "");
+            const mediaResponse = await fetch(primaryUrl, {
+              headers: {
+                Origin: "https://mmdbkk.com",
+                Range: "bytes=0-31",
+                "User-Agent": "mmd-app-sigil-production-acceptance/1",
+              },
+            });
+            if (![200, 206].includes(mediaResponse.status)) {
+              throw new Error(`${testCase.q}: public media route HTTP ${mediaResponse.status}`);
+            }
+
+            console.log(JSON.stringify({
+              accepted: true,
+              query: testCase.q,
+              model_id: testCase.modelId,
+              primary_media_id: model.primary_media_id,
+              public_media_count: uniqueMedia.size,
+              access_scope: body.access_scope || "",
+              member_status: body.member_status || "",
+              no_private_media_leak: true,
+            }));
+          }
+          NODE
