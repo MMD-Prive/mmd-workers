@@ -86,11 +86,16 @@ async function canonicalStoredPrivateAccess(env, request, url) {
   return !snapshot.member_blocked && String(snapshot.access?.private_visibility_envelope || "none") !== "none";
 }
 
-async function requestedScope(request, url) {
-  if (clean(url.searchParams.get("scope")).toLowerCase() === "private") return "private";
+export async function requestedScope(request, url) {
+  const queryScope = clean(url.searchParams.get("scope")).toLowerCase();
+  if (queryScope === "private") return "private";
+  if (queryScope === "booking") return "booking";
   if (request.method.toUpperCase() !== "POST") return "public";
   const body = await request.clone().json().catch(() => ({}));
-  return clean(body.scope || body.model_scope).toLowerCase() === "private" ? "private" : "public";
+  const bodyScope = clean(body.scope || body.model_scope).toLowerCase();
+  if (bodyScope === "private") return "private";
+  if (bodyScope === "booking") return "booking";
+  return "public";
 }
 
 function parseJson(value) {

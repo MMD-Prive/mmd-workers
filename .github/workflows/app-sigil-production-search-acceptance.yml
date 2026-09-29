@@ -2,17 +2,18 @@ name: APP SIGIL production search acceptance
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/app-sigil-production-search-acceptance.yml"
+  workflow_run:
+    workflows:
+      - "Deploy sigil-booking-worker"
+    types:
+      - completed
 
 permissions:
   contents: read
 
 jobs:
   real-production-search:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,7 +35,7 @@ jobs:
           for (const testCase of cases) {
             const url = new URL("/sigil/api/models/search", process.env.BASE_URL);
             url.searchParams.set("q", testCase.q);
-            url.searchParams.set("scope", "public");
+            url.searchParams.set("scope", "booking");
 
             const response = await fetch(url, {
               headers: {
