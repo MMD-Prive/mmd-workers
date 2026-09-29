@@ -706,6 +706,78 @@ function miniAppHandoff(request) {
   });
 }
 
+export function authenticatedJobBoardResumeHtml(request) {
+  const context = resolveJobBoardContextFromRequest(request);
+  if (!context) return "";
+  const fallback = modelMiniAppHandoffUrl(request);
+  const params = new URLSearchParams();
+  if (context.job_id) params.set("job_id", context.job_id);
+  if (context.next) params.set("next", context.next);
+  const endpoint = `/v1/model/job-board/handoff?${params.toString()}`;
+  const endpointJson = JSON.stringify(endpoint);
+  const fallbackJson = JSON.stringify(fallback);
+
+  return `<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#080907">
+<title>MMD APP · Opening job</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#080907}body{font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif;color:#f6f0e7}.mjb-resume{min-height:100dvh;display:grid;place-items:center;padding:20px}.mjb-resume__card{width:min(100%,440px);padding:24px;border:1px solid rgba(223,185,102,.25);border-radius:22px;background:#11110e}.mjb-resume__k{margin:0 0 10px;color:#d8bb7f;font-size:9px;font-weight:900;letter-spacing:.14em}.mjb-resume h1{margin:0;font-size:28px;line-height:1.08}.mjb-resume p{margin:12px 0 0;color:#aaa69c;font-size:13px;line-height:1.65}.mjb-resume a{display:flex;align-items:center;justify-content:center;min-height:48px;margin-top:18px;border-radius:14px;background:#d8bb7f;color:#17130c;text-decoration:none;font-size:12px;font-weight:900}
+</style>
+</head>
+<body>
+<main class="mjb-resume" data-mmd-authenticated-job-board-resume="v1">
+  <section class="mjb-resume__card" aria-live="polite">
+    <p class="mjb-resume__k">MMD APP · JOB BOARD</p>
+    <h1>กำลังเปิดงานนี้</h1>
+    <p id="mjb-resume-state">พบ Model session แล้ว · กำลังยืนยันลิงก์งานเดิม</p>
+    <a id="mjb-resume-retry" href=${fallbackJson} hidden>ยืนยันผ่าน LINE อีกครั้ง</a>
+  </section>
+</main>
+<script>
+(async function(){
+  var state=document.getElementById("mjb-resume-state");
+  var retry=document.getElementById("mjb-resume-retry");
+  try{
+    var response=await fetch(${endpointJson},{method:"GET",credentials:"include",cache:"no-store",headers:{accept:"application/json"}});
+    var body=await response.json().catch(function(){return null});
+    if(response.status===401||response.status===403){
+      window.location.replace(${fallbackJson});return;
+    }
+    if(!response.ok||!body||body.ok!==true||!body.redirect_url)throw new Error(body&&body.error||"job_board_handoff_failed");
+    var destination=new URL(String(body.redirect_url));
+    var path=destination.pathname.replace(/\\/+$/,"")||"/";
+    var allowed=destination.origin==="https://sigil.mmdbkk.com"&&(path==="/public/api/jobs"||/^\\/public\\/api\\/jobs\\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(path));
+    if(!allowed)throw new Error("job_board_redirect_invalid");
+    state.textContent="ยืนยันแล้ว · กำลังเปิดรายละเอียดงาน…";
+    window.location.replace(destination.toString());
+  }catch(error){
+    state.textContent="ยังเปิดงานนี้ไม่ได้ · กรุณายืนยันผ่าน LINE อีกครั้ง";
+    retry.hidden=false;
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+function authenticatedJobBoardResumeResponse(request) {
+  const method = String(request.method || "GET").toUpperCase();
+  const headers = new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store, private",
+    "x-mmd-worker": WORKER_NAME,
+    "x-mmd-route-owner": WORKER_NAME,
+    "x-mmd-model-entry": "authenticated-job-board-resume-v1",
+    "x-robots-tag": "noindex, nofollow",
+  });
+  return new Response(method === "HEAD" ? null : authenticatedJobBoardResumeHtml(request), { status: 200, headers });
+}
+
 function presentationRequestHeaders(request, { runtime = false } = {}) {
   const headers = new Headers();
   const allowed = runtime
@@ -1169,6 +1241,7 @@ export default {
       }
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
+      if (resolveJobBoardContextFromRequest(request) && hasModelSessionCookie(request)) return authenticatedJobBoardResumeResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
       const briefId = boundedParam(new URL(request.url), "brief_id");
       if ((path === `${UI_PREFIX}/briefs` || boundedParam(new URL(request.url), "briefs") === "1" || /^brf_[a-zA-Z0-9-]{10,70}$/.test(briefId)) && !isPwaLaunchRequest(request)) return modelLineBriefsPageResponse(request);

@@ -20,6 +20,7 @@ import {
   hasLineRedirectContext,
   modelMiniAppHandoffUrl,
   resolveJobBoardContextFromRequest,
+  authenticatedJobBoardResumeHtml,
   shouldHandoffToMiniApp,
   resolveLiffEnvironmentFromRequest,
   hasLiffPrimaryBootstrapCookie,
@@ -225,6 +226,39 @@ test("Job Board Mini App callback exchanges LINE session then opens the exact jo
   assert.match(html, /JOB-20260928-3DE86201F471/);
   assert.match(html, /https:\/\/sigil\.mmdbkk\.com\/public\/api\/jobs/);
   assert.match(html, /window\.location\.replace\(destination\.toString\(\)\)/);
+});
+
+test("existing Model session resumes Job Board handoff instead of falling through to the dashboard", async () => {
+  const jobId = "JOB-20260928-3DE86201F471";
+  const next = `https://sigil.mmdbkk.com/public/api/jobs/${jobId}`;
+  const request = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?intent=job_board&source=x_campaign&return_to=public_job_board&next=${encodeURIComponent(next)}&job_id=${jobId}`,
+    { headers: { cookie: "mmd_model_session_v1=existing-model-session" } },
+  );
+
+  const html = authenticatedJobBoardResumeHtml(request);
+  assert.match(html, /data-mmd-authenticated-job-board-resume="v1"/);
+  assert.match(html, /\/v1\/model\/job-board\/handoff\?/);
+  assert.match(html, /JOB-20260928-3DE86201F471/);
+  assert.match(html, /credentials:"include"/);
+  assert.match(html, /window\.location\.replace\(destination\.toString\(\)\)/);
+  assert.match(html, /https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq/);
+
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(request);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-model-entry"), "authenticated-job-board-resume-v1");
+  assert.match(await response.text(), /กำลังเปิดงานนี้/);
+});
+
+test("existing Model session Job Board resume keeps hostile next targets on canonical SIGIL jobs only", () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?intent=job_board&job_id=JOB-20260928-3DE86201F471&next=https%3A%2F%2Fevil.example%2Fpwn",
+    { headers: { cookie: "mmd_model_session_v1=existing-model-session" } },
+  );
+  const html = authenticatedJobBoardResumeHtml(request);
+  assert.doesNotMatch(html, /evil\.example/);
+  assert.match(html, /next=https%3A%2F%2Fsigil\.mmdbkk\.com%2Fpublic%2Fapi%2Fjobs%2FJOB-20260928-3DE86201F471/);
 });
 
 test("Job Board callback rejects a hostile next target and falls back to the canonical job URL", () => {
