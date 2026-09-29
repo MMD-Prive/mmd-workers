@@ -64,6 +64,10 @@ import {
   isAdminJobBoardPublishRequest,
 } from "./job-board-owner-publish.js";
 import {
+  handleModelDirectFirstJobGate,
+  isModelDirectFirstJobGateRequest,
+} from "./model-direct-first-job-gate.js";
+import {
   handleAdminShopOrdersApi,
   handleAdminShopOrdersPage,
   isAdminShopOrdersApiRequest,
@@ -234,6 +238,10 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (isModelDirectFirstJobGateRequest(normalizedPath, method)) {
+      return handleModelDirectFirstJobGate(request, runtimeEnv);
     }
 
     if (isModelJobBoardValidateRequest(normalizedPath, method)) {
