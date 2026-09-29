@@ -446,9 +446,9 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /id="credit-available"/);
     assert.match(html, /id="credit-reserved"/);
     assert.match(html, /id="credit-used"/);
-    assert.match(html, /const hydrationReads = \\[\\s*readCouponWallet\\(\\),\\s*readCreditWallet\\(\\),\\s*readCanonicalHistory\\(\\),\\s*readCustomerRequests\\(\\),\\s*\\]/);
-    assert.match(html, /await Promise\\.allSettled\\(hydrationReads\\)/);
-    assert.doesNotMatch(html, /await readCouponWallet\\(\\);\\s*await readCreditWallet\\(\\);/);
+    assert.match(html, /const hydrationReads = \[\s*readCouponWallet\(\),\s*readCreditWallet\(\),\s*readCanonicalHistory\(\),\s*readCustomerRequests\(\),\s*\]/);
+    assert.match(html, /await Promise\.allSettled\(hydrationReads\)/);
+    assert.doesNotMatch(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
     assert.match(html, /credentials:"same-origin"/);
     assert.match(html, /payload\.state !== "resolved" \|\| payload\.verificationState !== "verified_only"/);
     assert.match(html, /item\.verified !== true \|\| item\.verificationState !== "verified"/);
