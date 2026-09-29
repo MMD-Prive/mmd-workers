@@ -734,6 +734,7 @@ async function completeRecoveredReceipt(env, record, inboxId, recovered) {
   payload.customer_receipt_delivery_reason = notification.reason || null;
   payload.customer_receipt_delivery_http_status = Number(notification.status) || null;
   payload.customer_receipt_delivery_transport_status = Number(notification.transport_status) || null;
+  payload.customer_receipt_line_quota = notification.quota || null;
   payload.customer_receipt_confirmation_url_issued = Boolean(mediaUrl);
   payload.customer_receipt_confirmation_url_issued_at = mediaUrl ? new Date().toISOString() : null;
   payload.customer_confirmation_url = mediaUrl || null;
