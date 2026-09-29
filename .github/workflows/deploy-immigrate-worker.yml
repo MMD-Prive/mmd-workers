@@ -142,6 +142,10 @@ jobs:
             "www.mmdbkk.com/internal/admin/customer-data*",
             "mmdbkk.com/internal/admin/jobs/create-job*",
             "www.mmdbkk.com/internal/admin/jobs/create-job*",
+            "mmdbkk.com/internal/admin/job-board*",
+            "www.mmdbkk.com/internal/admin/job-board*",
+            "mmdbkk.com/internal/admin/jobs/job-board*",
+            "www.mmdbkk.com/internal/admin/jobs/job-board*",
             "mmdbkk.com/internal/jobs/create-job*",
             "www.mmdbkk.com/internal/jobs/create-job*",
             "mmdbkk.com/internal/admin/jobs/create-session/core",
@@ -336,40 +340,65 @@ jobs:
             exit 1
           fi
 
-      - name: Verify canonical Create Job and legacy compatibility route
+      - name: Verify separated Create Job and Job Board owner surfaces
         shell: bash
         working-directory: .
         run: |
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            body="$(mktemp)"
-            headers="$(mktemp)"
+            create_body="$(mktemp)"
+            create_headers="$(mktemp)"
+            board_body="$(mktemp)"
+            board_headers="$(mktemp)"
             legacy_headers="$(mktemp)"
-            trap 'rm -f "$body" "$headers" "$legacy_headers"' EXIT
+            board_alias_headers="$(mktemp)"
+            trap 'rm -f "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"' EXIT
 
-            verified=0
+            create_verified=0
             for attempt in 1 2 3 4 5 6 7 8; do
-              : > "$body"
-              : > "$headers"
-              code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}'                 "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
-              if [ "$code" = "200" ]                 && grep -q 'id="job-board-text" maxlength="1000"' "$body"                 && grep -q 'id="job-customer-gender"' "$body"                 && grep -q 'id="job-budget-disclosure"' "$body"                 && grep -q '/v1/admin/job-board/publish' "$body"                 && grep -q 'https://www.mmdbkk.com/sigil/model/login?' "$body"; then
-                echo "Canonical Create Job verified for $origin on attempt $attempt"
-                verified=1
+              : > "$create_body"
+              : > "$create_headers"
+              create_code="$(curl -sS -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              if [ "$create_code" = "200" ]                 && grep -q 'id="job-client-query"' "$create_body"                 && grep -q 'id="job-model-query"' "$create_body"                 && grep -q 'data-cj-job-board-handoff="separate-v1"' "$create_body"                 && grep -q 'href="/internal/admin/job-board"' "$create_body"                 && ! grep -q 'id="job-board-form"' "$create_body"                 && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
+                echo "Separated Create Job verified for $origin on attempt $attempt"
+                create_verified=1
                 break
               fi
-              echo "Create Job not ready for $origin (attempt $attempt, HTTP $code); retrying..."
+              echo "Create Job separation not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
               sleep 2
             done
-            if [ "$verified" != "1" ]; then
-              echo "Canonical Create Job production verification failed for $origin" >&2
-              head -c 500 "$body" >&2 || true
+            if [ "$create_verified" != "1" ]; then
+              echo "Separated Create Job production verification failed for $origin" >&2
+              head -c 700 "$create_body" >&2 || true
               exit 1
             fi
 
-            legacy_code="$(curl -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}'               "$origin/internal/jobs/create-job?source=legacy-smoke")"
+            board_verified=0
+            for attempt in 1 2 3 4 5 6 7 8; do
+              : > "$board_body"
+              : > "$board_headers"
+              board_code="$(curl -sS -D "$board_headers" -o "$board_body" -w '%{http_code}' "$origin/internal/admin/job-board?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              if [ "$board_code" = "200" ]                 && grep -q 'data-job-board-owner="separate-v1"' "$board_body"                 && grep -q 'id="job-board-form"' "$board_body"                 && grep -q 'name="board_text" maxlength="1000"' "$board_body"                 && grep -q 'name="customer_gender"' "$board_body"                 && grep -q 'name="budget_disclosure_approved"' "$board_body"                 && grep -q '/v1/admin/job-board/publish' "$board_body"                 && ! grep -q 'id="job-client-query"' "$board_body"                 && ! grep -q 'id="job-model-query"' "$board_body"; then
+                echo "Separate Job Board verified for $origin on attempt $attempt"
+                board_verified=1
+                break
+              fi
+              echo "Job Board not ready for $origin (attempt $attempt, HTTP $board_code); retrying..."
+              sleep 2
+            done
+            if [ "$board_verified" != "1" ]; then
+              echo "Separate Job Board production verification failed for $origin" >&2
+              head -c 700 "$board_body" >&2 || true
+              exit 1
+            fi
+
+            legacy_code="$(curl -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}' "$origin/internal/jobs/create-job?source=legacy-smoke")"
             test "$legacy_code" = "308"
-            expected="/internal/admin/jobs/create-job?source=legacy-smoke"
-            grep -Fqi "location: $expected" "$legacy_headers"
+            grep -Fqi "location: /internal/admin/jobs/create-job?source=legacy-smoke" "$legacy_headers"
+
+            board_alias_code="$(curl -sS -D "$board_alias_headers" -o /dev/null -w '%{http_code}' "$origin/internal/admin/jobs/job-board?source=legacy-smoke")"
+            test "$board_alias_code" = "308"
+            grep -Fqi "location: /internal/admin/job-board?source=legacy-smoke" "$board_alias_headers"
           done
 
       - name: Verify MMD Create Session Owner v14 in production

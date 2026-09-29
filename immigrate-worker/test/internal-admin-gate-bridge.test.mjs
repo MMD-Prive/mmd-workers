@@ -136,7 +136,7 @@ test("create-session page loads an existing bundled create-session asset", async
   assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev/);
 });
 
-test("canonical create-job page renders Job Board V2 controls and legacy route redirects", async () => {
+test("Create Job stays isolated from Job Board and legacy route redirects", async () => {
   const calls = [];
   const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-job"), {
     ADMIN_WORKER: adminWorkerBinding(calls),
@@ -147,15 +147,14 @@ test("canonical create-job page renders Job Board V2 controls and legacy route r
   assert.equal(response.status, 200);
   assert.equal(publicCalls, 0);
   assert.equal(calls.length, 1);
+  assert.match(html, /id="job-client-query"/);
+  assert.match(html, /id="job-model-query"/);
   assert.match(html, /id="amount_thb" name="amount_thb" type="number" min="1" step="1" required/);
-  assert.match(html, /function amount\(\)/);
-  assert.match(html, /amount_thb:\s*amount\(\)/);
-  assert.match(html, /if \(!payload\.amount_thb\)/);
-  assert.match(html, /id="job-board-text" maxlength="1000"/);
-  assert.match(html, /id="job-customer-gender"/);
-  assert.match(html, /id="job-budget-disclosure"/);
-  assert.match(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
-  assert.match(html, /broadcastLink\.startsWith\("https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?"/);
+  assert.match(html, /href="\/internal\/admin\/job-board"/);
+  assert.match(html, /data-cj-job-board-handoff="separate-v1"/);
+  assert.doesNotMatch(html, /id="job-board-form"/);
+  assert.doesNotMatch(html, /id="job-board-text"/);
+  assert.doesNotMatch(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
   assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
   assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
 
@@ -164,6 +163,36 @@ test("canonical create-job page renders Job Board V2 controls and legacy route r
   });
   assert.equal(legacy.status, 308);
   assert.equal(legacy.headers.get("location"), "/internal/admin/jobs/create-job?source=legacy");
+});
+
+test("Job Board is a separate authenticated composer with no Client or Model lookup", async () => {
+  const calls = [];
+  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/job-board"), {
+    ADMIN_WORKER: adminWorkerBinding(calls),
+    ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
+  }));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(publicCalls, 0);
+  assert.equal(calls.length, 1);
+  assert.match(html, /data-job-board-owner="separate-v1"/);
+  assert.match(html, /id="job-board-form"/);
+  assert.match(html, /name="board_text" maxlength="1000"/);
+  assert.match(html, /name="customer_gender"/);
+  assert.match(html, /name="budget_disclosure_approved"/);
+  assert.match(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
+  assert.match(html, /broadcastLink\.startsWith\("https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?"/);
+  assert.doesNotMatch(html, /id="job-client-query"/);
+  assert.doesNotMatch(html, /id="job-model-query"/);
+  assert.doesNotMatch(html, /\/v1\/admin\/clients\/lineage-lookup/);
+  assert.doesNotMatch(html, /\/v1\/admin\/models\/search/);
+
+  const alias = await handleInternalRoutes(request("/internal/admin/jobs/job-board?source=compat"), {
+    ADMIN_WORKER: adminWorkerBinding([]),
+  });
+  assert.equal(alias.status, 308);
+  assert.equal(alias.headers.get("location"), "/internal/admin/job-board?source=compat");
 });
 
 test("workers.dev and unknown hosts do not verify a public-host cookie", async () => {

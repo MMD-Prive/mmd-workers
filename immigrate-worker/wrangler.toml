@@ -88,13 +88,32 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
 zone_name = "mmdbkk.com"
 
-# Canonical owner Create Job / Job Board composition surface.
+# Canonical owner Create Job surface. Job Board is deliberately separate so
+# recruitment changes cannot regress Client/Model lookup.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/jobs/create-job*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-job*"
+zone_name = "mmdbkk.com"
+
+# Separate owner Job Board composer: no Client lookup and no Create Job state.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/job-board*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/job-board*"
+zone_name = "mmdbkk.com"
+
+# Compatibility alias only; internal route redirects to /internal/admin/job-board.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/job-board*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/job-board*"
 zone_name = "mmdbkk.com"
 
 # Webflow keeps ownership of /internal/admin/member-intelligence. Its browser

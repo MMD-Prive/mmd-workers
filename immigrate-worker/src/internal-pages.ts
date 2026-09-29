@@ -53,13 +53,8 @@ const createJobScript = `(() => {
   const status = $("create-job-status");
   const output = $("create-job-output");
   const createButton = $("create-job-button");
-  const publishButton = $("publish-job-board");
-  const copyBoardButton = $("copy-job-board-link");
-  const boardStatus = $("job-board-status");
-  const boardText = $("job-board-text");
   let selectedClient = null;
   let selectedModel = null;
-  let broadcastLink = "";
 
   function text(value) { return String(value || "").trim(); }
   function first(value) { return text(value).slice(0, 1).toUpperCase() || "?"; }
@@ -216,34 +211,10 @@ const createJobScript = `(() => {
     }
   }
 
-  async function publishBoard() {
-    if (!text(boardText.value)) { setStatus(boardStatus, "ใส่รายละเอียดกระดานก่อน", true); return; }
-    publishButton.disabled = true;
-    copyBoardButton.disabled = true;
-    broadcastLink = "";
-    try {
-      const budget = money();
-      const payload = { board_text: boardText.value.trim(), world: $("job-visibility").value, job_date: $("job-date").value, start_time: $("job-start").value, duration: $("job-duration").value, area: $("job-location").value, compensation: budget ? budget.toLocaleString("en-US") + " บาท" : "", owner_note: $("job-note").value };
-      const res = await fetch("/v1/admin/job-board/publish", { method: "POST", credentials: "include", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(payload) });
-      const data = await res.json().catch(function() { return {}; });
-      if (!res.ok || data.ok !== true || !data.broadcast_url) throw new Error(data.error || data.message || "job_board_publish_failed");
-      broadcastLink = String(data.broadcast_url);
-      if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
-      copyBoardButton.disabled = false;
-      setStatus(boardStatus, "Published · Copy LIFF Login V2 link ได้", false);
-    } catch (error) {
-      setStatus(boardStatus, "ยังลงกระดานไม่สำเร็จ · " + niceError(error && error.message), true);
-    } finally {
-      publishButton.disabled = false;
-    }
-  }
-
   $("search-client-button").addEventListener("click", function() { loadClients("search"); });
   $("load-recent-clients").addEventListener("click", function() { loadClients("recent"); });
   $("search-model-button").addEventListener("click", loadModels);
   createButton.addEventListener("click", createJob);
-  publishButton.addEventListener("click", publishBoard);
-  copyBoardButton.addEventListener("click", async function() { if (!broadcastLink) return; try { await navigator.clipboard.writeText(broadcastLink); setStatus(boardStatus, "คัดลอก Broadcast Link แล้ว", false); } catch { setStatus(boardStatus, "คัดลอกลิงก์ไม่สำเร็จ", true); } });
   clientQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadClients("search"); });
   modelQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadModels(); });
   ["job-visibility", "job-model-key", "amount_thb"].forEach(function(id) { $(id).addEventListener("input", refreshSummary); $(id).addEventListener("change", refreshSummary); });
@@ -254,6 +225,140 @@ const createJobScript = `(() => {
   $("job-date").value = yyyy + "-" + mm + "-" + dd;
   refreshSummary();
 })();`;
+
+const jobBoardScript = `(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const form = $("job-board-form");
+  const status = $("job-board-status");
+  const publishButton = $("job-board-publish");
+  const copyButton = $("job-board-copy");
+  const openButton = $("job-board-open");
+  let broadcastLink = "";
+  let boardDestination = "";
+
+  function text(value) { return String(value || "").trim(); }
+  function setStatus(message, bad) { status.textContent = message; status.className = "status " + (bad ? "bad" : "good"); }
+  function niceError(error) {
+    const raw = text(error);
+    if (raw === "job_board_text_required") return "ใส่รายละเอียดงานก่อน";
+    if (raw === "job_board_text_too_long") return "รายละเอียดงานยาวเกิน 1,000 ตัวอักษร";
+    if (raw === "owner_admin_session_required") return "Session เจ้าของหมดอายุ · Login ใหม่";
+    return raw || "job board unavailable";
+  }
+
+  async function publishBoard(event) {
+    event.preventDefault();
+    const data = new FormData(form);
+    const boardText = text(data.get("board_text"));
+    if (!boardText) { setStatus("ใส่รายละเอียดงานก่อน", true); return; }
+    publishButton.disabled = true;
+    copyButton.disabled = true;
+    openButton.disabled = true;
+    broadcastLink = "";
+    boardDestination = "";
+    setStatus("กำลังลง Job Board...", false);
+    const world = text(data.get("world")) === "private" ? "private" : "public";
+    const payload = {
+      world,
+      confidentiality: data.get("confidentiality") === "on",
+      title: text(data.get("title")) || "กระดานข่าวงาน",
+      category: "owner_broadcast",
+      board_text: boardText,
+      customer_gender: text(data.get("customer_gender")) || "unspecified",
+      customer_count: Math.max(1, Number(data.get("customer_count")) || 1),
+      budget_disclosure_approved: world === "private" && data.get("budget_disclosure_approved") === "on",
+      media_count: Math.min(12, Math.max(1, Number(data.get("media_count")) || 8)),
+      compensation: text(data.get("compensation")) || undefined,
+      date: text(data.get("date")) || undefined,
+      time: text(data.get("time")) || undefined,
+      duration: text(data.get("duration")) || undefined,
+      area: text(data.get("area")) || undefined,
+      safe_customer_description: text(data.get("safe_customer_description")) || undefined,
+      required_appearance_profile: text(data.get("required_appearance_profile")) || undefined,
+      owner_note: text(data.get("owner_note")) || undefined
+    };
+    try {
+      const res = await fetch("/v1/admin/job-board/publish", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json().catch(function() { return {}; });
+      if (!res.ok || out.ok !== true || !out.broadcast_url) throw new Error(out.error || out.message || "job_board_publish_failed");
+      broadcastLink = String(out.broadcast_url);
+      boardDestination = String(out.board_destination || "");
+      if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
+      $("job-board-link").textContent = broadcastLink;
+      $("job-board-link").href = broadcastLink;
+      $("job-board-result").hidden = false;
+      copyButton.disabled = false;
+      openButton.disabled = false;
+      setStatus("Published · ลิงก์พร้อมส่งให้โมเดล", false);
+    } catch (error) {
+      setStatus("ยังลง Job Board ไม่สำเร็จ · " + niceError(error && error.message), true);
+    } finally {
+      publishButton.disabled = false;
+    }
+  }
+
+  form.addEventListener("submit", publishBoard);
+  copyButton.addEventListener("click", async function() {
+    if (!broadcastLink) return;
+    try { await navigator.clipboard.writeText(broadcastLink); setStatus("คัดลอก Broadcast Link แล้ว", false); }
+    catch { setStatus("คัดลอกลิงก์ไม่สำเร็จ", true); }
+  });
+  openButton.addEventListener("click", function() {
+    if (boardDestination) window.open(boardDestination, "_blank", "noopener,noreferrer");
+    else if (broadcastLink) window.open(broadcastLink, "_blank", "noopener,noreferrer");
+  });
+})();`;
+
+export function renderJobBoardPage(): Response {
+  return page("MMD Job Board", `<section class="mmdop" data-job-board-owner="separate-v1"><main class="mmdop__shell">
+    ${topbar("Job Board")}
+    <section class="hero">
+      <div class="kicker">Recruitment / Open Opportunity</div>
+      <h1>Job Board</h1>
+      <p>ใช้สำหรับประกาศหาคนทำงานเท่านั้น · ไม่ Lookup ลูกค้า ไม่เลือก Canonical Client และไม่แตะ flow ของ Create Job</p>
+      <div class="steps"><div class="step">01 ข้อมูลงาน</div><div class="step">02 เงื่อนไข</div><div class="step">03 Publish</div><div class="step">04 Copy Link</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><a class="btn" href="/internal/admin/jobs/create-job">← Create Job</a><a class="btn soft" href="/internal/admin/control-room">Control Room</a></div>
+    </section>
+
+    <form class="card" id="job-board-form" style="margin-top:12px">
+      <span class="label">Owner Composer</span><h2>สร้างประกาศงาน</h2>
+      <div class="form">
+        <label class="field"><span>Public / Private</span><select name="world"><option value="public">Public · MMD</option><option value="private">Private · SIGIL</option></select></label>
+        <label class="field"><span>หัวข้อ</span><input class="input" name="title" maxlength="160" placeholder="งานกินข้าว · สุขุมวิท · งานลับ"></label>
+        <label class="field"><span>ค่าตอบแทนที่แสดง</span><input class="input" name="compensation" maxlength="120" placeholder="12,000 ถึงตัว"></label>
+        <label class="field"><span>วันที่</span><input class="input" name="date" maxlength="80" placeholder="พฤ 1 ต.ค. 69"></label>
+        <label class="field"><span>เวลา</span><input class="input" name="time" maxlength="80" placeholder="20:00"></label>
+        <label class="field"><span>ระยะเวลา</span><input class="input" name="duration" maxlength="80" placeholder="3 ชม. / Overnight"></label>
+        <label class="field"><span>พื้นที่</span><input class="input" name="area" maxlength="120" placeholder="สุขุมวิท / กรุงเทพฯ"></label>
+        <label class="field"><span>จำนวนลูกค้า</span><input class="input" name="customer_count" type="number" min="1" max="20" value="1"></label>
+        <label class="field"><span>เพศลูกค้าแบบ public-safe</span><select name="customer_gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่</option><option value="mixed">Mixed</option></select></label>
+        <label class="field"><span>จำนวนรูปที่ต้องส่ง</span><input class="input" name="media_count" type="number" min="1" max="12" value="8"></label>
+        <label class="field wide"><span>ลักษณะที่ต้องการ</span><textarea class="textarea" name="required_appearance_profile" maxlength="600" placeholder="เช่น สูง หุ่นดี ลุคสะอาด มีโปรไฟล์"></textarea></label>
+        <label class="field wide"><span>รายละเอียดลูกค้าแบบปลอดภัย</span><textarea class="textarea" name="safe_customer_description" maxlength="500" placeholder="ใส่เฉพาะสิ่งที่โมเดลจำเป็นต้องรู้ · ห้ามชื่อ/LINE/ข้อมูลระบุตัวลูกค้า"></textarea></label>
+        <label class="field wide"><span>ข้อความลง Job Board</span><textarea class="textarea" name="board_text" maxlength="1000" required placeholder="รายละเอียดงานที่โมเดลเห็น"></textarea></label>
+        <label class="field wide"><span>Owner Note</span><textarea class="textarea" name="owner_note" maxlength="1200" placeholder="Internal only"></textarea></label>
+      </div>
+      <div style="display:grid;gap:8px;margin-top:12px">
+        <label style="display:flex;align-items:center;gap:8px"><input name="confidentiality" type="checkbox" style="width:auto"> Confidential 🔐 · ไม่เปิดรายละเอียดลูกค้าที่ระบุตัวได้</label>
+        <label style="display:flex;align-items:center;gap:8px"><input name="budget_disclosure_approved" type="checkbox" style="width:auto"> Private เท่านั้น · อนุญาตแสดงงบให้โมเดล</label>
+      </div>
+      <button class="btn gold" id="job-board-publish" type="submit" style="margin-top:14px">Publish Job Board</button>
+      <div class="status" id="job-board-status">ยังไม่ได้ publish</div>
+    </form>
+
+    <section class="card" id="job-board-result" style="margin-top:12px" hidden>
+      <span class="label">Published</span><h2>Broadcast Link</h2>
+      <div class="links"><div class="linkRow"><div><span>ส่งลิงก์นี้ให้โมเดล</span><a id="job-board-link" href="#" target="_blank" rel="noreferrer"></a></div></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn soft" id="job-board-copy" type="button" disabled>Copy Link</button><button class="btn" id="job-board-open" type="button" disabled>เปิดประกาศ</button></div>
+    </section>
+  </main><script>${jobBoardScript}</script></section>`);
+}
 
 export function renderCreateJobPage(): Response {
   return page("MMD Create Job", `<section class="mmdop" data-cj-flow="owner-real-v2"><main class="mmdop__shell">
@@ -305,12 +410,10 @@ export function renderCreateJobPage(): Response {
       <div class="links" id="create-job-output"></div>
     </section>
 
-    <section class="card" style="margin-top:12px" data-cj-secondary-flow="model-job-board">
-      <span class="label">Optional</span><h2>ลงกระดานงาน</h2>
-      <p>ใช้เฉพาะงานที่ยังหาโมเดลอยู่ · Broadcast Link ต้องเป็น LIFF Login V2</p>
-      <textarea id="job-board-text" maxlength="1000" class="textarea" placeholder="รายละเอียด public-safe สำหรับโมเดล"></textarea>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn soft" id="publish-job-board" type="button">ลงกระดานงาน</button><button class="btn" id="copy-job-board-link" type="button" disabled>Copy Broadcast Link</button></div>
-      <div class="status" id="job-board-status">ยังไม่ได้ publish</div>
+    <section class="card" style="margin-top:12px" data-cj-job-board-handoff="separate-v1">
+      <span class="label">แยกจาก Create Job</span><h2>ยังหาโมเดลอยู่?</h2>
+      <p>ใช้ Job Board แยกต่างหาก · ไม่ค้นลูกค้า ไม่แตะ Client/Model lookup ของ Create Job</p>
+      <a class="btn soft" href="/internal/admin/job-board" style="margin-top:10px">เปิด Job Board ↗</a>
     </section>
   </main><script>${createJobScript}</script></section>`);
 }
