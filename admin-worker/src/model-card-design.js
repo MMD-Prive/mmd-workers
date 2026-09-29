@@ -101,7 +101,7 @@ export function cardPortraitPrompt(design) {
 const escape = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 export function cardHtml(design, portraitDataUrl, logoDataUrl) {
   for (const url of [portraitDataUrl, logoDataUrl]) {
-    if (!/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(url)) throw new Error("invalid_embedded_image");
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(url)) throw new Error("invalid_embedded_image");
   }
   const light = design.world === "public";
   const ink = light ? "#202226" : "#f4f0e8";
