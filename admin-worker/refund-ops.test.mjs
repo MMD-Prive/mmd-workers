@@ -85,6 +85,8 @@ test("same-job refund account change is flagged without overwriting prior eviden
       private_detail_key:"line-ofc/bank-details/new/detail.json",
       source_image_key:"line-ofc/bank-details/new/original.jpg",
       job_id:"JOB-FILM-J-001",
+      refund_amount_due:"4500",
+      refund_currency:"THB",
     }), env());
 
     const payload = await response.json();
@@ -93,13 +95,16 @@ test("same-job refund account change is flagged without overwriting prior eviden
     assert.equal(payload.account_changed, true);
     assert.equal(payload.account_change_review_required, true);
     assert.equal(payload.previous_account_inbox_id, "refund_prior");
+    assert.equal(payload.refund_amount_due, "4500");
     assert.equal(created.length, 1);
     const stored = JSON.parse(created[0].payload_json);
     assert.equal(stored.account_changed, true);
     assert.equal(stored.account_change_review_required, true);
     assert.equal(stored.account_fingerprint, nextFingerprint);
     assert.equal(stored.previous_account_inbox_id, "refund_prior");
+    assert.equal(stored.refund_amount_due, "4500");
     assert.match(created[0].admin_note, /ACCOUNT CHANGED/);
+    assert.match(created[0].admin_note, /amount 4500 THB/);
     assert.doesNotMatch(created[0].payload_json, /123-4-56789-0/);
     assert.equal(stored.money_truth_mutated, false);
   } finally {
@@ -154,7 +159,7 @@ test("different account on another job is not falsely promoted to ACCOUNT CHANGE
   }
 });
 
-test("owner receipt upload completes task, calls LINE notifier, and signed media reads private R2", async () => {
+test("owner receipt upload requires amount, completes task, calls LINE notifier, and signed media reads private R2", async () => {
   const originalFetch = globalThis.fetch;
   const objects = new Map();
   const record = {
@@ -215,8 +220,22 @@ test("owner receipt upload completes task, calls LINE notifier, and signed media
   });
 
   try {
+    const missingAmount = new FormData();
+    missingAmount.append("inbox_id", "refund_receipt_test");
+    missingAmount.append("file", new File([new Uint8Array([1])], "receipt.jpg", { type:"image/jpeg" }));
+    const missingAmountResponse = await handleRefundOpsRequest(new Request("https://www.mmdbkk.com/v1/admin/refunds/receipt", {
+      method:"POST",
+      body:missingAmount,
+    }), e, { isAuthed:async () => true });
+    assert.equal(missingAmountResponse.status, 400);
+    assert.equal((await missingAmountResponse.json()).error, "refund_amount_required");
+
     const form = new FormData();
     form.append("inbox_id", "refund_receipt_test");
+    form.append("refund_amount", "4,500");
+    form.append("refund_currency", "THB");
+    form.append("refund_note", "คืนยอดจากงานที่ยกเลิก");
+    form.append("refund_reference", "KTB-20260929-001");
     form.append("file", new File([new Uint8Array([1,2,3,4])], "receipt.jpg", { type:"image/jpeg" }));
     const response = await handleRefundOpsRequest(new Request("https://www.mmdbkk.com/v1/admin/refunds/receipt", {
       method:"POST",
@@ -226,19 +245,30 @@ test("owner receipt upload completes task, calls LINE notifier, and signed media
     assert.equal(response.status, 200);
     assert.equal(payload.ok, true);
     assert.equal(payload.status, "completed");
+    assert.equal(payload.refund_amount, "4500");
+    assert.equal(payload.refund_currency, "THB");
+    assert.match(payload.confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
     assert.equal(payload.money_truth_mutated, false);
     assert.equal(payload.line_notification.sent, true);
     assert.equal(lineCalls.length, 1);
     assert.equal(lineCalls[0].url, "https://member-dashboard-chat-worker.local/__internal/line/refund-receipt-notify");
     assert.equal(lineCalls[0].headers["x-mmd-service-binding"], "admin-worker");
     assert.equal(lineCalls[0].body.line_user_id, LINE_ID);
+    assert.equal(lineCalls[0].body.refund_amount, "4500");
+    assert.equal(lineCalls[0].body.refund_currency, "THB");
+    assert.equal(lineCalls[0].body.refund_note, "คืนยอดจากงานที่ยกเลิก");
     assert.match(lineCalls[0].body.receipt_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
+    assert.equal(lineCalls[0].body.confirmation_url, lineCalls[0].body.receipt_url);
     assert.equal(lineCalls[0].body.money_truth_mutated, false);
 
     const stored = JSON.parse(record.fields.payload_json);
     assert.match(stored.receipt_r2_key, /^owner-refund-receipts\//);
+    assert.equal(stored.owner_refund_amount, "4500");
+    assert.equal(stored.owner_refund_currency, "THB");
+    assert.equal(stored.owner_refund_reference, "KTB-20260929-001");
     assert.equal(stored.customer_receipt_delivery_status, "sent");
     assert.equal(stored.customer_receipt_delivery_mode, "image");
+    assert.equal(stored.customer_receipt_confirmation_url_issued, true);
     assert.equal(stored.money_truth_mutated, false);
 
     const media = await handleRefundOpsRequest(new Request(lineCalls[0].body.receipt_url), e, { isAuthed:async () => false });
