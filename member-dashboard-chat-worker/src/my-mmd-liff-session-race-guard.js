@@ -183,14 +183,18 @@ function isStatusShell(request) {
   } catch { return false; }
 }
 
+function injectRecoveryModeCss(html) {
+  if (html.includes("body.recovery-mode:not(.signup-mode) #actions")) return html;
+  if (html.includes("\n  </style>")) return html.replace("\n  </style>", `${RECOVERY_MODE_CSS}\n  </style>`);
+  return html.replace("</style>", `${RECOVERY_MODE_CSS}</style>`);
+}
+
 function patchStatusUnresolvedRecoveryShell(html) {
   let patched = String(html || "");
   if (!patched.includes(RENDER_FUNCTION_ANCHOR)) return patched;
   if (!patched.includes("status_unresolved")) return patched;
 
-  if (!patched.includes("body.recovery-mode:not(.signup-mode) #actions")) {
-    patched = patched.replace("\n  </style>", `${RECOVERY_MODE_CSS}\n  </style>`);
-  }
+  patched = injectRecoveryModeCss(patched);
   if (!patched.includes("function renderStatusUnresolved(screen)")) {
     patched = patched.replace(RENDER_FUNCTION_ANCHOR, `${RECOVERY_RENDER_HELPER}${RENDER_FUNCTION_ANCHOR}`);
   }
