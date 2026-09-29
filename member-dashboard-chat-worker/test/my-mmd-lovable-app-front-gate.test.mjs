@@ -329,7 +329,7 @@ test("direct status LIFF stays in the Worker-rendered Digital Home", async () =>
   assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
   assert.match(html, /MMD Privé · LIFF Digital Home/);
-  assert.match(html, /LOVABLE_POINTS_PATH = "\/my-mmd\/points"/);
+  assert.match(html, /CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);
   assert.match(html, /view === "history" \? "history-panel" : view/);
   assert.doesNotMatch(html, /mmd-status-bridge-veil/);
 });
