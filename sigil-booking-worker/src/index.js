@@ -88,7 +88,8 @@ async function handleModelSearch(req, env, url) {
   requireAirtable(env);
   const body = req.method.toUpperCase() === "POST" ? await safeJson(req) : {};
   const q = str(url.searchParams.get("q") || body.q || body.model_search_query || body.model_id_or_name);
-  const scope = token(url.searchParams.get("scope") || body.scope || body.model_scope || "public") === "private" ? "private" : "public";
+  const scopeToken = token(url.searchParams.get("scope") || body.scope || body.model_scope || "public");
+  const scope = scopeToken === "private" ? "private" : scopeToken === "booking" ? "booking" : "public";
   const bookingRef = str(url.searchParams.get("booking_ref") || body.booking_ref || body.request_id);
   const sessionId = str(url.searchParams.get("session_id") || body.session_id);
 
@@ -107,7 +108,7 @@ async function handleModelSearch(req, env, url) {
   for (const model of baseModels) {
     const projected = projectBookingSalesControl(model, salesContext, {
       requested_at: body.requested_at || body.preferred_at || body.date_time || new Date().toISOString(),
-      work_lane: body.work_lane || body.job_class || body.lane || scope,
+      work_lane: body.work_lane || body.job_class || body.lane || model.scope || scope,
     });
     if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
     allowed.push(projected);
@@ -121,7 +122,8 @@ async function handleModelSearch(req, env, url) {
     items: allowed.slice(0, 8),
     access_scope: privateAllowed ? "public_private" : "public_only",
     member_status: storedAccess.member_status || "unknown",
-    sales_control: salesContext.available ? "canonical" : "legacy_compatible"
+    sales_control: salesContext.available ? "canonical" : "legacy_compatible",
+    discovery_scope: scope
   };
 }
 
@@ -368,7 +370,7 @@ async function searchModels(env, q, limit) {
   return rows;
 }
 
-function sanitizeModelForBooking(record, { scope, privateAllowed, env }) {
+export function sanitizeModelForBooking(record, { scope, privateAllowed, env }) {
   const f = record.fields || {};
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
@@ -377,7 +379,9 @@ function sanitizeModelForBooking(record, { scope, privateAllowed, env }) {
   const canPrivate = bool(f.can_work_private) || token(f.sales_layer).includes("private") || token(f.private_tier) || token(f.private_work_format);
   if (scope === "private") {
     if (!privateAllowed || !canPrivate) return null;
-  } else if (!canPublic || (canPrivate && !canPublic)) return null;
+  } else if (scope === "booking") {
+    if (!canPublic && !canPrivate) return null;
+  } else if (!canPublic) return null;
 
   const publicImage = str(f["Public Image URL"] || f.public_image_url || f.card_image_url || f.hero_image_url);
   const primaryKey = str(f.primary_image_key || f.r2_key || f.r2_prefix);
@@ -401,7 +405,8 @@ function sanitizeModelForBooking(record, { scope, privateAllowed, env }) {
     r2_prefix: str(f.r2_prefix),
     drive_folder_id: str(f.drive_folder_id),
     preview_approved: bool(f["Preview Image Approved"]),
-    scope
+    scope: scope === "booking" ? (canPrivate && !canPublic ? "private" : "public") : scope,
+    booking_discovery: scope === "booking" ? true : undefined
   });
 }
 
