@@ -2,8 +2,8 @@ const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"
 
 const STATUS_UNRESOLVED_COPY = [
   "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ",
-  "ถ้าเคยเป็นสมาชิก MMD ให้กรอกอีเมลเดิม หรือ Member ID ที่เคยให้ MMD ไว้ก่อนสมัครใหม่",
-  "ตอนนี้ระบบกู้ข้อมูลสมาชิกเดิมรับเฉพาะอีเมลเดิมหรือ Member ID; เบอร์โทรหรือ Telegram ให้แจ้ง Per/HYPE เพื่อบันทึกเข้าคิวตรวจจากโน้ตเดิม",
+  "ถ้าเคยเป็นสมาชิก MMD ให้กรอกอีเมลเดิม เบอร์โทร Telegram หรือ Member ID ที่เคยให้ MMD ไว้ก่อนสมัครใหม่",
+  "ระบบจะส่งข้อมูลนี้เข้าคิวกู้ข้อมูลสมาชิกเดิม และตรวจจากโน้ตเดิมของ Per / LINE OFC / Console Inbox ก่อนเปิดสิทธิ์ใด ๆ",
   "แหล่งตรวจหลักคือ LINE OFC note / Per note / Console Inbox note และวันที่สมาชิกให้ยึดวันที่ล่าสุดที่ Per ทับไว้ในโน้ต ไม่ใช่วันที่ลูกค้ากรอกใหม่",
   "ระหว่างตรวจสอบ ระบบจะไม่เดา Tier, Points, Wallet, ประวัติงาน หรือ Private Access ให้เอง เพื่อกันสิทธิ์ผิดบัญชีครับ",
 ].join("\n");
@@ -20,14 +20,18 @@ const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
   private_access_state: "fail_closed",
   payment_truth_state: "pending_backend",
   browser_authority: "presentation_only",
-  recovery_required_fields: ["email", "member_id_candidate"],
+  recovery_required_fields: ["email", "phone", "telegram_username", "member_id_candidate"],
   recovery_match_evidence: [
     "members_email",
     "members_member_id",
     "clients_email",
+    "clients_phone",
+    "clients_telegram_username",
     "pre_session_identity_seed",
     "client_access_evidence",
     "line_ofc_email_candidate",
+    "line_ofc_phone_candidate",
+    "line_ofc_telegram_candidate",
   ],
 });
 
@@ -37,10 +41,10 @@ const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   actions: [
     {
       id: "recovery_evidence",
-      label: "เคยเป็นสมาชิก · กรอกอีเมลเดิม / Member ID",
+      label: "เคยเป็นสมาชิก · กรอกอีเมล / เบอร์ / Telegram / Member ID",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
-      fields: ["email", "member_id_candidate"],
+      fields: ["email", "phone", "telegram_username", "member_id_candidate"],
     },
     {
       id: "signup",
