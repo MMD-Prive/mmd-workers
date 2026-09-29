@@ -99,7 +99,7 @@ function modelResponse(answer = "ได้ครับ ผมช่วยดู�
 }
 
 test("versioned production prompt contains Per Voice and authority boundaries", () => {
-  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v4-compositional-authority");
+  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v5-canonical-brain");
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Per Voice/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Speak as "ผม"/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Never claim that payment is paid/);
