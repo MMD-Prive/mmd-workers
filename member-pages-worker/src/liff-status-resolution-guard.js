@@ -2,7 +2,7 @@ const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"
 
 const STATUS_UNRESOLVED_COPY = [
   "ยืนยัน LINE สำเร็จแล้ว",
-  "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
+  "กรอก 1–2 อย่างที่เคยให้ไว้: อีเมล / เบอร์ / ชื่อเล่นหรือนามแฝง แล้วกด Verify",
 ].join("\n");
 
 const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
@@ -26,7 +26,6 @@ const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   actions: [
     {
       id: "recovery_evidence",
-      label: "ยืนยันข้อมูลสมาชิกเดิม",
       label: "Verify",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
