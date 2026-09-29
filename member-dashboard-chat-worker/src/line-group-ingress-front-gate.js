@@ -91,7 +91,7 @@ function bankDetailPurpose(contextText = "") {
 
 async function recentDirectBankOpsContext(env = {}, lineUserId = "") {
   const userId = asString(lineUserId);
-  if (!userId) return { found: false, text: "", purpose: "unknown", sessionId: "", jobId: "" };
+  if (!userId) return { found: false, text: "", purpose: "unknown", sessionId: "", jobId: "", refundAmountThb: null };
   const params = new URLSearchParams();
   params.set("maxRecords", "12");
   params.set("filterByFormula", `{line_user_id}='${formulaValue(userId)}'`);
@@ -109,9 +109,102 @@ async function recentDirectBankOpsContext(env = {}, lineUserId = "") {
       purpose: bankDetailPurpose(text),
       sessionId: asString(meta?.session_id || meta?.sessionId || meta?.linked_session || ""),
       jobId: asString(meta?.job_id || meta?.jobId || ""),
+      refundAmountThb: positiveNumericAmount(
+        meta?.refund_amount_thb ??
+        meta?.refundAmountThb ??
+        record?.fields?.refund_amount_thb ??
+        null
+      ),
     };
   }
-  return { found: false, text: "", purpose: "unknown", sessionId: "", jobId: "" };
+  return { found: false, text: "", purpose: "unknown", sessionId: "", jobId: "", refundAmountThb: null };
+}
+
+function ownerWorkUrl(path = "") {
+  const suffix = asString(path).startsWith("/") ? asString(path) : `/${asString(path)}`;
+  return `https://www.mmdbkk.com${suffix}`;
+}
+
+function buildHypeOwnerProblemAlert({
+  eventType = "",
+  customerName = "",
+  modelName = "",
+  jobId = "",
+  sessionId = "",
+  refundAmountThb = null,
+  accountNumberMasked = "",
+} = {}) {
+  const type = asString(eventType).toLowerCase();
+  const customer = asString(customerName) || "LINE customer";
+  const jobRef = asString(jobId || sessionId);
+  const refundUrl = ownerWorkUrl("/internal/admin/refunds");
+  const jobQuery = asString(jobId)
+    ? `?job_id=${encodeURIComponent(asString(jobId))}`
+    : asString(sessionId)
+      ? `?session_id=${encodeURIComponent(asString(sessionId))}`
+      : "";
+  const jobUrl = jobQuery ? ownerWorkUrl(`/internal/admin/jobs/all${jobQuery}`) : "";
+  const amount = positiveNumericAmount(refundAmountThb);
+
+  if (type === "refund_ready") {
+    return [
+      "🟠 HYPE · REFUND READY",
+      "ลูกค้าส่งบัญชีเพื่อรับเงินคืนแล้ว",
+      "",
+      `ลูกค้า: ${customer}`,
+      asString(modelName) ? `Model: ${asString(modelName)}` : "",
+      jobRef ? `งาน: ${jobRef}` : "งาน: ยังจับคู่ไม่ได้",
+      accountNumberMasked ? `บัญชี: ${asString(accountNumberMasked)}` : "",
+      "",
+      "ระบบจัดการแล้ว",
+      "✓ อ่านข้อมูลบัญชีแล้ว",
+      jobRef ? "✓ ผูกกับงานแล้ว" : "⚠️ ยังต้องเลือกงานก่อนดำเนินการ",
+      "✓ สร้าง Refund Task แล้ว",
+      "✓ ไม่แก้ Payment / Money Truth",
+      "",
+      amount != null ? `เปอร์ต้องทำต่อ: คืนเงิน ${amount.toLocaleString("th-TH")} บาท` : "เปอร์ต้องทำต่อ: เปิด Refund เพื่อตรวจยอดและโอนคืน",
+      `เปิด Refund: ${refundUrl}`,
+      jobUrl ? `เปิด Job: ${jobUrl}` : "",
+    ].filter(Boolean).join("\n");
+  }
+
+  return [
+    "🟠 HYPE · NEEDS YOU",
+    "มีงานที่ต้องให้เปอร์ตรวจ",
+    `ลูกค้า: ${customer}`,
+    jobRef ? `งาน: ${jobRef}` : "งาน: ยังจับคู่ไม่ได้",
+    `เปิด Control Room: ${ownerWorkUrl("/internal/admin/control-room")}`,
+  ].join("\n");
+}
+
+async function notifyOwnerBankDetailReady(env = {}, {
+  proofId = "",
+  purpose = "",
+  customerName = "",
+  jobId = "",
+  sessionId = "",
+  refundAmountThb = null,
+  accountNumberMasked = "",
+} = {}) {
+  const chatId = paymentOpsChatId(env);
+  if (!chatId) return { skipped: true, reason: "telegram_config_missing" };
+  const eventType = asString(purpose) === "refund" ? "refund_ready" : "needs_you";
+  const text = buildHypeOwnerProblemAlert({
+    eventType,
+    customerName,
+    jobId,
+    sessionId,
+    refundAmountThb,
+    accountNumberMasked,
+  });
+  return sendOpsMessage(env, {
+    chatId,
+    threadId: alertsOpsThreadId(env),
+    flow: "alert",
+    text,
+    eventKey: asString(proofId),
+    purpose: eventType,
+  });
 }
 
 async function persistBankDetailOps(env = {}, input = {}) {
@@ -180,13 +273,42 @@ async function persistBankDetailOps(env = {}, input = {}) {
     }),
   }));
   const payload = await response.json().catch(() => ({}));
+  const queued = response.ok && payload?.ok === true;
+  const deduped = payload?.deduped === true;
+  let ownerNotification = null;
+  if (queued && !deduped) {
+    try {
+      ownerNotification = await notifyOwnerBankDetailReady(env, {
+        proofId,
+        purpose,
+        customerName: customer.payerName || "",
+        jobId: recent.jobId || "",
+        sessionId: recent.sessionId || "",
+        refundAmountThb: recent.refundAmountThb,
+        accountNumberMasked: maskAccountNumber(accountNumber),
+      });
+    } catch (error) {
+      ownerNotification = { delivered: false, reason: "owner_notification_failed" };
+      console.log(JSON.stringify({
+        line_bank_detail_owner_notification: "failed",
+        proof_id: proofId,
+        error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
+      }));
+    }
+  }
   return {
     captured: true,
-    queued: response.ok && payload?.ok === true,
-    deduped: payload?.deduped === true,
+    queued,
+    deduped,
     purpose,
     imageClass: "bank_account_detail",
     reason: response.ok ? "bank_detail_ops_created" : "bank_detail_ops_queue_failed",
+    ownerNotification: ownerNotification ? {
+      delivered: ownerNotification.sent === true || ownerNotification.delivered === true,
+      queued: ownerNotification.queued === true,
+      skipped: ownerNotification.skipped === true,
+      reason: asString(ownerNotification.reason) || null,
+    } : null,
   };
 }
 
@@ -988,6 +1110,8 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   notifyPaymentProofOps,
   notifyDirectCustomerPaymentEvidence,
   buildDirectPaymentAcknowledgement,
+  buildHypeOwnerProblemAlert,
+  notifyOwnerBankDetailReady,
   persistBankDetailOps,
   recentDirectBankOpsContext,
   paymentNotificationPurpose,
