@@ -2,7 +2,8 @@ const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"
 
 const STATUS_UNRESOLVED_COPY = [
   "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ",
-  "ถ้าเคยเป็นสมาชิก MMD จะตรวจจาก Per name / LINE OFC / ประวัติงานก่อนเปิดสิทธิ์ให้ใช้งาน",
+  "ถ้าเคยเป็นสมาชิก MMD ให้แจ้งอีเมล เบอร์โทร หรือ Telegram ที่เคยให้ MMD ไว้ เพื่อให้ทีมตรวจจากโน้ตเดิมของ Per ก่อนสมัครใหม่",
+  "แหล่งหลักคือ LINE OFC note / Per note / Console Inbox note และวันที่สมาชิกให้ยึดวันที่ล่าสุดที่ Per ทับไว้ในโน้ต ไม่ใช่วันที่ลูกค้ากรอกใหม่",
   "ระหว่างตรวจสอบ ระบบจะไม่เดา Tier, Points, Wallet, ประวัติงาน หรือ Private Access ให้เอง เพื่อกันสิทธิ์ผิดบัญชีครับ",
 ].join("\n");
 
@@ -18,12 +19,25 @@ const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
   private_access_state: "fail_closed",
   payment_truth_state: "pending_backend",
   browser_authority: "presentation_only",
+  recovery_required_fields: ["email", "phone", "telegram_username"],
+  recovery_match_evidence: ["line_ofc_note", "per_note", "console_inbox_note"],
+  membership_date_authority: "latest_per_note_override",
+  membership_date_customer_input_authority: false,
 });
 
 const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   key: "status_unresolved",
   copy: STATUS_UNRESOLVED_COPY,
   actions: [
+    {
+      id: "recovery_evidence",
+      label: "เคยเป็นสมาชิก · แจ้งอีเมล / เบอร์ / Telegram ที่เคยให้ MMD",
+      endpoint: "/member/api/liff/recovery",
+      method: "POST",
+      fields: ["email", "phone", "telegram_username"],
+      evidence_sources: ["LINE OFC note", "Per note", "Console Inbox note"],
+      membership_date_authority: "latest Per note date override",
+    },
     {
       id: "signup",
       label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
@@ -88,6 +102,10 @@ export async function rewritePendingStatusStartResponse(request, response, trace
       history_display_state: safeState.history_display_state,
       private_access_state: safeState.private_access_state,
       payment_truth_state: safeState.payment_truth_state,
+      recovery_required_fields: safeState.recovery_required_fields,
+      recovery_match_evidence: safeState.recovery_match_evidence,
+      membership_date_authority: safeState.membership_date_authority,
+      membership_date_customer_input_authority: safeState.membership_date_customer_input_authority,
     },
   }), {
     status: response.status,
