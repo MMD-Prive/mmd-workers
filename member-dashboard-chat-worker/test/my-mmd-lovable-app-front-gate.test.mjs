@@ -206,6 +206,29 @@ test("Lovable JS assets are republished same-origin and rewritten to the canonic
   assert.match(body, /\/my-mmd-assets\/chunk\.js/);
 });
 
+test("versioned Lovable assets are browser-cacheable while MY MMD HTML stays no-store", async () => {
+  globalThis.fetch = async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname.endsWith(".js")) {
+      return new Response('const chunk="/assets/chunk-abcdefgh.js";', {
+        headers: { "content-type": "application/javascript" },
+      });
+    }
+    return new Response("<!doctype html><html><head></head><body>MY MMD</body></html>", {
+      headers: { "content-type": "text/html" },
+    });
+  };
+
+  const asset = await worker.fetch(new Request("https://mmdbkk.com/my-mmd-assets/index-abcdefgh.js"), {});
+  assert.equal(asset.status, 200);
+  assert.equal(asset.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal(asset.headers.get("x-mmd-asset-cache"), "versioned-immutable");
+  assert.match(await asset.text(), /\/my-mmd-assets\/chunk-abcdefgh\.js/);
+
+  const page = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/"), {});
+  assert.match(page.headers.get("cache-control") || "", /no-store/);
+});
+
 test("public Lovable assets under /my-mmd/* are proxied from the published origin", async () => {
   const calls = [];
   globalThis.fetch = async (request) => {
