@@ -146,12 +146,16 @@ export async function enforceOwnerDashboardFirst(request, response) {
   const sessionCreated = response.headers.get("x-mmd-admin-login") === "session-created";
   if (!sessionCreated || role === "mms_partner") return response;
 
+  const requestedNext = String(response.headers.get("x-mmd-admin-next") || "").trim();
+  const preserveRefundNext = requestedNext === "/internal/admin/refunds" || requestedNext.startsWith("/internal/admin/refunds?");
+  const postLoginTarget = preserveRefundNext ? requestedNext : ADMIN_OWNER_DASHBOARD_PATH;
+
   const headers = new Headers(response.headers);
-  headers.set("x-mmd-admin-next", ADMIN_OWNER_DASHBOARD_PATH);
-  headers.set("x-mmd-admin-post-login", "dashboard-first");
+  headers.set("x-mmd-admin-next", postLoginTarget);
+  headers.set("x-mmd-admin-post-login", preserveRefundNext ? "resume-refund-ops" : "dashboard-first");
 
   if (response.status >= 300 && response.status < 400) {
-    headers.set("location", new URL(ADMIN_OWNER_DASHBOARD_PATH, requestUrl.origin).toString());
+    headers.set("location", new URL(postLoginTarget, requestUrl.origin).toString());
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -170,7 +174,7 @@ export async function enforceOwnerDashboardFirst(request, response) {
   }
 
   if (!payload || payload.ok !== true) return response;
-  payload.next = ADMIN_OWNER_DASHBOARD_PATH;
+  payload.next = postLoginTarget;
   headers.set("content-type", "application/json; charset=utf-8");
   return new Response(JSON.stringify(payload), {
     status: response.status,
