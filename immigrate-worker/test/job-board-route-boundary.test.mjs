@@ -25,14 +25,16 @@ test("Job Board route is authenticated and separate from Create Job", async () =
 test("Create Job contains only a link to Job Board while Job Board owns publish controls", async () => {
   const pages = await readFile(pagesUrl, "utf8");
   const createStart = pages.indexOf("export function renderCreateJobPage");
-  const boardStart = pages.indexOf("export function renderJobBoardPage");
-  assert.ok(createStart > boardStart);
+  const boardScriptStart = pages.indexOf("const jobBoardScript");
+  const boardRenderStart = pages.indexOf("export function renderJobBoardPage");
+  assert.ok(createStart > boardRenderStart);
+  assert.ok(boardRenderStart > boardScriptStart);
   const createSource = pages.slice(createStart);
   assert.match(createSource, /href="\/internal\/admin\/job-board"/);
   assert.doesNotMatch(createSource, /id="job-board-form"/);
   assert.doesNotMatch(createSource, /fetch\("\/v1\/admin\/job-board\/publish"/);
 
-  const boardSource = pages.slice(boardStart, createStart);
+  const boardSource = pages.slice(boardScriptStart, createStart);
   assert.match(boardSource, /data-job-board-owner="separate-v1"/);
   assert.match(boardSource, /id="job-board-form"/);
   assert.match(boardSource, /fetch\("\/v1\/admin\/job-board\/publish"/);
