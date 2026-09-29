@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCareBackTelegramPayload, sendCareBackTelegramPost } from "./send-care-back-telegram-post.mjs";
+import {
+  DEFAULT_INTERNAL_SEND_URL,
+  buildCareBackTelegramPayload,
+  resolveCareBackTelegramRuntimeEnv,
+  sendCareBackTelegramPost,
+} from "./send-care-back-telegram-post.mjs";
 
 const PACK = {
   schema: "mmd.care_back_telegram_post.v1",
@@ -22,6 +27,28 @@ test("builds safe CARE BACK Telegram payload", () => {
 test("rejects missing safety flags and sensitive text", () => {
   assert.throws(() => buildCareBackTelegramPayload({ ...PACK, safety: {} }), /care_back_safety_flags_required/);
   assert.throws(() => buildCareBackTelegramPayload({ ...PACK, copy: { text: "line_user_id U123" } }), /post_text_contains_sensitive_payload/);
+});
+
+test("resolves GitHub runtime fallbacks for live sender", () => {
+  const runtime = resolveCareBackTelegramRuntimeEnv({
+    TELEGRAM_INTERNAL_SEND_URL: "",
+    TELEGRAM_INTERNAL_TOKEN: "",
+    INTERNAL_API_TOKEN: "canonical-api-token",
+    INTERNAL_TOKEN: "legacy-token",
+  });
+  assert.equal(runtime.endpoint, DEFAULT_INTERNAL_SEND_URL);
+  assert.equal(runtime.token, "canonical-api-token");
+});
+
+test("keeps TELEGRAM_INTERNAL_TOKEN as highest-priority runtime token", () => {
+  const runtime = resolveCareBackTelegramRuntimeEnv({
+    TELEGRAM_INTERNAL_SEND_URL: "https://telegram-worker.override/telegram/internal/send",
+    TELEGRAM_INTERNAL_TOKEN: "telegram-token",
+    INTERNAL_API_TOKEN: "canonical-api-token",
+    INTERNAL_TOKEN: "legacy-token",
+  });
+  assert.equal(runtime.endpoint, "https://telegram-worker.override/telegram/internal/send");
+  assert.equal(runtime.token, "telegram-token");
 });
 
 test("dry-run returns payload without network", async () => {
