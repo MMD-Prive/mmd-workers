@@ -1613,7 +1613,7 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", optio
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
 }
 
-async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}) {
+async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const inboxTable = getAirtableTable(env);
@@ -1621,7 +1621,8 @@ async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity =
     return { ok: false, active: false, reason: "takeover_lookup_unconfigured", source: "none" };
   }
 
-  const matrix = continuity?.matrix || {};
+  const canonicalControls = options?.canonical !== false;
+  const matrix = canonicalControls ? (continuity?.matrix || {}) : {};
   const matrixStage = asString(matrix?.conversation_stage).toLowerCase();
   const matrixReason = asString(matrix?.handoff_reason).toLowerCase();
   const matrixHandoff = matrix?.handoff_required === true &&
@@ -1640,7 +1641,7 @@ async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity =
     asString(continuity?.conversation_hash),
     asString(matrix?.conversation_scope),
   ].filter(Boolean).slice(0, 3);
-  const controlsTable = asString(env.AIRTABLE_TABLE_KENJI_CONVERSATION_CONTROLS_ID || KENJI_CONVERSATION_CONTROLS_TABLE_FALLBACK);
+  const controlsTable = canonicalControls ? asString(env.AIRTABLE_TABLE_KENJI_CONVERSATION_CONTROLS_ID || KENJI_CONVERSATION_CONTROLS_TABLE_FALLBACK) : "";
   const controlsUrl = candidates.length && controlsTable
     ? new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(controlsTable)}`)
     : null;
@@ -2639,6 +2640,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const runtimeModelKill = runtimeAllKill || runtimeControls.model_keyword_auto_reply === true;
   const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED) && !runtimeLineKill;
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
+  const lineBrainEnabled = isEnabled(env.KENJI_LINE_BRAIN_V1_ENABLED);
   const saved = [];
 
   for (const prepared of preparedEvents) {
@@ -2707,25 +2709,36 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const lineUserId = getLineUserId({ event });
     const modelIntent = resolveKenjiModelIntent(text);
     const inferredIntent = modelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(text, event);
-    const continuity = await resolveKenjiLineContinuity({
-      env,
-      event,
-      currentIntent: inferredIntent,
-      now: new Date().toISOString(),
-    }).catch(() => ({
-      decision: "unavailable",
-      reason: "continuity_resolver_failed",
-      effective_intent: inferredIntent,
-      matrix: {},
-      conversation_hash: "",
-      client_record_id: "",
-      storage_status: "unavailable",
-      available: false,
-    }));
+    const continuity = lineBrainEnabled
+      ? await resolveKenjiLineContinuity({
+          env,
+          event,
+          currentIntent: inferredIntent,
+          now: new Date().toISOString(),
+        }).catch(() => ({
+          decision: "unavailable",
+          reason: "continuity_resolver_failed",
+          effective_intent: inferredIntent,
+          matrix: {},
+          conversation_hash: "",
+          client_record_id: "",
+          storage_status: "unavailable",
+          available: false,
+        }))
+      : {
+          decision: "disabled",
+          reason: "line_brain_v1_disabled",
+          effective_intent: inferredIntent,
+          matrix: {},
+          conversation_hash: "",
+          client_record_id: "",
+          storage_status: "disabled",
+          available: false,
+        };
     const effectiveIntent = asString(continuity?.effective_intent) || inferredIntent;
-    const ownerTakeover = lineUserId
+    const ownerTakeover = lineBrainEnabled && lineUserId
       ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
-      : { ok: true, active: false, reason: "", source: "not_applicable" };
+      : { ok: true, active: false, reason: "", source: lineBrainEnabled ? "not_applicable" : "line_brain_v1_disabled" };
     const ownerReplyBlocked = Boolean(
       lineUserId &&
       (
@@ -2786,7 +2799,14 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
     let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
-      campaignLeadClaim = await claimLineCardCampaignLead(env, event, "claim");
+      const campaignTakeover = lineBrainEnabled
+        ? ownerTakeover
+        : await getLineOwnerTakeoverState(env, lineUserId, {}, { canonical: false });
+      campaignLeadClaim = campaignTakeover.ok !== true
+        ? { ok: false, claimed: false, reason: campaignTakeover.reason }
+        : campaignTakeover.active === true
+          ? { ok: true, claimed: false, reason: "owner_takeover_active" }
+          : await claimLineCardCampaignLead(env, event, "claim");
       if (campaignLeadClaim.claimed === true) {
         try {
           campaignLeadRecord = await writeLineCardCampaignEventToConsoleInbox(
@@ -2892,9 +2912,15 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
           : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
     const postDecisionTakeover = lineUserId && replyText
-      ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
+      ? (lineBrainEnabled
+          ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
+          : campaignEvent
+            ? await getLineOwnerTakeoverState(env, lineUserId, {}, { canonical: false })
+            : { ok: true, active: false, reason: "", source: "line_brain_v1_disabled" })
       : ownerTakeover;
-    const takeoverClear = !lineUserId || (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true);
+    const takeoverClear = !lineUserId ||
+      (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true) ||
+      (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
     const shouldReply = Boolean(
       (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
       eventMode !== "standby" &&
@@ -2904,9 +2930,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       (!campaignEvent || options.suppressCampaignReply !== true)
     );
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
-    const outboundHistoryPromise = replyResult?.ok === true
+    const outboundHistoryPromise = lineBrainEnabled && replyResult?.ok === true
       ? recordDeliveredKenjiLineReply({ env, event: rawEvent, replyText }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
-      : Promise.resolve({ skipped: true, reason: "reply_not_delivered" });
+      : Promise.resolve({ skipped: true, reason: lineBrainEnabled ? "reply_not_delivered" : "line_brain_v1_disabled" });
 
     const historyMetadata = {
       turn_aggregation: {
@@ -2934,15 +2960,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       handoff_required: replyDecision.handoff_required === true || ownerReplyBlocked,
       handoff_reason: asString(replyDecision.handoff_reason || (ownerReplyBlocked ? ownerTakeover.reason : "")),
     };
-    const matrixWritePromise = writeKenjiLineMatrixTurn({
-      env,
-      continuity,
-      decision: matrixDecision,
-      delivered: replyResult?.ok === true,
-      attempted: shouldReply,
-      lastEventId: getLineEventId(rawEvent),
-      now: new Date().toISOString(),
-    }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }));
+    const matrixWritePromise = lineBrainEnabled
+      ? writeKenjiLineMatrixTurn({
+          env,
+          continuity,
+          decision: matrixDecision,
+          delivered: replyResult?.ok === true,
+          attempted: shouldReply,
+          lastEventId: getLineEventId(rawEvent),
+          now: new Date().toISOString(),
+        }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
+      : Promise.resolve({ skipped: true, reason: "line_brain_v1_disabled" });
 
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = campaignEvent ? await afterReply : { pending: canDefer, deduped: false };
@@ -2992,6 +3020,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       runtime_line_kill: runtimeLineKill,
       runtime_model_kill: runtimeModelKill,
       runtime_all_kill: runtimeAllKill,
+      line_brain_v1_enabled: lineBrainEnabled,
       reply_token_present: Boolean(getReplyToken(event)),
       inbox_deduped: Boolean(record?.deduped),
       reply_candidate: Boolean(replyText),
