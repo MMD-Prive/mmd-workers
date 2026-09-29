@@ -109,7 +109,8 @@ try {
   assert.equal(context.reason, "exact_clients_line_user_id");
   assert.equal(context.client_record_id, CLIENT_ID);
   assert.equal(context.per_rename_status, "matched");
-  assert.equal(context.safe_context.display_name_for_kenji, "พี่โจ้");\n  assert.doesNotMatch(context.safe_context.display_name_for_kenji, /17|มีค|69/);
+  assert.equal(context.safe_context.display_name_for_kenji, "พี่โจ้");
+  assert.doesNotMatch(context.safe_context.display_name_for_kenji, /17|มีค|69/);
   assert.doesNotMatch(JSON.stringify(context), /เบอร์ส่วนตัวห้ามพูด/);
   assert.equal(context.relationship_context, "svip_relationship");
   assert.equal(context.voice_context.voice_profile, "per_voice_concierge");
