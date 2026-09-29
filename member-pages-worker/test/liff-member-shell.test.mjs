@@ -128,13 +128,28 @@ describe("same-site /member/liff shell", () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    const sessionCheck = html.indexOf("const existingProfile = await readProfile()");
+    const sessionCheck = html.indexOf("existingProfilePromise = readProfile({ hydrate: false }).catch(() => null)");
     const liffInit = html.indexOf("await window.liff.init({ liffId: CONFIG.liffId })");
     const liffLogin = html.indexOf("window.liff.login({ redirectUri: window.location.href })");
-    assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
-    assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
+    assert.ok(sessionCheck >= 0, "same-site session preflight must be rendered");
+    assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session preflight");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
-    assert.match(html, /if \(existingProfile\) \{ signupLineEntry\?\.classList\.add\("hidden"\); await readSignupCatalog\(\); return; \}/);
+    assert.match(html, /void boot\(\{ existingProfileChecked: true \}\)/);
+    assert.match(html, /if \(!existingProfileChecked\) \{[\s\S]*readProfile\(\{ hydrate: false \}\)/);
+  });
+
+  it("keeps MY MMD entry latency bounded and defers secondary hydration", async () => {
+    const response = await shell("/member/liff?intent=status");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /setTimeout\(\(\) => controller\.abort\(\), 1500\)/);
+    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
+    const entered = html.indexOf('document.body.classList.add("app-entered")');
+    const hydrate = html.indexOf("void hydrateMemberHome()", entered);
+    assert.ok(entered >= 0 && hydrate > entered, "secondary member hydration must start only after the app surface is entered");
+    assert.match(html, /void readSignupCatalog\(\)/);
+    assert.match(html, /readProfile\(\{ hydrate: false \}\)/);
   });
 
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
@@ -236,8 +251,12 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /fetch\(CONFIG\.historyEndpoint/);
     assert.match(html, /fetch\(CONFIG\.historyRecoveryEndpoint/);
     assert.match(html, /credentials:"same-origin"/);
+    assert.match(html, /async function hydrateMemberHome\(\)/);
+    assert.match(html, /async function hydrateMemberHome\(\)/);
     assert.match(html, /const hydrationReads = \[\s*readCouponWallet\(\),\s*readCreditWallet\(\),\s*readCanonicalHistory\(\),\s*readCustomerRequests\(\),\s*\]/);
     assert.match(html, /await Promise\.allSettled\(hydrationReads\)/);
+    assert.match(html, /async function readProfile\(\{ hydrate = true \} = \{\}\)/);
+    assert.match(html, /if \(hydrate\) await hydrateMemberHome\(\)/);
     assert.doesNotMatch(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
     assert.match(html, /recoveryPayload\?\.history_recovery\?\.state/);
     assert.match(html, /pointsTitle:"⭐ 积分"/);
