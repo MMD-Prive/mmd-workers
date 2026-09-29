@@ -2,8 +2,9 @@ const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"
 
 const STATUS_UNRESOLVED_COPY = [
   "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ",
-  "ถ้าเคยเป็นสมาชิก MMD ให้แจ้งอีเมล เบอร์โทร หรือ Telegram ที่เคยให้ MMD ไว้ เพื่อให้ทีมตรวจจากโน้ตเดิมของ Per ก่อนสมัครใหม่",
-  "แหล่งหลักคือ LINE OFC note / Per note / Console Inbox note และวันที่สมาชิกให้ยึดวันที่ล่าสุดที่ Per ทับไว้ในโน้ต ไม่ใช่วันที่ลูกค้ากรอกใหม่",
+  "ถ้าเคยเป็นสมาชิก MMD ให้กรอกอีเมลเดิม หรือ Member ID ที่เคยให้ MMD ไว้ก่อนสมัครใหม่",
+  "ตอนนี้ระบบกู้ข้อมูลสมาชิกเดิมรับเฉพาะอีเมลเดิมหรือ Member ID; เบอร์โทรหรือ Telegram ให้แจ้ง Per/HYPE เพื่อบันทึกเข้าคิวตรวจจากโน้ตเดิม",
+  "แหล่งตรวจหลักคือ LINE OFC note / Per note / Console Inbox note และวันที่สมาชิกให้ยึดวันที่ล่าสุดที่ Per ทับไว้ในโน้ต ไม่ใช่วันที่ลูกค้ากรอกใหม่",
   "ระหว่างตรวจสอบ ระบบจะไม่เดา Tier, Points, Wallet, ประวัติงาน หรือ Private Access ให้เอง เพื่อกันสิทธิ์ผิดบัญชีครับ",
 ].join("\n");
 
@@ -19,10 +20,15 @@ const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
   private_access_state: "fail_closed",
   payment_truth_state: "pending_backend",
   browser_authority: "presentation_only",
-  recovery_required_fields: ["email", "phone", "telegram_username"],
-  recovery_match_evidence: ["line_ofc_note", "per_note", "console_inbox_note"],
-  membership_date_authority: "latest_per_note_override",
-  membership_date_customer_input_authority: false,
+  recovery_required_fields: ["email", "member_id_candidate"],
+  recovery_match_evidence: [
+    "members_email",
+    "members_member_id",
+    "clients_email",
+    "pre_session_identity_seed",
+    "client_access_evidence",
+    "line_ofc_email_candidate",
+  ],
 });
 
 const STATUS_UNRESOLVED_SCREEN = Object.freeze({
@@ -31,12 +37,10 @@ const STATUS_UNRESOLVED_SCREEN = Object.freeze({
   actions: [
     {
       id: "recovery_evidence",
-      label: "เคยเป็นสมาชิก · แจ้งอีเมล / เบอร์ / Telegram ที่เคยให้ MMD",
+      label: "เคยเป็นสมาชิก · กรอกอีเมลเดิม / Member ID",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
-      fields: ["email", "phone", "telegram_username"],
-      evidence_sources: ["LINE OFC note", "Per note", "Console Inbox note"],
-      membership_date_authority: "latest Per note date override",
+      fields: ["email", "member_id_candidate"],
     },
     {
       id: "signup",
@@ -104,8 +108,6 @@ export async function rewritePendingStatusStartResponse(request, response, trace
       payment_truth_state: safeState.payment_truth_state,
       recovery_required_fields: safeState.recovery_required_fields,
       recovery_match_evidence: safeState.recovery_match_evidence,
-      membership_date_authority: safeState.membership_date_authority,
-      membership_date_customer_input_authority: safeState.membership_date_customer_input_authority,
     },
   }), {
     status: response.status,
