@@ -126,6 +126,8 @@
     const jobId = safeJobId(sourceUrl.searchParams.get("job_id"));
     const source = String(sourceUrl.searchParams.get("source") || "line_model_group").trim();
     const campaignId = String(sourceUrl.searchParams.get("campaign_id") || "").trim();
+    const modelAlias = String(sourceUrl.searchParams.get("model_alias") || "").trim().slice(0, 160);
+    const modelRecordId = String(sourceUrl.searchParams.get("model_record_id") || "").trim();
     return {
       intent: "job_board",
       return_to: "public_job_board",
@@ -133,6 +135,8 @@
       job_id: jobId,
       next: safeJobBoardNext(sourceUrl.searchParams.get("next"), jobId),
       campaign_id: /^[A-Za-z0-9._:-]{1,128}$/.test(campaignId) ? campaignId : "",
+      model_alias: modelAlias,
+      model_record_id: /^[A-Za-z0-9._:-]{1,120}$/.test(modelRecordId) ? modelRecordId : "",
     };
   }
 
@@ -150,6 +154,8 @@
     url.searchParams.set("next", context.next);
     if (context.job_id) url.searchParams.set("job_id", context.job_id);
     if (context.campaign_id) url.searchParams.set("campaign_id", context.campaign_id);
+    if (context.model_alias) url.searchParams.set("model_alias", context.model_alias);
+    if (context.model_record_id) url.searchParams.set("model_record_id", context.model_record_id);
     return url.toString();
   }
 

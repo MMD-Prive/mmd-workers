@@ -48,6 +48,8 @@ export function modelLiffDigitalBootstrapHtml({
     ? {
         job_id: String(jobBoard.job_id || ""),
         next: String(jobBoard.next || ""),
+        model_alias: String(jobBoard.model_alias || ""),
+        model_record_id: String(jobBoard.model_record_id || ""),
       }
     : null;
   const jobBoardScript = safeJobBoard ? `
@@ -60,6 +62,8 @@ export function modelLiffDigitalBootstrapHtml({
     var handoffParams=new URLSearchParams();
     ${safeJobBoard.job_id ? `handoffParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
     ${safeJobBoard.next ? `handoffParams.set("next",${JSON.stringify(safeJobBoard.next)});` : ""}
+    ${safeJobBoard.model_alias ? `handoffParams.set("model_alias",${JSON.stringify(safeJobBoard.model_alias)});` : ""}
+    ${safeJobBoard.model_record_id ? `handoffParams.set("model_record_id",${JSON.stringify(safeJobBoard.model_record_id)});` : ""}
     var handoff=await fetch("/v1/model/job-board/handoff?"+handoffParams.toString(),{method:"GET",credentials:"include",cache:"no-store",headers:{accept:"application/json"}});
     var handoffBody=await handoff.json().catch(function(){return null});
     if(!handoff.ok||!handoffBody||handoffBody.ok!==true||!handoffBody.redirect_url)throw new Error(handoffBody&&handoffBody.error||"job_board_handoff_failed");
@@ -69,9 +73,10 @@ export function modelLiffDigitalBootstrapHtml({
   const returnScript = returnTo ? `window.location.replace(${safeReturnTo});return;` : "";
   const primary = mode === "primary";
   const jobBoardMode = Boolean(safeJobBoard);
-  const title = jobBoardMode ? "กำลังเปิดงาน MMD" : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
+  const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : "";
+  const title = jobBoardMode ? (ownerAlias ? "ยืนยันตัวตนสำหรับงาน " + ownerAlias : "กำลังเปิดงาน MMD") : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
   const copy = jobBoardMode ? "ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที" : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
-  const success = jobBoardMode ? "ยืนยัน LINE แล้ว · กำลังเปิดงาน…" : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
+  const success = jobBoardMode ? (ownerAlias ? "ยืนยัน LINE แล้ว · กำลังเปิดงาน " + ownerAlias + "…" : "ยืนยัน LINE แล้ว · กำลังเปิดงาน…") : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
   const fail = jobBoardMode ? "ยังเปิดงานผ่าน LINE ไม่สำเร็จ" : (primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ");
   const cta = jobBoardMode ? "เปิดงานผ่าน LINE อีกครั้ง" : (primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE");
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
