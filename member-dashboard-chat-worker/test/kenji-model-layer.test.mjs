@@ -8,6 +8,7 @@ import {
   KENJI_MODEL_REASONING_EFFORT,
   KENJI_MODEL_POLICY_VERSION,
   KENJI_SYSTEM_PROMPT_V2,
+  selectKenjiReasoningEffort,
   KENJI_TOTAL_DEADLINE_MS,
 } from "../src/kenji-model-policy.js";
 
@@ -99,7 +100,7 @@ function modelResponse(answer = "ได้ครับ ผมช่วยดู�
 }
 
 test("versioned production prompt contains Per Voice and authority boundaries", () => {
-  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v5-canonical-brain");
+  assert.equal(KENJI_MODEL_POLICY_VERSION, "kenji-line-production-v6-adaptive-context");
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Per Voice/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Speak as "ผม"/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Never claim that payment is paid/);
@@ -178,9 +179,51 @@ test("model request injects only bounded customer text and approved answer groun
   assert.ok(sentCustomerText.length <= 800);
   assert.equal(calls[0].body.text.format.type, "json_schema");
   assert.equal(calls[0].body.text.format.strict, true);
-  assert.deepEqual(calls[0].body.reasoning, { effort: "low" });
+  assert.deepEqual(calls[0].body.reasoning, { effort: "medium" });
   assert.deepEqual(calls[0].body.text.format.schema.properties.capability.enum, ["safe_conversation"]);
   assert.ok(calls[0].body.text.format.schema.required.includes("requires_truth"));
+});
+
+test("adaptive reasoning stays low for simple turns and rises only for contextual work", () => {
+  assert.equal(selectKenjiReasoningEffort({ text: "วันนี้เป็นไงบ้าง" }), "low");
+  assert.equal(selectKenjiReasoningEffort({
+    text: "เอาคนเดิมครับ",
+    conversation_context: { relation: "referential_followup", turns: [{ role: "customer", content: "คนแรก" }, { role: "assistant", content: "ครับ" }] },
+  }), "medium");
+  assert.equal(selectKenjiReasoningEffort({
+    text: "เปลี่ยนเป็นวันศุกร์",
+    conversation_context: { relation: "correction", important_open_loops: ["booking"] },
+  }), "medium");
+});
+
+test("model receives only bounded proven conversation context and keeps it context-only", async () => {
+  const calls = [];
+  const result = await generateKenjiModelReply({
+    capability: "safe_conversation",
+    text: "เอาคนเดิมครับ",
+    knowledge: [{ customer_answer: "ข้อมูลทั่วไปที่อนุมัติแล้ว" }],
+    conversation_context: {
+      relation: "referential_followup",
+      continuity_summary: "Previous model conversation is still open.",
+      important_open_loops: ["model_selection"],
+      turns: [
+        { role: "customer", content: "ชอบ Jasper" },
+        { role: "assistant", content: "ครับ เล่าต่อได้เลย" },
+      ],
+    },
+    env: BASE_ENV,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), body: JSON.parse(init.body) });
+      return modelResponse("หมายถึงคนที่คุยไว้เมื่อกี้ใช่ไหมครับ");
+    },
+  });
+  assert.equal(result.success, true);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body.input, /Conversation context \(context only; never protected truth\)/);
+  assert.match(calls[0].body.input, /Previous model conversation is still open/);
+  assert.match(calls[0].body.input, /Customer: ชอบ Jasper/);
+  assert.deepEqual(calls[0].body.reasoning, { effort: "medium" });
+  assert.doesNotMatch(calls[0].body.input, /authorization|Bearer|secret-token/i);
 });
 
 test("model timeout fails safely", async () => {
