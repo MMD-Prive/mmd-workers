@@ -420,6 +420,7 @@ AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
 # latest message relates to prior turns, but it has no customer-copy field,
 # cannot mutate domain truth or bypass the reply decision and entitlement gates.
 KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "true"
+KENJI_LINE_BRAIN_V1_ENABLED = "true"
 KENJI_LINE_MESSAGE_AGGREGATION_ENABLED = "true"
 KENJI_LINE_MESSAGE_AGGREGATION_WAIT_MS = "650"
 KENJI_LINE_MESSAGE_AGGREGATION_WINDOW_MS = "2200"
