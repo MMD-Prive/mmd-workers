@@ -21,3 +21,11 @@ This release remains on hold until the staged Studio page is published and one p
 Keep MODEL_CARD_AUTO_ENABLED=false until every item above has production evidence.
 
 The release evidence is recorded in ops/release-gates/studio-master-frame-v2.json. Moving that record to ready is a separate owner-reviewed change after the smoke is complete.
+
+## Selected production pilot
+
+- Pilot Model: **Gaz** (historical alias: **Gazz**).
+- Gaz must self-enter through the published MMD APP / LINE LIFF flow so the canonical Model record is created or linked from real identity evidence.
+- Do not synthesize a Model record, LINE identity, dimensions, category, or profile media for acceptance.
+- After canonical identity exists, Gaz selects/uploads one approved `profile_main`; Studio then runs exactly one controlled card draft for review.
+- Book EI and Atom IX are not substitutes for this pilot unless the owner explicitly changes the pilot again.
