@@ -1,9 +1,8 @@
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
 
 const STATUS_UNRESOLVED_COPY = [
-  "ยืนยัน LINE สำเร็จแล้ว แต่ยังไม่พบข้อมูลสมาชิกที่เชื่อมกับ LINE นี้ครับ",
-  "ถ้าเคยเป็นสมาชิก MMD ให้กรอก 1–2 อย่างที่เคยให้ไว้: อีเมล / เบอร์ / ชื่อเล่นหรือนามแฝง",
-  "MMD จะตรวจจากโน้ตเดิมของ Per ก่อนเปิดสิทธิ์ใด ๆ",
+  "ยืนยัน LINE สำเร็จแล้ว",
+  "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
 ].join("\n");
 
 const STATUS_UNRESOLVED_SAFE_STATE = Object.freeze({
@@ -28,13 +27,14 @@ const STATUS_UNRESOLVED_SCREEN = Object.freeze({
     {
       id: "recovery_evidence",
       label: "ยืนยันข้อมูลสมาชิกเดิม",
+      label: "Verify",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
       fields: ["email", "phone", "nickname"],
     },
     {
       id: "signup",
-      label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
+      label: "สมัครสมาชิก",
       endpoint: "/member/api/liff/intent",
     },
   ],

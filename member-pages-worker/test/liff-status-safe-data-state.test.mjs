@@ -38,6 +38,12 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.doesNotMatch(payload.data.screen.copy, /Member ID/);
   assert.doesNotMatch(payload.data.screen.copy, /LINE OFC note/);
   assert.doesNotMatch(payload.data.screen.copy, /Tier, Points, Wallet/);
+  assert.deepEqual(payload.data.screen.copy.split("\n"), [
+    "ยืนยัน LINE สำเร็จแล้ว",
+    "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
+  ]);
+  assert.match(payload.data.screen.copy, /Verify/);
+  assert.doesNotMatch(payload.data.screen.copy, /Per note|LINE OFC note|Console Inbox|Tier|Points|Wallet|Private Access|Guest/);
 
   assert.deepEqual(payload.data.my_mmd_safe_state, {
     line_verified: true,
@@ -66,6 +72,7 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
 });
 
 test("unmatched status exposes a lightweight recovery action before signup", async () => {
+test("unmatched status exposes compact Verify action before signup using the live backend fields", async () => {
   const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
   const response = jsonResponse({
     ok: true,
@@ -83,11 +90,16 @@ test("unmatched status exposes a lightweight recovery action before signup", asy
   assert.deepEqual(payload.data.screen.actions[0], {
     id: "recovery_evidence",
     label: "ยืนยันข้อมูลสมาชิกเดิม",
+    label: "Verify",
     endpoint: "/member/api/liff/recovery",
     method: "POST",
     fields: RECOVERY_REQUIRED_FIELDS,
   });
-  assert.equal(payload.data.screen.actions[1].id, "signup");
+  assert.deepEqual(payload.data.screen.actions[1], {
+    id: "signup",
+    label: "สมัครสมาชิก",
+    endpoint: "/member/api/liff/intent",
+  });
 });
 
 test("resolved MY MMD status is not overwritten by safe pending state", async () => {

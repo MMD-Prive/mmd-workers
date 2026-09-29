@@ -29,18 +29,22 @@ test("rewrites unresolved status start into explicit final state", async () => {
   assert.equal(payload.data.member_resolved, false);
   assert.equal(payload.data.next_screen_key, "status_unresolved");
   assert.equal(payload.data.screen.key, "status_unresolved");
-  assert.match(payload.data.screen.copy, /ยังไม่พบข้อมูลสมาชิก/);
+  assert.deepEqual(payload.data.screen.copy.split("\n"), [
+    "ยืนยัน LINE สำเร็จแล้ว",
+    "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
+  ]);
   assert.deepEqual(payload.data.screen.actions, [
     {
       id: "recovery_evidence",
       label: "ยืนยันข้อมูลสมาชิกเดิม",
+      label: "Verify",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
       fields: ["email", "phone", "nickname"],
     },
     {
       id: "signup",
-      label: "ยังไม่เคยเป็นสมาชิก · สมัครสมาชิก",
+      label: "สมัครสมาชิก",
       endpoint: "/member/api/liff/intent",
     },
   ]);
