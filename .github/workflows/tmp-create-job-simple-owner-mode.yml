@@ -1,29 +1,32 @@
 name: tmp-create-job-simple-owner-mode
+
 on:
   push:
     branches:
-      - ui/create-job-simple-owner-mode-20260929
+      - 'ui/create-job-simple-owner-mode-20260929'
+
 permissions:
   contents: write
+
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ui/create-job-simple-owner-mode-20260929
       - name: Patch Create Job simple mode
+        shell: bash
         run: |
-          python - <<'PY'
+          cat > /tmp/patch_create_job.py <<'PY'
           from pathlib import Path
           import re
 
           path = Path('immigrate-worker/src/internal-pages.ts')
           s = path.read_text()
 
-          css = r'''
-/* Create Job Simple Owner Mode v1 — reduce dashboard density for Boss Per */
+          css = '''
+/* Create Job Simple Owner Mode v1 - reduce dashboard density for Boss Per */
 section[data-cj-flow="customer-first-digital"] .mmdop__shell{width:min(920px,100%)}
 section[data-cj-flow="customer-first-digital"] .mmdop__command{display:block;margin-top:10px}
 section[data-cj-flow="customer-first-digital"] .mmdop__commandLeft{padding:18px 20px}
@@ -62,15 +65,12 @@ section[data-cj-flow="customer-first-digital"] #job-board-panel .mmdop__section{
               '<p><code>/internal/admin/jobs/create-job</code> ต้องเริ่มจากลูกค้าก่อน ไม่เริ่มจาก Model หรือ Job Board</p>': '<p>เริ่มจากลูกค้า → ใส่งาน → กดสร้างลิงก์ ไม่ต้องอ่าน dashboard ทั้งหน้า</p>',
               '<div><span>First Action</span><h2>1. ค้นลูกค้า</h2><p>พิมพ์ Per name / LINE / เบอร์ / package แล้วกดค้น หรือกด Recent ก่อน</p></div>': '<div><span>เริ่มตรงนี้</span><h2>เลือกลูกค้า</h2><p>พิมพ์ชื่อ / LINE / เบอร์ หรือกด Recent</p></div>',
               'id="search-client-button" type="button">1 ค้นลูกค้า</button>': 'id="search-client-button" type="button">ค้นหา</button>',
-              '<div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าก่อนสร้างงาน</h2><p>ไม่ต้องจำ Session ID เอง ถ้าไม่เจอให้ลอง Recent หรือค้นด้วยชื่อ LINE / Per name / เบอร์</p></div><button class="mmdop__btn" id="clear-client" type="button">Clear</button></div>': '<div class="mmdop__panelHead"><div><span>ลูกค้า</span><h2>เลือก 1 คน</h2><p>กด Recent หรือค้นหา แล้วแตะเลือกคนเดียว</p></div><button class="mmdop__btn" id="clear-client" type="button">Clear</button></div>',
               '<div class="mmdop__panelHead"><div><span>Steps 03-05</span><h2>สร้างงานแบบไม่งง</h2><p>เลือก scope → ใส่โมเดล → วันเวลา/พื้นที่ → ราคา แล้วค่อย Create Job</p></div></div>': '<div class="mmdop__panelHead"><div><span>งาน</span><h2>รายละเอียดงาน</h2><p>ใส่เท่าที่จำเป็นก่อน: Public/Private, Model, วันเวลา, พื้นที่, ราคา</p></div></div>',
               '<div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Step 1: กด Recent หรือค้นลูกค้าก่อน</div>': '<div class="mmdop__status" id="create-job-status" style="margin-top:16px;">เลือกลูกค้าก่อนสร้างงาน</div>',
-              'resultList.innerHTML = \'<div class="mmdop__empty">Step 1: กด Recent หรือพิมพ์ชื่อลูกค้าแล้วกด “1 ค้นลูกค้า”</div>\';': 'resultList.innerHTML = \'<div class="mmdop__empty">กด Recent หรือพิมพ์ชื่อลูกค้าแล้วกดค้นหา</div>\';',
               'setStatus(status, name ? "เลือกลูกค้าแล้ว · ต่อไปใส่ scope/model/details" : "Step 1: กด Recent หรือค้นลูกค้าก่อน", false);': 'setStatus(status, name ? "เลือกลูกค้าแล้ว · ต่อไปใส่งานและราคา" : "กด Recent หรือค้นลูกค้าก่อน", false);',
           }
           for old, new in replacements.items():
-              if old in s:
-                  s = s.replace(old, new)
+              s = s.replace(old, new)
 
           s = re.sub(r'\n    <section class="mmdop__tapGuide"[\s\S]*?</section>\n\n    <section class="mmdop__summary"', '\n    <section class="mmdop__summary"', s, count=1)
           path.write_text(s)
@@ -79,9 +79,9 @@ section[data-cj-flow="customer-first-digital"] #job-board-panel .mmdop__section{
           if wf.exists():
               wf.unlink()
           PY
+          python /tmp/patch_create_job.py
       - name: Validate
-        run: |
-          node --check immigrate-worker/src/internal-pages.ts
+        run: node --check immigrate-worker/src/internal-pages.ts
       - name: Commit patch
         run: |
           if git diff --quiet; then
