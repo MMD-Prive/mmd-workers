@@ -573,10 +573,61 @@ async function handleReceiptUpload(request, env) {
   });
 }
 
-function pageHtml() {
+function directRefundUploadHtml(item = null) {
+  if (!item?.inbox_id) return "";
+  const amount = html(item.refund_amount_due || "");
+  const note = html(item.owner_refund_note || "");
+  const ref = html(item.owner_refund_reference || "");
+  return `<article class="card" data-direct-refund>
+    <div class="row"><span class="tag">${html((item.purpose || "refund").toUpperCase())}</span><strong>${html(item.customer_name || "LINE customer")}</strong><span class="status muted">READY</span></div>
+    <div class="bank">${html(item.bank_name || "Bank detail")} · ${html(item.account_number_masked || "••••")}</div>
+    <div class="muted">ฟอร์มตรงสำหรับเคสนี้ · ไม่ต้องรอรายการทั้งหมดโหลด</div>
+    <form method="post" enctype="multipart/form-data" action="${REFUND_OPS_PAGE_PATH}">
+      <input type="hidden" name="inbox_id" value="${html(item.inbox_id)}">
+      <div class="owner-fields">
+        <label>ยอดคืน</label><input name="refund_amount" inputmode="decimal" placeholder="เช่น 4500" value="${amount}" required>
+        <label>หมายเหตุลูกค้า</label><textarea name="refund_note" placeholder="เช่น คืนยอดจากงานที่ยกเลิก">${note}</textarea>
+        <label>Ref/วันที่โอน</label><input name="refund_reference" placeholder="optional" value="${ref}">
+        <label>สลิปคืนเงิน</label><input name="file" type="file" accept="image/jpeg,image/png,image/webp" required>
+      </div>
+      <div class="actions"><button type="submit" class="btn primary">อัปโหลดสลิปคืน</button></div>
+    </form>
+  </article>`;
+}
+
+function refundPageHeaders() {
+  return {
+    "content-type":"text/html; charset=utf-8",
+    "cache-control":"no-store, private",
+    "x-mmd-route-owner":"admin-worker",
+    "x-content-type-options":"nosniff",
+    "referrer-policy":"no-referrer",
+    "content-security-policy":"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  };
+}
+
+function refundUploadResultHtml(payload = {}, status = 200) {
+  const ok = payload?.ok === true;
+  const title = ok ? "อัปโหลดสลิปสำเร็จ" : "อัปโหลดไม่สำเร็จ";
+  const customerUrl = clean(payload?.customer_confirmation_url || payload?.confirmation_url, 1000);
+  const adminUrl = clean(payload?.admin_job_url, 1000);
+  const modelUrl = clean(payload?.model_job_app_url, 1200);
+  const detail = ok
+    ? `<p>ระบบบันทึกสลิปแล้ว และทำ LINE / HYPE Telegram ต่อจาก backend แล้วค่ะ</p>
+       ${customerUrl ? `<p><strong>Customer URL</strong><br><a href="${html(customerUrl)}">${html(customerUrl)}</a></p>` : ""}
+       ${adminUrl ? `<p><strong>Admin Job URL</strong><br><a href="${html(adminUrl)}">${html(adminUrl)}</a></p>` : ""}
+       ${modelUrl ? `<p><strong>Model Job/App URL</strong><br><a href="${html(modelUrl)}">${html(modelUrl)}</a></p>` : ""}`
+    : `<p class="danger">${html(payload?.error || "upload_failed")}</p>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Refund Ops</title><style>
+  body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.55 system-ui;padding:24px}.wrap{max-width:720px;margin:auto}.card{border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:18px}a{color:#f7e7c3;word-break:break-all}.btn{display:inline-block;margin-top:12px;border:1px solid #6f6048;background:#d5b36b;color:#15110b;border-radius:12px;padding:10px 14px;font-weight:800;text-decoration:none}.danger{color:#ffbd9e}</style></head><body><main class="wrap"><section class="card"><h1>${title}</h1>${detail}<a class="btn" href="${REFUND_OPS_PAGE_PATH}">กลับ Refund Ops</a></section></main></body></html>`;
+}
+
+function pageHtml(initialItem = null) {
+  const directUpload = directRefundUploadHtml(initialItem);
+  const loadingLabel = initialItem ? "กำลังโหลดข้อมูลเสริม…" : "กำลังโหลด…";
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Refund Ops · MMD</title><style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:960px;margin:auto;padding:24px 16px 80px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:20px}.top h1{margin:0;font-size:26px}.sub{color:#a99e8e}.grid{display:grid;gap:12px}.card{border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:16px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.tag{font-size:12px;border:1px solid #514737;border-radius:999px;padding:4px 8px;color:#dec89b}.bank{font-size:20px;font-weight:800;margin:10px 0}.muted{color:#a99e8e}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}button,.btn{appearance:none;border:1px solid #6f6048;background:#211d17;color:#f7e7c3;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer;text-decoration:none}.primary{background:#d5b36b;color:#15110b;border-color:#d5b36b}.done{opacity:.62}.empty{padding:36px;text-align:center;color:#968b7c}.detail,.owner-fields,.confirm{margin-top:10px;padding:12px;background:#0f0e0c;border-radius:12px}.detail{display:none}.detail.open{display:block}.num{font:700 19px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace}.status{font-size:12px;margin-left:auto}.upload-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}.owner-fields{display:grid;grid-template-columns:160px 1fr;gap:8px}.owner-fields label{font-size:11px;color:#a99e8e;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.owner-fields input,.owner-fields textarea{width:100%;border:1px solid #3b3328;background:#0b0a09;color:#f4efe6;border-radius:10px;padding:10px;font:14px/1.4 inherit}.owner-fields textarea{min-height:42px;resize:vertical}.confirm a{word-break:break-all;color:#f7e7c3}.danger{color:#ffbd9e}@media(max-width:600px){.top{align-items:flex-start}.card{border-radius:16px}.status{width:100%;margin-left:0}.actions button,.actions .btn{flex:1 1 46%}.owner-fields{grid-template-columns:1fr}}
-</style></head><body><main class="wrap"><div class="top"><div><div class="sub">OWNER OPS</div><h1>Refund Accounts</h1><div class="sub">รูปบัญชีจาก LINE → ใส่ยอดคืน → Copy → โอน → อัปโหลดสลิปกลับ → ส่ง confirmation ให้ลูกค้า + Telegram pack ให้เปอร์</div></div><a class="btn" href="/internal/admin/control-room">Control Room</a></div><div id="list" class="grid"><div class="empty">กำลังโหลด…</div></div></main><script>
+</style></head><body><main class="wrap"><div class="top"><div><div class="sub">OWNER OPS</div><h1>Refund Accounts</h1><div class="sub">รูปบัญชีจาก LINE → ใส่ยอดคืน → Copy → โอน → อัปโหลดสลิปกลับ → ส่ง confirmation ให้ลูกค้า + Telegram pack ให้เปอร์</div></div><a class="btn" href="/internal/admin/control-room">Control Room</a></div>${directUpload}<div id="list" class="grid"><div class="empty">${loadingLabel}</div></div></main><script>
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=v=>{const n=Number(String(v||"").replace(/,/g,""));return Number.isFinite(n)&&n>0?n.toLocaleString("th-TH")+" บาท":"ยังไม่ระบุยอดคืน"};
 async function api(path,opts={}){const c=new AbortController();const t=setTimeout(()=>c.abort(),10000);try{const r=await fetch("/v1/admin/refunds"+path,{credentials:"include",cache:"no-store",...opts,signal:opts.signal||c.signal});const p=await r.json().catch(()=>({}));if(!r.ok||p.ok===false)throw new Error(p.error||r.status);return p}catch(e){if(e?.name==="AbortError")throw new Error("หมดเวลารอข้อมูล กรุณากดโหลดใหม่");throw e}finally{clearTimeout(t)}}
@@ -605,8 +656,30 @@ export async function handleRefundOpsRequest(request, env = {}, { isAuthed } = {
     return json({ ok:false, error:"unauthorized" }, 401);
   }
 
+  if (path === REFUND_OPS_PAGE_PATH && method === "POST") {
+    const uploadResponse = await handleReceiptUpload(request, env);
+    const payload = await uploadResponse.clone().json().catch(() => ({ ok:false, error:"upload_failed" }));
+    return new Response(refundUploadResultHtml(payload, uploadResponse.status), {
+      status:uploadResponse.ok ? 200 : uploadResponse.status,
+      headers:refundPageHeaders(),
+    });
+  }
+
   if (path === REFUND_OPS_PAGE_PATH && (method === "GET" || method === "HEAD")) {
-    return new Response(method === "HEAD" ? null : pageHtml(), { status:200, headers:{ "content-type":"text/html; charset=utf-8", "cache-control":"no-store, private", "x-mmd-route-owner":"admin-worker" } });
+    const inboxId = clean(url.searchParams.get("inbox_id"), 160);
+    let initialItem = null;
+    if (inboxId) {
+      try {
+        const record = await findByInboxId(env, inboxId);
+        if (record) initialItem = publicItem(record);
+      } catch {
+        // The client-side API still has a bounded retry/error state.
+      }
+    }
+    return new Response(method === "HEAD" ? null : pageHtml(initialItem), {
+      status:200,
+      headers:refundPageHeaders(),
+    });
   }
   if (path === `${REFUND_OPS_API_PREFIX}/list` && method === "GET") {
     const inboxId = clean(url.searchParams.get("inbox_id"), 160);
