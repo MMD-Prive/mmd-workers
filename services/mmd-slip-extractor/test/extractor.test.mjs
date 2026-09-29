@@ -59,9 +59,12 @@ test("OCR adapter is replaceable, terminates its worker, and returns normalized 
 
 test("normalized contract contains no payment decision fields", () => {
   const response = normalizedResponse({ payment_ref: "R", confidence_score: 2 });
-  assert.deepEqual(Object.keys(response.result), ["payment_ref", "amount_thb", "paid_at", "payer_name", "sender_bank", "receiver_bank", "provider", "confidence_score"]);
+  assert.deepEqual(Object.keys(response.result), ["payment_ref", "amount_thb", "paid_at", "payer_name", "sender_bank", "receiver_bank", "provider", "account_number", "account_name", "account_bank", "confidence_score"]);
   assert.equal(response.result.confidence_score, 1);
   assert.equal(Object.hasOwn(response.result, "status"), false);
+  assert.equal(Object.hasOwn(response.result, "paid"), false);
+  assert.equal(Object.hasOwn(response.result, "verified"), false);
+  assert.equal(Object.hasOwn(response.result, "decision"), false);
 });
 
 
