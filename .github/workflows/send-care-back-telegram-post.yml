@@ -7,6 +7,11 @@ on:
         description: "Build payload only; do not send to Telegram"
         required: false
         default: "true"
+  push:
+    branches:
+      - main
+    paths:
+      - "ops/campaigns/care-back-telegram-live-trigger.json"
 
 permissions:
   contents: read
