@@ -9,13 +9,18 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+const RECOVERY_REQUIRED_FIELDS = ["email", "phone", "telegram_username", "member_id_candidate"];
 const RECOVERY_EVIDENCE_SOURCES = [
   "members_email",
   "members_member_id",
   "clients_email",
+  "clients_phone",
+  "clients_telegram_username",
   "pre_session_identity_seed",
   "client_access_evidence",
   "line_ofc_email_candidate",
+  "line_ofc_phone_candidate",
+  "line_ofc_telegram_candidate",
 ];
 
 test("unmatched LINE-verified MY MMD status returns safe pending state, not guest data", async () => {
@@ -37,8 +42,8 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.data.next_screen_key, "status_unresolved");
   assert.equal(payload.data.screen.key, "status_unresolved");
   assert.match(payload.data.screen.copy, /ยืนยัน LINE สำเร็จแล้ว/);
-  assert.match(payload.data.screen.copy, /อีเมลเดิม หรือ Member ID/);
-  assert.match(payload.data.screen.copy, /เบอร์โทรหรือ Telegram ให้แจ้ง Per\/HYPE/);
+  assert.match(payload.data.screen.copy, /อีเมลเดิม เบอร์โทร Telegram หรือ Member ID/);
+  assert.match(payload.data.screen.copy, /โน้ตเดิมของ Per/);
   assert.match(payload.data.screen.copy, /LINE OFC note \/ Per note \/ Console Inbox note/);
   assert.match(payload.data.screen.copy, /วันที่ล่าสุดที่ Per ทับไว้ในโน้ต/);
   assert.match(payload.data.screen.copy, /ไม่เดา Tier, Points, Wallet/);
@@ -56,7 +61,7 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
     private_access_state: "fail_closed",
     payment_truth_state: "pending_backend",
     browser_authority: "presentation_only",
-    recovery_required_fields: ["email", "member_id_candidate"],
+    recovery_required_fields: RECOVERY_REQUIRED_FIELDS,
     recovery_match_evidence: RECOVERY_EVIDENCE_SOURCES,
   });
   assert.equal(payload.data.entitlement_display_state, "review_required");
@@ -65,7 +70,7 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.data.history_display_state, "pending_backend");
   assert.equal(payload.data.private_access_state, "fail_closed");
   assert.equal(payload.data.payment_truth_state, "pending_backend");
-  assert.deepEqual(payload.data.recovery_required_fields, ["email", "member_id_candidate"]);
+  assert.deepEqual(payload.data.recovery_required_fields, RECOVERY_REQUIRED_FIELDS);
   assert.deepEqual(payload.data.recovery_match_evidence, RECOVERY_EVIDENCE_SOURCES);
   assert.equal("membership_date_authority" in payload.data, false);
   assert.equal("membership_date_customer_input_authority" in payload.data, false);
@@ -88,10 +93,10 @@ test("unmatched status exposes recovery evidence action before signup using the 
 
   assert.deepEqual(payload.data.screen.actions[0], {
     id: "recovery_evidence",
-    label: "เคยเป็นสมาชิก · กรอกอีเมลเดิม / Member ID",
+    label: "เคยเป็นสมาชิก · กรอกอีเมล / เบอร์ / Telegram / Member ID",
     endpoint: "/member/api/liff/recovery",
     method: "POST",
-    fields: ["email", "member_id_candidate"],
+    fields: RECOVERY_REQUIRED_FIELDS,
   });
   assert.equal(payload.data.screen.actions[1].id, "signup");
 });

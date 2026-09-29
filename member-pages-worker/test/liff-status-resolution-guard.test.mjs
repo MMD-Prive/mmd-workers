@@ -33,10 +33,10 @@ test("rewrites unresolved status start into explicit final state", async () => {
   assert.deepEqual(payload.data.screen.actions, [
     {
       id: "recovery_evidence",
-      label: "เคยเป็นสมาชิก · กรอกอีเมลเดิม / Member ID",
+      label: "เคยเป็นสมาชิก · กรอกอีเมล / เบอร์ / Telegram / Member ID",
       endpoint: "/member/api/liff/recovery",
       method: "POST",
-      fields: ["email", "member_id_candidate"],
+      fields: ["email", "phone", "telegram_username", "member_id_candidate"],
     },
     {
       id: "signup",
