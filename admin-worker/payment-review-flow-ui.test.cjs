@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM } = require(process.env.MMD_UI_TEST_MODULES ? path.join(process.env.MMD_UI_TEST_MODULES, 'jsdom') : 'jsdom');
 const html = fs.readFileSync(path.join(__dirname, '../webflow/internal/admin/payments/payment-review-simple.html'), 'utf8');
-const proof = { proof_id:'proof-a', customer_name:'คิว - SVIP -', customer_aliases:['Que'], model_name:'J Dye', model_aliases:['EMs21'], payment_ref:'pay-a', session_id:'sess-a', job_date:'2026-10-04', payment_stage:'full', evidence_amount_thb:30000, expected_amount_thb:30000, context_loaded:true, can_approve:true, context_issues:[], evidence_preview_url:'/v1/admin/payments/evidence?proof_id=proof-a' };
+const proof = { proof_id:'proof-a', customer_name:'คิว - SVIP -', customer_name_source:'per_rename', customer_aliases:['Que'], model_name:'J Dye', model_aliases:['EMs21'], payment_ref:'pay-a', session_id:'sess-a', job_date:'2026-10-04', start_time:'2026-10-04T09:00:00.000Z', location_name:'Test Hotel', payment_stage:'full', evidence_amount_thb:30000, received_amount_thb:30000, expected_amount_thb:30000, service_amount_thb:30000, auto_match_source:'exact_record_links', context_loaded:true, can_approve:true, context_issues:[], evidence_preview_url:'/v1/admin/payments/evidence?proof_id=proof-a' };
 const confirmation={ok:true,session_id:'sess-a',payment_ref:'pay-a',payment_stage:'full',money_truth_changed:false,confirmation:{delivery_status:'pending',retry_available:true,retry_queued:true,dispatched:false,customer_line_sent:true,customer_acknowledged_at:'2026-09-21T09:00:00Z',model_acknowledged_at:null}};
 const job = { ...proof, session_record_id:'rec-a', payments:[{payment_ref:'pay-a',payment_stage:'full',expected_amount_thb:30000,state:'proof_pending',proof_ids:['proof-a']}] };
 const waiting = { ...job, session_record_id:'rec-b', session_id:'sess-b', customer_name:'เชน - SVIP -',customer_aliases:['shane'],model_name:'Model B',model_aliases:['MODEL02'], payments:[{payment_ref:'pay-b',payment_stage:'deposit',expected_amount_thb:7500,state:'waiting_proof',proof_ids:[]}] };
@@ -32,6 +32,21 @@ test('one search finds Per Rename, original names, models, and jobs without slip
  for(const value of ['คิว','Que','J-dye','EMs21']){h.search(value);assert.equal(h.qa('[data-pf-select]').length,1,value)}
  h.search('shane');assert.equal(h.qa('[data-pf-select]').length,1);await h.open();assert.match(h.q('[data-pf-work]').textContent,/ขั้นต่อไป: รับสลิป/);assert.equal(h.q('[data-pf-approve]'),null);
  h.search('not found');assert.equal(h.qa('[data-pf-select]').length,0);assert.match(h.q('[data-pf-list]').textContent,/ไม่พบชื่อนี้/);
+ }finally{h.dom.window.close()}
+});
+
+test('payment queue tells owner who paid, how much, and which exact job it belongs to',async()=>{
+ const h=setup();try{await tick();await tick();
+ assert.match(h.q('[data-pf-list]').textContent,/คิว/);
+ assert.match(h.q('[data-pf-list]').textContent,/โอนมา 30,000 บาท/);
+ assert.match(h.q('[data-pf-list]').textContent,/J Dye/);
+ await h.open();
+ const smart=h.q('[data-pf-smart]').textContent;
+ assert.match(smart,/ลูกค้า.*คิว/);
+ assert.match(smart,/โอนมา.*30,000 บาท/);
+ assert.match(smart,/เคสงาน.*J Dye/);
+ assert.match(smart,/จับคู่ Job \+ Payment \+ Slip แล้ว/);
+ assert.match(smart,/ราคางาน \/ รายการ.*30,000 บาท/);
  }finally{h.dom.window.close()}
 });
 
