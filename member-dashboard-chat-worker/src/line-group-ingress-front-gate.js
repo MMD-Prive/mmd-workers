@@ -146,6 +146,26 @@ function buildHypeOwnerProblemAlert({
   const jobUrl = jobQuery ? ownerWorkUrl(`/internal/admin/jobs/all${jobQuery}`) : "";
   const amount = positiveNumericAmount(refundAmountThb);
 
+  if (type === "account_changed") {
+    return [
+      "🔴 HYPE · ACCOUNT CHANGED",
+      "ลูกค้าส่งบัญชีรับเงินคืนใหม่ ไม่ตรงกับบัญชีเดิมของเคสนี้",
+      "",
+      `ลูกค้า: ${customer}`,
+      jobRef ? `งาน: ${jobRef}` : "งาน: ยังจับคู่ไม่ได้",
+      accountNumberMasked ? `บัญชีใหม่: ${asString(accountNumberMasked)}` : "",
+      "",
+      "ระบบจัดการแล้ว",
+      "✓ เก็บบัญชีใหม่เป็นหลักฐานแยก",
+      "✓ ไม่ overwrite บัญชีเดิม",
+      "✓ ไม่แก้ Payment / Money Truth",
+      "",
+      "เปอร์ต้องทำต่อ: เปิด Refund แล้วตรวจว่าบัญชีใหม่ถูกต้องก่อนโอน",
+      `เปิด Refund: ${refundUrl}`,
+      jobUrl ? `เปิด Job: ${jobUrl}` : "",
+    ].filter(Boolean).join("\n");
+  }
+
   if (type === "refund_ready") {
     return [
       "🟠 HYPE · REFUND READY",
@@ -185,10 +205,11 @@ async function notifyOwnerBankDetailReady(env = {}, {
   sessionId = "",
   refundAmountThb = null,
   accountNumberMasked = "",
+  accountChanged = false,
 } = {}) {
   const chatId = paymentOpsChatId(env);
   if (!chatId) return { skipped: true, reason: "telegram_config_missing" };
-  const eventType = asString(purpose) === "refund" ? "refund_ready" : "needs_you";
+  const eventType = accountChanged === true ? "account_changed" : (asString(purpose) === "refund" ? "refund_ready" : "needs_you");
   const text = buildHypeOwnerProblemAlert({
     eventType,
     customerName,
@@ -237,6 +258,13 @@ async function persistBankDetailOps(env = {}, input = {}) {
   const accountName = asString(extraction.account_name);
   const bankName = asString(extraction.account_bank || extraction.receiver_bank || extraction.sender_bank);
   if (!accountNumber) return { captured: false, reason: "account_number_missing" };
+  const accountFingerprint = await sha256Hex([
+    "refund-account-v1",
+    userId,
+    bankName.toLowerCase().replace(/\s+/g, ""),
+    accountNumber.replace(/\D+/g, ""),
+    accountName.toLowerCase().replace(/\s+/g, " "),
+  ].join("|"));
 
   const now = new Date();
   const base = `line-ofc/bank-details/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${proofId}`;
@@ -253,6 +281,7 @@ async function persistBankDetailOps(env = {}, input = {}) {
     bank_name: bankName,
     account_name: accountName,
     account_number: accountNumber,
+    account_fingerprint: accountFingerprint,
     purpose,
     source_image_key: sourceImageKey,
     received_at: now.toISOString(),
@@ -280,6 +309,7 @@ async function persistBankDetailOps(env = {}, input = {}) {
       bank_name: bankName,
       account_name_masked: maskAccountName(accountName),
       account_number_masked: maskAccountNumber(accountNumber),
+      account_fingerprint: accountFingerprint,
       private_detail_key: privateDetailKey,
       source_image_key: sourceImageKey,
       session_id: recent.sessionId || "",
@@ -300,6 +330,7 @@ async function persistBankDetailOps(env = {}, input = {}) {
         sessionId: recent.sessionId || "",
         refundAmountThb: recent.refundAmountThb,
         accountNumberMasked: maskAccountNumber(accountNumber),
+        accountChanged: payload?.account_changed === true,
       });
     } catch (error) {
       ownerNotification = { delivered: false, reason: "owner_notification_failed" };
@@ -315,6 +346,8 @@ async function persistBankDetailOps(env = {}, input = {}) {
     queued,
     deduped,
     purpose,
+    accountChanged: payload?.account_changed === true,
+    accountChangeReviewRequired: payload?.account_change_review_required === true,
     imageClass: "bank_account_detail",
     reason: response.ok ? "bank_detail_ops_created" : "bank_detail_ops_queue_failed",
     ownerNotification: ownerNotification ? {
