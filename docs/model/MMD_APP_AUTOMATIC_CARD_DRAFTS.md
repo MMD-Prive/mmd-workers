@@ -18,29 +18,48 @@ visibility change, Telegram notification or model identity write is performed.
 ## Visual contract
 
 Final output is **1322 × 1200 PNG**. The image API generates only the person and
-background. A server-side browser adds exact typography and the approved logo,
-then the PNG header dimensions are checked before the draft is marked ready.
+background. A server-side browser adds the **Master Frame V2** overlay, exact
+typography and the approved logo, then the PNG header dimensions are checked
+before the draft is marked ready.
 
-| Canonical category | Field | Tone / logo | Accent | Face |
-| --- | --- | --- | --- | --- |
-| Straight | ST | Dark / SIGIL | `#a7adb4` | Preserve reference identity |
-| Gay | GY | Dark / SIGIL | `#d96aa8` | Preserve reference identity |
-| Farang | FR | Dark / SIGIL | `#45bd7a` | Preserve reference identity |
-| Travel | EN | Light / MMD | `#4aa9d8` | Preserve reference identity |
-| Extreme | EX | Light / MMD | `#d83a48` | Preserve reference identity |
-| GWs | GWs | Dark / SIGIL | `#36c4c7` | Distinct fictional face, loose resemblance |
-| EMs | EMs | Dark / SIGIL | `#d3b45c` | Distinct fictional face, loose resemblance |
+Master Frame V2 is the owner-approved graphic direction from 2026-09-28:
 
-The visible content is the assigned model name/code and two measurements without
-`cm`/`kg`. Name and measurements sit on the right. The approved logo sits above
-the small brand text at the lower right. Graphics vary by category, with subtle
-reflected accent light rather than long color bars. No tier, role, Public,
-Private, Straight or Gay label is printed. No background numbers. The individual
-Kenji edit from the earlier conversation is not a global face preset.
+- One shared **metallic silver / graphite-gunmetal frame** across all categories.
+- No large category name, role, tier, `PUBLIC`, `PRIVATE`, `Straight`, `Gay`,
+  `TRAVEL`, `EXTREME`, or `SĪGIL SYSTEM` copy is printed on the final card.
+- No decorative right-side seam and no long color banner. Category is signaled
+  only by a **small edge accent cue**.
+- The approved logo is small at the lower right. Public cards use MMD PRIVÉ;
+  private/exclusive cards use the approved SIGIL logo.
+- Non-exclusive cards print the **model name only**. Canonical two-letter suffixes
+  remain metadata and are not printed.
+- GWs/EMs keep their assigned RUN identity (for example `GWs19`, `EMs11`).
+- Every card shows the two measurements as large numbers without `cm` / `kg`.
+- Travel is recognized by the small **cyan/blue** edge cue only; the word
+  `TRAVEL` is never printed on the card.
+- Extreme follows the same rule with a small **red** edge cue.
+- GWs/EMs retain their distinct portrait treatment while using the same frame
+  family; their accent cue is slightly stronger, not a separate text-heavy card.
+- A blank/master-frame graphic contains no person, copy or logo. Those are
+  runtime layers and must not be baked into a reusable frame asset.
+
+| Canonical category | Field | Tone / logo | Accent | Visible identity | Face |
+| --- | --- | --- | --- | --- | --- |
+| Straight | ST | Dark / SIGIL | `#a7adb4` | Model name | Preserve reference identity |
+| Gay | GY | Dark / SIGIL | `#d96aa8` | Model name | Preserve reference identity |
+| Farang | FR | Dark / SIGIL | `#45bd7a` | Model name | Preserve reference identity |
+| Travel | EN | Light / MMD | `#4aa9d8` | Model name | Preserve reference identity |
+| Extreme | EX | Light / MMD | `#d83a48` | Model name | Preserve reference identity |
+| GWs | GWs | Dark / SIGIL | `#36c4c7` | Assigned GWs RUN | Distinct fictional face, loose resemblance |
+| EMs | EMs | Dark / SIGIL | `#d3b45c` | Assigned EMs RUN | Distinct fictional face, loose resemblance |
 
 Province mode uses the selected category color plus a small explicit province
 code. It is not a new color. `CM` means Chiang Mai; `BKK` suppresses the badge.
 Location is never inferred from a legacy folder (for example Bonn CNX).
+
+The automatic renderer is versioned as `mmd-primary-v2`; the version is part of
+the saved design fingerprint so an old graphic recipe is not silently treated as
+the same design.
 
 ## Canonical data and incomplete profiles
 
@@ -54,8 +73,10 @@ The live Airtable schema was read on 2026-09-27 without modifying it:
 - `catalog_group`: explicit FR/Farang/Foreigner, otherwise `orientation_label`
   supplies the ordinary private category. No image-based classification.
 - `working_name`, `suffix_code`, `height_cm`, `weight_kg`, `status`.
-- GWs/EMs require an already assigned name such as `EMs11`. Other names use their
-  existing two-letter suffix. The job does not allocate or overwrite identities.
+- GWs/EMs require an already assigned name such as `EMs11`. Other records still
+  require their canonical two-letter suffix metadata for identity hygiene, but
+  Master Frame V2 does not print that suffix. The job does not allocate or
+  overwrite identities.
 - Province codes come from the server-owned `MODEL_CARD_PROVINCE_BY_MODEL_JSON`
   mapping, keyed by exact canonical Model record ID. Default `{}` omits badges.
 
