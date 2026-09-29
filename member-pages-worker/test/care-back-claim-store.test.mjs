@@ -347,7 +347,7 @@ test("Coupon Wallet refuses a legacy fixed 10 when model/job approval evidence i
   assert.equal(wallet.discount_percent, 0);
 });
 
-test("CARE BACK allows September continuation claims but closes new claims after September", async () => {
+test("CARE BACK allows continuation claims through October and closes new claims after October", async () => {
   const writes = [];
   globalThis.fetch = async (input, init = {}) => {
     const table = tableFrom(input);
