@@ -104,7 +104,7 @@ test("direct status LIFF remains the Worker-rendered member console", async () =
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><body><main>NATIVE LIFF DASHBOARD</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const historyEndpoint = "/api/member/app/history"; const LOVABLE_POINTS_PATH = "/my-mmd/points";</script></body></html>`,
+        `<!doctype html><html><body><main>NATIVE LIFF DASHBOARD</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const historyEndpoint = "/api/member/app/history"; const CANONICAL_POINTS_PATH = "/my-mmd/points";</script></body></html>`,
         {
           headers: {
             "content-type": "text/html; charset=utf-8",
