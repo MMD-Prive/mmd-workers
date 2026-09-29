@@ -1,0 +1,94 @@
+name: tmp-create-job-simple-owner-mode
+
+on:
+  push:
+    branches:
+      - 'ui/create-job-simple-owner-mode-20260929'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui/create-job-simple-owner-mode-20260929
+      - name: Patch Create Job simple mode
+        shell: bash
+        run: |
+          cat > /tmp/patch_create_job.py <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('immigrate-worker/src/internal-pages.ts')
+          s = path.read_text()
+
+          css = '''
+/* Create Job Simple Owner Mode v1 - reduce dashboard density for Boss Per */
+section[data-cj-flow="customer-first-digital"] .mmdop__shell{width:min(920px,100%)}
+section[data-cj-flow="customer-first-digital"] .mmdop__command{display:block;margin-top:10px}
+section[data-cj-flow="customer-first-digital"] .mmdop__commandLeft{padding:18px 20px}
+section[data-cj-flow="customer-first-digital"] .mmdop__commandLeft h1{font-size:clamp(36px,5.4vw,58px);letter-spacing:-.045em;margin-top:6px}
+section[data-cj-flow="customer-first-digital"] .mmdop__commandLeft p{max-width:620px;margin:10px 0 0;font-size:15px;line-height:1.55}
+section[data-cj-flow="customer-first-digital"] .mmdop__clientSearch{margin-top:10px;padding:18px 20px}
+section[data-cj-flow="customer-first-digital"] .mmdop__clientSearch h2{font-size:clamp(28px,4.4vw,44px);letter-spacing:-.04em}
+section[data-cj-flow="customer-first-digital"] .mmdop__clientSearch p{margin:5px 0 12px;line-height:1.45}
+section[data-cj-flow="customer-first-digital"] .mmdop__flowMini,
+section[data-cj-flow="customer-first-digital"] .mmdop__tapGuide,
+section[data-cj-flow="customer-first-digital"] .mmdop__summary,
+section[data-cj-flow="customer-first-digital"] .mmdop__rail,
+section[data-cj-flow="customer-first-digital"] #selected-client-panel{display:none!important}
+section[data-cj-flow="customer-first-digital"] .mmdop__layout{display:block;margin-top:10px}
+section[data-cj-flow="customer-first-digital"] .mmdop__main{gap:10px}
+section[data-cj-flow="customer-first-digital"] #client-results{border:0;background:transparent;box-shadow:none;margin-top:10px}
+section[data-cj-flow="customer-first-digital"] #client-results .mmdop__panelHead{display:none}
+section[data-cj-flow="customer-first-digital"] #client-results .mmdop__section{padding:0}
+section[data-cj-flow="customer-first-digital"] .mmdop__clientResults{margin-top:0}
+section[data-cj-flow="customer-first-digital"] [data-cj-step-panel="scope-model-details"]{margin-top:10px}
+section[data-cj-flow="customer-first-digital"] [data-cj-step-panel="scope-model-details"] .mmdop__panelHead{padding:16px 18px}
+section[data-cj-flow="customer-first-digital"] [data-cj-step-panel="scope-model-details"] .mmdop__section{padding:16px 18px}
+section[data-cj-flow="customer-first-digital"] [data-cj-step-panel="scope-model-details"] .mmdop__formGrid--4{grid-template-columns:repeat(2,minmax(0,1fr))}
+section[data-cj-flow="customer-first-digital"] a[href="/internal/admin/jobs/create-session"]{display:none!important}
+section[data-cj-flow="customer-first-digital"] #job-board-panel{margin-top:10px;opacity:.78}
+section[data-cj-flow="customer-first-digital"] #job-board-panel .mmdop__panelHead h2{font-size:20px}
+section[data-cj-flow="customer-first-digital"] #job-board-panel .mmdop__section{display:none}
+@media(max-width:720px){section[data-cj-flow="customer-first-digital"] .mmdop{padding:8px}section[data-cj-flow="customer-first-digital"] .mmdop__shell{width:100%}section[data-cj-flow="customer-first-digital"] .mmdop__topbar{position:sticky;top:0;z-index:2;background:rgba(8,6,4,.94);backdrop-filter:blur(14px)}section[data-cj-flow="customer-first-digital"] .mmdop__ghost{width:auto;min-width:112px}section[data-cj-flow="customer-first-digital"] .mmdop__commandLeft,section[data-cj-flow="customer-first-digital"] .mmdop__clientSearch{padding:14px;border-radius:18px}section[data-cj-flow="customer-first-digital"] .mmdop__commandLeft h1{font-size:34px}section[data-cj-flow="customer-first-digital"] .mmdop__clientSearch h2{font-size:30px}section[data-cj-flow="customer-first-digital"] .mmdop__searchBar,section[data-cj-flow="customer-first-digital"] [data-cj-step-panel="scope-model-details"] .mmdop__formGrid--4{grid-template-columns:1fr}section[data-cj-flow="customer-first-digital"] .mmdop__clientCard{grid-template-columns:42px 1fr}section[data-cj-flow="customer-first-digital"] .mmdop__clientCard .mmdop__btn{grid-column:1/-1}section[data-cj-flow="customer-first-digital"] #job-board-panel{display:none}}
+'''
+          if 'Create Job Simple Owner Mode v1' not in s:
+              s = s.replace('\n</style>\n', css + '\n</style>\n', 1)
+
+          replacements = {
+              '<div class="mmdop__kicker">Owner Workspace · Canonical route</div>': '<div class="mmdop__kicker">Simple Owner Mode</div>',
+              '<h1>Create Job.</h1>': '<h1>สร้างงาน</h1>',
+              '<p><code>/internal/admin/jobs/create-job</code> ต้องเริ่มจากลูกค้าก่อน ไม่เริ่มจาก Model หรือ Job Board</p>': '<p>เริ่มจากลูกค้า → ใส่งาน → กดสร้างลิงก์ ไม่ต้องอ่าน dashboard ทั้งหน้า</p>',
+              '<div><span>First Action</span><h2>1. ค้นลูกค้า</h2><p>พิมพ์ Per name / LINE / เบอร์ / package แล้วกดค้น หรือกด Recent ก่อน</p></div>': '<div><span>เริ่มตรงนี้</span><h2>เลือกลูกค้า</h2><p>พิมพ์ชื่อ / LINE / เบอร์ หรือกด Recent</p></div>',
+              'id="search-client-button" type="button">1 ค้นลูกค้า</button>': 'id="search-client-button" type="button">ค้นหา</button>',
+              '<div class="mmdop__panelHead"><div><span>Steps 03-05</span><h2>สร้างงานแบบไม่งง</h2><p>เลือก scope → ใส่โมเดล → วันเวลา/พื้นที่ → ราคา แล้วค่อย Create Job</p></div></div>': '<div class="mmdop__panelHead"><div><span>งาน</span><h2>รายละเอียดงาน</h2><p>ใส่เท่าที่จำเป็นก่อน: Public/Private, Model, วันเวลา, พื้นที่, ราคา</p></div></div>',
+              '<div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Step 1: กด Recent หรือค้นลูกค้าก่อน</div>': '<div class="mmdop__status" id="create-job-status" style="margin-top:16px;">เลือกลูกค้าก่อนสร้างงาน</div>',
+              'setStatus(status, name ? "เลือกลูกค้าแล้ว · ต่อไปใส่ scope/model/details" : "Step 1: กด Recent หรือค้นลูกค้าก่อน", false);': 'setStatus(status, name ? "เลือกลูกค้าแล้ว · ต่อไปใส่งานและราคา" : "กด Recent หรือค้นลูกค้าก่อน", false);',
+          }
+          for old, new in replacements.items():
+              s = s.replace(old, new)
+
+          s = re.sub(r'\n    <section class="mmdop__tapGuide"[\s\S]*?</section>\n\n    <section class="mmdop__summary"', '\n    <section class="mmdop__summary"', s, count=1)
+          path.write_text(s)
+
+          wf = Path('.github/workflows/tmp-create-job-simple-owner-mode.yml')
+          if wf.exists():
+              wf.unlink()
+          PY
+          python /tmp/patch_create_job.py
+      - name: Validate
+        run: node --check immigrate-worker/src/internal-pages.ts
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add immigrate-worker/src/internal-pages.ts .github/workflows/tmp-create-job-simple-owner-mode.yml
+          git commit -m "Simplify Create Job owner UI"
+          git push origin HEAD:ui/create-job-simple-owner-mode-20260929
