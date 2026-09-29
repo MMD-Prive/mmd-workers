@@ -362,7 +362,7 @@ test("CARE BACK allows continuation claims through October and closes new claims
     identityHash: IDENTITY,
     memberId: "MMD-PER-01",
     memberProfile: { membership_status: "active", tier: "Premium" },
-    now: new Date("2026-09-15T00:00:00.000Z"),
+    now: new Date("2026-10-15T00:00:00.000Z"),
   });
   assert.equal(continuation.campaign_phase, "continuation");
 
@@ -372,7 +372,7 @@ test("CARE BACK allows continuation claims through October and closes new claims
       identityHash: IDENTITY,
       memberId: "MMD-PER-01",
       memberProfile: { membership_status: "active", tier: "Premium" },
-      now: new Date("2026-10-01T00:00:00.000Z"),
+      now: new Date("2026-11-01T00:00:00.000Z"),
     }),
     (error) => error?.code === "CARE_BACK_CAMPAIGN_CLOSED",
   );
