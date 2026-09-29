@@ -26,7 +26,7 @@ test("job board after LIFF bootstrap cannot fall into apply onboarding", () => {
   assert.equal(shouldServePhaseAAfterBootstrap(request), false);
 });
 
-test("job board LINE shell uses owner alias copy, not apply copy", () => {
+test("customer-selected model gets selected-job copy, not applicant Welcome V2", () => {
   const html = modelLiffDigitalBootstrapHtml({
     liffId: "2010864854-N34SgCqq",
     fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",
@@ -38,11 +38,15 @@ test("job board LINE shell uses owner alias copy, not apply copy", () => {
       model_record_id: "recFilmJ",
     },
   });
-  assert.match(html, /กำลังเปิดงาน Film J/);\n  assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
+  assert.match(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
+  assert.match(html, /งานนี้ส่งตรงถึง Film J/);
+  assert.match(html, /ไม่ใช่หน้าสมัครงาน/);
+  assert.match(html, /เปิดรายละเอียดงานนี้/);
+  assert.doesNotMatch(html, /WELCOME V2 · สมัครงานนี้กับ MMD/);
+  assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
   assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
   assert.match(html, /model_alias/);
 });
-
 
 test("public job board entry is Welcome V2 application copy", () => {
   const html = modelLiffDigitalBootstrapHtml({
@@ -57,6 +61,7 @@ test("public job board entry is Welcome V2 application copy", () => {
   assert.match(html, /WELCOME V2 · สมัครงานนี้กับ MMD/);
   assert.match(html, /เปิด MMD APP เพื่อสมัครงานนี้/);
   assert.match(html, /งานที่คุณกดมาจะถูกเก็บไว้/);
+  assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
   assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
   assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
 });
