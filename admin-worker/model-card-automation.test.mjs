@@ -93,7 +93,7 @@ function modelRequest(path, method = "GET", body) {
   return new Request(`https://mmdbkk.com${path}`, { method, headers: { origin: "https://mmdbkk.com", cookie: sessionCookie(), "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 }
 
-test("seven directions follow canonical metadata; labels stay hidden, exclusive faces differ", () => {
+test("seven directions follow Master Frame V2; category labels stay hidden and exclusive faces differ", () => {
   const fixtures = {
     ST: { orientation_label: "straight" }, GY: {}, FR: { catalog_group: "Farang" },
     EN: { sales_layer: "public", "MMD Public Category": "Travel" },
@@ -106,10 +106,19 @@ test("seven directions follow canonical metadata; labels stay hidden, exclusive 
     assert.equal(result.design.identity, ["GWs", "EMs"].includes(field) ? "distinct_resemblance" : "preserve");
     const image = "data:image/png;base64,AA==";
     const html = cardHtml(result.design, image, image);
-    assert.doesNotMatch(html, />\s*(cm|kg|Straight|Gay|Private)\s*</);
-    assert.match(cardPortraitPrompt(result.design), /no text, numbers, faint digits/i);
+    assert.match(html, /data-master-frame="mmd-v2"/);
+    assert.match(html, /class="frameOuter"/);
+    assert.match(html, /class="accent"/);
+    assert.doesNotMatch(html, />\s*(cm|kg|Straight|Gay|Private|Public|TRAVEL|EXTREME|SĪGIL SYSTEM)\s*</i);
+    assert.match(cardPortraitPrompt(result.design), /Do not draw the metallic frame, accent strip, text, numbers, labels, logos/i);
   }
+  assert.equal(projectCardDesign(model()).design.title, "Jasper");
+  assert.equal(projectCardDesign(model({ working_name: "Jasper OP" })).design.title, "Jasper");
+  const travel = projectCardDesign(model({ sales_layer: "public", "MMD Public Category": "Travel" })).design;
+  assert.equal(travel.title, "Jasper");
+  assert.doesNotMatch(cardHtml(travel, "data:image/png;base64,AA==", "data:image/png;base64,AA=="), /TRAVEL/i);
 });
+
 test("missing/ambiguous classification or assigned identity pauses instead of inventing", () => {
   for (const fields of [{ sales_layer: "both" }, { orientation_label: "" }, { suffix_code: "" }, { recognition_class: "EMs", working_name: "Someone" }, { recognition_class: "EMs", exclusive_group: "GWs" }, { height_cm: 0 }, { status: "inactive" }]) assert.equal(projectCardDesign(model(fields)).ok, false);
   const publicExclusive = projectCardDesign(model({ sales_layer: "public", "MMD Public Category": "Travel", recognition_class: "EMs" }));
