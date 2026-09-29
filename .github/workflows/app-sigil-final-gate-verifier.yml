@@ -1,0 +1,69 @@
+name: APP SIGIL final gate verifier
+
+on:
+  workflow_dispatch:
+    inputs:
+      campaign_id:
+        description: "Real campaign ID to attach to the destination smoke"
+        required: false
+        default: "app-sigil-always-on-20260929"
+      campaign_source:
+        description: "Campaign source parameter"
+        required: false
+        default: "x_campaign"
+      campaign_destination_url:
+        description: "Optional exact ad entry URL. Leave blank to build the canonical MMD APP Job Board URL."
+        required: false
+        default: ""
+      handoff_model_record_id:
+        description: "Canonical Model record ID from the real post-LIFF handoff receipt"
+        required: true
+      handoff_job_id:
+        description: "Exact Job ID reached by the real post-LIFF handoff"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-sigil-final-gate-verifier
+  cancel-in-progress: false
+
+jobs:
+  verify-final-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      BASE_URL: https://sigil.mmdbkk.com
+      CAMPAIGN_ID: ${{ inputs.campaign_id }}
+      CAMPAIGN_SOURCE: ${{ inputs.campaign_source }}
+      CAMPAIGN_DESTINATION_URL: ${{ inputs.campaign_destination_url }}
+      HANDOFF_MODEL_RECORD_ID: ${{ inputs.handoff_model_record_id }}
+      HANDOFF_JOB_ID: ${{ inputs.handoff_job_id }}
+      PUBLIC_ACCESS_INTERNAL_TOKEN: ${{ secrets.PUBLIC_ACCESS_INTERNAL_TOKEN }}
+      INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate verifier syntax and unit contract
+        run: |
+          set -euo pipefail
+          node --check ops/release-gates/app-sigil-final-gate-verifier.mjs
+          node --test ops/release-gates/app-sigil-final-gate-verifier.test.mjs
+
+      - name: Verify real production final gates
+        run: |
+          set -euo pipefail
+          node ops/release-gates/app-sigil-final-gate-verifier.mjs | tee "$RUNNER_TEMP/app-sigil-final-gate-evidence.json"
+
+      - name: Upload final gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-sigil-final-gate-evidence
+          path: ${{ runner.temp }}/app-sigil-final-gate-evidence.json
+          if-no-files-found: ignore
