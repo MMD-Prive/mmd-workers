@@ -45,20 +45,24 @@ GitHub remains source truth; Workers remain runtime authority; Webflow remains p
 - `studio-final-lock.js` — scoped runtime final lock for typography, query continuity, and Review bypass removal.
 - `studio-upload-theme-lock.css` — scoped Upload theme/token lock matching the Studio launchpad visual system.
 
-## SIGIL Comp Card Template Pack
+## Model Card Master Frame V2
 
 - `studio-compcard-template-selector.js` is the source mirror for the local-draft template selector and read-only Final Preview renderer.
-- Template IDs: `straight`, `gay`, `foreigner`, `gws`, `ems`, `travel`, and `extreme`.
-- GWs and EMs retain RUN NUMBER, height/weight, and a required 1–2 line Title Bar. All other private cards show model name and metrics without run code.
-- Travel and Extreme render as public `MMD PRIVÉ` collection cards; they suppress individual-model and metric fields.
+- Existing template IDs remain stable for compatibility: `straight`, `gay`, `foreigner`, `gws`, `ems`, `travel`, and `extreme`.
+- The visible graphic is now one metallic silver / graphite-gunmetal frame family with a small category accent cue. The old split-panel / diagonal-seam treatment is retired.
+- No role, tier, Public/Private label, Straight/Gay label, Travel/Extreme word, or `SĪGIL SYSTEM` copy belongs on the final card.
+- Straight, Gay, Farang, Travel and Extreme show the model name plus large height/weight. Canonical two-letter suffix codes remain metadata and are not printed.
+- GWs and EMs retain their assigned RUN identity plus large height/weight; their accent cue may be slightly stronger.
+- Travel is a public MMD PRIVÉ card identified only by the small cyan/blue edge cue. Extreme uses the same public frame with a small red edge cue.
+- The approved logo is small at the lower right: MMD PRIVÉ for public cards, SIGIL for private/exclusive cards.
 - This pack preserves the Upload → Review → Final Preview flow and does not add production publication authority.
 
 ## Automatic profile-card inbox — 2026-09-27
 
 The automatic 1322 × 1200 drafts are a separate inbox beside the existing
-manual/My Card intake. They use the owner's current design contract in
-`docs/model/MMD_APP_AUTOMATIC_CARD_DRAFTS.md`; the earlier manual template pack
-is not the automatic renderer.
+manual/My Card intake. They use the same owner-approved Master Frame V2 contract
+in `docs/model/MMD_APP_AUTOMATIC_CARD_DRAFTS.md`; the automatic renderer and the
+manual preview remain separate implementations but must show the same graphic rules.
 
 - HTML: `auto-card-inbox.html`, root `#mmd-auto-card-inbox`.
 - CSS: `auto-card-inbox.css`, fully scoped with final contrast protection.
