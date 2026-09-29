@@ -220,8 +220,30 @@ export default {
       path === REFUND_OPS_INTERNAL_INTAKE ||
       path === REFUND_RECEIPT_MEDIA_PATH
     ) {
-      const refundOps = await handleRefundOpsRequest(req, env, { isAuthed });
-      if (refundOps) return refundOps;
+      try {
+        const refundOps = await handleRefundOpsRequest(req, env, { isAuthed });
+        if (refundOps) return refundOps;
+      } catch (error) {
+        console.error("refund_ops_unhandled", {
+          path,
+          method,
+          name:String(error?.name || "Error").slice(0, 80),
+          message:String(error?.message || "refund_ops_unavailable").slice(0, 240),
+        });
+        if (path === REFUND_OPS_PAGE_PATH) {
+          const body = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Refund Ops unavailable</title><style>body{margin:0;background:#0b0a09;color:#f4efe6;font:15px/1.55 system-ui;padding:24px}.card{max-width:680px;margin:auto;border:1px solid #2f2a23;background:#151310;border-radius:18px;padding:18px}a{color:#f7e7c3}.btn{display:inline-block;margin-top:12px;background:#d5b36b;color:#15110b;border-radius:12px;padding:10px 14px;font-weight:800;text-decoration:none}</style></head><body><main class="card"><h1>Refund Ops ยังเปิดไม่ได้</h1><p>ระบบหยุดแบบปลอดภัยแทน Cloudflare error กรุณากดลองใหม่อีกครั้ง</p><a class="btn" href="${REFUND_OPS_PAGE_PATH}">ลองใหม่</a></main></body></html>`;
+          return new Response(method === "HEAD" ? null : body, {
+            status:503,
+            headers:{
+              "content-type":"text/html; charset=utf-8",
+              "cache-control":"no-store, private",
+              "x-mmd-route-owner":"admin-worker",
+              "x-mmd-refund-error-boundary":"v1",
+            },
+          });
+        }
+        return json({ ok:false, error:"refund_ops_unavailable" }, 503);
+      }
     }
 
     if (path === ADMIN_LOGIN_ROOT_PATH && (method === "GET" || method === "HEAD")) {

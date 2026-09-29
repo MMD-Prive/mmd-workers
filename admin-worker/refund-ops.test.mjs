@@ -473,3 +473,89 @@ test("targeted refund page renders native upload form immediately and permits it
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("manual Boss Per refund evidence can open full account detail without private R2 key", async () => {
+  const originalFetch = globalThis.fetch;
+  const record = {
+    id:"recManualRefundDetail",
+    fields:{
+      inbox_id:"refund_manual_man_20260929_pay_mulcs8o4",
+      member_name:"แมน",
+      line_user_id:LINE_ID,
+      status:"new",
+      payload_json:JSON.stringify({
+        schema:"mmd_refund_bank_detail_v1",
+        purpose:"refund",
+        manual_source:"boss_per_chatgpt_image_20260929",
+        bank_name:"กรุงไทย",
+        account_name_masked:"นาย แมน อาชีพสมุทร",
+        account_number_masked:"715-1-42993-2",
+        private_detail_key:null,
+        owner_refund_amount:"3150",
+        refund_currency:"THB",
+      }),
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  try {
+    const response = await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/v1/admin/refunds/detail?inbox_id=refund_manual_man_20260929_pay_mulcs8o4"),
+      env(),
+      { isAuthed:async () => true },
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.deepEqual(payload.detail, {
+      bank_name:"กรุงไทย",
+      account_name:"นาย แมน อาชีพสมุทร",
+      account_number:"715-1-42993-2",
+      purpose:"refund",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("masked manual account does not bypass private detail storage", async () => {
+  const originalFetch = globalThis.fetch;
+  const record = {
+    id:"recMaskedManualRefundDetail",
+    fields:{
+      inbox_id:"refund_manual_masked",
+      payload_json:JSON.stringify({
+        purpose:"refund",
+        manual_source:"boss_per_manual",
+        bank_name:"กรุงไทย",
+        account_name_masked:"ม••",
+        account_number_masked:"•••• 1234",
+        private_detail_key:null,
+      }),
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  try {
+    const response = await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/v1/admin/refunds/detail?inbox_id=refund_manual_masked"),
+      env(),
+      { isAuthed:async () => true },
+    );
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).error, "private_detail_missing");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
