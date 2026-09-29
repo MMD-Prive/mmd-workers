@@ -102,3 +102,43 @@ test("refund receipt notify rejects external receipt URLs and non-service caller
   assert.equal(badCaller.status, 401);
   assert.equal((await badCaller.json()).error, "internal_auth_required");
 });
+
+
+test("small image refund receipt retries as secure link when LINE rejects image push", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url:String(url), init });
+    return calls.length === 1
+      ? new Response(JSON.stringify({ message:"invalid image message" }), { status:400, headers:{ "content-type":"application/json" } })
+      : new Response("{}", { status:200, headers:{ "content-type":"application/json" } });
+  };
+  try {
+    const response = await worker.fetch(internalRequest({
+      line_user_id: LINE_ID,
+      customer_name: "แมน",
+      job_id: "JOB-FILM-J-001",
+      receipt_url: RECEIPT,
+      mime_type: "image/jpeg",
+      byte_size: 420000,
+    }), { LINE_CHANNEL_ACCESS_TOKEN:"line-token" }, { waitUntil() {} });
+
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.mode, "secure_link_fallback");
+    assert.equal(payload.fallback_from_status, 400);
+    assert.equal(calls.length, 2);
+
+    const first = JSON.parse(calls[0].init.body);
+    assert.equal(first.messages.length, 2);
+    assert.equal(first.messages[1].type, "image");
+
+    const second = JSON.parse(calls[1].init.body);
+    assert.equal(second.messages.length, 1);
+    assert.equal(second.messages[0].type, "text");
+    assert.match(second.messages[0].text, /ดูสลิป: https:\/\/www\.mmdbkk\.com\/refund-receipt\/media/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -2700,8 +2700,47 @@ async function handleServiceBoundRefundReceipt(request, env) {
     },
     body:JSON.stringify({ to:lineUserId, messages }),
   });
+
+  if (!response.ok && imageEligible) {
+    const fallbackText = buildRefundReceiptCustomerText({
+      customerName,
+      jobId,
+      sessionId,
+      receiptUrl,
+      includeLink:true,
+    });
+    const fallbackResponse = await fetch(LINE_PUSH_URL, {
+      method:"POST",
+      headers:{
+        authorization:`Bearer ${token}`,
+        "content-type":"application/json",
+      },
+      body:JSON.stringify({
+        to:lineUserId,
+        messages:[{ type:"text", text:sanitizeLineText(fallbackText) }],
+      }),
+    });
+    if (fallbackResponse.ok) {
+      return json({
+        ok:true,
+        status:"sent",
+        mode:"secure_link_fallback",
+        message_count:1,
+        fallback_from_status:response.status,
+        money_truth_mutated:false,
+      });
+    }
+    return json({
+      ok:false,
+      error:"line_push_failed",
+      status:fallbackResponse.status,
+      initial_status:response.status,
+      mode:"secure_link_fallback",
+    }, 502);
+  }
+
   if (!response.ok) {
-    return json({ ok:false, error:"line_push_failed", status:response.status, mode:imageEligible ? "image" : "secure_link" }, 502);
+    return json({ ok:false, error:"line_push_failed", status:response.status, mode:"secure_link" }, 502);
   }
   return json({
     ok:true,
