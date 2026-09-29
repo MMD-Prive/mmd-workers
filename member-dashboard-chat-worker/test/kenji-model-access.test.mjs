@@ -146,6 +146,7 @@ test("owner-approved rollout keeps LLM and card leads off while gated model look
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
+  assert.match(lineWrangler, /^KENJI_LINE_BRAIN_V1_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_WAIT_MS\s*=\s*"650"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_WINDOW_MS\s*=\s*"2200"$/m);
@@ -1267,6 +1268,7 @@ test("active owner takeover suppresses ordinary deterministic LINE replies too",
     AIRTABLE_BASE_ID: "app-test",
     AIRTABLE_SYNC_TABLE: "console-inbox",
     LINE_KENJI_MODEL_ENABLED: "false",
+    KENJI_LINE_BRAIN_V1_ENABLED: "true",
     ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
   };
   try {
