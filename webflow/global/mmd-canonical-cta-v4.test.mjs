@@ -83,3 +83,15 @@ test("keeps dynamic Webflow content patched after injection", () => {
   assert.match(source, /childList: true/);
   assert.doesNotThrow(() => new Function(source));
 });
+
+
+test("global member control uses verified profile and routes to canonical member profile", () => {
+  assert.match(source, /mmd-global-member-control-v1/);
+  assert.match(source, /\/member\/api\/liff\/profile/);
+  assert.match(source, /const PROFILE_PATH="\/member\/profile"/);
+  assert.match(source, /dataset\.state="online"/);
+});
+
+test("coupon login continuation uses canonical MY MMD coupons route", () => {
+  assert.match(source, /const COUPON_ENTRY = "\/my-mmd\/coupons"/);
+});
