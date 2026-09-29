@@ -413,7 +413,7 @@ export function renderCreateJobPage(): Response {
     <section class="card" style="margin-top:12px" data-cj-job-board-handoff="separate-v1">
       <span class="label">แยกจาก Create Job</span><h2>ยังหาโมเดลอยู่?</h2>
       <p>ใช้ Job Board แยกต่างหาก · ไม่ค้นลูกค้า ไม่แตะ Client/Model lookup ของ Create Job</p>
-      <a class="btn soft" href="/internal/admin/job-board" style="margin-top:10px">เปิด Job Board ↗</a>
+      <a class="btn soft" href="/internal/admin/jobs/job-board" style="margin-top:10px">เปิด Job Board ↗</a>
     </section>
   </main><script>${createJobScript}</script></section>`);
 }
