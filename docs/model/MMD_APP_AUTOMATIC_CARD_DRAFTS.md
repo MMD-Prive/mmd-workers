@@ -31,8 +31,7 @@ Master Frame V2 is the owner-approved graphic direction from 2026-09-28:
   only by a **small edge accent cue**.
 - The approved logo is small at the lower right. Public cards use MMD PRIVÉ;
   private/exclusive cards use the approved SIGIL logo.
-- Non-exclusive cards print the **model name only**. Canonical two-letter suffixes
-  remain metadata and are not printed.
+- Standard, Premium, Foreign, Travel and Extreme cards print the **canonical Model ID/name exactly from `working_name`**. If a suffix or letter is part of that real ID/name, it stays visible; the renderer must not invent, strip, or replace it with a template/category label.
 - GWs/EMs keep their assigned RUN identity (for example `GWs19`, `EMs11`).
 - Every card shows the two measurements as large numbers without `cm` / `kg`.
 - Travel is recognized by the small **cyan/blue** edge cue only; the word
@@ -45,11 +44,11 @@ Master Frame V2 is the owner-approved graphic direction from 2026-09-28:
 
 | Canonical category | Field | Tone / logo | Accent | Visible identity | Face |
 | --- | --- | --- | --- | --- | --- |
-| Straight | ST | Dark / SIGIL | `#a7adb4` | Model name | Preserve reference identity |
-| Gay | GY | Dark / SIGIL | `#d96aa8` | Model name | Preserve reference identity |
-| Farang | FR | Dark / SIGIL | `#45bd7a` | Model name | Preserve reference identity |
-| Travel | EN | Light / MMD | `#4aa9d8` | Model name | Preserve reference identity |
-| Extreme | EX | Light / MMD | `#d83a48` | Model name | Preserve reference identity |
+| Straight | ST | Dark / SIGIL | `#a7adb4` | Canonical Model ID/name | Preserve reference identity |
+| Gay | GY | Dark / SIGIL | `#d96aa8` | Canonical Model ID/name | Preserve reference identity |
+| Farang | FR | Dark / SIGIL | `#45bd7a` | Canonical Model ID/name | Preserve reference identity |
+| Travel | EN | Light / MMD | `#4aa9d8` | Canonical Model ID/name | Preserve reference identity |
+| Extreme | EX | Light / MMD | `#d83a48` | Canonical Model ID/name | Preserve reference identity |
 | GWs | GWs | Dark / SIGIL | `#36c4c7` | Assigned GWs RUN | Distinct fictional face, loose resemblance |
 | EMs | EMs | Dark / SIGIL | `#d3b45c` | Assigned EMs RUN | Distinct fictional face, loose resemblance |
 
@@ -73,10 +72,9 @@ The live Airtable schema was read on 2026-09-27 without modifying it:
 - `catalog_group`: explicit FR/Farang/Foreigner, otherwise `orientation_label`
   supplies the ordinary private category. No image-based classification.
 - `working_name`, `suffix_code`, `height_cm`, `weight_kg`, `status`.
-- GWs/EMs require an already assigned name such as `EMs11`. Other records still
-  require their canonical two-letter suffix metadata for identity hygiene, but
-  Master Frame V2 does not print that suffix. The job does not allocate or
-  overwrite identities.
+- GWs/EMs require an already assigned RUN identity such as `EMs11`. All other
+  cards use the canonical `working_name` as the visible Model ID/name exactly as
+  stored. The job does not allocate, rewrite, shorten, or overwrite identities.
 - Province codes come from the server-owned `MODEL_CARD_PROVINCE_BY_MODEL_JSON`
   mapping, keyed by exact canonical Model record ID. Default `{}` omits badges.
 
