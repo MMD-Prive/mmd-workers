@@ -416,3 +416,60 @@ test("refund owner page renders a clickable upload trigger and well-formed refer
   assert.match(body, /Model Job\/App URL/);
   assert.doesNotMatch(body, /data-refund-ref placeholder="optional" value="[^"]*>\<\/div>/);
 });
+
+
+test("targeted refund page renders native upload form immediately and permits its client runtime", async () => {
+  const originalFetch = globalThis.fetch;
+  const record = {
+    id:"recRefundNative",
+    fields:{
+      inbox_id:"refund_manual_man_20260929_pay_mulcs8o4",
+      line_user_id:LINE_ID,
+      member_name:"แมน",
+      status:"new",
+      admin_note:"Refund account received",
+      payload_json:JSON.stringify({
+        schema:"mmd_refund_bank_detail_v1",
+        purpose:"refund",
+        bank_name:"กสิกรไทย",
+        account_number_masked:"•••• 9876",
+        refund_amount_due:"4500",
+        refund_currency:"THB",
+      }),
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = String(init.method || "GET").toUpperCase();
+    const formula = url.searchParams.get("filterByFormula") || "";
+    if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+
+  try {
+    const response = await handleRefundOpsRequest(
+      new Request("https://www.mmdbkk.com/internal/admin/refunds?inbox_id=refund_manual_man_20260929_pay_mulcs8o4&action=upload"),
+      env(),
+      { isAuthed:async () => true },
+    );
+    assert.equal(response.status, 200);
+    const csp = response.headers.get("content-security-policy") || "";
+    assert.match(csp, /script-src 'unsafe-inline'/);
+    assert.match(csp, /connect-src 'self'/);
+    assert.match(csp, /form-action 'self'/);
+
+    const body = await response.text();
+    assert.match(body, /data-direct-refund/);
+    assert.match(body, /<form method="post" enctype="multipart\/form-data" action="\/internal\/admin\/refunds">/);
+    assert.match(body, /name="inbox_id" value="refund_manual_man_20260929_pay_mulcs8o4"/);
+    assert.match(body, /name="file" type="file" accept="image\/jpeg,image\/png,image\/webp" required/);
+    assert.match(body, />อัปโหลดสลิปคืน<\/button>/);
+    assert.doesNotMatch(body, /<div id="list" class="grid"><div class="empty">กำลังโหลด…<\/div>/);
+
+    const script = body.match(/<script>([\s\S]*?)<\/script>/)?.[1] || "";
+    assert.ok(script.length > 100);
+    assert.doesNotThrow(() => new Function(script));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
