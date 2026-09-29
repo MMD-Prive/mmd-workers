@@ -1622,9 +1622,14 @@ async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity =
   }
 
   const matrix = continuity?.matrix || {};
+  const matrixStage = asString(matrix?.conversation_stage).toLowerCase();
+  const matrixReason = asString(matrix?.handoff_reason).toLowerCase();
   const matrixHandoff = matrix?.handoff_required === true &&
     /^(?:per|owner|human|mmd_review)$/i.test(asString(matrix?.handoff_owner)) &&
-    !/^(?:resolved|released|resumed)$/i.test(asString(matrix?.conversation_stage));
+    (
+      /^(?:human_takeover|awaiting_human|handoff_per|paused)$/.test(matrixStage) ||
+      /(?:owner_takeover|human_takeover|per_is_speaking|manual_takeover)/.test(matrixReason)
+    );
 
   const inboxUrl = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(inboxTable)}`);
   inboxUrl.searchParams.set("pageSize", "1");
