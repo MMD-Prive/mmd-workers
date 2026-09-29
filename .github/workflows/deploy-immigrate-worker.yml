@@ -358,7 +358,7 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$create_body"
               : > "$create_headers"
-              create_code="$(curl -sS -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              create_code="$(curl -sSL -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$create_code" = "200" ] \
                 && grep -q 'mmd-cj-split-v1' "$create_body" \
                 && grep -q 'lv13-operational' "$create_body" \

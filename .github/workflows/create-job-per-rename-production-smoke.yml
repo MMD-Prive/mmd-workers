@@ -154,7 +154,7 @@ jobs:
 
             create_page="$(mktemp)"
             board_page="$(mktemp)"
-            create_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            create_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sSL \
               -o "$create_page" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/admin/jobs/create-job?smoke=separate-job-board")"
             test "$create_code" = "200"
