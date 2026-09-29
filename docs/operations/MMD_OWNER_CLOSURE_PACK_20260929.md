@@ -28,8 +28,9 @@ This file brings the owner-approved work that was discussed but not fully closed
    - See `LOVABLE_CREDIT_REVIEW_20260928.md`.
 
 6. **Kenji customer-facing LINE scope**
-   - Code is intentionally isolated in a separate runtime PR because it changes customer-facing behavior.
+   - Runtime implementation is isolated in PR #2032 because it changes customer-facing behavior.
    - Required boundary: direct Model name/code lookup only; ordinary customer text is silent.
+   - Do not reopen the broad Seed/First Contact lane until Per explicitly changes this owner lock.
 
 ## Closure rule
 
