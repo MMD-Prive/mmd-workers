@@ -13,7 +13,7 @@
   var ALL_AUDIENCES = ["Guest", "Standard", "Premium", "Red Card", "VIP", "SVIP", "Black Card", "Inactive / Expired"];
   var MEMBER_AUDIENCES = ["Standard", "Premium", "Red Card", "VIP", "SVIP", "Black Card"];
   var PRIVATE_AUDIENCES = ["VIP", "SVIP", "Black Card"];
-  var state = { cards: [], teachMode: "answer", pendingKnowledge: null, pendingKnowledgeMeta: null, pendingModel: null, busy: false, previewTimer: null, historyTurns: [], historyMemory: null };
+  var state = { cards: [], teachMode: "answer", pendingKnowledge: null, pendingKnowledgeMeta: null, pendingModel: null, pendingModelIdentity: null, busy: false, previewTimer: null, historyTurns: [], historyMemory: null };
 
   var style = document.createElement("style");
   style.textContent = [
@@ -267,19 +267,15 @@
       var items = Array.isArray(data.items) ? data.items : [], model = items.find(function (item) { return [item.model_id, item.keyword_profile_id, item.model_key].includes(selectedId); });
       if (!model) throw new Error("หา Model record ไม่เจอ");
       var payload = modelPayload(model), privateRealName = value("kaModelPrivateRealName"), currentPrivateRealName = String(model.private_real_name || "").trim();
-      var identityWrite = Promise.resolve({ updated: false });
-      if (privateRealName !== currentPrivateRealName) {
-        if (!model.model_id) throw new Error("ต้องมี canonical Model ก่อนเก็บชื่อจริงภายใน");
-        identityWrite = request(MODEL_API + "/" + encodeURIComponent(model.model_id) + "/identity", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-          body: JSON.stringify({ private_real_name: privateRealName })
-        }).then(function (identity) { return { updated: true, identity: identity }; });
-      }
-      return identityWrite.then(function (identity) {
-        return request(MODEL_API + "/draft", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) })
-          .then(function (created) { return { created: created, payload: Object.assign({}, payload, { private_real_name: privateRealName, identity_memory_updated: identity.updated === true }) }; });
-      });
+      if (privateRealName !== currentPrivateRealName && !model.model_id) throw new Error("ต้องมี canonical Model ก่อนเก็บชื่อจริงภายใน");
+      state.pendingModelIdentity = {
+        model_id: model.model_id || "",
+        private_real_name: privateRealName,
+        original_private_real_name: currentPrivateRealName,
+        changed: privateRealName !== currentPrivateRealName
+      };
+      return request(MODEL_API + "/draft", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) })
+        .then(function (created) { return { created: created, payload: Object.assign({}, payload, { private_real_name: privateRealName, identity_memory_updated: false }) }; });
     }).then(function (ctx) {
       var requestId = ctx.created.request_id; if (!requestId) throw new Error("Model draft ไม่มี request id");
       return loadModelReview(requestId).then(function (item) { state.pendingModel = item; renderModelSummary(item, ctx.payload); toast("เก็บแล้ว ✓ · ดูสรุปก่อนใช้จริง"); });
@@ -316,7 +312,7 @@
     if (!confirm || !confirm.checked) return modelStatus("อ่านสรุปแล้วติ๊กยืนยันก่อนค่ะ", true);
     if (sensitive && !sensitive.checked) return modelStatus("กรุณายืนยันขอบเขต Private / access ก่อน", true);
     state.busy = true; setModelButtons(true); modelStatus("กำลังตรวจและใช้จริง…");
-    loadModelReview(requestId).then(function (item) {
+    savePendingModelIdentity().then(function () { return loadModelReview(requestId); }).then(function (item) {
       var stage = item.stage || "review", version = Number(item.workflow_version || 1), sourceOk = Boolean(item.source_ref);
       function reviewStep() { if (stage !== "review" || item.reviewed_at) return Promise.resolve(); return modelCommand(requestId, "review", { expected_version: version }).then(function (data) { stage = data.stage || "review"; version = Number(data.workflow_version || version); }); }
       function qaStep() { if (stage !== "review") return Promise.resolve(); return modelCommand(requestId, "qa", { expected_version: version, qa: { policy_path_match: true, customer_safe_preview_checked: true, source_checked: sourceOk, privacy_checked: true } }).then(function (data) { stage = data.stage || "qa_passed"; version = Number(data.workflow_version || version); }); }
@@ -325,6 +321,17 @@
     }).then(function (data) { modelStatus("ใช้จริงแล้ว ✓ · Production Profile " + (data.published_profile_version ? "v" + data.published_profile_version : "updated")); var badge = summary && summary.querySelector(".kso-badge"); if (badge) badge.textContent = "LIVE"; })
       .catch(function (error) { modelStatus(friendlyError(error), true); })
       .finally(function () { state.busy = false; setModelButtons(false); });
+  }
+
+  function savePendingModelIdentity() {
+    var identity = state.pendingModelIdentity;
+    if (!identity || !identity.changed) return Promise.resolve();
+    if (!identity.model_id) return Promise.reject(new Error("ต้องมี canonical Model ก่อนเก็บชื่อจริงภายใน"));
+    return request(MODEL_API + "/" + encodeURIComponent(identity.model_id) + "/identity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ private_real_name: identity.private_real_name })
+    }).then(function () { identity.changed = false; });
   }
 
   function modelCommand(requestId, action, body) { return request(MODEL_API + "/reviews/" + encodeURIComponent(requestId) + "/" + action, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) }); }
