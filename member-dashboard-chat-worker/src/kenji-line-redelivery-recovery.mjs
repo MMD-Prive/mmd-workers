@@ -83,7 +83,10 @@ export function isKenjiModelNameOnlyTextEvent(event = {}) {
   const intent = inferLineIntent(raw, event);
   if (intent === "model_access_verification") return true;
   const query = extractKenjiModelLookupQuery(raw);
-  return Boolean(query) && intent === "model_lookup";
+  if (!query) return false;
+  if (intent === "model_lookup") return true;
+  const campaign = resolveLineCardCampaignTrigger(raw);
+  return Boolean(campaign?.card_trigger && text(campaign.card_trigger).toLowerCase() === text(query).toLowerCase());
 }
 
 function silentModelOnlyAck(reason = "non_model_text") {
