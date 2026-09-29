@@ -400,8 +400,8 @@ async function resolveExactModel(env, query, fetchImpl) {
   const runMatches = await queryAcrossFields(env, table, MODEL_RUN_NUMBER_FIELDS, query, fetchImpl, 5);
   // Card text may be the Drive folder name rather than the model code or working name.
   // Match the canonical Models record exactly; folder location never grants access.
-  const aliasMatches = await queryAcrossFields(env, table, MODEL_ALIAS_FIELDS, query, fetchImpl, 5);
-  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...runMatches, ...aliasMatches]);
+  const directAliasMatches = await queryAcrossFields(env, table, MODEL_ALIAS_FIELDS, query, fetchImpl, 5);
+  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...runMatches, ...directAliasMatches]);
   if (directMatches.length) return { status: "resolved", records: directMatches };
 
   // GWs/EMs names are identity aliases, not customer-facing authority. Resolve
