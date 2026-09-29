@@ -13,7 +13,7 @@ test("Kenji AI 2.0 is a first-class query view inside canonical Kenji Admin", ()
 });
 
 test("Kenji AI 2.0 view reuses the real member-facing admin preview surface", () => {
-  assert.match(source, /\/member\/kenji-ai-20\?mode=admin-preview/);
+  assert.match(source, /\/member\/kenji\?mode=admin-preview/);
   assert.match(source, /<iframe/);
   assert.match(source, /data-kai20-frame/);
   assert.match(source, /Open Full Preview/);
