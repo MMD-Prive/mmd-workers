@@ -60,6 +60,7 @@ const SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH = "/__internal/line/rich-m
 const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default";
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const SERVICE_LINE_SHOP_SHIPPING_PATH = "/__internal/line/shop-shipping-notify";
+const SERVICE_LINE_REFUND_RECEIPT_PATH = "/__internal/line/refund-receipt-notify";
 const SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH = "/__internal/line/shop-shipping-notify/smoke";
 const SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_PATH = "/__internal/line/model-availability-reminder";
 const SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_SMOKE_PATH = "/__internal/line/model-availability-reminder/smoke";
@@ -2618,6 +2619,91 @@ async function handleServiceBoundShopShipping(request, env) {
   }, result.ok === true ? 200 : 502);
 }
 
+function safeRefundReceiptUrl(value = "") {
+  const raw = asString(value);
+  if (!raw || raw.length > 2000) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return "";
+    if (!["mmdbkk.com", "www.mmdbkk.com"].includes(url.hostname)) return "";
+    if (url.pathname !== "/refund-receipt/media") return "";
+    return url.toString();
+  } catch (_) {
+    return "";
+  }
+}
+
+function buildRefundReceiptCustomerText({ customerName = "", jobId = "", sessionId = "", receiptUrl = "", includeLink = false } = {}) {
+  const ref = asString(jobId || sessionId);
+  return [
+    customerName ? `คุณ${customerName}ครับ` : "",
+    "เปอร์ส่งสลิปการโอนคืนให้ครับ",
+    ref ? `อ้างอิงงาน: ${ref}` : "",
+    includeLink && receiptUrl ? `ดูสลิป: ${receiptUrl}` : "",
+    "",
+    "ถ้ายอดยังไม่เข้าหรือข้อมูลไม่ตรง แจ้งกลับมาในแชทนี้ได้เลยครับ",
+  ].filter(Boolean).join("\n");
+}
+
+async function handleServiceBoundRefundReceipt(request, env) {
+  if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+
+  const body = await readJson(request);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const lineUserId = getLineUserId(body);
+  const receiptUrl = safeRefundReceiptUrl(body.receipt_url);
+  const mimeType = asString(body.mime_type).toLowerCase();
+  const byteSize = Number(body.byte_size) || 0;
+  const customerName = asString(body.customer_name).slice(0, 160);
+  const jobId = asString(body.job_id).slice(0, 120);
+  const sessionId = asString(body.session_id).slice(0, 120);
+  if (!lineUserId) return json({ ok: false, error: "line_user_id_required" }, 400);
+  if (!receiptUrl) return json({ ok: false, error: "receipt_url_invalid" }, 400);
+
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!token) return json({ ok: false, error: "line_token_missing" }, 503);
+
+  // LINE image previews are limited to JPEG/PNG <= 1 MB. Larger images and
+  // WebP stay usable through the same short-lived signed HTTPS receipt link.
+  const imageEligible = ["image/jpeg", "image/png"].includes(mimeType) && byteSize > 0 && byteSize <= 1024 * 1024;
+  const messageText = buildRefundReceiptCustomerText({
+    customerName,
+    jobId,
+    sessionId,
+    receiptUrl,
+    includeLink: !imageEligible,
+  });
+  const messages = [{ type:"text", text:sanitizeLineText(messageText) }];
+  if (imageEligible) {
+    messages.push({
+      type:"image",
+      originalContentUrl:receiptUrl,
+      previewImageUrl:receiptUrl,
+    });
+  }
+
+  const response = await fetch(LINE_PUSH_URL, {
+    method:"POST",
+    headers:{
+      authorization:`Bearer ${token}`,
+      "content-type":"application/json",
+    },
+    body:JSON.stringify({ to:lineUserId, messages }),
+  });
+  if (!response.ok) {
+    return json({ ok:false, error:"line_push_failed", status:response.status, mode:imageEligible ? "image" : "secure_link" }, 502);
+  }
+  return json({
+    ok:true,
+    status:"sent",
+    mode:imageEligible ? "image" : "secure_link",
+    message_count:messages.length,
+    money_truth_mutated:false,
+  });
+}
+
 async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled, metadata = null) {
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
@@ -3251,6 +3337,10 @@ export default {
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH) {
       return handleServiceBoundShopShippingSmoke(request);
+    }
+
+    if (url.pathname === SERVICE_LINE_REFUND_RECEIPT_PATH) {
+      return handleServiceBoundRefundReceipt(request, env);
     }
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_PATH) {

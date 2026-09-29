@@ -253,6 +253,22 @@ test("HYPE refund-ready alert tells Per the real problem and next action", () =>
   assert.doesNotMatch(text, /123-4-56789-0/);
 });
 
+test("HYPE ACCOUNT CHANGED alert keeps old account intact and asks Per to review", () => {
+  const text = buildHypeOwnerProblemAlert({
+    eventType: "account_changed",
+    customerName: "แมน",
+    jobId: "JOB-FILM-J-001",
+    accountNumberMasked: "•••• 9876",
+  });
+  assert.match(text, /HYPE · ACCOUNT CHANGED/);
+  assert.match(text, /บัญชีรับเงินคืนใหม่/);
+  assert.match(text, /บัญชีใหม่: •••• 9876/);
+  assert.match(text, /ไม่ overwrite บัญชีเดิม/);
+  assert.match(text, /ไม่แก้ Payment \/ Money Truth/);
+  assert.match(text, /เปิด Refund/);
+  assert.doesNotMatch(text, /123-4-56789-0/);
+});
+
 test("HYPE refund-ready notification uses Alerts and is deduplicated by proof event", async () => {
   const h = telegramHarness({ LINE_SLIP_EVIDENCE: memoryR2() });
   const result = await notifyOwnerBankDetailReady(h.env, {
