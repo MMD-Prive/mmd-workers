@@ -134,6 +134,16 @@ async function handleOwnerRoute(request, env, parts) {
   if (request.method === "GET" && parts.length === 1 && parts[0] === "viewers") {
     return json({ ok: true, viewers: await listViewerSummaries(env) });
   }
+  if (request.method === "GET" && parts.length === 1 && parts[0] === "handoffs") {
+    const url = new URL(request.url);
+    return json({
+      ok: true,
+      handoffs: await listModelHandoffReceipts(env, {
+        modelRecordId: cleanRecordId(url.searchParams.get("model_record_id")),
+        jobId: cleanId(url.searchParams.get("job_id")),
+      }),
+    });
+  }
   if (request.method === "POST" && parts.length === 3 && parts[0] === "viewers" && parts[2] === "action") {
     return await updateViewerControl(request, env, parts[1]);
   }
@@ -757,6 +767,38 @@ async function listViewerSummaries(env) {
   return rows.filter((row) => row?.schema === "mmd_public_job_board_v2.viewer_summary" && Date.parse(row.expires_at) > now).sort((a, b) => String(b.last_seen_at).localeCompare(String(a.last_seen_at))).map((row) => structuredClone(row));
 }
 
+async function recordModelHandoffReceipt(env, { modelRecordId, jobId = "", targetPath = "" } = {}) {
+  const model = cleanRecordId(modelRecordId);
+  if (!model) throw httpError(400, "model_record_id_invalid");
+  const canonicalJobId = cleanId(jobId);
+  const verifiedAt = new Date().toISOString();
+  const digest = await sha256(`model-job-handoff:${model}:${canonicalJobId || "board"}:${verifiedAt}:${crypto.randomUUID()}`);
+  const receiptRef = `handoff_${digest.slice(0, 24)}`;
+  const record = {
+    schema: "mmd_public_job_board_v2.model_handoff_receipt",
+    receipt_ref: receiptRef,
+    model_record_id: model,
+    job_id: canonicalJobId || null,
+    target_path: clean(targetPath, 220) || PREFIX,
+    verified_at: verifiedAt,
+    source: "validated_model_handoff",
+  };
+  await putJson(env, handoffReceiptKey(receiptRef), record, { onlyIfMissing: true });
+  return record;
+}
+
+async function listModelHandoffReceipts(env, { modelRecordId = "", jobId = "" } = {}) {
+  const listed = await env.PUBLIC_ACCESS_EVIDENCE.list({ prefix: `${STORE_PREFIX}/handoffs/`, limit: 500 });
+  const rows = await Promise.all((listed.objects || []).map((item) => getJson(env, item.key)));
+  return rows
+    .filter((row) => row?.schema === "mmd_public_job_board_v2.model_handoff_receipt")
+    .filter((row) => !modelRecordId || row.model_record_id === modelRecordId)
+    .filter((row) => !jobId || row.job_id === jobId)
+    .sort((a, b) => String(b.verified_at).localeCompare(String(a.verified_at)))
+    .slice(0, 100)
+    .map((row) => structuredClone(row));
+}
+
 async function updateViewerControl(request, env, ref) {
   if (!/^[a-f0-9]{64}$/.test(ref)) throw httpError(400, "viewer_ref_invalid");
   const record = await getJson(env, viewerKey(ref));
@@ -856,6 +898,14 @@ async function enforceModelBoardGate(request, env, parts = []) {
   const handoff = clean(url.searchParams.get(MODEL_HANDOFF_PARAM), 4096);
   if (handoff) {
     const verified = await validateModelHandoff(env, handoff);
+    const requestedJobId = parts[0] && !["data", "events", "internal"].includes(parts[0]) ? cleanId(parts[0]) : "";
+    await recordModelHandoffReceipt(env, {
+      modelRecordId: verified.model_record_id,
+      jobId: requestedJobId,
+      targetPath: url.pathname,
+    }).catch((error) => {
+      console.warn(JSON.stringify({ event: "model_job_board_handoff_receipt_failed", code: safeCode(error) }));
+    });
     const exp = Math.floor(Date.now() / 1000) + 60 * 60;
     const tokenValue = await signToken(env, { typ: "model_gate", model_record_id: verified.model_record_id, exp });
     url.searchParams.delete(MODEL_HANDOFF_PARAM);
@@ -967,6 +1017,7 @@ function applicationKey(jobId, applicationRef) { return jobId && applicationRef 
 function dedupeKey(jobId, actorHash) { return `${STORE_PREFIX}/dedupe/${jobId}/${actorHash}.json`; }
 function mediaKey(jobId, applicationRef, slot, ext) { return `${STORE_PREFIX}/private-media/${jobId}/${applicationRef}/${slot}.${ext}`; }
 function viewerKey(ref) { return `${STORE_PREFIX}/viewers/${ref}.json`; }
+function handoffReceiptKey(ref) { return ref ? `${STORE_PREFIX}/handoffs/${ref}.json` : ""; }
 
 function inferCategory(value) {
   if (/กินข้าว|dining|ร้านอาหาร/i.test(value)) return "dining";

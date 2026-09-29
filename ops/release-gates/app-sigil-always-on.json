@@ -38,6 +38,7 @@
     "SIGIL Search must have approved public-safe media linked to the exact returned Models before this gate can become ready.",
     "Always-on APP campaign remains disabled until every gate is pass and evidence is recorded.",
     "Owner-confirmed contract: /sigil/booking may discover private-lane Models through scope=booking using public-safe media only; generic public search remains public-only and scope=private remains entitlement-gated.",
-    "MMD APP Job handoff remains pending because the 5-minute mmd_job_board_handoff token is intentionally not persisted; acceptance still requires one genuine post-LIFF handoff mint+validate event."
+    "MMD APP Job handoff remains pending because the 5-minute mmd_job_board_handoff token is intentionally not persisted; acceptance still requires one genuine post-LIFF handoff mint+validate event.",
+    "Validated Model Job Board handoffs now persist a privacy-safe durable receipt after token validation; no LINE ID, cookie, handoff token, payment, or customer payload is stored."
   ]
 }
