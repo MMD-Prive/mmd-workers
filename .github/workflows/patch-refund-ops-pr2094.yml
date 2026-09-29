@@ -1,0 +1,46 @@
+name: Patch Refund Ops PR 2094
+
+on:
+  push:
+    branches:
+      - ops/refund-completed-customer-job-url-20260929
+    paths:
+      - .github/workflows/patch-refund-ops-pr2094.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/refund-completed-customer-job-url-20260929
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fix inline script newline
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('admin-worker/src/refund-ops.js')
+          src = path.read_text()
+          fixed = src.replace('join("\\\n")', 'join(String.fromCharCode(10))')
+          fixed = fixed.replace('join("\\\r\n")', 'join(String.fromCharCode(10))')
+          fixed = fixed.replace('join("\\n")', 'join(String.fromCharCode(10))')
+          if fixed == src:
+              raise SystemExit('no_inline_script_join_pattern_found')
+          path.write_text(fixed)
+          PY
+          rm .github/workflows/patch-refund-ops-pr2094.yml
+          node --check admin-worker/src/refund-ops.js
+      - name: Run focused refund tests
+        run: node --test admin-worker/refund-ops.test.mjs member-dashboard-chat-worker/test/refund-receipt-notify.test.mjs
+      - name: Commit fix
+        run: |
+          git config user.name "mmdprive"
+          git config user.email "mmdprive@users.noreply.github.com"
+          git add admin-worker/src/refund-ops.js .github/workflows/patch-refund-ops-pr2094.yml
+          git commit -m "Fix refund ops page script syntax"
+          git push origin HEAD:ops/refund-completed-customer-job-url-20260929
