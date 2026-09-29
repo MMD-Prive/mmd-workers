@@ -33,6 +33,9 @@ function normalizePublishInput(body = {}) {
   }
 
   const world = clean(body.world || body.job_visibility, 20).toLowerCase() === "private" ? "private" : "public";
+  const confidentiality = typeof body.confidentiality === "boolean"
+    ? body.confidentiality
+    : /🔐|ความลับ|confidential/i.test(boardText);
   const compensation = clean(body.compensation || body.budget_text || "", 120);
   const customerGender = normalizeGender(body.customer_gender);
 
@@ -52,7 +55,8 @@ function normalizePublishInput(body = {}) {
       ? Number(body.customer_count)
       : 1,
     customer_gender: customerGender,
-    confidentiality: world === "private",
+    world,
+    confidentiality,
     budget_disclosure_approved: world === "private" && body.budget_disclosure_approved === true,
     safe_customer_description: clean(body.safe_customer_description, 500) || undefined,
     required_appearance_profile: clean(body.required_appearance_profile, 600) || undefined,

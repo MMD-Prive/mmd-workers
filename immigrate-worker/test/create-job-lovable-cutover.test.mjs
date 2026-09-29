@@ -68,6 +68,10 @@ try {
     assert.match(html, /data-mmd-create-job-static-copy="v1"/);
     assert.match(html, /data-mmd-job-board-panel="v1"/);
     assert.match(html, /Create กระดานข่าว/);
+    assert.match(html, /Public · MMD/);
+    assert.match(html, /Private · SIGIL/);
+    assert.match(html, /name="confidentiality"/);
+    assert.match(html, /data\.get\('world'\)\|\|'public'/);
     assert.match(html, /fetch\('\/v1\/admin\/job-board\/publish'/);
     assert.match(html, /Publish \+ Copy Link/);
     assert.match(html, /data-mmd-create-job-client-search="v2"/);
