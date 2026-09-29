@@ -47,6 +47,28 @@ Minimum payload for a customer snapshot:
 
 If the record cannot be matched to exactly one canonical Client, it remains review-required/candidate-only. Runtime flows may search the identity candidate but must keep access/rights fail-closed until resolver truth exists.
 
+## Batch helper
+
+Use `scripts/line-official-legacy/line-ofc-snapshot-batch.mjs` to turn one or two LINE OFC evidence snippets into import payloads with stable `source_hash` values and replay-safe `import_id` defaults.
+
+Build payloads without writing:
+
+```sh
+node scripts/line-official-legacy/line-ofc-snapshot-batch.mjs snapshots.json > payloads.json
+```
+
+Post to the existing import route after owner review:
+
+```sh
+LINE_OFC_IMPORT_URL="https://www.mmdbkk.com/v1/admin/kenji/control/line-ofc/import" \
+LINE_OFC_IMPORT_TOKEN="<internal token>" \
+node scripts/line-official-legacy/line-ofc-snapshot-batch.mjs snapshots.json --post
+```
+
+Input may be a single object or `{ "snapshots": [...] }`. Each snapshot requires `line_user_id` and at least one of `raw_line_notes`, `membership_application_sensitive`, `behaviour_care_context`, or `service_history_candidate`. `source_priority` must be one of `line_ofc`, `owner_confirmed`, `customer_note`, or `model_group_album`.
+
+The helper enforces the lightweight rule: no more than two evidence items per `case_key`. Use one strong LINE OFC item whenever possible.
+
 ## Acceptance contract
 
 - Snapshot first, resolve second.
