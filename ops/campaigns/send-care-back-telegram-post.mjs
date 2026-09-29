@@ -1,10 +1,18 @@
 import fs from "node:fs";
 
 const DEFAULT_POST_PACK = "ops/campaigns/care-back-telegram-post-20260929.json";
+export const DEFAULT_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send";
 const SENSITIVE_RE = /(?:line_user_id|cookie|authorization|bearer\s+[a-z0-9._-]+|AIRTABLE_API_KEY|TELEGRAM_BOT_TOKEN|private_original_key)/i;
 
 function clean(value = "", max = 5000) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max);
+}
+
+export function resolveCareBackTelegramRuntimeEnv(env = process.env) {
+  return {
+    endpoint: clean(env.TELEGRAM_INTERNAL_SEND_URL || DEFAULT_INTERNAL_SEND_URL, 500),
+    token: clean(env.TELEGRAM_INTERNAL_TOKEN || env.INTERNAL_API_TOKEN || env.INTERNAL_TOKEN, 5000),
+  };
 }
 
 export function buildCareBackTelegramPayload(pack) {
@@ -26,9 +34,10 @@ export function buildCareBackTelegramPayload(pack) {
 export async function sendCareBackTelegramPost({ packPath = DEFAULT_POST_PACK, endpoint, token, dryRun = false } = {}, fetchImpl = globalThis.fetch) {
   const pack = JSON.parse(fs.readFileSync(packPath, "utf8"));
   const payload = buildCareBackTelegramPayload(pack);
-  const url = clean(endpoint || pack.destination?.worker_url, 500);
+  const url = clean(endpoint || pack.destination?.worker_url || DEFAULT_INTERNAL_SEND_URL, 500);
+  const serviceToken = clean(token, 5000);
   if (!url) throw new Error("telegram_internal_send_url_required");
-  if (!dryRun && !token) throw new Error("telegram_internal_token_required");
+  if (!dryRun && !serviceToken) throw new Error("telegram_internal_token_required");
   if (dryRun) {
     return { ok: true, dry_run: true, campaign_id: pack.campaign_id, payload };
   }
@@ -36,8 +45,8 @@ export async function sendCareBackTelegramPost({ packPath = DEFAULT_POST_PACK, e
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "authorization": `Bearer ${token}`,
-      "x-internal-token": token,
+      "authorization": `Bearer ${serviceToken}`,
+      "x-internal-token": serviceToken,
     },
     body: JSON.stringify(payload),
   });
@@ -51,10 +60,11 @@ export async function sendCareBackTelegramPost({ packPath = DEFAULT_POST_PACK, e
 if (import.meta.url === `file://${process.argv[1]}`) {
   const packPath = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : DEFAULT_POST_PACK;
   const dryRun = process.argv.includes("--dry-run");
+  const runtime = resolveCareBackTelegramRuntimeEnv(process.env);
   sendCareBackTelegramPost({
     packPath,
-    endpoint: process.env.TELEGRAM_INTERNAL_SEND_URL,
-    token: process.env.TELEGRAM_INTERNAL_TOKEN || process.env.INTERNAL_TOKEN,
+    endpoint: runtime.endpoint,
+    token: runtime.token,
     dryRun,
   }).then((result) => {
     console.log(JSON.stringify(result, null, 2));
