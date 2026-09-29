@@ -5,7 +5,7 @@
   const MY_MMD = "/member/my-mmd";
   const MY_MMD_CANONICAL = "/my-mmd/";
   const CARE_BACK_COUPONS = "/my-mmd/coupons";
-  const COUPON_ENTRY = "/coupon";
+  const COUPON_ENTRY = "/my-mmd/coupons";
   const LIFF_STATUS = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status";
   const CARE_BACK_WISH = "/promotion/6-years-care-back/wish";
   const PUBLIC_MEMBERSHIP = "/pay/membership";
@@ -361,4 +361,66 @@ html[data-mmd-global-surface="v1"] :is(button,a,input,select,textarea){font:inhe
 @media(max-width:767px){html[data-mmd-global-surface="v1"] :is(main,[role="main"]){min-height:100dvh}html[data-mmd-global-surface="v1"] body{margin:0}}
 `;
   document.head.appendChild(style);
+})();
+
+
+(function(){
+  "use strict";
+  const PROFILE_PATH="/member/profile";
+  const LOGIN_PATH="/member/login";
+  const INTERNAL_PREFIX="/internal/";
+  const path=(location.pathname||"/").replace(/\/+$/,"")||"/";
+  if(path.startsWith(INTERNAL_PREFIX)||path===PROFILE_PATH)return;
+  if(document.getElementById("mmd-global-member-control-v1"))return;
+
+  const style=document.createElement("style");
+  style.id="mmd-global-member-control-v1-style";
+  style.textContent=\`
+  #mmd-global-member-control-v1{position:fixed;z-index:2147479000;top:max(10px,env(safe-area-inset-top));right:10px;max-width:min(46vw,210px);height:38px;padding:0 11px;display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(216,184,111,.22);border-radius:999px;background:rgba(12,11,10,.88);color:#fff8ed;text-decoration:none;box-shadow:0 10px 28px rgba(0,0,0,.22);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font:800 9px/1.15 Inter,"Noto Sans Thai",system-ui,sans-serif;letter-spacing:.05em}
+  #mmd-global-member-control-v1 .mmd-gm-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#8d8479;box-shadow:0 0 0 3px rgba(255,255,255,.04)}
+  #mmd-global-member-control-v1 .mmd-gm-copy{min-width:0;display:grid;gap:2px}
+  #mmd-global-member-control-v1 .mmd-gm-copy strong,#mmd-global-member-control-v1 .mmd-gm-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #mmd-global-member-control-v1 .mmd-gm-copy strong{font-size:9px;color:#fff8ed}
+  #mmd-global-member-control-v1 .mmd-gm-copy span{font-size:7px;color:#bfb4a2;letter-spacing:.09em}
+  #mmd-global-member-control-v1[data-state="online"] .mmd-gm-dot{background:#73d39b;box-shadow:0 0 0 3px rgba(115,211,155,.09),0 0 12px rgba(115,211,155,.34)}
+  #mmd-global-member-control-v1[data-private="1"]{border-color:rgba(216,184,111,.42);background:rgba(10,9,8,.92)}
+  html[data-mmd-world="public"] #mmd-global-member-control-v1{border-color:rgba(143,38,54,.22);background:rgba(255,250,243,.94);color:#25181b}
+  html[data-mmd-world="public"] #mmd-global-member-control-v1 .mmd-gm-copy strong{color:#25181b}
+  html[data-mmd-world="public"] #mmd-global-member-control-v1 .mmd-gm-copy span{color:#7c6f72}
+  @media(max-width:767px){#mmd-global-member-control-v1{top:max(8px,env(safe-area-inset-top));right:8px;height:36px;max-width:44vw;padding:0 10px}}
+  \`;
+  document.head.appendChild(style);
+
+  const chip=document.createElement("a");
+  chip.id="mmd-global-member-control-v1";
+  chip.href=LOGIN_PATH;
+  chip.dataset.state="guest";
+  chip.setAttribute("aria-label","Member profile");
+  chip.innerHTML='<i class="mmd-gm-dot" aria-hidden="true"></i><span class="mmd-gm-copy"><strong>MEMBER</strong><span>ACCOUNT</span></span>';
+  document.body.appendChild(chip);
+
+  function clean(value){return String(value==null?"":value).trim()}
+  function pick(obj,keys){for(const key of keys){let value=obj;for(const part of key.split(".")){value=value==null?undefined:value[part]}if(value!==undefined&&value!==null&&clean(value)!=="")return value}return""}
+  function privateAccess(profile,tier){
+    const raw=clean(profile.private_access||profile.private_status||pick(profile,["entitlement.private","membership.private_access","member.private_access"])).toLowerCase();
+    return /^(standard|premium|vip|svip|blackcard|black card)$/.test(clean(tier).toLowerCase())||/active|granted|true|yes|private/.test(raw);
+  }
+  fetch("/member/api/liff/profile",{credentials:"same-origin",cache:"no-store",headers:{accept:"application/json"}})
+    .then(async(response)=>{
+      const payload=await response.json().catch(()=>null);
+      if(!response.ok||!payload||payload.ok!==true)throw new Error("member_session_unavailable");
+      return payload.data&&typeof payload.data==="object"?payload.data:payload;
+    })
+    .then((profile)=>{
+      const name=pick(profile,["per_name","display_name","name","member.display_name","member.name","membership.per_name","membership.display_name"])||"MMD MEMBER";
+      const tier=pick(profile,["membership.tier","member.tier","tier","membership_level","member_level"])||"MEMBER";
+      const hasPrivate=privateAccess(profile,tier);
+      chip.href=PROFILE_PATH;
+      chip.dataset.state="online";
+      chip.dataset.private=hasPrivate?"1":"0";
+      chip.querySelector("strong").textContent=name;
+      chip.querySelector(".mmd-gm-copy span").textContent=hasPrivate?"PRIVATE · "+String(tier).toUpperCase():String(tier).toUpperCase();
+      chip.setAttribute("aria-label","เปิด Member Profile ของ "+name);
+    })
+    .catch(()=>{});
 })();
