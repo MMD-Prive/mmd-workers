@@ -13,6 +13,8 @@ const {
   notifyPaymentProofOps,
   notifyDirectCustomerPaymentEvidence,
   buildDirectPaymentAcknowledgement,
+  buildHypeOwnerProblemAlert,
+  notifyOwnerBankDetailReady,
   paymentOpsThreadId,
   promoteDirectUserCandidate,
   resolveDirectPayerContext,
@@ -227,6 +229,46 @@ test("tracking kind separates membership, job deposit, and job final payment", (
   assert.equal(paymentTrackingKind({ inferred_stage: "deposit" }), "job_deposit");
   assert.equal(paymentTrackingKind({ inferred_stage: "final" }), "job_final");
   assert.equal(paymentTrackingKind({ inferred_stage: "unknown" }), "unresolved_payment");
+});
+
+test("HYPE refund-ready alert tells Per the real problem and next action", () => {
+  const text = buildHypeOwnerProblemAlert({
+    eventType: "refund_ready",
+    customerName: "แมน",
+    jobId: "JOB-FILM-J-001",
+    refundAmountThb: 4500,
+    accountNumberMasked: "•••• 1234",
+  });
+  assert.match(text, /HYPE · REFUND READY/);
+  assert.match(text, /ลูกค้าส่งบัญชีเพื่อรับเงินคืนแล้ว/);
+  assert.match(text, /ลูกค้า: แมน/);
+  assert.match(text, /งาน: JOB-FILM-J-001/);
+  assert.match(text, /บัญชี: •••• 1234/);
+  assert.match(text, /✓ อ่านข้อมูลบัญชีแล้ว/);
+  assert.match(text, /✓ สร้าง Refund Task แล้ว/);
+  assert.match(text, /✓ ไม่แก้ Payment \/ Money Truth/);
+  assert.match(text, /เปอร์ต้องทำต่อ: คืนเงิน 4,500 บาท/);
+  assert.match(text, /\/internal\/admin\/refunds/);
+  assert.match(text, /\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-001/);
+  assert.doesNotMatch(text, /123-4-56789-0/);
+});
+
+test("HYPE refund-ready notification uses Alerts and is deduplicated by proof event", async () => {
+  const h = telegramHarness({ LINE_SLIP_EVIDENCE: memoryR2() });
+  const result = await notifyOwnerBankDetailReady(h.env, {
+    proofId: "line_bank_detail_1",
+    purpose: "refund",
+    customerName: "แมน",
+    sessionId: "sess-film-j",
+    refundAmountThb: 4500,
+    accountNumberMasked: "•••• 1234",
+  });
+  assert.equal(result.thread_id, 9);
+  assert.equal(h.messages.length, 1);
+  assert.equal(h.messages[0].flow, "alert");
+  assert.equal(h.messages[0].message_thread_id, 9);
+  assert.match(h.messages[0].text, /REFUND READY/);
+  assert.match(h.messages[0].text, /คืนเงิน 4,500 บาท/);
 });
 
 test("Telegram payment topic helpers keep Membership, Confirm and Alerts separate", () => {
