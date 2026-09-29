@@ -1241,6 +1241,7 @@ export default {
       }
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
+      if (resolveJobBoardContextFromRequest(request) && hasModelSessionCookie(request)) return authenticatedJobBoardResumeResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
       const briefId = boundedParam(new URL(request.url), "brief_id");
       if ((path === `${UI_PREFIX}/briefs` || boundedParam(new URL(request.url), "briefs") === "1" || /^brf_[a-zA-Z0-9-]{10,70}$/.test(briefId)) && !isPwaLaunchRequest(request)) return modelLineBriefsPageResponse(request);
