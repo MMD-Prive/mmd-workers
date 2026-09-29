@@ -174,7 +174,7 @@ export async function guardPrivateJobCreateWork(request, env) {
     body?.model?.lookup_key ||
     body?.model_lookup_key
   );
-  const pendingModelHold = ["pending_model_link", "pending_identity_link"].includes(holdMode);
+  const pendingModelHold = ["pending model link", "pending identity link"].includes(holdMode);
   if (!/^rec[A-Za-z0-9]+$/.test(modelId)) {
     if (pendingModelHold && typedSnapshot) {
       // Identity remains fail-closed: the downstream pending-identity wrapper
