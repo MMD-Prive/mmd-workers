@@ -5,8 +5,8 @@
   "campaign_enabled": false,
   "gates": {
     "production_route_smoke": {
-      "status": "pending",
-      "evidence": ""
+      "status": "pass",
+      "evidence": "Deploy sigil-booking-worker run 36528082511 completed success on production; exact SIGIL booking routes synced and custom-host private fail-closed smoke passed."
     },
     "real_line_liff_session_chain": {
       "status": "pending",
@@ -21,12 +21,12 @@
       "evidence": ""
     },
     "sigil_search_approved_public_media": {
-      "status": "pending",
-      "evidence": ""
+      "status": "pass",
+      "evidence": "APP SIGIL production search acceptance run 36528126495: scope=booking returned Atom IX reccoIEmIticuALwb with 8 approved public-safe assets and Book EI recj1SiBHrrGOBr8K with 4 approved public-safe assets."
     },
     "sigil_search_no_private_media_leak": {
-      "status": "pending",
-      "evidence": ""
+      "status": "pass",
+      "evidence": "APP SIGIL production search acceptance run 36528126495 completed success; both Atom IX and Book EI reported no_private_media_leak=true and public media route checks passed."
     },
     "campaign_destination_smoke": {
       "status": "pending",
@@ -36,6 +36,7 @@
   "notes": [
     "Real-event gates require genuine production evidence. Synthetic/unit/staging evidence cannot mark them pass.",
     "SIGIL Search must have approved public-safe media linked to the exact returned Models before this gate can become ready.",
-    "Always-on APP campaign remains disabled until every gate is pass and evidence is recorded."
+    "Always-on APP campaign remains disabled until every gate is pass and evidence is recorded.",
+    "Owner-confirmed contract: /sigil/booking may discover private-lane Models through scope=booking using public-safe media only; generic public search remains public-only and scope=private remains entitlement-gated."
   ]
 }
