@@ -37,6 +37,7 @@ import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecor
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
 import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
+import { handleRefundOpsRequest, REFUND_OPS_PAGE_PATH, REFUND_OPS_API_PREFIX, REFUND_OPS_INTERNAL_INTAKE } from "./refund-ops.js";
 import {
   handleCreateSessionClientLineageRequest,
   isCreateSessionClientLineageRequest,
@@ -211,6 +212,15 @@ export default {
 
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
+    }
+
+    if (
+      path === REFUND_OPS_PAGE_PATH ||
+      path.startsWith(`${REFUND_OPS_API_PREFIX}/`) ||
+      path === REFUND_OPS_INTERNAL_INTAKE
+    ) {
+      const refundOps = await handleRefundOpsRequest(req, env, { isAuthed });
+      if (refundOps) return refundOps;
     }
 
     if (path === ADMIN_LOGIN_ROOT_PATH && (method === "GET" || method === "HEAD")) {
@@ -1131,6 +1141,7 @@ function isAllowedAdminNextPath(pathname) {
     ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH,
     ADMIN_NEXT_CREATE_SESSION_PATH,
     ADMIN_NEXT_CREATE_JOB_PATH,
+    REFUND_OPS_PAGE_PATH,
   ]);
   if (exact.has(pathname)) return true;
   return pathname === ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH || pathname.startsWith(`${ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH}/`);
