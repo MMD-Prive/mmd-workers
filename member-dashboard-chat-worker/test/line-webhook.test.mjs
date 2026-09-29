@@ -170,6 +170,17 @@ test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   }
 });
 
+test("LINE refund wording routes to protected refund intent", () => {
+  for (const text of ["ขอคืนเงินนะ", "ช่วยโอนคืนให้หน่อย", "refund please", "money back"]) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), "refund_request", text);
+    const decision = decideKenjiCapability({ text, intent: "refund_request" });
+    assert.equal(decision.capability, "protected_authority");
+    assert.equal(decision.requested_domain, "human_handoff");
+    assert.equal(decision.requires_truth, true);
+  }
+});
+
 test("Kenji 2.0 recognizes booking status and Aftercare without inventing protected truth", () => {
   const cases = [
     ["จองถึงไหนแล้ว", "booking_status", /My MMD > History/],
