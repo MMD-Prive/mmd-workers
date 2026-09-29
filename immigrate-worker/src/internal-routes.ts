@@ -1,5 +1,4 @@
 import {
-  renderCreateJobPage,
   renderCreateSessionPage,
   renderJobBoardPage,
   type InternalPageEnv,
