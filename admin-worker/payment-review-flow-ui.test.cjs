@@ -57,7 +57,7 @@ test('deposit below 30 percent stays reviewable but requires explicit owner acce
    if(opts.method==='POST'){posted=JSON.parse(opts.body);return{ok:true,status:200,json:async()=>({ok:true,money_truth_changed:true,payment_stage:'deposit',deposit_review:{standard_minimum_percent:30,standard_minimum_thb:3000,received_thb:2000,received_percent:20,shortfall_thb:1000,under_standard:true},job_link_dispatch:{dispatched:false}})}}
  }});
  try{
-   await tick();await tick();await h.open();h.image();
+   await tick();await tick();assert.match(h.q('[data-pf-list]').textContent,/มัดจำ 20% · เปอร์ตรวจ/);await h.open();h.image();
    assert.match(h.q('[data-pf-review]').textContent,/ต่ำกว่า 30%/);
    assert.match(h.q('[data-pf-review]').textContent,/20%/);
    assert.match(h.q('[data-pf-review]').textContent,/ขาดจากมาตรฐาน 1,000 บาท/);
