@@ -2598,6 +2598,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
+  const preparedEvents = prepareKenjiLineWebhookBatch(events);
   const runtimeStatus = await requestKenjiRuntimeStatus(env);
   const runtimeControls = runtimeStatus.controls || {};
   const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
@@ -2607,17 +2608,99 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
   const saved = [];
 
-  for (const event of events) {
+  for (const prepared of preparedEvents) {
+    const rawEvent = prepared.raw_event || prepared.turn_event || {};
+    if (prepared.suppressed === true) {
+      const rawText = getLineEventText(rawEvent);
+      const rawIntent = inferLineIntent(rawText, rawEvent);
+      const persist = syncLineEventAfterReply(env, rawEvent, rawIntent, autoReplyEnabled, kenjiEnabled, {
+        turn_aggregation: {
+          source: prepared.aggregation_source || "webhook_batch",
+          suppressed: true,
+          aggregate_count: Number(prepared.aggregate_count) || 1,
+        },
+      }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(persist);
+      const record = typeof ctx?.waitUntil === "function" ? { pending: true, deduped: false } : await persist;
+      saved.push({
+        ok: true,
+        type: rawEvent?.type || "",
+        intent: rawIntent,
+        aggregate_suppressed: true,
+        aggregate_count: Number(prepared.aggregate_count) || 1,
+        replied: false,
+        deduped: Boolean(record?.deduped),
+        recorded: Boolean(record?.id),
+        record_pending: Boolean(record?.pending),
+        message_id: getLineEventId(rawEvent),
+      });
+      continue;
+    }
+
+    const aggregateResult = await aggregateKenjiLineTurn({
+      env,
+      event: prepared.turn_event || rawEvent,
+      batchCount: Number(prepared.aggregate_count) || 1,
+    });
+    if (aggregateResult.should_reply !== true) {
+      const rawText = getLineEventText(rawEvent);
+      const rawIntent = inferLineIntent(rawText, rawEvent);
+      const persist = syncLineEventAfterReply(env, rawEvent, rawIntent, autoReplyEnabled, kenjiEnabled, {
+        turn_aggregation: {
+          source: aggregateResult.source || "burst_superseded",
+          suppressed: true,
+          aggregate_count: 1,
+        },
+      }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(persist);
+      const record = typeof ctx?.waitUntil === "function" ? { pending: true, deduped: false } : await persist;
+      saved.push({
+        ok: true,
+        type: rawEvent?.type || "",
+        intent: rawIntent,
+        aggregate_suppressed: true,
+        aggregation_source: aggregateResult.source || "burst_superseded",
+        replied: false,
+        deduped: Boolean(record?.deduped),
+        recorded: Boolean(record?.id),
+        record_pending: Boolean(record?.pending),
+        message_id: getLineEventId(rawEvent),
+      });
+      continue;
+    }
+
+    const event = aggregateResult.event || prepared.turn_event || rawEvent;
     const text = getLineEventText(event);
     const lineUserId = getLineUserId({ event });
-    const inferredIntent = inferLineIntent(text, event);
-    const campaignTrigger = resolveLineCardCampaignTrigger(text);
+    const modelIntent = resolveKenjiModelIntent(text);
+    const inferredIntent = modelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(text, event);
+    const continuity = await resolveKenjiLineContinuity({
+      env,
+      event,
+      currentIntent: inferredIntent,
+      now: new Date().toISOString(),
+    }).catch(() => ({
+      decision: "unavailable",
+      reason: "continuity_resolver_failed",
+      effective_intent: inferredIntent,
+      matrix: {},
+      conversation_hash: "",
+      client_record_id: "",
+      storage_status: "unavailable",
+      available: false,
+    }));
+    const effectiveIntent = asString(continuity?.effective_intent) || inferredIntent;
+    const ownerTakeover = lineUserId
+      ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
+      : { ok: true, active: false, reason: "", source: "not_applicable" };
+    const ownerReplyBlocked = Boolean(lineUserId && (ownerTakeover.ok !== true || ownerTakeover.active === true));
+    const campaignTrigger = modelIntent.campaign_trigger || null;
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const supplierRegistrationName = matchHimaiSupplierRegistration(text);
     const isSupplierRegistration = supplierRegistrationName !== null;
-    const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && !ownerReplyBlocked && eventMode !== "standby" && getReplyToken(event));
     const campaignCanReply = Boolean(
-      kenjiEnabled && !runtimeLineKill && eventMode !== "standby" &&
+      kenjiEnabled && !runtimeLineKill && !ownerReplyBlocked && eventMode !== "standby" &&
       event?.type === "message" && event?.message?.type === "text" &&
       event?.source?.type === "user" && getReplyToken(event)
     );
@@ -2641,8 +2724,9 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     );
     const campaignItem = campaignTrigger || campaignContextResult.context || null;
     const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
-    const intent = campaignBrief ? "card_campaign_brief" : inferredIntent;
+    const intent = campaignBrief ? "card_campaign_brief" : effectiveIntent;
     const campaignLeadEnabled = Boolean(
+      !ownerReplyBlocked &&
       !campaignContextUnavailable &&
       campaignEvent &&
       campaignCanReply &&
