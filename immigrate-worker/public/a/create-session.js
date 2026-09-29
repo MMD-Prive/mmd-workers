@@ -91,8 +91,10 @@
     refreshModels: $("[data-op-refresh-models]"),
     modelRule: $("[data-op-model-rule]"),
     modelSelect: $("[data-op-model-select]"),
+    modelResults: $("[data-op-model-results]"),
     modelLookupKey: $("[data-op-model-lookup-key]"),
     modelPool: $("[data-op-model-pool]"),
+    modelBudget: $("[data-op-model-budget]"),
     modelPreview: $("[data-op-model-preview]"),
     customerTelegram: $("[data-op-customer-telegram]"),
     customerTelegramStatus: $("[data-op-customer-telegram-status]"),
@@ -661,8 +663,26 @@
           .join("");
       }
     }
+
+    if (el.modelResults) {
+      if (!state.modelFolder) {
+        el.modelResults.innerHTML = '<div class="mmdop__empty">เลือก Lane ก่อน</div>';
+      } else if (!state.models.length) {
+        el.modelResults.innerHTML = '<div class="mmdop__empty">ยังไม่พบ Model ในผลค้นหา</div>';
+      } else {
+        el.modelResults.innerHTML = state.models.map((model, index) => {
+          const selected = state.selectedModel && state.selectedModel.model_id === model.model_id;
+          return `<button type="button" class="mmd-cs-v14__modelPick${selected ? " is-selected" : ""}" data-op-pick-model="${index}">
+            <span class="mmd-cs-v14__modelPickIcon">${esc((model.model_name || "M").charAt(0).toUpperCase())}</span>
+            <span><strong>${esc(model.model_name)}</strong><small>${esc(model.lookup_key || "canonical model")}</small></span>
+            <em>${selected ? "SELECTED" : "SELECT"}</em>
+          </button>`;
+        }).join("");
+      }
+    }
+
     text(el.modelRule, state.modelFolder
-      ? `Folder ${state.modelFolder} · backend eligibility enforced`
+      ? `Folder ${state.modelFolder} · ${state.models.length} model${state.models.length === 1 ? "" : "s"}`
       : "Select a folder first");
     renderModelPreview();
   }
@@ -846,6 +866,7 @@
         telegram_username: val(el.modelTelegram),
         telegram_status: val(el.modelTelegramStatus)
       },
+      pay_model_thb: Number(val(el.modelBudget)) || undefined,
       schedule: {
         date: val(el.date),
         start: val(el.start),
@@ -1165,6 +1186,7 @@
     setVal(el.location, "");
     setVal(el.map, "");
     setVal(el.amount, "");
+    setVal(el.modelBudget, "");
     setVal(el.handlingNote, "");
     setVal(el.note, "");
     renderSelectedClient();
@@ -1237,9 +1259,15 @@
       if (Number.isInteger(index) && state.models[index]) selectModel(state.models[index]);
       else {
         state.selectedModel = null;
-        renderModelPreview();
+        renderModels();
         updateAll();
       }
+    });
+    el.modelResults?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-op-pick-model]");
+      if (!button) return;
+      const index = Number(button.getAttribute("data-op-pick-model"));
+      if (Number.isInteger(index) && state.models[index]) selectModel(state.models[index]);
     });
     [
       el.customerTelegram,
@@ -1252,6 +1280,7 @@
       el.location,
       el.map,
       el.amount,
+      el.modelBudget,
       el.paymentType,
       el.paymentMethod,
       el.pointsMode,

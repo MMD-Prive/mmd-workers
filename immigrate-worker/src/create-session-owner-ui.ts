@@ -39,6 +39,20 @@ body{min-height:100vh}
 .mmd-cs-v14__select{width:100%;min-height:52px;padding:0 14px;border-radius:16px;border:1px solid var(--line);background:rgba(8,8,13,.78);color:var(--text);font:inherit;outline:none}
 .mmd-cs-v14__modelSelectWrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;margin-top:14px}
 .mmd-cs-v14__modelSelectWrap .mmd-cs-v14__field{margin:0}
+.mmd-cs-v14__modelQuick{margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.mmd-cs-v14__modelPick{width:100%;display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:18px;background:rgba(8,8,13,.58);color:var(--text);text-align:left;cursor:pointer;transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.mmd-cs-v14__modelPick:hover{border-color:rgba(212,181,106,.38);background:rgba(212,181,106,.045);transform:translateY(-1px)}
+.mmd-cs-v14__modelPick.is-selected{border-color:rgba(212,181,106,.72);background:linear-gradient(145deg,rgba(212,181,106,.13),rgba(212,181,106,.045));box-shadow:inset 0 0 0 1px rgba(212,181,106,.08)}
+.mmd-cs-v14__modelPickIcon{width:48px;height:48px;display:grid;place-items:center;border:1px solid rgba(212,181,106,.28);border-radius:15px;background:rgba(212,181,106,.08);color:var(--gold-soft);font-weight:950}
+.mmd-cs-v14__modelPick strong{display:block;font-size:15px}
+.mmd-cs-v14__modelPick small{display:block;margin-top:4px;color:var(--text-dim);font-size:10px;line-height:1.45}
+.mmd-cs-v14__modelPick em{color:var(--gold);font-size:9px;font-style:normal;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.mmd-cs-v14__modelBudget{margin-top:12px;padding:14px;border:1px solid rgba(212,181,106,.22);border-radius:18px;background:rgba(212,181,106,.035)}
+.mmd-cs-v14__modelBudget .mmd-cs-v14__field{margin:0}
+.mmd-cs-v14__modelBudget small{display:block;margin-top:6px;color:var(--text-dim);font-size:10px;line-height:1.45}
+.mmd-cs-v14__essentialPayment{margin-top:12px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.45fr);gap:10px}
+.mmd-cs-v14__essentialPayment .mmd-cs-v14__field{margin:0}
+@media(max-width:760px){.mmd-cs-v14__essentialPayment{grid-template-columns:1fr}}
 .mmd-cs-v14__runtimeCard{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.025)}
 .mmd-cs-v14 .mmdop__empty{min-height:92px;display:grid;place-items:center;text-align:center;padding:18px;border:1px dashed var(--line);border-radius:18px;background:rgba(255,255,255,.022);color:var(--text-dim)}
 .mmd-cs-v14 .mmdop__clientCard{width:100%;display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:13px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:20px;background:rgba(8,8,13,.55);color:var(--text);text-align:left;cursor:pointer}
@@ -66,7 +80,7 @@ body{min-height:100vh}
 .mmd-cs-v14__urlGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
 .mmd-cs-v14__urlGrid label{display:grid;gap:6px;color:var(--text-dim);font-size:11px}
 .mmd-cs-v14__urlGrid input{width:100%;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:13px;background:rgba(8,8,13,.7);color:var(--text)}
-@media(max-width:760px){.mmd-cs-v14 [data-op-folder-grid],.mmd-cs-v14__urlGrid,.mmd-cs-v14__modelSelectWrap{grid-template-columns:1fr}.mmd-cs-v14 .mmdop__folder+.mmdop__folder{margin-left:0}.mmd-cs-v14 .mmdop__clientCard,.mmd-cs-v14 .mmdop__modelCard{grid-template-columns:52px 1fr}.mmd-cs-v14 .mmdop__tags{grid-column:1/-1;justify-content:flex-start}}
+@media(max-width:760px){.mmd-cs-v14 [data-op-folder-grid],.mmd-cs-v14__urlGrid,.mmd-cs-v14__modelSelectWrap,.mmd-cs-v14__modelQuick{grid-template-columns:1fr}.mmd-cs-v14 .mmdop__folder+.mmdop__folder{margin-left:0}.mmd-cs-v14 .mmdop__clientCard,.mmd-cs-v14 .mmdop__modelCard{grid-template-columns:52px 1fr}.mmd-cs-v14 .mmdop__tags{grid-column:1/-1;justify-content:flex-start}}
 `;
 
 function escapeRegExp(value: string): string {
@@ -215,17 +229,23 @@ function transformOwnerHtml(source: string): string {
 
   html = html.replace(
     '<div class="mmd-cs-v14__resultList mmd-cs-v14__resultList--models" data-cs-model-results>',
-    `<div class="mmd-cs-v14__modelSelectWrap"><label class="mmd-cs-v14__field"><span>Model จาก entitlement-aware pool</span><select class="mmd-cs-v14__select" data-op-model-select><option value="">เลือกกลุ่มก่อน</option></select></label><div class="mmd-cs-v14__mode" data-op-model-rule>-</div></div><div class="mmd-cs-v14__resultList mmd-cs-v14__resultList--models mmd-cs-v14__compatHidden" data-cs-model-results>`
+    `<select class="mmd-cs-v14__compatHidden" data-op-model-select aria-hidden="true"><option value="">เลือก Model</option></select>
+      <div class="mmd-cs-v14__mode" data-op-model-rule>-</div>
+      <div class="mmd-cs-v14__modelQuick" data-op-model-results><div class="mmdop__empty">พิมพ์ชื่อ Model หรือเลือกจากรายการได้เลย</div></div>
+      <div class="mmd-cs-v14__modelBudget"><label class="mmd-cs-v14__field"><span>บัทเจทถึง Model (THB)</span><input type="number" min="0" step="100" inputmode="numeric" placeholder="เช่น 3000" data-op-model-budget /></label><small>ยอดที่จ่ายให้นายแบบโดยตรงในงานนี้ — แยกจากยอดที่ลูกค้าชำระ</small></div>
+      <div class="mmd-cs-v14__resultList mmd-cs-v14__resultList--models mmd-cs-v14__compatHidden" data-cs-model-results>`
   );
   html = html.replace('<div class="mmd-cs-v14__inlinePicked">', '<div class="mmd-cs-v14__inlinePicked" data-op-model-preview>');
 
   html = html.replace(
-    '<div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n                <label class="mmd-cs-v14__field">\n                  <span>Google Map URL</span>',
-    `<input type="hidden" data-op-payment-type value="full" />
+    /<input id="csAssignedPerson"(?=[\s>])/,
+    `<div class="mmd-cs-v14__essentialPayment">
+        <label class="mmd-cs-v14__field"><span>การเรียกเก็บ</span><select data-op-payment-type><option value="deposit">มัดจำ</option><option value="full">เต็มจำนวน</option></select></label>
+      </div>
       <input type="hidden" data-op-payment-method value="promptpay" />
       <input type="hidden" data-op-points-mode value="auto" />
       <input type="hidden" data-op-escalation-owner value="Boss Per" />
-      <div class="mmd-cs-v14__fields mmd-cs-v14__fields--2">\n                <label class="mmd-cs-v14__field">\n                  <span>Google Map URL</span>`
+      <input id="csAssignedPerson"`
   );
 
   html = html.replace(

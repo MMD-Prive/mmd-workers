@@ -21,6 +21,29 @@ const SIMPLE_START_CSS = `
   display: none !important;
 }
 
+/* Owner compact mode: keep only fields needed to open a job. */
+.mmd-cs-v14 #gate-panel,
+.mmd-cs-v14 .mmd-cs-v14__section--review,
+.mmd-cs-v14 .mmd-cs-v14__advanced,
+.mmd-cs-v14__kenjiVisuals,
+.mmd-cs-v14__flowVisual,
+.mmd-cs-v14__paymentVisual {
+  display: none !important;
+}
+
+.mmd-cs-v14__dock {
+  margin-top: 14px;
+}
+
+.mmd-cs-v14__dockCopy p,
+.mmd-cs-v14__dockCopy span {
+  display: none !important;
+}
+
+.mmd-cs-v14__dockCopy strong {
+  font-size: 14px;
+}
+
 .mmd-cs-v14:not(.is-simple-has-client) #work-panel {
   opacity: .42;
   transform: translateY(4px);
@@ -276,6 +299,7 @@ const SIMPLE_START_SCRIPT = `
     var lanePanel = laneGrid ? laneGrid.closest("section") : null;
     var modelPanel = root.querySelector("#model-panel");
     var gatePanel = root.querySelector("#gate-panel");
+    if (gatePanel) gatePanel.setAttribute("data-simple-hidden", "true");
     var detailsControl = root.querySelector("[data-op-date]");
     var detailsPanel = detailsControl ? detailsControl.closest("section") : null;
     var reviewPanel = root.querySelector(".mmd-cs-v14__section--review");
@@ -441,9 +465,9 @@ const SIMPLE_START_SCRIPT = `
 
       hideUntil(lanePanel, hasWork);
       hideUntil(modelPanel, hasLane);
-      hideUntil(gatePanel, hasModel);
+      hideUntil(gatePanel, false);
       hideUntil(detailsPanel, hasModel);
-      hideUntil(reviewPanel, hasModel);
+      hideUntil(reviewPanel, false);
       hideUntil(dock, hasModel);
       updateFlow(hasClient, hasWork, hasLane, hasModel);
     }

@@ -62,7 +62,8 @@ try {
   assert.match(body, /is-simple-has-client/);
   assert.match(body, /data-simple-hidden/);
   assert.match(body, /data-simple-current-step/);
-  assert.match(body, /hideUntil\(reviewPanel, hasModel\)/);
+  assert.match(body, /hideUntil\(gatePanel, false\)/);
+  assert.match(body, /hideUntil\(reviewPanel, false\)/);
   assert.match(body, /hideUntil\(dock, hasModel\)/);
 
   assert.match(body, /function hasSelectedClient\(value\)/);
