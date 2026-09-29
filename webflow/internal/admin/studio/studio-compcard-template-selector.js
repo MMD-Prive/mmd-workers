@@ -1,5 +1,5 @@
 /*
- * MMD Studio — SIGIL Comp Card template selector
+ * MMD Studio — Master Frame V2 card template selector
  * Presentation/local-draft only. It does not publish, upload, or grant access.
  */
 (function () {
@@ -19,121 +19,112 @@
       uiFamily: "EMs",
       field: "EMs",
       label: "EMs",
-      title: "Aureate Vault",
+      title: "Master Frame V2 · EMs",
       kind: "exclusive",
-      accent: "#d7b05f",
-      accentSoft: "rgba(215,176,95,.23)",
-      line: "Actor / Artist · Private SIGIL",
+      accent: "#d3b45c",
+      accentSoft: "rgba(211,180,92,.22)",
       needsRun: true,
       needsMetrics: true,
-      needsTitle: true,
+      needsTitle: false,
       publicCollection: false,
       identity: "run",
-      note: "RUN NUMBER · CM / KG · 2-line Title Bar"
+      note: "RUN NUMBER · HEIGHT / WEIGHT"
     },
     {
       id: "sigil-gws-nightwave",
       uiFamily: "GWs",
       field: "GWs",
       label: "GWs",
-      title: "Nightwave Dossier",
+      title: "Master Frame V2 · GWs",
       kind: "exclusive",
-      accent: "#1bb7b0",
-      accentSoft: "rgba(27,183,176,.23)",
-      line: "Exclusive Model · Private SIGIL",
+      accent: "#36c4c7",
+      accentSoft: "rgba(54,196,199,.20)",
       needsRun: true,
       needsMetrics: true,
-      needsTitle: true,
+      needsTitle: false,
       publicCollection: false,
       identity: "run",
-      note: "RUN NUMBER · CM / KG · 2-line Title Bar"
+      note: "RUN NUMBER · HEIGHT / WEIGHT"
     },
     {
       id: "sigil-straight-bronze",
       uiFamily: "A",
       field: "ST",
       label: "Straight",
-      title: "Bronze Study",
+      title: "Master Frame V2 · Silver",
       kind: "standard",
-      accent: "#a77a4d",
-      accentSoft: "rgba(167,122,77,.22)",
-      line: "Private Model · SIGIL",
+      accent: "#a7adb4",
+      accentSoft: "rgba(167,173,180,.20)",
       needsRun: false,
       needsMetrics: true,
       needsTitle: false,
       publicCollection: false,
       identity: "name",
-      note: "MODEL NAME · CM / KG"
+      note: "MODEL NAME · HEIGHT / WEIGHT"
     },
     {
       id: "sigil-gay-plum",
       uiFamily: "B",
       field: "GY",
       label: "Gay",
-      title: "Plum Study",
+      title: "Master Frame V2 · Rose",
       kind: "standard",
-      accent: "#92557f",
-      accentSoft: "rgba(146,85,127,.23)",
-      line: "Private Model · SIGIL",
+      accent: "#d96aa8",
+      accentSoft: "rgba(217,106,168,.20)",
       needsRun: false,
       needsMetrics: true,
       needsTitle: false,
       publicCollection: false,
       identity: "name",
-      note: "MODEL NAME · CM / KG"
+      note: "MODEL NAME · HEIGHT / WEIGHT"
     },
     {
       id: "sigil-foreigner-emerald",
       uiFamily: "E",
       field: "FR",
       label: "Foreigner",
-      title: "Emerald Study",
+      title: "Master Frame V2 · Emerald",
       kind: "standard",
-      accent: "#2d926b",
-      accentSoft: "rgba(45,146,107,.23)",
-      line: "Private Model · SIGIL",
+      accent: "#45bd7a",
+      accentSoft: "rgba(69,189,122,.20)",
       needsRun: false,
       needsMetrics: true,
       needsTitle: false,
       publicCollection: false,
       identity: "name",
-      note: "MODEL NAME · CM / KG"
+      note: "MODEL NAME · HEIGHT / WEIGHT"
     },
     {
       id: "mmd-prive-travel",
       uiFamily: "C",
       field: "EN",
       label: "Travel",
-      title: "MMD Privé Travel",
+      title: "MMD PRIVÉ · Blue Edge",
       kind: "public",
-      accent: "#426fa9",
-      accentSoft: "rgba(66,111,169,.24)",
-      line: "MMD Privé · Public Collection",
+      accent: "#4aa9d8",
+      accentSoft: "rgba(74,169,216,.18)",
       needsRun: false,
-      needsMetrics: false,
+      needsMetrics: true,
       needsTitle: false,
       publicCollection: true,
-      identity: "prive",
-      collection: "TRAVEL MODELS",
-      note: "MMD PRIVÉ · PUBLIC COLLECTION"
+      identity: "name",
+      note: "BLUE EDGE CUE · NO TRAVEL LABEL"
     },
     {
       id: "mmd-prive-extreme",
       uiFamily: "D",
       field: "EX",
       label: "Extreme",
-      title: "MMD Privé Extreme",
+      title: "MMD PRIVÉ · Red Edge",
       kind: "public",
-      accent: "#b64c58",
-      accentSoft: "rgba(182,76,88,.24)",
-      line: "MMD Privé · Public Collection",
+      accent: "#d83a48",
+      accentSoft: "rgba(216,58,72,.18)",
       needsRun: false,
-      needsMetrics: false,
+      needsMetrics: true,
       needsTitle: false,
       publicCollection: true,
-      identity: "prive",
-      collection: "EXTREME MODELS",
-      note: "MMD PRIVÉ · PUBLIC COLLECTION"
+      identity: "name",
+      note: "RED EDGE CUE · NO EXTREME LABEL"
     }
   ];
 
@@ -264,11 +255,11 @@
     var heading = document.createElement("div");
     heading.className = "mmd-sigil-picker-head";
     var eyebrow = document.createElement("span");
-    eyebrow.textContent = "SIGIL COMP CARD / TEMPLATE PACK";
+    eyebrow.textContent = "MMD STUDIO / MASTER FRAME V2";
     var title = document.createElement("h2");
-    title.textContent = "เลือก Template ก่อน Build Draft";
+    title.textContent = "เลือกกรอบใหม่ก่อน Build Draft";
     var copy = document.createElement("p");
-    copy.textContent = "EMs และ GWs เป็นรุ่น signature; ที่เหลือเป็นระบบเดียวกันด้วย accent color และ field rule ที่ถูกล็อกไว้.";
+    copy.textContent = "กรอบหลักเป็น metallic silver / graphite เหมือนกันทุกกลุ่ม ใช้ accent เล็ก ๆ บอก category โดยไม่พิมพ์ role หรือชื่อกลุ่มบนการ์ด; Travel = ฟ้า, Extreme = แดง.";
     heading.appendChild(eyebrow);
     heading.appendChild(title);
     heading.appendChild(copy);
@@ -327,17 +318,11 @@
     }
     if (height) height.required = template.needsMetrics;
     if (weight) weight.required = template.needsMetrics;
-    if (title) title.required = template.needsTitle;
-    if (template.publicCollection) {
-      if (model) {
-        model.value = "MMD PRIVÉ";
-        model.readOnly = true;
-        model.setAttribute("aria-label", "MMD Privé collection card");
-      }
-      if (height) height.value = "";
-      if (weight) weight.value = "";
-      if (title) title.value = "";
-    } else if (model) {
+    if (title) {
+      title.required = template.needsTitle;
+      if (!template.needsTitle) title.value = "";
+    }
+    if (model) {
       model.readOnly = false;
       model.removeAttribute("aria-label");
       if (model.value === "MMD PRIVÉ") model.value = "";
@@ -361,44 +346,49 @@
     old.className = "mmd-sigil-card mmd-sigil-card-" + template.field.toLowerCase() + " mmd-sigil-card-" + template.kind;
     old.style.setProperty("--sigil-accent", template.accent);
     old.style.setProperty("--sigil-accent-soft", template.accentSoft);
+    old.setAttribute("data-master-frame", "mmd-v2");
     old.replaceChildren();
 
     var photoStyle = source ? window.getComputedStyle(source).backgroundImage : "";
     var photo = document.createElement("div");
     photo.className = "mmd-sigil-card-photo";
     if (photoStyle && photoStyle !== "none") photo.style.backgroundImage = photoStyle;
+
+    var shade = document.createElement("div");
+    shade.className = "mmd-sigil-card-shade";
+    var frameOuter = document.createElement("div");
+    frameOuter.className = "mmd-sigil-card-frame-outer";
+    var frameInner = document.createElement("div");
+    frameInner.className = "mmd-sigil-card-frame-inner";
+    var accent = document.createElement("div");
+    accent.className = "mmd-sigil-card-accent";
+
     var panel = document.createElement("div");
     panel.className = "mmd-sigil-card-panel";
-    var kicker = document.createElement("span");
-    kicker.className = "mmd-sigil-card-kicker";
-    kicker.textContent = template.kind === "exclusive" ? "PRIVATE SIGIL / SIGNATURE" : template.kind === "public" ? "MMD PRIVÉ / PUBLIC COLLECTION" : "PRIVATE SIGIL / MODEL CARD";
     var identity = document.createElement("strong");
     identity.className = "mmd-sigil-card-identity";
     identity.textContent = identityText(template, values);
-    var family = document.createElement("span");
-    family.className = "mmd-sigil-card-family";
-    family.textContent = template.kind === "public" ? template.collection : template.line;
-    panel.appendChild(kicker);
     panel.appendChild(identity);
-    panel.appendChild(family);
+
     if (template.needsMetrics) {
       var metrics = document.createElement("div");
       metrics.className = "mmd-sigil-card-metrics";
-      metrics.appendChild(metric("HT", values.height || "—", "CM"));
-      metrics.appendChild(metric("WT", values.weight || "—", "KG"));
+      metrics.appendChild(metric("", values.height || "—", ""));
+      metrics.appendChild(metric("", values.weight || "—", ""));
       panel.appendChild(metrics);
     }
-    if (template.needsTitle) {
-      var bar = document.createElement("div");
-      bar.className = "mmd-sigil-card-titlebar";
-      bar.textContent = values.title || "ใส่ Title Bar 1–2 บรรทัดที่นี่";
-      panel.appendChild(bar);
-    }
-    var seam = document.createElement("div");
-    seam.className = "mmd-sigil-card-seam";
+
+    var brand = document.createElement("span");
+    brand.className = "mmd-sigil-card-brand";
+    brand.textContent = template.publicCollection ? "MMD PRIVÉ" : "SĪGIL";
+
     old.appendChild(photo);
+    old.appendChild(shade);
+    old.appendChild(frameOuter);
+    old.appendChild(frameInner);
+    old.appendChild(accent);
     old.appendChild(panel);
-    old.appendChild(seam);
+    old.appendChild(brand);
   }
 
   function bootFinalPreview() {
@@ -434,10 +424,9 @@
   }
 
   function identityText(template, values) {
-    if (template.publicCollection) return "MMD PRIVÉ";
     if (template.needsRun) {
       var digits = String(values.run || "").replace(/\D/g, "").slice(-3);
-      return template.field + "-" + (digits ? digits.padStart(3, "0") : "000");
+      return template.field + (digits ? digits.padStart(3, "0") : "000");
     }
     return values.model || "MODEL NAME";
   }
@@ -543,7 +532,7 @@
     if (byId(STYLE_ID)) return;
     var style = document.createElement("style");
     style.id = STYLE_ID;
-    style.textContent = "#" + PICKER_ID + "{margin:16px 0;border:1px solid rgba(255,255,255,.12);border-radius:25px;padding:20px;background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(8,7,6,.82));box-shadow:0 20px 56px rgba(0,0,0,.26)}#" + PICKER_ID + " *{box-sizing:border-box;font-family:inherit}.mmd-sigil-picker-head{display:grid;gap:7px;margin-bottom:15px}.mmd-sigil-picker-head>span{color:#d8b96c;font-size:9px;letter-spacing:.16em}.mmd-sigil-picker-head h2{margin:0;color:#f7f0e4;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(28px,3vw,39px);font-weight:500;letter-spacing:-.045em}.mmd-sigil-picker-head p{max-width:760px;margin:0;color:rgba(247,240,228,.64);font-size:12px;line-height:1.6}.mmd-sigil-template-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.mmd-sigil-template-tile{--sigil-accent:#d8b96c;appearance:none;min-height:190px;padding:0;overflow:hidden;border:1px solid rgba(255,255,255,.11);border-radius:17px;background:#0c0b0a;color:#f7f0e4;text-align:left;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.mmd-sigil-template-tile:hover{transform:translateY(-2px);border-color:var(--sigil-accent);box-shadow:0 15px 34px rgba(0,0,0,.31)}.mmd-sigil-template-tile.is-selected{border-color:var(--sigil-accent);box-shadow:inset 0 0 0 1px var(--sigil-accent),0 15px 34px rgba(0,0,0,.32)}.mmd-sigil-tile-art{position:relative;display:block;height:92px;overflow:hidden;background:radial-gradient(circle at 28% 18%,var(--sigil-accent-soft),transparent 42%),linear-gradient(135deg,#22211e,#080807 66%)}.mmd-sigil-tile-art:before{content:\"\";position:absolute;left:-14%;top:-32%;width:76%;height:170%;border-right:2px solid var(--sigil-accent);border-radius:50%;opacity:.82;transform:skewX(-22deg)}.mmd-sigil-tile-art:after{content:\"\";position:absolute;right:12px;top:13px;width:25px;height:25px;border:1px solid var(--sigil-accent);transform:rotate(45deg);opacity:.88}.mmd-sigil-tile-cut{position:absolute;right:0;bottom:0;width:54%;height:54%;background:#0c0b0a;clip-path:polygon(44% 0,100% 0,100% 100%,0 100%)}.mmd-sigil-tile-mark{position:absolute;left:12px;bottom:10px;color:#f7f0e4;font-family:Georgia,\"Times New Roman\",serif;font-size:26px;letter-spacing:-.06em;line-height:1}.mmd-sigil-kind-exclusive .mmd-sigil-tile-art{background:linear-gradient(125deg,#2a271f,#060707 62%)}.mmd-sigil-tile-ems .mmd-sigil-tile-art:after{border-radius:50%;transform:none}.mmd-sigil-tile-gws .mmd-sigil-tile-art:before{border-right-width:4px;filter:drop-shadow(0 0 7px var(--sigil-accent))}.mmd-sigil-kind-public .mmd-sigil-tile-art{background:linear-gradient(145deg,#18191c,#070707 70%)}.mmd-sigil-tile-copy{display:grid;gap:4px;padding:12px}.mmd-sigil-tile-copy b{font-size:13px;line-height:1.15}.mmd-sigil-tile-copy small{color:rgba(247,240,228,.6);font-size:9px;line-height:1.25}.mmd-sigil-tile-copy em{color:var(--sigil-accent);font-size:7px;font-style:normal;letter-spacing:.08em;line-height:1.35}.mmd-sigil-extra{display:block}.mmd-sigil-title-field{grid-column:span 2}.mmd-sigil-hidden{display:none!important}#muCard{isolation:isolate}.mmd-sigil-card{position:absolute;z-index:9;inset:0;display:grid;grid-template-columns:51% 49%;overflow:hidden;border-radius:inherit;background:#080808;color:#f6eee1;--sigil-accent:#d8b96c;--sigil-accent-soft:rgba(216,185,108,.2)}.mmd-sigil-card-photo{position:relative;min-width:0;background:radial-gradient(circle at 54% 28%,rgba(255,255,255,.13),transparent 42%),linear-gradient(155deg,#3a342d,#101010 66%);background-size:cover;background-position:center 22%;filter:brightness(.88) contrast(1.03) saturate(.94)}.mmd-sigil-card-photo:after{content:\"\";position:absolute;inset:0;background:linear-gradient(90deg,transparent 46%,rgba(4,4,4,.58)),linear-gradient(180deg,transparent 57%,rgba(0,0,0,.42))}.mmd-sigil-card-panel{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:10px;min-width:0;padding:clamp(20px,3vw,42px);padding-left:clamp(32px,4vw,64px);background:radial-gradient(circle at 100% 0,var(--sigil-accent-soft),transparent 36%),linear-gradient(140deg,#10100f,#050505 72%)}.mmd-sigil-card-panel:before{content:\"\";position:absolute;inset:16px 16px auto auto;width:42px;height:42px;border:1px solid var(--sigil-accent);transform:rotate(45deg);opacity:.72}.mmd-sigil-card-seam{position:absolute;z-index:3;top:-6%;bottom:-8%;left:48.8%;width:3px;background:var(--sigil-accent);box-shadow:0 0 28px var(--sigil-accent);transform:rotate(7.4deg);opacity:.88}.mmd-sigil-card-kicker{position:relative;color:var(--sigil-accent);font-size:8px;font-weight:700;letter-spacing:.16em}.mmd-sigil-card-identity{position:relative;max-width:100%;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(37px,5.5vw,78px);font-weight:500;line-height:.88;letter-spacing:-.07em;overflow-wrap:anywhere}.mmd-sigil-card-family{position:relative;color:rgba(246,238,225,.66);font-size:9px;letter-spacing:.13em;line-height:1.4}.mmd-sigil-card-metrics{position:relative;display:flex;gap:20px;padding-top:12px;border-top:1px solid rgba(255,255,255,.16)}.mmd-sigil-card-metrics>span{display:grid;grid-template-columns:auto auto;align-items:baseline;column-gap:4px}.mmd-sigil-card-metrics small{grid-column:1/-1;color:var(--sigil-accent);font-size:7px;letter-spacing:.15em}.mmd-sigil-card-metrics b{font-family:Georgia,\"Times New Roman\",serif;font-size:23px;font-weight:500}.mmd-sigil-card-metrics em{color:rgba(246,238,225,.58);font-size:8px;font-style:normal;letter-spacing:.1em}.mmd-sigil-card-titlebar{position:relative;align-self:stretch;margin-top:8px;padding:10px 12px;border-left:3px solid var(--sigil-accent);background:#f1e8d8;color:#191714;font-size:11px;font-weight:650;line-height:1.4}.mmd-sigil-card-exclusive .mmd-sigil-card-panel:after{content:\"SIGNATURE\";position:absolute;right:19px;bottom:15px;color:var(--sigil-accent);font-size:7px;letter-spacing:.16em;writing-mode:vertical-rl}.mmd-sigil-card-ems .mmd-sigil-card-titlebar{background:linear-gradient(100deg,#eee1c8,#cba85d);color:#171007}.mmd-sigil-card-gws .mmd-sigil-card-panel{background:radial-gradient(circle at 100% 0,rgba(27,183,176,.25),transparent 43%),linear-gradient(140deg,#071313,#040707 72%)}.mmd-sigil-card-gws .mmd-sigil-card-titlebar{border-left-width:5px;background:rgba(239,244,239,.93)}.mmd-sigil-card-public .mmd-sigil-card-identity{font-size:clamp(32px,5vw,66px);letter-spacing:-.055em}.mmd-sigil-card-public .mmd-sigil-card-panel{justify-content:center}.mmd-sigil-card-public .mmd-sigil-card-family{color:var(--sigil-accent);font-size:10px}.mmd-sigil-card-public .mmd-sigil-card-photo{filter:brightness(.72) contrast(1.04) saturate(.82)}@media(max-width:1100px){.mmd-sigil-template-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:720px){#" + PICKER_ID + "{padding:16px;border-radius:20px}.mmd-sigil-template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mmd-sigil-template-tile{min-height:160px}.mmd-sigil-tile-art{height:70px}.mmd-sigil-card{grid-template-columns:1fr;grid-template-rows:44% 56%}.mmd-sigil-card-seam{left:-8%;right:-8%;top:42%;bottom:auto;width:auto;height:3px;transform:rotate(-3deg)}.mmd-sigil-card-panel{padding:22px}.mmd-sigil-card-identity{font-size:39px}.mmd-sigil-title-field{grid-column:span 1}}";
+    style.textContent = "#" + PICKER_ID + "{margin:16px 0;border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:18px;background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(7,7,8,.9));box-shadow:0 20px 56px rgba(0,0,0,.26)}#" + PICKER_ID + " *{box-sizing:border-box;font-family:inherit}.mmd-sigil-picker-head{display:grid;gap:7px;margin-bottom:14px}.mmd-sigil-picker-head>span{color:#d8b96c;font-size:9px;letter-spacing:.16em}.mmd-sigil-picker-head h2{margin:0;color:#f7f0e4;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(27px,3vw,38px);font-weight:500;letter-spacing:-.045em}.mmd-sigil-picker-head p{max-width:820px;margin:0;color:rgba(247,240,228,.66);font-size:12px;line-height:1.6}.mmd-sigil-template-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.mmd-sigil-template-tile{--sigil-accent:#a7adb4;appearance:none;min-height:176px;padding:0;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:15px;background:#0b0c0d;color:#f7f0e4;text-align:left;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.mmd-sigil-template-tile:hover{transform:translateY(-2px);border-color:rgba(230,233,236,.46)}.mmd-sigil-template-tile.is-selected{border-color:rgba(235,238,240,.76);box-shadow:inset 0 0 0 1px rgba(50,53,57,.9),0 15px 34px rgba(0,0,0,.32)}.mmd-sigil-tile-art{position:relative;display:block;height:84px;margin:9px;border:2px solid rgba(230,233,236,.72);box-shadow:0 0 0 1px rgba(55,58,62,.9),inset 0 0 0 8px rgba(20,21,22,.65);background:linear-gradient(145deg,#34373a,#0a0b0c 72%)}.mmd-sigil-tile-art:before{content:\"\";position:absolute;left:9px;top:12px;width:5px;height:38px;border:0;background:var(--sigil-accent);box-shadow:0 0 12px var(--sigil-accent);transform:none}.mmd-sigil-tile-art:after{display:none}.mmd-sigil-tile-cut{display:none}.mmd-sigil-tile-mark{position:absolute;left:20px;bottom:12px;color:rgba(247,240,228,.72);font-size:9px;font-weight:800;letter-spacing:.12em;line-height:1}.mmd-sigil-kind-public .mmd-sigil-tile-art{background:linear-gradient(145deg,#f3f2ee,#b6b8ba 72%)}.mmd-sigil-kind-public .mmd-sigil-tile-mark{color:#26282b}.mmd-sigil-tile-copy{display:grid;gap:4px;padding:6px 12px 12px}.mmd-sigil-tile-copy b{font-size:13px;line-height:1.15}.mmd-sigil-tile-copy small{color:rgba(247,240,228,.61);font-size:9px;line-height:1.25}.mmd-sigil-tile-copy em{color:var(--sigil-accent);font-size:7px;font-style:normal;letter-spacing:.07em;line-height:1.35}.mmd-sigil-extra{display:block}.mmd-sigil-title-field{grid-column:span 2}.mmd-sigil-hidden{display:none!important}#muCard{isolation:isolate}.mmd-sigil-card{position:absolute;z-index:9;inset:0;overflow:hidden;border-radius:inherit;background:#0c0d0e;color:#f4f0e8;--sigil-accent:#a7adb4;--sigil-accent-soft:rgba(167,173,180,.2)}.mmd-sigil-card-photo{position:absolute;inset:0;background:radial-gradient(circle at 54% 28%,rgba(255,255,255,.13),transparent 42%),linear-gradient(155deg,#3a342d,#101010 66%);background-size:cover;background-position:center 22%;filter:brightness(.9) contrast(1.03) saturate(.94)}.mmd-sigil-card-shade{position:absolute;inset:0;background:linear-gradient(90deg,transparent 48%,rgba(13,14,16,.12) 60%,rgba(13,14,16,.88) 100%)}.mmd-sigil-card-frame-outer,.mmd-sigil-card-frame-inner{position:absolute;pointer-events:none}.mmd-sigil-card-frame-outer{inset:15px;border:2px solid rgba(238,241,243,.76);box-shadow:0 0 0 1px rgba(58,61,65,.9),inset 0 0 0 1px rgba(255,255,255,.12)}.mmd-sigil-card-frame-inner{inset:23px;border:1px solid rgba(70,73,77,.85)}.mmd-sigil-card-accent{position:absolute;left:23px;top:38px;width:7px;height:66px;background:var(--sigil-accent);box-shadow:0 0 15px var(--sigil-accent)}.mmd-sigil-kind-exclusive .mmd-sigil-card-accent{width:9px;height:96px}.mmd-sigil-card-panel{position:absolute;right:36px;top:44px;width:43%;display:flex;flex-direction:column;align-items:flex-end;gap:18px;text-align:right}.mmd-sigil-card-identity{max-width:100%;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(38px,5.2vw,74px);font-weight:500;line-height:.92;letter-spacing:-.055em;overflow-wrap:anywhere}.mmd-sigil-card-metrics{display:flex;justify-content:flex-end;gap:18px;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(31px,4vw,58px);font-variant-numeric:tabular-nums}.mmd-sigil-card-metrics>span{display:flex;align-items:baseline}.mmd-sigil-card-metrics small,.mmd-sigil-card-metrics em{display:none}.mmd-sigil-card-brand{position:absolute;right:36px;bottom:32px;color:rgba(247,240,228,.76);font-size:9px;font-weight:800;letter-spacing:.17em}.mmd-sigil-card-public{color:#222428;background:#f2f1ed}.mmd-sigil-card-public .mmd-sigil-card-photo{filter:brightness(.96) contrast(1.01) saturate(.94)}.mmd-sigil-card-public .mmd-sigil-card-shade{background:linear-gradient(90deg,transparent 48%,rgba(246,245,239,.10) 60%,rgba(246,245,239,.9) 100%)}.mmd-sigil-card-public .mmd-sigil-card-frame-outer{border-color:rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(52,55,59,.78)}.mmd-sigil-card-public .mmd-sigil-card-frame-inner{border-color:rgba(72,75,79,.68)}.mmd-sigil-card-public .mmd-sigil-card-brand{color:rgba(31,33,36,.76)}@media(max-width:1100px){.mmd-sigil-template-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:720px){#" + PICKER_ID + "{padding:15px}.mmd-sigil-template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mmd-sigil-template-tile{min-height:154px}.mmd-sigil-tile-art{height:66px}.mmd-sigil-card-panel{right:26px;top:34px;width:52%}.mmd-sigil-card-identity{font-size:38px}.mmd-sigil-card-metrics{font-size:31px}.mmd-sigil-title-field{grid-column:span 1}}";
     document.head.appendChild(style);
   }
 
