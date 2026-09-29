@@ -519,9 +519,10 @@ test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
   }
 });
 
-test("Per Voice replies do not expose internal markers or the hidden Kenji identity", () => {
+test("Per Voice replies stay short and do not expose internal markers or the hidden Kenji identity", () => {
   const reply = buildKenjiLineReply(lineTextEvent("Hi Per"), { displayName: "Test User" });
-  assert.match(reply, /MMD Privé/);
+  assert.equal(reply, "ครับ คุณTest พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ");
+  assert.doesNotMatch(reply, /สวัสดี|ยินดีต้อนรับ|MMD Privé/);
   assert.doesNotMatch(reply, /kenji|เคนจิ|ทีม(?:งาน)?|ระบบ|airtable|record_id|secret|token|authorization|bearer|telegram|gmail|r2|kv/i);
 });
 
@@ -533,7 +534,7 @@ test("published Per Voice knowledge overrides the fallback only when it is LINE-
       records: [{
         fields: {
           knowledge_id: "kenji_per_voice_line_entry_v1",
-          customer_answer: "สวัสดีครับ ยินดีต้อนรับสู่ MMD Privé นะครับ",
+          customer_answer: "ครับ พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ",
           allowed_channels: ["LINE_OFC"],
           status: "active",
           response_mode: "auto_reply_allowed",
@@ -549,7 +550,7 @@ test("published Per Voice knowledge overrides the fallback only when it is LINE-
       AIRTABLE_API_KEY: "airtable-key",
       AIRTABLE_BASE_ID: "base-id",
     });
-    assert.equal(reply, "สวัสดีครับ ยินดีต้อนรับสู่ MMD Privé นะครับ");
+    assert.equal(reply, "ครับ พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ");
   } finally {
     globalThis.fetch = originalFetch;
   }

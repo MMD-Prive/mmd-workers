@@ -901,7 +901,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const prefix = name ? `คุณ${name} ` : "";
 
   if (event?.type === "follow") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ เช่น จองงาน เช็กราคา เช็กนายแบบ หรือเรื่องสมาชิก`;
+    return `ครับ ${prefix}พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ`;
   }
 
   if (intent === "per_continuity") {
@@ -909,7 +909,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé บอกเรื่องที่ต้องการได้เลยครับ เดี๋ยวผมช่วยดูและพาไปขั้นตอนที่ตรงกับบัญชีนี้ให้ครับ`;
+    return `ครับ ${prefix}พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ`;
   }
 
   if (intent === "privacy_request") {
