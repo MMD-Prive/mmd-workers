@@ -16,9 +16,9 @@ This document supersedes earlier CARE BACK guidance where it conflicts, includin
 ## Campaign calendar
 
 - MMD Birthday CARE BACK: through 31 August 2026.
-- CARE BACK CONTINUES: 1–30 September 2026.
-- Both phases use one identical benefit policy. September never creates a second claim, coupon, point bonus, or membership extension.
-- After 30 September 2026 no new CARE BACK claim may be created. An existing verified claim may resume its approved workflow.
+- CARE BACK CONTINUES: 1 September–31 October 2026.
+- Both phases use one identical benefit policy. The continuation period never creates a second claim, coupon, point bonus, or membership extension.
+- After 31 October 2026 no new CARE BACK claim may be created. An existing verified claim may resume its approved workflow.
 
 ## Required customer flow
 
