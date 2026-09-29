@@ -55,7 +55,7 @@ export function modelLiffDigitalBootstrapHtml({
   const jobBoardScript = safeJobBoard ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
-    status.textContent="ยืนยัน LINE แล้ว · กำลังเปิดงาน…";
+    status.textContent="กำลังเปิดงานที่คุณสนใจ…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
@@ -73,7 +73,7 @@ export function modelLiffDigitalBootstrapHtml({
   const returnScript = returnTo ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
-    status.textContent="ยืนยัน LINE แล้ว · กำลังเชื่อมตัวตนงาน…";
+    status.textContent="กำลังเชื่อมงานนี้กับ MMD APP…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
@@ -81,11 +81,41 @@ export function modelLiffDigitalBootstrapHtml({
   const primary = mode === "primary";
   const jobBoardMode = Boolean(safeJobBoard);
   const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : "";
-  const title = jobBoardMode ? (ownerAlias ? "ยืนยันตัวตนสำหรับงาน " + ownerAlias : "กำลังเปิดงาน MMD") : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
-  const copy = jobBoardMode ? "ยืนยัน LINE ครั้งเดียว แล้วเปิดรายละเอียดงานนี้ต่อทันที" : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
-  const success = jobBoardMode ? (ownerAlias ? "ยืนยัน LINE แล้ว · กำลังเปิดงาน " + ownerAlias + "…" : "ยืนยัน LINE แล้ว · กำลังเปิดงาน…") : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
-  const fail = jobBoardMode ? "ยังเปิดงานผ่าน LINE ไม่สำเร็จ" : (primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ");
-  const cta = jobBoardMode ? "เปิดงานผ่าน LINE อีกครั้ง" : (primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE");
+  const title = publicJobApplicant
+    ? "WELCOME V2 · สมัครงานนี้กับ MMD"
+    : jobBoardMode
+      ? (ownerAlias ? "กำลังเปิดงาน " + ownerAlias : "กำลังเปิดงาน MMD")
+      : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
+  const copy = publicJobApplicant
+    ? "คุณเข้ามาจากลิงก์งานแล้ว · MMD APP จะพาไปดูงานนี้และส่งความสนใจต่อ"
+    : jobBoardMode
+      ? "กำลังเชื่อมงานนี้กับ MMD APP"
+      : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
+  const success = publicJobApplicant
+    ? "Welcome พร้อม · กำลังเปิดงานที่คุณสนใจ…"
+    : jobBoardMode
+      ? (ownerAlias ? "กำลังเปิดงาน " + ownerAlias + "…" : "กำลังเปิดงาน…")
+      : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
+  const fail = publicJobApplicant
+    ? "ยังเปิดหน้าสมัครงานนี้ไม่สำเร็จ"
+    : jobBoardMode
+      ? "ยังเปิดงานนี้ไม่สำเร็จ"
+      : (primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ");
+  const cta = publicJobApplicant
+    ? "เปิด MMD APP เพื่อสมัครงานนี้"
+    : jobBoardMode
+      ? "เปิดงานนี้อีกครั้ง"
+      : (primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE");
+  const initialPill = publicJobApplicant ? "MMD APP · WELCOME V2" : jobBoardMode ? "MMD APP · JOB" : "LINE · CHECKING";
+  const readyPill = publicJobApplicant ? "WELCOME V2 · READY" : jobBoardMode ? "MMD APP · READY" : "LINE · VERIFIED";
+  const kicker = publicJobApplicant ? "WELCOME V2 · JOB ENTRY" : "SECURE ENTRY";
+  const statusLead = publicJobApplicant ? "กำลังเตรียมงานนี้" : jobBoardMode ? "กำลังเชื่อมงาน" : "กำลังตรวจสอบตัวตน";
+  const statusHelp = publicJobApplicant
+    ? "งานที่คุณกดมาจะถูกเก็บไว้ แล้ว MMD APP จะพาไปหน้าสมัครงานนี้ต่อ"
+    : jobBoardMode
+      ? "กำลังเตรียมข้อมูลงานนี้ใน MMD APP"
+      : "ข้อมูลสิทธิ์ งาน และโปรไฟล์จะอ่านจากระบบ MMD หลังยืนยันตัวตนเท่านั้น";
+  const pageTitle = publicJobApplicant ? "MMD APP · สมัครงาน" : "MMD APP · LINE";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
 
   return `<!doctype html>
@@ -95,7 +125,7 @@ export function modelLiffDigitalBootstrapHtml({
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#080907">
-<title>MMD APP · LINE</title>
+<title>${pageTitle}</title>
 <style>${MMD_APP_DIGITAL_CSS}</style>
 <script src=${safeSdk}></script>
 </head>
@@ -104,9 +134,9 @@ export function modelLiffDigitalBootstrapHtml({
   <main class="mmd-digital-shell">
     <header class="mmd-digital-top">
       <div class="mmd-digital-brand">MMD APP<small>DIGITAL MODEL WORKSPACE</small></div>
-      <span class="mmd-digital-pill" id="session-pill">LINE · CHECKING</span>
+      <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
-    <p class="mmd-digital-kicker">SECURE ENTRY</p>
+    <p class="mmd-digital-kicker">${kicker}</p>
     <h1 class="mmd-digital-title">${title}</h1>
     <p class="mmd-digital-sub">${copy}</p>
     <section class="mmd-digital-card" aria-live="polite">
@@ -132,7 +162,7 @@ export function modelLiffDigitalBootstrapHtml({
   try{
     if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
     await window.liff.init(${initOptions});
-    pill.textContent="LINE · VERIFIED";
+    pill.textContent=${JSON.stringify(readyPill)};
     status.textContent=${JSON.stringify(success)};
     ${jobBoardScript}
     ${returnScript}
