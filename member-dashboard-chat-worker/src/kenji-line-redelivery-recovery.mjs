@@ -80,8 +80,10 @@ export function isKenjiModelNameOnlyTextEvent(event = {}) {
   if (event?.source?.type !== "user" || event?.type !== "message" || event?.message?.type !== "text") return false;
   const raw = text(event?.message?.text);
   if (!raw) return false;
+  const intent = inferLineIntent(raw, event);
+  if (intent === "model_access_verification") return true;
   const query = extractKenjiModelLookupQuery(raw);
-  return Boolean(query) && inferLineIntent(raw, event) === "model_lookup";
+  return Boolean(query) && intent === "model_lookup";
 }
 
 function silentModelOnlyAck(reason = "non_model_text") {
@@ -238,6 +240,19 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   }
 
   const events = Array.isArray(body?.events) ? body.events : [];
+  const modelOnlyMode = enabled(env.LINE_KENJI_MODEL_NAME_ONLY_MODE);
+  if (modelOnlyMode) {
+    const customerTextEvents = events.filter((event) =>
+      event?.source?.type === "user" &&
+      event?.type === "message" &&
+      event?.message?.type === "text"
+    );
+    if (customerTextEvents.length > 0 && customerTextEvents.some((event) => !isKenjiModelNameOnlyTextEvent(event))) {
+      const work = scheduleCanonicalCustomerMemory(ctx, env, events);
+      if (typeof ctx?.waitUntil !== "function") await work;
+      return silentModelOnlyAck("owner_model_only_policy");
+    }
+  }
   const redeliveryIndexes = events
     .map((event, index) => event?.deliveryContext?.isRedelivery === true ? index : -1)
     .filter((index) => index >= 0);
