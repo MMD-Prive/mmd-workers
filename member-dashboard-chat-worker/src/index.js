@@ -952,6 +952,15 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return "ผมช่วยได้เฉพาะข้อมูลและขั้นตอนสำหรับลูกค้าครับ ไม่สามารถเปิดเผยหรือให้สิทธิ์เข้าถึงระบบภายในได้ครับ";
   }
 
+  if (intent === "refund_request") {
+    const previousIntent = asString(options?.continuity?.matrix?.last_customer_intent).toLowerCase();
+    const continuedRefund = ["note_only", "line_event", "context_clarification"].includes(inferredIntent) && previousIntent === "refund_request";
+    if (continuedRefund) {
+      return "หมายถึงเรื่องคืนเงินที่คุยไว้เมื่อกี้ใช่ไหมครับ? ถ้าใช่ ส่งรูปบัญชีสำหรับรับเงินคืนมาได้เลยครับ ถ้าเป็นคนละงาน บอกชื่องานหรือวันที่โดยย่อได้ครับ";
+    }
+    return "รับเรื่องคืนเงินแล้วครับ เป็นงานไหนหรือรายการไหนครับ? ถ้ามีรูปบัญชีสำหรับรับเงินคืน ส่งต่อมาได้เลยครับ";
+  }
+
   if (intent === "human_handoff") {
     return "";
   }
