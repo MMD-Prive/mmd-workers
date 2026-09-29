@@ -108,6 +108,7 @@
     }
 
     setDirectLabel("kaModelName", "ชื่อที่ Kenji ใช้เรียก", "ชื่อที่ต้องการให้ Kenji ใช้เวลาพูดถึง Model คนนี้");
+    setDirectLabel("kaModelPrivateRealName", "ชื่อจริงภายใน · เปอร์ยืนยันแล้วเท่านั้น", "เอาไว้ให้ Kenji รู้ว่า code / นามแฝง / working name / ชื่อจริงคือคนเดียวกัน · ไม่ส่งออกให้ลูกค้าและไม่เพิ่มสิทธิ์ access");
     setDirectLabel("kaModelAliases", "ชื่อเรียก / คำค้นที่ Kenji ควรรู้", "เช่น ชื่อเล่น ชื่อในโพสต์ หรือ alias ที่ลูกค้าอาจพิมพ์");
     setDirectLabel("kaModelSafeInfo", "เล่าให้ Kenji รู้จักคนนี้", "จุดเด่น คาแรกเตอร์ vibe ภาษา ความถนัด และเหมาะกับคำขอแบบไหน");
     setDirectLabel("kaModelPositiveSensitive", "สิ่งที่ Kenji ควรรู้ แต่ไม่ควรพูดตรง ๆ", "ใช้ช่วยเข้าใจบริบทภายใน ไม่ใช่ข้อความสำหรับลูกค้า");
