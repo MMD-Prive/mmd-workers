@@ -2726,7 +2726,13 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const ownerTakeover = lineUserId
       ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
       : { ok: true, active: false, reason: "", source: "not_applicable" };
-    const ownerReplyBlocked = Boolean(lineUserId && (ownerTakeover.ok !== true || ownerTakeover.active === true));
+    const ownerReplyBlocked = Boolean(
+      lineUserId &&
+      (
+        ownerTakeover.active === true ||
+        (ownerTakeover.ok !== true && ownerTakeover.reason !== "takeover_lookup_unconfigured")
+      )
+    );
     const campaignTrigger = modelIntent.campaign_trigger || null;
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
     const supplierRegistrationName = matchHimaiSupplierRegistration(text);
