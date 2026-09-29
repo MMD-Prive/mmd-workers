@@ -79,7 +79,8 @@ function campaignCodeFromText(value = "") {
   const raw = clean(value, 240);
   const match = raw.match(/(?:^|[^a-z0-9])(gws|ems)[\s_-]*0*(\d{1,3})(?=$|[^a-z0-9])/i);
   if (!match) return "";
-  return `${match[1].toUpperCase()}${String(Number(match[2])).padStart(2, "0")}`;
+  const prefix = match[1].toLowerCase() === "gws" ? "GWs" : "EMs";
+  return `${prefix}${String(Number(match[2])).padStart(2, "0")}`;
 }
 
 function campaignIdentity(record = {}) {
