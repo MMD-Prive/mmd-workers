@@ -6,7 +6,7 @@ const source = await readFile(new URL("./mmd-canonical-cta-v4.js", import.meta.u
 
 test("routes member login to coupon or canonical My MMD without direct LIFF hop", () => {
   assert.match(source, /const MY_MMD_CANONICAL = "\/my-mmd\/"/);
-  assert.match(source, /const COUPON_ENTRY = "\/coupon"/);
+  assert.match(source, /const COUPON_ENTRY = "\/my-mmd\/coupons"/);
   assert.match(source, /function memberLoginTarget\(\)/);
   assert.match(source, /params\.get\("return_to"\) === "coupon" \? COUPON_ENTRY : MY_MMD_CANONICAL/);
   assert.match(source, /if \(path === "\/member\/login"\)/);
