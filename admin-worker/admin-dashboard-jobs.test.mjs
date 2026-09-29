@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 
 import { buildJobsPage, projectJobs } from "./src/admin-dashboard-jobs.js";
 
-function session(id, jobDate, startTime = "19:00", status = "confirmed") {
+function session(id, jobDate, startTime = "19:00", status = "confirmed", jobId = "") {
   return {
     id: `rec_${id}`,
     fields: {
       session_id: id,
+      ...(jobId ? { job_id: jobId } : {}),
       model_name: `Model ${id}`,
       client_name: `Client ${id}`,
       job_date: jobDate,
@@ -103,4 +104,23 @@ test("owner handoff selects the exact canonical Session across job dates and pag
   const page = buildJobsPage(records, { now: new Date("2026-09-10T09:00:00.000Z"), sessionId: "job_74", pageSize: 20 });
   assert.deepEqual(page.items.map((item) => item.id), ["job_74"]);
   assert.equal(page.pagination.total, 1);
+});
+
+test("owner handoff accepts job_id deep links without losing the canonical session", () => {
+  const records = [
+    session("sess_alpha", "2026-09-11", "18:00", "pending", "JOB-ALPHA"),
+    session("sess_target", "2026-09-12", "19:00", "pending", "JOB-8B799C2387-C1BC84"),
+    session("sess_other", "2026-09-12", "20:00", "confirmed", "JOB-OTHER"),
+  ];
+  const page = buildJobsPage(records, {
+    now: new Date("2026-09-10T09:00:00.000Z"),
+    jobId: "JOB-8B799C2387-C1BC84",
+    pageSize: 20,
+  });
+
+  assert.equal(page.pagination.total, 1);
+  assert.equal(page.items[0].id, "sess_target");
+  assert.equal(page.items[0].session_id, "sess_target");
+  assert.equal(page.items[0].job_id, "JOB-8B799C2387-C1BC84");
+  assert.equal(page.items[0].href, "/internal/admin/jobs/all?job_id=JOB-8B799C2387-C1BC84");
 });
