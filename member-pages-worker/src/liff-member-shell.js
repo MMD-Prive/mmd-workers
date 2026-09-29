@@ -461,10 +461,11 @@ function renderShell(config, nonce) {
   }
   applyWorldTheme();
   let welcomeContextPromise;
+  let existingProfilePromise;
   async function resolveInitialWelcomeContext() {
      try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
+      const timeout = setTimeout(() => controller.abort(), 1500);
       let response;
       try {
         response = await fetch(CONFIG.welcomeContextEndpoint, { method: "GET", credentials: "same-origin", redirect: "error", headers: { accept: "application/json" }, signal: controller.signal });
@@ -484,12 +485,13 @@ function renderShell(config, nonce) {
     await welcomeContextPromise;
     introContinue.disabled = true;
     try {
-      const existingProfile = await readProfile();
+      const existingProfile = await existingProfilePromise;
       if (existingProfile) {
         appEntered = true;
         document.body.classList.add("app-entered");
         introContinue.setAttribute("aria-expanded", "true");
-        await readSignupCatalog();
+        void hydrateMemberHome();
+        void readSignupCatalog();
         return;
       }
     } catch {
@@ -498,7 +500,7 @@ function renderShell(config, nonce) {
     appEntered = true;
     document.body.classList.add("app-entered");
     introContinue.setAttribute("aria-expanded", "true");
-    boot();
+    void boot({ existingProfileChecked: true });
   }
   introContinue?.addEventListener("click", enterApp);
   for (const element of document.querySelectorAll("[data-copy]")) {
@@ -507,6 +509,7 @@ function renderShell(config, nonce) {
   }
   applyWorldTheme();
   welcomeContextPromise = resolveInitialWelcomeContext();
+  existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
   document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
   document.getElementById("service-spend-label").textContent = copy.serviceSpendLabel || "Service spend";
   document.getElementById("lifetime-spend-label").textContent = copy.lifetimeSpendLabel || "Lifetime";
@@ -739,12 +742,7 @@ function renderShell(config, nonce) {
     }
   }
 
-  async function readProfile() {
-    const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || payload.ok !== true) return null;
-    renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
-    renderCustomerContact(payload.data || {});
+  async function hydrateMemberHome() {
     const hydrationReads = [
       readCouponWallet(),
       readCreditWallet(),
@@ -753,6 +751,15 @@ function renderShell(config, nonce) {
     ];
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") hydrationReads.push(readCareBackState());
     await Promise.allSettled(hydrationReads);
+  }
+
+  async function readProfile({ hydrate = true } = {}) {
+    const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.ok !== true) return null;
+    renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+    renderCustomerContact(payload.data || {});
+    if (hydrate) await hydrateMemberHome();
     return payload.data || {};
   }
 
@@ -1486,7 +1493,7 @@ function renderShell(config, nonce) {
     }
   }
 
-  async function boot() {
+  async function boot({ existingProfileChecked = false } = {}) {
     if (CONFIG.stagingScenario) {
       try {
         show("STAGING · กำลังทดสอบสถานะ " + CONFIG.stagingScenario + " โดยไม่ใช้ข้อมูลสมาชิกจริงครับ");
@@ -1497,17 +1504,27 @@ function renderShell(config, nonce) {
         if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
         if (CONFIG.campaign) body.campaign = CONFIG.campaign;
         const started = await call(CONFIG.startEndpoint, body);
-        if (started && started.member_resolved) await readProfile();
+        if (started && started.member_resolved) {
+          await readProfile({ hydrate: false });
+          void hydrateMemberHome();
+        }
       } catch {
         show("STAGING · ระบบจำลองยังไม่พร้อมครับ");
       }
       return;
     }
-    try {
-      const existingProfile = await readProfile();
-      if (existingProfile) { signupLineEntry?.classList.add("hidden"); await readSignupCatalog(); return; }
-    } catch {
-      // No valid same-site session yet. Fall through to the one-time LIFF handshake.
+    if (!existingProfileChecked) {
+      try {
+        const existingProfile = await readProfile({ hydrate: false });
+        if (existingProfile) {
+          signupLineEntry?.classList.add("hidden");
+          void hydrateMemberHome();
+          void readSignupCatalog();
+          return;
+        }
+      } catch {
+        // No valid same-site session yet. Fall through to the one-time LIFF handshake.
+      }
     }
     if (!CONFIG.liffId || !window.liff) {
       show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
@@ -1535,8 +1552,11 @@ function renderShell(config, nonce) {
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
       if (started) {
-        if (started.member_resolved) await readProfile();
-        await readSignupCatalog();
+        if (started.member_resolved) {
+          await readProfile({ hydrate: false });
+          void hydrateMemberHome();
+        }
+        void readSignupCatalog();
       }
     } catch {
       show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
