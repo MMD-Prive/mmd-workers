@@ -140,8 +140,6 @@ jobs:
             "www.mmdbkk.com/internal/admin/customer-data",
             "mmdbkk.com/internal/admin/customer-data*",
             "www.mmdbkk.com/internal/admin/customer-data*",
-            "mmdbkk.com/internal/admin/jobs/create-job*",
-            "www.mmdbkk.com/internal/admin/jobs/create-job*",
             "mmdbkk.com/internal/admin/job-board*",
             "www.mmdbkk.com/internal/admin/job-board*",
             "mmdbkk.com/internal/admin/jobs/job-board*",
@@ -160,6 +158,8 @@ jobs:
             "www.mmdbkk.com/v1/admin/clients/intelligence*",
           ];
           const obsolete = [
+            "mmdbkk.com/internal/admin/jobs/create-job*",
+            "www.mmdbkk.com/internal/admin/jobs/create-job*",
             "mmdbkk.com/internal/admin/jobs/create-session.js",
             "www.mmdbkk.com/internal/admin/jobs/create-session.js",
             "mmdbkk.com/a/create-session.js*",
@@ -359,16 +359,24 @@ jobs:
               : > "$create_body"
               : > "$create_headers"
               create_code="$(curl -sS -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
-              if [ "$create_code" = "200" ]                 && grep -q 'id="job-client-query"' "$create_body"                 && grep -q 'id="job-model-query"' "$create_body"                 && grep -q 'data-cj-job-board-handoff="separate-v1"' "$create_body"                 && grep -q 'href="/internal/admin/jobs/job-board"' "$create_body"                 && ! grep -q 'id="job-board-form"' "$create_body"                 && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
-                echo "Separated Create Job verified for $origin on attempt $attempt"
+              if [ "$create_code" = "200" ] \
+                && grep -q "id='mmd-cj-split-v1'" "$create_body" \
+                && grep -q "data-design='lv13-operational'" "$create_body" \
+                && grep -q "data-cj='clientQuery'" "$create_body" \
+                && grep -q "data-cj='modelQuery'" "$create_body" \
+                && grep -q "data-client-lookup-endpoint='/v1/admin/clients/lineage-lookup'" "$create_body" \
+                && grep -q "data-model-search-endpoint='/v1/admin/models/search'" "$create_body" \
+                && ! grep -q 'id="job-board-form"' "$create_body" \
+                && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
+                echo "Webflow Create Job + canonical search UI verified for $origin on attempt $attempt"
                 create_verified=1
                 break
               fi
-              echo "Create Job separation not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
+              echo "Webflow Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
               sleep 2
             done
             if [ "$create_verified" != "1" ]; then
-              echo "Separated Create Job production verification failed for $origin" >&2
+              echo "Webflow Create Job production verification failed for $origin" >&2
               head -c 700 "$create_body" >&2 || true
               exit 1
             fi
