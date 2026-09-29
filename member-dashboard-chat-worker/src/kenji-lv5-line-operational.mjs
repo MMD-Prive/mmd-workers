@@ -357,7 +357,7 @@ function missingLabels(values = []) {
 
 export function renderKenjiLv5LineReply(context = {}, parsedIntent = {}) {
   if (parsedIntent.type === "payment_terms") {
-    return "ไม่ครับ งานบริการมัดจำขั้นต่ำ 30% เพื่อยืนยันการจองครับ จะชำระมากกว่า 30% เท่าไหร่ก็ได้ แต่ห้ามต่ำกว่า 30% ส่วนยอดคงเหลือชำระตามขั้นตอนของงานครับ";
+    return "มัดจำ 30% ครับ";
   }
   if (!context || context.ok !== true) return "";
   const displayName = text(context?.client_360?.display_name, 120);
