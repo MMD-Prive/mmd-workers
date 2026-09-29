@@ -28,6 +28,7 @@ const PUBLIC_KNOWLEDGE_INTENTS = new Set([
   "partner_venue",
   "private_talent",
   "membership",
+  "tmib_story",
 ]);
 
 const DETERMINISTIC_INTENTS = new Set([
