@@ -51,16 +51,16 @@ export function projectCardDesign(record, env = {}) {
   }
   if (!field) missing.push("card_category");
   const rawName = scalar(f.working_name);
-  const suffix = scalar(f.suffix_code).toUpperCase();
-  let title = displayNameWithoutSuffix(rawName, suffix);
+  let title = rawName;
   if (["GWs", "EMs"].includes(field)) {
     const match = rawName.match(new RegExp(`^${field}\\s*(\\d{1,6})$`, "i"));
     title = match ? `${field}${match[1]}` : "";
     if (!title) missing.push("assigned_run_number");
   } else {
-    // Master Frame V2 keeps suffix codes as canonical metadata but never prints them.
-    if (!/^[A-Z]{2}$/.test(suffix) && !/\s[A-Z]{2}$/.test(rawName)) missing.push("assigned_suffix_code");
-    if (!title) title = rawName.replace(/\s[A-Z]{2}$/, "").trim();
+    // Standard, Premium, Foreign, Travel and Extreme use the canonical Model ID/name
+    // exactly as stored in working_name. Do not substitute a template/category label,
+    // synthesize a suffix, or strip a letter that belongs to the real Model ID.
+    title = rawName;
   }
   if (!title || title.length > 40 || /[\r\n\u0000-\u001f]/.test(title)) missing.push("working_name");
   const height = Number(f.height_cm), weight = Number(f.weight_kg);

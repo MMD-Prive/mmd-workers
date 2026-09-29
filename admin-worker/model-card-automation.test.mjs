@@ -113,14 +113,31 @@ test("seven directions follow Master Frame V2; category labels stay hidden and e
     assert.match(cardPortraitPrompt(result.design), /Do not draw the metallic frame, accent strip, text, numbers, labels, logos/i);
   }
   assert.equal(projectCardDesign(model()).design.title, "Jasper");
-  assert.equal(projectCardDesign(model({ working_name: "Jasper OP" })).design.title, "Jasper");
-  const travel = projectCardDesign(model({ sales_layer: "public", "MMD Public Category": "Travel" })).design;
-  assert.equal(travel.title, "Jasper");
+  assert.equal(projectCardDesign(model({ working_name: "Jasper OP" })).design.title, "Jasper OP");
+  const travel = projectCardDesign(model({ sales_layer: "public", "MMD Public Category": "Travel", working_name: "Potae J" })).design;
+  assert.equal(travel.title, "Potae J");
   assert.doesNotMatch(cardHtml(travel, "data:image/png;base64,AA==", "data:image/png;base64,AA=="), /TRAVEL/i);
 });
 
+test("Standard, Premium and Foreign cards print the real canonical Model ID/name", () => {
+  const cases = [
+    { fields: { model_class: "Standard", orientation_label: "gay", working_name: "Hiei HI", suffix_code: "HI" }, expected: "Hiei HI" },
+    { fields: { model_class: "Premium", orientation_label: "straight", working_name: "Jasper OP", suffix_code: "OP" }, expected: "Jasper OP" },
+    { fields: { model_class: "Premium", orientation_label: "straight", working_name: "Day D", suffix_code: "" }, expected: "Day D" },
+    { fields: { catalog_group: "Foreigner", working_name: "Alex F", suffix_code: "" }, expected: "Alex F" },
+  ];
+  for (const item of cases) {
+    const result = projectCardDesign(model(item.fields));
+    assert.equal(result.ok, true);
+    assert.equal(result.design.title, item.expected);
+    const image = "data:image/png;base64,AA==";
+    const html = cardHtml(result.design, image, image);
+    assert.ok(html.includes(item.expected));
+    assert.doesNotMatch(html, />\s*(Standard|Premium|Foreigner|Foreign)\s*</i);
+  }
+});
 test("missing/ambiguous classification or assigned identity pauses instead of inventing", () => {
-  for (const fields of [{ sales_layer: "both" }, { orientation_label: "" }, { suffix_code: "" }, { recognition_class: "EMs", working_name: "Someone" }, { recognition_class: "EMs", exclusive_group: "GWs" }, { height_cm: 0 }, { status: "inactive" }]) assert.equal(projectCardDesign(model(fields)).ok, false);
+  for (const fields of [{ sales_layer: "both" }, { orientation_label: "" }, { recognition_class: "EMs", working_name: "Someone" }, { recognition_class: "EMs", exclusive_group: "GWs" }, { height_cm: 0 }, { status: "inactive" }]) assert.equal(projectCardDesign(model(fields)).ok, false);
   const publicExclusive = projectCardDesign(model({ sales_layer: "public", "MMD Public Category": "Travel", recognition_class: "EMs" }));
   assert.ok(publicExclusive.missing.includes("exclusive_public_direction_required"));
 });

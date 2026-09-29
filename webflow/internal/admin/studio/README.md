@@ -51,7 +51,7 @@ GitHub remains source truth; Workers remain runtime authority; Webflow remains p
 - Existing template IDs remain stable for compatibility: `straight`, `gay`, `foreigner`, `gws`, `ems`, `travel`, and `extreme`.
 - The visible graphic is now one metallic silver / graphite-gunmetal frame family with a small category accent cue. The old split-panel / diagonal-seam treatment is retired.
 - No role, tier, Public/Private label, Straight/Gay label, Travel/Extreme word, or `SĪGIL SYSTEM` copy belongs on the final card.
-- Straight, Gay, Farang, Travel and Extreme show the model name plus large height/weight. Canonical two-letter suffix codes remain metadata and are not printed.
+- Standard, Premium, Foreign, Travel and Extreme use the canonical `working_name` as the visible Model ID/name exactly as stored, including any suffix/letter that is part of that ID; they also show large height/weight. Template/category labels never replace the Model ID/name.
 - GWs and EMs retain their assigned RUN identity plus large height/weight; their accent cue may be slightly stronger.
 - Travel is a public MMD PRIVÉ card identified only by the small cyan/blue edge cue. Extreme uses the same public frame with a small red edge cue.
 - The approved logo is small at the lower right: MMD PRIVÉ for public cards, SIGIL for private/exclusive cards.

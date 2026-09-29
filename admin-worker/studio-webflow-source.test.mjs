@@ -66,8 +66,9 @@ test("Studio model-card selector mirrors Master Frame V2 without legacy public l
   const source = await readFile(new URL("studio-compcard-template-selector.js", SOURCE_DIR), "utf8");
 
   assert.match(source, /MASTER FRAME V2/);
-  assert.match(source, /BLUE EDGE CUE · NO TRAVEL LABEL/);
-  assert.match(source, /RED EDGE CUE · NO EXTREME LABEL/);
+  assert.match(source, /REAL MODEL ID \/ NAME · BLUE EDGE/);
+  assert.match(source, /REAL MODEL ID \/ NAME · RED EDGE/);
+  assert.match(source, /ใช้ชื่อ Model ID จริงจาก working_name บนการ์ด/);
   assert.match(source, /mmd-sigil-card-frame-outer/);
   assert.match(source, /data-master-frame/);
   assert.match(source, /template_version:\s*"mmd-master-frame-v2"/);

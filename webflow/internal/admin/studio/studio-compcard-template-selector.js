@@ -60,7 +60,7 @@
       needsTitle: false,
       publicCollection: false,
       identity: "name",
-      note: "MODEL NAME · HEIGHT / WEIGHT"
+      note: "REAL MODEL ID / NAME · HEIGHT / WEIGHT"
     },
     {
       id: "sigil-gay-plum",
@@ -76,7 +76,7 @@
       needsTitle: false,
       publicCollection: false,
       identity: "name",
-      note: "MODEL NAME · HEIGHT / WEIGHT"
+      note: "REAL MODEL ID / NAME · HEIGHT / WEIGHT"
     },
     {
       id: "sigil-foreigner-emerald",
@@ -92,7 +92,7 @@
       needsTitle: false,
       publicCollection: false,
       identity: "name",
-      note: "MODEL NAME · HEIGHT / WEIGHT"
+      note: "REAL MODEL ID / NAME · HEIGHT / WEIGHT"
     },
     {
       id: "mmd-prive-travel",
@@ -108,7 +108,7 @@
       needsTitle: false,
       publicCollection: true,
       identity: "name",
-      note: "BLUE EDGE CUE · NO TRAVEL LABEL"
+      note: "REAL MODEL ID / NAME · BLUE EDGE"
     },
     {
       id: "mmd-prive-extreme",
@@ -124,7 +124,7 @@
       needsTitle: false,
       publicCollection: true,
       identity: "name",
-      note: "RED EDGE CUE · NO EXTREME LABEL"
+      note: "REAL MODEL ID / NAME · RED EDGE"
     }
   ];
 
@@ -259,7 +259,7 @@
     var title = document.createElement("h2");
     title.textContent = "เลือกกรอบใหม่ก่อน Build Draft";
     var copy = document.createElement("p");
-    copy.textContent = "กรอบหลักเป็น metallic silver / graphite เหมือนกันทุกกลุ่ม ใช้ accent เล็ก ๆ บอก category โดยไม่พิมพ์ role หรือชื่อกลุ่มบนการ์ด; Travel = ฟ้า, Extreme = แดง.";
+    copy.textContent = "กรอบหลักเป็น metallic silver / graphite เหมือนกันทุกกลุ่ม ใช้ชื่อ Model ID จริงจาก working_name บนการ์ด ห้ามใช้ชื่อกลุ่มแทน; Travel = accent ฟ้า, Extreme = accent แดง.";
     heading.appendChild(eyebrow);
     heading.appendChild(title);
     heading.appendChild(copy);
