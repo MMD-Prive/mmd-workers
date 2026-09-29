@@ -25,18 +25,21 @@ For payment routing, `docs/knowledge/MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` a
 The following cards are treated as the current active card set for Kenji AI 2.0:
 
 1. `kenji_20_001_role` — Kenji AI 2.0 member concierge role lock.
-2. `kenji_20_002_mmd_companion` — MMD Companion route.
-3. `kenji_20_003_mms` — MMS Wellness route.
-4. `kenji_20_004_partner_venue` — Partner Venue / Relax Spa by 9 route.
-5. `kenji_20_005_private_talent` — Private Talent route.
-6. `kenji_20_006_payment_proof` — canonical payment handoff: backend-issued signed `/pay/checkout?t=...` for Public/TMIB or `/sigil/pay?t=...` for Private/Service; otherwise `/member/payments`; proof remains evidence only.
-7. `kenji_20_007_drop_690_guard` — Public Membership 690 safety guard: valid membership product, never pay-to-view or instant unlock.
-8. `kenji_20_008_membership_intake_catalog` — Membership Intake service catalog.
-9. `kenji_20_009_web_forbidden_terms` — Web forbidden terms guard.
-10. `kenji_20_010_cloudflare_deploy_gate` — Cloudflare deploy gate.
-11. `kenji_20_011_care_back_2026` — CARE BACK 2026 final policy, Wish-saved coupon gate, status benefits, and owner boundaries.
+2. `kenji_20_002_route_map` — canonical MMD website CTA map; see `KENJI_WEBSITE_CTA_MAP_V1_20260929.md`.
+3. `kenji_20_002_mmd_companion` — focused MMD Companion route with `/services/companion`, `/find`, `/booking`, `/profiles`, and `/tmib` discovery.
+4. `kenji_20_003_mms` — MMS Wellness route.
+5. `kenji_20_004_partner_venue` — Partner Venue / Relax Spa by 9 route.
+6. `kenji_20_005_private_talent` — Private Talent route.
+7. `kenji_20_006_payment_proof` — canonical payment handoff: backend-issued signed `/pay/checkout?t=...` for Public/TMIB or `/sigil/pay?t=...` for Private/Service; otherwise `/member/payments`; proof remains evidence only.
+8. `kenji_20_007_drop_690_guard` — Public Membership 690 safety guard: valid membership product, never pay-to-view or instant unlock.
+9. `kenji_20_008_membership_intake_catalog` — full Public Membership catalog (MMD Member 690 / 1y, Elite 4,990 / 2y, Red Card 11,499 / 1y) plus Public/Private membership/payment routing and `/tmib` discovery CTA.
+10. `kenji_20_009_web_forbidden_terms` — Web forbidden terms guard.
+11. `kenji_20_010_cloudflare_deploy_gate` — Cloudflare deploy gate.
+12. `kenji_20_011_care_back_2026` — CARE BACK 2026 final policy, Wish-saved coupon gate, status benefits, and owner boundaries.
 
 ## Route map
+
+The full current customer CTA map is locked in `docs/knowledge/KENJI_WEBSITE_CTA_MAP_V1_20260929.md`. Kenji should normally emit only the single CTA that matches the customer's intent, not dump the whole route table.
 
 - `/member/kenji` — canonical Kenji page/chat runtime for customers/members.
 - `/member/kenji?mode=admin-preview` — standalone owner preview source used by the canonical Kenji Admin AI 2.0 view.

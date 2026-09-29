@@ -65,31 +65,31 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
   },
   {
     id: "kenji_20_002_route_map",
-    title: "Kenji AI 2.0 — MMD / MMS / Relax Spa by 9 Route Map",
-    category: "booking",
+    title: "Kenji AI 2.0 — MMD Website CTA Map",
+    category: "faq",
     language: "th",
     status: "active",
     response_mode: "auto_reply_allowed",
     risk_level: "medium",
-    source_path: "line_ofc/kenji-2.0",
+    source_path: "docs/knowledge/KENJI_WEBSITE_CTA_MAP_V1_20260929.md",
     customer_answer:
-      "ผมช่วยแยกเส้นทางให้ครับ: MMD Companion สำหรับ social / dining / event / appearance, MMS Wellness สำหรับ male massage หรือ recovery service, และ Partner Venue เช่น Relax Spa by 9 เมื่อจำเป็นต้องมีสถานที่หรืออุปกรณ์พร้อม ทั้งหมดต้องให้ MMD ตรวจความเหมาะสมก่อนยืนยันครับ",
+      "บอกได้เลยครับว่าต้องการ หา Model / จอง / สมัครสมาชิก / MY MMD / ชำระเงิน / MMS / TMIB / Partner / Shop แบบไหน ผมจะส่งลิงก์หน้าเว็บที่ตรงให้ครับ ถ้าเป็นเรื่องที่มีสถานะเฉพาะบัญชี เช่น Payment, Membership, คิว หรือสิทธิ์ ผมจะยึดหน้าที่ระบบส่งให้และไม่เดาสถานะแทนครับ",
     internal_instruction:
-      "Collect minimum brief and route only. Do not confirm venue, model, therapist, availability, assignment, booking, or price.",
+      "CTA MAP 2026-09-29: Public /hall, /find, /profiles, /services/companion, /booking, /tmib, /tmib/stories, /pay/membership, /rules/customer; /public/access only for explicit access/identity context. Website member control: guest -> /member/login, verified -> /member/profile. Direct LINE MY MMD status -> https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status and remains in LIFF. Web MY MMD app-specific routes: /my-mmd/, /my-mmd/profile, /my-mmd/membership, /my-mmd/points, /my-mmd/history, /my-mmd/coupons, /my-mmd/payments, /my-mmd/orders; requests -> /member/requests; generic payment-status fallback -> /member/payments. Private: /sigil/start, /sigil/member/membership, renewal /sigil/member/membership?source=line&intent=renew, /sigil/booking, /sigil/recovery, /blackcard/black-card, exact backend /sigil/pay?t=.... MMS: /male-massage/home, /male-massage/how-to-use, /male-massage/member/mms-booking, /male-massage/therapists/relax-spa, /apply/mms-therapist. Partner: /partner, /partner/apply and partner_type lanes, /partner/model/recommend-model-apply?source=model-to-model, /sigil/model/dashboard/partner-login, /partner/terms, /partner/dashboard. Model: /apply/public-model, /apply/public-model/onboarding, /sigil/model/dashboard, /rules/model. Shop: /mmd-shop, /mmd-shop/order, /mmd-shop/rules, /my-mmd/orders. Care Back: /promotion/6-years-care-back, /promotion/6-years-care-back/wish, /my-mmd/coupons. Never invent URL/payment_ref; never use CTA click as business truth. Avoid fresh /sigil/pay/renew, /sigil/pay/renewal, /pay/renewal, default /confirm/payment-proof, stale /recovery or legacy /member/membership.",
   },
   {
     id: "kenji_20_008_membership_intake_catalog",
-    title: "Kenji AI 2.0 — MY MMD Canonical Route Map",
+    title: "Kenji AI 2.0 — Public + Private Membership Catalog",
     category: "membership",
     language: "th",
     status: "active",
     response_mode: "auto_reply_allowed",
     risk_level: "medium",
-    source_path: "/sigil/member/membership",
+    source_path: "/pay/membership",
     customer_answer:
-      "ถ้าถามเรื่อง Membership ผมแยกทางให้ตามประเภทได้เลยครับ: Public Membership — MMD Member / Elite / Red Card เริ่มที่ https://mmdbkk.com/pay/membership ส่วน Private Membership — Standard / Premium / private access ใช้ https://mmdbkk.com/sigil/member/membership ถ้าต่ออายุ Private ใช้ https://mmdbkk.com/sigil/member/membership?source=line&intent=renew และถ้าต้องการดูรายการชำระหรือสถานะเดิม ใช้ https://mmdbkk.com/member/payments ครับ ถ้า MMD สร้างลิงก์ชำระเฉพาะรายการให้แล้ว ให้ใช้ลิงก์นั้นตรง ๆ: Public/TMIB ใช้ /pay/checkout?t=... และ Private/Service ใช้ /sigil/pay?t=... หลักฐานเป็น evidence จนกว่า MMD Official Verify และรายการเดิมไม่ต้องส่งหลักฐานซ้ำครับ",
+      "Public Membership ตอนนี้มี 3 ระดับครับ\n• MMD Member — 690 บาท / 1 ปี · เริ่มต้นใช้บริการ MMD Companion ตามขอบเขตที่แต่ละคนเปิด\n• Elite — 4,990 บาท / 2 ปี · กลุ่มพรีเมียม + Exclusive MMD news ตามสิทธิ์ปัจจุบัน\n• Red Card — 11,499 บาท / 1 ปี · ระดับสูงสุดของ Public MMD สำหรับตัวเลือกที่ private/confidential ขึ้นเมื่อมี\n\nสมัคร/เลือกแพ็กเกจ → https://mmdbkk.com/pay/membership\nอยากดูหนุ่มจาก TMIB ที่สนใจ → https://mmdbkk.com/tmib\n\nถ้ามีลิงก์ชำระเฉพาะรายการจาก MMD แล้ว ใช้ลิงก์นั้นต่อได้เลยครับ สิทธิ์จริงเริ่มหลัง Official Verify และยังไม่ถือว่าเลือกคน/คิวสำเร็จจนกว่า MMD จะยืนยัน",
     internal_instruction:
-      "Public/Private lane lock 2026-09-19: /pay/membership = canonical Public Membership selection for mmd_member / elite / red_card. /sigil/member/membership = canonical Private Membership selection/start/renew/upgrade for Standard / Premium / private access. Private renewal CTA = /sigil/member/membership?source=line&intent=renew. /member/payments = payment list/status/navigation. Exact backend-issued /pay/checkout?t=... = Public/TMIB payment+proof; exact backend-issued /sigil/pay?t=... = Private/Service payment+proof. NEVER use /pay/membership for payment status or Private renewal. NEVER send Public Member/Elite/Red Card to /sigil/member/membership. NEVER send fresh customer CTAs to /sigil/pay/renew, /sigil/pay/renewal, or /pay/renewal; those are redirect-only compatibility routes. Preserve the exact backend-issued signed URL. Never mint payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
+      "PUBLIC MEMBERSHIP CANON 2026-09-29: mmd_member = 690 THB / 365 days; elite = 4,990 THB / 730 days; red_card = 11,499 THB / 365 days. Benefit wording follows webflow/pay/membership/README.md; do not promise a specific person, celebrity, date, booking, hidden content or availability. Red Card is the highest PUBLIC tier and is not Black Card/VIP/SVIP. Public selection = /pay/membership; backend exact payment = /pay/checkout?t=.... If customer asks which TMIB guy they want/like, send /tmib as discovery/preference only; browsing is not assignment/availability truth. Private Standard/Premium = /sigil/member/membership; renewal = /sigil/member/membership?source=line&intent=renew; exact Private/Service payment = /sigil/pay?t=.... Generic payment status fallback = /member/payments. Preserve signed URLs exactly, never mint payment_ref, never request duplicate proof already pending, and never confirm payment, membership, booking, availability, Black Card, VIP, SVIP or access from chat alone.",
   },
   {
     id: "kenji_20_012_my_mmd_trust_rule",
