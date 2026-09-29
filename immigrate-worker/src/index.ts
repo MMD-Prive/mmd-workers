@@ -2421,7 +2421,6 @@ function shouldUseInternalRoutesBridge(pathname: string): boolean {
     pathname === CONTROL_ROOM.root ||
     pathname === ADMIN_JOBS.createSession ||
     pathname === ADMIN_JOBS.createSessionLegacy ||
-    pathname === JOBS.createJob ||
     pathname === JOBS.createJobLegacy ||
     pathname === JOBS.jobBoard ||
     pathname === JOBS.jobBoardAlias
@@ -4290,30 +4289,6 @@ export default {
         return renderCreateSessionPage(request, session);
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === JOBS.createJob) {
-        if (request.method === "HEAD") {
-          return new Response(null, {
-            status: 200,
-            headers: {
-              "content-type": "text/html; charset=utf-8",
-              "cache-control": "no-store",
-            },
-          });
-        }
-
-        if (!isAuthorized(request, env)) {
-          return makeLoginRedirect(request, url.pathname);
-        }
-
-        const session = {
-          ok: true,
-          at: Date.now(),
-          baseUrl: new URL(request.url).origin,
-        } satisfies AdminGateSession;
-
-        return renderCreateJobPage(request, session);
-      }
-
       if ((request.method === "GET" || request.method === "HEAD") && isProtectedBrowserRoute(url.pathname)) {
         if (isAuthorized(request, env)) {
           return fetch(request);
@@ -4370,10 +4345,6 @@ export default {
       }
 
       if (request.method === "POST" && isCreateJobRoute(url.pathname)) {
-        return await handleCreateJob(request, env);
-      }
-
-      if (request.method === "POST" && url.pathname === JOBS.createJob) {
         return await handleCreateJob(request, env);
       }
 
