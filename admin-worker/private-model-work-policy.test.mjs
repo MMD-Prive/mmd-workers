@@ -312,6 +312,42 @@ try {
   });
   assert.equal(await guardPrivateJobCreateWork(pnJob, env), null);
 
+  const privatePendingModel = new Request("https://mmdbkk.com/v1/admin/job/create", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      operational_create_mode: "pending_model_link",
+      job_type: "pn",
+      work: { job_visibility: "private", job_type: "pn" },
+      client_record_id: "recClientCanonical001",
+      model: {
+        model_id: "",
+        model_name: "Film J",
+        lookup_key: "Film J",
+        identity_status: "pending_reconcile",
+      },
+    }),
+  });
+  assert.equal(
+    await guardPrivateJobCreateWork(privatePendingModel, env),
+    null,
+    "exact owner-typed Model snapshot may enter the downstream pending-model hold lane",
+  );
+
+  const privateMissingModelWithoutHold = new Request("https://mmdbkk.com/v1/admin/job/create", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      job_type: "pn",
+      work: { job_visibility: "private", job_type: "pn" },
+      client_record_id: "recClientCanonical001",
+      model: { model_id: "", model_name: "Film J" },
+    }),
+  });
+  const missingWithoutHold = await guardPrivateJobCreateWork(privateMissingModelWithoutHold, env);
+  assert.equal(missingWithoutHold.status, 409);
+  assert.equal((await missingWithoutHold.json()).error.code, "canonical_model_required_for_private_work");
+
   const vipWithPnOnly = new Request("https://mmdbkk.com/v1/admin/job/create", {
     method: "POST",
     headers: { "content-type": "application/json" },
