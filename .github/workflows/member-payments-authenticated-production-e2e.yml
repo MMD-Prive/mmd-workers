@@ -45,6 +45,16 @@ jobs:
           fi
           echo "::add-mask::$REAL_MEMBER_LIFF_ID_TOKEN"
 
+      - name: Record APP SIGIL release-gate context
+        shell: bash
+        run: |
+          {
+            echo "### APP / SIGIL real LINE -> LIFF acceptance"
+            echo "- Gate: `real_line_liff_session_chain`"
+            echo "- Evidence source: real repository LIFF credential only"
+            echo "- Synthetic downgrade: forbidden"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Establish real verified member session
         shell: bash
         run: |
