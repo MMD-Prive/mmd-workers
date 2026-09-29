@@ -1299,6 +1299,19 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
 
   const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
   const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
+  if (conciergeReply?.silent === true && conciergeReply?.next_action === "manual_silent") {
+    return {
+      text: "",
+      fallback: false,
+      reply_source: "verified_member_manual_silent",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: true,
+      guard_reason: "verified_member_manual_silent",
+    };
+  }
   const deterministicReply = conciergeReply?.text || buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
