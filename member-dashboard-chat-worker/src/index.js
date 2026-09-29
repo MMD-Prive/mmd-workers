@@ -2867,15 +2867,42 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     );
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
+    const historyMetadata = {
+      turn_aggregation: {
+        source: aggregateResult.source || prepared.aggregation_source || "single",
+        suppressed: false,
+        aggregate_count: Number(aggregateResult.count) || Number(prepared.aggregate_count) || 1,
+      },
+      continuity: {
+        decision: asString(continuity?.decision),
+        effective_intent: intent,
+      },
+    };
     const afterReply = campaignEvent
       ? Promise.resolve(campaignLeadRecord || { skipped: true, reason: "campaign_lead_not_processed", deduped: false })
-      : syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
-    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event }).catch(() => ({
+      : syncLineEventAfterReply(env, rawEvent, intent, autoReplyEnabled, kenjiEnabled, historyMetadata);
+    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event: rawEvent }).catch(() => ({
       enabled: false,
       eligible: false,
       persisted: false,
       reason: "assessment_runtime_error",
     }));
+    const matrixDecision = {
+      ...replyDecision,
+      intent,
+      handoff_required: replyDecision.handoff_required === true || ownerReplyBlocked,
+      handoff_reason: asString(replyDecision.handoff_reason || (ownerReplyBlocked ? ownerTakeover.reason : "")),
+    };
+    const matrixWritePromise = writeKenjiLineMatrixTurn({
+      env,
+      continuity,
+      decision: matrixDecision,
+      delivered: replyResult?.ok === true,
+      attempted: shouldReply,
+      lastEventId: getLineEventId(rawEvent),
+      now: new Date().toISOString(),
+    }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }));
+
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = campaignEvent ? await afterReply : { pending: canDefer, deduped: false };
     let historyAssessmentResult = {
@@ -2884,27 +2911,29 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       persisted: false,
       reason: canDefer ? "assessment_pending" : "assessment_not_run",
     };
-    if (canDefer && !campaignEvent) {
+    let matrixWriteResult = { pending: canDefer, skipped: false, reason: canDefer ? "matrix_write_pending" : "" };
+    if (canDefer) {
       const backgroundWork = Promise.all([
-        afterReply.catch(() => {
+        ...(campaignEvent ? [] : [afterReply.catch(() => {
           console.log(JSON.stringify({
             line_webhook: "background_sync_failed",
-            event_type: asString(event?.type) || "unknown",
+            event_type: asString(rawEvent?.type) || "unknown",
             intent,
           }));
-        }),
+        })]),
         historyAssessmentPromise,
+        matrixWritePromise,
       ]);
       ctx.waitUntil(backgroundWork);
-    } else if (!campaignEvent) {
-      try {
-        record = await afterReply;
-      } catch (_) {
-        record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
+    } else {
+      if (!campaignEvent) {
+        try {
+          record = await afterReply;
+        } catch (_) {
+          record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
+        }
       }
-      historyAssessmentResult = await historyAssessmentPromise;
-    } else if (!canDefer) {
-      historyAssessmentResult = await historyAssessmentPromise;
+      [historyAssessmentResult, matrixWriteResult] = await Promise.all([historyAssessmentPromise, matrixWritePromise]);
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
