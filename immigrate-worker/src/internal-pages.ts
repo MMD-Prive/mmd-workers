@@ -20,15 +20,12 @@ function page(title: string, body: string): Response {
 <meta name="robots" content="noindex,nofollow" />
 <title>${esc(title)}</title>
 <style>
-:root{color-scheme:dark;--bg:#050403;--panel:#12100d;--soft:rgba(255,255,255,.055);--line:rgba(214,170,69,.24);--line2:rgba(255,255,255,.12);--text:#fff8e8;--muted:rgba(255,248,232,.66);--gold:#d6aa45;--gold2:#ffe08b;--red:#ff8d8d;--green:#8ed5a9;--font:Inter,"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 16% 0%,rgba(214,170,69,.14),transparent 30%),linear-gradient(135deg,#050403,#0b0907 56%,#000);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}.mmdop{min-height:100vh;padding:18px}.mmdop__shell{width:min(1320px,100%);margin:0 auto}.mmdop__topbar,.mmdop__panel,.mmdop__clientSearch,.mmdop__commandLeft,.mmdop__railCard,.mmdop__status,.mmdop__tapGuide article{border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(18,15,11,.92),rgba(0,0,0,.78));box-shadow:0 18px 52px rgba(0,0,0,.38)}.mmdop__topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 15px}.mmdop__brand{display:flex;gap:12px;align-items:center}.mmdop__logo{width:46px;height:46px;border-radius:16px;display:grid;place-items:center;border:1px solid rgba(214,170,69,.35);background:rgba(214,170,69,.08)}.mmdop__logo img{width:36px}.mmdop__brand strong,.mmdop__kicker,.mmdop__panelHead span,.mmdop__step,.mmdop__field span,.mmdop__railCard span,.mmdop__tapGuide b{color:var(--gold);letter-spacing:.13em;text-transform:uppercase;font-size:11px;font-weight:950}.mmdop__brand small{display:block;color:var(--muted);margin-top:2px}.mmdop__ghost,.mmdop__btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:rgba(255,255,255,.045);color:var(--text);font-weight:900;cursor:pointer}.mmdop__btn--gold{border-color:rgba(255,224,139,.58);background:linear-gradient(135deg,#ffe48b,#c99937 58%,#f8d876);color:#0b0703}.mmdop__btn--soft{border-color:rgba(214,170,69,.32);color:var(--gold2);background:rgba(214,170,69,.08)}.mmdop__btn:disabled{opacity:.42;cursor:not-allowed}.mmdop__command{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.72fr);gap:16px;margin-top:16px}.mmdop__commandLeft,.mmdop__clientSearch{padding:clamp(20px,2.7vw,30px)}h1{margin:12px 0 0;font-size:clamp(40px,4.8vw,68px);line-height:.94;letter-spacing:-.05em}h2{margin:6px 0 6px;font-size:clamp(24px,2.4vw,36px);line-height:1;letter-spacing:-.035em}p{color:var(--muted);line-height:1.66}code{color:var(--gold2);background:rgba(214,170,69,.08);border:1px solid rgba(214,170,69,.18);border-radius:8px;padding:1px 6px}.mmdop__flowMini,.mmdop__summary,.mmdop__layout,.mmdop__formGrid,.mmdop__searchBar,.mmdop__copyRow,.mmdop__tapGuide{display:grid;gap:12px}.mmdop__flowMini{grid-template-columns:repeat(6,1fr);margin-top:20px}.mmdop__step,.mmdop__summary article{border:1px solid var(--line2);border-radius:16px;background:rgba(255,255,255,.035);padding:11px}.mmdop__step.is-active{color:#090704;background:linear-gradient(135deg,#ffe48b,#c99937);border-color:rgba(255,224,139,.58)}.mmdop__tapGuide{grid-template-columns:repeat(3,1fr);margin-top:14px}.mmdop__tapGuide article{padding:14px;display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center}.mmdop__tapGuide i{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#ffe48b,#c99937);color:#0b0703;font-style:normal;font-weight:950}.mmdop__tapGuide strong{display:block;font-size:17px;line-height:1.15}.mmdop__tapGuide p{margin:3px 0 0;font-size:13px;line-height:1.45}.mmdop__summary{grid-template-columns:repeat(5,1fr);margin-top:14px}.mmdop__summary strong{display:block;margin-top:7px;font-size:17px;word-break:break-word}.mmdop__layout{grid-template-columns:minmax(0,1fr) 300px;margin-top:16px;align-items:start}.mmdop__main,.mmdop__rail{display:grid;gap:14px}.mmdop__rail{position:sticky;top:16px}.mmdop__railCard{padding:17px}.mmdop__railCard strong{display:block;margin-top:8px;font-size:22px;line-height:1.08;letter-spacing:-.03em}.mmdop__panel{overflow:hidden}.mmdop__panelHead{display:flex;justify-content:space-between;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line2)}.mmdop__section{padding:18px 20px}.mmdop__formGrid--2{grid-template-columns:repeat(2,1fr)}.mmdop__formGrid--3{grid-template-columns:repeat(3,1fr)}.mmdop__formGrid--4{grid-template-columns:repeat(4,1fr)}.mmdop__searchBar{grid-template-columns:1fr auto auto}.mmdop__input,.mmdop__textarea{width:100%;min-height:49px;border-radius:15px;border:1px solid var(--line2);background:rgba(0,0,0,.42);color:var(--text);padding:0 14px;outline:none}.mmdop__input--big{min-height:56px;font-size:16px}.mmdop__textarea{min-height:110px;padding:13px 14px;resize:vertical;line-height:1.6}.mmdop__field span{display:block;margin-bottom:7px}.mmdop__empty{min-height:88px;display:grid;place-items:center;text-align:center;border:1px dashed var(--line2);border-radius:18px;color:var(--muted);background:rgba(255,255,255,.025);padding:14px}.mmdop__clientResults{display:grid;gap:10px;margin-top:14px}.mmdop__clientCard{width:100%;display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:14px;border-radius:20px;border:1px solid var(--line2);background:rgba(0,0,0,.36);color:inherit;text-align:left;cursor:pointer}.mmdop__clientCard.is-selected{border-color:rgba(255,224,139,.58);background:rgba(214,170,69,.09)}.mmdop__avatar{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;color:var(--gold2);border:1px solid rgba(214,170,69,.25);background:rgba(214,170,69,.08);font-weight:950}.mmdop__tag{display:inline-flex;margin:3px 5px 0 0;border-radius:999px;border:1px solid var(--line2);padding:3px 8px;color:var(--muted);font-size:11px;font-weight:850}.mmdop__copyRow{grid-template-columns:repeat(3,max-content);display:flex;gap:10px;flex-wrap:wrap}.mmdop__status{padding:14px 16px}.is-ok{border-color:rgba(142,213,169,.34)!important;color:rgba(224,255,236,.95)!important;background:rgba(142,213,169,.075)!important}.is-bad{border-color:rgba(255,141,141,.34)!important;color:rgba(255,222,222,.96)!important;background:rgba(255,141,141,.075)!important}.mmdop__secondary{border-color:rgba(255,255,255,.1);opacity:.96}.mmdop__secondary .mmdop__panelHead span{color:rgba(255,224,139,.72)}@media(max-width:1040px){.mmdop__command,.mmdop__layout{grid-template-columns:1fr}.mmdop__rail{position:static;grid-template-columns:repeat(2,1fr)}.mmdop__summary{grid-template-columns:repeat(2,1fr)}.mmdop__flowMini{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){body{background:#040302}.mmdop{min-height:100svh;padding:10px}.mmdop__shell{width:100%}.mmdop__topbar{border-radius:18px;padding:10px;box-shadow:none}.mmdop__logo{width:38px;height:38px;border-radius:13px}.mmdop__logo img{width:30px}.mmdop__brand small,.mmdop__commandLeft p{display:none}.mmdop__ghost{min-height:34px;padding:0 11px;font-size:12px}.mmdop__command{display:block;margin-top:10px}.mmdop__commandLeft,.mmdop__clientSearch,.mmdop__panel,.mmdop__railCard,.mmdop__status,.mmdop__tapGuide article{border-radius:18px;box-shadow:0 10px 28px rgba(0,0,0,.28)}.mmdop__commandLeft,.mmdop__clientSearch{padding:14px}.mmdop__clientSearch{margin-top:10px}h1{font-size:30px;letter-spacing:-.04em;margin:7px 0 0}h2{font-size:23px}.mmdop__flowMini{grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}.mmdop__step{padding:8px 5px;border-radius:12px;font-size:10px;text-align:center;letter-spacing:.08em}.mmdop__tapGuide{grid-template-columns:1fr;margin-top:10px;gap:8px}.mmdop__tapGuide article{grid-template-columns:34px 1fr;padding:11px;gap:9px}.mmdop__tapGuide i{width:34px;height:34px;border-radius:12px}.mmdop__tapGuide strong{font-size:15px}.mmdop__tapGuide p{font-size:12px}.mmdop__summary{grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}.mmdop__summary article{padding:10px;border-radius:14px}.mmdop__summary article:last-child{grid-column:1/-1}.mmdop__summary strong{font-size:14px}.mmdop__layout{display:block;margin-top:10px}.mmdop__main{gap:10px}.mmdop__panel{margin-top:10px}.mmdop__panelHead{padding:12px;display:block}.mmdop__panelHead p{font-size:12px;margin:4px 0 0}.mmdop__section{padding:12px}.mmdop__searchBar,.mmdop__formGrid--2,.mmdop__formGrid--3,.mmdop__formGrid--4,.mmdop__rail{grid-template-columns:1fr}.mmdop__searchBar{gap:8px}.mmdop__input,.mmdop__textarea{min-height:45px;border-radius:13px}.mmdop__clientCard{grid-template-columns:44px 1fr;padding:11px;border-radius:16px}.mmdop__avatar{width:44px;height:44px;border-radius:14px}.mmdop__clientCard .mmdop__btn{grid-column:1/-1}.mmdop__btn,.mmdop__ghost{width:100%}.mmdop__copyRow{display:grid;grid-template-columns:1fr}.mmdop__rail{display:none}#job-board-panel{opacity:.88}#job-board-panel .mmdop__panelHead h2{font-size:18px}.mmdop__status{font-size:13px;line-height:1.45}}
+:root{color-scheme:dark;--bg:#070604;--panel:#14110d;--panel2:#1e1a13;--line:rgba(216,170,74,.28);--line2:rgba(255,255,255,.12);--text:#fff8e8;--muted:rgba(255,248,232,.68);--gold:#d8ad55;--gold2:#ffe19a;--bad:#ffb0a5;--good:#a7e0b8;--font:Inter,"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 12% -8%,rgba(216,170,74,.16),transparent 33%),linear-gradient(145deg,#050403,#0b0906 58%,#000);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}.mmdop{min-height:100vh;padding:14px}.mmdop__shell{width:min(1040px,100%);margin:0 auto}.mmdop__topbar,.card,.status,.results button,.linkRow{border:1px solid var(--line);background:linear-gradient(145deg,rgba(20,17,13,.94),rgba(0,0,0,.75));box-shadow:0 16px 44px rgba(0,0,0,.32)}.mmdop__topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:20px}.mmdop__brand{display:flex;align-items:center;gap:10px}.mmdop__logo{width:42px;height:42px;border:1px solid rgba(216,170,74,.4);border-radius:14px;display:grid;place-items:center;background:rgba(216,170,74,.08)}.mmdop__logo img{width:32px}.mmdop__brand strong{display:block;font-size:14px;letter-spacing:.04em}.mmdop__brand small{display:block;margin-top:2px;color:var(--muted);font-size:11px}.mmdop__ghost,.btn{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border:1px solid var(--line2);border-radius:999px;background:rgba(255,255,255,.05);color:var(--text);font-weight:900;cursor:pointer}.btn.gold{border-color:rgba(255,225,154,.62);background:linear-gradient(135deg,#ffe49d,#c99b3f);color:#120d05}.btn.soft{color:var(--gold2);background:rgba(216,170,74,.08)}.btn:disabled{opacity:.46;cursor:not-allowed}.hero{margin-top:12px;padding:20px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(23,19,14,.96),rgba(0,0,0,.76))}.kicker,.label,.step{color:var(--gold);font-size:11px;font-weight:950;letter-spacing:.13em;text-transform:uppercase}.hero h1{margin:8px 0 6px;font-size:clamp(36px,7vw,64px);line-height:.96;letter-spacing:-.05em}.hero p,.card p,.status,.hint{color:var(--muted);line-height:1.58}.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}.step{padding:9px;border:1px solid var(--line2);border-radius:13px;background:rgba(255,255,255,.035);text-align:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.card{border-radius:22px;padding:16px}.card h2{margin:4px 0 10px;font-size:25px;line-height:1.05;letter-spacing:-.035em}.searchbar{display:grid;grid-template-columns:1fr auto auto;gap:8px}.field{display:grid;gap:7px}.field span{color:var(--gold);font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.input,.textarea,select{width:100%;min-height:46px;border:1px solid var(--line2);border-radius:14px;background:rgba(0,0,0,.42);color:var(--text);padding:0 12px;outline:none}.textarea{min-height:96px;padding:12px;resize:vertical;line-height:1.55}.form{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.form .wide{grid-column:1/-1}.results{display:grid;gap:9px;margin-top:10px}.results button{width:100%;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:11px;border-radius:16px;color:inherit;text-align:left}.results button.selected{border-color:rgba(255,225,154,.68);background:rgba(216,170,74,.12)}.avatar{width:42px;height:42px;border:1px solid rgba(216,170,74,.34);border-radius:13px;display:grid;place-items:center;color:var(--gold2);font-weight:950;background:rgba(216,170,74,.08)}.results strong{display:block}.results p{margin:3px 0 0;color:var(--muted);font-size:13px;line-height:1.4}.tag{display:inline-flex;margin:4px 5px 0 0;padding:3px 8px;border:1px solid var(--line2);border-radius:999px;color:var(--muted);font-size:11px;font-weight:800}.status{margin-top:12px;padding:12px 14px;border-radius:18px}.status.good{border-color:rgba(167,224,184,.45);color:#e9fff0;background:rgba(96,180,118,.08)}.status.bad{border-color:rgba(255,176,165,.5);color:#ffe8e4;background:rgba(210,83,66,.1)}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.summary div{border:1px solid var(--line2);border-radius:16px;padding:10px;background:rgba(255,255,255,.035)}.summary b{display:block;margin-top:5px;word-break:break-word}.links{display:grid;gap:8px;margin-top:10px}.linkRow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:16px}.linkRow span{color:var(--muted);font-size:12px}.linkRow a{display:block;margin-top:3px;color:var(--gold2);word-break:break-all;font-size:13px}.hidden{display:none!important}@media(max-width:760px){.mmdop{padding:8px}.mmdop__topbar{position:sticky;top:0;z-index:3;background:rgba(8,6,4,.94);backdrop-filter:blur(14px)}.hero{padding:15px;border-radius:19px}.hero h1{font-size:38px}.steps,.grid,.summary,.form,.searchbar{grid-template-columns:1fr}.card{padding:14px;border-radius:18px}.results button{grid-template-columns:38px 1fr}.results button .btn{grid-column:1/-1}.btn,.mmdop__ghost{width:100%}.linkRow{grid-template-columns:1fr}.mmdop__brand small{display:none}}
 </style>
 </head>
 <body>${body}</body>
 </html>`, {
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    },
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 }
 
@@ -41,259 +38,279 @@ const createSessionConfig = `window.MMD_CREATE_SESSION_CONFIG={adminBase:"",mock
 export function renderCreateSessionPage(_env: InternalPageEnv): Response {
   return page("MMD SIGIL Create Session", `<section class="mmdop" data-mmd-create-session-pro data-admin-base=""><main class="mmdop__shell">
     ${topbar("Create Session / Client Lineage")}
-    <section class="mmdop__command">
-      <div class="mmdop__commandLeft"><div class="mmdop__kicker">Operator Surface · Worker-rendered</div><h1>Find client. Verify lineage. Create session.</h1><p>ค้นลูกค้าจาก package / member / LINE lineage ก่อน แล้วค่อยเลือก Public หรือ Private, เลือกแฟ้ม Model, ตรวจ Telegram Gate และให้ backend คืนลิงก์พร้อม <code>?t=</code></p><div class="mmdop__flowMini"><div class="mmdop__step is-active">01 Client</div><div class="mmdop__step">02 Work</div><div class="mmdop__step">03 Model</div><div class="mmdop__step">04 Gate</div><div class="mmdop__step">05 Create</div><div class="mmdop__step">06 Output</div></div></div>
-      <aside class="mmdop__clientSearch"><div><span>First Action</span><h2>Client Lineage Search</h2><p>ค้นจากชื่อเล่น / username / เบอร์ / LINE / package / legacy tag</p></div><div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" type="text" placeholder="เช่น รัช VIP, line_user_id, premium" data-op-client-query /><button class="mmdop__btn mmdop__btn--gold" type="button" data-op-search-client>Search</button><button class="mmdop__btn" type="button" data-op-load-recent>Recent</button></div></aside>
-    </section>
-    <section class="mmdop__panel" style="margin-top:16px;"><div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าจาก lineage</h2><p>หน้านี้ยังใช้ create-session.js เดิมสำหรับ compatibility</p></div></div><div class="mmdop__section"><div class="mmdop__empty">ค้นหาลูกค้าก่อนสร้าง session</div></div></section>
+    <section class="hero"><div class="kicker">Compatibility surface</div><h1>Create Session</h1><p>ค้นลูกค้าจาก package / member / LINE lineage ก่อน แล้วค่อยสร้าง session เดิมผ่าน create-session.js</p><div class="searchbar" style="margin-top:12px"><input class="input" type="text" placeholder="ชื่อ / LINE / เบอร์ / package" data-op-client-query><button class="btn gold" type="button" data-op-search-client>Search</button><button class="btn" type="button" data-op-load-recent>Recent</button></div></section>
+    <section class="card" style="margin-top:12px"><h2>เลือกลูกค้าจาก lineage</h2><p>หน้านี้ใช้ create-session.js เดิมสำหรับ compatibility</p><div class="status">ค้นหาลูกค้าก่อนสร้าง session</div></section>
   </main><script>${createSessionConfig}</script><script src="/a/create-session.js"></script></section>`);
 }
 
-export function renderCreateJobPage(): Response {
-  return page("MMD Create Job", `<section class="mmdop" data-cj-flow="customer-first-digital"><main class="mmdop__shell">
-    ${topbar("Create Job · Customer First")}
-    <section class="mmdop__command">
-      <div class="mmdop__commandLeft">
-        <div class="mmdop__kicker">Owner Workspace · Canonical route</div>
-        <h1>Create Job.</h1>
-        <p><code>/internal/admin/jobs/create-job</code> ต้องเริ่มจากลูกค้าก่อน ไม่เริ่มจาก Model หรือ Job Board</p>
-        <div class="mmdop__flowMini" aria-label="Create Job flow">
-          <div class="mmdop__step is-active" data-cj-step="customer">01 Customer</div>
-          <div class="mmdop__step" data-cj-step="scope">02 Scope</div>
-          <div class="mmdop__step" data-cj-step="model">03 Model</div>
-          <div class="mmdop__step" data-cj-step="details">04 Details</div>
-          <div class="mmdop__step" data-cj-step="payment">05 Payment</div>
-          <div class="mmdop__step" data-cj-step="output">06 Output</div>
-        </div>
-      </div>
-      <aside class="mmdop__clientSearch" id="client-search" data-cj-primary-flow="customer-search">
-        <div><span>First Action</span><h2>1. ค้นลูกค้า</h2><p>พิมพ์ Per name / LINE / เบอร์ / package แล้วกดค้น หรือกด Recent ก่อน</p></div>
-        <div class="mmdop__searchBar"><input class="mmdop__input mmdop__input--big" id="job-client-query" placeholder="เช่น Shane, Book EI, line user id, เบอร์, VIP" autocomplete="off" /><button class="mmdop__btn mmdop__btn--gold" id="search-client-button" type="button">1 ค้นลูกค้า</button><button class="mmdop__btn" id="load-recent-clients" type="button">Recent</button></div>
-      </aside>
-    </section>
+const createJobScript = `(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const clientQuery = $("job-client-query");
+  const modelQuery = $("job-model-query");
+  const clientResults = $("client-result-list");
+  const modelResults = $("model-result-list");
+  const status = $("create-job-status");
+  const output = $("create-job-output");
+  const createButton = $("create-job-button");
+  const publishButton = $("publish-job-board");
+  const copyBoardButton = $("copy-job-board-link");
+  const boardStatus = $("job-board-status");
+  const boardText = $("job-board-text");
+  let selectedClient = null;
+  let selectedModel = null;
+  let broadcastLink = "";
 
-    <section class="mmdop__tapGuide" aria-label="Mobile digital guide">
-      <article><i>1</i><div><b>Tap first</b><strong>ค้นลูกค้า / Recent</strong><p>เริ่มจากช่องนี้ก่อนเสมอ</p></div></article>
-      <article><i>2</i><div><b>Then</b><strong>เลือกลูกค้า 1 คน</strong><p>ระบบจะเติม context ให้</p></div></article>
-      <article><i>3</i><div><b>Finish</b><strong>ใส่งาน + ราคา</strong><p>Create Job แล้วส่ง Payment URL</p></div></article>
-    </section>
+  function text(value) { return String(value || "").trim(); }
+  function first(value) { return text(value).slice(0, 1).toUpperCase() || "?"; }
+  function escapeHtml(value) { return String(value || "").replace(/[&<>\"']/g, function(c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c; }); }
+  function pickRows(data) { return data && (data.clients || data.results || data.records || data.items || data.models || data.rows) || []; }
+  function setStatus(node, message, bad) { node.textContent = message; node.className = "status " + (bad ? "bad" : "good"); }
+  function money() { const value = Number($("amount_thb").value || ""); return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0; }
+  function clientName(row) { return text(row.per_name || row.client_name || row.name || row.display_name || row.nickname || row.line_display_name || row.username || row.id || row.record_id); }
+  function clientId(row) { return text(row.client_id || row.record_id || row.id || row.airtable_id || row.line_record_id); }
+  function clientSession(row) { return text(row.session_id || row.latest_session_id || row.last_session_id); }
+  function clientMeta(row) { return [row.package, row.tier, row.membership_status, row.line_display_name, row.username, row.phone].filter(Boolean).map(text).join(" · "); }
+  function modelName(row) { return text(row.display_name || row.model_name || row.name || row.alias || row.stage_name || row.nickname || row.model_id || row.id || row.record_id); }
+  function modelKey(row) { return text(row.model_id || row.model_key || row.code || row.alias || row.record_id || row.id || modelName(row)); }
+  function modelMeta(row) { return [row.category, row.tier, row.group, row.city, row.status, row.height_weight].filter(Boolean).map(text).join(" · "); }
+  function niceError(error) { const raw = text(error); if (raw === "not_found") return "ไม่พบผลจากคำนี้ · ลองชื่ออื่น / Recent / Per name / LINE / เบอร์"; return raw || "backend unavailable"; }
 
-    <section class="mmdop__summary" aria-label="Create Job summary">
-      <article><span>Customer</span><strong id="summary-client">ยังไม่เลือก</strong></article>
-      <article><span>Scope</span><strong id="summary-scope">Public</strong></article>
-      <article><span>Model</span><strong id="summary-model">รอเลือก</strong></article>
-      <article><span>Payment</span><strong id="summary-payment">0 THB</strong></article>
-      <article><span>Output</span><strong>Payment URL first</strong></article>
-    </section>
+  async function apiJson(path, init) {
+    const res = await fetch(path, Object.assign({ credentials: "include", headers: { accept: "application/json" } }, init || {}));
+    const data = await res.json().catch(function() { return {}; });
+    if (res.status === 404 || data.error === "not_found") return { ok: true, records: [], lookup_empty: true };
+    if (!res.ok || data.ok === false) throw new Error(niceError(data.error && (data.error.message || data.error.code) || data.error || data.message || "request_failed"));
+    return data;
+  }
 
-    <section class="mmdop__layout">
-      <div class="mmdop__main">
-        <section class="mmdop__panel" id="client-results" data-cj-step-panel="customer">
-          <div class="mmdop__panelHead"><div><span>Step 01</span><h2>เลือกลูกค้าก่อนสร้างงาน</h2><p>ไม่ต้องจำ Session ID เอง ถ้าไม่เจอให้ลอง Recent หรือค้นด้วยชื่อ LINE / Per name / เบอร์</p></div><button class="mmdop__btn" id="clear-client" type="button">Clear</button></div>
-          <div class="mmdop__section"><div class="mmdop__clientResults" id="client-result-list"><div class="mmdop__empty">Step 1: กด Recent หรือพิมพ์ชื่อลูกค้าแล้วกด “1 ค้นลูกค้า”</div></div></div>
-        </section>
+  function refreshSummary() {
+    $("summary-client").textContent = selectedClient ? clientName(selectedClient) : "ยังไม่เลือก";
+    $("summary-model").textContent = selectedModel ? modelName(selectedModel) : (text($("job-model-key").value) || "รอเลือก");
+    $("summary-scope").textContent = $("job-visibility").value === "private" ? "Private" : "Public";
+    $("summary-payment").textContent = money().toLocaleString("en-US") + " THB";
+  }
 
-        <section class="mmdop__panel" id="selected-client-panel" data-cj-step-panel="lineage">
-          <div class="mmdop__panelHead"><div><span>Step 02</span><h2>Customer lineage</h2><p>ข้อมูลลูกค้าที่เลือกจะถูกส่งไปกับ create job payload เพื่อให้ backend resolve ต่อแบบ fail-closed</p></div></div>
-          <div class="mmdop__section">
-            <div class="mmdop__formGrid mmdop__formGrid--3">
-              <label class="mmdop__field"><span>Client ID</span><input class="mmdop__input" id="job-client-id" readonly placeholder="เลือกจากผลค้นหา" /></label>
-              <label class="mmdop__field"><span>Client / Per Name</span><input class="mmdop__input" id="job-client-name" placeholder="ชื่อลูกค้า" /></label>
-              <label class="mmdop__field"><span>Session ID · optional</span><input class="mmdop__input" id="job-session-id" placeholder="ถ้ามี session เดิม ระบบจะเติมให้" /></label>
-            </div>
-          </div>
-        </section>
+  function renderClientRows(rows) {
+    clientResults.__rows = rows;
+    if (!rows.length) { clientResults.innerHTML = '<div class="status">ยังไม่เจอลูกค้า · ลอง Recent หรือค้นด้วย Per name / LINE / เบอร์</div>'; return; }
+    clientResults.innerHTML = rows.map(function(row, index) {
+      const selected = selectedClient && clientId(selectedClient) === clientId(row);
+      const tag = text(row.match_type || row.source || row.status || "candidate");
+      return '<button type="button" class="' + (selected ? 'selected' : '') + '" data-client-index="' + index + '"><div class="avatar">' + escapeHtml(first(clientName(row))) + '</div><div><strong>' + escapeHtml(clientName(row) || clientId(row) || 'Unnamed client') + '</strong><p>' + escapeHtml(clientMeta(row) || 'LINE / package evidence pending') + '</p><span class="tag">' + escapeHtml(tag) + '</span></div><b class="btn soft">เลือก</b></button>';
+    }).join("");
+    clientResults.querySelectorAll("[data-client-index]").forEach(function(button) { button.addEventListener("click", function() { selectClient(rows[Number(button.dataset.clientIndex)]); }); });
+  }
 
-        <section class="mmdop__panel" data-cj-step-panel="scope-model-details">
-          <div class="mmdop__panelHead"><div><span>Steps 03-05</span><h2>สร้างงานแบบไม่งง</h2><p>เลือก scope → ใส่โมเดล → วันเวลา/พื้นที่ → ราคา แล้วค่อย Create Job</p></div></div>
-          <div class="mmdop__section">
-            <div class="mmdop__formGrid mmdop__formGrid--4">
-              <label class="mmdop__field"><span>Public / Private</span><select class="mmdop__input" id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label>
-              <label class="mmdop__field"><span>Model Lookup Key</span><input class="mmdop__input" id="job-model-key" placeholder="JASPER / EMs01 / rec..." /></label>
-              <label class="mmdop__field"><span>Job Date</span><input class="mmdop__input" id="job-date" type="date" /></label>
-              <label class="mmdop__field"><span>Start Time</span><input class="mmdop__input" id="job-start" type="time" /></label>
-              <label class="mmdop__field"><span>Duration</span><input class="mmdop__input" id="job-duration" placeholder="3 ชั่วโมง / overnight" /></label>
-              <label class="mmdop__field"><span>Area / Province</span><input class="mmdop__input" id="job-location" placeholder="สุขุมวิท / กรุงเทพฯ" /></label>
-              <label class="mmdop__field"><span>Amount THB</span><input class="mmdop__input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required placeholder="10000" /></label>
-              <label class="mmdop__field"><span>Payment mode</span><select class="mmdop__input" id="job-payment-mode"><option value="full">เต็มจำนวน</option><option value="deposit">มัดจำ</option><option value="final">ส่วนที่เหลือ</option></select></label>
-            </div>
-            <label class="mmdop__field" style="display:block;margin-top:12px;"><span>Internal Note</span><textarea class="mmdop__textarea" id="job-note" placeholder="รายละเอียด operation ภายใน / ข้อควรระวัง / brief"></textarea></label>
-            <div class="mmdop__copyRow" style="margin-top:16px;"><button class="mmdop__btn mmdop__btn--gold" id="create-job-button" type="button">Create Job</button><a class="mmdop__btn" href="/internal/admin/jobs/create-session">Open full lineage workspace</a></div>
-            <div class="mmdop__status" id="create-job-status" style="margin-top:16px;">Step 1: กด Recent หรือค้นลูกค้าก่อน</div>
-          </div>
-        </section>
-
-        <section class="mmdop__panel mmdop__secondary" id="job-board-panel" data-cj-secondary-flow="model-job-board">
-          <div class="mmdop__panelHead"><div><span>Optional</span><h2>Model Job Board / ลงกระดานงาน</h2><p>ใช้เฉพาะเมื่อยังไม่เลือกโมเดล · เป็น flow รองหลังจากรู้ customer/scope แล้ว</p></div></div>
-          <div class="mmdop__section">
-            <label class="mmdop__field" style="display:flex;align-items:center;gap:10px;"><input id="job-board-enabled" type="checkbox" style="width:20px;min-height:20px;" /><span>เปิดรับ Model / ลงกระดานงาน</span></label>
-            <label class="mmdop__field" style="display:block;margin-top:12px;"><span>รายละเอียดลงกระดาน · <b id="job-board-count">0 / 1000</b></span><textarea id="job-board-text" maxlength="1000" class="mmdop__textarea" placeholder="อธิบายงาน วันเวลา พื้นที่ สิ่งที่ต้องทำ และข้อมูล public-safe ที่ Model ควรรู้ก่อนกดสนใจ"></textarea></label>
-            <div class="mmdop__formGrid mmdop__formGrid--2" style="margin-top:12px;"><label class="mmdop__field"><span>เพศลูกค้า · สำหรับ Private cover</span><select class="mmdop__input" id="job-customer-gender"><option value="unspecified">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option><option value="couple">คู่ ชาย-หญิง</option><option value="mixed">หลายเพศ</option></select></label><label class="mmdop__field"><span>Budget บน Private cover</span><select class="mmdop__input" id="job-budget-disclosure"><option value="hidden">BUDGET · PRIVATE</option><option value="show">แสดงงบที่กรอกไว้</option></select></label></div>
-            <p style="margin:12px 0 0;color:var(--muted);font-size:13px;line-height:1.55;">เพศลูกค้าใช้ structured field นี้เท่านั้น · ไม่เดาจากชื่อ รสนิยม รูป หรือ Model preference</p>
-            <div class="mmdop__copyRow" style="margin-top:16px;"><button class="mmdop__btn mmdop__btn--soft" id="publish-job-board" type="button">ลงกระดานงาน</button><button class="mmdop__btn" id="copy-job-board-link" type="button" disabled>Copy Broadcast Link</button></div>
-            <div class="mmdop__status" id="job-board-status" style="margin-top:16px;">ยังไม่ได้ publish · Broadcast Link จะออกเป็น LIFF Login V2 เท่านั้น</div>
-          </div>
-        </section>
-      </div>
-      <aside class="mmdop__rail"><div class="mmdop__railCard"><span>Next Action</span><strong id="next-action">Find Customer</strong><p id="next-copy">กด Recent หรือค้นลูกค้าก่อน แล้วค่อยไป scope/model/details</p></div><div class="mmdop__railCard"><span>Rule</span><strong>Payment first</strong><p>หลัง Create Job ส่งได้เฉพาะ Customer Payment URL ก่อน Official Verify</p></div></aside>
-    </section>
-  </main>
-  <script>
-  (() => {
-    const $ = (id) => document.getElementById(id);
-    const clientQuery = $("job-client-query");
-    const resultList = $("client-result-list");
-    const searchClientButton = $("search-client-button");
-    const recentClientButton = $("load-recent-clients");
-    const clearClientButton = $("clear-client");
-    const status = $("create-job-status");
-    const createButton = $("create-job-button");
-    const boardEnabled = $("job-board-enabled");
-    const boardText = $("job-board-text");
-    const boardCount = $("job-board-count");
-    const boardStatus = $("job-board-status");
-    const publishButton = $("publish-job-board");
-    const copyButton = $("copy-job-board-link");
-    let selectedClient = null;
-    let broadcastLink = "";
-
-    function text(value) { return String(value || "").trim(); }
-    function setStatus(node, message, bad) { node.textContent = message; node.classList.remove("is-ok", "is-bad"); node.classList.add(bad ? "is-bad" : "is-ok"); }
-    function amount() { const value = Number($("amount_thb")?.value || ""); return Number.isFinite(value) && value > 0 ? value : 0; }
-    function escapeHtml(value) { return String(value || "").replace(/[&<>\"']/g, function(c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c] || c; }); }
-    function first(value) { return String(value || "?").trim().slice(0, 1).toUpperCase() || "?"; }
-    function pickRows(data) { return data.clients || data.results || data.records || data.items || data.rows || []; }
-    function clientName(row) { return text(row.per_name || row.client_name || row.name || row.display_name || row.nickname || row.line_display_name || row.username || row.id || row.record_id); }
-    function clientId(row) { return text(row.client_id || row.record_id || row.id || row.airtable_id || row.line_record_id); }
-    function clientSession(row) { return text(row.session_id || row.latest_session_id || row.last_session_id); }
-    function clientMeta(row) { return [row.package, row.tier, row.membership_status, row.line_display_name, row.username].filter(Boolean).map(text).join(" · "); }
-    function niceError(error) { const raw = String(error || ""); if (raw === "not_found") return "ไม่พบผลจากคำนี้ · ลอง Recent, Per name, LINE display, เบอร์ หรือ package"; return raw || "backend unavailable"; }
-
-    async function apiJson(path, init) {
-      const res = await fetch(path, Object.assign({ credentials: "include", headers: { accept: "application/json" } }, init || {}));
-      const data = await res.json().catch(function() { return {}; });
-      if (res.status === 404 || data.error === "not_found") return { ok: true, records: [], lookup_empty: true };
-      if (!res.ok || data.ok === false) throw new Error(niceError(data.error || "client_lookup_failed"));
-      return data;
-    }
-
-    function selectClient(row) {
-      selectedClient = row || null;
-      const name = selectedClient ? clientName(selectedClient) : "";
-      $("job-client-id").value = selectedClient ? clientId(selectedClient) : "";
-      $("job-client-name").value = name;
-      const session = selectedClient ? clientSession(selectedClient) : "";
-      if (session) $("job-session-id").value = session;
-      $("summary-client").textContent = name || "ยังไม่เลือก";
-      $("next-action").textContent = name ? "Fill job details" : "Find Customer";
-      $("next-copy").textContent = name ? "ใส่ scope/model/details ต่อได้เลย" : "กด Recent หรือค้นลูกค้าก่อน แล้วค่อยไป scope/model/details";
-      setStatus(status, name ? "เลือกลูกค้าแล้ว · ต่อไปใส่ scope/model/details" : "Step 1: กด Recent หรือค้นลูกค้าก่อน", false);
-      renderClientRows(resultList.__rows || []);
-    }
-
-    function renderClientRows(rows) {
-      resultList.__rows = rows;
-      if (!rows.length) { resultList.innerHTML = '<div class="mmdop__empty">ยังไม่เจอลูกค้า · ลองกด Recent หรือค้นด้วย Per name / LINE / เบอร์ / package</div>'; return; }
-      resultList.innerHTML = rows.map(function(row, index) {
-        const id = clientId(row);
-        const name = clientName(row);
-        const meta = clientMeta(row) || "LINE / package evidence pending";
-        const selected = selectedClient && clientId(selectedClient) === id;
-        const tag = text(row.match_type || row.source || row.status || "candidate");
-        return '<button type="button" class="mmdop__clientCard '+(selected ? 'is-selected' : '')+'" data-client-index="'+index+'"><div class="mmdop__avatar">'+escapeHtml(first(name))+'</div><div><strong>'+escapeHtml(name || id || 'Unnamed client')+'</strong><p>'+escapeHtml(meta)+'</p><span class="mmdop__tag">'+escapeHtml(tag)+'</span></div><b class="mmdop__btn mmdop__btn--soft">เลือก</b></button>';
-      }).join("");
-      resultList.querySelectorAll("[data-client-index]").forEach(function(button) { button.addEventListener("click", function() { selectClient(rows[Number(button.dataset.clientIndex)]); }); });
-    }
-
-    async function loadClients(kind) {
-      const q = text(clientQuery.value);
-      if (kind !== "recent" && !q) { setStatus(status, "พิมพ์ชื่อลูกค้า / LINE / เบอร์ / package ก่อนค้นหา หรือกด Recent", true); return; }
-      resultList.innerHTML = '<div class="mmdop__empty">กำลังค้นลูกค้า...</div>';
-      setStatus(status, kind === "recent" ? "กำลังโหลดลูกค้าล่าสุด..." : "กำลังค้นลูกค้า...", false);
-      try {
-        const data = kind === "recent"
-          ? await apiJson("/v1/admin/clients/recent")
-          : await apiJson("/v1/admin/clients/lineage-lookup", { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ query: q, canonical_only: false, allow_manual_fallback: true, source: "create_job_customer_first" }) });
-        const rows = pickRows(data);
-        renderClientRows(rows);
-        setStatus(status, rows.length ? "เจอลูกค้า " + rows.length + " รายการ · แตะเลือก 1 คน" : "ไม่เจอลูกค้า · ลอง Recent หรือค้นด้วย Per name / LINE / เบอร์", rows.length === 0);
-      } catch (error) {
-        resultList.innerHTML = '<div class="mmdop__empty">ค้นลูกค้าไม่สำเร็จ · '+escapeHtml(niceError(error && error.message))+'</div>';
-        setStatus(status, "ค้นลูกค้าไม่สำเร็จ · " + niceError(error && error.message), true);
-      }
-    }
-
-    function refreshBoardState() { boardCount.textContent = String(boardText.value.length) + " / 1000"; publishButton.disabled = !boardEnabled.checked || !boardText.value.trim(); }
-    function refreshSummary() { $("summary-scope").textContent = $("job-visibility").value === "private" ? "Private" : "Public"; $("summary-model").textContent = text($("job-model-key").value) || "รอเลือก"; $("summary-payment").textContent = amount().toLocaleString("en-US") + " THB"; }
-
-    searchClientButton.addEventListener("click", function() { loadClients("search"); });
-    recentClientButton.addEventListener("click", function() { loadClients("recent"); });
-    clientQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadClients("search"); });
-    clearClientButton.addEventListener("click", function() { selectedClient = null; $("job-client-id").value = ""; $("job-client-name").value = ""; $("job-session-id").value = ""; $("summary-client").textContent = "ยังไม่เลือก"; renderClientRows(resultList.__rows || []); setStatus(status, "ล้างลูกค้าแล้ว · กด Recent หรือค้นหาใหม่", false); });
-    ["job-visibility", "job-model-key", "amount_thb"].forEach(function(id) { $(id).addEventListener("input", refreshSummary); $(id).addEventListener("change", refreshSummary); });
-    boardEnabled.addEventListener("change", refreshBoardState);
-    boardText.addEventListener("input", refreshBoardState);
-    refreshBoardState();
+  function selectClient(row) {
+    selectedClient = row || null;
+    $("job-client-id").value = selectedClient ? clientId(selectedClient) : "";
+    $("job-client-name").value = selectedClient ? clientName(selectedClient) : "";
+    const session = selectedClient ? clientSession(selectedClient) : "";
+    if (session) $("job-session-id").value = session;
+    renderClientRows(clientResults.__rows || []);
     refreshSummary();
+    setStatus(status, selectedClient ? "เลือกลูกค้าแล้ว · ต่อไปค้น/เลือกโมเดล" : "เลือกลูกค้าก่อน", !selectedClient);
+  }
 
-    createButton?.addEventListener("click", async () => {
-      const payload = {
-        client_id: $("job-client-id")?.value || "",
-        client_name: $("job-client-name")?.value || "",
-        client_lookup_key: clientQuery?.value || "",
-        session_id: $("job-session-id")?.value || "",
-        amount_thb: amount(),
-        job_visibility: $("job-visibility")?.value || "public",
-        job_date: $("job-date")?.value || "",
-        start_time: $("job-start")?.value || "",
-        duration: $("job-duration")?.value || "",
-        location_name: $("job-location")?.value || "",
-        model_lookup_key: $("job-model-key")?.value || "",
-        payment_mode: $("job-payment-mode")?.value || "full",
-        note: $("job-note")?.value || "",
-        source: "worker_rendered_create_job_customer_first"
-      };
-      if (!payload.client_id && !payload.session_id && !payload.client_name) return setStatus(status, "กรุณาค้นหาและเลือกลูกค้าก่อนสร้างงาน", true);
-      if (!payload.amount_thb) return setStatus(status, "กรุณาใส่ Amount THB มากกว่า 0", true);
-      createButton.disabled = true;
-      setStatus(status, "Creating job...", false);
-      try {
-        const res = await fetch("/v1/admin/create-job", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.ok === false) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "create_job_failed");
-        setStatus(status, "Job created · ส่ง Customer Payment URL ก่อน: " + (data.job_id || data.session_id || data.id || "OK"), false);
-      } catch (error) {
-        setStatus(status, "ยัง create job ไม่สำเร็จ · " + String(error?.message || "backend unavailable"), true);
-      } finally {
-        createButton.disabled = false;
-      }
-    });
+  function renderModelRows(rows) {
+    modelResults.__rows = rows;
+    if (!rows.length) { modelResults.innerHTML = '<div class="status">ยังไม่เจอโมเดล · ลองชื่อเล่น / RUN / EMs / GWs / Jasper</div>'; return; }
+    modelResults.innerHTML = rows.map(function(row, index) {
+      const selected = selectedModel && modelKey(selectedModel) === modelKey(row);
+      return '<button type="button" class="' + (selected ? 'selected' : '') + '" data-model-index="' + index + '"><div class="avatar">' + escapeHtml(first(modelName(row))) + '</div><div><strong>' + escapeHtml(modelName(row) || modelKey(row) || 'Unnamed model') + '</strong><p>' + escapeHtml(modelMeta(row) || modelKey(row)) + '</p><span class="tag">' + escapeHtml(modelKey(row)) + '</span></div><b class="btn soft">เลือก</b></button>';
+    }).join("");
+    modelResults.querySelectorAll("[data-model-index]").forEach(function(button) { button.addEventListener("click", function() { selectModel(rows[Number(button.dataset.modelIndex)]); }); });
+  }
 
-    publishButton?.addEventListener("click", async () => {
-      if (!boardEnabled.checked || !boardText.value.trim()) return;
-      const visibility = $("job-visibility")?.value || "public";
-      const budget = amount();
-      const payload = { board_text: boardText.value.trim(), world: visibility, job_date: $("job-date")?.value || "", start_time: $("job-start")?.value || "", duration: $("job-duration")?.value || "", area: $("job-location")?.value || "", compensation: budget ? budget.toLocaleString("en-US") + " บาท" : "", customer_gender: $("job-customer-gender")?.value || "unspecified", budget_disclosure_approved: visibility === "private" && $("job-budget-disclosure")?.value === "show", owner_note: $("job-note")?.value || "" };
-      publishButton.disabled = true;
-      copyButton.disabled = true;
-      broadcastLink = "";
-      setStatus(boardStatus, "กำลัง publish งานเข้ากระดาน...", false);
-      try {
-        const res = await fetch("/v1/admin/job-board/publish", { method: "POST", credentials: "include", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(payload) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.ok !== true || !data.broadcast_url) throw new Error(data.error || "job_board_publish_failed");
-        broadcastLink = String(data.broadcast_url);
-        if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
-        copyButton.disabled = false;
-        setStatus(boardStatus, "Published · " + String(data.job_id || "") + " · พร้อม Copy LIFF Login V2 link", false);
-      } catch (error) {
-        setStatus(boardStatus, "ยังลงกระดานไม่สำเร็จ · " + String(error?.message || "backend unavailable"), true);
-      } finally {
-        refreshBoardState();
-      }
-    });
+  function selectModel(row) {
+    selectedModel = row || null;
+    $("job-model-key").value = selectedModel ? modelKey(selectedModel) : "";
+    renderModelRows(modelResults.__rows || []);
+    refreshSummary();
+    setStatus(status, selectedModel ? "เลือกโมเดลแล้ว · ใส่งานและราคาได้เลย" : "เลือกโมเดลก่อน", !selectedModel);
+  }
 
-    copyButton?.addEventListener("click", async () => { if (!broadcastLink) return; try { await navigator.clipboard.writeText(broadcastLink); setStatus(boardStatus, "คัดลอก Broadcast Link แล้ว · Model จะเข้า LIFF Login V2 ก่อน", false); } catch { setStatus(boardStatus, "คัดลอกลิงก์ไม่สำเร็จ", true); } });
-  })();
-  </script></section>`);
+  async function loadClients(kind) {
+    const q = text(clientQuery.value);
+    if (kind !== "recent" && !q) { setStatus(status, "พิมพ์ชื่อลูกค้า / LINE / เบอร์ หรือกด Recent", true); return; }
+    clientResults.innerHTML = '<div class="status">กำลังค้นลูกค้า...</div>';
+    try {
+      const data = kind === "recent"
+        ? await apiJson("/v1/admin/clients/recent")
+        : await apiJson("/v1/admin/clients/lineage-lookup", { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify({ query: q, canonical_only: false, allow_manual_fallback: true, source: "create_job_owner_ui" }) });
+      const rows = pickRows(data);
+      renderClientRows(rows);
+      setStatus(status, rows.length ? "เจอลูกค้า " + rows.length + " รายการ · แตะเลือก 1 คน" : "ไม่เจอลูกค้า · ลอง Recent / Per name / LINE / เบอร์", rows.length === 0);
+    } catch (error) {
+      clientResults.innerHTML = '<div class="status bad">ค้นลูกค้าไม่สำเร็จ · ' + escapeHtml(niceError(error && error.message)) + '</div>';
+      setStatus(status, "ค้นลูกค้าไม่สำเร็จ · " + niceError(error && error.message), true);
+    }
+  }
+
+  async function loadModels() {
+    const q = text(modelQuery.value || $("job-model-key").value);
+    if (!q) { setStatus(status, "พิมพ์ชื่อโมเดล / RUN / EMs / GWs ก่อนค้นหา", true); return; }
+    modelResults.innerHTML = '<div class="status">กำลังค้นโมเดล...</div>';
+    try {
+      const params = new URLSearchParams();
+      params.set("q", q);
+      params.set("scope", $("job-visibility").value === "private" ? "private" : "public");
+      const data = await apiJson("/v1/admin/models/search?" + params.toString());
+      const rows = pickRows(data);
+      renderModelRows(rows);
+      setStatus(status, rows.length ? "เจอโมเดล " + rows.length + " รายการ · แตะเลือก 1 คน" : "ไม่เจอโมเดล · ตรวจชื่อ/RUN/scope แล้วค้นใหม่", rows.length === 0);
+    } catch (error) {
+      modelResults.innerHTML = '<div class="status bad">ค้นโมเดลไม่สำเร็จ · ' + escapeHtml(niceError(error && error.message)) + '</div>';
+      setStatus(status, "ค้นโมเดลไม่สำเร็จ · " + niceError(error && error.message), true);
+    }
+  }
+
+  function renderLinks(data) {
+    const urls = [];
+    const push = function(label, value, note) { if (value) urls.push({ label: label, value: String(value), note: note || "" }); };
+    push("Customer Payment URL", data.customer_payment_url || data.payment_url || data.customerPaymentUrl, "ส่งให้ลูกค้าก่อน");
+    push("Customer Confirmation URL", data.customer_confirmation_url || data.customerConfirmationUrl || data.member_confirmation_url, "หลัง Official Verify");
+    push("Model App URL", data.model_app_url || data.modelJobAppUrl || data.model_url, "หลัง Official Verify / ส่งให้น้อง");
+    push("Admin Job URL", data.admin_job_url || data.admin_url, "ไว้ให้เปอร์ดูต่อ");
+    output.innerHTML = urls.length ? urls.map(function(item, index) {
+      return '<div class="linkRow"><div><span>' + escapeHtml(item.label + (item.note ? ' · ' + item.note : '')) + '</span><a href="' + escapeHtml(item.value) + '" target="_blank" rel="noreferrer">' + escapeHtml(item.value) + '</a></div><button class="btn soft" type="button" data-copy-url="' + index + '">Copy</button></div>';
+    }).join("") : '<div class="status">สร้างงานแล้ว แต่ response ยังไม่ส่ง URL กลับมา</div>';
+    output.__urls = urls;
+    output.querySelectorAll("[data-copy-url]").forEach(function(button) { button.addEventListener("click", async function() { const item = output.__urls[Number(button.dataset.copyUrl)]; if (!item) return; try { await navigator.clipboard.writeText(item.value); button.textContent = "Copied"; } catch { button.textContent = "Copy ไม่ได้"; } }); });
+  }
+
+  async function createJob() {
+    const payload = {
+      client_id: $("job-client-id").value,
+      client_name: $("job-client-name").value,
+      client_lookup_key: clientQuery.value,
+      session_id: $("job-session-id").value,
+      model_lookup_key: $("job-model-key").value,
+      model_name: selectedModel ? modelName(selectedModel) : $("job-model-key").value,
+      amount_thb: money(),
+      job_visibility: $("job-visibility").value,
+      job_date: $("job-date").value,
+      start_time: $("job-start").value,
+      duration: $("job-duration").value,
+      location_name: $("job-location").value,
+      payment_mode: $("job-payment-mode").value,
+      note: $("job-note").value,
+      source: "worker_rendered_create_job_owner_ui_v2"
+    };
+    if (!payload.client_id && !payload.session_id && !payload.client_name) { setStatus(status, "เลือกลูกค้าก่อนสร้างงาน", true); return; }
+    if (!payload.model_lookup_key) { setStatus(status, "เลือกหรือพิมพ์โมเดลก่อนสร้างงาน", true); return; }
+    if (!payload.amount_thb) { setStatus(status, "ใส่ราคา Amount THB ก่อน", true); return; }
+    createButton.disabled = true;
+    setStatus(status, "Creating job...", false);
+    try {
+      const res = await fetch("/v1/admin/create-job", { method: "POST", credentials: "include", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(payload) });
+      const data = await res.json().catch(function() { return {}; });
+      if (!res.ok || data.ok === false) throw new Error(data.error && (data.error.message || data.error.code) || data.error || data.message || "create_job_failed");
+      renderLinks(data.data || data);
+      setStatus(status, "Job created · ส่ง Customer Payment URL ก่อนเท่านั้น", false);
+    } catch (error) {
+      setStatus(status, "ยัง create job ไม่สำเร็จ · " + niceError(error && error.message), true);
+    } finally {
+      createButton.disabled = false;
+    }
+  }
+
+  async function publishBoard() {
+    if (!text(boardText.value)) { setStatus(boardStatus, "ใส่รายละเอียดกระดานก่อน", true); return; }
+    publishButton.disabled = true;
+    copyBoardButton.disabled = true;
+    broadcastLink = "";
+    try {
+      const budget = money();
+      const payload = { board_text: boardText.value.trim(), world: $("job-visibility").value, job_date: $("job-date").value, start_time: $("job-start").value, duration: $("job-duration").value, area: $("job-location").value, compensation: budget ? budget.toLocaleString("en-US") + " บาท" : "", owner_note: $("job-note").value };
+      const res = await fetch("/v1/admin/job-board/publish", { method: "POST", credentials: "include", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(payload) });
+      const data = await res.json().catch(function() { return {}; });
+      if (!res.ok || data.ok !== true || !data.broadcast_url) throw new Error(data.error || data.message || "job_board_publish_failed");
+      broadcastLink = String(data.broadcast_url);
+      if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
+      copyBoardButton.disabled = false;
+      setStatus(boardStatus, "Published · Copy LIFF Login V2 link ได้", false);
+    } catch (error) {
+      setStatus(boardStatus, "ยังลงกระดานไม่สำเร็จ · " + niceError(error && error.message), true);
+    } finally {
+      publishButton.disabled = false;
+    }
+  }
+
+  $("search-client-button").addEventListener("click", function() { loadClients("search"); });
+  $("load-recent-clients").addEventListener("click", function() { loadClients("recent"); });
+  $("search-model-button").addEventListener("click", loadModels);
+  createButton.addEventListener("click", createJob);
+  publishButton.addEventListener("click", publishBoard);
+  copyBoardButton.addEventListener("click", async function() { if (!broadcastLink) return; try { await navigator.clipboard.writeText(broadcastLink); setStatus(boardStatus, "คัดลอก Broadcast Link แล้ว", false); } catch { setStatus(boardStatus, "คัดลอกลิงก์ไม่สำเร็จ", true); } });
+  clientQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadClients("search"); });
+  modelQuery.addEventListener("keydown", function(event) { if (event.key === "Enter") loadModels(); });
+  ["job-visibility", "job-model-key", "amount_thb"].forEach(function(id) { $(id).addEventListener("input", refreshSummary); $(id).addEventListener("change", refreshSummary); });
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  $("job-date").value = yyyy + "-" + mm + "-" + dd;
+  refreshSummary();
+})();`;
+
+export function renderCreateJobPage(): Response {
+  return page("MMD Create Job", `<section class="mmdop" data-cj-flow="owner-real-v2"><main class="mmdop__shell">
+    ${topbar("Create Job")}
+    <section class="hero">
+      <div class="kicker">Simple Owner Mode · Real Flow</div>
+      <h1>สร้างงาน</h1>
+      <p>เริ่มจากลูกค้า → เลือกโมเดล → ใส่งาน/ราคา → ได้ Customer Payment URL ก่อน ส่วนลิงก์ลูกค้า/โมเดลปล่อยหลัง Official Verify เท่านั้น</p>
+      <div class="steps"><div class="step">01 ลูกค้า</div><div class="step">02 โมเดล</div><div class="step">03 งาน/ราคา</div><div class="step">04 URLs</div></div>
+    </section>
+
+    <section class="summary" aria-label="Create Job summary">
+      <div><span class="label">Customer</span><b id="summary-client">ยังไม่เลือก</b></div>
+      <div><span class="label">Model</span><b id="summary-model">รอเลือก</b></div>
+      <div><span class="label">Scope</span><b id="summary-scope">Public</b></div>
+      <div><span class="label">Payment</span><b id="summary-payment">0 THB</b></div>
+    </section>
+
+    <section class="grid">
+      <section class="card" data-cj-primary-flow="customer-search">
+        <span class="label">Step 01</span><h2>เลือกลูกค้า</h2>
+        <div class="searchbar"><input class="input" id="job-client-query" placeholder="Per name / LINE / เบอร์ / package" autocomplete="off"><button class="btn gold" id="search-client-button" type="button">ค้นหา</button><button class="btn" id="load-recent-clients" type="button">Recent</button></div>
+        <input id="job-client-id" type="hidden"><input id="job-client-name" type="hidden"><input id="job-session-id" type="hidden">
+        <div class="results" id="client-result-list"><div class="status">กด Recent หรือค้นชื่อลูกค้าก่อน</div></div>
+      </section>
+
+      <section class="card" data-cj-primary-flow="model-search">
+        <span class="label">Step 02</span><h2>เลือกโมเดล</h2>
+        <div class="searchbar"><input class="input" id="job-model-query" placeholder="JASPER / EMs01 / GWs19 / RUN"><button class="btn gold" id="search-model-button" type="button">ค้นโมเดล</button></div>
+        <label class="field" style="margin-top:10px"><span>Model key ที่จะส่งสร้างงาน</span><input class="input" id="job-model-key" placeholder="เลือกจากผลค้นหา หรือพิมพ์เอง"></label>
+        <div class="results" id="model-result-list"><div class="status">ค้นแล้วแตะเลือกโมเดล</div></div>
+      </section>
+    </section>
+
+    <section class="card" style="margin-top:12px">
+      <span class="label">Step 03</span><h2>รายละเอียดงาน</h2>
+      <div class="form">
+        <label class="field"><span>Public / Private</span><select id="job-visibility"><option value="public">Public Work</option><option value="private">Private Work</option></select></label>
+        <label class="field"><span>Amount THB</span><input class="input" id="amount_thb" name="amount_thb" type="number" min="1" step="1" required placeholder="10000"></label>
+        <label class="field"><span>Job Date</span><input class="input" id="job-date" type="date"></label>
+        <label class="field"><span>Start Time</span><input class="input" id="job-start" type="time" step="1800"></label>
+        <label class="field"><span>Duration</span><input class="input" id="job-duration" placeholder="90m / 3h / overnight" value="90m"></label>
+        <label class="field"><span>Area / Province</span><input class="input" id="job-location" list="province-list" placeholder="สุขุมวิท / กรุงเทพฯ"><datalist id="province-list"><option value="กรุงเทพฯ"><option value="นนทบุรี"><option value="ปทุมธานี"><option value="ชลบุรี"><option value="เชียงใหม่"><option value="ภูเก็ต"></datalist></label>
+        <label class="field"><span>Payment mode</span><select id="job-payment-mode"><option value="full">เต็มจำนวน</option><option value="deposit">มัดจำ</option><option value="final">ส่วนที่เหลือ</option></select></label>
+        <label class="field wide"><span>Internal Note</span><textarea class="textarea" id="job-note" placeholder="brief / ข้อควรระวัง / operation note"></textarea></label>
+      </div>
+      <button class="btn gold" id="create-job-button" type="button" style="margin-top:12px">Create Job</button>
+      <div class="status" id="create-job-status">เลือกลูกค้า + โมเดล แล้วใส่งาน/ราคา</div>
+      <div class="links" id="create-job-output"></div>
+    </section>
+
+    <section class="card" style="margin-top:12px" data-cj-secondary-flow="model-job-board">
+      <span class="label">Optional</span><h2>ลงกระดานงาน</h2>
+      <p>ใช้เฉพาะงานที่ยังหาโมเดลอยู่ · Broadcast Link ต้องเป็น LIFF Login V2</p>
+      <textarea id="job-board-text" maxlength="1000" class="textarea" placeholder="รายละเอียด public-safe สำหรับโมเดล"></textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn soft" id="publish-job-board" type="button">ลงกระดานงาน</button><button class="btn" id="copy-job-board-link" type="button" disabled>Copy Broadcast Link</button></div>
+      <div class="status" id="job-board-status">ยังไม่ได้ publish</div>
+    </section>
+  </main><script>${createJobScript}</script></section>`);
 }
