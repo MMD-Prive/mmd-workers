@@ -1,4 +1,4 @@
-import { createLineSignature, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import {
   handleKenjiSeedLineRequest,
   isKenjiSeedLineRequest,
@@ -74,6 +74,25 @@ function membershipStatusText(value = "") {
   if (/(?:เช็ก|เช็ค|ตรวจ|ตรวจสอบ|ดู|ขอดู|ขอเช็ก|ขอเช็ค).{0,16}สถานะ(?:การ)?สมาชิก/i.test(normalized)) return true;
   if (/สถานะ(?:การ)?สมาชิก.{0,20}(?:ของผม|ของฉัน|ของหนู|ของเรา|ตอนนี้|ปัจจุบัน|เป็นยังไง|เป็นอย่างไร|ยังอยู่|active|inactive|expired|หมดอายุ)/i.test(normalized)) return true;
   return /(?:สมาชิก|membership).{0,16}(?:active|inactive|expired|หมดอายุ|ยังอยู่|ยังเป็นสมาชิก)/i.test(normalized);
+}
+
+export function isKenjiModelNameOnlyTextEvent(event = {}) {
+  if (event?.source?.type !== "user" || event?.type !== "message" || event?.message?.type !== "text") return false;
+  const raw = text(event?.message?.text);
+  if (!raw) return false;
+  const query = extractKenjiModelLookupQuery(raw);
+  return Boolean(query) && inferLineIntent(raw, event) === "model_lookup";
+}
+
+function silentModelOnlyAck(reason = "non_model_text") {
+  return json({
+    ok: true,
+    route: "line_webhook",
+    kenji_mode: "model_name_only",
+    replied: false,
+    suppressed: true,
+    reason,
+  }, 200);
 }
 
 function membershipStatusEvent(event = {}) {
