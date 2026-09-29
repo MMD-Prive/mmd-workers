@@ -63,3 +63,17 @@ test("normalized contract contains no payment decision fields", () => {
   assert.equal(response.result.confidence_score, 1);
   assert.equal(Object.hasOwn(response.result, "status"), false);
 });
+
+
+test("account detail OCR extracts bank, name, and account number", () => {
+  const result = normalizeOcrText(`
+ธนาคาร กสิกรไทย
+ชื่อบัญชี นาย ทดสอบ ระบบ
+เลขที่บัญชี 123-4-56789-0
+`, 94);
+  assert.equal(result.account_bank, "กสิกรไทย");
+  assert.equal(result.account_name, "นาย ทดสอบ ระบบ");
+  assert.equal(result.account_number, "123-4-56789-0");
+  assert.equal(result.amount_thb, null);
+  assert.equal(result.payment_ref, "");
+});
