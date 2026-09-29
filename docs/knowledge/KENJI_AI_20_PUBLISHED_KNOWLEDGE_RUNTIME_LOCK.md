@@ -8,6 +8,10 @@ Canonical owner admin preview: `/internal/admin/kenji?view=ai20`
 Runtime source endpoint: `/v1/internal/kenji/knowledge/published`
 Admin namespace: `/v1/admin/kenji/knowledge/*`
 
+Canonical Brain overlay: `docs/knowledge/KENJI_CANONICAL_BRAIN_V1_20260929.md`
+
+The Canonical Brain overlay does not replace this Published Knowledge runtime. It defines the voice/knowledge/live-truth layering around it. Jotform / Per AI remains the canonical Per Voice corpus (TH / EN / ZH); stale factual claims from older Jotform material do not become runtime truth.
+
 ## Decision
 
 Kenji AI 2.0 must read published knowledge cards from the runtime endpoint first. If the endpoint or persisted store is unavailable, the page/chat must fallback to the static canonical route map only. The published runtime must not return an empty `cards: []` as the normal customer-facing state.
