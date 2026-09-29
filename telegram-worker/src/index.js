@@ -4410,7 +4410,7 @@ async function postPreviewChannelCta(body, env) {
 function previewVerificationRequiredText() {
   return [
     "6 YEARS CARE BACK · PHASE 2 — CARE BACK CONTINUES",
-    "เปิดถึง 31 ตุลาคม 2026 ครับ",
+    "เปิด 1 กันยายน–31 ตุลาคม 2026 ครับ",
     "",
     "HYPE จะพาคุณยืนยันผ่าน LINE/LIFF และให้ MMD ตรวจสถานะสมาชิก ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบได้ก่อนครับ",
     "Phase 2 ใช้สิทธิ์ชุดเดียวกับ Phase 1 ไม่ได้สร้างสิทธิ์ซ้ำ",
