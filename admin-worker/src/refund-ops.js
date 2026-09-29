@@ -157,13 +157,28 @@ function privateBucket(env = {}) {
   return bucket && typeof bucket.get === "function" && typeof bucket.put === "function" ? bucket : null;
 }
 
+function manualPayloadPrivateDetail(payload = {}) {
+  const manualSource = clean(payload.manual_source, 160).toLowerCase();
+  if (!manualSource.startsWith("boss_per_")) return null;
+  const accountNumber = clean(payload.account_number || payload.account_number_masked, 120);
+  const accountName = clean(payload.account_name || payload.account_name_masked, 200);
+  const bankName = clean(payload.bank_name, 120);
+  if (!accountNumber || !accountName || /[•*xX]/.test(accountNumber)) return null;
+  return {
+    bank_name: bankName,
+    account_name: accountName,
+    account_number: accountNumber,
+    purpose: clean(payload.purpose || "unknown", 40),
+  };
+}
+
 async function loadPrivateDetail(env, record) {
   const payload = parsePayload(record);
   const key = clean(payload.private_detail_key, 500);
   const bucket = privateBucket(env);
-  if (!key || !bucket) return null;
+  if (!key || !bucket) return manualPayloadPrivateDetail(payload);
   const object = await bucket.get(key);
-  if (!object) return null;
+  if (!object) return manualPayloadPrivateDetail(payload);
   try {
     const detail = JSON.parse(await object.text());
     return {
@@ -173,7 +188,7 @@ async function loadPrivateDetail(env, record) {
       purpose: clean(detail.purpose || payload.purpose || "unknown", 40),
     };
   } catch {
-    return null;
+    return manualPayloadPrivateDetail(payload);
   }
 }
 
