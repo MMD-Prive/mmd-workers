@@ -11,6 +11,7 @@ import worker, {
   inferLineIntent,
   KenjiModelIdempotency,
   resolveLineCardCampaignTrigger,
+  resolveKenjiModelIntent,
   resolveKenjiLineReply,
 } from "../src/index.js";
 
@@ -145,6 +146,10 @@ test("owner-approved rollout keeps LLM and card leads off while gated model look
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
+  assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_ENABLED\s*=\s*"true"$/m);
+  assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_WAIT_MS\s*=\s*"650"$/m);
+  assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_WINDOW_MS\s*=\s*"2200"$/m);
+  assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_MAX_MESSAGES\s*=\s*"4"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_LEAD_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_PILOT_HASHES\s*=\s*""$/m);
@@ -273,6 +278,34 @@ test("model browse copy follows canonical private visibility without granting pr
   assert.match(publicPicked.text, /Public Models/);
   assert.match(publicPicked.text, /Private \/ GWs \/ EMs/);
   assert.doesNotMatch(publicPicked.text, /มี Private visibility อยู่ด้วย/);
+});
+
+test("universal Model resolver normalizes campaign triggers and direct Model names through one identity query", () => {
+  const campaign = resolveKenjiModelIntent("GWs19");
+  assert.equal(campaign.matched, true);
+  assert.equal(campaign.intent, "model_lookup");
+  assert.equal(campaign.source, "campaign_trigger");
+  assert.equal(campaign.query, "GWs19");
+  assert.equal(campaign.campaign_trigger.card_trigger, "GWs19");
+
+  const ems = resolveKenjiModelIntent("EMs11");
+  assert.equal(ems.query, "EMs11");
+  assert.equal(ems.source, "campaign_trigger");
+
+  const tah = resolveKenjiModelIntent("Tah");
+  assert.equal(tah.query, "TAH");
+  assert.equal(tah.campaign_trigger.card_trigger, "TAH");
+
+  const direct = resolveKenjiModelIntent("MX17");
+  assert.equal(direct.matched, true);
+  assert.equal(direct.source, "model_lookup");
+  assert.equal(direct.query, "MX17");
+  assert.equal(direct.campaign_trigger, null);
+
+  const thai = resolveKenjiModelIntent("บุค");
+  assert.equal(thai.matched, true);
+  assert.equal(thai.query, "บุค");
+  assert.equal(resolveKenjiModelIntent("คืนนี้").matched, false);
 });
 
 test("standalone model names and short follow-ups keep guarded model context", () => {
@@ -1203,6 +1236,43 @@ test("next customer message is queued as the attributed campaign brief before ac
     assert.equal(metadata.auto_rate, "disabled");
     assert.match(replies[1].init.body, /ได้รับข้อความเพิ่มเติมแล้ว/);
     assert.doesNotMatch(replies[1].init.body, /บาท|โปรไฟล์|รหัส/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("active owner takeover suppresses ordinary deterministic LINE replies too", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && (init.method || "GET") === "GET") {
+      return new Response(JSON.stringify({ records: [{ id: "rec-owner-processing", fields: { status: "processing" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.hostname === "api.airtable.com") {
+      return new Response(JSON.stringify({ id: "rec-write" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.pathname.includes("/v2/bot/message/reply")) {
+      return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_KENJI_MODEL_ENABLED: "false",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    const response = await worker.fetch(await signedWebhook([lineEvent("คุยกับเปอร์")], env), env);
+    assert.equal(response.status, 200);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
