@@ -745,11 +745,14 @@ function renderShell(config, nonce) {
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
     renderCustomerContact(payload.data || {});
-    await readCouponWallet();
-    await readCreditWallet();
-    await readCanonicalHistory();
-    await readCustomerRequests();
-    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
+    const hydrationReads = [
+      readCouponWallet(),
+      readCreditWallet(),
+      readCanonicalHistory(),
+      readCustomerRequests(),
+    ];
+    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") hydrationReads.push(readCareBackState());
+    await Promise.allSettled(hydrationReads);
     return payload.data || {};
   }
 
