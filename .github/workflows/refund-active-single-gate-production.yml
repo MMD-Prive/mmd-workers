@@ -1,0 +1,29 @@
+name: Refund Ops Active Gate Production Acceptance
+
+on:
+  push:
+    branches:
+      - diag/refund-active-single-gate-prod-20260929
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require owner credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+      - name: Verify Refund Ops survives duplicate browser session cookie
+        run: node scripts/refund-active-single-gate-production.mjs
