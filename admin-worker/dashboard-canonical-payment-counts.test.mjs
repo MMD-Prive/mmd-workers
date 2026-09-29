@@ -50,7 +50,13 @@ function historicalProof(id, reviewState) {
         schema: "mmd_historical_slip_backfill_v1",
         review_state: reviewState,
         source_type: "line_archive",
-        source_ref: `archive:${id}`,
+        source_ref: id === "hist_pending_01"
+          ? "LINE OFC · บอส 23 ก.ย. 69 · งาน Book EI ยกเลิก"
+          : `archive:${id}`,
+        explicit_context: id === "hist_pending_01" ? {
+          payment_stage: "deposit",
+          context_text: "บอส 23 ก.ย. 69 · Book EI · งาน 24 ก.ย. 2569 01:00 ยกเลิก เพราะลูกค้าแจ้งว่า Book ไม่ตรงปก · มัดจำ K+ 4,500 บาท เพื่อเครดิต",
+        } : undefined,
         evidence_sha256: "a".repeat(64),
         r2_key: `line-ofc/payment-proofs/2026/09/${id}/original.png`,
         mime_type: "image/png",
@@ -163,9 +169,15 @@ test("dashboard reuses canonical payment-review and historical-recovery queues f
   assert.match(dashboard.money[0].text, /ค่าจบงาน \/ ยอดคงเหลือ/);
   assert.equal(dashboard.historical_recovery.length, 1);
   assert.equal(dashboard.historical_recovery[0].proof_id, "hist_pending_01");
+  assert.match(dashboard.historical_recovery[0].context_text, /Book EI/);
+
+  const historicalTodo = dashboard.todos.find((item) => item.tag === "สลิปย้อนหลัง");
+  assert.equal(historicalTodo?.title, "เช็ก บอส 23 ก.ย. 69 · Book EI ยกเลิก");
+  assert.match(historicalTodo?.text || "", /มัดจำ K\+ 4,500 บาท เพื่อเครดิต/);
+  assert.equal(historicalTodo?.href, "/internal/admin/payments/historical-backfill?proof_id=hist_pending_01");
 
   assert.equal(dashboard.todos.some((item) => item.href === "/internal/admin/payments"), true);
-  assert.equal(dashboard.todos.some((item) => item.href === "/internal/admin/payments/historical-backfill"), true);
+  assert.equal(dashboard.todos.some((item) => item.href.startsWith("/internal/admin/payments/historical-backfill")), true);
   assert.equal(dashboard.status.payments, "พร้อม");
   assert.equal(dashboard.status.historical_recovery, "พร้อม");
 });

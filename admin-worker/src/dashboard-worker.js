@@ -439,6 +439,15 @@ function buildFocus({ money, historicalPending, jobs, members, boss }) {
   };
 }
 
+function historicalOwnerLabel(item = {}) {
+  const source = firstText(item.source_ref);
+  if (!source) return "สลิปย้อนหลัง";
+  return source
+    .replace(/^LINE\s+(?:OFC|OA)\s*·\s*/i, "")
+    .replace(/\s*·\s*งาน\s+/i, " · ")
+    .trim() || "สลิปย้อนหลัง";
+}
+
 function buildTodos({ money, historicalPending, jobs, members, boss }) {
   const todos = [];
 
@@ -455,15 +464,18 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
 
   if (historicalPending[0]) {
     const proof = historicalPending[0];
+    const fallbackText = compactJoin([
+      proof.amount_thb ? `${amountText(proof.amount_thb)} บาท` : "ยังอ่านยอดไม่ครบ",
+      proof.payment_ref_masked ? `ref ${proof.payment_ref_masked}` : "",
+    ], " · ");
     todos.push({
-      title: `Historical Recovery · ${proof.proof_id || proof.source_ref || "สลิปย้อนหลัง"}`,
-      text: compactJoin([
-        proof.amount_thb ? `${amountText(proof.amount_thb)} บาท` : "ยังอ่านยอดไม่ครบ",
-        proof.payment_ref_masked ? `ref ${proof.payment_ref_masked}` : "",
-      ], " · "),
-      href: "/internal/admin/payments/historical-backfill",
+      title: `เช็ก ${historicalOwnerLabel(proof)}`,
+      text: firstText(proof.context_text, fallbackText),
+      href: proof.proof_id
+        ? `/internal/admin/payments/historical-backfill?proof_id=${encodeURIComponent(proof.proof_id)}`
+        : "/internal/admin/payments/historical-backfill",
       icon: "↺",
-      tag: "Historical",
+      tag: "สลิปย้อนหลัง",
       color: "yellow",
     });
   }
