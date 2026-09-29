@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { rewritePendingStatusStartResponse } from "../src/liff-status-resolution-guard.js";
 
@@ -10,8 +11,12 @@ function jsonResponse(payload, status = 200) {
 }
 
 const RECOVERY_REQUIRED_FIELDS = ["email", "phone", "nickname"];
+const COMPACT_COPY = [
+  "ยืนยัน LINE สำเร็จแล้ว",
+  "กรอก 1–2 อย่างที่เคยให้ไว้: อีเมล / เบอร์ / ชื่อเล่นหรือนามแฝง แล้วกด Verify",
+];
 
-test("unmatched LINE-verified MY MMD status returns safe pending state, not guest data", async () => {
+test("unmatched LINE-verified MY MMD status returns safe pending state with compact recovery copy", async () => {
   const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
   const response = jsonResponse({
     ok: true,
@@ -29,21 +34,10 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal(payload.ok, true);
   assert.equal(payload.data.next_screen_key, "status_unresolved");
   assert.equal(payload.data.screen.key, "status_unresolved");
-  assert.match(payload.data.screen.copy, /ยืนยัน LINE สำเร็จแล้ว/);
-  assert.match(payload.data.screen.copy, /1–2 อย่าง/);
-  assert.match(payload.data.screen.copy, /อีเมล \/ เบอร์ \/ ชื่อเล่นหรือนามแฝง/);
-  assert.match(payload.data.screen.copy, /โน้ตเดิมของ Per/);
-  assert.doesNotMatch(payload.data.screen.copy, /Guest/);
-  assert.doesNotMatch(payload.data.screen.copy, /Telegram/);
-  assert.doesNotMatch(payload.data.screen.copy, /Member ID/);
-  assert.doesNotMatch(payload.data.screen.copy, /LINE OFC note/);
-  assert.doesNotMatch(payload.data.screen.copy, /Tier, Points, Wallet/);
-  assert.deepEqual(payload.data.screen.copy.split("\n"), [
-    "ยืนยัน LINE สำเร็จแล้ว",
-    "กด Verify เพื่อให้ MMD ตรวจข้อมูลสมาชิกเดิมของคุณ",
-  ]);
+  assert.deepEqual(payload.data.screen.copy.split("\n"), COMPACT_COPY);
+  assert.match(payload.data.screen.copy, /ชื่อเล่นหรือนามแฝง/);
   assert.match(payload.data.screen.copy, /Verify/);
-  assert.doesNotMatch(payload.data.screen.copy, /Per note|LINE OFC note|Console Inbox|Tier|Points|Wallet|Private Access|Guest/);
+  assert.doesNotMatch(payload.data.screen.copy, /Guest|Telegram|Member ID|LINE OFC note|Per note|Console Inbox|Tier|Points|Wallet|Private Access/);
 
   assert.deepEqual(payload.data.my_mmd_safe_state, {
     line_verified: true,
@@ -71,7 +65,6 @@ test("unmatched LINE-verified MY MMD status returns safe pending state, not gues
   assert.equal("membership_date_customer_input_authority" in payload.data, false);
 });
 
-test("unmatched status exposes a lightweight recovery action before signup", async () => {
 test("unmatched status exposes compact Verify action before signup using the live backend fields", async () => {
   const request = new Request("https://mmdbkk.com/member/api/liff/start", { method: "POST" });
   const response = jsonResponse({
@@ -89,7 +82,6 @@ test("unmatched status exposes compact Verify action before signup using the liv
 
   assert.deepEqual(payload.data.screen.actions[0], {
     id: "recovery_evidence",
-    label: "ยืนยันข้อมูลสมาชิกเดิม",
     label: "Verify",
     endpoint: "/member/api/liff/recovery",
     method: "POST",
@@ -100,6 +92,12 @@ test("unmatched status exposes compact Verify action before signup using the liv
     label: "สมัครสมาชิก",
     endpoint: "/member/api/liff/intent",
   });
+});
+
+test("unresolved status source keeps only one customer-facing Verify label", async () => {
+  const source = await readFile(new URL("../src/liff-status-resolution-guard.js", import.meta.url), "utf8");
+  assert.equal((source.match(/label: "Verify"/g) || []).length, 1);
+  assert.equal(source.includes('label: "ยืนยันข้อมูลสมาชิกเดิม"'), false);
 });
 
 test("resolved MY MMD status is not overwritten by safe pending state", async () => {
