@@ -55,6 +55,44 @@ test("one exact existing Member email wins as canonical identity evidence withou
   assert.deepEqual(result.candidateMemberIds, ["recMemberABC12345"]);
 });
 
+test("one exact Client phone match is treated as known prior identity without granting rights", async () => {
+  const env = envWith({
+    Clients: [
+      { id: "recClientPhone123", fields: { "Phone Number": "081 234 5678" } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    phone: "081-234-5678",
+  });
+
+  assert.equal(result.state, "known_identity");
+  assert.equal(result.match_type, "exact_client_phone");
+  assert.equal(result.confidence, 92);
+  assert.deepEqual(result.candidateClientIds, ["recClientPhone123"]);
+  assert.deepEqual(result.evidenceSources, ["clients_phone"]);
+});
+
+test("LINE OFC Telegram username candidate is queued as known prior identity evidence", async () => {
+  const env = envWith({
+    "LINE OFC Client Import Staging": [
+      { id: "recLineOfcTg123", fields: { telegram_username_candidate: "perclient" } },
+    ],
+  });
+
+  const result = await inspectRecoveryEvidence(env, {
+    lineUserId: LINE_ID,
+    telegramUsername: "@PerClient",
+  });
+
+  assert.equal(result.state, "known_identity");
+  assert.equal(result.match_type, "line_ofc_telegram");
+  assert.equal(result.confidence, 78);
+  assert.deepEqual(result.candidateClientIds, []);
+  assert.deepEqual(result.evidenceSources, ["line_ofc_telegram_candidate"]);
+});
+
 test("ambiguous canonical Member email fails closed to manual review", async () => {
   const env = envWith({
     Members: [
@@ -147,7 +185,8 @@ test("approved Client Access Evidence pointing to multiple Canonical Clients fai
 test("a claimed old account with no exact evidence is review_required, never auto-created as a new Member", async () => {
   const result = await inspectRecoveryEvidence(envWith(), {
     lineUserId: LINE_ID,
-    email: "missing@example.com",
+    phone: "0991234567",
+    telegramUsername: "missinguser",
   });
 
   assert.equal(result.state, "review_required");
