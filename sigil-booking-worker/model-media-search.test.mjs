@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia } from "./src/model-image-policy-worker.js";
+import { sanitizeModelForBooking } from "./src/index.js";
+import { requestedScope } from "./src/runtime-index.js";
 
 const modelId = "recModel000000001";
 const secondModelId = "recModel000000002";
@@ -9,6 +11,44 @@ const primaryMediaId = "media_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const galleryMediaId = "media_cccccccc-cccc-cccc-cccc-cccccccccccc";
 const clipMediaId = "media_dddddddd-dddd-dddd-dddd-dddddddddddd";
 const secondPrimaryMediaId = "media_eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+
+
+test("booking discovery may return a private-only Model without widening public or private entitlement scope", async () => {
+  const record = {
+    id: "recPrivateBooking01",
+    fields: {
+      working_name: "Atom IX",
+      can_work_private: true,
+      can_work_public: false,
+      private_tier: "premium",
+      private_real_name: "must-not-project",
+      r2_prefix: "private/secret/path",
+    },
+  };
+
+  assert.equal(sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, env: {} }), null);
+  assert.equal(sanitizeModelForBooking(record, { scope: "private", privateAllowed: false, env: {} }), null);
+
+  const booking = sanitizeModelForBooking(record, { scope: "booking", privateAllowed: false, env: {} });
+  assert.equal(booking.model_id, record.id);
+  assert.equal(booking.working_name, "Atom IX");
+  assert.equal(booking.scope, "private");
+  assert.equal(booking.booking_discovery, true);
+  assert.equal(Object.hasOwn(booking, "private_real_name"), false);
+
+  const privateAllowed = sanitizeModelForBooking(record, { scope: "private", privateAllowed: true, env: {} });
+  assert.equal(privateAllowed.model_id, record.id);
+
+  const getUrl = new URL("https://sigil.mmdbkk.com/sigil/api/models/search?q=Atom%20IX&scope=booking");
+  assert.equal(await requestedScope(new Request(getUrl), getUrl), "booking");
+
+  const postUrl = new URL("https://sigil.mmdbkk.com/sigil/api/models/search");
+  assert.equal(await requestedScope(new Request(postUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scope: "booking" }),
+  }), postUrl), "booking");
+});
 
 test("SIGIL hydrates MMD MODEL primary image, public gallery and intro clips only", async () => {
   const records = [
