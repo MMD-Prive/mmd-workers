@@ -5,7 +5,8 @@ export const KENJI_LV5_LIVE_RPC_PATH = "/v1/internal/kenji/operational-context/l
 
 const BOOKING_SIGNAL_RE = /(จอง|book|booking|reserve|นัด|คิว|ว่าง|available|availability|เช็กคิว|เช็คคิว|รับงาน)/i;
 const BOOKING_STATUS_RE = /(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i;
-const PAYMENT_SIGNAL_RE = /(สลิป|โอน|จ่าย|ชำระ|payment|paid|deposit|มัดจำ|เครดิต|credit)/i;\nconst PAYMENT_TERMS_RE = /(?:จ่าย|ชำระ).{0,16}(?:เต็ม(?:จำนวน)?|ทั้งหมด)|(?:เต็ม(?:จำนวน)?).{0,16}(?:เลย|ไหม|มั้ย|หรือ|เหรอ|หรอ|ต้อง)|full\\s*payment/i;
+const PAYMENT_SIGNAL_RE = /(สลิป|โอน|จ่าย|ชำระ|payment|paid|deposit|มัดจำ|เครดิต|credit)/i;
+const PAYMENT_TERMS_RE = /(?:จ่าย|ชำระ).{0,16}(?:เต็ม(?:จำนวน)?|ทั้งหมด)|(?:เต็ม(?:จำนวน)?).{0,16}(?:เลย|ไหม|มั้ย|หรือ|เหรอ|หรอ|ต้อง)|full\\s*payment/i;
 const DEPOSIT_TRIGGER_RE = /(?:มัดจำ|deposit)/i;
 const LOCATION_PREFIX_RE = /(?:^|[\s,])(?:โซน|แถว|สถานที่|ที่)\s*[:：-]?\s*([^,\n]{2,80})/i;
 const DATE_WORDS_RE = /(วันนี้|คืนนี้|พรุ่งนี้|มะรืน|วันที่|วัน\s*(?:จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์|อาทิตย์)|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)/i;
@@ -254,6 +255,7 @@ export function extractOperationalLocation(raw = "", modelName = "") {
 
 function operationalType(currentIntent = "", raw = "") {
   const intent = token(currentIntent);
+  if (PAYMENT_TERMS_RE.test(raw)) return "payment_terms";
   if (intent === "payment_center") return "";
   if (intent === "booking_status") return "booking_status";
   if (DEPOSIT_TRIGGER_RE.test(raw)) return "booking";
@@ -267,6 +269,7 @@ export function parseKenjiLv5LineIntent(event = {}, currentIntent = "", now = ne
   const type = operationalType(currentIntent, raw);
   if (!type) return null;
   if (type === "booking_status") return { type, raw };
+  if (type === "payment_terms") return { type, raw };
   if (type === "payment" || type === "payment_slip") return { type, raw };
   const modelName = extractOperationalModelName(raw);
   const date = extractOperationalDate(raw, now);
@@ -353,6 +356,9 @@ function missingLabels(values = []) {
 }
 
 export function renderKenjiLv5LineReply(context = {}, parsedIntent = {}) {
+  if (parsedIntent.type === "payment_terms") {
+    return "ไม่ครับ งานบริการมัดจำขั้นต่ำ 30% เพื่อยืนยันการจองครับ จะชำระมากกว่า 30% เท่าไหร่ก็ได้ แต่ห้ามต่ำกว่า 30% ส่วนยอดคงเหลือชำระตามขั้นตอนของงานครับ";
+  }
   if (!context || context.ok !== true) return "";
   const displayName = text(context?.client_360?.display_name, 120);
   const name = displayName ? `${displayName} ` : "";
@@ -424,6 +430,19 @@ export async function resolveKenjiLv5LineOperationalDecision({ env = {}, event =
     ? suppliedParsedIntent
     : parseKenjiLv5LineIntent(event, currentIntent, now);
   if (!parsedIntent) return null;
+  if (parsedIntent.type === "payment_terms") {
+    return {
+      text: renderKenjiLv5LineReply({}, parsedIntent),
+      intent: "payment_terms",
+      reply_source: "lv5_payment_terms_policy",
+      handoff_required: false,
+      truth_authority: "payments-worker/canonical-confirm-link",
+      truth_status: "policy",
+      live_truth_used: false,
+      live_truth_verified: false,
+      operational: { schema: KENJI_LV5_LINE_SCHEMA, phase: "payment_terms_guard", readiness: "ready" },
+    };
+  }
 
   const canonical = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => ({ resolved: false, status: "unavailable" }));
   const userId = lineUserId(event);
