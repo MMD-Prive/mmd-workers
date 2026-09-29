@@ -143,8 +143,7 @@ export function modelLiffDigitalBootstrapHtml({
       <div class="mmd-digital-row">
         <span class="mmd-digital-orb" aria-hidden="true"></span>
         <div>
-          <strong id="status">กำลังตรวจสอบตัวตน</strong>
-          <p>ข้อมูลสิทธิ์ งาน และโปรไฟล์จะอ่านจากระบบ MMD หลังยืนยันตัวตนเท่านั้น</p>
+          <strong id="status">${statusLead}</strong>\n          <p>${statusHelp}</p>
         </div>
       </div>
       <div class="mmd-digital-meter" aria-hidden="true"><span></span></div>
@@ -167,7 +166,7 @@ export function modelLiffDigitalBootstrapHtml({
     ${jobBoardScript}
     ${returnScript}
   }catch(error){
-    pill.textContent="LINE · RETRY";
+    pill.textContent=${JSON.stringify(publicJobApplicant ? "WELCOME V2 · RETRY" : jobBoardMode ? "MMD APP · RETRY" : "LINE · RETRY")};
     status.textContent=${JSON.stringify(fail)};
     fallback.hidden=false;
     detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
