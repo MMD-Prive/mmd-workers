@@ -3019,6 +3019,16 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       history_assessment_eligible: historyAssessmentResult.eligible === true,
       history_assessment_persisted: historyAssessmentResult.persisted === true,
       history_assessment_reason: asString(historyAssessmentResult.reason).slice(0, 80) || null,
+      aggregation_source: asString(aggregateResult.source || prepared.aggregation_source || "single").slice(0, 40),
+      aggregate_count: Number(aggregateResult.count) || Number(prepared.aggregate_count) || 1,
+      continuity_decision: asString(continuity?.decision).slice(0, 40) || null,
+      continuity_effective_intent: asString(continuity?.effective_intent).slice(0, 80) || null,
+      continuity_available: continuity?.available === true,
+      owner_takeover_active: ownerReplyBlocked,
+      owner_takeover_source: asString(ownerTakeover?.source).slice(0, 40) || null,
+      matrix_write_pending: matrixWriteResult?.pending === true,
+      matrix_write_persisted: Boolean(matrixWriteResult?.id),
+      matrix_write_reason: asString(matrixWriteResult?.reason).slice(0, 80) || null,
     }));
 
     saved.push({
@@ -3039,7 +3049,25 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       runtime_model_kill: runtimeModelKill,
       runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
-      message_id: getLineEventId(event),
+      message_id: getLineEventId(rawEvent),
+      aggregation: {
+        source: asString(aggregateResult.source || prepared.aggregation_source || "single").slice(0, 40),
+        count: Number(aggregateResult.count) || Number(prepared.aggregate_count) || 1,
+      },
+      continuity: {
+        decision: asString(continuity?.decision).slice(0, 40),
+        effective_intent: asString(continuity?.effective_intent).slice(0, 80),
+        available: continuity?.available === true,
+      },
+      owner_takeover: {
+        active: ownerReplyBlocked,
+        source: asString(ownerTakeover?.source).slice(0, 40),
+      },
+      matrix_write: {
+        pending: matrixWriteResult?.pending === true,
+        persisted: Boolean(matrixWriteResult?.id),
+        reason: asString(matrixWriteResult?.reason).slice(0, 80),
+      },
       history_assessment: {
         enabled: historyAssessmentResult.enabled === true,
         eligible: historyAssessmentResult.eligible === true,
