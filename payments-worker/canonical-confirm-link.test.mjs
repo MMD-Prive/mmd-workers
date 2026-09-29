@@ -70,7 +70,7 @@ function post(body, token = "admin-payments-secret") {
   });
 }
 
-test("canonical confirm-link writes only real Sessions/Payments schema fields", async () => {
+test("ordinary service intent defaults to fixed 30 percent deposit when payment type is omitted", async () => {\n  const { env, calls } = envWithAirtableRecorder();\n  const result = await handleCanonicalConfirmLink(post({\n    session_id: "sess_default_deposit",\n    payment_ref: "pay_default_deposit",\n    client_name: "Client",\n    model_name: "Model",\n    job_type: "companion",\n    job_date: "2026-09-29",\n    start_time: "20:00",\n    end_time: "22:00",\n    location_name: "Bangkok",\n    amount_thb: 10000,\n  }), env);\n  assert.equal(result.status, 200);\n  const paymentPost = calls.find((call) => call.method === "POST" && call.url.pathname.endsWith("/tblWGGJJOx5eBvBZJ"));\n  assert.ok(paymentPost);\n  const fields = paymentPost.body.records[0].fields;\n  assert.equal(fields.fldrr9g8ZZjqAbdKQ, "deposit");\n  assert.equal(fields.fldydUWHhqVLMkNSC, "deposit");\n  assert.equal(fields.fldvCSwrUW8OMAooS, 3000);\n});\n\ntest("canonical confirm-link writes only real Sessions/Payments schema fields", async () => {
   const { env, calls, kv } = envWithAirtableRecorder();
   const request = post({
     session_id: "sess_create_job_schema_test",
