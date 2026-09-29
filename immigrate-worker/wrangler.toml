@@ -88,15 +88,9 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
 zone_name = "mmdbkk.com"
 
-# Canonical owner Create Job surface. Job Board is deliberately separate so
-# recruitment changes cannot regress Client/Model lookup.
-[[routes]]
-pattern = "mmdbkk.com/internal/admin/jobs/create-job*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/internal/admin/jobs/create-job*"
-zone_name = "mmdbkk.com"
+# Canonical Create Job visible UI is Webflow-owned at
+# /internal/admin/jobs/create-job. Keep only its same-origin /v1/admin/* APIs
+# on Workers so presentation changes cannot replace the proven search UI.
 
 # Compatibility alias for the separate owner Job Board composer.
 [[routes]]

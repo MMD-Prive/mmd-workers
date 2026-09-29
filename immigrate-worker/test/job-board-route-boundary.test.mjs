@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const sourceUrl = new URL("../src/index.ts", import.meta.url);
 const routesUrl = new URL("../src/internal-routes.ts", import.meta.url);
 const pagesUrl = new URL("../src/internal-pages.ts", import.meta.url);
+const wranglerUrl = new URL("../wrangler.toml", import.meta.url);
 
 test("outer immigrate router bridges both canonical and compatibility Job Board routes", async () => {
   const source = await readFile(sourceUrl, "utf8");
@@ -22,17 +23,20 @@ test("Job Board route is authenticated and separate from Create Job", async () =
   assert.match(routes, /redirect\(withQuery\("\/internal\/admin\/jobs\/job-board"/);
 });
 
-test("Create Job contains only a link to Job Board while Job Board owns publish controls", async () => {
+test("canonical Create Job is Webflow-owned while Job Board remains worker-owned", async () => {
+  const routes = await readFile(routesUrl, "utf8");
   const pages = await readFile(pagesUrl, "utf8");
+  const wrangler = await readFile(wranglerUrl, "utf8");
+
+  assert.doesNotMatch(routes, /if \(pathname === "\/internal\/admin\/jobs\/create-job"\)/);
+  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/jobs\/create-job\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/jobs\/create-job\*"/);
+
   const createStart = pages.indexOf("export function renderCreateJobPage");
   const boardScriptStart = pages.indexOf("const jobBoardScript");
   const boardRenderStart = pages.indexOf("export function renderJobBoardPage");
   assert.ok(createStart > boardRenderStart);
   assert.ok(boardRenderStart > boardScriptStart);
-  const createSource = pages.slice(createStart);
-  assert.match(createSource, /href="\/internal\/admin\/jobs\/job-board"/);
-  assert.doesNotMatch(createSource, /id="job-board-form"/);
-  assert.doesNotMatch(createSource, /fetch\("\/v1\/admin\/job-board\/publish"/);
 
   const boardSource = pages.slice(boardScriptStart, createStart);
   assert.match(boardSource, /data-job-board-owner="separate-v1"/);

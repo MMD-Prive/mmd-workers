@@ -158,13 +158,15 @@ jobs:
               -o "$create_page" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/admin/jobs/create-job?smoke=separate-job-board")"
             test "$create_code" = "200"
-            grep -q 'id="job-client-query"' "$create_page"
-            grep -q 'id="job-model-query"' "$create_page"
-            grep -q 'data-cj-job-board-handoff="separate-v1"' "$create_page"
-            grep -q 'href="/internal/admin/jobs/job-board"' "$create_page"
+            grep -q "id='mmd-cj-split-v1'" "$create_page"
+            grep -q "data-design='lv13-operational'" "$create_page"
+            grep -q "data-cj='clientQuery'" "$create_page"
+            grep -q "data-cj='modelQuery'" "$create_page"
+            grep -q "data-client-lookup-endpoint='/v1/admin/clients/lineage-lookup'" "$create_page"
+            grep -q "data-model-search-endpoint='/v1/admin/models/search'" "$create_page"
             ! grep -q 'id="job-board-form"' "$create_page"
             ! grep -q '/v1/admin/job-board/publish' "$create_page"
-            echo "PASS: $origin Create Job is isolated from Job Board"
+            echo "PASS: $origin Webflow Create Job restored with canonical Client/Model search"
 
             board_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
               -o "$board_page" -b "$cookie" -w "%{http_code}" \

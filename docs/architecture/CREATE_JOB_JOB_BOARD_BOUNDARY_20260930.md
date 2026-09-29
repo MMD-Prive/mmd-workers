@@ -12,6 +12,8 @@ Create Job and Job Board are separate owner surfaces.
 
 Canonical route: `/internal/admin/jobs/create-job`
 
+Presentation owner: **Webflow**. The proven Client/Model search UI stays on the published Webflow page; Cloudflare Workers own the same-origin `/v1/admin/*` authority, not this visible page.
+
 Purpose: confirmed operational work where MMD is creating a real Job/Session.
 
 Create Job keeps:
@@ -24,6 +26,8 @@ Create Job keeps:
 - Official Verify gated customer/model URLs
 
 Job Board controls must not be embedded into Create Job. Recruitment UI changes must not modify or replace Client lookup, Model lookup, canonical selection, or Create Job state.
+
+The `immigrate-worker` must not claim `/internal/admin/jobs/create-job*`. Legacy `/internal/jobs/create-job` may redirect to the canonical Webflow route, while Client/Model lookup APIs remain Worker-owned.
 
 ### Job Board
 

@@ -136,27 +136,16 @@ test("create-session page loads an existing bundled create-session asset", async
   assert.doesNotMatch(html, /immigrate-worker\.malemodel-bkk\.workers\.dev/);
 });
 
-test("Create Job stays isolated from Job Board and legacy route redirects", async () => {
+test("canonical Create Job falls through to Webflow while legacy route redirects", async () => {
   const calls = [];
-  const { result: response, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-job"), {
+  const { result: canonical, calls: publicCalls } = await withPublicFetchTrap(() => handleInternalRoutes(request("/internal/admin/jobs/create-job"), {
     ADMIN_WORKER: adminWorkerBinding(calls),
     ADMIN_WORKER_BASE_URL: "https://admin-worker.malemodel-bkk.workers.dev",
   }));
-  const html = await response.text();
 
-  assert.equal(response.status, 200);
+  assert.equal(canonical, null);
   assert.equal(publicCalls, 0);
-  assert.equal(calls.length, 1);
-  assert.match(html, /id="job-client-query"/);
-  assert.match(html, /id="job-model-query"/);
-  assert.match(html, /id="amount_thb" name="amount_thb" type="number" min="1" step="1" required/);
-  assert.match(html, /href="\/internal\/admin\/jobs\/job-board"/);
-  assert.match(html, /data-cj-job-board-handoff="separate-v1"/);
-  assert.doesNotMatch(html, /id="job-board-form"/);
-  assert.doesNotMatch(html, /id="job-board-text"/);
-  assert.doesNotMatch(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
-  assert.doesNotMatch(html, /amount_thb\s*:\s*1/);
-  assert.doesNotMatch(html, /amount_thb\s*(?:\|\||\?\?)\s*1/);
+  assert.equal(calls.length, 0);
 
   const legacy = await handleInternalRoutes(request("/internal/jobs/create-job?source=legacy"), {
     ADMIN_WORKER: adminWorkerBinding([]),
@@ -420,8 +409,6 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     "www.mmdbkk.com/internal/admin/create-session*",
     "mmdbkk.com/internal/admin/jobs/create-session*",
     "www.mmdbkk.com/internal/admin/jobs/create-session*",
-    "mmdbkk.com/internal/admin/jobs/create-job*",
-    "www.mmdbkk.com/internal/admin/jobs/create-job*",
     "mmdbkk.com/internal/jobs/create-job*",
     "www.mmdbkk.com/internal/jobs/create-job*",
     "mmdbkk.com/a/create-session.js",
@@ -450,6 +437,8 @@ test("wrangler routes only expose exact immigrate bridge surfaces", async () => 
     assert.match(wrangler, new RegExp(`pattern = "${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
   }
 
+  assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/jobs\/create-job\*"/);
+  assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/jobs\/create-job\*"/);
   assert.doesNotMatch(wrangler, /pattern = "mmdbkk\.com\/internal\/admin\/\*"/);
   assert.doesNotMatch(wrangler, /pattern = "www\.mmdbkk\.com\/internal\/admin\/\*"/);
   assert.match(wrangler, /binding = "ADMIN_WORKER"/);
@@ -459,7 +448,6 @@ test("protected-page login redirects preserve only same-origin internal next pat
   const cases = [
     ["/internal/admin/control-room?tab=line-inbox", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room%3Ftab%3Dline-inbox"],
     ["/internal/admin/jobs/create-session?source=bridge", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fjobs%2Fcreate-session%3Fsource%3Dbridge"],
-    ["/internal/admin/jobs/create-job?source=job-board", "/internal/admin/login?next=%2Finternal%2Fadmin%2Fjobs%2Fcreate-job%3Fsource%3Djob-board"],
   ];
 
   for (const [path, location] of cases) {
