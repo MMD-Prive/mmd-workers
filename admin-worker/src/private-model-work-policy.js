@@ -14,7 +14,7 @@ export const PRIVATE_MODEL_WORK_POLICY_VERSION = "private-model-work-policy-v1";
 export function normalizePrivateWork(value) {
   const v = normalizeToken(value);
   if (v === "vip" || v.includes("vip")) return "vip";
-  if (v === "pn" || /(^|\s)pn($|\s)/.test(v)) return "pn";
+  if (v === "pn" || v === "np" || /(^|\s)(?:pn|np)($|\s)/.test(v)) return "pn";
   return "";
 }
 
