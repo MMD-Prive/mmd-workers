@@ -13,6 +13,7 @@ import {
   resolveOwnerDestination,
   sendFailureStatus,
 } from "./model-reconfirm-guard.js";
+import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -672,26 +673,24 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
   const telegramUserId = clean(modelFields[clean(env.AT_MODELS__TELEGRAM_USER_ID || "telegram_user_id")]);
   const telegramVerified = normalizeWord(modelFields[clean(env.AT_MODELS__TELEGRAM_VERIFICATION_STATUS || "telegram_verification_status")]) === "verified";
   const message = "MMD APP · มีงานใหม่\nเปิด MMD APP เพื่อตรวจรายละเอียดและดำเนินการ";
+  const modelAppUrl = buildModelJobBoardBroadcastLink({ source: "model_new_job_notification" });
   let lineFailure = "model_line_identity_or_transport_missing";
 
   if (/^U[0-9a-f]{32}$/i.test(lineUserId) && lineToken) {
     try {
-      const liffId = clean(env.MODEL_LIFF_PUBLISHED_ID);
-      const messages = liffId
-        ? [{
-            type: "template",
-            altText: "MMD APP · มีงานใหม่",
-            template: {
-              type: "buttons",
-              text: "มีงานใหม่รอให้ตรวจในแอป",
-              actions: [{
-                type: "uri",
-                label: "เปิด MMD APP",
-                uri: "https://liff.line.me/" + encodeURIComponent(liffId),
-              }],
-            },
-          }]
-        : [{ type: "text", text: message }];
+      const messages = [{
+        type: "template",
+        altText: "MMD APP · มีงานใหม่",
+        template: {
+          type: "buttons",
+          text: "มีงานใหม่รอให้ตรวจในแอป",
+          actions: [{
+            type: "uri",
+            label: "เปิด MMD APP",
+            uri: modelAppUrl,
+          }],
+        },
+      }];
       const response = await fetch("https://api.line.me/v2/bot/message/push", {
         method: "POST",
         headers: { authorization: `Bearer ${lineToken}`, "content-type": "application/json" },
@@ -710,10 +709,7 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
     const endpoint = configuredEndpoint || (telegramBase ? `${telegramBase}/telegram/internal/send` : "");
     const token = clean(env.AUTH_SERVICE_EVENTS_TO_TELEGRAM || env.AUTH_SERVICE_STUDIO_TO_TELEGRAM);
     if (endpoint && token) {
-      const liffId = clean(env.MODEL_LIFF_PUBLISHED_ID);
-      const telegramText = liffId
-        ? `MMD APP · มีงานใหม่\nเปิด <a href="https://liff.line.me/${encodeURIComponent(liffId)}">MMD APP</a> เพื่อตรวจรายละเอียดและดำเนินการ`
-        : message;
+      const telegramText = `MMD APP · มีงานใหม่\nเปิด <a href="${escapeHtml(modelAppUrl)}">MMD APP</a> เพื่อตรวจรายละเอียดและดำเนินการ`;
       try {
         const response = await fetch(endpoint, {
           method: "POST",

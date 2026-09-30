@@ -54,7 +54,14 @@ test("new confirmed assignment pushes a privacy-safe LINE notice with an app act
     assert.match(payload.messages[0].altText, /มีงานใหม่/);
     assert.match(payload.messages[0].template.text, /มีงานใหม่/);
     assert.doesNotMatch(JSON.stringify(payload), /ลูกค้า|ที่อยู่|ยอดชำระ|payout/i);
-    assert.equal(payload.messages[0].template.actions[0].uri, "https://liff.line.me/2010864854-N34SgCqq");
+    const actionUrl = new URL(payload.messages[0].template.actions[0].uri);
+    assert.equal(actionUrl.origin, "https://www.mmdbkk.com");
+    assert.equal(actionUrl.pathname, "/sigil/model/login");
+    assert.equal(actionUrl.searchParams.get("intent"), "job_board");
+    assert.equal(actionUrl.searchParams.get("source"), "model_new_job_notification");
+    assert.equal(actionUrl.searchParams.get("return_to"), "public_job_board");
+    assert.equal(actionUrl.searchParams.get("next"), "https://sigil.mmdbkk.com/public/api/jobs");
+    assert.doesNotMatch(payload.messages[0].template.actions[0].uri, /liff\.line\.me/);
     assert.equal(mock.calls.some(({ url }) => url.includes("telegram-worker.test")), false);
   } finally {
     mock.restore();
@@ -86,6 +93,8 @@ test("Telegram is used only as fallback after LINE fails and Model binding is ve
     assert.equal(payload.chat_id, "123456789");
     assert.equal(payload.intent, "model_new_job_fallback");
     assert.match(payload.text, /MMD APP/);
+    assert.match(payload.text, /https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
+    assert.doesNotMatch(payload.text, /liff\.line\.me/);
   } finally {
     mock.restore();
   }
