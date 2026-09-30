@@ -451,3 +451,31 @@ test("wrangler keeps canonical My MMD, BFF and legacy redirect routes Worker-own
     assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
   }
 });
+
+
+test("private preview front gate overwrites rollout mode header and unknown config fails closed", async () => {
+  const seen = [];
+  const runtime = {
+    KENJI_SVIP_PHOTO_REVEAL_MODE: "pilot",
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        seen.push(request.headers.get("x-mmd-svip-photo-reveal-mode"));
+        return Response.json({ ok:false, error:{ code:"synthetic" } }, { status:423 });
+      },
+    },
+  };
+
+  const pilot = await worker.fetch(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { headers:{ "x-mmd-svip-photo-reveal-mode":"live" } },
+  ), runtime);
+  assert.equal(pilot.status, 423);
+  assert.deepEqual(seen, ["pilot"]);
+
+  runtime.KENJI_SVIP_PHOTO_REVEAL_MODE = "LIVE_typo";
+  await worker.fetch(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { headers:{ "x-mmd-svip-photo-reveal-mode":"pilot" } },
+  ), runtime);
+  assert.deepEqual(seen, ["pilot", "off"]);
+});
