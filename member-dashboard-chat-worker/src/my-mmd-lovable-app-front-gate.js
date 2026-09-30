@@ -486,6 +486,11 @@ function liffAuthBridgeTarget(request) {
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
   }
+  if (intent === "private_photo_reveal") {
+    const grant = String(url.searchParams.get("grant") || stateParams.get("grant") || "").trim();
+    if (!/^svip_photo_[0-9a-f-]{36}$/i.test(grant)) return "";
+    return `/api/member/app/private-preview/resume?g=${encodeURIComponent(grant)}`;
+  }
   if (!intent || intent === "unknown" || intent === "status") return "";
   if (intent === "continue_payment") return "/my-mmd/payments";
   return "";
