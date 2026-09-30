@@ -61,12 +61,15 @@ function safeAuditSummary(body = {}) {
   };
 }
 
-function safePrepareReason(body = {}) {
+function safeRuntimeReason(body = {}) {
   const reason = String(body?.reason || "").trim();
   if (/^rich_menu_repair_invalid_(guest|public|private)$/.test(reason)) return reason;
   if (/^image_(integrity_mismatch|unavailable|not_png|bad_size_\d+x\d+|http_\d{3}|too_large_\d+)$/.test(reason)) return reason;
-  if (/^line_\d{3}(?::|$)/.test(reason)) return reason.slice(0, 8).replace(/:$/, "");
-  if (reason === "rich_menu_id_missing") return reason;
+  const line = reason.match(/^line_(\d{3})(?::|$)/);
+  if (line) return `line_${line[1]}`;
+  const airtable = reason.match(/^airtable_(\d{3})(?::|$)/);
+  if (airtable) return `airtable_${airtable[1]}`;
+  if (["rich_menu_id_missing", "airtable_config_missing", "line_channel_access_token_missing"].includes(reason)) return reason;
   return "unclassified";
 }
 
@@ -96,22 +99,20 @@ async function call(path, method = "GET", { acceptStatuses = [] } = {}) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
   const errorCode = String(last?.body?.error || "unknown").replace(/[^a-z0-9_]/gi, "").slice(0, 80);
-  if (path.endsWith("/three-level/prepare")) {
-    const reasonCode = safePrepareReason(last?.body);
-    const output = `${process.env.RUNNER_TEMP || "/tmp"}/mmd-rich-menu-production-acceptance.json`;
-    await writeFile(output, JSON.stringify({
-      ok: false,
-      version: VERSION,
-      stage: "prepare",
-      http_status: last?.status || 0,
-      error_code: errorCode,
-      reason_code: reasonCode,
-      physical_tap_verified: false,
-      checked_at: new Date().toISOString(),
-    }, null, 2));
-    throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${errorCode}:${reasonCode}`);
-  }
-  throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${errorCode}`);
+  const reasonCode = safeRuntimeReason(last?.body);
+  const stage = path.split("/").filter(Boolean).at(-1) || "unknown";
+  const output = `${process.env.RUNNER_TEMP || "/tmp"}/mmd-rich-menu-production-acceptance.json`;
+  await writeFile(output, JSON.stringify({
+    ok: false,
+    version: VERSION,
+    stage,
+    http_status: last?.status || 0,
+    error_code: errorCode,
+    reason_code: reasonCode,
+    physical_tap_verified: false,
+    checked_at: new Date().toISOString(),
+  }, null, 2));
+  throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${errorCode}:${reasonCode}`);
 }
 
 const prepare = await call("/v1/admin/line/rich-menu/three-level/prepare", "POST");
