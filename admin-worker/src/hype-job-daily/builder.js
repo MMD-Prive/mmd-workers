@@ -15,6 +15,8 @@ export const SECTION_ORDER = Object.freeze([
 ]);
 
 export const P0_CAP = 3;
+export const PAYMENT_WATCH_CAP = 8;
+export const PAYMENT_REVIEW_MAX_AGE_DAYS = 3;
 const HOURS_72_MS = 72 * 3600 * 1000;
 
 const MODEL_READY = new Set(["confirmed", "accepted", "ready", "en_route", "travel", "on_the_way", "arrived", "working", "live"]);
@@ -117,6 +119,32 @@ function windowFor(session, now) {
   return jobMs(date, minutes) <= now + HOURS_72_MS ? { window: "upcoming", minutes } : { window: "outside" };
 }
 
+// Payment review queue -> digest-safe list.
+// - drops 0 THB slips (no evidence of money)
+// - drops backlog: proofs that are neither tied to a job in the digest windows nor created recently
+// - dedupes by payment ref (or proof id), keeping the newest and counting duplicates
+// Counts of what was left out are returned so the digest can say so instead of silently hiding them.
+export function prepareReviewItems(review, nowMs, windowSessionIds = new Set()) {
+  if (!review?.ok) return { ok: false, items: [], stats: { zero: 0, old: 0, duplicates: 0 } };
+  const cutoff = nowMs - PAYMENT_REVIEW_MAX_AGE_DAYS * 86400000;
+  const stats = { zero: 0, old: 0, duplicates: 0 };
+  const byKey = new Map();
+  for (const r of review.items || []) {
+    const amt = r.evidence_amount_thb;
+    if (amt !== null && amt !== undefined && amt !== "" && Number(amt) === 0) { stats.zero += 1; continue; } // unknown (null) is kept; only a real 0 is dropped
+    const linked = Boolean(r.session_id && windowSessionIds.has(r.session_id));
+    const created = Date.parse(r.created_at || "");
+    if (!linked && !(Number.isFinite(created) && created >= cutoff)) { stats.old += 1; continue; }
+    const key = r.payment_ref || r.proof_id || `${r.customer_name}|${r.evidence_amount_thb}|${r.session_id}`;
+    const prev = byKey.get(key);
+    if (!prev) { byKey.set(key, { ...r, linked, count: 1, createdMs: Number.isFinite(created) ? created : 0 }); continue; }
+    stats.duplicates += 1;
+    prev.count += 1;
+    if ((Number.isFinite(created) ? created : 0) > prev.createdMs) Object.assign(prev, { ...r, linked: prev.linked || linked, count: prev.count, createdMs: Number.isFinite(created) ? created : 0 });
+  }
+  return { ok: true, items: [...byKey.values()].sort((a, b) => b.createdMs - a.createdMs), stats };
+}
+
 export function buildDigest(input = {}, nowMs = Date.now()) {
   const { sessions, payments, review, recovery } = input;
   const today = ictDate(nowMs);
@@ -137,7 +165,18 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
   if (failed.recovery) sysFail("recovery queue unreachable", "recovery cases may be missing", recovery?.error);
 
   const counts = { jobs_today: 0, upcoming: 0 };
-  const matchedReviewIds = new Set();
+  const windowIds = new Set();
+  const jobTimeById = new Map();
+  if (sessions?.ok) {
+    for (const s of sessions.records || []) {
+      const k = classifyJobState(s).kind;
+      if (k === "cancelled" || k === "completed" || !s.session_id) continue;
+      const w = windowFor(s, nowMs).window;
+      if (w === "today" || w === "upcoming" || w === "unparseable_time") windowIds.add(s.session_id);
+    }
+  }
+  const prepared = prepareReviewItems(review, nowMs, windowIds);
+  const reviewForMoney = prepared.ok ? { ok: true, items: prepared.items } : review;
   if (sessions?.ok) {
     const seenIds = new Map();
     for (const s of sessions.records || []) seenIds.set(s.session_id, (seenIds.get(s.session_id) || 0) + 1);
@@ -158,8 +197,7 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
       if (win.window === "today" && minutes === null) reviewReasons.push("start time missing");
 
       const customer = customerDisplay(session.client_name);
-      const money = moneyForSession(session.session_id, payments, review);
-      for (const r of money.reviewItems || []) matchedReviewIds.add(r.proof_id || r.payment_ref);
+      const money = moneyForSession(session.session_id, payments, reviewForMoney);
       const isToday = win.window === "today";
       const home = isToday ? "jobs_today" : "upcoming";
       counts[home] += 1;
@@ -182,6 +220,7 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
         p0Class = 2; summaryTh = `${ref} — ยืนยันโมเดล`;
       } else if (state.kind === "hold") next = "review why the job is on hold";
       else if (!customer) { next = "confirm customer identity"; if (isToday) { p0Class = 6; summaryTh = `${ref} — ยืนยันตัวตนลูกค้า`; } }
+      if (session.session_id) jobTimeById.set(session.session_id, timeMs);
       const jobItem = item({ kind: "job", ref, timeMs, p0Class, text: jobLine, next, summaryTh, review_required });
       sec[home].push(jobItem);
 
@@ -197,10 +236,11 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
     }
   }
 
-  if (review?.ok) {
-    for (const r of review.items || []) {
+  if (prepared.ok) {
+    for (const r of prepared.items) {
       const amount = r.evidence_amount_thb === null ? "amount unknown" : `slip ${formatThb(r.evidence_amount_thb)} (unverified)`;
-      sec.payment.push(item({ kind: "payment", ref: r.payment_ref, text: `proof awaiting review (not paid) · ${clean(r.customer_name, 60) || "customer_review_required"} · ${amount}${r.payment_ref ? ` · ${maskRef(r.payment_ref)}` : ""}${r.session_id ? ` · ${r.session_id}` : ""}`, next: "review the payment proof" }));
+      const dup = r.count > 1 ? ` · ×${r.count} proofs` : "";
+      sec.payment.push(item({ kind: "payment", ref: r.payment_ref, timeMs: jobTimeById.get(r.session_id) ?? Infinity, text: `proof awaiting review (not paid) · ${clean(r.customer_name, 60) || "customer_review_required"} · ${amount}${dup}${r.payment_ref ? ` · ${maskRef(r.payment_ref)}` : ""}${r.session_id ? ` · ${r.session_id}` : ""}`, next: "review the payment proof" }));
     }
   }
 
@@ -214,6 +254,16 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
   }
 
   for (const key of Object.keys(sec)) sec[key].sort((a, b) => a.timeMs - b.timeMs);
+
+  // PAYMENT WATCH stays short: cap the list, then say plainly what was left out.
+  const paymentOverflow = Math.max(0, sec.payment.length - PAYMENT_WATCH_CAP);
+  sec.payment = sec.payment.slice(0, PAYMENT_WATCH_CAP);
+  if (paymentOverflow > 0) sec.payment.push(item({ kind: "payment_more", text: `+${paymentOverflow} more payment items not listed`, next: "open the payment review queue in admin" }));
+  const left = prepared.ok ? prepared.stats : { zero: 0, old: 0, duplicates: 0 };
+  if (left.old > 0 || left.zero > 0) {
+    const bits = [left.old > 0 ? `${left.old} older/undated unreviewed proofs` : "", left.zero > 0 ? `${left.zero} zero-amount slips` : ""].filter(Boolean);
+    sec.payment.push(item({ kind: "payment_backlog", text: `not listed: ${bits.join(" and ")}`, next: "clear the payment review queue in admin when convenient" }));
+  }
 
   const all = [...sec.jobs_today, ...sec.upcoming, ...sec.payment, ...sec.model, ...sec.customer, ...sec.system];
   const p0Pool = all.filter((i) => i.p0Class).sort((a, b) => a.timeMs - b.timeMs || a.p0Class - b.p0Class);
@@ -229,6 +279,7 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
     counts,
     sections: { p0, ...sec },
     p0_overflow: overflow,
+    payment_stats: { ...(prepared.ok ? prepared.stats : {}), overflow: paymentOverflow },
     summary,
   };
 }

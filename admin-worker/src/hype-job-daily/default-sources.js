@@ -22,6 +22,7 @@ export async function collectPaymentReview(env = {}) {
         proof_id: clean(item.proof_id, 120),
         payment_ref: clean(item.payment_ref, 180),
         session_id: clean(item.session_id, 120),
+        created_at: clean(item.created_at, 60),
         customer_name: clean(item.customer_name || item.payer_name, 120),
         evidence_amount_thb: Number.isFinite(Number(item.evidence_amount_thb)) ? Number(item.evidence_amount_thb) : null,
       })),

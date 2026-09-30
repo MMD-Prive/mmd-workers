@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDigest, SECTION_ORDER } from "./src/hype-job-daily/builder.js";
+import { buildDigest, PAYMENT_WATCH_CAP, SECTION_ORDER } from "./src/hype-job-daily/builder.js";
 import { formatDigest, renderSections } from "./src/hype-job-daily/formatter.js";
 import { collectPayments, collectSessions, paymentFieldMap } from "./src/hype-job-daily/sources.js";
 import { collectAll } from "./src/hype-job-daily/default-sources.js";
@@ -517,6 +517,97 @@ test("payment refs are masked in the digest", () => {
 test("rate: digest never shows a model rate or quote (flag-only in v1, no quote source exists)", () => {
   const d = buildDigest(input({ sessions: ok({ records: [sess("J-amt")] }), payments: ok({ records: [pay("J-amt", { amount: 5000 })] }) }), NOW);
   assert.doesNotMatch(text(d), /\brate\b|quote/i);
+});
+
+
+// ---------- PAYMENT WATCH: cap / dedupe / zero slips / no old backlog ----------
+const DAY = 86400000;
+const proof = (id, o = {}) => ({ proof_id: `pf_${id}`, payment_ref: o.ref === undefined ? `pay_ref_${id}` : o.ref, session_id: o.session ?? "", customer_name: o.name ?? `ลูกค้า ${id}`, evidence_amount_thb: o.amount === undefined ? 1000 : o.amount, created_at: o.created ?? new Date(NOW - 1 * DAY).toISOString() });
+const paymentBlocks = (d) => sectionText(d, "payment");
+const bullets = (t) => (t.match(/^• /gm) || []).length;
+
+test("PW1: slips of 0 THB are not listed and are counted in one backlog line", () => {
+  const review = ok({ items: [proof("z1", { amount: 0 }), proof("z2", { amount: 0 }), proof("real", { amount: 1500 })] });
+  const t = paymentBlocks(buildDigest(input({ review }), NOW));
+  assert.match(t, /1,500 THB/);
+  assert.doesNotMatch(t, /pay_ref_z|…z1|…z2|slip 0 THB/);
+  assert.match(t, /not listed: 2 zero-amount slips/);
+});
+
+test("PW1b: an unknown slip amount (null) is kept, only a real 0 is dropped", () => {
+  const t = paymentBlocks(buildDigest(input({ review: ok({ items: [proof("n1", { amount: null })] }) }), NOW));
+  assert.match(t, /amount unknown/);
+  assert.doesNotMatch(t, /not listed/);
+});
+
+test("PW2: old backlog is not dragged in (older than 3 days and not tied to a job in the window)", () => {
+  const old = new Date(NOW - 10 * DAY).toISOString();
+  const review = ok({ items: [proof("o1", { created: old }), proof("o2", { created: old }), proof("undated", { created: "" }), proof("fresh", { created: new Date(NOW - 2 * DAY).toISOString() })] });
+  const d = buildDigest(input({ review }), NOW);
+  const t = paymentBlocks(d);
+  assert.match(t, /ลูกค้า fresh/);
+  assert.doesNotMatch(t, /ลูกค้า o1|ลูกค้า o2|ลูกค้า undated/);
+  assert.match(t, /not listed: 3 older\/undated unreviewed proofs/);
+  assert.equal(d.payment_stats.old, 3);
+});
+
+test("PW2b: an old proof tied to a job in today's window is still listed", () => {
+  const old = new Date(NOW - 20 * DAY).toISOString();
+  const review = ok({ items: [proof("linked", { created: old, session: "JLINK" })] });
+  const d = buildDigest(input({ sessions: ok({ records: [sess("JLINK")] }), payments: ok({ records: [] }), review }), NOW);
+  assert.match(paymentBlocks(d), /ลูกค้า linked/);
+  assert.match(sectionText(d, "jobs_today"), /awaiting review \(not paid\)/);
+});
+
+test("PW3: duplicate proofs for the same payment ref collapse into one item with a count", () => {
+  const review = ok({ items: [
+    proof("a", { ref: "pay_same_9999", created: new Date(NOW - 3 * 3600000).toISOString() }),
+    proof("b", { ref: "pay_same_9999", created: new Date(NOW - 2 * 3600000).toISOString() }),
+    proof("c", { ref: "pay_same_9999", created: new Date(NOW - 1 * 3600000).toISOString() }),
+    proof("d", { ref: "pay_other_1111" }),
+  ] });
+  const t = paymentBlocks(buildDigest(input({ review }), NOW));
+  assert.equal(bullets(t), 2);
+  assert.match(t, /×3 proofs/);
+  assert.equal((t.match(/…9999/g) || []).length, 1);
+});
+
+test("PW3b: duplicates without a payment ref dedupe on proof id", () => {
+  const same = proof("dup", { ref: "" });
+  const t = paymentBlocks(buildDigest(input({ review: ok({ items: [same, { ...same }] }) }), NOW));
+  assert.equal(bullets(t), 1);
+  assert.match(t, /×2 proofs/);
+});
+
+test("PW4: PAYMENT WATCH is capped, with an explicit '+N more' pointer and one Next per line", () => {
+  const items = Array.from({ length: 20 }, (_, i) => proof(`c${String(i).padStart(2, "0")}`, { created: new Date(NOW - (i + 1) * 60000).toISOString() }));
+  const d = buildDigest(input({ review: ok({ items }) }), NOW);
+  const t = paymentBlocks(d);
+  assert.equal(d.sections.payment.filter((i) => i.kind === "payment").length, PAYMENT_WATCH_CAP);
+  assert.match(t, /\+12 more payment items not listed/);
+  assert.match(t, /Next: open the payment review queue in admin/);
+  assert.equal(bullets(t), (t.match(/^ {2}Next: /gm) || []).length);
+  assert.ok(bullets(t) <= PAYMENT_WATCH_CAP + 2);
+  assert.equal(d.payment_stats.overflow, 12);
+});
+
+test("PW4b: unpaid problems on today's jobs outrank unlinked proofs and survive the cap", () => {
+  const items = Array.from({ length: 15 }, (_, i) => proof(`x${i}`));
+  const d = buildDigest(input({ sessions: ok({ records: [sess("J-KEEP")] }), payments: ok({ records: [pay("J-KEEP", { status: "pending", ver: "pending" })] }), review: ok({ items }) }), NOW);
+  assert.match(paymentBlocks(d), /J-KEEP — payment pending/);
+  assert.match(paymentBlocks(d).split("\n")[0], /J-KEEP/);
+});
+
+test("PW5: a clean queue produces no backlog line and no overflow line", () => {
+  const t = paymentBlocks(buildDigest(input({ review: ok({ items: [proof("solo")] }) }), NOW));
+  assert.doesNotMatch(t, /not listed|more payment items/);
+});
+
+test("PW6: filtered proofs never affect a job's money state (0 THB slip does not make a job 'awaiting review')", () => {
+  const review = ok({ items: [proof("zj", { session: "JZ", amount: 0 })] });
+  const d = buildDigest(input({ sessions: ok({ records: [sess("JZ")] }), payments: ok({ records: [] }), review }), NOW);
+  assert.match(sectionText(d, "jobs_today"), /no payment record/);
+  assert.doesNotMatch(sectionText(d, "jobs_today"), /awaiting review/);
 });
 
 test.after(() => { globalThis.fetch = realFetch; });

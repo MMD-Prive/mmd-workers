@@ -109,5 +109,6 @@ export function durableObjectStore(binding) {
     claim: (key, opts) => call(key, "/claim", opts),
     mark: (key, opts) => call(key, "/mark", opts),
     finalizeMissed: (key, opts) => call(key, "/finalize-missed", opts),
+    state: async (key) => (await call(key, "/state", {})).state ?? null,
   };
 }
