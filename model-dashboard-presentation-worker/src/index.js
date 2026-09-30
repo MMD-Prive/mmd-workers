@@ -545,6 +545,37 @@ function selectedJobReturnTo(request) {
   return safeModelConfirmationReturnTo(request) || rememberedSelectedJobReturnTo(request);
 }
 
+function normalizeSelectedSessionId(value = "") {
+  const raw = String(value || "").trim();
+  return /^sess_[A-Za-z0-9._-]{8,180}$/.test(raw) ? raw : "";
+}
+
+function sessionIdFromModelConfirmationReturnTo(returnTo = "") {
+  const normalized = normalizeModelConfirmationReturnTo(returnTo);
+  if (!normalized) return "";
+  try {
+    const target = new URL(normalized, "https://mmdbkk.com");
+    const token = String(target.searchParams.get("t") || "");
+    const encoded = token.split(".", 1)[0] || "";
+    if (!encoded) return "";
+    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(encoded.length / 4) * 4, "=");
+    const binary = atob(base64);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const payload = JSON.parse(new TextDecoder().decode(bytes));
+    return normalizeSelectedSessionId(payload?.session_id);
+  } catch {
+    return "";
+  }
+}
+
+function selectedJobSessionId(request) {
+  let source;
+  try { source = new URL(request.url); } catch { return ""; }
+  const direct = normalizeSelectedSessionId(boundedParam(source, "session_id"));
+  if (direct) return direct;
+  return sessionIdFromModelConfirmationReturnTo(selectedJobReturnTo(request));
+}
+
 function safeMiniAppUrlForBootstrap(request) {
   const source = new URL(request.url);
   const environment = resolveLiffEnvironmentFromRequest(request);
@@ -568,8 +599,14 @@ function safeMiniAppUrlForBootstrap(request) {
     if (jobBoard.model_alias) params.set("model_alias", jobBoard.model_alias);
     if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
   } else {
+    const selectedSession = selectedJobSessionId(request);
     const returnTo = selectedJobReturnTo(request);
-    if (returnTo) params.set("handoff", "job-confirmed");
+    if (selectedSession) {
+      params.set("handoff", "job-confirmed");
+      params.set("session_id", selectedSession);
+    } else if (returnTo) {
+      params.set("handoff", "job-confirmed");
+    }
   }
   return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
 }
@@ -582,6 +619,7 @@ export function liffPrimaryBootstrapHtml(request) {
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
     returnTo: jobBoard ? "" : selectedJobReturnTo(request),
+    selectedSessionId: jobBoard ? "" : selectedJobSessionId(request),
     jobBoard,
     environment,
     mode: "primary",
@@ -596,6 +634,7 @@ export function liffPwaBootstrapHtml(request) {
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
     returnTo: jobBoard ? "" : safeModelConfirmationReturnTo(request),
+    selectedSessionId: jobBoard ? "" : selectedJobSessionId(request),
     jobBoard,
     environment,
     mode: "pwa",
@@ -671,7 +710,7 @@ export function shouldResumeSelectedJobAfterBootstrap(request) {
     && hasLiffPrimaryBootstrapCookie(request)
     && !hasModelSessionCookie(request)
     && !isPwaLaunchRequest(request)
-    && Boolean(selectedJobReturnTo(request));
+    && Boolean(selectedJobReturnTo(request) || selectedJobSessionId(request));
 }
 
 export function shouldServePhaseAAfterBootstrap(request) {
@@ -684,6 +723,7 @@ export function shouldServePhaseAAfterBootstrap(request) {
     && boundedParam(url, "intent") !== "job_board"
     && !boundedParam(url, "return_to")
     && !rememberedSelectedJobReturnTo(request)
+    && !selectedJobSessionId(request)
     && !boundedParam(url, "handoff")
     && !boundedParam(url, "flow");
 }
@@ -720,8 +760,14 @@ export function modelMiniAppHandoffUrl(request) {
     if (jobBoard.model_alias) params.set("model_alias", jobBoard.model_alias);
     if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
   } else {
+    const selectedSession = selectedJobSessionId(request);
     const returnTo = safeModelConfirmationReturnTo(request);
-    if (returnTo) params.set("return_to", returnTo);
+    if (selectedSession) {
+      params.set("handoff", "job-confirmed");
+      params.set("session_id", selectedSession);
+    } else if (returnTo) {
+      params.set("return_to", returnTo);
+    }
   }
 
   const phaseAId = source.searchParams.get("flow") === "apply" && (env === "developing" || env === "review")
@@ -748,20 +794,71 @@ function shortSelectedJobMiniAppUrl(request) {
   const lang = boundedParam(source, "lang");
   if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
   params.set("handoff", "job-confirmed");
+  const selectedSession = selectedJobSessionId(request);
+  if (selectedSession) params.set("session_id", selectedSession);
   return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
+}
+
+function isLineInAppBrowser(request) {
+  const ua = String(request.headers.get("user-agent") || "");
+  return /(?:\bLine\/|\bLIFF\b)/i.test(ua);
+}
+
+function shouldShowManualLineHandoff(request) {
+  const ua = String(request.headers.get("user-agent") || "").trim();
+  return Boolean(ua) && !isLineInAppBrowser(request);
+}
+
+function selectedJobExternalHandoffHtml(request) {
+  const href = shortSelectedJobMiniAppUrl(request)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;");
+  return `<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#080907">
+<title>MMD APP · เปิดงานใน LINE</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#080907}body{font-family:"LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f5efe5}.wrap{min-height:100dvh;display:grid;place-items:center;padding:24px}.card{width:min(100%,440px);border:1px solid rgba(223,185,102,.28);border-radius:24px;background:linear-gradient(180deg,#15140f,#0e0e0c);padding:24px;box-shadow:0 28px 80px #0008}.k{margin:0 0 10px;color:#d8bb7f;font-size:10px;font-weight:900;letter-spacing:.14em}.card h1{margin:0;font-size:30px;line-height:1.12;color:#fff4d6}.card p{margin:12px 0 0;color:#aaa69c;font-size:13px;line-height:1.7}.btn{display:flex;align-items:center;justify-content:center;min-height:52px;margin-top:22px;border-radius:14px;background:#d8bb7f;color:#17130c;text-decoration:none;font-size:13px;font-weight:900}.note{display:block;margin-top:11px;color:#77736b;font-size:10px;line-height:1.5;text-align:center}
+</style>
+</head>
+<body><main class="wrap" data-mmd-selected-job-external-handoff="v1"><section class="card">
+<p class="k">MMD APP · SELECTED JOB</p>
+<h1>เปิดงานนี้ใน LINE</h1>
+<p>ลิงก์นี้เปิดมาจาก Telegram หรือเบราว์เซอร์ภายนอกครับ<br>กดปุ่มด้านล่างเพื่อเปิด MMD APP ใน LINE ระบบจะใช้ LINE ที่เคยเชื่อมกับ MMD ไว้แล้วและพากลับมาที่งานนี้โดยตรง</p>
+<a class="btn" href="${href}">เปิดงานนี้ใน LINE →</a>
+<small class="note">ไม่ต้องสมัครใหม่ · ไม่ต้องเชื่อมโปรไฟล์ใหม่ · ไม่ต้องส่งข้อมูลซ้ำ</small>
+</section></main></body></html>`;
 }
 
 function miniAppHandoff(request) {
   const selectedJob = safeModelConfirmationReturnTo(request);
+  const selectedSession = selectedJobSessionId(request);
+  if (selectedSession && shouldShowManualLineHandoff(request)) {
+    return new Response(selectedJobExternalHandoffHtml(request), {
+      status:200,
+      headers:{
+        "content-type":"text/html; charset=utf-8",
+        "cache-control":"no-store, private",
+        "x-mmd-worker":WORKER_NAME,
+        "x-mmd-route-owner":WORKER_NAME,
+        "x-mmd-model-entry":"external-selected-job-handoff-v1",
+        "x-robots-tag":"noindex, nofollow",
+      },
+    });
+  }
   const headers = new Headers({
-    location: selectedJob ? shortSelectedJobMiniAppUrl(request) : modelMiniAppHandoffUrl(request),
+    location: selectedJob || selectedSession ? shortSelectedJobMiniAppUrl(request) : modelMiniAppHandoffUrl(request),
     "cache-control": "no-store",
     "x-mmd-worker": WORKER_NAME,
     "x-mmd-route-owner": WORKER_NAME,
     "x-mmd-model-entry": "line-miniapp-handoff-v1",
     "x-robots-tag": "noindex, nofollow",
   });
-  if (selectedJob) {
+  if (selectedJob && !selectedSession) {
     headers.append(
       "set-cookie",
       `${MODEL_SELECTED_JOB_INTENT_COOKIE}=${encodeURIComponent(selectedJob)}; Path=${UI_PREFIX}; Max-Age=${MODEL_SELECTED_JOB_INTENT_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
