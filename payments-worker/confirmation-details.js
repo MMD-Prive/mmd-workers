@@ -27,11 +27,11 @@ const SESSION_FIELDS = Object.freeze({
   modelAckAt: "fldFgkHXivIAThfDz",
 });
 
-// The model view carries what the model needs to acknowledge the job: date,
-// time, location/brief, acknowledgement state and the model's OWN payout.
-// Customer identity, payment identifiers/state and customer amounts/rates stay
-// owner/admin-side.
-const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status", "client_name"]);
+// The model view carries what the model needs to acknowledge and prepare for the
+// job: the client's display name (models address the client by name), date, time,
+// location/brief, acknowledgement state and the model's OWN payout. Payment
+// identifiers/state and customer amounts/rates stay owner/admin-side.
+const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status"]);
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
