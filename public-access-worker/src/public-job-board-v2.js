@@ -238,10 +238,9 @@ async function renderBoard(request, env) {
   const jobs = await listPublicJobs(env);
   const { token: anon, setCookie } = await ensureAnonymousSession(request, env);
   await recordViewerEvent(env, anon, { type: "board_open" });
-  const publicCards = jobs.filter((job) => job.world !== "private").map(jobCard).join("");
-  const privateCards = jobs.filter((job) => job.world === "private").map(jobCard).join("");
+  const cards = jobs.map(jobCard).join("");
   return html(pageShell("งานที่เปิดรับกับ MMD", `
-    <main><section class="hero"><p class="eyebrow">MMD · JOB BOARD</p><h1>ที่นี่พี่เปอร์ดูแลงานให้ครับ</h1><p>มีทั้งงาน Public และ Private เลือกดูงานที่ตรงกับคุณได้เลยครับ</p><p>งาน Private จะยังไม่แสดงรายละเอียดบนหน้ารวม แตะเข้าดูเมื่อสนใจได้เลย</p><a class="primary" href="#jobs">ดูงานที่เปิดรับ</a></section><section id="jobs" class="job-world"><p class="eyebrow">PUBLIC JOB</p><div class="grid">${publicCards || '<div class="empty">ตอนนี้ยังไม่มีงานทั่วไปที่เปิดรับครับ</div>'}</div></section><section class="job-world private-world"><p class="eyebrow">PRIVATE JOB</p><div class="grid">${privateCards || '<div class="empty">ตอนนี้ยังไม่มีงานลับที่เปิดรับครับ</div>'}</div></section></main>`), 200, { ...(setCookie ? { "Set-Cookie": setCookie } : {}), "x-mmd-anonymous-session": anon ? "ready" : "missing" });
+    <main><section class="hero"><p class="eyebrow">MMD · JOB BOARD</p><h1>ที่นี่พี่เปอร์ดูแลงานให้ครับ</h1><p>มีทั้งงาน Public และ Private อยู่ในกระดานเดียวกัน เลือกดูงานที่ตรงกับคุณได้เลยครับ</p><p>งาน Private จะยังไม่แสดงรายละเอียดบนหน้ารวม แตะเข้าดูเมื่อสนใจได้เลย</p><a class="primary" href="#jobs">ดูงานที่เปิดรับ</a></section><section id="jobs" class="job-world"><p class="eyebrow">งานที่เปิดรับ · PUBLIC + PRIVATE</p><div class="grid">${cards || '<div class="empty">ตอนนี้ยังไม่มีงานที่เปิดรับครับ</div>'}</div></section></main>`), 200, { ...(setCookie ? { "Set-Cookie": setCookie } : {}), "x-mmd-anonymous-session": anon ? "ready" : "missing" });
 }
 
 async function renderJobDetail(request, env, jobId) {
@@ -285,25 +284,32 @@ async function receiveViewerEvent(request, env) {
 async function renderApplication(request, env, jobId) {
   const job = await requireJob(env, jobId, { publicOnly: true });
   const anon = await requireAnonymousSession(request, env);
+  const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const count = job.public.media_requirements.count;
-  const script = applicationScript(job.id, count);
-  return html(pageShell(`ส่งความสนใจ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail"><p class="eyebrow">พี่เปอร์ดูแลงานให้</p><h1>${esc(job.public.title)}</h1><p>ส่งข้อมูลกับรูปปัจจุบันให้พี่ดูคร่าว ๆ ก่อนได้ครับ ถ้ายังไม่สะดวกส่งรูปตอนนี้ ฝาก LINE หรือเบอร์โทรไว้ก่อนก็ได้</p><form data-apply><div class="fields"><label>ชื่อที่อยากใช้<input name="nickname" required maxlength="80"></label><label>LINE ID<input name="line_id" maxlength="120" autocomplete="off"></label><label>เบอร์โทร<input name="phone" maxlength="40" inputmode="tel" autocomplete="tel"></label><label>อายุ<input name="age" type="number" min="18" max="100" required></label><label>ส่วนสูง (ซม.)<input name="height_cm" type="number" min="120" max="230" required></label><label>น้ำหนัก (กก.)<input name="weight_kg" type="number" min="35" max="250" required></label><label>เพศสภาพ<select name="gender" required><option value="">เลือก</option><option value="male">ชาย</option><option value="gay">เกย์</option><option value="bisexual">ไบฯ</option><option value="self_described">ระบุเอง</option></select></label><label>ระบุเพศสภาพเพิ่มเติม<input name="gender_note" maxlength="120"></label><label>รับงานกับลูกค้า<select name="customer_scope" required><option value="">เลือก</option><option value="men">ผู้ชาย</option><option value="women">ผู้หญิง</option><option value="both">ทั้งคู่</option></select></label><label>ไซซ์เสื้อผ้า<input name="clothing_size" maxlength="120"></label></div><label>ประสบการณ์ / โปรไฟล์ / ลิงก์ผลงาน<textarea name="profile" maxlength="1500"></textarea></label><label>ขอบเขตงานที่รับ<textarea name="work_scope" required maxlength="1500"></textarea></label><label>ขอบเขตที่ทำไม่ได้<textarea name="unavailable_scope" required maxlength="1500"></textarea></label><label>ถ้าเคยรับงานกับพี่เปอร์ ระบุชื่อหรือรหัสที่เคยใช้<input name="existing_model_claim" maxlength="160"></label><label>รูปเดี่ยวปัจจุบัน (ส่งได้สูงสุด ${count} รูป)<input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p>ยังไม่พร้อมส่งรูปไม่เป็นไรครับ ใบสมัครจะอยู่สถานะรอรูปและพี่เปอร์จะติดต่อกลับจาก LINE หรือเบอร์ที่ให้ไว้</p><button class="primary" type="submit">ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า →</button><p><a class="back" href="https://t.me/per_mmd" rel="noreferrer">CONFIDENTIAL · คุยกับพี่เปอร์โดยตรงที่ t.me/per_mmd</a></p><p data-status role="status"></p></form></section></main>${script}`));
+  const script = linkedInterestScript(job.id);
+  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail"><p class="eyebrow">MMD APP · MODEL POOL</p><h1>${esc(job.public.title)}</h1><p>โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ งานนี้ไม่ต้องกรอกข้อมูลหรือส่งรูปใหม่</p><p>กดด้านล่างเพื่อบอกพี่เปอร์ว่าคุณสนใจและสะดวกรับงานนี้</p><button class="primary" type="button" data-linked-interest>สนใจงานนี้ · ส่งให้พี่เปอร์</button><p data-status role="status"></p><small>Model record · ${esc(gate.model_record_id)}</small></section></main>${script}`));
 }
 
 async function createInterest(request, env, jobId) {
   requireWriteOrigin(request, env);
   const job = await requireJob(env, jobId, { publicOnly: true });
-  const input = await readJson(request);
+  await readJson(request);
   const anon = await requireAnonymousSession(request, env);
+  const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const actorHash = await sha256(`${job.id}:${anon.id}`);
+  const actorHash = await sha256(`${job.id}:${gate.model_record_id}`);
   const dedupe = await getJson(env, dedupeKey(job.id, actorHash));
   if (dedupe?.application_ref) throw httpError(409, "job_interest_already_exists");
-  const gate = await requireModelBoardGate(request, env);
-  const identity = { identity_class: "VERIFIED_LINE_MODEL", workflow_status: "existing_model_unbound", public_status: "received", verified_model_record_id: gate.model_record_id, claim: clean(input.existing_model_claim, 160) || null };
+
+  const identity = {
+    identity_class: "APPROVED_LINKED_MODEL",
+    workflow_status: "linked_model_fast_lane",
+    public_status: "received",
+    verified_model_record_id: gate.model_record_id,
+    claim: null,
+  };
   const applicationRef = makeRef("APP");
   const now = new Date().toISOString();
   const application = {
@@ -312,17 +318,18 @@ async function createInterest(request, env, jobId) {
     job_id: job.id,
     created_at: now,
     updated_at: now,
-    submission_status: "draft",
+    submission_status: "submitted",
     identity,
-    workflow_status: identity.workflow_status,
+    workflow_status: "candidate_pending_owner",
     owner_decision: null,
-    applicant: null,
+    applicant: { model_record_id: gate.model_record_id, fast_lane: true },
     uploads: [],
+    media_status: "profile_on_file",
     controls: { auto_bind: false, auto_rate: false, auto_book: false, auto_reply: false },
   };
   await putJson(env, applicationKey(job.id, applicationRef), application, { onlyIfMissing: true });
   try {
-    await putJson(env, dedupeKey(job.id, actorHash), { application_ref: applicationRef, created_at: now }, { onlyIfMissing: true });
+    await putJson(env, dedupeKey(job.id, actorHash), { application_ref: applicationRef, model_record_id: gate.model_record_id, created_at: now }, { onlyIfMissing: true });
   } catch (error) {
     await env.PUBLIC_ACCESS_EVIDENCE.delete(applicationKey(job.id, applicationRef));
     throw error;
@@ -331,10 +338,11 @@ async function createInterest(request, env, jobId) {
   return json({
     ok: true,
     application_ref: applicationRef,
-    status: identity.public_status,
-    media_required_count: 0,
-    media_recommended_count: job.public.media_requirements.count,
-    interest_detail: job.public.confidentiality ? job.protected.deeper_interest_detail : "",
+    status: "ส่งความสนใจให้พี่เปอร์แล้ว",
+    fast_lane: true,
+    model_record_id: gate.model_record_id,
+    auto_bound: false,
+    auto_reply: false,
   }, 201);
 }
 
@@ -894,6 +902,10 @@ function pageShell(title, body) {
 
 function styles() {
   return `:root{color-scheme:dark;font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#0b0b0b;color:#f7f3eb}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,#292116 0,transparent 36%),#0b0b0b}main{width:min(1180px,calc(100% - 32px));margin:auto;padding:32px 0 72px}.hero,.detail{border:1px solid #3d3224;border-radius:28px;padding:clamp(24px,6vw,64px);background:rgba(17,15,12,.94);box-shadow:0 24px 80px #0008}.hero h1,.detail h1{font-size:clamp(38px,8vw,78px);line-height:1;margin:.15em 0}.hero p,.detail p{color:#d8d0c2;line-height:1.7;max-width:720px}.eyebrow{color:#d6b56f!important;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.primary,.job a{display:inline-flex;min-height:48px;align-items:center;justify-content:center;border-radius:999px;padding:0 22px;background:#e0bd72;color:#17120b;text-decoration:none;font-weight:800;border:0;cursor:pointer;margin-top:16px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:28px}.owner-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.job{min-width:0;padding:20px;border:1px solid #352c21;border-radius:20px;background:#12110f}.job h2{font-size:22px;line-height:1.25;margin:8px 0;overflow-wrap:anywhere}.job p{color:#bdb4a6;overflow-wrap:anywhere}.job-cover-meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 12px}.cover-chip{display:inline-flex;align-items:center;min-height:30px;padding:0 10px;border-radius:999px;border:1px solid rgba(222,189,114,.28);font-size:11px;font-weight:850;letter-spacing:.06em}.private-card{background:radial-gradient(circle at 90% 0,rgba(95,119,154,.11),transparent 34%),linear-gradient(145deg,#12110f,#080807)!important;border-color:rgba(222,189,114,.28)!important}.private-card .budget-chip{background:rgba(222,189,114,.12);color:#f0d99f}.private-card .client-chip{background:rgba(103,126,160,.10);color:#d8e2ef;border-color:rgba(116,143,179,.25)}.money{color:#e5c57e!important;font-weight:700}.back{display:inline-block;color:#d6b56f;margin-bottom:18px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#31291f;border:1px solid #31291f;border-radius:16px;overflow:hidden;margin:24px 0}dl div{background:#12110f;padding:16px}dt{color:#958a7a;font-size:12px}dd{margin:4px 0 0;font-weight:700}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}label{display:grid;gap:7px;margin:14px 0;color:#d8d0c2;font-weight:700}input,select,textarea{width:100%;border:1px solid #4b4031;border-radius:12px;padding:13px;background:#090909;color:#fff;font:inherit}textarea{min-height:112px;resize:vertical}.owner-candidate{border-top:1px solid #3d3224;padding:18px 0}.owner-actions{display:flex;flex-wrap:wrap;gap:8px}.owner-actions button{border:1px solid #665235;border-radius:999px;background:#17130d;color:#e8d4a5;padding:8px 12px;cursor:pointer}.empty{padding:24px;color:#bdb4a6}@media(max-width:640px){main{width:min(100% - 16px,1180px);padding-top:8px}.hero,.detail{border-radius:20px;padding:20px}.hero h1,.detail h1{font-size:34px;line-height:1.08}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.owner-grid,.fields,dl{grid-template-columns:1fr}.job{padding:14px}.job h2{font-size:18px}.job a{width:100%;padding:0 12px;font-size:13px}.primary{width:100%}}`;
+}
+
+function linkedInterestScript(jobId) {
+  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#ff9b9b':'#d6b56f'};b.addEventListener('click',async()=>{b.disabled=true;try{say('กำลังส่งให้พี่เปอร์…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'});const x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'interest_failed');say(x.status||'ส่งความสนใจให้พี่เปอร์แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
 }
 
 function applicationScript(jobId, requiredCount) {
