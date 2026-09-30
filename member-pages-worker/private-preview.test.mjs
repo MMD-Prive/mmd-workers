@@ -104,3 +104,33 @@ test('append-only audit failure burns the grant and returns no media',async()=>{
   const response=await handlePrivatePreview(req(),f.env);assert.equal(response.status,503);assert.equal(f.storage.has('consumed'),true);assert.equal(f.writes.length,0);
   f.auditFailure=false;assert.equal((await handlePrivatePreview(req(),f.env)).status,410);
 });
+
+
+test("LINE crawler, HEAD and prefetch cannot consume a private preview grant", async () => {
+  const f = setup();
+
+  const crawlerGet = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/view#t=synthetic",
+    { method: "GET", headers: { "user-agent": "Line/14 link-preview" } },
+  ), f.env);
+  assert.equal(crawlerGet.status, 200);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 0);
+
+  const head = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/view#t=synthetic",
+    { method: "HEAD", headers: { "user-agent": "Line/14 link-preview" } },
+  ), f.env);
+  assert.equal(head.status, 405);
+  assert.equal(f.storage.has("consumed"), false);
+
+  const prefetchStatus = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { method: "GET", headers: { "sec-purpose": "prefetch", "user-agent": "Line/14 link-preview" } },
+  ), f.env);
+  assert.equal(prefetchStatus.status, 401);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 0);
+});
