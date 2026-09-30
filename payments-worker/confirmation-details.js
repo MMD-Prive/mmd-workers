@@ -24,7 +24,12 @@ const SESSION_FIELDS = Object.freeze({
   note: "fldEcDkF7CH9VixWM",
   notes: "fldwl9Gs5tYlXG5ls",
   payModelThb: "fldlTO5aNfqUmlNWm",
+  modelAckAt: "fldFgkHXivIAThfDz",
 });
+
+// Payment truth belongs to payments-worker and the customer view only. The
+// model view must never carry payment identifiers or payment state.
+const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status"]);
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
@@ -139,8 +144,13 @@ export async function handleConfirmationDetails(request, env = {}) {
     }
 
     const modelPayout = numberOrNull(fields[SESSION_FIELDS.payModelThb]);
+    const modelCommon = { ...common };
+    for (const key of MODEL_HIDDEN_KEYS) delete modelCommon[key];
+    const modelAcknowledgedAt = text(fields[field(env.AT_SESSIONS__MODEL_ACK_AT, SESSION_FIELDS.modelAckAt)], 200) || null;
     return withCors(request, env, json({
-      ...common,
+      ...modelCommon,
+      model_acknowledged_at: modelAcknowledgedAt,
+      already_confirmed: Boolean(modelAcknowledgedAt),
       model_payout_thb: modelPayout,
       amount_thb: modelPayout,
       amount_scope: "model_payout",

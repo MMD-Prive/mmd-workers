@@ -1,4 +1,4 @@
-/* MMD SIGIL Model Confirmation — Direct Private First Job Gate v1
+/* MMD SIGIL Model Confirmation — Direct Private First Job Gate v1 (v1.1 no-silent-failure)
  * Route: /sigil/confirm/job-model
  * Runs before the deferred confirmation runtime. It intercepts only the model
  * /v1/confirm/details read and releases it after the canonical gate says it may.
@@ -12,6 +12,9 @@
   const STATUS = "/v1/model/direct-job-gate/status";
   const DETAILS = "/v1/confirm/details";
   const LIFF = "https://miniapp.line.me/2010864854-N34SgCqq/";
+  const STATUS_TIMEOUT_MS = 15000;
+  const REENTRY_KEY = "mmd_dfjg_reentry_at";
+  const REENTRY_WINDOW_MS = 3 * 60 * 1000;
   let preflight = null;
 
   const clean = (v) => String(v == null ? "" : v).trim();
@@ -24,12 +27,42 @@
     return "/sigil/confirm/job-model?t=" + encodeURIComponent(token);
   }
 
-  function enterLiff(token) {
+  function liffUrl(token) {
     const u = new URL(LIFF);
     u.searchParams.set("handoff", "job-confirmed");
     u.searchParams.set("return_to", modelReturnTo(token));
     u.searchParams.set("lang", lang());
-    location.replace(u.toString());
+    return u.toString();
+  }
+
+  function recentReentry() {
+    try {
+      const at = Number(window.sessionStorage?.getItem(REENTRY_KEY) || 0);
+      return Number.isFinite(at) && at > 0 && Date.now() - at < REENTRY_WINDOW_MS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function markReentry() {
+    try { window.sessionStorage?.setItem(REENTRY_KEY, String(Date.now())); } catch (_) {}
+  }
+
+  function insideLiff() {
+    return /\bLIFF\b/i.test(String(navigator.userAgent || ""));
+  }
+
+  // Redirect to the LINE Mini App once. If we are already inside LIFF, or we
+  // bounced here within the window, a second automatic redirect would loop, so
+  // show a visible screen with a manual button and an owner reference instead.
+  function enterLiff(token, code) {
+    if (insideLiff() || recentReentry()) {
+      renderBlocked("ยังยืนยันตัวตนใน LINE ไม่สำเร็จ กรุณากดปุ่มด้านล่างเพื่อเปิดงานใน MMD APP อีกครั้ง", code || "model_session_reentry_loop", liffUrl(token));
+      return false;
+    }
+    markReentry();
+    location.replace(liffUrl(token));
+    return true;
   }
 
   function addGateStyle() {
@@ -82,33 +115,92 @@
     if (link) link.href = gateUrl(body, token);
   }
 
-  function renderBlocked(message) {
+  function renderBlocked(message, code, actionUrl) {
     addGateStyle();
     let wrap = document.querySelector("[data-mmd-direct-first-job-gate]");
     if (!wrap) {
       wrap = document.createElement("section");
       wrap.className = "mmd-dfjg";
       wrap.setAttribute("data-mmd-direct-first-job-gate", "1");
+      wrap.setAttribute("role", "alert");
       document.body.appendChild(wrap);
     }
-    wrap.innerHTML = `<div class="mmd-dfjg__card"><p class="mmd-dfjg__k">MMD APP</p><h1>ยังเปิดรายละเอียดงานไม่ได้</h1><p>${message || "ระบบยังตรวจสิทธิ์ของงานนี้ไม่ครบ กรุณาเปิดลิงก์ผ่าน LINE อีกครั้ง"}</p></div>`;
+    wrap.setAttribute("data-mmd-gate-state", "blocked");
+    const card = document.createElement("div");
+    card.className = "mmd-dfjg__card";
+    const kicker = document.createElement("p");
+    kicker.className = "mmd-dfjg__k";
+    kicker.textContent = "MMD APP";
+    const title = document.createElement("h1");
+    title.textContent = "ยังเปิดรายละเอียดงานไม่ได้";
+    const text = document.createElement("p");
+    text.textContent = message || "ระบบยังตรวจสิทธิ์ของงานนี้ไม่ครบ กรุณาเปิดลิงก์ผ่าน LINE อีกครั้ง";
+    card.append(kicker, title, text);
+    if (actionUrl) {
+      const button = document.createElement("a");
+      button.className = "mmd-dfjg__btn";
+      button.href = actionUrl;
+      button.textContent = "เปิดใน MMD APP (LINE)";
+      card.appendChild(button);
+    }
+    const retry = document.createElement("a");
+    retry.className = "mmd-dfjg__btn";
+    retry.href = location.pathname + location.search;
+    retry.textContent = "ลองใหม่";
+    retry.style.background = "transparent";
+    retry.style.border = "1px solid rgba(224,190,112,.4)";
+    retry.style.color = "#efd58d";
+    card.appendChild(retry);
+    const ref = document.createElement("div");
+    ref.className = "mmd-dfjg__state";
+    ref.textContent = `รหัสอ้างอิงสำหรับแจ้ง MMD: MC-G-${clean(code || "gate_blocked").replace(/[^a-z0-9_]/gi, "").slice(0, 60)}`;
+    card.appendChild(ref);
+    wrap.replaceChildren(card);
+    try { console.warn("[mmd-direct-first-job-gate]", { code: clean(code) }); } catch (_) {}
   }
 
-  async function check(token) {
-    const response = await nativeFetch(STATUS, {
+  async function statusFetch(token) {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    let timer = null;
+    const request = nativeFetch(STATUS, {
       method: "POST",
       credentials: "include",
       cache: "no-store",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ t: token }),
+      signal: controller?.signal,
     });
+    request.catch(() => {});
+    const watchdog = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        try { controller?.abort(); } catch (_) {}
+        reject(new Error("direct_job_gate_timeout"));
+      }, STATUS_TIMEOUT_MS);
+    });
+    try {
+      return await Promise.race([request, watchdog]);
+    } catch (error) {
+      throw new Error(clean(error?.message) === "direct_job_gate_timeout" ? "direct_job_gate_timeout" : "direct_job_gate_network");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function check(token) {
+    let response;
+    try {
+      response = await statusFetch(token);
+    } catch (error) {
+      renderBlocked("เชื่อมต่อระบบตรวจสิทธิ์งานไม่ได้ กรุณาเช็กอินเทอร์เน็ตแล้วกดลองใหม่", error.message);
+      throw error;
+    }
     const body = await response.json().catch(() => ({}));
     if (response.status === 401 && /^model_session_(required|invalid|expired)$/.test(clean(body.error))) {
-      enterLiff(token);
-      throw new Error("model_identity_reentry");
+      if (enterLiff(token, clean(body.error))) throw new Error("model_identity_reentry");
+      throw new Error(clean(body.error));
     }
     if (!response.ok || body.ok !== true) {
-      renderBlocked("ระบบยังตรวจ First Direct Job Gate ไม่ครบ กรุณาเปิดงานผ่าน LINE อีกครั้ง");
+      renderBlocked("ระบบยังตรวจ First Direct Job Gate ไม่ครบ กรุณาเปิดงานผ่าน LINE อีกครั้ง", clean(body.error) || `http_${response.status}`);
       throw new Error(clean(body.error) || "direct_job_gate_unavailable");
     }
     if (body.applies !== true || body.required !== true) return true;
@@ -135,7 +227,13 @@
       return nativeFetch(input, init);
     }
 
-    if (!preflight) preflight = check(clean(body.t));
+    if (!preflight) {
+      // A failed preflight must not be cached, otherwise "try again" can never recover.
+      preflight = check(clean(body.t)).catch((error) => {
+        preflight = null;
+        throw error;
+      });
+    }
     const allowed = await preflight;
     if (allowed) return nativeFetch(input, init);
 
