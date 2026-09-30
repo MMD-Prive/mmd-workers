@@ -434,14 +434,17 @@ function renderShell(config, nonce) {
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
   const WELCOME_COPY = {
+    checking: { title: "MY MMD", subtitle: "กำลังเตรียมพื้นที่ของคุณ", note: "", letter: "" },
     new: { title: "ยินดีที่ได้รู้จัก", subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์", note: "", letter: "ยินดีที่ได้รู้จัก\\n\\nMY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา และจากสิ่งที่เปอร์ค้นพบว่า ในยุคที่กำลังย่างเข้าสู่ปี 2027 โลกไปไกลมากแล้ว การมีระบบดูแลที่ดีจึงเป็นสิ่งที่ปลอดภัยที่สุด\\n\\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขมากขึ้น\\n\\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจองและจ่ายเงิน แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรอย่างชัดเจน รวมถึงรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\\n\\nขอให้มีความสุข\\nเปอร์" },
-    existing: { title: "ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว", subtitle: "MY MMD · ขอบคุณที่ยังอยู่และยังรอ", note: "กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี ทั้งสมาชิกปัจจุบันและสมาชิกที่หมดอายุแล้ว เมื่อสมัครหรือต่ออายุอีกครั้ง ระบบจะรวมสิทธิ์ให้เป็น 2 ปี", letter: "ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว\\n\\nเปอร์หายไปนานจริง ๆ\\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\\n\\nถึงจะยังเห็นอัปเดตกันอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\\n\\nเปอร์ไม่ได้หายไปติดผู้ชายนะครับ 5555\\nแต่ใช้เวลาปีกว่า ๆ ศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมาจากที่ทำไม่เป็นเลย\\n\\nจริงๆแล้วเราจะทำงานกันแบบเดิมก็ได้ ที่ต้องมานั่งจ้องมือถือกัน\\nเมื่อไหร่จะจองสักทีวะ เมื่อไหร่จะตอบสักที\\n(อุ๊ย! ขออภัยที่คิดดัง) เมื่อไหร่จะตอบซักที ถามไป หายไม่มีคนตอบ\\nมีใครสะดวกบ้างก็ไม่รุ้ แล้วรำคาญกันไหม AI เปอร์ก็รำคาญนะ 555\\n\\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท และทำทุกอย่างด้วยตัวเอง\\nเพื่อให้ทุกคนค้นหา จอง จ่าย และติดตามงานกับ MMD ได้สะดวกและปลอดภัยขึ้น\\n\\nมันอาจยังไม่สมบูรณ์ทั้งหมดในวันนี้\\nแต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\\n\\nขอบคุณที่ยังอยู่\\nขอบคุณที่ยังรอ\\n\\nเปอร์เองครับ" },
+    existing: { title: "ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว", subtitle: "MY MMD · ขอบคุณที่ยังอยู่และยังรอ", note: "กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี ทั้งสมาชิกปัจจุบันและสมาชิกที่หมดอายุแล้ว เมื่อสมัครหรือต่ออายุอีกครั้ง ระบบจะรวมสิทธิ์ให้เป็น 2 ปี", letter: "ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว\\n\\nเปอร์หายไปนานจริง ๆ\\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\\n\\nถึงจะยังเห็นอัปเดตกันอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\\n\\nเปอร์ไม่ได้หายไปติดผู้ชายนะครับ 5555\\nแต่ใช้เวลาปีกว่า ๆ ศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมาจากที่ทำไม่เป็นเลย\\n\\nจริงๆแล้วเราจะทำงานกันแบบเดิมก็ได้ ที่ต้องมานั่งจ้องมือถือกัน\\nเมื่อไหร่จะจองสักทีวะ เมื่อไหร่จะตอบสักที\\n(อุ๊ย! ขออภัยที่คิดดัง) เมื่อไหร่จะตอบซักที ถามไป หายไม่มีคนตอบ\\nมีใครสะดวกบ้างก็ไม่รุ้ แล้วรำคาญกันไหม AI เปอร์ก็รำคาญนะ 555\\n\\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท และทำทุกอย่างด้วยตัวเอง\\nเพื่อให้ทุกคนค้นหา จอง จ่าย และติดตามงานกับ MMD ได้สะดวกและปลอดภัยขึ้น\\n\\nมันอาจยังไม่สมบูรณ์ทั้งหมดในวันนี้\\nแต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\\n\\nขอบคุณที่ยังอยู่\\nขอบคุณที่ยังรอ\\n\\nเปอร์เองครับ" },
   };
   function detectWorld(data, authority) {
     return resolveTrustedWelcomeWorldInBrowser(data, authority);
   }
   function resolveWelcomeAudience(data, authority) {
-    return authority === "canonical_member_profile" && data?.audience === "existing" ? "existing" : "new";
+    if (data?.audience === "existing" && (authority === "canonical_member_profile" || authority === "canonical_client")) return "existing";
+    if (data?.audience === "new" && authority === "canonical_member_client_absence") return "new";
+    return "checking";
   }
   function applyWorldTheme(data, authority = "", audienceAuthority = "") {
     const world = detectWorld(data, authority);
@@ -462,18 +465,63 @@ function renderShell(config, nonce) {
   applyWorldTheme();
   let welcomeContextPromise;
   let existingProfilePromise;
-  async function resolveInitialWelcomeContext() {
-     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1500);
-      let response;
-      try {
-        response = await fetch(CONFIG.welcomeContextEndpoint, { method: "GET", credentials: "same-origin", redirect: "error", headers: { accept: "application/json" }, signal: controller.signal });
-      } finally { clearTimeout(timeout); }
+
+  async function readWelcomeContext() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const response = await fetch(CONFIG.welcomeContextEndpoint, {
+        method: "GET",
+        credentials: "same-origin",
+        redirect: "error",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      });
       const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.ok === true) applyWorldTheme(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-welcome-audience-authority") || "");
+      if (!response.ok || payload?.ok !== true) return false;
+      const displayAuthority = response.headers.get("x-mmd-member-display-authority") || "";
+      const audienceAuthority = response.headers.get("x-mmd-welcome-audience-authority") || "";
+      applyWorldTheme(payload.data || {}, displayAuthority, audienceAuthority);
+      return new Set(["canonical_member_profile", "canonical_client", "canonical_member_client_absence"]).has(audienceAuthority);
     } catch {
-      // Missing, stale, ambiguous, or unavailable identity evidence remains Public.
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function preflightWelcomeIdentity() {
+    if (CONFIG.intent === "signup" || !CONFIG.liffId || !window.liff) return false;
+    try {
+      await window.liff.init({ liffId: CONFIG.liffId });
+      if (!window.liff.isLoggedIn()) return false;
+      const idToken = window.liff.getIDToken();
+      if (!idToken) return false;
+      const body = { id_token: idToken, liff_intent: CONFIG.intent };
+      if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
+      if (CONFIG.campaign) body.campaign = CONFIG.campaign;
+      const response = await fetch(CONFIG.startEndpoint, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok !== true) return false;
+      existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function resolveInitialWelcomeContext() {
+    try {
+      let resolvedAudience = await readWelcomeContext();
+      if (!resolvedAudience) {
+        const sessionReady = await preflightWelcomeIdentity();
+        if (sessionReady) resolvedAudience = await readWelcomeContext();
+      }
     } finally {
       document.body.classList.remove("context-resolving");
       introContinue.disabled = false;
@@ -1565,7 +1613,7 @@ function renderShell(config, nonce) {
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  // Welcome screen is user-led; LINE verification begins after Continue.
+  // Welcome remains user-led. An already-authenticated LINE client may preflight a same-site session only to select the correct returning/new copy; this path never calls liff.login before Continue.
 })();
 </script>
 </body>

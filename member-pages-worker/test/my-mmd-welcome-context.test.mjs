@@ -14,14 +14,11 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function makeEnv({ entitlement = true, resolverFails = false } = {}) {
+async function makeEnv({ entitlement = true, resolverFails = false, memberExists = true, clientLookup = "unconfigured" } = {}) {
   const sessionKey = `liff:session:${await hmacHex(SECRET, `session:${TOKEN}`)}`;
   const writes = [];
   const resolverCalls = [];
-  return {
-    writes,
-    resolverCalls,
-    env: {
+  const runtime = {
       LIFF_SESSION_SECRET: SECRET,
       LIFF_IDENTITY_KV: {
         async get(key, format) {
@@ -36,6 +33,7 @@ async function makeEnv({ entitlement = true, resolverFails = false } = {}) {
         async fetch(request) {
           resolverCalls.push(request);
           if (resolverFails) return new Response("unavailable", { status: 503 });
+          if (!memberExists) return Response.json({ ok: true, data: { member_exists: false } });
           return Response.json({ ok: true, data: {
             member_exists: true, member_id: "recCanonicalMember",
             profile: { membership_status: "active", display_name: "not returned" },
@@ -50,7 +48,28 @@ async function makeEnv({ entitlement = true, resolverFails = false } = {}) {
           } });
         },
       },
-    },
+    };
+  if (clientLookup !== "unconfigured") {
+    runtime.AIRTABLE_API_KEY = "test-airtable-key";
+    runtime.AIRTABLE_BASE_ID = "app-test";
+    runtime.AIRTABLE_HTTP = {
+      async fetch(request) {
+        if (clientLookup === "fails") return Response.json({ error: "unavailable" }, { status: 503 });
+        const url = new URL(request.url);
+        const table = decodeURIComponent(url.pathname.split("/").pop() || "");
+        if (table === "Clients") {
+          return Response.json({ records: clientLookup === "match"
+            ? [{ id: "recCanonicalClient1", fields: { line_user_id: LINE_ID } }]
+            : [] });
+        }
+        return Response.json({ records: [] });
+      },
+    };
+  }
+  return {
+    writes,
+    resolverCalls,
+    env: runtime,
     cookie: `__Host-mmd_liff_session=${TOKEN}`,
   };
 }
@@ -84,6 +103,39 @@ test("missing protected entitlement and missing session remain Public", async ()
   assert.deepEqual(await anonymous.json(), { ok: true, data: { tier: "", membership_status: "", audience: "new" } });
 });
 
+test("legacy canonical Client is returning audience even without a Member record", async () => {
+  const fixture = await makeEnv({ memberExists: false, clientLookup: "match" });
+  const response = await handleMyMmdWelcomeContext(
+    new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { cookie: fixture.cookie } }),
+    fixture.env,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: { tier: "", membership_status: "", audience: "existing" } });
+  assert.equal(response.headers.get("x-mmd-welcome-audience-authority"), "canonical_client");
+  assert.equal(response.headers.get("x-mmd-member-display-authority"), null);
+});
+
+test("new audience is emitted only when Member and Canonical Client are both proven absent", async () => {
+  const fixture = await makeEnv({ memberExists: false, clientLookup: "none" });
+  const response = await handleMyMmdWelcomeContext(
+    new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { cookie: fixture.cookie } }),
+    fixture.env,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, data: { tier: "", membership_status: "", audience: "new" } });
+  assert.equal(response.headers.get("x-mmd-welcome-audience-authority"), "canonical_member_client_absence");
+});
+
+test("unknown Client lookup never downgrades a possible returning customer to new", async () => {
+  const fixture = await makeEnv({ memberExists: false, clientLookup: "fails" });
+  const response = await handleMyMmdWelcomeContext(
+    new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { cookie: fixture.cookie } }),
+    fixture.env,
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, state: "checking" });
+});
+
 test("invalid request shape, cross-origin request and unavailable resolver fail closed", async () => {
   const fixture = await makeEnv({ resolverFails: true });
   const wrongOrigin = await handleMyMmdWelcomeContext(new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { origin: "https://attacker.example", cookie: fixture.cookie } }), fixture.env);
@@ -95,6 +147,6 @@ test("invalid request shape, cross-origin request and unavailable resolver fail 
 
   const unavailable = await handleMyMmdWelcomeContext(new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { cookie: fixture.cookie } }), fixture.env);
   assert.equal(unavailable.status, 503);
-  assert.equal((await unavailable.json()).state, "public");
+  assert.equal((await unavailable.json()).state, "checking");
   assert.deepEqual(fixture.writes, []);
 });
