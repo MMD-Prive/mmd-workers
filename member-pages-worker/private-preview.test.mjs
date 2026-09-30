@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isPrivatePreviewRequest, PrivatePreviewGate, handlePrivatePreview } from "./src/private-preview.js";
+import { SVIP_PHOTO_REVEAL_MODE_HEADER, SVIP_PHOTO_REVEAL_POLICY } from "../shared/svip-photo-reveal-rollout.mjs";
 import { privateMediaFixture } from "../shared/private-media-fixture.mjs";
 import vm from "node:vm";
 
@@ -55,6 +56,15 @@ function req(path='consume',extra={}) {
   return new Request('https://www.mmdbkk.com/api/member/app/private-preview/'+path+(path==='status'?'?t=synthetic':''),{
     method:path==='consume'?'POST':'GET',headers:{cookie:'__Host-mmd_liff_session=test',origin:'https://www.mmdbkk.com','content-type':'application/json',...extra},...(path==='consume'?{body:JSON.stringify({t:'synthetic'})}:{}),
   });
+}
+function markSvipGrant(f) {
+  f.grant.fields.payload_json = JSON.stringify({
+    preview_kind:"private_pic",
+    access_lane:"private_preview",
+    policy_version:SVIP_PHOTO_REVEAL_POLICY,
+    authorization_basis:"active_svip_exact_customer_photo_reveal",
+  });
+  return f;
 }
 test('two simultaneous consumes yield exactly one file and one durable log',async()=>{
   const f=setup();const responses=await Promise.all([handlePrivatePreview(req(),f.env),handlePrivatePreview(req(),f.env)]);
@@ -189,4 +199,88 @@ test("resume is exact-client session bound and rejects malformed resume handles"
   assert.equal(denied.status, 403);
   assert.equal(wrongClient.writes.length, 0);
   assert.equal(wrongClient.storage.has("consumed"), false);
+});
+
+
+test("SVIP kill switch blocks existing grants at status and consume without burning them", async () => {
+  for (const mode of ["off", "dry_run", "LIVE_typo", ""]) {
+    const statusFixture = markSvipGrant(setup());
+    const status = await handlePrivatePreview(req("status", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), statusFixture.env);
+    assert.equal(status.status, 423, `status must be locked for mode=${mode || "missing"}`);
+    assert.equal(statusFixture.storage.has("consumed"), false);
+    assert.equal(statusFixture.audits.length, 0);
+    assert.equal(statusFixture.writes.length, 0);
+
+    const consumeFixture = markSvipGrant(setup());
+    const consume = await handlePrivatePreview(req("consume", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), consumeFixture.env);
+    assert.equal(consume.status, 423, `consume must be locked for mode=${mode || "missing"}`);
+    assert.equal(consumeFixture.storage.has("consumed"), false);
+    assert.equal(consumeFixture.audits.length, 0);
+    assert.equal(consumeFixture.writes.length, 0);
+  }
+});
+
+test("SVIP pilot and live modes permit the exact-client one-use path", async () => {
+  for (const mode of ["pilot", "live"]) {
+    const f = markSvipGrant(setup());
+    const status = await handlePrivatePreview(req("status", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), f.env);
+    assert.equal(status.status, 200);
+    const consume = await handlePrivatePreview(req("consume", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), f.env);
+    assert.equal(consume.status, 200);
+    assert.equal(f.storage.has("consumed"), true);
+    assert.equal(f.audits.length, 1);
+  }
+});
+
+test("LIFF resume rotates the bearer token and the old LINE URL token becomes invalid", async () => {
+  const f = markSvipGrant(setup());
+  const grantId = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  f.grant.fields.grant_id = grantId;
+
+  const resume = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/resume?g=${grantId}`,
+    { method:"GET", headers:{ cookie:"__Host-mmd_liff_session=test", [SVIP_PHOTO_REVEAL_MODE_HEADER]:"pilot" } },
+  ), f.env);
+  assert.equal(resume.status, 303);
+
+  const location = new URL(resume.headers.get("location"));
+  const freshToken = new URLSearchParams(location.hash.slice(1)).get("t");
+  assert.ok(freshToken);
+  assert.notEqual(freshToken, "synthetic");
+
+  const oldStatus = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { headers:{ cookie:"__Host-mmd_liff_session=test", [SVIP_PHOTO_REVEAL_MODE_HEADER]:"pilot" } },
+  ), f.env);
+  assert.equal(oldStatus.status, 404);
+
+  const freshStatus = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/status?t=${encodeURIComponent(freshToken)}`,
+    { headers:{ cookie:"__Host-mmd_liff_session=test", [SVIP_PHOTO_REVEAL_MODE_HEADER]:"pilot" } },
+  ), f.env);
+  assert.equal(freshStatus.status, 200);
+  assert.equal(f.storage.has("consumed"), false);
+});
+
+test("private media is no-store and reload after consume cannot display it again", async () => {
+  const f = setup();
+  const shell = await handlePrivatePreview(new Request("https://www.mmdbkk.com/api/member/app/private-preview/view#t=synthetic"), f.env);
+  assert.match(shell.headers.get("cache-control") || "", /no-store/);
+
+  const first = await handlePrivatePreview(req("consume"), f.env);
+  assert.equal(first.status, 200);
+  assert.match(first.headers.get("cache-control") || "", /no-store/);
+
+  const reloadStatus = await handlePrivatePreview(req("status"), f.env);
+  assert.equal(reloadStatus.status, 410);
+  assert.equal(f.audits.length, 1);
+});
+
+test("viewer sends mobile browsers into LIFF but gives LINE desktop a mobile instruction instead of an error loop", async () => {
+  const response = await handlePrivatePreview(req("view"), {});
+  const html = await response.text();
+  assert.match(html, /navigator\.userAgentData\?\.mobile/);
+  assert.match(html, /Android\|iPhone\|iPad\|iPod/);
+  assert.match(html, /กรุณาเปิดลิงก์นี้จาก LINE บนมือถือเพื่อดูรูปครับ/);
+  assert.match(html, /miniapp\.line\.me\/2010862595-yT4DCEMc/);
 });
