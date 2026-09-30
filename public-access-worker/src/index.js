@@ -285,7 +285,7 @@ function workerSurfaceCss() {
 }
 
 function legacyPublicJobBoardCopySentinels() {
-  return "<!-- data-worker-surface-sentinel=\"mobile-first-digital-v1\" legacy-copy=\"ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD | เลือกงานที่คุณสนใจ | งานลับ 🔐\" -->";
+  return "<!-- data-worker-surface-sentinel=\"mobile-first-digital-v1\" legacy-copy=\"ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD | เลือกงานที่คุณสนใจ | PRIVATE JOB | งานลับ 🔐\" -->";
 }
 
 function addParams(raw, values) {
