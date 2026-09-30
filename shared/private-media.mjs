@@ -62,7 +62,7 @@ async function listOwnedPrivateMedia(env, modelId) {
   let offset = "";
   do {
     const query = new URLSearchParams({ pageSize: "100" });
-    for (const field of ["media_id", "Model", "media_type", "review_status", "file_type", "file_size_bytes", "file_name", "uploaded_at", "r2_bucket", "private_original_key"]) query.append("fields[]", field);
+    for (const field of ["media_id", "Model", "media_type", "review_status", "private_safe", "file_type", "file_size_bytes", "file_name", "uploaded_at", "r2_bucket", "private_original_key"]) query.append("fields[]", field);
     if (offset) query.set("offset", offset);
     const body = await mediaRequest(env, mediaTable(env), `?${query}`);
     if (!Array.isArray(body.records)) throw mediaError("media_registry_unavailable", 503);
@@ -80,6 +80,35 @@ async function listOwnedPrivateMedia(env, modelId) {
   } while (offset);
   return records;
 }
+export async function listApprovedPrivatePhotos(env, modelId) {
+  if (!/^rec[a-zA-Z0-9]+$/.test(modelId || "")) throw mediaError("model_identity_required", 403);
+  const records = await listOwnedPrivateMedia(env, modelId);
+  const approved = records
+    .filter((record) => {
+      const fields = record.fields || {};
+      return fields.media_type === "private_gallery"
+        && fields.review_status === "approved"
+        && fields.private_safe === true
+        && mediaKind(fields.file_type) === "private_pic";
+    })
+    .sort((a, b) => {
+      const left = Date.parse(a?.fields?.uploaded_at || "") || 0;
+      const right = Date.parse(b?.fields?.uploaded_at || "") || 0;
+      return left - right || String(a?.id || "").localeCompare(String(b?.id || ""));
+    });
+  const verified = [];
+  for (const record of approved) {
+    await assertPrivateObject(env, record, true, "private_pic");
+    verified.push({
+      media_record_id: record.id,
+      media_id: String(record?.fields?.media_id || ""),
+      uploaded_at: String(record?.fields?.uploaded_at || ""),
+      preview_kind: "private_pic",
+    });
+  }
+  return verified;
+}
+
 export async function privateMediaCapacity(env, modelId, kind) {
   const records = await listOwnedPrivateMedia(env, modelId);
   const photoRecords = records.filter((record) => mediaKind(record.fields?.file_type) === "private_pic");
