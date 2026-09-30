@@ -133,4 +133,12 @@ test("LINE crawler, HEAD and prefetch cannot consume a private preview grant", a
   assert.equal(f.storage.has("consumed"), false);
   assert.equal(f.audits.length, 0);
   assert.equal(f.writes.length, 0);
+
+  // Even a real member session may auto-check status when the page opens.
+  // Status is read-only; only the explicit authenticated POST /consume burns the grant.
+  const memberStatus = await handlePrivatePreview(req("status"), f.env);
+  assert.equal(memberStatus.status, 200);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 0);
 });
