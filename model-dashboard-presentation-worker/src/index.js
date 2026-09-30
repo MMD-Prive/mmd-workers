@@ -683,7 +683,8 @@ export function shouldServePhaseAAfterBootstrap(request) {
     && !isPwaLaunchRequest(request)
     && !boundedParam(url, "activation")
     && boundedParam(url, "intent") !== "job_board"
-    && !selectedJobReturnTo(request)
+    && !boundedParam(url, "return_to")
+    && !rememberedSelectedJobReturnTo(request)
     && !boundedParam(url, "handoff")
     && !boundedParam(url, "flow");
 }
