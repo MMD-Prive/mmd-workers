@@ -361,7 +361,7 @@ test("Private reveal token expires and returns to the redacted gate", async () =
     const detail = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } });
     const page = await detail.text();
     assert.equal(detail.status, 200);
-    assert.match(page, /งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด/);
+    assert.match(page, /รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ/);
     assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
     assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } })).status, 403);
   } finally { Date.now = realNow; }
