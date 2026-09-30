@@ -5,8 +5,9 @@
  * Storage access is guarded because LINE/iOS in-app browsers may throw on localStorage.
  * v15.1: every state is visible. Errors are mapped to model-safe copy plus an
  * owner-safe reference code (error code + session tail only; never money, never token).
- * v15.1: the model page shows no customer identity and no rate/amount/payment data.
- * The client row always shows a neutral label and the payout card is removed.
+ * v15.1: the model page shows no customer identity and no customer amount/rate/payment
+ * data. The client row is a neutral label; the ONLY money shown is the model's own
+ * payout (model_payout_thb), with a clear warning when it has not been set.
  */
 (() => {
   "use strict";
@@ -69,8 +70,11 @@
       loadingPill: "กำลังโหลดรายละเอียด",
       title: "ยืนยันรับงาน",
       introKicker: "คืนนี้ในกรุงเทพ",
-      intro: "เช็กวัน เวลา สถานที่ และรายละเอียดงานให้เรียบร้อยก่อนออกเดินทาง",
+      intro: "เช็กเวลา สถานที่ รายละเอียดงาน และยอดเงินถึงตัวให้เรียบร้อยก่อนออกเดินทาง",
       clientLabel: "ลูกค้า MMD",
+      payout: "ยอดเงินถึงตัว",
+      payoutKicker: "ยอดถึงตัว",
+      payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน",
       details: "รายละเอียดงาน",
       client: "ลูกค้า",
       job: "งาน",
@@ -114,8 +118,11 @@
       loadingPill: "Loading details",
       title: "Confirm this job",
       introKicker: "TONIGHT IN BANGKOK",
-      intro: "Check the date, time, location, and job details before heading out.",
+      intro: "Check the time, location, job details, and payout before heading out.",
       clientLabel: "MMD client",
+      payout: "Rate to you",
+      payoutKicker: "YOUR PAYOUT",
+      payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming.",
       details: "Job details",
       client: "Client",
       job: "Job",
@@ -159,8 +166,11 @@
       loadingPill: "正在加载详情",
       title: "确认接单",
       introKicker: "今晚 · 曼谷",
-      intro: "出发前请确认日期、时间、地点和工作详情。",
+      intro: "出发前请确认时间、地点、工作详情和到手金额。",
       clientLabel: "MMD 客户",
+      payout: "到手金额",
+      payoutKicker: "到手金额",
+      payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。",
       details: "工作详情",
       client: "客户",
       job: "工作",
@@ -248,6 +258,7 @@
     check: $("[data-m-check]"),
     confirm: $("[data-m-confirm]"),
     success: $("[data-m-success]"),
+    payWarn: $("[data-m-paywarn]"),
     feedback: null,
     diag: null
   };
@@ -474,12 +485,15 @@
     staticAttr(".mm15__success", "data-mmd-i18n-kicker", d.successKicker);
     staticText(".mm15__intro h1", d.title);
     staticText(".mm15__intro p", d.intro);
+    staticAttr(".mm15__payout", "data-mmd-i18n-kicker", d.payoutKicker);
     staticText(".mm15__card h2", d.details);
     const rows = root.querySelectorAll(".mm15__rows > div > span");
     [d.client, d.job, d.date, d.time, d.location, "VIP"].forEach((value, index) => {
       if (rows[index]) rows[index].textContent = value;
     });
     if (el.map) el.map.textContent = d.map;
+    staticText(".mm15__payout > span", d.payout);
+    if (el.payWarn) el.payWarn.textContent = d.payoutMissingWarning;
     if (el.retry) el.retry.textContent = d.retry;
     staticText(".mm15__check > span", d.check);
     if (el.confirm) el.confirm.textContent = confirmed ? d.confirmed : d.confirm;
@@ -515,6 +529,13 @@
     root.dispatchEvent(new CustomEvent("mmd:sigil-language-change", {
       detail: { lang }
     }));
+  }
+
+  function money(value) {
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount > 0
+      ? new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(amount) + " THB"
+      : "—";
   }
 
   function formatDate(value) {
@@ -635,6 +656,24 @@
     applyLanguage();
   }
 
+  function setPayWarning(show) {
+    if (!el.payWarn && show) {
+      const node = document.createElement("p");
+      node.className = "mm15__feedback is-error";
+      node.setAttribute("data-m-paywarn", "1");
+      node.setAttribute("role", "alert");
+      node.textContent = dict().payoutMissingWarning;
+      (el.payoutCard || el.check || root).parentNode?.insertBefore?.(node, (el.payoutCard || el.check || root).nextSibling)
+        || root.appendChild(node);
+      el.payWarn = node;
+    }
+    if (el.payWarn) {
+      el.payWarn.textContent = dict().payoutMissingWarning;
+      el.payWarn.hidden = !show;
+    }
+    root.dataset.mmdPayout = show ? "missing" : "ok";
+  }
+
   function render(data, updateState = true) {
     currentDetails = data;
     // Customer identity is owner/admin-only: never render a name, even if an
@@ -657,6 +696,19 @@
     } else if (el.map) {
       el.map.hidden = true;
     }
+    // Model payout is the model's own pay. It is the only money on this page;
+    // customer amounts/rates never reach it (payments-worker strips them).
+    const payout = Number(data.model_payout_thb);
+    const hasPayout = Number.isFinite(payout) && payout > 0;
+    if (hasPayout) {
+      if (el.payout) el.payout.textContent = money(payout);
+      if (el.payoutCard) el.payoutCard.hidden = false;
+    } else if (el.payoutCard) {
+      // Keep the rate row visible so the missing rate is obvious, not hidden.
+      if (el.payout) el.payout.textContent = "—";
+      el.payoutCard.hidden = false;
+    }
+    setPayWarning(!hasPayout);
     if (updateState) {
       loaded = true;
       revision = str(data.confirmation_revision).slice(0, 80);
@@ -776,17 +828,6 @@
     }
   }
 
-  // No rate/amount on the model page: drop the payout card and the payout
-  // warning from the DOM so no other layer (e.g. rate-to-you v1) can re-show it.
-  function removePayoutSurface() {
-    [el.payoutCard, $(".mm15__payout"), $("[data-m-paywarn]")].forEach((node) => {
-      try { node?.parentNode?.removeChild(node); } catch (_) {}
-    });
-    el.payoutCard = null;
-    el.payout = null;
-  }
-
-  removePayoutSurface();
   installStyle();
   ensureLangSwitch();
   applyLanguage();

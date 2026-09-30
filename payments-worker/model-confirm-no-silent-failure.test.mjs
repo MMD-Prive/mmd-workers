@@ -148,20 +148,30 @@ test("unrelated payment ref on the session is still rejected by both details and
   assert.equal(s.writes.length, 0);
 });
 
-test("model details carry no customer identity, payment refs/state, rate or amount", async (t) => {
+test("model details carry the model's own payout but no customer identity, customer amount/rate or payment data", async (t) => {
   const s = await setup();
   t.after(s.restore);
   const data = await (await s.details()).json();
-  for (const key of ["client_name", "payment_ref", "payment_type", "payment_status", "pricing", "payment", "model_payout_thb", "amount_thb", "amount_scope"]) {
+  for (const key of ["client_name", "payment_ref", "payment_type", "payment_status", "pricing", "payment", "amount_thb", "customer_amount_due_thb"]) {
     assert.equal(key in data, false, `${key} must not be in the model response`);
   }
   const raw = JSON.stringify(data);
-  for (const leak of ["คุณ Client", "pay_model_nsf", "40500", "13500", "45000", "27000", "5000", "partial", "deposit"]) {
+  for (const leak of ["คุณ Client", "pay_model_nsf", "40500", "13500", "45000", "27000", "partial", "deposit"]) {
     assert.equal(raw.includes(leak), false, `model response leaked ${leak}`);
   }
+  assert.equal(data.model_payout_thb, 5000);
+  assert.equal(data.amount_scope, "model_payout");
   for (const key of ["job_date", "start_time", "end_time", "location_name", "already_confirmed"]) {
     assert.ok(key in data, `${key} is still available to acknowledge the job`);
   }
+});
+
+test("missing model payout is reported as null so the page can warn before confirming", async (t) => {
+  const s = await setup({ session: sessionRecord({ fldlTO5aNfqUmlNWm: undefined }) });
+  t.after(s.restore);
+  const data = await (await s.details()).json();
+  assert.equal(data.model_payout_thb, null);
+  assert.equal(data.amount_scope, "model_payout");
 });
 
 test("model confirmation context never carries the customer name", async (t) => {
