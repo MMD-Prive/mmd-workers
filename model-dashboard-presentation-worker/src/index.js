@@ -19,6 +19,8 @@ const DIGITAL_APP_MARKER = "mmd-app-digital-v3";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
 const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
+const MODEL_SELECTED_JOB_INTENT_COOKIE = "mmd_model_selected_job";
+const MODEL_SELECTED_JOB_INTENT_TTL_SECONDS = 180;
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 const MODEL_LIFF_IDS = Object.freeze({
   developing: "2010864852-MuzunIKU",
@@ -395,6 +397,18 @@ function hasCookie(request, name) {
   });
 }
 
+function cookieValue(request, name, max = 9000) {
+  const raw = String(request.headers.get("cookie") || "");
+  for (const part of raw.split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0 || part.slice(0, index).trim() !== name) continue;
+    const value = part.slice(index + 1).trim();
+    if (!value) return "";
+    try { return decodeURIComponent(value).slice(0, max); } catch { return ""; }
+  }
+  return "";
+}
+
 export function hasModelSessionCookie(request) {
   return hasCookie(request, MODEL_SESSION_COOKIE);
 }
@@ -504,10 +518,8 @@ export function resolveJobBoardContextFromRequest(request) {
   };
 }
 
-function safeModelConfirmationReturnTo(request) {
-  let source;
-  try { source = new URL(request.url); } catch { return ""; }
-  const raw = String(boundedParam(source, "return_to") || "").trim();
+function normalizeModelConfirmationReturnTo(rawValue = "") {
+  const raw = String(rawValue || "").trim();
   if (!raw || raw.length > 9000 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "";
   let target;
   try { target = new URL(raw, "https://mmdbkk.com"); } catch { return ""; }
@@ -517,6 +529,21 @@ function safeModelConfirmationReturnTo(request) {
   const tokenValue = String(target.searchParams.get("t") || "").trim();
   if (keys.length !== 1 || keys[0] !== "t" || !tokenValue || tokenValue.length > 8000 || !/^[A-Za-z0-9._~-]+$/.test(tokenValue)) return "";
   return `${target.pathname}?t=${encodeURIComponent(tokenValue)}`;
+}
+
+function safeModelConfirmationReturnTo(request) {
+  let source;
+  try { source = new URL(request.url); } catch { return ""; }
+  return normalizeModelConfirmationReturnTo(boundedParam(source, "return_to"));
+}
+
+function rememberedSelectedJobReturnTo(request) {
+  if (!hasLiffPrimaryBootstrapCookie(request)) return "";
+  return normalizeModelConfirmationReturnTo(cookieValue(request, MODEL_SELECTED_JOB_INTENT_COOKIE));
+}
+
+function selectedJobReturnTo(request) {
+  return safeModelConfirmationReturnTo(request) || rememberedSelectedJobReturnTo(request);
 }
 
 function safeMiniAppUrlForBootstrap(request) {
@@ -542,7 +569,7 @@ function safeMiniAppUrlForBootstrap(request) {
     if (jobBoard.model_alias) params.set("model_alias", jobBoard.model_alias);
     if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
   } else {
-    const returnTo = safeModelConfirmationReturnTo(request);
+    const returnTo = selectedJobReturnTo(request);
     if (returnTo) params.set("return_to", returnTo);
   }
   return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
@@ -555,7 +582,7 @@ export function liffPrimaryBootstrapHtml(request) {
     liffId: MODEL_LIFF_IDS[environment],
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
-    returnTo: jobBoard ? "" : safeModelConfirmationReturnTo(request),
+    returnTo: jobBoard ? "" : selectedJobReturnTo(request),
     jobBoard,
     environment,
     mode: "primary",
@@ -586,6 +613,10 @@ function liffPrimaryBootstrapResponse(request) {
     "x-mmd-model-entry": "liff-primary-preboot-v1",
     "x-robots-tag": "noindex, nofollow",
   });
+  const selectedJob = safeModelConfirmationReturnTo(request);
+  if (selectedJob) {
+    headers.append("set-cookie", `${MODEL_SELECTED_JOB_INTENT_COOKIE}=${encodeURIComponent(selectedJob)}; Path=${UI_PREFIX}; Max-Age=${MODEL_SELECTED_JOB_INTENT_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
+  }
   return new Response(request.method.toUpperCase() === "HEAD" ? null : liffPrimaryBootstrapHtml(request), {
     status: 200,
     headers,
@@ -635,6 +666,15 @@ function modelLineBriefsPageResponse(request) {
   return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
 
+export function shouldResumeSelectedJobAfterBootstrap(request) {
+  const url = new URL(request.url);
+  return normalizePath(url.pathname) === UI_PREFIX
+    && hasLiffPrimaryBootstrapCookie(request)
+    && !hasModelSessionCookie(request)
+    && !isPwaLaunchRequest(request)
+    && Boolean(selectedJobReturnTo(request));
+}
+
 export function shouldServePhaseAAfterBootstrap(request) {
   const url = new URL(request.url);
   return normalizePath(url.pathname) === UI_PREFIX
@@ -644,6 +684,7 @@ export function shouldServePhaseAAfterBootstrap(request) {
     && !boundedParam(url, "activation")
     && boundedParam(url, "intent") !== "job_board"
     && !boundedParam(url, "return_to")
+    && !rememberedSelectedJobReturnTo(request)
     && !boundedParam(url, "handoff")
     && !boundedParam(url, "flow");
 }
@@ -1253,6 +1294,7 @@ export default {
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
       if (resolveJobBoardContextFromRequest(request) && hasModelSessionCookie(request)) return authenticatedJobBoardResumeResponse(request);
+      if (shouldResumeSelectedJobAfterBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
       const briefId = boundedParam(new URL(request.url), "brief_id");
       if ((path === `${UI_PREFIX}/briefs` || boundedParam(new URL(request.url), "briefs") === "1" || /^brf_[a-zA-Z0-9-]{10,70}$/.test(briefId)) && !isPwaLaunchRequest(request)) return modelLineBriefsPageResponse(request);
