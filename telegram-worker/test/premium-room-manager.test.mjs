@@ -144,12 +144,22 @@ test("Premium room sync updates description and pins canonical Welcome", { concu
     telegramCalls.push(call);
 
     if (/getChat$/.test(call.url)) {
+      if (String(call.body.chat_id) === "-1002073919780") {
+        return Response.json({
+          ok: true,
+          result: {
+            id: -1002073919780,
+            type: "supergroup",
+            title: "MMD Standard old name",
+          },
+        });
+      }
       return Response.json({
         ok: true,
         result: {
           id: -1001668261779,
           type: "supergroup",
-          title: "MMD PRIVÉ : PREMIUM",
+          title: "MMD Premium old name",
           description: "old description",
         },
       });
@@ -183,6 +193,22 @@ test("Premium room sync updates description and pins canonical Welcome", { concu
     assert.equal(body.mode, "hype_premium_room_manager_v1");
     assert.equal(body.description.state, "updated");
     assert.equal(body.welcome.state, "welcome_pinned");
+    assert.equal(body.titles.ok, true);
+    assert.deepEqual(
+      body.titles.results.map((item) => [item.surface, item.state, item.desired_title]),
+      [
+        ["premium_group", "updated", "MMD PRIVÉ : PREMIUM"],
+        ["standard_group", "updated", "MMD PRIVÉ : STANDARD"],
+      ],
+    );
+
+    const premiumTitle = telegramCalls.find((call) => /setChatTitle$/.test(call.url) && call.body.chat_id === "-1001668261779");
+    assert.ok(premiumTitle);
+    assert.equal(premiumTitle.body.title, "MMD PRIVÉ : PREMIUM");
+
+    const standardTitle = telegramCalls.find((call) => /setChatTitle$/.test(call.url) && call.body.chat_id === "-1002073919780");
+    assert.ok(standardTitle);
+    assert.equal(standardTitle.body.title, "MMD PRIVÉ : STANDARD");
 
     const description = telegramCalls.find((call) => /setChatDescription$/.test(call.url));
     assert.ok(description);
@@ -221,6 +247,16 @@ test("Premium room sync is idempotent when canonical Welcome is already pinned",
     telegramCalls.push(call);
 
     if (/getChat$/.test(call.url)) {
+      if (String(call.body.chat_id) === "-1002073919780") {
+        return Response.json({
+          ok: true,
+          result: {
+            id: -1002073919780,
+            type: "supergroup",
+            title: "MMD PRIVÉ : STANDARD",
+          },
+        });
+      }
       return Response.json({
         ok: true,
         result: {
@@ -254,7 +290,10 @@ test("Premium room sync is idempotent when canonical Welcome is already pinned",
     assert.equal(body.description.state, "already_current");
     assert.equal(body.welcome.state, "already_ready");
     assert.equal(body.welcome.sent, false);
+    assert.equal(body.titles.ok, true);
+    assert.equal(body.titles.results.every((item) => item.state === "already_current"), true);
 
+    assert.equal(telegramCalls.some((call) => /setChatTitle$/.test(call.url)), false);
     assert.equal(telegramCalls.some((call) => /setChatDescription$/.test(call.url)), false);
     assert.equal(telegramCalls.some((call) => /sendMessage$/.test(call.url)), false);
     assert.equal(telegramCalls.some((call) => /pinChatMessage$/.test(call.url)), false);
