@@ -125,7 +125,7 @@ export function modelLiffDigitalBootstrapHtml({
   const copy = selectedJobMode
     ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MMD APP" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MMD APP")
     : publicJobApplicant
-      ? "มีทั้งงาน Public และ Private ครับ ก่อนเริ่มพี่ขอข้อมูลกับรูปปัจจุบันไว้ดูคร่าว ๆ ก่อน ถ้าผ่านแล้วครั้งต่อไปเข้ามาดูงานได้เลย ไม่ต้องกรอกใหม่"
+      ? "กรอกรายละเอียดและอัปโหลดรูปครั้งเดียวครับ พอโปรไฟล์พร้อมแล้ว ครั้งต่อไปเข้ามาเลือกงานที่อยากรับได้ตามใจชอบ กดสนใจได้ทันที ไม่ต้องกรอกใหม่ทุกงาน"
       : "กำลังเปิดพื้นที่ทำงานของคุณ";
   const success = selectedJobMode
     ? "กำลังเปิดรายละเอียดงานที่เลือกคุณไว้…"
@@ -149,7 +149,7 @@ export function modelLiffDigitalBootstrapHtml({
   const statusHelp = selectedJobMode
     ? "นี่คืองานที่ลูกค้าเลือกคุณแล้ว · ไม่ใช่หน้าสมัครงาน และไม่ต้องสมัครเป็นโมเดลใหม่"
     : publicJobApplicant
-      ? "ยังไม่สะดวกส่งรูปตอนนี้ก็ไม่เป็นไร ฝาก LINE หรือเบอร์โทรไว้ก่อนได้ เดี๋ยวพี่เปอร์คุยต่อให้เอง"
+      ? "ครั้งแรกกรอกข้อมูลกับอัปโหลดรูปไว้ให้พี่เปอร์ดูครับ หลังจากนั้นเข้ากระดานแล้วเลือกงานที่สนใจได้เลยทันที"
       : "กำลังเตรียมงานและโปรไฟล์ของคุณ";
   const pageTitle = selectedJobMode ? "MMD APP · งานที่เลือกคุณ" : publicJobApplicant ? "MMD APP · พี่เปอร์ดูแลงานให้" : "MMD APP";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
