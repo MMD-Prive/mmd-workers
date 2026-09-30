@@ -22,6 +22,7 @@ const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
+const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 const TELEGRAM_WEBHOOK_LOCK_CONFIRMATION = "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1";
 
@@ -52,6 +53,7 @@ export default {
             webhook_lock: ["/telegram/internal/webhook/ensure-canonical"],
             webhook_status: ["/telegram/webhook/status"],
             router_health: ["/telegram/internal/router/health", "/v1/internal/router/health"],
+            premium_room_sync: ["/telegram/internal/premium-room/sync", "/v1/internal/premium-room/sync"],
           },
           telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
@@ -159,6 +161,20 @@ export default {
           }, 400);
         }
         const result = await introduceHypePreview(env);
+        return json(result, result.ok ? 200 : 502);
+      }
+
+      if (isHypePremiumRoomSyncPath(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = (await safeJson(req)) || {};
+        if (clean(body.confirm) !== HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION) {
+          return json({
+            ok: false,
+            error: "hype_premium_room_sync_confirmation_required",
+            required_confirmation: HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION,
+          }, 400);
+        }
+        const result = await syncHypePremiumRoom(env, { force: body.force === true });
         return json(result, result.ok ? 200 : 502);
       }
 
@@ -286,6 +302,7 @@ async function ensureCanonicalTelegramWebhook(env) {
     url: TELEGRAM_CANONICAL_WEBHOOK_URL,
     secret_token: secret,
     drop_pending_updates: false,
+    allowed_updates: ["message", "edited_message", "callback_query", "chat_join_request"],
   });
   if (!setResult.ok) {
     return {
@@ -635,6 +652,11 @@ async function handleTelegramWebhook(update, env) {
   }
   if (callback && /^(?:hrbp|hrmp)\|/i.test(clean(callback.data))) {
     return handleHypeRecoveryCandidateCallback(callback, env);
+  }
+
+  const premiumJoinRequest = update.chat_join_request || null;
+  if (premiumJoinRequest) {
+    return handleHypePremiumJoinRequest(premiumJoinRequest, env);
   }
 
   const message = update.message || update.edited_message || null;
@@ -4249,6 +4271,313 @@ function hypePreviewWelcomeButtons(env) {
   };
 }
 
+function hypePremiumRoomDescription() {
+  return [
+    "💎 MMD PRIVÉ : PREMIUM",
+    "Premium Models • Availability • Private Updates",
+    "สนใจโพสต์ไหน กด Copy Link แล้วส่งมาสอบถามทาง LINE Official",
+  ].join("\n");
+}
+
+function hypePremiumRoomWelcomeText() {
+  return [
+    "<b>💎 MMD PRIVÉ : PREMIUM</b>",
+    "ยินดีต้อนรับเข้าสู่พื้นที่สำหรับสมาชิก <b>Premium</b> ครับ ✨",
+    "",
+    "กลุ่มนี้ใช้สำหรับอัปเดต <b>Premium Models / Availability / Private Updates / สิทธิ์ Premium</b> และข้อมูลที่เปิดให้สมาชิก Premium โดยเฉพาะ",
+    "",
+    "เจอ <b>Post หรือ Model ที่สนใจ</b> กด <b>Copy Link</b> ที่โพสต์นั้น แล้วส่งลิงก์มาสอบถามทาง LINE Official ได้เลยครับ 🔗💬",
+    "MMD จะเช็กสถานะล่าสุด ราคา คิว รายละเอียด และสิทธิ์ที่ใช้ได้ให้เป็นรายเคส",
+    "",
+    "🔒 กรุณาไม่นำภาพ ราคา ข้อมูล Model หรือข้อความภายในกลุ่มออกไปเผยแพร่ต่อภายนอก",
+    "",
+    "<b>Premium Member ≠ การการันตีคิวของ Model</b>",
+    "คิว ราคา สิทธิ์ และเงื่อนไขยึดข้อมูลล่าสุดในวันที่ทำคำขอครับ",
+  ].join("\n");
+}
+
+function hypePremiumRoomWelcomeButtons(env) {
+  return {
+    inline_keyboard: [
+      [{ text: "สอบถามผ่าน LINE Official", url: "https://lin.ee/xRqsALs" }],
+      [{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }],
+    ],
+  };
+}
+
+function isCanonicalPremiumWelcome(message) {
+  const text = clean(message?.text || message?.caption || "");
+  return text.includes("MMD PRIVÉ : PREMIUM") && /Copy Link/i.test(text);
+}
+
+async function ensureHypePremiumPinnedWelcome(chatId, env, { force = false, chat = null } = {}) {
+  const id = clean(chatId);
+  if (!id) return { ok: false, error: "premium_group_not_configured" };
+
+  let chatResult = chat;
+  if (!chatResult) {
+    chatResult = await callTelegramApiForPreviewIntro("getChat", { chat_id: id }, env);
+  }
+  const type = clean(chatResult?.result?.type).toLowerCase();
+  if (chatResult?.ok !== true || clean(chatResult?.result?.id) !== id || !["group", "supergroup"].includes(type)) {
+    return {
+      ok: false,
+      error: "premium_group_preflight_failed",
+      stage: "getChat",
+      telegram: sanitizePreviewIntroFailure(chatResult),
+    };
+  }
+
+  const pinned = chatResult?.result?.pinned_message || null;
+  if (isCanonicalPremiumWelcome(pinned) && force !== true) {
+    return {
+      ok: true,
+      state: "already_ready",
+      sent: false,
+      pinned: true,
+      message_id: Number(pinned?.message_id) || null,
+    };
+  }
+
+  if (isCanonicalPremiumWelcome(pinned) && Number.isInteger(Number(pinned?.message_id))) {
+    await callTelegramApiForPreviewIntro("unpinChatMessage", {
+      chat_id: id,
+      message_id: Number(pinned.message_id),
+    }, env).catch(() => null);
+  }
+
+  const welcome = await sendTelegramMessage({
+    chat_id: id,
+    text: hypePremiumRoomWelcomeText(),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: hypePremiumRoomWelcomeButtons(env),
+  }, env);
+  const messageId = Number(welcome?.result?.message_id);
+  if (welcome?.ok !== true || !Number.isInteger(messageId)) {
+    return {
+      ok: false,
+      error: "premium_welcome_send_failed",
+      stage: "sendMessage",
+      telegram: sanitizePreviewIntroFailure(welcome),
+    };
+  }
+
+  const pin = await callTelegramApiForPreviewIntro("pinChatMessage", {
+    chat_id: id,
+    message_id: messageId,
+    disable_notification: true,
+  }, env);
+
+  if (pin?.ok !== true) {
+    return {
+      ok: false,
+      error: "premium_welcome_pin_failed",
+      stage: "pinChatMessage",
+      sent: true,
+      message_id: messageId,
+      telegram: sanitizePreviewIntroFailure(pin),
+    };
+  }
+
+  return {
+    ok: true,
+    state: "welcome_pinned",
+    sent: true,
+    pinned: true,
+    message_id: messageId,
+  };
+}
+
+async function syncHypePremiumRoom(env, { force = false } = {}) {
+  const chatId = clean(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779");
+  if (!chatId) return { ok: false, error: "premium_group_not_configured" };
+
+  const chat = await callTelegramApiForPreviewIntro("getChat", { chat_id: chatId }, env);
+  const type = clean(chat?.result?.type).toLowerCase();
+  if (chat?.ok !== true || clean(chat?.result?.id) !== chatId || !["group", "supergroup"].includes(type)) {
+    return {
+      ok: false,
+      error: "premium_group_preflight_failed",
+      stage: "getChat",
+      telegram: sanitizePreviewIntroFailure(chat),
+    };
+  }
+
+  const desiredDescription = hypePremiumRoomDescription();
+  let description = { ok: true, state: "already_current" };
+  if (clean(chat?.result?.description) !== desiredDescription) {
+    const update = await callTelegramApiForPreviewIntro("setChatDescription", {
+      chat_id: chatId,
+      description: desiredDescription,
+    }, env);
+    description = update?.ok === true
+      ? { ok: true, state: "updated" }
+      : { ok: false, state: "update_failed", telegram: sanitizePreviewIntroFailure(update) };
+  }
+
+  const welcome = await ensureHypePremiumPinnedWelcome(chatId, env, { force, chat });
+  return {
+    ok: description.ok === true && welcome.ok === true,
+    mode: "hype_premium_room_manager_v1",
+    chat_id: chatId,
+    chat_type: type,
+    description,
+    welcome,
+  };
+}
+
+async function readHypePremiumJoinTruth(telegramUserId, env) {
+  const binding = env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    return { ok: false, state: "authority_unavailable", auto_approve: false };
+  }
+
+  let response;
+  let result;
+  try {
+    response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/operational-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramUserId,
+        intent: { type: "membership", trigger: "telegram_premium_join_request" },
+      }),
+    }));
+    result = await response.json().catch(() => null);
+  } catch {
+    return { ok: false, state: "authority_unavailable", auto_approve: false };
+  }
+
+  if (!(response.ok && result?.ok === true)) {
+    return {
+      ok: false,
+      state: clean(result?.state || "authority_unavailable"),
+      code: clean(result?.code),
+      auto_approve: false,
+    };
+  }
+
+  const level = clean(result?.membership?.level).toLowerCase();
+  const lifecycle = clean(result?.membership?.lifecycle || result?.membership?.status).toLowerCase();
+  const blocked = result?.membership?.blocked === true;
+  const exactPremium = ["premium", "private_premium"].includes(level);
+  const autoApprove = exactPremium && lifecycle === "active" && blocked !== true;
+
+  return {
+    ok: true,
+    state: clean(result?.state || "ready"),
+    level,
+    lifecycle,
+    blocked,
+    exact_premium: exactPremium,
+    auto_approve: autoApprove,
+  };
+}
+
+function premiumJoinReviewReason(truth = {}) {
+  if (truth.state === "connect_required" || truth.code === "telegram_identity_not_linked") return "telegram_identity_not_linked";
+  if (truth.state === "authority_unavailable") return "entitlement_authority_unavailable";
+  if (truth.blocked === true) return "membership_blocked";
+  if (truth.lifecycle && truth.lifecycle !== "active") return "membership_not_active";
+  if (truth.level && truth.exact_premium !== true) return "premium_entitlement_required";
+  return "review_required";
+}
+
+async function notifyHypePremiumJoinReview(joinRequest, truth, reason, env) {
+  const opsChatId = clean(env.TELEGRAM_CHAT_ID || env.TELEGRAM_OPS_CHAT_ID || env.HYPE_CHAT_ID);
+  if (!opsChatId) return { ok: false, skipped: true, reason: "ops_chat_not_configured" };
+
+  const user = joinRequest?.from || {};
+  const username = clean(user.username);
+  const displayName = [clean(user.first_name), clean(user.last_name)].filter(Boolean).join(" ");
+  const lines = [
+    "💎 <b>HYPE · PREMIUM JOIN REVIEW</b>",
+    "",
+    `<b>Telegram:</b> ${username ? "@" + escapeHtml(username) : "-"}`,
+    `<b>User ID:</b> <code>${escapeHtml(clean(user.id) || "-")}</code>`,
+    `<b>Name:</b> ${escapeHtml(displayName || "-")}`,
+    `<b>Canonical level:</b> ${escapeHtml(clean(truth?.level) || "unresolved")}`,
+    `<b>Lifecycle:</b> ${escapeHtml(clean(truth?.lifecycle) || "unresolved")}`,
+    `<b>Reason:</b> <code>${escapeHtml(reason)}</code>`,
+    "",
+    "Join Request ยังถูกค้างไว้ให้ Per ตรวจครับ",
+    "HYPE จะไม่ approve / decline โดยเดาสิทธิ์",
+  ];
+
+  return sendTelegramMessage({
+    chat_id: opsChatId,
+    text: lines.join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+}
+
+async function handleHypePremiumJoinRequest(joinRequest, env) {
+  const chatId = clean(joinRequest?.chat?.id);
+  const premiumChatId = clean(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779");
+  if (!premiumChatId || chatId !== premiumChatId) {
+    return { handled: false, reason: "join_request_outside_premium_group" };
+  }
+
+  const telegramUserId = clean(joinRequest?.from?.id);
+  if (!/^\d{5,20}$/.test(telegramUserId)) {
+    const truth = { ok: false, state: "identity_invalid", auto_approve: false };
+    const review = await notifyHypePremiumJoinReview(joinRequest, truth, "telegram_identity_invalid", env);
+    return {
+      handled: true,
+      flow: "hype_premium_join_request",
+      ok: false,
+      code_status: "review_required",
+      join_request_state: "pending_owner_review",
+      review,
+    };
+  }
+
+  const truth = await readHypePremiumJoinTruth(telegramUserId, env);
+  if (truth.auto_approve === true) {
+    const approval = await callTelegramApiForPreviewIntro("approveChatJoinRequest", {
+      chat_id: premiumChatId,
+      user_id: Number(telegramUserId),
+    }, env);
+    if (approval?.ok === true) {
+      return {
+        handled: true,
+        flow: "hype_premium_join_request",
+        ok: true,
+        code_status: "premium_join_approved",
+        join_request_state: "approved",
+        membership_level: truth.level,
+        membership_lifecycle: truth.lifecycle,
+      };
+    }
+
+    const review = await notifyHypePremiumJoinReview(joinRequest, truth, "telegram_approve_failed", env);
+    return {
+      handled: true,
+      flow: "hype_premium_join_request",
+      ok: false,
+      code_status: "telegram_approve_failed",
+      join_request_state: "pending_owner_review",
+      review,
+    };
+  }
+
+  const reason = premiumJoinReviewReason(truth);
+  const review = await notifyHypePremiumJoinReview(joinRequest, truth, reason, env);
+  return {
+    handled: true,
+    flow: "hype_premium_join_request",
+    ok: false,
+    code_status: reason,
+    join_request_state: "pending_owner_review",
+    review,
+  };
+}
+
 async function cleanupConfiguredGroupJoinMessage(message, env) {
   if (!Array.isArray(message.new_chat_members) || message.new_chat_members.length === 0) return null;
 
@@ -4271,17 +4600,20 @@ async function cleanupConfiguredGroupJoinMessage(message, env) {
   const deletion = await deleteTelegramMessage({ chat_id: chatId, message_id: messageId }, env);
 
   let welcome = null;
-  if (surface === "telegram_preview") {
-    const humanMembers = message.new_chat_members.filter((member) => member && member.is_bot !== true);
-    if (humanMembers.length > 0) {
-      welcome = await sendTelegramMessage({
-        chat_id: chatId,
-        text: hypePreviewJoinWelcomeText(),
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-        reply_markup: hypePreviewWelcomeButtons(env),
-      }, env);
-    }
+  let welcomeSent = false;
+  const humanMembers = message.new_chat_members.filter((member) => member && member.is_bot !== true);
+  if (surface === "telegram_preview" && humanMembers.length > 0) {
+    welcome = await sendTelegramMessage({
+      chat_id: chatId,
+      text: hypePreviewJoinWelcomeText(),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: hypePreviewWelcomeButtons(env),
+    }, env);
+    welcomeSent = welcome?.ok === true;
+  } else if (surface === "premium_group" && humanMembers.length > 0) {
+    welcome = await ensureHypePremiumPinnedWelcome(chatId, env);
+    welcomeSent = welcome?.sent === true;
   }
 
   return {
@@ -4290,7 +4622,8 @@ async function cleanupConfiguredGroupJoinMessage(message, env) {
     surface,
     deleted: deletion.ok === true,
     telegram: deletion,
-    welcome_sent: welcome?.ok === true,
+    welcome_sent: welcomeSent,
+    welcome_ready: welcome?.ok === true,
     welcome,
   };
 }
@@ -4523,6 +4856,11 @@ function isTopicSmokePath(path) {
 function isHypePreviewIntroPath(path) {
   return path === "/telegram/internal/preview/introduce-hype"
     || path === "/v1/internal/preview/introduce-hype";
+}
+
+function isHypePremiumRoomSyncPath(path) {
+  return path === "/telegram/internal/premium-room/sync"
+    || path === "/v1/internal/premium-room/sync";
 }
 
 function isComplaintInternalPath(path) {

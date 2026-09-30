@@ -240,6 +240,7 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
       assert.equal(body.url, CANONICAL_WEBHOOK_URL);
       assert.equal(body.secret_token, "expected-secret");
       assert.equal(body.drop_pending_updates, false);
+      assert.deepEqual(body.allowed_updates, ["message", "edited_message", "callback_query", "chat_join_request"]);
       return Response.json({ ok: true, result: true });
     }
     if (String(url).endsWith("/getWebhookInfo")) {

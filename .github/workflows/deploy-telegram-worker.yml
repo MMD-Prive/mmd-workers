@@ -238,6 +238,31 @@ jobs:
           console.log("HYPE Telegram Open target repaired:", observed.web_app.url);
           NODE
 
+      - name: Sync HYPE Premium room
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$INTERNAL_API_TOKEN"
+          body_file="$(mktemp)"
+          code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body_file" \
+            -w "%{http_code}" \
+            -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/premium-room/sync' \
+            -H "Authorization: Bearer $INTERNAL_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"confirm":"SYNC_HYPE_PREMIUM_ROOM_V1"}')"
+          cat "$body_file"
+          test "$code" = "200"
+          node - "$body_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload?.ok !== true) throw new Error("Premium room sync failed");
+          if (payload?.mode !== "hype_premium_room_manager_v1") throw new Error("Premium room manager mode mismatch");
+          if (!["already_current", "updated"].includes(payload?.description?.state)) throw new Error("Premium description sync failed");
+          if (!["already_ready", "welcome_pinned"].includes(payload?.welcome?.state)) throw new Error("Premium Welcome pin sync failed");
+          console.log("HYPE Premium room description + canonical Welcome verified");
+          NODE
+
       - name: Smoke canonical Telegram auth boundaries
         shell: bash
         run: |

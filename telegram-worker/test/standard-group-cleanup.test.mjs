@@ -10,6 +10,7 @@ function makeEnv(overrides = {}) {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     TELEGRAM_BOT_TOKEN: "telegram-token",
     TELEGRAM_STANDARD_GROUP_ID: "-100555",
+    TELEGRAM_PREMIUM_GROUP_ID: "-100666",
     TELEGRAM_MMD_CHAT_GROUP_ID: "-100777",
     TELEGRAM_PREVIEW_GROUP_ID: "-100888",
     ...overrides,
@@ -101,6 +102,52 @@ test("legacy Standard Group binding remains supported", { concurrency: false }, 
   await expectDeletedJoin(-100555, "standard_group");
 });
 
+test("HYPE keeps Premium join service messages clean and ensures one canonical welcome", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+
+  globalThis.fetch = async (url, init = {}) => {
+    const call = { url: String(url), body: JSON.parse(String(init.body || "{}")) };
+    telegramCalls.push(call);
+
+    if (/getChat$/.test(call.url)) {
+      return Response.json({
+        ok: true,
+        result: { id: -100666, type: "supergroup", title: "MMD PRIVÉ : PREMIUM" },
+      });
+    }
+    if (/sendMessage$/.test(call.url)) {
+      return Response.json({ ok: true, result: { message_id: 199, chat: { id: -100666 }, text: call.body.text } });
+    }
+    return Response.json({ ok: true, result: true });
+  };
+
+  try {
+    const response = await worker.fetch(joinRequest(-100666), makeEnv());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.surface, "premium_group");
+    assert.equal(body.deleted, true);
+    assert.equal(body.welcome_sent, true);
+    assert.equal(body.welcome_ready, true);
+
+    const welcomeCall = telegramCalls.find((call) => /sendMessage$/.test(call.url));
+    assert.ok(welcomeCall);
+    assert.match(welcomeCall.body.text, /MMD PRIVÉ : PREMIUM/);
+    assert.match(welcomeCall.body.text, /Copy Link/);
+    assert.match(welcomeCall.body.text, /LINE Official/);
+
+    const pinCall = telegramCalls.find((call) => /pinChatMessage$/.test(call.url));
+    assert.ok(pinCall);
+    assert.equal(pinCall.body.chat_id, "-100666");
+    assert.equal(pinCall.body.message_id, 199);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("HYPE leaves join service messages in other groups untouched", async () => {
   const response = await worker.fetch(joinRequest(-100999), makeEnv());
   const body = await response.json();
@@ -113,6 +160,7 @@ test("HYPE leaves join service messages in other groups untouched", async () => 
 test("join cleanup is disabled until at least one cleanup group is configured", async () => {
   const response = await worker.fetch(joinRequest(), makeEnv({
     TELEGRAM_STANDARD_GROUP_ID: "",
+    TELEGRAM_PREMIUM_GROUP_ID: "",
     TELEGRAM_MMD_CHAT_GROUP_ID: "",
     TELEGRAM_PREVIEW_GROUP_ID: "",
   }));
