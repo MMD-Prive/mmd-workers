@@ -428,6 +428,48 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
 });
 
 
+test("Public Model search and intake reject a budget below 5,000 THB", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    return Response.json({ records: [] });
+  };
+  try {
+    const searchResponse = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=search&budget_thb=4999"), {
+      AIRTABLE_API_KEY: "test-key",
+      AIRTABLE_BASE_ID: "test-base",
+    });
+    assert.equal(searchResponse.status, 200);
+    const searchBody = await searchResponse.json();
+    assert.equal(searchBody.validation_error, true);
+    assert.deepEqual(searchBody.errors, ["public_budget_below_minimum"]);
+    assert.equal(fetchCount, 0);
+
+    const intakeResponse = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        booking_ref: "public_budget_4999",
+        search_mode: "search",
+        lane: "public",
+        model_scope: "public",
+        customer_lane: "both",
+        budget_thb: 4999,
+        suppress_telegram_notify: true,
+      }),
+    }), {
+      AIRTABLE_API_KEY: "test-key",
+      AIRTABLE_BASE_ID: "test-base",
+    });
+    assert.equal(intakeResponse.status, 422);
+    assert.equal((await intakeResponse.json()).error, "public_budget_below_minimum");
+    assert.equal(fetchCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Public Model intake restores MMD Public Job V2 and rejects PN/VIP semantics", async () => {
   const originalFetch = globalThis.fetch;
   const persisted = [];
