@@ -46,10 +46,10 @@ test("Rich Menu status LIFF returns only to bounded customer destinations after 
     "/booking?source=line&entry_route=rich_menu_guest_booking",
     "/booking?source=line&entry_route=rich_menu_public_booking",
     "/services/companion?source=line&entry_route=rich_menu_guest_services",
-    "/tmib?source=line&entry_route=rich_menu_guest_stories",
-    "/member/private?source=line&entry_route=rich_menu_model_cards#detail-model",
-    "/member/private?source=line&entry_route=rich_menu_prive_update#access",
-    "/find?source=line&entry_route=rich_menu_private_booking",
+    "/tmib/stories?source=line&entry_route=rich_menu_guest_stories",
+    "/sigil/member/membership?intent=signup&source=line&entry_route=rich_menu_prive_access",
+    "/sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards",
+    "/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking",
   ];
   for (const target of targets) {
     const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
@@ -62,8 +62,11 @@ test("Rich Menu status LIFF fails closed for mismatched, privileged, or expanded
   const hostileTargets = [
     "/profiles?source=line&entry_route=rich_menu_private_booking",
     "/booking?source=web&entry_route=rich_menu_public_booking",
+    "/sigil/member/membership?intent=renew&source=line&entry_route=rich_menu_prive_access",
+    "/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_model_cards",
+    "/sigil/booking?mode=search&scope=public&source=line&entry_route=rich_menu_model_cards",
+    "/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking&next=/internal/admin",
     "/member/private?source=line&entry_route=rich_menu_model_cards#admin",
-    "/find?source=line&entry_route=rich_menu_private_booking&next=/internal/admin",
     "/internal/admin?source=line&entry_route=rich_menu_guest_models",
   ];
   for (const target of hostileTargets) {
