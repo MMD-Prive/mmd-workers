@@ -394,7 +394,7 @@ async function resolveCanonicalMemberAccess(env, lineUserId, fetchImpl) {
   return { status: allowPublic || folders.length ? "allowed" : "silent", allowPublic, folders, renewalDue, snapshot };
 }
 
-async function resolveExactModel(env, query, fetchImpl) {
+export async function resolveExactModel(env, query, fetchImpl = fetch) {
   const table = clean(env.AIRTABLE_TABLE_MODELS || "models");
   const codeMatches = await queryAcrossFields(env, table, MODEL_CODE_FIELDS, query, fetchImpl, 5);
   const nameMatches = await queryAcrossFields(env, table, MODEL_WORKING_NAME_FIELDS, query, fetchImpl, 5);
