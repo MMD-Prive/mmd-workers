@@ -710,6 +710,14 @@ small{display:block;margin-top:12px;color:#a39a8e;text-align:center;line-height:
     <small>สำหรับคนที่ต้องการความเป็นส่วนตัวเป็นพิเศษ / Confidential · ติดต่อพี่เปอร์โดยตรงที่ <a class="text-link" href="https://t.me/per_mmd" rel="noreferrer">t.me/per_mmd</a></small>
   </article>
 </main>
+<script data-mmd-job-miniapp-handoff="v1">
+(function(){
+  var target=${JSON.stringify(loginUrl)};
+  window.setTimeout(function(){
+    window.location.replace(target);
+  },60);
+})();
+</script>
 </body>
 </html>`;
 }
