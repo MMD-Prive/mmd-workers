@@ -156,14 +156,38 @@ async function handleModelSearch(req, env, url) {
     if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
     const visibleRate = projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null;
     if (Number.isFinite(visibleRate) && !priceFitsBudget(visibleRate, intent.budget)) continue;
+    const durationOptions = Array.isArray(projected.duration_options) ? projected.duration_options : [];
+    const requestedDuration = Number(body.duration_minutes || url.searchParams.get("duration_minutes") || 0);
+    const baseRateDuration = durationOptions.includes(90) && Number.isFinite(visibleRate) ? 90 : null;
+    const durationOffers = durationOptions.map((minutes) => {
+      const priceVisible = baseRateDuration === minutes;
+      return {
+        duration_minutes: minutes,
+        price_visible: priceVisible,
+        customer_rate_thb: priceVisible ? visibleRate : null,
+        requires_per_approval: !priceVisible || projected.sales_control?.requires_per_approval === true,
+        rate_review_required: !priceVisible,
+      };
+    });
+    const selectedDurationOffer = requestedDuration > 0
+      ? (durationOffers.find((item) => item.duration_minutes === requestedDuration) || {
+          duration_minutes: requestedDuration,
+          price_visible: false,
+          customer_rate_thb: null,
+          requires_per_approval: true,
+          rate_review_required: true,
+        })
+      : null;
     projected.offer = {
-      price_visible: projected.sales_control?.price_visible === true && Number.isFinite(projected.sales_control?.customer_rate_thb),
-      customer_rate_thb: projected.sales_control?.price_visible === true && Number.isFinite(projected.sales_control?.customer_rate_thb)
-        ? projected.sales_control.customer_rate_thb
-        : null,
+      price_visible: baseRateDuration === 90,
+      customer_rate_thb: baseRateDuration === 90 ? visibleRate : null,
+      base_rate_duration_minutes: baseRateDuration,
       requires_per_approval: projected.sales_control?.requires_per_approval === true || projected.sales_control?.configured !== true,
-      rate_review_required: projected.sales_control?.price_visible !== true || !Number.isFinite(projected.sales_control?.customer_rate_thb),
-      duration_options: Array.isArray(projected.duration_options) ? projected.duration_options : [],
+      rate_review_required: baseRateDuration !== 90 || selectedDurationOffer?.rate_review_required === true,
+      duration_options: durationOptions,
+      duration_offers: durationOffers,
+      requested_duration_minutes: requestedDuration > 0 ? requestedDuration : null,
+      requested_duration_offer: selectedDurationOffer,
       work_lane: intent.work_lane || "",
     };
     allowed.push(projected);
