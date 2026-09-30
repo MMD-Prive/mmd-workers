@@ -231,7 +231,7 @@ test("owner short link renders a Per-led job-first landing", async () => {
   assert.match(page, /intent=job_board/);
   assert.match(page, new RegExp(created.job.id));
   assert.doesNotMatch(page, /MMD APP \| Welcome|สวัสดีครับ|ยินดีที่ได้รู้จัก/);
-  assert.doesNotMatch(page, /og:image/i);
+  assert.match(page, /og:image/i);\n  assert.match(page, /twitter:image/i);\n  assert.match(page, /summary_large_image/i);
 
   const direct = await call(testEnv, "/public/api/jobs");
   assert.equal(direct.status, 302);
