@@ -12,6 +12,14 @@ function routeForDecision(env = {}, decision = {}) {
   const source = text(decision?.reply_source, 120);
   const reason = text(decision?.handoff_reason, 500);
 
+  if (/model_photo_reveal/i.test(reason) || (primary === "handoff_per" && /photo_reveal/i.test(reason))) {
+    return {
+      event: "svip_photo_reveal_review_required",
+      flow: "alert",
+      thread_id: Number(env.TELEGRAM_ALERTS_THREAD_ID || env.TG_THREAD_ALERTS || 9) || 9,
+      action: "Per review required before any photo leaves the private-media boundary. Do not expose rate, offer, availability, booking or payment.",
+    };
+  }
   if (primary === "review_payment" || /payment_review|required.*payment|payment_match/i.test(reason)) {
     return {
       event: "payment_match_uncertain",
