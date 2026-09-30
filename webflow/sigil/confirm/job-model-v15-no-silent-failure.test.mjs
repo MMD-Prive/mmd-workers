@@ -143,7 +143,7 @@ function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", w
 }
 
 const settle = (ms = 40) => new Promise((r) => setTimeout(r, ms));
-// client_name / model_payout_thb simulate an older backend: the page must still never render them.
+// client_name simulates an older backend: the page must still never render it. model_payout_thb is the model's own pay and IS shown.
 const DETAILS_OK = { status: 200, body: { ok: true, role: "model", client_name: "คุณ Secret Client", job_type: "private", job_date: "2026-10-02", start_time: "19:00", end_time: "21:00", location_name: "Hotel", model_payout_thb: 5000, confirmation_revision: "rev123", already_confirmed: false, model_acknowledged_at: null } };
 const feedback = (h) => h.root.querySelector("[data-m-confirm-feedback]");
 const diag = (h) => h.root.querySelector("[data-m-diag]");
@@ -333,14 +333,31 @@ test("gate: failed preflight is not cached, so retry can recover", async () => {
   assert.equal(h.root.dataset.mmdState, "ready");
 });
 
-test("model page never shows customer identity, rate or amount; client row is a neutral label", async () => {
-  const h = harness({ routes: { "/v1/confirm/details": DETAILS_OK } });
+test("model page shows the model's own payout but never customer identity or customer/payment data", async () => {
+  const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body, payment_ref: "pay_leak", payment_status: "partial", amount_thb: 40500 } } } });
   await settle();
   assert.equal(h.root.dataset.mmdState, "ready");
   assert.equal(h.el["data-m-client"].textContent, "ลูกค้า MMD");
-  assert.equal(h.root.contains(h.el["data-m-payout-card"]), false, "payout card removed from the model page");
+  assert.equal(h.root.contains(h.el["data-m-payout-card"]), true);
+  assert.equal(h.el["data-m-payout-card"].hidden, false);
+  assert.match(h.el["data-m-payout"].textContent, /5,000 THB/);
+  assert.equal(h.root.dataset.mmdPayout, "ok");
+  assert.equal(h.root.querySelector("[data-m-paywarn]")?.hidden ?? true, true);
   const visible = h.root.allText;
-  for (const leak of ["Secret Client", "5000", "5,000", "THB", "pay_", "deposit"]) {
+  for (const leak of ["Secret Client", "pay_leak", "partial", "40,500", "40500", "deposit"]) {
     assert.equal(visible.includes(leak), false, `model page leaked ${leak}`);
   }
+});
+
+test("missing model payout shows the clear warning and keeps the rate row visible", async () => {
+  const body = { ...DETAILS_OK.body, model_payout_thb: null };
+  const h = harness({ routes: { "/v1/confirm/details": { status: 200, body } } });
+  await settle();
+  assert.equal(h.root.dataset.mmdPayout, "missing");
+  const warn = h.root.querySelector("[data-m-paywarn]");
+  assert.ok(warn, "warning rendered");
+  assert.equal(warn.hidden, false);
+  assert.equal(warn.textContent, "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน");
+  assert.equal(h.el["data-m-payout-card"].hidden, false);
+  assert.equal(h.el["data-m-payout"].textContent, "—");
 });
