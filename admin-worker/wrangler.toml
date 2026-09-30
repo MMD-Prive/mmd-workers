@@ -341,6 +341,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/hype-job-daily/*"
 zone_name = "mmdbkk.com"
 
+# MODEL_RECONFIRM guard v2 owner-only status / dry-run preview / owner-destination smoke.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/model-reconfirm/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/model-reconfirm/*"
+zone_name = "mmdbkk.com"
+
 # MMD Shop owner workspace and authenticated API. Webflow is presentation only.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/shop/orders*"
@@ -934,6 +943,8 @@ service = "cal-sync-worker"
 INTERNAL_LOVABLE_ORIGIN = "https://mmd-os.lovable.app"
 MODEL_CARD_AUTO_ENABLED = "false"
 HYPE_JOB_DAILY_ENABLED = "false"
+# MODEL_RECONFIRM guard v2 (owner preview/dry-run accuracy). Owner chat id is set in Cloudflare only, never in this file.
+MODEL_RECONFIRM_GUARD_V2 = "false"
 # Optional comma/space-separated canonical Airtable Model record IDs for a controlled production pilot. Empty means no additional allowlist.\nMODEL_CARD_PILOT_MODEL_IDS = ""\nMODEL_CARD_DAILY_LIMIT = "20"
 # Approved brand assets must exist before enabling generation. No public URLs.
 MODEL_CARD_MMD_LOGO_KEY = "studio-card-brand/mmd-approved.png"

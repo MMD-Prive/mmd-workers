@@ -1,3 +1,19 @@
+import {
+  FOLLOWUP_OWNER_ACTION,
+  FOLLOWUP_REVIEW_REQUIRED,
+  GUARD_ACTIONS,
+  MAX_SEND_ATTEMPTS,
+  buildOwnerFallbackText,
+  classifyModelRef,
+  decideReconfirmAction,
+  isGuardV2Enabled,
+  nextIctDate,
+  normalizeJobDate,
+  parseSendFailures,
+  resolveOwnerDestination,
+  sendFailureStatus,
+} from "./model-reconfirm-guard.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const ADMIN_JOB_CREATE_PATH = "/v1/admin/job/create";
@@ -262,6 +278,9 @@ export async function runModelReconfirmSweep(env, { now = Date.now(), maxRecords
     return { ok: true, enabled: false, processed: 0, notified: 0, reminded: 0, escalated: 0 };
   }
 
+  // Guard v2 is a separate, default-off flag. When it is off the legacy sweep below runs unchanged.
+  if (isGuardV2Enabled(env)) return runGuardedReconfirmSweep(env, { now, maxRecords });
+
   const listed = await listSessions(env, Math.max(1, Math.min(1000, Number(maxRecords) || 500)));
   if (!listed.ok) return { ok: false, error: listed.error, processed: 0 };
 
@@ -282,54 +301,205 @@ export async function runModelReconfirmSweep(env, { now = Date.now(), maxRecords
     if (!reconfirm || reconfirm.status === "acknowledged") continue;
 
     counters.processed += 1;
-    const requiredMs = Date.parse(reconfirm.required_at);
-    const reminderMs = Date.parse(reconfirm.reminder_at);
-    const overdueMs = Date.parse(reconfirm.overdue_at);
-
-    if (Number.isFinite(requiredMs) && now >= requiredMs && !reconfirm.notified_at) {
-      const sent = await pushModelReconfirm(env, record, false);
-      if (sent.ok) {
-        const patched = await patchReconfirm(env, record, {
-          status: now >= overdueMs ? "overdue" : "pending",
-          notifiedAt: new Date(now).toISOString(),
-        });
-        if (patched.ok) { record.fields = patched.record.fields; counters.notified += 1; }
-        else counters.errors += 1;
-      } else counters.errors += 1;
-      reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
-    }
-
-    if (Number.isFinite(reminderMs) && now >= reminderMs && !reconfirm.reminder_notified_at && reconfirm.status !== "acknowledged") {
-      const sent = await pushModelReconfirm(env, record, true);
-      if (sent.ok) {
-        const patched = await patchReconfirm(env, record, {
-          reminderNotifiedAt: new Date(now).toISOString(),
-          followupStatus: "reminded",
-          riskLevel: "normal",
-        });
-        if (patched.ok) { record.fields = patched.record.fields; counters.reminded += 1; }
-        else counters.errors += 1;
-      } else counters.errors += 1;
-      reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
-    }
-
-    if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged") {
-      const alert = await sendOpsReconfirmOverdue(env, record);
-      if (alert.ok) {
-        const patched = await patchReconfirm(env, record, {
-          status: "overdue",
-          opsAlertedAt: new Date(now).toISOString(),
-          followupStatus: "followup_required",
-          riskLevel: "elevated",
-          backupRequired: false,
-        });
-        if (patched.ok) { record.fields = patched.record.fields; counters.escalated += 1; }
-        else counters.errors += 1;
-      } else counters.errors += 1;
-    }
+    await runReconfirmSteps(env, record, reconfirm, now, counters);
   }
 
   return { ok: counters.errors === 0, enabled: true, ...counters };
+}
+
+// The three D-1 steps (16:00 notify, 18:00 reminder, 19:00 ops alert). Shared by the legacy sweep and guard v2.
+// `guard` is only passed by guard v2; without it the behavior is exactly the legacy one.
+async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = null) {
+  const requiredMs = Date.parse(reconfirm.required_at);
+  const reminderMs = Date.parse(reconfirm.reminder_at);
+  const overdueMs = Date.parse(reconfirm.overdue_at);
+
+  if (Number.isFinite(requiredMs) && now >= requiredMs && !reconfirm.notified_at) {
+    const sent = await pushModelReconfirm(env, record, false);
+    if (sent.ok) {
+      const patched = await patchReconfirm(env, record, {
+        status: now >= overdueMs ? "overdue" : "pending",
+        notifiedAt: new Date(now).toISOString(),
+      });
+      if (patched.ok) { record.fields = patched.record.fields; counters.notified += 1; }
+      else counters.errors += 1;
+    } else if (guard) {
+      const halted = await recordGuardedSendFailure(env, record, reconfirm, now, counters, guard);
+      if (halted) return;
+    } else counters.errors += 1;
+    reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
+  }
+
+  if (Number.isFinite(reminderMs) && now >= reminderMs && !reconfirm.reminder_notified_at && reconfirm.status !== "acknowledged") {
+    const sent = await pushModelReconfirm(env, record, true);
+    if (sent.ok) {
+      const patched = await patchReconfirm(env, record, {
+        reminderNotifiedAt: new Date(now).toISOString(),
+        followupStatus: "reminded",
+        riskLevel: "normal",
+      });
+      if (patched.ok) { record.fields = patched.record.fields; counters.reminded += 1; }
+      else counters.errors += 1;
+    } else counters.errors += 1;
+    reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
+  }
+
+  if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged") {
+    const alert = await sendOpsReconfirmOverdue(env, record);
+    if (alert.ok) {
+      const patched = await patchReconfirm(env, record, {
+        status: "overdue",
+        opsAlertedAt: new Date(now).toISOString(),
+        followupStatus: "followup_required",
+        riskLevel: "elevated",
+        backupRequired: false,
+      });
+      if (patched.ok) { record.fields = patched.record.fields; counters.escalated += 1; }
+      else counters.errors += 1;
+    } else counters.errors += 1;
+  }
+}
+
+// ---- Guard v2 -------------------------------------------------------------------------------------------------
+
+// Read-only: lists ONLY sessions whose job date is the next ICT date, reads each assigned model once, and decides.
+// Used by the guarded sweep and by the owner dry-run/preview, so the preview shows exactly what the sweep would do.
+export async function collectReconfirmDecisions(env, { now = Date.now(), maxRecords = 300, lineTransportReady = null } = {}) {
+  const target = nextIctDate(now);
+  const names = sessionFields(env);
+  const formula = `LEFT({${names.jobDate}}&"",10)="${escapeFormula(target)}"`;
+  const listed = await listSessions(env, Math.max(1, Math.min(1000, Number(maxRecords) || 300)), formula);
+  if (!listed.ok) return { ok: false, error: listed.error || "reconfirm_sessions_unavailable", target_date: target, items: [] };
+
+  const transport = lineTransportReady === null ? Boolean(clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN || env.LINE_CHANNEL_ACCESS_TOKEN)) : lineTransportReady;
+  const modelCache = new Map();
+  const items = [];
+  for (const record of listed.records) {
+    const fields = record.fields || {};
+    // Cheap pre-check so we never read a Model for a job that will be skipped anyway.
+    const pre = decideReconfirmAction({
+      lifecycleState: sessionLifecycleState(env, fields), jobDate: sessionJobDate(env, fields), now,
+      reconfirm: reconfirmFromFields(env, fields, now),
+      followupStatus: fields?.[reconfirmFields(env).followupStatus],
+      modelRef: fields?.[names.modelRecordId], model: { line_user_id: "" }, lineTransportReady: transport,
+    });
+    const ref = classifyModelRef(fields?.[names.modelRecordId]);
+    let model = null;
+    if (ref.status === "one" && (pre.action !== GUARD_ACTIONS.SKIP)) {
+      if (!modelCache.has(ref.id)) {
+        const read = await airtable(env, modelTable(env), `/${encodeURIComponent(ref.id)}`);
+        modelCache.set(ref.id, read.ok ? { line_user_id: clean(read.data?.fields?.[clean(env.AT_MODELS__LINE_USER_ID || "line_user_id")]) } : null);
+      }
+      model = modelCache.get(ref.id);
+    }
+    const decision = decideReconfirmAction({
+      lifecycleState: sessionLifecycleState(env, fields), jobDate: sessionJobDate(env, fields), now,
+      reconfirm: reconfirmFromFields(env, fields, now),
+      followupStatus: fields?.[reconfirmFields(env).followupStatus],
+      modelRef: fields?.[names.modelRecordId], model, lineTransportReady: transport,
+    });
+    items.push({ record, decision });
+  }
+  return { ok: true, target_date: target, items };
+}
+
+async function runGuardedReconfirmSweep(env, { now, maxRecords }) {
+  const counters = { processed: 0, notified: 0, reminded: 0, escalated: 0, errors: 0, skipped: 0, owner_actions: 0, review_required: 0, owner_destination_missing: 0, guard_v2: true };
+  const collected = await collectReconfirmDecisions(env, { now, maxRecords });
+  if (!collected.ok) return { ok: false, enabled: true, error: collected.error, ...counters };
+
+  for (const { record, decision } of collected.items) {
+    const fields = record.fields || {};
+    if (decision.action === GUARD_ACTIONS.SKIP) { counters.skipped += 1; continue; }
+
+    let reconfirm = reconfirmFromFields(env, fields, now);
+    if (!reconfirm) {
+      const schedule = buildReconfirmSchedule(sessionJobDate(env, fields));
+      if (!schedule) { counters.review_required += 1; continue; }
+      const persisted = await persistReconfirmSchedule(env, sessionIdFromFields(env, fields), schedule, record);
+      if (!persisted.ok) { counters.errors += 1; continue; }
+      record.fields = persisted.record.fields || {};
+      reconfirm = reconfirmFromFields(env, record.fields, now);
+    }
+    if (!reconfirm || reconfirm.status === "acknowledged") { counters.skipped += 1; continue; }
+    // Never notify before the canonical D-1 16:00 ICT moment.
+    const requiredMs = Date.parse(reconfirm.required_at);
+    if (Number.isFinite(requiredMs) && now < requiredMs) { counters.skipped += 1; continue; }
+
+    counters.processed += 1;
+    if (decision.action === GUARD_ACTIONS.SEND) {
+      await runReconfirmSteps(env, record, reconfirm, now, counters, { modelRecordId: decision.model_record_id });
+      continue;
+    }
+    await escalateToOwner(env, record, decision.action, decision.reason, now, counters);
+  }
+  return { ok: counters.errors === 0, enabled: true, ...counters };
+}
+
+async function escalateToOwner(env, record, kind, reason, now, counters) {
+  const fields = record.fields || {};
+  const destination = resolveOwnerDestination(env);
+  if (!destination) { counters.owner_destination_missing += 1; return { ok: false, error: "owner_destination_missing" }; }
+  const sent = await sendOwnerFallback(env, destination, {
+    text: buildOwnerFallbackText({
+      kind, reason,
+      sessionId: sessionIdFromFields(env, fields) || record.id,
+      jobDate: normalizeJobDate(sessionJobDate(env, fields)),
+      modelName: sessionModelName(env, fields),
+    }),
+    sessionId: sessionIdFromFields(env, fields) || record.id,
+    intent: kind === GUARD_ACTIONS.REVIEW_REQUIRED ? "model_reconfirm_review_required" : "model_reconfirm_owner_action",
+  });
+  if (!sent.ok) { counters.errors += 1; return sent; }
+  const patched = await patchReconfirm(env, record, {
+    followupStatus: kind === GUARD_ACTIONS.REVIEW_REQUIRED ? FOLLOWUP_REVIEW_REQUIRED : FOLLOWUP_OWNER_ACTION,
+  });
+  if (patched.ok) { record.fields = patched.record.fields; } else counters.errors += 1;
+  if (kind === GUARD_ACTIONS.REVIEW_REQUIRED) counters.review_required += 1; else counters.owner_actions += 1;
+  return { ok: true };
+}
+
+// A failed model send is counted in the existing followup_status field (`send_failed_N`).
+// After MAX_SEND_ATTEMPTS the job stops retrying and goes to the owner as review_required.
+async function recordGuardedSendFailure(env, record, reconfirm, now, counters) {
+  const names = reconfirmFields(env);
+  const failures = parseSendFailures(record.fields?.[names.followupStatus]) + 1;
+  if (failures >= MAX_SEND_ATTEMPTS) {
+    await escalateToOwner(env, record, GUARD_ACTIONS.REVIEW_REQUIRED, "send_failed_repeatedly", now, counters);
+    return true;
+  }
+  const patched = await patchReconfirm(env, record, { followupStatus: sendFailureStatus(failures) });
+  if (patched.ok) record.fields = patched.record.fields;
+  counters.errors += 1;
+  return false;
+}
+
+export async function sendOwnerFallback(env, destination, { text, sessionId = "", intent = "model_reconfirm_owner_action" } = {}) {
+  const endpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL);
+  const token = clean(env.AUTH_SERVICE_EVENTS_TO_TELEGRAM || env.AUTH_SERVICE_STUDIO_TO_TELEGRAM);
+  if (!endpoint || !token || !destination?.chat_id) return { ok: false, error: "owner_notify_config_missing" };
+  const payload = {
+    chat_id: destination.chat_id,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    source: "events-worker",
+    intent,
+  };
+  if (sessionId) payload.session_id = sessionId;
+  if (destination.thread_id) { payload.message_thread_id = destination.thread_id; payload.thread_id = destination.thread_id; }
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-internal-token": token },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    // Success only when Telegram itself confirms delivery, same contract as HYPE_JOB_DAILY.
+    return response.ok && body?.telegram?.ok === true ? { ok: true } : { ok: false, error: `telegram_http_${response.status}` };
+  } catch {
+    return { ok: false, error: "telegram_transport_unavailable" };
+  }
 }
 
 function enrichSessionWithReconfirm(session, reconfirm, offerAction = true) {
@@ -448,12 +618,13 @@ async function findSessionBySessionId(env, sessionId) {
   return record ? { ok: true, status: 200, record: { id: record.id, fields: record.fields || {} } } : { ok: false, status: 404, error: "session_not_found" };
 }
 
-async function listSessions(env, maxRecords) {
+async function listSessions(env, maxRecords, filterByFormula = "") {
   const records = [];
   let offset = "";
   while (records.length < maxRecords) {
     const params = new URLSearchParams({ pageSize: String(Math.min(100, maxRecords - records.length)) });
     if (offset) params.set("offset", offset);
+    if (filterByFormula) params.set("filterByFormula", filterByFormula);
     const result = await airtable(env, sessionTable(env), `?${params.toString()}`);
     if (!result.ok) return { ok: false, status: result.status, error: result.error, records };
     records.push(...(result.data?.records || []).map((record) => ({ id: record.id, fields: record.fields || {} })));
