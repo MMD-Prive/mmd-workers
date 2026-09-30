@@ -2,6 +2,7 @@ import entitlementRuntime from "./entitlement-runtime-worker.js";
 import modelImagePolicyWorker from "./model-image-policy-worker.js";
 import { attachCareBackApprovalToConfirmedBooking } from "./care-back-trusted-caller.js";
 import { handlePublicProfilesCatalogRequest, isPublicProfilesCatalogRequest } from "./public-profiles-catalog.js";
+import { allowedCustomerModelFolders } from "./customer-search-policy.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENT_RESOLVE_PATH = "/sigil/api/client/resolve";
@@ -83,7 +84,7 @@ async function canonicalStoredPrivateAccess(env, request, url) {
   const parsed = parseJson(fields.resolver_payload_json);
   const snapshot = parsed?.entitlement_snapshot;
   if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1") return false;
-  return !snapshot.member_blocked && String(snapshot.access?.private_visibility_envelope || "none") !== "none";
+  return allowedCustomerModelFolders(snapshot).length > 0;
 }
 
 export async function requestedScope(request, url) {
