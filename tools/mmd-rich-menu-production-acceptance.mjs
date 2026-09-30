@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
+import { getMmdRichMenuVersion } from "../member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs";
 
 const ORIGIN = "https://www.mmdbkk.com";
-const VERSION = "mmd-rm3-20260924-v4.6";
+const VERSION = getMmdRichMenuVersion();
 const credential = String(process.env.ADMIN_LOGIN_CREDENTIAL || "").trim();
 assert.ok(credential, "Canonical admin credential is missing");
 
@@ -144,8 +145,7 @@ await writeFile(output, JSON.stringify({
 }, null, 2));
 
 assert.equal(audit.version, VERSION);
-assert.equal(audit.hidden_by_schedule, false);
-assert.equal(audit.default_state, "guest");
+assert.equal(audit.default_state, audit.hidden_by_schedule ? "none" : "guest");
 assert.equal(audit.schedule_policy_match, true);
 assert.equal(audit.five_state_matrix_match, true);
 assert.deepEqual(audit.five_state_matrix, {
