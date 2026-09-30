@@ -215,7 +215,10 @@ async function handleBookingIntake(req, env, ctx) {
       preferred_model_name: intent.preferred_model_name,
       telegram_reference: intent.telegram_reference,
       fallback_allowed: intent.fallback_allowed,
+      duration_minutes: Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0 ? Number(body.duration_minutes) : null,
+      review_requested: body.review_requested === true || incomingResolver.review_requested === true || incomingResolver.filters?.review_requested === true,
     },
+    review_requested: body.review_requested === true || incomingResolver.review_requested === true || incomingResolver.filters?.review_requested === true,
     job_creation_state: "waiting_for_per",
     saved_at: new Date().toISOString(),
   };
@@ -616,7 +619,7 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
   const route = `${str(fields.lane || "public").toUpperCase()} / ${str(fields.job_class || search.work_lane || "travel").toUpperCase()}`;
   const access = `${str(fields.member_status || "unknown")} · ${str(fields.access_scope || "public_only")}`;
   const model = str(fields["Selected Model Name"] || fields.model_search_query || search.preferred_model_name || "ให้ MMD หา");
-  const duration = str(body.duration_minutes || body.duration);
+  const duration = str(body.duration_minutes || search.duration_minutes || body.duration);
   const date = [fields["Preferred Date"], fields["Preferred Time"], duration ? duration + " นาที" : ""].map(str).filter(Boolean).join(" · ") || "not set";
   const place = [body.city, body.google_address].map(str).filter(Boolean).join(" · ") || "not set";
   const customerLane = str(body.customer_lane || search.customer_lane || "-");
@@ -628,7 +631,7 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
   const spec = str(body.spec || search.spec || "-");
   const telegramRef = str(body.telegram_post_url || search.telegram_reference || "");
   const fallback = body.fallback_allowed === true || search.fallback_allowed === true ? "ได้" : "เฉพาะที่ระบุ";
-  const reviewRequested = body.review_requested === true || resolver.review_requested === true || resolver.filters?.review_requested === true;
+  const reviewRequested = body.review_requested === true || search.review_requested === true || resolver.review_requested === true || resolver.filters?.review_requested === true;
   return [
     mode === "search" ? "🔎 <b>SIGIL SEARCH · WAITING FOR PER</b>" : "📅 <b>SIGIL BOOKING · WAITING FOR PER</b>",
     `Ref: <code>${escHtml(bookingRef)}</code>`,
