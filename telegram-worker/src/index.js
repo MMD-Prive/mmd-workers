@@ -4279,6 +4279,80 @@ function hypePremiumRoomDescription() {
   ].join("\n");
 }
 
+function hypeMemberGroupTitles(env) {
+  return [
+    {
+      surface: "premium_group",
+      chat_id: clean(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779"),
+      title: "MMD PRIVÉ : PREMIUM",
+    },
+    {
+      surface: "standard_group",
+      chat_id: clean(env.TELEGRAM_STANDARD_GROUP_ID || "-1002073919780"),
+      title: "MMD PRIVÉ : STANDARD",
+    },
+  ].filter((item) => item.chat_id);
+}
+
+async function syncHypeMemberGroupTitles(env, { premiumChat = null } = {}) {
+  const results = [];
+  for (const target of hypeMemberGroupTitles(env)) {
+    const chat = target.surface === "premium_group" && premiumChat
+      ? premiumChat
+      : await callTelegramApiForPreviewIntro("getChat", { chat_id: target.chat_id }, env);
+    const type = clean(chat?.result?.type).toLowerCase();
+    if (chat?.ok !== true || clean(chat?.result?.id) !== target.chat_id || !["group", "supergroup"].includes(type)) {
+      results.push({
+        ok: false,
+        surface: target.surface,
+        chat_id: target.chat_id,
+        desired_title: target.title,
+        state: "preflight_failed",
+        telegram: sanitizePreviewIntroFailure(chat),
+      });
+      continue;
+    }
+
+    const currentTitle = clean(chat?.result?.title);
+    if (currentTitle === target.title) {
+      results.push({
+        ok: true,
+        surface: target.surface,
+        chat_id: target.chat_id,
+        desired_title: target.title,
+        state: "already_current",
+      });
+      continue;
+    }
+
+    const update = await callTelegramApiForPreviewIntro("setChatTitle", {
+      chat_id: target.chat_id,
+      title: target.title,
+    }, env);
+    results.push(update?.ok === true
+      ? {
+          ok: true,
+          surface: target.surface,
+          chat_id: target.chat_id,
+          desired_title: target.title,
+          state: "updated",
+        }
+      : {
+          ok: false,
+          surface: target.surface,
+          chat_id: target.chat_id,
+          desired_title: target.title,
+          state: "update_failed",
+          telegram: sanitizePreviewIntroFailure(update),
+        });
+  }
+
+  return {
+    ok: results.length > 0 && results.every((item) => item.ok === true),
+    results,
+  };
+}
+
 function hypePremiumRoomWelcomeText() {
   return [
     "<b>💎 MMD PRIVÉ : PREMIUM</b>",
@@ -4404,6 +4478,8 @@ async function syncHypePremiumRoom(env, { force = false } = {}) {
     };
   }
 
+  const titles = await syncHypeMemberGroupTitles(env, { premiumChat: chat });
+
   const desiredDescription = hypePremiumRoomDescription();
   let description = { ok: true, state: "already_current" };
   if (clean(chat?.result?.description) !== desiredDescription) {
@@ -4418,10 +4494,11 @@ async function syncHypePremiumRoom(env, { force = false } = {}) {
 
   const welcome = await ensureHypePremiumPinnedWelcome(chatId, env, { force, chat });
   return {
-    ok: description.ok === true && welcome.ok === true,
+    ok: titles.ok === true && description.ok === true && welcome.ok === true,
     mode: "hype_premium_room_manager_v1",
     chat_id: chatId,
     chat_type: type,
+    titles,
     description,
     welcome,
   };
