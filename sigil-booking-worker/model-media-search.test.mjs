@@ -296,3 +296,74 @@ test("booking intake stores approved MMD media registry provenance and fails clo
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("SIGIL Search intake requires budget, strips customer-supplied storage URLs, and persists Per-review draft context", async () => {
+  const originalFetch = globalThis.fetch;
+  const persisted = [];
+  globalThis.fetch = async (url, init = {}) => {
+    assert.match(String(url), /^https:\/\/api\.airtable\.com\/v0\/test-base\//);
+    if (init.method === "POST") {
+      const fields = JSON.parse(init.body).fields;
+      persisted.push(fields);
+      return Response.json({ id: "recSearchDraft", fields });
+    }
+    return Response.json({ records: [] });
+  };
+  try {
+    const missingBudget = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        search_mode: "search",
+        customer_lane: "both",
+        work_lane: "pn",
+        spec: "สูง คุยอังกฤษได้",
+        suppress_telegram_notify: true,
+      }),
+    }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
+    assert.equal(missingBudget.status, 422);
+    assert.equal((await missingBudget.json()).error, "budget_required");
+    assert.equal(persisted.length, 0);
+
+    const accepted = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        booking_ref: "search_001",
+        search_mode: "search",
+        customer_lane: "both",
+        work_lane: "pn",
+        budget_thb: 15000,
+        spec: "สูง คุยอังกฤษได้",
+        preferred_model_name: "Jasper",
+        telegram_post_url: "https://t.me/c/1668261779/1234",
+        fallback_allowed: true,
+        duration_minutes: 90,
+        review_requested: true,
+        resolved_image_url: "https://drive.google.com/private.jpg",
+        drive_folder_id_snapshot: "drive-secret-folder",
+        r2_key_snapshot: "private/key.webp",
+        resolver_payload_json: { filters: { review_requested: true } },
+        suppress_telegram_notify: true,
+      }),
+    }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
+    assert.equal(accepted.status, 200);
+    assert.equal((await accepted.json()).ok, true);
+    const fields = persisted.at(-1);
+    assert.equal(fields.Source, "sigil_search");
+    assert.equal(Object.hasOwn(fields, "resolved_image_url"), false);
+    assert.equal(Object.hasOwn(fields, "drive_folder_id_snapshot"), false);
+    assert.equal(Object.hasOwn(fields, "r2_key_snapshot"), false);
+    const resolver = JSON.parse(fields.resolver_payload_json);
+    assert.equal(resolver.job_creation_state, "waiting_for_per");
+    assert.equal(resolver.customer_search.budget.max_thb, 15000);
+    assert.equal(resolver.customer_search.customer_lane, "both");
+    assert.equal(resolver.customer_search.work_lane, "pn");
+    assert.equal(resolver.customer_search.telegram_reference, "https://t.me/c/1668261779/1234");
+    assert.equal(resolver.customer_search.duration_minutes, 90);
+    assert.equal(resolver.customer_search.review_requested, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
