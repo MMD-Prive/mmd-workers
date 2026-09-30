@@ -1,3 +1,5 @@
+import { normalizeSvipPhotoRevealMode, SVIP_PHOTO_REVEAL_MODE_HEADER } from "../../shared/svip-photo-reveal-rollout.mjs";
+import { observeSvipPhotoRevealMode } from "./svip-photo-reveal-mode-audit.mjs";
 import worker from "./index.js";
 import { observeKenjiLineWebhook } from "./kenji-ai-worker-line-bridge.mjs";
 import { recordKenjiConversationShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
@@ -40,12 +42,26 @@ function json(payload, status = 200) {
   });
 }
 
-async function forwardMemberPages(request, env) {
+async function forwardMemberPages(request, env, ctx = null) {
   if (!env.MEMBER_PAGES_WORKER?.fetch) {
     return json({ ok: false, error: { code: "MEMBER_PAGES_UPSTREAM_NOT_CONFIGURED", message: "Member service is unavailable." } }, 503);
   }
 
-  const upstreamResponse = await env.MEMBER_PAGES_WORKER.fetch(new Request(request.url, request));
+  const url = new URL(request.url);
+  const requestHeaders = new Headers(request.headers);
+  if (url.pathname.startsWith("/api/member/app/private-preview/")) {
+    const mode = normalizeSvipPhotoRevealMode(env.KENJI_SVIP_PHOTO_REVEAL_MODE);
+    requestHeaders.set(SVIP_PHOTO_REVEAL_MODE_HEADER, mode);
+    const audit = observeSvipPhotoRevealMode(env, `preview:${url.pathname.split("/").pop() || "request"}`).catch(() => null);
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(audit);
+    else await audit;
+  } else {
+    requestHeaders.delete(SVIP_PHOTO_REVEAL_MODE_HEADER);
+  }
+
+  const upstreamResponse = await env.MEMBER_PAGES_WORKER.fetch(new Request(request, {
+    headers: requestHeaders,
+  }));
   const headers = new Headers(upstreamResponse.headers);
   headers.set("x-mmd-worker", WORKER_NAME);
   headers.set("x-mmd-route-owner", WORKER_NAME);
@@ -104,6 +120,11 @@ function liffAuthReturnTarget(request) {
     const model = String(url.searchParams.get("model") || state.get("model") || "").trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
     return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
+  }
+  if (intent === "private_photo_reveal") {
+    const grant = String(url.searchParams.get("grant") || state.get("grant") || "").trim();
+    if (!/^svip_photo_[0-9a-f-]{36}$/i.test(grant)) return "";
+    return `/api/member/app/private-preview/resume?g=${encodeURIComponent(grant)}`;
   }
   if (intent === "status") return "";
   if (intent === "continue_payment") return "/member/payments";
@@ -166,6 +187,11 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   }
 
   async function offerTelegramThenContinue() {
+    if (/^\/api\/member\/app\/private-preview\/resume\?g=svip_photo_[0-9a-f-]{36}$/i.test(target)) {
+      setShellMessage("ยืนยัน LINE เรียบร้อยแล้วครับ · กำลังเปิดรูป");
+      window.location.replace(target);
+      return;
+    }
     setShellMessage("ยืนยัน LINE เรียบร้อยแล้วครับ · Telegram เป็นช่องทางติดต่อสำรอง (ไม่บังคับ)");
     const actions = clearShellActions();
     if (!actions) {
@@ -440,7 +466,7 @@ export default {
     if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });
     if (isMyMmdUiPath(path)) return proxyMyMmdPresentation(request);
     if (PUBLIC_CARE_BACK_PATHS.has(path) || path.startsWith(MEMBER_APP_API_PREFIX)) {
-      return forwardMemberPages(request, env);
+      return forwardMemberPages(request, env, ctx);
     }
 
     const shouldObserveLine = request.method === "POST" && LINE_WEBHOOK_PATHS.has(path);

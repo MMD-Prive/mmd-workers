@@ -6,8 +6,10 @@ body{margin:0;background:#11100f;color:#f6f0e8;font:16px system-ui,sans-serif}ma
 </style></head><body><main><p>MMD PRIVÉ</p><h1>Private Media</h1><p id="message">กำลังตรวจสิทธิ์ของคุณ</p><button id="open" hidden>เปิดดู</button><a id="login" href="/my-mmd/" hidden>เข้าสู่ MY MMD</a><div id="stage"></div></main><script nonce="${nonce}">
 (() => {
   const params = new URLSearchParams(location.hash.slice(1)); let token = params.get('t') || '';
+  const search = new URLSearchParams(location.search); let grant = search.get('g') || '';
   history.replaceState(null,'',location.pathname);
   const message = document.getElementById('message'), button = document.getElementById('open'), stage = document.getElementById('stage');
+  const mobileClient = navigator.userAgentData?.mobile === true || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   let policy = null, objectUrl = '', timer = 0, used = false, closed = false;
   const controller = new AbortController();
   function close(text) { closed = true; clearTimeout(timer); controller.abort(); const video = stage.querySelector('video'); if (video) { video.pause(); video.removeAttribute('src'); video.load(); } stage.replaceChildren(); if (objectUrl) URL.revokeObjectURL(objectUrl); objectUrl = ''; token = ''; button.hidden = true; message.textContent = text; }
@@ -20,7 +22,20 @@ body{margin:0;background:#11100f;color:#f6f0e8;font:16px system-ui,sans-serif}ma
     try {
       const response = await fetch('/api/member/app/private-preview/status?t='+encodeURIComponent(token),{credentials:'same-origin',cache:'no-store',signal:controller.signal});
       const body = await response.json();
-      if (response.status === 401) { document.getElementById('login').hidden = false; return close('เข้าสู่ MY MMD แล้วเปิดลิงก์นี้อีกครั้ง'); }
+      if (response.status === 401) {
+        if (/^svip_photo_[0-9a-f-]{36}$/i.test(grant)) {
+          if (!mobileClient) return close('กรุณาเปิดลิงก์นี้จาก LINE บนมือถือเพื่อดูรูปครับ');
+          message.textContent = 'กำลังยืนยันผ่าน LINE ให้ครับ';
+          const loginUrl = new URL('https://miniapp.line.me/2010862595-yT4DCEMc/');
+          loginUrl.searchParams.set('intent','private_photo_reveal');
+          loginUrl.searchParams.set('grant',grant);
+          window.location.replace(loginUrl.toString());
+          return;
+        }
+        document.getElementById('login').hidden = false;
+        return close('กรุณายืนยัน LINE ก่อนเปิดดู');
+      }
+      if (response.status === 423) return close('รายการนี้ถูกพักไว้ชั่วคราว กรุณาติดต่อ MMD ครับ');
       if (!response.ok || body.ok !== true || !['private_pic','private_clip'].includes(body.preview?.kind) || body.preview.viewLimit !== 1) return close('สิทธิ์นี้ยังไม่พร้อม หมดอายุ หรือใช้ไปแล้ว กรุณาติดต่อ MMD');
       policy = body.preview; button.hidden = false;
       message.textContent = policy.kind === 'private_pic' ? 'เปิดดูรูปได้ 3 วินาที ครั้งเดียว เมื่อพร้อมแล้วกดเปิดดู' : 'เล่นคลิปได้ครั้งเดียว เมื่อพร้อมแล้วกดเริ่มเล่น';

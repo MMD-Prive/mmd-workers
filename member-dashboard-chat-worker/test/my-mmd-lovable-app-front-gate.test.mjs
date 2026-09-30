@@ -362,6 +362,37 @@ test("private_teaser LIFF verifies the member then returns only to the allowlist
   assert.equal(hostile.headers.get("x-mmd-liff-return-target"), null);
 });
 
+test("private_photo_reveal LIFF returns directly to the exact grant resume and skips optional Telegram before return", async () => {
+  const grantId = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PRIVATE PHOTO BRIDGE</main><div id="message"></div><div id="actions"></div><script nonce="photo123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request(`https://mmdbkk.com/member/liff?intent=private_photo_reveal&grant=${grantId}`),
+    runtime,
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), `/api/member/app/private-preview/resume?g=${grantId}`);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.match(html, new RegExp(`const target = "/api/member/app/private-preview/resume\\?g=${grantId}"`));
+  assert.match(html, /กำลังเปิดรูป/);
+  assert.match(html, /private-preview\/resume/);
+
+  const hostile = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?intent=private_photo_reveal&grant=https%3A%2F%2Fevil.example"),
+    runtime,
+  );
+  assert.equal(hostile.headers.get("x-mmd-liff-return-target"), null);
+});
+
 test("continue_payment LIFF stays auth-bridge-only and returns to My MMD Payment Center", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
@@ -419,4 +450,32 @@ test("wrangler keeps canonical My MMD, BFF and legacy redirect routes Worker-own
   ]) {
     assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
   }
+});
+
+
+test("private preview front gate overwrites rollout mode header and unknown config fails closed", async () => {
+  const seen = [];
+  const runtime = {
+    KENJI_SVIP_PHOTO_REVEAL_MODE: "pilot",
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        seen.push(request.headers.get("x-mmd-svip-photo-reveal-mode"));
+        return Response.json({ ok:false, error:{ code:"synthetic" } }, { status:423 });
+      },
+    },
+  };
+
+  const pilot = await worker.fetch(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { headers:{ "x-mmd-svip-photo-reveal-mode":"live" } },
+  ), runtime);
+  assert.equal(pilot.status, 423);
+  assert.deepEqual(seen, ["pilot"]);
+
+  runtime.KENJI_SVIP_PHOTO_REVEAL_MODE = "LIVE_typo";
+  await worker.fetch(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { headers:{ "x-mmd-svip-photo-reveal-mode":"pilot" } },
+  ), runtime);
+  assert.deepEqual(seen, ["pilot", "off"]);
 });

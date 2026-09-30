@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isPrivatePreviewRequest, PrivatePreviewGate, handlePrivatePreview } from "./src/private-preview.js";
+import { SVIP_PHOTO_REVEAL_MODE_HEADER, SVIP_PHOTO_REVEAL_POLICY } from "../shared/svip-photo-reveal-rollout.mjs";
 import { privateMediaFixture } from "../shared/private-media-fixture.mjs";
 import vm from "node:vm";
 
 test("private preview routes are narrowly matched", () => {
   assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/status"), true);
   assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/consume"), true);
+  assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/resume"), true);
   assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/other"), false);
 });
 
@@ -55,6 +57,15 @@ function req(path='consume',extra={}) {
     method:path==='consume'?'POST':'GET',headers:{cookie:'__Host-mmd_liff_session=test',origin:'https://www.mmdbkk.com','content-type':'application/json',...extra},...(path==='consume'?{body:JSON.stringify({t:'synthetic'})}:{}),
   });
 }
+function markSvipGrant(f) {
+  f.grant.fields.payload_json = JSON.stringify({
+    preview_kind:"private_pic",
+    access_lane:"private_preview",
+    policy_version:SVIP_PHOTO_REVEAL_POLICY,
+    authorization_basis:"active_svip_exact_customer_photo_reveal",
+  });
+  return f;
+}
 test('two simultaneous consumes yield exactly one file and one durable log',async()=>{
   const f=setup();const responses=await Promise.all([handlePrivatePreview(req(),f.env),handlePrivatePreview(req(),f.env)]);
   assert.deepEqual(responses.map(r=>r.status).sort(),[200,410]);assert.equal(f.writes.length,1);assert.equal(f.audits.length,1);assert.equal(f.audits[0].outcome,'consumed');
@@ -91,16 +102,185 @@ test('missing session and cross-origin consume cannot burn a grant',async()=>{
   const f=setup();assert.equal((await handlePrivatePreview(req('consume',{origin:'https://evil.example'}),f.env)).status,403);
   assert.equal((await handlePrivatePreview(req('consume',{cookie:''}),f.env)).status,401);assert.equal(f.storage.has('consumed'),false);
 });
-test('viewer is isolated, parses, and uses no persistent browser media storage',async()=>{
+test('viewer is isolated, parses, uses no persistent browser media storage, and auto-enters LIFF verify on 401',async()=>{
   const response=await handlePrivatePreview(req('view'),{});assert.equal(response.status,200);
   assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/);
   const html=await response.text(),script=html.match(/<script nonce="[^"]+">([\s\S]*)<\/script>/)[1];
   new vm.Script(script);assert.doesNotMatch(script,/localStorage|sessionStorage|indexedDB|caches\.open/);
   assert.match(script,/setTimeout\(conceal,3000\)/);assert.match(script,/revokeObjectURL/);
+  assert.match(script,/miniapp\.line\.me\/2010862595-yT4DCEMc/);
+  assert.match(script,/private_photo_reveal/);
+  assert.match(script,/window\.location\.replace\(loginUrl\.toString\(\)\)/);
 });
 
 test('append-only audit failure burns the grant and returns no media',async()=>{
   const f=setup();f.auditFailure=true;
   const response=await handlePrivatePreview(req(),f.env);assert.equal(response.status,503);assert.equal(f.storage.has('consumed'),true);assert.equal(f.writes.length,0);
   f.auditFailure=false;assert.equal((await handlePrivatePreview(req(),f.env)).status,410);
+});
+
+
+test("LINE crawler, HEAD and prefetch cannot consume a private preview grant", async () => {
+  const f = setup();
+
+  const crawlerGet = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/view#t=synthetic",
+    { method: "GET", headers: { "user-agent": "Line/14 link-preview" } },
+  ), f.env);
+  assert.equal(crawlerGet.status, 200);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 0);
+
+  const head = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/view#t=synthetic",
+    { method: "HEAD", headers: { "user-agent": "Line/14 link-preview" } },
+  ), f.env);
+  assert.equal(head.status, 405);
+  assert.equal(f.storage.has("consumed"), false);
+
+  const prefetchStatus = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { method: "GET", headers: { "sec-purpose": "prefetch", "user-agent": "Line/14 link-preview" } },
+  ), f.env);
+  assert.equal(prefetchStatus.status, 401);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 0);
+
+  // Even a real member session may auto-check status when the page opens.
+  // Status is read-only; only the explicit authenticated POST /consume burns the grant.
+  const memberStatus = await handlePrivatePreview(req("status"), f.env);
+  assert.equal(memberStatus.status, 200);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 0);
+});
+
+
+test("one-tap resume after LIFF verify rotates the bearer token without consuming the grant", async () => {
+  const f = setup();
+  const grantId = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  f.grant.fields.grant_id = grantId;
+
+  const response = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/resume?g=${grantId}`,
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), f.env);
+
+  assert.equal(response.status, 303);
+  const location = response.headers.get("location") || "";
+  assert.match(location, new RegExp(`^https://www\\.mmdbkk\\.com/api/member/app/private-preview/view\\?g=${grantId}#t=`));
+  assert.equal(response.headers.get("x-mmd-private-preview-resume"), "one-tap-line-verify-v1");
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 1);
+  assert.match(String(f.writes[0]?.fields?.preview_token_hash || ""), /^[a-f0-9]{64}$/);
+  assert.equal(f.writes[0]?.fields?.signed_url_status, "not_issued");
+});
+
+test("resume is exact-client session bound and rejects malformed resume handles", async () => {
+  const malformed = setup();
+  const bad = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/resume?g=not-a-grant",
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), malformed.env);
+  assert.equal(bad.status, 400);
+  assert.equal(malformed.writes.length, 0);
+  assert.equal(malformed.storage.has("consumed"), false);
+
+  const wrongClient = setup();
+  wrongClient.grant.fields.grant_id = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  wrongClient.grant.fields.Client = ["recOther"];
+  const denied = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/resume?g=svip_photo_123e4567-e89b-12d3-a456-426614174000",
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), wrongClient.env);
+  assert.equal(denied.status, 403);
+  assert.equal(wrongClient.writes.length, 0);
+  assert.equal(wrongClient.storage.has("consumed"), false);
+});
+
+
+test("SVIP kill switch blocks existing grants at status and consume without burning them", async () => {
+  for (const mode of ["off", "dry_run", "LIVE_typo", ""]) {
+    const statusFixture = markSvipGrant(setup());
+    const status = await handlePrivatePreview(req("status", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), statusFixture.env);
+    assert.equal(status.status, 423, `status must be locked for mode=${mode || "missing"}`);
+    assert.equal(statusFixture.storage.has("consumed"), false);
+    assert.equal(statusFixture.audits.length, 0);
+    assert.equal(statusFixture.writes.length, 0);
+
+    const consumeFixture = markSvipGrant(setup());
+    const consume = await handlePrivatePreview(req("consume", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), consumeFixture.env);
+    assert.equal(consume.status, 423, `consume must be locked for mode=${mode || "missing"}`);
+    assert.equal(consumeFixture.storage.has("consumed"), false);
+    assert.equal(consumeFixture.audits.length, 0);
+    assert.equal(consumeFixture.writes.length, 0);
+  }
+});
+
+test("SVIP pilot and live modes permit the exact-client one-use path", async () => {
+  for (const mode of ["pilot", "live"]) {
+    const f = markSvipGrant(setup());
+    const status = await handlePrivatePreview(req("status", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), f.env);
+    assert.equal(status.status, 200);
+    const consume = await handlePrivatePreview(req("consume", { [SVIP_PHOTO_REVEAL_MODE_HEADER]: mode }), f.env);
+    assert.equal(consume.status, 200);
+    assert.equal(f.storage.has("consumed"), true);
+    assert.equal(f.audits.length, 1);
+  }
+});
+
+test("LIFF resume rotates the bearer token and the old LINE URL token becomes invalid", async () => {
+  const f = markSvipGrant(setup());
+  const grantId = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  f.grant.fields.grant_id = grantId;
+
+  const resume = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/resume?g=${grantId}`,
+    { method:"GET", headers:{ cookie:"__Host-mmd_liff_session=test", [SVIP_PHOTO_REVEAL_MODE_HEADER]:"pilot" } },
+  ), f.env);
+  assert.equal(resume.status, 303);
+
+  const location = new URL(resume.headers.get("location"));
+  const freshToken = new URLSearchParams(location.hash.slice(1)).get("t");
+  assert.ok(freshToken);
+  assert.notEqual(freshToken, "synthetic");
+
+  const oldStatus = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/status?t=synthetic",
+    { headers:{ cookie:"__Host-mmd_liff_session=test", [SVIP_PHOTO_REVEAL_MODE_HEADER]:"pilot" } },
+  ), f.env);
+  assert.equal(oldStatus.status, 404);
+
+  const freshStatus = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/status?t=${encodeURIComponent(freshToken)}`,
+    { headers:{ cookie:"__Host-mmd_liff_session=test", [SVIP_PHOTO_REVEAL_MODE_HEADER]:"pilot" } },
+  ), f.env);
+  assert.equal(freshStatus.status, 200);
+  assert.equal(f.storage.has("consumed"), false);
+});
+
+test("private media is no-store and reload after consume cannot display it again", async () => {
+  const f = setup();
+  const shell = await handlePrivatePreview(new Request("https://www.mmdbkk.com/api/member/app/private-preview/view#t=synthetic"), f.env);
+  assert.match(shell.headers.get("cache-control") || "", /no-store/);
+
+  const first = await handlePrivatePreview(req("consume"), f.env);
+  assert.equal(first.status, 200);
+  assert.match(first.headers.get("cache-control") || "", /no-store/);
+
+  const reloadStatus = await handlePrivatePreview(req("status"), f.env);
+  assert.equal(reloadStatus.status, 410);
+  assert.equal(f.audits.length, 1);
+});
+
+test("viewer sends mobile browsers into LIFF but gives LINE desktop a mobile instruction instead of an error loop", async () => {
+  const response = await handlePrivatePreview(req("view"), {});
+  const html = await response.text();
+  assert.match(html, /navigator\.userAgentData\?\.mobile/);
+  assert.match(html, /Android\|iPhone\|iPad\|iPod/);
+  assert.match(html, /กรุณาเปิดลิงก์นี้จาก LINE บนมือถือเพื่อดูรูปครับ/);
+  assert.match(html, /miniapp\.line\.me\/2010862595-yT4DCEMc/);
 });

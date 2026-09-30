@@ -1,3 +1,8 @@
+import {
+  isSvipPhotoRevealGrantPayload,
+  svipPhotoRevealCanServe,
+  SVIP_PHOTO_REVEAL_MODE_HEADER,
+} from "../../shared/svip-photo-reveal-rollout.mjs";
 import { readMemberAppSession } from "./member-app-api.js";
 import { assertPrivateObject, privateBucket } from "../../shared/private-media.mjs";
 import { privatePreviewPage } from "./private-preview-page.js";
@@ -10,14 +15,14 @@ const DEFAULT_MEDIA = "MMD — Model Media Assets";
 
 export function isPrivatePreviewRequest(input) {
   const path = new URL(input instanceof Request ? input.url : String(input)).pathname.replace(/\/+$/, "");
-  return path === `${PREFIX}status` || path === `${PREFIX}consume` || path === `${PREFIX}view`;
+  return path === `${PREFIX}status` || path === `${PREFIX}consume` || path === `${PREFIX}view` || path === `${PREFIX}resume`;
 }
 
 export async function handlePrivatePreview(request, env = {}) {
   const path = new URL(request.url).pathname.replace(/\/+$/, "");
   if (!isPrivatePreviewRequest(request)) return json({ ok:false, error:{ code:"NOT_FOUND" } }, 404);
   if (path === `${PREFIX}view`) return request.method === "GET" ? privatePreviewPage() : json({ok:false,error:{code:"METHOD_NOT_ALLOWED"}},405);
-  const expected = path === `${PREFIX}status` ? "GET" : "POST";
+  const expected = path === `${PREFIX}status` || path === `${PREFIX}resume` ? "GET" : "POST";
   if (request.method !== expected) return json({ ok:false, error:{ code:"METHOD_NOT_ALLOWED" } }, 405, { allow:expected });
   if (expected === "POST" && (request.headers.get("origin") !== new URL(request.url).origin || !["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(new URL(request.url).origin))) return json({ ok:false, error:{code:"ORIGIN_NOT_ALLOWED"}},403);
   if (expected === "POST" && !/^application\/json(?:;|$)/i.test(request.headers.get("content-type") || "")) return json({ok:false,error:{code:"JSON_REQUIRED"}},415);
@@ -25,16 +30,46 @@ export async function handlePrivatePreview(request, env = {}) {
   const identity = await readMemberAppSession(request, env);
   if (!identity?.lineUserId) return json({ ok:false, error:{ code:"MEMBER_SESSION_REQUIRED" } }, 401);
 
-  const token = path.endsWith("/status")
-    ? clean(new URL(request.url).searchParams.get("t"), 4096)
-    : clean((await request.json().catch(() => null))?.t, 4096);
-  if (!token) return json({ ok:false, error:{ code:"PREVIEW_TOKEN_REQUIRED" } }, 400);
-
   try {
     const clientId = await resolveClient(env, identity.lineUserId);
     if (!clientId) return json({ ok:false, error:{ code:"CLIENT_IDENTITY_UNRESOLVED" } }, 403);
+
+    if (path.endsWith("/resume")) {
+      const grantId = clean(new URL(request.url).searchParams.get("g"), 160);
+      if (!/^svip_photo_[0-9a-f-]{36}$/i.test(grantId)) return json({ ok:false, error:{ code:"PREVIEW_RESUME_INVALID" } }, 400);
+      const grant = await resolveGrantById(env, grantId, clientId);
+      if (!grant.ok) return json({ ok:false, error:{ code:grant.code } }, grant.status);
+      if (grant.svipPhotoReveal && !svipPhotoRevealCanServe(request.headers.get(SVIP_PHOTO_REVEAL_MODE_HEADER))) {
+        return json({ ok:false, error:{ code:"PREVIEW_DISABLED" } }, 423);
+      }
+      const gate = gateStub(env, grant.recordId);
+      const gateState = await gate.fetch("https://private-preview.internal/status");
+      if (gateState.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
+      if (gateState.status !== 204) return json({ok:false,error:{code:"PREVIEW_LOCK_FAILED"}},503);
+      const rawToken = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+      await rotatePreviewToken(env, grant.recordId, rawToken);
+      const target = new URL(`${PREFIX}view`, request.url);
+      target.searchParams.set("g", grant.grantId);
+      target.hash = `t=${encodeURIComponent(rawToken)}`;
+      return new Response(null, {
+        status: 303,
+        headers: noStoreHeaders({
+          location: target.toString(),
+          "x-mmd-private-preview-resume": "one-tap-line-verify-v1",
+        }),
+      });
+    }
+
+    const token = path.endsWith("/status")
+      ? clean(new URL(request.url).searchParams.get("t"), 4096)
+      : clean((await request.json().catch(() => null))?.t, 4096);
+    if (!token) return json({ ok:false, error:{ code:"PREVIEW_TOKEN_REQUIRED" } }, 400);
+
     const grant = await resolveGrant(env, token, clientId);
     if (!grant.ok) return json({ ok:false, error:{ code:grant.code } }, grant.status);
+    if (grant.svipPhotoReveal && !svipPhotoRevealCanServe(request.headers.get(SVIP_PHOTO_REVEAL_MODE_HEADER))) {
+      return json({ ok:false, error:{ code:"PREVIEW_DISABLED" } }, 423);
+    }
     // Record ID, rather than a mutable display identifier, is the one-use key.
     const gate = gateStub(env, grant.recordId);
     const asset = await readAsset(env, grant.mediaRecordId, grant.kind, grant.modelId, grant.accessLane);
@@ -120,11 +155,8 @@ async function resolveClient(env, lineUserId) {
   if ([f.status,f.client_status,f.member_status].some(value => /^(blocked|suspended|revoked)$/i.test(String(value || ""))) || f.blocked === true) return "";
   return records.length === 1 ? records[0].id : "";
 }
-async function resolveGrant(env, token, clientId) {
-  const hash = await sha256(token);
-  const records = await list(env, env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS || DEFAULT_GRANTS, `{preview_token_hash}='${formula(hash)}'`, 2);
-  if (records.length !== 1) return { ok:false, status:404, code:"PREVIEW_NOT_FOUND" };
-  const record = records[0], f = record.fields || {};
+function validateGrantRecord(record, clientId) {
+  const f = record?.fields || {};
   const clients = links(f.Client || f.client);
   if (clients.length !== 1 || clients[0] !== clientId) return { ok:false, status:403, code:"PREVIEW_CLIENT_MISMATCH" };
   if (word(f.grant_status) !== "active") return { ok:false, status:410, code:"PREVIEW_CONSUMED" };
@@ -136,8 +168,42 @@ async function resolveGrant(env, token, clientId) {
   const kind = ["private_pic","private_clip"].includes(payload.preview_kind) ? payload.preview_kind : "";
   if (!kind) return { ok:false, status:409, code:"PREVIEW_POLICY_MISSING" };
   const mediaIds = links(f["Media Asset"] || f.media_asset), models = links(f.Model);
-  if (mediaIds.length !== 1 || models.length !== 1 || !clean(f.grant_id,160)) return { ok:false, status:409, code:"PREVIEW_POLICY_MISSING" };
-  return { ok:true, recordId:record.id, grantId:clean(f.grant_id,160), kind, expiresAt, watermark:clean(f.watermark_code,120), mediaRecordId:mediaIds[0], modelId:models[0], accessLane };
+  const grantId = clean(f.grant_id,160);
+  if (mediaIds.length !== 1 || models.length !== 1 || !grantId) return { ok:false, status:409, code:"PREVIEW_POLICY_MISSING" };
+  return {
+    ok:true,
+    recordId:record.id,
+    grantId,
+    kind,
+    expiresAt,
+    watermark:clean(f.watermark_code,120),
+    mediaRecordId:mediaIds[0],
+    modelId:models[0],
+    accessLane,
+    svipPhotoReveal:isSvipPhotoRevealGrantPayload(payload),
+  };
+}
+async function resolveGrant(env, token, clientId) {
+  const hash = await sha256(token);
+  const records = await list(env, env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS || DEFAULT_GRANTS, `{preview_token_hash}='${formula(hash)}'`, 2);
+  if (records.length !== 1) return { ok:false, status:404, code:"PREVIEW_NOT_FOUND" };
+  return validateGrantRecord(records[0], clientId);
+}
+async function resolveGrantById(env, grantId, clientId) {
+  const records = await list(env, env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS || DEFAULT_GRANTS, `{grant_id}='${formula(grantId)}'`, 2);
+  if (records.length !== 1) return { ok:false, status:404, code:"PREVIEW_NOT_FOUND" };
+  return validateGrantRecord(records[0], clientId);
+}
+async function rotatePreviewToken(env, recordId, rawToken) {
+  const hash = await sha256(rawToken);
+  const response = await airtable(env, env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS || DEFAULT_GRANTS, recordId, {
+    method:"PATCH",
+    headers:{ "content-type":"application/json" },
+    body:JSON.stringify({ fields:{ preview_token_hash:hash, signed_url_status:"not_issued" }, typecast:false }),
+  });
+  if (!response.ok) throw new Error("preview_resume_write_failed");
+  const result = await response.json();
+  if (result.id !== recordId || result.fields?.preview_token_hash !== hash) throw new Error("preview_resume_write_unconfirmed");
 }
 async function readAsset(env, id, kind, modelId, accessLane = "private_preview") {
   const record = await get(env, env.AIRTABLE_TABLE_MODEL_MEDIA_ASSETS || env.AIRTABLE_TABLE_MODEL_MEDIA || DEFAULT_MEDIA, id);

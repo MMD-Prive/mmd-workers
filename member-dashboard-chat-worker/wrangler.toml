@@ -466,6 +466,11 @@ LINE_KENJI_MODEL_ENABLED = "false"
 # GWs/EMs remain default-deny unless one current Per approval matches this exact
 # verified client and Model. LLM generation remains separately disabled below.
 LINE_KENJI_MODEL_ACCESS_ENABLED = "true"
+# SVIP exact-customer approved-photo reveal rollout:
+# off = no new behavior; dry_run = owner receipt only/no grants/no LINE;
+# pilot = real LINE only for approved SHA-256 tester hashes; live = eligible SVIP customers.
+KENJI_SVIP_PHOTO_REVEAL_MODE = "off"
+KENJI_SVIP_PHOTO_REVEAL_PILOT_HASHES = ""
 LINE_CARD_21829530_LEAD_ENABLED = "false"
 LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR = "true"
 LINE_CARD_21829530_PILOT_HASHES = ""
@@ -495,6 +500,10 @@ class_name = "KenjiModelIdempotency"
 name = "KENJI_SHADOW_RECEIPT"
 class_name = "KenjiShadowReceipt"
 
+[[durable_objects.bindings]]
+name = "SVIP_PHOTO_REVEAL_MODE_AUDIT"
+class_name = "SvipPhotoRevealModeAudit"
+
 [[migrations]]
 tag = "v1-kenji-model-idempotency"
 new_sqlite_classes = ["KenjiModelIdempotency"]
@@ -502,6 +511,10 @@ new_sqlite_classes = ["KenjiModelIdempotency"]
 [[migrations]]
 tag = "v2-kenji-conversation-shadow-receipt"
 new_sqlite_classes = ["KenjiShadowReceipt"]
+
+[[migrations]]
+tag = "v3-svip-photo-reveal-mode-audit"
+new_sqlite_classes = ["SvipPhotoRevealModeAudit"]
 
 # Full CARE BACK staging front gate. No production routes are inherited into
 # named environments; this Worker is reachable only on its workers.dev URL.
