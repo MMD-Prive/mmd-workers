@@ -2,6 +2,7 @@ import { createConfirmTokenRecord, getConfirmTokenTtlSeconds, signConfirmToken }
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_REISSUE_PATH = "/v1/internal/confirm/reissue";
+export const CONFIRM_MODEL_REISSUE_PATH = "/v1/internal/confirm/reissue-model";
 
 const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
@@ -73,6 +74,11 @@ async function findSingle(env, table, fieldName, value) {
 export function isConfirmationReissueRequest(path, method) {
   return String(method || "").toUpperCase() === "POST"
     && String(path || "").replace(/\/+$/g, "") === CONFIRM_REISSUE_PATH;
+}
+
+export function isModelConfirmationReissueRequest(path, method) {
+  return String(method || "").toUpperCase() === "POST"
+    && String(path || "").replace(/\/+$/g, "") === CONFIRM_MODEL_REISSUE_PATH;
 }
 
 export async function handleConfirmationReissue(request, env = {}) {
@@ -159,5 +165,81 @@ export async function handleConfirmationReissue(request, env = {}) {
     });
   } catch (error) {
     return json({ ok: false, error: clean(error?.message || "confirmation_reissue_failed", 160) }, Number(error?.status || 500));
+  }
+}
+
+export async function handleModelConfirmationReissue(request, env = {}) {
+  if (!authed(request, env)) return json({ ok: false, error: "service_auth_required" }, 401);
+
+  const body = await request.json().catch(() => null);
+  const sessionId = clean(body?.session_id, 220);
+  if (!sessionId || Object.keys(body || {}).some((key) => key !== "session_id")) {
+    return json({ ok: false, error: "session_id_required" }, 400);
+  }
+
+  try {
+    const sessionsTable = clean(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", 160);
+    const paymentsTable = clean(env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", 160);
+    const session = await findSingle(env, sessionsTable, "session_id", sessionId);
+    if (!session?.id) return json({ ok: false, error: "session_not_found" }, 404);
+
+    const paymentRef = clean(session.fields?.[SESSION_FIELDS.paymentRef], 220);
+    if (!paymentRef) return json({ ok: false, error: "session_payment_ref_missing" }, 409);
+
+    const payment = await findSingle(env, paymentsTable, "payment_ref", paymentRef);
+    if (!payment?.id) return json({ ok: false, error: "payment_not_found" }, 409);
+
+    const paymentType = clean(
+      payment.fields?.[PAYMENT_FIELDS.paymentStage] || payment.fields?.[PAYMENT_FIELDS.paymentType] || "deposit",
+      80,
+    ).toLowerCase();
+    if (!new Set(["deposit", "full", "final", "tips"]).has(paymentType)) {
+      return json({ ok: false, error: "payment_type_not_reissuable" }, 409);
+    }
+
+    const secret = clean(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY, 5000);
+    if (!secret) return json({ ok: false, error: "confirmation_signing_not_ready" }, 503);
+
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const expiresAt = issuedAt + getConfirmTokenTtlSeconds(env);
+    const modelClaims = {
+      kind: "model_confirm",
+      role: "model",
+      session_id: sessionId,
+      payment_ref: paymentRef,
+      payment_type: paymentType,
+      iat: issuedAt,
+      exp: expiresAt,
+    };
+    const modelToken = await signConfirmToken(modelClaims, secret);
+    await createConfirmTokenRecord(env, modelToken, modelClaims);
+
+    const base = clean(env.WEB_BASE_URL || "https://mmdbkk.com", 500).replace(/\/+$/, "");
+    const modelUrl = `${base}/sigil/confirm/job-model?t=${encodeURIComponent(modelToken)}`;
+
+    await airtable(env, `${encodeURIComponent(sessionsTable)}/${encodeURIComponent(session.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        fields: {
+          [SESSION_FIELDS.modelUrl]: modelUrl,
+        },
+        typecast: false,
+      }),
+    });
+
+    return json({
+      ok: true,
+      schema: "mmd_model_confirmation_reissue_v1",
+      session_id: sessionId,
+      payment_ref: paymentRef,
+      payment_type: paymentType,
+      expires_at: expiresAt,
+      model_confirmation_url: modelUrl,
+      customer_confirmation_url_mutated: false,
+      payment_state_mutated: false,
+      notification_sent: false,
+    });
+  } catch (error) {
+    return json({ ok: false, error: clean(error?.message || "model_confirmation_reissue_failed", 160) }, Number(error?.status || 500));
   }
 }
