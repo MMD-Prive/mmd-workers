@@ -133,6 +133,23 @@ test("admin-safe avatar summary never exposes raw LINE User ID", () => {
   assert.equal(Object.hasOwn(item, "line_user_id"), false);
 });
 
+test("selected-job hold is surfaced as a Per Invite without exposing LINE User ID", () => {
+  const item = safeClaimSummaryWithAvatar({
+    fields: {
+      claim_id: "model_line_aaaaaaaaaaaaaaaaaaaaaaaa",
+      line_user_id: "U0123456789abcdef0123456789abcdef",
+      line_user_id_hash: "12345678abcdef00",
+      line_display_name: "Film J",
+      claim_status: "verified_unlinked",
+      verified_at: "2026-09-30T12:00:00.000Z",
+      safe_note: '[MMD_SELECTED_MODEL_HOLD_V1] {"version":1,"session_id":"sess_mu8oo9ao_a97c529604a34602","expected_model_id":null,"observed_model_id":null,"state":"owner_confirmation_required"}',
+    },
+  });
+  assert.equal(item.source_group, "per_invite");
+  assert.equal(item.selected_session_id, "sess_mu8oo9ao_a97c529604a34602");
+  assert.equal(Object.hasOwn(item, "line_user_id"), false);
+});
+
 test("model-link recruitment groups use explicit channel fields and fail closed to Unknown", () => {
   assert.equal(modelLineLinkOriginGroup({ recruitment_channel: "Public Board" }), "public_board");
   assert.equal(modelLineLinkOriginGroup({ application_channel: "กระดานข่าว Private" }), "private_board");
@@ -225,6 +242,9 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /กระดานข่าว Private/);
   assert.match(html, /Social Media/);
   assert.match(html, /Per Invite/);
+  assert.match(html, /รอพี่เปอร์ยืนยันคนนี้/);
+  assert.match(html, /selected_session_id/);
+  assert.match(html, /สร้าง Model \+ ยืนยันคนนี้ \+ ผูกเข้ากับงานสำเร็จแล้ว/);
   assert.match(html, /Unknown/);
   assert.match(html, /class="claim-workflow"/);
   assert.match(html, /searchFailureMessage/);

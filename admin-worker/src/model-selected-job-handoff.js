@@ -1,13 +1,13 @@
-import {
-  bindCanonicalModelLineFromTrustedSelection,
-  normalizeActivationEnvironment,
-} from "./model-first-time-activation.js";
+import { normalizeActivationEnvironment } from "./model-first-time-activation.js";
+import { captureVerifiedModelLineClaimForOwnerReview } from "./model-liff-manual-review-worker.js";
 
 export const MODEL_SELECTED_JOB_HANDOFF_PATH = "/v1/model/selected-job/handoff";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const SESSIONS_TABLE_DEFAULT = "tblC98mKWbzmPuNzX";
 const CANONICAL_MODEL_FIELD = "fldrXQAyOMPCvbOaY";
+const SESSION_NOTES_FIELD = "fldwl9Gs5tYlXG5ls";
+const SELECTED_HOLD_MARKER = "[MMD_SELECTED_MODEL_HOLD_V1]";
 const SESSION_RE = /^sess_[A-Za-z0-9._-]{8,180}$/;
 const MODEL_RECORD_RE = /^rec[A-Za-z0-9]{14,24}$/;
 const ALLOWED_BODY_KEYS = new Set(["session_id", "idToken", "id_token", "environment"]);
@@ -20,7 +20,7 @@ function json(value, status = 200, extraHeaders = null) {
   const headers = new Headers({
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store, private",
-    "x-mmd-model-selected-job-handoff": "v2",
+    "x-mmd-model-selected-job-handoff": "v3-owner-confirm",
     "x-robots-tag": "noindex, nofollow",
   });
   if (extraHeaders) {
@@ -80,7 +80,7 @@ async function readSession(env, sessionId) {
   if (!response.ok) return { ok:false, status:response.status >= 500 ? 503 : 500, error:"session_lookup_failed" };
   const rows = Array.isArray(data.records) ? data.records : [];
   if (rows.length !== 1) return { ok:false, status:rows.length ? 409 : 404, error:rows.length ? "session_ambiguous" : "session_not_found" };
-  return { ok:true, record:rows[0] };
+  return { ok:true, record:rows[0], table, baseId, apiKey };
 }
 
 function canonicalModelIds(record) {
@@ -105,10 +105,94 @@ function safeModelConfirmationUrl(value) {
   }
 }
 
-async function selectedBindingJti(sessionId) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(sessionId || "")));
-  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `selected_job_${hex.slice(0, 32)}`;
+function parseSelectedHold(notes = "") {
+  const lines = String(notes || "").split(/\r?\n/);
+  const line = lines.find((item) => item.startsWith(SELECTED_HOLD_MARKER));
+  if (!line) return null;
+  try {
+    const parsed = JSON.parse(line.slice(SELECTED_HOLD_MARKER.length).trim());
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSelectedHold(env, session, payload) {
+  const record = session?.record;
+  if (!record?.id) return { ok:false, status:503, error:"selected_job_hold_session_missing" };
+  const current = clean(record?.fields?.[SESSION_NOTES_FIELD], 12000);
+  const markerPayload = {
+    version: 1,
+    session_id: clean(payload.session_id, 220),
+    claim_id: clean(payload.claim_id, 120),
+    line_ref: clean(payload.line_ref, 20),
+    expected_model_id: MODEL_RECORD_RE.test(clean(payload.expected_model_id, 60)) ? clean(payload.expected_model_id, 60) : null,
+    observed_model_id: MODEL_RECORD_RE.test(clean(payload.observed_model_id, 60)) ? clean(payload.observed_model_id, 60) : null,
+    state: "owner_confirmation_required",
+    captured_at: new Date().toISOString(),
+  };
+  const marker = `${SELECTED_HOLD_MARKER} ${JSON.stringify(markerPayload)}`;
+  const kept = current
+    .split(/\r?\n/)
+    .filter((line) => line && !line.startsWith(SELECTED_HOLD_MARKER));
+  const next = [marker, ...kept].join("\n").slice(0, 4000);
+
+  const response = await fetch(
+    `${AIRTABLE_API}/${encodeURIComponent(session.baseId)}/${encodeURIComponent(session.table)}/${encodeURIComponent(record.id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${session.apiKey}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ fields: { [SESSION_NOTES_FIELD]: next }, typecast: false }),
+    },
+  );
+  if (!response.ok) return { ok:false, status:503, error:"selected_job_hold_write_failed" };
+  return { ok:true, marker:markerPayload };
+}
+
+async function selectedOwnerHold(env, session, {
+  sessionId,
+  idToken,
+  environment,
+  expectedModelId = "",
+  observedModelId = "",
+} = {}) {
+  const safeNote = `${SELECTED_HOLD_MARKER} ${JSON.stringify({
+    version: 1,
+    session_id: sessionId,
+    expected_model_id: MODEL_RECORD_RE.test(expectedModelId) ? expectedModelId : null,
+    observed_model_id: MODEL_RECORD_RE.test(observedModelId) ? observedModelId : null,
+    state: "owner_confirmation_required",
+  })}`;
+
+  const claim = await captureVerifiedModelLineClaimForOwnerReview(env, {
+    idToken,
+    environment,
+    safe_note: safeNote,
+  });
+  if (!claim.ok) {
+    return { ok:false, status:claim.status || 503, error:claim.error || "selected_job_identity_capture_failed" };
+  }
+
+  const hold = await writeSelectedHold(env, session, {
+    session_id: sessionId,
+    claim_id: claim.claim_id,
+    line_ref: claim.line_ref,
+    expected_model_id: expectedModelId,
+    observed_model_id: observedModelId,
+  });
+  if (!hold.ok) return hold;
+
+  return {
+    ok:true,
+    claim_id:claim.claim_id,
+    line_ref:claim.line_ref,
+    claim_status:claim.claim_status,
+    matching_model_ids:claim.matching_model_ids || [],
+  };
 }
 
 async function resolveModelFromExistingSession(request, coreFetch) {
@@ -129,47 +213,50 @@ async function resolveModelFromExistingSession(request, coreFetch) {
   return { ok:true, status:200, model_record_id:modelRecordId, set_cookie:"" };
 }
 
-async function resolveModelFromLineSelection(request, env, coreFetch, {
-  sessionId,
-  expectedModelId,
-  idToken,
-  environment,
-}) {
-  const binding = await bindCanonicalModelLineFromTrustedSelection(env, {
-    model_record_id: expectedModelId,
-    idToken,
-    environment,
-    jti: await selectedBindingJti(sessionId),
-    exp: Math.floor(Date.now() / 1000) + 10 * 60,
-  });
-  if (!binding.ok) {
-    const status = binding.status === 400 ? 409 : (binding.status || 409);
-    return { ok:false, status, error:binding.error || "selected_model_line_binding_failed" };
+async function resolveLineExchange(request, coreFetch, { idToken, environment }) {
+  const exchange = await coreFetch(forwardedExchangeRequest(request, { idToken, environment }));
+  const body = await exchange.clone().json().catch(() => null);
+  const modelRecordId = clean(body?.model?.id || body?.profile?.id, 160);
+  return {
+    ok: exchange.ok && body?.ok === true && MODEL_RECORD_RE.test(modelRecordId),
+    status: exchange.status,
+    error: clean(body?.error, 120) || "",
+    state: clean(body?.state, 120) || "",
+    claim_id: clean(body?.claim_id, 120) || "",
+    model_record_id: MODEL_RECORD_RE.test(modelRecordId) ? modelRecordId : "",
+    set_cookie: clean(exchange.headers.get("set-cookie"), 12000),
+  };
+}
+
+async function reissueModelConfirmation(env, sessionId) {
+  const internalToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS, 5000);
+  if (!internalToken || typeof env.PAYMENTS_WORKER?.fetch !== "function") {
+    return { ok:false, status:503, error:"confirmation_reissue_not_ready" };
   }
 
-  const exchange = await coreFetch(forwardedExchangeRequest(request, { idToken, environment }));
-  const exchangeBody = await exchange.clone().json().catch(() => null);
-  if (!exchange.ok || exchangeBody?.ok !== true) {
-    const status = exchange.status === 401 || exchange.status === 403 || exchange.status === 409
-      ? exchange.status
-      : 503;
+  const reissue = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.internal/v1/internal/confirm/reissue-model", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-token": internalToken,
+    },
+    body: JSON.stringify({ session_id: sessionId }),
+  }));
+  const result = await reissue.json().catch(() => null);
+  if (!reissue.ok || result?.ok !== true) {
     return {
       ok:false,
-      status,
-      error:clean(exchangeBody?.error, 120) || "model_session_exchange_failed",
+      status:reissue.status >= 400 ? reissue.status : 503,
+      error:clean(result?.error, 120) || "confirmation_reissue_failed",
     };
   }
 
-  const modelRecordId = clean(exchangeBody?.model?.id || exchangeBody?.profile?.id, 160);
-  if (!MODEL_RECORD_RE.test(modelRecordId)) {
-    return { ok:false, status:403, error:"model_identity_not_ready" };
-  }
-
+  const redirectUrl = safeModelConfirmationUrl(result.model_confirmation_url);
+  if (!redirectUrl) return { ok:false, status:503, error:"model_confirmation_url_invalid" };
   return {
     ok:true,
-    status:200,
-    model_record_id:modelRecordId,
-    set_cookie:clean(exchange.headers.get("set-cookie"), 12000),
+    redirect_url:redirectUrl,
+    expires_at:result.expires_at || null,
   };
 }
 
@@ -198,52 +285,81 @@ export async function handleModelSelectedJobHandoff(request, env = {}, coreFetch
   if (!session.ok) return json({ ok:false, error:session.error }, session.status);
 
   const canonicalIds = canonicalModelIds(session.record);
-  if (canonicalIds.length !== 1 || !MODEL_RECORD_RE.test(canonicalIds[0])) {
-    return json({ ok:false, error:"selected_job_model_unresolved" }, 409);
-  }
-  const expectedModelId = canonicalIds[0];
+  const canonicalResolved = canonicalIds.length === 1 && MODEL_RECORD_RE.test(canonicalIds[0]);
+  const expectedModelId = canonicalResolved ? canonicalIds[0] : "";
 
   const idToken = clean(body?.idToken || body?.id_token, 8000);
   const environment = normalizeActivationEnvironment(body?.environment);
-  const identity = idToken
-    ? await resolveModelFromLineSelection(request, env, coreFetch, {
+
+  let identity;
+  if (idToken) {
+    const exchange = await resolveLineExchange(request, coreFetch, { idToken, environment });
+
+    if (canonicalResolved && exchange.ok && exchange.model_record_id === expectedModelId) {
+      identity = {
+        ok:true,
+        model_record_id:exchange.model_record_id,
+        set_cookie:exchange.set_cookie,
+      };
+    } else {
+      const hold = await selectedOwnerHold(env, session, {
         sessionId,
-        expectedModelId,
         idToken,
         environment,
-      })
-    : await resolveModelFromExistingSession(request, coreFetch);
+        expectedModelId,
+        observedModelId:exchange.model_record_id,
+      });
+      if (!hold.ok) {
+        if (exchange.status === 401 || exchange.error === "invalid_line_id_token" || exchange.error === "line_id_token_invalid") {
+          return json({ ok:false, error:exchange.error || hold.error }, exchange.status || hold.status || 401);
+        }
+        return json({ ok:false, error:hold.error }, hold.status || 503);
+      }
 
-  if (!identity.ok) return json({ ok:false, error:identity.error }, identity.status);
-  if (identity.model_record_id !== expectedModelId) {
-    return json({ ok:false, error:"selected_job_forbidden" }, 403);
+      return json({
+        ok:false,
+        state:"owner_confirmation_required",
+        error:"selected_model_owner_confirmation_required",
+        session_id:sessionId,
+        claim_id:hold.claim_id,
+        message:"ส่งให้พี่เปอร์แล้ว เดี๋ยวเปิดงานให้ครับ",
+        retryable:true,
+      }, 202);
+    }
+  } else {
+    if (!canonicalResolved) {
+      return json({
+        ok:false,
+        state:"owner_confirmation_required",
+        error:"selected_model_owner_confirmation_required",
+        session_id:sessionId,
+        reopen_in_line:true,
+      }, 409);
+    }
+    identity = await resolveModelFromExistingSession(request, coreFetch);
+    if (!identity.ok) return json({ ok:false, error:identity.error }, identity.status);
+    if (identity.model_record_id !== expectedModelId) {
+      return json({
+        ok:false,
+        state:"owner_confirmation_required",
+        error:"selected_model_owner_confirmation_required",
+        session_id:sessionId,
+        reopen_in_line:true,
+      }, 409);
+    }
   }
 
-  const internalToken = clean(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS, 5000);
-  if (!internalToken || typeof env.PAYMENTS_WORKER?.fetch !== "function") {
-    return json({ ok:false, error:"confirmation_reissue_not_ready" }, 503);
-  }
-
-  const reissue = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.internal/v1/internal/confirm/reissue-model", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-internal-token": internalToken,
-    },
-    body: JSON.stringify({ session_id: sessionId }),
-  }));
-  const result = await reissue.json().catch(() => null);
-  if (!reissue.ok || result?.ok !== true) {
-    return json({ ok:false, error:clean(result?.error, 120) || "confirmation_reissue_failed" }, reissue.status >= 400 ? reissue.status : 503);
-  }
-
-  const redirectUrl = safeModelConfirmationUrl(result.model_confirmation_url);
-  if (!redirectUrl) return json({ ok:false, error:"model_confirmation_url_invalid" }, 503);
+  const confirmation = await reissueModelConfirmation(env, sessionId);
+  if (!confirmation.ok) return json({ ok:false, error:confirmation.error }, confirmation.status);
 
   return json({
     ok:true,
     session_id:sessionId,
-    redirect_url:redirectUrl,
-    expires_at:result.expires_at || null,
+    redirect_url:confirmation.redirect_url,
+    expires_at:confirmation.expires_at,
   }, 200, identity.set_cookie ? { "set-cookie": identity.set_cookie } : null);
+}
+
+export function selectedModelHoldFromSession(record = {}) {
+  return parseSelectedHold(record?.fields?.[SESSION_NOTES_FIELD]);
 }

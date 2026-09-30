@@ -98,12 +98,22 @@ export function modelLiffDigitalBootstrapHtml({
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
     status.textContent="กำลังเปิดงานนี้…";
-    var selected=await fetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession},idToken:idToken,environment:${safeEnvironment}})});
-    var selectedBody=await selected.json().catch(function(){return null});
-    if(!selected.ok||!selectedBody||selectedBody.ok!==true||!selectedBody.redirect_url)throw new Error(selectedBody&&selectedBody.error||"selected_job_handoff_failed");
-    var destination=new URL(String(selectedBody.redirect_url),"https://mmdbkk.com");
-    if(destination.origin!=="https://mmdbkk.com"||destination.pathname!=="/sigil/confirm/job-model"||!destination.searchParams.get("t"))throw new Error("selected_job_redirect_invalid");
-    window.location.replace(destination.pathname+destination.search);return;` : "";
+    for(var selectedAttempt=0;selectedAttempt<60;selectedAttempt+=1){
+      var selected=await fetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession},idToken:idToken,environment:${safeEnvironment}})});
+      var selectedBody=await selected.json().catch(function(){return null});
+      if(selected.status===202&&selectedBody&&selectedBody.state==="owner_confirmation_required"){
+        pill.textContent="รอพี่เปอร์";
+        status.textContent=selectedBody.message||"ส่งให้พี่เปอร์แล้ว เดี๋ยวเปิดงานให้ครับ";
+        detail.textContent="หน้านี้เปิดค้างไว้ได้ครับ พอยืนยันแล้วระบบจะพาเข้าไปที่งานนี้ให้เอง";
+        await new Promise(function(resolve){setTimeout(resolve,5000)});
+        continue;
+      }
+      if(!selected.ok||!selectedBody||selectedBody.ok!==true||!selectedBody.redirect_url)throw new Error(selectedBody&&selectedBody.error||"selected_job_handoff_failed");
+      var destination=new URL(String(selectedBody.redirect_url),"https://mmdbkk.com");
+      if(destination.origin!=="https://mmdbkk.com"||destination.pathname!=="/sigil/confirm/job-model"||!destination.searchParams.get("t"))throw new Error("selected_job_redirect_invalid");
+      window.location.replace(destination.pathname+destination.search);return;
+    }
+    throw new Error("selected_job_owner_confirmation_timeout");` : "";
   const primary = mode === "primary";
   const jobBoardMode = Boolean(safeJobBoard);
   const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : "";

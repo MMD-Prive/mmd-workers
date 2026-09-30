@@ -97,6 +97,63 @@ async function handleOwnerReviewedExchange(request, env, ctx) {
   }, 202, request, env);
 }
 
+
+export async function captureVerifiedModelLineClaimForOwnerReview(env = {}, input = {}) {
+  const idToken = clean(input.idToken || input.id_token);
+  const environment = normalizeLineEnvironment(input.environment);
+  if (!idToken) return { ok: false, status: 400, error: "id_token_required" };
+
+  const channelId = resolveLineChannelId(env, environment);
+  const lineIdentity = await verifyLineIdToken(idToken, channelId);
+  if (!lineIdentity.ok) return lineIdentity;
+
+  const lineUserId = clean(lineIdentity.profile?.sub);
+  if (!isCanonicalLineUserId(lineUserId)) {
+    return { ok: false, status: 401, error: "line_identity_invalid" };
+  }
+
+  const existing = await findModelsByLineUserId(env, lineUserId);
+  if (!existing.ok) {
+    return { ok: false, status: existing.status || 503, error: "model_lookup_unavailable" };
+  }
+
+  const nowIso = new Date().toISOString();
+  const lineHash = await sha256Hex(lineUserId);
+  const lineDisplayName = clean(lineIdentity.profile?.name).slice(0, 160);
+  const linePictureUrl = normalizeLinePictureUrl(lineIdentity.profile?.picture);
+  const status = existing.records.length > 1 ? "conflict" : "verified_unlinked";
+  const safeNote = clean(input.safe_note || input.safeNote).slice(0, 1000)
+    || (existing.records.length > 1
+      ? "Verified LINE identity matched multiple Model records; explicit owner confirmation required."
+      : "Verified LINE identity captured for explicit owner confirmation.");
+
+  const claim = await upsertIdentityClaim(env, {
+    lineUserId,
+    lineHash,
+    lineDisplayName,
+    linePictureUrl,
+    environment,
+    status,
+    nowIso,
+    safeNote,
+  });
+  if (!claim.ok) {
+    return { ok: false, status: claim.status || 503, error: "identity_claim_unavailable" };
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    claim_id: clean(claim.record?.fields?.claim_id) || `model_line_${lineHash.slice(0, 24)}`,
+    claim_status: status,
+    line_user_id: lineUserId,
+    line_ref: lineHash.slice(0, 8),
+    line_display_name: lineDisplayName,
+    line_picture_url: linePictureUrl,
+    matching_model_ids: existing.records.map((record) => clean(record?.id)).filter(Boolean),
+  };
+}
+
 async function findModelsByLineUserId(env, lineUserId) {
   const fields = [...new Set([clean(env.AT_MODELS__LINE_USER_ID), "line_user_id", "LINE User ID"].filter(Boolean))];
   const records = new Map();
