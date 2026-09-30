@@ -1,5 +1,6 @@
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
+import { runHypeJobDailyScheduled } from "./hype-job-daily/runner.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { observeGenuineLiffAcceptance } from "./membership-genuine-liff-acceptance-observer.js";
@@ -80,6 +81,7 @@ import {
   isAdminShopOperationsPageRequest,
 } from "./mmd-shop-operations-admin.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
+export { HypeJobDailyRunState } from "./hype-job-daily/run-state-do.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
@@ -207,6 +209,10 @@ coreWorker.fetch(request, env, ctx)
 export default {
   async scheduled(event, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    // HYPE_JOB_DAILY is isolated: it never rejects and never blocks the jobs below. Default off.
+    const hypeJobDaily = runHypeJobDailyScheduled(runtimeEnv, event);
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(hypeJobDaily);
+    else await hypeJobDaily;
     await drainApprovedJobLinkNotifications(runtimeEnv);
     await reconcilePendingMembershipRecoveries(runtimeEnv);
     await observeGenuineLiffAcceptance(runtimeEnv);
