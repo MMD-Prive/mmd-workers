@@ -17,22 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Verify exact returned Models and public-safe media
+      - name: Verify customer search privacy and canonical entitlement gate
         shell: bash
         env:
           BASE_URL: https://sigil.mmdbkk.com
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
-          const cases = [
-            { q: "Atom IX", modelId: "reccoIEmIticuALwb", minMedia: 8 },
-            { q: "Book EI", modelId: "recj1SiBHrrGOBr8K", minMedia: 4 },
+          const protectedCases = [
+            { q: "Atom IX", modelId: "reccoIEmIticuALwb" },
+            { q: "Book EI", modelId: "recj1SiBHrrGOBr8K" },
           ];
 
-          const allowedMediaTypes = new Set(["profile_photo", "public_gallery", "intro_video"]);
-          const forbiddenRole = /private|flash|sensitive/i;
-
-          for (const testCase of cases) {
+          for (const testCase of protectedCases) {
             const url = new URL("/sigil/api/models/search", process.env.BASE_URL);
             url.searchParams.set("q", testCase.q);
             url.searchParams.set("scope", "booking");
@@ -41,108 +38,76 @@ jobs:
               headers: {
                 Origin: "https://mmdbkk.com",
                 Accept: "application/json",
-                "User-Agent": "mmd-app-sigil-production-acceptance/1",
+                "User-Agent": "mmd-app-sigil-production-acceptance/2",
               },
             });
-
             const text = await response.text();
             if (response.status !== 200) {
-              throw new Error(`${testCase.q}: search HTTP ${response.status}: ${text.slice(0, 500)}`);
+              throw new Error(`${testCase.q}: booking discovery HTTP ${response.status}: ${text.slice(0, 500)}`);
             }
 
             const body = JSON.parse(text);
             if (body?.ok !== true) throw new Error(`${testCase.q}: ok=true required`);
-            const models = Array.isArray(body.items) ? body.items : [];
-            const model = models.find((item) =>
-              item?.model_id === testCase.modelId || item?.model_record_id === testCase.modelId
-            ) || (body?.model?.model_id === testCase.modelId ? body.model : null);
-
-            if (!model) {
-              throw new Error(`${testCase.q}: canonical model ${testCase.modelId} not returned`);
+            if (body?.visibility_enforced !== true) {
+              throw new Error(`${testCase.q}: visibility_enforced=true required`);
             }
 
-            if (!/^media_[a-f0-9-]{32,36}$/i.test(String(model.primary_media_id || ""))) {
-              throw new Error(`${testCase.q}: approved primary_media_id missing`);
-            }
-
-            const storageKeys = ["r2_key", "r2_prefix", "primary_image_key"];
-            for (const key of storageKeys) {
-              if (String(model[key] || "") !== "") {
-                throw new Error(`${testCase.q}: storage key leaked via ${key}`);
-              }
-            }
-
-            const media = [
-              ...(model.primary_media_id ? [{
-                media_id: model.primary_media_id,
-                media_type: String(model.primary_image_url || "").includes("/models/media/") ? "profile_photo" : "",
-                asset_role: "profile_main",
-                url: model.primary_image_url || model.public_image_url || model.cover_url || "",
-              }] : []),
-              ...(Array.isArray(model.additional_images) ? model.additional_images : []),
-              ...(Array.isArray(model.clips) ? model.clips : []),
+            const models = [
+              ...(Array.isArray(body.items) ? body.items : []),
+              ...(body.model ? [body.model] : []),
             ];
-
-            const uniqueMedia = new Map();
-            for (const asset of media) {
-              if (asset?.media_id) uniqueMedia.set(asset.media_id, asset);
+            if (models.some((item) => item?.model_id === testCase.modelId || item?.model_record_id === testCase.modelId)) {
+              throw new Error(`${testCase.q}: protected/private Model leaked without canonical customer entitlement`);
             }
 
-            if (uniqueMedia.size < testCase.minMedia) {
-              throw new Error(`${testCase.q}: expected at least ${testCase.minMedia} public media assets, got ${uniqueMedia.size}`);
-            }
-
-            for (const asset of uniqueMedia.values()) {
-              const mediaType = String(asset.media_type || "");
-              const role = String(asset.asset_role || "");
-              const assetUrl = String(asset.url || "");
-
-              if (mediaType && !allowedMediaTypes.has(mediaType)) {
-                throw new Error(`${testCase.q}: non-public media_type leaked: ${mediaType}`);
+            const serialized = JSON.stringify(body);
+            for (const forbidden of [
+              "private_original_key",
+              "drive_folder_id",
+              "drive_folder_url",
+              "r2_prefix",
+              "primary_image_key",
+              "private_real_name",
+            ]) {
+              if (serialized.includes(`"${forbidden}"`)) {
+                throw new Error(`${testCase.q}: forbidden customer storage/private field leaked: ${forbidden}`);
               }
-              if (forbiddenRole.test(role)) {
-                throw new Error(`${testCase.q}: private/sensitive role leaked: ${role}`);
-              }
-              if (!assetUrl.startsWith(process.env.BASE_URL + "/sigil/api/models/media/")) {
-                throw new Error(`${testCase.q}: media URL is not the public media route`);
-              }
-              if (/private_original_key|private_candidate|pending_review/i.test(JSON.stringify(asset))) {
-                throw new Error(`${testCase.q}: private/pending metadata leaked in media projection`);
-              }
-            }
-
-            const serialized = JSON.stringify(model);
-            if (/"private_original_key"\s*:/i.test(serialized)) {
-              throw new Error(`${testCase.q}: private_original_key field leaked`);
-            }
-            if (/"review_status"\s*:\s*"pending_review"/i.test(serialized)) {
-              throw new Error(`${testCase.q}: pending_review media leaked`);
-            }
-            if (/"media_visibility"\s*:\s*"private_candidate"/i.test(serialized)) {
-              throw new Error(`${testCase.q}: private_candidate media leaked`);
-            }
-
-            const primaryUrl = String(model.primary_image_url || model.public_image_url || "");
-            const mediaResponse = await fetch(primaryUrl, {
-              headers: {
-                Origin: "https://mmdbkk.com",
-                Range: "bytes=0-31",
-                "User-Agent": "mmd-app-sigil-production-acceptance/1",
-              },
-            });
-            if (![200, 206].includes(mediaResponse.status)) {
-              throw new Error(`${testCase.q}: public media route HTTP ${mediaResponse.status}`);
             }
 
             console.log(JSON.stringify({
               accepted: true,
               query: testCase.q,
-              model_id: testCase.modelId,
-              primary_media_id: model.primary_media_id,
-              public_media_count: uniqueMedia.size,
-              access_scope: body.access_scope || "",
-              member_status: body.member_status || "",
-              no_private_media_leak: true,
+              unauthenticated_private_model_hidden: true,
+              visibility_enforced: true,
             }));
           }
+
+          const privateUrl = new URL("/sigil/api/models/search", process.env.BASE_URL);
+          privateUrl.searchParams.set("q", "Atom IX");
+          privateUrl.searchParams.set("scope", "private");
+          privateUrl.searchParams.set("booking_ref", "production-acceptance-no-authority");
+
+          const privateResponse = await fetch(privateUrl, {
+            headers: {
+              Origin: "https://mmdbkk.com",
+              Accept: "application/json",
+              "User-Agent": "mmd-app-sigil-production-acceptance/2",
+            },
+          });
+          const privateText = await privateResponse.text();
+          if (privateResponse.status !== 200) {
+            throw new Error(`private fail-closed HTTP ${privateResponse.status}: ${privateText.slice(0, 500)}`);
+          }
+          const privateBody = JSON.parse(privateText);
+          if (privateBody?.ok !== true || privateBody?.blocked !== true) {
+            throw new Error("private search must remain blocked without a canonical entitlement snapshot");
+          }
+          if (Array.isArray(privateBody?.items) && privateBody.items.length) {
+            throw new Error("blocked private search must return no Model items");
+          }
+          console.log(JSON.stringify({
+            accepted: true,
+            private_search_without_entitlement: "blocked",
+            reason: privateBody.reason || "",
+          }));
           NODE

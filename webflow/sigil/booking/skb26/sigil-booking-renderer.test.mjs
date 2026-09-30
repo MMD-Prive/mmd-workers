@@ -80,10 +80,13 @@ test('customer Search UI requires backend visibility and carries budget, both-la
   assert.match(footer, /source:mode==='search'\?'sigil_search':'sigil_booking'/);
 });
 
-test('customer offer cards show backend-resolved price and approved extra media without Drive URLs', () => {
-  assert.match(footer, /item\.offer&&item\.offer\.price_visible/);
+test('customer offer cards label rates by duration and never imply the 90-minute rate applies to 120 minutes', () => {
+  assert.match(footer, /function durationOfferLabels\(item\)/);
+  assert.match(footer, /item\.offer&&item\.offer\.duration_offers/);
+  assert.match(footer, /m\+' นาที · '/);
+  assert.match(footer, /ให้ MMD ตรวจราคา/);
+  assert.match(footer, /qs\.set\('duration_minutes',v\('duration_minutes'\)\)/);
   assert.match(footer, /รูปเพิ่มเติมที่อนุมัติ/);
   assert.doesNotMatch(footer, /drive_folder_id/);
   assert.doesNotMatch(footer, /drive\.google\.com/);
-  assert.match(footer, /ราคาให้ MMD ตรวจ/);
 });
