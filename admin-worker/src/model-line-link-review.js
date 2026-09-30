@@ -1,3 +1,5 @@
+import { handleCanonicalLinkedJobCreate } from "./create-session-canonical-link-runtime.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLAIMS_TABLE_DEFAULT = "tbluoZ5JiRcoUP6WT";
 const MODELS_TABLE_DEFAULT = "Models";
@@ -70,7 +72,7 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
   if (!isModelLineLinkBindPayload(body)) return json({ ok: false, error: "unsupported_mode" }, 400);
   if (body.confirm !== true) return json({ ok: false, error: "explicit_confirmation_required" }, 400);
 
-  const allowedKeys = new Set(["mode", "claim_id", "model_record_id", "confirm"]);
+  const allowedKeys = new Set(["mode", "claim_id", "model_record_id", "selected_session_id", "confirm"]);
   for (const key of Object.keys(body)) {
     if (!allowedKeys.has(key)) return json({ ok: false, error: "unsupported_fields" }, 400);
   }
@@ -89,6 +91,14 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
   const claimStatus = clean(claimFields.claim_status);
   const lineUserId = clean(claimFields.line_user_id);
   const priorLinkedModel = linkedRecordId(claimFields["Linked Model"]);
+
+  const selectedContext = selectedJobContextFromSafeNote(claimFields.safe_note);
+  const selectedSessionId = clean(body.selected_session_id).slice(0, 220);
+  if (selectedSessionId) {
+    if (!selectedContext || selectedContext.session_id !== selectedSessionId) {
+      return json({ ok: false, error: "selected_job_claim_session_mismatch" }, 409);
+    }
+  }
 
   if (!isCanonicalLineUserId(lineUserId)) return json({ ok: false, error: "identity_claim_invalid" }, 409);
   if (claimStatus === "conflict") return json({ ok: false, error: "identity_claim_conflict_requires_review" }, 409);
@@ -136,6 +146,19 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
   }
   if (!binding.ok) return json({ ok: false, error: binding.error || "model_line_binding_failed" }, binding.status || 409);
 
+  let selectedJobLinkage = null;
+  if (selectedSessionId) {
+    const linked = await linkSelectedSessionModel(request, env, selectedSessionId, modelRecordId);
+    if (!linked.ok) {
+      return json({
+        ok: false,
+        error: linked.error || "selected_job_model_link_failed",
+        model_binding_idempotent: Boolean(binding.idempotent),
+      }, linked.status || 503);
+    }
+    selectedJobLinkage = linked.linkage;
+  }
+
   const nowIso = new Date().toISOString();
   const actorId = clean(actor?.id || actor?.email || "owner").slice(0, 80);
   const note = binding.recovered === true
@@ -162,8 +185,73 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
       drive_folder_url: candidate.drive_folder_url,
       folder_name: candidate.folder_name,
     },
-    next: "Model can retry the same LINE account and enter MMD MODEL.",
+    selected_job: selectedJobLinkage ? {
+      session_id: selectedSessionId,
+      session_linked: selectedJobLinkage.session_linked === true,
+      job_linked: selectedJobLinkage.job_linked === true,
+    } : null,
+    next: selectedJobLinkage
+      ? "Model can continue the same selected-job link."
+      : "Model can retry the same LINE account and enter MMD MODEL.",
   }, 200);
+}
+
+
+function selectedJobContextFromSafeNote(value) {
+  const raw = clean(value);
+  if (!raw) return null;
+  const marker = "[MMD_SELECTED_MODEL_HOLD_V1]";
+  const index = raw.indexOf(marker);
+  if (index < 0) return null;
+  const tail = raw.slice(index + marker.length).trim();
+  const line = tail.split(/\r?\n/, 1)[0];
+  try {
+    const parsed = JSON.parse(line);
+    const sessionId = clean(parsed?.session_id).slice(0, 220);
+    if (!/^sess_[A-Za-z0-9._-]{8,180}$/.test(sessionId)) return null;
+    return {
+      session_id: sessionId,
+      expected_model_id: clean(parsed?.expected_model_id).slice(0, 40),
+      observed_model_id: clean(parsed?.observed_model_id).slice(0, 40),
+      state: clean(parsed?.state).slice(0, 80),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function linkSelectedSessionModel(request, env, sessionId, modelRecordId) {
+  const url = new URL("/v1/admin/job/create", request.url);
+  const linkRequest = new Request(url.toString(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: url.origin,
+    },
+    body: JSON.stringify({
+      model_record_id: modelRecordId,
+      model: {
+        model_id: modelRecordId,
+        source: "owner_selected_job_confirmation",
+      },
+    }),
+  });
+  const downstream = {
+    async fetch() {
+      return json({ ok: true, session_id: sessionId }, 200);
+    },
+  };
+
+  const response = await handleCanonicalLinkedJobCreate(linkRequest, env, null, downstream);
+  const data = await response.clone().json().catch(() => ({}));
+  if (!response.ok || data?.linkage?.session_linked !== true || data?.linkage?.model_record_id !== modelRecordId) {
+    return {
+      ok: false,
+      status: response.ok ? 503 : response.status,
+      error: clean(data?.linkage?.warning || data?.error) || "selected_job_model_link_failed",
+    };
+  }
+  return { ok: true, status: 200, linkage: data.linkage };
 }
 
 export function renderModelLineLinkPage() {
