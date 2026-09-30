@@ -57,6 +57,10 @@ const RICH_MENU_RETURN_TARGETS = Object.freeze({
   "/profiles": new Set(["rich_menu_guest_models", "rich_menu_public_models"]),
   "/booking": new Set(["rich_menu_guest_booking", "rich_menu_public_booking"]),
   "/services/companion": new Set(["rich_menu_guest_services"]),
+  "/tmib/stories": new Set(["rich_menu_guest_stories"]),
+  "/sigil/member/membership": new Set(["rich_menu_prive_access"]),
+  "/sigil/booking": new Set(["rich_menu_model_cards", "rich_menu_private_booking"]),
+  // Transitional allowlist for already-issued pre-v4.9 links only.
   "/tmib": new Set(["rich_menu_guest_stories"]),
   "/member/private": new Set(["rich_menu_model_cards", "rich_menu_prive_update"]),
   "/find": new Set(["rich_menu_private_booking"]),
@@ -78,7 +82,7 @@ function safeStatusReturnTarget(value) {
     return `${path}?t=${encodeURIComponent(tokenValue)}`;
   }
   if (raw.length > 600) return "";
-  if (path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
+  if (TMIB_ACT_PATH.test(path)) {
     if ([...target.searchParams.keys()].length) return "";
     return `${path}${target.hash || ""}`;
   }
@@ -94,10 +98,21 @@ function safeStatusReturnTarget(value) {
   const allowedEntries = RICH_MENU_RETURN_TARGETS[path];
   if (!allowedEntries) return "";
   const keys = [...target.searchParams.keys()];
-  if (keys.some((key) => key !== "source" && key !== "entry_route")) return "";
-  if (target.searchParams.get("source") !== "line") return "";
   const entryRoute = String(target.searchParams.get("entry_route") || "").trim();
-  if (!allowedEntries.has(entryRoute)) return "";
+  if (!allowedEntries.has(entryRoute) || target.searchParams.get("source") !== "line") return "";
+
+  if (path === "/sigil/member/membership") {
+    if (keys.some((key) => !["intent", "source", "entry_route"].includes(key))) return "";
+    if (target.searchParams.get("intent") !== "signup") return "";
+  } else if (path === "/sigil/booking") {
+    if (keys.some((key) => !["mode", "scope", "source", "entry_route"].includes(key))) return "";
+    if (target.searchParams.get("scope") !== "private") return "";
+    const mode = target.searchParams.get("mode");
+    if (entryRoute === "rich_menu_model_cards" && mode !== "search") return "";
+    if (entryRoute === "rich_menu_private_booking" && mode !== "booking") return "";
+  } else {
+    if (keys.some((key) => key !== "source" && key !== "entry_route")) return "";
+  }
 
   const allowedHash = path === "/member/private"
     ? new Set(["", "#detail-model", "#access"])
