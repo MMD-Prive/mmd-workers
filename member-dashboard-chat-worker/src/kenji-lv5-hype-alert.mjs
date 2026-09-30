@@ -12,6 +12,14 @@ function routeForDecision(env = {}, decision = {}) {
   const source = text(decision?.reply_source, 120);
   const reason = text(decision?.handoff_reason, 500);
 
+  if (primary === "dry_run_owner_receipt" && /model_photo_reveal/i.test(reason)) {
+    return {
+      event: "svip_photo_reveal_dry_run",
+      flow: "alert",
+      thread_id: Number(env.TELEGRAM_ALERTS_THREAD_ID || env.TG_THREAD_ALERTS || 9) || 9,
+      action: "Dry-run only: gates resolved, no preview grant was created and no LINE message was sent. Review before moving to pilot/live.",
+    };
+  }
   if (/model_photo_reveal/i.test(reason) || (primary === "handoff_per" && /photo_reveal/i.test(reason))) {
     return {
       event: "svip_photo_reveal_review_required",
