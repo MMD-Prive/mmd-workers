@@ -1,7 +1,21 @@
 # SIGIL Booking SKB26 page code
 
-These two files are the repository source for the page-level freeform head and footer code on Webflow page `69dfc48bf362a5a92612f00a` (`/sigil/booking`). The active page contains `[data-skb25-root]`; the footer script installs SKB26 into that section. The separate `HtmlEmbed` with `#sigil-booking-kenji` is hidden legacy content and is not this renderer.
+Canonical route: `/sigil/booking`
 
-Provenance: the starting head `<style>` and footer `<script>` blocks were copied byte-for-byte from the published page HTML captured on 2026-09-26 at `https://www.mmdbkk.com/sigil/booking` (`/private/tmp/sigil-webflow-booking.html`). This branch then changes only those two extracted blocks for approved public media rendering and result-strip width. The captured page and Webflow `get_page_freeform_code` establish the owner; these files alone do not establish that Webflow has been updated or published.
+## Webflow placement
 
-When integrating, replace only the matching SKB26 `<style>` block inside the page's freeform head code and the matching SKB26 `<script>` block inside its freeform footer code, after reviewing the current Webflow values for drift. Preserve all other page-level and site-wide code, the page element tree, and the hidden legacy Embed. Publishing and production verification are separate steps.
+These files are the repository source for the page-level custom code on Webflow page `69dfc48bf362a5a92612f00a`.
+
+- `sigil-booking-head.html` → **Page Settings → Inside <head>**
+- `sigil-booking-footer.html` → **Page Settings → Before </body>**
+- The page Section `#sigil-booking-compact[data-skb25-root]` is the render root.
+
+Do not paste the combined head + footer runtime into the legacy HtmlEmbed. The combined code can exceed Webflow's HtmlEmbed character limit and, more importantly, duplicates the page-level script. The legacy HtmlEmbed should stay a harmless placeholder only.
+
+Before a Webflow update, compare the current page freeform code with the repo source for drift. Publishing and production verification are separate steps.
+
+## Authority
+
+SKB26 is presentation only. Entitlement, Model visibility, customer rate, approved media, protected Model access, payment, and final booking authority stay on the existing backend contracts.
+
+The frontend must preserve query parameter `t`, use the canonical `/sigil/api/*` contract, and must not create a second search/booking authority path.
