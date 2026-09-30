@@ -212,11 +212,18 @@ async function persistCanonicalAccess(env, payload, canonical) {
   const row = rows[0];
   if (!row?.id) return;
   const response = canonical.response;
+  const prior = parseJson(row?.fields?.resolver_payload_json);
   await airtablePatch(env, table, row.id, {
     member_status: response.member_status,
     access_scope: response.access_scope,
     "Private Allowed": response.can_search_private_models,
-    resolver_payload_json: JSON.stringify({ kind: "client_resolve", schema_version: canonical.snapshot.schema_version, entitlement_snapshot: canonical.snapshot, saved_at: new Date().toISOString() }),
+    resolver_payload_json: JSON.stringify({
+      ...prior,
+      kind: "client_resolve",
+      schema_version: canonical.snapshot.schema_version,
+      entitlement_snapshot: canonical.snapshot,
+      saved_at: new Date().toISOString(),
+    }),
   });
 }
 
