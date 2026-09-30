@@ -48,7 +48,8 @@ test("expired preview cannot be consumed", async () => {
 });
 
 function setup() {
-  const f=privateMediaFixture(),gate=new PrivatePreviewGate(f.state);
+  const f=privateMediaFixture(),gate=new PrivatePreviewGate(f.state, f.env);
+  f.previewGate = gate;
   f.env.PRIVATE_PREVIEW_GATE={idFromName:id=>id,get:()=>({fetch:async(input,init)=>f.gateFailure ? new Response(null,{status:f.gateFailure}) : gate.fetch(new Request(input,init))})};
   return f;
 }
@@ -312,8 +313,9 @@ function tokenWrites(f) {
   return f.writes.filter(write => write?.fields?.preview_token_hash);
 }
 
-test("concurrent resume requests share one bearer and never invalidate each other", async () => {
+test("concurrent resume requests share one in-flight Airtable write and one bearer", async () => {
   const f = resumeSetup();
+  f.patchDelayMs = 60;
   const [a, b, c] = await Promise.all([
     handlePrivatePreview(resumeReq(), f.env),
     handlePrivatePreview(resumeReq(), f.env),
@@ -329,6 +331,7 @@ test("concurrent resume requests share one bearer and never invalidate each othe
   assert.equal(tokenWrites(f).length, 1);
   const committed = await sha256Hex(tokens[0]);
   assert.equal(f.grant.fields.preview_token_hash, committed);
+  assert.equal(f.storage.get("active_resume")?.token, tokens[0]);
   assert.equal(f.storage.has("consumed"), false);
   assert.equal(f.audits.length, 0);
 });
@@ -453,49 +456,15 @@ async function sha256Hex(value) {
   return [...new Uint8Array(digest)].map(v => v.toString(16).padStart(2, "0")).join("");
 }
 
-test("a second resume waits for the in-flight rotation instead of minting a rival token", async () => {
-  const gate = new PrivatePreviewGate(stateMock());
-  const begin = () => gate.fetch(new Request("https://private-preview.internal/resume/begin?ttl=10000", {
-    method: "POST", headers: { "content-type": "application/json" },
-  }));
 
-  const owner = await (await begin()).json();
-  assert.equal(owner.mode, "rotate");
-  assert.match(owner.token, /^[a-f0-9]{64}$/);
+test("expired resume bearer is removed from DO storage", async () => {
+  const f = resumeSetup();
+  const response = await handlePrivatePreview(resumeReq(), f.env);
+  assert.equal(response.status, 303);
 
-  // The rival arrives while the owner is still writing to Airtable.
-  const rival = begin();
-  const pending = await Promise.race([rival.then(() => "settled"), new Promise(r => setTimeout(() => r("waiting"), 40))]);
-  assert.equal(pending, "waiting", "a concurrent resume must block on the owner, not mint its own token");
-
-  const commit = await gate.fetch(new Request("https://private-preview.internal/resume/commit", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rotationId: owner.rotation_id }),
-  }));
-  assert.equal(commit.status, 200);
-
-  const joined = await (await rival).json();
-  assert.equal(joined.mode, "reuse");
-  assert.equal(joined.token, owner.token);
-});
-
-test("an aborted rotation releases waiters closed and leaves no active bearer", async () => {
-  const gate = new PrivatePreviewGate(stateMock());
-  const begin = () => gate.fetch(new Request("https://private-preview.internal/resume/begin?ttl=10000", {
-    method: "POST", headers: { "content-type": "application/json" },
-  }));
-
-  const owner = await (await begin()).json();
-  const rival = begin();
-  await gate.fetch(new Request("https://private-preview.internal/resume/abort", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rotationId: owner.rotation_id }),
-  }));
-
-  const joined = await rival;
-  assert.equal(joined.status, 409);
-  assert.equal((await joined.json()).mode, "failed");
-
-  // The next attempt starts a clean rotation.
-  const retry = await (await begin()).json();
-  assert.equal(retry.mode, "rotate");
-  assert.notEqual(retry.token, owner.token);
+  const active = f.storage.get("active_resume");
+  assert.ok(active?.token);
+  f.storage.set("active_resume", { ...active, expiresAt: Date.now() - 1 });
+  await f.previewGate.alarm();
+  assert.equal(f.storage.has("active_resume"), false);
 });
