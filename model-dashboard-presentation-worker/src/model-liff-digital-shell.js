@@ -60,7 +60,7 @@ export function modelLiffDigitalBootstrapHtml({
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
     status.textContent="กำลังเปิดรายละเอียดงาน…";
-    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
+    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment},intent:"job_board",job_id:${JSON.stringify(safeJobBoard.job_id || "")}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true){
       if(${JSON.stringify(publicJobApplicant)}&&exchange.status===202&&exchangeBody&&exchangeBody.state==="identity_review_required"){
