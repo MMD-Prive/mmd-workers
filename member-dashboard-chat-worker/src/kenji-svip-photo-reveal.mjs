@@ -105,7 +105,7 @@ function perVoiceMessages(result = {}) {
     }];
     for (let index = 0; index < photos.length; index += 1) {
       const url = text(photos[index]?.viewer_url, 1200);
-      if (!/^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view#t=/.test(url)) continue;
+      if (!/^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view\?g=svip_photo_[A-Za-z0-9-]+#t=/.test(url)) continue;
       messages.push({
         type: "text",
         text: `รูป ${index + 1}/${photos.length}\n${url}`,
