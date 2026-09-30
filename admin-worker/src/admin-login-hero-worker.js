@@ -63,6 +63,11 @@ import {
 } from "./model-job-board-handoff.js";
 
 import {
+  handleModelSelectedJobHandoff,
+  isModelSelectedJobHandoffRequest,
+} from "./model-selected-job-handoff.js";
+
+import {
   handleAdminJobBoardPublish,
   isAdminJobBoardPublishRequest,
 } from "./job-board-owner-publish.js";
@@ -258,6 +263,14 @@ export default {
 
     if (isModelJobBoardHandoffRequest(normalizedPath, method)) {
       return handleModelJobBoardHandoff(
+        request,
+        runtimeEnv,
+        (profileRequest) => worker.fetch(profileRequest, runtimeEnv, ctx),
+      );
+    }
+
+    if (isModelSelectedJobHandoffRequest(normalizedPath, method)) {
+      return handleModelSelectedJobHandoff(
         request,
         runtimeEnv,
         (profileRequest) => worker.fetch(profileRequest, runtimeEnv, ctx),

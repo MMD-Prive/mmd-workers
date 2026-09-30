@@ -291,6 +291,88 @@ test("approved Model job link enters the published Mini App before opening signe
   assert.equal(new URL(modelMiniAppHandoffUrl(hostile)).searchParams.has("return_to"), false);
 });
 
+test("Telegram selected-job entry pauses on MMD and opens LINE with only the short Session id", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const payload = Buffer.from(JSON.stringify({
+    kind:"model_confirm",
+    role:"model",
+    session_id:"sess_mu8oo9ao_a97c529604a34602",
+    payment_ref:"pay_fixture",
+    exp:2_000_000_000,
+  })).toString("base64url");
+  const token = payload + ".fake-signature";
+  const target = "/sigil/confirm/job-model?t=" + token;
+  const entry = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?handoff=job-confirmed&return_to=${encodeURIComponent(target)}`,
+    { headers:{ "user-agent":"TelegramBot (like TwitterBot) Telegram iOS" } },
+  );
+
+  const response = await worker.fetch(entry);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-model-entry"), "external-selected-job-handoff-v1");
+  const html = await response.text();
+  assert.match(html, /เปิดงานนี้ใน LINE/);
+  assert.match(html, /ไม่ต้องสมัครใหม่/);
+  assert.match(html, /session_id=sess_mu8oo9ao_a97c529604a34602/);
+  assert.doesNotMatch(html, /fake-signature/);
+  assert.doesNotMatch(html, /return_to=/);
+});
+
+test("LINE selected-job entry skips the external handoff page and carries only Session id", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const payload = Buffer.from(JSON.stringify({
+    kind:"model_confirm",
+    role:"model",
+    session_id:"sess_mu8oo9ao_a97c529604a34602",
+    payment_ref:"pay_fixture",
+    exp:2_000_000_000,
+  })).toString("base64url");
+  const token = payload + ".fake-signature";
+  const target = "/sigil/confirm/job-model?t=" + token;
+  const entry = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?handoff=job-confirmed&return_to=${encodeURIComponent(target)}`,
+    { headers:{ "user-agent":"LINE/15.0.0 LIFF" } },
+  );
+
+  const response = await worker.fetch(entry);
+  assert.equal(response.status, 302);
+  const location = new URL(response.headers.get("location"));
+  assert.equal(location.origin, "https://miniapp.line.me");
+  assert.equal(location.searchParams.get("handoff"), "job-confirmed");
+  assert.equal(location.searchParams.get("session_id"), "sess_mu8oo9ao_a97c529604a34602");
+  assert.equal(location.searchParams.has("return_to"), false);
+  assert.equal(location.toString().includes("fake-signature"), false);
+});
+
+test("selected Session survives LINE OAuth and resolves through the Model-only backend handoff", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const state = "?handoff=job-confirmed&session_id=sess_mu8oo9ao_a97c529604a34602";
+  const first = await worker.fetch(new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?liff.state=${encodeURIComponent(state)}&access_token=opaque`,
+  ));
+  assert.equal(first.status, 200);
+  const cookies = first.headers.get("set-cookie") || "";
+  assert.match(cookies, /mmd_model_selected_job_session=/);
+
+  const html = await first.text();
+  assert.match(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
+  assert.match(html, /\/v1\/model\/liff\/exchange/);
+  assert.match(html, /\/v1\/model\/selected-job\/handoff/);
+  assert.match(html, /sess_mu8oo9ao_a97c529604a34602/);
+  assert.doesNotMatch(html, /MODEL ONBOARDING/);
+
+  const second = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    headers:{
+      cookie:"mmd_liff_boot=1; mmd_model_selected_job_session=sess_mu8oo9ao_a97c529604a34602",
+    },
+  }));
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get("x-mmd-model-entry"), "liff-primary-preboot-v1");
+  const resumed = await second.text();
+  assert.match(resumed, /\/v1\/model\/selected-job\/handoff/);
+  assert.doesNotMatch(resumed, /MODEL ONBOARDING/);
+});
+
 test("selected-job browser entry keeps the signed token off access.line.me", async () => {
   const worker = (await import("./src/index.js")).default;
   const target = "/sigil/confirm/job-model?t=abc.DEF_123";
