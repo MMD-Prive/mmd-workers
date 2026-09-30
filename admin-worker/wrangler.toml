@@ -1060,10 +1060,6 @@ name = "LINE_OFC_BACKFILL_COORDINATOR"
 class_name = "LineOfcConsoleBackfillCoordinator"
 
 [[migrations]]
-tag = "v2026-09-01-kenji-knowledge-coordinator"
-new_classes = ["KenjiKnowledgeCoordinator"]
-
-[[migrations]]
 tag = "v2026-09-04-model-first-time-activation"
 new_sqlite_classes = ["ModelActivationCoordinator"]
 
