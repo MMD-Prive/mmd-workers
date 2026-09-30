@@ -158,3 +158,16 @@ test('Public and Private scope inputs are mutually exclusive on the digital surf
   assert.match(footer, /scope==='private'&&filters\.private_work\)qs\.set\('work_lane'/);
   assert.match(footer, /scope==='public'&&filters\.public_format\)qs\.set\('service_context'/);
 });
+
+
+test('Public World budget starts at 5,000 THB while Private keeps its legacy lower band', () => {
+  assert.ok(footer.includes('data-skb26-first-budget data-filter="budget_band" data-value="5000_10000">5–10K</button>'));
+  assert.ok(footer.includes('name="budget_thb" type="number" min="5000"'));
+  assert.ok(footer.includes("firstBudgetBtn.textContent=isPrivate?'ต่ำกว่า 10K':'5–10K'"));
+  assert.ok(footer.includes("firstBudgetBtn.dataset.value=isPrivate?'under_10000':'5000_10000'"));
+  assert.ok(footer.includes("form.elements.budget_thb.min=isPrivate?'0':'5000'"));
+  assert.ok(footer.includes("function publicBudgetBelowFloor()"));
+  assert.ok(footer.includes("amount<5000"));
+  assert.match(footer, /Public Model เริ่มต้นที่ 5,000 บาท/);
+  assert.match(footer, /public_budget_below_minimum/);
+});

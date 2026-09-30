@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
+  PUBLIC_MODEL_MIN_BUDGET_THB,
   allowedCustomerModelFolders,
   customerLaneMatches,
   defaultDurationOptions,
   inferCustomerModelFolder,
   isProtectedCampaignModel,
   normalizeBudget,
+  publicBudgetFloorError,
   safeSearchIntent,
   sanitizeTelegramReference,
 } from "./src/customer-search-policy.js";
@@ -90,6 +92,16 @@ test("Telegram customer reference accepts only Telegram HTTPS links", () => {
 });
 
 test("budget bands become bounded numeric search context", () => {
+  assert.deepEqual(normalizeBudget({ budget_band: "5000_10000" }), { provided: true, min_thb: 5000, max_thb: 10000, label: "5000_10000" });
   assert.deepEqual(normalizeBudget({ budget_band: "10000_20000" }), { provided: true, min_thb: 10000, max_thb: 20000, label: "10000_20000" });
   assert.deepEqual(normalizeBudget({ budget_band: "30000_plus" }), { provided: true, min_thb: 30000, max_thb: null, label: "30000_plus" });
+});
+
+test("Public Model budget floor is 5,000 THB without changing Private budget parsing", () => {
+  assert.equal(PUBLIC_MODEL_MIN_BUDGET_THB, 5000);
+  assert.equal(publicBudgetFloorError({ budget_thb: 4999 }), "public_budget_below_minimum");
+  assert.equal(publicBudgetFloorError({ budget_thb: 5000 }), "");
+  assert.equal(publicBudgetFloorError({ budget_band: "5000_10000" }), "");
+  assert.equal(publicBudgetFloorError({ budget_band: "under_10000" }), "public_budget_below_minimum");
+  assert.deepEqual(normalizeBudget({ budget_band: "under_10000" }), { provided: true, min_thb: 0, max_thb: 10000, label: "under_10000" });
 });
