@@ -84,9 +84,10 @@ export function modelCustomerLane(fields = {}) {
 
 export function customerLaneMatches(fields = {}, requested = "") {
   const wanted = normalizeCustomerLane(requested);
-  if (!wanted || wanted === "both") return true;
+  if (!wanted) return true;
   const modelLane = modelCustomerLane(fields);
-  if (!modelLane) return true; // unknown stays reviewable; never invent orientation.
+  if (!modelLane) return false; // customer search never guesses an unknown Model lane.
+  if (wanted === "both") return ["straight", "gay", "both"].includes(modelLane);
   return modelLane === "both" || modelLane === wanted;
 }
 
