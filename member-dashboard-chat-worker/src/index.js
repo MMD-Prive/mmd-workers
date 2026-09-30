@@ -2051,7 +2051,7 @@ function mmdbkkMembershipUrl(entryRoute, extra = "") {
 }
 
 function memberLiffUrl(intent = "status", view = "profile") {
-  const url = new URL(`https://liff.line.me/${MEMBER_LIFF_ID}`);
+  const url = new URL(`https://miniapp.line.me/${MEMBER_LIFF_ID}/`);
   url.searchParams.set("intent", intent);
   url.searchParams.set("view", view);
   return url.toString();

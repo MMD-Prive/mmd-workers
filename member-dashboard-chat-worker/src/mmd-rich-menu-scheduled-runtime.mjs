@@ -11,7 +11,7 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260928-v4.7";
+const VERSION = "mmd-rm3-20260930-v4.8";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
@@ -27,7 +27,7 @@ function uri(label, value) { return { type: "uri", label, uri: value }; }
 function msg(label, value) { return { type: "message", label, text: value }; }
 function postback(label, data) { return { type: "postback", label, data }; }
 function site(path, entry) { const u = new URL(path, "https://mmdbkk.com"); u.searchParams.set("source", "line"); u.searchParams.set("entry_route", entry); return u.toString(); }
-function liff() { return `https://liff.line.me/${LIFF_ID}?intent=status&view=profile`; }
+function liff() { return `https://miniapp.line.me/${LIFF_ID}/?intent=status&view=profile`; }
 function signupLiff() { return `https://miniapp.line.me/${LIFF_ID}/?intent=signup&view=signup`; }
 function liffReturn(path, entry) {
   const target = new URL(path, "https://mmdbkk.com");
