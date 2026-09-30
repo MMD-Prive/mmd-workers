@@ -835,7 +835,7 @@ function selectedJobExternalHandoffHtml(request) {
 <body><main class="wrap" data-mmd-selected-job-external-handoff="v1"><section class="card">
 <p class="k">MMD APP · SELECTED JOB</p>
 <h1>เปิดงานนี้ใน LINE</h1>
-<p>ลิงก์นี้เปิดมาจาก Telegram หรือเบราว์เซอร์ภายนอกครับ<br>กดปุ่มด้านล่างเพื่อเปิด MMD APP ใน LINE ระบบจะใช้ LINE ที่เคยเชื่อมกับ MMD ไว้แล้วและพากลับมาที่งานนี้โดยตรง</p>
+<p>ลิงก์นี้เปิดมาจาก Telegram หรือเบราว์เซอร์ภายนอกครับ<br>กดปุ่มด้านล่างเพื่อเปิดงานนี้ใน LINE แล้วระบบจะพากลับมาที่งานนี้ให้เลย</p>
 <a class="btn" href="${href}">เปิดงานนี้ใน LINE →</a>
 <small class="note">ไม่ต้องสมัครใหม่ · ไม่ต้องเชื่อมโปรไฟล์ใหม่ · ไม่ต้องส่งข้อมูลซ้ำ</small>
 </section></main></body></html>`;
