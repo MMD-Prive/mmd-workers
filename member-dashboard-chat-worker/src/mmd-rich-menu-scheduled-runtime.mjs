@@ -11,7 +11,7 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260930-v4.10";
+const VERSION = "mmd-rm3-20260930-v4.11";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
@@ -77,7 +77,7 @@ const MENUS = Object.freeze({
       uri("PUBLIC MODELS", liffReturn("/profiles", "rich_menu_public_models")),
       uri("BOOKING", liffReturn("/booking", "rich_menu_public_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE ACCESS", signupLiff()),
+      uri("PRIVE ACCESS", liffReturn("/sigil/start", "rich_menu_prive_access")),
       postback("SUPPORT", "mmd_action=support&audience=public&intent=ใช้บริการยังไง"),
     ],
   },
@@ -97,10 +97,10 @@ const MENUS = Object.freeze({
     ],
     actions: [
       postback("KENJI AI", "mmd_action=kenji_ai&audience=private&source=private_rich_menu"),
-      uri("MODEL CARDS", liffReturn("/member/private#detail-model", "rich_menu_model_cards")),
-      uri("BOOKING", liffReturn("/find", "rich_menu_private_booking")),
+      uri("MODEL CARDS", liffReturn("/sigil/booking?mode=search&scope=private", "rich_menu_model_cards")),
+      uri("BOOKING", liffReturn("/sigil/booking?mode=booking&scope=private", "rich_menu_private_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE UPDATE", liffReturn("/member/private#access", "rich_menu_prive_update")),
+      uri("PRIVE UPDATE", liff()),
       postback("SUPPORT", "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu"),
     ],
   },

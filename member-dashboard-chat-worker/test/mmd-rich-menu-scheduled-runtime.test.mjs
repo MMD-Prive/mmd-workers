@@ -142,16 +142,16 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "PUBLIC MODELS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fprofiles%3Fsource%3Dline%26entry_route%3Drich_menu_public_models" },
     { type: "uri", label: "BOOKING", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fbooking%3Fsource%3Dline%26entry_route%3Drich_menu_public_booking" },
     { type: "uri", label: "MY MMD", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
-    { type: "uri", label: "PRIVE ACCESS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup" },
+    { type: "uri", label: "PRIVE ACCESS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fstart%3Fsource%3Dline%26entry_route%3Drich_menu_prive_access" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=public&intent=ใช้บริการยังไง" },
   ]);
 
   assert.deepEqual(map.private, [
     { type: "postback", label: "KENJI AI", data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" },
-    { type: "uri", label: "MODEL CARDS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fmember%2Fprivate%3Fsource%3Dline%26entry_route%3Drich_menu_model_cards%23detail-model" },
-    { type: "uri", label: "BOOKING", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Ffind%3Fsource%3Dline%26entry_route%3Drich_menu_private_booking" },
+    { type: "uri", label: "MODEL CARDS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fbooking%3Fmode%3Dsearch%26scope%3Dprivate%26source%3Dline%26entry_route%3Drich_menu_model_cards" },
+    { type: "uri", label: "BOOKING", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fbooking%3Fmode%3Dbooking%26scope%3Dprivate%26source%3Dline%26entry_route%3Drich_menu_private_booking" },
     { type: "uri", label: "MY MMD", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
-    { type: "uri", label: "PRIVE UPDATE", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fmember%2Fprivate%3Fsource%3Dline%26entry_route%3Drich_menu_prive_update%23access" },
+    { type: "uri", label: "PRIVE UPDATE", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu" },
   ]);
 });
@@ -204,7 +204,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork and Mini App MY MMD entry", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260930-v4.10");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260930-v4.11");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
   const map = getMmdRichMenuActionMap();
   assert.match(map.public[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);

@@ -47,14 +47,15 @@ test("Rich Menu status LIFF returns only to current and bounded transitional cus
     "/booking?source=line&entry_route=rich_menu_public_booking",
     "/services/companion?source=line&entry_route=rich_menu_guest_services",
     "/tmib?source=line&entry_route=rich_menu_guest_stories",
+    "/sigil/start?source=line&entry_route=rich_menu_prive_access",
+    "/sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards",
+    "/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking",
+    // Transitional links already issued by v4.9/v4.10 stay bounded while v4.11 rolls out.
     "/member/private?source=line&entry_route=rich_menu_model_cards#detail-model",
     "/find?source=line&entry_route=rich_menu_private_booking",
     "/member/private?source=line&entry_route=rich_menu_prive_update#access",
-    // v4.9 transition: already-issued links stay bounded while v4.10 rolls out.
     "/tmib/stories?source=line&entry_route=rich_menu_guest_stories",
     "/sigil/member/membership?intent=signup&source=line&entry_route=rich_menu_prive_access",
-    "/sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards",
-    "/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking",
   ];
   for (const target of targets) {
     const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
