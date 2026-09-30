@@ -302,6 +302,7 @@ async function ensureCanonicalTelegramWebhook(env) {
     url: TELEGRAM_CANONICAL_WEBHOOK_URL,
     secret_token: secret,
     drop_pending_updates: false,
+    allowed_updates: ["message", "edited_message", "callback_query", "chat_join_request"],
   });
   if (!setResult.ok) {
     return {
