@@ -49,7 +49,7 @@ test("Straight, Gay and Both matching never guesses unknown model orientation", 
   assert.equal(customerLaneMatches({ orientation: "Straight" }, "straight"), true);
   assert.equal(customerLaneMatches({ orientation: "Gay" }, "straight"), false);
   assert.equal(customerLaneMatches({ orientation: "Both" }, "gay"), true);
-  assert.equal(customerLaneMatches({}, "gay"), true);
+  assert.equal(customerLaneMatches({}, "gay"), false);
   assert.equal(customerLaneMatches({ orientation: "Straight" }, "both"), true);
 });
 
