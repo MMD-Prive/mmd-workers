@@ -1,4 +1,5 @@
 import { confirmationRevision } from "../shared/confirmation-revision.mjs";
+import { stablePaymentRef } from "./unified-payment-proof.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_ACK_PATH = "/v1/confirm/ack";
 export const CONFIRM_CONTEXT_PATH = "/v1/confirm/context";
@@ -219,10 +220,14 @@ async function findSession(env, sessionId) {
   return data?.records?.[0] || null;
 }
 
-function assertSessionMatchesClaims(env, session, claims) {
+async function assertSessionMatchesClaims(env, session, claims) {
   const fields = sessionFields(env);
   const sessionPaymentRef = clean(session?.fields?.[fields.paymentRef], 200);
-  if (sessionPaymentRef && sessionPaymentRef !== clean(claims.payment_ref, 200)) {
+  // Same subject rule as /v1/confirm/details: the signed ref, or the session's
+  // stable final ref once the balance intent exists. Details and ack must agree,
+  // otherwise a link can render but never be acknowledged.
+  const accepted = new Set([clean(claims.payment_ref, 200), await stablePaymentRef(claims.session_id, "final")]);
+  if (sessionPaymentRef && !accepted.has(sessionPaymentRef)) {
     const error = new Error("confirmation_session_mismatch");
     error.status = 409;
     throw error;
@@ -238,10 +243,11 @@ function safeConfirmationContext(env, session, role) {
     start_time: clean(source[fields.startTime], 120) || null,
     end_time: clean(source[fields.endTime], 120) || null,
     location_name: clean(source[fields.locationName], 300) || null,
+    // Customer identity is owner/admin-only; the model context never carries it.
     counterpart_name:
       role === "customer"
         ? clean(source[fields.modelName], 120) || null
-        : clean(source[fields.clientName], 120) || null,
+        : null,
     acknowledged_at:
       clean(source[role === "customer" ? fields.customerAck : fields.modelAck], 200) || null,
   };
@@ -313,7 +319,7 @@ export async function authorizeConfirmationRequest(request, env) {
     const claims = await verifyToken(env, token, expectedRole);
     const session = await findSession(env, claims.session_id);
     if (!session?.id) return { response: withCors(request, env, json({ ok: false, error: "session_not_found" }, 404)) };
-    assertSessionMatchesClaims(env, session, claims);
+    await assertSessionMatchesClaims(env, session, claims);
     return { claims, session, expectedRole, body };
   } catch (error) {
     return {

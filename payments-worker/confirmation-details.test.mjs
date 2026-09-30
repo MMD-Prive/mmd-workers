@@ -336,16 +336,19 @@ test("payment enrichment never exposes a payment record bound to another session
   assert.equal(data.payment.amount_due_thb, 13500);
 });
 
-test("model confirmation details expose model payout but never customer pricing or payment QR", async () => {
+test("model confirmation details expose no customer identity, rate, amount, pricing or payment QR", async () => {
   const { env, modelToken } = await envAndTokens();
   const response = await handleConfirmationDetails(post(modelToken, "model"), env);
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.ok, true);
   assert.equal(data.role, "model");
-  assert.equal(data.amount_scope, "model_payout");
-  assert.equal(data.model_payout_thb, 5500);
-  assert.equal(data.amount_thb, 5500);
+  assert.equal("amount_scope" in data, false);
+  assert.equal("model_payout_thb" in data, false);
+  assert.equal("amount_thb" in data, false);
+  assert.equal("client_name" in data, false);
+  assert.equal(JSON.stringify(data).includes("5500"), false);
+  assert.equal(JSON.stringify(data).includes("พี่ SVIP"), false);
   assert.equal("pricing" in data, false);
   assert.equal("payment" in data, false);
   assert.equal(JSON.stringify(data).includes("payments.example.com"), false);
