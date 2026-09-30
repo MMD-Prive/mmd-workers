@@ -53,7 +53,7 @@ test("mode audit records every observed transition and ignores duplicate observa
   assert.equal(killed.from, "pilot");
   assert.equal(killed.to, "off");
 
-  const status = await gate.fetch("https://svip-photo-mode.internal/status");
+  const status = await gate.fetch(new Request("https://svip-photo-mode.internal/status"));
   const body = await status.json();
   assert.equal(body.mode, "off");
   assert.equal(body.version, 3);
