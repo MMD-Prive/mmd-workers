@@ -42,36 +42,22 @@ export async function handlePrivatePreview(request, env = {}) {
       if (grant.svipPhotoReveal && !svipPhotoRevealCanServe(request.headers.get(SVIP_PHOTO_REVEAL_MODE_HEADER))) {
         return json({ ok:false, error:{ code:"PREVIEW_DISABLED" } }, 423);
       }
-      // The gate serializes rotation. Concurrent resumes share one bearer
-      // instead of overwriting each other's Airtable token hash.
+      // The gate owns the entire resume rotation: mint -> Airtable hash write
+      // -> active-token commit. Concurrent callers await the same in-flight
+      // promise, so no caller can receive a bearer that another caller kills.
       const gate = gateStub(env, grant.recordId);
       const ttlMs = resumeTtlMs(env.PRIVATE_PREVIEW_RESUME_TTL_MS);
-      const begin = await gate.fetch(`https://private-preview.internal/resume/begin?ttl=${ttlMs}`, {
-        method:"POST", headers:{ "content-type":"application/json" },
+      const rotation = await gate.fetch("https://private-preview.internal/resume", {
+        method:"POST",
+        headers:{ "content-type":"application/json" },
+        body:JSON.stringify({ grantRecordId:grant.recordId, ttlMs }),
       });
-      if (begin.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
-      if (!begin.ok) return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
-      const claim = await begin.json().catch(() => ({}));
+      if (rotation.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
+      if (!rotation.ok) return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
+      const claim = await rotation.json().catch(() => ({}));
       const rawToken = clean(claim.token, 200);
       if (!rawToken || (claim.mode !== "reuse" && claim.mode !== "rotate")) {
         return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
-      }
-      if (claim.mode === "rotate") {
-        const rotationId = clean(claim.rotation_id, 80);
-        try {
-          await rotatePreviewToken(env, grant.recordId, rawToken);
-        } catch (error) {
-          // Fail closed: no committed token, no redirect. A retry rotates again.
-          await gate.fetch("https://private-preview.internal/resume/abort", {
-            method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ rotationId }),
-          }).catch(() => {});
-          return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
-        }
-        const commit = await gate.fetch("https://private-preview.internal/resume/commit", {
-          method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ rotationId }),
-        });
-        if (commit.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
-        if (!commit.ok) return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
       }
       const target = new URL(`${PREFIX}view`, request.url);
       target.searchParams.set("g", grant.grantId);
@@ -146,13 +132,11 @@ export async function handlePrivatePreview(request, env = {}) {
 // Resume bearer rotation is serialized by the gate so that two concurrent
 // /resume requests cannot mint competing tokens and invalidate each other.
 //
-// This protects link freshness only. One-use media access remains enforced
-// exclusively by the atomic consume transaction below; nothing here changes
-// consume semantics, and a rotated bearer is never an access grant by itself.
+// Bearer rotation protects link freshness only. One-use media access remains
+// enforced exclusively by the atomic /consume transaction below.
 const RESUME_TTL_DEFAULT_MS = 10_000;
 const RESUME_TTL_MIN_MS = 2_000;
 const RESUME_TTL_MAX_MS = 120_000;
-const RESUME_WAIT_TIMEOUT_MS = 5_000;
 
 export function resumeTtlMs(value) {
   const ttl = Number(value);
@@ -164,20 +148,31 @@ function mintResumeToken() {
   return `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
+function resumeFailure(code, status = 503) {
+  const error = new Error(code);
+  error.resumeCode = code;
+  error.resumeStatus = status;
+  return error;
+}
+
 export class PrivatePreviewGate {
-  constructor(state) { this.state = state; this.rotation = null; }
+  constructor(state, env = {}) {
+    this.state = state;
+    this.env = env;
+    this.rotation = null;
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/status" && request.method === "GET") {
       const consumed = await this.state.storage.get("consumed");
       return new Response(null, { status:consumed ? 410 : 204, headers:noStoreHeaders() });
     }
-    // Claimed synchronously: no await may run between reading this.rotation and
-    // assigning it, otherwise two requests could both believe they own the mint.
-    if (url.pathname === "/resume/begin" && request.method === "POST") return this.beginResume(url);
-    if (url.pathname === "/resume/commit" && request.method === "POST") return this.commitResume(request);
-    if (url.pathname === "/resume/abort" && request.method === "POST") return this.abortResume(request);
+    if (url.pathname === "/resume" && request.method === "POST") return this.resume(request);
     if (url.pathname !== "/consume" || request.method !== "POST") return new Response(null, { status:405 });
+
+    // Consume semantics are intentionally unchanged. This transaction remains
+    // the sole one-use authority for private media.
     const body = await request.json().catch(() => ({}));
     return this.state.storage.transaction(async txn => {
       if (await txn.get("consumed")) return new Response(null, { status:410, headers:noStoreHeaders() });
@@ -191,90 +186,106 @@ export class PrivatePreviewGate {
     });
   }
 
-  // Not async on purpose: the in-flight check and the claim must happen in one
-  // synchronous step so concurrent callers cannot both become rotation owner.
-  beginResume(url) {
-    if (this.rotation) return this.joinRotation(this.rotation);
-    const rotation = { id:crypto.randomUUID(), ttlMs:resumeTtlMs(url.searchParams.get("ttl")), token:"" };
-    rotation.promise = new Promise((resolve, reject) => { rotation.resolve = resolve; rotation.reject = reject; });
-    rotation.promise.catch(() => {});
+  async resume(request) {
+    const body = await request.json().catch(() => ({}));
+    const grantRecordId = clean(body.grantRecordId, 80);
+    if (!/^rec[A-Za-z0-9]+$/.test(grantRecordId)) {
+      return Response.json({ ok:false, error:"grant_record_required" }, { status:400, headers:noStoreHeaders() });
+    }
+
+    // No await is allowed between this check and assigning this.rotation.
+    // That makes the in-flight promise the single owner for this DO instance.
+    if (this.rotation) {
+      if (this.rotation.grantRecordId !== grantRecordId) {
+        return Response.json({ ok:false, error:"rotation_grant_mismatch" }, { status:409, headers:noStoreHeaders() });
+      }
+      return this.awaitRotation(this.rotation);
+    }
+
+    const rotation = {
+      grantRecordId,
+      ttlMs:resumeTtlMs(body.ttlMs),
+      promise:null,
+    };
     this.rotation = rotation;
-    return this.runRotation(rotation);
-  }
+    rotation.promise = this.performResumeRotation(rotation);
 
-  async runRotation(rotation) {
     try {
-      if (await this.state.storage.get("consumed")) {
-        this.settleRotation(rotation, null, new Error("preview_consumed"));
-        return new Response(null, { status:410, headers:noStoreHeaders() });
-      }
-      const active = await this.state.storage.get("active_resume");
-      if (active && typeof active.token === "string" && active.token && Number(active.expiresAt) > Date.now()) {
-        // Still inside the coalescing window: reuse rather than rotate, so a
-        // double tap cannot kill the bearer the customer already holds.
-        this.settleRotation(rotation, active.token, null);
-        return Response.json({ mode:"reuse", token:active.token }, { headers:noStoreHeaders() });
-      }
-      rotation.token = mintResumeToken();
-      // Deliberately left in flight: the owner must confirm the Airtable write
-      // before this token is committed as active.
-      return Response.json({ mode:"rotate", token:rotation.token, rotation_id:rotation.id }, { headers:noStoreHeaders() });
+      const result = await rotation.promise;
+      return Response.json(result, { headers:noStoreHeaders() });
     } catch (error) {
-      this.settleRotation(rotation, null, error);
-      return Response.json({ mode:"failed" }, { status:409, headers:noStoreHeaders() });
-    }
-  }
-
-  async joinRotation(rotation) {
-    let timer = null;
-    try {
-      const token = await Promise.race([
-        rotation.promise,
-        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("preview_resume_wait_timeout")), RESUME_WAIT_TIMEOUT_MS); }),
-      ]);
-      return Response.json({ mode:"reuse", token }, { headers:noStoreHeaders() });
-    } catch {
-      // The owner failed closed, so every waiter fails closed too. A retry
-      // starts a fresh rotation and self-heals.
-      return Response.json({ mode:"failed" }, { status:409, headers:noStoreHeaders() });
+      return Response.json(
+        { ok:false, error:clean(error?.resumeCode || "preview_resume_failed", 120) },
+        { status:Number(error?.resumeStatus) || 503, headers:noStoreHeaders() },
+      );
     } finally {
-      if (timer) clearTimeout(timer);
+      if (this.rotation === rotation) this.rotation = null;
     }
   }
 
-  settleRotation(rotation, token, error) {
-    if (this.rotation === rotation) this.rotation = null;
-    if (error) rotation.reject(error);
-    else rotation.resolve(token);
-  }
-
-  async commitResume(request) {
-    const body = await request.json().catch(() => ({}));
-    const rotation = this.rotation;
-    if (!rotation || rotation.id !== clean(body.rotationId, 80) || !rotation.token) {
-      return Response.json({ ok:false, error:"rotation_unknown" }, { status:409, headers:noStoreHeaders() });
-    }
+  async awaitRotation(rotation) {
     try {
-      const expiresAt = Date.now() + rotation.ttlMs;
-      await this.state.storage.transaction(async txn => {
-        if (await txn.get("consumed")) throw new Error("preview_consumed");
-        await txn.put("active_resume", { token:rotation.token, expiresAt });
-      });
-      this.settleRotation(rotation, rotation.token, null);
-      return Response.json({ ok:true, expires_at:expiresAt }, { headers:noStoreHeaders() });
+      const result = await rotation.promise;
+      return Response.json(result, { headers:noStoreHeaders() });
     } catch (error) {
-      this.settleRotation(rotation, null, error);
-      return new Response(null, { status:410, headers:noStoreHeaders() });
+      return Response.json(
+        { ok:false, error:clean(error?.resumeCode || "preview_resume_failed", 120) },
+        { status:Number(error?.resumeStatus) || 503, headers:noStoreHeaders() },
+      );
     }
   }
 
-  async abortResume(request) {
-    const body = await request.json().catch(() => ({}));
-    const rotation = this.rotation;
-    if (rotation && rotation.id === clean(body.rotationId, 80)) {
-      this.settleRotation(rotation, null, new Error("preview_resume_rotation_aborted"));
+  async performResumeRotation(rotation) {
+    if (await this.state.storage.get("consumed")) throw resumeFailure("preview_consumed", 410);
+
+    const active = await this.state.storage.get("active_resume");
+    if (active && typeof active.token === "string" && active.token && Number(active.expiresAt) > Date.now()) {
+      return { mode:"reuse", token:active.token, expires_at:Number(active.expiresAt) };
     }
-    return Response.json({ ok:true }, { headers:noStoreHeaders() });
+    if (active) await this.state.storage.delete("active_resume");
+
+    const rawToken = mintResumeToken();
+
+    // Important ordering invariant:
+    // 1) mint only in this DO;
+    // 2) persist only the hash to Airtable;
+    // 3) commit raw token as active in DO only after Airtable confirms the hash.
+    // If the PATCH fails, the promise rejects, no active token is stored, every
+    // waiter fails closed, and the next /resume starts a fresh self-healing run.
+    try {
+      await rotatePreviewToken(this.env, rotation.grantRecordId, rawToken);
+    } catch {
+      throw resumeFailure("preview_resume_write_failed", 503);
+    }
+
+    const expiresAt = Date.now() + rotation.ttlMs;
+    try {
+      await this.state.storage.transaction(async txn => {
+        if (await txn.get("consumed")) throw resumeFailure("preview_consumed", 410);
+        await txn.put("active_resume", { token:rawToken, expiresAt });
+      });
+    } catch (error) {
+      if (error?.resumeCode) throw error;
+      throw resumeFailure("preview_resume_commit_failed", 503);
+    }
+
+    if (typeof this.state.storage.setAlarm === "function") {
+      await this.state.storage.setAlarm(expiresAt).catch(() => {});
+    }
+    return { mode:"rotate", token:rawToken, expires_at:expiresAt };
+  }
+
+  async alarm() {
+    const active = await this.state.storage.get("active_resume");
+    if (!active) return;
+    const expiresAt = Number(active.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      await this.state.storage.delete("active_resume");
+      return;
+    }
+    if (typeof this.state.storage.setAlarm === "function") {
+      await this.state.storage.setAlarm(expiresAt);
+    }
   }
 }
 
@@ -333,14 +344,22 @@ async function resolveGrantById(env, grantId, clientId) {
 }
 async function rotatePreviewToken(env, recordId, rawToken) {
   const hash = await sha256(rawToken);
-  const response = await airtable(env, env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS || DEFAULT_GRANTS, recordId, {
-    method:"PATCH",
-    headers:{ "content-type":"application/json" },
-    body:JSON.stringify({ fields:{ preview_token_hash:hash, signed_url_status:"not_issued" }, typecast:false }),
-  });
-  if (!response.ok) throw new Error("preview_resume_write_failed");
-  const result = await response.json();
-  if (result.id !== recordId || result.fields?.preview_token_hash !== hash) throw new Error("preview_resume_write_unconfirmed");
+  const timeoutMs = Math.min(15_000, Math.max(1_000, Number(env.AIRTABLE_REQUEST_TIMEOUT_MS) || 10_000));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await airtable(env, env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS || DEFAULT_GRANTS, recordId, {
+      method:"PATCH",
+      headers:{ "content-type":"application/json" },
+      body:JSON.stringify({ fields:{ preview_token_hash:hash, signed_url_status:"not_issued" }, typecast:false }),
+      signal:controller.signal,
+    });
+    if (!response.ok) throw new Error("preview_resume_write_failed");
+    const result = await response.json();
+    if (result.id !== recordId || result.fields?.preview_token_hash !== hash) throw new Error("preview_resume_write_unconfirmed");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function readAsset(env, id, kind, modelId, accessLane = "private_preview") {
   const record = await get(env, env.AIRTABLE_TABLE_MODEL_MEDIA_ASSETS || env.AIRTABLE_TABLE_MODEL_MEDIA || DEFAULT_MEDIA, id);
