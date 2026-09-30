@@ -20,6 +20,7 @@ const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
 const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
 const MODEL_SELECTED_JOB_INTENT_COOKIE = "mmd_model_selected_job";
+const MODEL_SELECTED_JOB_SESSION_COOKIE = "mmd_model_selected_job_session";
 const MODEL_SELECTED_JOB_INTENT_TTL_SECONDS = 180;
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 const MODEL_LIFF_IDS = Object.freeze({
@@ -573,6 +574,8 @@ function selectedJobSessionId(request) {
   try { source = new URL(request.url); } catch { return ""; }
   const direct = normalizeSelectedSessionId(boundedParam(source, "session_id"));
   if (direct) return direct;
+  const remembered = normalizeSelectedSessionId(cookieValue(request, MODEL_SELECTED_JOB_SESSION_COOKIE, 220));
+  if (remembered) return remembered;
   return sessionIdFromModelConfirmationReturnTo(selectedJobReturnTo(request));
 }
 
@@ -654,6 +657,10 @@ function liffPrimaryBootstrapResponse(request) {
   const selectedJob = safeModelConfirmationReturnTo(request);
   if (selectedJob) {
     headers.append("set-cookie", `${MODEL_SELECTED_JOB_INTENT_COOKIE}=${encodeURIComponent(selectedJob)}; Path=${UI_PREFIX}; Max-Age=${MODEL_SELECTED_JOB_INTENT_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
+  }
+  const selectedSession = selectedJobSessionId(request);
+  if (selectedSession) {
+    headers.append("set-cookie", `${MODEL_SELECTED_JOB_SESSION_COOKIE}=${encodeURIComponent(selectedSession)}; Path=${UI_PREFIX}; Max-Age=${MODEL_SELECTED_JOB_INTENT_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`);
   }
   return new Response(request.method.toUpperCase() === "HEAD" ? null : liffPrimaryBootstrapHtml(request), {
     status: 200,
