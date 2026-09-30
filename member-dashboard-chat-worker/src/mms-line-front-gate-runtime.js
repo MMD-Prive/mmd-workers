@@ -1,3 +1,4 @@
+import { observeSvipPhotoRevealMode } from "./svip-photo-reveal-mode-audit.mjs";
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
 import { MMS_LINE_EVIDENCE_INTERNALS, observeMmsLineEvidence } from "./mms-line-evidence-observer.mjs";
@@ -637,8 +638,14 @@ export default {
     // notifications and reprocess held evidence candidates even when LINE is
     // quiet. It never settles payments and never blocks the rich-menu job.
     const maintenance = runLineSlipEvidenceMaintenance(env, {}).catch(() => null);
-    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(maintenance);
-    else await maintenance;
+    const photoModeAudit = observeSvipPhotoRevealMode(env, "scheduled_hourly_reconcile").catch(() => null);
+    if (typeof ctx?.waitUntil === "function") {
+      ctx.waitUntil(maintenance);
+      ctx.waitUntil(photoModeAudit);
+    } else {
+      await maintenance;
+      await photoModeAudit;
+    }
     return handleMmdRichMenuScheduled(event, env, ctx);
   },
 };
