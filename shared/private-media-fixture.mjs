@@ -5,7 +5,7 @@ export function privateMediaFixture() {
   const lineUserId = `U${"a".repeat(32)}`;
   const fields = { media_id: "media_example", Model: ["recModel"], media_type: "flash_preview", file_type: "image/png", file_size_bytes: 8, private_original_key: "private-model-media/recModel/media_example.png", r2_bucket: "mmd-private-model-media", review_status: "approved", private_safe: true };
   const asset = { id: "recMedia", fields };
-  const grant = { id: "recGrant", fields: { grant_id: "grant_example", Client: ["recClient"], Model: ["recModel"], "Media Asset": ["recMedia"], grant_status: "active", expires_at: new Date(Date.now() + 60_000).toISOString(), view_count: 0, view_limit: 1, payload_json: JSON.stringify({preview_kind:"private_pic"}) } };
+  const grant = { id: "recGrant", fields: { grant_id: "grant_example", Client: ["recClient"], Model: ["recModel"], "Media Asset": ["recMedia"], grant_status: "active", expires_at: new Date(Date.now() + 60_000).toISOString(), view_count: 0, view_limit: 1, preview_token_hash: "b3cc0475bb78a5026098858e9889acf666d31062d513d303314eca31d36e72f2", payload_json: JSON.stringify({preview_kind:"private_pic"}) } };
   const object = { size:8, httpMetadata:{contentType:"image/png"}, customMetadata:{media_id:"media_example",model_record_id:"recModel",sha256:"a".repeat(64)} };
   const storage = new Map(); let queue = Promise.resolve();
   const state = { storage: {
@@ -29,11 +29,18 @@ export function privateMediaFixture() {
         const body = await request.json();
         fixture.writes.push(body);
         if(fixture.logFailure) return Response.json({}, {status:503});
-        if(body?.fields?.preview_token_hash) return Response.json({id:'recGrant',fields:body.fields});
-        return Response.json({id:'recGrant',fields:{grant_status:'consumed',view_count:1}});
+        grant.fields = { ...grant.fields, ...(body?.fields || {}) };
+        return Response.json({id:'recGrant',fields:grant.fields});
       }
       if(table === 'tblVv58TCbwh5j1fS') return Response.json({records:[{id:'recClient',fields:{line_user_id:lineUserId}}]});
-      if(table === 'MMD — Private Flash Preview Grants') return Response.json({records:[grant]});
+      if(table === 'MMD — Private Flash Preview Grants') {
+        const filter = url.searchParams.get('filterByFormula') || '';
+        const tokenMatch = filter.match(/\{preview_token_hash\}='([^']+)'/);
+        if (tokenMatch && tokenMatch[1] !== grant.fields.preview_token_hash) return Response.json({records:[]});
+        const grantMatch = filter.match(/\{grant_id\}='([^']+)'/);
+        if (grantMatch && grantMatch[1] !== grant.fields.grant_id) return Response.json({records:[]});
+        return Response.json({records:[grant]});
+      }
       if(id === 'recMedia') return Response.json(asset);
       throw new Error('unexpected_test_request');
     }},
