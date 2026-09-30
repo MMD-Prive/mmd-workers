@@ -284,3 +284,218 @@ test("viewer sends mobile browsers into LIFF but gives LINE desktop a mobile ins
   assert.match(html, /กรุณาเปิดลิงก์นี้จาก LINE บนมือถือเพื่อดูรูปครับ/);
   assert.match(html, /miniapp\.line\.me\/2010862595-yT4DCEMc/);
 });
+
+// --- concurrent /resume rotation gate -------------------------------------
+// Bearer-token rotation protects link freshness; it is not the one-use
+// authority. One-use media access stays enforced exclusively by the atomic
+// PrivatePreviewGate consume transaction.
+
+const RESUME_GRANT_ID = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+
+function resumeSetup() {
+  const f = setup();
+  f.grant.fields.grant_id = RESUME_GRANT_ID;
+  return f;
+}
+function resumeReq() {
+  return new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/resume?g=${RESUME_GRANT_ID}`,
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  );
+}
+function bearerOf(response) {
+  const location = response.headers.get("location") || "";
+  const hash = location.split("#t=")[1] || "";
+  return decodeURIComponent(hash);
+}
+function tokenWrites(f) {
+  return f.writes.filter(write => write?.fields?.preview_token_hash);
+}
+
+test("concurrent resume requests share one bearer and never invalidate each other", async () => {
+  const f = resumeSetup();
+  const [a, b, c] = await Promise.all([
+    handlePrivatePreview(resumeReq(), f.env),
+    handlePrivatePreview(resumeReq(), f.env),
+    handlePrivatePreview(resumeReq(), f.env),
+  ]);
+
+  for (const response of [a, b, c]) assert.equal(response.status, 303);
+  const tokens = [bearerOf(a), bearerOf(b), bearerOf(c)];
+  for (const token of tokens) assert.match(token, /^[a-f0-9]{64}$/);
+  assert.equal(new Set(tokens).size, 1, "concurrent resumes must point at one bearer");
+
+  // Exactly one rotation reached Airtable, so no redirect can be killed by another.
+  assert.equal(tokenWrites(f).length, 1);
+  const committed = await sha256Hex(tokens[0]);
+  assert.equal(f.grant.fields.preview_token_hash, committed);
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+});
+
+test("sequential resume inside the coalescing window returns the same bearer", async () => {
+  const f = resumeSetup();
+  const first = await handlePrivatePreview(resumeReq(), f.env);
+  const second = await handlePrivatePreview(resumeReq(), f.env);
+
+  assert.equal(first.status, 303);
+  assert.equal(second.status, 303);
+  assert.equal(bearerOf(first), bearerOf(second));
+  assert.equal(tokenWrites(f).length, 1, "a reused bearer must not rewrite Airtable");
+});
+
+test("resume after the window rotates and the previous bearer stops resolving", async () => {
+  const f = resumeSetup();
+  const first = await handlePrivatePreview(resumeReq(), f.env);
+  const firstToken = bearerOf(first);
+
+  // Expire the coalescing window deterministically instead of sleeping.
+  const active = f.storage.get("active_resume");
+  f.storage.set("active_resume", { ...active, expiresAt: Date.now() - 1 });
+
+  const second = await handlePrivatePreview(resumeReq(), f.env);
+  const secondToken = bearerOf(second);
+  assert.equal(second.status, 303);
+  assert.notEqual(secondToken, firstToken);
+  assert.equal(tokenWrites(f).length, 2);
+  assert.equal(f.grant.fields.preview_token_hash, await sha256Hex(secondToken));
+
+  // The superseded bearer is no longer resolvable.
+  const stale = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/status?t=${firstToken}`,
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), f.env);
+  assert.equal(stale.status, 404);
+});
+
+test("an Airtable rotation write failure fails closed and a retry self-heals", async () => {
+  const f = resumeSetup();
+  f.logFailure = true;
+  const failed = await handlePrivatePreview(resumeReq(), f.env);
+
+  assert.equal(failed.status, 503);
+  assert.equal((await failed.json()).error.code, "PREVIEW_LOCK_FAILED");
+  assert.equal(failed.headers.get("location"), null, "a failed rotation must not redirect");
+  assert.equal(f.storage.has("active_resume"), false, "no bearer may be held live after a failed write");
+  assert.equal(f.storage.has("consumed"), false);
+
+  f.logFailure = false;
+  const recovered = await handlePrivatePreview(resumeReq(), f.env);
+  assert.equal(recovered.status, 303);
+  assert.match(bearerOf(recovered), /^[a-f0-9]{64}$/);
+  assert.equal(f.grant.fields.preview_token_hash, await sha256Hex(bearerOf(recovered)));
+});
+
+test("waiters on a failed rotation fail closed instead of inheriting a dead bearer", async () => {
+  const f = resumeSetup();
+  f.logFailure = true;
+  const [a, b] = await Promise.all([
+    handlePrivatePreview(resumeReq(), f.env),
+    handlePrivatePreview(resumeReq(), f.env),
+  ]);
+  for (const response of [a, b]) {
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("location"), null);
+  }
+  assert.equal(f.storage.has("active_resume"), false);
+});
+
+test("resume rotation is not the one-use authority: consume stays exactly once", async () => {
+  const f = resumeSetup();
+  const resumed = await handlePrivatePreview(resumeReq(), f.env);
+  const token = bearerOf(resumed);
+  assert.equal(resumed.status, 303);
+
+  const consumeReq = () => new Request("https://www.mmdbkk.com/api/member/app/private-preview/consume", {
+    method: "POST",
+    headers: { cookie: "__Host-mmd_liff_session=test", origin: "https://www.mmdbkk.com", "content-type": "application/json" },
+    body: JSON.stringify({ t: token }),
+  });
+  const [first, second] = await Promise.all([
+    handlePrivatePreview(consumeReq(), f.env),
+    handlePrivatePreview(consumeReq(), f.env),
+  ]);
+  const statuses = [first.status, second.status].sort();
+  assert.deepEqual(statuses, [200, 410]);
+  assert.equal(f.audits.length, 1, "one-use comes from the gate transaction, not token uniqueness");
+});
+
+test("a consumed grant can no longer mint or reuse a resume bearer", async () => {
+  const f = resumeSetup();
+  const resumed = await handlePrivatePreview(resumeReq(), f.env);
+  const token = bearerOf(resumed);
+  await handlePrivatePreview(new Request("https://www.mmdbkk.com/api/member/app/private-preview/consume", {
+    method: "POST",
+    headers: { cookie: "__Host-mmd_liff_session=test", origin: "https://www.mmdbkk.com", "content-type": "application/json" },
+    body: JSON.stringify({ t: token }),
+  }), f.env);
+
+  const after = await handlePrivatePreview(resumeReq(), f.env);
+  assert.equal(after.status, 410);
+  assert.equal(after.headers.get("location"), null);
+});
+
+test("no raw resume bearer is ever written to Airtable or the consumption audit", async () => {
+  const f = resumeSetup();
+  const resumed = await handlePrivatePreview(resumeReq(), f.env);
+  const token = bearerOf(resumed);
+  assert.ok(token);
+
+  const written = JSON.stringify(f.writes);
+  assert.equal(written.includes(token), false, "Airtable must hold the hash only");
+  assert.equal(JSON.stringify(f.audits).includes(token), false);
+  assert.equal(JSON.stringify(f.grant.fields).includes(token), false);
+  assert.match(String(f.grant.fields.preview_token_hash), /^[a-f0-9]{64}$/);
+});
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+test("a second resume waits for the in-flight rotation instead of minting a rival token", async () => {
+  const gate = new PrivatePreviewGate(stateMock());
+  const begin = () => gate.fetch(new Request("https://private-preview.internal/resume/begin?ttl=10000", {
+    method: "POST", headers: { "content-type": "application/json" },
+  }));
+
+  const owner = await (await begin()).json();
+  assert.equal(owner.mode, "rotate");
+  assert.match(owner.token, /^[a-f0-9]{64}$/);
+
+  // The rival arrives while the owner is still writing to Airtable.
+  const rival = begin();
+  const pending = await Promise.race([rival.then(() => "settled"), new Promise(r => setTimeout(() => r("waiting"), 40))]);
+  assert.equal(pending, "waiting", "a concurrent resume must block on the owner, not mint its own token");
+
+  const commit = await gate.fetch(new Request("https://private-preview.internal/resume/commit", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rotationId: owner.rotation_id }),
+  }));
+  assert.equal(commit.status, 200);
+
+  const joined = await (await rival).json();
+  assert.equal(joined.mode, "reuse");
+  assert.equal(joined.token, owner.token);
+});
+
+test("an aborted rotation releases waiters closed and leaves no active bearer", async () => {
+  const gate = new PrivatePreviewGate(stateMock());
+  const begin = () => gate.fetch(new Request("https://private-preview.internal/resume/begin?ttl=10000", {
+    method: "POST", headers: { "content-type": "application/json" },
+  }));
+
+  const owner = await (await begin()).json();
+  const rival = begin();
+  await gate.fetch(new Request("https://private-preview.internal/resume/abort", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rotationId: owner.rotation_id }),
+  }));
+
+  const joined = await rival;
+  assert.equal(joined.status, 409);
+  assert.equal((await joined.json()).mode, "failed");
+
+  // The next attempt starts a clean rotation.
+  const retry = await (await begin()).json();
+  assert.equal(retry.mode, "rotate");
+  assert.notEqual(retry.token, owner.token);
+});

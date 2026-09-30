@@ -42,12 +42,37 @@ export async function handlePrivatePreview(request, env = {}) {
       if (grant.svipPhotoReveal && !svipPhotoRevealCanServe(request.headers.get(SVIP_PHOTO_REVEAL_MODE_HEADER))) {
         return json({ ok:false, error:{ code:"PREVIEW_DISABLED" } }, 423);
       }
+      // The gate serializes rotation. Concurrent resumes share one bearer
+      // instead of overwriting each other's Airtable token hash.
       const gate = gateStub(env, grant.recordId);
-      const gateState = await gate.fetch("https://private-preview.internal/status");
-      if (gateState.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
-      if (gateState.status !== 204) return json({ok:false,error:{code:"PREVIEW_LOCK_FAILED"}},503);
-      const rawToken = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
-      await rotatePreviewToken(env, grant.recordId, rawToken);
+      const ttlMs = resumeTtlMs(env.PRIVATE_PREVIEW_RESUME_TTL_MS);
+      const begin = await gate.fetch(`https://private-preview.internal/resume/begin?ttl=${ttlMs}`, {
+        method:"POST", headers:{ "content-type":"application/json" },
+      });
+      if (begin.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
+      if (!begin.ok) return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
+      const claim = await begin.json().catch(() => ({}));
+      const rawToken = clean(claim.token, 200);
+      if (!rawToken || (claim.mode !== "reuse" && claim.mode !== "rotate")) {
+        return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
+      }
+      if (claim.mode === "rotate") {
+        const rotationId = clean(claim.rotation_id, 80);
+        try {
+          await rotatePreviewToken(env, grant.recordId, rawToken);
+        } catch (error) {
+          // Fail closed: no committed token, no redirect. A retry rotates again.
+          await gate.fetch("https://private-preview.internal/resume/abort", {
+            method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ rotationId }),
+          }).catch(() => {});
+          return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
+        }
+        const commit = await gate.fetch("https://private-preview.internal/resume/commit", {
+          method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ rotationId }),
+        });
+        if (commit.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
+        if (!commit.ok) return json({ ok:false, error:{ code:"PREVIEW_LOCK_FAILED" } }, 503);
+      }
       const target = new URL(`${PREFIX}view`, request.url);
       target.searchParams.set("g", grant.grantId);
       target.hash = `t=${encodeURIComponent(rawToken)}`;
@@ -118,14 +143,40 @@ export async function handlePrivatePreview(request, env = {}) {
   }
 }
 
+// Resume bearer rotation is serialized by the gate so that two concurrent
+// /resume requests cannot mint competing tokens and invalidate each other.
+//
+// This protects link freshness only. One-use media access remains enforced
+// exclusively by the atomic consume transaction below; nothing here changes
+// consume semantics, and a rotated bearer is never an access grant by itself.
+const RESUME_TTL_DEFAULT_MS = 10_000;
+const RESUME_TTL_MIN_MS = 2_000;
+const RESUME_TTL_MAX_MS = 120_000;
+const RESUME_WAIT_TIMEOUT_MS = 5_000;
+
+export function resumeTtlMs(value) {
+  const ttl = Number(value);
+  if (!Number.isFinite(ttl) || ttl <= 0) return RESUME_TTL_DEFAULT_MS;
+  return Math.min(RESUME_TTL_MAX_MS, Math.max(RESUME_TTL_MIN_MS, Math.floor(ttl)));
+}
+
+function mintResumeToken() {
+  return `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
 export class PrivatePreviewGate {
-  constructor(state) { this.state = state; }
+  constructor(state) { this.state = state; this.rotation = null; }
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/status" && request.method === "GET") {
       const consumed = await this.state.storage.get("consumed");
       return new Response(null, { status:consumed ? 410 : 204, headers:noStoreHeaders() });
     }
+    // Claimed synchronously: no await may run between reading this.rotation and
+    // assigning it, otherwise two requests could both believe they own the mint.
+    if (url.pathname === "/resume/begin" && request.method === "POST") return this.beginResume(url);
+    if (url.pathname === "/resume/commit" && request.method === "POST") return this.commitResume(request);
+    if (url.pathname === "/resume/abort" && request.method === "POST") return this.abortResume(request);
     if (url.pathname !== "/consume" || request.method !== "POST") return new Response(null, { status:405 });
     const body = await request.json().catch(() => ({}));
     return this.state.storage.transaction(async txn => {
@@ -138,6 +189,92 @@ export class PrivatePreviewGate {
       });
       return new Response(null, { status:204, headers:noStoreHeaders() });
     });
+  }
+
+  // Not async on purpose: the in-flight check and the claim must happen in one
+  // synchronous step so concurrent callers cannot both become rotation owner.
+  beginResume(url) {
+    if (this.rotation) return this.joinRotation(this.rotation);
+    const rotation = { id:crypto.randomUUID(), ttlMs:resumeTtlMs(url.searchParams.get("ttl")), token:"" };
+    rotation.promise = new Promise((resolve, reject) => { rotation.resolve = resolve; rotation.reject = reject; });
+    rotation.promise.catch(() => {});
+    this.rotation = rotation;
+    return this.runRotation(rotation);
+  }
+
+  async runRotation(rotation) {
+    try {
+      if (await this.state.storage.get("consumed")) {
+        this.settleRotation(rotation, null, new Error("preview_consumed"));
+        return new Response(null, { status:410, headers:noStoreHeaders() });
+      }
+      const active = await this.state.storage.get("active_resume");
+      if (active && typeof active.token === "string" && active.token && Number(active.expiresAt) > Date.now()) {
+        // Still inside the coalescing window: reuse rather than rotate, so a
+        // double tap cannot kill the bearer the customer already holds.
+        this.settleRotation(rotation, active.token, null);
+        return Response.json({ mode:"reuse", token:active.token }, { headers:noStoreHeaders() });
+      }
+      rotation.token = mintResumeToken();
+      // Deliberately left in flight: the owner must confirm the Airtable write
+      // before this token is committed as active.
+      return Response.json({ mode:"rotate", token:rotation.token, rotation_id:rotation.id }, { headers:noStoreHeaders() });
+    } catch (error) {
+      this.settleRotation(rotation, null, error);
+      return Response.json({ mode:"failed" }, { status:409, headers:noStoreHeaders() });
+    }
+  }
+
+  async joinRotation(rotation) {
+    let timer = null;
+    try {
+      const token = await Promise.race([
+        rotation.promise,
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("preview_resume_wait_timeout")), RESUME_WAIT_TIMEOUT_MS); }),
+      ]);
+      return Response.json({ mode:"reuse", token }, { headers:noStoreHeaders() });
+    } catch {
+      // The owner failed closed, so every waiter fails closed too. A retry
+      // starts a fresh rotation and self-heals.
+      return Response.json({ mode:"failed" }, { status:409, headers:noStoreHeaders() });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  settleRotation(rotation, token, error) {
+    if (this.rotation === rotation) this.rotation = null;
+    if (error) rotation.reject(error);
+    else rotation.resolve(token);
+  }
+
+  async commitResume(request) {
+    const body = await request.json().catch(() => ({}));
+    const rotation = this.rotation;
+    if (!rotation || rotation.id !== clean(body.rotationId, 80) || !rotation.token) {
+      return Response.json({ ok:false, error:"rotation_unknown" }, { status:409, headers:noStoreHeaders() });
+    }
+    try {
+      const expiresAt = Date.now() + rotation.ttlMs;
+      await this.state.storage.transaction(async txn => {
+        if (await txn.get("consumed")) throw new Error("preview_consumed");
+        await txn.put("active_resume", { token:rotation.token, expiresAt });
+      });
+      this.settleRotation(rotation, rotation.token, null);
+      return Response.json({ ok:true, expires_at:expiresAt }, { headers:noStoreHeaders() });
+    } catch (error) {
+      this.settleRotation(rotation, null, error);
+      return new Response(null, { status:410, headers:noStoreHeaders() });
+    }
+  }
+
+  async abortResume(request) {
+    const body = await request.json().catch(() => ({}));
+    const rotation = this.rotation;
+    if (rotation && rotation.id === clean(body.rotationId, 80)) {
+      this.settleRotation(rotation, null, new Error("preview_resume_rotation_aborted"));
+    }
+    return Response.json({ ok:true }, { headers:noStoreHeaders() });
   }
 }
 
