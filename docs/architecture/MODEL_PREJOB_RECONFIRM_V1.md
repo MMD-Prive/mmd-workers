@@ -120,3 +120,22 @@ A job created after D-1 16:00 is eligible for the next scheduler sweep immediate
 - No Model-side action may mark final payment confirmed.
 - Reconfirm acknowledgement must not change `confirmed` to another lifecycle state.
 - Scheduler is idempotent through persisted notification/ack/escalation timestamps.
+
+## Guard v2 hardening (issue #2140)
+
+`MODEL_RECONFIRM_GUARD_V2` (default `false`) hardens this flow without adding a second sender. With the flag off, `runModelReconfirmSweep` behaves exactly as before. With it on (set on `events-worker`, where the sweep runs):
+
+- Only sessions whose job date is the **next ICT date** are read (server-side filter) and acted on. Past-dated, same-day and later jobs are skipped.
+- Only `confirmed` / `accepted` jobs are eligible; cancelled, completed and every other state are skipped.
+- The assigned Model must be exactly one valid Models record. None, more than one, or a malformed link is `review_required`: the Model is never messaged and the first link is never picked.
+- A Model without a valid LINE identity, or a worker without the LINE token, is `owner_action`: an owner-only Telegram message, one per job, no message to the Model.
+- Owner messages go only to `MODEL_RECONFIRM_OWNER_CHAT_ID`, falling back to `HYPE_JOB_DAILY_CHAT_ID`. They never fall back to `TELEGRAM_CHAT_ID`, the booking chat, or any customer/member/Model room. With neither set nothing is sent and the sweep reports `owner_destination_missing`.
+- A failed Model send is counted in the existing `reconfirm_followup_status` field (`send_failed_N`). After 3 attempts the job becomes `review_required` for the owner and stops retrying.
+- Owner dedupe uses the same field (`owner_action_sent`, `review_required`). No new Airtable field is required; the only writes remain the existing `reconfirm_*` metadata.
+- Owner messages carry job date, Model name and session id only, with exactly one `Next:` line. No customer, payment or pricing data.
+
+The 19:00 `Reconfirm Overdue` alert is unchanged and still uses its existing destination chain.
+
+Owner-only routes (admin-worker, owner session required) for rollout checks: `GET /internal/admin/model-reconfirm/status`, `GET /internal/admin/model-reconfirm/preview` (dry run for the next ICT date, sends and writes nothing), `POST /internal/admin/model-reconfirm/smoke` with `{"confirm":"send-smoke-test"}` (one short line to the owner destination).
+
+Variables: `MODEL_RECONFIRM_ENABLED` (existing), `MODEL_RECONFIRM_GUARD_V2` (new, default false), `MODEL_RECONFIRM_OWNER_CHAT_ID` and optional `MODEL_RECONFIRM_OWNER_THREAD_ID` (Cloudflare only, never in the repo). Preview and smoke read the same variables on admin-worker, so set the guard flag and owner chat id on both workers.
