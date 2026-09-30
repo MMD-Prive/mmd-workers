@@ -59,6 +59,10 @@ import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from ".
 import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
 import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
 import { HYPE_OPERATIONAL_STATUS_PATH, handleHypeOperationalStatusRpc } from "./hype-operating-concierge.js";
+import {
+  HYPE_SVIP_PHOTO_REVEAL_PATH,
+  handleHypeSvipPhotoRevealRpc,
+} from "./hype-svip-photo-reveal.js";
 import { HYPE_MEMBER_WALLET_PATH, handleHypeMemberWalletRpc } from "./hype-member-wallet.js";
 import {
   HYPE_SHOP_ORDERS_PATH,
@@ -180,6 +184,9 @@ export default {
     // read-only projection from the same live fan-in used by Kenji LV5.
     if (path === HYPE_OPERATIONAL_STATUS_PATH) {
       return handleHypeOperationalStatusRpc(request, env);
+    }
+    if (path === HYPE_SVIP_PHOTO_REVEAL_PATH) {
+      return handleHypeSvipPhotoRevealRpc(request, env);
     }
     if (path === HYPE_MEMBER_WALLET_PATH) {
       return handleHypeMemberWalletRpc(request, env);
