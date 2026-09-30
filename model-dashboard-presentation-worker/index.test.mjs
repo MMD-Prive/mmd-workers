@@ -291,6 +291,49 @@ test("approved Model job link enters the published Mini App before opening signe
   assert.equal(new URL(modelMiniAppHandoffUrl(hostile)).searchParams.has("return_to"), false);
 });
 
+test("selected-job intent survives a LIFF OAuth reload that strips the query string", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const target = "/sigil/confirm/job-model?t=abc.DEF_123";
+  const state = "?return_to=" + encodeURIComponent(target);
+  const first = await worker.fetch(new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?liff.state=${encodeURIComponent(state)}&access_token=opaque`,
+  ));
+
+  assert.equal(first.status, 200);
+  const cookies = first.headers.get("set-cookie") || "";
+  assert.match(cookies, /mmd_liff_boot=1/);
+  assert.match(cookies, /mmd_model_selected_job=/);
+  assert.match(cookies, /HttpOnly/);
+  assert.match(cookies, /Path=\/sigil\/model\/dashboard/);
+
+  const second = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    headers: {
+      cookie: `mmd_liff_boot=1; mmd_model_selected_job=${encodeURIComponent(target)}`,
+    },
+  }));
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get("x-mmd-model-entry"), "liff-primary-preboot-v1");
+  const html = await second.text();
+  assert.match(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
+  assert.match(html, /ไม่ใช่หน้าสมัครงาน/);
+  assert.match(html, /window\.location\.replace\("\/sigil\/confirm\/job-model\?t=abc\.DEF_123"\)/);
+  assert.doesNotMatch(html, /MODEL ONBOARDING/);
+  assert.doesNotMatch(html, /เปิดจาก LINE Mini App เพื่อเริ่มสมัครโมเดล/);
+});
+
+test("invalid remembered selected-job cookie cannot suppress normal onboarding", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    headers: {
+      cookie: `mmd_liff_boot=1; mmd_model_selected_job=${encodeURIComponent("/internal/admin?t=bad")}`,
+    },
+  }));
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /MODEL ONBOARDING/);
+  assert.match(html, /เปิดจาก LINE Mini App เพื่อเริ่มสมัครโมเดล/);
+});
+
 test("LINE primary redirect is consumed before the SPA renders", async () => {
   const request = new Request(
     "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fflow%3Dverify%26lang%3Dth&access_token=opaque",
