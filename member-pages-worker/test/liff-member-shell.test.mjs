@@ -31,10 +31,10 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /world-public/);
       assert.match(html, /id="intro-screen" class="intro-screen my-mmd-welcome"/);
       assert.match(html, /dataset\.welcomeAudience = audience/);
-      assert.match(html, /canonical_member_profile/);
-      assert.match(html, /audience === "existing"/);
+      assert.match(html, /canonical_member_profile/);\n      assert.match(html, /canonical_client/);\n      assert.match(html, /canonical_member_client_absence/);
+      assert.match(html, /audience === "existing"/);\n      assert.match(html, /checking: \{ title: "MY MMD", subtitle: "กำลังเตรียมพื้นที่ของคุณ"/);
       assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
-      assert.match(html, /ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว/);
+      assert.match(html, /ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว/);
       assert.match(html, /ไม่ได้หายไปติดผู้ชายนะครับ 5555/);
       assert.match(html, /ถามไป หายไม่มีคนตอบ/);
       assert.match(html, /AI เปอร์ก็รำคาญนะ 555/);
@@ -123,17 +123,22 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
   });
 
-  it("checks the existing same-site member session before any LIFF init or login", async () => {
+  it("resolves Welcome audience before rendering customer-specific copy and never auto-logins", async () => {
     const response = await shell("/member/liff?intent=promo&campaign=care_back&view=care_back");
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    const sessionCheck = html.indexOf("existingProfilePromise = readProfile({ hydrate: false }).catch(() => null)");
-    const liffInit = html.indexOf("await window.liff.init({ liffId: CONFIG.liffId })");
-    const liffLogin = html.indexOf("window.liff.login({ redirectUri: window.location.href })");
-    assert.ok(sessionCheck >= 0, "same-site session preflight must be rendered");
-    assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session preflight");
-    assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
+    assert.match(html, /async function readWelcomeContext\(\)/);
+    assert.match(html, /async function preflightWelcomeIdentity\(\)/);
+    assert.match(html, /let resolvedAudience = await readWelcomeContext\(\)/);
+    assert.match(html, /const sessionReady = await preflightWelcomeIdentity\(\)/);
+    assert.match(html, /if \(!window\.liff\.isLoggedIn\(\)\) return false/);
+    assert.match(html, /const idToken = window\.liff\.getIDToken\(\)/);
+    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
+    const preflightStart = html.indexOf("async function preflightWelcomeIdentity()");
+    const preflightEnd = html.indexOf("async function resolveInitialWelcomeContext()", preflightStart);
+    const preflightCode = html.slice(preflightStart, preflightEnd);
+    assert.doesNotMatch(preflightCode, /liff\.login/);
     assert.match(html, /void boot\(\{ existingProfileChecked: true \}\)/);
     assert.match(html, /if \(!existingProfileChecked\) \{[\s\S]*readProfile\(\{ hydrate: false \}\)/);
   });
@@ -143,7 +148,7 @@ describe("same-site /member/liff shell", () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /setTimeout\(\(\) => controller\.abort\(\), 1500\)/);
+    assert.match(html, /setTimeout\(\(\) => controller\.abort\(\), 4500\)/);
     assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
     const entered = html.indexOf('document.body.classList.add("app-entered")');
     const hydrate = html.indexOf("void hydrateMemberHome()", entered);
