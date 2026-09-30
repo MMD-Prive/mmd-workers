@@ -694,8 +694,9 @@ function validatePublicRoles(value) {
 
 async function verifyUploads(body, env, applicationId) {
   const refs = body.uploads ?? body.upload_refs ?? body.uploadRefs ?? [];
-  const required = flagEnabled(env.PUBLIC_MODEL_UPLOAD_REQUIRED);
-  if (!refs.length) return required ? { ok: false, error: "at least one verified applicant photo is required" } : { ok: true, items: [] };
+  // First contact may be submitted without media. Per can continue by LINE or
+  // phone, while final approval remains an owner-reviewed step.
+  if (!refs.length) return { ok: true, items: [] };
   if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR) return { ok: false, error: "upload verification is not configured" };
   const sessionId = body.upload_session_id;
   const items = [];
@@ -716,7 +717,6 @@ async function verifyUploads(body, env, applicationId) {
   const photos = items.filter((item) => item.kind === "photo");
   const clips = items.filter((item) => item.kind === "clip");
   const bodyPhotos = photos.filter((item) => item.role === "body_presentation");
-  if (required && photos.length < 1) return { ok: false, error: "at least one verified applicant photo is required" };
   if (photos.length > PUBLIC_MODEL_MAX_PHOTOS) return { ok: false, error: "too many applicant photos" };
   if (clips.length > PUBLIC_MODEL_MAX_CLIPS) return { ok: false, error: "too many applicant clips" };
   if (bodyPhotos.length > 3) return { ok: false, error: "too many body presentation photos" };
