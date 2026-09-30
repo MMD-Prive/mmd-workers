@@ -7,6 +7,7 @@ import vm from "node:vm";
 test("private preview routes are narrowly matched", () => {
   assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/status"), true);
   assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/consume"), true);
+  assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/resume"), true);
   assert.equal(isPrivatePreviewRequest("https://mmdbkk.com/api/member/app/private-preview/other"), false);
 });
 
@@ -91,12 +92,15 @@ test('missing session and cross-origin consume cannot burn a grant',async()=>{
   const f=setup();assert.equal((await handlePrivatePreview(req('consume',{origin:'https://evil.example'}),f.env)).status,403);
   assert.equal((await handlePrivatePreview(req('consume',{cookie:''}),f.env)).status,401);assert.equal(f.storage.has('consumed'),false);
 });
-test('viewer is isolated, parses, and uses no persistent browser media storage',async()=>{
+test('viewer is isolated, parses, uses no persistent browser media storage, and auto-enters LIFF verify on 401',async()=>{
   const response=await handlePrivatePreview(req('view'),{});assert.equal(response.status,200);
   assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/);
   const html=await response.text(),script=html.match(/<script nonce="[^"]+">([\s\S]*)<\/script>/)[1];
   new vm.Script(script);assert.doesNotMatch(script,/localStorage|sessionStorage|indexedDB|caches\.open/);
   assert.match(script,/setTimeout\(conceal,3000\)/);assert.match(script,/revokeObjectURL/);
+  assert.match(script,/miniapp\.line\.me\/2010862595-yT4DCEMc/);
+  assert.match(script,/private_photo_reveal/);
+  assert.match(script,/window\.location\.replace\(loginUrl\.toString\(\)\)/);
 });
 
 test('append-only audit failure burns the grant and returns no media',async()=>{
@@ -141,4 +145,48 @@ test("LINE crawler, HEAD and prefetch cannot consume a private preview grant", a
   assert.equal(f.storage.has("consumed"), false);
   assert.equal(f.audits.length, 0);
   assert.equal(f.writes.length, 0);
+});
+
+
+test("one-tap resume after LIFF verify rotates the bearer token without consuming the grant", async () => {
+  const f = setup();
+  const grantId = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  f.grant.fields.grant_id = grantId;
+
+  const response = await handlePrivatePreview(new Request(
+    `https://www.mmdbkk.com/api/member/app/private-preview/resume?g=${grantId}`,
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), f.env);
+
+  assert.equal(response.status, 303);
+  const location = response.headers.get("location") || "";
+  assert.match(location, new RegExp(`^https://www\\.mmdbkk\\.com/api/member/app/private-preview/view\\?g=${grantId}#t=`));
+  assert.equal(response.headers.get("x-mmd-private-preview-resume"), "one-tap-line-verify-v1");
+  assert.equal(f.storage.has("consumed"), false);
+  assert.equal(f.audits.length, 0);
+  assert.equal(f.writes.length, 1);
+  assert.match(String(f.writes[0]?.fields?.preview_token_hash || ""), /^[a-f0-9]{64}$/);
+  assert.equal(f.writes[0]?.fields?.signed_url_status, "not_issued");
+});
+
+test("resume is exact-client session bound and rejects malformed resume handles", async () => {
+  const malformed = setup();
+  const bad = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/resume?g=not-a-grant",
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), malformed.env);
+  assert.equal(bad.status, 400);
+  assert.equal(malformed.writes.length, 0);
+  assert.equal(malformed.storage.has("consumed"), false);
+
+  const wrongClient = setup();
+  wrongClient.grant.fields.grant_id = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  wrongClient.grant.fields.Client = ["recOther"];
+  const denied = await handlePrivatePreview(new Request(
+    "https://www.mmdbkk.com/api/member/app/private-preview/resume?g=svip_photo_123e4567-e89b-12d3-a456-426614174000",
+    { method: "GET", headers: { cookie: "__Host-mmd_liff_session=test" } },
+  ), wrongClient.env);
+  assert.equal(denied.status, 403);
+  assert.equal(wrongClient.writes.length, 0);
+  assert.equal(wrongClient.storage.has("consumed"), false);
 });
