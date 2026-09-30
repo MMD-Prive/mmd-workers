@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia } from "./src/model-image-policy-worker.js";
-import { sanitizeModelForBooking } from "./src/index.js";
+import { buildCustomerDurationOffer, sanitizeModelForBooking } from "./src/index.js";
 import { requestedScope } from "./src/runtime-index.js";
 
 const modelId = "recModel000000001";
@@ -64,6 +64,59 @@ test("booking discovery requires canonical private folder entitlement and keeps 
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ scope: "booking" }),
   }), postUrl), "booking");
+});
+
+test("customer rate is explicitly tied to 90 minutes while Standard 120-minute price remains Per-review", () => {
+  const offer = buildCustomerDurationOffer({
+    duration_options: [90, 120],
+    sales_control: {
+      configured: true,
+      price_visible: true,
+      customer_rate_thb: 15000,
+      requires_per_approval: false,
+    },
+  }, { requested_duration_minutes: 120, work_lane: "pn" });
+
+  assert.equal(offer.price_visible, true);
+  assert.equal(offer.customer_rate_thb, 15000);
+  assert.equal(offer.base_rate_duration_minutes, 90);
+  assert.deepEqual(offer.duration_offers, [
+    {
+      duration_minutes: 90,
+      price_visible: true,
+      customer_rate_thb: 15000,
+      requires_per_approval: false,
+      rate_review_required: false,
+    },
+    {
+      duration_minutes: 120,
+      price_visible: false,
+      customer_rate_thb: null,
+      requires_per_approval: true,
+      rate_review_required: true,
+    },
+  ]);
+  assert.equal(offer.requested_duration_offer.duration_minutes, 120);
+  assert.equal(offer.requested_duration_offer.price_visible, false);
+  assert.equal(offer.requested_duration_offer.customer_rate_thb, null);
+  assert.equal(offer.rate_review_required, true);
+});
+
+test("Premium 90-minute offer may expose its canonical resolved customer rate", () => {
+  const offer = buildCustomerDurationOffer({
+    duration_options: [90],
+    sales_control: {
+      configured: true,
+      price_visible: true,
+      customer_rate_thb: 18000,
+      requires_per_approval: false,
+    },
+  }, { requested_duration_minutes: 90, work_lane: "vip" });
+
+  assert.equal(offer.base_rate_duration_minutes, 90);
+  assert.equal(offer.requested_duration_offer.price_visible, true);
+  assert.equal(offer.requested_duration_offer.customer_rate_thb, 18000);
+  assert.equal(offer.rate_review_required, false);
 });
 
 test("SIGIL hydrates MMD MODEL primary image, public gallery and intro clips only", async () => {
