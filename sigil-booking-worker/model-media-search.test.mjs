@@ -13,7 +13,7 @@ const clipMediaId = "media_dddddddd-dddd-dddd-dddd-dddddddddddd";
 const secondPrimaryMediaId = "media_eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
 
 
-test("booking discovery may return a private-only Model without widening public or private entitlement scope", async () => {
+test("booking discovery requires canonical private folder entitlement and keeps protected models fail-closed", async () => {
   const record = {
     id: "recPrivateBooking01",
     fields: {
@@ -27,17 +27,33 @@ test("booking discovery may return a private-only Model without widening public 
   };
 
   assert.equal(sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, env: {} }), null);
-  assert.equal(sanitizeModelForBooking(record, { scope: "private", privateAllowed: false, env: {} }), null);
+  assert.equal(sanitizeModelForBooking(record, { scope: "private", privateAllowed: false, allowedFolders: [], env: {} }), null);
+  assert.equal(sanitizeModelForBooking(record, { scope: "booking", privateAllowed: false, allowedFolders: [], env: {} }), null);
 
-  const booking = sanitizeModelForBooking(record, { scope: "booking", privateAllowed: false, env: {} });
+  const booking = sanitizeModelForBooking(record, { scope: "booking", privateAllowed: true, allowedFolders: ["premium"], env: {} });
   assert.equal(booking.model_id, record.id);
   assert.equal(booking.working_name, "Atom IX");
   assert.equal(booking.scope, "private");
+  assert.deepEqual(booking.duration_options, [90]);
   assert.equal(booking.booking_discovery, true);
   assert.equal(Object.hasOwn(booking, "private_real_name"), false);
+  assert.equal(Object.hasOwn(booking, "drive_folder_id"), false);
+  assert.equal(Object.hasOwn(booking, "r2_prefix"), false);
 
-  const privateAllowed = sanitizeModelForBooking(record, { scope: "private", privateAllowed: true, env: {} });
+  assert.equal(sanitizeModelForBooking(record, { scope: "private", privateAllowed: true, allowedFolders: ["standard"], env: {} }), null);
+  const privateAllowed = sanitizeModelForBooking(record, { scope: "private", privateAllowed: true, allowedFolders: ["premium"], env: {} });
   assert.equal(privateAllowed.model_id, record.id);
+
+  const protectedRecord = {
+    id: "recProtectedBooking1",
+    fields: {
+      working_name: "EMs11 Example",
+      unique_key: "EMs11",
+      can_work_private: true,
+      private_tier: "exclusive",
+    },
+  };
+  assert.equal(sanitizeModelForBooking(protectedRecord, { scope: "private", privateAllowed: true, allowedFolders: ["exclusive"], env: {} }), null);
 
   const getUrl = new URL("https://sigil.mmdbkk.com/sigil/api/models/search?q=Atom%20IX&scope=booking");
   assert.equal(await requestedScope(new Request(getUrl), getUrl), "booking");
