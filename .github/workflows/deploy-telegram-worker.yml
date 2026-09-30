@@ -258,9 +258,16 @@ jobs:
           const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
           if (payload?.ok !== true) throw new Error("Premium room sync failed");
           if (payload?.mode !== "hype_premium_room_manager_v1") throw new Error("Premium room manager mode mismatch");
+          if (payload?.titles?.ok !== true) throw new Error("Member group title sync failed");
+          const premiumTitle = payload.titles.results?.find((item) => item.surface === "premium_group");
+          const standardTitle = payload.titles.results?.find((item) => item.surface === "standard_group");
+          if (premiumTitle?.desired_title !== "MMD PRIVÉ : PREMIUM") throw new Error("Premium group title mismatch");
+          if (standardTitle?.desired_title !== "MMD PRIVÉ : STANDARD") throw new Error("Standard group title mismatch");
+          if (!["already_current", "updated"].includes(premiumTitle?.state)) throw new Error("Premium title sync failed");
+          if (!["already_current", "updated"].includes(standardTitle?.state)) throw new Error("Standard title sync failed");
           if (!["already_current", "updated"].includes(payload?.description?.state)) throw new Error("Premium description sync failed");
           if (!["already_ready", "welcome_pinned"].includes(payload?.welcome?.state)) throw new Error("Premium Welcome pin sync failed");
-          console.log("HYPE Premium room description + canonical Welcome verified");
+          console.log("HYPE Premium + Standard titles, Premium description, and canonical Welcome verified");
           NODE
 
       - name: Smoke canonical Telegram auth boundaries
