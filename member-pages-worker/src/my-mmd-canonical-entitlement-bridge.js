@@ -52,11 +52,14 @@ export async function handleMyMmdWelcomeContext(request, env = {}) {
   if (origin && origin !== url.origin) return Response.json({ ok: false, state: "public" }, { status: 403, headers });
   const sessionRef = await readSessionRef(request, env);
   if (!sessionRef) return Response.json({ ok: true, data: { tier: "", membership_status: "", audience: "new" } }, { status: 200, headers });
+  const clientLookupPromise = env.AIRTABLE_API_KEY && env.AIRTABLE_BASE_ID
+    ? resolveCanonicalClientForLine(env, sessionRef.lineUserId)
+      .then((client) => ({ ok: true, client }))
+      .catch(() => ({ ok: false, client: null }))
+    : Promise.resolve({ ok: false, client: null });
   const [resolved, clientLookup] = await Promise.all([
     readCanonicalMemberProfile(env, sessionRef.lineUserId),
-    resolveCanonicalClientForLine(env, sessionRef.lineUserId)
-      .then((client) => ({ ok: true, client }))
-      .catch(() => ({ ok: false, client: null })),
+    clientLookupPromise,
   ]);
   const canonicalClient = clientLookup.client;
   const returningCustomer = Boolean(resolved?.memberId || canonicalClient?.id);
