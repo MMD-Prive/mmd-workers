@@ -170,6 +170,55 @@ export async function activateModelLine(request, env = {}, baseWorker) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });
 }
 
+
+export async function bindCanonicalModelLineFromTrustedSelection(env = {}, input = {}) {
+  const modelRecordId = clean(input.model_record_id || input.modelRecordId, 40);
+  const idToken = clean(input.idToken || input.id_token, 5000);
+  const environment = normalizeActivationEnvironment(input.environment);
+  const jti = clean(input.jti, 120);
+  const exp = Number(input.exp);
+  if (
+    !/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)
+    || !idToken
+    || !jti
+    || !Number.isFinite(exp)
+    || exp <= Math.floor(Date.now() / 1000)
+  ) {
+    return { ok: false, status: 400, error: "selected_model_binding_invalid" };
+  }
+
+  const lineIdentity = await verifyLineIdToken(idToken, resolveLineChannelId(env, environment));
+  if (!lineIdentity.ok) return lineIdentity;
+
+  const lineUserId = clean(lineIdentity.profile?.sub, 80);
+  if (!isCanonicalLineUserId(lineUserId)) {
+    return { ok: false, status: 401, error: "line_identity_invalid" };
+  }
+
+  const binding = await bindLineUserId(env, {
+    model_record_id: modelRecordId,
+    line_user_id: lineUserId,
+    jti,
+    exp,
+  });
+  if (!binding.ok) {
+    return {
+      ok: false,
+      status: binding.status || 409,
+      error: binding.error || "model_line_binding_failed",
+    };
+  }
+
+  return {
+    ok: true,
+    status: binding.status || 200,
+    idempotent: binding.idempotent === true,
+    model_record_id: modelRecordId,
+    line_user_id: lineUserId,
+    environment,
+  };
+}
+
 async function bindLineUserId(env, input) {
   const namespace = env.MODEL_ACTIVATION_COORDINATOR;
   if (!namespace || typeof namespace.idFromName !== "function") {
