@@ -367,7 +367,8 @@ async function lookupStoredBookingAccess(env, { bookingRef, sessionId }) {
     member_status: normalizeMemberStatus(f.member_status),
     access_scope: normalizeAccessScope(f.access_scope),
     member_record_id: str(payload?.access?.member_record_id),
-    client_record_id: str(payload?.access?.client_record_id)
+    client_record_id: str(payload?.access?.client_record_id),
+    entitlement_snapshot: payload?.entitlement_snapshot && typeof payload.entitlement_snapshot === "object" ? payload.entitlement_snapshot : null,
   };
 }
 
@@ -375,20 +376,28 @@ async function lookupStoredBookingAccess(env, { bookingRef, sessionId }) {
 async function resolveBookingSalesContext(env, storedAccess) {
   const memberRecordId = str(storedAccess?.member_record_id);
   const clientRecordId = str(storedAccess?.client_record_id);
-  if (!/^rec[A-Za-z0-9]{14,24}$/.test(memberRecordId)) {
-    return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId };
-  }
-
-  const entitlementTable = env.AIRTABLE_TABLE_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const storedSnapshot = storedAccess?.entitlement_snapshot;
   const offerRulesTable = env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || env.AIRTABLE_TABLE_MODEL_OFFER_RULES || "MMD — Model Offer Rules";
   try {
-    const [entitlements, rules] = await Promise.all([
-      airtableListByFormula(env, entitlementTable, `FIND(${formulaText(memberRecordId)},ARRAYJOIN({member}))`, 100),
-      airtableListByFormula(env, offerRulesTable, "", 500),
-    ]);
+    const rules = await airtableListByFormula(env, offerRulesTable, "", 500);
+    if (storedSnapshot?.schema_version === "my_mmd_entitlement_resolver_v1" && storedSnapshot?.fail_closed === true) {
+      return {
+        available: true,
+        entitlement_snapshot: storedSnapshot,
+        rules,
+        client_record_id: clientRecordId,
+        protected_review_required: ["vip", "svip", "black_card", "blackcard"].includes(token(storedSnapshot?.access?.private_visibility_envelope)),
+      };
+    }
+    if (!/^rec[A-Za-z0-9]{14,24}$/.test(memberRecordId)) {
+      return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
+    }
+
+    const entitlementTable = env.AIRTABLE_TABLE_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+    const entitlements = await airtableListByFormula(env, entitlementTable, `FIND(${formulaText(memberRecordId)},ARRAYJOIN({member}))`, 100);
     const snapshot = resolveMemberEntitlements(entitlements);
     if (snapshot?.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot?.fail_closed !== true) {
-      return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId };
+      return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
     }
     return {
       available: true,
@@ -398,7 +407,7 @@ async function resolveBookingSalesContext(env, storedAccess) {
       protected_review_required: ["vip", "svip", "black_card", "blackcard"].includes(token(snapshot?.access?.private_visibility_envelope)),
     };
   } catch {
-    return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId };
+    return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
   }
 }
 
