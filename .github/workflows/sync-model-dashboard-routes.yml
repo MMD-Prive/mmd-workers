@@ -73,6 +73,7 @@ jobs:
           const worker = "admin-worker";
           const paths = [
             "/v1/model/liff/exchange",
+            "/v1/model/selected-job/handoff",
             "/v1/model/session/current*",
             "/v1/model/session/action",
             "/v1/model/profile",
