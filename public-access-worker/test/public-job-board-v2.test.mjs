@@ -307,6 +307,21 @@ test("linked Model uses the fast lane instead of repeating an application", asyn
   assert.match(applyHtml, /สนใจงานนี้ · ส่งให้พี่เปอร์/);
   assert.doesNotMatch(applyHtml, /เพศสภาพ|รับงานกับลูกค้า|type="file"/);
   assert.doesNotMatch(applyHtml, /Verify|ยืนยันตัวตน|Identity review|สมัครสมาชิก/i);
+
+  const interested = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/interest", {
+    method: "POST",
+    headers: { cookie: openedCookie },
+    body: { fast_lane: true },
+  });
+  const result = await interested.json();
+  assert.equal(interested.status, 201, JSON.stringify(result));
+  assert.equal(result.fast_lane, true);
+  assert.equal(result.model_record_id, "rec12345678901234");
+  const key = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((item) => item.endsWith(`/${result.application_ref}.json`));
+  const application = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(key).bytes));
+  assert.equal(application.submission_status, "submitted");
+  assert.equal(application.workflow_status, "candidate_pending_owner");
+  assert.equal(application.applicant.fast_lane, true);
 });
 
 test("Public and Private share one feed while Private teaser leaks no sensitive detail", async () => {
