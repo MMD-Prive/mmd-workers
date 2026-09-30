@@ -60,3 +60,30 @@ test('stylesheet includes the min-content guard verified by the 390px browser sm
   assert.match(head, /\.skb26-model-results\{width:100%\}/);
   assert.match(head, /\.skb26-model-results\{display:flex;gap:8px;overflow-x:auto;/);
 });
+
+
+test('customer Search UI requires backend visibility and carries budget, both-lane, Spec and Telegram reference', () => {
+  assert.match(footer, /data-skb26-mode="search"/);
+  assert.match(footer, /data-skb26-mode="booking"/);
+  assert.match(footer, /data-filter="customer_lane" data-value="both">ได้ทั้งคู่/);
+  assert.match(footer, /name="spec"/);
+  assert.match(footer, /name="telegram_link"/);
+  assert.match(footer, /name="fallback_allowed"/);
+  assert.match(footer, /name="review_requested"/);
+  assert.match(footer, /name="duration_minutes"/);
+  assert.match(footer, /mode==='search'&&!budgetProvided\(\)/);
+  assert.match(footer, /visibility_enforced===true/);
+  assert.doesNotMatch(footer, /function allowedForTier/);
+  assert.doesNotMatch(footer, /data-value="estimate"/);
+  assert.doesNotMatch(footer, /resolved_image_url:/);
+  assert.match(footer, /telegram_post_url:v\('telegram_link'\)/);
+  assert.match(footer, /source:mode==='search'\?'sigil_search':'sigil_booking'/);
+});
+
+test('customer offer cards show backend-resolved price and approved extra media without Drive URLs', () => {
+  assert.match(footer, /item\.offer&&item\.offer\.price_visible/);
+  assert.match(footer, /รูปเพิ่มเติมที่อนุมัติ/);
+  assert.doesNotMatch(footer, /drive_folder_id/);
+  assert.doesNotMatch(footer, /drive\.google\.com/);
+  assert.match(footer, /ราคาให้ MMD ตรวจ/);
+});

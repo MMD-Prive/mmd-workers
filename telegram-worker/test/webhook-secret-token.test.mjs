@@ -1251,6 +1251,18 @@ for (const [groupName, chatId] of [
       const buttons = telegramBody.reply_markup.inline_keyboard.flat();
       assert.equal(buttons.some((button) => button.url === "https://t.me/mmdprivebot"), true);
       assert.equal(buttons.some((button) => new URL(button.url).pathname === "/my-mmd/"), true);
+      if (groupName === "standard" || groupName === "premium") {
+        const sigilButtons = buttons.filter((button) => /SIGIL (Search|Booking)/.test(button.text || ""));
+        assert.equal(sigilButtons.length, 2);
+        assert.equal(sigilButtons.every((button) => new URL(button.url).origin === "https://sigil.mmdbkk.com"), true);
+        assert.deepEqual(
+          sigilButtons.map((button) => new URL(button.url).searchParams.get("mode")).sort(),
+          ["booking", "search"],
+        );
+        assert.equal(sigilButtons.every((button) => new URL(button.url).searchParams.get("scope") === "private"), true);
+      } else {
+        assert.equal(buttons.some((button) => /SIGIL (Search|Booking)/.test(button.text || "")), false);
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }

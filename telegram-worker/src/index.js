@@ -4017,11 +4017,22 @@ function hypeCanonicalRouteButtons(env, command) {
   };
 }
 
+function sigilCustomerRequestUrl(env, mode = "search") {
+  const base = clean(env.SIGIL_BASE_URL || "https://sigil.mmdbkk.com").replace(/\/+$/, "");
+  const url = new URL(base + "/sigil/booking");
+  url.searchParams.set("mode", mode === "booking" ? "booking" : "search");
+  url.searchParams.set("scope", "private");
+  return url.toString();
+}
+
 function hypeBookingButtons(env, result = {}) {
   const rows = [];
   const next = result.next_action || {};
   if (clean(next.href)) rows.push([{ text: clean(next.label) || "ดำเนินการต่อ", url: publicUrl(env, next.href) }]);
-  rows.push([{ text: "Booking", url: publicUrl(env, "/booking") }]);
+  rows.push([
+    { text: "SIGIL Search", url: sigilCustomerRequestUrl(env, "search") },
+    { text: "SIGIL Booking", url: sigilCustomerRequestUrl(env, "booking") },
+  ]);
   rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   return { inline_keyboard: rows };
 }
@@ -4070,6 +4081,9 @@ function hypeMemberGroupCommandText(group) {
     "<b>/next</b> — ขั้นตอนที่ต้องทำต่อ",
     "<b>/booking</b> — progress งานและการจอง",
     "",
+    "<b>SIGIL Search</b> — ให้ MMD ช่วยหา Model โดยต้องมี Budget",
+    "<b>SIGIL Booking</b> — มี Model ที่เล็งไว้แล้ว",
+    "",
     "HYPE จะไม่แสดงชื่อ Model ของงาน, ยอดชำระ, Points balance, Coupon code หรือสถานะบัญชีส่วนตัวในกลุ่มครับ",
   ].join("\n");
 }
@@ -4080,10 +4094,13 @@ function hypeMemberGroupCommandButtons(env, group = "") {
     rows.push([{ text: "เลือกมุมมองใน Hall", url: publicUrl(env, "/hall") }]);
   }
   rows.push([{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }]);
-  rows.push([
-    { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
-    { text: "Booking", url: publicUrl(env, "/booking") },
-  ]);
+  if (group === "standard" || group === "premium") {
+    rows.push([
+      { text: "🔎 SIGIL Search", url: sigilCustomerRequestUrl(env, "search") },
+      { text: "📅 SIGIL Booking", url: sigilCustomerRequestUrl(env, "booking") },
+    ]);
+  }
+  rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   rows.push([
     { text: "Points", url: publicUrl(env, "/my-mmd/points") },
     { text: "Coupons", url: publicUrl(env, "/my-mmd/coupons") },
@@ -4363,6 +4380,8 @@ function hypePremiumRoomWelcomeText() {
     "เจอ <b>Post หรือ Model ที่สนใจ</b> กด <b>Copy Link</b> ที่โพสต์นั้น แล้วส่งลิงก์มาสอบถามทาง LINE Official ได้เลยครับ 🔗💬",
     "MMD จะเช็กสถานะล่าสุด ราคา คิว รายละเอียด และสิทธิ์ที่ใช้ได้ให้เป็นรายเคส",
     "",
+    "กด <b>SIGIL Search</b> ถ้าต้องการให้ MMD ช่วยหา หรือ <b>SIGIL Booking</b> ถ้ามี Model ที่เล็งไว้แล้ว",
+    "",
     "🔒 กรุณาไม่นำภาพ ราคา ข้อมูล Model หรือข้อความภายในกลุ่มออกไปเผยแพร่ต่อภายนอก",
     "",
     "<b>Premium Member ≠ การการันตีคิวของ Model</b>",
@@ -4373,6 +4392,10 @@ function hypePremiumRoomWelcomeText() {
 function hypePremiumRoomWelcomeButtons(env) {
   return {
     inline_keyboard: [
+      [
+        { text: "🔎 SIGIL Search", url: sigilCustomerRequestUrl(env, "search") },
+        { text: "📅 SIGIL Booking", url: sigilCustomerRequestUrl(env, "booking") },
+      ],
       [{ text: "สอบถามผ่าน LINE Official", url: "https://lin.ee/xRqsALs" }],
       [{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }],
     ],
@@ -4381,7 +4404,7 @@ function hypePremiumRoomWelcomeButtons(env) {
 
 function isCanonicalPremiumWelcome(message) {
   const text = clean(message?.text || message?.caption || "");
-  return text.includes("MMD PRIVÉ : PREMIUM") && /Copy Link/i.test(text);
+  return text.includes("MMD PRIVÉ : PREMIUM") && /Copy Link/i.test(text) && /SIGIL Search/i.test(text);
 }
 
 async function ensureHypePremiumPinnedWelcome(chatId, env, { force = false, chat = null } = {}) {
