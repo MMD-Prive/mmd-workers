@@ -17,6 +17,18 @@ import {
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LOCK = "sigil-booking-worker-v24-airtable-resolver-telegram-notify";
+const PUBLIC_JOB_V2_FORMATS = new Set([
+  "dining",
+  "event",
+  "party",
+  "travel",
+  "guest_care",
+  "social_appearance",
+  "brand_guest",
+  "city_companion",
+  "other",
+]);
+const PRIVATE_JOB_TYPE_TOKENS = new Set(["pn", "vip", "private_review"]);
 
 export default {
   async fetch(req, env, ctx) {
@@ -189,12 +201,20 @@ async function handleBookingIntake(req, env, ctx) {
   const bookingRef = str(body.booking_ref || body.request_id || makeRef("book"));
   const sessionId = str(body.session_id || makeRef("mmd_session"));
   const incomingResolver = body.resolver_payload_json && typeof body.resolver_payload_json === "object" ? body.resolver_payload_json : {};
+  const intakeScope = token(body.lane || body.model_scope) === "private" ? "private" : "public";
   const intent = safeSearchIntent({ ...(incomingResolver.filters || {}), ...body });
   if (intent.errors.length) {
     const error = new Error(intent.errors[0]);
     error.status = 422;
     throw error;
   }
+  const requestedPrivateType = token(body.work_lane || body.private_work || body.job_class);
+  if (intakeScope === "public" && PRIVATE_JOB_TYPE_TOKENS.has(requestedPrivateType)) {
+    const error = new Error("public_job_private_type_forbidden");
+    error.status = 422;
+    throw error;
+  }
+  const publicJob = intakeScope === "public" ? normalizePublicJobV2Intake(body.public_job) : null;
   const modelQuery = str(body.model_search_query || body.model_id_or_name || intent.preferred_model_name || body.preference_text);
   const resolverPayload = {
     ...incomingResolver,
@@ -203,7 +223,7 @@ async function handleBookingIntake(req, env, ctx) {
       policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
       mode: intent.mode,
       customer_lane: intent.customer_lane,
-      work_lane: intent.work_lane,
+      work_lane: intakeScope === "private" ? intent.work_lane : "",
       budget: intent.budget,
       spec: intent.spec,
       preferred_model_name: intent.preferred_model_name,
@@ -211,8 +231,9 @@ async function handleBookingIntake(req, env, ctx) {
       fallback_allowed: intent.fallback_allowed,
       duration_minutes: Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0 ? Number(body.duration_minutes) : null,
       review_requested: body.review_requested === true || incomingResolver.review_requested === true || incomingResolver.filters?.review_requested === true,
-      service_context: str(body.service_context || body.service || incomingResolver.filters?.service_context).slice(0, 80),
+      service_context: str(body.service_context || body.service || publicJob?.format || incomingResolver.filters?.service_context).slice(0, 80),
     },
+    public_job: publicJob || undefined,
     review_requested: body.review_requested === true || incomingResolver.review_requested === true || incomingResolver.filters?.review_requested === true,
     job_creation_state: "waiting_for_per",
     saved_at: new Date().toISOString(),
@@ -226,7 +247,13 @@ async function handleBookingIntake(req, env, ctx) {
     "Source Path": str(body.source_path || "/sigil/booking"),
     "Selected Model ID": str(body.selected_model_id || body.resolved_model_key),
     "Selected Model Name": str(body.selected_model_name),
-    "Preference Text": str(body.preference_text || [intent.customer_lane, intent.work_lane, intent.budget?.label, intent.spec, intent.preferred_model_name].filter(Boolean).join(" · ") || modelQuery || body.client_notes),
+    "Preference Text": str(body.preference_text || [
+      intent.customer_lane,
+      intakeScope === "private" ? intent.work_lane : publicJob?.format,
+      intent.budget?.label,
+      intent.spec,
+      intent.preferred_model_name
+    ].filter(Boolean).join(" · ") || modelQuery || body.client_notes),
     "Preferred Date": str(body.preferred_date || body.date),
     "Preferred Time": str(body.preferred_time || body.time),
     "Contact Name": str(body.client_nickname || body.client_name),
@@ -235,9 +262,11 @@ async function handleBookingIntake(req, env, ctx) {
     "Access Hash": body.t ? shortHash(body.t) : "",
     "Private Allowed": bool(body.private_allowed),
     "Client Notes": str(body.client_notes || intent.spec || body.details),
-    "Admin Notes": intent.mode === "search"
-      ? "SIGIL Search draft waiting for Per. Budget is customer-supplied; HYPE may prepare candidates but must not publish or confirm a Model."
-      : "SIGIL Booking draft waiting for Per. Official review/payment verification still required.",
+    "Admin Notes": intakeScope === "public"
+      ? "Public Model request · MMD Public Job V2 draft waiting for Per. No PN/VIP semantics are allowed."
+      : intent.mode === "search"
+        ? "SIGIL Search draft waiting for Per. Budget is customer-supplied; HYPE may prepare candidates but must not publish or confirm a Model."
+        : "SIGIL Booking draft waiting for Per. Official review/payment verification still required.",
     "Raw Safety Note": "Draft only. Do not confirm booking, model availability, private access, or payment from this record alone.",
     session_id: sessionId,
     booking_ref: bookingRef,
@@ -246,9 +275,9 @@ async function handleBookingIntake(req, env, ctx) {
     line_or_member_id: str(body.line_or_member_id),
     member_status: normalizeMemberStatus(body.member_status),
     access_scope: normalizeAccessScope(body.access_scope),
-    lane: token(body.lane) === "private" ? "private" : "public",
-    job_class: normalizeJobClass(body.job_class),
-    model_scope: token(body.model_scope) === "private" ? "private" : "public",
+    lane: intakeScope,
+    job_class: intakeScope === "public" && publicJob ? publicJob.format : normalizeJobClass(body.job_class),
+    model_scope: intakeScope,
     model_search_query: modelQuery,
     resolved_model_key: str(body.resolved_model_key),
     model_asset_source: normalizeModelAssetSource(body.model_asset_source),
@@ -277,7 +306,11 @@ async function handleBookingIntake(req, env, ctx) {
       member_status: fields.member_status,
       status: "draft",
       customer_search_mode: intent.mode,
-      work_lane: intent.work_lane || fields.job_class,
+      work_lane: intakeScope === "private" ? (intent.work_lane || fields.job_class) : "",
+      public_format: publicJob?.format || "",
+      public_customer_count: publicJob?.customer_count || null,
+      public_care_count: publicJob?.care_count ?? null,
+      public_model_count: publicJob?.model_count || null,
       has_budget: intent.budget?.provided === true,
     },
   });
@@ -285,12 +318,66 @@ async function handleBookingIntake(req, env, ctx) {
   return {
     ok: true,
     record_id: rec?.id || null,
+    ...(publicJob ? { public_job: publicJob } : {}),
     booking_ref: bookingRef,
     session_id: sessionId,
     next_url: nextUrl,
     telegram_notify: telegram,
     intake_snapshot: bookingIntakeSnapshot(rec, { bookingRef, sessionId }),
   };
+}
+
+function normalizePublicJobV2Intake(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const schemaVersion = token(raw.schema_version || "mmd_public_job_v2");
+  if (schemaVersion !== "mmd_public_job_v2") {
+    const error = new Error("public_job_schema_invalid");
+    error.status = 422;
+    throw error;
+  }
+  const format = token(raw.format || raw.job_format);
+  if (!PUBLIC_JOB_V2_FORMATS.has(format)) {
+    const error = new Error("public_job_format_invalid");
+    error.status = 422;
+    throw error;
+  }
+  const duties = str(raw.duties).slice(0, 1200);
+  if (!duties) {
+    const error = new Error("public_job_duties_required");
+    error.status = 422;
+    throw error;
+  }
+  const customerCount = publicJobInteger(raw.customer_count, "customer_count", { min: 1, max: 200 });
+  const careCount = publicJobInteger(raw.care_count, "care_count", { min: 0, max: 200, fallback: 0 });
+  if (careCount > customerCount) {
+    const error = new Error("public_job_care_count_invalid");
+    error.status = 422;
+    throw error;
+  }
+  const modelCount = publicJobInteger(raw.model_count, "model_count", { min: 1, max: 20, fallback: 1 });
+  return {
+    schema_version: "mmd_public_job_v2",
+    format,
+    duties,
+    customer_count: customerCount,
+    care_count: careCount,
+    special_care_names: str(raw.special_care_names).slice(0, 1200),
+    model_count: modelCount,
+    model_assignment_note: str(raw.model_assignment_note).slice(0, 1200),
+    presentation_note: str(raw.presentation_note).slice(0, 1200),
+    remark: str(raw.remark).slice(0, 1200),
+  };
+}
+
+function publicJobInteger(value, field, { min = 0, max = 1000, fallback } = {}) {
+  if ((value === undefined || value === null || value === "") && fallback !== undefined) return fallback;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < min || number > max) {
+    const error = new Error(`public_job_${field}_invalid`);
+    error.status = 422;
+    throw error;
+  }
+  return number;
 }
 
 async function resolveMemberAccess(env, input) {
@@ -657,7 +744,8 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
   const resolver = parseJsonObject(fields.resolver_payload_json);
   const search = resolver.customer_search && typeof resolver.customer_search === "object" ? resolver.customer_search : {};
   const mode = token(body.search_mode || search.mode || fields["Source"]) === "search" || token(fields["Source"]) === "sigil_search" ? "search" : "booking";
-  const route = `${str(fields.lane || "public").toUpperCase()} / ${str(fields.job_class || search.work_lane || "travel").toUpperCase()}`;
+  const publicJob = resolver.public_job && typeof resolver.public_job === "object" ? resolver.public_job : null;
+  const route = `${str(fields.lane || "public").toUpperCase()} / ${str(publicJob?.format || fields.job_class || search.work_lane || "travel").toUpperCase()}`;
   const access = `${str(fields.member_status || "unknown")} · ${str(fields.access_scope || "public_only")}`;
   const model = str(fields["Selected Model Name"] || fields.model_search_query || search.preferred_model_name || "ให้ MMD หา");
   const duration = str(body.duration_minutes || search.duration_minutes || body.duration);
@@ -683,8 +771,14 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
     `Contact: ${escHtml(fields.client_contact || fields.line_or_member_id || fields["Contact Value"] || "ไม่ระบุ")}`,
     `Status: ${escHtml(access)}`,
     `Route: <b>${escHtml(route)}</b>`,
-    `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
-    serviceContext ? `Context: ${escHtml(serviceContext)}` : "",
+    publicJob
+      ? `Public: <b>${escHtml(publicJob.format)}</b> · ลูกค้า ${Number(publicJob.customer_count)} คน · ดูแลพิเศษ ${Number(publicJob.care_count)} คน · ต้องการ Model ${Number(publicJob.model_count)} คน`
+      : `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
+    publicJob?.duties ? `Duties: ${escHtml(publicJob.duties)}` : "",
+    publicJob?.special_care_names ? `Special care: ${escHtml(publicJob.special_care_names)}` : "",
+    publicJob?.model_assignment_note ? `Assignment: ${escHtml(publicJob.model_assignment_note)}` : "",
+    publicJob?.presentation_note ? `Presentation: ${escHtml(publicJob.presentation_note)}` : "",
+    !publicJob && serviceContext ? `Context: ${escHtml(serviceContext)}` : "",
     mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
     `Spec: ${escHtml(spec)}`,
     `Preferred: ${escHtml(model)}`,
@@ -794,7 +888,7 @@ function tierFromText(v) { const t = token(v); if (t.includes("black") || t.incl
 function normalizeMemberStatus(v) { const t = token(v); if (["active", "existing", "existing_active", "member_active", "active_member"].includes(t)) return "active"; if (["expired", "inactive", "cancelled", "canceled", "lapsed"].includes(t)) return t === "cancelled" || t === "canceled" ? "inactive" : t; if (["new", "guest", "not_found", "pending", "review_required"].includes(t)) return t; return "unknown"; }
 function normalizeAccessScope(v) { const t = token(v); if (["public_private", "private_review", "blocked"].includes(t)) return t; return "public_only"; }
 function normalizeRequestStatus(v) { const t = token(unwrapJsonString(v)); return ["draft", "pending", "review_required", "confirmed", "cancelled", "canceled"].includes(t) ? t : "draft"; }
-function normalizeJobClass(v) { const t = token(v); return ["travel", "extreme", "vip", "pn", "private_review"].includes(t) ? t : "travel"; }
+function normalizeJobClass(v) { const t = token(v); return ["travel", "extreme", "vip", "pn", "private_review", ...PUBLIC_JOB_V2_FORMATS].includes(t) ? t : "travel"; }
 function normalizeModelAssetSource(v) { const t = token(v); return ["mmd_model_media_assets", "r2_catalog", "r2_prefix", "airtable_attachment", "drive_folder", "gmail_folder_reference", "manual_review"].includes(t) ? t : "manual_review"; }
 function unwrapJsonString(v) { const s = str(v); if (s.length < 2 || s[0] !== '"' || s[s.length - 1] !== '"') return s; try { const parsed = JSON.parse(s); return typeof parsed === "string" ? parsed : s; } catch (_) { return s.replace(/^"+|"+$/g, ""); } }
 function isRequestStatusSelectFailure(res, fields) { return Object.hasOwn(fields || {}, "Request Status") && res.status === 422 && /(INVALID_MULTIPLE_CHOICE_OPTIONS|INVALID_VALUE_FOR_COLUMN|Request Status|draft)/i.test(str(res.text)); }
