@@ -358,6 +358,8 @@ async function handleExchange(request, env) {
   const body = await request.json().catch(() => ({}));
   const idToken = String(body?.idToken || body?.id_token || "").trim();
   const environment = normalizeLineEnvironment(body?.environment);
+  const intent = clean(body?.intent || body?.entry_intent).toLowerCase();
+  const jobId = clean(body?.job_id || body?.jobId);
   if (!idToken) return json({ ok: false, error: "id_token_required" }, 400, request, env);
 
   const channelId = resolveLineChannelId(env, environment);
@@ -365,7 +367,18 @@ async function handleExchange(request, env) {
   if (!lineIdentity.ok) return json({ ok: false, error: lineIdentity.error }, lineIdentity.status, request, env);
 
   const model = await findModelByLineUserId(env, lineIdentity.profile.sub);
-  if (!model.ok) return json({ ok: false, error: model.error }, model.status, request, env);
+  if (!model.ok) {
+    if (model.error === "model_not_linked" && intent === "job_board") {
+      return json({
+        ok: false,
+        state: "identity_review_required",
+        error: "model_not_linked",
+        intent: "job_board",
+        ...(jobId ? { job_id: jobId } : {}),
+      }, 202, request, env);
+    }
+    return json({ ok: false, error: model.error }, model.status, request, env);
+  }
 
   const sessionResult = await findActiveSessionForModel(env, model.record);
   if (!sessionResult.ok && sessionResult.status !== 404) {
