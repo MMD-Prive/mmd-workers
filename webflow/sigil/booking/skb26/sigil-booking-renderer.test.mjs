@@ -139,7 +139,7 @@ test('Public Model restores MMD Public Job V2 activity and group-care intake wit
   assert.match(footer, /name="presentation_note"/);
   assert.match(footer, /schema_version:'mmd_public_job_v2'/);
   assert.match(footer, /public_job:publicJob\|\|undefined/);
-  assert.match(footer, /work_lane:scope==='private'\?\(filters\.private_work\|\|''\\):''/);
+  assert.ok(footer.includes("work_lane:scope==='private'?(filters.private_work||''):''"));
   assert.match(footer, /if\(scope==='private'&&mode==='search'&&!filters\.private_work\)/);
   assert.doesNotMatch(footer, /if\(mode==='search'&&!filters\.private_work\)/);
   assert.match(footer, /if\(scope==='public'&&!filters\.public_format\)/);
