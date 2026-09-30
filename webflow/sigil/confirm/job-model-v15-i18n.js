@@ -5,6 +5,8 @@
  * Storage access is guarded because LINE/iOS in-app browsers may throw on localStorage.
  * v15.1: every state is visible. Errors are mapped to model-safe copy plus an
  * owner-safe reference code (error code + session tail only; never money, never token).
+ * v15.1: the model page shows no customer identity and no rate/amount/payment data.
+ * The client row always shows a neutral label and the payout card is removed.
  */
 (() => {
   "use strict";
@@ -67,7 +69,8 @@
       loadingPill: "กำลังโหลดรายละเอียด",
       title: "ยืนยันรับงาน",
       introKicker: "คืนนี้ในกรุงเทพ",
-      intro: "เช็กเวลา สถานที่ รายละเอียดงาน และยอดเงินถึงตัวให้เรียบร้อยก่อนออกเดินทาง",
+      intro: "เช็กวัน เวลา สถานที่ และรายละเอียดงานให้เรียบร้อยก่อนออกเดินทาง",
+      clientLabel: "ลูกค้า MMD",
       details: "รายละเอียดงาน",
       client: "ลูกค้า",
       job: "งาน",
@@ -75,8 +78,6 @@
       time: "เวลา",
       location: "สถานที่",
       map: "เปิด Google Maps ↗",
-      payout: "ยอดเงินถึงตัว",
-      payoutKicker: "ยอดถึงตัว",
       readyKicker: "พร้อมสำหรับคืนนี้?",
       loadingStatus: "กำลังโหลดรายละเอียดงาน…",
       retry: "ลองใหม่",
@@ -94,7 +95,6 @@
       confirming: "กำลังยืนยัน…",
       confirmed: "ยืนยันแล้ว",
       confirmError: "ยังยืนยันไม่ได้ กรุณาลองอีกครั้ง",
-      payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน",
       checkFirst: "กรุณาติ๊ก ✓ ว่าตรวจรายละเอียดแล้ว ก่อนกดยืนยันรับงาน",
       alreadyPill: "รับทราบแล้ว",
       alreadyTitle: "รับทราบแล้ว",
@@ -114,7 +114,8 @@
       loadingPill: "Loading details",
       title: "Confirm this job",
       introKicker: "TONIGHT IN BANGKOK",
-      intro: "Check the time, location, job details, and payout before heading out.",
+      intro: "Check the date, time, location, and job details before heading out.",
+      clientLabel: "MMD client",
       details: "Job details",
       client: "Client",
       job: "Job",
@@ -122,8 +123,6 @@
       time: "Time",
       location: "Location",
       map: "Open Google Maps ↗",
-      payout: "Your payout",
-      payoutKicker: "YOUR PAYOUT",
       readyKicker: "READY FOR TONIGHT?",
       loadingStatus: "Loading job details…",
       retry: "Try again",
@@ -141,7 +140,6 @@
       confirming: "Confirming…",
       confirmed: "Confirmed",
       confirmError: "Couldn’t confirm yet. Please try again.",
-      payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming.",
       checkFirst: "Please tick ✓ to confirm you reviewed the details, then tap Confirm.",
       alreadyPill: "Already confirmed",
       alreadyTitle: "Already confirmed",
@@ -161,7 +159,8 @@
       loadingPill: "正在加载详情",
       title: "确认接单",
       introKicker: "今晚 · 曼谷",
-      intro: "出发前请确认时间、地点、工作详情和到手金额。",
+      intro: "出发前请确认日期、时间、地点和工作详情。",
+      clientLabel: "MMD 客户",
       details: "工作详情",
       client: "客户",
       job: "工作",
@@ -169,8 +168,6 @@
       time: "时间",
       location: "地点",
       map: "打开 Google Maps ↗",
-      payout: "到手金额",
-      payoutKicker: "到手金额",
       readyKicker: "今晚准备好了吗？",
       loadingStatus: "正在加载工作详情…",
       retry: "重试",
@@ -188,7 +185,6 @@
       confirming: "正在确认…",
       confirmed: "已确认",
       confirmError: "暂时无法确认，请再试一次。",
-      payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。",
       checkFirst: "请先勾选 ✓ 确认已核对详情，再点击确认接单。",
       alreadyPill: "已确认",
       alreadyTitle: "已确认",
@@ -474,7 +470,6 @@
       button.setAttribute("aria-pressed", button.dataset.lang === lang ? "true" : "false");
     });
     staticAttr(".mm15__intro", "data-mmd-i18n-kicker", d.introKicker);
-    staticAttr(".mm15__payout", "data-mmd-i18n-kicker", d.payoutKicker);
     staticAttr(".mm15__confirm", "data-mmd-i18n-kicker", d.readyKicker);
     staticAttr(".mm15__success", "data-mmd-i18n-kicker", d.successKicker);
     staticText(".mm15__intro h1", d.title);
@@ -485,15 +480,12 @@
       if (rows[index]) rows[index].textContent = value;
     });
     if (el.map) el.map.textContent = d.map;
-    staticText(".mm15__payout > span", d.payout);
     if (el.retry) el.retry.textContent = d.retry;
     staticText(".mm15__check > span", d.check);
     if (el.confirm) el.confirm.textContent = confirmed ? d.confirmed : d.confirm;
     staticText(".mm15__success > strong", alreadyConfirmed ? d.alreadyTitle : d.successTitle);
     staticText(".mm15__success > span", alreadyConfirmed ? d.alreadyText : d.successText);
     staticText(".mm15__success > a", d.dashboard);
-    const payoutWarning = $("[data-m-paywarn]");
-    if (payoutWarning) payoutWarning.textContent = d.payoutMissingWarning;
     if (statusKey) setStatus(statusKey, statusIsError);
     if (pillKey) setPill(pillKey);
     if (feedbackKey) setFeedback(feedbackKey, feedbackIsError);
@@ -523,13 +515,6 @@
     root.dispatchEvent(new CustomEvent("mmd:sigil-language-change", {
       detail: { lang }
     }));
-  }
-
-  function money(value) {
-    const amount = Number(value);
-    return Number.isFinite(amount) && amount > 0
-      ? new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(amount) + " THB"
-      : "—";
   }
 
   function formatDate(value) {
@@ -652,7 +637,9 @@
 
   function render(data, updateState = true) {
     currentDetails = data;
-    if (el.client) el.client.textContent = str(data.client_name) || "—";
+    // Customer identity is owner/admin-only: never render a name, even if an
+    // older backend still sends one.
+    if (el.client) el.client.textContent = dict().clientLabel;
     if (el.type) el.type.textContent = workType(data.job_type);
     if (el.date) el.date.textContent = formatDate(data.job_date);
     if (el.time) el.time.textContent = range(data.start_time, data.end_time);
@@ -669,13 +656,6 @@
       el.map.hidden = false;
     } else if (el.map) {
       el.map.hidden = true;
-    }
-    const payout = Number(data.model_payout_thb);
-    if (Number.isFinite(payout) && payout > 0) {
-      if (el.payout) el.payout.textContent = money(payout);
-      if (el.payoutCard) el.payoutCard.hidden = false;
-    } else if (el.payoutCard) {
-      el.payoutCard.hidden = true;
     }
     if (updateState) {
       loaded = true;
@@ -796,6 +776,17 @@
     }
   }
 
+  // No rate/amount on the model page: drop the payout card and the payout
+  // warning from the DOM so no other layer (e.g. rate-to-you v1) can re-show it.
+  function removePayoutSurface() {
+    [el.payoutCard, $(".mm15__payout"), $("[data-m-paywarn]")].forEach((node) => {
+      try { node?.parentNode?.removeChild(node); } catch (_) {}
+    });
+    el.payoutCard = null;
+    el.payout = null;
+  }
+
+  removePayoutSurface();
   installStyle();
   ensureLangSwitch();
   applyLanguage();

@@ -148,17 +148,29 @@ test("unrelated payment ref on the session is still rejected by both details and
   assert.equal(s.writes.length, 0);
 });
 
-test("model details never expose customer pricing, payment refs, payment state or customer amounts", async (t) => {
+test("model details carry no customer identity, payment refs/state, rate or amount", async (t) => {
   const s = await setup();
   t.after(s.restore);
   const data = await (await s.details()).json();
-  for (const key of ["payment_ref", "payment_type", "payment_status", "pricing", "payment"]) {
+  for (const key of ["client_name", "payment_ref", "payment_type", "payment_status", "pricing", "payment", "model_payout_thb", "amount_thb", "amount_scope"]) {
     assert.equal(key in data, false, `${key} must not be in the model response`);
   }
   const raw = JSON.stringify(data);
-  for (const leak of ["pay_model_nsf", "40500", "13500", "45000", "27000", "partial", "deposit"]) {
+  for (const leak of ["คุณ Client", "pay_model_nsf", "40500", "13500", "45000", "27000", "5000", "partial", "deposit"]) {
     assert.equal(raw.includes(leak), false, `model response leaked ${leak}`);
   }
-  assert.equal(data.model_payout_thb, 5000);
-  assert.equal(data.amount_scope, "model_payout");
+  for (const key of ["job_date", "start_time", "end_time", "location_name", "already_confirmed"]) {
+    assert.ok(key in data, `${key} is still available to acknowledge the job`);
+  }
+});
+
+test("model confirmation context never carries the customer name", async (t) => {
+  const s = await setup();
+  t.after(s.restore);
+  const { handleConfirmationContext } = await import("./confirmation-ack.js");
+  const r = await handleConfirmationContext(new Request("https://sigil.mmdbkk.com/v1/confirm/context", { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify({ t: s.token, expected_role: "model" }) }), s.env);
+  assert.equal(r.status, 200);
+  const data = await r.json();
+  assert.equal(data.confirmation.counterpart_name, null);
+  assert.equal(JSON.stringify(data).includes("คุณ Client"), false);
 });

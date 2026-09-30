@@ -54,6 +54,7 @@ class FakeEl {
     if (i < 0) this.children.push(child); else this.children.splice(i, 0, child);
     return child;
   }
+  removeChild(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parentNode = null; return child; }
   closest() { return null; }
   focus() { this.focused = true; }
   querySelector(sel) { return this.find(sel)[0] || null; }
@@ -65,6 +66,7 @@ class FakeEl {
     walk(this);
     return out;
   }
+  contains(node) { return this.children.some((c) => c === node || c.contains(node)); }
   get allText() { return [this.textContent, ...this.children.map((c) => c.allText)].join(" "); }
 }
 
@@ -141,7 +143,8 @@ function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", w
 }
 
 const settle = (ms = 40) => new Promise((r) => setTimeout(r, ms));
-const DETAILS_OK = { status: 200, body: { ok: true, role: "model", client_name: "คุณ A", job_type: "private", job_date: "2026-10-02", start_time: "19:00", end_time: "21:00", location_name: "Hotel", model_payout_thb: 5000, confirmation_revision: "rev123", already_confirmed: false, model_acknowledged_at: null } };
+// client_name / model_payout_thb simulate an older backend: the page must still never render them.
+const DETAILS_OK = { status: 200, body: { ok: true, role: "model", client_name: "คุณ Secret Client", job_type: "private", job_date: "2026-10-02", start_time: "19:00", end_time: "21:00", location_name: "Hotel", model_payout_thb: 5000, confirmation_revision: "rev123", already_confirmed: false, model_acknowledged_at: null } };
 const feedback = (h) => h.root.querySelector("[data-m-confirm-feedback]");
 const diag = (h) => h.root.querySelector("[data-m-diag]");
 const status = (h) => h.el["data-m-status"];
@@ -328,4 +331,16 @@ test("gate: failed preflight is not cached, so retry can recover", async () => {
   await settle();
   assert.equal(h.calls.filter((c) => c.path === "/v1/model/direct-job-gate/status").length, 2);
   assert.equal(h.root.dataset.mmdState, "ready");
+});
+
+test("model page never shows customer identity, rate or amount; client row is a neutral label", async () => {
+  const h = harness({ routes: { "/v1/confirm/details": DETAILS_OK } });
+  await settle();
+  assert.equal(h.root.dataset.mmdState, "ready");
+  assert.equal(h.el["data-m-client"].textContent, "ลูกค้า MMD");
+  assert.equal(h.root.contains(h.el["data-m-payout-card"]), false, "payout card removed from the model page");
+  const visible = h.root.allText;
+  for (const leak of ["Secret Client", "5000", "5,000", "THB", "pay_", "deposit"]) {
+    assert.equal(visible.includes(leak), false, `model page leaked ${leak}`);
+  }
 });

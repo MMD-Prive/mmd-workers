@@ -27,9 +27,10 @@ const SESSION_FIELDS = Object.freeze({
   modelAckAt: "fldFgkHXivIAThfDz",
 });
 
-// Payment truth belongs to payments-worker and the customer view only. The
-// model view must never carry payment identifiers or payment state.
-const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status"]);
+// The model view carries only what the model needs to acknowledge the job:
+// date, time, location/brief and acknowledgement state. Customer identity,
+// payment identifiers/state and any rate or amount stay owner/admin-side.
+const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status", "client_name"]);
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
@@ -143,7 +144,6 @@ export async function handleConfirmationDetails(request, env = {}) {
       }));
     }
 
-    const modelPayout = numberOrNull(fields[SESSION_FIELDS.payModelThb]);
     const modelCommon = { ...common };
     for (const key of MODEL_HIDDEN_KEYS) delete modelCommon[key];
     const modelAcknowledgedAt = text(fields[field(env.AT_SESSIONS__MODEL_ACK_AT, SESSION_FIELDS.modelAckAt)], 200) || null;
@@ -151,9 +151,6 @@ export async function handleConfirmationDetails(request, env = {}) {
       ...modelCommon,
       model_acknowledged_at: modelAcknowledgedAt,
       already_confirmed: Boolean(modelAcknowledgedAt),
-      model_payout_thb: modelPayout,
-      amount_thb: modelPayout,
-      amount_scope: "model_payout",
     }));
   } catch (error) {
     return withCors(request, env, json({
