@@ -77,7 +77,7 @@ function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-function createEnv() {
+function createEnv({ modelRecords = [], includeAsset = true } = {}) {
   let application = appRecord();
   let asset = assetRecord();
   const calls = [];
@@ -102,7 +102,10 @@ function createEnv() {
         return jsonResponse({ records: [application] });
       }
       if (parsed.pathname.endsWith(`/${ASSET_TABLE}`) && method === "GET") {
-        return jsonResponse({ records: [asset] });
+        return jsonResponse({ records: includeAsset ? [asset] : [] });
+      }
+      if (parsed.pathname.endsWith("/Models") && method === "GET") {
+        return jsonResponse({ records: modelRecords });
       }
       if (parsed.pathname.endsWith(`/${ASSET_TABLE}`) && method === "PATCH") {
         const body = JSON.parse(init.body);
@@ -188,6 +191,59 @@ test("approve writes canonical review state, approves attached assets, and never
   assert.equal(application.fields[PUBLIC_MODEL_REVIEW_FIELDS.handler], "per");
   assert.match(application.fields[PUBLIC_MODEL_REVIEW_FIELDS.notes], /เหมาะกับ Public lane/);
   assert.equal(state.getAsset().fields[PUBLIC_MODEL_ASSET_FIELDS.reviewStatus], "approved");
+});
+
+test("contact-first application can stay pending without photos but cannot be approved yet", async () => {
+  const state = createEnv({ includeAsset: false });
+  const request = new Request(`https://mmdbkk.com/v1/admin/model-applications/${APP_ID}/decision`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Origin: "https://mmdbkk.com" },
+    body: JSON.stringify({ decision: "approve" }),
+  });
+  const response = await handlePublicModelApplicationReviewRequest(request, state.env, { id: "per" });
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.error, "application_media_required_for_approval");
+  assert.equal(body.state, "needs_media");
+  assert.equal(state.getApplication().fields[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus], "private_review_pending");
+});
+
+test("approval blocks a working-name collision until Per explicitly confirms the same Model record", async () => {
+  const modelId = "rec12345678901234";
+  const modelRecords = [{ id: modelId, fields: { working_name: "ไม้เรียว", aliases: "Old Alias" } }];
+  const state = createEnv({ modelRecords });
+  const request = (body) => new Request(`https://mmdbkk.com/v1/admin/model-applications/${APP_ID}/decision`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Origin: "https://mmdbkk.com" },
+    body: JSON.stringify(body),
+  });
+
+  let response = await handlePublicModelApplicationReviewRequest(request({ decision: "approve" }), state.env, { id: "per" });
+  assert.equal(response.status, 409);
+  let body = await response.json();
+  assert.equal(body.error, "working_name_conflict");
+  assert.deepEqual(body.conflicts, [{ model_record_id: modelId, working_name: "ไม้เรียว" }]);
+
+  response = await handlePublicModelApplicationReviewRequest(request({ decision: "approve", linked_model_id: modelId }), state.env, { id: "per" });
+  assert.equal(response.status, 200);
+  body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.linked_model_id, modelId);
+  assert.match(state.getApplication().fields[PUBLIC_MODEL_REVIEW_FIELDS.notes], new RegExp(modelId));
+});
+
+test("GWs and EMs run-number names stay reserved for system assignment", async () => {
+  const state = createEnv();
+  const application = state.getApplication();
+  application.fields[PUBLIC_MODEL_REVIEW_FIELDS.nickname] = "GWs19";
+  const request = new Request(`https://mmdbkk.com/v1/admin/model-applications/${APP_ID}/decision`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Origin: "https://mmdbkk.com" },
+    body: JSON.stringify({ decision: "approve" }),
+  });
+  const response = await handlePublicModelApplicationReviewRequest(request, state.env, { id: "per" });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "reserved_working_name");
 });
 
 test("decision mutation rejects cross-origin requests before Airtable writes", async () => {
