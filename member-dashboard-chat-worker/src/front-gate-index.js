@@ -48,20 +48,20 @@ async function forwardMemberPages(request, env, ctx = null) {
   }
 
   const url = new URL(request.url);
-  const headers = new Headers(request.headers);
+  const requestHeaders = new Headers(request.headers);
   if (url.pathname.startsWith("/api/member/app/private-preview/")) {
     const mode = normalizeSvipPhotoRevealMode(env.KENJI_SVIP_PHOTO_REVEAL_MODE);
-    headers.set(SVIP_PHOTO_REVEAL_MODE_HEADER, mode);
+    requestHeaders.set(SVIP_PHOTO_REVEAL_MODE_HEADER, mode);
     const audit = observeSvipPhotoRevealMode(env, `preview:${url.pathname.split("/").pop() || "request"}`).catch(() => null);
     if (typeof ctx?.waitUntil === "function") ctx.waitUntil(audit);
     else await audit;
   } else {
-    headers.delete(SVIP_PHOTO_REVEAL_MODE_HEADER);
+    requestHeaders.delete(SVIP_PHOTO_REVEAL_MODE_HEADER);
   }
 
   const upstreamResponse = await env.MEMBER_PAGES_WORKER.fetch(new Request(request.url, {
     method: request.method,
-    headers,
+    headers: requestHeaders,
     body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
     redirect: request.redirect,
   }));
