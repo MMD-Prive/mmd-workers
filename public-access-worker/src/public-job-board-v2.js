@@ -417,7 +417,6 @@ async function submitApplication(request, env, jobId, applicationRef) {
   if (application.uploads.length > job.public.media_requirements.count) throw httpError(400, "media_count_exceeded");
   const lineId = clean(input.line_id, 120);
   const phone = clean(input.phone, 40);
-  if (!lineId && !phone) throw httpError(400, "contact_required");
   application.applicant = {
     nickname: required(input.nickname, "nickname", 80),
     line_id: lineId,
