@@ -10,6 +10,7 @@ import {
 
 export * from "./mms-line-front-gate.js";
 export { KenjiShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
+export { SvipPhotoRevealModeAudit } from "./svip-photo-reveal-mode-audit.mjs";
 
 const MEDICAL_REQUEST_PATHS = new Set(["/api/member/medical-request", "/api/member/medical-request/"]);
 
