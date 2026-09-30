@@ -101,13 +101,14 @@ export async function materializeDriveAndBindVerifiedModelLineClaim(request, env
   const body = await request.json().catch(() => null);
   if (!body || body.mode !== MODEL_LINE_LINK_MATERIALIZE_MODE) return json({ ok: false, error: "unsupported_mode" }, 400);
   if (body.confirm !== true) return json({ ok: false, error: "explicit_confirmation_required" }, 400);
-  const allowedKeys = new Set(["mode", "claim_id", "drive_folder_id", "confirm"]);
+  const allowedKeys = new Set(["mode", "claim_id", "drive_folder_id", "selected_session_id", "confirm"]);
   for (const key of Object.keys(body)) {
     if (!allowedKeys.has(key)) return json({ ok: false, error: "unsupported_fields" }, 400);
   }
 
   const claimId = clean(body.claim_id, 120);
   const driveFolderId = clean(body.drive_folder_id, 180);
+  const selectedSessionId = clean(body.selected_session_id, 220);
   if (!/^model_line_[a-f0-9]{24}$/i.test(claimId)) return json({ ok: false, error: "claim_id_invalid" }, 400);
   if (!/^[A-Za-z0-9_-]{10,180}$/.test(driveFolderId)) return json({ ok: false, error: "drive_folder_id_invalid" }, 400);
 
@@ -142,6 +143,7 @@ export async function materializeDriveAndBindVerifiedModelLineClaim(request, env
       mode: "bind_verified_claim",
       claim_id: claimId,
       model_record_id: modelRecordId,
+      ...(selectedSessionId ? { selected_session_id: selectedSessionId } : {}),
       confirm: true,
     }),
   });
