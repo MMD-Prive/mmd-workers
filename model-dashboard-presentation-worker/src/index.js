@@ -538,7 +538,6 @@ function safeModelConfirmationReturnTo(request) {
 }
 
 function rememberedSelectedJobReturnTo(request) {
-  if (!hasLiffPrimaryBootstrapCookie(request)) return "";
   return normalizeModelConfirmationReturnTo(cookieValue(request, MODEL_SELECTED_JOB_INTENT_COOKIE));
 }
 
@@ -570,7 +569,7 @@ function safeMiniAppUrlForBootstrap(request) {
     if (jobBoard.model_record_id) params.set("model_record_id", jobBoard.model_record_id);
   } else {
     const returnTo = selectedJobReturnTo(request);
-    if (returnTo) params.set("return_to", returnTo);
+    if (returnTo) params.set("handoff", "job-confirmed");
   }
   return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
 }
@@ -742,18 +741,33 @@ export function shouldHandoffToMiniApp(request) {
   return true;
 }
 
+function shortSelectedJobMiniAppUrl(request) {
+  const source = new URL(request.url);
+  const environment = resolveLiffEnvironmentFromRequest(request);
+  const params = new URLSearchParams();
+  const lang = boundedParam(source, "lang");
+  if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
+  params.set("handoff", "job-confirmed");
+  return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
+}
+
 function miniAppHandoff(request) {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location: modelMiniAppHandoffUrl(request),
-      "cache-control": "no-store",
-      "x-mmd-worker": WORKER_NAME,
-      "x-mmd-route-owner": WORKER_NAME,
-      "x-mmd-model-entry": "line-miniapp-handoff-v1",
-      "x-robots-tag": "noindex, nofollow",
-    },
+  const selectedJob = safeModelConfirmationReturnTo(request);
+  const headers = new Headers({
+    location: selectedJob ? shortSelectedJobMiniAppUrl(request) : modelMiniAppHandoffUrl(request),
+    "cache-control": "no-store",
+    "x-mmd-worker": WORKER_NAME,
+    "x-mmd-route-owner": WORKER_NAME,
+    "x-mmd-model-entry": "line-miniapp-handoff-v1",
+    "x-robots-tag": "noindex, nofollow",
   });
+  if (selectedJob) {
+    headers.append(
+      "set-cookie",
+      `${MODEL_SELECTED_JOB_INTENT_COOKIE}=${encodeURIComponent(selectedJob)}; Path=${UI_PREFIX}; Max-Age=${MODEL_SELECTED_JOB_INTENT_TTL_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
+    );
+  }
+  return new Response(null, { status:302, headers });
 }
 
 export function authenticatedJobBoardResumeHtml(request) {
