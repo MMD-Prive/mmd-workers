@@ -313,7 +313,8 @@ async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRe
     }),
   });
   return {
-    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view#t=${encodeURIComponent(rawToken)}`,
+    grant_id: grantId,
+    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view?g=${encodeURIComponent(grantId)}#t=${encodeURIComponent(rawToken)}`,
     expires_at: expiresAt,
   };
 }
