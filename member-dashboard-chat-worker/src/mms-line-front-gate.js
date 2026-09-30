@@ -57,13 +57,13 @@ const RICH_MENU_RETURN_TARGETS = Object.freeze({
   "/profiles": new Set(["rich_menu_guest_models", "rich_menu_public_models"]),
   "/booking": new Set(["rich_menu_guest_booking", "rich_menu_public_booking"]),
   "/services/companion": new Set(["rich_menu_guest_services"]),
-  "/tmib/stories": new Set(["rich_menu_guest_stories"]),
-  "/sigil/member/membership": new Set(["rich_menu_prive_access"]),
-  "/sigil/booking": new Set(["rich_menu_model_cards", "rich_menu_private_booking"]),
-  // Transitional allowlist for already-issued pre-v4.9 links only.
   "/tmib": new Set(["rich_menu_guest_stories"]),
   "/member/private": new Set(["rich_menu_model_cards", "rich_menu_prive_update"]),
   "/find": new Set(["rich_menu_private_booking"]),
+  // Transitional allowlist for already-issued v4.9 links only.
+  "/tmib/stories": new Set(["rich_menu_guest_stories"]),
+  "/sigil/member/membership": new Set(["rich_menu_prive_access"]),
+  "/sigil/booking": new Set(["rich_menu_model_cards", "rich_menu_private_booking"]),
 });
 
 function safeStatusReturnTarget(value) {
