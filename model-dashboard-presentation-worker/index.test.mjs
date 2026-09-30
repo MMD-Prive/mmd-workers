@@ -291,6 +291,54 @@ test("approved Model job link enters the published Mini App before opening signe
   assert.equal(new URL(modelMiniAppHandoffUrl(hostile)).searchParams.has("return_to"), false);
 });
 
+test("selected-job browser entry keeps the signed token off access.line.me", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const target = "/sigil/confirm/job-model?t=abc.DEF_123";
+  const entry = new Request(
+    `https://mmdbkk.com/sigil/model/dashboard?handoff=job-confirmed&return_to=${encodeURIComponent(target)}`,
+  );
+  const response = await worker.fetch(entry);
+  assert.equal(response.status, 302);
+
+  const location = new URL(response.headers.get("location"));
+  assert.equal(location.origin, "https://miniapp.line.me");
+  assert.equal(location.pathname, "/2010864854-N34SgCqq/");
+  assert.equal(location.searchParams.get("handoff"), "job-confirmed");
+  assert.equal(location.searchParams.has("return_to"), false);
+  assert.equal(location.toString().includes("abc.DEF_123"), false);
+  assert.ok(location.toString().length < 180);
+
+  const cookies = response.headers.get("set-cookie") || "";
+  assert.match(cookies, /mmd_model_selected_job=/);
+  assert.match(cookies, /HttpOnly/);
+  assert.match(cookies, /Secure/);
+  assert.match(cookies, /Path=\/sigil\/model\/dashboard/);
+  assert.match(cookies, /Max-Age=180/);
+});
+
+test("first LIFF callback can recover selected job from the secure handoff cookie", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const target = "/sigil/confirm/job-model?t=abc.DEF_123";
+  const callback = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?liffClientId=2010864854-N34SgCqq",
+    {
+      headers: {
+        cookie: `mmd_model_selected_job=${encodeURIComponent(target)}`,
+      },
+    },
+  );
+  const response = await worker.fetch(callback);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-model-entry"), "liff-primary-preboot-v1");
+
+  const html = await response.text();
+  assert.match(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
+  assert.match(html, /ไม่ใช่หน้าสมัครงาน/);
+  assert.match(html, /window\.location\.replace\("\/sigil\/confirm\/job-model\?t=abc\.DEF_123"\)/);
+  assert.doesNotMatch(html, /MODEL ONBOARDING/);
+  assert.doesNotMatch(html, /return_to=%2Fsigil%2Fconfirm%2Fjob-model/);
+});
+
 test("selected-job intent survives a LIFF OAuth reload that strips the query string", async () => {
   const worker = (await import("./src/index.js")).default;
   const target = "/sigil/confirm/job-model?t=abc.DEF_123";
