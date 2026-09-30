@@ -10,9 +10,14 @@ export function privateMediaFixture() {
   const storage = new Map(); let queue = Promise.resolve();
   const state = { storage: {
     get: async key => storage.get(key),
-    transaction: fn => { const task = queue.then(() => fn({ get:async key=>storage.get(key), put:async(key,value)=>storage.set(key,value) })); queue = task.catch(()=>{}); return task; },
+    delete: async key => storage.delete(key),
+    transaction: fn => { const task = queue.then(() => fn({
+      get:async key=>storage.get(key),
+      put:async(key,value)=>storage.set(key,value),
+      delete:async key=>storage.delete(key),
+    })); queue = task.catch(()=>{}); return task; },
   } };
-  const fixture = { lineUserId, asset, grant, object, state, storage, gateFailure:0, registryFailure:false, logFailure:false, auditFailure:false, audits:[], writes:[], objects:new Map() };
+  const fixture = { lineUserId, asset, grant, object, state, storage, gateFailure:0, registryFailure:false, logFailure:false, auditFailure:false, patchDelayMs:0, audits:[], writes:[], objects:new Map() };
   fixture.env = {
     AIRTABLE_API_KEY:"synthetic",AIRTABLE_BASE_ID:"appTest",LIFF_SESSION_SECRET:"s".repeat(32),
     MODEL_MEDIA_SLOT_COORDINATOR:modelMediaSlotCoordinatorFixture(),
@@ -28,6 +33,7 @@ export function privateMediaFixture() {
       if(request.method === 'PATCH') {
         const body = await request.json();
         fixture.writes.push(body);
+        if(fixture.patchDelayMs > 0) await new Promise(resolve => setTimeout(resolve, fixture.patchDelayMs));
         if(fixture.logFailure) return Response.json({}, {status:503});
         grant.fields = { ...grant.fields, ...(body?.fields || {}) };
         return Response.json({id:'recGrant',fields:grant.fields});
