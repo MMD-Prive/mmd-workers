@@ -582,6 +582,7 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
   const threadId = str(env.TG_THREAD_BOOKING_DRAFT || env.TELEGRAM_BOOKING_THREAD_ID || env.TELEGRAM_THREAD_ID);
   const adminUrl = buildAdminBookingUrl(env, bookingRef, rec?.id || "");
   const text = buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordId: rec?.id || "", nextUrl, adminUrl });
+  const draftMode = token(body.search_mode || body.mode || fields["Source"]) === "sigil_search" || token(body.search_mode || body.mode) === "search" ? "search" : "booking";
   const payload = compact({
     chat_id: chatId,
     message_thread_id: threadId,
@@ -590,7 +591,7 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
     disable_web_page_preview: true,
     text,
     source: "sigil_booking_worker",
-    intent: "booking_draft_notify",
+    intent: draftMode === "search" ? "sigil_search_draft_notify" : "booking_draft_notify",
     booking_ref: bookingRef,
     session_id: sessionId,
     airtable_record_id: rec?.id || ""
@@ -609,26 +610,46 @@ async function notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionI
 }
 
 function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordId, nextUrl, adminUrl }) {
-  const route = `${str(fields.lane || "public").toUpperCase()} / ${str(fields.job_class || "travel").toUpperCase()}`;
+  const resolver = parseJsonObject(fields.resolver_payload_json);
+  const search = resolver.customer_search && typeof resolver.customer_search === "object" ? resolver.customer_search : {};
+  const mode = token(body.search_mode || search.mode || fields["Source"]) === "search" || token(fields["Source"]) === "sigil_search" ? "search" : "booking";
+  const route = `${str(fields.lane || "public").toUpperCase()} / ${str(fields.job_class || search.work_lane || "travel").toUpperCase()}`;
   const access = `${str(fields.member_status || "unknown")} · ${str(fields.access_scope || "public_only")}`;
-  const model = str(fields.resolved_model_key || fields["Selected Model Name"] || fields.model_search_query || "manual review");
-  const date = [fields["Preferred Date"], fields["Preferred Time"], body.duration].map(str).filter(Boolean).join(" · ") || "not set";
+  const model = str(fields["Selected Model Name"] || fields.model_search_query || search.preferred_model_name || "ให้ MMD หา");
+  const duration = str(body.duration_minutes || body.duration);
+  const date = [fields["Preferred Date"], fields["Preferred Time"], duration ? duration + " นาที" : ""].map(str).filter(Boolean).join(" · ") || "not set";
   const place = [body.city, body.google_address].map(str).filter(Boolean).join(" · ") || "not set";
+  const customerLane = str(body.customer_lane || search.customer_lane || "-");
+  const workLane = str(body.work_lane || search.work_lane || fields.job_class || "-").toUpperCase();
+  const budgetObject = search.budget && typeof search.budget === "object" ? search.budget : {};
+  const budget = str(body.budget_thb)
+    ? Number(body.budget_thb).toLocaleString("th-TH") + " THB"
+    : str(body.budget_band || budgetObject.label || "-");
+  const spec = str(body.spec || search.spec || "-");
+  const telegramRef = str(body.telegram_post_url || search.telegram_reference || "");
+  const fallback = body.fallback_allowed === true || search.fallback_allowed === true ? "ได้" : "เฉพาะที่ระบุ";
+  const reviewRequested = body.review_requested === true || resolver.review_requested === true || resolver.filters?.review_requested === true;
   return [
-    "🕯️ <b>MMD Booking Draft</b>",
+    mode === "search" ? "🔎 <b>SIGIL SEARCH · WAITING FOR PER</b>" : "📅 <b>SIGIL BOOKING · WAITING FOR PER</b>",
     `Ref: <code>${escHtml(bookingRef)}</code>`,
-    `Session: <code>${escHtml(sessionId)}</code>`,
     recordId ? `Airtable: <code>${escHtml(recordId)}</code>` : "",
     "",
     `Client: <b>${escHtml(fields.client_nickname || fields["Contact Name"] || "ไม่ระบุ")}</b>`,
     `Contact: ${escHtml(fields.client_contact || fields.line_or_member_id || fields["Contact Value"] || "ไม่ระบุ")}`,
-    `Status: ${escHtml(access)}`,
+    `Status: ${escHtml(access)}</b>`.replace("</b>", ""),
     `Route: <b>${escHtml(route)}</b>`,
-    `Model: ${escHtml(model)}`,
+    `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
+    mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
+    `Spec: ${escHtml(spec)}`,
+    `Preferred: ${escHtml(model)}`,
+    telegramRef ? `Telegram ref: ${escHtml(telegramRef)}` : "",
+    `Fallback: ${escHtml(fallback)}`,
+    reviewRequested ? "Review requested: YES · ใช้เฉพาะ Review ที่ผ่าน customer-safe review" : "",
     `When: ${escHtml(date)}`,
     `Place: ${escHtml(place)}`,
     "",
-    "Note: draft only. ยังไม่ยืนยันงาน / model / payment",
+    "<b>HYPE: PREPARE ONLY</b> · ห้าม publish Job Board / confirm Model / confirm Rate เอง",
+    "รอ Per ตรวจและกดอนุมัติก่อนทุกครั้ง",
     adminUrl ? `Admin: ${escHtml(adminUrl)}` : "",
     nextUrl ? `Next: ${escHtml(nextUrl)}` : ""
   ].filter(Boolean).join("\n");
