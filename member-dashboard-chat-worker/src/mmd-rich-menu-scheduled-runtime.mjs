@@ -11,7 +11,7 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260930-v4.8";
+const VERSION = "mmd-rm3-20260930-v4.9";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
@@ -27,7 +27,7 @@ function uri(label, value) { return { type: "uri", label, uri: value }; }
 function msg(label, value) { return { type: "message", label, text: value }; }
 function postback(label, data) { return { type: "postback", label, data }; }
 function site(path, entry) { const u = new URL(path, "https://mmdbkk.com"); u.searchParams.set("source", "line"); u.searchParams.set("entry_route", entry); return u.toString(); }
-function liff() { return `https://miniapp.line.me/${LIFF_ID}/?intent=status&view=profile`; }
+function liff() { return `https://miniapp.line.me/${LIFF_ID}/?intent=status&view=home`; }
 function signupLiff() { return `https://miniapp.line.me/${LIFF_ID}/?intent=signup&view=signup`; }
 function liffReturn(path, entry) {
   const target = new URL(path, "https://mmdbkk.com");
@@ -57,7 +57,7 @@ const MENUS = Object.freeze({
       uri("PUBLIC MODELS", liffReturn("/profiles", "rich_menu_guest_models")),
       uri("BOOKING", liffReturn("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", liffReturn("/services/companion", "rich_menu_guest_services")),
-      uri("MMD STORIES", liffReturn("/tmib", "rich_menu_guest_stories")),
+      uri("MMD STORIES", liffReturn("/tmib/stories", "rich_menu_guest_stories")),
       postback("SUPPORT", "mmd_action=support&audience=guest&intent=ใช้บริการยังไง"),
     ],
   },
@@ -77,7 +77,7 @@ const MENUS = Object.freeze({
       uri("PUBLIC MODELS", liffReturn("/profiles", "rich_menu_public_models")),
       uri("BOOKING", liffReturn("/booking", "rich_menu_public_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE ACCESS", signupLiff()),
+      uri("PRIVE ACCESS", liffReturn("/sigil/member/membership?intent=signup", "rich_menu_prive_access")),
       postback("SUPPORT", "mmd_action=support&audience=public&intent=ใช้บริการยังไง"),
     ],
   },
@@ -97,10 +97,10 @@ const MENUS = Object.freeze({
     ],
     actions: [
       postback("KENJI AI", "mmd_action=kenji_ai&audience=private&source=private_rich_menu"),
-      uri("MODEL CARDS", liffReturn("/member/private#detail-model", "rich_menu_model_cards")),
-      uri("BOOKING", liffReturn("/find", "rich_menu_private_booking")),
+      uri("MODEL CARDS", liffReturn("/sigil/booking?mode=search&scope=private", "rich_menu_model_cards")),
+      uri("BOOKING", liffReturn("/sigil/booking?mode=booking&scope=private", "rich_menu_private_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE UPDATE", liffReturn("/member/private#access", "rich_menu_prive_update")),
+      uri("PRIVE UPDATE", liff()),
       postback("SUPPORT", "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu"),
     ],
   },
@@ -178,7 +178,7 @@ export function getMmdRichMenuFiveStateMatrix(now = new Date()) {
 }
 
 export function bangkokHour(now = new Date()) { return new Date(now.getTime() + 7 * 3600_000).getUTCHours(); }
-export function isMmdRichMenuHidden() { return false; }
+export function isMmdRichMenuHidden(now = new Date()) { const h = bangkokHour(now); return h >= 16 && h < 23; }
 
 function pngSize(buffer) {
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 24) return null;
@@ -379,7 +379,7 @@ export async function auditMmdRichMenus(env, now = new Date(), menuSpecs = MENUS
   const defaultId = defaultResult.r.status === 404 ? "" : clean(defaultResult.body?.richMenuId);
   const hidden = isMmdRichMenuHidden(now);
   const defaultState = !defaultId ? "none" : defaultId === ids.guest ? "guest" : "unexpected";
-  const schedulePolicyMatch = !hidden && defaultState === "guest";
+  const schedulePolicyMatch = hidden ? defaultState === "none" : defaultState === "guest";
   const fiveState = getMmdRichMenuFiveStateMatrix(now);
   const matrixMatch =
     fiveState.guest === "guest" &&
@@ -494,7 +494,19 @@ export async function showMmdRichMenus(env, now = new Date()) {
   return { visible: true, counts: { guest_known: group.guest.length, public: group.public.length, private: group.private.length } };
 }
 
-export async function reconcileMmdRichMenus(env, now = new Date()) { return showMmdRichMenus(env, now); }
+export async function hideMmdRichMenus(env) {
+  await line(env, `${LINE_API}/user/all/richmenu`, { method: "DELETE" }, [404]);
+  await line(env, `${LINE_API}/richmenu/batch`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operations: [{ type: "unlinkAll" }] }),
+  }, [409]);
+  return { visible: false };
+}
+
+export async function reconcileMmdRichMenus(env, now = new Date()) {
+  return isMmdRichMenuHidden(now) ? hideMmdRichMenus(env) : showMmdRichMenus(env, now);
+}
 
 function internal(request, env) { const a = clean(request.headers.get("authorization")); return Boolean(clean(env.INTERNAL_TOKEN) && a === `Bearer ${clean(env.INTERNAL_TOKEN)}`); }
 export function isMmdRichMenuScheduledRequest(request) {
@@ -520,8 +532,8 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
 
   if (request.method === "POST" && path === THREE_LEVEL_ACTIVATE_PATH) {
     try {
-      const result = await showMmdRichMenus(env, new Date());
-      return json({ ok: true, version: VERSION, active: result.visible, selected_default: false, counts: result.counts });
+      const result = await reconcileMmdRichMenus(env, new Date());
+      return json({ ok: true, version: VERSION, active: result.visible, selected_default: result.visible ? false : null, counts: result.counts || {} });
     } catch (error) {
       return json({ ok: false, error: "rich_menu_activate_failed", reason: clean(error?.message || error).slice(0, 120) }, 502);
     }
@@ -539,6 +551,10 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
   const body = await request.json().catch(() => ({}));
   const id = clean(body.line_user_id || body.lineUserId);
   if (!id) return json({ ok: false, error: "line_user_id_missing" }, 400);
+  if (isMmdRichMenuHidden()) {
+    await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]);
+    return json({ ok: true, target: "hidden" });
+  }
   const menus = await ensureMenus(env);
   const group = await users(env, new Date());
   const target = group.private.includes(id) ? "private" : group.public.includes(id) ? "public" : "guest";
