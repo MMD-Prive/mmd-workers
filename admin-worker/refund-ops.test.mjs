@@ -397,10 +397,11 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     assert.match(sent.text, /Admin job URL/);
     assert.match(sent.text, /Model job\/app URL for Film J/);
     assert.match(sent.text, /ส่งเฉพาะ Model job\/app URL ให้น้อง/);
-    assert.equal(sent.reply_markup.inline_keyboard.length, 3);
+    assert.equal(sent.reply_markup.inline_keyboard.length, 4);
     assert.equal(sent.reply_markup.inline_keyboard[0][0].text, "Customer receipt");
-    assert.equal(sent.reply_markup.inline_keyboard[1][0].text, "Open admin job");
-    assert.equal(sent.reply_markup.inline_keyboard[2][0].text, "Send to Film J");
+    assert.equal(sent.reply_markup.inline_keyboard[1][0].text, "Customer job/confirm");
+    assert.equal(sent.reply_markup.inline_keyboard[2][0].text, "Open admin job");
+    assert.equal(sent.reply_markup.inline_keyboard[3][0].text, "Send to Film J");
     const stored = JSON.parse(record.fields.payload_json);
     assert.equal(stored.owner_telegram_delivery_status, "sent");
     assert.equal(stored.owner_telegram_message_id, 99);
