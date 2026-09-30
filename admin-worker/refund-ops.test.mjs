@@ -336,6 +336,13 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
       return Response.json({ ok:true, result:{ message_id:99 } });
     }
     if (method === "GET" && formula.includes("{inbox_id}")) return Response.json({ records:[record] });
+    if (method === "GET" && formula.includes("{session_id}")) return Response.json({ records:[{
+      id:"recFilmJSession",
+      fields:{
+        fldi9ZdoiUXzSv1rI:"https://www.mmdbkk.com/sigil/confirm/job-confirmation?t=customer-film-j",
+        fld0mFma9J9yfEaKb:"https://www.mmdbkk.com/sigil/confirm/job-model?t=film-j-signed",
+      },
+    }] });
     if (method === "PATCH") {
       const body = JSON.parse(init.body || "{}");
       Object.assign(record.fields, body.fields || {});
@@ -370,10 +377,15 @@ test("refund receipt upload sends owner Telegram completed pack with customer, a
     assert.match(payload.customer_confirmation_url, /^https:\/\/www\.mmdbkk\.com\/refund-receipt\/media\?/);
     assert.match(payload.admin_job_url, /^https:\/\/www\.mmdbkk\.com\/internal\/admin\/jobs\/all\?job_id=JOB-FILM-J-20260929&session_id=sess_film_j$/);
     assert.match(payload.model_job_app_url, /^https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
-    assert.match(payload.model_job_app_url, /intent=job_board/);
-    assert.match(payload.model_job_app_url, /job_id=JOB-FILM-J-20260929/);
-    assert.match(payload.model_job_app_url, /model_alias=Film\+J/);
-    assert.match(payload.model_job_app_url, /lang=th/);
+    const filmJUrl = new URL(payload.model_job_app_url);
+    assert.equal(filmJUrl.hostname, "miniapp.line.me");
+    assert.equal(filmJUrl.pathname, "/2010864854-N34SgCqq/");
+    assert.equal(filmJUrl.searchParams.get("source"), "refund_completed_pack");
+    assert.equal(filmJUrl.searchParams.get("model_alias"), "Film J");
+    assert.equal(filmJUrl.searchParams.get("lang"), "th");
+    assert.equal(filmJUrl.searchParams.get("return_to"), "/sigil/confirm/job-model?t=film-j-signed");
+    assert.equal(filmJUrl.searchParams.has("intent"), false);
+    assert.doesNotMatch(payload.model_job_app_url, /\/j\//);
     assert.equal(payload.owner_telegram.sent, true);
     assert.equal(payload.owner_telegram.message_id, 99);
     assert.equal(telegramCalls.length, 1);
