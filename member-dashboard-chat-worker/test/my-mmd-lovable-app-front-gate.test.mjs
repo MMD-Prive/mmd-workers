@@ -362,6 +362,37 @@ test("private_teaser LIFF verifies the member then returns only to the allowlist
   assert.equal(hostile.headers.get("x-mmd-liff-return-target"), null);
 });
 
+test("private_photo_reveal LIFF returns directly to the exact grant resume and skips optional Telegram before return", async () => {
+  const grantId = "svip_photo_123e4567-e89b-12d3-a456-426614174000";
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PRIVATE PHOTO BRIDGE</main><div id="message"></div><div id="actions"></div><script nonce="photo123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request(`https://mmdbkk.com/member/liff?intent=private_photo_reveal&grant=${grantId}`),
+    runtime,
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), `/api/member/app/private-preview/resume?g=${grantId}`);
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.match(html, new RegExp(`const target = "/api/member/app/private-preview/resume\\?g=${grantId}"`));
+  assert.match(html, /กำลังเปิดรูป/);
+  assert.match(html, /private-preview\\/resume/);
+
+  const hostile = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?intent=private_photo_reveal&grant=https%3A%2F%2Fevil.example"),
+    runtime,
+  );
+  assert.equal(hostile.headers.get("x-mmd-liff-return-target"), null);
+});
+
 test("continue_payment LIFF stays auth-bridge-only and returns to My MMD Payment Center", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
