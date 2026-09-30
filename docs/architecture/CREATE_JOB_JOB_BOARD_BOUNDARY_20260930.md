@@ -74,5 +74,50 @@ The owner UI route and the Model broadcast route are different concerns.
 - `/public/api/jobs/internal/*` remains backend/internal API authority only; it is not the owner UI navigation route.
 - Existing Login V2 identity outcomes remain fail-closed: `existing_bound`, `verified_new`, and `identity_review_required`.
 
+## Applicant Welcome / Per Voice contract
+
+The first applicant-facing screen is human and Per-led, not an organization/security screen.
+
+Canonical copy direction:
+- `ที่นี่พี่เปอร์ดูแลงานให้ครับ`
+- Primary CTA: `ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า →`
+- Do not show applicant-facing `ยืนยันตัวตน`, candidate-database, organization, or identity-review language.
+- If the person is not ready to send photos, first contact may be saved with LINE or phone and remains pending.
+- Confidential applicants may bypass the web intake and contact Per directly at `t.me/per_mmd`.
+
+An unlinked Job Board visitor who completes the LINE bootstrap but has no approved Model link is sent to:
+`/apply/public-model?source=job_board&job_id=<canonical job id>`.
+
+The application must preserve `job_id` so owner review can trace the exact job that caused the intake.
+
+## Approval / identity contract
+
+A historical Folder or name match is a hint only. It never auto-binds a person or skips first-time review.
+
+Before owner approval:
+- contact-first applications may exist without photos;
+- final approval requires current media;
+- the desired working name is checked against current Model names/folders/aliases;
+- GWs/EMs run-number identities are reserved system names;
+- a collision with another Model blocks approval;
+- if the collision is the applicant's own historical Model, Per must explicitly confirm that existing Model record.
+
+After Per links/approves:
+- the latest owner-approved working name becomes canonical;
+- old names remain aliases/history;
+- the same durable Model/Folder identity is retained rather than duplicated;
+- downstream compcard generation uses the canonical working name and latest approved profile/media.
+
+## Model Pool / Job Board contract
+
+Approved linked Models use a fast lane:
+- Public and Private jobs share one feed;
+- a linked Model does not re-enter profile data or upload photos for every job;
+- one tap records interest against the already-linked Model record;
+- Private teaser cards expose no date, time, area, compensation, customer gender/count, or sensitive description;
+- Private detail is projected only after the linked Model explicitly opens that job.
+
+Selected-model direct jobs remain a separate lane and must not be converted into applicant/recruitment flow.
+
 Canonical separation:
-`Owner UI /internal/admin/jobs/job-board -> publish API -> LIFF Login V2 broadcast link -> verified Model -> public Job Board/detail`.
+`Owner UI /internal/admin/jobs/job-board -> publish API -> Per-led LIFF Welcome -> linked Model: unified Job Board fast lane | unlinked person: Application -> Per review/link -> Model Pool`.
