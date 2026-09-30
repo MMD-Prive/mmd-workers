@@ -1,6 +1,6 @@
 # MMD Privé LINE Rich Menu — 3 LV Action Map
 
-Status: canonical production map for the MMD Privé LINE OA. LV1 CTA copy updated for Rich Menu v4.1 on 2026-09-23. Rich Menu runtime v4.7 changes customer web CTAs to a LIFF-first identity bridge before returning to the bounded destination.
+Status: canonical production map for the MMD Privé LINE OA. Revalidated against the current route canon and live customer surfaces on 2026-09-30. Rich Menu runtime v4.9 corrects stale CTA destinations while preserving the LIFF-first identity bridge.
 
 This map applies only to MMD Privé. MMS / Male Massage is a separate LINE OA and is not part of this runtime.
 
@@ -13,7 +13,7 @@ Pattern:
 
 `Rich Menu → Mini App / LIFF status bridge → POST /member/api/liff/start → bounded return_to → destination`
 
-This applies to PUBLIC MODELS, BOOKING, PUBLIC SERVICES, MMD STORIES, MODEL CARDS and PRIVÉ UPDATE. START HERE and PRIVÉ ACCESS already use the signup Mini App, and MY MMD already uses LIFF. Message/Postback actions remain message/postback actions.
+This applies to PUBLIC MODELS, BOOKING, PUBLIC SERVICES, MMD STORIES, PRIVÉ ACCESS and the Privé Model/Booking journeys. START HERE uses the signup Mini App directly. MY MMD and PRIVÉ UPDATE stay inside the Worker-rendered MY MMD Digital Home. Message/Postback actions remain message/postback actions.
 
 The LIFF bridge does not grant membership, entitlement, payment, model visibility or booking authority. The destination still performs its own backend authorization and must fail closed.
 
@@ -25,7 +25,7 @@ The LIFF bridge does not grant membership, entitlement, payment, model visibilit
 | Top-center | PUBLIC MODELS | `LIFF status → /profiles?source=line&entry_route=rich_menu_guest_models` |
 | Top-right | BOOKING | `LIFF status → /booking?source=line&entry_route=rich_menu_guest_booking` |
 | Bottom-left | PUBLIC SERVICES | `LIFF status → /services/companion?source=line&entry_route=rich_menu_guest_services` |
-| Bottom-center | MMD STORIES · Discover TMIB | `LIFF status → /tmib?source=line&entry_route=rich_menu_guest_stories` |
+| Bottom-center | MMD STORIES · Discover TMIB | `LIFF status → /tmib/stories?source=line&entry_route=rich_menu_guest_stories` |
 | Bottom-right | SUPPORT | Silent LINE postback → MMD support guidance; no Kenji name is shown to the customer |
 
 ### LV1 image asset
@@ -44,8 +44,8 @@ Verified identity; no active Privé entitlement required.
 | Top-left | คุยกับ PER | LINE message: `Hi Per` |
 | Top-center | PUBLIC MODELS | `LIFF status → /profiles?source=line&entry_route=rich_menu_public_models` |
 | Top-right | BOOKING | `LIFF status → /booking?source=line&entry_route=rich_menu_public_booking` |
-| Bottom-left | MY MMD | LINE Mini App / LIFF status view |
-| Bottom-center | PRIVÉ ACCESS | `Mini App signup: intent=signup&view=signup` |
+| Bottom-left | MY MMD | LINE Mini App / LIFF `intent=status&view=home` |
+| Bottom-center | PRIVÉ ACCESS | `LIFF status → /sigil/member/membership?intent=signup&source=line&entry_route=rich_menu_prive_access` |
 | Bottom-right | SUPPORT | Silent LINE postback → MMD support guidance; no Kenji name is shown to the customer |
 
 ## LV3 — Privé Member
@@ -55,10 +55,10 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 | Position | Label | Action |
 | --- | --- | --- |
 | Top-left | KENJI AI | LINE message: `Hi Kenji` |
-| Top-center | MODEL CARDS | `LIFF status → /member/private?source=line&entry_route=rich_menu_model_cards#detail-model` |
-| Top-right | BOOKING | `LIFF status → /find?source=line&entry_route=rich_menu_private_booking` |
-| Bottom-left | MY MMD | LINE Mini App / LIFF status view |
-| Bottom-center | PRIVÉ UPDATE | `LIFF status → /member/private?source=line&entry_route=rich_menu_prive_update#access` |
+| Top-center | MODEL CARDS | `LIFF status → /sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards` |
+| Top-right | BOOKING | `LIFF status → /sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking` |
+| Bottom-left | MY MMD | LINE Mini App / LIFF `intent=status&view=home` |
+| Bottom-center | PRIVÉ UPDATE | LINE Mini App / LIFF `intent=status&view=home` → MMD NEWS / member updates |
 | Bottom-right | SUPPORT | LINE message: `Hi Kenji` |
 
 ## State Rules
@@ -83,5 +83,23 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 
 - Rich Menu is navigation only; it never grants membership or private access.
 - `MY MMD` uses the authenticated LINE Mini App / LIFF status flow.
-- `MODEL CARDS` points to the current Private member surface; the backend remains the entitlement authority and the page must not behave as a public catalogue.
+- `MODEL CARDS` enters the current SIGIL Search surface in Private scope; the backend entitlement resolver remains authoritative and protected Models remain fail-closed.
 - Kenji is a concierge/router and continuity layer, not the final authority for protected decisions.
+
+## 2026-09-30 CTA correction
+
+The v4.9 route audit supersedes the stale v4.8 destinations below:
+
+- `MMD STORIES`: `/tmib` → `/tmib/stories`
+- Public `PRIVÉ ACCESS`: Public signup Mini App → `/sigil/member/membership?intent=signup`
+- Privé `MODEL CARDS`: informational `/member/private#detail-model` → `/sigil/booking?mode=search&scope=private`
+- Privé `BOOKING`: public `/find` → `/sigil/booking?mode=booking&scope=private`
+- Privé `PRIVÉ UPDATE`: informational `/member/private#access` → MY MMD Digital Home / MMD NEWS
+- `MY MMD`: uses explicit `view=home`; `view=profile` was only a normalized alias.
+
+Source alignment:
+- customer CTA canon: `docs/knowledge/KENJI_WEBSITE_CTA_MAP_V1_20260929.md`
+- SIGIL Search/Booking contract: `docs/architecture/SIGIL_CUSTOMER_SEARCH_V1.md`
+- MY MMD Digital Home: `docs/architecture/MY_MMD_LIFF_DIGITAL_HOME_V1_20260928.md`
+
+The quiet-window rule remains authoritative: hide daily 16:00–22:59 Asia/Bangkok; restore at 23:00.
