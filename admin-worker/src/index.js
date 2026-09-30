@@ -121,6 +121,11 @@ const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
 const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
+const ADMIN_RICH_MENU_CURRENT_THREE_LEVEL_PATHS = new Set([
+  `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`,
+  `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate`,
+  `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`,
+]);
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
 const INTERNAL_ADMIN_PREFIX = "/internal/admin";
 const SIGIL_INTERNAL_ADMIN_PREFIX = "/sigil/internal/admin";
@@ -1790,9 +1795,7 @@ async function handleAdminRichMenuRoute(req, env, path, method) {
   const servicePath = adminRichMenuServicePath(path);
   if (!servicePath) return json({ ok: false, error: "not_found" }, 404);
 
-  const currentThreeLevel = path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare` ||
-    path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate` ||
-    path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`;
+  const currentThreeLevel = ADMIN_RICH_MENU_CURRENT_THREE_LEVEL_PATHS.has(path);
   const internalToken = currentThreeLevel ? str(env.INTERNAL_TOKEN) : "";
   if (currentThreeLevel && !internalToken) {
     return json({ ok: false, error: "internal_token_unavailable" }, 502);
