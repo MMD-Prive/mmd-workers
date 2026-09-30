@@ -15,7 +15,9 @@ import {
 } from "./canonical-confirm-link.js";
 import {
   handleConfirmationReissue,
+  handleModelConfirmationReissue,
   isConfirmationReissueRequest,
+  isModelConfirmationReissueRequest,
 } from "./confirmation-link-reissue.js";
 import { canonicalizeConfirmLinkRequest } from "./confirm-route-canonicalizer.js";
 import {
@@ -178,6 +180,10 @@ export default {
 
     if (isConfirmationReissueRequest(path, method)) {
       return handleConfirmationReissue(request, env);
+    }
+
+    if (isModelConfirmationReissueRequest(path, method)) {
+      return handleModelConfirmationReissue(request, env);
     }
 
     if (isUnifiedPaymentIntentRequest(path, method)) {
