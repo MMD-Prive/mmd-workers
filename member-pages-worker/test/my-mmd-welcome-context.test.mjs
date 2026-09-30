@@ -147,6 +147,6 @@ test("invalid request shape, cross-origin request and unavailable resolver fail 
 
   const unavailable = await handleMyMmdWelcomeContext(new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { cookie: fixture.cookie } }), fixture.env);
   assert.equal(unavailable.status, 503);
-  assert.equal((await unavailable.json()).state, "public");
+  assert.equal((await unavailable.json()).state, "checking");
   assert.deepEqual(fixture.writes, []);
 });
