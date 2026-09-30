@@ -220,6 +220,10 @@ test("Premium room sync updates description and pins canonical Welcome", { concu
     assert.match(welcome.body.text, /MMD PRIVÉ : PREMIUM/);
     assert.match(welcome.body.text, /Copy Link/);
     assert.match(welcome.body.text, /LINE Official/);
+    assert.match(welcome.body.text, /SIGIL Search/);
+    const buttons = welcome.body.reply_markup.inline_keyboard.flat();
+    assert.equal(buttons.some((button) => button.text.includes("SIGIL Search") && new URL(button.url).searchParams.get("mode") === "search"), true);
+    assert.equal(buttons.some((button) => button.text.includes("SIGIL Booking") && new URL(button.url).searchParams.get("mode") === "booking"), true);
 
     const pin = telegramCalls.find((call) => /pinChatMessage$/.test(call.url));
     assert.ok(pin);
@@ -266,7 +270,7 @@ test("Premium room sync is idempotent when canonical Welcome is already pinned",
           description,
           pinned_message: {
             message_id: 700,
-            text: "💎 MMD PRIVÉ : PREMIUM\nเจอ Post หรือ Model ที่สนใจ กด Copy Link แล้วส่งทาง LINE Official",
+            text: "💎 MMD PRIVÉ : PREMIUM\nเจอ Post หรือ Model ที่สนใจ กด Copy Link แล้วส่งทาง LINE Official\nกด SIGIL Search หรือ SIGIL Booking ได้เลย",
           },
         },
       });
