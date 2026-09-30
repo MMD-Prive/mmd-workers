@@ -59,11 +59,8 @@ async function forwardMemberPages(request, env, ctx = null) {
     requestHeaders.delete(SVIP_PHOTO_REVEAL_MODE_HEADER);
   }
 
-  const upstreamResponse = await env.MEMBER_PAGES_WORKER.fetch(new Request(request.url, {
-    method: request.method,
+  const upstreamResponse = await env.MEMBER_PAGES_WORKER.fetch(new Request(request, {
     headers: requestHeaders,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
-    redirect: request.redirect,
   }));
   const headers = new Headers(upstreamResponse.headers);
   headers.set("x-mmd-worker", WORKER_NAME);
