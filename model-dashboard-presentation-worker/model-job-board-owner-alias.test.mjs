@@ -65,6 +65,8 @@ test("public job board entry uses Per-led Welcome and contact-first intake", () 
   assert.match(html, /\/apply\/public-model/);
   assert.match(html, /source","job_board"/);
   assert.match(html, /job_id/);
+  assert.match(html, /intent:"job_board"/);
+  assert.match(html, /identity_review_required/);
   assert.match(html, /fallback\.addEventListener\("click"/);
   assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
   assert.doesNotMatch(html, /ยืนยันตัวตน|กำลังตรวจสอบตัวตน|สมัครสมาชิก/);
