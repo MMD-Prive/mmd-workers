@@ -636,7 +636,7 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
     "",
     `Client: <b>${escHtml(fields.client_nickname || fields["Contact Name"] || "ไม่ระบุ")}</b>`,
     `Contact: ${escHtml(fields.client_contact || fields.line_or_member_id || fields["Contact Value"] || "ไม่ระบุ")}`,
-    `Status: ${escHtml(access)}</b>`.replace("</b>", ""),
+    `Status: ${escHtml(access)}`,
     `Route: <b>${escHtml(route)}</b>`,
     `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
     mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
