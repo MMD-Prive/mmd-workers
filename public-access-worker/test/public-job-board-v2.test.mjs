@@ -237,6 +237,9 @@ test("owner short link renders a Per-led job-first landing", async () => {
   assert.match(page, /HYPE%20Ner%20Job-p-1080\.png/);
   assert.match(page, /og:image:type" content="image\/png"/);
   assert.doesNotMatch(page, /HYPE%20Ner%20Job\.webp/);
+  assert.match(page, /data-mmd-job-miniapp-handoff="v1"/);
+  assert.match(page, /window\.location\.replace\(target\)/);
+  assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);
 
   const direct = await call(testEnv, "/public/api/jobs");
   assert.equal(direct.status, 302);
@@ -267,6 +270,8 @@ test("branded short link renders an existing canonical job created before aliase
   assert.match(page, /MMD JOB · CONFIDENTIAL/);
   assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);
+  assert.match(page, /data-mmd-job-miniapp-handoff="v1"/);
+  assert.match(page, /window\.location\.replace\(target\)/);
 });
 
 test("job board Welcome is Per-led and keeps Public plus Private in one feed", async () => {
