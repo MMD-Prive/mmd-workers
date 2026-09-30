@@ -119,7 +119,7 @@ Required:
 
 ## Cache / reload policy
 
-Policy: **one successful open consumes the grant permanently. Reload never replays media.**
+Policy: **one successful `POST /consume` permanently consumes the grant. Reload never replays media.**
 
 - [ ] Viewer HTML: `Cache-Control: private, no-store`.
 - [ ] Media bytes: `Cache-Control: no-store`.
@@ -127,6 +127,30 @@ Policy: **one successful open consumes the grant permanently. Reload never repla
 - [ ] No LocalStorage, SessionStorage, IndexedDB, or Cache API persistence.
 - [ ] Reload after consume does not display cached media.
 - [ ] Browser back/forward does not display media again.
+
+## Network drop immediately after `เปิดดู`
+
+This is a mandatory manual pilot case because the one-use gate commits before the browser can prove that the person actually saw rendered pixels.
+
+Test on both iPhone LINE and Android LINE:
+
+1. Open a valid pilot preview.
+2. Tap **เปิดดู**.
+3. Immediately disable network / force-close LINE before the image visibly renders.
+4. Reopen the same link.
+
+Required:
+
+- [ ] Original grant remains consumed; reload/back/reopen does **not** replay the media.
+- [ ] Exactly one consumption audit exists for the original grant.
+- [ ] Customer-facing recovery copy does not claim the customer definitely saw the image; it says the one-time access ended and MMD can review it.
+- [ ] Per can follow the network-drop recovery runbook without changing the original consumed grant.
+- [ ] Recovery, when approved, creates a **new** exact-client grant for the same Model/Media set only.
+- [ ] The recovery record references the original grant and reason `delivery_failure_after_consume`.
+- [ ] No automatic reissue, automatic replay window, or entitlement expansion occurs.
+
+Canonical recovery runbook:
+`docs/ops/KENJI_SVIP_PHOTO_REVEAL_NETWORK_DROP_RECOVERY_20260930.md`
 
 ## Kill switch during pilot
 
@@ -186,6 +210,7 @@ Do not enable `live` unless all are true:
 - [ ] LINE PC/Mac behavior is either supported or cleanly instructs mobile use.
 - [ ] Old token invalidation PASS.
 - [ ] no-store/reload policy PASS.
+- [ ] network-drop-after-consume recovery PASS on iPhone and Android.
 - [ ] live-link kill switch PASS.
 - [ ] concurrency one-use PASS.
 - [ ] exact-client isolation PASS.
