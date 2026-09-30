@@ -234,6 +234,22 @@ function base64Url(value) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+export function photoGrantAuditContext({ clientId = "", modelId = "", mediaRecordId = "", eventRef = "", requestedModelRef = "", issuedAt = "" } = {}) {
+  return {
+    authorization_basis: "active_svip_exact_customer_photo_reveal",
+    policy_version: HYPE_SVIP_PHOTO_REVEAL_POLICY,
+    issue_reason: "svip_exact_customer_requested_approved_photo_set",
+    issued_at: clean(issuedAt, 80),
+    issued_by: "hype:svip_exact_customer_photo_reveal",
+    customer_binding: "exact_canonical_line_client",
+    client_record_id: clean(clientId, 100),
+    model_record_id: clean(modelId, 100),
+    media_record_id: clean(mediaRecordId, 100),
+    requested_model_ref: clean(requestedModelRef, 120),
+    event_ref: clean(eventRef, 160),
+  };
+}
+
 function grantFields(env = {}) {
   return {
     grantId: clean(env.AT_FLASH_GRANTS__GRANT_ID, 120) || "grant_id",
@@ -285,7 +301,7 @@ async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRe
     [fields.authorizedAt]: issuedAt,
     [fields.grantNote]: "Photo-only exact-customer reveal. No rate, availability, offer, booking or payment authority.",
     [fields.payloadJson]: JSON.stringify({
-      authorization_basis: "active_svip_exact_customer_photo_reveal",
+      ...photoGrantAuditContext({ clientId, modelId, mediaRecordId, eventRef, requestedModelRef, issuedAt }),
       access_lane: "private_preview",
       preview_kind: "private_pic",
       consume_on: "open",
@@ -294,16 +310,6 @@ async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRe
       availability_authority: false,
       booking_authority: false,
       payment_authority: false,
-      policy_version: HYPE_SVIP_PHOTO_REVEAL_POLICY,
-      issue_reason: "svip_exact_customer_requested_approved_photo_set",
-      issued_at: issuedAt,
-      issued_by: "hype:svip_exact_customer_photo_reveal",
-      customer_binding: "exact_canonical_line_client",
-      client_record_id: clientId,
-      model_record_id: modelId,
-      media_record_id: mediaRecordId,
-      requested_model_ref: requestedModelRef,
-      event_ref: eventRef,
     }),
   });
   return {
