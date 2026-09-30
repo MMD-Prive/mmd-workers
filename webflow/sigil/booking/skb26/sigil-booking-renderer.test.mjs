@@ -55,10 +55,12 @@ test('renderer keeps a safe no-media state and API failure state', () => {
   assert.doesNotMatch(footer, /var img=item\.cover_url\|\|item\.public_image_url/);
 });
 
-test('stylesheet includes the min-content guard verified by the 390px browser smoke', () => {
+test('digital surface keeps min-content safe and uses a non-swipe Model grid', () => {
   assert.match(head, /\.skb26-shell,\.skb26-form,\.skb26-form>\*,\.skb26-card,\.skb26-model-results\{min-width:0;max-width:100%\}/);
-  assert.match(head, /\.skb26-model-results\{width:100%\}/);
-  assert.match(head, /\.skb26-model-results\{display:flex;gap:8px;overflow-x:auto;/);
+  assert.match(head, /\.skb26-model-results\{[\s\S]*width:100%;[\s\S]*display:grid;[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.doesNotMatch(head, /\.skb26-model-results\{[^}]*overflow-x:auto/);
+  assert.match(head, /min-height:100dvh/);
+  assert.match(head, /env\(safe-area-inset-bottom\)/);
 });
 
 
@@ -89,4 +91,34 @@ test('customer offer cards label rates by duration and never imply the 90-minute
   assert.match(footer, /รูปเพิ่มเติมที่อนุมัติ/);
   assert.doesNotMatch(footer, /drive_folder_id/);
   assert.doesNotMatch(footer, /drive\.google\.com/);
+});
+
+
+test('SIGIL booking presents as a compact digital private concierge surface', () => {
+  assert.match(footer, /<span class="skb26-brand">SĪGIL<\/span>/);
+  assert.match(footer, /PRIVATE CONCIERGE/);
+  assert.match(footer, /data-skb26-mode="search"/);
+  assert.match(footer, /data-skb26-mode="booking"/);
+  assert.doesNotMatch(footer, /data-skb26-identity open/);
+  assert.match(footer, /if\(params\.get\('scope'\)==='private'\)identity\.open=true/);
+  assert.match(head, /background:[\s\S]*radial-gradient/);
+  assert.match(head, /backdrop-filter:blur/);
+});
+
+test('selected Model details open in a guarded bottom sheet with approved projected media only', () => {
+  assert.match(footer, /skb26-model-sheet/);
+  assert.match(footer, /role="dialog" aria-modal="true"/);
+  assert.match(footer, /function openModelSheet\(\)/);
+  assert.match(footer, /function closeModelSheet\(\)/);
+  assert.match(footer, /openModelBtn\.addEventListener\('click',openModelSheet\)/);
+  assert.match(footer, /btn\.classList\.add\('is-selected'\);openModelSheet\(\)/);
+  assert.match(footer, /if\(e\.key==='Escape'/);
+  assert.match(head, /\.skb26-model-sheet\{/);
+  assert.match(head, /\.skb26-media-gallery\{[\s\S]*display:grid/);
+  assert.doesNotMatch(head, /\.skb26-media-gallery[^}]*overflow-x:auto/);
+});
+
+test('renderer is idempotent when Webflow reruns the embed', () => {
+  assert.match(footer, /if\(root\.dataset\.skb26Mounted==='1'\)return/);
+  assert.match(footer, /root\.dataset\.skb26Mounted='1'/);
 });
