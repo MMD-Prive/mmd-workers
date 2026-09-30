@@ -160,6 +160,7 @@ test("HYPE leaves join service messages in other groups untouched", async () => 
 test("join cleanup is disabled until at least one cleanup group is configured", async () => {
   const response = await worker.fetch(joinRequest(), makeEnv({
     TELEGRAM_STANDARD_GROUP_ID: "",
+    TELEGRAM_PREMIUM_GROUP_ID: "",
     TELEGRAM_MMD_CHAT_GROUP_ID: "",
     TELEGRAM_PREVIEW_GROUP_ID: "",
   }));
