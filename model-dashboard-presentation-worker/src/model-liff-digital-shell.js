@@ -35,6 +35,7 @@ export function modelLiffDigitalBootstrapHtml({
   fallback,
   sdk,
   returnTo = "",
+  selectedSessionId = "",
   jobBoard = null,
   environment = "published",
   mode = "primary",
@@ -43,6 +44,9 @@ export function modelLiffDigitalBootstrapHtml({
   const safeFallback = JSON.stringify(String(fallback || ""));
   const safeSdk = JSON.stringify(String(sdk || ""));
   const safeReturnTo = JSON.stringify(String(returnTo || ""));
+  const selectedSessionRaw = String(selectedSessionId || "").trim();
+  const selectedSession = /^sess_[A-Za-z0-9._-]{8,180}$/.test(selectedSessionRaw) ? selectedSessionRaw : "";
+  const safeSelectedSession = JSON.stringify(selectedSession);
   const safeEnvironment = JSON.stringify(String(environment || "published"));
   const safeJobBoard = jobBoard && typeof jobBoard === "object"
     ? {
@@ -53,7 +57,7 @@ export function modelLiffDigitalBootstrapHtml({
       }
     : null;
   const directAssignedModel = Boolean(safeJobBoard && safeJobBoard.model_record_id);
-  const directConfirmedJob = Boolean(returnTo);
+  const directConfirmedJob = Boolean(returnTo || selectedSession);
   const publicJobApplicant = Boolean(safeJobBoard && !directAssignedModel);
   const selectedJobMode = directAssignedModel || directConfirmedJob;
   const jobBoardScript = safeJobBoard ? `
@@ -90,6 +94,19 @@ export function modelLiffDigitalBootstrapHtml({
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
     window.location.replace(${safeReturnTo});return;` : "";
+  const selectedSessionScript = selectedSession ? `
+    var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
+    if(!idToken)throw new Error("id_token_missing");
+    status.textContent="กำลังยืนยันงานที่เลือกคุณ…";
+    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
+    var exchangeBody=await exchange.json().catch(function(){return null});
+    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    var selected=await fetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession}})});
+    var selectedBody=await selected.json().catch(function(){return null});
+    if(!selected.ok||!selectedBody||selectedBody.ok!==true||!selectedBody.redirect_url)throw new Error(selectedBody&&selectedBody.error||"selected_job_handoff_failed");
+    var destination=new URL(String(selectedBody.redirect_url),"https://mmdbkk.com");
+    if(destination.origin!=="https://mmdbkk.com"||destination.pathname!=="/sigil/confirm/job-model"||!destination.searchParams.get("t"))throw new Error("selected_job_redirect_invalid");
+    window.location.replace(destination.pathname+destination.search);return;` : "";
   const primary = mode === "primary";
   const jobBoardMode = Boolean(safeJobBoard);
   const ownerAlias = safeJobBoard && safeJobBoard.model_alias ? safeJobBoard.model_alias : "";
@@ -180,7 +197,7 @@ export function modelLiffDigitalBootstrapHtml({
       pill.textContent=${JSON.stringify(readyPill)};
       status.textContent=${JSON.stringify(success)};
       ${jobBoardScript}
-      ${returnScript}
+      ${selectedSessionScript || returnScript}
     }catch(error){
       pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MMD APP · RETRY")};
       status.textContent=${JSON.stringify(fail)};
