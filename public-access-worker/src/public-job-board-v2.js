@@ -2,6 +2,8 @@ import { buildModelJobBoardBroadcastLink, buildModelJobBoardMiniAppLink, resolve
 
 const PREFIX = "/public/api/jobs";
 const SHORT_PREFIX = "/j";
+const PUBLIC_JOB_OG_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abb8f0705dd02706846642f_HYPE%20Ner%20Job.webp";
+const PRIVATE_JOB_OG_IMAGE = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abb912c94dd2bbb082d620e_HYPE%20Private%20Job.webp";
 const SHORT_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 const SHORT_CODE_RE = /^[A-F0-9]{12}$/;
 const STORE_PREFIX = "public-job-board/v2";
@@ -656,6 +658,8 @@ function shortJobLandingHtml(job, loginUrl) {
   const description = privateJob
     ? "งาน Private · รายละเอียดเปิดเฉพาะด้านใน"
     : ([meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับพี่เปอร์");
+  const ogImage = privateJob ? PRIVATE_JOB_OG_IMAGE : PUBLIC_JOB_OG_IMAGE;
+  const ogImageAlt = privateJob ? "HYPE · Private Job" : "HYPE · New Job";
   const button = "ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า";
 
   return `<!doctype html>
@@ -668,9 +672,15 @@ function shortJobLandingHtml(job, loginUrl) {
 <meta property="og:site_name" content="MMD">
 <meta property="og:title" content="${esc("MMD · " + title)}">
 <meta property="og:description" content="${esc(description)}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${esc(ogImage)}">
+<meta property="og:image:secure_url" content="${esc(ogImage)}">
+<meta property="og:image:type" content="image/webp">
+<meta property="og:image:alt" content="${esc(ogImageAlt)}">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc("MMD · " + title)}">
 <meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${esc(ogImage)}">
+<meta name="twitter:image:alt" content="${esc(ogImageAlt)}">
 <title>${esc(title)} · MMD</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#090909;color:#f8f3ea}
