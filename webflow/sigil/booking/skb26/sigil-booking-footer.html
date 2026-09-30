@@ -29,11 +29,18 @@ function setDurationOptions(item){
   values.forEach(function(n){n=Number(n);if(!Number.isFinite(n))return;var option=document.createElement('option');option.value=String(n);option.textContent=n+' นาที';select.appendChild(option)});
   if(values.map(String).includes(current))select.value=current;else if(values.length===1)select.value=String(values[0])
 }
+function durationOfferLabels(item){
+  var rows=Array.isArray(item&&item.offer&&item.offer.duration_offers)?item.offer.duration_offers:[];
+  if(rows.length)return rows.map(function(row){var m=Number(row.duration_minutes),rate=row.price_visible&&Number.isFinite(Number(row.customer_rate_thb))?Number(row.customer_rate_thb):null;return (m?m+' นาที · ':'')+(rate?rate.toLocaleString('th-TH')+' บาท':'ให้ MMD ตรวจราคา')});
+  var rate=item&&item.offer&&item.offer.price_visible&&Number.isFinite(Number(item.offer.customer_rate_thb))?Number(item.offer.customer_rate_thb):null;
+  var base=Number(item&&item.offer&&item.offer.base_rate_duration_minutes||0);
+  return [rate?(base?base+' นาที · ':'')+rate.toLocaleString('th-TH')+' บาท':'ราคาให้ MMD ตรวจ'];
+}
 function choose(item,btn){
   selected=item;
   form.elements.model_preference.value=item.display_name||item.working_name||item.nickname||item.model_key||'';
-  var rate=item.offer&&item.offer.price_visible&&Number.isFinite(Number(item.offer.customer_rate_thb))?Number(item.offer.customer_rate_thb):null;
-  selectedName.textContent=form.elements.model_preference.value+(rate?' · '+rate.toLocaleString('th-TH')+' บาท':'');
+  var offerLabels=durationOfferLabels(item);
+  selectedName.textContent=form.elements.model_preference.value+(offerLabels[0]?' · '+offerLabels[0]:'');
   setDurationOptions(item);
   var media=projectedMedia(item),cover=media.primary||media.photos[0];
   if(cover){selectedImg.onerror=function(){selectedImg.removeAttribute('src');selectedImg.style.display='none';selectedBox.classList.remove('has-media')};selectedImg.src=cover.url;selectedImg.style.display='block';selectedBox.classList.add('has-media')}
@@ -42,8 +49,7 @@ function choose(item,btn){
   selectedMedia.replaceChildren();
   selectedMedia.classList.remove('skb26-hidden');
   var offerLine=document.createElement('div');offerLine.className='skb26-offer-line';
-  var durations=Array.isArray(item.offer&&item.offer.duration_options)?item.offer.duration_options:[];
-  offerLine.textContent=(rate?rate.toLocaleString('th-TH')+' บาท':'ราคาให้ MMD ตรวจ')+(durations.length?' · '+durations.join(' / ')+' นาที':'');
+  offerLine.textContent=offerLabels.join(' | ');
   selectedMedia.appendChild(offerLine);
   if(!cover&&!media.photos.length&&!media.clips.length){selectedMedia.appendChild(mediaPlaceholder())}
   else{
@@ -64,10 +70,8 @@ function renderItems(items){
     var strong=document.createElement('strong');strong.textContent=item.display_name||item.working_name||item.nickname||item.model_key||'Model';
     var small=document.createElement('small');small.textContent=scope==='private'?String(item.access_folder||'PRIVATE MODEL').toUpperCase():'PUBLIC MODEL';
     copy.appendChild(strong);copy.appendChild(small);
-    var rate=item.offer&&item.offer.price_visible&&Number.isFinite(Number(item.offer.customer_rate_thb))?Number(item.offer.customer_rate_thb):null;
-    var price=document.createElement('small');price.className='skb26-model-rate';price.textContent=rate?rate.toLocaleString('th-TH')+' บาท':'ราคาให้ MMD ตรวจ';copy.appendChild(price);
-    var durations=Array.isArray(item.offer&&item.offer.duration_options)?item.offer.duration_options:[];
-    if(durations.length){var duration=document.createElement('small');duration.textContent=durations.join(' / ')+' นาที';copy.appendChild(duration)}
+    var offerLabels=durationOfferLabels(item);
+    var price=document.createElement('small');price.className='skb26-model-rate';price.textContent=offerLabels.join(' · ');copy.appendChild(price);
     if(media.photos.length||media.clips.length){var count=document.createElement('small');count.textContent=(media.photos.length?'รูปเพิ่ม '+media.photos.length:'')+(media.clips.length?' · คลิป '+media.clips.length:'');copy.appendChild(count)}
     b.appendChild(copy);b.addEventListener('click',function(){choose(item,b)});results.appendChild(b)
   })
@@ -81,7 +85,7 @@ async function search(){
   clearModel();busy(searchBtn,true,'กำลังหา...');results.innerHTML='';
   try{
     var qs=new URLSearchParams({scope:scope,booking_ref:ids.booking_ref,session_id:ids.session_id,search_mode:mode});
-    if(q)qs.set('q',q);if(filters.customer_lane)qs.set('customer_lane',filters.customer_lane);if(filters.private_work)qs.set('work_lane',filters.private_work);if(filters.selected_access_folder)qs.set('selected_access_folder',filters.selected_access_folder);if(v('budget_thb'))qs.set('budget_thb',v('budget_thb'));if(filters.budget_band)qs.set('budget_band',filters.budget_band);if(v('spec'))qs.set('spec',v('spec'));if(v('telegram_link'))qs.set('telegram_reference',v('telegram_link'));if(requestedAt())qs.set('requested_at',requestedAt());
+    if(q)qs.set('q',q);if(filters.customer_lane)qs.set('customer_lane',filters.customer_lane);if(filters.private_work)qs.set('work_lane',filters.private_work);if(filters.selected_access_folder)qs.set('selected_access_folder',filters.selected_access_folder);if(v('budget_thb'))qs.set('budget_thb',v('budget_thb'));if(filters.budget_band)qs.set('budget_band',filters.budget_band);if(v('spec'))qs.set('spec',v('spec'));if(v('telegram_link'))qs.set('telegram_reference',v('telegram_link'));if(v('duration_minutes'))qs.set('duration_minutes',v('duration_minutes'));if(requestedAt())qs.set('requested_at',requestedAt());
     var d=await req('/sigil/api/models/search?'+qs.toString());
     if(d.validation_error){msg('ตรวจข้อมูลก่อนค้นหา',(d.errors||[]).join(', '));return}
     if(d.blocked){identity.open=true;msg('ยัง Browse กลุ่มนี้ไม่ได้',d.reason==='protected_models_require_per_review'?'ส่งชื่อหรือลิงก์ไว้ได้ โดยระบบจะไม่เปิดเผย Profile หรือ Rate จนกว่า Per ตรวจ':'ระบบต้องยืนยันสิทธิ์ก่อน');return}
