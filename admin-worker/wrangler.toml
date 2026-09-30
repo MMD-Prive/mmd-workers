@@ -924,6 +924,7 @@ service = "cal-sync-worker"
 [vars]
 INTERNAL_LOVABLE_ORIGIN = "https://mmd-os.lovable.app"
 MODEL_CARD_AUTO_ENABLED = "false"
+HYPE_JOB_DAILY_ENABLED = "false"
 # Optional comma/space-separated canonical Airtable Model record IDs for a controlled production pilot. Empty means no additional allowlist.\nMODEL_CARD_PILOT_MODEL_IDS = ""\nMODEL_CARD_DAILY_LIMIT = "20"
 # Approved brand assets must exist before enabling generation. No public URLs.
 MODEL_CARD_MMD_LOGO_KEY = "studio-card-brand/mmd-approved.png"
@@ -1116,6 +1117,18 @@ class_name = "ModelCardCoordinator"
 [[migrations]]
 tag = "v2026-09-27-model-card-drafts"
 new_sqlite_classes = ["ModelCardCoordinator"]
+
+# HYPE_JOB_DAILY: guarded once-per-ICT-day owner digest (docs/HYPE_JOB_DAILY_DESIGN.md).
+# Default OFF. Before enabling: set HYPE_JOB_DAILY_CHAT_ID (owner-only destination) and, if the
+# chat is a forum group, HYPE_JOB_DAILY_THREAD_ID; then deploy the DO binding/migration below.
+# The run-state DO stores only status/attempts/timestamps/error class, never the digest body.
+[[durable_objects.bindings]]
+name = "HYPE_JOB_DAILY_RUN_STATE"
+class_name = "HypeJobDailyRunState"
+
+[[migrations]]
+tag = "v2026-09-30-hype-job-daily-run-state"
+new_sqlite_classes = ["HypeJobDailyRunState"]
 
 [browser]
 binding = "MODEL_CARD_BROWSER"
