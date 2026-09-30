@@ -61,7 +61,9 @@ Default duration policy:
 - Premium Model: 90 minutes
 - Standard Model: 90 or 120 minutes
 
-An explicit Model duration configuration overrides these defaults.
+The V1 canonical sales-rule schema resolves one customer sell rate but does not encode a separate 120-minute rate. Therefore a customer-visible resolved rate is labeled explicitly as the **90-minute rate**. A 120-minute Standard option may be selected, but its price remains `rate_review_required` / Per-review until a duration-specific canonical rate is available. The UI must never imply that the 90-minute amount also buys 120 minutes.
+
+An explicit Model duration configuration overrides the available duration choices, but it does not invent a duration-specific price.
 
 ## Media
 
