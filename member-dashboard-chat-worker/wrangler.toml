@@ -466,6 +466,11 @@ LINE_KENJI_MODEL_ENABLED = "false"
 # GWs/EMs remain default-deny unless one current Per approval matches this exact
 # verified client and Model. LLM generation remains separately disabled below.
 LINE_KENJI_MODEL_ACCESS_ENABLED = "true"
+# SVIP exact-customer approved-photo reveal rollout:
+# off = no new behavior; dry_run = owner receipt only/no grants/no LINE;
+# pilot = real LINE only for approved SHA-256 tester hashes; live = eligible SVIP customers.
+KENJI_SVIP_PHOTO_REVEAL_MODE = "off"
+KENJI_SVIP_PHOTO_REVEAL_PILOT_HASHES = ""
 LINE_CARD_21829530_LEAD_ENABLED = "false"
 LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR = "true"
 LINE_CARD_21829530_PILOT_HASHES = ""
