@@ -39,13 +39,18 @@ test("TMIB status LIFF returns to the originating story or checkout after verifi
   assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, checkoutRequest), checkoutTarget);
 });
 
-test("Rich Menu status LIFF returns only to bounded customer destinations after verified start", () => {
+test("Rich Menu status LIFF returns only to current and bounded transitional customer destinations", () => {
   const targets = [
     "/profiles?source=line&entry_route=rich_menu_guest_models",
     "/profiles?source=line&entry_route=rich_menu_public_models",
     "/booking?source=line&entry_route=rich_menu_guest_booking",
     "/booking?source=line&entry_route=rich_menu_public_booking",
     "/services/companion?source=line&entry_route=rich_menu_guest_services",
+    "/tmib?source=line&entry_route=rich_menu_guest_stories",
+    "/member/private?source=line&entry_route=rich_menu_model_cards#detail-model",
+    "/find?source=line&entry_route=rich_menu_private_booking",
+    "/member/private?source=line&entry_route=rich_menu_prive_update#access",
+    // v4.9 transition: already-issued links stay bounded while v4.10 rolls out.
     "/tmib/stories?source=line&entry_route=rich_menu_guest_stories",
     "/sigil/member/membership?intent=signup&source=line&entry_route=rich_menu_prive_access",
     "/sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards",
