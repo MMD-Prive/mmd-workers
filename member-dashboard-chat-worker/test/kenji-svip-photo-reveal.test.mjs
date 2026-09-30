@@ -33,14 +33,14 @@ test("ready response contains only controlled MMD preview links and no raw priva
     status: "ready",
     model: { working_name: "Jasper" },
     photos: [
-      { viewer_url: "https://www.mmdbkk.com/api/member/app/private-preview/view#t=one" },
-      { viewer_url: "https://www.mmdbkk.com/api/member/app/private-preview/view#t=two" },
+      { viewer_url: "https://www.mmdbkk.com/api/member/app/private-preview/view?g=svip_photo_123e4567-e89b-12d3-a456-426614174000#t=one" },
+      { viewer_url: "https://www.mmdbkk.com/api/member/app/private-preview/view?g=svip_photo_123e4567-e89b-12d3-a456-426614174001#t=two" },
       { viewer_url: "https://drive.google.com/private-folder" },
     ],
   });
   assert.equal(messages.length, 3);
   const serialized = JSON.stringify(messages);
-  assert.match(serialized, /private-preview\/view#t=/);
+  assert.match(serialized, /private-preview\/view\?g=svip_photo_.*#t=/);
   assert.doesNotMatch(serialized, /drive\.google|r2|private-model-media|storage_key/i);
 });
 
@@ -74,8 +74,10 @@ test("caution/no-sell/ambiguity response requires Per handoff", () => {
 });
 
 
-test("rollout defaults off and pilot requires an approved SHA-256 user hash", async () => {
+test("rollout defaults off, unknown modes fail closed, and pilot requires an approved SHA-256 user hash", async () => {
   assert.equal(KENJI_SVIP_PHOTO_REVEAL_INTERNALS.photoRevealMode({}), "off");
+  assert.equal(KENJI_SVIP_PHOTO_REVEAL_INTERNALS.photoRevealMode({ KENJI_SVIP_PHOTO_REVEAL_MODE: "LIVE_typo" }), "off");
+  assert.equal(KENJI_SVIP_PHOTO_REVEAL_INTERNALS.photoRevealMode({ KENJI_SVIP_PHOTO_REVEAL_MODE: "anything_else" }), "off");
   assert.equal(KENJI_SVIP_PHOTO_REVEAL_INTERNALS.photoRevealMode({ KENJI_SVIP_PHOTO_REVEAL_MODE: "dry_run" }), "dry_run");
   const userId = "U1234567890abcdef1234567890abcdef";
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
