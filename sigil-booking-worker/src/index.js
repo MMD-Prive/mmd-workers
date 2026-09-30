@@ -217,6 +217,7 @@ async function handleBookingIntake(req, env, ctx) {
       fallback_allowed: intent.fallback_allowed,
       duration_minutes: Number.isFinite(Number(body.duration_minutes)) && Number(body.duration_minutes) > 0 ? Number(body.duration_minutes) : null,
       review_requested: body.review_requested === true || incomingResolver.review_requested === true || incomingResolver.filters?.review_requested === true,
+      service_context: str(body.service_context || body.service || incomingResolver.filters?.service_context).slice(0, 80),
     },
     review_requested: body.review_requested === true || incomingResolver.review_requested === true || incomingResolver.filters?.review_requested === true,
     job_creation_state: "waiting_for_per",
@@ -630,6 +631,7 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
     : str(body.budget_band || budgetObject.label || "-");
   const spec = str(body.spec || search.spec || "-");
   const telegramRef = str(body.telegram_post_url || search.telegram_reference || "");
+  const serviceContext = str(body.service_context || body.service || search.service_context || "");
   const fallback = body.fallback_allowed === true || search.fallback_allowed === true ? "ได้" : "เฉพาะที่ระบุ";
   const reviewRequested = body.review_requested === true || search.review_requested === true || resolver.review_requested === true || resolver.filters?.review_requested === true;
   return [
@@ -642,6 +644,7 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
     `Status: ${escHtml(access)}`,
     `Route: <b>${escHtml(route)}</b>`,
     `Preference: ${escHtml(customerLane)} · ${escHtml(workLane)}`,
+    serviceContext ? `Context: ${escHtml(serviceContext)}` : "",
     mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
     `Spec: ${escHtml(spec)}`,
     `Preferred: ${escHtml(model)}`,
