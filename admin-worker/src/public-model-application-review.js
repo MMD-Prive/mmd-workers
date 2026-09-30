@@ -4,6 +4,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
 const APPLICATIONS_TABLE_ID = "tblwUa8ySWln8OfaJ";
 const ASSETS_TABLE_ID = "tblEhg3dsFzPERpNQ";
+const MODELS_TABLE_DEFAULT = "Models";
 const APPLICATION_ID_RE = /^pma_[A-Za-z0-9_-]{8,120}$/;
 const ASSET_ID_RE = /^pmua_[A-Za-z0-9_-]{8,120}$/;
 const SAFE_ADMIN_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
@@ -148,6 +149,37 @@ async function applyDecision(request, env, actor, applicationId) {
     return json({ ok: false, error: "not_public_model_application" }, 409);
   }
 
+  const projection = normalizeApplication(application, await listAssetsForApplication(env, applicationId));
+  const explicitLinkedModelId = /^rec[A-Za-z0-9]{14,24}$/.test(clean(body?.linked_model_id)) ? clean(body.linked_model_id) : "";
+
+  if (decision === "approve") {
+    if ((projection.counts?.photos || 0) < 1) {
+      return json({
+        ok: false,
+        error: "application_media_required_for_approval",
+        state: "needs_media",
+        message: "รับข้อมูลไว้ได้ แต่ต้องมีรูปปัจจุบันอย่างน้อย 1 รูปก่อนอนุมัติ",
+      }, 409);
+    }
+
+    const preferredName = clean(projection.nickname);
+    if (/^(?:gws|ems)\s*-?\s*\d{1,6}$/i.test(preferredName)) {
+      return json({ ok: false, error: "reserved_working_name", state: "name_review_required" }, 409);
+    }
+    const conflicts = preferredName ? await findModelNameConflicts(env, preferredName) : [];
+    const acknowledgedSelf = conflicts.length === 1 && explicitLinkedModelId === conflicts[0].id;
+    if (conflicts.length && !acknowledgedSelf) {
+      return json({
+        ok: false,
+        error: "working_name_conflict",
+        state: "name_review_required",
+        requested_name: preferredName,
+        conflicts: conflicts.map((item) => ({ model_record_id: item.id, working_name: item.working_name })),
+        message: "ชื่อนี้มีอยู่ใน Model แล้ว ถ้าเป็นคนเดิมให้พี่เปอร์ยืนยัน Model record เดิมก่อนอนุมัติ",
+      }, 409);
+    }
+  }
+
   const currentIntake = clean(application.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]);
   const actorId = clean(actor?.id || request.headers.get("x-mmd-admin-actor") || "per").slice(0, 80) || "per";
   const fields = {
@@ -159,12 +191,13 @@ async function applyDecision(request, env, actor, applicationId) {
 
   if (currentIntake !== policy.intakeStatus || note) {
     const previous = clean(application.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.notes]);
-    const line = `[${new Date().toISOString()}] Public Model review: ${decision} by ${actorId}${note ? ` — ${note}` : ""}`;
+    const linkNote = decision === "approve" && explicitLinkedModelId ? ` · existing_model=${explicitLinkedModelId}` : "";
+    const line = `[${new Date().toISOString()}] Public Model review: ${decision} by ${actorId}${linkNote}${note ? ` — ${note}` : ""}`;
     fields[PUBLIC_MODEL_REVIEW_FIELDS.notes] = [previous, line].filter(Boolean).join("\n").slice(-9000);
   }
 
   await patchApplication(env, application.id, fields);
-  const assets = await listAssetsForApplication(env, applicationId);
+  const assets = projection.assets?.length ? await listAssetsForApplication(env, applicationId) : [];
   if (assets.length) await patchAssetReviewStatuses(env, assets, policy.assetReviewStatus);
 
   const refreshed = await findApplicationById(env, applicationId);
@@ -175,6 +208,7 @@ async function applyDecision(request, env, actor, applicationId) {
     application: normalizeApplication(refreshed || application, refreshedAssets),
     publishes_model: false,
     next_step: decision === "approve" ? "onboarding_ready" : null,
+    linked_model_id: decision === "approve" ? (explicitLinkedModelId || null) : null,
   });
 }
 
@@ -247,6 +281,52 @@ async function serveAsset(env, applicationId, assetId) {
   });
   if (object.size) headers.set("content-length", String(object.size));
   return new Response(object.body, { status: 200, headers });
+}
+
+async function findModelNameConflicts(env, requestedName) {
+  const normalized = normalizeWorkingName(requestedName);
+  if (!normalized) return [];
+  const table = clean(env.AIRTABLE_TABLE_MODELS || MODELS_TABLE_DEFAULT);
+  const records = [];
+  let offset = "";
+  do {
+    const url = airtableUrl(env, table);
+    url.searchParams.set("pageSize", "100");
+    if (offset) url.searchParams.set("offset", offset);
+    const data = await airtableRequest(env, url.toString(), { method: "GET" });
+    if (Array.isArray(data.records)) records.push(...data.records);
+    offset = clean(data.offset);
+  } while (offset && records.length < 1000);
+
+  return records.flatMap((record) => {
+    const fields = record?.fields || {};
+    const tokens = [
+      fields.working_name,
+      fields["Working Name"],
+      fields.nickname,
+      fields.Nickname,
+      fields.folder_name,
+      fields.display_name,
+      fields.alias,
+      fields.aliases,
+      fields.search_aliases,
+    ].flatMap(nameValues).map(normalizeWorkingName).filter(Boolean);
+    if (!tokens.includes(normalized)) return [];
+    return [{
+      id: clean(record.id),
+      working_name: clean(fields.working_name || fields["Working Name"] || fields.display_name || fields.nickname || fields.folder_name),
+    }];
+  }).filter((item) => item.id);
+}
+
+function nameValues(value) {
+  if (Array.isArray(value)) return value.flatMap(nameValues);
+  if (value && typeof value === "object") return nameValues(value.name || value.value || "");
+  return String(value ?? "").split(/[\n,|]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeWorkingName(value) {
+  return clean(value).normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase("en-US");
 }
 
 async function listPublicModelApplications(env, limit) {
@@ -386,6 +466,10 @@ function normalizeApplication(record, assets) {
       video_call_preference: clean(payload.video_call_preference, 20),
       preferred_at_bangkok: clean(payload.preferred_at_bangkok, 24),
     } : {}),
+    source: {
+      job_id: clean(payload.job_id),
+      application_source: clean(payload.application_source || payload.source),
+    },
     contact: {
       phone: get(PUBLIC_MODEL_REVIEW_FIELDS.phone, payload.phone),
       line_id: get(PUBLIC_MODEL_REVIEW_FIELDS.lineId, payload.line_id),
@@ -464,7 +548,7 @@ const id=new URL(location.href).searchParams.get('application_id')||'';
 const val=v=>(v===0||v)?esc(v):'—';
 const list=v=>Array.isArray(v)&&v.length?v.map(esc).join(' · '):'—';
 const chip=(text,cls='')=>text?'<span class="chip '+cls+'">'+esc(text)+'</span>':'';
-async function api(path,init){const r=await fetch(path,{credentials:'same-origin',...init});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||('HTTP '+r.status));return d}
+async function api(path,init){const r=await fetch(path,{credentials:'same-origin',...init});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){const e=new Error(d.error||('HTTP '+r.status));e.data=d;throw e}return d}
 function statusClass(a){return a.intake_status==='approved'?'ok':a.intake_status==='rejected'?'bad':''}
 function mmdExp(a){const y=Number(a.mmd_experience_years||0),m=Number(a.mmd_experience_months||0);return y||m?(y?y+' ปี ':'')+(m?m+' เดือน':''):'—'}
 function render(a){
@@ -479,6 +563,7 @@ function render(a){
  '<section class="card"><div class="section-title">รูปที่ส่งมา ('+photos.length+')</div><div class="photos">'+(photos.length?photos.map(x=>'<a class="photo" href="'+esc(x.url)+'" target="_blank" rel="noopener"><img loading="lazy" src="'+esc(x.url)+'" alt="'+esc(x.role||x.kind||'photo')+'"><span>'+esc(x.role||x.kind||'photo')+'</span></a>').join(''):'<div class="muted">ไม่มีรูปที่อ่านได้</div>')+'</div>'+(docs.length?'<div class="docs">'+docs.map(x=>'<a class="doc" href="'+esc(x.url)+'" target="_blank" rel="noopener"><span>'+esc(x.file_name||x.role||'เอกสาร')+'</span><span>เปิด ↗</span></a>').join('')+'</div>':'')+'</section>'+
  '<section class="card"><div class="section-title">Role / Publication Policy</div><div class="grid"><div class="kv" style="grid-column:1/-1"><div class="k">Applicant Requested Roles</div><div class="v">'+list(a.requested_roles)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">MMD Approved Roles</div><div class="v">'+list(a.approved_roles)+'</div></div><div class="kv"><div class="k">Booking Mode</div><div class="v">'+val(a.booking_mode)+'</div></div><div class="kv"><div class="k">Public Profile</div><div class="v">'+(a.public_profile_approved?'APPROVED':'OFF')+'</div></div><div class="kv"><div class="k">Credential</div><div class="v">'+val(a.credential_status)+'</div></div><div class="kv"><div class="k">Credential Notes</div><div class="v">'+val(a.credential_notes)+'</div></div></div><div id="rolePolicy" style="margin-top:14px"></div></section>'+
  '<section class="card"><div class="section-title">ข้อมูลสำหรับตัดสินใจ</div><div class="grid"><div class="kv"><div class="k">ประสบการณ์</div><div class="v">'+val(a.experience)+'</div></div><div class="kv"><div class="k">Skills / ภาษา</div><div class="v">'+val(a.skills)+'</div></div><div class="kv"><div class="k">ประสบการณ์กับ MMD</div><div class="v">'+esc(mmdExp(a))+'</div></div><div class="kv"><div class="k">เคยทำกับ / สถานที่เดิม</div><div class="v">'+val(a.previous_agency_or_venue)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">งาน / Background ที่เคยทำ</div><div class="v">'+list(a.previous_work_background)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">กลุ่มลูกค้าที่รับ</div><div class="v">'+list(a.customer_scope)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">ขอบเขตที่ไม่รับ</div><div class="v">'+val(a.boundaries)+'</div></div><div class="kv"><div class="k">LGBT Professional</div><div class="v">'+val(a.lgbt_professional)+'</div></div><div class="kv"><div class="k">เคยรับงานเอง</div><div class="v">'+(a.worked_independently_before?'เคย':'—')+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">Portfolio</div><div class="v">'+val(a.portfolio_links)+'</div></div></div></section>'+
+ '<section class="card"><div class="section-title">ที่มาของใบสมัคร</div><div class="grid"><div class="kv"><div class="k">Source</div><div class="v">'+val(a.source&&a.source.application_source)+'</div></div><div class="kv"><div class="k">Job ID</div><div class="v">'+val(a.source&&a.source.job_id)+'</div></div></div></section>'+
  '<section class="card"><details><summary>ข้อมูลติดต่อ (Internal)</summary><div class="grid" style="margin-top:12px"><div class="kv"><div class="k">Phone</div><div class="v">'+val(contact.phone)+'</div></div><div class="kv"><div class="k">LINE</div><div class="v">'+val(contact.line_id)+'</div></div><div class="kv"><div class="k">Email</div><div class="v">'+val(contact.email)+'</div></div><div class="kv"><div class="k">Social</div><div class="v">'+val(contact.social_url)+'</div></div></div></details></section>'+
  '<section class="card"><div class="section-title">หมายเหตุการพิจารณา</div><textarea id="reviewNote" class="note" placeholder="เขียนเหตุผล / สิ่งที่ต้องติดตาม (ไม่บังคับ)"></textarea><div class="muted" style="margin-top:8px">อนุมัติใบสมัคร = รับเข้าสู่ขั้น onboarding เท่านั้น ระบบจะไม่เปิด Public visibility หรือ publish profile เอง</div></section>';
  const roleLabels={everyday_companion:'เพื่อนคู่ใจ',driver_companion:'คนขับรถหล่อ',culinary_companion:'เชฟหล่อ',social_appearance:'คู่หูออกงาน',bangkok_companion:'เพื่อนเที่ยวกรุงเทพ',sport_activity:'หนุ่มสายกีฬา',wellness_companion:'หนุ่มสายสุขภาพ',business_companion:'หนุ่มออฟฟิศ',nightlife_companion:'เพื่อนสายปาร์ตี้',creative_companion:'เพื่อนสายศิลป์',medical_professional:'บุรุษทางการแพทย์'};
@@ -495,11 +580,23 @@ async function saveRolePolicy(a){
  catch(e){alert('บันทึก Role Policy ไม่สำเร็จ: '+e.message)}
  finally{if(button)button.disabled=false}
 }
-async function decide(decision,a){
+async function decide(decision,a,linkedModelId=''){
  const labels={approve:'อนุมัติใบสมัครนี้เข้าสู่ onboarding',reject:'ปฏิเสธใบสมัครนี้',screening:'ย้ายใบสมัครนี้ไปสถานะกำลังพิจารณา'};
- if(!confirm((labels[decision]||'บันทึกการตัดสินใจ')+'?'))return;
+ if(!linkedModelId&&!confirm((labels[decision]||'บันทึกการตัดสินใจ')+'?'))return;
  const note=$('#reviewNote')?.value||''; actions.querySelectorAll('button').forEach(b=>b.disabled=true);
- try{const d=await api('/v1/admin/model-applications/'+encodeURIComponent(a.application_id)+'/decision',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({decision,note})});render(d.application)}catch(e){alert('บันทึกไม่สำเร็จ: '+e.message)}finally{actions.querySelectorAll('button').forEach(b=>b.disabled=false)}
+ try{
+   const d=await api('/v1/admin/model-applications/'+encodeURIComponent(a.application_id)+'/decision',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({decision,note,linked_model_id:linkedModelId||undefined})});
+   render(d.application);
+ }catch(e){
+   if(e.data&&e.data.error==='application_media_required_for_approval'){alert('รับข้อมูลไว้แล้ว แต่ยังอนุมัติไม่ได้จนกว่าจะมีรูปปัจจุบันอย่างน้อย 1 รูป');}
+   else if(e.data&&e.data.error==='reserved_working_name'){alert('ชื่อนี้เป็นรหัสระบบ GWs/EMs กรุณาใช้ชื่ออื่น');}
+   else if(e.data&&e.data.error==='working_name_conflict'){
+     const conflicts=Array.isArray(e.data.conflicts)?e.data.conflicts:[];
+     const summary=conflicts.map(x=>(x.working_name||'Model')+' · '+x.model_record_id).join('\n');
+     const chosen=prompt('ชื่อนี้มีอยู่แล้ว\n'+summary+'\n\nถ้าเป็นคนเดิม ให้ใส่ Model record ID เพื่อยืนยันการเชื่อมต่อ\nถ้าเป็นคนละคน กด Cancel แล้วให้เลือกชื่อใหม่');
+     if(chosen&&conflicts.some(x=>x.model_record_id===chosen.trim())) return decide(decision,a,chosen.trim());
+   } else alert('บันทึกไม่สำเร็จ: '+e.message);
+ }finally{actions.querySelectorAll('button').forEach(b=>b.disabled=false)}
 }
 async function loadQueue(){const d=await api('/v1/admin/model-applications?limit=30');app.className='';const rows=d.applications||[];app.innerHTML='<div class="queue">'+(rows.length?rows.map(a=>'<a class="card q" href="?application_id='+encodeURIComponent(a.application_id)+'"><div class="eyebrow">'+esc(a.application_id)+'</div><div class="section-title" style="margin-top:6px">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.intake_status,statusClass(a))+'</div><div class="muted">'+val(a.age)+' ปี · '+val(a.height_cm)+' cm · '+val(a.location)+'</div></a>').join(''):'<div class="card muted">ยังไม่มีใบสมัคร Public Model</div>')+'</div>'}
 (async()=>{try{if(id){if(!/^pma_[A-Za-z0-9_-]{8,120}$/.test(id))throw new Error('invalid application_id');const d=await api('/v1/admin/model-applications/'+encodeURIComponent(id));render(d.application)}else await loadQueue()}catch(e){app.className='card error';app.textContent='เปิดใบสมัครไม่ได้: '+e.message}})();
