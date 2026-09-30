@@ -1,5 +1,6 @@
 import bookingWorker from "./index.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { allowedCustomerModelFolders, protectedCustomerModelAccess } from "./customer-search-policy.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENT_RESOLVE_PATH = "/sigil/api/client/resolve";
@@ -161,15 +162,21 @@ function accessFromSnapshot(snapshot) {
   const access = snapshot?.access || {};
   const active = Array.isArray(snapshot?.capability_state?.active) ? snapshot.capability_state.active : [];
   const grace = Array.isArray(snapshot?.capability_state?.grace) ? snapshot.capability_state.grace : [];
-  const privateAllowed = !snapshot?.member_blocked && String(access.private_visibility_envelope || "none") !== "none";
+  const allowedModelFolders = allowedCustomerModelFolders(snapshot);
+  const privateAllowed = allowedModelFolders.length > 0;
+  const protectedReviewRequired = protectedCustomerModelAccess(snapshot);
   const memberStatus = snapshot?.member_blocked ? "blocked" : active.length ? "active" : grace.length ? "grace" : "expired";
   return {
     member_status: memberStatus,
     membership_tier: String(access.private_visibility_envelope || ""),
     access_scope: privateAllowed ? "public_private" : "public_only",
-    can_search_public_models: Boolean(access.public_service_access || access.guest_pass_access || privateAllowed),
+    can_search_public_models: Boolean(access.public_service_access || access.guest_pass_access || privateAllowed || protectedReviewRequired),
     can_search_private_models: privateAllowed,
-    next_required_action: privateAllowed ? "continue_booking" : "signup_or_continue_public",
+    allowed_model_folders: allowedModelFolders,
+    visibility_enforced: true,
+    model_visibility_policy_version: "sigil-customer-search-v1",
+    protected_model_review_required: protectedReviewRequired,
+    next_required_action: privateAllowed ? "continue_booking" : protectedReviewRequired ? "per_review_for_protected_models" : "signup_or_continue_public",
   };
 }
 
@@ -194,7 +201,7 @@ function bookingAccessFromSnapshot(snapshot, laneRaw) {
 
 function failClosedAccess() {
   const snapshot = resolveMemberEntitlements([]);
-  return { snapshot, response: { member_status: "unknown", membership_tier: "", access_scope: "public_only", can_search_public_models: false, can_search_private_models: false, next_required_action: "signup_or_continue_public" } };
+  return { snapshot, response: { member_status: "unknown", membership_tier: "", access_scope: "public_only", can_search_public_models: false, can_search_private_models: false, allowed_model_folders: [], visibility_enforced: true, model_visibility_policy_version: "sigil-customer-search-v1", protected_model_review_required: false, next_required_action: "signup_or_continue_public" } };
 }
 
 async function persistCanonicalAccess(env, payload, canonical) {
@@ -228,7 +235,7 @@ async function canonicalStoredPrivateAccess(env, request, url) {
   const parsed = parseJson(fields.resolver_payload_json);
   const snapshot = parsed?.entitlement_snapshot;
   if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1") return false;
-  return !snapshot.member_blocked && String(snapshot.access?.private_visibility_envelope || "none") !== "none";
+  return allowedCustomerModelFolders(snapshot).length > 0;
 }
 
 async function verifyBookingPayment(env, { paymentRef, sessionId, bookingRef }) {
