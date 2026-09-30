@@ -369,6 +369,61 @@ async function resolveCustomerJobConfirmUrl(env, payload = {}) {
   return safeCustomerJobConfirmUrl(fields[SESSION_FIELDS.customerUrl] || fields.customer_confirmation_url || fields.Customer_confirmation_url || fields["Customer confirmation URL"] || "");
 }
 
+function safeModelJobConfirmReturnTo(value = "") {
+  const raw = clean(value, 1800);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, "https://www.mmdbkk.com");
+    if (!["https://mmdbkk.com","https://www.mmdbkk.com"].includes(url.origin)) return "";
+    if (!new Set(["/sigil/confirm/job-model","/confirm/job-model"]).has(url.pathname)) return "";
+    if (url.username || url.password || url.hash) return "";
+    const keys = [...url.searchParams.keys()];
+    const tokenValue = clean(url.searchParams.get("t"), 1600);
+    if (keys.length !== 1 || keys[0] !== "t" || !tokenValue) return "";
+    return `${url.pathname}?${url.searchParams.toString()}`;
+  } catch {
+    return "";
+  }
+}
+
+function modelMiniAppForConfirmation(returnTo, payload = {}) {
+  const safeReturnTo = safeModelJobConfirmReturnTo(returnTo);
+  if (!safeReturnTo) return "";
+  const url = new URL("https://miniapp.line.me/2010864854-N34SgCqq/");
+  url.searchParams.set("return_to", safeReturnTo);
+  url.searchParams.set("source", "refund_completed_pack");
+  url.searchParams.set("lang", "th");
+  const modelAlias = clean(payload.model_alias || payload.owner_model_alias || payload.model_name || payload.model_display_name || "Film J", 160);
+  if (modelAlias) url.searchParams.set("model_alias", modelAlias);
+  return url.toString();
+}
+
+async function resolveModelJobAppUrl(env, payload = {}) {
+  for (const candidate of [payload.model_job_confirm_url, payload.model_confirmation_url, payload.model_job_url]) {
+    const wrapped = modelMiniAppForConfirmation(candidate, payload);
+    if (wrapped) return wrapped;
+  }
+  const sessionId = clean(payload.session_id, 160);
+  if (sessionId) {
+    const params = new URLSearchParams({
+      maxRecords:"2",
+      filterByFormula:`{session_id}='${escapeFormula(sessionId, 160)}'`,
+      returnFieldsByFieldId:"true",
+    });
+    const data = await airtableTable(env, sessionsTableId(env), `?${params.toString()}`);
+    const rows = Array.isArray(data.records) ? data.records : [];
+    if (rows.length === 1) {
+      const fields = rows[0]?.fields || {};
+      const wrapped = modelMiniAppForConfirmation(
+        fields[SESSION_FIELDS.modelUrl] || fields.model_confirmation_url || fields.Model_confirmation_url || fields["Model confirmation URL"] || "",
+        payload,
+      );
+      if (wrapped) return wrapped;
+    }
+  }
+  return modelJobAppUrl(payload);
+}
+
 async function handleReceiptMedia(request, env) {
   const url = new URL(request.url);
   const inboxId = clean(url.searchParams.get("i"), 160);
@@ -555,7 +610,7 @@ async function notifyRefundCompletedToTelegram(env, record, payload, { mediaUrl 
 
 async function persistReceiptAndNotify(env, record, inboxId, payload, mediaUrl, file, { ownerRefundAmount, ownerRefundCurrency, recovered = null, retryLine = true, retryTelegram = true } = {}) {
   const adminUrl = adminJobUrl(payload);
-  const modelUrl = modelJobAppUrl(payload);
+  const modelUrl = await resolveModelJobAppUrl(env, payload).catch(() => modelJobAppUrl(payload));
   const customerJobUrl = await resolveCustomerJobConfirmUrl(env, payload).catch(() => "");
   let notification = { ok:false, skipped:true, reason:"not_attempted", mode:null };
   let telegram = { ok:false, skipped:true, reason:"not_attempted" };
