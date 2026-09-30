@@ -356,8 +356,9 @@ test("selected Session survives LINE OAuth and resolves through the Model-only b
 
   const html = await first.text();
   assert.match(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
-  assert.match(html, /\/v1\/model\/liff\/exchange/);
+  assert.doesNotMatch(html, /\/v1\/model\/liff\/exchange/);
   assert.match(html, /\/v1\/model\/selected-job\/handoff/);
+  assert.match(html, /idToken:idToken,environment:"published"/);
   assert.match(html, /sess_mu8oo9ao_a97c529604a34602/);
   assert.doesNotMatch(html, /MODEL ONBOARDING/);
 
