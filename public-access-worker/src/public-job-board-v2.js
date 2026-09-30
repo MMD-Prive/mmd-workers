@@ -294,55 +294,79 @@ async function renderApplication(request, env, jobId) {
 async function createInterest(request, env, jobId) {
   requireWriteOrigin(request, env);
   const job = await requireJob(env, jobId, { publicOnly: true });
-  await readJson(request);
+  const input = await readJson(request);
   const anon = await requireAnonymousSession(request, env);
   const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const actorHash = await sha256(`${job.id}:${gate.model_record_id}`);
+
+  const fastLane = input.fast_lane === true;
+  const actorHash = await sha256(fastLane ? `${job.id}:${gate.model_record_id}` : `${job.id}:${anon.id}`);
   const dedupe = await getJson(env, dedupeKey(job.id, actorHash));
   if (dedupe?.application_ref) throw httpError(409, "job_interest_already_exists");
 
-  const identity = {
-    identity_class: "APPROVED_LINKED_MODEL",
-    workflow_status: "linked_model_fast_lane",
-    public_status: "received",
-    verified_model_record_id: gate.model_record_id,
-    claim: null,
-  };
   const applicationRef = makeRef("APP");
   const now = new Date().toISOString();
+  const identity = fastLane
+    ? {
+        identity_class: "APPROVED_LINKED_MODEL",
+        workflow_status: "linked_model_fast_lane",
+        public_status: "received",
+        verified_model_record_id: gate.model_record_id,
+        claim: null,
+      }
+    : {
+        identity_class: "VERIFIED_LINE_MODEL",
+        workflow_status: "existing_model_unbound",
+        public_status: "received",
+        verified_model_record_id: gate.model_record_id,
+        claim: clean(input.existing_model_claim, 160) || null,
+      };
   const application = {
     schema: "mmd_public_job_board_v2.application",
     application_ref: applicationRef,
     job_id: job.id,
     created_at: now,
     updated_at: now,
-    submission_status: "submitted",
+    submission_status: fastLane ? "submitted" : "draft",
     identity,
-    workflow_status: "candidate_pending_owner",
+    workflow_status: fastLane ? "candidate_pending_owner" : identity.workflow_status,
     owner_decision: null,
-    applicant: { model_record_id: gate.model_record_id, fast_lane: true },
+    applicant: fastLane ? { model_record_id: gate.model_record_id, fast_lane: true } : null,
     uploads: [],
-    media_status: "profile_on_file",
+    ...(fastLane ? { media_status: "profile_on_file" } : {}),
     controls: { auto_bind: false, auto_rate: false, auto_book: false, auto_reply: false },
   };
   await putJson(env, applicationKey(job.id, applicationRef), application, { onlyIfMissing: true });
   try {
-    await putJson(env, dedupeKey(job.id, actorHash), { application_ref: applicationRef, model_record_id: gate.model_record_id, created_at: now }, { onlyIfMissing: true });
+    await putJson(env, dedupeKey(job.id, actorHash), {
+      application_ref: applicationRef,
+      ...(fastLane ? { model_record_id: gate.model_record_id } : {}),
+      created_at: now,
+    }, { onlyIfMissing: true });
   } catch (error) {
     await env.PUBLIC_ACCESS_EVIDENCE.delete(applicationKey(job.id, applicationRef));
     throw error;
   }
   await recordViewerEvent(env, anon.id, { type: "interest_started", job_id: job.id, world: job.public.world, applied: true });
+  if (fastLane) {
+    return json({
+      ok: true,
+      application_ref: applicationRef,
+      status: "ส่งความสนใจให้พี่เปอร์แล้ว",
+      fast_lane: true,
+      model_record_id: gate.model_record_id,
+      auto_bound: false,
+      auto_reply: false,
+    }, 201);
+  }
   return json({
     ok: true,
     application_ref: applicationRef,
-    status: "ส่งความสนใจให้พี่เปอร์แล้ว",
-    fast_lane: true,
-    model_record_id: gate.model_record_id,
-    auto_bound: false,
-    auto_reply: false,
+    status: identity.public_status,
+    media_required_count: 0,
+    media_recommended_count: job.public.media_requirements.count,
+    interest_detail: job.public.confidentiality ? job.protected.deeper_interest_detail : "",
   }, 201);
 }
 
@@ -905,7 +929,7 @@ function styles() {
 }
 
 function linkedInterestScript(jobId) {
-  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#ff9b9b':'#d6b56f'};b.addEventListener('click',async()=>{b.disabled=true;try{say('กำลังส่งให้พี่เปอร์…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'});const x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'interest_failed');say(x.status||'ส่งความสนใจให้พี่เปอร์แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
+  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#ff9b9b':'#d6b56f'};b.addEventListener('click',async()=>{b.disabled=true;try{say('กำลังส่งให้พี่เปอร์…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({fast_lane:true})});const x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'interest_failed');say(x.status||'ส่งความสนใจให้พี่เปอร์แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
 }
 
 function applicationScript(jobId, requiredCount) {
