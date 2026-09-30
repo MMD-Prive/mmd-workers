@@ -1,11 +1,11 @@
 # MMD Privé LINE Rich Menu — 3 LV Action Map
 
-Status: canonical production map for the MMD Privé LINE OA. Owner-memory recheck on 2026-09-30 found that v4.9 rewired several button meanings beyond the approved Rich Menu map. Runtime v4.10 restores the owner-approved CTA semantics while preserving the LIFF-first identity bridge.
+Status: canonical production map for the MMD Privé LINE OA. Rechecked against the owner-approved button meanings and the current 2026-09-29/30 customer architecture. Runtime v4.11 fixes CTA destinations that had drifted from the meaning printed on the Rich Menu.
 
 This map applies only to MMD Privé. MMS / Male Massage is a separate LINE OA and is not part of this runtime.
 
 
-## LIFF-first CTA rule — retained in v4.10
+## LIFF-first CTA rule — v4.11
 
 All Rich Menu URI CTAs that lead into MMD customer journeys now enter through the canonical MMD LIFF/Mini App identity bridge first, then return to a strict allowlisted destination after verified LINE session establishment.
 
@@ -13,7 +13,7 @@ Pattern:
 
 `Rich Menu → Mini App / LIFF status bridge → POST /member/api/liff/start → bounded return_to → destination`
 
-This applies to PUBLIC MODELS, BOOKING, PUBLIC SERVICES, MMD STORIES and the Privé MODEL CARDS / BOOKING / PRIVÉ UPDATE journeys. START HERE and Public `PRIVÉ ACCESS` use the signup Mini App directly. MY MMD stays inside the Worker-rendered MY MMD Digital Home. Message/Postback actions remain message/postback actions.
+This applies to PUBLIC MODELS, BOOKING, PUBLIC SERVICES, MMD STORIES, Public `PRIVÉ ACCESS`, and the Privé MODEL CARDS / BOOKING journeys. START HERE uses the signup Mini App directly. MY MMD and PRIVÉ UPDATE stay inside the Worker-rendered MY MMD Digital Home. Message/Postback actions remain message/postback actions.
 
 The LIFF bridge does not grant membership, entitlement, payment, model visibility or booking authority. The destination still performs its own backend authorization and must fail closed.
 
@@ -45,7 +45,7 @@ Verified identity; no active Privé entitlement required.
 | Top-center | PUBLIC MODELS | `LIFF status → /profiles?source=line&entry_route=rich_menu_public_models` |
 | Top-right | BOOKING | `LIFF status → /booking?source=line&entry_route=rich_menu_public_booking` |
 | Bottom-left | MY MMD | LINE Mini App / LIFF `intent=status&view=home` |
-| Bottom-center | PRIVÉ ACCESS | `Mini App signup: intent=signup&view=signup` — Explore More / access entry, not a direct entitlement grant |
+| Bottom-center | PRIVÉ ACCESS | `LIFF status → /sigil/start?source=line&entry_route=rich_menu_prive_access` — Explore More / Private entry, not a membership-sales CTA |
 | Bottom-right | SUPPORT | Silent LINE postback → MMD support guidance; no Kenji name is shown to the customer |
 
 ## LV3 — Privé Member
@@ -55,10 +55,10 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 | Position | Label | Action |
 | --- | --- | --- |
 | Top-left | KENJI AI | Typed LINE postback → Kenji Member Concierge |
-| Top-center | MODEL CARDS | `LIFF status → /member/private?source=line&entry_route=rich_menu_model_cards#detail-model` |
-| Top-right | BOOKING | `LIFF status → /find?source=line&entry_route=rich_menu_private_booking` |
+| Top-center | MODEL CARDS | `LIFF status → /sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards` |
+| Top-right | BOOKING | `LIFF status → /sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking` |
 | Bottom-left | MY MMD | LINE Mini App / LIFF `intent=status&view=home` |
-| Bottom-center | PRIVÉ UPDATE | `LIFF status → /member/private?source=line&entry_route=rich_menu_prive_update#access` |
+| Bottom-center | PRIVÉ UPDATE | LINE Mini App / LIFF `intent=status&view=home` → MMD NEWS / curated member updates |
 | Bottom-right | SUPPORT | Typed LINE postback → Kenji Member Concierge |
 
 ## State Rules
@@ -86,20 +86,19 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 - `MODEL CARDS` returns to the owner-approved Private member detail surface; the backend entitlement resolver remains authoritative and the page must not behave as a public catalogue.
 - Kenji is a concierge/router and continuity layer, not the final authority for protected decisions.
 
-## 2026-09-30 CTA owner-memory correction — v4.10
+## 2026-09-30 CTA current-architecture correction — v4.11
 
-The v4.9 destination rewrite is superseded for current Rich Menu objects because it changed approved button meaning rather than only repairing transport.
+The physical labels are treated as the contract. The destination must match the customer meaning printed on the button.
 
-Restored owner-approved destinations:
+Current destinations:
 
 - `MMD STORIES · Discover TMIB`: LIFF-first → `/tmib`
-- Public `PRIVÉ ACCESS · Explore More`: direct Signup Mini App entry
-- Privé `MODEL CARDS · Your Access`: LIFF-first → `/member/private#detail-model`
-- Privé `BOOKING · Request Service`: LIFF-first → `/find`
-- Privé `PRIVÉ UPDATE · New · Curated`: LIFF-first → `/member/private#access`
-- `MY MMD`: remains Mini App `intent=status&view=home`
+- Public `PRIVÉ ACCESS · Explore More`: LIFF-first → `/sigil/start` (Private entry; not signup/payment)
+- Privé `MODEL CARDS · Your Access`: LIFF-first → `/sigil/booking?mode=search&scope=private`
+- Privé `BOOKING · Request Service`: LIFF-first → `/sigil/booking?mode=booking&scope=private`
+- Privé `PRIVÉ UPDATE · New · Curated`: MY MMD Digital Home → MMD NEWS / curated member updates
+- `MY MMD`: Mini App `intent=status&view=home`
 
-The v4.9 return targets remain narrowly allowlisted only as a transition for already-issued links; they are not emitted by v4.10 Rich Menu objects.
+Older v4.9/v4.10 return targets remain narrowly allowlisted only so already-issued links fail safely during rollout; v4.11 does not emit them.
 
-Live Webflow recheck on 2026-09-30 confirms `/member/private` is a published page and its `#detail-model` and `#access` anchors exist.
 The quiet-window rule remains authoritative: hide daily 16:00–22:59 Asia/Bangkok; restore at 23:00.
