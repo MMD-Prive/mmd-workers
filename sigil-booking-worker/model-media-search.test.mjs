@@ -369,6 +369,8 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         search_mode: "search",
+        lane: "private",
+        model_scope: "private",
         customer_lane: "both",
         work_lane: "pn",
         spec: "สูง คุยอังกฤษได้",
@@ -385,6 +387,8 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
       body: JSON.stringify({
         booking_ref: "search_001",
         search_mode: "search",
+        lane: "private",
+        model_scope: "private",
         customer_lane: "both",
         work_lane: "pn",
         budget_thb: 15000,
