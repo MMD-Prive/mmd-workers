@@ -55,16 +55,6 @@ async function airtableList(env, table, filterByFormula, maxRecords = 20) {
   return payload.records;
 }
 
-async function airtableGet(env, table, recordId) {
-  if (!apiKey(env) || !baseId(env) || !table || !/^rec[A-Za-z0-9]+$/.test(recordId || "")) throw new Error("airtable_config_missing");
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
-    headers: { authorization: `Bearer ${apiKey(env)}`, accept: "application/json" },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload?.id) throw new Error("airtable_read_failed");
-  return payload;
-}
-
 async function airtableCreate(env, table, fields) {
   if (!apiKey(env) || !baseId(env) || !table) throw new Error("airtable_config_missing");
   const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(table)}`, {
@@ -208,6 +198,20 @@ async function exactActiveKeywordProfile(env, modelId) {
   return active.length === 1 ? { status: "resolved", record: active[0] } : { status: active.length > 1 ? "ambiguous" : "not_found" };
 }
 
+async function activeNoSellRule(env, modelId) {
+  const table = clean(env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || env.AIRTABLE_TABLE_MODEL_OFFER_RULES, 160);
+  if (!table) return { blocked: false, source: "not_configured" };
+  const records = await airtableList(env, table, `FIND('${formula(modelId)}',ARRAYJOIN({Model}))`, 100);
+  const relevant = records.filter((record) => linked(record?.fields?.Model).includes(modelId));
+  const off = relevant.filter((record) => {
+    const fields = record?.fields || {};
+    const status = token(fields.status);
+    const visibility = token(fields.sales_visibility);
+    return ["active", "approved", "live", "published"].includes(status) && visibility === "off";
+  });
+  return off.length ? { blocked: true, source: "model_sales_control", count: off.length } : { blocked: false, source: "model_sales_control" };
+}
+
 async function readClientIntelligence(env, clientId) {
   const request = new Request(`https://admin-worker.local/v1/admin/clients/intelligence?client_id=${encodeURIComponent(clientId)}`, {
     method: "GET",
@@ -336,6 +340,9 @@ export async function resolveHypeSvipPhotoReveal(env = {}, input = {}) {
   const modelId = clean(model.id, 100);
   const modelBlock = modelRestriction(model.fields || {});
   if (modelBlock) return review(modelBlock);
+
+  const noSell = await activeNoSellRule(env, modelId);
+  if (noSell.blocked) return review("model_sales_control_no_sell");
 
   const profileResult = await exactActiveKeywordProfile(env, modelId);
   if (profileResult.status !== "resolved") return review(profileResult.status === "ambiguous" ? "photo_profile_ambiguous" : "photo_profile_missing");
