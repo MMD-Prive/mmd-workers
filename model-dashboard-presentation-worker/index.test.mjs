@@ -219,9 +219,11 @@ test("Job Board Mini App callback exchanges LINE session then opens the exact jo
   assert.equal(context?.next, next);
 
   const html = liffPrimaryBootstrapHtml(callback);
-  assert.match(html, /WELCOME V2 · สมัครงานนี้กับ MMD/);
-  assert.match(html, /เปิด MMD APP เพื่อสมัครงานนี้/);
-  assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
+  assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
+  assert.match(html, /ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า/);
+  assert.match(html, /t\.me\/per_mmd/);
+  assert.match(html, /\/apply\/public-model/);
+  assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้|ยืนยันตัวตน|กำลังตรวจสอบตัวตน/);
   assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.match(html, /\/v1\/model\/job-board\/handoff/);
   assert.match(html, /id_token_missing/);
@@ -308,7 +310,9 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.match(html, /data-mmd-app-digital="v1"/);
   assert.match(html, /DIGITAL MODEL WORKSPACE/);
   assert.match(html, /--mmd-bg:#080907/);
-  assert.match(html, /LINE · CHECKING/);
+  assert.match(html, /<span class="mmd-digital-pill" id="session-pill">MMD APP<\/span>/);
+  assert.match(html, /กำลังเปิดพื้นที่ทำงาน/);
+  assert.doesNotMatch(html, /LINE · CHECKING|กำลังตรวจสอบตัวตน|ยืนยันตัวตน/);
 
   const worker = (await import("./src/index.js")).default;
   const response = await worker.fetch(request);

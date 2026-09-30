@@ -48,7 +48,7 @@ test("customer-selected model gets selected-job copy, not applicant Welcome V2",
   assert.match(html, /model_alias/);
 });
 
-test("public job board entry is Welcome V2 application copy", () => {
+test("public job board entry uses Per-led Welcome and contact-first intake", () => {
   const html = modelLiffDigitalBootstrapHtml({
     liffId: "2010864854-N34SgCqq",
     fallback: "https://miniapp.line.me/2010864854-N34SgCqq/",
@@ -58,10 +58,14 @@ test("public job board entry is Welcome V2 application copy", () => {
       next: "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-05F8B7666EC7",
     },
   });
-  assert.match(html, /WELCOME V2 · สมัครงานนี้กับ MMD/);
-  assert.match(html, /เปิด MMD APP เพื่อสมัครงานนี้/);
-  assert.match(html, /งานที่คุณกดมาจะถูกเก็บไว้/);
+  assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
+  assert.match(html, /ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า/);
+  assert.match(html, /ยังไม่สะดวกส่งรูป/);
+  assert.match(html, /t\.me\/per_mmd/);
+  assert.match(html, /\/apply\/public-model/);
+  assert.match(html, /source","job_board"/);
+  assert.match(html, /job_id/);
+  assert.match(html, /fallback\.addEventListener\("click"/);
   assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้/);
-  assert.doesNotMatch(html, /ยืนยันตัวตนสำหรับงาน/);
-  assert.doesNotMatch(html, /สมัครเป็นโมเดล MMD/);
+  assert.doesNotMatch(html, /ยืนยันตัวตน|กำลังตรวจสอบตัวตน|สมัครสมาชิก/);
 });

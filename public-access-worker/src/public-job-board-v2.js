@@ -238,10 +238,9 @@ async function renderBoard(request, env) {
   const jobs = await listPublicJobs(env);
   const { token: anon, setCookie } = await ensureAnonymousSession(request, env);
   await recordViewerEvent(env, anon, { type: "board_open" });
-  const publicCards = jobs.filter((job) => job.world !== "private").map(jobCard).join("");
-  const privateCards = jobs.filter((job) => job.world === "private").map(jobCard).join("");
+  const cards = jobs.map(jobCard).join("");
   return html(pageShell("งานที่เปิดรับกับ MMD", `
-    <main><section class="hero"><p class="eyebrow">MMD · PUBLIC JOB BOARD</p><h1>สวัสดีครับ</h1><p>ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD</p><p>เลือกดูงานที่ตรงกับคุณได้เลย อ่านรายละเอียดก่อน แล้วค่อยส่งความสนใจเมื่อพร้อม</p><p>งานแต่ละงานมีรายละเอียด เวลา สถานที่ และค่าตอบแทนระบุไว้ชัดเจน</p><a class="primary" href="#jobs">เลือกงานที่คุณสนใจ</a></section><section id="jobs" class="job-world"><p class="eyebrow">PUBLIC JOB</p><div class="grid">${publicCards || '<div class="empty">ตอนนี้ยังไม่มีงานทั่วไปที่เปิดรับครับ</div>'}</div></section><section class="job-world private-world"><p class="eyebrow">PRIVATE JOB</p><div class="grid">${privateCards || '<div class="empty">ตอนนี้ยังไม่มีงานลับที่เปิดรับครับ</div>'}</div></section></main>`), 200, { ...(setCookie ? { "Set-Cookie": setCookie } : {}), "x-mmd-anonymous-session": anon ? "ready" : "missing" });
+    <main><section class="hero"><p class="eyebrow">MMD · JOB BOARD</p><h1>ที่นี่พี่เปอร์ดูแลงานให้ครับ</h1><p>มีทั้งงาน Public และ Private อยู่ในกระดานเดียวกัน เลือกดูงานที่ตรงกับคุณได้เลยครับ</p><p>งาน Private จะยังไม่แสดงรายละเอียดบนหน้ารวม แตะเข้าดูเมื่อสนใจได้เลย</p><a class="primary" href="#jobs">ดูงานที่เปิดรับ</a></section><section id="jobs" class="job-world"><p class="eyebrow">งานที่เปิดรับ · PUBLIC + PRIVATE</p><div class="grid">${cards || '<div class="empty">ตอนนี้ยังไม่มีงานที่เปิดรับครับ</div>'}</div></section></main>`), 200, { ...(setCookie ? { "Set-Cookie": setCookie } : {}), "x-mmd-anonymous-session": anon ? "ready" : "missing" });
 }
 
 async function renderJobDetail(request, env, jobId) {
@@ -251,7 +250,7 @@ async function renderJobDetail(request, env, jobId) {
   const view = publicJobView(job, { detail: true });
   if (view.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon))) {
     await recordViewerEvent(env, anon, { type: "private_gate_open", job_id: job.id, world: "private" });
-    return html(pageShell("งานลับ", `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail private-detail"><p class="eyebrow">งานลับ 🔐</p><h1>${esc(categoryLabel(view.category))}</h1><p>งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด</p><p>${esc([view.date, view.time, view.area].filter(Boolean).join(" · "))}</p><form method="post" action="${PREFIX}/${encodeURIComponent(job.id)}/reveal"><button class="primary" type="submit">ดูรายละเอียดงานลับ</button></form></article></main>`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
+    return html(pageShell("งานลับ", `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail private-detail"><p class="eyebrow">PRIVATE JOB · 🔒</p><h1>งาน Private</h1><p>รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ</p><p>แตะต่อเมื่อคุณต้องการเปิดดูรายละเอียดของงานนี้</p><form method="post" action="${PREFIX}/${encodeURIComponent(job.id)}/reveal"><button class="primary" type="submit">เปิดรายละเอียดงานนี้</button></form></article></main>`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
   }
   await recordViewerEvent(env, anon, { type: "brief_open", job_id: job.id, world: view.world });
   return html(pageShell(view.title, `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail${view.world === "private" ? " private-detail" : ""}"><p class="eyebrow">${esc(view.world === "private" ? "งานลับ 🔐" : categoryLabel(view.category))}</p><h1>${esc(view.title)}</h1><p>งานนี้กำลังเปิดรับคนที่สนใจครับ</p><p>อ่านรายละเอียดให้ครบก่อนนะ ถ้าตรงกับคุณ กดส่งความสนใจได้เลย</p>${view.listing_description ? `<p>${esc(view.listing_description)}</p>` : ""}${detailRows(view)}<p>${esc(view.safe_customer_description)}</p><p>${esc(view.required_appearance_profile)}</p><a class="primary" data-interest-cta href="${PREFIX}/${encodeURIComponent(job.id)}/apply">สนใจงานนี้</a></article></main>${viewerSignalScript(job.id)}`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
@@ -285,11 +284,11 @@ async function receiveViewerEvent(request, env) {
 async function renderApplication(request, env, jobId) {
   const job = await requireJob(env, jobId, { publicOnly: true });
   const anon = await requireAnonymousSession(request, env);
+  const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const count = job.public.media_requirements.count;
-  const script = applicationScript(job.id, count);
-  return html(pageShell(`ส่งความสนใจ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail"><p class="eyebrow">ส่งความสนใจ</p><h1>${esc(job.public.title)}</h1><p>ขอข้อมูลสั้น ๆ และรูปปัจจุบัน เพื่อให้พี่ดูว่างานนี้เหมาะกับคุณไหมครับ</p><form data-apply><div class="fields"><label>ชื่อเล่น<input name="nickname" required maxlength="80"></label><label>อายุ<input name="age" type="number" min="18" max="100" required></label><label>ส่วนสูง (ซม.)<input name="height_cm" type="number" min="120" max="230" required></label><label>น้ำหนัก (กก.)<input name="weight_kg" type="number" min="35" max="250" required></label><label>เพศสภาพ<select name="gender" required><option value="">เลือก</option><option value="male">ชาย</option><option value="gay">เกย์</option><option value="bisexual">ไบฯ</option><option value="self_described">ระบุเอง</option><option value="unspecified">ยังไม่ระบุ</option></select></label><label>ระบุเพศสภาพเพิ่มเติม<input name="gender_note" maxlength="120"></label><label>รับงานกับลูกค้า<select name="customer_scope" required><option value="">เลือก</option><option value="men">ผู้ชาย</option><option value="women">ผู้หญิง</option><option value="both">ทั้งคู่</option></select></label><label>ไซซ์เสื้อผ้า<input name="clothing_size" maxlength="120"></label></div><label>ประสบการณ์ / โปรไฟล์ / ลิงก์ผลงาน<textarea name="profile" maxlength="1500"></textarea></label><label>ขอบเขตงานที่รับ<textarea name="work_scope" required maxlength="1500"></textarea></label><label>ขอบเขตที่ทำไม่ได้<textarea name="unavailable_scope" required maxlength="1500"></textarea></label><label>ถ้าเคยเป็น Model MMD ระบุชื่อหรือรหัสที่เคยใช้<input name="existing_model_claim" maxlength="160"></label><label>รูปเดี่ยวปัจจุบัน ${count} รูป<input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple required></label><button class="primary" type="submit">ส่งข้อมูลให้พี่พิจารณา</button><p data-status role="status"></p></form></section></main>${script}`));
+  const script = linkedInterestScript(job.id);
+  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail"><p class="eyebrow">MMD APP · MODEL POOL</p><h1>${esc(job.public.title)}</h1><p>โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ งานนี้ไม่ต้องกรอกข้อมูลหรือส่งรูปใหม่</p><p>กดด้านล่างเพื่อบอกพี่เปอร์ว่าคุณสนใจและสะดวกรับงานนี้</p><button class="primary" type="button" data-linked-interest>สนใจงานนี้ · ส่งให้พี่เปอร์</button><p data-status role="status"></p><small>Model record · ${esc(gate.model_record_id)}</small></section></main>${script}`));
 }
 
 async function createInterest(request, env, jobId) {
@@ -297,42 +296,76 @@ async function createInterest(request, env, jobId) {
   const job = await requireJob(env, jobId, { publicOnly: true });
   const input = await readJson(request);
   const anon = await requireAnonymousSession(request, env);
+  const gate = await requireModelBoardGate(request, env);
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
-  const actorHash = await sha256(`${job.id}:${anon.id}`);
+
+  const fastLane = input.fast_lane === true;
+  const actorHash = await sha256(fastLane ? `${job.id}:${gate.model_record_id}` : `${job.id}:${anon.id}`);
   const dedupe = await getJson(env, dedupeKey(job.id, actorHash));
   if (dedupe?.application_ref) throw httpError(409, "job_interest_already_exists");
-  const gate = await requireModelBoardGate(request, env);
-  const identity = { identity_class: "VERIFIED_LINE_MODEL", workflow_status: "existing_model_unbound", public_status: "received", verified_model_record_id: gate.model_record_id, claim: clean(input.existing_model_claim, 160) || null };
+
   const applicationRef = makeRef("APP");
   const now = new Date().toISOString();
+  const identity = fastLane
+    ? {
+        identity_class: "APPROVED_LINKED_MODEL",
+        workflow_status: "linked_model_fast_lane",
+        public_status: "received",
+        verified_model_record_id: gate.model_record_id,
+        claim: null,
+      }
+    : {
+        identity_class: "VERIFIED_LINE_MODEL",
+        workflow_status: "existing_model_unbound",
+        public_status: "received",
+        verified_model_record_id: gate.model_record_id,
+        claim: clean(input.existing_model_claim, 160) || null,
+      };
   const application = {
     schema: "mmd_public_job_board_v2.application",
     application_ref: applicationRef,
     job_id: job.id,
     created_at: now,
     updated_at: now,
-    submission_status: "draft",
+    submission_status: fastLane ? "submitted" : "draft",
     identity,
-    workflow_status: identity.workflow_status,
+    workflow_status: fastLane ? "candidate_pending_owner" : identity.workflow_status,
     owner_decision: null,
-    applicant: null,
+    applicant: fastLane ? { model_record_id: gate.model_record_id, fast_lane: true } : null,
     uploads: [],
+    ...(fastLane ? { media_status: "profile_on_file" } : {}),
     controls: { auto_bind: false, auto_rate: false, auto_book: false, auto_reply: false },
   };
   await putJson(env, applicationKey(job.id, applicationRef), application, { onlyIfMissing: true });
   try {
-    await putJson(env, dedupeKey(job.id, actorHash), { application_ref: applicationRef, created_at: now }, { onlyIfMissing: true });
+    await putJson(env, dedupeKey(job.id, actorHash), {
+      application_ref: applicationRef,
+      ...(fastLane ? { model_record_id: gate.model_record_id } : {}),
+      created_at: now,
+    }, { onlyIfMissing: true });
   } catch (error) {
     await env.PUBLIC_ACCESS_EVIDENCE.delete(applicationKey(job.id, applicationRef));
     throw error;
   }
   await recordViewerEvent(env, anon.id, { type: "interest_started", job_id: job.id, world: job.public.world, applied: true });
+  if (fastLane) {
+    return json({
+      ok: true,
+      application_ref: applicationRef,
+      status: "ส่งความสนใจให้พี่เปอร์แล้ว",
+      fast_lane: true,
+      model_record_id: gate.model_record_id,
+      auto_bound: false,
+      auto_reply: false,
+    }, 201);
+  }
   return json({
     ok: true,
     application_ref: applicationRef,
     status: identity.public_status,
-    media_required_count: job.public.media_requirements.count,
+    media_required_count: 0,
+    media_recommended_count: job.public.media_requirements.count,
     interest_detail: job.public.confidentiality ? job.protected.deeper_interest_detail : "",
   }, 201);
 }
@@ -381,9 +414,13 @@ async function submitApplication(request, env, jobId, applicationRef) {
   const customerScope = token(input.customer_scope);
   if (!GENDERS.has(gender)) throw httpError(400, "gender_invalid");
   if (!CUSTOMER_SCOPES.has(customerScope)) throw httpError(400, "customer_scope_invalid");
-  if (application.uploads.length !== job.public.media_requirements.count) throw httpError(400, "required_media_incomplete");
+  if (application.uploads.length > job.public.media_requirements.count) throw httpError(400, "media_count_exceeded");
+  const lineId = clean(input.line_id, 120);
+  const phone = clean(input.phone, 40);
   application.applicant = {
     nickname: required(input.nickname, "nickname", 80),
+    line_id: lineId,
+    phone,
     age: boundedInt(input.age, 18, 100),
     height_cm: boundedInt(input.height_cm, 120, 230),
     weight_kg: boundedInt(input.weight_kg, 35, 250),
@@ -395,10 +432,19 @@ async function submitApplication(request, env, jobId, applicationRef) {
     unavailable_scope: requiredMultiline(input.unavailable_scope, "unavailable_scope", 1500),
     clothing_size: clean(input.clothing_size, 120),
   };
+  application.media_status = application.uploads.length > 0 ? "media_received" : "needs_media";
+  if (application.uploads.length === 0) application.workflow_status = "needs_media";
   application.submission_status = "submitted";
   application.updated_at = new Date().toISOString();
   await putJson(env, applicationKey(jobId, applicationRef), application);
-  return json({ ok: true, application_ref: applicationRef, status: "ส่งให้พี่พิจารณาแล้ว", auto_bound: false, auto_reply: false });
+  return json({
+    ok: true,
+    application_ref: applicationRef,
+    status: application.media_status === "needs_media" ? "รับข้อมูลแล้ว · รอรูปเพิ่มเติม" : "ส่งให้พี่พิจารณาแล้ว",
+    media_status: application.media_status,
+    auto_bound: false,
+    auto_reply: false,
+  });
 }
 
 async function decideApplication(request, env, jobId, applicationRef) {
@@ -496,8 +542,18 @@ async function requireOwnedApplication(request, env, jobId, applicationRef) {
 function publicJobView(job, { detail = false } = {}) {
   const view = { id: job.id, status: job.status, ...structuredClone(job.public) };
   if (view.world === "private" && !detail) {
-    view.title = categoryLabel(view.category);
-    if (!view.budget_disclosure_approved) view.compensation = "";
+    // Private teaser is deliberately metadata-free. Sensitive job data is only
+    // projected after the approved Model explicitly opens the job.
+    view.title = "PRIVATE JOB";
+    view.listing_description = "";
+    view.category = "private";
+    view.duration = "";
+    view.date = "";
+    view.time = "";
+    view.area = "";
+    view.compensation = "";
+    view.customer_count = null;
+    view.customer_gender = "unspecified";
     view.safe_customer_description = "";
     view.required_appearance_profile = "";
   }
@@ -505,13 +561,9 @@ function publicJobView(job, { detail = false } = {}) {
 }
 
 function jobCard(job) {
-  const meta = [job.date, job.world === "public" ? job.duration : "", job.area].filter(Boolean).join(" · ") || "ดูรายละเอียดในบรีฟ";
+  const meta = [job.date, job.duration, job.area].filter(Boolean).join(" · ") || "ดูรายละเอียดในบรีฟ";
   if (job.world === "private") {
-    const approvedBudget = job.budget_disclosure_approved && job.compensation ? job.compensation.replace(/\s*ถึงตัว\s*$/i, "").trim() : "";
-    const budgetCover = approvedBudget || "PRIVATE";
-    const button = approvedBudget ? `ดูงานลับ · ${approvedBudget}` : "ดูงานลับ";
-    const customerGender = customerGenderLabel(job.customer_gender);
-    return `<article class="job private-card" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PRIVATE JOB · งานลับ 🔐</p><div class="job-cover-meta"><span class="cover-chip budget-chip">BUDGET · ${esc(budgetCover)}</span><span class="cover-chip client-chip">ลูกค้า · ${esc(customerGender)}</span></div><h2>${esc(categoryLabel(job.category))}</h2><p>${esc(meta)}</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">${esc(button)}</a></article>`;
+    return `<article class="job private-card" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PRIVATE JOB · 🔒</p><h2>งาน Private</h2><p>รายละเอียดจะเปิดหลังจากคุณแตะเข้าดูงานนี้</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">แตะเพื่อดูรายละเอียด</a></article>`;
   }
   return `<article class="job" data-job-id="${esc(job.id)}" data-job-status="${esc(job.status)}"><p class="eyebrow">PUBLIC JOB</p><h2>${esc(job.title)}</h2><p>${esc(meta)}</p><p>${esc(job.required_appearance_profile)}</p><a href="${PREFIX}/${encodeURIComponent(job.id)}">เลือกงานนี้</a></article>`;
 }
@@ -598,11 +650,13 @@ function shortJobLandingHtml(job, loginUrl) {
     : confidential
       ? "MMD JOB · CONFIDENTIAL 🔐"
       : "MMD · JOB BOARD";
-  const title = privateJob ? categoryLabel(view.category) : (view.title || "งานที่เปิดรับ");
-  const meta = [view.date, view.time, view.duration, view.area].filter(Boolean).join(" · ");
-  const compensation = String(view.compensation || "").trim();
-  const description = [meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับ MMD";
-  const button = "สมัครงานนี้ใน MMD APP";
+  const title = privateJob ? "PRIVATE JOB" : (view.title || "งานที่เปิดรับ");
+  const meta = privateJob ? "" : [view.date, view.time, view.duration, view.area].filter(Boolean).join(" · ");
+  const compensation = privateJob ? "" : String(view.compensation || "").trim();
+  const description = privateJob
+    ? "งาน Private · รายละเอียดเปิดเฉพาะด้านใน"
+    : ([meta, compensation].filter(Boolean).join(" · ") || "เปิดดูรายละเอียดงานกับพี่เปอร์");
+  const button = "ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า";
 
   return `<!doctype html>
 <html lang="th">
@@ -630,7 +684,7 @@ h1{margin:0;font-size:clamp(30px,9vw,44px);line-height:1.06;letter-spacing:-.035
 .money{margin:12px 0 0;color:#f0cf8a;font-size:22px;font-weight:850}
 .note{margin:20px 0 0;padding-top:18px;border-top:1px solid rgba(255,255,255,.09);color:#989087;font-size:12px;line-height:1.65}
 a{margin-top:22px;min-height:50px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:#dfbc73;color:#17120b;text-decoration:none;font-weight:850}
-small{display:block;margin-top:12px;color:#817b72;text-align:center;line-height:1.5}
+small{display:block;margin-top:12px;color:#a39a8e;text-align:center;line-height:1.6}.text-link{display:inline;margin:0;padding:0;min-height:0;background:none;color:#ddb970;text-decoration:underline;font-weight:750}
 </style>
 </head>
 <body>
@@ -640,9 +694,10 @@ small{display:block;margin-top:12px;color:#817b72;text-align:center;line-height:
     <h1>${esc(title)}</h1>
     ${meta ? `<p class="meta">${esc(meta)}</p>` : ""}
     ${compensation ? `<p class="money">${esc(compensation)}</p>` : ""}
-    <p class="note">คุณกดมาจากลิงก์งานนี้โดยตรง · ยังไม่ต้องอ่าน Welcome หรือเริ่มใหม่</p>
+    <p class="note">ที่นี่พี่เปอร์ดูแลงานให้ครับ · งานที่คุณกดมาถูกเก็บไว้แล้ว</p>
     <a href="${esc(loginUrl)}">${esc(button)} →</a>
-    <small>LINE ใช้ยืนยันตัวตน แล้วระบบจะพากลับมาที่งานนี้</small>
+    <small>ยังไม่สะดวกส่งรูปตอนนี้ ฝาก LINE หรือเบอร์โทรไว้ก่อนได้</small>
+    <small>สำหรับคนที่ต้องการความเป็นส่วนตัวเป็นพิเศษ / Confidential · ติดต่อพี่เปอร์โดยตรงที่ <a class="text-link" href="https://t.me/per_mmd" rel="noreferrer">t.me/per_mmd</a></small>
   </article>
 </main>
 </body>
@@ -860,7 +915,7 @@ async function updateViewerControl(request, env, ref) {
 }
 
 function detailRows(view) {
-  const rows = [["เวลา", [view.date, view.time].filter(Boolean).join(" · ")], ["ระยะเวลา", view.duration], ["พื้นที่", view.area], ["ค่าตอบแทน", view.compensation], ["จำนวนลูกค้า", view.customer_count ? `${view.customer_count} ท่าน` : ""], ["รูปที่ต้องส่ง", `${view.media_requirements.count} รูป`]].filter(([, value]) => value);
+  const rows = [["เวลา", [view.date, view.time].filter(Boolean).join(" · ")], ["ระยะเวลา", view.duration], ["พื้นที่", view.area], ["ค่าตอบแทน", view.compensation], ["จำนวนลูกค้า", view.customer_count ? `${view.customer_count} ท่าน` : ""], ["รูปที่แนะนำ", `สูงสุด ${view.media_requirements.count} รูป`]].filter(([, value]) => value);
   return `<dl>${rows.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>`;
 }
 
@@ -872,8 +927,12 @@ function styles() {
   return `:root{color-scheme:dark;font-family:Inter,"Noto Sans Thai",system-ui,sans-serif;background:#0b0b0b;color:#f7f3eb}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,#292116 0,transparent 36%),#0b0b0b}main{width:min(1180px,calc(100% - 32px));margin:auto;padding:32px 0 72px}.hero,.detail{border:1px solid #3d3224;border-radius:28px;padding:clamp(24px,6vw,64px);background:rgba(17,15,12,.94);box-shadow:0 24px 80px #0008}.hero h1,.detail h1{font-size:clamp(38px,8vw,78px);line-height:1;margin:.15em 0}.hero p,.detail p{color:#d8d0c2;line-height:1.7;max-width:720px}.eyebrow{color:#d6b56f!important;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.primary,.job a{display:inline-flex;min-height:48px;align-items:center;justify-content:center;border-radius:999px;padding:0 22px;background:#e0bd72;color:#17120b;text-decoration:none;font-weight:800;border:0;cursor:pointer;margin-top:16px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:28px}.owner-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.job{min-width:0;padding:20px;border:1px solid #352c21;border-radius:20px;background:#12110f}.job h2{font-size:22px;line-height:1.25;margin:8px 0;overflow-wrap:anywhere}.job p{color:#bdb4a6;overflow-wrap:anywhere}.job-cover-meta{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 12px}.cover-chip{display:inline-flex;align-items:center;min-height:30px;padding:0 10px;border-radius:999px;border:1px solid rgba(222,189,114,.28);font-size:11px;font-weight:850;letter-spacing:.06em}.private-card{background:radial-gradient(circle at 90% 0,rgba(95,119,154,.11),transparent 34%),linear-gradient(145deg,#12110f,#080807)!important;border-color:rgba(222,189,114,.28)!important}.private-card .budget-chip{background:rgba(222,189,114,.12);color:#f0d99f}.private-card .client-chip{background:rgba(103,126,160,.10);color:#d8e2ef;border-color:rgba(116,143,179,.25)}.money{color:#e5c57e!important;font-weight:700}.back{display:inline-block;color:#d6b56f;margin-bottom:18px}dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#31291f;border:1px solid #31291f;border-radius:16px;overflow:hidden;margin:24px 0}dl div{background:#12110f;padding:16px}dt{color:#958a7a;font-size:12px}dd{margin:4px 0 0;font-weight:700}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}label{display:grid;gap:7px;margin:14px 0;color:#d8d0c2;font-weight:700}input,select,textarea{width:100%;border:1px solid #4b4031;border-radius:12px;padding:13px;background:#090909;color:#fff;font:inherit}textarea{min-height:112px;resize:vertical}.owner-candidate{border-top:1px solid #3d3224;padding:18px 0}.owner-actions{display:flex;flex-wrap:wrap;gap:8px}.owner-actions button{border:1px solid #665235;border-radius:999px;background:#17130d;color:#e8d4a5;padding:8px 12px;cursor:pointer}.empty{padding:24px;color:#bdb4a6}@media(max-width:640px){main{width:min(100% - 16px,1180px);padding-top:8px}.hero,.detail{border-radius:20px;padding:20px}.hero h1,.detail h1{font-size:34px;line-height:1.08}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.owner-grid,.fields,dl{grid-template-columns:1fr}.job{padding:14px}.job h2{font-size:18px}.job a{width:100%;padding:0 12px;font-size:13px}.primary{width:100%}}`;
 }
 
+function linkedInterestScript(jobId) {
+  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#ff9b9b':'#d6b56f'};b.addEventListener('click',async()=>{b.disabled=true;try{say('กำลังส่งให้พี่เปอร์…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({fast_lane:true})});const x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'interest_failed');say(x.status||'ส่งความสนใจให้พี่เปอร์แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
+}
+
 function applicationScript(jobId, requiredCount) {
-  return `<script>(()=>{const f=document.querySelector('[data-apply]'),s=document.querySelector('[data-status]');const say=(x,b=false)=>{s.textContent=x;s.style.color=b?'#ff9b9b':'#d6b56f'};f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f),files=[...d.getAll('photos')].filter(x=>x&&x.size);if(files.length!==${requiredCount})return say('กรุณาเลือกรูปให้ครบ ${requiredCount} รูป',true);const profile=Object.fromEntries([...d.entries()].filter(([k])=>k!=='photos'));try{say('กำลังเตรียมข้อมูล…');let r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({existing_model_claim:profile.existing_model_claim||''})});let x=await r.json();if(!r.ok)throw Error(x.error||'interest_failed');for(let i=0;i<files.length;i++){const file=files[i];r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/applications/'+encodeURIComponent(x.application_ref)+'/upload-grant',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({slot:i+1,content_type:file.type,size:file.size})});let g=await r.json();if(!r.ok)throw Error(g.error||'upload_grant_failed');r=await fetch(g.upload.url,{method:'PUT',credentials:'same-origin',headers:{'content-type':file.type},body:file});if(!r.ok){g=await r.json().catch(()=>({}));throw Error(g.error||'upload_failed')}say('อัปโหลดรูป '+(i+1)+' / '+files.length)}r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/applications/'+encodeURIComponent(x.application_ref)+'/submit',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(profile)});x=await r.json();if(!r.ok)throw Error(x.error||'submit_failed');f.reset();say('ส่งข้อมูลให้พี่พิจารณาแล้วครับ')}catch(err){say(err.message==='job_interest_already_exists'?'คุณส่งความสนใจงานนี้แล้วครับ':'ยังส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่',true)}})})();</script>`;
+  return `<script>(()=>{const f=document.querySelector('[data-apply]'),s=document.querySelector('[data-status]');const say=(x,b=false)=>{s.textContent=x;s.style.color=b?'#ff9b9b':'#d6b56f'};f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f),files=[...d.getAll('photos')].filter(x=>x&&x.size);if(files.length>${requiredCount})return say('ส่งรูปได้สูงสุด ${requiredCount} รูป',true);const profile=Object.fromEntries([...d.entries()].filter(([k])=>k!=='photos'));if(!String(profile.line_id||'').trim()&&!String(profile.phone||'').trim())return say('ฝาก LINE หรือเบอร์โทรไว้อย่างน้อย 1 ช่องทางนะครับ',true);try{say('กำลังเตรียมข้อมูล…');let r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({existing_model_claim:profile.existing_model_claim||''})});let x=await r.json();if(!r.ok)throw Error(x.error||'interest_failed');for(let i=0;i<files.length;i++){const file=files[i];r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/applications/'+encodeURIComponent(x.application_ref)+'/upload-grant',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({slot:i+1,content_type:file.type,size:file.size})});let g=await r.json();if(!r.ok)throw Error(g.error||'upload_grant_failed');r=await fetch(g.upload.url,{method:'PUT',credentials:'same-origin',headers:{'content-type':file.type},body:file});if(!r.ok){g=await r.json().catch(()=>({}));throw Error(g.error||'upload_failed')}say('อัปโหลดรูป '+(i+1)+' / '+files.length)}r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/applications/'+encodeURIComponent(x.application_ref)+'/submit',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(profile)});x=await r.json();if(!r.ok)throw Error(x.error||'submit_failed');f.reset();say(x.media_status==='needs_media'?'รับข้อมูลแล้วครับ · ส่งรูปเพิ่มกับพี่เปอร์ภายหลังได้':'ส่งข้อมูลให้พี่เปอร์พิจารณาแล้วครับ')}catch(err){say(err.message==='job_interest_already_exists'?'คุณส่งความสนใจงานนี้แล้วครับ':err.message==='contact_required'?'ฝาก LINE หรือเบอร์โทรไว้อย่างน้อย 1 ช่องทางนะครับ':'ยังส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่',true)}})})();</script>`;
 }
 
 function viewerSignalScript(jobId) {

@@ -212,7 +212,7 @@ test("runtime fails closed without durable R2 or a strong signing secret", async
   assert.equal((await response.json()).error, "public_job_board_signing_unavailable");
 });
 
-test("owner short link renders a compact job-first landing and skips generic Welcome", async () => {
+test("owner short link renders a Per-led job-first landing", async () => {
   const testEnv = env();
   const created = await ownerCreate(testEnv, { id: "JOB-20261001-A1B2C3D4E5F6", world: "public", confidentiality: true });
   assert.equal(created.job.broadcast_url, "https://mmdbkk.com/j/A1B2C3D4E5F6");
@@ -222,7 +222,10 @@ test("owner short link renders a compact job-first landing and skips generic Wel
   assert.equal(short.headers.get("x-mmd-job-short-link"), "v2");
   const page = await short.text();
   assert.match(page, /MMD JOB · CONFIDENTIAL/);
-  assert.match(page, /สมัครงานนี้ใน MMD APP/);\n  assert.match(page, /Welcome V2 สำหรับสมัครงานนี้/);\n  assert.doesNotMatch(page, /LINE ใช้ยืนยันตัวตน/);
+  assert.match(page, /ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า/);
+  assert.match(page, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
+  assert.match(page, /t\.me\/per_mmd/);
+  assert.doesNotMatch(page, /LINE ใช้ยืนยันตัวตน|ยืนยันตัวตน/);
   assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.match(page, /https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
   assert.match(page, /intent=job_board/);
@@ -261,7 +264,7 @@ test("branded short link renders an existing canonical job created before aliase
   assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);
 });
 
-test("public welcome uses approved copy and hides internal identity language", async () => {
+test("job board Welcome is Per-led and keeps Public plus Private in one feed", async () => {
   const testEnv = env();
   const created = await ownerCreate(testEnv);
   assert.equal(created.job.public.title, "กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์");
@@ -271,24 +274,25 @@ test("public welcome uses approved copy and hides internal identity language", a
   const response = await call(testEnv, "/public/api/jobs", { headers: { cookie } });
   const html = await response.text();
   assert.equal(response.status, 200);
-  assert.match(html, /ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD/);
-  assert.match(html, /เลือกงานที่คุณสนใจ/);
+  assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
+  assert.match(html, /Public และ Private อยู่ในกระดานเดียวกัน/);
+  assert.match(html, /งานที่เปิดรับ · PUBLIC \+ PRIVATE/);
   assert.match(html, /PRIVATE JOB/);
-  assert.match(html, /งานลับ 🔐/);
+  assert.match(html, /แตะเพื่อดูรายละเอียด/);
   const copy = visibleText(html);
   for (const banned of ["Verify", "ยืนยันตัวตน", "Bind", "Candidate", "Identity review", "สมัครสมาชิก"]) assert.doesNotMatch(copy, new RegExp(banned, "i"));
   assert.doesNotMatch(html, /source_brief|owner_note|private-media/);
 });
 
-test("job detail and intake expose approved applicant copy without internal statuses", async () => {
+test("linked Model uses the fast lane instead of repeating an application", async () => {
   const testEnv = env();
   await ownerCreate(testEnv);
   const cookie = await anonymousCookie(testEnv);
   const gate = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie } });
   const gateHtml = await gate.text();
-  assert.match(gateHtml, /งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด/);
-  assert.doesNotMatch(gateHtml, /งานนี้กำลังเปิดรับคนที่สนใจครับ/);
-  assert.doesNotMatch(gateHtml, /ลูกค้าเกย์ผู้ใหญ่/);
+  assert.match(gateHtml, /รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ/);
+  assert.doesNotMatch(gateHtml, /ลูกค้าเกย์ผู้ใหญ่|สุขุมวิท|10,000/);
+
   const reveal = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/reveal", { method: "POST", headers: { cookie } });
   assert.equal(reveal.status, 303);
   const openedCookie = `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}`;
@@ -296,39 +300,53 @@ test("job detail and intake expose approved applicant copy without internal stat
   const detailHtml = await detail.text();
   assert.match(detailHtml, /งานนี้กำลังเปิดรับคนที่สนใจครับ/);
   assert.match(detailHtml, /สนใจงานนี้/);
+
   const apply = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } });
   const applyHtml = await apply.text();
-  assert.match(applyHtml, /ขอข้อมูลสั้น ๆ และรูปปัจจุบัน/);
-  assert.match(applyHtml, /เพศสภาพ/);
-  assert.match(applyHtml, /รับงานกับลูกค้า/);
-  assert.match(applyHtml, /ส่งข้อมูลให้พี่พิจารณา/);
+  assert.match(applyHtml, /โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ/);
+  assert.match(applyHtml, /สนใจงานนี้ · ส่งให้พี่เปอร์/);
+  assert.doesNotMatch(applyHtml, /เพศสภาพ|รับงานกับลูกค้า|type="file"/);
   assert.doesNotMatch(applyHtml, /Verify|ยืนยันตัวตน|Identity review|สมัครสมาชิก/i);
+
+  const interested = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/interest", {
+    method: "POST",
+    headers: { cookie: openedCookie },
+    body: { fast_lane: true },
+  });
+  const result = await interested.json();
+  assert.equal(interested.status, 201, JSON.stringify(result));
+  assert.equal(result.fast_lane, true);
+  assert.equal(result.model_record_id, "rec12345678901234");
+  const key = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((item) => item.endsWith(`/${result.application_ref}.json`));
+  const application = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(key).bytes));
+  assert.equal(application.submission_status, "submitted");
+  assert.equal(application.workflow_status, "candidate_pending_owner");
+  assert.equal(application.applicant.fast_lane, true);
 });
 
-test("Public and Private cards are separated and only owner-approved Private budget is exposed", async () => {
+test("Public and Private share one feed while Private teaser leaks no sensitive detail", async () => {
   const testEnv = env();
   await ownerCreate(testEnv, { budget_disclosure_approved: true, customer_gender: "male" });
   await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC1", world: "public", confidentiality: false, brief: "งานอีเวนต์ ขอคนมีโปรไฟล์\n⏳ งาน 4 ชม.\n🏡 ศ 2 ต.ค. 18:00 ย่านสาทร\n💰 6,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
   const cookie = await anonymousCookie(testEnv);
   const response = await call(testEnv, "/public/api/jobs", { headers: { cookie } });
   const page = await response.text();
+  assert.match(page, /งานที่เปิดรับ · PUBLIC \+ PRIVATE/);
   assert.match(page, /PUBLIC JOB/);
-  assert.match(page, /PRIVATE JOB/);
+  assert.match(page, /PRIVATE JOB · 🔒/);
   assert.match(page, /เลือกงานนี้/);
-  assert.match(page, /ดูงานลับ · 10,000/);
-  assert.match(page, /BUDGET · 10,000/);
-  assert.match(page, /ลูกค้า · ชาย/);
-  assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
+  assert.match(page, /แตะเพื่อดูรายละเอียด/);
+  assert.doesNotMatch(page, /BUDGET · 10,000|ลูกค้า · ชาย|ลูกค้าเกย์ผู้ใหญ่/);
 
-  const hiddenEnv = env();
-  await ownerCreate(hiddenEnv, { budget_disclosure_approved: false });
-  const hiddenCookie = await anonymousCookie(hiddenEnv);
-  const hiddenPage = await (await call(hiddenEnv, "/public/api/jobs", { headers: { cookie: hiddenCookie } })).text();
-  assert.match(hiddenPage, /BUDGET · PRIVATE/);
-  assert.match(hiddenPage, /ลูกค้า · ไม่ระบุ/);
-  const data = await (await call(hiddenEnv, "/public/api/jobs/data", { headers: { cookie: hiddenCookie } })).json();
-  assert.equal(data.jobs[0].compensation, "");
-  assert.equal(data.jobs[0].title, "งานร่วมรับประทานอาหาร");
+  const data = await (await call(testEnv, "/public/api/jobs/data", { headers: { cookie } })).json();
+  const privateJob = data.jobs.find((job) => job.world === "private");
+  assert.equal(privateJob.compensation, "");
+  assert.equal(privateJob.title, "PRIVATE JOB");
+  assert.equal(privateJob.date, "");
+  assert.equal(privateJob.time, "");
+  assert.equal(privateJob.area, "");
+  assert.equal(privateJob.customer_count, null);
+  assert.equal(privateJob.customer_gender, "unspecified");
 });
 
 test("Private reveal is server-issued and pause invalidates an opened link immediately", async () => {
@@ -358,7 +376,7 @@ test("Private reveal token expires and returns to the redacted gate", async () =
     const detail = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } });
     const page = await detail.text();
     assert.equal(detail.status, 200);
-    assert.match(page, /งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด/);
+    assert.match(page, /รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ/);
     assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
     assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } })).status, 403);
   } finally { Date.now = realNow; }
@@ -537,8 +555,7 @@ test("draft paused closed and expired jobs never appear on the public board", as
   await ownerCreate(testEnv, { status: "paused" });
   const cookie = await anonymousCookie(testEnv);
   const html = await (await call(testEnv, "/public/api/jobs", { headers: { cookie } })).text();
-  assert.match(html, /ตอนนี้ยังไม่มีงานทั่วไปที่เปิดรับครับ/);
-  assert.match(html, /ตอนนี้ยังไม่มีงานลับที่เปิดรับครับ/);
+  assert.match(html, /ตอนนี้ยังไม่มีงานที่เปิดรับครับ/);
   assert.doesNotMatch(html, /JOB-20261001-DEMO01/);
 });
 

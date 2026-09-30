@@ -212,6 +212,22 @@ test("production apply accepts V12 form version while keeping the V8 contract", 
   assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.formVersion], "public-model-apply-v12");
 });
 
+test("first contact can be persisted without media even when the legacy upload-required flag is enabled", async () => {
+  const env = makeEnv({ PUBLIC_MODEL_UPLOAD_REQUIRED: "true" });
+  const response = await post(APPLY_URL, validApplication({
+    nickname: "Contact First",
+    uploads: [],
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(env.__airtable.applications.length, 1);
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.photoCount], 0);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.intakeStatus], "private_review_pending");
+});
+
 test("production apply persists once and returns an idempotent duplicate response", async () => {
   const env = makeEnv();
   const first = await post(APPLY_URL, validApplication(), env);

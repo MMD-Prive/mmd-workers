@@ -62,7 +62,15 @@ export function modelLiffDigitalBootstrapHtml({
     status.textContent="กำลังเปิดรายละเอียดงาน…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
-    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true){
+      if(${JSON.stringify(publicJobApplicant)}&&exchange.status===202&&exchangeBody&&exchangeBody.state==="identity_review_required"){
+        var intake=new URL("/apply/public-model","https://mmdbkk.com");
+        intake.searchParams.set("source","job_board");
+        ${safeJobBoard.job_id ? `intake.searchParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
+        window.location.replace(intake.toString());return;
+      }
+      throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    }
     var handoffParams=new URLSearchParams();
     ${safeJobBoard.job_id ? `handoffParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
     ${safeJobBoard.next ? `handoffParams.set("next",${JSON.stringify(safeJobBoard.next)});` : ""}
@@ -88,38 +96,38 @@ export function modelLiffDigitalBootstrapHtml({
   const title = selectedJobMode
     ? "ลูกค้าเลือกคุณสำหรับงานนี้"
     : publicJobApplicant
-      ? "WELCOME V2 · สมัครงานนี้กับ MMD"
-      : (primary ? "ยืนยัน LINE สำหรับ MMD APP" : "เปิด MMD APP");
+      ? "ที่นี่พี่เปอร์ดูแลงานให้ครับ"
+      : "เปิด MMD APP";
   const copy = selectedJobMode
     ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MMD APP" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MMD APP")
     : publicJobApplicant
-      ? "คุณเข้ามาจากลิงก์งานแล้ว · MMD APP จะพาไปดูงานนี้และส่งความสนใจต่อ"
-      : (primary ? "กำลังสร้างเซสชันโมเดลที่ปลอดภัย" : "กำลังยืนยัน LINE และเตรียมพื้นที่ทำงาน");
+      ? "มีทั้งงาน Public และ Private ครับ ก่อนเริ่มพี่ขอข้อมูลกับรูปปัจจุบันไว้ดูคร่าว ๆ ก่อน ถ้าผ่านแล้วครั้งต่อไปเข้ามาดูงานได้เลย ไม่ต้องกรอกใหม่"
+      : "กำลังเปิดพื้นที่ทำงานของคุณ";
   const success = selectedJobMode
     ? "กำลังเปิดรายละเอียดงานที่เลือกคุณไว้…"
     : publicJobApplicant
-      ? "Welcome พร้อม · กำลังเปิดงานที่คุณสนใจ…"
-      : (primary ? "ยืนยัน LINE แล้ว · กำลังเปิด MMD APP…" : "ยืนยัน LINE แล้ว · กำลังเปิดพื้นที่ทำงาน…");
+      ? "กำลังเปิดงานที่คุณสนใจ…"
+      : "กำลังเปิด MMD APP…";
   const fail = selectedJobMode
     ? "ยังเปิดงานที่เลือกคุณไว้ไม่สำเร็จ"
     : publicJobApplicant
-      ? "ยังเปิดหน้าสมัครงานนี้ไม่สำเร็จ"
-      : (primary ? "ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ" : "ยังเปิด MMD APP ไม่สำเร็จ");
+      ? "ยังเปิดหน้าส่งข้อมูลไม่สำเร็จ"
+      : "ยังเปิด MMD APP ไม่สำเร็จ";
   const cta = selectedJobMode
     ? "เปิดรายละเอียดงานนี้"
     : publicJobApplicant
-      ? "เปิด MMD APP เพื่อสมัครงานนี้"
-      : (primary ? "เปิด MMD APP ผ่าน LINE" : "เปิดผ่าน LINE");
-  const initialPill = selectedJobMode ? "MMD APP · SELECTED JOB" : publicJobApplicant ? "MMD APP · WELCOME V2" : "LINE · CHECKING";
-  const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "WELCOME V2 · READY" : "LINE · VERIFIED";
-  const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "WELCOME V2 · JOB ENTRY" : "SECURE ENTRY";
-  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "กำลังเตรียมงานนี้" : "กำลังตรวจสอบตัวตน";
+      ? "ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า →"
+      : "เปิด MMD APP";
+  const initialPill = selectedJobMode ? "MMD APP · SELECTED JOB" : publicJobApplicant ? "พี่เปอร์ · WELCOME" : "MMD APP";
+  const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "พร้อมเริ่ม" : "MMD APP · READY";
+  const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "WELCOME" : "MMD APP";
+  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "งานที่คุณกดมาถูกเก็บไว้แล้ว" : "กำลังเปิดพื้นที่ทำงาน";
   const statusHelp = selectedJobMode
     ? "นี่คืองานที่ลูกค้าเลือกคุณแล้ว · ไม่ใช่หน้าสมัครงาน และไม่ต้องสมัครเป็นโมเดลใหม่"
     : publicJobApplicant
-      ? "งานที่คุณกดมาจะถูกเก็บไว้ แล้ว MMD APP จะพาไปหน้าสมัครงานนี้ต่อ"
-      : "ข้อมูลสิทธิ์ งาน และโปรไฟล์จะอ่านจากระบบ MMD หลังยืนยันตัวตนเท่านั้น";
-  const pageTitle = selectedJobMode ? "MMD APP · งานที่เลือกคุณ" : publicJobApplicant ? "MMD APP · สมัครงาน" : "MMD APP · LINE";
+      ? "ยังไม่สะดวกส่งรูปตอนนี้ก็ไม่เป็นไร ฝาก LINE หรือเบอร์โทรไว้ก่อนได้ เดี๋ยวพี่เปอร์คุยต่อให้เอง"
+      : "กำลังเตรียมงานและโปรไฟล์ของคุณ";
+  const pageTitle = selectedJobMode ? "MMD APP · งานที่เลือกคุณ" : publicJobApplicant ? "MMD APP · พี่เปอร์ดูแลงานให้" : "MMD APP";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
 
   return `<!doctype html>
@@ -152,7 +160,8 @@ export function modelLiffDigitalBootstrapHtml({
       </div>
       <div class="mmd-digital-meter" aria-hidden="true"><span></span></div>
     </section>
-    <a class="mmd-digital-action" id="fallback" href=${safeFallback} hidden>${cta}</a>
+    <a class="mmd-digital-action" id="fallback" href=${safeFallback} ${publicJobApplicant ? "" : "hidden"}>${cta}</a>
+    ${publicJobApplicant ? '<small class="mmd-digital-detail">สำหรับคนที่ต้องการความเป็นส่วนตัวเป็นพิเศษ / Confidential · ติดต่อพี่เปอร์โดยตรงที่ <a href="https://t.me/per_mmd" rel="noreferrer">t.me/per_mmd</a> · ไม่จำเป็นต้องส่งรายละเอียดหรือรูปผ่านหน้านี้ครับ</small>' : ""}
     <small class="mmd-digital-detail" id="detail"></small>
   </main>
 </div>
@@ -162,19 +171,33 @@ export function modelLiffDigitalBootstrapHtml({
   var pill=document.getElementById("session-pill");
   var fallback=document.getElementById("fallback");
   var detail=document.getElementById("detail");
-  try{
-    if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
-    await window.liff.init(${initOptions});
-    pill.textContent=${JSON.stringify(readyPill)};
-    status.textContent=${JSON.stringify(success)};
-    ${jobBoardScript}
-    ${returnScript}
-  }catch(error){
-    pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "WELCOME V2 · RETRY" : "LINE · RETRY")};
-    status.textContent=${JSON.stringify(fail)};
-    fallback.hidden=false;
-    detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
+
+  async function continueIntoApp(){
+    try{
+      fallback.hidden=true;
+      if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
+      await window.liff.init(${initOptions});
+      pill.textContent=${JSON.stringify(readyPill)};
+      status.textContent=${JSON.stringify(success)};
+      ${jobBoardScript}
+      ${returnScript}
+    }catch(error){
+      pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MMD APP · RETRY")};
+      status.textContent=${JSON.stringify(fail)};
+      fallback.hidden=false;
+      detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
+    }
   }
+
+  if(${JSON.stringify(publicJobApplicant)}){
+    fallback.hidden=false;
+    fallback.addEventListener("click",function(event){
+      event.preventDefault();
+      continueIntoApp();
+    },{once:true});
+    return;
+  }
+  await continueIntoApp();
 })();
 </script>
 </body>
