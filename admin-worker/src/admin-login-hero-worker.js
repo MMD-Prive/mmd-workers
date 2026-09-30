@@ -1,6 +1,7 @@
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
 import { runHypeJobDailyScheduled } from "./hype-job-daily/runner.js";
+import { handleHypeJobDailyOwnerRequest, isHypeJobDailyOwnerRequest } from "./hype-job-daily/owner.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { observeGenuineLiffAcceptance } from "./membership-genuine-liff-acceptance-observer.js";
@@ -260,6 +261,11 @@ export default {
         runtimeEnv,
         (profileRequest) => worker.fetch(profileRequest, runtimeEnv, ctx),
       );
+    }
+
+    // HYPE_JOB_DAILY owner-only status / preview / destination smoke (owner session required).
+    if (isHypeJobDailyOwnerRequest(normalizedPath)) {
+      return handleHypeJobDailyOwnerRequest(request, runtimeEnv);
     }
 
     if (isAdminJobBoardPublishRequest(normalizedPath, method)) {
