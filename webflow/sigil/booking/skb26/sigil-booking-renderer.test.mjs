@@ -122,3 +122,39 @@ test('renderer is idempotent when Webflow reruns the embed', () => {
   assert.match(footer, /if\(root\.dataset\.skb26Mounted==='1'\)return/);
   assert.match(footer, /root\.dataset\.skb26Mounted='1'/);
 });
+
+
+test('Public Model restores MMD Public Job V2 activity and group-care intake without PN/VIP semantics', () => {
+  assert.match(footer, /data-skb26-public-activity/);
+  for (const format of ['dining','event','party','travel','guest_care','social_appearance','brand_guest','city_companion','other']) {
+    assert.match(footer, new RegExp('data-filter="public_format" data-value="' + format + '"'));
+  }
+  assert.match(footer, /data-skb26-private-work-block hidden/);
+  assert.match(footer, /name="model_count"/);
+  assert.match(footer, /name="customer_count"/);
+  assert.match(footer, /name="care_count"/);
+  assert.match(footer, /name="special_care_names"/);
+  assert.match(footer, /name="duties"/);
+  assert.match(footer, /name="model_assignment_note"/);
+  assert.match(footer, /name="presentation_note"/);
+  assert.match(footer, /schema_version:'mmd_public_job_v2'/);
+  assert.match(footer, /public_job:publicJob\|\|undefined/);
+  assert.match(footer, /work_lane:scope==='private'\?\(filters\.private_work\|\|''\\):''/);
+  assert.match(footer, /if\(scope==='private'&&mode==='search'&&!filters\.private_work\)/);
+  assert.doesNotMatch(footer, /if\(mode==='search'&&!filters\.private_work\)/);
+  assert.match(footer, /if\(scope==='public'&&!filters\.public_format\)/);
+  assert.match(footer, /careCount>customerCount/);
+});
+
+test('Public and Private scope inputs are mutually exclusive on the digital surface', () => {
+  assert.match(footer, /function syncScopeInputs\(\)/);
+  assert.match(footer, /publicActivityBlock\.hidden=isPrivate/);
+  assert.match(footer, /publicJobCard\.hidden=isPrivate/);
+  assert.match(footer, /privateWorkBlock\.hidden=!isPrivate/);
+  assert.match(footer, /privateContextField\.hidden=!isPrivate/);
+  assert.match(footer, /privateDurationField\.hidden=!isPrivate/);
+  assert.match(footer, /filters\.private_work=''/);
+  assert.match(footer, /filters\.public_format=''/);
+  assert.match(footer, /scope==='private'&&filters\.private_work\)qs\.set\('work_lane'/);
+  assert.match(footer, /scope==='public'&&filters\.public_format\)qs\.set\('service_context'/);
+});
