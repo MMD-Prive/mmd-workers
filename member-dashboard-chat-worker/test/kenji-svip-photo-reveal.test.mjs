@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   KENJI_SVIP_PHOTO_REVEAL_INTERNALS,
   parseKenjiSvipPhotoRevealText,
+  tryHandleKenjiSvipPhotoRevealRequest,
 } from "../src/kenji-svip-photo-reveal.mjs";
 
 test("explicit Thai and English photo requests extract only the exact Model reference", () => {
@@ -70,4 +71,77 @@ test("caution/no-sell/ambiguity response requires Per handoff", () => {
     assert.equal(decision.operational.primary_action, "handoff_per");
     assert.match(decision.handoff_reason, /model_photo_reveal/);
   }
+});
+
+
+test("rollout defaults off and pilot requires an approved SHA-256 user hash", async () => {
+  assert.equal(KENJI_SVIP_PHOTO_REVEAL_INTERNALS.photoRevealMode({}), "off");
+  assert.equal(KENJI_SVIP_PHOTO_REVEAL_INTERNALS.photoRevealMode({ KENJI_SVIP_PHOTO_REVEAL_MODE: "dry_run" }), "dry_run");
+  const userId = "U1234567890abcdef1234567890abcdef";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  assert.equal(await KENJI_SVIP_PHOTO_REVEAL_INTERNALS.pilotAllows({ KENJI_SVIP_PHOTO_REVEAL_PILOT_HASHES: hash }, userId), true);
+  assert.equal(await KENJI_SVIP_PHOTO_REVEAL_INTERNALS.pilotAllows({ KENJI_SVIP_PHOTO_REVEAL_PILOT_HASHES: "" }, userId), false);
+});
+
+test("feature-off exits before any runtime or LINE network call", async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+  globalThis.fetch = async () => { networkCalls += 1; throw new Error("network must stay dark"); };
+  try {
+    const request = new Request("https://www.mmdbkk.com/webhooks/line", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ events: [{
+        type: "message",
+        replyToken: "reply-test",
+        source: { type: "user", userId: "U1234567890abcdef1234567890abcdef" },
+        message: { type: "text", id: "msg-test", text: "ขอรูป EMs11 หน่อยครับ" },
+      }] }),
+    });
+    const result = await tryHandleKenjiSvipPhotoRevealRequest(request, {
+      LINE_KENJI_AI_ENABLED: "true",
+      LINE_AUTO_REPLY_ENABLED: "true",
+    });
+    assert.equal(result, null);
+    assert.equal(networkCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("LINE transport test is fully mocked and never contacts the real endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (input, init) => {
+    seen.push({ url: String(input), body: JSON.parse(init.body) });
+    return new Response("", { status: 200 });
+  };
+  try {
+    const result = await KENJI_SVIP_PHOTO_REVEAL_INTERNALS.sendLineReply(
+      { LINE_CHANNEL_ACCESS_TOKEN: "synthetic-token" },
+      "synthetic-reply-token",
+      [{ type: "text", text: "synthetic only" }],
+    );
+    assert.equal(result.ok, true);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].url, "https://api.line.me/v2/bot/message/reply");
+    assert.deepEqual(seen[0].body.messages, [{ type: "text", text: "synthetic only" }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("dry-run decision creates an owner receipt and never claims customer delivery", () => {
+  const decision = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.decisionFor(
+    {},
+    { query: "EMs11" },
+    { status: "dry_run_ready", reason_code: "dry_run_ready", photo_count: 2 },
+    { ok: false },
+  );
+  assert.equal(decision.handoff_required, true);
+  assert.equal(decision.operational.primary_action, "dry_run_owner_receipt");
+  assert.equal(decision.operational.line_delivery_status, "not_delivered");
+  assert.equal(decision.operational.sales_authority, false);
+  assert.equal(decision.operational.booking_authority, false);
 });
