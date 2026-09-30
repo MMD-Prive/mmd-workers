@@ -80,17 +80,26 @@ function projectModelsWithoutMedia(payload) {
 
 function projectModelMedia(model, media = { primary: null, photos: [], clips: [] }) {
   const primary = media.primary;
+  const {
+    drive_folder_id: _driveFolderId,
+    drive_folder_url: _driveFolderUrl,
+    folder_name: _folderName,
+    source_folder: _sourceFolder,
+    folder_path: _folderPath,
+    private_real_name: _privateRealName,
+    r2_key: _r2Key,
+    r2_prefix: _r2Prefix,
+    primary_image_key: _primaryImageKey,
+    ...customerSafe
+  } = model || {};
   return {
-    ...model,
+    ...customerSafe,
     source: primary ? "mmd_model_media_assets" : "",
     asset_source: primary ? "mmd_model_media_assets" : "",
     public_image_url: primary?.url || "",
     cover_url: primary?.url || "",
     primary_image_url: primary?.url || "",
     primary_media_id: primary?.media_id || "",
-    r2_key: "",
-    r2_prefix: "",
-    primary_image_key: "",
     additional_images: media.photos,
     clips: media.clips,
     media_source: "mmd_model_media_assets",
