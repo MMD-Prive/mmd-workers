@@ -23,22 +23,34 @@ function mediaPlaceholder(){
 function mediaImage(media){
   var img=document.createElement('img');img.src=media.url;img.alt='สื่อ Model ที่อนุมัติให้แสดงสาธารณะ';img.loading='lazy';img.addEventListener('error',function(){img.replaceWith(mediaPlaceholder())},{once:true});return img
 }
+function setDurationOptions(item){
+  var select=form.elements.duration_minutes,values=Array.isArray(item&&item.offer&&item.offer.duration_options)?item.offer.duration_options:Array.isArray(item&&item.duration_options)?item.duration_options:[];
+  var current=v('duration_minutes');select.innerHTML='<option value="">ให้ MMD ตรวจ</option>';
+  values.forEach(function(n){n=Number(n);if(!Number.isFinite(n))return;var option=document.createElement('option');option.value=String(n);option.textContent=n+' นาที';select.appendChild(option)});
+  if(values.map(String).includes(current))select.value=current;else if(values.length===1)select.value=String(values[0])
+}
 function choose(item,btn){
   selected=item;
   form.elements.model_preference.value=item.display_name||item.working_name||item.nickname||item.model_key||'';
-  selectedName.textContent=form.elements.model_preference.value;
+  var rate=item.offer&&item.offer.price_visible&&Number.isFinite(Number(item.offer.customer_rate_thb))?Number(item.offer.customer_rate_thb):null;
+  selectedName.textContent=form.elements.model_preference.value+(rate?' · '+rate.toLocaleString('th-TH')+' บาท':'');
+  setDurationOptions(item);
   var media=projectedMedia(item),cover=media.primary||media.photos[0];
   if(cover){selectedImg.onerror=function(){selectedImg.removeAttribute('src');selectedImg.style.display='none';selectedBox.classList.remove('has-media')};selectedImg.src=cover.url;selectedImg.style.display='block';selectedBox.classList.add('has-media')}
   else{selectedImg.removeAttribute('src');selectedImg.style.display='none';selectedBox.classList.remove('has-media')}
   selectedBox.classList.remove('skb26-hidden');
   selectedMedia.replaceChildren();
   selectedMedia.classList.remove('skb26-hidden');
+  var offerLine=document.createElement('div');offerLine.className='skb26-offer-line';
+  var durations=Array.isArray(item.offer&&item.offer.duration_options)?item.offer.duration_options:[];
+  offerLine.textContent=(rate?rate.toLocaleString('th-TH')+' บาท':'ราคาให้ MMD ตรวจ')+(durations.length?' · '+durations.join(' / ')+' นาที':'');
+  selectedMedia.appendChild(offerLine);
   if(!cover&&!media.photos.length&&!media.clips.length){selectedMedia.appendChild(mediaPlaceholder())}
   else{
-    var title=document.createElement('strong');title.textContent='สื่อสาธารณะที่อนุมัติ';selectedMedia.appendChild(title);
+    var title=document.createElement('strong');title.textContent='รูปเพิ่มเติมที่อนุมัติ';selectedMedia.appendChild(title);
     var photos=(media.primary?[media.primary]:[]).concat(media.photos);
     if(photos.length){var gallery=document.createElement('div');gallery.className='skb26-media-gallery';photos.forEach(function(m){gallery.appendChild(mediaImage(m))});selectedMedia.appendChild(gallery)}
-    if(media.clips.length){var clips=document.createElement('div');clips.className='skb26-media-clips';media.clips.forEach(function(m){var video=document.createElement('video');video.src=m.url;video.controls=true;video.preload='metadata';video.playsInline=true;video.setAttribute('aria-label','คลิป Model ที่อนุมัติให้แสดงสาธารณะ');video.addEventListener('error',function(){video.replaceWith(mediaPlaceholder())},{once:true});clips.appendChild(video)});selectedMedia.appendChild(clips)}
+    if(media.clips.length){var clips=document.createElement('div');clips.className='skb26-media-clips';media.clips.forEach(function(m){var video=document.createElement('video');video.src=m.url;video.controls=true;video.preload='metadata';video.playsInline=true;video.setAttribute('aria-label','คลิป Model ที่อนุมัติให้แสดง');video.addEventListener('error',function(){video.replaceWith(mediaPlaceholder())},{once:true});clips.appendChild(video)});selectedMedia.appendChild(clips)}
   }
   results.querySelectorAll('.skb26-model').forEach(function(x){x.classList.remove('is-selected')});btn.classList.add('is-selected')
 }
@@ -50,9 +62,60 @@ function renderItems(items){
     b.appendChild(cover?mediaImage(cover):mediaPlaceholder());
     var copy=document.createElement('span');copy.className='skb26-model-copy';
     var strong=document.createElement('strong');strong.textContent=item.display_name||item.working_name||item.nickname||item.model_key||'Model';
-    var small=document.createElement('small');small.textContent=scope==='private'?String(item.access_folder||item.tier||'PRIVATE MODEL').toUpperCase():'PUBLIC MODEL';
+    var small=document.createElement('small');small.textContent=scope==='private'?String(item.access_folder||'PRIVATE MODEL').toUpperCase():'PUBLIC MODEL';
     copy.appendChild(strong);copy.appendChild(small);
-    if(media.photos.length||media.clips.length){var count=document.createElement('small');count.textContent=(media.photos.length?'แกลเลอรี '+media.photos.length:'')+(media.clips.length?' · คลิป '+media.clips.length:'');copy.appendChild(count)}
+    var rate=item.offer&&item.offer.price_visible&&Number.isFinite(Number(item.offer.customer_rate_thb))?Number(item.offer.customer_rate_thb):null;
+    var price=document.createElement('small');price.className='skb26-model-rate';price.textContent=rate?rate.toLocaleString('th-TH')+' บาท':'ราคาให้ MMD ตรวจ';copy.appendChild(price);
+    var durations=Array.isArray(item.offer&&item.offer.duration_options)?item.offer.duration_options:[];
+    if(durations.length){var duration=document.createElement('small');duration.textContent=durations.join(' / ')+' นาที';copy.appendChild(duration)}
+    if(media.photos.length||media.clips.length){var count=document.createElement('small');count.textContent=(media.photos.length?'รูปเพิ่ม '+media.photos.length:'')+(media.clips.length?' · คลิป '+media.clips.length:'');copy.appendChild(count)}
     b.appendChild(copy);b.addEventListener('click',function(){choose(item,b)});results.appendChild(b)
   })
-}async function search(){var q=v('model_query');if(scope==='public'&&!q){form.elements.model_query.focus();msg('พิมพ์ชื่อหรือสไตล์','Public Model search ตอนนี้ใช้ชื่อ รหัส หรือสไตล์เป็นหลัก');return}if(scope==='private'&&!access.can_search_private_models){identity.open=true;msg('Private Model ต้องตรวจสถานะก่อน','ระบบต้องยืนยันสมาชิก Active ก่อน');return}clearModel();busy(searchBtn,true,'กำลังหา...');results.innerHTML='';try{var qs=new URLSearchParams({q:q||'match',scope:scope,booking_ref:ids.booking_ref,session_id:ids.session_id});if(filters.customer_lane)qs.set('customer_lane',filters.customer_lane);if(filters.private_work)qs.set('private_work',filters.private_work);if(filters.selected_access_folder)qs.set('selected_access_folder',filters.selected_access_folder);if(v('budget_thb'))qs.set('budget_thb',v('budget_thb'));if(filters.budget_band)qs.set('budget_band',filters.budget_band);var d=await req('/sigil/api/models/search?'+qs.toString());var items=d.items||[];if(d.blocked){identity.open=true;msg('ยังเปิด Private Model ไม่ได้','ระบบต้องยืนยันสมาชิก Active ก่อน');return}if(scope==='private'){var authoritative=Array.isArray(d.allowed_model_folders)&&(d.visibility_enforced===true||d.access_policy_version||d.model_visibility_policy_version);if(!authoritative){results.innerHTML='<div class="skb26-empty"><strong>บันทึกตัวกรองแล้ว</strong><span>MMD จะ Match จาก Model levels ที่บัญชีคุณมีสิทธิ์เห็นในขั้นตอนตรวจ Request</span></div>';return}var allowed=d.allowed_model_folders;items=items.filter(function(item){var t=token(item.access_folder||item.tier||item.model_tier);return t&&allowed.indexOf(t)>=0})}if(!items.length){results.innerHTML='<div class="skb26-empty"><strong>ยังไม่พบ Model ที่ตรงทั้งหมด</strong><span>ส่ง Request ได้เลย แล้วให้ MMD ช่วยดูตัวเลือกเพิ่ม</span></div>';return}renderItems(items)}catch(e){results.innerHTML='<div class="skb26-empty"><strong>ค้นหายังไม่สำเร็จ</strong><span>ตัวกรองยังถูกเก็บไว้ใน Request ได้</span></div>'}finally{busy(searchBtn,false,'กำลังหา...')}}async function submitForm(e){e.preventDefault();if(!form.reportValidity())return;if(!ids.booking_ref){var ok=await resolve();if(!ok&&scope==='private')return}busy(submit,true,'กำลังส่ง...');var filterPayload={customer_lane:filters.customer_lane||'',private_work:filters.private_work||'',budget_band:filters.budget_band||'',budget_thb:v('budget_thb')||'',selected_access_folder:filters.selected_access_folder||'',membership_tier_display:access.membership_tier||''};var payload={source:'sigil_booking',source_path:'/sigil/booking',request_status:'draft',booking_ref:ids.booking_ref,session_id:ids.session_id,t:params.get('t')||'',client_nickname:v('client_name'),client_contact:v('contact'),line_or_member_id:v('contact'),member_status:access.member_status,access_scope:access.access_scope,private_allowed:access.can_search_private_models,lane:scope==='private'?'private':'public',model_scope:scope,job_class:filters.private_work||v('service')||'travel',model_search_query:v('model_query')||v('model_preference'),selected_model_id:selected&&(selected.model_id||selected.model_record_id)||'',selected_model_name:v('model_preference'),resolved_model_key:selected&&(selected.model_key||selected.unique_key)||'',model_asset_source:selected&&selected.asset_source||'',resolved_image_url:selected&&(projectedMedia(selected).primary||{}).url||'',preferred_date:v('date'),preferred_time:v('time'),city:v('area'),google_address:v('area'),preference_text:[filters.customer_lane,filters.private_work,filters.selected_access_folder,filters.budget_band,v('budget_thb'),v('brief')].filter(Boolean).join(' · '),client_notes:v('brief'),resolver_payload_json:{kind:'sigil_booking_match_preferences_v26',filters:filterPayload,advisory_only:true,saved_at:new Date().toISOString()}};try{var d=await req('/sigil/api/booking/intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});ids.booking_ref=d.booking_ref||ids.booking_ref;ids.session_id=d.session_id||ids.session_id;msg('ส่ง Booking Request แล้ว','Ref: '+(ids.booking_ref||'received')+' · MMD จะตรวจสิทธิ์ Model, คิว และยอดก่อนยืนยัน');submit.textContent='ส่ง Request แล้ว';submit.disabled=true}catch(err){msg('ยังส่งไม่สำเร็จ','กรุณาลองอีกครั้ง หรือกลับไป MY MMD เพื่อเริ่มใหม่')}finally{if(!submit.disabled)busy(submit,false,'กำลังส่ง...')}}root.querySelectorAll('[data-filter]').forEach(function(b){b.addEventListener('click',function(){var k=b.dataset.filter,val=b.dataset.value||'';filters[k]=val;root.querySelectorAll('[data-filter="'+k+'"]').forEach(function(x){x.classList.toggle('is-active',x===b)});if(k==='budget_band'&&val!=='estimate')form.elements.budget_thb.value='';updateSummary()})});form.elements.budget_thb.addEventListener('input',function(){if(v('budget_thb')){filters.budget_band='custom';root.querySelectorAll('[data-filter="budget_band"]').forEach(function(x){x.classList.remove('is-active')})}updateSummary()});root.querySelector('[data-skb26-clear-budget]').addEventListener('click',function(){form.elements.budget_thb.value='';filters.budget_band='estimate';root.querySelectorAll('[data-filter="budget_band"]').forEach(function(x){x.classList.toggle('is-active',x.dataset.value==='estimate')});updateSummary()});tabs.forEach(function(b){b.addEventListener('click',function(){setScope(b.dataset.skb26Scope)})});resolveBtn.addEventListener('click',resolve);searchBtn.addEventListener('click',search);clearBtn.addEventListener('click',clearModel);form.addEventListener('submit',submitForm);form.elements.model_query.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();search()}});if(params.get('model'))form.elements.model_query.value=params.get('model');if(params.get('service'))form.elements.service.value=params.get('service');updateSummary();if(params.get('scope')==='private')setScope('private');})();</script>
+}
+function budgetProvided(){return Number(v('budget_thb'))>0||['under_10000','10000_20000','20000_30000','30000_plus'].includes(filters.budget_band)}
+function requestedAt(){var d=v('date'),t=v('time');return d&&t?d+'T'+t+':00+07:00':''}
+async function search(){
+  var q=v('model_query');
+  if(mode==='search'&&!budgetProvided()){msg('SIGIL Search ต้องมี Budget','เลือกช่วงงบหรือกรอกจำนวนเงินก่อนค้นหา Model');return}
+  if(scope==='private'&&!access.can_search_private_models){identity.open=true;msg('Private Model ยังเปิดไม่ได้',access.protected_model_review_required?'ส่งชื่อหรือลิงก์ไว้ใน Request ได้ แล้ว Per จะตรวจสิทธิ์เป็นราย Model':'ระบบต้องยืนยันสมาชิก Active ก่อน');return}
+  clearModel();busy(searchBtn,true,'กำลังหา...');results.innerHTML='';
+  try{
+    var qs=new URLSearchParams({scope:scope,booking_ref:ids.booking_ref,session_id:ids.session_id,search_mode:mode});
+    if(q)qs.set('q',q);if(filters.customer_lane)qs.set('customer_lane',filters.customer_lane);if(filters.private_work)qs.set('work_lane',filters.private_work);if(filters.selected_access_folder)qs.set('selected_access_folder',filters.selected_access_folder);if(v('budget_thb'))qs.set('budget_thb',v('budget_thb'));if(filters.budget_band)qs.set('budget_band',filters.budget_band);if(v('spec'))qs.set('spec',v('spec'));if(v('telegram_link'))qs.set('telegram_reference',v('telegram_link'));if(requestedAt())qs.set('requested_at',requestedAt());
+    var d=await req('/sigil/api/models/search?'+qs.toString());
+    if(d.validation_error){msg('ตรวจข้อมูลก่อนค้นหา',(d.errors||[]).join(', '));return}
+    if(d.blocked){identity.open=true;msg('ยัง Browse กลุ่มนี้ไม่ได้',d.reason==='protected_models_require_per_review'?'ส่งชื่อหรือลิงก์ไว้ได้ โดยระบบจะไม่เปิดเผย Profile หรือ Rate จนกว่า Per ตรวจ':'ระบบต้องยืนยันสิทธิ์ก่อน');return}
+    if(scope==='private'&&!(d.visibility_enforced===true&&Array.isArray(d.allowed_model_folders))){results.innerHTML='<div class="skb26-empty"><strong>ยังเปิดผลค้นหาไม่ได้</strong><span>ระบบไม่พบ entitlement projection ที่ยืนยันได้</span></div>';return}
+    var items=Array.isArray(d.items)?d.items:[];
+    if(!items.length){results.innerHTML='<div class="skb26-empty"><strong>ยังไม่พบ Model ที่ตรงทั้งหมด</strong><span>ส่ง Search Request ได้ แล้ว HYPE จะเตรียมให้ Per ตรวจต่อ</span></div>';return}
+    renderItems(items)
+  }catch(e){results.innerHTML='<div class="skb26-empty"><strong>ค้นหายังไม่สำเร็จ</strong><span>Spec / Budget / ชื่อ / Telegram link ยังส่งเป็น Request ให้ Per ตรวจได้</span></div>'}
+  finally{busy(searchBtn,false,'กำลังหา...')}
+}
+async function submitForm(e){
+  e.preventDefault();if(!form.reportValidity())return;
+  if(mode==='search'&&!budgetProvided()){msg('ต้องระบุ Budget','SIGIL Search จะส่งเข้าหาคนไม่ได้ถ้ายังไม่มีงบประมาณ');form.elements.budget_thb.focus();return}
+  if(mode==='search'&&!filters.customer_lane){msg('เลือก Preference','เลือก Straight / Gay / ได้ทั้งคู่ ก่อนส่ง SIGIL Search');return}
+  if(mode==='search'&&!filters.private_work){msg('เลือกรูปแบบงาน','เลือก PN หรือ VIP ก่อนส่ง SIGIL Search');return}
+  if(!ids.booking_ref){var ok=await resolve();if(!ok&&scope==='private')return}
+  busy(submit,true,'กำลังส่ง...');
+  var filterPayload={search_mode:mode,customer_lane:filters.customer_lane||'',work_lane:filters.private_work||'',budget_band:filters.budget_band||'',budget_thb:v('budget_thb')||'',selected_access_folder:filters.selected_access_folder||'',spec:v('spec'),telegram_reference:v('telegram_link'),fallback_allowed:Boolean(form.elements.fallback_allowed.checked),review_requested:Boolean(form.elements.review_requested.checked)};
+  var modelName=v('model_query')||v('model_preference');
+  var payload={source:mode==='search'?'sigil_search':'sigil_booking',source_path:'/sigil/booking',search_mode:mode,request_status:'draft',booking_ref:ids.booking_ref,session_id:ids.session_id,t:params.get('t')||'',client_nickname:v('client_name'),client_contact:v('contact'),line_or_member_id:v('contact'),member_status:access.member_status,access_scope:access.access_scope,private_allowed:access.can_search_private_models,lane:scope==='private'?'private':'public',model_scope:scope,job_class:filters.private_work||v('service')||'travel',work_lane:filters.private_work||'',customer_lane:filters.customer_lane||'',budget_band:filters.budget_band||'',budget_thb:v('budget_thb')||'',spec:v('spec'),preferred_model_name:modelName,telegram_post_url:v('telegram_link'),fallback_allowed:Boolean(form.elements.fallback_allowed.checked),review_requested:Boolean(form.elements.review_requested.checked),duration_minutes:v('duration_minutes')||'',model_search_query:modelName,selected_model_id:selected&&(selected.model_id||selected.model_record_id)||'',selected_model_name:v('model_preference'),resolved_model_key:selected&&(selected.model_key||selected.unique_key)||'',model_asset_source:selected&&selected.asset_source||'',preferred_date:v('date'),preferred_time:v('time'),city:v('area'),google_address:v('area'),preference_text:[filters.customer_lane,filters.private_work,filters.budget_band,v('budget_thb'),v('spec'),modelName].filter(Boolean).join(' · '),client_notes:v('brief'),resolver_payload_json:{kind:mode==='search'?'sigil_search_customer_intake_v1':'sigil_booking_customer_intake_v1',filters:filterPayload,review_requested:Boolean(form.elements.review_requested.checked),saved_at:new Date().toISOString()}};
+  try{
+    var d=await req('/sigil/api/booking/intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    ids.booking_ref=d.booking_ref||ids.booking_ref;ids.session_id=d.session_id||ids.session_id;
+    msg(mode==='search'?'ส่ง SIGIL Search แล้ว':'ส่ง SIGIL Booking แล้ว','Ref: '+(ids.booking_ref||'received')+' · HYPE จะเตรียม Draft ให้ Per ตรวจ Model / Rate / Review / คิว ก่อนยืนยัน');
+    submit.textContent='ส่ง Request แล้ว';submit.disabled=true
+  }catch(err){msg('ยังส่งไม่สำเร็จ',String(err&&err.message||'กรุณาลองอีกครั้ง หรือกลับไป MY MMD เพื่อเริ่มใหม่'))}
+  finally{if(!submit.disabled)busy(submit,false,'กำลังส่ง...')}
+}
+root.querySelectorAll('[data-filter]').forEach(function(b){b.addEventListener('click',function(){var k=b.dataset.filter,val=b.dataset.value||'';filters[k]=val;root.querySelectorAll('[data-filter="'+k+'"]').forEach(function(x){x.classList.toggle('is-active',x===b)});if(k==='budget_band')form.elements.budget_thb.value='';updateSummary()})});
+form.elements.budget_thb.addEventListener('input',function(){if(v('budget_thb')){filters.budget_band='custom';root.querySelectorAll('[data-filter="budget_band"]').forEach(function(x){x.classList.remove('is-active')})}updateSummary()});
+root.querySelector('[data-skb26-clear-budget]').addEventListener('click',function(){form.elements.budget_thb.value='';filters.budget_band='';root.querySelectorAll('[data-filter="budget_band"]').forEach(function(x){x.classList.remove('is-active')});updateSummary()});
+modeBtns.forEach(function(b){b.addEventListener('click',function(){setMode(b.dataset.skb26Mode)})});
+tabs.forEach(function(b){b.addEventListener('click',function(){setScope(b.dataset.skb26Scope)})});
+resolveBtn.addEventListener('click',resolve);searchBtn.addEventListener('click',search);clearBtn.addEventListener('click',function(){clearModel();setDurationOptions(null)});form.addEventListener('submit',submitForm);
+form.elements.model_query.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();search()}});
+if(params.get('model'))form.elements.model_query.value=params.get('model');if(params.get('service'))form.elements.service.value=params.get('service');if(params.get('telegram'))form.elements.telegram_link.value=params.get('telegram');
+setMode(mode);updateSummary();if(params.get('scope')==='private'&&access.can_search_private_models)setScope('private');})();</script>
