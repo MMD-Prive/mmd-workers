@@ -1,3 +1,4 @@
+import { normalizeSvipPhotoRevealMode } from "../../shared/svip-photo-reveal-rollout.mjs";
 import { requestKenjiRuntimeStatus } from "./index.js";
 
 const HYPE_SVIP_PHOTO_REVEAL_PATH = "/v1/internal/hype/svip-photo-reveal";
@@ -12,8 +13,7 @@ function enabled(value) {
 }
 
 function photoRevealMode(env = {}) {
-  const mode = text(env.KENJI_SVIP_PHOTO_REVEAL_MODE, 20).toLowerCase();
-  return ["dry_run", "pilot", "live"].includes(mode) ? mode : "off";
+  return normalizeSvipPhotoRevealMode(env.KENJI_SVIP_PHOTO_REVEAL_MODE);
 }
 
 async function sha256Hex(value) {
