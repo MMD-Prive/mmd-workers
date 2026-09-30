@@ -306,8 +306,25 @@ const jobBoardScript = `(() => {
   form.addEventListener("submit", publishBoard);
   copyButton.addEventListener("click", async function() {
     if (!broadcastLink) return;
-    try { await navigator.clipboard.writeText(broadcastLink); setStatus("คัดลอก Broadcast Link แล้ว", false); }
-    catch { setStatus("คัดลอกลิงก์ไม่สำเร็จ", true); }
+    const originalLabel = copyButton.dataset.copyLabel || copyButton.textContent || "Copy Link";
+    copyButton.dataset.copyLabel = originalLabel;
+    clearTimeout(copyButton.__mmdCopyTimer);
+    try {
+      await navigator.clipboard.writeText(broadcastLink);
+      copyButton.textContent = "คัดลอกแล้ว ✓";
+      copyButton.disabled = true;
+      setStatus("คัดลอก Broadcast Link แล้ว", false);
+      copyButton.__mmdCopyTimer = setTimeout(function() {
+        copyButton.textContent = copyButton.dataset.copyLabel || "Copy Link";
+        copyButton.disabled = false;
+      }, 1800);
+    } catch {
+      copyButton.textContent = "คัดลอกไม่สำเร็จ";
+      setStatus("คัดลอกลิงก์ไม่สำเร็จ", true);
+      copyButton.__mmdCopyTimer = setTimeout(function() {
+        copyButton.textContent = copyButton.dataset.copyLabel || "Copy Link";
+      }, 1800);
+    }
   });
   openButton.addEventListener("click", function() {
     if (boardDestination) window.open(boardDestination, "_blank", "noopener,noreferrer");
