@@ -97,11 +97,8 @@ export function modelLiffDigitalBootstrapHtml({
   const selectedSessionScript = selectedSession ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
-    status.textContent="กำลังยืนยันงานที่เลือกคุณ…";
-    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
-    var exchangeBody=await exchange.json().catch(function(){return null});
-    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
-    var selected=await fetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession}})});
+    status.textContent="กำลังเปิดงานนี้…";
+    var selected=await fetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession},idToken:idToken,environment:${safeEnvironment}})});
     var selectedBody=await selected.json().catch(function(){return null});
     if(!selected.ok||!selectedBody||selectedBody.ok!==true||!selectedBody.redirect_url)throw new Error(selectedBody&&selectedBody.error||"selected_job_handoff_failed");
     var destination=new URL(String(selectedBody.redirect_url),"https://mmdbkk.com");
