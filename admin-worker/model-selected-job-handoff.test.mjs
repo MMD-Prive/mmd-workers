@@ -75,8 +75,8 @@ function installExternal(env) {
 
     if (url.hostname === "api.airtable.com") {
       const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-      const table = segments[1] || "";
-      const recordId = segments[2] || "";
+      const table = segments[2] || "";
+      const recordId = segments[3] || "";
 
       if (table === "tblC98mKWbzmPuNzX" && req.method === "GET" && !recordId) {
         return Response.json({
