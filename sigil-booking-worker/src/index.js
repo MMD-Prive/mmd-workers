@@ -11,6 +11,7 @@ import {
   inferCustomerModelFolder,
   isProtectedCampaignModel,
   priceFitsBudget,
+  publicBudgetFloorError,
   safeSearchIntent,
 } from "./customer-search-policy.js";
 // Webflow calls this worker. Browser never touches Airtable, R2, Gmail, or Drive directly.
@@ -121,6 +122,10 @@ async function handleModelSearch(req, env, url) {
   if (intent.errors.length) {
     return { ok: false, matched: false, validation_error: true, errors: intent.errors, items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
   }
+  const publicBudgetError = scope === "public" ? publicBudgetFloorError({ ...queryInput, ...body }, intent.budget) : "";
+  if (publicBudgetError) {
+    return { ok: false, matched: false, validation_error: true, errors: [publicBudgetError], items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
+  }
   if (!q && intent.mode !== "search") return { ok: true, matched: false, reason: "missing_query", items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
 
   const storedAccess = await lookupStoredBookingAccess(env, { bookingRef, sessionId });
@@ -208,6 +213,12 @@ async function handleBookingIntake(req, env, ctx) {
   const intent = safeSearchIntent(intentSource);
   if (intent.errors.length) {
     const error = new Error(intent.errors[0]);
+    error.status = 422;
+    throw error;
+  }
+  const publicBudgetError = intakeScope === "public" ? publicBudgetFloorError(intentSource, intent.budget) : "";
+  if (publicBudgetError) {
+    const error = new Error(publicBudgetError);
     error.status = 422;
     throw error;
   }
