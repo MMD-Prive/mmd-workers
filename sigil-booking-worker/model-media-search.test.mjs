@@ -340,6 +340,7 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
         telegram_post_url: "https://t.me/c/1668261779/1234",
         fallback_allowed: true,
         duration_minutes: 90,
+        service_context: "dinner",
         review_requested: true,
         resolved_image_url: "https://drive.google.com/private.jpg",
         drive_folder_id_snapshot: "drive-secret-folder",
@@ -362,6 +363,7 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
     assert.equal(resolver.customer_search.work_lane, "pn");
     assert.equal(resolver.customer_search.telegram_reference, "https://t.me/c/1668261779/1234");
     assert.equal(resolver.customer_search.duration_minutes, 90);
+    assert.equal(resolver.customer_search.service_context, "dinner");
     assert.equal(resolver.customer_search.review_requested, true);
   } finally {
     globalThis.fetch = originalFetch;
