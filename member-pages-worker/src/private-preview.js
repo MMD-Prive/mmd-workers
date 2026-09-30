@@ -1,3 +1,8 @@
+import {
+  isSvipPhotoRevealGrantPayload,
+  svipPhotoRevealCanServe,
+  SVIP_PHOTO_REVEAL_MODE_HEADER,
+} from "../../shared/svip-photo-reveal-rollout.mjs";
 import { readMemberAppSession } from "./member-app-api.js";
 import { assertPrivateObject, privateBucket } from "../../shared/private-media.mjs";
 import { privatePreviewPage } from "./private-preview-page.js";
@@ -34,6 +39,9 @@ export async function handlePrivatePreview(request, env = {}) {
       if (!/^svip_photo_[0-9a-f-]{36}$/i.test(grantId)) return json({ ok:false, error:{ code:"PREVIEW_RESUME_INVALID" } }, 400);
       const grant = await resolveGrantById(env, grantId, clientId);
       if (!grant.ok) return json({ ok:false, error:{ code:grant.code } }, grant.status);
+      if (grant.svipPhotoReveal && !svipPhotoRevealCanServe(request.headers.get(SVIP_PHOTO_REVEAL_MODE_HEADER))) {
+        return json({ ok:false, error:{ code:"PREVIEW_DISABLED" } }, 423);
+      }
       const gate = gateStub(env, grant.recordId);
       const gateState = await gate.fetch("https://private-preview.internal/status");
       if (gateState.status === 410) return json({ ok:false, error:{ code:"PREVIEW_CONSUMED" } }, 410);
@@ -59,6 +67,9 @@ export async function handlePrivatePreview(request, env = {}) {
 
     const grant = await resolveGrant(env, token, clientId);
     if (!grant.ok) return json({ ok:false, error:{ code:grant.code } }, grant.status);
+    if (grant.svipPhotoReveal && !svipPhotoRevealCanServe(request.headers.get(SVIP_PHOTO_REVEAL_MODE_HEADER))) {
+      return json({ ok:false, error:{ code:"PREVIEW_DISABLED" } }, 423);
+    }
     // Record ID, rather than a mutable display identifier, is the one-use key.
     const gate = gateStub(env, grant.recordId);
     const asset = await readAsset(env, grant.mediaRecordId, grant.kind, grant.modelId, grant.accessLane);
@@ -159,7 +170,18 @@ function validateGrantRecord(record, clientId) {
   const mediaIds = links(f["Media Asset"] || f.media_asset), models = links(f.Model);
   const grantId = clean(f.grant_id,160);
   if (mediaIds.length !== 1 || models.length !== 1 || !grantId) return { ok:false, status:409, code:"PREVIEW_POLICY_MISSING" };
-  return { ok:true, recordId:record.id, grantId, kind, expiresAt, watermark:clean(f.watermark_code,120), mediaRecordId:mediaIds[0], modelId:models[0], accessLane };
+  return {
+    ok:true,
+    recordId:record.id,
+    grantId,
+    kind,
+    expiresAt,
+    watermark:clean(f.watermark_code,120),
+    mediaRecordId:mediaIds[0],
+    modelId:models[0],
+    accessLane,
+    svipPhotoReveal:isSvipPhotoRevealGrantPayload(payload),
+  };
 }
 async function resolveGrant(env, token, clientId) {
   const hash = await sha256(token);
