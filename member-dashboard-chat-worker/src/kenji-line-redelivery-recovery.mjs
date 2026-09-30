@@ -12,6 +12,7 @@ import {
 } from "./kenji-line-canonical-client-resolution.mjs";
 import { tryHandleKenjiLv5LineOperationalRequest } from "./kenji-lv5-line-operational-request.mjs";
 import { notifyKenjiLv5Hype } from "./kenji-lv5-hype-alert.mjs";
+import { tryHandleKenjiSvipPhotoRevealRequest } from "./kenji-svip-photo-reveal.mjs";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
@@ -255,6 +256,12 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
       headers: new Headers(request.headers),
       body: rawBody,
     });
+    const photoReveal = await tryHandleKenjiSvipPhotoRevealRequest(operationalRequest.clone(), env, ctx).catch(() => null);
+    if (photoReveal?.handled && photoReveal.response) {
+      const sideEffects = scheduleOperationalSideEffects(ctx, env, events, photoReveal);
+      if (typeof ctx?.waitUntil !== "function") await sideEffects;
+      return photoReveal.response;
+    }
     const operational = await tryHandleKenjiLv5LineOperationalRequest(operationalRequest, env, ctx).catch(() => null);
     if (operational?.handled && operational.response) {
       const sideEffects = scheduleOperationalSideEffects(ctx, env, events, operational);
