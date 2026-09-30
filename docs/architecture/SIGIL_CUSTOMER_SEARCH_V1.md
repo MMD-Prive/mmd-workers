@@ -14,14 +14,30 @@ Customer chooses one mode:
 Search input supports:
 
 - Straight / Gay / Both
-- PN / VIP
-- date, time, duration and area
 - budget
 - free-text Spec
 - preferred Model name
 - Telegram post link
 - fallback to similar Models
 - Review request
+
+Private Model adds:
+
+- PN / VIP
+- private duration options and customer-specific rate resolution
+
+Public Model does **not** use PN / VIP. It restores the existing `MMD Public Job V2` brief:
+
+- activity/format: `dining`, `event`, `party`, `travel`, `guest_care`, `social_appearance`, `brand_guest`, `city_companion`, or `other`
+- `customer_count` — total people in the customer group
+- `care_count` — people needing focused care; may not exceed `customer_count`
+- `special_care_names` — optional names/context for focused care
+- `model_count` — how many Models are requested
+- `duties` — required Public duties / activity brief
+- `model_assignment_note` — optional assignment split when multiple Models are requested
+- `presentation_note` — optional dress / presentation note
+
+The booking intake rejects `PN`, `VIP`, and `private_review` semantics whenever the request scope is Public.
 
 ## Visibility boundary
 

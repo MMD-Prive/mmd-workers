@@ -55,10 +55,12 @@ test('renderer keeps a safe no-media state and API failure state', () => {
   assert.doesNotMatch(footer, /var img=item\.cover_url\|\|item\.public_image_url/);
 });
 
-test('stylesheet includes the min-content guard verified by the 390px browser smoke', () => {
+test('digital surface keeps min-content safe and uses a non-swipe Model grid', () => {
   assert.match(head, /\.skb26-shell,\.skb26-form,\.skb26-form>\*,\.skb26-card,\.skb26-model-results\{min-width:0;max-width:100%\}/);
-  assert.match(head, /\.skb26-model-results\{width:100%\}/);
-  assert.match(head, /\.skb26-model-results\{display:flex;gap:8px;overflow-x:auto;/);
+  assert.match(head, /\.skb26-model-results\{[\s\S]*width:100%;[\s\S]*display:grid;[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.doesNotMatch(head, /\.skb26-model-results\{[^}]*overflow-x:auto/);
+  assert.match(head, /min-height:100dvh/);
+  assert.match(head, /env\(safe-area-inset-bottom\)/);
 });
 
 
@@ -89,4 +91,70 @@ test('customer offer cards label rates by duration and never imply the 90-minute
   assert.match(footer, /รูปเพิ่มเติมที่อนุมัติ/);
   assert.doesNotMatch(footer, /drive_folder_id/);
   assert.doesNotMatch(footer, /drive\.google\.com/);
+});
+
+
+test('SIGIL booking presents as a compact digital private concierge surface', () => {
+  assert.match(footer, /<span class="skb26-brand">SĪGIL<\/span>/);
+  assert.match(footer, /PRIVATE CONCIERGE/);
+  assert.match(footer, /data-skb26-mode="search"/);
+  assert.match(footer, /data-skb26-mode="booking"/);
+  assert.doesNotMatch(footer, /data-skb26-identity open/);
+  assert.match(footer, /if\(params\.get\('scope'\)==='private'\)identity\.open=true/);
+  assert.match(head, /background:[\s\S]*radial-gradient/);
+  assert.match(head, /backdrop-filter:blur/);
+});
+
+test('selected Model details open in a guarded bottom sheet with approved projected media only', () => {
+  assert.match(footer, /skb26-model-sheet/);
+  assert.match(footer, /role="dialog" aria-modal="true"/);
+  assert.match(footer, /function openModelSheet\(\)/);
+  assert.match(footer, /function closeModelSheet\(\)/);
+  assert.match(footer, /openModelBtn\.addEventListener\('click',openModelSheet\)/);
+  assert.match(footer, /btn\.classList\.add\('is-selected'\);openModelSheet\(\)/);
+  assert.match(footer, /if\(e\.key==='Escape'/);
+  assert.match(head, /\.skb26-model-sheet\{/);
+  assert.match(head, /\.skb26-media-gallery\{[\s\S]*display:grid/);
+  assert.doesNotMatch(head, /\.skb26-media-gallery[^}]*overflow-x:auto/);
+});
+
+test('renderer is idempotent when Webflow reruns the embed', () => {
+  assert.match(footer, /if\(root\.dataset\.skb26Mounted==='1'\)return/);
+  assert.match(footer, /root\.dataset\.skb26Mounted='1'/);
+});
+
+
+test('Public Model restores MMD Public Job V2 activity and group-care intake without PN/VIP semantics', () => {
+  assert.match(footer, /data-skb26-public-activity/);
+  for (const format of ['dining','event','party','travel','guest_care','social_appearance','brand_guest','city_companion','other']) {
+    assert.match(footer, new RegExp('data-filter="public_format" data-value="' + format + '"'));
+  }
+  assert.match(footer, /data-skb26-private-work-block hidden/);
+  assert.match(footer, /name="model_count"/);
+  assert.match(footer, /name="customer_count"/);
+  assert.match(footer, /name="care_count"/);
+  assert.match(footer, /name="special_care_names"/);
+  assert.match(footer, /name="duties"/);
+  assert.match(footer, /name="model_assignment_note"/);
+  assert.match(footer, /name="presentation_note"/);
+  assert.match(footer, /schema_version:'mmd_public_job_v2'/);
+  assert.match(footer, /public_job:publicJob\|\|undefined/);
+  assert.ok(footer.includes("work_lane:scope==='private'?(filters.private_work||''):''"));
+  assert.match(footer, /if\(scope==='private'&&mode==='search'&&!filters\.private_work\)/);
+  assert.doesNotMatch(footer, /if\(mode==='search'&&!filters\.private_work\)/);
+  assert.match(footer, /if\(scope==='public'&&!filters\.public_format\)/);
+  assert.match(footer, /careCount>customerCount/);
+});
+
+test('Public and Private scope inputs are mutually exclusive on the digital surface', () => {
+  assert.match(footer, /function syncScopeInputs\(\)/);
+  assert.match(footer, /publicActivityBlock\.hidden=isPrivate/);
+  assert.match(footer, /publicJobCard\.hidden=isPrivate/);
+  assert.match(footer, /privateWorkBlock\.hidden=!isPrivate/);
+  assert.match(footer, /privateContextField\.hidden=!isPrivate/);
+  assert.match(footer, /privateDurationField\.hidden=!isPrivate/);
+  assert.match(footer, /filters\.private_work=''/);
+  assert.match(footer, /filters\.public_format=''/);
+  assert.match(footer, /scope==='private'&&filters\.private_work\)qs\.set\('work_lane'/);
+  assert.match(footer, /scope==='public'&&filters\.public_format\)qs\.set\('service_context'/);
 });

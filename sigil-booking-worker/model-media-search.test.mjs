@@ -369,6 +369,8 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         search_mode: "search",
+        lane: "private",
+        model_scope: "private",
         customer_lane: "both",
         work_lane: "pn",
         spec: "สูง คุยอังกฤษได้",
@@ -385,6 +387,8 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
       body: JSON.stringify({
         booking_ref: "search_001",
         search_mode: "search",
+        lane: "private",
+        model_scope: "private",
         customer_lane: "both",
         work_lane: "pn",
         budget_thb: 15000,
@@ -418,6 +422,107 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
     assert.equal(resolver.customer_search.duration_minutes, 90);
     assert.equal(resolver.customer_search.service_context, "dinner");
     assert.equal(resolver.customer_search.review_requested, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Public Model intake restores MMD Public Job V2 and rejects PN/VIP semantics", async () => {
+  const originalFetch = globalThis.fetch;
+  const persisted = [];
+  globalThis.fetch = async (url, init = {}) => {
+    assert.match(String(url), /^https:\/\/api\.airtable\.com\/v0\/test-base\//);
+    if (init.method === "POST") {
+      const fields = JSON.parse(init.body).fields;
+      persisted.push(fields);
+      return Response.json({ id: "recPublicDraft", fields });
+    }
+    return Response.json({ records: [] });
+  };
+  try {
+    const forbidden = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        booking_ref: "public_forbidden_pn",
+        lane: "public",
+        model_scope: "public",
+        work_lane: "pn",
+        job_class: "pn",
+        suppress_telegram_notify: true,
+      }),
+    }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
+    assert.equal(forbidden.status, 422);
+    assert.equal((await forbidden.json()).error, "public_job_private_type_forbidden");
+    assert.equal(persisted.length, 0);
+
+    const invalidCare = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        booking_ref: "public_invalid_care",
+        lane: "public",
+        model_scope: "public",
+        public_job: {
+          schema_version: "mmd_public_job_v2",
+          format: "dining",
+          duties: "ไปทานข้าวและช่วยดูแลแขก",
+          customer_count: 2,
+          care_count: 3,
+          model_count: 1,
+        },
+        suppress_telegram_notify: true,
+      }),
+    }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
+    assert.equal(invalidCare.status, 422);
+    assert.equal((await invalidCare.json()).error, "public_job_care_count_invalid");
+    assert.equal(persisted.length, 0);
+
+    const accepted = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        booking_ref: "public_job_v2_001",
+        lane: "public",
+        model_scope: "public",
+        job_class: "dining",
+        customer_lane: "both",
+        public_job: {
+          schema_version: "mmd_public_job_v2",
+          format: "dining",
+          duties: "ไปทานข้าวด้วยกันและช่วยคุยกับแขก",
+          customer_count: 8,
+          care_count: 3,
+          special_care_names: "คุณ A, คุณ B",
+          model_count: 3,
+          model_assignment_note: "1 คนดูแลแขกหลัก ที่เหลือดูแลกลุ่ม",
+          presentation_note: "Smart casual",
+          remark: "Public dinner",
+        },
+        suppress_telegram_notify: true,
+      }),
+    }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
+    assert.equal(accepted.status, 200);
+    const acceptedBody = await accepted.json();
+    assert.equal(acceptedBody.ok, true);
+    assert.equal(acceptedBody.public_job.format, "dining");
+    assert.equal(acceptedBody.public_job.customer_count, 8);
+    assert.equal(acceptedBody.public_job.care_count, 3);
+    assert.equal(acceptedBody.public_job.model_count, 3);
+
+    const fields = persisted.at(-1);
+    assert.equal(fields.lane, "public");
+    assert.equal(fields.model_scope, "public");
+    assert.equal(fields.job_class, "travel");
+    assert.doesNotMatch(fields["Preference Text"], /\b(?:PN|VIP)\b/i);
+    const resolver = JSON.parse(fields.resolver_payload_json);
+    assert.equal(resolver.public_job.schema_version, "mmd_public_job_v2");
+    assert.equal(resolver.public_job.format, "dining");
+    assert.equal(resolver.public_job.customer_count, 8);
+    assert.equal(resolver.public_job.care_count, 3);
+    assert.equal(resolver.public_job.model_count, 3);
+    assert.equal(resolver.customer_search.work_lane, "");
   } finally {
     globalThis.fetch = originalFetch;
   }
