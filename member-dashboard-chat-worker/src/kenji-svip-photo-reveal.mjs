@@ -11,6 +11,25 @@ function enabled(value) {
   return ["1", "true", "yes", "on"].includes(text(value, 20).toLowerCase());
 }
 
+function photoRevealMode(env = {}) {
+  const mode = text(env.KENJI_SVIP_PHOTO_REVEAL_MODE, 20).toLowerCase();
+  return ["dry_run", "pilot", "live"].includes(mode) ? mode : "off";
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function pilotAllows(env = {}, userId = "") {
+  const hashes = text(env.KENJI_SVIP_PHOTO_REVEAL_PILOT_HASHES, 4000)
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .filter(Boolean);
+  if (!hashes.length || hashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) return false;
+  return hashes.includes(await sha256Hex(userId));
+}
+
 function lineUserId(event = {}) {
   const value = event?.source?.type === "user" ? text(event?.source?.userId, 80) : "";
   return /^U[0-9a-f]{32}$/i.test(value) ? value : "";
@@ -19,7 +38,7 @@ function lineUserId(event = {}) {
 function cleanModelQuery(value = "") {
   return text(value, 120)
     .replace(/^(?:ของ|น้อง|คุณ)\s+/i, "")
-    .replace(/\s*(?:ทั้งหมด|เต็มชุด|all|full\s*set)?\s*(?:หน่อย|ที|ครับ|ค่ะ|คะ|นะ|น้า)?\s*$/i, "")
+    .replace(/\s*(?:ทั้งหมด|เต็มชุด|all|full\s*set)?\s*(?:หน่อย|ที|ครับ|ค่ะ|คะ|นะ|น้า)*(?:ครับ|ค่ะ|คะ|นะ|น้า)?\s*$/i, "")
     .trim();
 }
 
@@ -48,7 +67,7 @@ export function parseKenjiSvipPhotoRevealText(value = "") {
   return null;
 }
 
-async function callHypePhotoResolver(env = {}, event = {}, query = "") {
+async function callHypePhotoResolver(env = {}, event = {}, query = "", context = {}) {
   const userId = lineUserId(event);
   const internalToken = text(env.INTERNAL_TOKEN, 2000);
   if (!env.ADMIN_WORKER?.fetch || !internalToken || !userId || !query) return { status: "unavailable" };
@@ -65,6 +84,7 @@ async function callHypePhotoResolver(env = {}, event = {}, query = "") {
         line_user_id: userId,
         query,
         event_ref: text(event?.message?.id || event?.webhookEventId || event?.replyToken, 160),
+        dry_run: context.dry_run === true,
       }),
     }));
     if (!response.ok) return { status: "unavailable" };
@@ -132,6 +152,7 @@ async function sendLineReply(env = {}, replyToken = "", messages = []) {
 }
 
 function decisionFor(event = {}, parsed = {}, result = {}, delivery = {}) {
+  const dryRun = result.status === "dry_run_ready";
   const review = result.status === "review_required";
   const ready = result.status === "ready";
   const reason = text(result.reason_code, 160) || result.status || "unknown";
@@ -140,15 +161,15 @@ function decisionFor(event = {}, parsed = {}, result = {}, delivery = {}) {
     intent: "model_photo_reveal",
     inferred_intent: "model_photo_reveal",
     reply_source: "hype_svip_exact_customer_photo_reveal",
-    handoff_required: review,
-    handoff_reason: review ? `model_photo_reveal:${reason}` : "",
+    handoff_required: review || dryRun,
+    handoff_reason: review || dryRun ? `model_photo_reveal:${reason}` : "",
     truth_authority: "HYPE_SVIP_PHOTO_REVEAL_V1",
     truth_status: ready ? "verified_photo_gate" : result.status,
     live_truth_used: true,
     live_truth_verified: ready || result.status === "not_authorized",
     operational: {
       phase: "P3_svip_exact_customer_photo_reveal",
-      primary_action: review ? "handoff_per" : ready ? "send_approved_photo_set" : "deny_photo_reveal",
+      primary_action: dryRun ? "dry_run_owner_receipt" : review ? "handoff_per" : ready ? "send_approved_photo_set" : "deny_photo_reveal",
       model_access_status: result.status,
       requested_model_ref: parsed.query,
       photo_count: Number(result.photo_count || 0),
@@ -172,15 +193,40 @@ export async function tryHandleKenjiSvipPhotoRevealRequest(request, env = {}, ct
   if (event?.source?.type !== "user" || event?.type !== "message" || event?.message?.type !== "text") return null;
 
   const parsed = parseKenjiSvipPhotoRevealText(event.message.text);
-  if (!parsed || !lineUserId(event)) return null;
+  const userId = lineUserId(event);
+  if (!parsed || !userId) return null;
   if (!enabled(env.LINE_KENJI_AI_ENABLED)) return null;
+
+  const rolloutMode = photoRevealMode(env);
+  if (rolloutMode === "off") return null;
+  if (["dry_run", "pilot"].includes(rolloutMode) && !await pilotAllows(env, userId)) return null;
 
   const runtime = await requestKenjiRuntimeStatus(env).catch(() => ({ ok: false }));
   const controls = runtime?.controls || {};
   if (runtime?.ok !== true || controls.all_kenji_mutations === true || controls.line_oa_auto_reply === true) return null;
   if (!enabled(env.LINE_AUTO_REPLY_ENABLED)) return null;
 
-  const result = await callHypePhotoResolver(env, event, parsed.query);
+  const result = await callHypePhotoResolver(env, event, parsed.query, { dry_run: rolloutMode === "dry_run" });
+  if (rolloutMode === "dry_run") {
+    const decision = decisionFor(event, parsed, result, { ok: false });
+    return {
+      handled: true,
+      response: Response.json({
+        ok: true,
+        route: "line_webhook",
+        replied: false,
+        suppressed: true,
+        kenji_mode: "svip_exact_customer_photo_reveal_dry_run",
+        status: result.status,
+      }),
+      event,
+      decision,
+      delivered: false,
+      attempted: false,
+      delivery_status: "dry_run_owner_only",
+    };
+  }
+
   const messages = perVoiceMessages(result);
   if (!messages.length) {
     return {
@@ -215,6 +261,9 @@ export async function tryHandleKenjiSvipPhotoRevealRequest(request, env = {}, ct
 
 export const KENJI_SVIP_PHOTO_REVEAL_INTERNALS = Object.freeze({
   cleanModelQuery,
+  photoRevealMode,
+  pilotAllows,
   perVoiceMessages,
+  sendLineReply,
   decisionFor,
 });
