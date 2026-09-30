@@ -30,6 +30,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/job-board/handoff*"
 zone_name = "mmdbkk.com"
 
+# Telegram/external-browser selected-job bridge. LINE identity remains the
+# authority; this endpoint accepts only a canonical Session id and returns a
+# freshly minted Model confirmation URL after exact Canonical Model ownership.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/selected-job/handoff"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/selected-job/handoff"
+zone_name = "mmdbkk.com"
+
 # Owner-only Create Job -> Model Job Board publish bridge.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/job-board/publish"
