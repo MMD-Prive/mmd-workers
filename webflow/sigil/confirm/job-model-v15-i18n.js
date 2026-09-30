@@ -5,9 +5,9 @@
  * Storage access is guarded because LINE/iOS in-app browsers may throw on localStorage.
  * v15.1: every state is visible. Errors are mapped to model-safe copy plus an
  * owner-safe reference code (error code + session tail only; never money, never token).
- * v15.1: the model page shows no customer identity and no customer amount/rate/payment
- * data. The client row is a neutral label; the ONLY money shown is the model's own
- * payout (model_payout_thb), with a clear warning when it has not been set.
+ * v15.1: the model page shows the client's display name (client_name) and the model's own
+ * payout (model_payout_thb, with a clear warning when unset). It never shows payment_ref /
+ * payment_type / payment_status or any customer amount/rate.
  */
 (() => {
   "use strict";
@@ -71,7 +71,6 @@
       title: "ยืนยันรับงาน",
       introKicker: "คืนนี้ในกรุงเทพ",
       intro: "เช็กเวลา สถานที่ รายละเอียดงาน และยอดเงินถึงตัวให้เรียบร้อยก่อนออกเดินทาง",
-      clientLabel: "ลูกค้า MMD",
       payout: "ยอดเงินถึงตัว",
       payoutKicker: "ยอดถึงตัว",
       payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน",
@@ -119,7 +118,6 @@
       title: "Confirm this job",
       introKicker: "TONIGHT IN BANGKOK",
       intro: "Check the time, location, job details, and payout before heading out.",
-      clientLabel: "MMD client",
       payout: "Rate to you",
       payoutKicker: "YOUR PAYOUT",
       payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming.",
@@ -167,7 +165,6 @@
       title: "确认接单",
       introKicker: "今晚 · 曼谷",
       intro: "出发前请确认时间、地点、工作详情和到手金额。",
-      clientLabel: "MMD 客户",
       payout: "到手金额",
       payoutKicker: "到手金额",
       payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。",
@@ -676,9 +673,8 @@
 
   function render(data, updateState = true) {
     currentDetails = data;
-    // Customer identity is owner/admin-only: never render a name, even if an
-    // older backend still sends one.
-    if (el.client) el.client.textContent = dict().clientLabel;
+    // Models address the client by name, so the canonical client display name is shown.
+    if (el.client) el.client.textContent = str(data.client_name) || "—";
     if (el.type) el.type.textContent = workType(data.job_type);
     if (el.date) el.date.textContent = formatDate(data.job_date);
     if (el.time) el.time.textContent = range(data.start_time, data.end_time);

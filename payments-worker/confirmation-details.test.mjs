@@ -336,7 +336,7 @@ test("payment enrichment never exposes a payment record bound to another session
   assert.equal(data.payment.amount_due_thb, 13500);
 });
 
-test("model confirmation details expose only the model's own payout, never customer identity, amounts, pricing or payment QR", async () => {
+test("model confirmation details expose the client display name and the model's own payout, never payment data, customer amounts, pricing or payment QR", async () => {
   const { env, modelToken } = await envAndTokens();
   const response = await handleConfirmationDetails(post(modelToken, "model"), env);
   assert.equal(response.status, 200);
@@ -346,8 +346,7 @@ test("model confirmation details expose only the model's own payout, never custo
   assert.equal(data.amount_scope, "model_payout");
   assert.equal(data.model_payout_thb, 5500);
   assert.equal("amount_thb" in data, false, "no generic/customer amount on the model view");
-  assert.equal("client_name" in data, false);
-  assert.equal(JSON.stringify(data).includes("พี่ SVIP"), false);
+  assert.equal(data.client_name, "พี่ SVIP", "model sees the client display name");
   assert.equal("pricing" in data, false);
   assert.equal("payment" in data, false);
   assert.equal(JSON.stringify(data).includes("payments.example.com"), false);

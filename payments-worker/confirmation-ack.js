@@ -243,11 +243,10 @@ function safeConfirmationContext(env, session, role) {
     start_time: clean(source[fields.startTime], 120) || null,
     end_time: clean(source[fields.endTime], 120) || null,
     location_name: clean(source[fields.locationName], 300) || null,
-    // Customer identity is owner/admin-only; the model context never carries it.
     counterpart_name:
       role === "customer"
         ? clean(source[fields.modelName], 120) || null
-        : null,
+        : clean(source[fields.clientName], 120) || null,
     acknowledged_at:
       clean(source[role === "customer" ? fields.customerAck : fields.modelAck], 200) || null,
   };

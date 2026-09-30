@@ -143,8 +143,8 @@ function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", w
 }
 
 const settle = (ms = 40) => new Promise((r) => setTimeout(r, ms));
-// client_name simulates an older backend: the page must still never render it. model_payout_thb is the model's own pay and IS shown.
-const DETAILS_OK = { status: 200, body: { ok: true, role: "model", client_name: "คุณ Secret Client", job_type: "private", job_date: "2026-10-02", start_time: "19:00", end_time: "21:00", location_name: "Hotel", model_payout_thb: 5000, confirmation_revision: "rev123", already_confirmed: false, model_acknowledged_at: null } };
+// client_name (display name) and model_payout_thb (the model's own pay) are both shown to the model.
+const DETAILS_OK = { status: 200, body: { ok: true, role: "model", client_name: "เชน - SVIP -", job_type: "private", job_date: "2026-10-02", start_time: "19:00", end_time: "21:00", location_name: "Hotel", model_payout_thb: 17500, confirmation_revision: "rev123", already_confirmed: false, model_acknowledged_at: null } };
 const feedback = (h) => h.root.querySelector("[data-m-confirm-feedback]");
 const diag = (h) => h.root.querySelector("[data-m-diag]");
 const status = (h) => h.el["data-m-status"];
@@ -273,7 +273,7 @@ test("no customer payment amount, rate, token or payment ref leaks into model-vi
   await h.el["data-m-confirm"].click();
   await settle();
   const text = `${diag(h).textContent} ${JSON.stringify(h.warnings)} ${h.root.dataset.mmdDiag}`;
-  assert.doesNotMatch(text, /5000|pay_|sig\b|THB|amount|price/i);
+  assert.doesNotMatch(text, /17500|17,500|pay_|sig\b|THB|amount|price/i);
   assert.ok(!text.includes(TOKEN));
 });
 
@@ -333,20 +333,25 @@ test("gate: failed preflight is not cached, so retry can recover", async () => {
   assert.equal(h.root.dataset.mmdState, "ready");
 });
 
-test("model page shows the model's own payout but never customer identity or customer/payment data", async () => {
+test("model page shows the actual client display name and the model's own payout, never payment or customer-amount data", async () => {
   const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body, payment_ref: "pay_leak", payment_status: "partial", amount_thb: 40500 } } } });
   await settle();
   assert.equal(h.root.dataset.mmdState, "ready");
-  assert.equal(h.el["data-m-client"].textContent, "ลูกค้า MMD");
-  assert.equal(h.root.contains(h.el["data-m-payout-card"]), true);
+  assert.equal(h.el["data-m-client"].textContent, "เชน - SVIP -");
+  assert.notEqual(h.el["data-m-client"].textContent, "ลูกค้า MMD");
   assert.equal(h.el["data-m-payout-card"].hidden, false);
-  assert.match(h.el["data-m-payout"].textContent, /5,000 THB/);
+  assert.match(h.el["data-m-payout"].textContent, /17,500 THB/);
   assert.equal(h.root.dataset.mmdPayout, "ok");
-  assert.equal(h.root.querySelector("[data-m-paywarn]")?.hidden ?? true, true);
   const visible = h.root.allText;
-  for (const leak of ["Secret Client", "pay_leak", "partial", "40,500", "40500", "deposit"]) {
+  for (const leak of ["pay_leak", "partial", "40,500", "40500", "deposit"]) {
     assert.equal(visible.includes(leak), false, `model page leaked ${leak}`);
   }
+});
+
+test("missing client name falls back to a dash instead of a blank or a fake name", async () => {
+  const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body, client_name: "" } } } });
+  await settle();
+  assert.equal(h.el["data-m-client"].textContent, "—");
 });
 
 test("missing model payout shows the clear warning and keeps the rate row visible", async () => {

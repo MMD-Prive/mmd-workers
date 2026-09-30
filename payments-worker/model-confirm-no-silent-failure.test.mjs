@@ -19,14 +19,14 @@ function sessionRecord(overrides = {}) {
       fldvJowquu8RrsOMc: 13500,
       fldojgjSQLaO0uQLX: "pay_model_nsf",
       fldTY5lE6m0kQf72n: "partial",
-      fldMvnQ0BzDfHUYjT: "คุณ Client",
+      fldMvnQ0BzDfHUYjT: "เชน - SVIP -",
       flddVz6eoWRHrzIQr: "EMs16",
       fldjK3U9bghnj7xUe: "private",
       fldpnqoIsUMfN7y3c: "2026-10-02",
       fldBeG0FkWwa8kgnp: "2026-10-02T12:00:00.000Z",
       fldiDSz0wW9Ct9I3P: "2026-10-02T14:00:00.000Z",
       fldIiRpaxoafjTkFt: "Hotel",
-      fldlTO5aNfqUmlNWm: 5000,
+      fldlTO5aNfqUmlNWm: 17500,
       fldEcDkF7CH9VixWM: "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"net_price_thb\":40500,\"deposit_due_thb\":13500,\"balance_thb\":27000}",
       ...overrides,
     },
@@ -148,19 +148,20 @@ test("unrelated payment ref on the session is still rejected by both details and
   assert.equal(s.writes.length, 0);
 });
 
-test("model details carry the model's own payout but no customer identity, customer amount/rate or payment data", async (t) => {
+test("model details carry the client display name and the model's own payout, but no payment data or customer amount/rate", async (t) => {
   const s = await setup();
   t.after(s.restore);
   const data = await (await s.details()).json();
-  for (const key of ["client_name", "payment_ref", "payment_type", "payment_status", "pricing", "payment", "amount_thb", "customer_amount_due_thb"]) {
+  assert.equal(data.client_name, "เชน - SVIP -");
+  assert.equal(data.model_payout_thb, 17500);
+  assert.equal(data.amount_scope, "model_payout");
+  for (const key of ["payment_ref", "payment_type", "payment_status", "pricing", "payment", "amount_thb", "customer_amount_due_thb", "line_id", "line_user_id", "client_line_id", "client_record_id"]) {
     assert.equal(key in data, false, `${key} must not be in the model response`);
   }
   const raw = JSON.stringify(data);
-  for (const leak of ["คุณ Client", "pay_model_nsf", "40500", "13500", "45000", "27000", "partial", "deposit"]) {
+  for (const leak of ["pay_model_nsf", "40500", "13500", "45000", "27000", "partial", "deposit"]) {
     assert.equal(raw.includes(leak), false, `model response leaked ${leak}`);
   }
-  assert.equal(data.model_payout_thb, 5000);
-  assert.equal(data.amount_scope, "model_payout");
   for (const key of ["job_date", "start_time", "end_time", "location_name", "already_confirmed"]) {
     assert.ok(key in data, `${key} is still available to acknowledge the job`);
   }
@@ -174,13 +175,14 @@ test("missing model payout is reported as null so the page can warn before confi
   assert.equal(data.amount_scope, "model_payout");
 });
 
-test("model confirmation context never carries the customer name", async (t) => {
+test("model confirmation context carries the client display name but no payment data", async (t) => {
   const s = await setup();
   t.after(s.restore);
   const { handleConfirmationContext } = await import("./confirmation-ack.js");
   const r = await handleConfirmationContext(new Request("https://sigil.mmdbkk.com/v1/confirm/context", { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify({ t: s.token, expected_role: "model" }) }), s.env);
   assert.equal(r.status, 200);
   const data = await r.json();
-  assert.equal(data.confirmation.counterpart_name, null);
-  assert.equal(JSON.stringify(data).includes("คุณ Client"), false);
+  assert.equal(data.confirmation.counterpart_name, "เชน - SVIP -");
+  const raw = JSON.stringify(data);
+  for (const leak of ["pay_model_nsf", "40500", "13500", "17500", "deposit"]) assert.equal(raw.includes(leak), false, `context leaked ${leak}`);
 });
