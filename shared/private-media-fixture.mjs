@@ -26,8 +26,10 @@ export function privateMediaFixture() {
         const body=await request.json();fixture.audits.push(body.fields);return Response.json({id:'recAudit',fields:body.fields});
       }
       if(request.method === 'PATCH') {
-        fixture.writes.push(await request.json());
+        const body = await request.json();
+        fixture.writes.push(body);
         if(fixture.logFailure) return Response.json({}, {status:503});
+        if(body?.fields?.preview_token_hash) return Response.json({id:'recGrant',fields:body.fields});
         return Response.json({id:'recGrant',fields:{grant_status:'consumed',view_count:1}});
       }
       if(table === 'tblVv58TCbwh5j1fS') return Response.json({records:[{id:'recClient',fields:{line_user_id:lineUserId}}]});
