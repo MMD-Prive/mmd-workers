@@ -114,9 +114,13 @@ async function handleModelSearch(req, env, url) {
   const storedAccess = await lookupStoredBookingAccess(env, { bookingRef, sessionId });
   const salesContext = await resolveBookingSalesContext(env, storedAccess);
   const allowedFolders = allowedCustomerModelFolders(salesContext.entitlement_snapshot);
+  const requestedFolder = token(url.searchParams.get("selected_access_folder") || body.selected_access_folder || body.access_folder);
+  const effectiveAllowedFolders = requestedFolder
+    ? (allowedFolders.includes(requestedFolder) ? [requestedFolder] : [])
+    : allowedFolders;
   const privateAllowed = storedAccess.member_status === "active" && allowedFolders.length > 0;
 
-  if (scope === "private" && !privateAllowed) {
+  if (scope === "private" && (!privateAllowed || (requestedFolder && effectiveAllowedFolders.length === 0))) {
     return {
       ok: true,
       matched: false,
@@ -124,7 +128,7 @@ async function handleModelSearch(req, env, url) {
       reason: salesContext.protected_review_required ? "protected_models_require_per_review" : "private_requires_active_member",
       access_scope: "public_only",
       member_status: storedAccess.member_status || "unknown",
-      allowed_model_folders: [],
+      allowed_model_folders: allowedFolders,
       visibility_enforced: true,
       policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
       items: [],
@@ -136,7 +140,7 @@ async function handleModelSearch(req, env, url) {
     .map((record) => sanitizeModelForBooking(record, {
       scope,
       privateAllowed,
-      allowedFolders,
+      allowedFolders: effectiveAllowedFolders,
       customerLane: intent.customer_lane,
       workLane: intent.work_lane,
       env,
