@@ -114,6 +114,7 @@ function installRichMenuFetch(specs, canonical, livePrivate) {
   return {
     calls,
     rows,
+    images,
     restore() { globalThis.fetch = originalFetch; },
   };
 }
