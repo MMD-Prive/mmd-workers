@@ -153,7 +153,11 @@ async function applyDecision(request, env, actor, applicationId) {
   const explicitLinkedModelId = /^rec[A-Za-z0-9]{14,24}$/.test(clean(body?.linked_model_id)) ? clean(body.linked_model_id) : "";
 
   if (decision === "approve") {
-    if ((projection.counts?.photos || 0) < 1) {
+    const reviewedPhotoCount = Math.max(
+      Number(projection.counts?.photos || 0),
+      (projection.assets || []).filter((asset) => asset.kind === "photo").length,
+    );
+    if (reviewedPhotoCount < 1) {
       return json({
         ok: false,
         error: "application_media_required_for_approval",
