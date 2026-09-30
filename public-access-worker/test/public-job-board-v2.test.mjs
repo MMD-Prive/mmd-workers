@@ -236,8 +236,7 @@ test("owner short link renders a Per-led job-first landing", async () => {
   assert.match(page, /summary_large_image/i);
   assert.match(page, /HYPE%20Ner%20Job-p-1080\.png/);
   assert.match(page, /og:image:type" content="image\/png"/);
-  assert.doesNotMatch(page, /HYPE%20Ner%20Job\.webp/);
-
+  assert.doesNotMatch(page, /HYPE%20Ner%20Job\.webp/);\n  assert.match(page, /data-mmd-job-miniapp-handoff="v1"/);\n  assert.match(page, /window\.location\.replace\(target\)/);\n  assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);\n
   const direct = await call(testEnv, "/public/api/jobs");
   assert.equal(direct.status, 302);
   const login = new URL(direct.headers.get("location"));
@@ -266,10 +265,7 @@ test("branded short link renders an existing canonical job created before aliase
   assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);
   assert.match(page, /MMD JOB · CONFIDENTIAL/);
   assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
-  assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);
-});
-
-test("job board Welcome is Per-led and keeps Public plus Private in one feed", async () => {
+  assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);\n  assert.match(page, /data-mmd-job-miniapp-handoff="v1"/);\n  assert.match(page, /window\.location\.replace\(target\)/);\n});\n\ntest("job board Welcome is Per-led and keeps Public plus Private in one feed", async () => {
   const testEnv = env();
   const created = await ownerCreate(testEnv);
   assert.equal(created.job.public.title, "กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์");
