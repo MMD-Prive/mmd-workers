@@ -384,7 +384,7 @@ test("private_photo_reveal LIFF returns directly to the exact grant resume and s
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
   assert.match(html, new RegExp(`const target = "/api/member/app/private-preview/resume\\?g=${grantId}"`));
   assert.match(html, /กำลังเปิดรูป/);
-  assert.match(html, /private-preview\\/resume/);
+  assert.match(html, /private-preview\/resume/);
 
   const hostile = await worker.fetch(
     new Request("https://mmdbkk.com/member/liff?intent=private_photo_reveal&grant=https%3A%2F%2Fevil.example"),
