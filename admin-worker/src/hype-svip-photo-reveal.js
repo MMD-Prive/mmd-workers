@@ -258,10 +258,11 @@ function grantFields(env = {}) {
   };
 }
 
-async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRef = "" }) {
+async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRef = "", requestedModelRef = "" }) {
   const fields = grantFields(env);
   const grantId = `svip_photo_${crypto.randomUUID()}`;
   const rawToken = base64Url(`${crypto.randomUUID()}:${Date.now()}:${grantId}`);
+  const issuedAt = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const table = clean(env.AIRTABLE_TABLE_PRIVATE_FLASH_PREVIEW_GRANTS, 180) || DEFAULT_GRANTS_TABLE;
   await airtableCreate(env, table, {
@@ -281,7 +282,7 @@ async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRe
     [fields.expiresAt]: expiresAt,
     [fields.watermarkCode]: grantId.slice(-8),
     [fields.authorizedBy]: "hype:svip_exact_customer_photo_reveal",
-    [fields.authorizedAt]: new Date().toISOString(),
+    [fields.authorizedAt]: issuedAt,
     [fields.grantNote]: "Photo-only exact-customer reveal. No rate, availability, offer, booking or payment authority.",
     [fields.payloadJson]: JSON.stringify({
       authorization_basis: "active_svip_exact_customer_photo_reveal",
@@ -294,6 +295,14 @@ async function createPhotoGrant(env, { clientId, modelId, mediaRecordId, eventRe
       booking_authority: false,
       payment_authority: false,
       policy_version: HYPE_SVIP_PHOTO_REVEAL_POLICY,
+      issue_reason: "svip_exact_customer_requested_approved_photo_set",
+      issued_at: issuedAt,
+      issued_by: "hype:svip_exact_customer_photo_reveal",
+      customer_binding: "exact_canonical_line_client",
+      client_record_id: clientId,
+      model_record_id: modelId,
+      media_record_id: mediaRecordId,
+      requested_model_ref: requestedModelRef,
       event_ref: eventRef,
     }),
   });
@@ -355,6 +364,38 @@ export async function resolveHypeSvipPhotoReveal(env = {}, input = {}) {
   const safeModel = projectKenjiSafeModel(model);
   if (!safeModel) return review("customer_safe_model_projection_failed");
 
+  if (input.dry_run === true) {
+    return {
+      ok: true,
+      status: "dry_run_ready",
+      handoff_required: true,
+      reason_code: "dry_run_ready",
+      policy_version: HYPE_SVIP_PHOTO_REVEAL_POLICY,
+      customer_binding: "exact_canonical_line_client",
+      model: {
+        model_code: clean(safeModel.model_code, 60),
+        working_name: clean(safeModel.working_name, 120),
+      },
+      photo_count: media.length,
+      audit_preview: {
+        client_record_id: clientId,
+        model_record_id: modelId,
+        media_record_ids: media.map((item) => item.media_record_id),
+        requested_model_ref: query,
+        event_ref: eventRef,
+        issue_reason: "svip_exact_customer_requested_approved_photo_set",
+      },
+      authority: {
+        photo_reveal: false,
+        rate: false,
+        sales_offer: false,
+        availability: false,
+        booking: false,
+        payment: false,
+      },
+    };
+  }
+
   const grants = [];
   for (const item of media) {
     grants.push(await createPhotoGrant(env, {
@@ -362,6 +403,7 @@ export async function resolveHypeSvipPhotoReveal(env = {}, input = {}) {
       modelId,
       mediaRecordId: item.media_record_id,
       eventRef,
+      requestedModelRef: query,
     }));
   }
 
