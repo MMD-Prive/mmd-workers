@@ -51,16 +51,21 @@ export async function handleMyMmdWelcomeContext(request, env = {}) {
   if (origin && origin !== url.origin) return Response.json({ ok: false, state: "public" }, { status: 403, headers });
   const sessionRef = await readSessionRef(request, env);
   if (!sessionRef) return Response.json({ ok: true, data: { tier: "", membership_status: "", audience: "new" } }, { status: 200, headers });
-  const resolved = await readCanonicalMemberProfile(env, sessionRef.lineUserId);
-  if (!resolved) return Response.json({ ok: false, state: "public" }, { status: 503, headers });
-  const denied = ["blocked", "suspended", "revoked", "expired", "pending_review", "under_review"].includes(String(resolved.profile?.membership_status || "").toLowerCase());
-  const projection = denied ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
-  const audience = resolved.memberId ? "existing" : "new";
+  const [resolved, canonicalClient] = await Promise.all([
+    readCanonicalMemberProfile(env, sessionRef.lineUserId),
+    resolveCanonicalClientForLine(env, sessionRef.lineUserId).catch(() => null),
+  ]);
+  if (!resolved && !canonicalClient?.id) return Response.json({ ok: false, state: "public" }, { status: 503, headers });
+  const denied = ["blocked", "suspended", "revoked", "expired", "pending_review", "under_review"].includes(String(resolved?.profile?.membership_status || "").toLowerCase());
+  const projection = denied || !resolved ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
+  const audience = resolved?.memberId || canonicalClient?.id ? "existing" : "new";
   const safeData = projection
     ? { tier: projection.label, membership_status: projection.lifecycle, audience }
     : { tier: "", membership_status: "", audience };
   if (projection) headers["x-mmd-member-display-authority"] = RESOLVER_SOURCE;
-  if (audience === "existing") headers["x-mmd-welcome-audience-authority"] = PROFILE_SOURCE;
+  if (audience === "existing") {
+    headers["x-mmd-welcome-audience-authority"] = resolved?.memberId ? PROFILE_SOURCE : CONTACT_PROFILE_SOURCE;
+  }
   return Response.json({ ok: true, data: safeData }, { status: 200, headers });
 }
 
