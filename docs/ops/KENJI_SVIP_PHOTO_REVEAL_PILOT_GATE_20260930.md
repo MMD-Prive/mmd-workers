@@ -25,7 +25,14 @@ Default production mode: `off`
 - [ ] `pilot` and `live` are the only modes that may serve an already-issued SVIP reveal grant.
 - [ ] Durable Object one-use gate allows exactly one of two simultaneous `POST /consume` calls.
 - [ ] LINE crawler GET, HEAD, anonymous prefetch, and authenticated status preflight cannot consume a grant.
-- [ ] LIFF resume rotates the bearer token; the old token is invalid immediately.
+- [ ] LIFF resume rotates the bearer token; once a rotation is committed the superseded token is invalid immediately.
+- [ ] Two or more simultaneous `GET /resume` calls resolve to one bearer token and one Airtable rotation write; no successful redirect may be invalidated by another.
+- [ ] A sequential resume inside the short coalescing window returns the same bearer instead of rotating.
+- [ ] A resume after the window rotates, and the previous bearer stops resolving.
+- [ ] A failed Airtable rotation write fails closed: no redirect is issued, the gate holds no active bearer, and a retry self-heals.
+- [ ] Waiters on a failed rotation fail closed too; they never inherit a dead bearer.
+- [ ] A consumed grant can neither mint nor reuse a resume bearer.
+- [ ] No raw bearer token is written to Airtable, telemetry, console logs, or the consumption audit; Airtable holds the hash only.
 - [ ] Viewer shell and media response use `Cache-Control: no-store`.
 - [ ] After successful consume, reload/back/open-again cannot display the media again.
 - [ ] Cross-origin `POST /consume` is rejected.
@@ -104,6 +111,18 @@ If the desktop environment cannot complete the LIFF handoff:
 
 ## Token rotation / replay test
 
+> **Bearer-token rotation protects link freshness; it is not the one-use authority.
+> One-use media access is enforced exclusively by the atomic `PrivatePreviewGate`
+> consume state.**
+>
+> It follows that `preview_token_hash` is current lookup state, not audit evidence.
+> It records which bearer resolves *now*, never which bearer was actually used.
+> The evidence of real use is the atomic consume state plus the Consumption Log.
+>
+> Resume rotation is serialized by the same Durable Object: concurrent resumes
+> share one bearer within a short coalescing window, and a bearer is committed as
+> active only after the Airtable write confirms. A failed write fails closed.
+
 For a pilot link that requires LIFF:
 
 1. Save the original URL before verification.
@@ -115,6 +134,7 @@ Required:
 
 - [ ] Original bearer token returns not-found/invalid and cannot access status or media.
 - [ ] Fresh token remains valid until one use or expiry.
+- [ ] Re-tapping the link twice in quick succession does not break the first redirect.
 - [ ] Grant ID alone is not sufficient to consume media; exact member session is still required.
 
 ## Cache / reload policy
