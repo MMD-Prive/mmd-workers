@@ -62,7 +62,15 @@ export function modelLiffDigitalBootstrapHtml({
     status.textContent="กำลังเปิดรายละเอียดงาน…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
-    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true){
+      if(${JSON.stringify(publicJobApplicant)}&&exchange.status===202&&exchangeBody&&exchangeBody.state==="identity_review_required"){
+        var intake=new URL("/apply/public-model","https://mmdbkk.com");
+        intake.searchParams.set("source","job_board");
+        ${safeJobBoard.job_id ? `intake.searchParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
+        window.location.replace(intake.toString());return;
+      }
+      throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    }
     var handoffParams=new URLSearchParams();
     ${safeJobBoard.job_id ? `handoffParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
     ${safeJobBoard.next ? `handoffParams.set("next",${JSON.stringify(safeJobBoard.next)});` : ""}
