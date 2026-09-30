@@ -202,7 +202,10 @@ async function handleBookingIntake(req, env, ctx) {
   const sessionId = str(body.session_id || makeRef("mmd_session"));
   const incomingResolver = body.resolver_payload_json && typeof body.resolver_payload_json === "object" ? body.resolver_payload_json : {};
   const intakeScope = token(body.lane || body.model_scope) === "private" ? "private" : "public";
-  const intent = safeSearchIntent({ ...(incomingResolver.filters || {}), ...body });
+  const intentSource = intakeScope === "public"
+    ? { ...(incomingResolver.filters || {}), ...body, work_lane: "", private_work: "", job_class: "" }
+    : { ...(incomingResolver.filters || {}), ...body };
+  const intent = safeSearchIntent(intentSource);
   if (intent.errors.length) {
     const error = new Error(intent.errors[0]);
     error.status = 422;
