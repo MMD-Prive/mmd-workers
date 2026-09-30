@@ -465,18 +465,63 @@ function renderShell(config, nonce) {
   applyWorldTheme();
   let welcomeContextPromise;
   let existingProfilePromise;
-  async function resolveInitialWelcomeContext() {
-     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1500);
-      let response;
-      try {
-        response = await fetch(CONFIG.welcomeContextEndpoint, { method: "GET", credentials: "same-origin", redirect: "error", headers: { accept: "application/json" }, signal: controller.signal });
-      } finally { clearTimeout(timeout); }
+
+  async function readWelcomeContext() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const response = await fetch(CONFIG.welcomeContextEndpoint, {
+        method: "GET",
+        credentials: "same-origin",
+        redirect: "error",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      });
       const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.ok === true) applyWorldTheme(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-welcome-audience-authority") || "");
+      if (!response.ok || payload?.ok !== true) return false;
+      const displayAuthority = response.headers.get("x-mmd-member-display-authority") || "";
+      const audienceAuthority = response.headers.get("x-mmd-welcome-audience-authority") || "";
+      applyWorldTheme(payload.data || {}, displayAuthority, audienceAuthority);
+      return new Set(["canonical_member_profile", "canonical_client", "canonical_member_client_absence"]).has(audienceAuthority);
     } catch {
-      // Missing, stale, ambiguous, or unavailable identity evidence remains Public.
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function preflightWelcomeIdentity() {
+    if (CONFIG.intent === "signup" || !CONFIG.liffId || !window.liff) return false;
+    try {
+      await window.liff.init({ liffId: CONFIG.liffId });
+      if (!window.liff.isLoggedIn()) return false;
+      const idToken = window.liff.getIDToken();
+      if (!idToken) return false;
+      const body = { id_token: idToken, liff_intent: CONFIG.intent };
+      if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
+      if (CONFIG.campaign) body.campaign = CONFIG.campaign;
+      const response = await fetch(CONFIG.startEndpoint, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok !== true) return false;
+      existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function resolveInitialWelcomeContext() {
+    try {
+      let resolvedAudience = await readWelcomeContext();
+      if (!resolvedAudience) {
+        const sessionReady = await preflightWelcomeIdentity();
+        if (sessionReady) resolvedAudience = await readWelcomeContext();
+      }
     } finally {
       document.body.classList.remove("context-resolving");
       introContinue.disabled = false;
@@ -1568,7 +1613,7 @@ function renderShell(config, nonce) {
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  // Welcome screen is user-led; LINE verification begins after Continue.
+  // Welcome remains user-led. An already-authenticated LINE client may preflight a same-site session only to select the correct returning/new copy; this path never calls liff.login before Continue.
 })();
 </script>
 </body>
