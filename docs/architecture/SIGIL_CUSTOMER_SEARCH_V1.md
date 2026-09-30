@@ -39,6 +39,15 @@ Public Model does **not** use PN / VIP. It restores the existing `MMD Public Job
 
 The booking intake rejects `PN`, `VIP`, and `private_review` semantics whenever the request scope is Public.
 
+### Public World budget floor
+
+Public Model customer requests start at **5,000 THB**.
+
+- Public budget bands begin at `5,000–10,000`, then `10,000–20,000`, `20,000–30,000`, and `30,000+`.
+- A custom Public budget below 5,000 THB is rejected by the worker with `public_budget_below_minimum`.
+- Legacy `under_10000` is not accepted as a Public budget because it includes values below the Public floor.
+- Private Model budget parsing remains unchanged and continues to use its own canonical offer/rate rules.
+
 ## Visibility boundary
 
 Customer model lookup uses the canonical entitlement snapshot before model projection.
