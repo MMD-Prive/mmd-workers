@@ -3,6 +3,7 @@ import { requestKenjiRuntimeStatus } from "./index.js";
 
 const HYPE_SVIP_PHOTO_REVEAL_PATH = "/v1/internal/hype/svip-photo-reveal";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
+const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 
 function text(value, max = 1600) {
   return String(value ?? "").trim().slice(0, max);
@@ -98,17 +99,17 @@ async function callHypePhotoResolver(env = {}, event = {}, query = "", context =
 function perVoiceMessages(result = {}) {
   if (result.status === "ready") {
     const modelName = text(result?.model?.working_name || result?.model?.model_code, 120) || "นายแบบที่ขอ";
-    const photos = Array.isArray(result.photos) ? result.photos.slice(0, 4) : [];
+    const photos = (Array.isArray(result.photos) ? result.photos : [])
+      .map((item) => text(item?.viewer_url, 1200))
+      .filter((url) => /^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view\?g=svip_photo_[A-Za-z0-9-]+#t=/.test(url));
     const messages = [{
       type: "text",
-      text: `ได้ครับ รูปของ ${modelName} ชุดนี้ผ่านการอนุมัติสำหรับดูแล้วครับ ผมส่งให้เฉพาะบัญชีนี้นะครับ ลิงก์แต่ละรูปเปิดดูได้ 1 ครั้งและจะหมดอายุอัตโนมัติครับ`,
+      text: `ได้ครับ รูปของ ${modelName} ชุดนี้ผ่านการอนุมัติสำหรับดูแล้วครับ ผมส่งให้ครบทั้งชุดที่อนุมัติสำหรับบัญชีนี้นะครับ ลิงก์แต่ละรูปเปิดดูได้ 1 ครั้งและจะหมดอายุอัตโนมัติครับ`,
     }];
     for (let index = 0; index < photos.length; index += 1) {
-      const url = text(photos[index]?.viewer_url, 1200);
-      if (!/^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view\?g=svip_photo_[A-Za-z0-9-]+#t=/.test(url)) continue;
       messages.push({
         type: "text",
-        text: `รูป ${index + 1}/${photos.length}\n${url}`,
+        text: `รูป ${index + 1}/${photos.length}\n${photos[index]}`,
       });
     }
     return messages.length > 1 ? messages : [];
@@ -151,6 +152,66 @@ async function sendLineReply(env = {}, replyToken = "", messages = []) {
   }
 }
 
+async function sendLineAlbum(env = {}, replyToken = "", userId = "", messages = []) {
+  const channelToken = text(env.LINE_CHANNEL_ACCESS_TOKEN, 2400);
+  const to = text(userId, 80);
+  const safeMessages = Array.isArray(messages) ? messages.filter((item) => item?.type === "text" && text(item?.text, 5000)) : [];
+  if (!channelToken || !replyToken || !/^U[0-9a-f]{32}$/i.test(to) || !safeMessages.length) {
+    return { ok: false, complete: false, delivered_messages: 0, total_messages: safeMessages.length, error: "album_delivery_not_configured" };
+  }
+
+  const firstBatch = safeMessages.slice(0, 5);
+  const reply = await sendLineReply(env, replyToken, firstBatch);
+  if (!reply.ok) {
+    return { ...reply, complete: false, delivered_messages: 0, total_messages: safeMessages.length };
+  }
+
+  let delivered = firstBatch.length;
+  for (let offset = 5; offset < safeMessages.length; offset += 5) {
+    const batch = safeMessages.slice(offset, offset + 5);
+    let response;
+    try {
+      response = await fetch(LINE_PUSH_URL, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${channelToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ to, messages: batch }),
+      });
+    } catch {
+      return {
+        ok: false,
+        complete: false,
+        delivered_messages: delivered,
+        total_messages: safeMessages.length,
+        error: "line_album_push_request_failed",
+        status: 0,
+      };
+    }
+    if (!response.ok) {
+      return {
+        ok: false,
+        complete: false,
+        delivered_messages: delivered,
+        total_messages: safeMessages.length,
+        error: "line_album_push_failed",
+        status: response.status,
+      };
+    }
+    delivered += batch.length;
+  }
+
+  return {
+    ok: true,
+    complete: true,
+    delivered_messages: delivered,
+    total_messages: safeMessages.length,
+    batches: Math.ceil(safeMessages.length / 5),
+    status: 200,
+  };
+}
+
 function decisionFor(event = {}, parsed = {}, result = {}, delivery = {}) {
   const dryRun = result.status === "dry_run_ready";
   const review = result.status === "review_required";
@@ -173,7 +234,7 @@ function decisionFor(event = {}, parsed = {}, result = {}, delivery = {}) {
       model_access_status: result.status,
       requested_model_ref: parsed.query,
       photo_count: Number(result.photo_count || 0),
-      line_delivery_status: delivery.ok === true ? "delivered" : "not_delivered",
+      line_delivery_status: delivery.ok === true ? "delivered" : Number(delivery.delivered_messages || 0) > 0 ? "partial" : "not_delivered",
       photo_only_authority: true,
       sales_authority: false,
       availability_authority: false,
@@ -240,7 +301,7 @@ export async function tryHandleKenjiSvipPhotoRevealRequest(request, env = {}, ct
     };
   }
 
-  const delivery = await sendLineReply(env, text(event.replyToken, 500), messages);
+  const delivery = await sendLineAlbum(env, text(event.replyToken, 500), userId, messages);
   const decision = decisionFor(event, parsed, result, delivery);
   return {
     handled: true,
@@ -255,7 +316,7 @@ export async function tryHandleKenjiSvipPhotoRevealRequest(request, env = {}, ct
     decision,
     delivered: delivery.ok === true,
     attempted: true,
-    delivery_status: delivery.ok === true ? "delivered" : text(delivery.error, 120) || "failed",
+    delivery_status: delivery.ok === true ? "delivered" : Number(delivery.delivered_messages || 0) > 0 ? "partial" : text(delivery.error, 120) || "failed",
   };
 }
 
@@ -265,5 +326,6 @@ export const KENJI_SVIP_PHOTO_REVEAL_INTERNALS = Object.freeze({
   pilotAllows,
   perVoiceMessages,
   sendLineReply,
+  sendLineAlbum,
   decisionFor,
 });
