@@ -109,7 +109,7 @@ async function sendHennaWatch(env = {}, event = {}, { lane, signal, language }) 
     body: JSON.stringify(payload),
   })).catch(() => null);
 
-  const body = await response?.json?.().catch(() => ({}));
+  const body = response ? await response.json().catch(() => ({})) : {};
   const ok = Boolean(response?.ok && body?.ok === true && body?.telegram?.ok === true);
   if (!ok) {
     console.log(JSON.stringify({
