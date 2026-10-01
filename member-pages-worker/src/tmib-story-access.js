@@ -5,6 +5,7 @@ import {
   normalizeTmibEpisodeId,
   publicTmibEpisodeMetadata,
 } from "./tmib-episode-catalog.js";
+import { publicEpisodeMedia } from "./tmib-public-episode-media.js";
 
 const API_ROOT = "/member/api/liff/tmib/episodes";
 const MEDIA_TTL_SECONDS = 5 * 60;
@@ -285,6 +286,10 @@ function catalogPayload(episode) {
 }
 
 async function handleAccess(request, env, episode) {
+  if (episode.freePublic === true) {
+    const media = Object.fromEntries(episode.frames.map((frame) => [frame, `${episodeRoot(episode)}/media/${frame}`]));
+    return json({ ...catalogPayload(episode), granted: true, access_source: "public_free", media, media_expires_at: null });
+  }
   const session = await readMemberAppSession(request, env);
   if (!session?.lineUserId) return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
   const hash = await userKey(env, session.lineUserId);
@@ -303,6 +308,9 @@ async function handleAccess(request, env, episode) {
 }
 
 async function handlePurchase(request, env, episode) {
+  if (episode.purchasable !== true) {
+    return json({ ok: false, error: { code: "EPISODE_NOT_PURCHASABLE" } }, 409);
+  }
   if (!sameOrigin(request)) return json({ ok: false, error: { code: "SAME_ORIGIN_REQUIRED" } }, 403);
   if (episode.status !== "live" || episode.purchasable !== true) {
     return json({ ok: false, error: { code: "EPISODE_NOT_PURCHASABLE" } }, 409);
@@ -343,6 +351,25 @@ async function handlePurchase(request, env, episode) {
 
 async function handleMedia(request, env, episode, frame) {
   if (!episode.frames.includes(frame)) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
+  if (episode.freePublic === true) {
+    const source = publicEpisodeMedia(episode.id, frame);
+    if (!source) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
+    const upstream = await fetch(source, { headers: { accept: "image/webp,image/*;q=0.8" } }).catch(() => null);
+    if (!upstream?.ok || !upstream.body || !String(upstream.headers.get("content-type") || "").toLowerCase().startsWith("image/")) {
+      return json({ ok: false, error: { code: "TMIB_MEDIA_UNAVAILABLE", frame } }, 503);
+    }
+    return new Response(upstream.body, {
+      status: 200,
+      headers: {
+        "content-type": "image/webp",
+        "cache-control": "public, max-age=3600",
+        "cross-origin-resource-policy": "same-origin",
+        "x-content-type-options": "nosniff",
+        "x-robots-tag": "noindex, noarchive, nosnippet, noimageindex",
+        "x-mmd-tmib-story": "public-media-v1",
+      },
+    });
+  }
   const session = await readMemberAppSession(request, env);
   if (!session?.lineUserId) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
   const hash = await userKey(env, session.lineUserId);
