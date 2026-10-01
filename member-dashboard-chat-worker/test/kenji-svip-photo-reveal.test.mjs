@@ -54,7 +54,7 @@ test("ready response keeps the complete approved album instead of truncating aft
     photos,
   });
   assert.equal(messages.length, 8);
-  assert.match(messages[0].text, /ครบทั้งชุดที่อนุมัติ/);
+  assert.match(messages[0].text, /กำลังส่งชุดที่อนุมัติ/);
   assert.match(messages[1].text, /รูป 1\/7/);
   assert.match(messages[7].text, /รูป 7\/7/);
 });
@@ -107,6 +107,23 @@ test("photo reveal decision never grants sales, availability, booking or payment
   assert.equal(decision.operational.availability_authority, false);
   assert.equal(decision.operational.booking_authority, false);
   assert.equal(decision.operational.payment_authority, false);
+});
+
+test("partial album delivery escalates to Per instead of claiming completion", () => {
+  const decision = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.decisionFor(
+    {},
+    { query: "EMs11" },
+    { status: "ready", photo_count: 9 },
+    { ok: false, delivered_messages: 5, total_messages: 10, error: "line_album_push_failed" },
+  );
+  assert.equal(decision.handoff_required, true);
+  assert.equal(decision.handoff_reason, "model_photo_reveal:partial_delivery");
+  assert.equal(decision.operational.primary_action, "handoff_per");
+  assert.equal(decision.operational.line_delivery_status, "partial");
+  assert.equal(decision.operational.delivered_messages, 5);
+  assert.equal(decision.operational.total_messages, 10);
+  assert.equal(decision.operational.sales_authority, false);
+  assert.equal(decision.operational.booking_authority, false);
 });
 
 test("caution/no-sell/ambiguity response requires Per handoff", () => {
