@@ -259,7 +259,12 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     const photoReveal = await tryHandleKenjiSvipPhotoRevealRequest(operationalRequest.clone(), env, ctx).catch(() => null);
     if (photoReveal?.handled && photoReveal.response) {
       const sideEffects = scheduleOperationalSideEffects(ctx, env, events, photoReveal);
-      if (typeof ctx?.waitUntil !== "function") await sideEffects;
+      const partialPhotoDelivery = photoReveal.delivery_status === "partial"
+        || text(photoReveal?.decision?.handoff_reason).includes("model_photo_reveal:partial_delivery");
+      // Partial SVIP album delivery is already customer-visible. Do not acknowledge
+      // the webhook until the durable telemetry + Per/HYPE recovery alert attempt has
+      // completed, otherwise the remaining one-use links could expire silently.
+      if (partialPhotoDelivery || typeof ctx?.waitUntil !== "function") await sideEffects;
       return photoReveal.response;
     }
     const operational = await tryHandleKenjiLv5LineOperationalRequest(operationalRequest, env, ctx).catch(() => null);
