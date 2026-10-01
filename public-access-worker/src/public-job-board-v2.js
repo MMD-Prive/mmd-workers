@@ -947,7 +947,10 @@ function styles() {
 }
 
 function linkedInterestScript(jobId) {
-  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]'),back=document.querySelector('[data-board-return]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#b33a36':''};const received=()=>{b.textContent='บันทึกความสนใจแล้ว';if(back)back.hidden=false};b.addEventListener('click',async()=>{if(b.disabled)return;b.disabled=true;try{say('กำลังส่งข้อมูล…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({fast_lane:true})});const x=await r.json().catch(()=>({}));if(!r.ok||x.ok!==true)throw Error(x.error||'interest_failed');say('รับความสนใจแล้วครับ · พี่เปอร์เป็นผู้เลือกคนสำหรับงาน');received()}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');received()}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
+  // Match the gate's canonical URL exactly, including this job's intent and return path.
+  // A malformed API response must never send a Model to an arbitrary login/next URL.
+  const loginUrl = buildModelJobBoardBroadcastLink({ source: "job_board_guard", job_id: jobId });
+  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]'),back=document.querySelector('[data-board-return]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#b33a36':''};const received=()=>{b.textContent='บันทึกความสนใจแล้ว';if(back)back.hidden=false};b.addEventListener('click',async()=>{if(b.disabled)return;b.disabled=true;try{say('กำลังส่งข้อมูล…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({fast_lane:true})});const x=await r.json().catch(()=>({}));if(r.status===401&&x.error==='model_login_required'&&x.login_url===${JSON.stringify(loginUrl)}){say('เซสชันหมดอายุ กำลังไปหน้าเข้าสู่ระบบ…');window.location.assign(x.login_url);return}if(!r.ok||x.ok!==true)throw Error(x.error||'interest_failed');say('รับความสนใจแล้วครับ · พี่เปอร์เป็นผู้เลือกคนสำหรับงาน');received()}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');received()}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
 }
 
 function applicationScript(jobId, requiredCount) {
@@ -1208,3 +1211,4 @@ export const PUBLIC_JOB_BOARD_V2_INTERNALS = {
   parsePublicJobBriefV2,
   publicJobView,
 };
+

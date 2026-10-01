@@ -689,11 +689,13 @@ async function interestUi(testEnv, cookie, fetchImpl) {
   const button = { disabled: false, textContent: "สนใจงานนี้", addEventListener: (_type, handler) => { button.click = handler; } };
   const status = { textContent: "", style: {} };
   const back = { hidden: true };
+  const redirects = [];
   runInNewContext(source, {
     document: { querySelector: selector => ({ "[data-linked-interest]": button, "[data-status]": status, "[data-board-return]": back })[selector] },
     fetch: fetchImpl,
+    window: { location: { assign: url => redirects.push(url) } },
   });
-  return { button, status, back };
+  return { button, status, back, redirects };
 }
 
 test("direct interest UI creates one durable candidate and enables the board link only after acknowledgement", async () => {
@@ -711,6 +713,7 @@ test("direct interest UI creates one durable candidate and enables the board lin
   await ui.button.click();
   await ui.button.click();
   assert.equal(requests, 1);
+  assert.deepEqual(ui.redirects, []);
   assert.equal(ui.button.disabled, true);
   assert.equal(ui.back.hidden, false);
   assert.equal(ui.button.textContent, "บันทึกความสนใจแล้ว");
@@ -741,4 +744,86 @@ test("direct interest UI retries failures, rejects malformed success and treats 
   assert.equal(ui.button.disabled, true);
   assert.equal(ui.back.hidden, false);
   assert.match(ui.status.textContent, /ส่งความสนใจงานนี้ไว้แล้ว/);
+});
+
+test("direct interest UI renews an expired Model session and returns to the same job", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { world: "public" });
+  let cookie = await anonymousCookie(testEnv);
+  let requests = 0;
+  const submit = (path, init) => {
+    requests++;
+    return call(testEnv, path, { method: init.method, headers: { cookie }, body: JSON.parse(init.body) });
+  };
+  const ui = await interestUi(testEnv, cookie, submit);
+  const realNow = Date.now;
+  const issuedAt = realNow();
+  try {
+    Date.now = () => issuedAt + 61 * 60 * 1000;
+    await ui.button.click();
+    await ui.button.click();
+    assert.equal(requests, 1);
+    assert.equal(ui.redirects.length, 1);
+    assert.equal(ui.button.disabled, true);
+    assert.equal(ui.back.hidden, true);
+    assert.match(ui.status.textContent, /เซสชันหมดอายุ/);
+    const login = new URL(ui.redirects[0]);
+    assert.equal(login.origin, "https://www.mmdbkk.com");
+    assert.equal(login.pathname, "/sigil/model/login");
+    assert.equal(login.searchParams.get("intent"), "job_board");
+    assert.equal(login.searchParams.get("return_to"), "public_job_board");
+    assert.equal(login.searchParams.get("job_id"), "JOB-20261001-DEMO01");
+    assert.equal(login.searchParams.get("next"), "https://sigil.mmdbkk.com/public/api/jobs/JOB-20261001-DEMO01");
+    const candidates = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/candidates", { headers: { "x-internal-token": "owner-test-token" } });
+    assert.equal((await candidates.json()).candidates.length, 0);
+
+    // Simulate the existing trusted handoff after login; no interest is auto-submitted.
+    const next = new URL(login.searchParams.get("next"));
+    const handoff = await call(testEnv, next.pathname + "?mmd_job_board_handoff=renewed-handoff");
+    assert.equal(handoff.status, 303);
+    assert.equal(handoff.headers.get("location"), next.toString());
+    cookie = handoff.headers.get("set-cookie").split(";", 1)[0] + "; " + cookie.split("; ").find(value => value.startsWith("mmd_pjb="));
+    const renewed = await interestUi(testEnv, cookie, submit);
+    await renewed.button.click();
+    assert.deepEqual(renewed.redirects, []);
+    assert.equal(renewed.back.hidden, false);
+    assert.equal(renewed.button.textContent, "บันทึกความสนใจแล้ว");
+  } finally { Date.now = realNow; }
+});
+
+test("direct interest UI rejects unsafe login URLs and unrelated auth failures", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { world: "public" });
+  const cookie = await anonymousCookie(testEnv);
+  const denied = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/interest", { method: "POST", body: { fast_lane: true } });
+  assert.equal(denied.status, 401);
+  const { login_url: safeLogin } = await denied.json();
+  const changed = (edit) => { const url = new URL(safeLogin); edit(url); return url.toString(); };
+  const invalid = [
+    undefined, "", "not a URL", "javascript:alert(1)", "//attacker.invalid/login",
+    changed(url => { url.hostname = "attacker.invalid"; }),
+    changed(url => { url.protocol = "http:"; }),
+    changed(url => { url.username = "user"; }),
+    changed(url => { url.pathname = "/redirect"; }),
+    changed(url => { url.hash = "redirect"; }),
+    changed(url => url.searchParams.set("next", "https://attacker.invalid")),
+    changed(url => url.searchParams.set("next", "https://sigil.mmdbkk.com/public/api/jobs/OTHER-JOB")),
+    changed(url => url.searchParams.set("job_id", "OTHER-JOB")),
+    changed(url => url.searchParams.set("intent", "other")),
+    changed(url => url.searchParams.set("return_to", "other")),
+    changed(url => url.searchParams.append("next", "https://attacker.invalid")),
+  ];
+  for (const login_url of invalid) {
+    const ui = await interestUi(testEnv, cookie, async () => Response.json({ error: "model_login_required", login_url }, { status: 401 }));
+    await ui.button.click();
+    assert.deepEqual(ui.redirects, [], String(login_url));
+    assert.equal(ui.button.disabled, false);
+    assert.equal(ui.back.hidden, true);
+  }
+  for (const [status, error] of [[403, "model_login_required"], [500, "model_login_required"], [401, "other_error"]]) {
+    const ui = await interestUi(testEnv, cookie, async () => Response.json({ error, login_url: safeLogin }, { status }));
+    await ui.button.click();
+    assert.deepEqual(ui.redirects, []);
+    assert.equal(ui.button.disabled, false);
+  }
 });
