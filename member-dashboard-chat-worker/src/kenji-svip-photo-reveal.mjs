@@ -104,7 +104,7 @@ function perVoiceMessages(result = {}) {
       .filter((url) => /^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view\?g=svip_photo_[A-Za-z0-9-]+#t=/.test(url));
     const messages = [{
       type: "text",
-      text: `ได้ครับ รูปของ ${modelName} ชุดนี้ผ่านการอนุมัติสำหรับดูแล้วครับ ผมส่งให้ครบทั้งชุดที่อนุมัติสำหรับบัญชีนี้นะครับ ลิงก์แต่ละรูปเปิดดูได้ 1 ครั้งและจะหมดอายุอัตโนมัติครับ`,
+      text: `ได้ครับ รูปของ ${modelName} ชุดนี้ผ่านการอนุมัติสำหรับดูแล้วครับ ผมกำลังส่งชุดที่อนุมัติสำหรับบัญชีนี้ให้ต่อเนื่องนะครับ ลิงก์แต่ละรูปเปิดดูได้ 1 ครั้งและจะหมดอายุอัตโนมัติครับ`,
     }];
     for (let index = 0; index < photos.length; index += 1) {
       messages.push({
@@ -216,25 +216,30 @@ function decisionFor(event = {}, parsed = {}, result = {}, delivery = {}) {
   const dryRun = result.status === "dry_run_ready";
   const review = result.status === "review_required";
   const ready = result.status === "ready";
-  const reason = text(result.reason_code, 160) || result.status || "unknown";
+  const partialDelivery = ready && delivery.ok !== true && Number(delivery.delivered_messages || 0) > 0;
+  const reason = partialDelivery
+    ? "partial_delivery"
+    : text(result.reason_code, 160) || result.status || "unknown";
   return {
     text: ready ? "approved_photo_reveal_sent" : reason,
     intent: "model_photo_reveal",
     inferred_intent: "model_photo_reveal",
     reply_source: "hype_svip_exact_customer_photo_reveal",
-    handoff_required: review || dryRun,
-    handoff_reason: review || dryRun ? `model_photo_reveal:${reason}` : "",
+    handoff_required: review || dryRun || partialDelivery,
+    handoff_reason: review || dryRun || partialDelivery ? `model_photo_reveal:${reason}` : "",
     truth_authority: "HYPE_SVIP_PHOTO_REVEAL_V1",
     truth_status: ready ? "verified_photo_gate" : result.status,
     live_truth_used: true,
     live_truth_verified: ready || result.status === "not_authorized",
     operational: {
       phase: "P3_svip_exact_customer_photo_reveal",
-      primary_action: dryRun ? "dry_run_owner_receipt" : review ? "handoff_per" : ready ? "send_approved_photo_set" : "deny_photo_reveal",
+      primary_action: dryRun ? "dry_run_owner_receipt" : review || partialDelivery ? "handoff_per" : ready ? "send_approved_photo_set" : "deny_photo_reveal",
       model_access_status: result.status,
       requested_model_ref: parsed.query,
       photo_count: Number(result.photo_count || 0),
-      line_delivery_status: delivery.ok === true ? "delivered" : Number(delivery.delivered_messages || 0) > 0 ? "partial" : "not_delivered",
+      line_delivery_status: delivery.ok === true ? "delivered" : partialDelivery ? "partial" : "not_delivered",
+      delivered_messages: Number(delivery.delivered_messages || 0),
+      total_messages: Number(delivery.total_messages || 0),
       photo_only_authority: true,
       sales_authority: false,
       availability_authority: false,
