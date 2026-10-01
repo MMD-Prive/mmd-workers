@@ -264,6 +264,9 @@ async function connectWorkerSurface(response) {
 }
 
 function transformWorkerSurfaceHtml(source) {
+  // The reviewed discovery presentation owns its responsive styles and copy.
+  // Do not run legacy CSS/hidden-copy rewrites over it.
+  if (source.includes('data-mmd-discovery="v1"')) return source;
   const ownerSurface = source.includes("owner-grid");
   let next = String(source)
     .replace("<html lang=\"th\">", "<html lang=\"th\" data-mmd-worker-surface=\"mobile-first-digital-v1\">")
