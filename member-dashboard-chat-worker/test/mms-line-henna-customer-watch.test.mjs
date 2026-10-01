@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { webcrypto } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -46,6 +47,13 @@ function envWithTelegram(messages = []) {
     },
   };
 }
+
+test("MMS front gate schedules HENNA customer watch observer from the canonical ingress", async () => {
+  const source = await readFile(new URL("../src/mms-line-front-gate-runtime.js", import.meta.url), "utf8");
+  assert.match(source, /observeHennaCustomerWatch/);
+  assert.match(source, /observeHennaCustomerWatch\(request\.clone\(\), env\)/);
+  assert.match(source, /ctx\?\.waitUntil/);
+});
 
 test("HENNA customer watch version is owner phase-1 lock", () => {
   assert.equal(version, "henna-customer-watch-mms-wms-v1-20261001");
