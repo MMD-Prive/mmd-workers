@@ -44,6 +44,56 @@ test("ready response contains only controlled MMD preview links and no raw priva
   assert.doesNotMatch(serialized, /drive\.google|r2|private-model-media|storage_key/i);
 });
 
+test("ready response keeps the complete approved album instead of truncating after four photos", () => {
+  const photos = Array.from({ length: 7 }, (_, index) => ({
+    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view?g=svip_photo_123e4567-e89b-12d3-a456-4266141740${String(index).padStart(2, "0")}#t=token-${index + 1}`,
+  }));
+  const messages = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.perVoiceMessages({
+    status: "ready",
+    model: { working_name: "Album Model" },
+    photos,
+  });
+  assert.equal(messages.length, 8);
+  assert.match(messages[0].text, /ครบทั้งชุดที่อนุมัติ/);
+  assert.match(messages[1].text, /รูป 1\/7/);
+  assert.match(messages[7].text, /รูป 7\/7/);
+});
+
+test("full album delivery replies with the first five messages then pushes every remaining batch", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (input, init) => {
+    seen.push({ url: String(input), body: JSON.parse(init.body) });
+    return new Response("", { status: 200 });
+  };
+  try {
+    const messages = Array.from({ length: 12 }, (_, index) => ({ type: "text", text: `m${index + 1}` }));
+    const result = await KENJI_SVIP_PHOTO_REVEAL_INTERNALS.sendLineAlbum(
+      { LINE_CHANNEL_ACCESS_TOKEN: "synthetic-token" },
+      "synthetic-reply-token",
+      "U1234567890abcdef1234567890abcdef",
+      messages,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.complete, true);
+    assert.equal(result.delivered_messages, 12);
+    assert.equal(result.batches, 3);
+    assert.equal(seen.length, 3);
+    assert.equal(seen[0].url, "https://api.line.me/v2/bot/message/reply");
+    assert.equal(seen[0].body.messages.length, 5);
+    assert.equal(seen[1].url, "https://api.line.me/v2/bot/message/push");
+    assert.equal(seen[1].body.messages.length, 5);
+    assert.equal(seen[2].url, "https://api.line.me/v2/bot/message/push");
+    assert.equal(seen[2].body.messages.length, 2);
+    assert.deepEqual(
+      seen.flatMap((item) => item.body.messages).map((item) => item.text),
+      messages.map((item) => item.text),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("photo reveal decision never grants sales, availability, booking or payment authority", () => {
   const decision = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.decisionFor(
     {},
