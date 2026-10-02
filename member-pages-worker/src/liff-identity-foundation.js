@@ -13,7 +13,7 @@ import { approvedLineChannelIds } from "./line-channel-audiences.js";
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
-const SESSION_TTL_SECONDS = 15 * 60;
+const SESSION_TTL_SECONDS = 30 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
 const VERIFY_TIMEOUT_MS = 5000;
 const MEMBER_RESOLVER_TIMEOUT_MS = 12000;

@@ -457,7 +457,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(profile.payload.data.membership_status, "active");
     assert.equal(recoveredResolver.calls.length, 1);
     assert.equal(recoveredResolver.calls[0]._path, "/__internal/member-profile/read");
-    assertHostCookie(findCookie(profile.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
+    assertHostCookie(findCookie(profile.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 1800);
   });
 
   it("self-heals a stale pending LIFF session on dashboard read without asking the member to restart LINE", async () => {
@@ -503,7 +503,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal("liff_session_id" in payload.data, false);
     assert.equal(payload.data.next_screen_key, "start_intent");
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
-    assertHostCookie(cookie, "__Host-mmd_liff_session", 900);
+    assertHostCookie(cookie, "__Host-mmd_liff_session", 1800);
     assertNoSensitive(JSON.stringify(payload));
     assert.equal(payload.data.line_user_id, undefined);
     assert.equal(payload.data.renewal_flow_status, undefined);
@@ -1161,7 +1161,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const rotatedCookie = findCookie(checked.response, "__Host-mmd_liff_session");
     assert.equal(checked.response.status, 200);
     assert.equal(checked.response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
-    assertHostCookie(rotatedCookie, "__Host-mmd_liff_session", 900);
+    assertHostCookie(rotatedCookie, "__Host-mmd_liff_session", 1800);
     assert.notEqual(cookiePair(rotatedCookie), cookiePair(startCookie));
     assertNoSensitive(JSON.stringify(checked.payload));
 
@@ -1199,7 +1199,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
 
     assert.equal(approved.response.status, 200);
     assert.equal(approved.response.headers.get("access-control-allow-origin"), "https://www.mmdbkk.com");
-    assertHostCookie(findCookie(approved.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
+    assertHostCookie(findCookie(approved.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 1800);
   });
 
   it("keeps the prior cookie usable when package storage fails after rotation", async () => {
@@ -1236,7 +1236,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(failed.payload.error.code, "LIFF_GATEWAY_STORAGE_UNAVAILABLE");
     assert.equal(findCookie(failed.response, "__Host-mmd_liff_session"), "");
     assert.equal(retried.response.status, 200);
-    assertHostCookie(findCookie(retried.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
+    assertHostCookie(findCookie(retried.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 1800);
   });
 
   it("status uses only the verified LIFF session and never grants a dashboard route from a query claim", async () => {
@@ -1886,7 +1886,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(result.payload.error.code, "LIFF_ATOMIC_SESSION_GUARD_REQUIRED");
     assert.equal(result.payload.data.route_after_liff, null);
     assert.equal("redirect_to" in result.payload.data, false);
-    assertHostCookie(findCookie(result.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
+    assertHostCookie(findCookie(result.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 1800);
     assert.doesNotMatch(JSON.stringify(result.payload), /Uprivate-line-sub|private-id-token|private-signed-t|female_view|show_female_profiles/i);
   });
 
