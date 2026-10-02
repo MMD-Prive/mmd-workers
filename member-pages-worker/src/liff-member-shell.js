@@ -278,7 +278,8 @@ function renderShell(config, nonce) {
       <div id="message" class="welcome-context-note hidden" role="status" aria-live="polite"></div>
       <div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div>
       <div class="welcome-divider" aria-hidden="true"></div>
-      <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>\n      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
+      <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
+      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
     </div>
   </section>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
@@ -404,7 +405,8 @@ function renderShell(config, nonce) {
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
-  const introContinue = document.getElementById("intro-continue");\n  const logoutButton = document.getElementById("member-logout");
+  const introContinue = document.getElementById("intro-continue");
+  const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
   const profile = document.getElementById("profile");
@@ -552,7 +554,18 @@ function renderShell(config, nonce) {
     introContinue.setAttribute("aria-expanded", "true");
     void boot({ existingProfileChecked: true });
   }
-  introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {\n    if (logoutButton.disabled) return;\n    logoutButton.disabled = true;\n    try {\n      const response = await fetch("/member/api/liff/logout", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" } });\n      if (!response.ok) throw new Error("logout_failed");\n      window.location.assign("/member/login");\n    } catch {\n      logoutButton.disabled = false;\n      show("ออกจากระบบไม่สำเร็จชั่วคราวครับ กรุณาลองอีกครั้ง");\n    }\n  });
+  introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {
+    if (logoutButton.disabled) return;
+    logoutButton.disabled = true;
+    try {
+      const response = await fetch("/member/api/liff/logout", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error("logout_failed");
+      window.location.assign("/member/login");
+    } catch {
+      logoutButton.disabled = false;
+      show("ออกจากระบบไม่สำเร็จชั่วคราวครับ กรุณาลองอีกครั้ง");
+    }
+  });
   for (const element of document.querySelectorAll("[data-copy]")) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
