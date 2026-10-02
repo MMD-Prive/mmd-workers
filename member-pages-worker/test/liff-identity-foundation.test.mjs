@@ -25,6 +25,35 @@ class MemoryKv {
   async delete(key) { this.map.delete(key); }
 }
 
+function memoryRememberedLoginStore() {
+  const records = new Map();
+  return {
+    records,
+    idFromName(name) { return name; },
+    get(id) {
+      return {
+        async fetch(request) {
+          const path = new URL(request.url).pathname;
+          if (path !== "/credential") return new Response("Not found", { status: 404 });
+          if (request.method === "PUT") {
+            records.set(id, await request.json());
+            return Response.json({ ok: true }, { status: 201 });
+          }
+          if (request.method === "GET") {
+            const data = records.get(id);
+            return data ? Response.json({ ok: true, data }) : Response.json({ ok: false }, { status: 404 });
+          }
+          if (request.method === "DELETE") {
+            records.delete(id);
+            return Response.json({ ok: true });
+          }
+          return new Response("Method not allowed", { status: 405 });
+        },
+      };
+    },
+  };
+}
+
 class MemoryGatewayStore {
   constructor() {
     this.records = [];
@@ -182,6 +211,7 @@ function env(overrides = {}) {
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
     MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
+    MEMBER_REMEMBERED_LOGIN: memoryRememberedLoginStore(),
     MEMBER_STATUS_RESOLVER: resolver(),
     LIFF_GATEWAY_STORE: new MemoryGatewayStore(),
     BIRTHDAY_WISH_STORE: birthdayStore,
@@ -509,6 +539,50 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(payload.data.renewal_flow_status, undefined);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].line_user_id, "U123");
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].renewal_flow_status, "identity_linked");
+  });
+
+  it("remembers a verified member for 30 days, restores a 30-minute session, and revokes the device on logout", async () => {
+    const store = memoryRememberedLoginStore();
+    const runtime = env({
+      MEMBER_STATUS_RESOLVER: resolver({
+        member_exists: true,
+        mmd_member_id: "MMD-REMEMBER-01",
+        profile: { display_name: "สมาชิก MMD", tier: "Premium", membership_status: "active", points: 120, history: [] },
+      }),
+      MEMBER_REMEMBERED_LOGIN: store,
+    });
+    const started = await start(runtime, { id_token: "valid-token", remember_me: true });
+    assert.equal(started.response.status, 200);
+    const rememberCookie = findCookie(started.response, "__Host-mmd_liff_remember");
+    assertHostCookie(rememberCookie, "__Host-mmd_liff_remember", 30 * 24 * 60 * 60);
+    assert.equal(store.records.size, 1);
+
+    for (const [key, value] of runtime.LIFF_IDENTITY_KV.map) {
+      const session = JSON.parse(value);
+      session.expires_at = 1;
+      runtime.LIFF_IDENTITY_KV.map.set(key, JSON.stringify(session));
+    }
+    const expiredSessionCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+    const restored = await request("/member/api/liff/profile", {
+      method: "GET",
+      cookie: `${expiredSessionCookie}; ${cookiePair(rememberCookie)}`,
+    }, runtime);
+    assert.equal(restored.response.status, 200);
+    assert.equal(restored.payload.ok, true);
+    assertHostCookie(findCookie(restored.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 1800);
+
+    const signedOut = await request("/member/api/liff/logout", {
+      method: "POST",
+      cookie: `${cookiePair(findCookie(restored.response, "__Host-mmd_liff_session"))}; ${cookiePair(rememberCookie)}`,
+    }, runtime);
+    assert.equal(signedOut.response.status, 200);
+    assert.equal(store.records.size, 0);
+    assert.match(findCookie(signedOut.response, "__Host-mmd_liff_remember"), /Max-Age=0/);
+    const denied = await request("/member/api/liff/profile", {
+      method: "GET",
+      cookie: `${cookiePair(findCookie(restored.response, "__Host-mmd_liff_session"))}; ${cookiePair(rememberCookie)}`,
+    }, runtime);
+    assert.equal(denied.response.status, 401);
   });
 
   it("returns the bounded member profile and holds the CARE BACK coupon for a Birthday Wish from the verified session", async () => {
