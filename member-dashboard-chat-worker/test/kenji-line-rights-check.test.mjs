@@ -6,7 +6,7 @@ import { KenjiModelIdempotency } from "../src/kenji-model-idempotency.js";
 globalThis.crypto ||= webcrypto;
 const UID = `U${"1".repeat(32)}`;
 const sha = async s => Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))).toString("hex");
-const event = (id = "event-1", text = "เช็กสิทธิ์") => ({ type: "message", mode: "active", webhookEventId: id, replyToken: "mock-only", source: { type: "user", userId: UID }, message: { id, type: "text", text } });
+const event = (id = "event-1", text = "เช็กสิทธิ์") => ({ type: "message", timestamp: Date.now(), mode: "active", webhookEventId: id, replyToken: "mock-only", source: { type: "user", userId: UID }, message: { id, type: "text", text } });
 const truth = () => ({ ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved", membership: { level: "private_premium", lifecycle: "active", expire_at: "2028-10-01", member_blocked: false }, points: { status: "verified", authority: "canonical_paid_points_source_guard_v1", active_points: 123 }, renewal: { status: "ready", package_code: "premium", amount_thb: 2500, membership_years: 2, history_status: "verified", discount_verified: true } });
 async function fixture() {
   const map = new Map(); let queue = Promise.resolve();
@@ -57,3 +57,5 @@ test("actual signed ingress reaches bounded lane; invalid signature cannot read 
     assert.equal(result.status,200);assert.equal(truthReads,1);assert.equal(delivered,1);assert.equal((await result.json()).saved[0].rights_check,true);
   } finally { globalThis.fetch=previous; }
 });
+
+test("old webhook cannot bypass dedupe expiry through redelivery recovery", async () => { const f = await fixture(); f.event.timestamp=Date.now()-86400000; assert.equal((await handleLineRightsCheck(f)).reason,"stale_or_missing_event_timestamp"); assert.equal(f.counters.truth,0); });
