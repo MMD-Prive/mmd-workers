@@ -4,7 +4,7 @@ const CONTENT_PATH = "/member/api/liff/tmib/episodes/act-001/content";
 const ACCESS_PATH = "/member/api/liff/tmib/episodes/act-001/access";
 
 export const TMIB_ACT001_STORY = Object.freeze({
-  kicker: "LONG STORY · PRIVATE READER",
+  kicker: "LONG STORY · PUBLIC READER",
   title: "ก่อนที่ทั้งสี่จะเรียกกันว่าเพื่อน",
   intro: "แต่ละภาพคือหนึ่งจังหวะของช่วงปิดเทอมก่อน Year One — จากการมาเจอกันโดยบังเอิญ จนถึงคืนที่คำว่า ‘เพื่อน’ ถูกยืนยันออกมาตรง ๆ เป็นครั้งแรก",
   frames: [
@@ -30,7 +30,7 @@ export const TMIB_ACT001_STORY = Object.freeze({
 });
 
 function json(payload, status = 200) {
-  return Response.json(payload, { status, headers: { "cache-control":"no-store, private", "x-robots-tag":"noindex, noarchive, nosnippet", "x-mmd-tmib-story":"content-v1" } });
+  return Response.json(payload, { status, headers: { "cache-control":"no-store, private", "x-robots-tag":"noarchive, nosnippet", "x-mmd-tmib-story":"content-v1" } });
 }
 
 export function isTmibAct001ContentPath(input) {

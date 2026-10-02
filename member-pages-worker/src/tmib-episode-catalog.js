@@ -2,19 +2,27 @@ const ACT_001_FRAMES = Object.freeze(
   Array.from({ length: 17 }, (_, index) => String(index + 4).padStart(2, "0")),
 );
 
+export const TMIB_RELEASE_POLICY = Object.freeze({
+  publicFreeEpisodesThrough: 10,
+  memberGateStartsAtEpisode: 11,
+});
+
 const CATALOG = Object.freeze({
   "act-001": Object.freeze({
     id: "act-001",
+    episodeNumber: 1,
     actLabel: "ACT 001",
     title: "Four Strangers, One Summer",
-    priceThb: 299,
-    packageCode: "tmib_act_001",
+    priceThb: 0,
+    packageCode: "tmib_act_001_public",
     paymentStage: "tmib_story",
     storyPath: "/tmib/act-001",
-    checkoutPath: "/pay/tmib?episode=act-001",
+    checkoutPath: "",
     status: "live",
-    purchasable: true,
-    membershipIncluded: true,
+    accessMode: "public_free",
+    publicFree: true,
+    purchasable: false,
+    membershipIncluded: false,
     frames: ACT_001_FRAMES,
   }),
 });
@@ -34,14 +42,19 @@ export function publicTmibEpisodeMetadata(value) {
   if (!episode) return null;
   return Object.freeze({
     episode_id: episode.id,
+    episode_number: episode.episodeNumber,
     act_label: episode.actLabel,
     title: episode.title,
     price_thb: episode.priceThb,
     currency: "THB",
     package_code: episode.packageCode,
     status: episode.status,
+    access_mode: episode.accessMode,
+    public_free: episode.publicFree === true,
     purchasable: episode.purchasable === true,
     membership_included: episode.membershipIncluded === true,
+    public_free_episodes_through: TMIB_RELEASE_POLICY.publicFreeEpisodesThrough,
+    member_gate_starts_at_episode: TMIB_RELEASE_POLICY.memberGateStartsAtEpisode,
     story_path: episode.storyPath,
     checkout_path: episode.checkoutPath,
   });
