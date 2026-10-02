@@ -1650,7 +1650,12 @@ async function rememberedLoginRecord(env, token, method, body) {
 async function issueOrReuseRememberedLogin(request, env, session) {
   const currentToken = cookieValue(request, REMEMBERED_LOGIN_COOKIE);
   if (session.member_exists !== true) {
-    if (currentToken) await rememberedLoginRecord(env, currentToken, "DELETE");
+    if (currentToken && env.LIFF_REMEMBERED_LOGIN_DEVICE?.idFromName) await rememberedLoginRecord(env, currentToken, "DELETE");
+    else if (currentToken) throw new RememberedLoginStorageError("remembered_login_binding_missing");
+    return null;
+  }
+  if (!env.LIFF_REMEMBERED_LOGIN_DEVICE?.idFromName || !env.LIFF_REMEMBERED_LOGIN_DEVICE?.get) {
+    if (currentToken) throw new RememberedLoginStorageError("remembered_login_binding_missing");
     return null;
   }
   if (currentToken) {
