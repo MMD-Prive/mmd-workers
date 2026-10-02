@@ -801,7 +801,29 @@ function renderShell(config, nonce) {
     await Promise.allSettled(hydrationReads);
   }
 
+  async function readQuickMembershipStatus() {
+    try {
+      // Membership has no archive/contact scan or points-ledger decorator.
+      // Let its canonical snapshot render while the full profile is loading.
+      const response = await fetch("/api/member/app/membership", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body || body.ok === false) return;
+      const membership = body.data && typeof body.data === "object" ? body.data : body;
+      const labels = { public_member:"Member", elite:"Elite", red_card:"Red Card", trial_7d:"7 Days", standard:"Standard", premium:"Premium", vip:"VIP", svip:"SVIP", black_card:"Black Card" };
+      const level = String(membership.level || "").trim().toLowerCase();
+      const tierNode = document.getElementById("profile-tier");
+      const statusNode = document.getElementById("profile-status");
+      if (tierNode && membership.levelVerified === true && labels[level]) tierNode.textContent = labels[level];
+      const status = String(membership.status || membership.lifecycle || "").trim();
+      if (statusNode && ["active", "grace", "expired", "blocked", "suspended", "revoked", "pending_review", "checking"].includes(status)) {
+        const expiry = safeDate(membership.expiresAt || membership.renewalDueAt);
+        statusNode.textContent = membershipStatus(status) + (expiry ? " · ถึง " + shortDate(expiry) : "");
+      }
+    } catch {}
+  }
+
   async function readProfile({ hydrate = true } = {}) {
+    void readQuickMembershipStatus();
     const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;

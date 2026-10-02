@@ -109,6 +109,8 @@
   }
 
   async function startRenewalPayment(root, tier, trigger) {
+    if (root.dataset.renewalPaymentBusy === "1") return;
+    root.dataset.renewalPaymentBusy = "1";
     const status = renewalStatusNode(root);
     const original = trigger.textContent;
     trigger.setAttribute("aria-busy", "true");
@@ -116,6 +118,17 @@
     trigger.textContent = "กำลังคำนวณเรทต่ออายุ…";
     if (status) status.textContent = "ระบบกำลังตรวจสถานะเดิมและยอดใช้บริการย้อนหลัง 365 วันให้ครับ";
     try {
+      // Resume the server-issued pending intent before rotating package/session
+      // state again. A proof awaiting review is evidence, never a second charge.
+      const payments = await memberApi("/v1/member/payments", { method: "GET" });
+      const current = (Array.isArray(payments.records) ? payments.records : []).find((item) =>
+        item.payment_ref && ["pending_review", "awaiting_payment"].includes(item.official_status));
+      if (current) {
+        const resume = current.official_status === "awaiting_payment"
+          ? canonicalPaymentUrl(current.customer_payment_url) : "";
+        location.assign(resume || "/my-mmd/payments");
+        return;
+      }
       await memberApi("/member/api/liff/intent", {
         method: "POST",
         body: JSON.stringify({ liff_intent: "renew" }),
@@ -137,8 +150,10 @@
       trigger.style.pointerEvents = "";
       trigger.textContent = original;
       if (status) status.textContent = error?.status === 401
-        ? "กรุณาเปิด MY MMD เพื่อยืนยันตัวตนก่อนต่ออายุครับ"
-        : "ยังเตรียมรายการชำระไม่ได้ในตอนนี้ กรุณาลองอีกครั้ง หรือกลับไปที่ MY MMD ครับ";
+        ? "กรุณาเปิด /member/liff?world=private เพื่อยืนยันตัวตนก่อนต่ออายุครับ"
+        : "ยังเตรียมรายการชำระไม่ได้ครับ เปิด Payment Center ที่ /my-mmd/payments เพื่อตรวจรายการเดิม หากชำระแล้วให้ส่งเลขอ้างอิงพร้อมสลิปในแชท LINE เดิมเพื่อให้เปอร์ตรวจ อย่าโอนหรือส่งซ้ำระหว่างรอตรวจครับ";
+    } finally {
+      delete root.dataset.renewalPaymentBusy;
     }
   }
 
