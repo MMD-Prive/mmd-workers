@@ -196,10 +196,6 @@ new_sqlite_classes = ["PrivatePreviewGate"]
 name = "LIFF_REMEMBERED_LOGIN_DEVICE"
 class_name = "RememberedLoginDevice"
 
-[[env.staging.migrations]]
-tag = "v3-remembered-login-device-staging"
-new_sqlite_classes = ["RememberedLoginDevice"]
-
 [[env.staging.durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
@@ -207,6 +203,10 @@ class_name = "CareBackBirthdayWishCoordinator"
 [[env.staging.migrations]]
 tag = "v1-care-back-birthday-wish-staging"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[[env.staging.migrations]]
+tag = "v3-remembered-login-device-staging"
+new_sqlite_classes = ["RememberedLoginDevice"]
 
 [env.staging.observability]
 enabled = true
