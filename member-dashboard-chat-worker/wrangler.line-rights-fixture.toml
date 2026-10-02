@@ -1,0 +1,28 @@
+# Preparation only. No production routes, data or service bindings.
+name = "mmd-sound-rights-fixture-staging"
+main = "src/line-rights-fixture-entry.mjs"
+compatibility_date = "2026-07-02"
+workers_dev = false
+routes = []
+
+[vars]
+MMD_FIXTURE_ONLY = "true"
+LINE_FIXTURE_CHANNEL_ID = "2011839389"
+LINE_FIXTURE_PROVIDER_ID = "2004492377"
+# This is the bot destination UID, NOT the numeric channel ID. Owner verifies it.
+LINE_FIXTURE_DESTINATION_ID = ""
+KENJI_LINE_RIGHTS_CHECK_MODE = "off"
+KENJI_LINE_RIGHTS_CHECK_PILOT_HASHES = ""
+LINE_AUTO_REPLY_ENABLED = "true"
+LINE_KENJI_AI_ENABLED = "true"
+LINE_FIXTURE_EMERGENCY_STOP = "true"
+# Future secrets, owner-provided securely: LINE_CHANNEL_SECRET,
+# LINE_CHANNEL_ACCESS_TOKEN, LINE_FIXTURE_OPERATOR_TOKEN. Never commit values.
+
+[[durable_objects.bindings]]
+name = "KENJI_MODEL_DEDUPE"
+class_name = "LineRightsFixtureState"
+
+[[migrations]]
+tag = "v1-sound-rights-fixture-only"
+new_sqlite_classes = ["LineRightsFixtureState"]
