@@ -95,6 +95,7 @@ test("operator takeover during a slow truth operation suppresses delivery", asyn
 test("committed fixture config cannot inherit production routes, services or data stores", async () => {
   const config = await readFile(new URL("../wrangler.line-rights-fixture.toml", import.meta.url), "utf8");
   assert.match(config, /workers_dev = false/); assert.match(config, /routes = \[\]/); assert.match(config, /KENJI_LINE_RIGHTS_CHECK_MODE = "off"/);
+  assert.match(config, /preview_urls = false/);
   assert.match(config, /LINE_FIXTURE_EMERGENCY_STOP = "true"/);
   assert.doesNotMatch(config, /\[\[?(?:env\.|services|kv_namespaces|r2_buckets|d1_databases)/);
 });
