@@ -332,6 +332,7 @@ function renderShell(config, nonce) {
     </div>
     </section>
     <section id="points" class="panel digital-view" aria-label="Points">
+      <div class="card" id="history-preview-card"><h2>ประวัติและคะแนนประมาณการ</h2><p id="history-preview-notice" class="sub">ยอดประวัติเบื้องต้น อยู่ระหว่างตรวจสอบ</p><strong id="history-preview-points" class="value">—</strong><p id="history-preview-amount" class="sub"></p><p class="sub">ประมาณการจากประวัติงานที่บันทึก · ทุก 100 บาท = 1 คะแนน · ก่อนหักหรือหมดอายุ · ยังใช้แลกหรือยืนยันสิทธิ์ไม่ได้</p></div>
       <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
       <div class="card"><span id="service-spend-label" class="label">Service spend</span><div class="detail-grid"><div><span id="lifetime-spend-label" class="label">Lifetime</span><strong id="points-lifetime-spend" class="value">—</strong></div><div><span id="spend-365-label" class="label">Last 365 days</span><strong id="points-365-spend" class="value">—</strong></div></div></div>
       <div class="card"><span class="label" data-copy="pointsHistoryLabel">Points history</span><div id="points-history" class="history"></div></div>
@@ -801,6 +802,31 @@ function renderShell(config, nonce) {
     await Promise.allSettled(hydrationReads);
   }
 
+  async function readOwnHistoryPreview() {
+    const generation = (readOwnHistoryPreview.generation || 0) + 1;
+    readOwnHistoryPreview.generation = generation;
+    const pointsNode = document.getElementById("history-preview-points");
+    const amountNode = document.getElementById("history-preview-amount");
+    const noticeNode = document.getElementById("history-preview-notice");
+    if (!pointsNode || !amountNode || !noticeNode) return;
+    // Clear the previous account's preview before any reload/session failure.
+    pointsNode.textContent = "—";
+    amountNode.textContent = "";
+    noticeNode.textContent = "ยอดประวัติเบื้องต้น อยู่ระหว่างตรวจสอบ";
+    try {
+      const response = await fetch("/api/member/app/history/preview", {credentials:"same-origin", cache:"no-store", headers:{accept:"application/json"}});
+      const body = await response.json().catch(() => null);
+      if (generation !== readOwnHistoryPreview.generation) return;
+      const data = response.ok && body?.ok === true ? body.data : null;
+      if (!data || data.redemptionEnabled !== false || data.automaticPrivilegeEnabled !== false || data.pointsMeaning !== "gross_estimate_before_any_deduction_not_redeemable") return;
+      if (data.historyState === "identity_review") { noticeNode.textContent = "ประวัติอยู่ระหว่างตรวจสอบการเชื่อมบัญชี"; return; }
+      if (data.historyState !== "preliminary_review") { noticeNode.textContent = "ยังไม่มีหลักฐานประวัติที่เพียงพอ อยู่ระหว่างตรวจสอบ"; return; }
+      if (!Number.isFinite(data.estimatedGrossPointsBeforeDeduction) || !Number.isFinite(data.recordedHistoryAmountTHB) || data.recordedHistoryAmountTHB <= 0 || data.estimatedGrossPointsBeforeDeduction !== data.recordedHistoryAmountTHB / 100) return;
+      pointsNode.textContent = new Intl.NumberFormat("th-TH").format(data.estimatedGrossPointsBeforeDeduction) + " คะแนนประมาณการ";
+      amountNode.textContent = "ยอดประวัติงานที่บันทึก " + formatThb(data.recordedHistoryAmountTHB);
+    } catch {}
+  }
+
   async function readQuickMembershipStatus() {
     try {
       // Membership has no archive/contact scan or points-ledger decorator.
@@ -824,6 +850,7 @@ function renderShell(config, nonce) {
 
   async function readProfile({ hydrate = true } = {}) {
     void readQuickMembershipStatus();
+    void readOwnHistoryPreview();
     const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;

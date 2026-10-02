@@ -52,6 +52,7 @@ import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-rout
 import { handleMemberTelegramBind, isMemberTelegramBindPath } from "./member-telegram-bind.js";
 import { handleMedicalVerifiedRequest, isMedicalVerifiedRequestPath } from "./medical-verified-request.js";
 import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+import { HISTORY_PREVIEW_PATH, handleMemberHistoryPreview } from "./member-history-preview.js";
 
 function queueVerifiedLiffSessionEvent(request, response, env, ctx) {
   if (request.method !== "POST" || !response?.ok) return;
@@ -85,6 +86,7 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === HISTORY_PREVIEW_PATH) return handleMemberHistoryPreview(request, env);
 
     // TMIB Long Story routes resolve before generic response decorators. Media
     // keeps the canonical session/signature gate and may migrate a missing

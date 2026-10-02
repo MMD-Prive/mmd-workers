@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 const source = readFileSync(new URL("../src/liff-member-shell.js", import.meta.url), "utf8");
-const functions = source.slice(source.indexOf("  async function readQuickMembershipStatus("), source.indexOf("  function requestId()"));
+const functions = source.slice(source.indexOf("  async function readOwnHistoryPreview("), source.indexOf("  function requestId()"));
 function setup(membership, profileResponse) {
   const nodes = { "profile-tier": { textContent: "SVIP" }, "profile-status": { textContent: "checking" }, "profile-points": { textContent: "—" } };
   const calls = [];

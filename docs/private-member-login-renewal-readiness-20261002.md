@@ -4,20 +4,30 @@ Status: code/fixture verified; production customer flow NOT VERIFIED. No release
 
 ## Entry and today's evidence
 
-- Private login: https://mmdbkk.com/member/liff?world=private
+- Public Private entry (user-selected): https://mmdbkk.com/sigil/start
+- LINE identity runtime: https://mmdbkk.com/member/liff?world=private
 - Private membership: https://mmdbkk.com/sigil/member/membership?intent=renew&world=private
 - Payment Center: https://mmdbkk.com/my-mmd/payments
 - Compatibility entry: https://mmdbkk.com/pay/renewal
 - Official human review desk: https://mmdbkk.com/internal/ceo/payment-slip-inbox
 - Matching/recovery desk: https://mmdbkk.com/internal/admin/payments
 
-The first four URLs were GET-tested from the Mac shell and each returned HTTP 403. This is a verification blocker, not evidence of a working or broken authenticated customer flow. No browser/session takeover was attempted. The owner desk URLs above come from repository contracts and were not authenticated/live-tested.
+Shell GETs returned 403, but subsequent isolated Chrome-extension read-only checks reached the pages without taking over customer or owner sessions:
 
+- `/sigil/start`: actual Private Entry, Member Space links to `/sigil/inme?lang=th`; membership is secondary. The live page is ss31; repository Webflow snapshot is V29. No stale snapshot was published.
+- `/sigil/inme?lang=th`: two entrance sections are present together. One shows `/member/login`; the Member Card button was not clicked. Private identity, return and renewal context handoff remain unverified. Start is the public entrance, not evidence of a completed login.
+- `/member/liff?world=private`: MY MMD preparation/ENTER shell reached; no LINE sign-in performed.
+- `/sigil/member/membership?intent=renew&world=private`: catalog defaults to GuestPass 1,499 and Continue `/member/payments`. This is not an authenticated existing-member renewal quote; do not send members to pay that default as renewal.
+- `/my-mmd/payments`: Payment Center reached but displays a load failure in this unverified browser session.
+- `/internal/ceo/payment-slip-inbox`: BackOfficeAccessCode gate reached. Per must enter their own code; the queue and decision controls have not been authenticated/live-verified.
+- `/sigil/pay` without a token: asks to open the payment link for the exact item. A valid signed checkout was not tested.
+
+Membership and signed checkout pages carry Webflow page/site markers and CDN scripts. Webflow workspace/publication is currently unavailable according to the user. The Worker fixes below do not publish those pages. Admin login is Worker-rendered, but its post-login presentation also needs acceptance testing.
 Code at base 7bf963d supports signed payment handoff to `/sigil/pay?t=...`; `/pay/renewal` is a redirect bridge, not a standalone bank-payment page. An unsigned renewal redirects to Private membership; a signed one retains only `t`. Public purchases stay on `/pay/membership` and signed `/pay/checkout`.
 
 ## Customer and Per steps
 
-1. Customer opens Private login in the original LINE account. Read canonical status/tier/expiry; missing or unresolved evidence remains checking/review required. Lite means Standard; Per Rename is the legacy naming source. A date in a renamed label is a renewal date, not an expiry. VIP/Black Card/SVIP must not be downgraded because a lookup is missing.
+1. Customer starts at `/sigil/start` → Member Space. Complete Private LINE login in the original account; if the public entry handoff fails, the known identity runtime is `/member/liff?world=private`. Read canonical status/tier/expiry; missing or unresolved evidence remains checking/review required. Lite means Standard; Per Rename is the legacy naming source. A date in a renamed label is a renewal date, not an expiry. VIP/Black Card/SVIP must not be downgraded because a lookup is missing.
 2. For renewal, continue the existing package from a verified member session. Standard/Premium quote is calculated server-side, not from a browser amount. Unsupported/protected tiers need owner review. New signup is a separate intent. Do not estimate a protected member's plan or term.
 3. Check Payment Center for an existing reference before issuing a new payment. Continue its signed checkout. If a slip is already received/pending review, wait; do not pay or upload again. Session expiry requires LINE login again. Cross-session persistence/recovery still needs a live acceptance check; the current BFF snapshot is session-backed.
 4. Before transfer, customer checks the reference, purpose=membership, member, expected amount and bank instructions issued by the canonical payment backend. If no valid quote/reference/instructions exist, Per must resolve identity/package and issue the canonical payment handoff first. Do not use an arbitrary bank account or an amount guessed from LINE notes.
@@ -35,12 +45,21 @@ Review contracts: `GET /v1/admin/payments/review-queue`, `GET /v1/admin/payments
 - Make `pending_review` and `under_review` proofs visible to the existing human queue, preserving explicit approval and settlement guards.
 - Guard repeated renewal clicks, resume session-backed pending payment before issuing another intent, and provide evidence/reference instructions when setup fails. The legacy `/member/renewal` Webflow CTA is the surface changed here; canonical membership and the current MY MMD application have their own route owners. Publish of the global CTA requires a separately approved Webflow release if this legacy page is still used.
 
-Points policy was not changed. Current deployed code applies expiring lots to customer redeemable points. It must not be used as the requested gross historical nominee report. Known corrupt approved sessions/Champ points remain a separate explicit data-correction approval; an authoritative ledger row can still contain bad historic input. No snapshot import, ledger repair, expiry/deduction change, or rights materialization was done.
+The spendable-points presentation now fails closed when canonical money evidence is absent, ambiguous, incomplete or disagrees with the posted ledger amount/points/session. A posted/approved historical row alone cannot certify points. Missing/read-failed sources no longer fall back to stale profile totals; duplicates and unsupported adjustments remain review required. This may temporarily hide legitimate legacy awards or debits without the required linkage. VIP/Black Card/SVIP and membership status are untouched. No existing ledger was changed, including the known false 6,132,082 THB / 61,320 points and 37 suspect sessions.
 
+A separate historical preview uses the data team's frozen saved-OA job-note estimate adapter, not the suspect points ledger. `/api/member/app/history/preview` accepts only GET/HEAD, same origin, no query selectors, and derives the exact LINE UID from the existing signed session store and expiry checks. The response contains only that UID's whitelisted own preview, private/no-store. No names/amounts from other accounts, raw notes, contacts, model details, index or owner provenance are returned.
+
+The LIFF Points section labels recorded job-history amount and estimated gross points before any expiry/deduction as preliminary and not redeemable or privilege-confirming. Quarantined/missing evidence stays null, never zero. Reload, failed sessions and late stale responses clear the display. The snapshot's 100 THB:1 point baseline is retained independently of redeemable points policy.
+
+The real dataset is NOT in this repository, not bundled and not uploaded. Runtime expects an separately approved private KV provisioning under `private:customer-history-preview:2026-10-02`, pinned to SHA256 `07c390528df0a6900ed7b892c74927fcce2cdc975c37cb4efc733f5550662cf0`. With no valid payload it returns 503 pending, not a fabricated balance. Provisioning requires separate release/data authorization. No new binding, permission, credential, import, ledger repair, expiry/deduction policy change or rights materialization was performed.
 ## Validation and release gate
 
-Local fixture suites: auth LIFF profile 82/82; member pages LIFF 377/377; payment route governance 33/33; payment review 38/38; unified payment/proof/renewal settlement 71/71. Syntax checks and git diff whitespace check passed. Added behavioral tests cover early membership rendering with a deferred profile, active/expired/unknown/protected display, Private world, repeated click, pending payment resume, expired session, unavailable payment status, and queue visibility without writes. Existing suites cover renew/signup separation, stable session/reload handling, proof dedupe, and settlement failure without entitlement/points grants.
+Local fixture suites: auth LIFF profile 82/82; member pages LIFF 393/393; payment route governance 33/33; payment review 38/38; unified payment/proof/renewal settlement 71/71. Syntax checks and git diff whitespace check passed. Added behavioral tests cover early membership rendering with a deferred profile, active/expired/unknown/protected display, Private world, repeated click, pending payment resume, expired session, unavailable payment status, and queue visibility without writes. Existing suites cover renew/signup separation, stable session/reload handling, proof dedupe, and settlement failure without entitlement/points grants.
 
 The installed Node rejects repository `--experimental-default-type=module` and `--default-type=module` flags. The 71 unified-payment tests were run on an unchanged file mirror in `/tmp/mmd-renewal-module-tests` with root `type:module` (payments-worker/shared/webflow/auth-worker copied); no source behavior was modified for the run. Native npm command remains incompatible with this host runtime.
 
 Before release: parent approves scope, merge and deploy separately; check conflicts with ongoing LIFF work; run CI on the supported Node runtime; authenticate on staging/live read-only and measure login/status/points latency; use approved synthetic fixtures to verify quote and proof-review-to-renewal loop; confirm observer-independent queue access. No real test transfer, slip approval, customer message, or new entitlement may be used without separate authorization.
+
+## CI blocker
+
+The original draft head 84c77e31b7d6c33c456690fa2a0686c2ec2e9339 triggered six workflows, all startup_failure before jobs/check-runs. Repository Actions permissions currently report `enabled:true`, `allowed_actions:local_only`. Required Node.js CI references external `actions/checkout@v4` and `actions/setup-node@v4`; main ruleset requires build(18.x), build(20.x), build(22.x). This policy incompatibility is confirmed; no run-specific annotation exists to prove the precise failure cause. Organization policy cannot be read by this credential (403), so inheritance is unresolved. A narrow selected-action allowlist proposal is awaiting per-action user approval. No settings were changed, no broad action allowlist, credentials refresh, org escalation, CI rerun or protection bypass was performed.
