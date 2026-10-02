@@ -2,6 +2,7 @@ import { observeSvipPhotoRevealMode } from "./svip-photo-reveal-mode-audit.mjs";
 import currentWorker from "./my-mmd-bounded-status-front-gate.js";
 import { handleMmsLineRequest, isMmsLineRequest } from "./mms-line-runtime.mjs";
 import { MMS_LINE_EVIDENCE_INTERNALS, observeMmsLineEvidence } from "./mms-line-evidence-observer.mjs";
+import { observeHennaCustomerWatch } from "./mms-line-henna-customer-watch.mjs";
 import {
   handleMmdRichMenuScheduledRequest,
   handleMmdRichMenuScheduled,
@@ -609,7 +610,18 @@ export default {
     if (isKenjiLineTransportHealthRequest(request)) {
       return handleKenjiLineTransportHealth(request, env);
     }
-    if (isMmsLineRequest(request)) return handleMmsLineRequest(request, env, ctx);
+    if (isMmsLineRequest(request)) {
+      const watched = observeHennaCustomerWatch(request.clone(), env).catch((error) => {
+        console.log(JSON.stringify({
+          henna_customer_watch: "observer_failed",
+          error: text(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
+        }));
+        return null;
+      });
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(watched);
+      else await watched;
+      return handleMmsLineRequest(request, env, ctx);
+    }
     if (isMmdRichMenuScheduledRequest(request)) {
       return handleMmdRichMenuScheduledRequest(request, env, ctx);
     }
