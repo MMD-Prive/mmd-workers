@@ -37,11 +37,18 @@ export function isMyMmdLifetimePointsPath(requestOrUrl) {
 
 export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
   if (!(request instanceof Request) || request.method !== "GET" || !isMyMmdLifetimePointsPath(request)) return null;
-  const unavailable = { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return unavailable;
   try {
     const session = await readMemberAppSession(request, env);
-    if (!session?.memberId || !session?.lineUserId) return unavailable;
+    return await readMyMmdVerifiedPointsContext(env, session);
+  } catch { return { state: "checking", pointsRecoveryPending: true }; }
+}
+
+// Internal callers must supply identity from the canonical resolver, never a
+// browser/query identity. Reuses the same payment-backed presentation gate.
+export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
+  const unavailable = { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !session?.memberId || !/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return unavailable;
+  try {
     const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
     const recoveryState = normalizeToken(recoveryStatus?.state);
     if (["checking", "in_progress", "review_required"].includes(recoveryState)) {
@@ -53,12 +60,13 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
 
     const member = await resolveMember(env, session.memberId);
     if (!member) return unavailable;
-    const formula = pointsFormula(member.memberId, member.email);
+    const formula = pointsFormula(member.memberId, session.strictIdentity === true ? "" : member.email);
     if (!formula) return unavailable;
     const records = await airtableList(env, env.AIRTABLE_TABLE_POINTS_LEDGER || POINTS_LEDGER_TABLE, {
       filterByFormula: formula,
       maxRecords: MAX_RECORDS,
     });
+    if (session.strictIdentity === true && records.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
     const refs = paymentRefsForPoints(records);
     const payments = [];
     // Bound each formula and fail closed rather than falling back to profile
@@ -69,14 +77,29 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
         filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: MAX_RECORDS,
       }));
     }
+    if (session.strictIdentity === true && payments.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
     const guarded = guardPointsDisplaySources(records, payments);
     if (guarded.state !== "verified") return {
       ...unavailable, sourceReviewRequired: true, historicalPoints: guarded.historicalPoints,
     };
+    // Discounts require explicit canonical service classification as well as
+    // the payment/amount/session guard. Missing category is owner review.
+    const spendRows = guarded.verifiedRecords.filter(row => Number(row?.fields?.points) > 0);
+    const serviceSpendVerified = spendRows.every(row => {
+      const matches = payments.filter(p => p?.fields?.["Payment Reference"] === row?.fields?.payment_ref);
+      return matches.length === 1 && row?.fields?.session_id && ["service", "service_payment"].includes(normalizeToken(matches[0].fields.payment_kind || matches[0].fields.payment_type));
+    });
+    const cutoff = Date.now() - POINTS_TTL_MS;
+    const serviceSpend365Thb = serviceSpendVerified ? spendRows.reduce((sum, row) => {
+      const f = row.fields;
+      return Date.parse(f.posted_at || f.created_at || row.createdTime) >= cutoff ? sum + Number(f.eligible_amount_thb ?? f.amount_thb) : sum;
+    }, 0) : null;
     return {
       ...summarizeLifetimePoints(guarded.verifiedRecords),
       historicalPoints: guarded.historicalPoints,
       sourceVerified: true,
+      serviceSpendVerified,
+      serviceSpend365Thb,
       recoveryState: normalizeToken(recoveryStatus?.state) || null,
       pointsRecoveryPending: false,
     };
