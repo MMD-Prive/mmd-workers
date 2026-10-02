@@ -73,7 +73,7 @@ test("released public episode is not purchasable", async () => {
 });
 
 test("released TMIB reader is public without a verified LINE session", async () => {
-  const response = await handleTmibStoryAccess(new Request("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001/access"), {});
+  const response = await handleTmibStoryAccess(new Request("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001/access"), { LIFF_SESSION_SECRET: "test-only-tmib-media-secret-12345678901234567890" });
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.granted, true);
