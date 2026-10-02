@@ -7,7 +7,7 @@ import {
   handleTmibStoryAccess,
   TMIB_STORY_INTERNALS,
 } from "../src/tmib-story-access.js";
-import { getTmibEpisode, publicTmibEpisodeMetadata } from "../src/tmib-episode-catalog.js";
+import { getTmibEpisode, publicTmibEpisodeMetadata, TMIB_RELEASE_POLICY } from "../src/tmib-episode-catalog.js";
 
 test("recognizes catalog-driven TMIB protected routes", () => {
   assert.equal(isTmibStoryAccessPath("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001/catalog"), true);
@@ -20,14 +20,19 @@ test("recognizes catalog-driven TMIB protected routes", () => {
 test("ACT 001 catalog is the single pricing/package source", () => {
   const episode = getTmibEpisode("act-001");
   assert.ok(episode);
-  assert.equal(episode.priceThb, 299);
-  assert.equal(episode.packageCode, "tmib_act_001");
+  assert.equal(episode.priceThb, 0);
+  assert.equal(episode.packageCode, "tmib_act_001_public");
   assert.equal(episode.storyPath, "/tmib/act-001");
-  assert.equal(episode.checkoutPath, "/pay/tmib?episode=act-001");
+  assert.equal(episode.checkoutPath, "");
+  assert.equal(episode.publicFree, true);
+  assert.equal(episode.accessMode, "public_free");
   const pub = publicTmibEpisodeMetadata(episode);
-  assert.equal(pub.price_thb, 299);
-  assert.equal(pub.purchasable, true);
-  assert.equal(pub.membership_included, true);
+  assert.equal(pub.price_thb, 0);
+  assert.equal(pub.purchasable, false);
+  assert.equal(pub.public_free, true);
+  assert.equal(pub.member_gate_starts_at_episode, 11);
+  assert.equal(TMIB_RELEASE_POLICY.publicFreeEpisodesThrough, 10);
+  assert.equal(pub.membership_included, false);
 });
 
 test("catalog endpoint is public metadata only", async () => {
@@ -72,12 +77,14 @@ test("episode purchase requires exact verified paid catalog price/package", () =
   assert.equal(paymentGrantsTmib(good, "act-999"), false);
 });
 
-test("access fails closed without verified LINE session", async () => {
+test("released TMIB reader is public without a verified LINE session", async () => {
   const response = await handleTmibStoryAccess(new Request("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001/access"), {});
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.granted, false);
-  assert.equal(payload.error.code, "LINE_SESSION_REQUIRED");
+  assert.equal(payload.granted, true);
+  assert.equal(payload.access_source, "public_free");
+  assert.equal(payload.watermark, "MMD · PUBLIC STORY");
+  assert.ok(payload.media["04"]);
 });
 
 test("purchase requires same-origin browser request", async () => {
