@@ -1,3 +1,4 @@
+import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
 import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membership-response.mjs";
 import {
   inferLineIntent,
@@ -592,6 +593,11 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const directUser = isDirectUserEvent(event);
     if (legacyOutcome.saved[index]?.campaign_event === true) {
       saved.push({ ok: true, type: text(event?.type), campaign_handled: true, replied: legacyOutcome.saved[index].replied === true });
+      continue;
+    }
+    const rightsOutcome = await handleLineRightsCheck({ env, event, runtime });
+    if (rightsOutcome) {
+      saved.push(rightsOutcome);
       continue;
     }
     const eventMode = text(event?.mode).toLowerCase() || "unknown";
