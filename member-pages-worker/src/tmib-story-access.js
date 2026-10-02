@@ -238,6 +238,10 @@ async function storeGrant(env, episode, hash, data) {
 }
 
 async function resolveEpisodeAccess(request, env, hash, episode) {
+  if (episode.publicFree === true || episode.accessMode === "public_free") {
+    return { granted: true, source: "public_free" };
+  }
+
   const stored = await readStoredGrant(env, episode, hash);
   if (stored?.state === "granted") return { granted: true, source: "episode_purchase", paymentRef: clean(stored.payment_ref, 220) || null };
 
@@ -285,9 +289,12 @@ function catalogPayload(episode) {
 }
 
 async function handleAccess(request, env, episode) {
-  const session = await readMemberAppSession(request, env);
-  if (!session?.lineUserId) return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
-  const hash = await userKey(env, session.lineUserId);
+  const publicFree = episode.publicFree === true || episode.accessMode === "public_free";
+  const session = publicFree ? null : await readMemberAppSession(request, env);
+  if (!publicFree && !session?.lineUserId) {
+    return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
+  }
+  const hash = publicFree ? "public" : await userKey(env, session.lineUserId);
   if (!hash) return json({ ok: false, granted: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503);
   const access = await resolveEpisodeAccess(request, env, hash, episode);
   if (!access.granted) return json({ ...catalogPayload(episode), granted: false });
@@ -296,7 +303,7 @@ async function handleAccess(request, env, episode) {
     ...catalogPayload(episode),
     granted: true,
     access_source: access.source,
-    watermark: `MMD PRIVATE · ${hash.slice(0, 10).toUpperCase()}`,
+    watermark: publicFree ? "MMD · PUBLIC STORY" : `MMD PRIVATE · ${hash.slice(0, 10).toUpperCase()}`,
     media_expires_at: signed.expiresAt,
     media: signed.media,
   });
@@ -343,9 +350,12 @@ async function handlePurchase(request, env, episode) {
 
 async function handleMedia(request, env, episode, frame) {
   if (!episode.frames.includes(frame)) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
-  const session = await readMemberAppSession(request, env);
-  if (!session?.lineUserId) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
-  const hash = await userKey(env, session.lineUserId);
+  const publicFree = episode.publicFree === true || episode.accessMode === "public_free";
+  const session = publicFree ? null : await readMemberAppSession(request, env);
+  if (!publicFree && !session?.lineUserId) {
+    return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
+  }
+  const hash = publicFree ? "public" : await userKey(env, session.lineUserId);
   const url = new URL(request.url);
   const exp = Number(url.searchParams.get("exp"));
   const sig = clean(url.searchParams.get("sig"), 128);
