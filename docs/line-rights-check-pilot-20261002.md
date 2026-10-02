@@ -33,11 +33,13 @@ Global runtime kill currently blocks this lane too. Do not globally unpause to t
 
 ## Validation
 
-- New focused contracts: 38/38 passed, including actual signed ingress, invalid-signature rejection, real existing DO concurrency, both spellings, duplicate cases, failure acknowledgments, takeover/kill races, no failed-delivery history, corruption 61,320 fixture, foreign identity, duplicate payment, protected tiers and new-signup classification.
+- New focused contracts: 39/39 passed, including actual signed ingress, invalid-signature rejection, real existing DO concurrency, both spellings, duplicate cases, failure acknowledgments, takeover/kill races, no failed-delivery history, corruption 61,320 fixture, foreign identity, duplicate payment, protected tiers and new-signup classification.
 - `npm run test:member-pages-liff`: 408/408 passed.
-- `npm run test:member-dashboard-line`: 340/340 passed.
-- Regression subset: 85/85 passed.
+- `npm run test:member-dashboard-line`: 341/341 passed.
+- Regression subset: 86/86 passed.
 - Wrangler dry-run build passed for both affected Workers. No deploy command without `--dry-run` was executed.
 - `git diff --check` passed. New contracts were added to existing CI test scripts.
 
 No customer messages, real slip verification, financial approval, grants, ledger repair, billing/security policy changes or runtime control changes occurred. #2184 is preserved; merge/deploy remain separate decisions.
+
+CI qualification: #2184 has a separately observed Shop Phase1 safety workflow startup failure at a71808f (run37006011709), because `actions/setup-python@v5` is not allowed. The earlier 12 successful check entries are not an all-workflow success statement. No allowlist change or rerun is authorized here. New stacked branch CI is reported separately.

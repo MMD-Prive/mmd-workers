@@ -100,6 +100,8 @@ export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}
   if (!hashes.includes(await hash(userId))) return silent("outside_owner_pilot");
   if (!enabled(env.LINE_AUTO_REPLY_ENABLED) || !enabled(env.LINE_KENJI_AI_ENABLED) || killed(runtime)) return silent("runtime_line_kill");
   if (event.mode === "standby" || event.deliveryContext?.isRedelivery === true || !event.replyToken) return silent("event_not_eligible");
+  const age = Date.now() - Number(event.timestamp);
+  if (!Number.isFinite(age) || age < -60000 || age > 300000) return silent("stale_or_missing_event_timestamp");
   const eventId = clean(event.webhookEventId || event.message?.id);
   if (!eventId) return silent("stable_event_id_missing");
   try {
