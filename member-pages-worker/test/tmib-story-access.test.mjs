@@ -41,8 +41,8 @@ test("catalog endpoint is public metadata only", async () => {
   const payload = await response.json();
   assert.equal(payload.schema, "tmib_episode_catalog_v1");
   assert.equal(payload.episode_id, "act-001");
-  assert.equal(payload.price_thb, 299);
-  assert.equal(payload.purchase_path, "/member/api/liff/tmib/episodes/act-001/purchase");
+  assert.equal(payload.price_thb, 0);
+  assert.equal(payload.purchase_path, "");
 });
 
 test("unknown episode fails closed", async () => {
