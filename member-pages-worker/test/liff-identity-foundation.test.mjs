@@ -25,6 +25,36 @@ class MemoryKv {
   async delete(key) { this.map.delete(key); }
 }
 
+class MemoryRememberedLoginDeviceNamespace {
+  constructor() { this.objects = new Map(); }
+  idFromName(name) { return String(name); }
+  get(id) {
+    const key = String(id);
+    return {
+      fetch: async (request) => {
+        const method = request.method;
+        if (method === "PUT") {
+          this.objects.set(key, await request.json());
+          return Response.json({ ok: true });
+        }
+        if (method === "GET") {
+          const record = this.objects.get(key);
+          if (!record || Number(record.expires_at) <= Date.now()) {
+            this.objects.delete(key);
+            return Response.json({ ok: false }, { status: 404 });
+          }
+          return Response.json({ ok: true, data: record });
+        }
+        if (method === "DELETE") {
+          this.objects.delete(key);
+          return Response.json({ ok: true });
+        }
+        return Response.json({ ok: false }, { status: 405 });
+      },
+    };
+  }
+}
+
 class MemoryGatewayStore {
   constructor() {
     this.records = [];
@@ -182,6 +212,7 @@ function env(overrides = {}) {
     LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
     MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
     LIFF_IDENTITY_KV: new MemoryKv(),
+    LIFF_REMEMBERED_LOGIN_DEVICE: new MemoryRememberedLoginDeviceNamespace(),
     MEMBER_STATUS_RESOLVER: resolver(),
     LIFF_GATEWAY_STORE: new MemoryGatewayStore(),
     BIRTHDAY_WISH_STORE: birthdayStore,
@@ -1146,6 +1177,49 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(records[0], firstRecord);
     assert.equal(mappingKeys.length, 2);
     assert.ok(mappingKeys.every((key) => records.every((record) => !key.includes(record.session_id))));
+  });
+
+  it("remembers a verified member for 30 absolute days, restores a 30-minute session and revokes on logout", async () => {
+    const lineUserId = `U${"a".repeat(32)}`;
+    const memberResolver = resolver({ member_exists: true });
+    const runtime = env({ MEMBER_STATUS_RESOLVER: memberResolver });
+    lineVerify({ sub: lineUserId });
+    const started = await request("/member/api/liff/start", { body: { id_token: "valid-token", liff_intent: "status" } }, runtime);
+    assert.equal(started.response.status, 200);
+
+    const rememberCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_remember"));
+    const initialSessionCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+    assert.ok(rememberCookie.startsWith("__Host-mmd_liff_remember="));
+    assertHostCookie(findCookie(started.response, "__Host-mmd_liff_remember"), "__Host-mmd_liff_remember", 30 * 24 * 60 * 60);
+    const rememberedRecord = [...runtime.LIFF_REMEMBERED_LOGIN_DEVICE.objects.values()][0];
+    assert.equal(rememberedRecord.line_user_id, lineUserId);
+    assert.equal(rememberedRecord.expires_at - rememberedRecord.issued_at, 30 * 24 * 60 * 60 * 1000);
+
+    const sessionKey = [...runtime.LIFF_IDENTITY_KV.map.keys()].find((key) => key.startsWith("liff:session:"));
+    const expiredSession = JSON.parse(runtime.LIFF_IDENTITY_KV.map.get(sessionKey));
+    expiredSession.expires_at = Date.now() - 1;
+    runtime.LIFF_IDENTITY_KV.map.set(sessionKey, JSON.stringify(expiredSession));
+
+    const resumed = await request("/member/api/liff/profile", { method: "GET", cookie: rememberCookie }, runtime);
+    assert.equal(resumed.response.status, 200);
+    assertHostCookie(findCookie(resumed.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 1800);
+    assert.equal(findCookie(resumed.response, "__Host-mmd_liff_remember"), "");
+    assert.equal([...runtime.LIFF_REMEMBERED_LOGIN_DEVICE.objects.values()][0].expires_at, rememberedRecord.expires_at);
+    assert.notEqual(cookiePair(findCookie(resumed.response, "__Host-mmd_liff_session")), initialSessionCookie);
+
+    const activeSessionCookie = cookiePair(findCookie(resumed.response, "__Host-mmd_liff_session"));
+    const loggedOut = await request("/member/api/liff/logout", {
+      method: "POST",
+      cookie: `${rememberCookie}; ${activeSessionCookie}`,
+      body: {},
+    }, runtime);
+    assert.equal(loggedOut.response.status, 200);
+    assert.match(findCookie(loggedOut.response, "__Host-mmd_liff_session"), /Max-Age=0/);
+    assert.match(findCookie(loggedOut.response, "__Host-mmd_liff_remember"), /Max-Age=0/);
+    assert.equal(runtime.LIFF_REMEMBERED_LOGIN_DEVICE.objects.size, 0);
+
+    const replay = await request("/member/api/liff/profile", { method: "GET", cookie: rememberCookie }, runtime);
+    assert.equal(replay.response.status, 401);
   });
 
   it("status authenticates with cookie, rotates through Set-Cookie only, and retires a prior cookie on sequential reuse", async () => {
