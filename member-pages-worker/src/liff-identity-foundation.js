@@ -1597,6 +1597,7 @@ async function authenticateAndRotate(request, env) {
   // can restore a fresh 30-minute session for up to 30 absolute days.
   let auth = await authenticateSession(request, env);
   if (!auth.ok) {
+    if (!cookieValue(request, REMEMBERED_LOGIN_COOKIE)) return auth;
     const restored = await restoreRememberedLogin(request, env);
     if (!restored.ok) return restored;
     auth = { ok: true, session: restored.session, key: "" };
