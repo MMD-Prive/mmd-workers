@@ -1633,6 +1633,7 @@ async function authenticateAndRotate(request, env) {
 async function authenticateSession(request, env) {
   const token = cookieValue(request, SESSION_COOKIE);
   const rememberToken = cookieValue(request, REMEMBER_COOKIE);
+  if (!token && !rememberToken) return authFailure("LIFF_SESSION_REQUIRED", "Authenticated LIFF session required.");
   if (token) {
     const hash = await keyedDigest(env, `session:${token}`);
     const key = `liff:session:${hash}`;
