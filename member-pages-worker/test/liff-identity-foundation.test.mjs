@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { afterEach, describe, it } from "node:test";
 
 import worker, { createHallRouteToken, verifyHallRouteToken } from "../src/liff-identity-foundation.js";
+import { RememberedLoginDevice } from "../src/liff-remembered-login-device.js";
 
 const realFetch = globalThis.fetch;
 const realLog = console.log;
@@ -302,6 +303,50 @@ async function keyedDigestForTest(secret, value) {
   const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
+describe("remembered login Durable Object", () => {
+  it("stores a bounded credential, expires it, and revokes it atomically", async () => {
+    const map = new Map();
+    const storage = {
+      alarm_at: 0,
+      async put(key, value) { map.set(key, structuredClone(value)); },
+      async get(key) { return structuredClone(map.get(key)); },
+      async delete(key) { map.delete(key); },
+      async setAlarm(timestamp) { this.alarm_at = timestamp; },
+    };
+    const device = new RememberedLoginDevice({ storage });
+    const issuedAt = Date.now();
+    const record = {
+      version: 1,
+      line_user_id: `U${"b".repeat(32)}`,
+      identity_key: "c".repeat(64),
+      gateway_record_id: "rec12345678901234",
+      issued_at: issuedAt,
+      expires_at: issuedAt + 30 * 24 * 60 * 60 * 1000,
+    };
+
+    const saved = await device.fetch(new Request("https://device.internal/credential", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(record),
+    }));
+    assert.equal(saved.status, 200);
+    assert.equal(storage.alarm_at, record.expires_at);
+
+    const read = await device.fetch(new Request("https://device.internal/credential"));
+    assert.deepEqual((await read.json()).data, record);
+
+    await storage.put("credential", { ...record, expires_at: Date.now() - 1 });
+    const expired = await device.fetch(new Request("https://device.internal/credential"));
+    assert.equal(expired.status, 404);
+    assert.equal(await storage.get("credential"), undefined);
+
+    await storage.put("credential", record);
+    const revoked = await device.fetch(new Request("https://device.internal/credential", { method: "DELETE" }));
+    assert.equal(revoked.status, 200);
+    assert.equal(await storage.get("credential"), undefined);
+  });
+});
 
 describe("Phase 1 LIFF identity foundation security correction", () => {
   it("verifies CARE BACK, Dashboard and Backup tokens only against fixed server-owned audiences", async () => {
