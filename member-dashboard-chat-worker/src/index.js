@@ -1637,7 +1637,7 @@ async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", optio
   return Array.isArray(payload?.records) ? payload.records[0] || null : null;
 }
 
-async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}, options = {}) {
+export async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity = {}, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const inboxTable = getAirtableTable(env);
@@ -1686,8 +1686,8 @@ async function getLineOwnerTakeoverState(env = {}, lineUserId = "", continuity =
   try {
     const headers = { authorization: `Bearer ${apiKey}` };
     const [inboxResponse, controlsResponse] = await Promise.all([
-      fetch(inboxUrl.toString(), { method: "GET", headers }),
-      controlsUrl ? fetch(controlsUrl.toString(), { method: "GET", headers }) : Promise.resolve(null),
+      fetch(inboxUrl.toString(), { method: "GET", headers, signal: options.signal }),
+      controlsUrl ? fetch(controlsUrl.toString(), { method: "GET", headers, signal: options.signal }) : Promise.resolve(null),
     ]);
     if (!inboxResponse.ok || (controlsResponse && !controlsResponse.ok)) {
       return { ok: false, active: matrixHandoff, reason: "takeover_lookup_failed", source: matrixHandoff ? "matrix_handoff" : "lookup_failed" };
