@@ -127,7 +127,7 @@ function renderShell(config, nonce) {
     .intro-screen .title{max-width:680px;margin-top:14px;font-size:clamp(34px,10vw,68px);letter-spacing:-.04em}
     .intro-screen .sub{max-width:640px;margin-top:12px;font-size:clamp(14px,3.8vw,19px)}
     .intro-screen #message{max-width:680px;margin-top:clamp(22px,6vw,46px);font-size:clamp(15px,4.2vw,20px);line-height:1.78}
-    .intro-continue{width:100%;max-width:360px;margin-top:clamp(24px,7vw,52px);padding:15px 20px;border:0;border-radius:999px;text-align:center;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(0,0,0,.16)}
+    .intro-continue{width:100%;max-width:360px;margin-top:clamp(24px,7vw,52px);padding:15px 20px;border:0;border-radius:999px;text-align:center;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(0,0,0,.16)}.remember-login-note{max-width:680px;margin:10px 0 0;color:rgba(244,237,225,.62);font-size:11px;line-height:1.5}
     body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:#b94a3f;color:#fffaf4}
     body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:#e5bf72;color:#20170f}
     body:not(.app-entered) .actions,body:not(.app-entered) .member-nav,body:not(.app-entered) #profile,body:not(.app-entered) #signup{display:none!important}
@@ -244,7 +244,7 @@ function renderShell(config, nonce) {
     body.app-entered:not(.signup-mode) .digital-requests .form-stack button{min-height:46px;border:0;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d;font-weight:800;text-align:center}
     body.app-entered:not(.signup-mode) .digital-requests>.card>.history{margin-top:8px}
     .digital-home{position:relative}
-    .digital-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.digital-brand{font-size:13px;font-weight:850;letter-spacing:.18em}.digital-brand small{display:block;margin-top:3px;color:var(--digital-gold);font-size:9px;letter-spacing:.19em}.digital-session{border:1px solid rgba(231,204,137,.3);border-radius:999px;padding:7px 9px;color:var(--digital-gold);background:#191a14;font-size:9px}
+    .digital-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.digital-brand{font-size:13px;font-weight:850;letter-spacing:.18em}.digital-brand small{display:block;margin-top:3px;color:var(--digital-gold);font-size:9px;letter-spacing:.19em}.digital-session{border:1px solid rgba(231,204,137,.3);border-radius:999px;padding:7px 9px;color:var(--digital-gold);background:#191a14;font-size:9px}.digital-signout{width:auto;padding:7px 9px;border:1px solid rgba(231,204,137,.18);border-radius:999px;background:transparent;color:var(--digital-muted);font-size:9px;text-align:center}
     .digital-hello{margin-top:18px}.digital-eyebrow{margin:0 0 5px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.16em}.digital-hello h1{margin:0 0 4px;color:var(--digital-cream);font-size:27px;line-height:1.12;letter-spacing:-.04em}.digital-sub{margin:0;color:var(--digital-muted);font-size:11px;line-height:1.5}
     .digital-snapshot{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}.digital-snapshot-icon{font-size:20px;color:var(--digital-gold)}.digital-snapshot strong{display:block;color:var(--digital-cream);font-size:12px}.digital-snapshot p{margin:3px 0 0;color:var(--digital-muted);font-size:10px}.digital-points{color:var(--digital-gold)!important;font-size:19px!important;text-align:right}
     .digital-kenji{display:grid;grid-template-columns:72px 1fr;align-items:center;gap:13px;margin:10px 0;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-raised)}.digital-orb{position:relative;width:66px;height:66px;display:grid;place-items:center;border-radius:50%;background:radial-gradient(circle,rgba(229,199,133,.28),rgba(88,66,29,.14) 42%,transparent 72%)}.digital-orb::before,.digital-orb::after{content:"";position:absolute;border-radius:50%}.digital-orb::before{inset:5px;border:1px solid rgba(231,204,137,.65);border-left-color:transparent}.digital-orb::after{inset:15px;border:1px dashed rgba(201,158,88,.62)}.digital-core{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff5cf,#e5bd6e 48%,#4d3618);box-shadow:0 0 20px rgba(223,185,102,.55)}.digital-kenji strong{display:block;font-size:13px}.digital-kenji p{margin:3px 0 8px;color:var(--digital-muted);font-size:10px;line-height:1.5}.digital-kenji a{display:inline-block;border:1px solid rgba(209,183,117,.48);border-radius:99px;padding:7px 10px;color:var(--digital-gold);background:#27251b;font-size:10px;font-weight:700;text-decoration:none}
@@ -279,6 +279,7 @@ function renderShell(config, nonce) {
       <div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div>
       <div class="welcome-divider" aria-hidden="true"></div>
       <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
+      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
     </div>
   </section>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
@@ -311,7 +312,7 @@ function renderShell(config, nonce) {
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
-    <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><span class="digital-session" id="digital-session">● LINE VERIFIED</span></header>
+    <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><div><span class="digital-session" id="digital-session">● LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
     <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
     <section class="digital-snapshot" aria-label="Verified member snapshot"><span class="digital-snapshot-icon">◇</span><div><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div><strong id="profile-points" class="digital-points">—</strong></section>
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
@@ -405,6 +406,7 @@ function renderShell(config, nonce) {
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
+  const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
   const profile = document.getElementById("profile");
@@ -552,7 +554,18 @@ function renderShell(config, nonce) {
     introContinue.setAttribute("aria-expanded", "true");
     void boot({ existingProfileChecked: true });
   }
-  introContinue?.addEventListener("click", enterApp);
+  introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {
+    if (logoutButton.disabled) return;
+    logoutButton.disabled = true;
+    try {
+      const response = await fetch("/member/api/liff/logout", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error("logout_failed");
+      window.location.assign("/member/login");
+    } catch {
+      logoutButton.disabled = false;
+      show("ออกจากระบบไม่สำเร็จชั่วคราวครับ กรุณาลองอีกครั้ง");
+    }
+  });
   for (const element of document.querySelectorAll("[data-copy]")) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];

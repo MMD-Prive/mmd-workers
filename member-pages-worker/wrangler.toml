@@ -93,9 +93,18 @@ bucket_name = "mmd-customer-request-evidence"
 name = "PRIVATE_PREVIEW_GATE"
 class_name = "PrivatePreviewGate"
 
+[[durable_objects.bindings]]
+name = "LIFF_REMEMBERED_LOGIN_DEVICE"
+class_name = "RememberedLoginDevice"
+
 [[migrations]]
 tag = "v2-private-preview-gate"
 new_sqlite_classes = ["PrivatePreviewGate"]
+
+# Migration for one Durable Object per remembered browser device.
+[[migrations]]
+tag = "v3-remembered-login-device"
+new_sqlite_classes = ["RememberedLoginDevice"]
 
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)
@@ -192,12 +201,20 @@ tag = "v2-private-preview-gate-staging"
 new_sqlite_classes = ["PrivatePreviewGate"]
 
 [[env.staging.durable_objects.bindings]]
+name = "LIFF_REMEMBERED_LOGIN_DEVICE"
+class_name = "RememberedLoginDevice"
+
+[[env.staging.durable_objects.bindings]]
 name = "CARE_BACK_WISH_COORDINATOR"
 class_name = "CareBackBirthdayWishCoordinator"
 
 [[env.staging.migrations]]
 tag = "v1-care-back-birthday-wish-staging"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[[env.staging.migrations]]
+tag = "v3-remembered-login-device-staging"
+new_sqlite_classes = ["RememberedLoginDevice"]
 
 [env.staging.observability]
 enabled = true
