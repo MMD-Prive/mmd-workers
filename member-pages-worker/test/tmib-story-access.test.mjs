@@ -62,19 +62,14 @@ test("grants active verified MMD Member through Black Card but not display-only 
   assert.equal(membershipGrantsTmib({ level: "black_card", levelVerified: true, status: "expired", lifecycle: "expired" }), false);
 });
 
-test("episode purchase requires exact verified paid catalog price/package", () => {
-  const good = { fields: {
-    "Payment Status": "Paid",
-    "Verification Status": "Verified",
-    package_code: "tmib_act_001",
-    amount_thb: 299,
-    notes: "session_id=tmib_x; stage=tmib_story; created_at=2026-09-16T00:00:00Z",
-  } };
-  assert.equal(paymentGrantsTmib(good, "act-001"), true);
-  assert.equal(paymentGrantsTmib({ fields: { ...good.fields, amount_thb: 298 } }, "act-001"), false);
-  assert.equal(paymentGrantsTmib({ fields: { ...good.fields, "Verification Status": "Pending" } }, "act-001"), false);
-  assert.equal(paymentGrantsTmib({ fields: { ...good.fields, package_code: "other" } }, "act-001"), false);
-  assert.equal(paymentGrantsTmib(good, "act-999"), false);
+test("released public episode is not purchasable", async () => {
+  const response = await handleTmibStoryAccess(new Request("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001/purchase", {
+    method: "POST",
+    headers: { origin: "https://mmdbkk.com" },
+  }), {});
+  assert.equal(response.status, 409);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "EPISODE_NOT_PURCHASABLE");
 });
 
 test("released TMIB reader is public without a verified LINE session", async () => {
