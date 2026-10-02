@@ -1648,6 +1648,10 @@ async function rememberedLoginRecord(env, token, method, body) {
 
 async function issueOrReuseRememberedLogin(request, env, session) {
   const currentToken = cookieValue(request, REMEMBERED_LOGIN_COOKIE);
+  if (session.member_exists !== true) {
+    if (currentToken) await rememberedLoginRecord(env, currentToken, "DELETE");
+    return null;
+  }
   if (currentToken) {
     const current = await rememberedLoginRecord(env, currentToken, "GET");
     if (current?.ok && current.data?.line_user_id === session.line_user_id && Number(current.data.expires_at) > Date.now()) {
@@ -1719,9 +1723,7 @@ async function restoreRememberedLogin(request, env) {
   try {
     await persistGatewayStart(env, gatewayStore, issued.session);
     await recordGatewayDecision(gatewayStore, issued.session);
-    await saveSession(env, issued.hash, issued.session, SESSION_TTL_SECONDS);
   } catch (error) {
-    await env.LIFF_IDENTITY_KV.delete(`liff:session:${issued.hash}`);
     return { ok: false, response: gatewayStorageFailure(error) };
   }
   return { ok: true, session: issued.session };
