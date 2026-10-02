@@ -2,6 +2,8 @@ const ACT_001_FRAMES = Object.freeze(
   Array.from({ length: 17 }, (_, index) => String(index + 4).padStart(2, "0")),
 );
 
+const PUBLIC_FRAMES = Object.freeze(Array.from({ length: 20 }, (_, index) => String(index + 1).padStart(2, "0")));
+
 const CATALOG = Object.freeze({
   "act-001": Object.freeze({
     id: "act-001",
@@ -11,11 +13,57 @@ const CATALOG = Object.freeze({
     packageCode: "tmib_act_001",
     paymentStage: "tmib_story",
     storyPath: "/tmib/act-001",
-    checkoutPath: "/pay/tmib?episode=act-001",
+    checkoutPath: null,
     status: "live",
-    purchasable: true,
+    purchasable: false,
     membershipIncluded: true,
+    freePublic: false,
     frames: ACT_001_FRAMES,
+  }),
+  "act-001-ep01": Object.freeze({
+    id: "act-001-ep01",
+    actLabel: "ACT 001",
+    title: "คืนแรกที่ความเกรงใจเริ่มเบาลง",
+    priceThb: 0,
+    packageCode: "",
+    paymentStage: "",
+    storyPath: "/tmib/act-001#ep01-preview",
+    checkoutPath: null,
+    status: "live",
+    purchasable: false,
+    membershipIncluded: false,
+    freePublic: true,
+    frames: PUBLIC_FRAMES,
+  }),
+  "act-001-ep02": Object.freeze({
+    id: "act-001-ep02",
+    actLabel: "ACT 001",
+    title: "แผนของวันพรุ่งนี้เริ่มจากการเปิดแผนที่",
+    priceThb: 0,
+    packageCode: "",
+    paymentStage: "",
+    storyPath: "/tmib/act-001#ep02-preview",
+    checkoutPath: null,
+    status: "live",
+    purchasable: false,
+    membershipIncluded: false,
+    freePublic: true,
+    frames: PUBLIC_FRAMES,
+  }),
+  "act-001-ep03": Object.freeze({
+    id: "act-001-ep03",
+    actLabel: "ACT 001",
+    title: "เรื่องที่ HITO อยากให้เพื่อนรู้",
+    priceThb: 0,
+    packageCode: "",
+    paymentStage: "",
+    storyPath: "/tmib/act-001#ep03-preview",
+    checkoutPath: null,
+    status: "live",
+    purchasable: false,
+    membershipIncluded: false,
+    freePublic: true,
+    frames: PUBLIC_FRAMES,
   }),
 });
 
@@ -42,6 +90,7 @@ export function publicTmibEpisodeMetadata(value) {
     status: episode.status,
     purchasable: episode.purchasable === true,
     membership_included: episode.membershipIncluded === true,
+    free_public: episode.freePublic === true,
     story_path: episode.storyPath,
     checkout_path: episode.checkoutPath,
   });
