@@ -1,3 +1,5 @@
+import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
+import { resolveCanonicalRenewalOffer, renewalPriceForSpend } from "./renewal-offer.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 
 const PATH = "/__internal/kenji/member-truth";
@@ -11,7 +13,7 @@ const TIMEOUT_MS = 2500;
 const ENTITLEMENT_TIMEOUT_MS = 900;
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
-const EXPLICIT_INTENTS = new Set(["membership_status", "points_status"]);
+const EXPLICIT_INTENTS = new Set(["membership_status", "points_status", "rights_check"]);
 
 const CAPABILITY_PRIORITY = Object.freeze([
   "black_card",
@@ -131,7 +133,7 @@ async function readCanonicalMemberProfile(env, lineUserId) {
       ? data.entitlement_snapshot
       : (isPlainObject(profile?.entitlement_snapshot) ? profile.entitlement_snapshot : null);
     if (!profile || !snapshot) return null;
-    return { profile, snapshot };
+    return { profile, snapshot, memberId: text(data.member_id) };
   } catch {
     return null;
   } finally {
@@ -342,6 +344,22 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
   const projection = projectKenjiLineMemberTruth(resolved || {});
   if (!projection) {
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
+  }
+  if (intent === "rights_check") {
+    const context = await readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true });
+    projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance)
+      ? { status: "verified", active_points: context.confirmedBalance, authority: "canonical_paid_points_source_guard_v1" }
+      : { status: "unavailable", active_points: null };
+    projection.renewal = { status: "review_required", reason: "verified_service_spend_required" };
+    const m = projection.former_private_membership || projection.membership;
+    const packageCode = { private_standard: "standard", private_premium: "premium" }[m.level];
+    if (packageCode && m.expire_at && !projection.membership.member_blocked && context.serviceSpendVerified === true) {
+      projection.renewal = await resolveCanonicalRenewalOffer({ ...env, RENEWAL_OFFER_RESOLVER: { resolve: async () => ({
+        status: "ready", ...renewalPriceForSpend(packageCode, context.serviceSpend365Thb), history_status: "verified", discount_verified: true,
+      }) } }, { liff_intent: "renew", member_exists: true, line_user_id: lineUserId,
+        member_profile: { tier: packageCode, membership_expires_at: m.expire_at } });
+    }
+    if (["vip", "svip", "black_card"].includes(m.level)) projection.renewal = { status: "review_required", reason: "protected_tier_owner_review" };
   }
   return json(projection);
 }
