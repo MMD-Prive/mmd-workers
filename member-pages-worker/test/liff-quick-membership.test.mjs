@@ -5,7 +5,7 @@ import vm from "node:vm";
 const source = readFileSync(new URL("../src/liff-member-shell.js", import.meta.url), "utf8");
 const functions = source.slice(source.indexOf("  async function readOwnHistoryPreview("), source.indexOf("  function requestId()"));
 function setup(membership, profileResponse) {
-  const nodes = { "profile-tier": { textContent: "SVIP" }, "profile-status": { textContent: "checking" }, "profile-points": { textContent: "—" } };
+  const nodes = { "minimal-member-display":{hidden:true}, "minimal-member-expiry":{textContent:"—"}, "minimal-member-points":{textContent:"12.5 คะแนนประมาณการ"}, "profile-tier": { textContent: "SVIP" }, "profile-status": { textContent: "checking" }, "profile-points": { textContent: "—" } };
   const calls = [];
   const context = vm.createContext({
     fetch: async path => { calls.push(path); return path === "/api/member/app/membership" ? Response.json(membership) : profileResponse; },
@@ -27,6 +27,9 @@ test("canonical membership renders before the full profile completes", async () 
   assert.equal(h.nodes["profile-tier"].textContent, "Premium");
   assert.equal(h.nodes["profile-status"].textContent, "expired · ถึง 2026-09-01");
   assert.equal(h.nodes["profile-points"].textContent, "—");
+  assert.equal(h.nodes["minimal-member-display"].hidden,false);
+  assert.equal(h.nodes["minimal-member-expiry"].textContent,"2026-09-01");
+  assert.equal(h.nodes["minimal-member-points"].textContent,"12.5 คะแนนประมาณการ");
   assert.deepEqual(h.calls, ["/api/member/app/membership", "/member/api/liff/profile"]);
   release(Response.json({ ok:true, data:{} })); await full;
 });
@@ -46,3 +49,4 @@ test("active canonical status carries its authoritative expiry", async () => {
   assert.equal(h.nodes["profile-tier"].textContent, "VIP");
   assert.equal(h.nodes["profile-status"].textContent, "active · ถึง 2027-01-01");
 });
+test('missing expiry leaves an independently supported provisional points field visible',async()=>{const h=setup({level:'svip',levelVerified:true,status:'active'},null);await h.context.readQuickMembershipStatus();assert.equal(h.nodes['minimal-member-expiry'].textContent,'—');assert.equal(h.nodes['minimal-member-points'].textContent,'12.5 คะแนนประมาณการ');assert.equal(h.nodes['profile-tier'].textContent,'SVIP');assert.equal(h.nodes['minimal-member-display'].hidden,false);});

@@ -27,7 +27,9 @@ export async function handleMemberHistoryPreview(request, env = {}, dependencies
     const preview = await load();
     if (!preview) return respond(503, null, "history_preview_pending");
     const result = preview.lookupOwnHistory({provider:"line", isVerified:true, lineUserId:session.lineUserId});
-    return respond(result.statusCode, result.data, result.statusCode === 404 ? "history_evidence_missing" : null);
+    const data = result.data ? {...result.data, notice:"ข้อมูลยังแสดงไม่ครบ", historyCompleteness:"partial",
+      fieldStatus:{points:result.data.historyState === "preliminary_review" ? "provisional" : result.data.historyState === "identity_review" ? "identity_review" : "missing_evidence"}} : null;
+    return respond(result.statusCode, data, result.statusCode === 404 ? "history_evidence_missing" : null);
   } catch {
     return respond(503, null, "history_preview_pending");
   }
