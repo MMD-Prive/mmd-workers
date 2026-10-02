@@ -37,7 +37,7 @@ test("signed renewal links redirect to canonical signed SIGIL Pay only", () => {
 test("unsigned renewal links redirect to canonical renewal entry and preserve safe context only", () => {
   assert.equal(
     resolveRenewalRedirect("https://mmdbkk.com/sigil/pay/renewal?package=premium&promo=CARE&amount=5000&payment_ref=BAD"),
-    "https://mmdbkk.com/sigil/member/membership?intent=renew&package=premium&promo=CARE",
+    "https://mmdbkk.com/sigil/member/membership?intent=renew&world=private&package=premium&promo=CARE",
   );
 });
 
@@ -49,7 +49,7 @@ test("all renewal hosts return redirect-only responses with canonical owner head
     assert.equal(response.headers.get("x-mmd-page"), "sigil-pay-renewal");
     assert.equal(response.headers.get("x-mmd-route-source"), "member-dashboard-chat-worker:renewal-redirect-bridge");
     assert.equal(response.headers.get("x-mmd-upstream-source"), "redirect-bridge");
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/member/membership?intent=renew");
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/member/membership?intent=renew&world=private");
     assert.equal(await response.text(), "");
   }
 });
@@ -80,4 +80,14 @@ test("production entrypoint redirects renewal before unrelated routes", async ()
 test("header helper exposes redirect bridge and no rendered upstream", () => {
   const headers = renewalHeaders();
   assert.equal(headers["x-mmd-upstream-source"], "redirect-bridge");
+});
+
+ test("renewal entry preserves Private world even with conflicting browser context", () => {
+  for (const world of ["private", "public", "unknown", ""]) {
+    const target = new URL(resolveRenewalRedirect(`https://mmdbkk.com/pay/renewal?world=${world}&amount=1&member_id=bad`));
+    assert.equal(target.searchParams.get("world"), "private");
+    assert.equal(target.searchParams.get("intent"), "renew");
+    assert.equal(target.searchParams.has("amount"), false);
+    assert.equal(target.searchParams.has("member_id"), false);
+  }
 });

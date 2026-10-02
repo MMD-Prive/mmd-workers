@@ -108,6 +108,7 @@ test("LINE slip intake creates a pending Payment Proof visible in the admin revi
   };
 
   const intake = await processPaymentSlipImage({
+    now: new Date("2026-09-05T10:00:00.000Z"),
     event: {
       source: { userId: "U-line-test" },
       message: { id: "line-message-001", type: "image" },

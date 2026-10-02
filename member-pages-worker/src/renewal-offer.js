@@ -1,4 +1,5 @@
 import { readClientBackedHistoryResult } from "./member-app-client-history.js";
+import { currentPrivateMembershipPromotion, privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
 
 const WINDOW_DAYS = 365;
 const PACKAGE_POLICY = Object.freeze({
@@ -55,13 +56,18 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
 
   const packageCode = canonicalRenewalPackageFromTier(session?.member_profile?.tier);
   if (!packageCode) return { status: "review_required", reason: "renewal_current_package_not_supported" };
+  const timing = privateRenewalTiming(session?.member_profile?.membership_expires_at, now);
+  if (timing?.expired_over_one_year) return {status:"review_required", classification:"new_signup", reason:"renewal_expired_over_one_year_new_signup_required"};
+  const promotion = currentPrivateMembershipPromotion({package_code:packageCode, verified_at:now.toISOString(), action:"renewal", existing_member:true});
+  const term = promotion?.total_years === 2 ? {membership_years:2, membership_start_at:timing?.start_at, membership_term_source:promotion.code} : {};
 
   const lineUserId = canonicalLineId(session?.line_user_id);
   if (!lineUserId) return { status: "review_required", reason: "renewal_line_identity_required" };
 
   const injected = env.RENEWAL_OFFER_RESOLVER;
   if (injected && typeof injected.resolve === "function") {
-    return sanitizeInjectedOffer(await injected.resolve({ line_user_id: lineUserId, package_code: packageCode, now }), packageCode);
+    const offer = sanitizeInjectedOffer(await injected.resolve({ line_user_id: lineUserId, package_code: packageCode, now }), packageCode);
+    return offer.status === "ready" ? {...offer,...term} : offer;
   }
 
   const base = renewalPriceForSpend(packageCode, 0);
@@ -73,6 +79,7 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
       history_status: "checking",
       discount_verified: false,
       price_rule: `${base.price_rule}_history_unavailable`,
+      ...term,
     };
   }
 
@@ -89,6 +96,7 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
     ...renewalPriceForSpend(packageCode, spend),
     history_status: "verified",
     discount_verified: true,
+    ...term,
   };
 }
 

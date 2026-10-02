@@ -121,3 +121,39 @@ test('unavailable canonical data remains an error, never a ready item', async ()
   assert.equal(result.can_approve, false);
   assert.ok(result.context_issues.includes('review_context_unavailable'));
 });
+
+for (const status of ['pending_review', 'under_review']) {
+  test(`${status} proof appears in the manual queue without settlement`, async () => {
+    const methods = [];
+    const proof = { id: 'rec-proof', fields: {
+      proof_id: proofId, status, amount_thb: 1000, payment_ref: 'pay-test',
+      payment: ['rec-pay'], note: `schema=mmd_web_payment_proof_v1; r2_key=${key}`,
+    } };
+    const env = {
+      AIRTABLE_BASE_ID: 'app-test', AIRTABLE_API_KEY: 'fixture',
+      AIRTABLE_HTTP: { fetch: async (url, init) => {
+        methods.push(url.method || init?.method || 'GET');
+        const formula = new URL(url.url || url).searchParams.get('filterByFormula');
+        assert.ok(formula.includes(`{status}='${status}'`));
+        return Response.json({ records: [proof] });
+      } },
+      PAYMENTS_WORKER: { fetch: () => { throw new Error('queue must never settle'); } },
+    };
+    const response = await handlePaymentReviewRequest(new Request('https://mmdbkk.com/v1/admin/payments/review-queue'), env, actor);
+    assert.equal(response.status, 200);
+    const items = (await response.json()).items;
+    assert.equal(items.length, 1);
+    assert.equal(items[0].status, status);
+    assert.equal(items[0].reviewable, true);
+    assert.deepEqual(methods, ['GET']);
+  });
+}
+
+test('settled and rejected proofs cannot reenter manual approval through the queue', async () => {
+  for (const status of ['approved', 'verified', 'rejected', 'cancelled']) {
+    const { env } = envFor(`schema=mmd_web_payment_proof_v1; r2_key=${key}`);
+    env.AIRTABLE_HTTP.fetch = async () => Response.json({ records: [{ id: 'rec-proof', fields: { proof_id: proofId, status, amount_thb: 1000 } }] });
+    const response = await handlePaymentReviewRequest(new Request('https://mmdbkk.com/v1/admin/payments/review-queue'), env, actor);
+    assert.deepEqual((await response.json()).items, []);
+  }
+});

@@ -421,17 +421,23 @@ async function createPendingProof(env = {}, evidence = {}) {
   const extraction = analysis.extraction || {};
   const links = analysis.links || {};
   const opsRoute = analysis.ops_route || evidence.paymentOpsRoute || classifyPaymentOpsRoute({ source_context: evidence.sourceContext, context_text: evidence.paymentContextText });
-  const ownerPolicyVerified = membershipPaymentAcceptedByOwnerPolicy({ route: opsRoute, extraction, contextText: evidence.paymentContextText });
   const identityReady = Boolean(asString(links.member) || asString(links.client) || asString(links.renewal));
+  const membershipBound = Boolean(asString(links.member) || asString(links.renewal));
+  const canonicalPaymentBound = analysis.canonical_payment?.status === "exact" && Boolean(asString(analysis.canonical_payment?.payment_ref));
+  // Evidence can be retained before identity/binding. A Client link by itself
+  // cannot certify a membership payment or authorize an entitlement.
+  const ownerPolicyVerified = identityReady && (membershipBound || canonicalPaymentBound)
+    && membershipPaymentAcceptedByOwnerPolicy({ route: opsRoute, extraction, contextText: evidence.paymentContextText });
   const packageReady = Boolean(asString(analysis.payment_intelligence?.inferred_package_code));
   const explicitMembershipIntent = hasMembershipPaymentContext(evidence.paymentContextText);
-  const mayExtendMembership = ownerPolicyVerified && identityReady && packageReady && (Boolean(asString(links.renewal)) || explicitMembershipIntent);
+  const mayExtendMembership = ownerPolicyVerified && membershipBound && packageReady && (Boolean(asString(links.renewal)) || explicitMembershipIntent);
   const noteValue = {
     schema: "line_payment_evidence_v4",
     evidence_only: !ownerPolicyVerified,
     source_type: evidence.sourceType,
     source_context: evidence.sourceContext || null,
     identity_match: evidence.identityMatch || analysis.customer?.source || "unresolved",
+    identity_binding_review_required: !membershipBound,
     sender_display_name: evidence.payerName || analysis.customer?.display_name || extraction.payer_name || null,
     source_group_hash: evidence.groupHash || null,
     source_user_hash: evidence.userHash || null,
@@ -474,7 +480,7 @@ async function createPendingProof(env = {}, evidence = {}) {
       ? { status: "official_verify_required", authority: "payments-worker" }
       : mayExtendMembership
         ? { status: "pending", authority: "payments-worker" }
-        : { status: "review_required", reason: identityReady ? "membership_package_unresolved" : "canonical_identity_unresolved" },
+        : { status: "review_required", reason: !membershipBound ? "canonical_identity_binding_manual_review_required" : "membership_package_unresolved" },
   };
   // Never persist a verified proof before the authoritative Payments write-through succeeds.
   const fields = { proof_id: evidence.proofId, channel: "line_ofc", note: JSON.stringify(noteValue), status: "pending" };
@@ -1137,6 +1143,7 @@ export default {
 };
 
 export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
+  createPendingProof,
   alertsOpsThreadId,
   captureDirectUserImageEvidence,
   captureGroupImageEvidence,

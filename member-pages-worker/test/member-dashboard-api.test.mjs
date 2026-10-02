@@ -164,7 +164,7 @@ async function memberAppMembership(runtime, cookie) {
 }
 
 describe("member dashboard Phase 1 API", () => {
-  it("returns verified tier, non-zero points, history, and safe action URLs", async () => {
+  it("returns verified tier/history but holds profile-only points without money truth", async () => {
     const runtime = env();
     const cookie = await startSession(runtime);
     const { response, payload } = await dashboard(runtime, cookie);
@@ -173,20 +173,21 @@ describe("member dashboard Phase 1 API", () => {
     assert.equal(payload.ok, true);
     assert.equal(payload.data.dashboard_state, "ready");
     assert.deepEqual(payload.data.member.tier, { value: "Premium", status: "verified", source: "member_profile_resolver" });
-    assert.deepEqual(payload.data.points, { value: 125, status: "verified", source: "points_ledger", records_count: 2 });
+    assert.equal(payload.data.points.value, null);
+    assert.equal(payload.data.points.status, "checking");
     assert.equal(payload.data.history.status, "verified");
     assert.equal(payload.data.payment_history.status, "verified_history");
     assert.equal(payload.data.actions.dashboard_url, "/member/dashboard?t=abc&code=c&promo=p&source=line&invite=i");
     assert.doesNotMatch(JSON.stringify(payload), /unsafe|evil|payment_status|payment_ref|grants|SVIP|svip|internal_note/i);
   });
 
-  it("returns genuine zero points only when the ledger count is resolved", async () => {
+  it("does not certify profile zero from ledger count without a source read", async () => {
     const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ profile: profileFixture({ points: 0, points_records_count: 0, history: [], payment_history: [] }) }) });
     const cookie = await startSession(runtime);
     const { payload } = await dashboard(runtime, cookie);
 
-    assert.equal(payload.data.points.status, "verified");
-    assert.equal(payload.data.points.value, 0);
+    assert.equal(payload.data.points.status, "checking");
+    assert.equal(payload.data.points.value, null);
     assert.equal(payload.data.points.records_count, 0);
     assert.equal(payload.data.history.status, "empty");
   });
@@ -324,7 +325,8 @@ it("refreshes an existing Premium session after status, tier and points change",
   const first = await dashboard(runtime, cookie);
   assert.equal(first.payload.data.member.tier.value, "Standard");
   assert.equal(first.payload.data.member.membership_status.value, "expired");
-  assert.equal(first.payload.data.points.value, 47);
+  assert.equal(first.payload.data.points.value, null);
+  assert.equal(first.payload.data.points.status, "checking");
   const response = await worker.fetch(new Request("https://mmdbkk.com/api/member/app/profile", {
     headers: { origin: "https://mmdbkk.com", cookie: first.response.headers.get("set-cookie").split(";")[0] },
   }), runtime);
@@ -332,7 +334,7 @@ it("refreshes an existing Premium session after status, tier and points change",
   assert.equal(profile.match_state, "matched");
   assert.equal(profile.membership_tier, "standard");
   assert.equal(profile.membership_status, "expired");
-  assert.equal(profile.points_confirmed, 47);
+  assert.equal(profile.points_confirmed, null);
   assert.equal(profile.active_through, null); // legacy expiry is not proven for an expired package
   assert.equal(profile.actual_access, "restricted");
 });

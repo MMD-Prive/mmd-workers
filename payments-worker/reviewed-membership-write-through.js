@@ -1,6 +1,6 @@
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { inferMembershipPayment } from "../shared/payment-intelligence.mjs";
-import { applyMembershipPromotion, currentPrivateMembershipPromotion } from "../shared/membership-promotion-policy.mjs";
+import { applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -40,7 +40,7 @@ export async function reconcileReviewedMembershipEntitlement(request, response, 
 
   try {
     requireAirtable(env);
-    const plan = await resolveWriteThroughPlan(env, body);
+    const plan = await resolveWriteThroughPlan(env, body, {verified_at:iso(payload.paid_at) || undefined});
     if (plan.status !== "ready") {
       return withReceipt(response, payload, {
         status: "review_required",
@@ -65,7 +65,11 @@ export async function reconcileReviewedMembershipEntitlement(request, response, 
         return withReceipt(response, payload, failedReceipt("payment_entitlement_conflict", plan));
       }
       const existingExpiry = iso(row.fields?.expire_at);
-      if (plan.promotion && existingExpiry && existingExpiry !== plan.proposed_expire_at) {
+      if (plan.promotion?.total_years === 2 && existingExpiry) {
+        // A retry is not authorization to backfill a historical paid term.
+        plan.proposed_expire_at = existingExpiry;
+        plan.membership_expiry_rule = text(row.fields?.membership_expiry_rule, 180) || plan.membership_expiry_rule;
+      } else if (plan.promotion && existingExpiry && existingExpiry !== plan.proposed_expire_at) {
         const existingRule = text(row.fields?.membership_expiry_rule, 180);
         if (!existingRule.includes(plan.promotion.code) && Date.parse(existingExpiry) < Date.parse(plan.proposed_expire_at)) {
           await airtableUpdate(env, entitlementsTable(env), row.id, {
@@ -157,6 +161,7 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
   }
 
   const member = members[0];
+  if (isProtectedPrivateMembership(member.fields?.["Membership Tier"] || member.fields?.tier)) return review("protected_membership_manual_review_required", {package_code:packageCode});
   const memberId = text(member.fields?.member_id, 120);
   if (!memberId) {
     return review("canonical_member_id_required", { package_code: packageCode, capability: policy.capability, confidence: inference.confidence });
@@ -173,6 +178,7 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
 
   const priorRows = rows.filter((row) => text(row?.fields?.payment_ref, 180) !== paymentRef);
   const planningSnapshot = resolveMemberEntitlements(priorRows, { now: verifiedAt });
+  if (priorRows.some(row => [row.fields?.entitlement_level,row.fields?.package_code,row.fields?.capability].some(isProtectedPrivateMembership))) return review("protected_membership_manual_review_required", {package_code:packageCode});
   const normalizedRows = planningSnapshot.entitlements.filter((item) => item.package_code === packageCode || item.capability === policy.capability);
   const exactPackageRows = normalizedRows.filter((item) => canonicalPackage(item.package_code) === packageCode);
   const hasExactHistory = exactPackageRows.length > 0;
@@ -188,11 +194,13 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
   }
 
   const futureExpiry = latestFutureExpiry(exactPackageRows, verifiedAt);
-  const action = hasExactHistory ? "renewal" : "signup";
-  const startAt = futureExpiry || verifiedAt;
+  const timing = privateRenewalTiming(futureExpiry || latestHistoricalExpiry(exactPackageRows), verifiedAt);
+  if (hasExactHistory && timing?.expired_over_one_year && inferredIntent === "renewal") return review("expired_over_one_year_new_signup_required", {package_code:packageCode, action:"signup"});
+  const action = hasExactHistory && !timing?.expired_over_one_year ? "renewal" : "signup";
+  const startAt = timing?.start_at || verifiedAt;
   const baseExpireAt = addCalendarYears(startAt, policy.years)?.toISOString() || "";
-  const promotion = currentPrivateMembershipPromotion({ package_code: packageCode, verified_at: verifiedAt, action });
-  const promotedExpireAt = applyMembershipPromotion(baseExpireAt, promotion);
+  const promotion = currentPrivateMembershipPromotion({ package_code: packageCode, verified_at: verifiedAt, action, existing_member:hasExactHistory });
+  const promotedExpireAt = applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt});
   const expireAt = (promotedExpireAt || (baseExpireAt ? new Date(baseExpireAt) : null))?.toISOString() || "";
   if (!expireAt) return review("membership_term_invalid", { package_code: packageCode, capability: policy.capability, action, confidence: inference.confidence });
 
@@ -220,10 +228,12 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     current_expire_at: futureExpiry || latestHistoricalExpiry(exactPackageRows) || null,
     start_at: startAt,
     proposed_expire_at: expireAt,
-    membership_term: promotion
+    membership_term: promotion?.total_years === 2 ? "2_years" : promotion
       ? `${policy.years === 2 ? "2_years" : "1_year"}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
       : policy.years === 2 ? "2_years" : "1_year",
-    membership_expiry_rule: action === "renewal" && futureExpiry
+    membership_expiry_rule: promotion?.total_years === 2
+      ? `2_years_from_${futureExpiry ? "current_expiry" : "verified_payment"}_${promotion.code}`
+      : action === "renewal" && futureExpiry
       ? `${policy.years}_year${policy.years === 1 ? "" : "s"}_from_current_expiry${promotion ? `_plus_${promotion.code}` : ""}`
       : `${policy.years}_year${policy.years === 1 ? "" : "s"}_from_verified_payment${promotion ? `_plus_${promotion.code}` : ""}`,
     promotion,

@@ -62,6 +62,9 @@ export function resolveRenewalRedirect(requestUrl) {
 
   const target = new URL(RENEWAL_ENTRY_PATH, CANONICAL_ORIGIN);
   target.searchParams.set("intent", "renew");
+  // This compatibility family is Private membership; Public purchases have
+  // their own entry. Never let browser context switch a renewal to Public.
+  target.searchParams.set("world", "private");
 
   for (const [key, value] of source.searchParams.entries()) {
     if (SAFE_ENTRY_PARAMS.has(key) && value) target.searchParams.set(key, value);

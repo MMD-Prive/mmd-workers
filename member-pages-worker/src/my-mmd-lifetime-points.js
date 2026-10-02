@@ -1,9 +1,6 @@
 import { readMemberAppSession } from "./member-app-api.js";
 import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
-import {
-  lifetimePointsFromPreload,
-  readMemberHistoryPreload,
-} from "./member-history-preload.js";
+import { guardPointsDisplaySources, paymentRefsForPoints } from "./points-display-source-guard.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -40,20 +37,11 @@ export function isMyMmdLifetimePointsPath(requestOrUrl) {
 
 export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
   if (!(request instanceof Request) || request.method !== "GET" || !isMyMmdLifetimePointsPath(request)) return null;
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return null;
-  const session = await readMemberAppSession(request, env);
-  if (!session?.memberId || !session?.lineUserId) return null;
-
+  const unavailable = { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return unavailable;
   try {
-    try {
-      const preload = await readMemberHistoryPreload(env, session.lineUserId);
-      // The preload projection only contains a lifetime aggregate and cannot
-      // represent lot expiry. Read the ledger below so each entry is aged
-      // from its own posted/entered date.
-    } catch (error) {
-      console.warn({ event: "my_mmd_points_preload_lookup_failed", failure_class: safeFailure(error) });
-    }
-
+    const session = await readMemberAppSession(request, env);
+    if (!session?.memberId || !session?.lineUserId) return unavailable;
     const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
     const recoveryState = normalizeToken(recoveryStatus?.state);
     if (["checking", "in_progress", "review_required"].includes(recoveryState)) {
@@ -64,32 +52,50 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
     }
 
     const member = await resolveMember(env, session.memberId);
-    if (!member) return null;
+    if (!member) return unavailable;
     const formula = pointsFormula(member.memberId, member.email);
-    if (!formula) return null;
+    if (!formula) return unavailable;
     const records = await airtableList(env, env.AIRTABLE_TABLE_POINTS_LEDGER || POINTS_LEDGER_TABLE, {
       filterByFormula: formula,
       maxRecords: MAX_RECORDS,
     });
+    const refs = paymentRefsForPoints(records);
+    const payments = [];
+    // Bound each formula and fail closed rather than falling back to profile
+    // points if canonical Payments cannot be read completely.
+    for (let offset = 0; offset < refs.length; offset += 40) {
+      const clauses = refs.slice(offset, offset + 40).map(ref => `{Payment Reference}=${formulaString(ref)}`);
+      payments.push(...await airtableList(env, env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", {
+        filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: MAX_RECORDS,
+      }));
+    }
+    const guarded = guardPointsDisplaySources(records, payments);
+    if (guarded.state !== "verified") return {
+      ...unavailable, sourceReviewRequired: true, historicalPoints: guarded.historicalPoints,
+    };
     return {
-      ...summarizeLifetimePoints(records),
+      ...summarizeLifetimePoints(guarded.verifiedRecords),
+      historicalPoints: guarded.historicalPoints,
+      sourceVerified: true,
       recoveryState: normalizeToken(recoveryStatus?.state) || null,
       pointsRecoveryPending: false,
     };
   } catch (error) {
     console.warn({ event: "my_mmd_lifetime_points_lookup_failed", failure_class: safeFailure(error) });
-    return null;
+    return unavailable;
   }
 }
 
 export async function applyMyMmdLifetimePointsResponse(request, response, context) {
-  if (!(response instanceof Response) || !context || !response.ok || !isMyMmdLifetimePointsPath(request)) return response;
+  if (!(response instanceof Response) || !response.ok || !isMyMmdLifetimePointsPath(request)) return response;
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("application/json")) return response;
   const payload = await response.clone().json().catch(() => null);
   if (!payload || typeof payload !== "object") return response;
   const path = new URL(request.url).pathname;
-  const patched = patchLifetimePointsPayload(path, payload, context);
+  const safeContext = context?.sourceVerified === true || context?.pointsRecoveryPending || context?.state === "blocked"
+    ? context : { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
+  const patched = patchLifetimePointsPayload(path, payload, safeContext);
   if (JSON.stringify(patched) === JSON.stringify(payload)) return response;
   const headers = new Headers(response.headers);
   headers.delete("content-length");
@@ -160,7 +166,7 @@ export function patchLifetimePointsPayload(path, payload, summary) {
     return patchPendingLifetimePointsPayload(path, payload);
   }
   if (normalizeToken(summary?.recoveryState) === "blocked" || summary?.state === "blocked") {
-    return patchBlockedLifetimePointsPayload(path, payload);
+    return patchBlockedLifetimePointsPayload(path, patchPendingLifetimePointsPayload(path, payload));
   }
 
   const safeSummary = {
@@ -418,6 +424,7 @@ async function airtableList(env, table, { filterByFormula = "", maxRecords = MAX
       clearTimeout(timeout);
     }
   } while (offset && records.length < maxRecords);
+  if (offset) throw new Error("points_source_read_incomplete");
   return records;
 }
 

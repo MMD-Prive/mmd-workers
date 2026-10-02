@@ -197,9 +197,9 @@ test("email-less canonical LINE recovery materializes entitlement only after tru
   assert.equal(result.context_source, "liff_renewal_recovery");
   assert.equal(result.recovery_context, true);
   assert.equal(result.entitlement_materialized, true);
-  assert.equal(result.membership_expire_at, "2029-09-07T15:16:21.000Z");
-  assert.equal(result.membership_term, "2_years_plus_1_year");
-  assert.equal(result.membership_promotion.code, "care_back_private_premium_2026");
+  assert.equal(result.membership_expire_at, "2028-09-07T15:16:21.000Z");
+  assert.equal(result.membership_term, "2_years");
+  assert.equal(result.membership_promotion.code, "private_premium_two_year_term_2026");
   assert.equal(notifyCalls, 1);
 
   assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 1);
@@ -227,7 +227,7 @@ test("member dashboard service may settle only a canonical LINE OFC membership p
   assert.equal(response.status, 200);
   assert.equal(result.ok, true);
   assert.equal(result.entitlement_materialized, true);
-  assert.equal(result.membership_promotion.code, "care_back_private_premium_2026");
+  assert.equal(result.membership_promotion.code, "private_premium_two_year_term_2026");
 });
 
 test("LINE OFC settlement source rejects callers without the service identity", async () => {
@@ -246,4 +246,12 @@ test("email-less recovery does not materialize entitlement if trusted notify fai
   assert.equal(result.ok, false);
   assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 0);
   assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status, "pending");
+});
+
+test('active recovered renewal adds exactly two years to existing expiry',async()=>{
+  const h=harness();h.tables['tblNImdF9PKAxhXGi'].push({id:'recExisting',fields:{member_id:'inn',line_user_id:LINE_ID,package_code:'premium',expire_at:'2027-03-15T10:00:00Z',payment_ref:'OLDER'}});
+  const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const data=await response.json();assert.equal(response.status,200);assert.equal(data.membership_expire_at,'2029-03-15T10:00:00.000Z');
+});
+test('protected recovered member never gets a Standard or Premium entitlement',async()=>{
+  for(const tier of ['VIP','SVIP','Black Card']){const h=harness();h.tables['tblgWc5VRon5o8Mhk'][0].fields['Membership Tier']=tier;const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));assert.equal(response.status,409);assert.equal(h.tables['tblNImdF9PKAxhXGi'].length,0);assert.equal(h.writes.length,0);}
 });
