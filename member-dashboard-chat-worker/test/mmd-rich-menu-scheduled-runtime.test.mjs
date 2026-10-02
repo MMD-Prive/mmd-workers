@@ -114,6 +114,7 @@ function installRichMenuFetch(specs, canonical, livePrivate) {
   return {
     calls,
     rows,
+    images,
     restore() { globalThis.fetch = originalFetch; },
   };
 }
@@ -266,7 +267,37 @@ test("prepare repairs wrong Guest and Public artwork once, leaving Private, defa
   const canonical = pngFixture(4096, 1);
   const wrong = pngFixture(4096, 2);
   const specs = menuSpecs(canonical);
-  for (const key of ["guest", "public"]) {
+  test("prepare may clone byte-exact approved prior LINE artwork when the Webflow source drifts", async () => {
+  const canonical = pngFixture(4096, 1);
+  const wrong = pngFixture(4096, 2);
+  const specs = menuSpecs(canonical);
+  specs.guest.repairName = specs.guest.name + " artwork-approved";
+  specs.guest.images = [{
+    url: "https://assets.example/guest.png",
+    bytes: canonical.byteLength,
+    sha256: sha256(canonical),
+  }];
+
+  const mock = installRichMenuFetch(
+    specs,
+    { guest: wrong, public: canonical, private: canonical },
+    { guest: wrong, public: canonical, private: canonical },
+  );
+  const priorSpec = { ...specs.guest, name: "MMD Guest prior-approved" };
+  mock.rows.push(menuRow("guest-prior-approved-id", priorSpec));
+  mock.images.set("guest-prior-approved-id", canonical);
+
+  try {
+    const result = await prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs });
+    assert.equal(result.menu_names.guest, specs.guest.repairName);
+    assert.deepEqual(mock.images.get("created-1"), canonical);
+    assert.ok(mock.calls.some((call) =>
+      call.method === "GET" && call.url.endsWith("/richmenu/guest-prior-approved-id/content")));
+  } finally {
+    mock.restore();
+  }
+});
+for (const key of ["guest", "public"]) {
     specs[key].repairName = `${specs[key].name} artwork-${sha256(canonical).slice(0, 8)}`;
     specs[key].images = [{
       url: `https://assets.example/${key}.png`,

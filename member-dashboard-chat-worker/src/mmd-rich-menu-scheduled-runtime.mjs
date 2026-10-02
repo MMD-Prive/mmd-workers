@@ -401,8 +401,38 @@ export async function auditMmdRichMenus(env, now = new Date(), menuSpecs = MENUS
     physical_tap_verified: false,
   };
 }
-async function createMenu(env, spec, name) {
-  const image = await imageFor(spec);
+async function approvedLineImageFallback(env, rows, key, spec) {
+  const prefix = key === "guest" ? "MMD Guest " : key === "public" ? "MMD Public " : key === "private" ? "MMD Private " : "";
+  const pinned = spec.images.map(imageSource).filter((source) =>
+    source.bytes > 0 && /^[a-f0-9]{64}$/.test(source.sha256));
+  if (!prefix || !pinned.length) return null;
+
+  for (const row of rows) {
+    const richMenuId = clean(row?.richMenuId);
+    if (!richMenuId || !clean(row?.name).startsWith(prefix)) continue;
+    const response = await fetch(`${LINE_DATA_API}/richmenu/${encodeURIComponent(richMenuId)}/content`, {
+      headers: lineHeaders(env),
+    }).catch(() => null);
+    if (!response?.ok) continue;
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_IMAGE_BYTES) continue;
+    const size = pngSize(buffer);
+    if (!size || size.width < 800 || size.width > 2500 || size.height < 250 || size.width / size.height < 1.45) continue;
+    const digest = await sha256Hex(buffer);
+    if (!pinned.some((source) => source.bytes === buffer.byteLength && source.sha256 === digest)) continue;
+    return { buffer, ...size };
+  }
+  return null;
+}
+
+async function createMenu(env, spec, name, rows = [], key = "") {
+  let image;
+  try {
+    image = await imageFor(spec);
+  } catch (sourceError) {
+    image = await approvedLineImageFallback(env, rows, key, spec);
+    if (!image) throw sourceError;
+  }
   const targetSpec = { ...spec, name };
   const created = await line(env, `${LINE_API}/richmenu`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft(targetSpec, image.width, image.height)) });
   const id = clean(created.body?.richMenuId); if (!id) throw new Error("rich_menu_id_missing");
@@ -440,11 +470,11 @@ async function ensureMenus(env, menuSpecs = MENUS, options = {}) {
         if (options.selectedNames) options.selectedNames[key] = spec.name;
         continue;
       }
-      out[key] = await createMenu(env, spec, spec.repairName);
+      out[key] = await createMenu(env, spec, spec.repairName, rows, key);
       if (options.selectedNames) options.selectedNames[key] = spec.repairName;
       continue;
     }
-    out[key] = await createMenu(env, spec, spec.name);
+    out[key] = await createMenu(env, spec, spec.name, rows, key);
     if (options.selectedNames) options.selectedNames[key] = spec.name;
   }
   return out;
