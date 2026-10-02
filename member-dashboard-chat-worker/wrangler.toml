@@ -21,6 +21,11 @@ service = "admin-worker"
 binding = "AI_WORKER"
 service = "ai-worker"
 
+# Canonical Organization-native Kenji AI shadow runtime. Delivery remains shadow-only.
+[[services]]
+binding = "KENJI_AI_WORKER"
+service = "mmd-kenji-ai"
+
 [[services]]
 binding = "MMS_WORKER"
 service = "mms-worker"

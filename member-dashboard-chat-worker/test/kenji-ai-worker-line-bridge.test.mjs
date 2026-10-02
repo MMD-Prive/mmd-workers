@@ -113,7 +113,7 @@ test("bridge calls Conversation Matrix through private service binding and emits
   assert.equal(result.shadow_only, true);
   assert.equal(result.customer_copy_changed, false);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "https://ai-worker.local/v1/ai/kenji/conversation-matrix");
+  assert.equal(calls[0].url, "https://mmd-kenji-ai.local/v1/ai/kenji/conversation-matrix");
   assert.equal(calls[0].headers["x-mmd-internal-call"], "true");
   assert.equal(calls[0].headers["x-mmd-service-binding"], "member-dashboard-chat-worker");
   assert.equal(calls[0].body.actor.role, "system");
@@ -182,7 +182,7 @@ test("missing ai-worker binding fails closed and never becomes SEARCHED_NO_MATCH
     event: userEvent(),
   });
   assert.equal(result.ok, false);
-  assert.equal(result.reason, "ai_worker_binding_missing");
+  assert.equal(result.reason, "kenji_ai_worker_binding_missing");
   assert.equal(result.note_ready, false);
   assert.equal(result.evidence_incomplete, true);
 });
