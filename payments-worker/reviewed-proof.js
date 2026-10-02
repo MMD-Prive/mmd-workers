@@ -1,4 +1,4 @@
-import { applyMembershipPromotion, currentPrivateMembershipPromotion } from "../shared/membership-promotion-policy.mjs";
+import { applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 
 const REVIEW_SOURCE = "payment_review_console";
 const LINE_OFC_SOURCE = "line_ofc_payment_ingress";
@@ -186,6 +186,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       line_ofc_payment_ingress: source === LINE_OFC_SOURCE,
       proof_id: proofId,
       evidence_record_id: proof.id,
+      paid_at: notifyBody.paid_at || payload.paid_at || null,
       context_source: recovery ? RECOVERY_CONTEXT : contextSource || undefined,
       recovery_context: Boolean(recovery),
       entitlement_materialized: Boolean(materialization?.entitlement_record_id),
@@ -221,6 +222,7 @@ async function validateEmailLessRecovery(env, input) {
     airtableGet(env, renewalTable(env), input.renewalRecordId),
   ]);
   const mf = member.fields || {};
+  if (isProtectedPrivateMembership(mf["Membership Tier"] || mf.tier)) throw httpError(409, "recovery_protected_membership_manual_review_required");
   const cf = client.fields || {};
   const rf = renewal.fields || {};
   // Canonical Members stores the LINE subject in `line_id`; Clients and LIFF
@@ -286,16 +288,26 @@ async function materializeRecoveredMembership(env, input) {
 
   const paidAtRaw = text(input.proof.fields?.paid_at || input.proof.fields?.["Payment Date"], 80);
   const paidAt = validDate(paidAtRaw) || new Date();
-  const startAt = new Date(paidAt);
+  const prior = await airtableList(env, entitlementsTable(env), {
+    filterByFormula:`OR({member_id}='${formulaValue(input.member_id)}',{line_user_id}='${formulaValue(input.line_user_id)}')`, maxRecords:200, requireComplete:true,
+  });
+  const own = prior.filter(row => row.fields?.payment_ref !== input.payment_ref && (text(row.fields?.member_id,120) === input.member_id || lineId(row.fields?.line_user_id) === input.line_user_id || linkedIds(row.fields?.member).includes(input.member_record_id)));
+  if (own.some(row => [row.fields?.entitlement_level,row.fields?.package_code,row.fields?.capability].some(isProtectedPrivateMembership))) throw httpError(409, "recovery_protected_membership_manual_review_required");
+  const exact = own.filter(row => canonicalPackage(row.fields?.package_code) === input.package_code);
+  const expiries = exact.map(row => validDate(row.fields?.expire_at)).filter(Boolean).sort((a,b)=>b-a);
+  const timing = privateRenewalTiming(expiries[0]?.toISOString(), paidAt);
+  if (timing?.expired_over_one_year) throw httpError(409, "recovery_expired_over_one_year_new_signup_required");
+  const startAt = new Date(timing?.start_at || paidAt);
   const membershipTerm = membershipTermForPackage(input.package_code, startAt);
   if (!membershipTerm) throw httpError(409, "recovery_membership_term_invalid");
-  const promotion = currentPrivateMembershipPromotion({ package_code: input.package_code, verified_at: paidAt.toISOString(), action: "renewal" });
-  const promotedExpireAt = applyMembershipPromotion(membershipTerm.expire_at, promotion);
+  const promotion = currentPrivateMembershipPromotion({ package_code: input.package_code, verified_at: paidAt.toISOString(), action: "renewal", existing_member:true });
+  const promotedExpireAt = applyMembershipPromotion(membershipTerm.expire_at, promotion, {start_at:startAt.toISOString()});
   const expireAt = promotedExpireAt || membershipTerm.expire_at;
-  const membershipExpiryRule = promotion
+  const membershipExpiryRule = promotion?.total_years === 2
+    ? `2_years_from_${expiries[0] && expiries[0] > paidAt ? "current_expiry" : "verified_payment"}_${promotion.code}` : promotion
     ? `${membershipTerm.membership_expiry_rule}_plus_${promotion.code}`
     : membershipTerm.membership_expiry_rule;
-  const membershipTermLabel = promotion
+  const membershipTermLabel = promotion?.total_years === 2 ? "2_years" : promotion
     ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
     : membershipTerm.membership_term;
   const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
@@ -306,6 +318,7 @@ async function materializeRecoveredMembership(env, input) {
     entitlement = await airtableCreate(env, entitlementsTable(env), {
       entitlement_id: `renewal_${code(input.payment_ref).slice(0, 80)}`,
       member: [input.member_record_id],
+      member_id: input.member_id,
       client: [input.client_record_id],
       line_user_id: input.line_user_id,
       member_status: input.package_code,
@@ -346,8 +359,8 @@ async function materializeRecoveredMembership(env, input) {
 
   return {
     entitlement_record_id: entitlement.id,
-    start_at: startAt.toISOString(),
-    expire_at: expireAt.toISOString(),
+    start_at: validDate(entitlement.fields?.start_at)?.toISOString() || startAt.toISOString(),
+    expire_at: validDate(entitlement.fields?.expire_at)?.toISOString() || expireAt.toISOString(),
     membership_term: membershipTermLabel,
     membership_expiry_rule: membershipExpiryRule,
     promotion,
@@ -370,6 +383,7 @@ async function airtableList(env, tableName, params = {}) {
   const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(request) : await fetch(request);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(payload.records)) throw httpError(response.status || 502, `airtable_${response.status || "malformed"}`);
+  if (params.requireComplete && payload.offset) throw httpError(409, "recovery_entitlement_history_incomplete");
   return payload.records;
 }
 
