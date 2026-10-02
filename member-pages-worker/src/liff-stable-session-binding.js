@@ -4,7 +4,7 @@ const SESSION_COOKIE = "__Host-mmd_liff_session";
 const READ_GRACE_MS = 30_000;
 const KV_GRACE_TTL_SECONDS = 60;
 const MIN_KV_TTL_SECONDS = 60;
-const MAX_SESSION_TTL_SECONDS = 15 * 60;
+const MAX_SESSION_TTL_SECONDS = 30 * 60;
 
 function normalizePath(value) {
   const path = String(value || "/").replace(/\/{2,}/g, "/");
