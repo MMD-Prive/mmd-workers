@@ -50,7 +50,9 @@ function isValidRecord(value) {
   if (typeof value.line_user_id !== "string" || !/^U[A-Za-z0-9_-]{20,80}$/.test(value.line_user_id)) return false;
   if (typeof value.identity_key !== "string" || !/^[a-f0-9]{64}$/.test(value.identity_key)) return false;
   if (!Number.isFinite(value.issued_at) || !Number.isFinite(value.expires_at)) return false;
-  return value.expires_at > value.issued_at
+  return value.issued_at > 0
+    && value.issued_at <= Date.now() + 1000
+    && value.expires_at > value.issued_at
     && value.expires_at - value.issued_at <= MAX_REMEMBERED_LOGIN_MS + 1000;
 }
 
