@@ -236,6 +236,8 @@ const jobBoardScript = `(() => {
   const openButton = $("job-board-open");
   let broadcastLink = "";
   let boardDestination = "";
+  let publishVersion = 0;
+  let publishing = false;
 
   function text(value) { return String(value || "").trim(); }
   function setStatus(message, bad) { status.textContent = message; status.className = "status " + (bad ? "bad" : "good"); }
@@ -249,9 +251,17 @@ const jobBoardScript = `(() => {
 
   async function publishBoard(event) {
     event.preventDefault();
+    if (publishing) return;
     const data = new FormData(form);
     const boardText = text(data.get("board_text"));
     if (!boardText) { setStatus("ใส่รายละเอียดงานก่อน", true); return; }
+    publishing = true;
+    ++publishVersion;
+    clearTimeout(copyButton.__mmdCopyTimer);
+    copyButton.textContent = copyButton.dataset.copyLabel || "Copy Link";
+    $("job-board-result").hidden = true;
+    $("job-board-link").textContent = "";
+    $("job-board-link").removeAttribute("href");
     publishButton.disabled = true;
     copyButton.disabled = true;
     openButton.disabled = true;
@@ -287,9 +297,10 @@ const jobBoardScript = `(() => {
       });
       const out = await res.json().catch(function() { return {}; });
       if (!res.ok || out.ok !== true || !out.broadcast_url) throw new Error(out.error || out.message || "job_board_publish_failed");
-      broadcastLink = String(out.broadcast_url);
+      const nextBroadcastLink = String(out.broadcast_url);
+      if (!nextBroadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
+      broadcastLink = nextBroadcastLink;
       boardDestination = String(out.board_destination || "");
-      if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
       $("job-board-link").textContent = broadcastLink;
       $("job-board-link").href = broadcastLink;
       $("job-board-result").hidden = false;
@@ -299,29 +310,38 @@ const jobBoardScript = `(() => {
     } catch (error) {
       setStatus("ยังลง Job Board ไม่สำเร็จ · " + niceError(error && error.message), true);
     } finally {
+      publishing = false;
       publishButton.disabled = false;
     }
   }
 
   form.addEventListener("submit", publishBoard);
   copyButton.addEventListener("click", async function() {
-    if (!broadcastLink) return;
+    if (!broadcastLink || publishing || copyButton.disabled) return;
+    const copiedLink = broadcastLink;
+    const copiedVersion = publishVersion;
     const originalLabel = copyButton.dataset.copyLabel || copyButton.textContent || "Copy Link";
     copyButton.dataset.copyLabel = originalLabel;
     clearTimeout(copyButton.__mmdCopyTimer);
+    copyButton.disabled = true;
     try {
-      await navigator.clipboard.writeText(broadcastLink);
+      await navigator.clipboard.writeText(copiedLink);
+      if (copiedVersion !== publishVersion) return;
       copyButton.textContent = "คัดลอกแล้ว ✓";
       copyButton.disabled = true;
       setStatus("คัดลอก Broadcast Link แล้ว", false);
       copyButton.__mmdCopyTimer = setTimeout(function() {
+        if (copiedVersion !== publishVersion) return;
         copyButton.textContent = copyButton.dataset.copyLabel || "Copy Link";
-        copyButton.disabled = false;
+        copyButton.disabled = publishing || !broadcastLink;
       }, 1800);
     } catch {
+      if (copiedVersion !== publishVersion) return;
+      copyButton.disabled = publishing || !broadcastLink;
       copyButton.textContent = "คัดลอกไม่สำเร็จ";
       setStatus("คัดลอกลิงก์ไม่สำเร็จ", true);
       copyButton.__mmdCopyTimer = setTimeout(function() {
+        if (copiedVersion !== publishVersion) return;
         copyButton.textContent = copyButton.dataset.copyLabel || "Copy Link";
       }, 1800);
     }
