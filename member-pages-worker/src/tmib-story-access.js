@@ -284,7 +284,7 @@ function catalogPayload(episode) {
     schema: "tmib_episode_catalog_v1",
     ...metadata,
     access_path: `${episodeRoot(episode)}/access`,
-    purchase_path: `${episodeRoot(episode)}/purchase`,
+    purchase_path: episode.purchasable === true ? `${episodeRoot(episode)}/purchase` : "",
   };
 }
 
