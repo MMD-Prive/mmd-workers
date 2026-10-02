@@ -99,3 +99,15 @@ test("committed fixture config cannot inherit production routes, services or dat
   assert.match(config, /LINE_FIXTURE_EMERGENCY_STOP = "true"/);
   assert.doesNotMatch(config, /\[\[?(?:env\.|services|kv_namespaces|r2_buckets|d1_databases)/);
 });
+test("fixture reserves at most ten sends even when the owner rearms", async () => {
+  const f = await fixture(); await f.arm("active");
+  for (let i = 0; i < 12; i++) { await f.arm("active"); await f.send(`limited-${i}`); }
+  assert.equal(f.replies.length, 10);
+  const receipt = await (await f.operator("/fixture/receipt")).json(); assert.equal(receipt.reply_attempts, 10);
+});
+test("expired operator arm prevents all sends and attempts", async () => {
+  const f = await fixture(); await f.arm("active");
+  const map = f.env.KENJI_MODEL_DEDUPE.get("fixture-owner-state-v1").map;
+  const control = map.get("fixture-control"); map.set("fixture-control", { ...control, expires_at: Date.now() - 1 });
+  await f.send(); assert.equal(f.replies.length, 0); assert.equal(map.get("fixture-attempts"), undefined);
+});

@@ -22,6 +22,8 @@ This harness proves only fixture handler/control/delivery behavior. It intention
 
 ## Acceptance
 
+An operator arm expires after15minutes. The isolated durable state reserves at most10LINE reply attempts total, including ambiguous transport failures; rearming or changing scenarios does not reset that cap. Expiry/cap/owner-takeover/emergency stop each suppress replies. These bounds do not disconnect the webhook or stop all inbound request billing: the agreed teardown remains required after the test.
+
 Owner sends เช็กสิทธิ์/ต่ออายุ: active, expired, new signup, unknown and protected VIP/SVIP/Blackcard scenarios. Check the test label, honest pending handling and synthetic review receipt. Confirm nonowner/group/unrelated/slip text never replies; invalid signature/destination and old/redelivered events fail closed; repeated event/ambiguous timeout do not retry; owner takeover and emergency stop win before delivery. There is no transfer, slip verification, approval, real membership grant or points mutation in this sandbox.
 
 Before any production pilot, finish the separate main integration review and main CI, real own-member field coverage read-only qualification, signed canonical intake acceptance, owner queue usability, and explicit production release approval. This draft does not authorize merge or deployment.

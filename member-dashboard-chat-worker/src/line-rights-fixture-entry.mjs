@@ -7,6 +7,9 @@ const clean = value => String(value ?? "").trim();
 const json = (value, status = 200) => Response.json(value, { status, headers: { "cache-control": "no-store" } });
 const stopped = env => clean(env.LINE_FIXTURE_EMERGENCY_STOP) !== "false";
 const SCENARIOS = new Set(["active", "expired", "new_signup", "unknown", "vip", "svip", "black_card"]);
+const MAX_REPLY_ATTEMPTS = 10;
+const armed = control => control?.all_kenji_mutations === false && control.line_oa_auto_reply === false
+  && control.owner_takeover === false && Number(control.expires_at) > Date.now();
 const hash = async value => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))].map(x => x.toString(16).padStart(2, "0")).join("");
 
 export function fixtureTruth(scenario = "unknown") {
@@ -33,15 +36,24 @@ export class LineRightsFixtureState extends KenjiModelIdempotency {
     if (path === "/campaign-lead/claim") return super.fetch(request);
     if (request.method !== "POST") return json({ ok: false }, 405);
     const current = await this.state.storage.get("fixture-control") || { scenario: "unknown", all_kenji_mutations: true, line_oa_auto_reply: true, owner_takeover: true };
-    if (path === "/fixture/read") return json({ control: current, matrix: await this.state.storage.get("fixture-matrix") || {}, delivered_count: await this.state.storage.get("fixture-delivered") || 0 });
+    if (path === "/fixture/read") return json({ control: current, matrix: await this.state.storage.get("fixture-matrix") || {}, delivered_count: await this.state.storage.get("fixture-delivered") || 0, reply_attempts: await this.state.storage.get("fixture-attempts") || 0 });
     const body = await request.json().catch(() => null);
     if (!body) return json({ ok: false }, 400);
     if (path === "/fixture/control") {
       const keys = ["scenario", "all_kenji_mutations", "line_oa_auto_reply", "owner_takeover"];
       if (Object.keys(body).some(key => !keys.includes(key)) || !SCENARIOS.has(body.scenario)
         || keys.slice(1).some(key => typeof body[key] !== "boolean")) return json({ ok: false }, 400);
-      await this.state.storage.put("fixture-control", body);
+      await this.state.storage.put("fixture-control", { ...body, expires_at: Date.now() + 15 * 60 * 1000 });
       return json({ ok: true, fixture_only: true });
+    }
+    if (path === "/fixture/reserve") {
+      const reserved = await this.state.storage.transaction(async txn => {
+        const control = await txn.get("fixture-control"), attempts = await txn.get("fixture-attempts") || 0;
+        if (!armed(control) || attempts >= MAX_REPLY_ATTEMPTS) return false;
+        await txn.put("fixture-attempts", attempts + 1);
+        return true;
+      });
+      return json({ reserved });
     }
     if (path === "/fixture/matrix") {
       const reason = clean(body.reason);
@@ -84,8 +96,9 @@ export async function handleFixtureRequest(request, env = {}, transports = {}) {
   if (!/^U[a-f0-9]{32}$/i.test(clean(env.LINE_FIXTURE_DESTINATION_ID)) || payload.destination !== env.LINE_FIXTURE_DESTINATION_ID) return json({ ok: false, reason: "test_oa_destination_mismatch" }, 403);
   if (!Array.isArray(payload.events) || payload.events.length > 10) return json({ ok: false }, 400);
   const runtime = async () => {
-    const { control } = await rpc("/fixture/read");
-    return { ok: true, controls: { all_kenji_mutations: stopped(env) || control.all_kenji_mutations !== false, line_oa_auto_reply: stopped(env) || control.line_oa_auto_reply !== false } };
+    const { control, reply_attempts } = await rpc("/fixture/read");
+    const blocked = stopped(env) || !armed(control) || reply_attempts >= MAX_REPLY_ATTEMPTS;
+    return { ok: true, controls: { all_kenji_mutations: blocked, line_oa_auto_reply: blocked } };
   };
   const services = {
     runtime,
@@ -98,6 +111,7 @@ export async function handleFixtureRequest(request, env = {}, transports = {}) {
       if (stopped(env) || !env.LINE_CHANNEL_ACCESS_TOKEN) return false;
       const fresh = await runtime();
       if (fresh.controls.all_kenji_mutations || fresh.controls.line_oa_auto_reply || (await services.takeover()).active) return false;
+      if ((await rpc("/fixture/reserve")).reserved !== true) return false;
       const response = await (transports.line || fetch)("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { authorization: `Bearer ${env.LINE_CHANNEL_ACCESS_TOKEN}`, "content-type": "application/json" }, body: JSON.stringify({ replyToken: event.replyToken, messages: [{ type: "text", text: `[STAGING — ข้อมูลจำลอง ไม่ใช่สิทธิ์จริง]\n${text}`.slice(0, 1600) }] }), signal: AbortSignal.timeout(3000) });
       return response.ok;
     },
