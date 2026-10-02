@@ -82,6 +82,7 @@ function queueVerifiedLiffSessionEvent(request, response, env, ctx) {
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coordinator.js";
+export { RememberedLoginDevice } from "./liff-remembered-login-device.js";
 
 export default {
   async fetch(request, env = {}, ctx) {
