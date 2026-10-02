@@ -49,6 +49,9 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /width="31" height="31"/);
       assert.match(html, /aria-label="เข้าสู่บอร์ดสมาชิก MY MMD"/);
       assert.match(html, /ENTER →/);
+      assert.match(html, /ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน/);
+      assert.match(html, /id="member-logout"/);
+      assert.match(html, /\/member\/api\/liff\/logout/);
       assert.match(html, /"world":"public"/);
       assert.match(html, /context-resolving/);
       assert.doesNotMatch(html, /<details id="per-letter"/);
