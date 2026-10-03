@@ -32,3 +32,9 @@ Before separately authorized publication:
 4. Paste the reviewed embed/head/body as one matched revision only after authorization, retaining `viewport-fit=cover` in the host page's viewport configuration. Test the actual Webflow shell, native mobile keyboard/safe-area and public/private boundaries before any publication decision.
 
 No merge, deployment, route change, Webflow edit/publication or live customer message was performed.
+
+## Compact page staging follow-up
+
+Use the main HTML embed, page-head CSS, page-footer JS and secondary `kenji-concierge-v3-shell.html` embed as a matched revision. The shell embed scopes body margin/duplicate global account badge suppression to this page and adds `viewport-fit=cover` to the existing viewport meta when absent. It does not change authentication or global code.
+
+The approved compact follow-up removes repeated hero/nav/explanatory blocks; one closed disclosure keeps essential eligibility/privacy/takeover limitations and historical anchors. Thai is the current page language. Proposed SEO/OG title is `Kenji Concierge | MMD Privé`; describe verified member status, Points and safe routing without trilingual/memory promises. These metadata fields are not yet applied: the connector rejects the documented update payload, and no hidden API was used.
