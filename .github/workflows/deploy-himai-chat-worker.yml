@@ -136,7 +136,7 @@ jobs:
           if (!response.ok || data.success !== true || active?.versions?.length !== 1 || active.versions[0].version_id !== process.env.COUPON_VERSION_ID || active.versions[0].percentage !== 100) throw new Error('Exact coupon version is not serving 100%');
           const versionResponse = await fetch(root + '/versions/' + process.env.COUPON_VERSION_ID, { headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } });
           const versionData = await versionResponse.json();
-          if (!versionResponse.ok || versionData.success !== true || versionData.result?.metadata?.annotations?.['workers/tag'] !== 'gg-coupon-' + process.env.RELEASE_SOURCE_SHA.slice(0, 12)) throw new Error('Deployed source tag does not match the release commit');
+          if (!versionResponse.ok || versionData.success !== true || (versionData.result?.annotations || versionData.result?.metadata?.annotations)?.['workers/tag'] !== 'gg-coupon-' + process.env.RELEASE_SOURCE_SHA.slice(0, 12)) throw new Error('Deployed source tag does not match the release commit');
           const checks = [];
           for (const host of ['www.mmdbkk.com', 'mmdbkk.com']) {
             for (const [path, options, status, error] of [
