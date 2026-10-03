@@ -22,10 +22,14 @@
     var guarded=profile.points_policy==="lot_365d_from_entry"&&points.expiry_policy==="lot_365d_from_entry"&&points.status==="verified"&&points.active_points===balance&&profile.points_recovery_pending!==true;
     if(!guarded||typeof balance!=="number"||!Number.isSafeInteger(balance)||balance<0)balance=null;
     var unresolved=profile.pending_identity===true||profile.resolution_guard&&profile.resolution_guard.state==="checking";
-    return{mode:mode,tier:unresolved?"":clean(profile.tier),expiry:!unresolved&&Number.isFinite(expires)?expiry:"",points:unresolved?null:balance};
+    return{mode:mode,tier:unresolved?"":clean(profile.tier),expiry:!unresolved&&Number.isFinite(expires)?expiry:"",points:unresolved?null:balance,displayName:unresolved?"":clean(profile.display_name).slice(0,100)};
   }
-  function displayReply(data,points){
-    return data.intent==="points_status"&&points===null?"ตอนนี้ยังยืนยันยอด Points ไม่ได้ครับ ตรวจข้อมูลใน MY MMD ก่อน ผมจะไม่เติมยอดที่ยังไม่ยืนยัน":data.reply;
+  function displayReply(data,points,name){
+    if(data.intent!=="points_status")return data.reply;
+    // The chat BFF can carry an unguarded legacy balance. Render only the
+    // freshly read, payment-backed LIFF value; never parse or reuse its reply.
+    if(typeof points!=="number"||!Number.isSafeInteger(points)||points<0)return "ตอนนี้ยังยืนยันยอด Points ไม่ได้ครับ ตรวจข้อมูลใน MY MMD ก่อน ผมจะไม่เติมยอดที่ยังไม่ยืนยัน";
+    return (clean(name)?clean(name)+" · ":"")+"Points ที่ระบบยืนยันตอนนี้ "+new Intl.NumberFormat("th-TH").format(points)+" แต้มครับ";
   }
   function safeAction(action){
     if(!action||typeof action.url!=="string"||typeof action.label!=="string")return null;
@@ -39,7 +43,7 @@
   root.dataset.initialized="true";
   var $=function(selector){return root.querySelector(selector)};
   var card=$("[data-kj3-status-card]"),input=$("#kj3-input"),feedback=$("[data-kj3-chat-status]");
-  var requestId=0,controller=null,lastChecked=0,chatController=null,chatId=0,memberPoints=null,busy=false,canChat=false,paused=false;
+  var requestId=0,controller=null,lastChecked=0,chatController=null,chatId=0,memberPoints=null,memberName="",busy=false,canChat=false,paused=false;
   var messages=$("[data-kj3-messages]"),send=$("[data-kj3-send]");
   function safePath(value,fallback){try{var url=new URL(value,location.origin);return url.origin===location.origin&&url.pathname.startsWith("/")?url.pathname+url.search+url.hash:fallback}catch(e){return fallback}}
   var endpoint=safePath(root.dataset.profileEndpoint,"/member/api/liff/profile");
@@ -62,7 +66,7 @@
   $("[data-kj3-login]").href=verify;
   var labels={loading:["กำลังตรวจสอบสมาชิก","อ่านข้อมูลที่ยืนยันแล้วจาก MY MMD"],active:["ข้อมูลสมาชิกยืนยันแล้ว","ระดับสมาชิกไม่ใช่การยืนยันสิทธิ์โปรโมชั่นหรือ Private Access"],guest:["ยืนยันบัญชีเพื่อดูสถานะ","เปิด MY MMD แล้วกลับมาตรวจอีกครั้ง"],expired:["สมาชิกหมดอายุ / ไม่ใช้งาน","ตรวจขั้นตอนต่ออายุใน MY MMD"],pending:["สถานะอยู่ระหว่างตรวจสอบ","ยังไม่ยืนยันการเปิดสิทธิ์ส่วนตัว"],blocked:["สิทธิ์อยู่ระหว่างระงับ","ตรวจสถานะใน MY MMD หรือติดต่อ Private Care"],unknown:["ยังยืนยันสถานะสมาชิกไม่ได้","ข้อมูลไม่ครบ กรุณาตรวจใน MY MMD"],error:["ตรวจสถานะไม่สำเร็จ","ลองตรวจอีกครั้ง ข้อมูลเก่าจะไม่ถูกแสดงแทน" ]};
   function state(profile){
-    memberPoints=profile.points==null?null:profile.points;
+    memberPoints=profile.points==null?null:profile.points;memberName=profile.displayName||"";
     var mode=profile.mode,copy=labels[mode]||labels.unknown;
     root.dataset.memberMode=mode;card.setAttribute("aria-busy",mode==="loading"?"true":"false");
     $("[data-kj3-status-title]").textContent=copy[0];$("[data-kj3-status-copy]").textContent=copy[1];
@@ -118,8 +122,12 @@
       if(!response.ok||!data||data.ok!==true||typeof data.reply!=="string"||!data.reply.trim()){
         label.textContent="ยังไม่ยืนยันการรับ";feedback.textContent=response.status===409?"รายการซ้ำหรือสถานะเปลี่ยน ยังไม่ยืนยันการรับ กรุณาตรวจบทสนทนาเดิมก่อนส่งซ้ำ":"ยังรับคำตอบไม่ได้ ข้อความยังอยู่ในช่องพิมพ์ กรุณาตรวจสถานะก่อนลองใหม่";return;
       }
+      if(data.intent==="points_status"){
+        await load();
+        if(id!==chatId||root.dataset.memberMode==="loading")return;
+      }
       label.textContent="Kenji ตอบกลับแล้ว";
-      var reply=displayReply(data,memberPoints);
+      var reply=displayReply(data,memberPoints,memberName);
       addMessage(reply,"kenji",data.review_required===true?"KENJI · ต้องตรวจสอบเพิ่มเติม":"KENJI",data.action);
       if(input.value.trim()===message){input.value="";$("[data-kj3-count]").textContent="0 / 800"}
       feedback.textContent="คำตอบจาก Kenji · การอนุมัติและสิทธิ์ใช้สถานะจริงของ MMD";

@@ -1,3 +1,16 @@
+# Points reply authority correction
+
+Source-confirmed P1 from PR2195 discussion_r4171974421. Merged compact main64582f2d retained unsafe exact Points reply preservation: a known guarded profile amount did not prove the BFF reply used that amount. No customer incident reproduced.
+
+The page now re-reads payment-backed LIFF on each successful points_status response and composes Points text only from that freshly normalized amount and profile display name. Arbitrary BFF Points reply text is discarded; general replies remain unchanged. Preserves polite Thai Per Voice and verified profile name. No backend/model/ledger/session changes.
+
+- 28 focused tests pass, including actual raw truth projection + actual BFF + actual reply builder producing61320 while actual LIFF response guard produces1234.
+- 87 mock browser checks pass,13 intercepted POSTs. UI never renders raw61320; refreshed2222 replaces initial1234, null/negative remain unknown, verified0 remains0, and refresh401 clears private data instead of showing the reply.
+- Footer-only Webflow staging readback matches. No publication. Existing Designer/metadata/native/auth and single-page capability limitations remain.
+- Shell composition uses blocked external resources and WebFont stub; no live customer messages or authenticated incident reproduction.
+
+## Historical evidence (superseded where exact Points reply preservation was claimed)
+
 # Compact mobile-first follow-up
 
 Base main `130d8608`, retains merged LIFF/profile/reply contracts. The page now prioritizes member status, three compact quick prompts and chat. Removed repeated hero CTA, standalone explanatory sections and duplicate service nav; safety/takeover/eligibility information is in one collapsed disclosure with historical anchor IDs retained. Desktop uses a smaller portrait and bounded two-column layout.

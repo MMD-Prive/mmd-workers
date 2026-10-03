@@ -1,9 +1,9 @@
 async (page) => {
   const capture=async options=>{await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot(options)};
   const checks=[];const check=(value,label)=>{if(!value)throw new Error(label);checks.push(label)};
-  const liffProfile=(points=1234,fields={})=>({ok:true,data:{tier:'Premium',membership_status:'active',membership_expires_at:'2027-01-01',...fields,points,points_policy:'lot_365d_from_entry',customer_360:{points:{status:points===null?'checking':'verified',active_points:points,expiry_policy:'lot_365d_from_entry'}}}});
+  const liffProfile=(points=1234,fields={})=>({ok:true,data:{display_name:'QA Member',tier:'Premium',membership_status:'active',membership_expires_at:'2027-01-01',...fields,points,points_policy:'lot_365d_from_entry',customer_360:{points:{status:points===null?'checking':'verified',active_points:points,expiry_policy:'lot_365d_from_entry'}}}});
   const profileBody=liffProfile();
-  let profile={status:200,body:profileBody},chat={status:200,body:{ok:true,reply:'Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ',intent:'points_status',action:{label:'เปิด Points',url:'/my-mmd/points'}}},posts=[];
+  let profile={status:200,body:profileBody},chat={status:200,body:{ok:true,reply:'Legacy balance 61,320 แต้ม',intent:'points_status',action:{label:'เปิด Points',url:'/my-mmd/points'}}},posts=[];
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/member/api/liff/profile',async route=>{const current=profile;if(current.delay)await page.waitForTimeout(current.delay);await route.fulfill({status:current.status,contentType:'application/json',body:JSON.stringify(current.body)})});
   await page.route('**/api/member/kenji/chat',async route=>{posts.push(route.request().postDataJSON());const current=chat;if(current.delay)await page.waitForTimeout(current.delay);if(current.abort)return route.abort();await route.fulfill({status:current.status,contentType:'application/json',body:current.raw??JSON.stringify(current.body)})});
@@ -27,7 +27,7 @@ async (page) => {
   check((await input.inputValue()).includes('Points'),'points prompt');
   chat.delay=400;await send.dblclick();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);
   check(posts.length===1,'duplicate clicks send exactly once');check(Object.keys(posts[0]).join(',')==='message','request is existing message contract only');
-  check((await root.locator('[data-kj3-messages]').textContent()).includes('1,234'),'actual mock reply rendered');check((await input.inputValue())==='','success clears submitted input');
+  check((await root.locator('[data-kj3-messages]').textContent()).includes('1,234'),'guarded1234 replaces raw61320 reply');check((await input.inputValue())==='','success clears submitted input');
   check((await root.locator('.kj3-message a').getAttribute('href'))==='/my-mmd/points','backend action preserved');
   await capture({path:'output/playwright/kenji-chat-390.png',fullPage:true});
   await input.fill('อยากคุยต่อครับ');await input.press('Enter');check(posts.length===1,'Enter adds newline, no implicit send');
@@ -53,6 +53,21 @@ async (page) => {
   await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));check(await root.locator('[data-kj3-status-card]').evaluate(el=>Math.abs(el.getBoundingClientRect().top)<1),'status persists while scrolling');
   await page.setViewportSize({width:390,height:844});profile={status:200,body:profileBody};await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY#kj3-faq');await ready();check(page.url().includes('t=QA_ONLY#kj3-faq'),'query and historical anchor preserved');await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY#kj3-care');await page.goBack();check(page.url().endsWith('#kj3-faq'),'back anchor');await page.goForward();check(page.url().endsWith('#kj3-care'),'forward anchor');
   await page.reload();await ready();check((await root.locator('[data-kj3-messages]').textContent()).includes('ยังไม่มีบทสนทนา'),'reload no fabricated history');
+  for(const balance of [2222,null,0,-5]){
+    profile={status:200,body:profileBody};await page.reload();await ready();
+    profile={status:200,body:liffProfile(balance)};
+    chat={status:200,body:{ok:true,reply:'QA Member · Points 61,320 แต้ม',intent:'points_status'}};
+    await input.fill('เช็ก Points');await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);
+    const shown=await root.locator('.kj3-message[data-role=kenji]').last().textContent();
+    check(!shown.includes('61,320'),'raw reply discarded for fresh '+balance);
+    check(balance===null||balance<0?shown.includes('ยังยืนยันยอด Points ไม่ได้'):shown.includes(balance===0?'0 แต้ม':'2,222 แต้ม'),'fresh guarded reply '+balance);
+    check((await root.locator('[data-kj3-points]').textContent())===(balance===null||balance<0?'ยังไม่ยืนยัน':balance===0?'0':'2,222'),'status and reply same authority '+balance);
+    if(balance===2222)await capture({path:'output/playwright/kenji-points-authority.png',fullPage:true});
+  }
+  profile={status:200,body:profileBody};await page.reload();await ready();profile={status:401,body:{ok:false}};
+  await input.fill('เช็ก Points');await send.click();await page.waitForFunction(()=>document.querySelector('#kenji-concierge-v3').dataset.memberMode==='guest');
+  check(!(await root.locator('[data-kj3-messages]').textContent()).includes('61,320'),'lost session during fresh Points read discards reply');
+  check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน','fresh401 clears guarded points');
   await page.emulateMedia({reducedMotion:'reduce'});check(await input.evaluate(el=>getComputedStyle(el).transitionDuration)==='0s','reduced motion');
   check(errors.length===0,'no JavaScript errors');return {checks:checks.length,passed:checks,chatRequests:posts.length,errors};
 }
