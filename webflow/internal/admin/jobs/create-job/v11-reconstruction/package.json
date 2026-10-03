@@ -1,0 +1,13 @@
+{
+  "name": "mmd-create-job-v11-reconstruction",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test review.test.mjs",
+    "serve": "node server.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
