@@ -226,14 +226,18 @@ jobs:
               : > "$read_body"
               : > "$audit_headers"
               : > "$audit_body"
-              read_code="$(curl -sS -D "$read_headers" -o "$read_body" -w '%{http_code}' \
-                "${origin}/v1/admin/clients/intelligence?client_id=recSMOKE00000001&deploy=${GITHUB_SHA}&attempt=${attempt}")"
-              audit_code="$(curl -sS -D "$audit_headers" -o "$audit_body" -w '%{http_code}' \
+              if ! read_code="$(curl -sS --connect-timeout 5 --max-time 10 -D "$read_headers" -o "$read_body" -w '%{http_code}' \
+                "${origin}/v1/admin/clients/intelligence?client_id=recSMOKE00000001&deploy=${GITHUB_SHA}&attempt=${attempt}")"; then
+                read_code="000"
+              fi
+              if ! audit_code="$(curl -sS --connect-timeout 5 --max-time 10 -D "$audit_headers" -o "$audit_body" -w '%{http_code}' \
                 -X POST \
                 -H "Origin: ${origin}" \
                 -H 'Content-Type: application/json' \
                 --data '{"action":"view","client_id":"recSMOKE00000001"}' \
-                "${origin}/v1/admin/clients/intelligence/audit")"
+                "${origin}/v1/admin/clients/intelligence/audit")"; then
+                audit_code="000"
+              fi
 
               if [ "$read_code" = "401" ] \
                 && [ "$audit_code" = "401" ] \
@@ -272,9 +276,27 @@ jobs:
           for attempt in 1 2 3 4 5 6 7 8; do
             : > "$headers"
             : > "$body"
-            code="$(curl -sSL -D "$headers" -o "$body" -w '%{http_code}' \
-              "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+            if ! code="$(curl -sSL --connect-timeout 5 --max-time 10 -D "$headers" -o "$body" -w '%{http_code}' \
+              "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"; then
+              code="000"
+            fi
 
+            # Lovable directory: verify the presentation contract and native
+            # customer list copy. This proves HTML delivery, not authenticated data.
+            if [ "$code" = "200" ] \
+              && grep -Eiq '^content-type:[[:space:]]*text/html' "$headers" \
+              && grep -Eiq '^x-mmd-presentation-source:[[:space:]]*lovable' "$headers" \
+              && grep -Eiq '^x-mmd-presentation-version:[[:space:]]*internal-lovable-v1' "$headers" \
+              && grep -q 'ลูกค้าล่าสุดจากระบบหลังบ้าน' "$body" \
+              && grep -q 'เลือกรายชื่อก่อนเปิดข้อมูล' "$body" \
+              && grep -q 'อ่านข้อมูลอีกครั้ง' "$body" \
+              && ! grep -q 'customer_scope_contract_unavailable' "$body"; then
+              echo "Production Customer Data Lovable presentation verified on attempt ${attempt}; authenticated data verification remains separate"
+              verified=1
+              break
+            fi
+
+            # Retain the Worker-rendered fallback contract.
             if [ "$code" = "200" ] \
               && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers" \
               && grep -Eiq '^x-mmd-customer-data-authority:[[:space:]]*identity-context-staging-only' "$headers" \
@@ -289,13 +311,13 @@ jobs:
             fi
 
             echo "Customer Data readable UI not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|location:|server|cf-ray):' "$headers" || true
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
             sleep 2
           done
 
           if [ "$verified" != "1" ]; then
             echo "Customer Data readable UI production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|location:|server|cf-ray):' "$headers" || true
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
             head -c 320 "$body" >&2 || true
             echo >&2
             exit 1
