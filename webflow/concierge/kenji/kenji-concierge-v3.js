@@ -92,7 +92,7 @@
       if(id===requestId){state(profile);lastChecked=Date.now()}
     }catch(e){if(id===requestId)state({mode:"error"})}finally{clearTimeout(timeout)}
   }
-  function clearConversation(){messages.replaceChildren();var empty=document.createElement("p");empty.className="kj3-empty";empty.dataset.kj3Empty="";empty.textContent="ยังไม่มีบทสนทนา เลือกหัวข้อหรือพิมพ์เรื่องที่อยากให้ผมช่วยครับ";messages.appendChild(empty)}
+  function clearConversation(){messages.replaceChildren();var empty=document.createElement("p");empty.className="kj3-empty";empty.dataset.kj3Empty="";empty.textContent="ยังไม่มีบทสนทนา";messages.appendChild(empty)}
   function addMessage(text,role,label,action){
     var empty=$("[data-kj3-empty]");if(empty)empty.remove();
     var box=document.createElement("div");box.className="kj3-message";box.dataset.role=role;

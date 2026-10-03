@@ -1,0 +1,20 @@
+{
+  "checks": 15,
+  "passed": [
+    "global guest control hidden on Kenji 320",
+    "MY MMD replacement visible 320",
+    "verification replacement visible 320",
+    "unrelated control preserved 320",
+    "global guest control preserved outside Kenji 320",
+    "global guest control hidden on Kenji 390",
+    "MY MMD replacement visible 390",
+    "verification replacement visible 390",
+    "unrelated control preserved 390",
+    "global guest control preserved outside Kenji 390",
+    "global guest control hidden on Kenji 1440",
+    "MY MMD replacement visible 1440",
+    "verification replacement visible 1440",
+    "unrelated control preserved 1440",
+    "global guest control preserved outside Kenji 1440"
+  ]
+}

@@ -1,3 +1,17 @@
+## Duplicate global member control guard
+
+Page-only shell now hides both #mmd-global-member and #mmd-global-member-control-v1 when #kenji-concierge-v3 exists. Fifteen additional browser checks run the real member-control initializer from repository global source at 320/390/1440: guest chip hidden on Kenji, MY MMD and account verification replacements visible, unrelated control visible, and chip visible outside Kenji. No global source or authentication change.
+
+Evidence distinction: the saved published HTML references global mmd-canonical-cta-v4.js at immutable 3dbc951f698391b60ebd9dafed91a5eef5970582, whose fetched Git source does not contain the newer control ID. Current repository global source does contain it. Current site freeform code contains the legacy ID, not the newer one. This fix supports both versions; it does not establish the newer chip was present on live production.
+
+# Composer-first follow-up
+
+Mocked 503 profile state at 320/375/390/430 and 1440 desktop. At 390px input top moves 662 → 467px; exact current measurements are in composer-geometry.json. Chat heading becomes a single 44px row, repeated intro/caption is removed, coupons remain in the disclosure, and the empty state is shortened. No session, transport, Points or AI behavior changed. Screenshots composer-before-* and composer-* contain no customer data.
+
+28 focused unit tests and 87 mocked browser checks pass. Root npm run check fails on installed Node 24: `bad option: --experimental-default-type=module`; this existing command is unchanged. No standalone build exists for the three Webflow snippets. Actual native keyboard and authenticated Webflow runtime acceptance remain open.
+
+The supplied screenshot proves the page entered error mode, but does not identify URL, HTTP status, response body or browser network failure. Code maps 401/403 to guest, other HTTP failures / ok:false / invalid JSON / network timeout to error. No live auth cause is established. No credentials, backend or scopes changed.
+
 # Points reply authority correction
 
 Source-confirmed P1 from PR2195 discussion_r4171974421. Merged compact main64582f2d retained unsafe exact Points reply preservation: a known guarded profile amount did not prove the BFF reply used that amount. No customer incident reproduced.

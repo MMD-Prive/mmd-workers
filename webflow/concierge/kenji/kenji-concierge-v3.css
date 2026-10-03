@@ -113,6 +113,20 @@
 #kenji-concierge-v3 .kj3-footer nav{display:flex;gap:14px}
 #kenji-concierge-v3 .kj3-footer a{font-size:11px}
 @media(min-width:900px){#kenji-concierge-v3{max-width:1120px;padding:0 32px}#kenji-concierge-v3 .kj3-layout{grid-template-columns:minmax(240px,.7fr) minmax(0,1.3fr);gap:32px;padding-top:24px}#kenji-concierge-v3 .kj3-welcome{padding:12px 0}#kenji-concierge-v3 .kj3-portrait{height:180px;max-width:240px;margin:20px 0 0}#kenji-concierge-v3 .kj3-status dl{max-width:600px}#kenji-concierge-v3 .kj3-messages{min-height:130px}#kenji-concierge-v3 .kj3-faq{margin-top:20px}}
+/* Composer-first spacing, including unresolved account states. */
+#kenji-concierge-v3 .kj3-top{min-height:56px}
+#kenji-concierge-v3 .kj3-status{padding:4px 12px 8px}
+#kenji-concierge-v3 .kj3-status p{margin-top:3px;line-height:1.5}
+#kenji-concierge-v3 .kj3-welcome{padding:10px 0 8px}
+#kenji-concierge-v3 h1{font-size:clamp(21px,5.6vw,30px);margin:0}
+#kenji-concierge-v3 .kj3-chat{margin-top:8px}
+#kenji-concierge-v3 .kj3-chat__heading{padding:0 12px;min-height:44px}
+#kenji-concierge-v3 .kj3-messages{min-height:52px;padding:8px 12px}
+#kenji-concierge-v3 .kj3-empty{line-height:1.6}
+#kenji-concierge-v3 .kj3-login{margin:0 12px 8px;min-height:44px;padding:8px 12px}
+#kenji-concierge-v3 .kj3-composer{padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+#kenji-concierge-v3 details a{display:inline-flex;align-items:center;min-height:44px;color:var(--gold);text-decoration:underline}
+@media(min-width:900px){#kenji-concierge-v3 .kj3-layout{padding-top:16px}#kenji-concierge-v3 .kj3-welcome{padding:8px 0}#kenji-concierge-v3 .kj3-messages{min-height:100px}}
 /* FINAL MMD CONTRAST SAFETY LAYER — KEEP LAST */
 #kenji-concierge-v3 :where(h1,h2,h3,summary){color:var(--cream)!important;-webkit-text-fill-color:var(--cream)!important;background:none!important}
 </style>
