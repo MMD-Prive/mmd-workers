@@ -1,4 +1,5 @@
 import { notificationDigest } from "../../shared/payment-notification-outbox.mjs";
+import { revisionAuditLine } from "./model-reconfirm-freshness.js";
 import { buildReconfirmSchedule } from "./model-reconfirm-runtime.js";
 
 export const CHANGE_FIELDS = Object.freeze({
@@ -13,6 +14,7 @@ export const CHANGE_SESSION_FIELDS = Object.freeze({
   location_name:"fldIiRpaxoafjTkFt", google_map_url:"fldoUDQ8sH93idPx0", session_status:"fldmwuvOaiCFdzzRa",
   model:"fldrXQAyOMPCvbOaY", client:"fld6P6if0vDZCeV0C", state:"fld57fhdWqIcOy4Jp",
   customer_ack:"fldJSS5GNN7quJwa8", model_ack:"fldFgkHXivIAThfDz",
+  notes:"fldwl9Gs5tYlXG5ls", partner_revision:"fldhO72ZSYcyjbLzi",
   partner_id:"fld0jkscGAtyX7i2J", partner_confirmation_status:"fldrAQxUX4pRqz6qr",
   partner_confirmed_at:"fldLonXanVTSybnpv", partner_confirmation_note:"fldjAwRLqxhJ7GjJL",
   partner_notification_status:"fldv1X9HIfgUjwpJw", partner_notification_error:"fldGLKYcQVPZelwue",
@@ -94,6 +96,7 @@ function plan(session,request) {
       fldPvRothitseULiN:new Date(schedule.reminder_at).toISOString(),fldVElAODigVt7AcR:new Date(schedule.overdue_at).toISOString(),
       fldMtFsIZicREiCzG:null,fldpKEJeqlocCkEqB:null,fldXh5Nfz8ccc5bA3:null,
       fldY1KdKxwLgBLOUV:null,fldT59CDe9AMy3ciT:"none",
+      fldamZExPJqSdVqZO:"normal",fldHqmEiNo7LJbd9g:false,
     });
   }
   return {type,before,requested,current,after,patch:block?{}:patch,block};
@@ -149,11 +152,17 @@ export async function resolveCustomerChange(env,input,deps) {
     if(decision==="approve"&&["request_snapshot_stale","job_already_in_progress","no_job_change"].includes(p.block))fail(409,p.block);
     const status=decision==="reject"?"rejected":p.block?"approved":"applied";
     const sessionPatch=decision==="approve"?p.patch:{};
+    const reviewedAt=new Date().toISOString();
+    if(Object.keys(sessionPatch).length) {
+      const line=await revisionAuditLine({...session.fields,...sessionPatch},{request_id:input.request_id,actor_ref:actor.id,resolved_at:reviewedAt});
+      sessionPatch[S.notes]=[clean(session.fields?.[S.notes]),line].filter(Boolean).join("\n");
+      if(clean(session.fields?.[S.partner_id]))sessionPatch[S.partner_revision]=Number(session.fields?.[S.partner_revision]||0)+1;
+    }
     j={schema:"customer_change_resolution_v1",operation,request_id:input.request_id,session_id:input.session_id,
       session_record:session.id,request_record:request.id,actor:{id:actor.id,role:actor.role},decision,note,
       expected_version:input.expected_version,
       phase:"prepared",updated_at:Date.now(),before:snapshot(session),request_before:requestSnapshot(request),session_patch:sessionPatch,
-      request_patch:{[C.status]:status,[C.reviewer]:actor.id,[C.reviewedAt]:new Date().toISOString(),[C.resolution]:note},
+      request_patch:{[C.status]:status,[C.reviewer]:actor.id,[C.reviewedAt]:reviewedAt,[C.resolution]:note},
       result:{ok:true,session_id:input.session_id,request_id:input.request_id,status,money_truth_changed:false,
         session_changed:Object.keys(sessionPatch).length>0,reconfirmation_required:Object.keys(sessionPatch).length>0,
         followup:status==="approved"?p.block:Object.keys(sessionPatch).length?"notify_parties_and_check_calendar":null}};
