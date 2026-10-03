@@ -7,6 +7,8 @@ import {
 } from "./tmib-episode-catalog.js";
 
 const API_ROOT = "/member/api/liff/tmib/episodes";
+const SESSION_COOKIE = "__Host-mmd_liff_session";
+const REMEMBERED_LOGIN_COOKIE = "__Host-mmd_liff_remember";
 const MEDIA_TTL_SECONDS = 5 * 60;
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAYMENTS_TABLE_DEFAULT = "tblWGGJJOx5eBvBZJ";
@@ -45,16 +47,55 @@ function parseRoute(input) {
   return null;
 }
 
-function json(payload, status = 200, headers = {}) {
-  return Response.json(payload, {
-    status,
-    headers: {
-      "cache-control": "no-store, private",
-      "x-robots-tag": "noindex, noarchive, nosnippet, noimageindex",
-      "x-mmd-tmib-story": "v2",
-      ...headers,
-    },
+function json(payload, status = 200, headers = {}, setCookies = []) {
+  const responseHeaders = new Headers({
+    "cache-control": "no-store, private",
+    "x-robots-tag": "noindex, noarchive, nosnippet, noimageindex",
+    "x-mmd-tmib-story": "v2",
+    ...headers,
   });
+  appendSetCookies(responseHeaders, setCookies);
+  return Response.json(payload, { status, headers: responseHeaders });
+}
+
+function setCookiesFrom(response) {
+  if (typeof response?.headers?.getSetCookie === "function") return response.headers.getSetCookie();
+  const value = response?.headers?.get("set-cookie");
+  return value ? [value] : [];
+}
+
+function appendSetCookies(headers, cookies = []) {
+  for (const cookie of cookies) {
+    if (cookie) headers.append("set-cookie", String(cookie));
+  }
+}
+
+function sessionCookiePair(cookies = []) {
+  for (const cookie of cookies) {
+    const pair = String(cookie || "").split(";", 1)[0].trim();
+    if (pair.startsWith(SESSION_COOKIE + "=") && pair.slice(SESSION_COOKIE.length + 1)) return pair;
+  }
+  return "";
+}
+
+function requestWithSessionCookie(request, pair) {
+  const headers = new Headers(request.headers);
+  const entries = String(headers.get("cookie") || "").split(";").map((item) => item.trim()).filter(Boolean)
+    .filter((item) => item.slice(0, item.indexOf("=")).trim() !== SESSION_COOKIE);
+  entries.push(pair);
+  headers.set("cookie", entries.join("; "));
+  return new Request(request, { headers });
+}
+
+function mergeSetCookies(...groups) {
+  const byCookieName = new Map();
+  for (const cookie of groups.flat()) {
+    const value = String(cookie || "").trim();
+    const pair = value.split(";", 1)[0];
+    const index = pair.indexOf("=");
+    if (index > 0) byCookieName.set(pair.slice(0, index), value);
+  }
+  return [...byCookieName.values()];
 }
 
 function bytesToHex(buffer) {
@@ -120,15 +161,46 @@ export function membershipGrantsTmib(membership) {
     && access !== "restricted";
 }
 
+function cookieValue(request, name) {
+  for (const part of String(request.headers.get("cookie") || "").split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0) continue;
+    if (part.slice(0, index).trim() === name) return part.slice(index + 1).trim();
+  }
+  return "";
+}
+
 async function resolveMembership(request, env) {
   try {
     const response = await handleMemberAppApi(memberRequest(request), env);
-    if (!response.ok) return null;
-    const membership = await response.json().catch(() => null);
-    return membershipGrantsTmib(membership) ? membership : null;
+    const payload = response.ok ? await response.json().catch(() => null) : null;
+    return {
+      membership: membershipGrantsTmib(payload) ? payload : null,
+      cookies: setCookiesFrom(response),
+    };
   } catch {
-    return null;
+    return { membership: null, cookies: [] };
   }
+}
+
+async function resolveMemberContext(request, env, dependencies = {}) {
+  const readSession = dependencies.readSession || readMemberAppSession;
+  const renewMembership = dependencies.renewMembership || ((currentRequest) => resolveMembership(currentRequest, env));
+  const currentSession = await readSession(request, env);
+  if (currentSession?.lineUserId) return { session: currentSession, membershipCheck: null, cookies: [], request };
+  if (!cookieValue(request, REMEMBERED_LOGIN_COOKIE)) return { session: null, membershipCheck: null, cookies: [], request };
+
+  let membershipCheck;
+  try {
+    membershipCheck = await renewMembership(request, env);
+  } catch {
+    membershipCheck = { membership: null, cookies: [] };
+  }
+  const cookies = Array.isArray(membershipCheck?.cookies) ? membershipCheck.cookies : [];
+  const pair = sessionCookiePair(cookies);
+  const refreshedRequest = pair ? requestWithSessionCookie(request, pair) : request;
+  const session = pair ? await readSession(refreshedRequest, env) : null;
+  return { session: session?.lineUserId ? session : null, membershipCheck, cookies, request: refreshedRequest };
 }
 
 function first(fields, keys) {
@@ -237,17 +309,23 @@ async function storeGrant(env, episode, hash, data) {
   return true;
 }
 
-async function resolveEpisodeAccess(request, env, hash, episode) {
+async function resolveEpisodeAccess(request, env, hash, episode, membershipCheck = null) {
   if (episode.publicFree === true || episode.accessMode === "public_free") {
-    return { granted: true, source: "public_free" };
+    return { granted: true, source: "public_free", cookies: [] };
   }
 
   const stored = await readStoredGrant(env, episode, hash);
-  if (stored?.state === "granted") return { granted: true, source: "episode_purchase", paymentRef: clean(stored.payment_ref, 220) || null };
+  if (stored?.state === "granted") return { granted: true, source: "episode_purchase", paymentRef: clean(stored.payment_ref, 220) || null, cookies: [] };
 
   if (episode.membershipIncluded === true) {
-    const membership = await resolveMembership(request, env);
-    if (membership) return { granted: true, source: "membership", level: normalizeLevel(membership.level) };
+    const resolvedMembership = membershipCheck || await resolveMembership(request, env);
+    if (resolvedMembership.membership) return {
+      granted: true,
+      source: "membership",
+      level: normalizeLevel(resolvedMembership.membership.level),
+      cookies: resolvedMembership.cookies || [],
+    };
+    membershipCheck = resolvedMembership;
   }
 
   if (stored?.state === "pending" && clean(stored.payment_ref, 220)) {
@@ -259,10 +337,10 @@ async function resolveEpisodeAccess(request, env, hash, episode) {
         granted_at: new Date().toISOString(),
         source: "verified_payment",
       });
-      return { granted: true, source: "episode_purchase", paymentRef: clean(stored.payment_ref, 220) };
+      return { granted: true, source: "episode_purchase", paymentRef: clean(stored.payment_ref, 220), cookies: membershipCheck?.cookies || [] };
     }
   }
-  return { granted: false };
+  return { granted: false, cookies: membershipCheck?.cookies || [] };
 }
 
 async function mediaMap(env, hash, episode) {
@@ -290,23 +368,27 @@ function catalogPayload(episode) {
 
 async function handleAccess(request, env, episode) {
   const publicFree = episode.publicFree === true || episode.accessMode === "public_free";
-  const session = publicFree ? null : await readMemberAppSession(request, env);
+  const context = publicFree
+    ? { session: null, membershipCheck: null, cookies: [] }
+    : await resolveMemberContext(request, env);
+  const session = context.session;
   if (!publicFree && !session?.lineUserId) {
-    return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
+    return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401, {}, context.cookies);
   }
   const hash = publicFree ? "public" : await userKey(env, session.lineUserId);
-  if (!hash) return json({ ok: false, granted: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503);
-  const access = await resolveEpisodeAccess(request, env, hash, episode);
-  if (!access.granted) return json({ ...catalogPayload(episode), granted: false });
+  if (!hash) return json({ ok: false, granted: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503, {}, context.cookies);
+  const access = await resolveEpisodeAccess(request, env, hash, episode, context.membershipCheck);
+  const cookies = mergeSetCookies(context.cookies, access.cookies || []);
+  if (!access.granted) return json({ ...catalogPayload(episode), granted: false }, 200, {}, cookies);
   const signed = await mediaMap(env, hash, episode);
   return json({
     ...catalogPayload(episode),
     granted: true,
     access_source: access.source,
-    watermark: publicFree ? "MMD · PUBLIC STORY" : `MMD PRIVATE · ${hash.slice(0, 10).toUpperCase()}`,
+    watermark: publicFree ? "MMD · PUBLIC STORY" : "MMD PRIVATE · " + hash.slice(0, 10).toUpperCase(),
     media_expires_at: signed.expiresAt,
     media: signed.media,
-  });
+  }, 200, {}, cookies);
 }
 
 async function handlePurchase(request, env, episode) {
@@ -314,17 +396,19 @@ async function handlePurchase(request, env, episode) {
   if (episode.status !== "live" || episode.purchasable !== true) {
     return json({ ok: false, error: { code: "EPISODE_NOT_PURCHASABLE" } }, 409);
   }
-  const session = await readMemberAppSession(request, env);
-  if (!session?.lineUserId) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
+  const context = await resolveMemberContext(request, env);
+  const session = context.session;
+  if (!session?.lineUserId) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401, {}, context.cookies);
   const hash = await userKey(env, session.lineUserId);
-  if (!hash) return json({ ok: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503);
-  const existing = await resolveEpisodeAccess(request, env, hash, episode);
+  if (!hash) return json({ ok: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503, {}, context.cookies);
+  const existing = await resolveEpisodeAccess(request, env, hash, episode, context.membershipCheck);
+  const cookies = mergeSetCookies(context.cookies, existing.cookies || []);
   if (existing.granted) return json({
     ok: true,
     already_granted: true,
     episode_id: episode.id,
     redirect_to: episode.storyPath,
-  });
+  }, 200, {}, cookies);
   const intent = await paymentIntent(env, episode, canonicalPurchaseSession(episode, hash));
   if (!intent) return json({ ok: false, error: { code: "PAYMENT_INTENT_UNAVAILABLE" } }, 503);
   await storeGrant(env, episode, hash, {
@@ -345,15 +429,18 @@ async function handlePurchase(request, env, episode) {
     story_path: episode.storyPath,
     redirect_to: intent.paymentUrl,
     customer_payment_url: intent.paymentUrl,
-  });
+  }, 200, {}, cookies);
 }
 
 async function handleMedia(request, env, episode, frame) {
   if (!episode.frames.includes(frame)) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
   const publicFree = episode.publicFree === true || episode.accessMode === "public_free";
-  const session = publicFree ? null : await readMemberAppSession(request, env);
+  const context = publicFree
+    ? { session: null, cookies: [] }
+    : await resolveMemberContext(request, env);
+  const session = context.session;
   if (!publicFree && !session?.lineUserId) {
-    return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
+    return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401, {}, context.cookies);
   }
   const hash = publicFree ? "public" : await userKey(env, session.lineUserId);
   const url = new URL(request.url);
@@ -361,14 +448,14 @@ async function handleMedia(request, env, episode, frame) {
   const sig = clean(url.searchParams.get("sig"), 128);
   const now = Math.floor(Date.now() / 1000);
   if (!hash || !Number.isInteger(exp) || exp < now || exp > now + MEDIA_TTL_SECONDS + 30 || !/^[a-f0-9]{64}$/.test(sig)) {
-    return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403);
+    return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403, {}, context.cookies);
   }
   const expected = await hmacHex(secretFor(env), `tmib-media:${episode.id}:${frame}:${exp}:${hash}`);
-  if (!timingSafeEqual(sig, expected)) return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403);
+  if (!timingSafeEqual(sig, expected)) return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403, {}, context.cookies);
   const bucket = env.MMD_MODEL_ASSETS;
-  if (!bucket?.get) return json({ ok: false, error: { code: "TMIB_MEDIA_STORAGE_UNAVAILABLE" } }, 503);
+  if (!bucket?.get) return json({ ok: false, error: { code: "TMIB_MEDIA_STORAGE_UNAVAILABLE" } }, 503, {}, context.cookies);
   const object = await bucket.get(`tmib/${episode.id}/${frame}.webp`);
-  if (!object) return json({ ok: false, error: { code: "TMIB_MEDIA_NOT_SEEDED", frame } }, 503);
+  if (!object) return json({ ok: false, error: { code: "TMIB_MEDIA_NOT_SEEDED", frame } }, 503, {}, context.cookies);
   const headers = new Headers();
   object.writeHttpMetadata?.(headers);
   headers.set("content-type", headers.get("content-type") || "image/webp");
@@ -378,6 +465,7 @@ async function handleMedia(request, env, episode, frame) {
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-robots-tag", "noindex, noarchive, nosnippet, noimageindex");
   headers.set("x-mmd-tmib-story", "media-v2");
+  appendSetCookies(headers, context.cookies);
   return new Response(object.body, { status: 200, headers });
 }
 
@@ -421,5 +509,6 @@ export const TMIB_STORY_INTERNALS = Object.freeze({
   CATALOG: TMIB_EPISODE_CATALOG,
   paymentGrantsTmib,
   membershipGrantsTmib,
+  resolveMemberContext,
   canonicalPayUrl,
 });
