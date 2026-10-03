@@ -1,6 +1,6 @@
 # Composer-first follow-up
 
-Mocked 503 profile state at 320/375/390/430 and 1440 desktop. At 390px input top moves 662 → 451px; exact current measurements are in composer-geometry.json. Chat heading becomes a single 44px row, repeated intro/caption is removed, coupons remain in the disclosure, and the empty state is shortened. No session, transport, Points or AI behavior changed. Screenshots composer-before-* and composer-* contain no customer data.
+Mocked 503 profile state at 320/375/390/430 and 1440 desktop. At 390px input top moves 662 → 467px; exact current measurements are in composer-geometry.json. Chat heading becomes a single 44px row, repeated intro/caption is removed, coupons remain in the disclosure, and the empty state is shortened. No session, transport, Points or AI behavior changed. Screenshots composer-before-* and composer-* contain no customer data.
 
 28 focused unit tests and 87 mocked browser checks pass. Root npm run check fails on installed Node 24: `bad option: --experimental-default-type=module`; this existing command is unchanged. No standalone build exists for the three Webflow snippets. Actual native keyboard and authenticated Webflow runtime acceptance remain open.
 
