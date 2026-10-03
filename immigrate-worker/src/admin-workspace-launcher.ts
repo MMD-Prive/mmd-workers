@@ -1,5 +1,6 @@
 // Navigation only. Destination pages retain their existing session and role gates.
 const modules = [
+  ["CEO · ภาพรวมและจุดตัดสินใจ", "ดูภาพรวม แล้วเลือกเรื่องที่เปอร์ต้องรับช่วง", "/internal/ceo", "ceo owner per ภาพรวม ตัดสินใจ"],
   ["ลูกค้าและ MMD Memory", "ค้นตัวตน ชื่อที่เปอร์เรียก และประวัติที่มีหลักฐาน", "/internal/admin/member-intelligence", "ลูกค้า memory client customer LINE Per Rename"],
   ["งานทั้งหมด", "เลือกงานเดิมเพื่อตรวจรายละเอียดและขั้นตอนที่ค้าง", "/internal/admin/jobs/all", "งาน job session คอนเฟิร์ม confirmation"],
   ["สร้างงานใหม่", "เลือก Client และ Model ก่อนสร้างงาน", "/internal/admin/jobs/create-job", "สร้าง create booking จอง"],
@@ -7,8 +8,8 @@ const modules = [
   ["ตรวจรับเงิน", "เปิดรายการเพื่อตรวจเงินและสถานะคอนเฟิร์ม", "/internal/admin/payments", "เงิน payment verify คอนเฟิร์ม confirmation"],
   ["หลักฐานรับเงินย้อนหลัง", "ตรวจรายการย้อนหลังที่ต้องเชื่อมหลักฐาน", "/internal/admin/payments/historical-backfill", "ย้อนหลัง historical backfill"],
   ["สมาชิกและสิทธิ์", "ดูสถานะที่ระบบยืนยันก่อนดำเนินการ", "/internal/admin/membership-access", "สมาชิก membership access entitlement"],
-  ["Kenji Admin", "ดูความรู้ คำตอบ และรายการที่ต้องตรวจ", "/internal/admin/kenji", "kenji knowledge AI ความรู้"],
-  ["Per Control", "เปิดเครื่องมือ Owner สำหรับข้อยกเว้นและการรับช่วง", "/internal/ceo/kenji-control", "owner per takeover exception"],
+  ["Kenji · ความรู้และตรวจคำตอบ", "ตรวจความรู้และคำตอบที่ใช้ช่วยงานหลังบ้าน", "/internal/admin/kenji", "kenji knowledge AI ความรู้"],
+  ["CEO / Kenji · เปอร์รับช่วง", "อ่านข้อเสนอและบริบทก่อนให้เปอร์ตัดสินใจ", "/internal/ceo/kenji-control", "ceo kenji owner per takeover exception รับช่วง ตัดสินใจ"],
   ["MMS Operations", "ดูใบสมัครและงานฝั่ง MMS", "/internal/admin/mms", "mms therapist partner ใบสมัคร"],
 ] as const;
 
@@ -19,8 +20,18 @@ export function matchesAdminModule(label: string, description: string, keywords:
 }
 
 export const ADMIN_WORKSPACE_PANEL = `<section class="mmd-launcher" data-mmd-admin-launcher aria-labelledby="admin-launcher-title">
-  <h2 id="admin-launcher-title">เปิดหน้าที่ต้องใช้</h2>
-  <p>ค้นหาหน้าที่ทำงาน เช่น ลูกค้า สลิป คอนเฟิร์ม หรือสมาชิก แล้วเลือกหน้าต้นทาง</p>
+  <h2 id="admin-launcher-title">หลังบ้าน MMD · เริ่มจากเรื่องที่ต้องทำ</h2>
+  <p>CEO ดูภาพรวม · MMD Memory ตรวจบริบทลูกค้า · Kenji ช่วยเตรียมข้อมูลให้เปอร์รับช่วง</p>
+  <nav class="mmd-launcher__flow" aria-label="ลำดับการทำงานหลังบ้าน">
+    <ol>
+      <li><a href="/internal/ceo"><strong>1 · CEO ดูภาพรวม</strong><span>เลือกเรื่องที่ต้องดูต่อ</span></a></li>
+      <li><a href="/internal/admin/member-intelligence"><strong>2 · ลูกค้า / MMD Memory</strong><span>ยืนยันตัวตนและบริบทจากหลักฐาน</span></a></li>
+      <li><a href="/internal/admin/jobs/all"><strong>3 · เปิดงานที่เกี่ยวข้อง</strong><span>เลือกงานเดิม หรือสร้างงานใหม่จากเมนูด้านล่าง</span></a></li>
+      <li><a href="/internal/ceo/payment-slip-inbox"><strong>4 · ตรวจหลักฐาน</strong><span>ตรวจเงินและสิทธิ์ในหน้าต้นทางเมื่อเกี่ยวข้อง</span></a></li>
+      <li><a href="/internal/ceo/kenji-control"><strong>5 · CEO / Kenji รับช่วง</strong><span>ให้เปอร์พิจารณาเรื่องที่ต้องตัดสินใจ</span></a></li>
+    </ol>
+  </nav>
+  <p>เลือกเฉพาะขั้นที่เกี่ยวข้องกับงาน · Kenji ช่วยอ่านและเตรียมข้อมูล การยืนยันเงิน สมาชิก และสิทธิ์ยังอยู่ในหน้าต้นทาง</p>
   <label for="admin-module-search">ค้นหาเครื่องมือหลังบ้าน</label>
   <input id="admin-module-search" type="search" placeholder="พิมพ์ชื่อหน้าหรือสิ่งที่ต้องทำ" autocomplete="off" maxlength="100" aria-controls="admin-module-list">
   <p class="mmd-launcher__count" data-module-count role="status" aria-live="polite">${modules.length} เครื่องมือ</p>
@@ -43,6 +54,11 @@ export const ADMIN_WORKSPACE_STYLE = `<style data-mmd-admin-launcher-style>
 #mmd-os-v1 .mmd-launcher input{width:100%;min-height:48px;padding:12px;border:1px solid #79603b;border-radius:10px;background:#080706;color:#f2ece1}
 #mmd-os-v1 .mmd-launcher input{font-family:inherit;font-size:16px}
 #mmd-os-v1 .mmd-launcher input::placeholder{color:#bfb5a6}
+#mmd-os-v1 .mmd-launcher__flow ol{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;list-style:none;margin:16px 0;padding:0}
+#mmd-os-v1 .mmd-launcher__flow a{display:block;height:100%;padding:12px;border:1px solid #79603b;border-radius:10px;background:#211a10}
+#mmd-os-v1 .mmd-launcher__flow strong,#mmd-os-v1 .mmd-launcher__flow span{display:block;line-height:1.6}
+#mmd-os-v1 .mmd-launcher__flow strong{font-size:14px;color:#e8c782}
+#mmd-os-v1 .mmd-launcher__flow span{font-size:13px;color:#c1b8aa;margin-top:6px}
 #mmd-os-v1 .mmd-launcher__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 #mmd-os-v1 .mmd-launcher__grid a{min-width:0;padding:16px;border:1px solid #403426;border-radius:12px;min-height:96px}
 #mmd-os-v1 .mmd-launcher__grid strong,#mmd-os-v1 .mmd-launcher__grid span{display:block}
@@ -54,7 +70,7 @@ export const ADMIN_WORKSPACE_STYLE = `<style data-mmd-admin-launcher-style>
 #mmd-os-v1 .mmd-launcher__references{margin-top:18px;border-top:1px solid #403426;padding-top:10px}
 #mmd-os-v1 .mmd-launcher summary{min-height:44px;padding:12px 0;cursor:pointer;font-size:14px}
 #mmd-os-v1 .mmd-launcher__references a{display:block;min-height:44px;padding:12px 0;color:#e8c782;font-size:14px;overflow-wrap:anywhere}
-@media(max-width:900px){#mmd-os-v1 .mmd-launcher__grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){#mmd-os-v1 .mmd-launcher__flow ol{grid-template-columns:1fr}#mmd-os-v1 .mmd-launcher__grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){#mmd-os-v1 .mmd-launcher{padding:16px}#mmd-os-v1 .mmd-launcher__grid{grid-template-columns:1fr}}
 </style>`;
 
