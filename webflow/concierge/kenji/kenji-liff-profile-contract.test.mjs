@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import {projectKenjiLineMemberTruth} from '../../../member-pages-worker/src/kenji-line-member-truth.js';
+import {handleKenjiMemberChat} from '../../../member-dashboard-chat-worker/src/kenji-member-app.js';
+import {buildKenjiMemberChat} from '../../../ai-worker/src/services/kenji-member-chat.js';
 import {readFileSync} from 'node:fs';
 import {serializeCustomer360Profile} from '../../../member-pages-worker/src/customer-360-serializer.js';
 import {prepareMyMmdLifetimePointsContext,applyMyMmdLifetimePointsResponse} from '../../../member-pages-worker/src/my-mmd-lifetime-points.js';
@@ -22,7 +25,7 @@ test('actual LIFF serializer and money guard retain flat customer status and Ken
   const {payload,raw,requests}=await contract();assert.equal(raw.data.membership,undefined);assert.equal(raw.data.points,61320);
   assert.equal(payload.data.points,1234);assert.equal(payload.data.customer_360.points.status,'verified');
   const value=normalize(payload,Date.now());assert.equal(value.tier,'Premium');assert.equal(value.expiry,'2027-08-31');assert.equal(value.points,1234);assert.equal(value.mode,'active');
-  const answer={intent:'points_status',reply:'QA Member · Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ'};assert.equal(displayReply(answer,value.points),answer.reply);
+  const answer={intent:'points_status',reply:'QA Member · Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ'};assert.equal(displayReply(answer,value.points,value.displayName),answer.reply);
   assert.ok(requests.length>0&&requests.every(method=>method==='GET'));
 });
 test('actual guard masks missing, invalid, duplicate and no-evidence balances instead of trusting old 61320',async()=>{
@@ -36,4 +39,18 @@ test('actual guard masks missing, invalid, duplicate and no-evidence balances in
 test('real verified expired lots produce legitimate zero; raw serializer zero alone does not',async()=>{
   const {payload}=await contract({expired:true});assert.equal(payload.data.points,0);assert.equal(normalize(payload,Date.now()).points,0);
   assert.equal(normalize({ok:true,data:serializeCustomer360Profile({tier:'Premium',membership_status:'active',points:0,points_records_count:1})},Date.now()).points,null);
+});
+
+test('actual raw truth projection and BFF can reply61320; guarded LIFF rendering uses1234',async()=>{
+  const {payload,raw}=await contract();
+  const snapshot={schema_version:'my_mmd_entitlement_resolver_v1',source_status:'verified',evaluated_at:new Date().toISOString(),fail_closed:true,member_blocked:false,capability_state:{active:['svip'],expiring_soon:[],grace:[],inactive:[],recognized:['svip']},access:{public_service_access:true,private_visibility_envelope:'svip',protected_allowlist_required:true,protected_capabilities_active:['svip'],new_model_reveals_allowed:true},entitlements:[{capability:'svip',lifecycle:'active',expire_at:'2027-08-31'}]};
+  const rawResolverProfile={display_name:raw.data.display_name,customer_360:{points:{status:"verified",active_points:raw.data.points}}};
+  const truth=projectKenjiLineMemberTruth({profile:rawResolverProfile,snapshot});assert.equal(truth.points.active_points,61320);
+  const bodies=[];
+  const env={MEMBER_PAGES_WORKER:{fetch:async request=>{bodies.push(await request.json());return Response.json(truth)}},AI_WORKER:{fetch:async request=>Response.json({ok:true,data:buildKenjiMemberChat(await request.json())})}};
+  const response=await handleKenjiMemberChat(new Request('https://mmdbkk.com/api/member/kenji/chat',{method:'POST',headers:{'content-type':'application/json',origin:'https://mmdbkk.com',cookie:'__Host-mmd_liff_session=fixture'},body:JSON.stringify({message:'เช็ก Points'})}),env);
+  const data=await response.json();assert.equal(data.intent,'points_status');assert.match(data.reply,/61,320/);assert.deepEqual(bodies,[{}]);
+  const guarded=normalize(payload,Date.now());const shown=displayReply(data,guarded.points,guarded.displayName);assert.match(shown,/QA Member/);assert.match(shown,/1,234/);assert.doesNotMatch(shown,/61,320/);
+  for(const value of [null,-5,undefined])assert.match(displayReply(data,value),/ยังยืนยันยอด Points ไม่ได้/);
+  assert.equal(displayReply(data,0),'Points ที่ระบบยืนยันตอนนี้ 0 แต้มครับ');
 });

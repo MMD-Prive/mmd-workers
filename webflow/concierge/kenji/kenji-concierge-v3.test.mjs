@@ -45,11 +45,12 @@ test('access blocks and review override flat membership status',()=>{
   assert.equal(normalize(profile({membership_expires_at:'2026-10-02'}),now).mode,'expired');
   assert.equal(normalize(profile({membership_status:'expired'}),now).mode,'expired');
 });
-test('verified Points preserve the exact existing Kenji reply and Per Rename',()=>{
-  const response={intent:'points_status',reply:'QA Member · Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ'};
-  assert.equal(displayReply(response,normalize(profile(),now).points),response.reply);
-  assert.match(displayReply({...response,reply:'Points 0 แต้ม'},null),/ยังยืนยันยอด Points ไม่ได้/);
-  assert.equal(displayReply({intent:'general',reply:'คำตอบเดิมครับ'},null),'คำตอบเดิมครับ');
+test('Points reply uses guarded value and name rather than arbitrary raw BFF text',()=>{
+  const response={intent:'points_status',reply:'wrong legacy 61,320 / -5 / 0'};
+  assert.equal(displayReply(response,1234,'QA Member'),'QA Member · Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ');
+  assert.equal(displayReply(response,0),'Points ที่ระบบยืนยันตอนนี้ 0 แต้มครับ');
+  for(const value of [null,undefined,-5,NaN,Infinity,'1234',1.5])assert.match(displayReply(response,value),/ยังยืนยันยอด Points ไม่ได้/);
+  assert.equal(displayReply({intent:'general',reply:'คำตอบเดิมครับ'},1234),'คำตอบเดิมครับ');
 });
 test('quick prompts and promotion copy do not grant eligibility',()=>{
   assert.match(script,/เช็กโปรโมชั่นทั่วไปที่ระบบยืนยันแล้ว/);

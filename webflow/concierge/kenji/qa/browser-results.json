@@ -1,5 +1,5 @@
 {
-  "checks": 76,
+  "checks": 87,
   "passed": [
     "flat LIFF tier at 320",
     "flat LIFF expiry at 320",
@@ -37,7 +37,7 @@
     "points prompt",
     "duplicate clicks send exactly once",
     "request is existing message contract only",
-    "actual mock reply rendered",
+    "guarded1234 replaces raw61320 reply",
     "success clears submitted input",
     "backend action preserved",
     "Enter adds newline, no implicit send",
@@ -72,12 +72,23 @@
     "back anchor",
     "forward anchor",
     "reload no fabricated history",
+    "raw reply discarded for fresh 2222",
+    "fresh guarded reply 2222",
+    "status and reply same authority 2222",
+    "raw reply discarded for fresh null",
+    "fresh guarded reply null",
+    "status and reply same authority null",
+    "raw reply discarded for fresh 0",
+    "fresh guarded reply 0",
+    "status and reply same authority 0",
+    "raw reply discarded for fresh -5",
+    "fresh guarded reply -5",
+    "status and reply same authority -5",
+    "lost session during fresh Points read discards reply",
+    "fresh401 clears guarded points",
     "reduced motion",
-    "page-only viewport-fit cover",
-    "page-only body reset",
-    "duplicate global status hidden on this page",
     "no JavaScript errors"
   ],
-  "chatRequests": 8,
+  "chatRequests": 13,
   "errors": []
 }
