@@ -18,6 +18,8 @@ const HALL_TOKEN_TTL_SECONDS = 5 * 60;
 const VERIFY_TIMEOUT_MS = 5000;
 const MEMBER_RESOLVER_TIMEOUT_MS = 12000;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
+const REMEMBER_COOKIE = "__Host-mmd_liff_remember";
+const REMEMBER_TTL_SECONDS = 30 * 24 * 60 * 60;
 const REMEMBERED_LOGIN_COOKIE = "__Host-mmd_liff_remember";
 const REMEMBERED_LOGIN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
@@ -89,7 +91,7 @@ const APPROVED_ORIGINS = new Set([
 ]);
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "mms_booking", "unknown"]);
 const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
-const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code", "campaign"]);
+const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code", "campaign", "remember_me"]);
 const INTENT_BODY_KEYS = new Set(["intent", "liff_intent"]);
 const AUDIENCE_BODY_KEYS = new Set(["hall_audience_context"]);
 const PACKAGE_BODY_KEYS = new Set(["requested_package_code", "promo_code"]);
@@ -546,6 +548,24 @@ function forwardMmsResponse(upstream, cookies = []) {
   return json(payload, status, { cookies });
 }
 
+export async function handleLogout(request, env = {}) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  const rememberToken = cookieValue(request, REMEMBER_COOKIE);
+  const sessionToken = cookieValue(request, SESSION_COOKIE);
+  try {
+    if (rememberToken) await revokeRememberedLogin(env, rememberToken);
+    if (sessionToken && env.LIFF_IDENTITY_KV?.delete && String(env.LIFF_SESSION_SECRET || "").length >= 32) {
+      const hash = await keyedDigest(env, `session:${sessionToken}`);
+      await env.LIFF_IDENTITY_KV.delete(`liff:session:${hash}`);
+    }
+  } catch {
+    return json({ ok: false, error: { code: "LOGOUT_REVOKE_FAILED", message: "This device could not be signed out safely. Please retry." } }, 503);
+  }
+  return json({ ok: true }, 200, { cookies: [clearCookie(SESSION_COOKIE), clearCookie(REMEMBER_COOKIE)] });
+}
+
 export async function handleStart(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   const originFailure = requireSameOrigin(request, env);
@@ -574,6 +594,11 @@ export async function handleStart(request, env = {}) {
   const intent = normalizeIntent(body.intent);
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
   const continuity = cleanContinuity(new URL(request.url).searchParams.get("t"));
+  const rememberRequested = body.remember_me === true;
+  if (rememberRequested && memberState.exists && !env.MEMBER_REMEMBERED_LOGIN?.idFromName) {
+    return unavailable("MEMBER_REMEMBERED_LOGIN_NOT_CONFIGURED");
+  }
+  const rememberToken = rememberRequested && memberState.exists ? randomToken(32) : "";
   const session = await issueSession(env, {
     line_user_id: verified.sub,
     verified_at: new Date().toISOString(),
@@ -597,13 +622,24 @@ export async function handleStart(request, env = {}) {
     next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),
     continuity,
   });
+  let rememberedStored = false;
   let remembered;
   try {
+    if (rememberToken) {
+      await writeRememberedLogin(env, rememberToken, verified.sub);
+      rememberedStored = true;
+    }
     await persistGatewayStart(env, gatewayStore, session.session);
     await saveSession(env, session.hash, session.session, SESSION_TTL_SECONDS);
     remembered = await issueOrReuseRememberedLogin(request, env, session.session);
   } catch (error) {
     await env.LIFF_IDENTITY_KV.delete(`liff:session:${session.hash}`);
+    if (rememberedStored) await revokeRememberedLogin(env, rememberToken).catch(() => {});
+    return gatewayStorageFailure(error);
+  }
+
+  const cookies = [sessionCookie(session.token, SESSION_TTL_SECONDS)];
+  if (rememberToken) cookies.push(rememberCookie(rememberToken, REMEMBER_TTL_SECONDS));
     return error instanceof RememberedLoginStorageError
       ? unavailable("REMEMBERED_LOGIN_STORAGE_UNAVAILABLE")
       : gatewayStorageFailure(error);
@@ -1611,15 +1647,88 @@ async function authenticateAndRotate(request, env) {
 
 async function authenticateSession(request, env) {
   const token = cookieValue(request, SESSION_COOKIE);
-  if (!token) return authFailure("LIFF_SESSION_REQUIRED", "Authenticated LIFF session required.");
-  const hash = await keyedDigest(env, `session:${token}`);
-  const key = `liff:session:${hash}`;
-  const session = await env.LIFF_IDENTITY_KV.get(key, "json");
-  if (!session || Number(session.expires_at || 0) <= Date.now()) {
+  const rememberToken = cookieValue(request, REMEMBER_COOKIE);
+  if (!token && !rememberToken) return authFailure("LIFF_SESSION_REQUIRED", "Authenticated LIFF session required.");
+  if (token) {
+    const hash = await keyedDigest(env, `session:${token}`);
+    const key = `liff:session:${hash}`;
+    const session = await env.LIFF_IDENTITY_KV.get(key, "json");
+    if (session && Number(session.expires_at || 0) > Date.now()) return { ok: true, session, key };
     if (session) await env.LIFF_IDENTITY_KV.delete(key);
-    return authFailure("LIFF_SESSION_INVALID", "LIFF session is invalid or expired.");
   }
-  return { ok: true, session, key };
+  if (!rememberToken) return authFailure("LIFF_SESSION_INVALID", "LIFF session is invalid or expired.");
+  const remembered = await readRememberedLogin(env, rememberToken);
+  if (!remembered?.line_user_id || Number(remembered.expires_at || 0) <= Date.now()) {
+    if (remembered) await revokeRememberedLogin(env, rememberToken).catch(() => {});
+    return authFailure("LIFF_SESSION_INVALID", "Remembered login is invalid or expired.");
+  }
+  const memberState = await resolveMemberIdentity(env, remembered.line_user_id);
+  if (!memberState.ok) {
+    return { ok: false, response: json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be verified." } }, 503) };
+  }
+  if (!memberState.exists || !memberState.member_id || !memberState.profile) {
+    await revokeRememberedLogin(env, rememberToken).catch(() => {});
+    return authFailure("LIFF_SESSION_INVALID", "Remembered member identity is no longer active.");
+  }
+  const identityKey = await keyedDigest(env, `identity:${remembered.line_user_id}`);
+  const session = {
+    line_user_id: remembered.line_user_id,
+    verified_at: new Date(Number(remembered.issued_at) || Date.now()).toISOString(),
+    renewal_flow_status: "identity_linked",
+    identity_key: identityKey,
+    member_exists: true,
+    member_id: memberState.member_id,
+    member_profile: memberState.profile,
+    pending_identity_id: null,
+    intent: "unknown",
+    liff_intent: "unknown",
+    source_channel: "line_liff",
+    language: "th",
+    hype_decision_status: "not_started",
+    hall_audience_context: "unknown",
+    model_visibility_mode: "hold_until_selected",
+    pricing_lane: "unknown",
+    promo_code: "",
+    promotion_campaign: "",
+    route_after_liff: null,
+    next_screen_key: nextScreenForIntent("unknown", true),
+    continuity: null,
+  };
+  return { ok: true, session, key: "", recovered: true };
+}
+
+async function rememberedLoginStub(env, token) {
+  if (!env.MEMBER_REMEMBERED_LOGIN?.idFromName || !token) return null;
+  const tokenHash = await keyedDigest(env, `remember:${token}`);
+  return env.MEMBER_REMEMBERED_LOGIN.get(env.MEMBER_REMEMBERED_LOGIN.idFromName(tokenHash));
+}
+
+async function writeRememberedLogin(env, token, lineUserId) {
+  const stub = await rememberedLoginStub(env, token);
+  if (!stub) throw new Error("member_remembered_login_not_configured");
+  const issuedAt = Date.now();
+  const response = await stub.fetch(new Request("https://member-remembered-login.internal/credential", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ line_user_id: lineUserId, issued_at: issuedAt, expires_at: issuedAt + REMEMBER_TTL_SECONDS * 1000 }),
+  }));
+  if (!response.ok) throw new Error("member_remembered_login_write_failed");
+}
+
+async function readRememberedLogin(env, token) {
+  const stub = await rememberedLoginStub(env, token);
+  if (!stub) return null;
+  const response = await stub.fetch(new Request("https://member-remembered-login.internal/credential"));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("member_remembered_login_read_failed");
+  const payload = await response.json().catch(() => null);
+  return payload?.ok === true && payload.data && typeof payload.data === "object" ? payload.data : null;
+}
+
+async function revokeRememberedLogin(env, token) {
+  const stub = await rememberedLoginStub(env, token);
+  if (!stub) throw new Error("member_remembered_login_not_configured");
+  const response = await stub.fetch(new Request("https://member-remembered-login.internal/credential", { method: "DELETE" }));
+  if (!response.ok) throw new Error("member_remembered_login_revoke_failed");
 }
 
 async function saveSession(env, hash, session, ttl) {
@@ -1755,6 +1864,7 @@ export async function handleLogout(request, env = {}) {
 
 async function commitRotatedSession(env, auth) {
   await saveSession(env, auth.newHash, auth.session, SESSION_TTL_SECONDS);
+  if (auth.key && auth.key !== `liff:session:${auth.newHash}`) await env.LIFF_IDENTITY_KV.delete(auth.key);
   if (auth.key) await env.LIFF_IDENTITY_KV.delete(auth.key);
 }
 
@@ -2192,6 +2302,7 @@ function withLiffCors(request, response, env) {
 }
 
 function sessionCookie(value, maxAge) { return hostCookie(SESSION_COOKIE, value, maxAge); }
+function rememberCookie(value, maxAge) { return hostCookie(REMEMBER_COOKIE, value, maxAge); }
 function rememberedLoginCookie(value, expiresAt) {
   const maxAge = Math.max(0, Math.ceil((Number(expiresAt) - Date.now()) / 1000));
   return hostCookie(REMEMBERED_LOGIN_COOKIE, value, maxAge);
@@ -2513,6 +2624,7 @@ async function saveBirthdayWishError(env, auth, error) {
   return saveRotatedError(env, auth, code, "Birthday Wish is temporarily unavailable.", status);
 }
 function methodNotAllowed(methods) { return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: `${methods} required` } }, 405, { headers: { allow: methods } }); }
+function authFailure(code, message) { return { ok: false, response: json({ ok: false, error: { code, message } }, 401, { cookies: [clearCookie(SESSION_COOKIE), clearCookie(REMEMBER_COOKIE)] }) }; }
 function authFailure(code, message) { return { ok: false, response: json({ ok: false, error: { code, message } }, 401, { cookies: clearLoginCookies() }) }; }
 function apiHeaders(methods = "POST,GET,OPTIONS") {
   return {

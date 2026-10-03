@@ -36,6 +36,14 @@ AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS = "tbl2624vwyWkOeP0y"
 binding = "LIFF_IDENTITY_KV"
 id = "12f4c4e7357d4019b5e0951be0b984f5"
 
+[[durable_objects.bindings]]
+name = "MEMBER_REMEMBERED_LOGIN"
+class_name = "MemberRememberedLoginStore"
+
+[[migrations]]
+tag = "v3-member-remembered-login-30d"
+new_sqlite_classes = ["MemberRememberedLoginStore"]
+
 [[services]]
 binding = "MEMBER_STATUS_RESOLVER"
 service = "mmd-auth-worker"
