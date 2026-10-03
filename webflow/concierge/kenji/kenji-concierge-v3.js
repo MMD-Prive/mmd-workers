@@ -1,283 +1,138 @@
 <script>
 (function(){
   "use strict";
-
+  function clean(value){return typeof value==="string"?value.trim():""}
+  function normalize(payload,now){
+    if(!payload||payload.ok!==true)return{mode:"error"};
+    var profile=payload.profile||payload.data||payload;
+    var membership=profile.membership||{};
+    var access=membership.access;
+    var accessState=clean(typeof access==="object"&&access?access.value||access.status:access).toLowerCase();
+    var status=clean(membership.status||profile.membership_status||profile.member_status).toLowerCase();
+    var expiry=clean(membership.activeThrough||membership.active_through||membership.expiresAt||membership.expire_at);
+    var expires=Date.parse(expiry);
+    var mode="unknown";
+    if(["blocked","denied","suspended","revoked","none","inactive"].includes(accessState)||["blocked","suspended","revoked","forbidden"].includes(status))mode="blocked";
+    else if(["pending","pending_review","review","checking","unknown"].includes(accessState)||["pending","pending_review","review","waiting"].includes(status))mode="pending";
+    else if(["expired","inactive","former_member","cancelled"].includes(status)||Number.isFinite(expires)&&expires<=now)mode="expired";
+    else if(["active","verified","current","approved"].includes(status))mode="active";
+    var points=profile.points||{};
+    var balance=points.confirmedBalance;
+    // Only the canonical confirmed field; no null/empty coercion or tag estimates.
+    if(typeof balance!=="number"||!Number.isFinite(balance)||balance<0||["pending","checking","unknown","unavailable"].includes(clean(points.status).toLowerCase()))balance=null;
+    return{mode:mode,tier:clean(membership.level),expiry:Number.isFinite(expires)?expiry:"",points:balance};
+  }
+  function safeAction(action){
+    if(!action||typeof action.url!=="string"||typeof action.label!=="string")return null;
+    // Current BFF actions are relative first-party routes. Reject scripts, external and scheme-relative URLs.
+    if(!action.url.startsWith("/")||action.url.startsWith("//")||/[\\\x00-\x20]/.test(action.url))return null;
+    return {url:action.url,label:action.label.slice(0,120)};
+  }
+  if(typeof module!=="undefined"&&module.exports){module.exports={normalize:normalize,safeAction:safeAction};return}
   var root=document.getElementById("kenji-concierge-v3");
   if(!root||root.dataset.initialized==="true")return;
   root.dataset.initialized="true";
-  root.classList.add("js");
-
-  var config={
-    endpoint:root.dataset.profileEndpoint||"",
-    chat:root.dataset.chatUrl||"/member/kenji",
-    verify:root.dataset.verifyUrl||"/member/my-mmd",
-    booking:root.dataset.bookingUrl||"/booking",
-    recovery:root.dataset.recoveryUrl||"/recovery"
-  };
-
-  var ui={
-    card:root.querySelector("[data-kj3-status-card]"),
-    title:root.querySelector("[data-kj3-status-title]"),
-    copy:root.querySelector("[data-kj3-status-copy]"),
-    retry:root.querySelector("[data-kj3-retry]"),
-    primary:root.querySelectorAll("[data-kj3-primary],[data-kj3-footer]"),
-    privateLinks:root.querySelectorAll("[data-kj3-private]"),
-    branchbar:root.querySelector("[data-kj3-branchbar]"),
-    current:root.querySelector("[data-kj3-current]"),
-    progress:root.querySelector("[data-kj3-progress]"),
-    previous:root.querySelector("[data-kj3-prev]"),
-    next:root.querySelector("[data-kj3-next]"),
-    sheet:root.querySelector("[data-kj3-sheet]"),
-    sheetPanel:root.querySelector("[data-kj3-sheet-panel]"),
-    branchBack:root.querySelector("[data-kj3-branch-back]"),
-    sheetStatus:root.querySelector("[data-kj3-sheet-status]")
-  };
-
-  var controller=null;
-  var statusMode="loading";
-  var activeChapter=0;
-  var lastFocused=null;
-  var touchStartY=0;
-  var chapters=[
-    {id:"kj3-overview",label:"ภาพรวม"},
-    {id:"kj3-actions",label:"เริ่มเรื่อง"},
-    {id:"kj3-intelligence",label:"วิธีคิด"},
-    {id:"kj3-standard",label:"มาตรฐาน"},
-    {id:"kj3-faq",label:"ก่อนเริ่ม"},
-    {id:"kj3-care",label:"Private Care"}
-  ];
-
-  function setLinks(selector,url){
-    root.querySelectorAll(selector).forEach(function(link){link.href=url});
+  var $=function(selector){return root.querySelector(selector)};
+  var card=$("[data-kj3-status-card]"),input=$("#kj3-input"),feedback=$("[data-kj3-chat-status]");
+  var requestId=0,controller=null,lastChecked=0,chatController=null,chatId=0,memberPoints=null,busy=false,canChat=false,paused=false;
+  var messages=$("[data-kj3-messages]"),send=$("[data-kj3-send]");
+  function safePath(value,fallback){try{var url=new URL(value,location.origin);return url.origin===location.origin&&url.pathname.startsWith("/")?url.pathname+url.search+url.hash:fallback}catch(e){return fallback}}
+  var endpoint=safePath(root.dataset.profileEndpoint,"/member/api/liff/profile");
+  function withToken(path){
+    var token=new URLSearchParams(location.search).get("t");
+    if(!token)return path;
+    var url=new URL(path,location.origin);
+    if(!url.searchParams.has("t"))url.searchParams.set("t",token);
+    return url.pathname+url.search+url.hash;
   }
-
-  function setDisabled(nodes,disabled){
-    nodes.forEach(function(link){
-      if(disabled){link.setAttribute("aria-disabled","true");link.tabIndex=-1}
-      else{link.removeAttribute("aria-disabled");link.removeAttribute("tabindex")}
-    });
+  // Preserve existing public handoffs; do not copy tokens to new destinations.
+  root.querySelectorAll('a[href="/member/my-mmd"],a[href="/booking"]').forEach(function(link){link.href=withToken(link.getAttribute("href"))});
+  var portrait=$(".kj3-portrait"),portraitImage=portrait.querySelector("img");
+  function showPortrait(){portrait.hidden=!(portraitImage.complete&&portraitImage.naturalWidth>0)}
+  portraitImage.addEventListener("load",showPortrait);
+  portraitImage.addEventListener("error",function(){portrait.hidden=true});
+  showPortrait();
+  var verify=withToken(safePath(root.dataset.verifyUrl,"/member/my-mmd"));
+  var chatEndpoint=safePath(root.dataset.chatEndpoint,"/api/member/kenji/chat");
+  $("[data-kj3-login]").href=verify;
+  var labels={loading:["กำลังตรวจสอบสมาชิก","อ่านข้อมูลที่ยืนยันแล้วจาก MY MMD"],active:["ข้อมูลสมาชิกยืนยันแล้ว","ระดับสมาชิกไม่ใช่การยืนยันสิทธิ์โปรโมชั่นหรือ Private Access"],guest:["ยืนยันบัญชีเพื่อดูสถานะ","เปิด MY MMD แล้วกลับมาตรวจอีกครั้ง"],expired:["สมาชิกหมดอายุ / ไม่ใช้งาน","ตรวจขั้นตอนต่ออายุใน MY MMD"],pending:["สถานะอยู่ระหว่างตรวจสอบ","ยังไม่ยืนยันการเปิดสิทธิ์ส่วนตัว"],blocked:["สิทธิ์อยู่ระหว่างระงับ","ตรวจสถานะใน MY MMD หรือติดต่อ Private Care"],unknown:["ยังยืนยันสถานะสมาชิกไม่ได้","ข้อมูลไม่ครบ กรุณาตรวจใน MY MMD"],error:["ตรวจสถานะไม่สำเร็จ","ลองตรวจอีกครั้ง ข้อมูลเก่าจะไม่ถูกแสดงแทน" ]};
+  function state(profile){
+    memberPoints=profile.points==null?null:profile.points;
+    var mode=profile.mode,copy=labels[mode]||labels.unknown;
+    root.dataset.memberMode=mode;card.setAttribute("aria-busy",mode==="loading"?"true":"false");
+    $("[data-kj3-status-title]").textContent=copy[0];$("[data-kj3-status-copy]").textContent=copy[1];
+    $("[data-kj3-tier]").textContent=profile.tier||"—";
+    $("[data-kj3-expiry]").textContent=profile.expiry?new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"short",year:"2-digit",timeZone:"Asia/Bangkok"}).format(new Date(profile.expiry)):"—";
+    $("[data-kj3-points]").textContent=profile.points==null?"ยังไม่ยืนยัน":new Intl.NumberFormat("th-TH").format(profile.points);
+    if(["guest","blocked","error"].includes(mode)){++chatId;if(chatController)chatController.abort();busy=false;clearConversation();input.value="";$("[data-kj3-count]").textContent="0 / 800";$("[data-kj3-clear-chat]").disabled=false;messages.setAttribute("aria-busy","false")}
+    canChat=["active","expired","pending","unknown"].includes(mode);
+    send.disabled=busy||!canChat||paused;
+    $("[data-kj3-login]").hidden=canChat;
+    if(!busy)feedback.textContent=paused?"MMD กำลังดูแลบทสนทนา กรุณาคุยต่อในช่องทางเดิม":canChat?"Kenji ใช้ข้อมูลสมาชิกที่ระบบยืนยัน":mode==="loading"?"กำลังตรวจสอบบัญชี":"ยืนยันบัญชีใน MY MMD หรือตรวจสถานะอีกครั้งก่อนส่ง";
+    $("[data-kj3-retry]").disabled=mode==="loading";
   }
-
-  setLinks("[data-kj3-membership]",config.verify);
-  setLinks("[data-kj3-booking]",config.booking);
-  setLinks("[data-kj3-recovery]",config.recovery);
-
-  function setState(mode,heading,message,retryable){
-    statusMode=mode;
-    root.dataset.memberMode=mode;
-    ui.card.dataset.state=mode;
-    ui.card.setAttribute("aria-busy",mode==="loading"?"true":"false");
-    ui.title.textContent=heading;
-    ui.copy.textContent=message;
-    ui.retry.hidden=!retryable;
-
-    var active=mode==="active";
-    var waiting=mode==="loading"||mode==="pending"||mode==="blocked";
-    var destination=active?config.chat:config.verify;
-
-    ui.primary.forEach(function(link){link.href=destination});
-    ui.privateLinks.forEach(function(link){link.href=destination});
-    setDisabled(ui.primary,waiting);
-    setDisabled(ui.privateLinks,waiting);
-
-    var hero=root.querySelector("[data-kj3-primary] span");
-    if(hero)hero.textContent=active?"พร้อมครับ ให้ผมพาไปต่อ":mode==="pending"?"กำลังยืนยันสถานะ":"ให้ผมตรวจสอบสิทธิ์";
-
-    ui.sheetStatus.textContent=active?"ACCESS VERIFIED · พร้อมเริ่มกับ Kenji":mode==="pending"?"MMD กำลังตรวจสอบสถานะ":"เชื่อม MY MMD เพื่อเปิดเส้นทางที่ตรงกับสิทธิ์";
-  }
-
-  function clean(value){return typeof value==="string"?value.trim():""}
-
-  function normalize(payload){
-    var profile=payload&&typeof payload==="object"?(payload.profile||payload.data||payload):{};
-    var membership=profile.membership&&typeof profile.membership==="object"?profile.membership:{};
-    var accessObject=membership.access&&typeof membership.access==="object"?membership.access:{};
-    var access=clean(accessObject.value||accessObject.status||membership.access).toLowerCase();
-    var status=clean(membership.status||profile.membership_status||profile.status||profile.member_status).toLowerCase();
-    var tier=clean(membership.level||profile.membership_tier||profile.tier||profile.level);
-    var expiry=clean(membership.activeThrough||membership.active_through||membership.expiresAt||profile.active_through||profile.activeThrough||profile.expires_at||profile.expiry_date);
-    if(["blocked","denied","suspended","revoked","none","inactive"].includes(access))return{mode:"blocked"};
-    if(["pending","pending_review","review","checking","unknown"].includes(access))return{mode:"pending"};
-    if(["blocked","suspended","revoked","forbidden"].includes(status))return{mode:"blocked"};
-    if(["pending","pending_review","review","waiting"].includes(status))return{mode:"pending"};
-    if(["active","verified","current","approved"].includes(status))return{mode:"active",tier:tier,expiry:expiry};
-    if(["expired","inactive","former_member","cancelled"].includes(status))return{mode:"expired"};
-    return{mode:"guest"};
-  }
-
-  function thaiDate(value){
-    if(!value)return"";
-    var date=new Date(value);
-    if(Number.isNaN(date.getTime()))return"";
-    try{return new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"short",year:"numeric"}).format(date)}catch(error){return""}
-  }
-
-  function render(profile){
-    if(profile.mode==="active"){
-      var expiry=thaiDate(profile.expiry);
-      setState("active","ACCESS VERIFIED"+(profile.tier?" · "+profile.tier:""),expiry?"พร้อมใช้งานถึง "+expiry+" · บอกผมได้เลยว่าต้องการอะไร":"สิทธิ์พร้อม · บอกผมได้เลยว่าต้องการอะไร",false);
-      return;
-    }
-    if(profile.mode==="pending"){
-      setState("pending","REVIEW IN PROGRESS","ผมจะเปิดเส้นทางส่วนตัวเมื่อข้อมูลผ่านการยืนยันแล้ว",false);
-      return;
-    }
-    if(profile.mode==="blocked"){
-      setState("blocked","PRIVATE ACCESS ON HOLD","ผมจะไม่เปิดข้อมูลหรือเส้นทางส่วนตัวจนกว่าสถานะจะพร้อม",false);
-      return;
-    }
-    if(profile.mode==="expired"){
-      setState("expired","RENEWAL REQUIRED","ต่ออายุใน MY MMD แล้วกลับมาให้ผมตรวจอีกครั้ง",false);
-      return;
-    }
-    setState("guest","CONNECT MY MMD","ยืนยันตัวตนครั้งเดียว แล้วผมจะอ่านสิทธิ์ที่ถูกต้องให้คุณ",false);
-  }
-
-  function loadProfile(){
-    if(!config.endpoint){
-      setState("error","STATUS UNAVAILABLE","ยังไม่ได้กำหนด Profile Endpoint",false);
-      return;
-    }
-
+  async function load(){
+    var id=++requestId;
     if(controller)controller.abort();
-    controller=new AbortController();
-    setState("loading","READING MEMBER SIGNAL","กำลังเชื่อมสถานะจริงจาก MY MMD",false);
-    var timeout=setTimeout(function(){controller.abort()},8000);
-
-    fetch(config.endpoint,{method:"GET",credentials:"include",headers:{Accept:"application/json"},signal:controller.signal})
-      .then(function(response){
-        if(response.status===401||response.status===403)return{unauthenticated:true};
-        if(!response.ok)throw new Error("HTTP_"+response.status);
-        return response.text().then(function(body){
-          if(!body)return{};
-          try{return JSON.parse(body)}catch(error){throw new Error("INVALID_JSON")}
-        });
-      })
-      .then(function(data){render(data.unauthenticated?{mode:"guest"}:normalize(data))})
-      .catch(function(error){
-        setState("error",error.name==="AbortError"?"CONNECTION TIMEOUT":"STATUS UNAVAILABLE","ข้อมูลยังไม่พร้อม ผมจะไม่เดาสิทธิ์ให้คุณ",true);
-      })
-      .finally(function(){clearTimeout(timeout)});
+    controller=new AbortController();var activeController=controller;
+    state({mode:"loading"});
+    var timeout=setTimeout(function(){activeController.abort()},8000);
+    try{
+      var response=await fetch(endpoint,{method:"GET",credentials:"include",cache:"no-store",headers:{Accept:"application/json"},signal:activeController.signal});
+      var profile=response.status===401||response.status===403?{mode:"guest"}:response.ok?normalize(await response.json(),Date.now()):{mode:"error"};
+      if(id===requestId){state(profile);lastChecked=Date.now()}
+    }catch(e){if(id===requestId)state({mode:"error"})}finally{clearTimeout(timeout)}
   }
-
-  ui.retry.addEventListener("click",loadProfile);
-
-  root.addEventListener("click",function(event){
-    var disabledLink=event.target.closest("a[aria-disabled='true']");
-    if(disabledLink&&root.contains(disabledLink))event.preventDefault();
-  });
-
-  root.querySelectorAll(".kj3-disclosure").forEach(function(item,unused,items){
-    item.addEventListener("toggle",function(){
-      if(item.open)items.forEach(function(other){if(other!==item)other.open=false});
-    });
-  });
-
-  var reveals=root.querySelectorAll(".kj3-reveal");
-  if("IntersectionObserver" in window&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches){
-    var observer=new IntersectionObserver(function(entries){
-      entries.forEach(function(entry){
-        if(entry.isIntersecting){entry.target.classList.add("is-visible");observer.unobserve(entry.target)}
-      });
-    },{threshold:.12,rootMargin:"0px 0px -7% 0px"});
-    reveals.forEach(function(item){observer.observe(item)});
-  }else{
-    reveals.forEach(function(item){item.classList.add("is-visible")});
+  function clearConversation(){messages.replaceChildren();var empty=document.createElement("p");empty.className="kj3-empty";empty.dataset.kj3Empty="";empty.textContent="ยังไม่มีบทสนทนา เลือกหัวข้อหรือพิมพ์เรื่องที่อยากให้ผมช่วยครับ";messages.appendChild(empty)}
+  function addMessage(text,role,label,action){
+    var empty=$("[data-kj3-empty]");if(empty)empty.remove();
+    var box=document.createElement("div");box.className="kj3-message";box.dataset.role=role;
+    var name=document.createElement("small");name.textContent=label;box.appendChild(name);
+    var content=document.createElement("span");content.textContent=text;box.appendChild(content);
+    var next=safeAction(action);if(next){var link=document.createElement("a");link.href=next.url;link.textContent=next.label+" ↗";box.appendChild(link)}
+    messages.appendChild(box);messages.scrollTop=messages.scrollHeight;
+    return name;
   }
-
-  function updateBranchbar(){
-    var visible=window.scrollY>Math.min(window.innerHeight*.58,520);
-    root.classList.toggle("is-branchbar-visible",visible);
+  async function ask(){
+    var message=input.value.trim();
+    if(busy||paused||!canChat)return;
+    if(!message){feedback.textContent="พิมพ์เรื่องที่ต้องการ หรือเลือกหัวข้อด้านบนครับ";input.focus();return}
+    busy=true;send.disabled=true;$("[data-kj3-clear-chat]").disabled=true;
+    var id=++chatId;chatController=new AbortController();var activeChat=chatController;
+    var label=addMessage(message,"user","กำลังส่ง · ยังไม่ยืนยันการรับ");
+    messages.setAttribute("aria-busy","true");feedback.textContent="Kenji กำลังตรวจข้อมูล…";
+    var timeout=setTimeout(function(){activeChat.abort()},25000);
+    try{
+      var response=await fetch(chatEndpoint,{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({message:message}),signal:activeChat.signal});
+      var data=await response.json().catch(function(){return null});
+      if(id!==chatId)return;
+      if(response.status===401){clearConversation();input.value="";$("[data-kj3-count]").textContent="0 / 800";state({mode:"guest"});feedback.textContent="บัญชีหมดเวลา กรุณายืนยัน MY MMD อีกครั้ง ข้อความนี้ยังไม่ยืนยันการรับ";return}
+      if(response.status===423||data&&["owner_takeover","human_takeover","conversation_paused"].includes(data.error)){
+        paused=true;label.textContent="ยังไม่ยืนยันการรับ";feedback.textContent="MMD กำลังดูแลบทสนทนา กรุณาคุยต่อในช่องทางเดิม ไม่ต้องส่งซ้ำ";return;
+      }
+      if(!response.ok||!data||data.ok!==true||typeof data.reply!=="string"||!data.reply.trim()){
+        label.textContent="ยังไม่ยืนยันการรับ";feedback.textContent=response.status===409?"รายการซ้ำหรือสถานะเปลี่ยน ยังไม่ยืนยันการรับ กรุณาตรวจบทสนทนาเดิมก่อนส่งซ้ำ":"ยังรับคำตอบไม่ได้ ข้อความยังอยู่ในช่องพิมพ์ กรุณาตรวจสถานะก่อนลองใหม่";return;
+      }
+      label.textContent="Kenji ตอบกลับแล้ว";
+      var reply=data.intent==="points_status"&&memberPoints===null?"ตอนนี้ยังยืนยันยอด Points ไม่ได้ครับ ตรวจข้อมูลใน MY MMD ก่อน ผมจะไม่เติมยอดที่ยังไม่ยืนยัน":data.reply;
+      addMessage(reply,"kenji",data.review_required===true?"KENJI · ต้องตรวจสอบเพิ่มเติม":"KENJI",data.action);
+      if(input.value.trim()===message){input.value="";$("[data-kj3-count]").textContent="0 / 800"}
+      feedback.textContent="คำตอบจาก Kenji · การอนุมัติและสิทธิ์ใช้สถานะจริงของ MMD";
+    }catch(error){if(id===chatId){label.textContent="ยังไม่ยืนยันการรับ";feedback.textContent="การเชื่อมต่อขัดข้อง ยังไม่ยืนยันการรับข้อความ ตรวจบทสนทนาเดิมก่อนส่งซ้ำ"}}
+    finally{clearTimeout(timeout);if(id===chatId){busy=false;send.disabled=!canChat||paused;$("[data-kj3-clear-chat]").disabled=false;messages.setAttribute("aria-busy","false")}}
   }
-
-  function setChapter(index){
-    activeChapter=Math.max(0,Math.min(index,chapters.length-1));
-    ui.current.textContent=chapters[activeChapter].label;
-    ui.progress.textContent=String(activeChapter+1).padStart(2,"0")+" / "+String(chapters.length).padStart(2,"0");
-    ui.previous.disabled=activeChapter===0;
-    ui.next.disabled=activeChapter===chapters.length-1;
-  }
-
-  function goToChapter(index,pushHash){
-    setChapter(index);
-    var target=document.getElementById(chapters[activeChapter].id);
-    if(!target)return;
-    if(pushHash&&history.pushState)history.pushState(null,"","#"+chapters[activeChapter].id);
-    target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
-    closeSheet(false);
-  }
-
-  function showSheetView(name){
-    root.querySelectorAll("[data-kj3-sheet-view]").forEach(function(view){
-      var selected=view.dataset.kj3SheetView===name;
-      view.classList.toggle("is-active",selected);
-      view.setAttribute("aria-hidden",selected?"false":"true");
-    });
-    ui.branchBack.hidden=name==="main";
-  }
-
-  function sheetFocusables(){
-    return Array.from(ui.sheetPanel.querySelectorAll("button:not([hidden]):not([disabled]),a[href]:not([aria-disabled='true'])"));
-  }
-
-  function openSheet(){
-    lastFocused=document.activeElement;
-    showSheetView("main");
-    ui.sheet.classList.add("is-open");
-    ui.sheet.setAttribute("aria-hidden","false");
-    document.body.style.overflow="hidden";
-    var first=sheetFocusables()[0];
-    if(first)setTimeout(function(){first.focus()},30);
-  }
-
-  function closeSheet(returnFocus){
-    ui.sheet.classList.remove("is-open");
-    ui.sheet.setAttribute("aria-hidden","true");
-    document.body.style.removeProperty("overflow");
-    if(returnFocus!==false&&lastFocused&&typeof lastFocused.focus==="function")lastFocused.focus();
-  }
-
-  root.querySelector("[data-kj3-menu-open]").addEventListener("click",openSheet);
-  root.querySelectorAll("[data-kj3-menu-close]").forEach(function(button){button.addEventListener("click",function(){closeSheet(true)})});
-  ui.branchBack.addEventListener("click",function(){showSheetView("main")});
-  root.querySelectorAll("[data-kj3-branch]").forEach(function(button){button.addEventListener("click",function(){showSheetView(button.dataset.kj3Branch)})});
-  root.querySelectorAll("[data-kj3-goto]").forEach(function(button){
-    button.addEventListener("click",function(){
-      var index=chapters.findIndex(function(chapter){return chapter.id===button.dataset.kj3Goto});
-      if(index>=0)goToChapter(index,true);
-    });
-  });
-  ui.previous.addEventListener("click",function(){goToChapter(activeChapter-1,true)});
-  ui.next.addEventListener("click",function(){goToChapter(activeChapter+1,true)});
-
-  ui.sheet.addEventListener("keydown",function(event){
-    if(event.key==="Escape"){closeSheet(true);return}
-    if(event.key!=="Tab")return;
-    var focusables=sheetFocusables();
-    if(!focusables.length)return;
-    var first=focusables[0],last=focusables[focusables.length-1];
-    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
-    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
-  });
-  ui.sheetPanel.addEventListener("touchstart",function(event){touchStartY=event.changedTouches[0].clientY},{passive:true});
-  ui.sheetPanel.addEventListener("touchend",function(event){if(event.changedTouches[0].clientY-touchStartY>90)closeSheet(true)},{passive:true});
-
-  if("IntersectionObserver" in window){
-    var chapterObserver=new IntersectionObserver(function(entries){
-      entries.forEach(function(entry){
-        if(entry.isIntersecting){
-          var index=chapters.findIndex(function(chapter){return chapter.id===entry.target.id});
-          if(index>=0)setChapter(index);
-        }
-      });
-    },{rootMargin:"-22% 0px -62% 0px",threshold:0});
-    chapters.forEach(function(chapter){var section=document.getElementById(chapter.id);if(section)chapterObserver.observe(section)});
-  }
-
-  var hashIndex=chapters.findIndex(function(chapter){return "#"+chapter.id===window.location.hash});
-  setChapter(hashIndex>=0?hashIndex:0);
-  window.addEventListener("scroll",updateBranchbar,{passive:true});
-  updateBranchbar();
-  loadProfile();
+  var prompts={points:"เช็ก Points ที่ระบบยืนยันให้หน่อยครับ",promotions:"เช็กโปรโมชั่นทั่วไปที่ระบบยืนยันแล้ว และเงื่อนไขที่ต้องตรวจให้หน่อยครับ",renewal:"เช็กวันหมดอายุและขั้นตอนต่ออายุสมาชิกให้หน่อยครับ"};
+  root.querySelectorAll("[data-kj3-prompt]").forEach(function(button){button.addEventListener("click",function(){input.value=prompts[button.dataset.kj3Prompt];$("[data-kj3-count]").textContent=input.value.length+" / 800";feedback.textContent="เตรียมข้อความแล้ว กดส่งเมื่อพร้อม";input.focus()})});
+  $("[data-kj3-form]").addEventListener("submit",function(event){event.preventDefault();ask()});
+  input.addEventListener("input",function(){$("[data-kj3-count]").textContent=input.value.length+" / 800"});
+  $("[data-kj3-clear-chat]").addEventListener("click",function(){if(busy)return;clearConversation();input.value="";$("[data-kj3-count]").textContent="0 / 800";feedback.textContent="ล้างเฉพาะบทสนทนาในหน้านี้ ประวัติในระบบไม่ได้ถูกลบ";input.focus()});
+  $("[data-kj3-retry]").addEventListener("click",load);
+  function clearPrivateState(){++requestId;if(controller)controller.abort();++chatId;if(chatController)chatController.abort();busy=false;messages.setAttribute("aria-busy","false");$("[data-kj3-clear-chat]").disabled=false;clearConversation();state({mode:"loading"})}
+  // Never restore a stale member snapshot from browser history or a background tab.
+  window.addEventListener("pagehide",function(){clearPrivateState();input.value="";$("[data-kj3-count]").textContent="0 / 800";feedback.textContent=""});
+  window.addEventListener("pageshow",function(event){if(event.persisted)load()});
+  document.addEventListener("visibilitychange",function(){if(document.hidden){clearPrivateState();input.value="";$("[data-kj3-count]").textContent="0 / 800"}else load()});
+  window.addEventListener("focus",function(){if(!document.hidden&&Date.now()-lastChecked>60000)load()});
+  load();
 })();
 </script>
