@@ -25,6 +25,17 @@ export default {
   async fetch(request, env = {}, ctx) {
     let path = "";
     try { path = new URL(request.url).pathname; } catch { return currentWorker.fetch(request, env, ctx); }
+    // Browser visits to the service root use the canonical LIFF member entry.
+    // API paths, internal service hosts and non-read methods keep their owners.
+    if ((request.method === "GET" || request.method === "HEAD")
+      && path === "/"
+      && new URL(request.url).hostname === "mmd-auth-worker.malemodel-bkk.workers.dev") {
+      return new Response(null, { status: 302, headers: {
+        location: "https://mmdbkk.com/member/liff?intent=status",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+      } });
+    }
     const eligible = request.method === "POST" && (path === STATUS_PATH || path === PROFILE_PATH);
     if (!eligible) return currentWorker.fetch(request, env, ctx);
 
