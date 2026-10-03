@@ -88,7 +88,7 @@ function fixture() {
     if (req.method === 'PATCH') return Response.json({ id, fields: body.fields });
     throw new Error('unexpected_fixture_io');
   };
-  const env = { AIRTABLE_BASE_ID: 'appFixture', AIRTABLE_TOKEN: 'fixture-only', INTERNAL_TOKEN: 'fixture-only', PAYMENTS_WORKER: { fetch: async (input, init) => {
+  const env = { AIRTABLE_BASE_ID: 'appFixture', AIRTABLE_TOKEN: 'fixture-only', INTERNAL_TOKEN: 'unrelated-internal-fixture', MMD_SHOP_COUPON_ISSUER_TOKEN: 'fixture-only', PAYMENTS_WORKER: { fetch: async (input, init) => {
     const req = input instanceof Request ? input : new Request(input, init), body = await req.json();
     if (new URL(req.url).pathname.includes('expire-intent')) return Response.json({ ok: true, expired: env.expiryConfirmed === true, order_id: body.order_id });
     counts.payments++; paymentBodies.push(body);
@@ -111,7 +111,7 @@ function fixture() {
 function checkoutRequest(code, key = 'a', shop = 'mmd-shop', changes = {}) {
   return new Request('https://mmdbkk.com/' + shop + '/api/checkout', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'sc1_' + key.repeat(32) }, body: JSON.stringify({ customer: { name: 'Fixture Therapist', phone: '0800000000' }, shipping: { delivery_method: 'pickup' }, items: [{ product_id: GG_COUPON.product_id, quantity: 1, expected_unit_price_thb: 4500 }], ...(code ? { coupon_code: code } : {}), ...changes }) });
 }
-function routeRequest(action, body, token = '') { return new Request('https://mmdbkk.com/mmd-shop/api/coupons/' + action, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { 'x-internal-token': token } : {}) }, body: JSON.stringify(body) }); }
+function routeRequest(action, body, token = '') { return new Request('https://mmdbkk.com/mmd-shop/api/coupons/' + action, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { 'x-coupon-issuer-token': token } : {}) }, body: JSON.stringify(body) }); }
 
 test('anonymous quote is read only; only authenticated issuer can create a code', async () => {
   const x = fixture(); try {
@@ -186,4 +186,18 @@ test('Webflow deliverables fit the custom-code limit and embed the tested coupon
   assert.ok(embed.length < 50000 && footer.length < 50000 && head.length < 50000);
   assert.equal(embed.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1].trim(), client.trim());
   assert.equal(head.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1].trim(), safety.trim());
+});
+
+test('coupon issuer key is isolated from existing internal auth and fails closed when missing', async () => {
+  const x = fixture(); try {
+    let coordinatorCalls = 0;
+    x.env.MMD_SHOP_STOCK_COORDINATOR = { idFromName: () => 'global', get: () => { coordinatorCalls++; throw new Error('must not write'); } };
+    const old = routeRequest('issue', { issuance_key: KEY });
+    old.headers.set('x-internal-token', x.env.INTERNAL_TOKEN);
+    assert.equal((await handleShopCouponRoute(old, x.env)).status, 401);
+    assert.equal((await handleShopCouponRoute(routeRequest('issue', { issuance_key: KEY }, x.env.INTERNAL_TOKEN), x.env)).status, 401);
+    delete x.env.MMD_SHOP_COUPON_ISSUER_TOKEN;
+    assert.equal((await handleShopCouponRoute(routeRequest('issue', { issuance_key: KEY }, 'fixture-only'), x.env)).status, 401);
+    assert.equal(coordinatorCalls, 0);
+  } finally { x.restore(); }
 });

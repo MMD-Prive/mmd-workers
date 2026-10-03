@@ -30,6 +30,7 @@ jobs:
       WORKER_NAME: "himai-chat-worker"
       WRANGLER_SEND_METRICS: "false"
       COUPON_VERSION_ID: ${{ inputs.verify_version }}
+      MMD_SHOP_COUPON_ISSUER_TOKEN: ${{ secrets.MMD_SHOP_COUPON_ISSUER_TOKEN }}
       RELEASE_SOURCE_SHA: ${{ inputs.verify_source_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +69,8 @@ jobs:
             if (type === 'service' && b.environment && b.environment !== 'production') throw new Error('Serving service environment mismatch');
             if (type === 'durable_object_namespace' && b.script_name && b.script_name !== process.env.WORKER_NAME) throw new Error('Durable Object owner mismatch');
           }
-          if (!(settings.bindings || []).some(b => b.name === 'INTERNAL_TOKEN' && b.type === 'secret_text')) throw new Error('Existing internal issuance auth is unavailable');
+          if (!/^[a-f0-9]{64}$/.test(process.env.MMD_SHOP_COUPON_ISSUER_TOKEN || '')) throw new Error('Approved dedicated coupon issuer secret unavailable');
+          if ((settings.bindings || []).some(b => b.name === 'MMD_SHOP_COUPON_ISSUER_TOKEN')) throw new Error('Dedicated issuer key already exists; refuse rotation');
           const source = fs.readFileSync('himai-chat-worker/wrangler.toml', 'utf8');
           const compatibility = source.match(/^compatibility_date\s*=\s*"([^"]+)"/m)?.[1];
           if (settings.compatibility_date !== compatibility || (settings.compatibility_flags || []).length) throw new Error('Serving compatibility settings differ; deployment refused');
@@ -76,9 +78,10 @@ jobs:
           const deployments = await fetch(root + '/deployments', { headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } }).then(r => r.json());
           if (deployments.success !== true || !deployments.result?.deployments?.length) throw new Error('Serving deployment provenance is unavailable');
           before.deployment = deployments.result.deployments[0];
+          if (before.deployment.versions.length !== 1 || before.deployment.versions[0].version_id !== '208870d5-ece8-4024-aaff-e0fa35f1b1a0' || before.deployment.versions[0].percentage !== 100) throw new Error('Serving Worker changed since the approved coupon release');
           const record = process.env.RUNNER_TEMP + '/gg-coupon-serving-before.json';
           fs.writeFileSync(record, JSON.stringify(before), { mode: 0o600 });
-          // No route, secret, migration, variable, or scheduled-trigger writes in this workflow.
+          // Preserve routes, existing secrets, variables, migrations, and scheduled triggers.
           let skip = false;
           const lines = source.split(/\r?\n/).filter(line => {
             if (/^\s*\[/.test(line)) skip = /^\s*(?:\[\[routes\]\]|\[vars\]|\[triggers\]|\[\[migrations\]\])\s*$/.test(line);
@@ -97,7 +100,8 @@ jobs:
         working-directory: himai-chat-worker
         run: |
           set -euo pipefail
-          npx --yes wrangler@4.138.0 versions upload --keep-vars --config .wrangler-coupon-code-only.toml --tag "gg-coupon-${GITHUB_SHA:0:12}" --message "GG Water coupon code release ${GITHUB_SHA}" 2>&1 | tee "$RUNNER_TEMP/gg-coupon-upload.log"
+          node --input-type=module -e "import fs from 'node:fs';fs.writeFileSync(process.env.RUNNER_TEMP+'/gg-coupon-issuer.json',JSON.stringify({MMD_SHOP_COUPON_ISSUER_TOKEN:process.env.MMD_SHOP_COUPON_ISSUER_TOKEN}),{mode:0o600});"
+          npx --yes wrangler@4.138.0 versions upload --secrets-file "$RUNNER_TEMP/gg-coupon-issuer.json" --keep-vars --config .wrangler-coupon-code-only.toml --tag "gg-coupon-${GITHUB_SHA:0:12}" --message "GG Water coupon code release ${GITHUB_SHA}" 2>&1 | tee "$RUNNER_TEMP/gg-coupon-upload.log"
           version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/gg-coupon-upload.log" | tail -n 1)"
           test -n "$version_id"
           echo "COUPON_VERSION_ID=$version_id" >> "$GITHUB_ENV"
@@ -116,7 +120,9 @@ jobs:
           const canonical = v => Array.isArray(v) ? v.map(canonical) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical(v[k])])) : v;
           const bindings = rows => JSON.stringify(canonical(rows.slice().sort((a, b) => a.name.localeCompare(b.name))));
           const version = await read('/versions/' + process.env.COUPON_VERSION_ID);
-          if (bindings(version.resources.bindings) !== bindings(before.settings.bindings)) throw new Error('Uploaded binding or variable drift; version will not be deployed');
+          const dedicated = version.resources.bindings.filter(b => b.name === 'MMD_SHOP_COUPON_ISSUER_TOKEN');
+          if (dedicated.length !== 1 || dedicated[0].type !== 'secret_text') throw new Error('Dedicated coupon issuer binding missing');
+          if (bindings(version.resources.bindings.filter(b => b.name !== 'MMD_SHOP_COUPON_ISSUER_TOKEN')) !== bindings(before.settings.bindings)) throw new Error('Existing binding or variable drift; version will not be deployed');
           const current = await read('/deployments');
           if (current.deployments[0].id !== before.deployment.id) throw new Error('Another deployment occurred after preflight; refusing to replace it');
           NODE
@@ -138,6 +144,7 @@ jobs:
           const versionData = await versionResponse.json();
           if (!versionResponse.ok || versionData.success !== true || (versionData.result?.annotations || versionData.result?.metadata?.annotations)?.['workers/tag'] !== 'gg-coupon-' + process.env.RELEASE_SOURCE_SHA.slice(0, 12)) throw new Error('Deployed source tag does not match the release commit');
           const checks = [];
+          if (versionData.result.resources.bindings.filter(b => b.name === 'MMD_SHOP_COUPON_ISSUER_TOKEN' && b.type === 'secret_text').length !== 1) throw new Error('Active dedicated coupon issuer secret missing');
           for (const host of ['www.mmdbkk.com', 'mmdbkk.com']) {
             for (const [path, options, status, error] of [
               ['/mmd-shop/api/coupons/quote', {}, 405, 'method_not_allowed'],

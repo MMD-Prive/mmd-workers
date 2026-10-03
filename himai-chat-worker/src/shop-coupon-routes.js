@@ -8,8 +8,8 @@ export async function handleShopCouponRoute(request, env) {
   if (request.method !== 'POST') return reply({ ok: false, error: 'method_not_allowed' }, 405);
   try {
     if (path.endsWith('/issue')) {
-      const expected = String(env.INTERNAL_TOKEN || '').trim();
-      const supplied = String(request.headers.get('x-internal-token') || '').trim();
+      const expected = String(env.MMD_SHOP_COUPON_ISSUER_TOKEN || '').trim();
+      const supplied = String(request.headers.get('x-coupon-issuer-token') || '').trim();
       const digest = async value => crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
       const a = new Uint8Array(await digest(expected)), b = new Uint8Array(await digest(supplied));
       let mismatch = 0;
