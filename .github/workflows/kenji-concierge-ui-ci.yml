@@ -1,0 +1,25 @@
+name: Kenji concierge UI contracts
+on:
+  pull_request:
+    paths:
+      - 'webflow/concierge/kenji/**'
+      - '.github/workflows/kenji-concierge-ui-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'webflow/concierge/kenji/**'
+      - '.github/workflows/kenji-concierge-ui-ci.yml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --experimental-global-webcrypto --test webflow/concierge/kenji/*.test.mjs member-dashboard-chat-worker/test/kenji-member-app.test.mjs ai-worker/test/kenji-member-chat.test.mjs
