@@ -1,0 +1,97 @@
+{
+  "state": "mock profile HTTP 503",
+  "before": [
+    {
+      "width": 320,
+      "inputTop": 658,
+      "sendBottom": 765,
+      "statusHeight": 131,
+      "chatHeaderHeight": 117,
+      "pageHeight": 998,
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "inputTop": 660,
+      "sendBottom": 767,
+      "statusHeight": 131,
+      "chatHeaderHeight": 117,
+      "pageHeight": 961,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "inputTop": 662,
+      "sendBottom": 769,
+      "statusHeight": 131,
+      "chatHeaderHeight": 117,
+      "pageHeight": 963,
+      "overflow": false
+    },
+    {
+      "width": 430,
+      "inputTop": 665,
+      "sendBottom": 773,
+      "statusHeight": 131,
+      "chatHeaderHeight": 117,
+      "pageHeight": 967,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "inputTop": 632,
+      "sendBottom": 739,
+      "statusHeight": 131,
+      "chatHeaderHeight": 117,
+      "pageHeight": 939,
+      "overflow": false
+    }
+  ],
+  "after": [
+    {
+      "width": 320,
+      "inputTop": 466,
+      "sendBottom": 573,
+      "statusHeight": 118,
+      "chatHeaderHeight": 45,
+      "pageHeight": 804,
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "inputTop": 466,
+      "sendBottom": 573,
+      "statusHeight": 118,
+      "chatHeaderHeight": 45,
+      "pageHeight": 765,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "inputTop": 467,
+      "sendBottom": 574,
+      "statusHeight": 118,
+      "chatHeaderHeight": 45,
+      "pageHeight": 766,
+      "overflow": false
+    },
+    {
+      "width": 430,
+      "inputTop": 470,
+      "sendBottom": 578,
+      "statusHeight": 118,
+      "chatHeaderHeight": 45,
+      "pageHeight": 770,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "inputTop": 483,
+      "sendBottom": 590,
+      "statusHeight": 118,
+      "chatHeaderHeight": 45,
+      "pageHeight": 788,
+      "overflow": false
+    }
+  ]
+}

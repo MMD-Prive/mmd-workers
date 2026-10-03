@@ -1,3 +1,11 @@
+# Composer-first follow-up
+
+Mocked 503 profile state at 320/375/390/430 and 1440 desktop. At 390px input top moves 662 → 451px; exact current measurements are in composer-geometry.json. Chat heading becomes a single 44px row, repeated intro/caption is removed, coupons remain in the disclosure, and the empty state is shortened. No session, transport, Points or AI behavior changed. Screenshots composer-before-* and composer-* contain no customer data.
+
+28 focused unit tests and 87 mocked browser checks pass. Root npm run check fails on installed Node 24: `bad option: --experimental-default-type=module`; this existing command is unchanged. No standalone build exists for the three Webflow snippets. Actual native keyboard and authenticated Webflow runtime acceptance remain open.
+
+The supplied screenshot proves the page entered error mode, but does not identify URL, HTTP status, response body or browser network failure. Code maps 401/403 to guest, other HTTP failures / ok:false / invalid JSON / network timeout to error. No live auth cause is established. No credentials, backend or scopes changed.
+
 # Points reply authority correction
 
 Source-confirmed P1 from PR2195 discussion_r4171974421. Merged compact main64582f2d retained unsafe exact Points reply preservation: a known guarded profile amount did not prove the BFF reply used that amount. No customer incident reproduced.
