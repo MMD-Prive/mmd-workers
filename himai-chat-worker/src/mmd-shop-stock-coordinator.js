@@ -15,6 +15,8 @@ import {
   reserveMmdShopStock,
 } from "../../shared/mmd-shop-stock-reservation.mjs";
 
+import { issueGgCoupon, inspectGgCoupon, holdGgCoupon, settleGgCoupon } from './mmd-shop-coupons.js';
+
 export class MmdShopStockCoordinator {
   constructor(state, env) {
     this.state = state;
@@ -35,6 +37,17 @@ export class MmdShopStockCoordinator {
     }
 
     const run = async () => {
+      if (url.pathname === "/coupons/issue") return issueGgCoupon(this.state.storage, body.issuance_key);
+      if (url.pathname === "/coupons/inspect") return inspectGgCoupon(this.state.storage, body.coupon_code);
+      if (url.pathname === "/coupons/hold") return holdGgCoupon(this.state.storage, body.coupon_code, body.order_id);
+      if (url.pathname === "/coupons/recover") {
+        // Uncertain payment creation cannot unlock a discount for a second order.
+        if (body.no_payment_started !== true) {
+          const expiry = await expirePaymentIntent(this.env, body.order_id);
+          if (!expiry.ok || expiry.expired !== true) return { ok: false, error: "coupon_recovery_required", status: 409 };
+        }
+        return settleGgCoupon(this.state.storage, body.order_id, "release");
+      }
       if (url.pathname === "/reserve") {
         const reservation = await reserveMmdShopStock(this.env, body);
         return { ok: true, reservation };
@@ -53,13 +66,16 @@ export class MmdShopStockCoordinator {
       }
       if (url.pathname === "/commit") {
         const result = await commitMmdShopReservation(this.env, body.reservation);
+        await settleGgCoupon(this.state.storage, result.reservation.order_id, "commit");
         return { ok: true, ...result };
       }
       if (url.pathname === "/expire") {
         const result = await expireMmdShopReservations(this.env);
         const payment_expiry = [];
         for (const orderId of result.payment_expiry_order_ids || result.expired_order_ids || []) {
-          payment_expiry.push(await expirePaymentIntent(this.env, orderId));
+          const expiry = await expirePaymentIntent(this.env, orderId);
+          payment_expiry.push(expiry);
+          if (expiry.ok && expiry.expired === true) await settleGgCoupon(this.state.storage, orderId, "release");
         }
         return { ok: true, ...result, payment_expiry };
       }
@@ -138,6 +154,7 @@ async function expirePaymentIntent(env, orderId) {
     ok: response.ok && data.ok === true,
     status: response.status,
     error: data.error || null,
+    expired: data.expired === true,
   };
 }
 

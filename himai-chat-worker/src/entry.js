@@ -1,3 +1,4 @@
+import { handleShopCouponRoute } from './shop-coupon-routes.js';
 import himaiChatWorker from "./index.js";
 import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { handleShopCatalog } from "./shop-catalog.js";
@@ -33,6 +34,8 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
+    const couponResponse = await handleShopCouponRoute(request, env);
+    if (couponResponse) return couponResponse;
 
     if (request.method.toUpperCase() === "GET" && ["/health", "/mmd-shop/api/health", "/shop/api/health"].includes(path)) {
       const healthUrl = new URL(request.url);

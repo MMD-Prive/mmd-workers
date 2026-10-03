@@ -3,6 +3,8 @@ import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfil
 import { publicMmdShopReservation, writeMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 import { releaseViaMmdShopCoordinator, reserveViaMmdShopCoordinator } from "./mmd-shop-stock-coordinator.js";
 
+import { couponCoordinator, couponTotals, normalizeCouponCode } from './mmd-shop-coupons.js';
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 const TABLES = Object.freeze({
@@ -117,6 +119,9 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
   let reservation = null;
   let order = null;
   let orderId = "";
+  let coupon = null;
+  let paymentStarted = false;
+  let couponHeld = false;
 
   try {
     const body = await request.json().catch(() => null);
@@ -129,10 +134,22 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
     const products = await loadProducts(env, cartInput.map((item) => item.product_id));
     const stock = await loadMmdStock(env);
     const pricedCart = validateAndPriceCart(cartInput, products, stock, shop);
+    const couponCode = normalizeCouponCode(body.coupon_code);
+    if (couponCode && shop.key !== "mmd-shop") throw httpError(400, "coupon_wrong_shop");
+    const subtotal = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
+    orderId = options.orderId || makeOrderId(shop.orderPrefix);
+    if (couponCode) {
+      const totals = couponTotals(pricedCart);
+      // Reject invalid/expired/held coupons before any customer or order writes.
+      const inspected = await couponCoordinator(env, "inspect", { coupon_code: couponCode });
+      const held = await couponCoordinator(env, "hold", { coupon_code: couponCode, order_id: orderId });
+      couponHeld = true;
+      if (options.checkpoint) await options.checkpoint("coupon_held");
+      coupon = { ...totals, product_id: inspected.coupon.product_id, sku: inspected.coupon.sku, issued_at: held.coupon.issued_at, expires_at: held.coupon.expires_at };
+    }
     if (options.checkpoint) await options.checkpoint("before_customer_write");
     const customer = await findOrCreateCustomer(env, customerInput, shop.sourcePath, memberContext, shop);
-    orderId = options.orderId || makeOrderId(shop.orderPrefix);
-    const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
+    const total = coupon ? coupon.total_thb : subtotal;
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "on_demand");
 
     if (options.checkpoint) await options.checkpoint("before_order_write");
@@ -145,6 +162,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
       shop,
       shipping,
       reservation: null,
+      coupon,
     });
 
     if (options.checkpoint) await options.checkpoint("order_created");
@@ -174,6 +192,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
       await patchRecord(env, table(env, "orders"), order.id, { [ORDER_FIELDS.telegramSent]: true }).catch(() => null);
     }
 
+    paymentStarted = true;
     const payment = await createPaymentIntent(env, { orderId, total, email: customerInput.email, shop });
     if (!payment?.ok || !clean(payment.customer_payment_url, 2000)) {
       const released = await releaseViaMmdShopCoordinator(env, reservation, "payment_initialization_failed").catch(() => null);
@@ -186,6 +205,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
           reservation,
         ),
       }).catch(() => null);
+      if (couponHeld) await couponCoordinator(env, "recover", { order_id: orderId, no_payment_started: false }).catch(() => null);
       return json({
         ok: false,
         error: "payment_initialization_failed",
@@ -232,6 +252,9 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
       order_record_id: order.id,
       customer_record_id: customer.id,
       total_thb: total,
+      subtotal_thb: subtotal,
+      discount_thb: coupon?.discount_thb || 0,
+      coupon,
       currency: "THB",
       payment_ref: clean(payment.payment_ref, 220) || null,
       payment_url: payment.customer_payment_url,
@@ -267,6 +290,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
           : currentNotes,
       }).catch(() => null);
     }
+    if (couponHeld) await couponCoordinator(env, "recover", { order_id: orderId, no_payment_started: !paymentStarted }).catch(() => null);
     console.error("MMD Shop checkout error:", error);
     return json({ ok: false, error: clean(error?.message || error || "checkout_failed", 300), order_id: orderId || null }, Number(error?.status || 500));
   }
@@ -381,6 +405,13 @@ export function validateAndPriceCart(cart, products, stock, shop = SHOP_CHECKOUT
       stock_status: onDemand ? "on_demand" : "tracked",
     };
   });
+}
+
+export async function priceMmdCouponCart(env, items) {
+  const cart = normalizeCart(items);
+  const products = await loadProducts(env, cart.map(item => item.product_id));
+  const stock = await loadMmdStock(env);
+  return validateAndPriceCart(cart, products, stock);
 }
 
 async function findOrCreateCustomer(env, customer, sourcePath, memberContext = null, shop = SHOP_CHECKOUT_CONFIG["mmd-shop"]) {
@@ -505,6 +536,7 @@ async function createOrder(env, input) {
     `source_path=${input.sourcePath}`,
     input.stockConfirmationRequired ? "stock_confirmation_required=true" : "stock_confirmation_required=false",
     "payment_verification_required=true",
+    ...(input.coupon ? ["mmd_shop_coupon_v1=" + JSON.stringify(input.coupon)] : []),
   ];
   const fulfillment = createMmdShopFulfillment({ shipping: input.shipping });
   const fulfillmentNotes = writeMmdShopFulfillment(noteLines.join("; "), fulfillment);

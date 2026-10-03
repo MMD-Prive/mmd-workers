@@ -180,17 +180,19 @@
               Object.assign(shipping, { address_line1: val('address1'), address_line2: val('address2'), subdistrict: val('subdistrict'), district: val('district'), province: val('province'), postal_code: val('postal').replace(/\D/g, '').slice(0, 5) });
               if (shipping.address_line1.length < 5 || !shipping.district || !shipping.province || shipping.postal_code.length !== 5) { status.textContent = message('addressReq'); return; }
             }
-            data = await client.submit({ customer: { name: name, phone: phone, email: email }, shipping: shipping, source_path: config.shop === 'shop' ? '/shop' : '/mmd-shop', items: cart.map(function (x) { return { product_id: x.product_id, quantity: Number(x.qty), expected_unit_price_thb: Number(x.unit_price_thb) }; }) });
+            var couponCode = config.shop === 'mmd-shop' && config.couponCode ? config.couponCode() : '';
+            data = await client.submit({ ...(couponCode ? { coupon_code: couponCode } : {}), customer: { name: name, phone: phone, email: email }, shipping: shipping, source_path: config.shop === 'shop' ? '/shop' : '/mmd-shop', items: cart.map(function (x) { return { product_id: x.product_id, quantity: Number(x.qty), expected_unit_price_thb: Number(x.unit_price_thb) }; }) });
           }
           config.clearCart();
           var destination = paymentDestination(data.payment_url);
           if (config.navigate) config.navigate(destination); else host.location.assign(destination);
         } catch (error) {
           var code = error.message;
-          var base = code === 'checkout_storage_required' || code === 'checkout_crypto_required' ? more('storage')
+          var couponError = config.couponError ? config.couponError(code) : '';
+          var base = couponError || (code === 'checkout_storage_required' || code === 'checkout_crypto_required' ? more('storage')
             : code === 'checkout_resume_expired' || code === 'checkout_recovery_required' || code === 'checkout_key_conflict' ? more('expired')
             : code === 'cart_price_changed' || code === 'insufficient_stock' ? message('cartUpdated')
-            : client.unresolved() ? more('unknown') : message('failed');
+            : client.unresolved() ? more('unknown') : message('failed'));
           var order = error.data && error.data.order_id;
           status.textContent = base + (order ? ' [Order: ' + String(order).slice(0, 100) + ']' : '');
         } finally {
@@ -203,5 +205,4 @@
   }
   host.MMDShopCheckoutSafety = Object.freeze({ version: 1, cartStore: cartStore, reconcile: reconcile, jsonRequest: jsonRequest, paymentDestination: paymentDestination, checkoutClient: checkoutClient, bindFlow: bindFlow, extra: extra });
 })(typeof window !== 'undefined' ? window : globalThis);
-
 </script>

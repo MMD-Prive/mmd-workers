@@ -1,0 +1,75 @@
+<style id="mmd-shop-coupon-style">
+#mmdshop-final .mmd-coupon{margin:0 0 20px;padding:16px;border:1px solid #d8c8ac;border-radius:14px;background:#f8f5f0}
+#mmdshop-final .mmd-coupon label{display:block;font-weight:700;margin-bottom:8px}
+#mmdshop-final .mmd-coupon-input{display:flex;gap:8px}
+#mmdshop-final .mmd-coupon-input input{flex:1;min-width:0;margin:0;font-size:16px}
+#mmdshop-final .mmd-coupon button{min-height:44px;padding:8px 12px;border:1px solid #d8c8ac;border-radius:10px;background:#fff;cursor:pointer;color:#171719;font:inherit}
+#mmdshop-final .mmd-coupon button:disabled{opacity:.5;cursor:wait}
+#mmdshop-final .mmd-coupon p,#mmdShopCouponStatus{font-size:12px;line-height:1.6;margin:8px 0}
+#mmdShopCouponSummary>div{display:flex;justify-content:space-between;gap:12px;padding-top:8px;font-size:12px}
+#mmdShopCouponSummary[hidden]{display:none}
+@media(max-width:360px){#mmdshop-final .mmd-coupon-input{flex-direction:column}}
+</style>
+<script id="mmd-shop-coupon-client">
+(function (host) {
+  'use strict';
+  var COPY = {
+    en: { label: 'Coupon code', apply: 'Apply', remove: 'Remove', help: '500 THB off GG Water 50 ml only · One use · Valid for 2 months from issue', checking: 'Checking coupon…', applied: 'Coupon applied', subtotal: 'Items', discount: 'Coupon discount', total: 'Total after discount', expires: 'Expires', invalid: 'This coupon is invalid.', used: 'This coupon has already been used.', expired: 'This coupon has expired.', held: 'This coupon is reserved for another order. Please contact MMD.', product: 'Add GG Water 50 ml to use this coupon.', unavailable: 'Coupon checking is unavailable. Try again before ordering.', required: 'Press Apply to check this coupon before ordering.', changed: 'Your cart changed. Apply the coupon again.', pending: 'Check your previous order before changing the coupon.' },
+    th: { label: 'โค้ดคูปอง', apply: 'ใช้คูปอง', remove: 'นำคูปองออก', help: 'ลด 500 บาท เฉพาะ GG Water 50 ml · ใช้ได้ครั้งเดียว · อายุ 2 เดือนนับจากวันที่ออก', checking: 'กำลังตรวจคูปอง…', applied: 'ใช้ส่วนลดแล้ว', subtotal: 'ยอดสินค้า', discount: 'ส่วนลดคูปอง', total: 'ยอดหลังส่วนลด', expires: 'หมดอายุ', invalid: 'โค้ดคูปองไม่ถูกต้องครับ', used: 'คูปองนี้ใช้ไปแล้วครับ', expired: 'คูปองนี้หมดอายุแล้วครับ', held: 'คูปองนี้อยู่กับ Order อื่น กรุณาติดต่อ MMD ครับ', product: 'เพิ่ม GG Water 50 ml ในตะกร้าก่อนใช้คูปองครับ', unavailable: 'ยังตรวจคูปองไม่ได้ กรุณาลองอีกครั้งก่อนสั่งซื้อครับ', required: 'กดใช้คูปองเพื่อตรวจส่วนลดก่อนสั่งซื้อครับ', changed: 'รายการสินค้าเปลี่ยนแล้ว กรุณากดใช้คูปองอีกครั้งครับ', pending: 'กรุณาตรวจ Order เดิมก่อนเปลี่ยนคูปองครับ' },
+    zh: { label: '优惠码', apply: '使用', remove: '移除', help: '仅 GG Water 50 ml 减 500 泰铢 · 限用一次 · 发放后两个月有效', checking: '正在核验…', applied: '优惠已应用', subtotal: '商品金额', discount: '优惠', total: '优惠后金额', expires: '到期', invalid: '优惠码无效。', used: '此优惠已使用。', expired: '此优惠已到期。', held: '此优惠已保留给其他订单，请联系 MMD。', product: '请添加 GG Water 50 ml。', unavailable: '暂时无法核验，请重试。', required: '下单前请先核验优惠码。', changed: '购物车已变更，请重新核验。', pending: '请先查询原订单。' },
+    ja: { label: 'クーポンコード', apply: '適用', remove: '解除', help: 'GG Water 50 ml のみ500バーツ割引 · 1回限り · 発行から2か月有効', checking: '確認中…', applied: '割引適用済み', subtotal: '商品合計', discount: '割引', total: '割引後の合計', expires: '有効期限', invalid: '無効なコードです。', used: '使用済みです。', expired: '有効期限が切れています。', held: '別の注文で予約されています。MMDにご連絡ください。', product: 'GG Water 50 ml を追加してください。', unavailable: '確認できません。再試行してください。', required: '注文前に適用を押してください。', changed: 'カートが変わりました。再度適用してください。', pending: '先に前の注文をご確認ください。' },
+    ko: { label: '쿠폰 코드', apply: '적용', remove: '제거', help: 'GG Water 50 ml만 500바트 할인 · 1회 사용 · 발급 후 2개월 유효', checking: '확인 중…', applied: '할인 적용됨', subtotal: '상품 합계', discount: '쿠폰 할인', total: '할인 후 합계', expires: '만료일', invalid: '유효하지 않은 코드입니다.', used: '이미 사용한 쿠폰입니다.', expired: '만료된 쿠폰입니다.', held: '다른 주문에 예약된 쿠폰입니다. MMD에 문의하세요.', product: 'GG Water 50 ml를 추가해 주세요.', unavailable: '확인할 수 없습니다. 다시 시도해 주세요.', required: '주문 전에 적용을 눌러 주세요.', changed: '장바구니가 변경되었습니다. 다시 적용해 주세요.', pending: '이전 주문을 먼저 확인해 주세요.' }
+  };
+  function bind(config) {
+    var root = config.root, applied = null, revision = 0;
+    var find = function (id) { return root.querySelector('#' + id); };
+    var input = find('mmdShopCouponCode'), button = find('mmdShopCouponApply'), remove = find('mmdShopCouponRemove'), status = find('mmdShopCouponStatus'), summary = find('mmdShopCouponSummary');
+    var t = function (key) { return (COPY[config.lang()] || COPY.en)[key]; };
+    function items() { return config.cart().map(function (x) { return { product_id: x.product_id, quantity: Number(x.qty), expected_unit_price_thb: Number(x.unit_price_thb) }; }); }
+    function signature() { return JSON.stringify(items()); }
+    function code() { return input.value.trim().toUpperCase(); }
+    function reset(message) { revision++; applied = null; summary.hidden = true; summary.replaceChildren(); status.textContent = message || ''; }
+    function errorMessage(error) {
+      var map = { coupon_invalid: 'invalid', coupon_required: 'invalid', coupon_used: 'used', coupon_expired: 'expired', coupon_in_use: 'held', coupon_product_required: 'product', coupon_apply_required: 'required', coupon_service_unavailable: 'unavailable', coupon_recovery_required: 'held', coupon_product_price_too_low: 'unavailable', coupon_payable_amount_required: 'unavailable', coupon_cart_changed: 'changed' };
+      return map[error] ? t(map[error]) : '';
+    }
+    function render() {
+      find('mmdShopCouponLabel').textContent = t('label'); button.textContent = t('apply'); remove.textContent = t('remove'); find('mmdShopCouponHelp').textContent = t('help');
+      if (!applied) return;
+      summary.hidden = false; summary.replaceChildren();
+      [['subtotal', config.money(applied.subtotal_thb)], ['discount', '−' + config.money(applied.discount_thb)], ['total', config.money(applied.total_thb)], ['expires', new Date(applied.coupon.expires_at).toLocaleString(config.lang() || 'en', { timeZone: 'Asia/Bangkok' })]].forEach(function (row) {
+        var line = document.createElement('div'), label = document.createElement('span'), value = document.createElement('strong');
+        label.textContent = t(row[0]); value.textContent = row[1]; line.append(label, value); summary.append(line);
+      });
+      status.textContent = t('applied');
+    }
+    input.addEventListener('input', function () { reset(); });
+    remove.addEventListener('click', function () { if (config.locked()) { status.textContent = t('pending'); return; } input.value = ''; reset(); });
+    button.addEventListener('click', async function () {
+      if (config.locked()) { status.textContent = t('pending'); return; }
+      reset(); var stamp = revision, currentCode = code(), currentCart = signature();
+      if (!currentCode) { status.textContent = t('invalid'); return; }
+      button.disabled = true; status.textContent = t('checking');
+      try {
+        var data = await config.request('/mmd-shop/api/coupons/quote', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ coupon_code: currentCode, items: items() }) });
+        if (revision !== stamp || code() !== currentCode || signature() !== currentCart) return;
+        if (data.shop !== 'mmd-shop' || data.discount_thb !== 500 || data.coupon.sku !== 'WGG-50' || !(data.total_thb > 0) || !Number.isFinite(Date.parse(data.coupon.expires_at))) throw new Error('coupon_service_unavailable');
+        applied = Object.assign({}, data, { code: currentCode, signature: currentCart }); render();
+      } catch (error) { if (revision === stamp) status.textContent = errorMessage(error.message) || t('unavailable'); }
+      finally { button.disabled = false; }
+    });
+    render();
+    return {
+      refresh: function () { if (applied && (applied.signature !== signature() || applied.code !== code())) reset(t('changed')); render(); },
+      errorMessage: errorMessage,
+      checkoutCode: function () {
+        if (!code()) return '';
+        if (!applied || applied.signature !== signature() || applied.code !== code()) throw new Error('coupon_apply_required');
+        if (Date.parse(applied.coupon.expires_at) <= Date.now()) { reset(t('expired')); throw new Error('coupon_expired'); }
+        return applied.code;
+      }
+    };
+  }
+  host.MMDShopCoupons = Object.freeze({ bind: bind });
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>

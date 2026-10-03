@@ -2,6 +2,8 @@ import { checkoutConfigForPath, handleMmdShopCheckout, normalizeCart, normalizeC
 import { normalizeMmdShopShipping } from '../../shared/mmd-shop-fulfillment.mjs';
 import { digestCheckout, runCheckoutOnce } from '../../shared/shop-checkout-once.mjs';
 
+import { normalizeCouponCode } from './mmd-shop-coupons.js';
+
 const KEY_RE = /^sc1_[a-f0-9]{32}$/;
 function reply(error, status, extra = {}) {
   return Response.json({ ok: false, error, ...extra }, { status, headers: { 'cache-control': 'no-store, private' } });
@@ -39,6 +41,8 @@ export async function handleReplaySafeShopCheckout(request, env, ctx = null) {
     const customer = normalizeCustomer(body.customer || body);
     const shipping = normalizeMmdShopShipping(body.shipping || {}, customer);
     const items = normalizeCart(body.items).sort((a, b) => a.product_id.localeCompare(b.product_id));
+    const coupon_code = normalizeCouponCode(body.coupon_code);
+    if (coupon_code && shop.key !== 'mmd-shop') return reply('coupon_wrong_shop', 400, { new_attempt_allowed: true });
     const ns = env.MMD_SHOP_STOCK_COORDINATOR;
     if (!ns?.idFromName || !ns?.get) return reply('checkout_durability_unavailable', 503);
     const id = ns.idFromName('checkout:v1:' + await digestCheckout(key));
@@ -46,7 +50,7 @@ export async function handleReplaySafeShopCheckout(request, env, ctx = null) {
     if (request.headers.get('cookie')) headers.cookie = request.headers.get('cookie');
     // Same binding, separate object IDs: never hold the global stock queue while checking out.
     return await ns.get(id).fetch(new Request('https://shop-checkout.internal' + shop.path, {
-      method: 'POST', headers, body: JSON.stringify({ customer, shipping, items, source_path: shop.sourcePath, checkout_key: key }),
+      method: 'POST', headers, body: JSON.stringify({ customer, shipping, items, source_path: shop.sourcePath, checkout_key: key, ...(coupon_code ? { coupon_code } : {}) }),
     }));
   } catch (e) { return reply(e.status ? e.message : 'checkout_outcome_unknown', Number(e.status || 503), { new_attempt_allowed: Boolean(e.status && e.status < 500) }); }
 }
