@@ -4,23 +4,28 @@
   function clean(value){return typeof value==="string"?value.trim():""}
   function normalize(payload,now){
     if(!payload||payload.ok!==true)return{mode:"error"};
-    var profile=payload.profile||payload.data||payload;
-    var membership=profile.membership||{};
-    var access=membership.access;
+    var profile=payload.data&&typeof payload.data==="object"?payload.data:{};
+    var access=profile.actual_access;
     var accessState=clean(typeof access==="object"&&access?access.value||access.status:access).toLowerCase();
-    var status=clean(membership.status||profile.membership_status||profile.member_status).toLowerCase();
-    var expiry=clean(membership.activeThrough||membership.active_through||membership.expiresAt||membership.expire_at);
+    var status=clean(profile.membership_status).toLowerCase();
+    var expiry=clean(profile.membership_expires_at);
     var expires=Date.parse(expiry);
     var mode="unknown";
     if(["blocked","denied","suspended","revoked","none","inactive"].includes(accessState)||["blocked","suspended","revoked","forbidden"].includes(status))mode="blocked";
-    else if(["pending","pending_review","review","checking","unknown"].includes(accessState)||["pending","pending_review","review","waiting"].includes(status))mode="pending";
+    else if(profile.pending_identity===true||profile.resolution_guard&&profile.resolution_guard.state==="checking"||["pending","pending_review","review","checking","unknown"].includes(accessState)||["pending","pending_review","under_review","checking","review","waiting"].includes(status))mode="pending";
     else if(["expired","inactive","former_member","cancelled"].includes(status)||Number.isFinite(expires)&&expires<=now)mode="expired";
     else if(["active","verified","current","approved"].includes(status))mode="active";
-    var points=profile.points||{};
-    var balance=points.confirmedBalance;
-    // Only the canonical confirmed field; no null/empty coercion or tag estimates.
-    if(typeof balance!=="number"||!Number.isFinite(balance)||balance<0||["pending","checking","unknown","unavailable"].includes(clean(points.status).toLowerCase()))balance=null;
-    return{mode:mode,tier:clean(membership.level),expiry:Number.isFinite(expires)?expiry:"",points:balance};
+    var points=profile.customer_360&&profile.customer_360.points||{};
+    var balance=profile.points;
+    // LIFF emits a flat amount. Accept only the payment-backed response guard,
+    // never old resolver totals, estimates, null/empty coercion or dashboard fields.
+    var guarded=profile.points_policy==="lot_365d_from_entry"&&points.expiry_policy==="lot_365d_from_entry"&&points.status==="verified"&&points.active_points===balance&&profile.points_recovery_pending!==true;
+    if(!guarded||typeof balance!=="number"||!Number.isSafeInteger(balance)||balance<0)balance=null;
+    var unresolved=profile.pending_identity===true||profile.resolution_guard&&profile.resolution_guard.state==="checking";
+    return{mode:mode,tier:unresolved?"":clean(profile.tier),expiry:!unresolved&&Number.isFinite(expires)?expiry:"",points:unresolved?null:balance};
+  }
+  function displayReply(data,points){
+    return data.intent==="points_status"&&points===null?"ตอนนี้ยังยืนยันยอด Points ไม่ได้ครับ ตรวจข้อมูลใน MY MMD ก่อน ผมจะไม่เติมยอดที่ยังไม่ยืนยัน":data.reply;
   }
   function safeAction(action){
     if(!action||typeof action.url!=="string"||typeof action.label!=="string")return null;
@@ -28,7 +33,7 @@
     if(!action.url.startsWith("/")||action.url.startsWith("//")||/[\\\x00-\x20]/.test(action.url))return null;
     return {url:action.url,label:action.label.slice(0,120)};
   }
-  if(typeof module!=="undefined"&&module.exports){module.exports={normalize:normalize,safeAction:safeAction};return}
+  if(typeof module!=="undefined"&&module.exports){module.exports={normalize:normalize,safeAction:safeAction,displayReply:displayReply};return}
   var root=document.getElementById("kenji-concierge-v3");
   if(!root||root.dataset.initialized==="true")return;
   root.dataset.initialized="true";
@@ -114,7 +119,7 @@
         label.textContent="ยังไม่ยืนยันการรับ";feedback.textContent=response.status===409?"รายการซ้ำหรือสถานะเปลี่ยน ยังไม่ยืนยันการรับ กรุณาตรวจบทสนทนาเดิมก่อนส่งซ้ำ":"ยังรับคำตอบไม่ได้ ข้อความยังอยู่ในช่องพิมพ์ กรุณาตรวจสถานะก่อนลองใหม่";return;
       }
       label.textContent="Kenji ตอบกลับแล้ว";
-      var reply=data.intent==="points_status"&&memberPoints===null?"ตอนนี้ยังยืนยันยอด Points ไม่ได้ครับ ตรวจข้อมูลใน MY MMD ก่อน ผมจะไม่เติมยอดที่ยังไม่ยืนยัน":data.reply;
+      var reply=displayReply(data,memberPoints);
       addMessage(reply,"kenji",data.review_required===true?"KENJI · ต้องตรวจสอบเพิ่มเติม":"KENJI",data.action);
       if(input.value.trim()===message){input.value="";$("[data-kj3-count]").textContent="0 / 800"}
       feedback.textContent="คำตอบจาก Kenji · การอนุมัติและสิทธิ์ใช้สถานะจริงของ MMD";

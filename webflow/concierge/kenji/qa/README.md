@@ -2,7 +2,16 @@
 
 Isolated clone based on `31abd3eb891c6970357415f315a528157156004b`; no unrelated checkout or release folder was modified. No repository AGENTS.md or local `.agents/skills` was present. README-FIRST.md and local Codex safety instructions were inspected. Local memory was read only; no memory write.
 
-## Results
+## LIFF contract recovery
+
+Follow-up based on merged main `d308255ec9797d3b36877111254df90410c851b3`. The original browser fixture incorrectly modeled nested membership/confirmedBalance fields and missed the actual flat LIFF contract. The earlier 23 focused tests and 58 browser checks were not evidence that this contract worked.
+
+- Recovery tests: **104 passed**, including actual customer-360 serializer, payment-backed Points guard, LIFF identity tests and frontend/chat tests.
+- Recovery browser: **68 checks passed**, 8 intercepted mock POSTs, no runtime errors; flat LIFF fixtures at every width validate tier, expiry and guarded Points.
+- Integration fixtures run the existing serializer and lifetime-points response patch. Verified payment/ledger data preserves the exact Points reply. Missing, pending, mismatched or duplicate payment evidence stays unknown; expired verified lots can yield genuine zero. Unguarded legacy balances and conflicting guard markers are rejected.
+- Screenshots and browser-results.json below are replaced with recovery evidence. Existing takeover and publication limitations remain unchanged.
+
+## Original broader checks (historical)
 
 - Focused page, integration, existing member-chat and AI member-chat tests: **23 passed**.
 - `npm run test:member-dashboard-liff`: **95 passed**.
