@@ -1,5 +1,6 @@
 import { renderOwnerControlRoomPage as renderLegacyOwnerControlRoomPage } from "./control-room-owner-ui-legacy";
 import { MMD_OPERATIONS_FLOW, MMD_OPERATIONS_STYLE } from "./control-room-mmd-flow";
+import { ADMIN_WORKSPACE_PANEL, ADMIN_WORKSPACE_STYLE, ADMIN_WORKSPACE_SCRIPT } from "./admin-workspace-launcher";
 
 const encoder = new TextEncoder();
 const AI_OPS_SCRIPT = '<script src="/v1/admin/ai-ops/client.js?v=3" defer data-mmd-ai-ops-script="v3"></script>';
@@ -108,7 +109,8 @@ const CONTROL_ROOM_CANON_SCRIPT = `<script data-mmd-control-room-canon-v3>(funct
 
 function canonicalizeOwnerControlRoom(html: string): string {
   return html
-    .replace('<div class="g4">', `${MMD_OPERATIONS_FLOW}<div class="g4">`)
+    .replace('<div class="g4">', `${ADMIN_WORKSPACE_PANEL}${MMD_OPERATIONS_FLOW}<div class="g4">`)
+    .replace('</head>', `${ADMIN_WORKSPACE_STYLE}</head>`)
     .replace('</head>', `${MMD_OPERATIONS_STYLE}${CONTROL_ROOM_V2_STYLE}${OWNER_ANALYTICS_STYLE}${OWNER_ACTIONS_STYLE}</head>`)
     .replace('<section class="view" data-view="today">', `<section class="view" data-view="today">${CONTROL_ROOM_V2_PANEL}${OWNER_ANALYTICS_PANEL}${OWNER_ACTIONS_PANEL}`)
     .replaceAll("/internal/admin/jobs/create-session", "/internal/admin/jobs/create-job")
@@ -117,7 +119,7 @@ function canonicalizeOwnerControlRoom(html: string): string {
     .replaceAll("เริ่ม session จาก canonical client", "เริ่ม Job จาก canonical client")
     .replaceAll("/internal/ceo/dashboard", "/internal/ceo")
     .replaceAll("MMD PRIVÉ · OWNER CONTROL ROOM · 05 SEP 2026", "MMD PRIVÉ · OWNER CONTROL ROOM · 07 SEP 2026")
-    .replace("</body>", `${CONTROL_ROOM_CANON_SCRIPT}${CONTROL_ROOM_V2_SCRIPT}${OWNER_ANALYTICS_SCRIPT}${OWNER_ACTIONS_SCRIPT}${AI_OPS_SCRIPT}${SAFETY_LOCATION_UI_SCRIPT}</body>`);
+    .replace("</body>", `${CONTROL_ROOM_CANON_SCRIPT}${CONTROL_ROOM_V2_SCRIPT}${OWNER_ANALYTICS_SCRIPT}${OWNER_ACTIONS_SCRIPT}${AI_OPS_SCRIPT}${SAFETY_LOCATION_UI_SCRIPT}${ADMIN_WORKSPACE_SCRIPT}</body>`);
 }
 
 export function renderOwnerControlRoomPage(): Response {
