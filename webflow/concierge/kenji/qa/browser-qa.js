@@ -16,13 +16,14 @@ async (page) => {
     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`no horizontal overflow at ${width}`);
     check(await input.evaluate(el=>getComputedStyle(el).fontSize)==='16px',`16px input at ${width}`);
     const targets=await root.locator('button,a,summary').evaluateAll(nodes=>nodes.filter(el=>el.getBoundingClientRect().width>0&&!el.classList.contains('kj3-skip')).map(el=>el.getBoundingClientRect().height));check(targets.every(h=>h>=44),`44px targets at ${width}`);
+    check(await root.evaluate(el=>el.getBoundingClientRect().height)<(width===1440?950:1100),`compact page height at ${width}`);
     if(width===1440)await root.locator('.kj3-portrait').waitFor();
     await capture({path:`output/playwright/kenji-${width}.png`,fullPage:true});
   }
   await page.setViewportSize({width:390,height:844});await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY');await ready();
-  await page.getByRole('button',{name:'ดูโปรโมชั่น โปรโมชั่นทั่วไป / เงื่อนไข'}).click();check((await input.inputValue()).includes('โปรโมชั่นทั่วไปที่ระบบยืนยันแล้ว'),'confirmed general promo prompt only');
-  await page.getByRole('button',{name:'ต่ออายุสมาชิก ไปขั้นตอนของบัญชีคุณ'}).click();check((await input.inputValue()).includes('วันหมดอายุ'),'expiry and renewal prompt');
-  await page.getByRole('button',{name:'เช็ก Points ถามยอดที่ยืนยันแล้ว'}).click();check(posts.length===0,'quick prompt prepares text without sending');
+  await page.getByRole('button',{name:'ดูโปรโมชั่น'}).click();check((await input.inputValue()).includes('โปรโมชั่นทั่วไปที่ระบบยืนยันแล้ว'),'confirmed general promo prompt only');
+  await page.getByRole('button',{name:'ต่ออายุสมาชิก'}).click();check((await input.inputValue()).includes('วันหมดอายุ'),'expiry and renewal prompt');
+  await page.getByRole('button',{name:'เช็ก Points'}).click();check(posts.length===0,'quick prompt prepares text without sending');
   check((await input.inputValue()).includes('Points'),'points prompt');
   chat.delay=400;await send.dblclick();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);
   check(posts.length===1,'duplicate clicks send exactly once');check(Object.keys(posts[0]).join(',')==='message','request is existing message contract only');

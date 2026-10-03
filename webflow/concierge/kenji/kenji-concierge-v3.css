@@ -83,6 +83,36 @@
 #kenji-concierge-v3 button:disabled{cursor:default;opacity:.55}
 @media(min-width:900px){#kenji-concierge-v3{padding:0 56px}#kenji-concierge-v3 .kj3-top{min-height:104px}#kenji-concierge-v3 .kj3-status{padding:10px 24px}#kenji-concierge-v3 .kj3-status dl{max-width:620px}#kenji-concierge-v3 .kj3-layout{display:grid;grid-template-columns:1fr 1fr;gap:80px;padding-top:48px}#kenji-concierge-v3 .kj3-welcome{padding:0}#kenji-concierge-v3 .kj3-welcome>.kj3-primary{max-width:350px}#kenji-concierge-v3 .kj3-workspace{padding:0;border-top:0}#kenji-concierge-v3 .kj3-portrait{display:block;margin:32px 0;position:relative;max-width:350px;border-radius:10px;overflow:hidden;height:300px}#kenji-concierge-v3 .kj3-portrait img{width:100%;height:100%;object-fit:cover;object-position:center 25%;filter:saturate(.55)}#kenji-concierge-v3 figcaption{position:absolute;bottom:0;left:0;right:0;padding:36px 20px 16px;background:linear-gradient(transparent,#191a19);font-size:13px;letter-spacing:.12em}#kenji-concierge-v3 figcaption span{display:block;font-size:12px;letter-spacing:0;color:var(--muted)}#kenji-concierge-v3 .kj3-paths{grid-template-columns:repeat(3,1fr);gap:40px;margin-top:28px}}
 @media(prefers-reduced-motion:reduce){#kenji-concierge-v3 *{scroll-behavior:auto!important;transition:none!important}}
+/* Compact mobile-first composition. Keep the chat close to member status. */
+#kenji-concierge-v3 .kj3-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#kenji-concierge-v3 .kj3-top{min-height:64px}
+#kenji-concierge-v3 .kj3-welcome{padding:18px 0 12px}
+#kenji-concierge-v3 h1{font-size:clamp(24px,6.8vw,36px);line-height:1.4;margin:0 0 6px}
+#kenji-concierge-v3 .kj3-lead{font-size:13px;line-height:1.6;margin:0}
+#kenji-concierge-v3 .kj3-workspace{border:0;padding:0}
+#kenji-concierge-v3 .kj3-prompts{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+#kenji-concierge-v3 .kj3-prompts button{display:flex;justify-content:center;min-height:48px;padding:9px 5px;gap:5px;text-align:center}
+#kenji-concierge-v3 .kj3-prompts button>span{font-size:17px}
+#kenji-concierge-v3 .kj3-prompts strong{font-size:12px;white-space:nowrap}
+#kenji-concierge-v3 .kj3-prompts small,#kenji-concierge-v3 .kj3-prompts i{display:none}
+#kenji-concierge-v3 .kj3-chat{margin-top:12px}
+#kenji-concierge-v3 .kj3-chat__heading{padding:12px 12px 0}
+#kenji-concierge-v3 .kj3-chat__heading h3{font-size:17px;margin:3px 0}
+#kenji-concierge-v3 .kj3-chat>.kj3-caption{padding:0 12px 8px;font-size:11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#kenji-concierge-v3 .kj3-chat>.kj3-caption a{display:inline-flex;align-items:center;padding:0;min-height:44px;font-size:11px}
+#kenji-concierge-v3 .kj3-messages{min-height:90px;max-height:min(340px,38dvh);padding:12px;gap:12px}
+#kenji-concierge-v3 .kj3-empty{font-size:13px}
+#kenji-concierge-v3 .kj3-composer{padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+#kenji-concierge-v3 label{font-size:13px;margin-bottom:6px}
+#kenji-concierge-v3 textarea{padding:10px 12px}
+#kenji-concierge-v3 .kj3-feedback{font-size:12px;line-height:1.6}
+#kenji-concierge-v3 .kj3-faq{margin-top:14px}
+#kenji-concierge-v3 summary{min-height:48px;padding:10px 0;font-size:12px}
+#kenji-concierge-v3 details p{font-size:12px;padding-bottom:12px}
+#kenji-concierge-v3 .kj3-footer{padding:8px 0 calc(8px + env(safe-area-inset-bottom));font-size:9px;gap:8px}
+#kenji-concierge-v3 .kj3-footer nav{display:flex;gap:14px}
+#kenji-concierge-v3 .kj3-footer a{font-size:11px}
+@media(min-width:900px){#kenji-concierge-v3{max-width:1120px;padding:0 32px}#kenji-concierge-v3 .kj3-layout{grid-template-columns:minmax(240px,.7fr) minmax(0,1.3fr);gap:32px;padding-top:24px}#kenji-concierge-v3 .kj3-welcome{padding:12px 0}#kenji-concierge-v3 .kj3-portrait{height:180px;max-width:240px;margin:20px 0 0}#kenji-concierge-v3 .kj3-status dl{max-width:600px}#kenji-concierge-v3 .kj3-messages{min-height:130px}#kenji-concierge-v3 .kj3-faq{margin-top:20px}}
 /* FINAL MMD CONTRAST SAFETY LAYER — KEEP LAST */
 #kenji-concierge-v3 :where(h1,h2,h3,summary){color:var(--cream)!important;-webkit-text-fill-color:var(--cream)!important;background:none!important}
 </style>

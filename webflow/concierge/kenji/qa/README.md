@@ -1,3 +1,17 @@
+# Compact mobile-first follow-up
+
+Base main `130d8608`, retains merged LIFF/profile/reply contracts. The page now prioritizes member status, three compact quick prompts and chat. Removed repeated hero CTA, standalone explanatory sections and duplicate service nav; safety/takeover/eligibility information is in one collapsed disclosure with historical anchor IDs retained. Desktop uses a smaller portrait and bounded two-column layout.
+
+- 27 focused tests pass; script/backend contract unchanged.
+- 76 mock browser checks pass in locally reconstructed published shell with staged substitutions at320/375/390/430/1440, including compact height, 44px targets, duplicate send guard, unknown/zero, session loss and mocked takeover.
+- Initial screenshots are under1100px mobile and950px desktop; interactive-state measurements ~897–934px mobile,875px desktop. No customer data.
+- External Webflow/analytics/font resources blocked; WebFont stubbed. Actual Designer, native device and authenticated-session acceptance is not claimed.
+- Four staged parts read back. `kenji-concierge-v3-shell.html` documents page-only body reset, account-chip suppression and viewport-fit=cover; global custom code untouched.
+- Designer MCP disconnected. Actual preview requires the owner to open the supplied Designer MCP link. Metadata update failed because connector schema rejects documented `data` field; old SEO/OG claims are still unchanged pending supported update/manual reconciliation.
+- Publishing tool supports optional pageId, but this site's Enterprise/Single Page Publishing enablement could not be verified read-only. No publication attempted.
+
+## Historical implementation evidence
+
 # Kenji UI QA — mocked local preview
 
 Isolated clone based on `31abd3eb891c6970357415f315a528157156004b`; no unrelated checkout or release folder was modified. No repository AGENTS.md or local `.agents/skills` was present. README-FIRST.md and local Codex safety instructions were inspected. Local memory was read only; no memory write.

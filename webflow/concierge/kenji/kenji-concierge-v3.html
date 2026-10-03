@@ -8,16 +8,12 @@
   </section>
   <div class="kj3-layout">
     <section id="kj3-overview" class="kj3-welcome" aria-labelledby="kj3-title">
-      <p class="kj3-eyebrow">YOUR NEXT STEP, QUIETLY HANDLED</p>
-      <h1 id="kj3-title">วันนี้ ให้ผม<br>ช่วยเรื่องไหนครับ</h1>
-      <p class="kj3-lead">สมาชิก แต้ม หรือเรื่องที่อยากให้ดูแล<br>เริ่มจากสิ่งที่คุณต้องการได้เลยครับ</p>
-      <a class="kj3-primary" href="#kj3-chat">คุยกับ Kenji <span aria-hidden="true">↓</span></a>
-      <p class="kj3-caption">คุยในหน้านี้ · ใช้บัญชีสมาชิกเดิมของคุณ</p>
+      <h1 id="kj3-title">ให้ผมช่วยเรื่องไหนครับ</h1>
+      <p class="kj3-lead">เลือกหัวข้อ หรือพิมพ์คุยกับ Kenji ได้เลย</p>
       <figure class="kj3-portrait" hidden><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b02b82617e25beaa4c_Kenji%20CC%2002.webp" alt="Kenji ผู้ช่วย MMD Privé" width="1086" height="1448" decoding="async"><figcaption>KENJI <span>ใส่ใจในทุกขั้นตอน</span></figcaption></figure>
     </section>
     <section id="kj3-actions" class="kj3-workspace" aria-labelledby="kj3-actions-title">
-      <div class="kj3-section-head"><span class="kj3-eyebrow">START HERE</span><span class="kj3-caption">เลือกหัวข้อเพื่อเตรียมข้อความ</span></div>
-      <h2 id="kj3-actions-title">เริ่มง่าย ๆ จากเรื่องนี้</h2>
+      <h2 id="kj3-actions-title" class="kj3-sr">เลือกหัวข้อเพื่อเตรียมข้อความ</h2>
       <div class="kj3-prompts" aria-label="เรื่องที่ใช้บ่อย">
         <button type="button" data-kj3-prompt="points"><span aria-hidden="true">＋</span><strong>เช็ก Points</strong><small>ถามยอดที่ยืนยันแล้ว</small><i aria-hidden="true">↗</i></button>
         <button type="button" data-kj3-prompt="promotions"><span aria-hidden="true">◇</span><strong>ดูโปรโมชั่น</strong><small>โปรโมชั่นทั่วไป / เงื่อนไข</small><i aria-hidden="true">↗</i></button>
@@ -25,17 +21,14 @@
       </div>
       <section id="kj3-chat" class="kj3-chat" aria-labelledby="kj3-chat-title">
         <div class="kj3-chat__heading"><div><p class="kj3-eyebrow">KENJI CONCIERGE</p><h3 id="kj3-chat-title">คุยกับ Kenji</h3></div><button class="kj3-text-button" data-kj3-clear-chat type="button" aria-label="ล้างบทสนทนาในหน้านี้">ล้างแชต</button></div>
-        <p class="kj3-caption">คำตอบใช้ข้อมูลที่ระบบยืนยัน การอนุมัติและคิวใช้สถานะจริงของ MMD · <a href="/my-mmd/coupons">ดูรายการโปรโมชั่นใน MY MMD ↗</a></p>
+        <p class="kj3-caption">ใช้ข้อมูลที่ระบบยืนยัน · <a href="/my-mmd/coupons">ดูโปรโมชั่น ↗</a></p>
         <div class="kj3-messages" data-kj3-messages role="log" aria-label="บทสนทนากับ Kenji" aria-live="polite" aria-relevant="additions"><p class="kj3-empty" data-kj3-empty>ยังไม่มีบทสนทนา เลือกหัวข้อหรือพิมพ์เรื่องที่อยากให้ผมช่วยครับ</p></div>
         <a class="kj3-secondary kj3-login" data-kj3-login href="/member/my-mmd">ยืนยันบัญชีใน MY MMD ↗</a>
-        <form class="kj3-composer" data-kj3-form><label for="kj3-input">ข้อความถึง Kenji</label><textarea id="kj3-input" rows="2" maxlength="800" placeholder="บอกผมได้เลยครับ ว่าอยากให้ช่วยเรื่องไหน…" aria-describedby="kj3-input-note kj3-chat-status"></textarea><div class="kj3-draft__bottom"><span class="kj3-caption" data-kj3-count>0 / 800</span><button class="kj3-send" data-kj3-send type="submit" disabled>ส่งข้อความ <span aria-hidden="true">↑</span></button></div><p id="kj3-input-note" class="kj3-caption">Enter ขึ้นบรรทัดใหม่ · กดส่งเมื่อพร้อม ข้อความร่างไม่ถูกเก็บหลังออกจากหน้านี้</p><p id="kj3-chat-status" class="kj3-feedback" data-kj3-chat-status role="status">กำลังตรวจสอบบัญชี</p></form>
+        <form class="kj3-composer" data-kj3-form><label for="kj3-input">ข้อความถึง Kenji</label><textarea id="kj3-input" rows="1" maxlength="800" placeholder="บอกผมได้เลยครับ ว่าอยากให้ช่วยเรื่องไหน…" aria-describedby="kj3-input-note kj3-chat-status"></textarea><div class="kj3-draft__bottom"><span class="kj3-caption" data-kj3-count>0 / 800</span><button class="kj3-send" data-kj3-send type="submit" disabled>ส่งข้อความ <span aria-hidden="true">↑</span></button></div><p id="kj3-input-note" class="kj3-caption">กดส่งเมื่อพร้อม · ข้อความร่างไม่ถูกเก็บหลังออกจากหน้านี้</p><p id="kj3-chat-status" class="kj3-feedback" data-kj3-chat-status role="status">กำลังตรวจสอบบัญชี</p></form>
       </section>
     </section>
   </div>
-  <nav class="kj3-paths" aria-label="ทางลัดบริการ"><a href="/member/my-mmd">ข้อมูลสมาชิก <span>MY MMD ↗</span></a><a href="/booking">เริ่มคำขอจอง <span>BOOKING ↗</span></a><a href="/recovery">เรื่องที่ต้องดูแลต่อ <span>PRIVATE CARE ↗</span></a></nav>
-  <section id="kj3-intelligence" class="kj3-note"><p class="kj3-eyebrow">ข้อมูลที่เชื่อถือได้</p><h2>ชัดเจน ก่อนคุณไปต่อ</h2><p>Points ที่ยังไม่ยืนยันจะแสดงว่า “ยังไม่ยืนยัน” โปรโมชั่นต้องตรวจเงื่อนไขของแต่ละรายการ และคำขอจองยังไม่ใช่คิวที่ยืนยันแล้ว</p></section>
-  <section id="kj3-standard" class="kj3-note"><h2>ดูแลอย่างเป็นส่วนตัว</h2><p>ข้อมูลส่วนตัวอยู่ในพื้นที่สมาชิก หน้านี้ไม่แสดงข้อมูลส่วนตัวของ Model หรือบันทึกภายใน การอนุมัติและสิทธิ์ใช้ขั้นตอนของ MMD</p></section>
-  <section id="kj3-faq" class="kj3-faq" aria-label="ก่อนเริ่ม"><details><summary>ยังไม่ได้เข้าสู่ระบบ ทำอย่างไร</summary><p>เปิด MY MMD เพื่อยืนยันบัญชีด้วยวิธีเดิมของระบบ แล้วกลับมาตรวจสถานะอีกครั้ง ข้อความจะถูกส่งเมื่อกด “ส่งข้อความ” เท่านั้น</p></details><details><summary>ถ้า MMD กำลังดูแลบทสนทนาอยู่</summary><p>หน้านี้ใช้ Kenji ของพื้นที่สมาชิก และยังไม่แสดงสถานะการรับช่วงจากช่องทางอื่น หาก MMD ดูแลคุณอยู่ใน LINE ให้คุยต่อในบทสนทนาเดิม ไม่ต้องส่งเรื่องซ้ำครับ</p></details><details><summary>โปรโมชั่นนี้ใช้กับผมได้ไหม</summary><p>ระดับสมาชิก แท็ก หรือยอดที่เคยประเมิน ไม่ใช่การยืนยันสิทธิ์โปรโมชั่นเฉพาะบุคคล ต้องตรวจเงื่อนไขและข้อมูลปัจจุบันก่อนครับ</p></details></section>
-  <footer id="kj3-care" class="kj3-footer"><span>KENJI / MMD PRIVÉ</span><a href="/recovery">เปิด Private Care ↗</a></footer>
+  <section id="kj3-faq" class="kj3-faq" aria-label="ข้อควรรู้"><details><summary>ข้อควรรู้ก่อนคุย</summary><p id="kj3-intelligence">Points ที่ยังไม่ยืนยันจะแสดงว่า “ยังไม่ยืนยัน” ระดับสมาชิกหรือแท็ก ไม่ใช่การยืนยันสิทธิ์โปรโมชั่น และคำขอจองยังไม่ใช่คิวที่ยืนยันแล้ว</p><p id="kj3-standard">ใช้บัญชีสมาชิกเดิมใน MY MMD ข้อความจะส่งเมื่อกดส่งเท่านั้น ข้อมูลส่วนตัวไม่ถูกเก็บไว้ในหน้านี้</p><p>ถ้า MMD ดูแลคุณอยู่ใน LINE ให้คุยต่อในบทสนทนาเดิม หน้านี้ยังไม่แสดงสถานะรับช่วงจากช่องทางอื่น</p></details></section>
+  <footer id="kj3-care" class="kj3-footer"><span>KENJI / MMD PRIVÉ</span><nav aria-label="ทางลัดบริการ"><a href="/booking">Booking ↗</a><a href="/recovery">Private Care ↗</a></nav></footer>
   <noscript><p class="kj3-note">หน้านี้ต้องใช้ JavaScript เพื่อตรวจสถานะ คุณยังเปิด <a href="/member/my-mmd">MY MMD</a> หรือ <a href="/member/kenji">แชตสมาชิก</a> ได้โดยตรง</p></noscript>
 </main>
