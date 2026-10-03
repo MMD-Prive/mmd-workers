@@ -55,3 +55,12 @@ test('an immutable receipt recognizes an old retry after the session journal has
  for(const [key,v] of f.objects)if(key.includes('/sessions/'))v.value.operation='another_completed_operation';
  const n=f.writes.length;assert.equal((await resolveCustomerChange(f.env,b,f.deps)).idempotent,true);assert.equal(f.writes.length,n);
 });
+
+test('owner-reviewed 17:45 reschedule stores server provenance/revision and preserves history without replay',async()=>{
+ const f=fixture('time_change',{start_time:'17:45'});f.data.session.fields[S.notes]='Existing audit history';f.data.session.fields[S.partner_revision]=1;
+ const b=await f.body();await resolveCustomerChange(f.env,b,f.deps);
+ assert.equal(f.data.session.fields[S.start_time],'2026-10-04T10:45:00.000Z');assert.equal(f.data.session.fields[S.end_time],'2026-10-04T12:15:00.000Z');
+ const lines=f.data.session.fields[S.notes].split('\n');assert.equal(lines[0],'Existing audit history');
+ const e=JSON.parse(lines[1].replace('[MMD Reconfirm Revision v1] ',''));assert.equal(e.source,'owner_reviewed_customer_change');assert.equal(e.actor_ref,'owner-1');assert.equal(e.request_id,'ccr_1');assert.match(e.revision,/^[a-f0-9]{64}$/);assert.equal(e.resolved_at,f.data.request.fields[C.reviewedAt]);assert.equal(f.data.session.fields[S.partner_revision],2);
+ const before=f.writes.length;await resolveCustomerChange(f.env,b,f.deps);assert.equal(f.writes.length,before);assert.equal(f.data.session.fields[S.notes].split('\n').length,2);
+});

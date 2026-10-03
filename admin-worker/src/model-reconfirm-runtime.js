@@ -13,6 +13,7 @@ import {
   resolveOwnerDestination,
   sendFailureStatus,
 } from "./model-reconfirm-guard.js";
+import { checkReconfirmFreshness, reconfirmRevision, reconfirmSnapshot } from "./model-reconfirm-freshness.js";
 import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -274,7 +275,15 @@ export function shouldOfferReconfirmAction(lifecycleState, reconfirmStatus) {
   return isReconfirmLifecycleState(lifecycleState) && RECONFIRM_OPEN_STATUSES.has(normalizeWord(reconfirmStatus));
 }
 
-export async function runModelReconfirmSweep(env, { now = Date.now(), maxRecords = 500 } = {}) {
+const runningSweeps = new Set();
+export async function runModelReconfirmSweep(env, options = {}) {
+  const key = `${env.AIRTABLE_BASE_ID || ""}/${sessionTable(env)}`;
+  if (runningSweeps.has(key)) return { ok: true, skipped: true, reason: "reconfirm_sweep_in_progress" };
+  runningSweeps.add(key);
+  try { return await runModelReconfirmSweepOnce(env, options); }
+  finally { runningSweeps.delete(key); }
+}
+async function runModelReconfirmSweepOnce(env, { now = Date.now(), maxRecords = 500 } = {}) {
   if (normalizeWord(env.MODEL_RECONFIRM_ENABLED || "false") !== "true") {
     return { ok: true, enabled: false, processed: 0, notified: 0, reminded: 0, escalated: 0 };
   }
@@ -289,6 +298,7 @@ export async function runModelReconfirmSweep(env, { now = Date.now(), maxRecords
   for (const record of listed.records) {
     const fields = record.fields || {};
     if (!isReconfirmLifecycleState(sessionLifecycleState(env, fields))) continue;
+    if (!await freshForDispatch(env, record, now, counters)) continue;
 
     let reconfirm = reconfirmFromFields(env, fields, now);
     if (!reconfirm) {
@@ -308,6 +318,48 @@ export async function runModelReconfirmSweep(env, { now = Date.now(), maxRecords
   return { ok: counters.errors === 0, enabled: true, ...counters };
 }
 
+function noticeAge(reconfirm, now) {
+  const at = Date.parse(reconfirm.notified_at);
+  return Number.isFinite(at) && at <= now ? now - at : -1;
+}
+async function reconfirmRetryKey(record, step) {
+  const hash = await reconfirmRevision({ record:record.id, snapshot:reconfirmSnapshot(record.fields), step });
+  return `${hash.slice(0,8)}-${hash.slice(8,12)}-4${hash.slice(13,16)}-8${hash.slice(17,20)}-${hash.slice(20,32)}`;
+}
+async function freshForDispatch(env, record, now, counters) {
+  const original = await reconfirmRevision(reconfirmSnapshot(record.fields));
+  const fresh = await findSessionBySessionId(env, sessionIdFromFields(env, record.fields));
+  let reason = "";
+  if (!fresh.ok || fresh.record.id !== record.id) reason = fresh.error || "canonical_session_unavailable";
+  else if (!isReconfirmLifecycleState(sessionLifecycleState(env, fresh.record.fields))) return false;
+  else if (original !== await reconfirmRevision(reconfirmSnapshot(fresh.record.fields)) || JSON.stringify(record.fields)!==JSON.stringify(fresh.record.fields)) reason = "canonical_snapshot_changed";
+  else {
+    const result = await checkReconfirmFreshness(env, fresh.record, { now, readChanges: async () => {
+      const params = new URLSearchParams({ pageSize:"100", returnFieldsByFieldId:"true",
+        filterByFormula:`{session_id}="${escapeFormula(sessionIdFromFields(env, fresh.record.fields))}"` });
+      const result = await airtable(env, clean(env.AIRTABLE_TABLE_CUSTOMER_CHANGE_REQUESTS || "tblhQGfJc4GgiteZr"), `?${params}`);
+      if (!result.ok || !Array.isArray(result.data?.records) || result.data.offset) throw new Error("changes_unavailable");
+      return result.data.records;
+    }});
+    reason = result.action === "current" ? "" : result.reason;
+    const schedule = buildReconfirmSchedule(sessionJobDate(env, fresh.record.fields));
+    const reconfirm = reconfirmFromFields(env, fresh.record.fields, now);
+    if (!reason && reconfirm && ["required_at","reminder_at","overdue_at"].some(k=>Date.parse(reconfirm[k])!==Date.parse(schedule?.[k]))) reason="reconfirm_schedule_superseded";
+    if (!reason && result.resolved_at && reconfirm?.acknowledged_at && Date.parse(reconfirm.acknowledged_at)<Date.parse(result.resolved_at)) reason="reconfirm_ack_superseded";
+    // One more read after resolution lookup; no send based on an earlier snapshot.
+    if (!reason) {
+      const verified = await findSessionBySessionId(env, sessionIdFromFields(env, fresh.record.fields));
+      if (!verified.ok || JSON.stringify(verified.record.fields)!==JSON.stringify(fresh.record.fields)) reason="canonical_snapshot_changed";
+      else record.fields=verified.record.fields;
+    }
+  }
+  if (!reason) return true;
+  counters.review_required = (counters.review_required || 0) + 1;
+  (counters.reviews ||= []).push({ session_id:sessionIdFromFields(env, record.fields), action:"review_required", reason });
+  // Return structured data review; do not send a speculative overdue alert or alter stale truth.
+  return false;
+}
+
 // The three D-1 steps (16:00 notify, 18:00 reminder, 19:00 ops alert). Shared by the legacy sweep and guard v2.
 // `guard` is only passed by guard v2; without it the behavior is exactly the legacy one.
 async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = null) {
@@ -316,6 +368,7 @@ async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = 
   const overdueMs = Date.parse(reconfirm.overdue_at);
 
   if (Number.isFinite(requiredMs) && now >= requiredMs && !reconfirm.notified_at) {
+    if (!await freshForDispatch(env, record, now, counters)) return;
     const sent = await pushModelReconfirm(env, record, false);
     if (sent.ok) {
       const patched = await patchReconfirm(env, record, {
@@ -331,7 +384,8 @@ async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = 
     reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
   }
 
-  if (Number.isFinite(reminderMs) && now >= reminderMs && !reconfirm.reminder_notified_at && reconfirm.status !== "acknowledged") {
+  if (Number.isFinite(reminderMs) && now >= reminderMs && !reconfirm.reminder_notified_at && reconfirm.status !== "acknowledged" && noticeAge(reconfirm, now) >= 2 * 3600000) {
+    if (!await freshForDispatch(env, record, now, counters)) return;
     const sent = await pushModelReconfirm(env, record, true);
     if (sent.ok) {
       const patched = await patchReconfirm(env, record, {
@@ -345,7 +399,8 @@ async function runReconfirmSteps(env, record, reconfirm, now, counters, guard = 
     reconfirm = reconfirmFromFields(env, record.fields || {}, now) || reconfirm;
   }
 
-  if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged") {
+  if (Number.isFinite(overdueMs) && now >= overdueMs && !reconfirm.ops_alerted_at && reconfirm.status !== "acknowledged" && noticeAge(reconfirm, now) >= 3 * 3600000) {
+    if (!await freshForDispatch(env, record, now, counters)) return;
     const alert = await sendOpsReconfirmOverdue(env, record);
     if (alert.ok) {
       const patched = await patchReconfirm(env, record, {
@@ -411,6 +466,8 @@ async function runGuardedReconfirmSweep(env, { now, maxRecords }) {
 
   for (const { record, decision } of collected.items) {
     const fields = record.fields || {};
+    if (!isReconfirmLifecycleState(sessionLifecycleState(env, fields))) { counters.skipped += 1; continue; }
+    if (!await freshForDispatch(env, record, now, counters)) continue;
     if (decision.action === GUARD_ACTIONS.SKIP) { counters.skipped += 1; continue; }
 
     let reconfirm = reconfirmFromFields(env, fields, now);
@@ -596,6 +653,12 @@ async function persistReconfirmSchedule(env, sessionId, schedule, knownRecord = 
 }
 
 async function patchReconfirm(env, record, patch) {
+  const fresh = await findSessionBySessionId(env, sessionIdFromFields(env, record.fields));
+  if (!fresh.ok || fresh.record.id !== record.id ||
+      await reconfirmRevision(reconfirmSnapshot(fresh.record.fields)) !== await reconfirmRevision(reconfirmSnapshot(record.fields)) ||
+      sessionLifecycleState(env, fresh.record.fields) !== sessionLifecycleState(env, record.fields) ||
+      clean(fresh.record.fields?.[reconfirmFields(env).acknowledgedAt]) !== clean(record.fields?.[reconfirmFields(env).acknowledgedAt]))
+    return { ok: false, error: "reconfirm_snapshot_changed" };
   const names = reconfirmFields(env);
   const fields = {};
   if (patch.status !== undefined) fields[names.status] = patch.status;
@@ -612,9 +675,10 @@ async function findSessionBySessionId(env, sessionId) {
   const id = clean(sessionId);
   if (!id) return { ok: false, status: 400, error: "session_id_required" };
   const names = sessionFields(env);
-  const params = new URLSearchParams({ pageSize: "1", filterByFormula: `{${names.sessionId}}="${escapeFormula(id)}"` });
+  const params = new URLSearchParams({ pageSize: "2", filterByFormula: `{${names.sessionId}}="${escapeFormula(id)}"` });
   const result = await airtable(env, sessionTable(env), `?${params.toString()}`);
   if (!result.ok) return result;
+  if (result.data?.offset || (result.data?.records || []).length > 1) return { ok: false, status: 409, error: "session_ambiguous" };
   const record = result.data?.records?.[0];
   return record ? { ok: true, status: 200, record: { id: record.id, fields: record.fields || {} } } : { ok: false, status: 404, error: "session_not_found" };
 }
@@ -745,15 +809,15 @@ async function pushModelReconfirm(env, sessionRecord, reminder) {
   const modelName = sessionModelName(env, fields) || "Model";
   const date = sessionJobDate(env, fields) || "วันพรุ่งนี้";
   const text = reminder
-    ? `MMD APP · Reminder\n${modelName} ยังไม่ได้กดรับทราบงานวันที่ ${date}\nกรุณาเปิด MMD APP และกด “รับทราบงานแล้ว”`
+    ? `MMD APP · Reminder\n${modelName} ยังไม่มีหลักฐานการกดรับทราบรายละเอียดล่าสุดของงานวันที่ ${date}\nกรุณาเปิด MMD APP และกด “รับทราบงานแล้ว”`
     : `MMD APP · งานของคุณพรุ่งนี้\nงานวันที่ ${date}\nกรุณาเปิด MMD APP เพื่อตรวจรายละเอียดและกด “รับทราบงานแล้ว”`;
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "X-Line-Retry-Key": await reconfirmRetryKey(sessionRecord, reminder ? "reminder" : "notice") },
     body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text }] }),
   });
-  return response.ok ? { ok: true } : { ok: false, error: `line_push_http_${response.status}` };
+  return response.ok || response.status === 409 && response.headers.has("x-line-accepted-request-id") ? { ok: true } : { ok: false, error: `line_push_http_${response.status}` };
 }
 
 async function sendOpsReconfirmOverdue(env, sessionRecord) {
@@ -772,7 +836,7 @@ async function sendOpsReconfirmOverdue(env, sessionRecord) {
     `Job date: <b>${escapeHtml(jobDate)}</b>`,
     `Session: <code>${escapeHtml(sessionId)}</code>`,
     "",
-    "Model ยังไม่ได้รับทราบงานสำหรับวันพรุ่งนี้",
+    "ยังไม่มีหลักฐานการรับทราบรายละเอียดล่าสุดในระบบหลังส่งคำขอ reconfirm",
     "กรุณาติดตาม Model และเฝ้าดูความเสี่ยง / เตรียมแผนสำรองหากยังไม่มีการตอบกลับ",
     "งานยังไม่ถูกยกเลิก และยังไม่แจ้งลูกค้าว่างานมีปัญหา",
   ].join("\n");
@@ -816,7 +880,8 @@ async function airtable(env, table, suffix = "", init = {}) {
   const baseId = clean(env.AIRTABLE_BASE_ID);
   const apiKey = clean(env.AIRTABLE_API_KEY);
   if (!baseId || !apiKey || !table) return { ok: false, status: 503, error: "reconfirm_storage_not_ready" };
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}${suffix}`, {
+  let response;
+  try { response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}${suffix}`, {
     ...init,
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -824,6 +889,7 @@ async function airtable(env, table, suffix = "", init = {}) {
       ...(init.headers || {}),
     },
   });
+  } catch { return { ok: false, status: 503, error: "reconfirm_storage_request_failed" }; }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const type = clean(data?.error?.type || data?.error);
