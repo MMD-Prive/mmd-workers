@@ -1,4 +1,5 @@
 async (page) => {
+  const capture=async options=>{await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot(options)};
   const checks=[];const check=(value,label)=>{if(!value)throw new Error(label);checks.push(label)};
   const profileBody={ok:true,membership:{status:'active',level:'Premium',activeThrough:'2027-01-01'},points:{confirmedBalance:1234}};
   let profile={status:200,body:profileBody},chat={status:200,body:{ok:true,reply:'Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ',intent:'points_status',action:{label:'เปิด Points',url:'/my-mmd/points'}}},posts=[];
@@ -13,7 +14,7 @@ async (page) => {
     check(await input.evaluate(el=>getComputedStyle(el).fontSize)==='16px',`16px input at ${width}`);
     const targets=await root.locator('button,a,summary').evaluateAll(nodes=>nodes.filter(el=>el.getBoundingClientRect().width>0&&!el.classList.contains('kj3-skip')).map(el=>el.getBoundingClientRect().height));check(targets.every(h=>h>=44),`44px targets at ${width}`);
     if(width===1440)await root.locator('.kj3-portrait').waitFor();
-    await page.screenshot({path:`output/playwright/kenji-${width}.png`,fullPage:true});
+    await capture({path:`output/playwright/kenji-${width}.png`,fullPage:true});
   }
   await page.setViewportSize({width:390,height:844});await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY');await ready();
   await page.getByRole('button',{name:'ดูโปรโมชั่น โปรโมชั่นทั่วไป / เงื่อนไข'}).click();check((await input.inputValue()).includes('โปรโมชั่นทั่วไปที่ระบบยืนยันแล้ว'),'confirmed general promo prompt only');
@@ -24,23 +25,23 @@ async (page) => {
   check(posts.length===1,'duplicate clicks send exactly once');check(Object.keys(posts[0]).join(',')==='message','request is existing message contract only');
   check((await root.locator('[data-kj3-messages]').textContent()).includes('1,234'),'actual mock reply rendered');check((await input.inputValue())==='','success clears submitted input');
   check((await root.locator('.kj3-message a').getAttribute('href'))==='/my-mmd/points','backend action preserved');
-  await page.screenshot({path:'output/playwright/kenji-chat-390.png',fullPage:true});
+  await capture({path:'output/playwright/kenji-chat-390.png',fullPage:true});
   await input.fill('อยากคุยต่อครับ');await input.press('Enter');check(posts.length===1,'Enter adds newline, no implicit send');
   await input.press('Tab');check((await page.evaluate(()=>document.activeElement.textContent)).includes('ส่งข้อความ'),'keyboard reaches send');
   chat={status:503,body:{ok:false}};await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);check((await input.inputValue()).includes('คุยต่อ'),'failed response retains draft');check((await feedback.textContent()).includes('ยังรับคำตอบไม่ได้'),'503 honest error');
   chat={status:200,raw:'not json'};await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);check((await feedback.textContent()).includes('ยังรับคำตอบไม่ได้'),'malformed reply never success');
   chat={abort:true};await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);check((await feedback.textContent()).includes('ยังไม่ยืนยันการรับ'),'network error no sent claim');
-  await page.screenshot({path:'output/playwright/kenji-chat-error.png',fullPage:true});
+  await capture({path:'output/playwright/kenji-chat-error.png',fullPage:true});
   chat={status:409,body:{ok:false,error:'conflict'}};await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);check((await feedback.textContent()).includes('รายการซ้ำ'),'409 no automatic retry');
   chat={status:423,body:{ok:false,error:'owner_takeover'}};await send.click();await page.waitForFunction(()=>document.querySelector('[data-kj3-chat-status]').textContent.includes('MMD กำลังดูแล'));
   check(await send.isDisabled(),'server takeover stops sends');const count=posts.length;await root.locator('[data-kj3-form]').evaluate(form=>form.requestSubmit());check(posts.length===count,'takeover cannot be bypassed by form submit');
-  await page.screenshot({path:'output/playwright/kenji-takeover.png',fullPage:true});
+  await capture({path:'output/playwright/kenji-takeover.png',fullPage:true});
   await page.reload();await ready();chat={status:401,body:{ok:false,error:'member_session_required'}};await input.fill('QA session expiry');await send.click();await page.waitForFunction(()=>document.querySelector('#kenji-concierge-v3').dataset.memberMode==='guest');
   check(await send.isDisabled(),'expired session blocks sends');check((await input.inputValue())==='','expiry clears private draft');check((await root.locator('[data-kj3-messages]').textContent()).includes('ยังไม่มีบทสนทนา'),'expiry clears transcript');check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน','expiry clears balance');
   check((await root.locator('[data-kj3-login]').getAttribute('href'))==='/member/my-mmd?t=QA_ONLY','existing verification token handoff');
   for(const [mode,status,body] of [['guest',401,{ok:false}],['error',503,{ok:false}],['pending',200,{ok:true,membership:{status:'active',access:'pending'}}],['blocked',200,{ok:true,membership:{status:'active',access:'blocked'}}],['expired',200,{ok:true,membership:{status:'expired',activeThrough:'2026-01-01'}}],['unknown',200,{ok:true}],['active',200,{ok:true,membership:{status:'active'},points:{confirmedBalance:null}}]]){
     profile={status,body};await root.locator('[data-kj3-retry]').click();await page.waitForFunction(mode=>document.querySelector('#kenji-concierge-v3').dataset.memberMode===mode,mode);
-    check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน',`${mode} unknown points`);await page.screenshot({path:`output/playwright/kenji-state-${mode}.png`,fullPage:true});
+    check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน',`${mode} unknown points`);await capture({path:`output/playwright/kenji-state-${mode}.png`,fullPage:true});
   }
   chat={status:200,body:{ok:true,reply:'Points 0 แต้ม',intent:'points_status'}};await input.fill('เช็ก Points');await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);check((await root.locator('.kj3-message[data-role=kenji]').last().textContent()).includes('ยังยืนยันยอด Points ไม่ได้'),'unknown points cannot become a zero in reply');
   profile={status:200,delay:300,body:{ok:true,membership:{status:'active'},points:{confirmedBalance:0}}};await root.locator('[data-kj3-retry]').click();check(await root.locator('[data-kj3-status-card]').getAttribute('aria-busy')==='true','loading busy state');check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน','loading clears prior balance');await ready();check((await root.locator('[data-kj3-points]').textContent())==='0','verified zero is zero');
