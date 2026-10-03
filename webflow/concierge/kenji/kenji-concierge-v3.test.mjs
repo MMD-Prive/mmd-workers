@@ -7,35 +7,49 @@ const html = read('./kenji-concierge-v3.html'), css = read('./kenji-concierge-v3
 const script = read('./kenji-concierge-v3.js').replace(/^<script>\s*/, '').replace(/\s*<\/script>\s*$/, '');
 const context = {module:{exports:{}}};
 vm.runInNewContext(script, context);
-const {normalize, safeAction} = context.module.exports;
+const {normalize, safeAction, displayReply} = context.module.exports;
 const now = Date.parse('2026-10-03T00:00:00Z');
-const profile = (membership={},points={}) => ({ok:true,membership:{status:'active',level:'Premium',activeThrough:'2027-01-01',...membership},points});
+const profile = (membership={},balance=1234) => ({ok:true,data:{tier:'Premium',membership_status:'active',membership_expires_at:'2027-01-01',...membership,points:balance,points_policy:'lot_365d_from_entry',customer_360:{points:{status:'verified',active_points:balance,expiry_policy:'lot_365d_from_entry'}}}});
 test('canonical paths and historical hash targets remain available',()=>{
   for(const route of ['/member/api/liff/profile','/member/kenji','/member/my-mmd','/booking','/recovery'])assert.ok(html.includes(route));
   for(const id of ['overview','actions','intelligence','standard','faq','care'])assert.ok(html.includes(`id="kj3-${id}"`));
   const ids=[...html.matchAll(/\sid="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(ids).size,ids.length);
 });
-test('current verified facts are displayed, missing points are never coerced',()=>{
-  assert.equal(normalize(profile({}, {confirmedBalance:0}),now).points,0);
-  assert.equal(normalize(profile({}, {confirmedBalance:1234}),now).points,1234);
-  for(const value of [undefined,null,'',false,'10',NaN,Infinity,-1])assert.equal(normalize(profile({}, {confirmedBalance:value}),now).points,null);
-  assert.equal(normalize(profile({}, {confirmedBalance:100,status:'pending'}),now).points,null);
-  assert.equal(normalize(profile({}, {balance:999,tags:['eligible'],estimated_points:888}),now).points,null);
+test('flat guarded LIFF fields display membership, expiry and Points',()=>{
+  const value=normalize(profile(),now);
+  assert.equal(value.mode,'active');assert.equal(value.tier,'Premium');assert.equal(value.expiry,'2027-01-01');assert.equal(value.points,1234);
+  assert.equal(normalize(profile({},0),now).points,0);
+  for(const value of [undefined,null,'',false,'10',NaN,Infinity,-1,1.5]){const payload=profile();payload.data.points=value;payload.data.customer_360.points.active_points=value;assert.equal(normalize(payload,now).points,null)}
 });
-test('failed or incomplete profile never produces access',()=>{
-  for(const payload of [null,{}, {ok:false}, {ok:false,membership:{status:'active'}}])assert.equal(normalize(payload,now).mode,'error');
+test('unguarded, pending, conflicting and old raw totals never become confirmed Points',()=>{
+  for(const payload of [
+    {ok:true,data:{tier:'Premium',membership_status:'active',points:61320,points_records_count:1}},
+    {ok:true,data:{points:{confirmedBalance:61320}}},
+    {...profile(),data:{...profile().data,points_policy:undefined}},
+    {...profile(),data:{...profile().data,points_recovery_pending:true}},
+    {...profile(),data:{...profile().data,customer_360:{points:{status:'checking',active_points:1234,expiry_policy:'lot_365d_from_entry'}}}},
+    {...profile(),data:{...profile().data,customer_360:{points:{status:'verified',active_points:999,expiry_policy:'lot_365d_from_entry'}}}}
+  ])assert.equal(normalize(payload,now).points,null);
+});
+test('failed, incomplete and unresolved profiles remain unknown',()=>{
+  for(const payload of [null,{}, {ok:false}, {ok:false,data:profile().data}])assert.equal(normalize(payload,now).mode,'error');
   assert.equal(normalize({ok:true},now).mode,'unknown');
-  assert.equal(normalize(profile({activeThrough:'invalid'}),now).expiry,'');
+  assert.equal(normalize(profile({membership_expires_at:'invalid'}),now).expiry,'');
+  for(const fields of [{pending_identity:true},{resolution_guard:{state:'checking'}}]){
+    const value=normalize(profile(fields),now);assert.equal(value.mode,'pending');assert.equal(value.tier,'');assert.equal(value.expiry,'');assert.equal(value.points,null);
+  }
 });
-test('access blocks and review override membership tier or active status',()=>{
-  for(const access of ['blocked','denied','revoked','suspended','none','inactive'])assert.equal(normalize(profile({access}),now).mode,'blocked');
-  for(const access of ['pending','review','checking','unknown'])assert.equal(normalize(profile({access:{value:access}}),now).mode,'pending');
-  assert.equal(normalize(profile({activeThrough:'2026-10-02'}),now).mode,'expired');
-  assert.equal(normalize(profile({status:'expired'}),now).mode,'expired');
+test('access blocks and review override flat membership status',()=>{
+  for(const actual_access of ['blocked','denied','revoked','suspended','none','inactive'])assert.equal(normalize(profile({actual_access}),now).mode,'blocked');
+  for(const membership_status of ['pending_review','under_review','checking'])assert.equal(normalize(profile({membership_status}),now).mode,'pending');
+  assert.equal(normalize(profile({membership_expires_at:'2026-10-02'}),now).mode,'expired');
+  assert.equal(normalize(profile({membership_status:'expired'}),now).mode,'expired');
 });
-test('canonical nested payload and legitimate active membership work',()=>{
-  assert.equal(normalize({ok:true,profile:profile()},now).mode,'active');
-  assert.equal(normalize({ok:true,data:profile()},now).tier,'Premium');
+test('verified Points preserve the exact existing Kenji reply and Per Rename',()=>{
+  const response={intent:'points_status',reply:'QA Member · Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ'};
+  assert.equal(displayReply(response,normalize(profile(),now).points),response.reply);
+  assert.match(displayReply({...response,reply:'Points 0 แต้ม'},null),/ยังยืนยันยอด Points ไม่ได้/);
+  assert.equal(displayReply({intent:'general',reply:'คำตอบเดิมครับ'},null),'คำตอบเดิมครับ');
 });
 test('quick prompts and promotion copy do not grant eligibility',()=>{
   assert.match(script,/เช็กโปรโมชั่นทั่วไปที่ระบบยืนยันแล้ว/);

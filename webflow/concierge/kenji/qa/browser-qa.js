@@ -1,7 +1,8 @@
 async (page) => {
   const capture=async options=>{await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot(options)};
   const checks=[];const check=(value,label)=>{if(!value)throw new Error(label);checks.push(label)};
-  const profileBody={ok:true,membership:{status:'active',level:'Premium',activeThrough:'2027-01-01'},points:{confirmedBalance:1234}};
+  const liffProfile=(points=1234,fields={})=>({ok:true,data:{tier:'Premium',membership_status:'active',membership_expires_at:'2027-01-01',...fields,points,points_policy:'lot_365d_from_entry',customer_360:{points:{status:points===null?'checking':'verified',active_points:points,expiry_policy:'lot_365d_from_entry'}}}});
+  const profileBody=liffProfile();
   let profile={status:200,body:profileBody},chat={status:200,body:{ok:true,reply:'Points ที่ระบบยืนยันตอนนี้ 1,234 แต้มครับ',intent:'points_status',action:{label:'เปิด Points',url:'/my-mmd/points'}}},posts=[];
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/member/api/liff/profile',async route=>{const current=profile;if(current.delay)await page.waitForTimeout(current.delay);await route.fulfill({status:current.status,contentType:'application/json',body:JSON.stringify(current.body)})});
@@ -10,6 +11,8 @@ async (page) => {
   const ready=async()=>{await page.waitForFunction(()=>document.querySelector('#kenji-concierge-v3').dataset.memberMode==='active')};
   for(const width of [320,375,390,430,1440]){
     await page.setViewportSize({width,height:width===1440?1000:844});await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY#kj3-overview');await ready();
+    check((await root.locator('[data-kj3-tier]').textContent())==='Premium',`flat LIFF tier at ${width}`);
+    check((await root.locator('[data-kj3-expiry]').textContent())!=='—',`flat LIFF expiry at ${width}`);
     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`no horizontal overflow at ${width}`);
     check(await input.evaluate(el=>getComputedStyle(el).fontSize)==='16px',`16px input at ${width}`);
     const targets=await root.locator('button,a,summary').evaluateAll(nodes=>nodes.filter(el=>el.getBoundingClientRect().width>0&&!el.classList.contains('kj3-skip')).map(el=>el.getBoundingClientRect().height));check(targets.every(h=>h>=44),`44px targets at ${width}`);
@@ -39,12 +42,12 @@ async (page) => {
   await page.reload();await ready();chat={status:401,body:{ok:false,error:'member_session_required'}};await input.fill('QA session expiry');await send.click();await page.waitForFunction(()=>document.querySelector('#kenji-concierge-v3').dataset.memberMode==='guest');
   check(await send.isDisabled(),'expired session blocks sends');check((await input.inputValue())==='','expiry clears private draft');check((await root.locator('[data-kj3-messages]').textContent()).includes('ยังไม่มีบทสนทนา'),'expiry clears transcript');check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน','expiry clears balance');
   check((await root.locator('[data-kj3-login]').getAttribute('href'))==='/member/my-mmd?t=QA_ONLY','existing verification token handoff');
-  for(const [mode,status,body] of [['guest',401,{ok:false}],['error',503,{ok:false}],['pending',200,{ok:true,membership:{status:'active',access:'pending'}}],['blocked',200,{ok:true,membership:{status:'active',access:'blocked'}}],['expired',200,{ok:true,membership:{status:'expired',activeThrough:'2026-01-01'}}],['unknown',200,{ok:true}],['active',200,{ok:true,membership:{status:'active'},points:{confirmedBalance:null}}]]){
+  for(const [mode,status,body] of [['guest',401,{ok:false}],['error',503,{ok:false}],['pending',200,liffProfile(null,{actual_access:'pending'})],['blocked',200,liffProfile(null,{actual_access:'blocked'})],['expired',200,liffProfile(null,{membership_status:'expired',membership_expires_at:'2026-01-01'})],['unknown',200,{ok:true}],['active',200,liffProfile(null)]]){
     profile={status,body};await root.locator('[data-kj3-retry]').click();await page.waitForFunction(mode=>document.querySelector('#kenji-concierge-v3').dataset.memberMode===mode,mode);
     check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน',`${mode} unknown points`);await capture({path:`output/playwright/kenji-state-${mode}.png`,fullPage:true});
   }
   chat={status:200,body:{ok:true,reply:'Points 0 แต้ม',intent:'points_status'}};await input.fill('เช็ก Points');await send.click();await page.waitForFunction(()=>!document.querySelector('[data-kj3-send]').disabled);check((await root.locator('.kj3-message[data-role=kenji]').last().textContent()).includes('ยังยืนยันยอด Points ไม่ได้'),'unknown points cannot become a zero in reply');
-  profile={status:200,delay:300,body:{ok:true,membership:{status:'active'},points:{confirmedBalance:0}}};await root.locator('[data-kj3-retry]').click();check(await root.locator('[data-kj3-status-card]').getAttribute('aria-busy')==='true','loading busy state');check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน','loading clears prior balance');await ready();check((await root.locator('[data-kj3-points]').textContent())==='0','verified zero is zero');
+  profile={status:200,delay:300,body:liffProfile(0)};await root.locator('[data-kj3-retry]').click();check(await root.locator('[data-kj3-status-card]').getAttribute('aria-busy')==='true','loading busy state');check((await root.locator('[data-kj3-points]').textContent())==='ยังไม่ยืนยัน','loading clears prior balance');await ready();check((await root.locator('[data-kj3-points]').textContent())==='0','verified zero is zero');
   await input.fill('ก'.repeat(800));check((await root.locator('[data-kj3-count]').textContent())==='800 / 800','800-char Thai input');await page.setViewportSize({width:320,height:440});await input.focus();check((await input.boundingBox()).width<=288,'keyboard-size viewport input fits');
   await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));check(await root.locator('[data-kj3-status-card]').evaluate(el=>Math.abs(el.getBoundingClientRect().top)<1),'status persists while scrolling');
   await page.setViewportSize({width:390,height:844});profile={status:200,body:profileBody};await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY#kj3-faq');await ready();check(page.url().includes('t=QA_ONLY#kj3-faq'),'query and historical anchor preserved');await page.goto('http://127.0.0.1:8765/concierge/kenji?t=QA_ONLY#kj3-care');await page.goBack();check(page.url().endsWith('#kj3-faq'),'back anchor');await page.goForward();check(page.url().endsWith('#kj3-care'),'forward anchor');
