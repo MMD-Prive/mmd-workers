@@ -95,7 +95,13 @@ export default {
       return response;
     }
     if (method === "GET" && path === CUSTOMER_PAGE) {
-      return decorateCustomer360Page(response, resolveRequestedClientId(url.searchParams));
+      const isLovable = response.headers.get("x-mmd-presentation-source") === "lovable";
+      // The Lovable directory owns its list UI. Legacy exact-client decorators
+      // require a different HTML contract; explicit client scopes still fail closed.
+      const scope = isLovable && !url.searchParams.has("client_id")
+        ? null
+        : resolveRequestedClientId(url.searchParams);
+      return decorateCustomer360Page(response, scope);
     }
     if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
@@ -240,6 +246,9 @@ export function decorateCreateJobGuidance(html: string): string {
 
 export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
+  if (requestedClientId === null && response.headers.get("x-mmd-presentation-source") === "lovable") {
+    return response;
+  }
   let html = await response.text();
   if (requestedClientId !== null) {
     const defaultBoot = "load('review_required');summary()})();";

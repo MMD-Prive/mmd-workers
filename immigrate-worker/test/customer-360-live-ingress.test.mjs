@@ -101,6 +101,22 @@ try {
   assert.match(missingScopeHtml, /if\(backfill\)backfill\.onclick=directScope\?null:startImport/);
   assert.match(missingScopeHtml, /txt\(d\.client_id\)!==id\|\|d\.identity\?\.status!=='canonical'/);
 
+  // Lovable directory HTML must retain hydration and its native list UI.
+  const lovableHtml = '<html><body><main id="app">Customer directory</main></body></html>';
+  const lovableResponse = () => new Response(lovableHtml, {
+    headers: { 'content-type': 'text/html', 'x-mmd-presentation-source': 'lovable' },
+  });
+  const directory = await decorateCustomer360Page(lovableResponse(), null);
+  assert.equal(directory.status, 200);
+  assert.equal(await directory.text(), lovableHtml);
+  assert.equal(directory.headers.get('x-mmd-customer-360'), null);
+  // A direct/invalid/repeated scope must not expose an unscoped directory.
+  for (const scope of ['recCanonical123', '']) {
+    const lockedLovable = await decorateCustomer360Page(lovableResponse(), scope);
+    assert.equal(lockedLovable.status, 503);
+    assert.equal(await lockedLovable.text(), 'customer_scope_contract_unavailable');
+  }
+
   const exactScope = await enforceExactCanonicalClientScope(Response.json({
     ok: true,
     client_id: "recCanonical123",
