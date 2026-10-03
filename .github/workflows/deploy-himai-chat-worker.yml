@@ -3,6 +3,15 @@ name: Deploy himai-chat-worker
 # Branch-only, code-only release for the approved GG Water coupon change.
 on:
   workflow_dispatch:
+    inputs:
+      verify_version:
+        description: "Read-only verification of an already deployed version; skips all deployment steps"
+        required: false
+        type: string
+      verify_source_sha:
+        description: "Source commit of the already deployed version"
+        required: false
+        type: string
 
 concurrency:
   group: telegram-router-secret-rotation-production
@@ -20,18 +29,22 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       WORKER_NAME: "himai-chat-worker"
       WRANGLER_SEND_METRICS: "false"
+      COUPON_VERSION_ID: ${{ inputs.verify_version }}
+      RELEASE_SOURCE_SHA: ${{ inputs.verify_source_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Validate coupon and checkout regression cases
+        if: ${{ inputs.verify_version == '' }}
         run: |
           set -euo pipefail
           node --check himai-chat-worker/src/mmd-shop-coupons.js
           node --check himai-chat-worker/src/shop-coupon-routes.js
           node --test himai-chat-worker/test/mmd-shop-coupons.test.mjs himai-chat-worker/test/shop-phase1-integration.test.mjs himai-chat-worker/test/mmd-shop-payment-binding.test.mjs himai-chat-worker/test/mmd-shop-webflow-checkout-gate.test.mjs shared/shop-phase1-safety.test.mjs himai-chat-worker/test/mmd-shop-reservation.test.mjs
       - name: Read serving configuration and preserve existing bindings
+        if: ${{ inputs.verify_version == '' }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -76,9 +89,11 @@ jobs:
           console.log('Previous deployment:', before.deployment.id);
           NODE
       - name: Package reviewed Worker source
+        if: ${{ inputs.verify_version == '' }}
         working-directory: himai-chat-worker
         run: npx --yes wrangler@4.138.0 versions upload --dry-run --keep-vars --config .wrangler-coupon-code-only.toml
       - name: Upload code version preserving secrets and variables
+        if: ${{ inputs.verify_version == '' }}
         working-directory: himai-chat-worker
         run: |
           set -euo pipefail
@@ -87,6 +102,7 @@ jobs:
           test -n "$version_id"
           echo "COUPON_VERSION_ID=$version_id" >> "$GITHUB_ENV"
       - name: Verify uploaded resources and prevent deployment races
+        if: ${{ inputs.verify_version == '' }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -105,6 +121,7 @@ jobs:
           if (current.deployments[0].id !== before.deployment.id) throw new Error('Another deployment occurred after preflight; refusing to replace it');
           NODE
       - name: Activate approved himai-chat-worker code version
+        if: ${{ inputs.verify_version == '' }}
         working-directory: himai-chat-worker
         run: npx --yes wrangler@4.138.0 versions deploy "${COUPON_VERSION_ID}@100%" -y --config .wrangler-coupon-code-only.toml
       - name: Verify active version and read-only production coupon routes
@@ -117,6 +134,9 @@ jobs:
           const data = await response.json();
           const active = data.result?.deployments?.[0];
           if (!response.ok || data.success !== true || active?.versions?.length !== 1 || active.versions[0].version_id !== process.env.COUPON_VERSION_ID || active.versions[0].percentage !== 100) throw new Error('Exact coupon version is not serving 100%');
+          const versionResponse = await fetch(root + '/versions/' + process.env.COUPON_VERSION_ID, { headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } });
+          const versionData = await versionResponse.json();
+          if (!versionResponse.ok || versionData.success !== true || versionData.result?.metadata?.annotations?.['workers/tag'] !== 'gg-coupon-' + process.env.RELEASE_SOURCE_SHA.slice(0, 12)) throw new Error('Deployed source tag does not match the release commit');
           const checks = [];
           for (const host of ['www.mmdbkk.com', 'mmdbkk.com']) {
             for (const [path, options, status, error] of [
@@ -126,14 +146,14 @@ jobs:
             ]) {
               const r = await fetch('https://' + host + path, { ...options, signal: AbortSignal.timeout(20000) });
               const body = await r.json();
-              if (r.status !== status || body.error !== error) throw new Error('Coupon production route did not return the expected guard');
+              if (r.status !== status || body.error !== error) throw new Error(`Coupon guard mismatch: ${host}${path} status=${r.status} error=${body.error}`);
               checks.push({ host, path, status, error });
             }
           }
           const catalog = await fetch('https://www.mmdbkk.com/mmd-shop/api/products', { signal: AbortSignal.timeout(20000) }).then(r => r.json());
           const product = catalog.products?.find(p => p.id === 'recSod352ioZ17aMr' && p.sku === 'WGG-50');
           if (catalog.ok !== true || !product) throw new Error('Canonical GG Water 50 ml product unavailable');
-          const receipt = { worker: process.env.WORKER_NAME, source_sha: process.env.GITHUB_SHA, version_id: process.env.COUPON_VERSION_ID, deployment_id: active.id, percentage: 100, coupon_route_checks: checks, gg50_price_thb: product.selling_price_thb, authenticated_redemption: 'not_run', real_coupon_issued: false, webflow_published: false };
+          const receipt = { worker: process.env.WORKER_NAME, source_sha: process.env.RELEASE_SOURCE_SHA, verification_sha: process.env.GITHUB_SHA, version_id: process.env.COUPON_VERSION_ID, deployment_id: active.id, percentage: 100, coupon_route_checks: checks, gg50_price_thb: product.selling_price_thb, authenticated_redemption: 'not_run', real_coupon_issued: false, webflow_published: false };
           fs.writeFileSync('gg-coupon-deploy-receipt.json', JSON.stringify(receipt, null, 2));
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'GG Water coupon backend deployed.\n\n```json\n' + JSON.stringify(receipt, null, 2) + '\n```\n');
           console.log(JSON.stringify(receipt));
