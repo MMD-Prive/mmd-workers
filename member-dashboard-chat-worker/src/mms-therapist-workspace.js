@@ -4,10 +4,13 @@ const PAGES = new Set([`${PREFIX}/login`, `${PREFIX}/me`, `${PREFIX}/app`]);
 export async function maybeHandleTherapistWorkspace(request, env = {}) {
   // A single behavior contract remains in mms-worker when presentation changes.
   if (env.MMS_THERAPIST_UI_SOURCE !== "native") return null;
-  const path = new URL(request.url).pathname.replace(/\/$/, "");
-  if (!PAGES.has(path)) return null;
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/\/$/, "");
+  // LINE may return to the registered LIFF endpoint rather than /login.
+  const callback = path === PREFIX && ["code", "liff.state", "liff_state", "invite"].some(key => url.searchParams.has(key));
+  if (!PAGES.has(path) && !callback) return null;
   if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
-  const login = path === `${PREFIX}/login`;
+  const login = callback || path === `${PREFIX}/login`;
   const headers = new Headers({
     "content-type": "text/html; charset=utf-8", "cache-control": "private, no-store",
     "x-mmd-route-owner": "member-dashboard-chat-worker", "x-mmd-ui-source": "mms-native-workspace-v1",
@@ -188,19 +191,55 @@ export function therapistClient() {
   $("line-login").onclick = () => location.assign(P + "/login");
   async function login() {
     $("entry").hidden = false;
-    const hash = new URLSearchParams(location.hash.slice(1)); const invite = hash.get("invite") || "";
+    const storageKey = "mms-therapist-invite-v1";
+    const recoveryKey = "mms-therapist-line-recovery-v1";
+    const url = new URL(location.href);
+    const hash = new URLSearchParams(url.hash.slice(1));
+    const nested = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
+    const state = new URL(nested || P + "/login", url.origin);
+    let invite = url.searchParams.get("invite") || hash.get("invite") || state.searchParams.get("invite") || new URLSearchParams(state.hash.slice(1)).get("invite") || "";
+    const storage = {
+      get(key) { try { return window.sessionStorage.getItem(key); } catch (_) { return null; } },
+      set(key, value) { try { window.sessionStorage.setItem(key, value); } catch (_) {} },
+      remove(key) { try { window.sessionStorage.removeItem(key); } catch (_) {} },
+    };
+    if (invite) storage.set(storageKey, JSON.stringify({ token: invite, until: Date.now() + 30 * 60 * 1000 }));
+    else {
+      try { const saved = JSON.parse(storage.get(storageKey)); if (saved?.until > Date.now()) invite = saved.token || ""; else storage.remove(storageKey); } catch (_) { storage.remove(storageKey); }
+    }
     if (!invite) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
+    // Keep the invitation in the redirect too if browser storage is unavailable.
+    const redirect = new URL(P + "/login", url.origin);
+    if (invite) redirect.hash = new URLSearchParams({ invite }).toString();
+    function recoverLine() {
+      if (storage.get(recoveryKey) || url.searchParams.get("line_recovery") === "1") { notice("LINE ยังยืนยันบัญชีไม่ได้ครับ ติดต่อพี่เปอร์เพื่อตรวจ LINE Login", true); return; }
+      storage.set(recoveryKey, "1");
+      redirect.searchParams.set("line_recovery", "1");
+      window.liff.logout();
+      window.liff.login({ redirectUri: redirect.href });
+    }
     notice("ยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
-    $("line-login").onclick = () => busy($("line-login"), async () => {
+    async function authenticate() {
       if (!window.liff) throw new Error("LIFF_UNAVAILABLE");
       await window.liff.init({ liffId: "2011425652-YqK1F6y8" });
-      if (!window.liff.isLoggedIn()) { window.liff.login({ redirectUri: location.href }); return; }
-      const token = window.liff.getIDToken(); if (!token) throw new Error("ID_TOKEN_UNAVAILABLE");
-      await api(P + "/api/auth/line", json("POST", { id_token: token, ...(invite ? { invite_token: invite } : {}) }));
-      // Preserve the invite through unsuccessful attempts; clear only after success.
-      history.replaceState(null, "", location.pathname); location.replace(P + "/app");
-    });
+      if (!window.liff.isLoggedIn()) { window.liff.login({ redirectUri: redirect.href }); return; }
+      const token = window.liff.getIDToken();
+      if (!token) { recoverLine(); return; }
+      try {
+        await api(P + "/api/auth/line", json("POST", { id_token: token, ...(invite ? { invite_token: invite } : {}) }));
+      } catch (e) {
+        // api() normally changes this handler on 401; preserve the auth retry.
+        $("line-login").onclick = () => busy($("line-login"), authenticate);
+        if (e.code === "LINE_ID_TOKEN_INVALID") { recoverLine(); return; }
+        throw e;
+      }
+      storage.remove(storageKey); storage.remove(recoveryKey);
+      history.replaceState(null, "", P + "/login"); location.replace(P + "/app");
+    }
+    $("line-login").onclick = () => busy($("line-login"), authenticate);
+    if (["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key))) await busy($("line-login"), authenticate);
   }
   if (document.querySelector("main").dataset.login === "true") login().catch(() => notice("กรุณาลองยืนยันผ่าน LINE อีกครั้งครับ", true));
   else refresh().catch((e) => { notice(messages[e.code] || "ยังตรวจสอบบัญชีไม่ได้ครับ กดรีเฟรชหรือติดต่อพี่เปอร์", true); if (e.status === 403) { $("entry").hidden = false; } });
 }
+
