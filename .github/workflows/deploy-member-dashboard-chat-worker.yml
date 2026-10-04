@@ -143,6 +143,7 @@ jobs:
           node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
           node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
           node --test member-dashboard-chat-worker/test/model-availability-reminder.test.mjs
+          node --test member-dashboard-chat-worker/test/mms-therapist-deploy-routes.test.mjs
           node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
           node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
           node --test member-dashboard-chat-worker/test/eligible-recommendation-smoke-policy.test.mjs
@@ -268,6 +269,16 @@ jobs:
           const desired = [
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
+            "mmdbkk.com/male-massage/therapists",
+            "mmdbkk.com/male-massage/therapists/login*",
+            "mmdbkk.com/male-massage/therapists/me*",
+            "mmdbkk.com/male-massage/therapists/app*",
+            "mmdbkk.com/male-massage/therapists/api/app/*",
+            "www.mmdbkk.com/male-massage/therapists",
+            "www.mmdbkk.com/male-massage/therapists/login*",
+            "www.mmdbkk.com/male-massage/therapists/me*",
+            "www.mmdbkk.com/male-massage/therapists/app*",
+            "www.mmdbkk.com/male-massage/therapists/api/app/*",
             "mmdbkk.com/v1/internal/ai/service-binding-smoke",
             "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
             "mmdbkk.com/v1/member/payments*",
@@ -446,6 +457,31 @@ jobs:
           grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
           grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
           grep -qi '^cache-control: .*no-store' "$auth_headers"
+
+      - name: Verify native MY THERAPIST entrance and callbacks
+        id: therapist_ui_smoke
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            for suffix in '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
+              url="https://${host}/male-massage/therapists${suffix}"
+              code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-ui.headers" -o "$RUNNER_TEMP/therapist-ui.html" -w '%{http_code}' "$url")"
+              test "$code" = '200'
+              grep -Fq 'data-mms-shell="native-workspace-v1"' "$RUNNER_TEMP/therapist-ui.html"
+              grep -Fq 'data-login="true"' "$RUNNER_TEMP/therapist-ui.html"
+              grep -Fq 'mms-therapist-invite-v1' "$RUNNER_TEMP/therapist-ui.html"
+              grep -qi '^x-mmd-ui-source: mms-native-workspace-v1' "$RUNNER_TEMP/therapist-ui.headers"
+              grep -qi '^cache-control: .*no-store' "$RUNNER_TEMP/therapist-ui.headers"
+            done
+            code="$(curl --silent --show-error -D "$RUNNER_TEMP/therapist-access.headers" -o "$RUNNER_TEMP/therapist-access.json" -w '%{http_code}' "https://${host}/male-massage/therapists/api/app/access")"
+            test "$code" = '401'
+            node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/therapist-access.json","utf8"));if(b.ok!==false||b.error?.code!=="THERAPIST_SESSION_REQUIRED")process.exit(1)'
+            code="$(curl --silent --show-error -D "$RUNNER_TEMP/therapist-app.headers" -o /dev/null -w '%{http_code}' "https://${host}/male-massage/therapists/app")"
+            test "$code" = '302'
+            grep -Eq '^location: https://(www\.)?mmdbkk\.com/male-massage/therapists/login' "$RUNNER_TEMP/therapist-app.headers"
+          done
 
       - name: Smoke MY MMD Private Teaser Viewer route
         id: private_teaser_route_smoke
@@ -781,6 +817,7 @@ jobs:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          THERAPIST_UI_SMOKE_OUTCOME: ${{ steps.therapist_ui_smoke.outcome }}
           PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
           PAYMENT_CENTER_ACCEPTANCE_OUTCOME: ${{ steps.member_payments_authenticated.outcome }}
           PAYMENT_CENTER_ACCEPTANCE_STATUS: ${{ steps.member_payments_authenticated.outputs.status }}
@@ -875,8 +912,13 @@ jobs:
         shell: bash
         env:
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          THERAPIST_UI_SMOKE_OUTCOME: ${{ steps.therapist_ui_smoke.outcome }}
           PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
         run: |
+          if [ "$THERAPIST_UI_SMOKE_OUTCOME" != "success" ]; then
+            echo "native MY THERAPIST entrance/callback smoke did not pass" >&2
+            exit 1
+          fi
           if [ "$SMOKE_OUTCOME" != "success" ]; then
             echo "member-dashboard-chat-worker production smoke did not pass" >&2
             exit 1
@@ -892,6 +934,7 @@ jobs:
                steps.migration_deploy.outcome == 'success') &&
               steps.route_sync.outcome == 'success' &&
               steps.smoke.outcome == 'success' &&
+              steps.therapist_ui_smoke.outcome == 'success' &&
               env.MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID != '' }}
         shell: bash
         env:
@@ -921,3 +964,4 @@ jobs:
           - acceptance boundary: this receipt does not attest Kenji contextual/recommendation acceptance or Card 21829530 pilot/human E2E; see the deploy diagnosis for those outcomes
           EOF
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+
