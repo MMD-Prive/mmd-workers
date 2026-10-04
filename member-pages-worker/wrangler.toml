@@ -77,6 +77,12 @@ bucket_name = "mmd-private-model-media"
 # Customer-submitted reference images are private intake evidence. They never
 # share the model-media buckets and are read only through the internal request
 # handoff after a verified member submits a request.
+# Approved application portraits remain in private storage. They are delivered
+# only by the member profile route after fresh canonical membership validation.
+[[r2_buckets]]
+binding = "PUBLIC_MODEL_UPLOADS_R2"
+bucket_name = "mmd-private-public-model-uploads"
+
 [[r2_buckets]]
 binding = "CUSTOMER_REQUEST_EVIDENCE"
 bucket_name = "mmd-customer-request-evidence"
