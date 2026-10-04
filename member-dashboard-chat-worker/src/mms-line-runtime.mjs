@@ -1,6 +1,5 @@
 import { CONCIERGE_CAPABILITY_PACK_VERSION, conciergeCapabilityPrompt, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
 import { RECOVERY_OUTCOME_TAXONOMY_VERSION } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
-import { persistVerifiedMmsContactEvents } from "./mms-customer-contact-history.mjs";
 
 const MMS_WEBHOOK_PATHS = new Set(["/webhooks/line/mms", "/webhooks/line/mms/"]);
 const MMS_RICH_MENU_PUBLISH_PATH = "/v1/internal/line/mms/rich-menu/publish";
@@ -439,14 +438,6 @@ async function handleWebhook(request, env, ctx) {
 
   const body = (() => { try { return JSON.parse(rawBody); } catch (_) { return null; } })();
   if (!body || !Array.isArray(body.events)) return json({ ok: false, error: "invalid_json" }, 400);
-  // Persist before acknowledging or replying, including when AI replies are
-  // disabled. A retry must never silently lose contact history.
-  try {
-    await persistVerifiedMmsContactEvents(body.events, env);
-  } catch (_) {
-    console.error(JSON.stringify({ mms_contact_history: "persist_failed" }));
-    return json({ ok: false, error: "mms_contact_history_unavailable" }, 503);
-  }
   const tasks = [];
   for (const event of body.events.slice(0, MAX_EVENTS)) {
     const replyToken = clean(event?.replyToken, 256);
