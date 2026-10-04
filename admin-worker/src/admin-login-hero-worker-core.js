@@ -392,7 +392,7 @@ function normalizePath(pathname) {
   return normalized;
 }
 
-async function applyCredentialBoundAdminGate(request, env, path, method) {
+export async function applyCredentialBoundAdminGate(request, env, path, method) {
   if (isGateBypassedAdminPath(path, method)) return { request };
   if (path === ADMIN_LOGIN_PAGE_PATH || path === SIGIL_ADMIN_LOGIN_PAGE_PATH) {
     if (method === "GET" || method === "HEAD") return { response: renderLoginGate(request, env) };

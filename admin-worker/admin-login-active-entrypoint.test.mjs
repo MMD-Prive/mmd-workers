@@ -239,3 +239,143 @@ test("active Refund Ops converts downstream exceptions to controlled 503 instead
     globalThis.fetch = originalFetch;
   }
 });
+
+const SESSION_CREATOR_PAGES = [
+  "/internal/admin/work",
+  "/internal/admin/jobs/all",
+  "/internal/admin/jobs/create-job",
+  "/internal/admin/jobs/job-board",
+];
+const PAGE_GATE_ENV = runtimeEnv({
+  ADMIN_LOGIN_CREDENTIAL: "page_test_credential",
+  ADMIN_SESSION_SECRET: "page_test_session_secret",
+});
+
+async function withSessionCreatorUpstream(run) {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (request) => {
+    assert.equal(new URL(request.url).origin, "https://mmd-os.lovable.app");
+    requests.push(request);
+    return new Response(request.method === "HEAD" ? null : '<html><script src="/assets/main.js"></script>protected page</html>', {
+      headers: { "content-type": "text/html", "set-cookie": "upstream=ignored" },
+    });
+  };
+  try {
+    await run(requests);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function assertPagesDenied(headers, requests) {
+  for (const path of SESSION_CREATOR_PAGES) {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(new Request(`https://mmdbkk.com${path}?page=2`, {
+        method, headers,
+      }), PAGE_GATE_ENV, {});
+      assert.equal(response.status, method === "GET" ? 303 : 401, `${method} ${path}`);
+      if (method === "GET") {
+        const target = new URL(response.headers.get("location"));
+        assert.equal(target.pathname, "/internal/admin/login");
+        const next = path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
+          ? `${path}?page=2` : "/internal/admin/control-room";
+        assert.equal(target.searchParams.get("next"), next);
+        assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
+      } else {
+        assert.equal((await response.json()).error, "unauthorized");
+      }
+      assert.equal(requests.length, 0, "denied pages must not fetch upstream");
+    }
+  }
+}
+
+test("Session Creator pages reject anonymous GET/HEAD before any upstream fetch", async () => {
+  await withSessionCreatorUpstream((requests) => assertPagesDenied({}, requests));
+});
+
+test("Session Creator pages reject invalid cookies and spoofed service/actor credentials", async () => {
+  await withSessionCreatorUpstream((requests) => assertPagesDenied({
+    Cookie: "mmd_admin_gate_v1=invalid; mmd_admin_gate_v1=also-invalid",
+    Authorization: "Bearer service_internal_token",
+    "X-MMD-Admin-Actor": "per",
+    "X-MMD-Admin-Role": "owner",
+    "X-MMD-Admin-Source": "credential-bound-session",
+  }, requests));
+});
+
+test("Session Creator pages reject an expired signed credential", async () => {
+  const { createCredentialBoundAdminSession } = await import("./src/credential-bound-admin-session.js");
+  const realNow = Date.now;
+  let token;
+  try {
+    Date.now = () => realNow() - 9 * 60 * 60 * 1000;
+    token = await createCredentialBoundAdminSession(new Request("https://mmdbkk.com/"), { id: "per", role: "admin" }, PAGE_GATE_ENV);
+  } finally {
+    Date.now = realNow;
+  }
+  await withSessionCreatorUpstream((requests) => assertPagesDenied({ Cookie: `mmd_admin_gate_v1=${token}` }, requests));
+});
+
+test("Session Creator pages allow signed owner GET/HEAD with stale duplicate cookie on either production host", async () => {
+  const response = await login("page_test_credential", PAGE_GATE_ENV);
+  assert.equal(response.status, 303);
+  const Cookie = `mmd_admin_gate_v1=stale; ${cookiePair(response)}`;
+  await withSessionCreatorUpstream(async (requests) => {
+    for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
+      for (const path of SESSION_CREATOR_PAGES) {
+        for (const method of ["GET", "HEAD"]) {
+          const response = await worker.fetch(new Request(`https://${host}${path}/?page=2`, {
+            method, headers: { Cookie, Authorization: "Bearer private" },
+          }), PAGE_GATE_ENV, {});
+          assert.equal(response.status, 200);
+          assert.equal(response.headers.get("cache-control"), "no-store");
+          assert.equal(response.headers.get("set-cookie"), null);
+          const upstream = requests.at(-1);
+          assert.equal(upstream.url, `https://mmd-os.lovable.app${path}?page=2`);
+          assert.equal(upstream.method, method);
+          for (const name of ["cookie", "authorization", "x-mmd-admin-actor", "x-mmd-admin-role", "x-mmd-admin-source"]) {
+            assert.equal(upstream.headers.has(name), false, name);
+          }
+          const body = await response.text();
+          if (method === "HEAD") assert.equal(body, "");
+          else assert.match(body, /src="\/internal\/admin\/work\/assets\/main.js"/);
+        }
+      }
+    }
+    assert.equal(requests.length, 16);
+  });
+});
+
+test("Session Creator pages preserve MMS partner scope restrictions", async () => {
+  const { createCredentialBoundAdminSession } = await import("./src/credential-bound-admin-session.js");
+  const token = await createCredentialBoundAdminSession(new Request("https://mmdbkk.com/"), {
+    id: "partner", role: "mms_partner",
+  }, PAGE_GATE_ENV);
+  await withSessionCreatorUpstream(async (requests) => {
+    for (const path of SESSION_CREATOR_PAGES) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`, {
+          method, headers: { Cookie: `mmd_admin_gate_v1=${token}` },
+        }), PAGE_GATE_ENV, {});
+        assert.equal(response.status, method === "GET" ? 303 : 403);
+        if (method === "GET") assert.equal(response.headers.get("location"), "https://mmdbkk.com/internal/admin/mms");
+        else assert.equal((await response.json()).error, "mms_partner_scope_forbidden");
+      }
+    }
+    assert.equal(requests.length, 0);
+  });
+});
+
+test("Session Creator assets remain public for anonymous GET/HEAD", async () => {
+  await withSessionCreatorUpstream(async (requests) => {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/work/assets/main.js", { method }), PAGE_GATE_ENV, {});
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "public, max-age=3600");
+      assert.equal(requests.at(-1).url, "https://mmd-os.lovable.app/assets/main.js");
+      assert.equal(requests.at(-1).method, method);
+    }
+    assert.equal(requests.length, 2);
+  });
+});
