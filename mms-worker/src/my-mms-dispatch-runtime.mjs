@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { matchTherapists } from "./core.mjs";
 import { requireMyMmsApprovedTherapist } from "./my-mms-access-runtime.mjs";
+import { mmsJobPricing } from "./mms-job-pricing.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
@@ -376,7 +377,7 @@ async function dispatchPrebooking(request, env, prebookingId) {
   rejectUnknownKeys(body, new Set([
     "request_key", "service_label", "safe_area_label", "safe_note_label", "exact_address",
     "customer_display_label", "customer_contact", "map_url", "travel_label", "eta_label",
-    "therapist_payout_thb", "payout_note", "payment_state_label", "offer_ttl_seconds", "max_offers",
+    "therapist_payout_thb", "course_amount_thb", "travel_amount_thb", "payout_note", "payment_state_label", "offer_ttl_seconds", "max_offers",
   ]));
   const requestKey = requiredRequestKey(body.request_key, `dispatch:${prebookingId}`);
   const prebooking = await findUniqueByField(env, tableId(env, "PREBOOKINGS"), "Prebooking ID", prebookingId);
@@ -417,9 +418,16 @@ async function dispatchPrebooking(request, env, prebookingId) {
   const durationMinutes = boundedInt(pf["Duration Minutes"], 15, 480, 60);
   const serviceStartAt = combineBangkokDateTime(pf["Service Date"], pf["Service Time"]);
   const safeAreaLabel = clean(body.safe_area_label, 180) || zone;
-  const payout = optionalMoney(body.therapist_payout_thb);
+  let pricing = null;
+  if (body.course_amount_thb !== undefined || body.travel_amount_thb !== undefined) {
+    try { pricing = mmsJobPricing(body.course_amount_thb, body.travel_amount_thb); }
+    catch (_) { throw dispatchError(400, "MMS_JOB_AMOUNT_INVALID"); }
+    if (body.therapist_payout_thb !== undefined && optionalMoney(body.therapist_payout_thb) !== pricing.therapist_share_thb) throw dispatchError(400, "MMS_JOB_PAYOUT_MISMATCH");
+  }
+  const payout = pricing ? pricing.therapist_share_thb : optionalMoney(body.therapist_payout_thb);
   const internalPayload = {
     request_key: requestKey,
+    pricing,
     member_ref: clean(pf["Member Ref"], 160) || null,
     exact_address: clean(body.exact_address, 2000) || null,
     customer_display_label: clean(body.customer_display_label, 160) || null,
@@ -474,6 +482,7 @@ async function dispatchPrebooking(request, env, prebookingId) {
       travel_label: clean(body.travel_label, 160) || null,
       eta_label: clean(body.eta_label, 160) || null,
       payout_thb: payout,
+      pricing,
       payout_note: clean(body.payout_note, 240) || null,
       note_label: internalPayload.safe_note_label,
       expires_at: new Date(expiresAt).toISOString(),
@@ -651,6 +660,7 @@ function offerProjection(offerRecord, jobRecord) {
     etaLabel: clean(safe.eta_label || of["ETA Label"] || jf["ETA Label"], 160) || null,
     payoutLabel: moneyLabel(safe.payout_thb ?? of["Payout THB"] ?? jf["Therapist Payout THB"]),
     payoutNote: clean(safe.payout_note || jf["Payout Note"], 240) || null,
+    pricing: safeJobPricing(safe.pricing),
     expiresAt: clean(safe.expires_at || of["Expires At"], 80) || null,
     noteLabel: clean(safe.note_label, 500) || null,
   };
@@ -687,10 +697,17 @@ function jobProjection(record) {
       contactUrl: null,
     },
     payoutSummaryLabel: clean(fields["Payout Note"], 240) || null,
+    pricing: safeJobPricing(internal.pricing),
     paymentStateLabel: clean(fields["Payment State Label"], 160) || null,
     timeline: timelineFor(fields, state),
     supportUrl: SUPPORT_URL,
   };
+}
+
+function safeJobPricing(value) {
+  if (!value || typeof value !== "object") return null;
+  try { return mmsJobPricing(value.course_amount_thb, value.travel_amount_thb); }
+  catch (_) { return null; }
 }
 
 function internalJobProjection(record) {
@@ -718,7 +735,7 @@ function internalOfferProjection(record) {
 
 function actionJson(jobId, result, request, env) {
   const state = canonicalClientState(result?.state);
-  const status = state === "TAKEN" ? 409 : state === "EXPIRED" ? 410 : state === "CHECKING" ? 409 : 200;
+  const status = result?.code ? (state === "EXPIRED" ? 410 : 409) : state === "TAKEN" ? 409 : state === "EXPIRED" ? 410 : state === "CHECKING" ? 409 : 200;
   const messageMap = {
     ACCEPTED: "JOB CONFIRMED ✓",
     DECLINED: "ปฏิเสธงานนี้แล้ว",

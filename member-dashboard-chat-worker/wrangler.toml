@@ -265,6 +265,22 @@ pattern = "www.mmdbkk.com/male-massage/therapists/api/auth/*"
 zone_name = "mmdbkk.com"
 
 # MY MMS Therapist work app. Browser session cookies never leave mmdbkk.com:
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/me*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/me*"
+zone_name = "mmdbkk.com"
+
 # app APIs are delegated to mms-worker, while the app page is server-gated by
 # the canonical MY MMS entitlement before anonymous Lovable presentation bytes
 # are republished on the same origin.
@@ -393,6 +409,7 @@ zone_name = "mmdbkk.com"
 # muted/disabled runtime value by accident. An intentional emergency mute can
 # still be made by changing this config and redeploying.
 [vars]
+MMS_THERAPIST_UI_SOURCE = "native"
 # General customer replies remain off. The separately approved rights command
 # uses deterministic live truth and retains global stop and owner takeover.
 # Owner authorization 2026-10-04: exact check-rights command only. General

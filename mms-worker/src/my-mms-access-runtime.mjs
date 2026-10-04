@@ -1,6 +1,7 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
 const SELF_ACCESS_PATH = "/male-massage/therapists/api/app/access";
+const SELF_AVAILABILITY_PATH = "/male-massage/therapists/api/app/availability";
 const ADMIN_ACCESS_RE = /^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})\/my-mms-access$/;
 const ADMIN_THERAPIST_RE = /^\/internal\/mms\/admin\/therapists\/([A-Za-z0-9_-]{4,80})$/;
 const APP_ROUTE = "/male-massage/therapists/app";
@@ -12,7 +13,7 @@ const MY_MMS_VALUES = new Set(["Locked", "Approved", "Revoked"]);
 
 export function isMyMmsAccessRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === SELF_ACCESS_PATH || ADMIN_ACCESS_RE.test(path) || ADMIN_THERAPIST_RE.test(path);
+  return path === SELF_ACCESS_PATH || path === SELF_AVAILABILITY_PATH || ADMIN_ACCESS_RE.test(path) || ADMIN_THERAPIST_RE.test(path);
 }
 
 export async function maybeHandleMyMmsAccess(request, env = {}) {
@@ -20,6 +21,20 @@ export async function maybeHandleMyMmsAccess(request, env = {}) {
   const path = normalizePath(url.pathname);
 
   try {
+    if (path === SELF_AVAILABILITY_PATH) {
+      if (request.method === "OPTIONS") {
+        requireTrustedOrigin(request, env);
+        return new Response(null, { status: 204, headers: responseHeaders(request, env) });
+      }
+      if (request.method !== "PUT") return methodNotAllowed(request, env);
+      requireTrustedOrigin(request, env);
+      const therapist = await requireMyMmsApprovedTherapist(request, env);
+      const body = await readJson(request);
+      if (!body || Array.isArray(body) || Object.keys(body).some((key) => key !== "availability_status")) throw accessError(400, "AVAILABILITY_BODY_INVALID");
+      if (!["Available", "Unavailable", "Paused"].includes(body.availability_status)) throw accessError(400, "AVAILABILITY_STATUS_INVALID");
+      const updated = await updateTherapist(env, therapist.id, { "Availability Status": body.availability_status });
+      return json({ ok: true, data: safeAccessProjection(updated) }, 200, request, env);
+    }
     if (path === SELF_ACCESS_PATH) {
       if (request.method === "OPTIONS") {
         requireTrustedOrigin(request, env);
@@ -162,6 +177,10 @@ function safeAccessProjection(record) {
     can_open: access === "Approved",
     app_route: access === "Approved" ? APP_ROUTE : null,
     approved_at: access === "Approved" ? clean(fields["MY MMS Approved At"], 80) || null : null,
+    display_name: clean(fields["Display Name"], 120) || null,
+    availability_status: clean(fields["Availability Status"], 40) || "Unavailable",
+    matching_enabled: fields["Matching Enabled"] === true,
+    verified_skills: Array.isArray(fields["Verified Skills"]) ? fields["Verified Skills"].filter((item) => typeof item === "string").slice(0, 20) : [],
   };
 }
 
@@ -223,6 +242,7 @@ async function findUniqueTherapist(env, therapistId) {
   for (const field of [
     "Therapist ID", "Display Name", "Status", "Therapist Auth Status", "LINE Subject Hash",
     "MY MMS Access", "MY MMS Approved At", "MY MMS Approved By", "MY MMS Review Note",
+    "Availability Status", "Matching Enabled", "Verified Skills",
   ]) url.searchParams.append("fields[]", field);
   const data = await airtableFetch(url, { method: "GET" }, env);
   const records = Array.isArray(data.records) ? data.records : [];
@@ -345,7 +365,7 @@ function responseHeaders(request, env) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Access-Control-Allow-Credentials"] = "true";
     headers["Access-Control-Allow-Headers"] = "Content-Type";
-    headers["Access-Control-Allow-Methods"] = "GET,OPTIONS";
+    headers["Access-Control-Allow-Methods"] = "GET,PUT,OPTIONS";
     headers.Vary = "Origin";
   }
   return headers;
