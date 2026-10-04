@@ -27,7 +27,11 @@ export async function awardBasePointsPhase1(env, payload) {
   const paymentRef = clean(payload.payment_ref);
   if (!paymentRef) return { ok: false, skipped: true, reason: "payment_ref_required" };
 
-  const memberId = clean(payload.member_id) || await resolveCanonicalMemberId(env, payload.member_email);
+  const suppliedId = canonicalMemberId(payload);
+  const email = clean(payload.member_email).toLowerCase();
+  const memberId = suppliedId === null ? "" : email
+    ? await resolveCanonicalMemberId(env, email, suppliedId)
+    : suppliedId;
   if (!memberId) {
     return { ok: true, skipped: true, awarded: false, reason: "canonical_member_id_required" };
   }
@@ -76,13 +80,14 @@ export class PointsPhase1Coordinator {
 async function writeSerializedLedgerEvent(env, payload) {
   requireAirtable(env);
   const paymentRef = clean(payload.payment_ref);
-  const memberId = clean(payload.member_id);
+  const memberId = canonicalMemberId(payload);
   if (!paymentRef) throw new Error("payment_ref_required");
   if (!memberId) throw new Error("canonical_member_id_required");
 
   const ledgerTable = clean(env.AIRTABLE_TABLE_POINTS_LEDGER || "tbl5dfnwjUFMLbnWL");
   const duplicate = await findFirst(env, ledgerTable, `{payment_ref}=${formulaText(paymentRef)}`);
   if (duplicate?.id) {
+    if (canonicalMemberId(duplicate.fields || {}) !== memberId) throw new Error("canonical_member_id_required");
     return {
       ok: true,
       duplicate: true,
@@ -131,24 +136,49 @@ async function writeSerializedLedgerEvent(env, payload) {
   };
 }
 
-async function resolveCanonicalMemberId(env, emailRaw) {
+// Canonical IDs are opaque strings. Do not coerce linked-record arrays,
+// objects, numbers or conflicting aliases into an identity.
+function canonicalMemberId(fields = {}) {
+  const values = [];
+  for (const key of ["member_id", "Member ID"]) {
+    const value = fields[key];
+    if (value == null || value === "") continue;
+    if (typeof value !== "string") return null;
+    const id = value.trim();
+    if (id) values.push(id);
+  }
+  const ids = [...new Set(values)];
+  return ids.length > 1 ? null : ids[0] || "";
+}
+
+async function resolveCanonicalMemberId(env, emailRaw, suppliedId = "") {
   const email = clean(emailRaw).toLowerCase();
-  if (!email || !email.includes("@")) return "";
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
   const table = clean(env.AIRTABLE_TABLE_MEMBERS || env.AIRTABLE_TABLE_MEMBERS_ID || "Members");
   const formulas = [
     `LOWER({email})=${formulaText(email)}`,
     `LOWER({Contact Email})=${formulaText(email)}`,
     `LOWER({member_email})=${formulaText(email)}`,
   ];
+  const matches = new Map();
   for (const formula of formulas) {
     try {
-      const row = await findFirst(env, table, formula);
-      const fields = row?.fields || {};
-      const id = clean(fields.member_id || fields["Member ID"] || fields.memberstack_id);
-      if (id) return id;
-    } catch {}
+      const qs = new URLSearchParams({ maxRecords: "2", pageSize: "2", filterByFormula: formula });
+      const data = await airtable(env, `${encodeURIComponent(table)}?${qs.toString()}`, { method: "GET" });
+      if (!Array.isArray(data?.records) || data.offset || data.records.length > 1) return "";
+      for (const row of data.records) {
+        const id = canonicalMemberId(row?.fields || {});
+        if (!row?.id || !id || (suppliedId && suppliedId !== id)) return "";
+        if (matches.has(row.id) && matches.get(row.id) !== id) return "";
+        matches.set(row.id, id);
+      }
+    } catch (error) {
+      // Older schemas may omit an email alias. Only that precise schema
+      // rejection is skippable; authorization/network/read errors fail closed.
+      if (!/^airtable_422:/.test(String(error?.message)) || !/Unknown field names?|UNKNOWN_FIELD_NAME/i.test(String(error?.message))) return "";
+    }
   }
-  return "";
+  return matches.size === 1 ? [...matches.values()][0] : "";
 }
 
 async function findLatestBaseEntry(env, table, memberId) {
