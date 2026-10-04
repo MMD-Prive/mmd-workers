@@ -90,3 +90,29 @@ for(const input of [{"Member ID":"canonical-fixture",member_email:""},{member_id
 test("paginated Member matches are ambiguous and cannot reach coordinator",async t=>{const f=identityFixture(t);globalThis.fetch=async()=>Response.json({records:[{id:"one",fields:{member_id:"canonical-fixture"}}],offset:"another-page"});assert.equal((await awardBasePointsPhase1(f.env,payment())).reason,"canonical_member_id_required");assert.equal(f.names.length,0);assert.equal(f.writes.length,0);});
 test("network failure cannot award to supplied ID with unresolved email",async t=>{const f=identityFixture(t);globalThis.fetch=async()=>{throw new Error("fixture-network-unavailable");};assert.equal((await awardBasePointsPhase1(f.env,payment({member_id:"canonical-fixture"}))).reason,"canonical_member_id_required");assert.equal(f.names.length,0);assert.equal(f.writes.length,0);});
 test("ineligible stage still exits without reading identity or writing points",async t=>{const f=identityFixture(t);assert.equal((await awardBasePointsPhase1(f.env,payment({stage:"refund"}))).reason,"stage_not_eligible");assert.equal(f.reads.length,0);assert.equal(f.writes.length,0);});
+
+
+test("production base writer satisfies existing ledger source choices without schema mutation", async t => {
+  const originalFetch = globalThis.fetch;
+  t.after(()=>{globalThis.fetch=originalFetch;});
+  const writes=[];
+  // Exact observed production single-select options; this is fixture-only.
+  const sourceChoices=new Set(["web","system","admin","line","line_ofc_history"]);
+  globalThis.fetch=async(raw,init={})=>{
+    const url=new URL(raw);
+    assert.ok(url.pathname.endsWith("/tbl5dfnwjUFMLbnWL"));
+    if(init.method!=="POST") return Response.json({records:[]});
+    const body=JSON.parse(init.body), fields=body.records[0].fields;
+    if(!sourceChoices.has(fields.source)) return Response.json({error:{type:"INVALID_SINGLE_SELECT_OPTION",message:"Fixture ledger source not allowed"}},{status:422});
+    assert.equal(body.typecast,undefined);
+    writes.push(fields);
+    return Response.json({records:[{id:"fixture-ledger",fields}]});
+  };
+  const env={AIRTABLE_API_KEY:"fixture-token",AIRTABLE_BASE_ID:"fixture-base"};
+  const coordinator=new PointsPhase1Coordinator({},env);
+  env.POINTS_PHASE1_COORDINATOR={idFromName:name=>{assert.equal(name,"member:fixture-canonical");return name;},get:()=>({fetch:(url,init)=>coordinator.fetch(new Request(url,init))})};
+  const result=await awardBasePointsPhase1(env,{stage:"full",payment_ref:"fixture-payment",member_id:"fixture-canonical",amount_thb:160});
+  assert.equal(result.ok,true);assert.equal(result.awarded,true);assert.equal(result.points,1);assert.equal(result.remainder_after_thb,60);
+  assert.equal(writes.length,1);assert.equal(writes[0].source,"system");assert.match(writes[0].note,/Writer: payments-worker/);
+  assert.equal(writes[0].points_bucket,"base_phase1");assert.equal(writes[0].transaction_status,"posted");assert.equal(writes[0].idempotency_key,"base_phase1:fixture-payment");
+});
