@@ -296,3 +296,8 @@ test('recovery uses October payment cutoff and replay preserves historical expir
   const h=harness();h.tables.tblNImdF9PKAxhXGi.push({id:"recHistorical",fields:{member_id:"inn",line_user_id:LINE_ID,payment_ref:PAYMENT_REF,package_code:"premium",expire_at:"2028-01-01T00:00:00Z",access_status:"active"}},{id:"recProtected",fields:{member_id:"inn",entitlement_level:"vip"}});
   const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,409);assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Tier"],null);assert.equal(h.writes.length,0);
  });
+
+for (const field of ["access_status", "member_status", "member_lifecycle_status"]) test(`replay does not reactivate recorded revoked ${field}`,async()=>{
+ const h=harness();h.tables.tblNImdF9PKAxhXGi.push({id:"recRevoked",fields:{member_id:"inn",line_user_id:LINE_ID,payment_ref:PAYMENT_REF,package_code:"premium",expire_at:"2028-01-01T00:00:00Z",[field]:"revoked"}});
+ const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,200);assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"],null);assert.equal(h.writes.filter(w=>w.method==="POST").length,0);
+});

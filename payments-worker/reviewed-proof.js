@@ -355,7 +355,7 @@ async function materializeRecoveredMembership(env, input) {
 async function reconcileRecoveredMembership(env, input, entitlement) {
   const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
   const expiry = validDate(entitlement.fields?.expire_at);
-  const currentlyActive = expiry && expiry.getTime() > Date.now() && !["blocked", "suspended", "revoked"].includes(code(entitlement.fields?.access_status));
+  const currentlyActive = expiry && expiry.getTime() > Date.now() && ![entitlement.fields?.access_status, entitlement.fields?.member_status, entitlement.fields?.member_lifecycle_status].some(value => ["blocked", "suspended", "revoked"].includes(code(value)));
   await Promise.all([
     currentlyActive ? airtableUpdate(env, membersTable(env), input.member_record_id, {
       "Membership Tier": packageLabel,
