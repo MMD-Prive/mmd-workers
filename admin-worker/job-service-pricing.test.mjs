@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { validateJobServicePricing, withJobServicePricingNote, SERVICE_PRICING_MARKER } from './src/job-service-pricing.js';
+import { validateJobServicePricing, withJobServicePricingNote, SERVICE_PRICING_MARKER, PARTNER_SNAPSHOT_MARKER, preservePartnerSnapshot } from './src/job-service-pricing.js';
 import { handleCanonicalLinkedJobCreate } from './src/create-session-canonical-link-runtime.js';
 import worker from './src/index.js';
 const body = () => ({
@@ -142,4 +142,31 @@ test('legacy string notes and structured operation notes retain the same renewal
     const b = combinedRenewal(); b.notes = structured ? { operation_note: b.note } : b.note; delete b.note;
     assert.equal(validateJobServicePricing(b).client_total_amount_thb, 13000);
   }
+});
+
+test('complete immutable partner evidence is reserved ahead of long operator text', () => {
+  const b = combinedRenewal(); b.job_details = { partner_relationship: { partner_source_rate_thb: 8000,
+    included_partner_amount_thb: 2500, model_payout_thb: 5500 } };
+  b.partner_attribution = { partner_name: 'Original Partner' };
+  const p = validateJobServicePricing(b);
+  const original = preservePartnerSnapshot(b.note+'\n'+'ไทย'.repeat(2000), b);
+  const originalSnapshot = original.split(PARTNER_SNAPSHOT_MARKER+'\n')[1];
+  const note = withJobServicePricingNote(preservePartnerSnapshot(original, { partner_attribution: { partner_name: 'Changed Partner' } }), p);
+  assert.ok(note.length <= 3800);
+  assert.equal(note.split(PARTNER_SNAPSHOT_MARKER+'\n')[1].split('\n')[0], originalSnapshot);
+  assert.equal(JSON.parse(originalSnapshot).partner_attribution.partner_name, 'Original Partner');
+  assert.ok(note.includes(b.note));
+  assert.equal(withJobServicePricingNote(note, p), note);
+});
+test('inline and separate-line partner snapshot layouts retain their complete JSON', () => {
+  const p = validateJobServicePricing(body());
+  for (const separator of [' ', '\n']) {
+    const block = PARTNER_SNAPSHOT_MARKER+separator+JSON.stringify({ model_payout_thb: 6200 });
+    const note = withJobServicePricingNote('x'.repeat(5000)+'\n'+block, p);
+    assert.ok(note.includes(block)); assert.ok(note.length <= 3800);
+  }
+});
+test('oversized new partner evidence is rejected in preflight before grant/create writes', () => {
+  const b = body(); b.partner_attribution = { partner_name: 'x'.repeat(4000) };
+  assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_note_too_large', status: 400 });
 });
