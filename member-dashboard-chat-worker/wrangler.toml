@@ -3,8 +3,8 @@ main = "src/my-mms-customer-front-gate-entry.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
-# MMD Privé Rich Menu runtime. Cloudflare cron is UTC; the handler evaluates
-# Asia/Bangkok and keeps the menu hidden 16:00-23:00, visible otherwise.
+# MMD Privé Rich Menu stays available 24h with selected=false (collapsed by default).
+# Cloudflare cron is UTC; no time window unlinks the customer menu.
 # Hourly reconciliation also self-heals assignments after deploys/state drift.
 [triggers]
 crons = ["0 * * * *"]

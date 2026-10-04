@@ -155,7 +155,8 @@ await writeFile(output, JSON.stringify({
 }, null, 2));
 
 assert.equal(audit.version, VERSION);
-assert.equal(audit.default_state, audit.hidden_by_schedule ? "none" : "guest");
+assert.equal(audit.hidden_by_schedule, false);
+assert.equal(audit.default_state, "guest");
 assert.equal(audit.schedule_policy_match, true);
 assert.equal(audit.five_state_matrix_match, true);
 assert.deepEqual(audit.five_state_matrix, {
