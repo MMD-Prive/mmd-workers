@@ -15,7 +15,8 @@ function harness() {
         payment_ref: "PAY-WEB-RENEW-1",
         session_id: "liff-session-1",
         payment_stage: "membership",
-        amount_thb: 799,
+        amount_thb: 1000,
+        paid_at: "2026-09-13T04:30:00.000Z",
         package_code: "standard",
         "Payment Status": "pending",
         "Verification Status": "pending",
@@ -38,7 +39,7 @@ function harness() {
         line_user_id: LINE_ID,
         renewal_flow_status: "renewal_pending_payment",
         requested_package: "standard",
-        renewal_amount_thb: 799,
+        renewal_amount_thb: 1000,
       },
     }],
     members: [{
@@ -50,7 +51,7 @@ function harness() {
     }],
     packages: [{
       id: "recPackage123456",
-      fields: { code: "standard", is_active: true, require_approval: false },
+      fields: { code: "standard", is_active: true, require_approval: false, duration_days: 365, renew_price: 1000 },
     }],
     entitlements: [{
       id: "recEntitle123456",
@@ -173,7 +174,7 @@ test("signed Standard renewal accepts slip money truth and materializes one enti
   assert.equal(created.length, 1);
   assert.equal(created[0].fields.package_code, "standard");
   assert.equal(created[0].fields.member_id, MEMBER_ID);
-  assert.equal(created[0].fields.expire_at, "2027-12-31T00:00:00.000Z");
+  assert.equal(created[0].fields.expire_at, "2028-06-28T00:00:00.000Z");
 });
 
 test("amount/package conflict stays pending and never materializes", async () => {
@@ -198,4 +199,44 @@ test("same accepted payment is idempotent", async () => {
   assert.equal(body.entitlement_materialized, true);
   assert.equal(body.renewal_settlement.duplicate, true);
   assert.equal(h.tables.entitlements.filter((row) => String(row.fields?.source_ref || "").startsWith("payment:")).length, 1);
+});
+
+ test("legacy signed Standard 799 cannot grant a new entitlement", async()=>{
+  const h=harness();h.tables.payments[0].fields.amount_thb=799;h.tables.renewals[0].fields.renewal_amount_thb=799;
+  const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
+  assert.equal(body.entitlement_materialized,false);
+  assert.equal(h.tables.entitlements.length,1);
+ });
+
+for (const [label, mutate, reason] of [
+ ["missing paid date",h=>delete h.tables.payments[0].fields.paid_at,"canonical_payment_date_required"],
+ ["unknown prior expiry",h=>delete h.tables.entitlements[0].fields.expire_at,"canonical_expiry_required"],
+ ["exactly one year expired",h=>h.tables.entitlements[0].fields.expire_at="2025-09-13T04:30:00.000Z","expired_one_year_or_more_policy_review_required"],
+ ["older than one year",h=>h.tables.entitlements[0].fields.expire_at="2024-09-13T04:30:00.000Z","expired_one_year_or_more_policy_review_required"],
+ ["unknown active price",h=>delete h.tables.packages[0].fields.renew_price,"renewal_price_policy_review_required"],
+ ["contradictory base term",h=>h.tables.packages[0].fields.duration_days=999,"membership_package_term_review_required"],
+ ["missing catalog",h=>h.tables.packages.length=0,"membership_package_unavailable"],
+ ["protected tier",h=>h.tables.members[0].fields["Membership Tier"]="Blackcard","protected_membership_manual_review_required"],
+]) test(`signed web ${label} cannot grant rights`,async()=>{
+ const h=harness();mutate(h);const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
+ assert.equal(body.entitlement_materialized,false);assert.equal(body.renewal_settlement.reason,reason);assert.equal(h.tables.entitlements.length,1);
+});
+for (const [paidAt,promoted] of [["2026-10-31T16:59:59.999Z",true],["2026-10-31T17:00:00.000Z",false]]) test(`signed Premium renewal Bangkok cutoff ${paidAt}`,async()=>{
+ const h=harness();Object.assign(h.tables.payments[0].fields,{amount_thb:2500,package_code:"premium",paid_at:paidAt});
+ Object.assign(h.tables.renewals[0].fields,{requested_package:"premium",renewal_amount_thb:2500});
+ Object.assign(h.tables.packages[0].fields,{code:"premium",duration_days:730,renew_price:2500});
+ Object.assign(h.tables.entitlements[0].fields,{package_code:"premium",capability:"private_premium",entitlement_level:"premium",expire_at:"2026-01-01T00:00:00Z"});
+ const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();assert.equal(body.entitlement_materialized,true);
+ assert.equal(body.membership_expire_at,paidAt.replace("2026-",promoted?"2029-":"2028-"));
+ assert.equal(body.membership_term,promoted?"2_years_plus_1_year":"2_years");
+});
+test("signed replay preserves historical 799 rights with missing catalog and paid date",async()=>{
+ const h=harness();const recorded={id:"recPaidHistorical",fields:{entitlement_id:"pay_pay_web_renew_1_standard",member_id:MEMBER_ID,line_user_id:LINE_ID,payment_ref:"PAY-WEB-RENEW-1",package_code:"standard",capability:"private_standard",access_status:"active",expire_at:"2028-12-31T00:00:00Z",membership_expiry_rule:"old_paid_rule"}};
+ h.tables.entitlements.push(structuredClone(recorded));h.tables.packages.length=0;delete h.tables.payments[0].fields.paid_at;h.tables.payments[0].fields.amount_thb=799;h.tables.renewals[0].fields.renewal_amount_thb=799;
+ const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();assert.equal(body.entitlement_materialized,true);assert.equal(body.renewal_settlement.duplicate,true);assert.deepEqual(h.tables.entitlements[1],recorded);assert.equal(h.tables.entitlements.length,2);
+});
+
+test("expired Standard uses fixed1000 plus180days on purchased base year",async()=>{
+ const h=harness();h.tables.entitlements[0].fields.expire_at="2026-01-01T00:00:00Z";h.tables.packages[0].fields.renew_price=799;
+ const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();assert.equal(body.entitlement_materialized,true);assert.equal(body.membership_expire_at,"2028-03-11T04:30:00.000Z");assert.equal(body.membership_term,"1_year_plus_180_days");
 });

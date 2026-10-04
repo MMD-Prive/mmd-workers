@@ -268,3 +268,31 @@ test('recovery uses October payment cutoff and replay preserves historical expir
  const row=h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF);row.fields.expire_at='2028-06-01T00:00:00Z';
  const second=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const b=await second.json();assert.equal(b.membership_expire_at,'2028-06-01T00:00:00Z');assert.equal(h.tables.tblNImdF9PKAxhXGi.length,2);
 });
+
+ for (const failedRecord of [MEMBER_RECORD, RENEWAL_RECORD, PROOF_RECORD]) test(`retry reconciles after entitlement created and ${failedRecord} patch failed`,async()=>{
+  const h=harness();const original=h.env.AIRTABLE_HTTP.fetch;let fail=true;
+  h.env.AIRTABLE_HTTP.fetch=async(req)=>{
+   if(fail&&req.method==="PATCH"&&new URL(req.url).pathname.endsWith(failedRecord)){fail=false;return Response.json({error:"fixture_failure"},{status:503});}
+   return original(req);
+  };
+  const notify=async()=>Response.json({ok:true,payment_ref:PAYMENT_REF,payment_stage:"membership"});
+  const first=await handleReviewedProof(request(),h.env,{},notify);assert.notEqual(first.status,200);
+  const recorded=structuredClone(h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF));
+  assert.ok(recorded);
+  const retry=await handleReviewedProof(request(),h.env,{},notify);assert.equal(retry.status,200);
+  assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Tier"],"Premium");
+  assert.equal(h.tables.tblXjQFwo0A2cHseh[0].fields.renewal_flow_status,"materialized");
+  assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status,"verified");
+  assert.deepEqual(h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF),recorded);
+  assert.equal(h.writes.filter(w=>w.method==="POST").length,1);
+ });
+
+ test("historical expired replay never reactivates Member status",async()=>{
+  const h=harness();h.tables.tblNImdF9PKAxhXGi.push({id:"recHistorical",fields:{member_id:"inn",line_user_id:LINE_ID,payment_ref:PAYMENT_REF,package_code:"premium",expire_at:"2025-01-01T00:00:00Z",access_status:"active"}});
+  const notify=async()=>Response.json({ok:true,payment_ref:PAYMENT_REF});
+  const r=await handleReviewedProof(request(),h.env,{},notify);assert.equal(r.status,200);assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"],null);assert.equal(h.writes.filter(w=>w.method==="POST").length,0);
+ });
+ test("paid replay cannot overwrite a protected entitlement tier",async()=>{
+  const h=harness();h.tables.tblNImdF9PKAxhXGi.push({id:"recHistorical",fields:{member_id:"inn",line_user_id:LINE_ID,payment_ref:PAYMENT_REF,package_code:"premium",expire_at:"2028-01-01T00:00:00Z",access_status:"active"}},{id:"recProtected",fields:{member_id:"inn",entitlement_level:"vip"}});
+  const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,409);assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Tier"],null);assert.equal(h.writes.length,0);
+ });

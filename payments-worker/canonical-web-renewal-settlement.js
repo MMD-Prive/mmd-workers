@@ -1,3 +1,4 @@
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { classifyPaymentOpsRoute, inferMembershipPayment } from "../shared/payment-intelligence.mjs";
 
@@ -70,11 +71,12 @@ export async function reconcileCanonicalWebRenewalProof(request, response, env =
     // and no payment-classification conflict is accepted as money truth. Identity
     // and entitlement materialization remain separate, exact, fail-closed steps.
     const verifiedAt = new Date().toISOString();
+    const paidAt = iso(firstValue(payment.fields || {}, ["Payment Date", "paid_at"]) || firstValue(proof.fields || {}, ["paid_at", "Payment Date"]));
     await airtableUpdate(env, paymentsTable(env), payment.id, {
       "Payment Status": "paid",
       "Verification Status": "verified",
       "Payment Intent Status (AI)": "owner_membership_policy_verified",
-      "Payment Date": firstValue(payment.fields || {}, ["Payment Date", "paid_at"]) || verifiedAt,
+      ...(paidAt ? { "Payment Date": paidAt } : {}),
     });
     await airtableUpdate(env, proofsTable(env), proof.id, {
       status: "verified",
@@ -99,6 +101,7 @@ export async function reconcileCanonicalWebRenewalProof(request, response, env =
       snapshot,
       inference,
       verified_at: verifiedAt,
+      paid_at: paidAt,
     });
 
     return withSettlement(response, payload, {
@@ -139,9 +142,7 @@ async function materializeRenewal(env, input) {
   if (!memberId) return entitlementReview("canonical_member_id_required");
 
   const packagePolicy = POLICY[input.snapshot.package_code];
-  const catalog = await loadPackage(env, input.snapshot.package_code);
-  if (!catalog || catalog.active !== true) return entitlementReview("membership_package_unavailable");
-  if (catalog.require_approval === true) return entitlementReview("membership_package_requires_separate_approval");
+  if (isProtectedPrivateMembership(member.fields?.["Membership Tier"] || member.fields?.tier)) return entitlementReview("protected_membership_manual_review_required");
 
   const rows = await airtableList(env, entitlementsTable(env), {
     filterByFormula: `{member_id}='${formulaValue(memberId)}'`,
@@ -152,7 +153,6 @@ async function materializeRenewal(env, input) {
   if (snapshot.member_blocked === true || rows.some(blockedRow)) return entitlementReview("canonical_member_blocked");
 
   const exactRows = snapshot.entitlements.filter((item) => canonicalPackage(item.package_code) === input.snapshot.package_code);
-  if (!exactRows.length) return entitlementReview("renewal_history_not_found");
 
   const existing = await airtableList(env, entitlementsTable(env), {
     filterByFormula: `{payment_ref}='${formulaValue(input.payment_ref)}'`,
@@ -162,17 +162,33 @@ async function materializeRenewal(env, input) {
   if (existing.length > 1) return entitlementReview("payment_entitlement_payment_ref_ambiguous");
   if (existing.length === 1) {
     const ef = existing[0].fields || {};
-    if (text(ef.entitlement_id, 180) !== entitlementId || text(ef.member_id, 120) !== memberId || canonicalPackage(ef.package_code) !== input.snapshot.package_code) {
+    if (text(ef.entitlement_id, 180) !== entitlementId || text(ef.member_id, 120) !== memberId || canonicalPackage(ef.package_code) !== input.snapshot.package_code || !iso(ef.expire_at) || (lineId(ef.line_user_id) && lineId(ef.line_user_id) !== lineUserId)) {
       return entitlementReview("payment_entitlement_conflict");
     }
     await markRenewalMaterialized(env, renewal, input.proof, member, existing[0], input, lineUserId);
     return entitlementSuccess(existing[0], input, packagePolicy, true);
   }
 
-  const futureExpiry = latestFutureExpiry(exactRows, input.verified_at);
-  const startAt = futureExpiry || input.verified_at;
-  const expireAt = addCalendarYears(startAt, packagePolicy.years)?.toISOString() || "";
+  if (!input.paid_at) return entitlementReview("canonical_payment_date_required");
+  if (rows.some(row => [row.fields?.entitlement_level, row.fields?.package_code, row.fields?.capability].some(isProtectedPrivateMembership))) return entitlementReview("protected_membership_manual_review_required");
+  if (!exactRows.length) return entitlementReview("renewal_history_not_found");
+  const catalog = await loadPackage(env, input.snapshot.package_code);
+  if (!catalog || catalog.active !== true) return entitlementReview("membership_package_unavailable");
+  if (catalog.require_approval === true) return entitlementReview("membership_package_requires_separate_approval");
+  if (catalog.duration_days !== packagePolicy.years * 365) return entitlementReview("membership_package_term_review_required");
+  const priorExpiry = latestFutureExpiry(exactRows, input.paid_at) || latestHistoricalExpiry(exactRows);
+  const timing = privateRenewalTiming(priorExpiry, input.paid_at);
+  if (!timing.expiry_known) return entitlementReview("canonical_expiry_required");
+  if (timing.expired_one_year_or_more) return entitlementReview("expired_one_year_or_more_policy_review_required");
+  const expectedAmount = timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[input.snapshot.package_code]) : catalog.renew_price;
+  if (!(expectedAmount > 0) || input.snapshot.amount_thb !== expectedAmount) return entitlementReview("renewal_price_policy_review_required");
+  const startAt = timing.start_at;
+  const baseExpireAt = addBangkokCalendarYears(new Date(startAt), packagePolicy.years);
+  const promotion = currentPrivateMembershipPromotion({package_code:input.snapshot.package_code,paid_at:input.paid_at,action:"renewal",existing_member:true,prior_expire_at:priorExpiry});
+  const expireAt = (applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt}) || baseExpireAt)?.toISOString() || "";
   if (!expireAt) return entitlementReview("membership_term_invalid");
+  const baseRule = `${packagePolicy.years}_year${packagePolicy.years === 1 ? "" : "s"}_from_${timing.active ? "current_expiry" : "verified_payment"}`;
+  const membershipTerm = `${packagePolicy.years === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}` : ""}`;
   const memberEmail = email(member.fields?.["Contact Email"] || member.fields?.email);
   const fields = compact({
     entitlement_id: entitlementId,
@@ -189,12 +205,11 @@ async function materializeRenewal(env, input) {
     target_package_label: packagePolicy.label,
     start_at: startAt,
     expire_at: expireAt,
-    membership_expiry_rule: futureExpiry
-      ? `${packagePolicy.years}_year${packagePolicy.years === 1 ? "" : "s"}_from_current_expiry`
-      : `${packagePolicy.years}_year${packagePolicy.years === 1 ? "" : "s"}_from_verified_payment`,
+    membership_expiry_rule: promotion ? `${baseRule}_plus_${promotion.code}` : baseRule,
+    membership_term: membershipTerm,
     source_ref: `payment:${input.payment_ref}`,
     payment_ref: input.payment_ref,
-    notes: `Canonical signed web renewal; owner_policy=${OWNER_POLICY}; amount=${input.snapshot.amount_thb}; price_rule=${text(input.inference?.inferred_price_rule, 120)}; authority=${AUTHORITY}`,
+    notes: `Canonical signed web renewal; owner_policy=${OWNER_POLICY}; amount=${input.snapshot.amount_thb}; price_rule=${timing.expired_less_than_one_year ? "expired_less_than_one_year" : "canonical_catalog_renew_price"}${promotion ? `; promotion=${promotion.code}` : ""}; authority=${AUTHORITY}`,
   });
 
   const prospective = resolveMemberEntitlements([...rows, { fields }], { now: input.verified_at });
@@ -230,7 +245,7 @@ async function materializeRenewal(env, input) {
     package_code: input.snapshot.package_code,
     member_id: memberId,
     membership_expire_at: expireAt,
-    membership_term: packagePolicy.years === 2 ? "2_years" : "1_year",
+    membership_term: membershipTerm,
     membership_expiry_rule: fields.membership_expiry_rule,
     manual_membership_review_required: false,
     downstream_access_reconcile_required: true,
@@ -271,7 +286,7 @@ function entitlementSuccess(row, input, policy, duplicate) {
     package_code: input.snapshot.package_code,
     member_id: text(f.member_id, 120) || null,
     membership_expire_at: iso(f.expire_at) || null,
-    membership_term: policy.years === 2 ? "2_years" : "1_year",
+    membership_term: text(f.membership_term,120) || (policy.years === 2 ? "2_years" : "1_year"),
     membership_expiry_rule: text(f.membership_expiry_rule, 120) || null,
     manual_membership_review_required: false,
     downstream_access_reconcile_required: true,
@@ -359,7 +374,7 @@ async function loadPackage(env, packageCode) {
   });
   if (rows.length !== 1) return null;
   const f = rows[0].fields || {};
-  return { active: f.is_active !== false, require_approval: f.require_approval === true };
+  return { active: f.is_active !== false, require_approval: f.require_approval === true, duration_days: Number(f.duration_days), renew_price: positiveAmount(f.renew_price) };
 }
 
 function latestFutureExpiry(rows, nowIso) {
@@ -371,17 +386,9 @@ function latestFutureExpiry(rows, nowIso) {
   return values.length ? new Date(Math.max(...values)).toISOString() : "";
 }
 
-function addCalendarYears(value, years) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime()) || !Number.isInteger(years) || years < 1) return null;
-  const month = date.getUTCMonth();
-  const day = date.getUTCDate();
-  date.setUTCDate(1);
-  date.setUTCFullYear(date.getUTCFullYear() + years);
-  date.setUTCMonth(month);
-  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), month + 1, 0)).getUTCDate();
-  date.setUTCDate(Math.min(day, lastDay));
-  return date;
+function latestHistoricalExpiry(rows) {
+  const values = rows.map(item => Date.parse(item.expire_at || "")).filter(Number.isFinite);
+  return values.length ? new Date(Math.max(...values)).toISOString() : "";
 }
 
 function blockedRow(row) {
