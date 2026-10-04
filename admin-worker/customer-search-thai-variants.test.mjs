@@ -113,3 +113,28 @@ test('absent authorization stays unauthorized and does not query storage', async
     assert.equal(mock.calls.length, 0);
   } finally {mock.restore();}
 });
+
+test('synthetic initial-only names cannot match letters inside a longer search query', async () => {
+  const initials = ['c', 'A', 'C', 'A', 'A'];
+  const clients = initials.map((initial, i) => ({
+    id: `recSyntheticInitial${i}`, fields: {'Client Name': initial},
+  }));
+  const mock = mockStorage({clients});
+  try {
+    const response = await handleCreateSessionClientLineageRequest(request('ทดสอบ Blackcard'), env);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.records, []);
+    assert.equal(body.manual_fallback, false);
+  } finally {mock.restore();}
+});
+test('an explicit synthetic short-name query still finds its canonical record', async () => {
+  const mock = mockStorage({clients: [{id: clientId, fields: {'Client Name': 'A'}}]});
+  try {
+    const response = await handleCreateSessionClientLineageRequest(request('A'), env);
+    const body = await response.json();
+    assert.equal(body.records.length, 1);
+    assert.equal(body.records[0].client_id, clientId);
+    assert.equal(body.records[0].client_name, 'A');
+  } finally {mock.restore();}
+});
