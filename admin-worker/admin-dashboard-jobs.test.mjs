@@ -1,7 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildJobsPage, projectJobs } from "./src/admin-dashboard-jobs.js";
+import { buildJobsPage, projectJobs, handleAdminDashboardJobsRequest } from "./src/admin-dashboard-jobs.js";
+
+const CLIENT_A = "recAAAAAAAAAAAAAA";
+const CLIENT_B = "recBBBBBBBBBBBBBB";
+
+test("Console customer scope matches one canonical Client and retains the Session handoff", () => {
+  const first = session("SESSION-A", "2026-10-04");
+  first.fields.Client = [CLIENT_A];
+  const second = session("SESSION-B", "2026-10-04");
+  second.fields.Client = [CLIENT_B];
+  const conflict = session("SESSION-C", "2026-10-04");
+  conflict.fields.Client = [CLIENT_A];
+  conflict.fields.client_id = CLIENT_B;
+  const ambiguous = session("SESSION-D", "2026-10-04");
+  ambiguous.fields.Client = [CLIENT_A, CLIENT_B];
+  const page = buildJobsPage([first, second, conflict, ambiguous], { clientId: CLIENT_A });
+  assert.equal(page.pagination.total, 1);
+  assert.equal(page.items[0].session_id, "SESSION-A");
+  assert.equal(page.items[0].client_id, CLIENT_A);
+  assert.equal(page.items[0].customer_view_href, "/my-mmd/?session_id=SESSION-A");
+  assert.equal(buildJobsPage([first, second], { sessionId: "SESSION-B", clientId: CLIENT_A }).items.length, 0);
+  assert.equal(projectJobs([{ id: "recFallback", fields: { job_id: "JOB-FALLBACK" } }])[0].customer_view_href, null);
+});
+
+test("Console client selector requires admin auth and rejects invalid or repeated client IDs", async () => {
+  const call = (query, actor) => handleAdminDashboardJobsRequest(new Request("https://www.mmdbkk.com/v1/admin/dashboard?view=jobs&" + query), {}, actor);
+  assert.equal((await call("client_id=" + CLIENT_A, null)).status, 401);
+  for (const query of ["client_id=customer-name", "client_id=", "client_id=" + CLIENT_A + "&client_id=" + CLIENT_B]) {
+    assert.equal((await call(query, { role: "admin" })).status, 400);
+  }
+});
 
 function session(id, jobDate, startTime = "19:00", status = "confirmed", jobId = "") {
   return {
