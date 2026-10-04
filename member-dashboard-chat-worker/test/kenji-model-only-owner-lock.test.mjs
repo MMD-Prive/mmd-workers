@@ -22,11 +22,12 @@ test("owner model-only gate allows only direct Model lookup continuations", () =
   }
 });
 
-test("production config keeps broad First Contact off while Model-only lock is on", async () => {
+test("production config keeps broad First Contact off while general replies stay off and the rights exception is enabled", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /KENJI_LINE_MODEL_ONLY_ENABLED\s*=\s*"true"/);
   assert.match(wrangler, /LINE_FIRST_CONTACT_ENABLED\s*=\s*"false"/);
-  assert.match(wrangler, /LINE_AUTO_REPLY_ENABLED\s*=\s*"true"/);
+  assert.match(wrangler, /LINE_AUTO_REPLY_ENABLED\s*=\s*"false"/);
+  assert.match(wrangler, /KENJI_LINE_RIGHTS_COMMAND_ENABLED\s*=\s*"true"/);
 });
 
 
