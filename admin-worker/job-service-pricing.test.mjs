@@ -136,3 +136,10 @@ test('valid currency cents do not fail due to floating-point addition of renewal
     .replace('"renewal_amount_thb":3000', '"renewal_amount_thb":0.2').replace('"customer_total_thb":16000', '"customer_total_thb":0.3');
   assert.equal(validateJobServicePricing(b).client_total_amount_thb, 0.1);
 });
+
+test('legacy string notes and structured operation notes retain the same renewal component contract', () => {
+  for (const structured of [false, true]) {
+    const b = combinedRenewal(); b.notes = structured ? { operation_note: b.note } : b.note; delete b.note;
+    assert.equal(validateJobServicePricing(b).client_total_amount_thb, 13000);
+  }
+});

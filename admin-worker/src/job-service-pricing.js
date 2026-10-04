@@ -25,7 +25,7 @@ export function validateJobServicePricing(body) {
   }
   const clientTotal = total(p.client_base_amount_thb, p.addons, "client_amount_thb");
   if (!money(clientTotal) || p.client_total_amount_thb !== clientTotal) fail();
-  const note = body.note || body?.notes?.operation_note || body?.notes?.handling_note || "";
+  const note = body.note || body?.notes?.operation_note || body?.notes?.handling_note || body.notes || "";
   let components;
   try { components = parseSigilMembershipPaymentComponents(note, body.amount_thb); }
   catch { fail(); }
