@@ -1,3 +1,4 @@
+import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
@@ -6121,6 +6122,9 @@ function withCanonicalPublicJobNote(note, publicJob) {
 }
 
 async function createAdminJob(env, body) {
+  let servicePricing;
+  try { servicePricing = validateJobServicePricing(body); }
+  catch (error) { throw new CreateSessionAccessError(error.code, error.message, error.status); }
   const work = body?.work || {};
   const model = body?.model || {};
   const jobDetails = body?.job_details || {};
@@ -6153,7 +6157,7 @@ async function createAdminJob(env, body) {
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const note = withCanonicalPublicJobNote(rawNote, publicJob);
+  const note = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
   const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
   if (!["deposit", "full"].includes(requested_payment_type)) {
     throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
