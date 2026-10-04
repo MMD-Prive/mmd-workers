@@ -409,7 +409,7 @@ async function listAcceptedPrivateApplications(env, limit) {
   url.searchParams.set("maxRecords", String(limit));
   url.searchParams.set("pageSize", String(limit));
   url.searchParams.set("returnFieldsByFieldId", "true");
-  url.searchParams.set("filterByFormula", "AND({application_type}='private_model',{review_status}='accepted')");
+  url.searchParams.set("filterByFormula", "AND(OR({application_type}='private_model',{application_type}='public_model'),{review_status}='accepted')");
   const data = await airtableRequest(env, url.toString(), { method: "GET" });
   return Array.isArray(data.records) ? data.records : [];
 }
