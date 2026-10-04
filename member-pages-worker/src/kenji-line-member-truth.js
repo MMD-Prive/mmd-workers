@@ -1,5 +1,6 @@
 import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
 import { projectKenjiRenewalPromotion, readKenjiCareBackCoupon } from "./kenji-member-benefits.js";
+import { readKenjiPrivateSignupCatalog } from "./kenji-private-interest.js";
 import { resolveCanonicalRenewalOffer, renewalPriceForSpend } from "./renewal-offer.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 
@@ -14,7 +15,7 @@ const TIMEOUT_MS = 2500;
 const ENTITLEMENT_TIMEOUT_MS = 900;
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
-const EXPLICIT_INTENTS = new Set(["membership_status", "points_status", "rights_check"]);
+const EXPLICIT_INTENTS = new Set(["membership_status", "points_status", "rights_check", "private_interest"]);
 
 const CAPABILITY_PRIORITY = Object.freeze([
   "black_card",
@@ -180,7 +181,7 @@ async function readCanonicalEntitlementSnapshot(env, lineUserId) {
 }
 
 async function readTruthContext(env, lineUserId, intent) {
-  if (intent === "membership_status") {
+  if (intent === "membership_status" || intent === "private_interest") {
     const snapshot = await readCanonicalEntitlementSnapshot(env, lineUserId);
     return snapshot ? { profile: {}, snapshot } : null;
   }
@@ -343,6 +344,11 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
 
   const resolved = await readTruthContext(env, lineUserId, intent);
   const projection = projectKenjiLineMemberTruth(resolved || {});
+  if (intent === "private_interest") {
+    // Read-only entitlement/catalog lane: no identity-link recovery or claim.
+    const catalog = await readKenjiPrivateSignupCatalog(env);
+    return json({ ...(projection || { ok: true, authority: RESOLVER_SCHEMA, identity_status: "unresolved" }), private_signup_catalog: catalog });
+  }
   if (!projection) {
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
   }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { handleLineRightsCheck, isLineRightsCheck, renderLineRightsCheck } from "../src/kenji-line-rights-check.mjs";
 import { KenjiModelIdempotency } from "../src/kenji-model-idempotency.js";
+import { isPrivateInterestCommand, renderPrivateInterest } from "../src/kenji-private-interest.mjs";
 globalThis.crypto ||= webcrypto;
 const UID = `U${"1".repeat(32)}`;
 const sha = async s => Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))).toString("hex");
@@ -116,4 +117,59 @@ test("own canonical coupon and approved total-two-year promo are rendered withou
   t.coupon.status = "used"; t.promotion.package_code = "standard";
   const mismatch = renderLineRightsCheck(t).text;
   assert.match(mismatch, /คูปอง CARE BACK: ใช้แล้ว/); assert.doesNotMatch(mismatch, /ส่วนลดที่อนุมัติ 5%|รวม 2 ปี/);
+});
+const signupCatalog = () => ({ authority: "canonical_private_signup_catalog_v1", status: "verified", packages: [{ code: "standard", price_thb: 1199, base_years: 1 }, { code: "premium", price_thb: 2999, base_years: 2 }], new_member_policy: { authority: "owner_approved_private_signup_20261004_v1", welcome_points: 66, premium_total_years: 2, eligibility_requires_review: true, payment_requires_verification: true } });
+for (const phrase of ["สนใจ", "สนใจ\u200B", "\uFEFFสนใจค่ะ"]) test(`exact Private interest accepts ${JSON.stringify(phrase)}`, () => assert.equal(isPrivateInterestCommand(event("interest", phrase)), true));
+for (const phrase of ["ไม่สนใจ", "สนใจต่ออายุ", "สนใจ Public", "สนใจคนนี้", "เมื่อวานสนใจ", "สนใจ\u200Bให้คนอื่น"]) test(`Private interest excludes ${phrase}`, () => assert.equal(isPrivateInterestCommand(event("interest", phrase)), false));
+test("group interest and interest with switch off remain silent", async () => {
+  const f = commandFixture(await fixture()); f.event.message.text = "สนใจ";
+  assert.equal(await handleLineRightsCheck(f), null); assert.equal(f.counters.truth, 0);
+  f.env.KENJI_LINE_PRIVATE_INTEREST_ENABLED = "true"; f.event.source.type = "group";
+  assert.equal(await handleLineRightsCheck(f), null); assert.equal(f.counters.truth, 0);
+});
+test("unknown membership receives general verified packages without asserting new-member eligibility", () => {
+  const reply = renderPrivateInterest({ private_signup_catalog: signupCatalog() });
+  assert.equal(reply.audience, "unknown_general_information");
+  assert.match(reply.text, /Standard 1,199 บาท/); assert.match(reply.text, /Premium 2,999 บาท/); assert.match(reply.text, /Welcome Points 66/);
+  assert.match(reply.text, /ยังไม่ได้ยืนยันว่าบัญชีนี้เข้าเงื่อนไขสมาชิกใหม่/); assert.match(reply.text, /world=private&intent=signup/);
+  assert.doesNotMatch(reply.text, /บัญชีนี้ไม่ใช่สมาชิก|ได้สิทธิ์แล้ว|แต้มใช้ได้|3 ปี|690|4,990|11,499/);
+});
+for (const level of ["private_standard", "private_premium", "vip", "svip", "black_card", "public_member", "red_card"]) test(`known ${level} receives existing-account route, not new-member offer`, () => {
+  const t = truth(); t.membership.level = level; t.membership.lifecycle = "expired"; t.private_signup_catalog = signupCatalog();
+  const reply = renderPrivateInterest(t); assert.equal(reply.audience, "existing_member"); assert.match(reply.text, /เช็กสิทธิ์/); assert.doesNotMatch(reply.text, /1,199|2,999|Welcome/);
+});
+test("missing catalog never invents prices or old welcome points", () => {
+  const reply = renderPrivateInterest({}); assert.match(reply.text, /ราคาและระยะสิทธิ์.*รอตรวจ/); assert.doesNotMatch(reply.text, /1,199|2,999|Welcome Points/);
+});
+test("interest uses exact sender's read-only catalog intent, general stop and concurrent dedupe", async () => {
+  const f = commandFixture(await fixture()); f.env.KENJI_LINE_PRIVATE_INTEREST_ENABLED = "true"; f.event.message.text = "สนใจ\u200B";
+  f.services.truth = async (env, id, intent) => { assert.equal(id, UID); assert.equal(intent, "private_interest"); f.counters.truth++; return { private_signup_catalog: signupCatalog() }; };
+  const result = await Promise.all([handleLineRightsCheck(f), handleLineRightsCheck(f)]);
+  assert.equal(result.filter(row => row.replied).length, 1); assert.equal(f.counters.truth, 1); assert.equal(f.counters.cases, 0); assert.match(f.counters.replies[0], /Welcome Points 66/);
+});
+test("signed interest ingress answers once while general replies stay stopped", async () => {
+  const { createLineSignature } = await import("../src/index.js");
+  const { handleKenjiSeedLineRequest } = await import("../src/kenji-seed-line-runtime.mjs");
+  const f = commandFixture(await fixture()); let deliveries = 0; let reads = 0;
+  Object.assign(f.env, { KENJI_LINE_PRIVATE_INTEREST_ENABLED: "true", LINE_CHANNEL_SECRET: "fixture-only", LINE_CHANNEL_ACCESS_TOKEN: "fixture-only", INTERNAL_TOKEN: "fixture-only", AIRTABLE_API_KEY: "fixture-only", AIRTABLE_BASE_ID: "fixture-only", ADMIN_WORKER: { fetch: async () => Response.json(f.runtime) }, MEMBER_PAGES_WORKER: { fetch: async request => {
+    const input = await request.json(); assert.equal(input.line_user_id, UID); assert.equal(input.intent, "private_interest"); reads++;
+    return Response.json({ ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "unresolved", private_signup_catalog: signupCatalog() });
+  } } });
+  const legacy = { fetch: async () => Response.json({ saved: [{ ok: true }] }) };
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes("api.line.me")) {
+      const body = JSON.parse(init.body); assert.equal(body.replyToken, "mock-only"); assert.match(body.messages[0].text, /Welcome Points 66/); deliveries++; return Response.json({});
+    }
+    assert.match(String(url), /api.airtable.com/); assert.equal(init.method, "GET"); return Response.json({ records: [] });
+  };
+  try {
+    const body = JSON.stringify({ events: [event("signed-interest", "สนใจ\u200B")] });
+    const signature = await createLineSignature(body, f.env.LINE_CHANNEL_SECRET);
+    const request = value => new Request("https://mmdbkk.com/webhooks/line", { method: "POST", headers: { "x-line-signature": value }, body });
+    assert.equal((await handleKenjiSeedLineRequest(request("invalid"), f.env, null, legacy)).status, 401); assert.equal(reads, 0);
+    await handleKenjiSeedLineRequest(request(signature), f.env, null, legacy);
+    await handleKenjiSeedLineRequest(request(signature), f.env, null, legacy);
+    assert.equal(deliveries, 1); assert.equal(reads, 1);
+  } finally { globalThis.fetch = previous; }
 });
