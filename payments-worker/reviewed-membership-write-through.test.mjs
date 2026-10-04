@@ -368,7 +368,7 @@ test("existing recovery materialization remains authoritative and is not duplica
 test('expired over one year requires signup classification and rejects a discounted renewal',async()=>{
   const h=harness({entitlements:[entitlement({expireAt:'2025-01-01T00:00:00Z'})]});
   const plan=await resolveWriteThroughPlan(h.env,{payment_stage:'membership',payment_ref:'PAY-OLD',amount_thb:799,member_email:EMAIL,package_code:'standard'},{paid_at:NOW});
-  assert.equal(plan.status,'review_required');assert.equal(plan.reason,'expired_over_one_year_new_signup_required');assert.equal(plan.action,'signup');assert.equal(h.writes.length,0);
+  assert.equal(plan.status,'review_required');assert.equal(plan.reason,'expired_one_year_or_more_policy_review_required');assert.equal(plan.action,'signup');assert.equal(h.writes.length,0);
 });
 test('protected VIP SVIP and Blackcard never get a lower tier or promo write-through',async()=>{
   for(const tier of ['VIP','SVIP','Black Card']) {

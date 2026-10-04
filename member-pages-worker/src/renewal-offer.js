@@ -55,7 +55,7 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
   const packageCode = canonicalRenewalPackageFromTier(session?.member_profile?.tier);
   if (!packageCode) return { status: "review_required", reason: "renewal_current_package_not_supported" };
   const timing = privateRenewalTiming(session?.member_profile?.membership_expires_at, now);
-  if (timing?.expired_one_year_or_more) return {status:"review_required", classification:"new_signup", reason:"renewal_expired_over_one_year_new_signup_required"};
+  if (timing?.expired_one_year_or_more) return {status:"review_required", classification:timing.expired_over_one_year ? "new_signup" : "review_required", reason:"renewal_expired_one_year_or_more_policy_review_required"};
   if (!timing?.expiry_known) return {status:"review_required",reason:"canonical_expiry_required"};
   // Quote only the approved fixed-price audience. Active prices require a
   // separately authoritative current package quote, not legacy spend estimates.

@@ -194,7 +194,7 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
   const futureExpiry = latestFutureExpiry(exactPackageRows, verifiedAt);
   const timing = privateRenewalTiming(futureExpiry || latestHistoricalExpiry(exactPackageRows), verifiedAt);
   const requiresSignupReview = policy.private_catalog ? timing?.expired_one_year_or_more : timing?.expired_over_one_year;
-  if (hasExactHistory && requiresSignupReview && inferredIntent === "renewal") return review("expired_over_one_year_new_signup_required", {package_code:packageCode, action:"signup"});
+  if (hasExactHistory && requiresSignupReview && inferredIntent === "renewal") return review(policy.private_catalog ? "expired_one_year_or_more_policy_review_required" : "expired_over_one_year_new_signup_required", {package_code:packageCode, action:timing.expired_over_one_year ? "signup" : "review_required"});
   const action = hasExactHistory && !requiresSignupReview ? "renewal" : "signup";
   if (policy.private_catalog && hasExactHistory && !timing?.expiry_known) return review("canonical_expiry_required", {package_code:packageCode});
   if (policy.private_catalog && hasExactHistory && timing.expired_one_year_or_more) return review("expired_one_year_or_more_policy_review_required", {package_code:packageCode});

@@ -289,7 +289,7 @@ async function materializeRecoveredMembership(env, input) {
   const exact = own.filter(row => canonicalPackage(row.fields?.package_code) === input.package_code);
   const expiries = exact.map(row => validDate(row.fields?.expire_at)).filter(Boolean).sort((a,b)=>b-a);
   const timing = privateRenewalTiming(expiries[0]?.toISOString(), paidAt);
-  if (timing?.expired_one_year_or_more) throw httpError(409, "recovery_expired_over_one_year_new_signup_required");
+  if (timing?.expired_one_year_or_more) throw httpError(409, "recovery_expired_one_year_or_more_policy_review_required");
   if (!timing?.expiry_known) throw httpError(409,"recovery_canonical_expiry_required");
   const packages=await airtableList(env, env.AIRTABLE_TABLE_PACKAGES || "tblg2z8dENx75yHka", {filterByFormula:`{code}='${formulaValue(input.package_code)}'`,maxRecords:2});
   const catalog=packages.length===1 ? packages[0].fields : null;
