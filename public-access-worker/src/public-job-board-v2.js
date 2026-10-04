@@ -1,4 +1,5 @@
 import { buildModelJobBoardBroadcastLink, buildModelJobBoardMiniAppLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
+import { discoveryCard, discoveryFacts, discoveryShell } from "./job-discovery-presentation.js";
 
 const PREFIX = "/public/api/jobs";
 const SHORT_PREFIX = "/j";
@@ -240,9 +241,9 @@ async function renderBoard(request, env) {
   const jobs = await listPublicJobs(env);
   const { token: anon, setCookie } = await ensureAnonymousSession(request, env);
   await recordViewerEvent(env, anon, { type: "board_open" });
-  const cards = jobs.map(jobCard).join("");
-  return html(pageShell("งานที่เปิดรับกับ MMD", `
-    <main><section class="hero"><p class="eyebrow">MMD · JOB BOARD</p><h1>ที่นี่พี่เปอร์ดูแลงานให้ครับ</h1><p>มีทั้งงาน Public และ Private อยู่ในกระดานเดียวกัน เลือกดูงานที่ตรงกับคุณได้เลยครับ</p><p>งาน Private จะยังไม่แสดงรายละเอียดบนหน้ารวม แตะเข้าดูเมื่อสนใจได้เลย</p><a class="primary" href="#jobs">ดูงานที่เปิดรับ</a></section><section id="jobs" class="job-world"><p class="eyebrow">งานที่เปิดรับ · PUBLIC + PRIVATE</p><div class="grid">${cards || '<div class="empty">ตอนนี้ยังไม่มีงานที่เปิดรับครับ</div>'}</div></section></main>`), 200, { ...(setCookie ? { "Set-Cookie": setCookie } : {}), "x-mmd-anonymous-session": anon ? "ready" : "missing" });
+  const cards = jobs.map(discoveryCard).join("");
+  return html(discoveryShell("งานที่เปิดรับกับ MMD", `
+    <main><section class="intro"><p class="eyebrow">Jobs:</p><h1>งานที่เปิดรับ</h1><p>เลือกดูงานที่สนใจ · Public และ Private อยู่ในกระดานเดียวกัน</p></section><section id="jobs" aria-label="งาน Public และ Private"><div class="grid">${cards || '<div class="empty">ตอนนี้ยังไม่มีงานที่เปิดรับครับ</div>'}</div></section></main>`), 200, { ...(setCookie ? { "Set-Cookie": setCookie } : {}), "x-mmd-anonymous-session": anon ? "ready" : "missing" });
 }
 
 async function renderJobDetail(request, env, jobId) {
@@ -252,10 +253,10 @@ async function renderJobDetail(request, env, jobId) {
   const view = publicJobView(job, { detail: true });
   if (view.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon))) {
     await recordViewerEvent(env, anon, { type: "private_gate_open", job_id: job.id, world: "private" });
-    return html(pageShell("งานลับ", `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail private-detail"><p class="eyebrow">PRIVATE JOB · 🔒</p><h1>งาน Private</h1><p>รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ</p><p>แตะต่อเมื่อคุณต้องการเปิดดูรายละเอียดของงานนี้</p><form method="post" action="${PREFIX}/${encodeURIComponent(job.id)}/reveal"><button class="primary" type="submit">เปิดรายละเอียดงานนี้</button></form></article></main>`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
+    return html(discoveryShell("งาน Private", `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail private-detail"><p class="eyebrow">PRIVATE JOB · 🔒</p><h1>งาน Private</h1><p>รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ</p><form method="post" action="${PREFIX}/${encodeURIComponent(job.id)}/reveal"><button class="primary" type="submit">เปิดรายละเอียดงานนี้</button></form></article></main>`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
   }
   await recordViewerEvent(env, anon, { type: "brief_open", job_id: job.id, world: view.world });
-  return html(pageShell(view.title, `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail${view.world === "private" ? " private-detail" : ""}"><p class="eyebrow">${esc(view.world === "private" ? "งานลับ 🔐" : categoryLabel(view.category))}</p><h1>${esc(view.title)}</h1><p>งานนี้กำลังเปิดรับคนที่สนใจครับ</p><p>อ่านรายละเอียดให้ครบก่อนนะ ถ้าตรงกับคุณ กดส่งความสนใจได้เลย</p>${view.listing_description ? `<p>${esc(view.listing_description)}</p>` : ""}${detailRows(view)}<p>${esc(view.safe_customer_description)}</p><p>${esc(view.required_appearance_profile)}</p><a class="primary" data-interest-cta href="${PREFIX}/${encodeURIComponent(job.id)}/apply">สนใจงานนี้</a></article></main>${viewerSignalScript(job.id)}`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
+  return html(discoveryShell(view.title, `<main><a class="back" href="${PREFIX}">← งานทั้งหมด</a><article class="detail${view.world === "private" ? " private-detail" : ""}"><p class="eyebrow">Jobs: · ${view.world === "private" ? "PRIVATE" : "PUBLIC"}</p><h1>${esc(view.title)}</h1><p class="brief">${esc(view.listing_description || view.required_appearance_profile || "รายละเอียดเพิ่มเติมในบรีฟงาน")}</p>${discoveryFacts(view)}<p>${esc(view.safe_customer_description)}</p><p>${esc(view.required_appearance_profile)}</p><p class="note">งานนี้กำลังเปิดรับคนที่สนใจครับ</p><button class="primary" type="button" data-interest-cta data-linked-interest>สนใจงานนี้</button><p data-status role="status" aria-live="polite"></p><a class="back" data-board-return hidden href="${PREFIX}">เลือกดูงานอื่น</a></article></main>${linkedInterestScript(job.id)}${viewerSignalScript(job.id)}`), 200, setCookie ? { "Set-Cookie": setCookie } : {});
 }
 
 async function revealPrivateJob(request, env, jobId) {
@@ -290,7 +291,7 @@ async function renderApplication(request, env, jobId) {
   await enforceViewerAccess(env, anon.id, job);
   if (job.public.world === "private" && !(await hasPrivateReveal(request, env, job.id, anon.id))) throw httpError(403, "job_brief_not_opened");
   const script = linkedInterestScript(job.id);
-  return html(pageShell(`สนใจงานนี้ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail"><p class="eyebrow">MMD APP · MODEL POOL</p><h1>${esc(job.public.title)}</h1><p>โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ งานนี้ไม่ต้องกรอกข้อมูลใหม่</p><p>ถ้ารูปปัจจุบันยังไม่มีหรืออยากอัปเดต สามารถส่งรูปให้ MMD ตรวจได้ก่อนตอบรับงาน</p><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a><p>กดด้านล่างเพื่อบอกพี่เปอร์ว่าคุณสนใจและสะดวกรับงานนี้</p><button class="primary" type="button" data-linked-interest>สนใจงานนี้ · ส่งให้พี่เปอร์</button><p data-status role="status"></p><small>Model record · ${esc(gate.model_record_id)}</small></section></main>${script}`));
+  return html(discoveryShell(`สนใจงานนี้ · ${job.public.title}`, `<main><a class="back" href="${PREFIX}/${encodeURIComponent(job.id)}">← กลับไปอ่านบรีฟ</a><section class="detail${job.public.world === "private" ? " private-detail" : ""}"><p class="eyebrow">Jobs: · ${job.public.world === "private" ? "PRIVATE" : "PUBLIC"}</p><h1>${esc(job.public.title)}</h1><p class="brief">${esc(job.public.listing_description)}</p>${discoveryFacts(job.public)}<p class="note">โปรไฟล์ของคุณเชื่อมกับพี่เปอร์ไว้แล้วครับ งานนี้ไม่ต้องกรอกข้อมูลใหม่</p><a class="back" href="https://www.mmdbkk.com/sigil/model/dashboard/photos?source=job_board&job_id=${encodeURIComponent(job.id)}">อัปเดตรูปปัจจุบัน →</a><button class="primary" type="button" data-linked-interest>สนใจงานนี้</button><p data-status role="status" aria-live="polite"></p><a class="back" data-board-return hidden href="${PREFIX}">เลือกดูงานอื่น</a></section></main>${script}`));
 }
 
 async function createInterest(request, env, jobId) {
@@ -946,7 +947,10 @@ function styles() {
 }
 
 function linkedInterestScript(jobId) {
-  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#ff9b9b':'#d6b56f'};b.addEventListener('click',async()=>{b.disabled=true;try{say('กำลังส่งให้พี่เปอร์…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({fast_lane:true})});const x=await r.json().catch(()=>({}));if(!r.ok)throw Error(x.error||'interest_failed');say(x.status||'ส่งความสนใจให้พี่เปอร์แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');b.textContent='ส่งให้พี่เปอร์แล้ว';}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
+  // Match the gate's canonical URL exactly, including this job's intent and return path.
+  // A malformed API response must never send a Model to an arbitrary login/next URL.
+  const loginUrl = buildModelJobBoardBroadcastLink({ source: "job_board_guard", job_id: jobId });
+  return `<script>(()=>{const b=document.querySelector('[data-linked-interest]'),s=document.querySelector('[data-status]'),back=document.querySelector('[data-board-return]');if(!b||!s)return;const say=(x,bad=false)=>{s.textContent=x;s.style.color=bad?'#b33a36':''};const received=()=>{b.textContent='บันทึกความสนใจแล้ว';if(back)back.hidden=false};b.addEventListener('click',async()=>{if(b.disabled)return;b.disabled=true;try{say('กำลังส่งข้อมูล…');const r=await fetch('${PREFIX}/${encodeURIComponent(jobId)}/interest',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({fast_lane:true})});const x=await r.json().catch(()=>({}));if(r.status===401&&x.error==='model_login_required'&&x.login_url===${JSON.stringify(loginUrl)}){say('เซสชันหมดอายุ กำลังไปหน้าเข้าสู่ระบบ…');window.location.assign(x.login_url);return}if(!r.ok||x.ok!==true)throw Error(x.error||'interest_failed');say('รับความสนใจแล้วครับ · พี่เปอร์เป็นผู้เลือกคนสำหรับงาน');received()}catch(err){if(err.message==='job_interest_already_exists'){say('คุณส่งความสนใจงานนี้ไว้แล้วครับ');received()}else{say('ยังส่งไม่สำเร็จ กรุณาลองใหม่',true);b.disabled=false;}}})})();</script>`;
 }
 
 function applicationScript(jobId, requiredCount) {
@@ -1207,3 +1211,4 @@ export const PUBLIC_JOB_BOARD_V2_INTERNALS = {
   parsePublicJobBriefV2,
   publicJobView,
 };
+
