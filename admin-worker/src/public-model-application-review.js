@@ -1,3 +1,5 @@
+import { issueModelActivation, resolvePublicCanonicalModel } from "./model-first-time-activation.js";
+
 const PAGE_PATH = "/internal/admin/model-applications";
 const API_PREFIX = "/v1/admin/model-applications";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -43,6 +45,8 @@ export const PUBLIC_MODEL_REVIEW_FIELDS = Object.freeze({
   publicProfileApproved: "fldcnCF3KrdAd4cfa",
   credentialStatus: "fldFM8T50S1zObdVP",
   credentialNotes: "fldbYsysmDlLP5ycc",
+  canonicalModel: "fldBPLNmVfbfjsNeN",
+  handoffStatus: "fldGin601ANWXG5Ro",
 });
 
 export const PUBLIC_MODEL_ASSET_FIELDS = Object.freeze({
@@ -116,6 +120,14 @@ export async function handlePublicModelApplicationReviewRequest(request, env = {
     return applyDecision(request, env, actor, decision[1]);
   }
 
+  const onboarding = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/onboarding$/);
+  if (onboarding && method === "POST") {
+    const originError = enforceSameOrigin(request);
+    if (originError) return originError;
+    if (!isPerOwner(actor)) return json({ ok: false, error: "owner_required" }, 403);
+    return preparePublicModelOnboarding(request, env, actor, onboarding[1]);
+  }
+
   const rolePolicy = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/role-policy$/);
   if (rolePolicy && method === "POST") {
     const originError = enforceSameOrigin(request);
@@ -172,6 +184,7 @@ async function applyDecision(request, env, actor, applicationId) {
     }
     const conflicts = preferredName ? await findModelNameConflicts(env, preferredName) : [];
     const acknowledgedSelf = conflicts.length === 1 && explicitLinkedModelId === conflicts[0].id;
+    if (explicitLinkedModelId && !acknowledgedSelf) return json({ ok: false, error: "unconfirmed_existing_model" }, 409);
     if (conflicts.length && !acknowledgedSelf) {
       return json({
         ok: false,
@@ -200,6 +213,13 @@ async function applyDecision(request, env, actor, applicationId) {
     fields[PUBLIC_MODEL_REVIEW_FIELDS.notes] = [previous, line].filter(Boolean).join("\n").slice(-9000);
   }
 
+  if (decision === "approve" && explicitLinkedModelId) {
+    const existingLinks = application.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.canonicalModel] || [];
+    if (existingLinks.length && (existingLinks.length !== 1 || existingLinks[0] !== explicitLinkedModelId)) {
+      return json({ ok: false, error: "canonical_model_conflict" }, 409);
+    }
+    fields[PUBLIC_MODEL_REVIEW_FIELDS.canonicalModel] = [explicitLinkedModelId];
+  }
   await patchApplication(env, application.id, fields);
   const assets = projection.assets?.length ? await listAssetsForApplication(env, applicationId) : [];
   if (assets.length) await patchAssetReviewStatuses(env, assets, policy.assetReviewStatus);
@@ -214,6 +234,61 @@ async function applyDecision(request, env, actor, applicationId) {
     next_step: decision === "approve" ? "onboarding_ready" : null,
     linked_model_id: decision === "approve" ? (explicitLinkedModelId || null) : null,
   });
+}
+
+
+async function preparePublicModelOnboarding(request, env, actor, applicationId) {
+  const application = await findApplicationById(env, applicationId);
+  if (!application) return json({ ok: false, error: "application_not_found" }, 404);
+  const fields = application.fields || {};
+  if (clean(fields[PUBLIC_MODEL_REVIEW_FIELDS.applicationType]) !== "public_model") return json({ ok: false, error: "not_public_model_application" }, 409);
+  if (selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.reviewStatus]) !== "accepted" || clean(fields[PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus]) !== "approved") {
+    return json({ ok: false, error: "application_approval_required" }, 409);
+  }
+  const assets = await listAssetsForApplication(env, applicationId);
+  const projection = normalizeApplication(application, assets);
+  if (!(projection.assets || []).some(asset => asset.kind === "photo" && REVIEWABLE_ASSET_UPLOAD_STATES.has(asset.upload_status))) {
+    return json({ ok: false, error: "application_media_required_for_onboarding" }, 409);
+  }
+  const links = fields[PUBLIC_MODEL_REVIEW_FIELDS.canonicalModel] || [];
+  if (!Array.isArray(links) || links.length > 1) return json({ ok: false, error: "canonical_model_ambiguous" }, 409);
+  let model, created = false;
+  if (links.length === 1) {
+    if (!/^rec[A-Za-z0-9]{14,24}$/.test(links[0])) return json({ ok: false, error: "canonical_model_invalid" }, 409);
+    const table = clean(env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || env.AT_MODELS_TABLE_ID || "Models");
+    const url = airtableUrl(env, table + "/" + encodeURIComponent(links[0]));
+    url.searchParams.set("returnFieldsByFieldId", "true");
+    model = await airtableRequest(env, url.toString(), { method: "GET" });
+    if (!model?.id) return json({ ok: false, error: "canonical_model_not_found" }, 409);
+  } else {
+    const name = clean(projection.nickname);
+    if (!name || /^(?:gws|ems)\s*-?\s*\d{1,6}$/i.test(name)) return json({ ok: false, error: "working_name_review_required" }, 409);
+    const modelKey = "mdl_pub_app_" + applicationId.replace(/^pma_/, "").toLowerCase();
+    const conflicts = (await findModelNameConflicts(env, name)).filter(item => item.model_key !== modelKey);
+    if (conflicts.length) return json({ ok: false, error: "working_name_conflict", conflicts, next_step: "confirm_existing_model" }, 409);
+    // One application-owned key serializes retries and concurrent requests in the coordinator.
+    const resolved = await resolvePublicCanonicalModel(env, {
+      model_key: modelKey,
+      working_name: name,
+    });
+    if (!resolved.ok) return json({ ok: false, error: resolved.error || "canonical_model_unavailable" }, resolved.status || 503);
+    model = resolved.model;
+    created = resolved.created === true;
+  }
+  if (!model?.id || !/^rec[A-Za-z0-9]{14,24}$/.test(model.id)) return json({ ok: false, error: "canonical_model_invalid" }, 502);
+  const linked = Boolean(clean(model.fields?.[env.AT_MODELS__LINE_USER_ID || "line_user_id"] || model.fields?.["fld2ywTFI6MZhX6PV"]));
+  await patchApplication(env, application.id, {
+    [PUBLIC_MODEL_REVIEW_FIELDS.canonicalModel]: [model.id],
+    [PUBLIC_MODEL_REVIEW_FIELDS.handoffStatus]: linked ? "linked" : "ready",
+  });
+  if (linked) return json({ ok: true, handoff_status: "linked", next_step: "model_ready", publishes_model: false });
+  const activationResponse = await issueModelActivation(new Request(new URL("/v1/admin/model/activation/issue", request.url), {
+    method: "POST", headers: { "content-type": "application/json", Origin: new URL(request.url).origin },
+    body: JSON.stringify({ model_record_id: model.id, environment: "published", ttl_hours: 24 }),
+  }), env);
+  const activation = await activationResponse.json().catch(() => ({}));
+  if (!activationResponse.ok) return json({ ok: false, error: "activation_issue_failed", reason: activation.error, handoff_status: "ready", next_step: "retry_activation_issue" }, activationResponse.status);
+  return json({ ok: true, handoff_status: "ready", next_step: "send_activation_link", activation_url: activation.activation_url, expires_at: activation.expires_at, model_created: created, publishes_model: false });
 }
 
 async function applyRolePolicy(request, env, actor, applicationId) {
@@ -318,6 +393,7 @@ async function findModelNameConflicts(env, requestedName) {
     if (!tokens.includes(normalized)) return [];
     return [{
       id: clean(record.id),
+      model_key: clean(fields.model_record_id || fields["fldVWbT0gsSe0hn7Q"]),
       working_name: clean(fields.working_name || fields["Working Name"] || fields.display_name || fields.nickname || fields.folder_name),
     }];
   }).filter((item) => item.id);
@@ -488,6 +564,8 @@ function normalizeApplication(record, assets) {
     status: selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.status]),
     review_status: selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.reviewStatus]),
     intake_status: get(PUBLIC_MODEL_REVIEW_FIELDS.intakeStatus),
+    handoff_status: selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.handoffStatus]) || "not_started",
+    canonical_model_linked: Array.isArray(fields[PUBLIC_MODEL_REVIEW_FIELDS.canonicalModel]) && fields[PUBLIC_MODEL_REVIEW_FIELDS.canonicalModel].length === 1,
     handler: get(PUBLIC_MODEL_REVIEW_FIELDS.handler),
     notes: get(PUBLIC_MODEL_REVIEW_FIELDS.notes),
     submitted_at: get(PUBLIC_MODEL_REVIEW_FIELDS.submittedAt, fields[PUBLIC_MODEL_REVIEW_FIELDS.createdAt]),
@@ -561,7 +639,7 @@ function render(a){
  const contact=a.contact||{};
  app.className='';
  app.innerHTML='<section class="card hero"><div><div class="eyebrow">'+esc(a.application_id)+'</div><div class="name">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.review_status)+chip(a.intake_status,statusClass(a))+'</div><div class="muted">ส่งเมื่อ '+val(a.submitted_at)+'</div></div><div class="grid"><div class="kv"><div class="k">Age</div><div class="v">'+val(a.age)+'</div></div><div class="kv"><div class="k">Height / Weight</div><div class="v">'+(a.height_cm?esc(a.height_cm)+' cm':'—')+' / '+(a.weight_kg?esc(a.weight_kg)+' kg':'—')+'</div></div><div class="kv"><div class="k">Location</div><div class="v">'+val(a.location)+'</div></div><div class="kv"><div class="k">Occupation / Background</div><div class="v">'+val(a.occupation)+'</div></div></div></section>'+
- (a.intake_status==='approved'?'<div class="banner">อนุมัติใบสมัครแล้ว · พร้อมเข้าสู่ onboarding แต่ยังไม่ Publish ขึ้นหน้า Public อัตโนมัติ</div>':'')+
+ (a.intake_status==='approved'?'<section class="card"><div class="section-title">ขั้นต่อไป · MY MODEL</div><div class="muted">'+(a.handoff_status==='linked'?'ยืนยัน LINE แล้ว · พร้อมเข้า MY MODEL':'เตรียมประวัติ Model และลิงก์ให้เจ้าของใบสมัครยืนยัน LINE')+'</div><button id="prepareOnboarding" class="btn approve" style="margin-top:12px">เตรียมเข้า MY MODEL / ออกลิงก์ LINE</button><div id="onboardingResult"></div></section>':'')+
  '<section class="card"><div class="section-title">แนะนำตัว / ภาพรวม</div><div class="lead">'+val(a.intro)+'</div></section>'+
  (a.display_name?'<section class="card"><div class="section-title">MY MODEL · ขอบเขตใบสมัคร</div><div class="grid"><div class="kv"><div class="k">ชื่อที่แสดง</div><div class="v">'+esc(a.display_name)+'</div></div><div class="kv"><div class="k">Public client gender</div><div class="v">'+val(a.public_client_gender)+'</div></div><div class="kv"><div class="k">Private opt in</div><div class="v">'+(a.private_opt_in?'เปิด · '+val(a.private_client_gender):'ปิด')+'</div></div><div class="kv"><div class="k">ภาษา</div><div class="v">'+list(a.languages)+'</div></div><div class="kv"><div class="k">วิดีโอคอล LINE</div><div class="v">'+val(a.video_call_preference)+'</div></div><div class="kv"><div class="k">เวลาที่สะดวก (กรุงเทพ)</div><div class="v">'+val(a.preferred_at_bangkok)+'</div></div></div></section>':'')+
  (a.per_only_remark?'<section class="card"><div class="section-title">หมายเหตุผลงานเดิม · พี่เปอร์เท่านั้น</div><div class="lead">'+esc(a.per_only_remark)+'</div></section>':'')+
@@ -574,8 +652,22 @@ function render(a){
  const roleLabels={everyday_companion:'เพื่อนคู่ใจ',driver_companion:'คนขับรถหล่อ',culinary_companion:'เชฟหล่อ',social_appearance:'คู่หูออกงาน',bangkok_companion:'เพื่อนเที่ยวกรุงเทพ',sport_activity:'หนุ่มสายกีฬา',wellness_companion:'หนุ่มสายสุขภาพ',business_companion:'หนุ่มออฟฟิศ',nightlife_companion:'เพื่อนสายปาร์ตี้',creative_companion:'เพื่อนสายศิลป์',medical_professional:'บุรุษทางการแพทย์'};
  const approved=new Set(a.approved_roles||[]), rolePolicy=$('#rolePolicy');
  if(rolePolicy){rolePolicy.innerHTML='<div class="chips">'+Object.keys(roleLabels).map(k=>'<label class="chip"><input type="checkbox" data-role-policy="'+esc(k)+'" '+(approved.has(k)?'checked':'')+'> '+esc(roleLabels[k])+'</label>').join('')+'</div><div class="grid" style="margin-top:10px"><label class="kv"><div class="k">Booking Mode</div><select id="bookingMode" class="note" style="min-height:46px"><option value="curated">curated</option><option value="direct">direct</option><option value="brief_only">brief_only</option></select></label><label class="kv"><div class="k">Credential Status</div><select id="credentialStatus" class="note" style="min-height:46px"><option value="not_required">not_required</option><option value="pending">pending</option><option value="verified">verified</option><option value="rejected">rejected</option></select></label></div><label class="chip" style="margin-top:10px"><input id="publicProfileApproved" type="checkbox" '+(a.public_profile_approved?'checked':'')+'> เปิด Public Profile</label><textarea id="credentialNotes" class="note" style="margin-top:10px" placeholder="Credential notes (internal only)">'+esc(a.credential_notes||'')+'</textarea><button id="saveRolePolicy" class="btn approve" style="margin-top:10px">บันทึก Role / Publication Policy</button>';$('#bookingMode').value=a.booking_mode||'curated';$('#credentialStatus').value=a.credential_status||'not_required';$('#saveRolePolicy').onclick=()=>saveRolePolicy(a);}
+ const onboardingButton=$('#prepareOnboarding'); if(onboardingButton)onboardingButton.onclick=()=>prepareOnboarding(a);
  actions.hidden=false;
  actions.querySelectorAll('button[data-decision]').forEach(b=>b.onclick=()=>decide(b.dataset.decision,a));
+}
+
+async function prepareOnboarding(a){
+ const button=$('#prepareOnboarding'),result=$('#onboardingResult');button.disabled=true;result.textContent='กำลังเตรียม…';
+ try{
+  const d=await api('/v1/admin/model-applications/'+encodeURIComponent(a.application_id)+'/onboarding',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+  if(d.handoff_status==='linked'){result.textContent='ยืนยัน LINE แล้ว · ให้ Model เข้า MY MODEL ด้วย LINE เดิมได้เลย';return}
+  if(!d.activation_url)throw new Error('activation_link_missing');
+  result.innerHTML='<div class="banner">ประวัติพร้อมแล้ว · ส่งลิงก์นี้ให้ '+esc(a.nickname)+' เปิดด้วย LINE ของตัวเอง</div><textarea id="activationLink" class="note" readonly></textarea><button id="copyActivation" class="btn" style="margin-top:8px">คัดลอกลิงก์ให้ Model</button><div class="muted">ลิงก์หมดอายุ '+esc(d.expires_at)+' · รูปและโปรไฟล์ Public ยังรอการตรวจเผยแพร่</div>';
+  $('#activationLink').value=d.activation_url;
+  $('#copyActivation').onclick=async()=>{try{await navigator.clipboard.writeText(d.activation_url);$('#copyActivation').textContent='คัดลอกแล้ว'}catch(e){$('#activationLink').select();$('#copyActivation').textContent='เลือกลิงก์แล้ว · กดคัดลอก'}};
+ }catch(e){const messages={owner_required:'ใช้บัญชีพี่เปอร์เพื่อเตรียม MY MODEL',application_approval_required:'อนุมัติใบสมัครก่อน',working_name_conflict:'ชื่อมีใน Model แล้ว · ยืนยันว่าเป็นคนเดิมผ่านปุ่มอนุมัติใบสมัครก่อน',application_media_required_for_onboarding:'ต้องมีรูปปัจจุบันอย่างน้อย 1 รูป',activation_issue_failed:'สร้างประวัติแล้ว แต่ออกลิงก์ยังไม่สำเร็จ · กดเตรียมอีกครั้งได้'};result.textContent=messages[e.message]||('เตรียมไม่สำเร็จ: '+e.message)}
+ finally{button.disabled=false}
 }
 async function saveRolePolicy(a){
  const approvedRoles=Array.from(document.querySelectorAll('[data-role-policy]:checked')).map(x=>x.dataset.rolePolicy);
