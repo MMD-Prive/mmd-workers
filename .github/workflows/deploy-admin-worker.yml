@@ -366,6 +366,9 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/internal/admin/jobs/all",
+            "/internal/admin/jobs/all*",
+            "/internal/admin/work/assets/*",
             "/internal/admin/mmd-review*",
             "/v1/admin/private-media*",
             "/v1/admin/line/rich-menu/three-level/prepare",
@@ -495,6 +498,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node ../scripts/check-admin-all-jobs-gate.mjs
           body_file="$(mktemp)"
           http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" "$ADMIN_DASHBOARD_PRODUCTION_URL")"
           cat "$body_file"
