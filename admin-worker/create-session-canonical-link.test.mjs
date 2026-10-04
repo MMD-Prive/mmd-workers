@@ -338,3 +338,22 @@ test('created job surfaces agreement reconciliation instead of claiming financia
     const result=await response.json();assert.equal(result.linkage.session_linked,true);assert.equal(result.linkage.partner_agreement,'review_required');assert.equal(result.linkage.partner_warning,'historical_agreement_required');
   } finally {globalThis.fetch=originalFetch;}
 });
+
+test('persists the validated separate quote snapshot for new and existing canonical Jobs', async () => {
+  for (const existingJob of [false, true]) {
+    const originalFetch = globalThis.fetch; const mock = makeFetch({ existingJob }); globalThis.fetch = mock.fetch;
+    try {
+      const pricing = { version: 1, currency: 'THB', settlement_mode: 'direct', client_base_amount_thb: 14000,
+        model_base_payout_thb: 5000, addons: [{ option: 'mk', client_amount_thb: 1000, model_payout_thb: 500 }],
+        client_total_amount_thb: 15000, model_total_payout_thb: 5500 };
+      const response = await handleCanonicalLinkedJobCreate(request(linkedBody({
+        pay_model_thb: 5500, work: { job_visibility: 'private', service_options: ['mk'] },
+        private_access: { settlement_mode: 'direct' }, service_pricing: pricing,
+      })), ENV, {}, { fetch: async () => json({ ok: true, session_id: 'sess_001' }) });
+      assert.equal((await response.json()).linkage.job_linked, true);
+      const call = mock.calls.find(c => c.method === (existingJob ? 'PATCH' : 'POST') && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
+      const note = call.body.fields['Internal Notes'];
+      assert.deepEqual(JSON.parse(note.split('[MMD SERVICE PRICING v1] ')[1]), pricing);
+    } finally { globalThis.fetch = originalFetch; }
+  }
+});

@@ -1,3 +1,4 @@
+import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CREATE_JOB_PATH = "/v1/admin/job/create";
 
@@ -37,6 +38,9 @@ export function isCanonicalLinkedJobCreate(path, method) {
 
 export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstream) {
   const body = await request.clone().json().catch(() => ({}));
+
+  try { validateJobServicePricing(body); }
+  catch (error) { return jsonLike(request, { ok: false, error: { code: error.code, message: error.message } }, error.status); }
 
   const clientId = clean(body?.client_lineage?.client_id || body?.client_record_id);
   const modelId = clean(body?.model?.model_id || body?.model_record_id);
@@ -212,7 +216,7 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
   } else {
     const jobPatch = {};
     const existingNote = clean(job.fields?.[JOB_FIELDS.note]);
-    const snapshotNote = preservePartnerSnapshot(existingNote, body);
+    const snapshotNote = withJobServicePricingNote(preservePartnerSnapshot(existingNote, body), validateJobServicePricing(body));
     if (snapshotNote !== existingNote) jobPatch[JOB_FIELDS.note] = snapshotNote;
     if (ids.clientId) {
       jobPatch[JOB_FIELDS.client] = [ids.clientId];
@@ -275,7 +279,7 @@ function buildJobFields(body, canonical, ids) {
     [JOB_FIELDS.jobId]: ids.jobId,
     [JOB_FIELDS.location]: location,
     [JOB_FIELDS.dateTimeLocation]: [date, start && end ? `${start}-${end}` : start, location].filter(Boolean).join(" · "),
-    [JOB_FIELDS.note]: preservePartnerSnapshot(noteParts.join("\n"), body),
+    [JOB_FIELDS.note]: withJobServicePricingNote(preservePartnerSnapshot(noteParts.join("\n"), body), validateJobServicePricing(body)),
   };
   if (ids.clientId) fields[JOB_FIELDS.client] = [ids.clientId];
   if (ids.modelId) fields[JOB_FIELDS.model] = [ids.modelId];
