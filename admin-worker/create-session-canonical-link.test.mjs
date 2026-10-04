@@ -353,7 +353,7 @@ test('persists the validated separate quote snapshot for new and existing canoni
       assert.equal((await response.json()).linkage.job_linked, true);
       const call = mock.calls.find(c => c.method === (existingJob ? 'PATCH' : 'POST') && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
       const note = call.body.fields['Internal Notes'];
-      assert.deepEqual(JSON.parse(note.split('[MMD SERVICE PRICING v1] ')[1]), pricing);
+      assert.deepEqual(JSON.parse(note.split('[MMD SERVICE PRICING v1] ')[1].split('\n')[0]), pricing);
     } finally { globalThis.fetch = originalFetch; }
   }
 });

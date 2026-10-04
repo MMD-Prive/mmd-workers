@@ -259,3 +259,39 @@ test("production wrapper intercepts confirm-link before the legacy payments work
   assert.notEqual(legacyIndex, -1);
   assert.ok(canonicalIndex < legacyIndex);
 });
+
+test("issuer persists complete service and renewal snapshots for long combined-price notes", async () => {
+  const { validateJobServicePricing, withJobServicePricingNote, SERVICE_PRICING_MARKER } = await import("../admin-worker/src/job-service-pricing.js");
+  const { canonicalizeSigilJobBody } = await import("../admin-worker/src/sigil-jobs-membership-action.js");
+  const { parseSigilMembershipPaymentComponents } = await import("./sigil-membership-payment-components.js");
+  const quote = { version: 1, currency: "THB", settlement_mode: "direct", client_base_amount_thb: 10000,
+    model_base_payout_thb: 5000, addons: [{ option: "mk", client_amount_thb: 1000, model_payout_thb: 500 },
+      { option: "burn", client_amount_thb: 2000, model_payout_thb: 700 }],
+    client_total_amount_thb: 13000, model_total_payout_thb: 6200 };
+  const b = canonicalizeSigilJobBody({ client_name: "Synthetic Client", model_name: "Synthetic Model", job_type: "pn",
+    job_date: "2026-10-10", start_time: "12:00", end_time: "14:00", location_name: "Test",
+    amount_thb: 13000, service_amount_thb: 13000, original_amount_thb: 13000, pay_model_thb: 6200,
+    work: { job_visibility: "private", service_options: ["mk", "burn"] }, private_access: { settlement_mode: "direct" },
+    service_pricing: quote, payment_type: "deposit", deposit_amount_thb: 4000,
+    note: "  [MMD SERVICE PRICING v1] {\"fake\":true}\n"+"Operator note ".repeat(500),
+    membership_action: { type: "renew", renewal_amount_thb: 3000, include_in_payment: true, tier_hint: "standard" },
+  }).body;
+  b.note = withJobServicePricingNote(b.note, validateJobServicePricing(b));
+  const { env, calls } = envWithAirtableRecorder();
+  const result = await handleCanonicalConfirmLink(post(b), env);
+  assert.equal(result.status, 200, await result.clone().text());
+  const session = calls.find(call => call.method === "POST" && call.url.pathname.endsWith("/tblC98mKWbzmPuNzX")).body.records[0].fields;
+  const payment = calls.find(call => call.method === "POST" && call.url.pathname.endsWith("/tblWGGJJOx5eBvBZJ")).body.records[0].fields;
+  assert.equal(session.fldhwC79ndbnEXSZz, 13000);
+  assert.equal(payment.fldvCSwrUW8OMAooS, 16000);
+  assert.equal(session.fldlTO5aNfqUmlNWm, 6200);
+  for (const note of [session.fldEcDkF7CH9VixWM, payment.fldjsZIKoJPawlb2u]) {
+    assert.ok(note.length <= 4000);
+    assert.equal(note.includes("fake"), false);
+    assert.deepEqual(JSON.parse(note.split(SERVICE_PRICING_MARKER+" ")[1].split("\n")[0]), quote);
+    assert.equal(parseSigilMembershipPaymentComponents(note, 16000).service_amount_thb, 13000);
+  }
+  assert.equal((await result.json()).pricing_breakdown.deposit_due_thb, 4000);
+  assert.deepEqual(calls.filter(call => call.method === "POST").map(call => call.url.pathname.split("/").at(-1)).sort(),
+    ["tblC98mKWbzmPuNzX", "tblWGGJJOx5eBvBZJ"].sort());
+});
