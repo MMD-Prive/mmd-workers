@@ -256,6 +256,23 @@ export async function resolvePrivateCanonicalModel(env, input = {}) {
   return { ...data, status: response.status };
 }
 
+
+export async function resolvePublicCanonicalModel(env, input = {}) {
+  const modelKey = clean(input.model_key, 110);
+  const workingName = clean(input.working_name, 120);
+  if (!/^mdl_pub_app_[a-z0-9_-]{8,96}$/.test(modelKey) || !workingName) {
+    return { ok: false, status: 400, error: "public_model_resolve_invalid" };
+  }
+  const namespace = env.MODEL_ACTIVATION_COORDINATOR;
+  if (!namespace?.idFromName || !namespace?.get) return { ok: false, status: 503, error: "activation_coordinator_not_ready" };
+  const stub = namespace.get(namespace.idFromName(`public-model-create:${modelKey}`));
+  const response = await stub.fetch("https://model-activation.internal/resolve-public-model", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model_key: modelKey, working_name: workingName }),
+  });
+  return { ...(await response.json().catch(() => ({}))), status: response.status };
+}
+
 export class ModelActivationCoordinator {
   constructor(state, env) {
     this.state = state;
@@ -266,12 +283,14 @@ export class ModelActivationCoordinator {
     const url = new URL(request.url);
     if (url.pathname === "/phase-a") return handlePhaseADurableRequest(this.state, this.env, request);
     if (url.pathname === "/line-job-briefs") return handleLineJobBriefDurableRequest(this.state, this.env, request);
-    if (url.pathname === "/resolve-private-model" && request.method.toUpperCase() === "POST") {
+    if ((url.pathname === "/resolve-private-model" || url.pathname === "/resolve-public-model") && request.method.toUpperCase() === "POST") {
+      const isPublic = url.pathname === "/resolve-public-model";
+      const resolve = async () => {
       const input = await request.json().catch(() => null);
       const modelKey = clean(input?.model_key, 110);
       const workingName = clean(input?.working_name, 120);
-      if (!/^mdl_pri_app_[a-z0-9_-]{8,96}$/.test(modelKey) || !workingName) {
-        return internalJson({ ok: false, error: "private_model_resolve_invalid" }, 400);
+      if (!(isPublic ? /^mdl_pub_app_[a-z0-9_-]{8,96}$/ : /^mdl_pri_app_[a-z0-9_-]{8,96}$/).test(modelKey) || !workingName) {
+        return internalJson({ ok: false, error: "model_resolve_invalid" }, 400);
       }
 
       const matches = await findModelsByPrivateModelKey(this.env, modelKey);
@@ -297,6 +316,8 @@ export class ModelActivationCoordinator {
         model_record_id: created.record.id,
         line_user_id: "",
       }, 201);
+      };
+      return isPublic ? this.state.blockConcurrencyWhile(resolve) : resolve();
     }
 
     const recovery = url.pathname === "/recover";
