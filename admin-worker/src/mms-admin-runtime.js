@@ -4,6 +4,7 @@ import { wireMmsApproveUi } from "./mms-admin-approve-ui.js";
 import { wireMmsAdminMobileBundle } from "./mms-admin-mobile-bundle.js";
 import { wireMmsJobsUi } from "./mms-admin-jobs-ui.js";
 import { renderMmsAdminPage } from "./mms-admin-page.js";
+import { wireMmsWorkspaceUi } from "./mms-admin-workspace-ui.js";
 import {
   appendMmsJobReceipt,
   buildMmsCanonicalJobPayload,
@@ -86,7 +87,7 @@ export async function handleMmsAdminRequest(request, env = {}) {
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
     const build = mmsAdminBuild(env);
-    const page = stampMmsAdminBuild(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))), build);
+    const page = stampMmsAdminBuild(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())))), build);
     const response = html(page);
     response.headers.set("x-mmd-admin-build", build);
     response.headers.set("x-mmd-admin-surface", "mms-admin");
@@ -108,6 +109,14 @@ export async function handleMmsAdminRequest(request, env = {}) {
   }
   if (path === `${API_PREFIX}/jobs` && method === "GET") {
     return json(await listMmsCanonicalJobs(env));
+  }
+  if (path === `${API_PREFIX}/workspace` && method === "GET") {
+    return proxyJson(request, env, "/internal/mms/admin/workspace");
+  }
+  if (path === `${API_PREFIX}/test-jobs` && method === "POST") {
+    const origin = request.headers.get("origin");
+    if (origin && origin !== url.origin) return json({ ok: false, error: "origin_not_allowed" }, 403);
+    return proxyJson(request, env, "/internal/mms/admin/test-jobs");
   }
   if (path === `${API_PREFIX}/applications` && method === "POST") {
     return proxyJson(request, env, "/mms/api/applications", { origin: true });
