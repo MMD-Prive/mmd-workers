@@ -301,3 +301,38 @@ for (const field of ["access_status", "member_status", "member_lifecycle_status"
  const h=harness();h.tables.tblNImdF9PKAxhXGi.push({id:"recRevoked",fields:{member_id:"inn",line_user_id:LINE_ID,payment_ref:PAYMENT_REF,package_code:"premium",expire_at:"2028-01-01T00:00:00Z",[field]:"revoked"}});
  const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,200);assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"],null);assert.equal(h.writes.filter(w=>w.method==="POST").length,0);
 });
+
+function recordedReplay(h) {
+ const row={id:"recRecordedReplay",fields:{member_id:"inn",line_user_id:LINE_ID,payment_ref:PAYMENT_REF,package_code:"premium",expire_at:"2028-01-01T00:00:00Z",access_status:"active"}};
+ h.tables.tblNImdF9PKAxhXGi.push(row);
+ return structuredClone(row);
+}
+for (const status of ["Blocked", "Suspended", "Revoked"]) test(`replay preserves canonical Member ${status}`,async()=>{
+ const h=harness();const recorded=recordedReplay(h);h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"]=status;
+ const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,200);
+ assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"],status);
+ assert.equal(h.writes.filter(w=>w.recordId===MEMBER_RECORD).length,0);
+ assert.deepEqual(h.tables.tblNImdF9PKAxhXGi.find(r=>r.id===recorded.id),recorded);
+ assert.equal(h.tables.tblXjQFwo0A2cHseh[0].fields.renewal_flow_status,"materialized");
+});
+for (const field of ["access_status", "member_status", "member_lifecycle_status"]) test(`replay respects another entitlement hard block in ${field}`,async()=>{
+ const h=harness();recordedReplay(h);h.tables.tblNImdF9PKAxhXGi.push({id:"recOtherBlocked",fields:{member_id:"inn",line_user_id:LINE_ID,[field]:"suspended",package_code:"standard"}});
+ const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,200);
+ assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"],null);assert.equal(h.writes.filter(w=>w.recordId===MEMBER_RECORD).length,0);
+});
+test("replay rechecks suspension applied after identity read",async()=>{
+ const h=harness();recordedReplay(h);
+ const r=await handleReviewedProof(request(),h.env,{},async()=>{h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"]="Suspended";return Response.json({ok:true,payment_ref:PAYMENT_REF});});
+ assert.equal(r.status,200);assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"],"Suspended");assert.equal(h.writes.filter(w=>w.recordId===MEMBER_RECORD).length,0);
+});
+
+test("replay cannot activate when current Member recheck fails",async()=>{
+ const h=harness();recordedReplay(h);const original=h.env.AIRTABLE_HTTP.fetch;let memberReads=0;
+ h.env.AIRTABLE_HTTP.fetch=async req=>{if(req.method==="GET"&&new URL(req.url).pathname.endsWith(MEMBER_RECORD)&&++memberReads>1)return Response.json({error:"fixture_unavailable"},{status:503});return original(req);};
+ const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,503);assert.equal(h.writes.length,0);
+});
+test("replay cannot activate when member-wide history recheck is incomplete",async()=>{
+ const h=harness();recordedReplay(h);const original=h.env.AIRTABLE_HTTP.fetch;
+ h.env.AIRTABLE_HTTP.fetch=async req=>{const url=new URL(req.url);if(req.method==="GET"&&url.pathname.endsWith("tblNImdF9PKAxhXGi")&&(url.searchParams.get("filterByFormula")||"").startsWith("OR("))return Response.json({records:h.tables.tblNImdF9PKAxhXGi,offset:"more"});return original(req);};
+ const r=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true,payment_ref:PAYMENT_REF}));assert.equal(r.status,409);assert.equal(h.writes.length,0);
+});
