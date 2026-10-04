@@ -453,7 +453,13 @@ export function shouldServeLiffPrimaryBootstrap(request) {
   if (!new Set(["GET", "HEAD"]).has(method)) return false;
   const url = new URL(request.url);
   if (!isPresentationUiPath(url.pathname)) return false;
-  if (!hasLineRedirectContext(request)) return false;
+  // A bare Mini App link can carry LINE credentials only in the fragment,
+  // which never reaches the Worker. UA selects presentation, never identity.
+  const bareLineEntry = normalizePath(url.pathname) === UI_PREFIX
+    && !url.search
+    && isLineInAppBrowser(request)
+    && !hasModelSessionCookie(request);
+  if (!hasLineRedirectContext(request) && !bareLineEntry) return false;
   if (hasLiffPrimaryBootstrapCookie(request)) return false;
   return true;
 }

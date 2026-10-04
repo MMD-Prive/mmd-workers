@@ -24,6 +24,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .mmd-digital-meter{height:3px;background:#313126;overflow:hidden}
 .mmd-digital-meter>span{display:block;height:100%;width:38%;background:linear-gradient(90deg,#9e8246,var(--mmd-gold));animation:mmdPulse 1.45s ease-in-out infinite alternate}
 .mmd-digital-action{display:flex;align-items:center;justify-content:center;min-height:48px;margin-top:15px;border:1px solid #806b3d;border-radius:14px;background:#d8bb7f;color:#17130c;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.04em}
+.mmd-digital-action[hidden]{display:none}
 .mmd-digital-detail{margin-top:11px;color:#74766b;font-size:9.5px;line-height:1.45;word-break:break-word;text-align:center}
 @keyframes mmdPulse{from{transform:translateX(-20%);opacity:.65}to{transform:translateX(155%);opacity:1}}
 @media(max-width:359px){.mmd-digital-shell{padding-left:15px;padding-right:15px}.mmd-digital-title{font-size:25px}}
@@ -163,7 +164,6 @@ export function modelLiffDigitalBootstrapHtml({
 <meta name="theme-color" content="#080907">
 <title>${pageTitle}</title>
 <style>${MMD_APP_DIGITAL_CSS}</style>
-<script src=${safeSdk}></script>
 </head>
 <body>
 <div class="mmd-digital-app" data-mmd-app-digital="v1">
@@ -195,21 +195,53 @@ export function modelLiffDigitalBootstrapHtml({
   var pill=document.getElementById("session-pill");
   var fallback=document.getElementById("fallback");
   var detail=document.getElementById("detail");
+  function showFailure(code){
+    pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MMD APP · RETRY")};
+    status.textContent=${JSON.stringify(fail)};
+    fallback.hidden=false;
+    detail.textContent=code;
+  }
+  function loadSdk(){
+    if(window.liff&&typeof window.liff.init==="function")return Promise.resolve();
+    return new Promise(function(resolve,reject){
+      var script=document.createElement("script");
+      var timer=setTimeout(function(){finish(new Error("line_sdk_timeout"));},12000);
+      function finish(error){
+        clearTimeout(timer);
+        script.onload=script.onerror=null;
+        if(error){script.remove();reject(error);}else{resolve();}
+      }
+      script.async=true;
+      script.src=${safeSdk};
+      script.onload=function(){finish(window.liff&&typeof window.liff.init==="function"?null:new Error("line_sdk_unavailable"));};
+      script.onerror=function(){finish(new Error("line_sdk_unavailable"));};
+      document.head.appendChild(script);
+    });
+  }
+  async function initializeLine(){
+    await loadSdk();
+    var timer;
+    try{
+      await Promise.race([
+        window.liff.init(${initOptions}),
+        new Promise(function(_,reject){timer=setTimeout(function(){reject(new Error("line_init_timeout"));},12000);})
+      ]);
+    }finally{clearTimeout(timer);}
+  }
 
   async function continueIntoApp(){
     try{
       fallback.hidden=true;
-      if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
-      await window.liff.init(${initOptions});
+      await initializeLine();
       pill.textContent=${JSON.stringify(readyPill)};
       status.textContent=${JSON.stringify(success)};
       ${jobBoardScript}
       ${selectedSessionScript || returnScript}
+      ${!jobBoardScript && !selectedSessionScript && !returnScript ? 'setTimeout(function(){showFailure("line_redirect_timeout");},12000);' : ""}
     }catch(error){
-      pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MMD APP · RETRY")};
-      status.textContent=${JSON.stringify(fail)};
-      fallback.hidden=false;
-      detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
+      // Never echo SDK errors: they can include credential-bearing URLs.
+      var code=String(error&&error.message||"");
+      showFailure(/^line_(sdk_timeout|sdk_unavailable|init_timeout)$/.test(code)?code:"line_connection_failed");
     }
   }
 
