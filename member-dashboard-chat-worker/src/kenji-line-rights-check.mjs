@@ -60,9 +60,27 @@ export function renderLineRightsCheck(truth = {}) {
     const envelope = { standard: "Standard", premium: "Premium", vip: "VIP", svip: "SVIP", black_card: "Black Card" }[truth.membership.private_visibility_envelope];
     if (envelope) lines.push(`สิทธิ์ดู Private: ${envelope}`);
   }
-  // This canonical endpoint does not yet project account-bound coupons or
-  // approved promotions. Never imply none/eligible from a missing domain.
-  lines.push("คูปองและโปรที่ใช้ได้กับบัญชีนี้ยังรอเปอร์ตรวจครับ");
+  const coupon = truth.coupon || {};
+  if (verified && !truth.membership?.member_blocked && coupon.authority === "canonical_care_back_wallet_v1") {
+    if (coupon.status === "ready" && date(coupon.expires_at) && Date.parse(coupon.expires_at) > Date.now()) {
+      const rate = Number(coupon.approved_discount_percent);
+      lines.push(`คูปอง CARE BACK: พร้อมใช้ 1 ครั้ง · ใช้ถึง ${date(coupon.expires_at)}${rate > 0 && rate <= 10 ? ` · ส่วนลดที่อนุมัติ ${rate}%` : " · อัตราส่วนลดยังรอเปอร์ตรวจตามงาน"}`);
+    } else if (["used", "expired", "revoked", "invalid"].includes(coupon.status)) {
+      lines.push(`คูปอง CARE BACK: ${{ used: "ใช้แล้ว", expired: "หมดอายุแล้ว", revoked: "ยกเลิกแล้ว", invalid: "ยังใช้ไม่ได้" }[coupon.status]}`);
+    } else lines.push("คูปอง CARE BACK ยังรอตรวจคำอวยพรและสิทธิ์ครับ");
+  } else lines.push("คูปอง CARE BACK ยังรอเปอร์ตรวจครับ");
+  const promotion = truth.promotion || {};
+  const currentPackage = { private_standard: "standard", private_premium: "premium" }[m.level];
+  if (verified && !truth.membership?.member_blocked && ["active", "expiring_soon", "grace", "expired"].includes(m.lifecycle) && promotion.authority === "owner_approved_october_renewal_2026_v1" && promotion.status === "conditional_eligible" && promotion.package_code === currentPackage && promotion.requires_verified_payment === true && Date.parse(promotion.ends_before) > Date.now()) {
+    if (promotion.total_years === 2 && promotion.base_years === 1 && promotion.promotion_years === 1) {
+      const start = promotion.starts_from === "existing_expiry" ? "นับต่อจากวันหมดอายุเดิม" : "นับจากวันต่ออายุที่ตรวจชำระแล้ว";
+      lines.push(`โปรต่ออายุ ${promotion.package_code === "premium" ? "Premium" : "Standard"}: รวม 2 ปี (สิทธิ์หลัก 1 ปี + โปร 1 ปี) · ${start} เมื่อชำระตามเงื่อนไขก่อน ${date(promotion.ends_before)} และผ่านการตรวจชำระครับ ยังไม่เพิ่มสิทธิ์จากการเช็กนี้`);
+      if (promotion.checkout_status !== "ready") lines.push("ให้เปอร์ตรวจยอดและรายการชำระให้ตรงโปรนี้ก่อนโอนครับ");
+    }
+    else lines.push("โปรต่ออายุยังรอเปอร์ตรวจเงื่อนไขครับ");
+  } else if (verified && promotion.authority === "owner_approved_october_renewal_2026_v1" && promotion.status === "not_applicable") {
+    lines.push("โปรต่ออายุ Standard/Premium รอบนี้ไม่เข้าเงื่อนไขบัญชีนี้ครับ สิทธิ์เดิมคงเดิม");
+  } else lines.push("โปรที่ใช้ได้กับบัญชีนี้ยังรอเปอร์ตรวจครับ");
   const points = truth.points;
   if (verified && points?.status === "verified" && points.authority === POINTS_AUTHORITY && Number.isSafeInteger(points.active_points) && points.active_points >= 0) {
     lines.push(`แต้มที่ยืนยันและใช้ได้: ${points.active_points.toLocaleString("th-TH")} Points`);
