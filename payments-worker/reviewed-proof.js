@@ -355,7 +355,24 @@ async function materializeRecoveredMembership(env, input) {
 async function reconcileRecoveredMembership(env, input, entitlement) {
   const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
   const expiry = validDate(entitlement.fields?.expire_at);
-  const currentlyActive = expiry && expiry.getTime() > Date.now() && ![entitlement.fields?.access_status, entitlement.fields?.member_status, entitlement.fields?.member_lifecycle_status].some(value => ["blocked", "suspended", "revoked"].includes(code(value)));
+  // Re-read current authority after money verification and before projection writes.
+  // A historical paid record cannot undo a later administrator suspension.
+  const [member, currentRows] = await Promise.all([
+    airtableGet(env, membersTable(env), input.member_record_id),
+    airtableList(env, entitlementsTable(env), {
+      filterByFormula: `OR({member_id}='${formulaValue(input.member_id)}',{line_user_id}='${formulaValue(input.line_user_id)}')`,
+      maxRecords: 200,
+      requireComplete: true,
+    }),
+  ]);
+  const memberFields = member.fields || {};
+  if (text(memberFields.member_id, 120) !== input.member_id || lineId(memberFields.line_id) !== input.line_user_id) throw httpError(409, "recovery_current_member_identity_mismatch");
+  if (isProtectedPrivateMembership(memberFields["Membership Tier"] || memberFields.tier)) throw httpError(409, "recovery_protected_membership_manual_review_required");
+  const ownRows = currentRows.filter(row => text(row.fields?.member_id,120) === input.member_id || lineId(row.fields?.line_user_id) === input.line_user_id || linkedIds(row.fields?.member).includes(input.member_record_id));
+  const memberBlocked = activationBlocked(memberFields, true);
+  const memberWideBlocked = ownRows.some(row => activationBlocked(row.fields));
+  const currentlyActive = expiry && expiry.getTime() > Date.now()
+    && !activationBlocked(entitlement.fields, true) && !memberBlocked && !memberWideBlocked;
   await Promise.all([
     currentlyActive ? airtableUpdate(env, membersTable(env), input.member_record_id, {
       "Membership Tier": packageLabel,
@@ -375,6 +392,11 @@ async function reconcileRecoveredMembership(env, input, entitlement) {
       verified_by: "payments-worker",
     }),
   ]);
+}
+
+function activationBlocked(fields = {}, includeRevoked = false) {
+  return [fields["Membership Status"], fields.member_status, fields.member_lifecycle_status, fields.access_status, fields.status]
+    .some(value => ["blocked", "suspended", ...(includeRevoked ? ["revoked"] : [])].includes(code(value)));
 }
 
 async function loadProof(env, proofId) {
