@@ -3,6 +3,7 @@
 const path = require("node:path");
 const { readRows } = require("./dry-run-import.js");
 const { runHistoryEvidenceIntake } = require("./history-evidence-intake.js");
+const { auditMmsServiceFinance } = require("./mms-service-finance.js");
 
 const MMS_GROUP_NAME = "Male Massage";
 const MMS_SOURCE = "line_crew";
@@ -39,6 +40,7 @@ function evidenceKind(row = {}) {
   if (["payout", "therapist_payout", "model_payout"].includes(explicit)) return "payout";
   if (["payment", "deposit", "customer_payment", "tip"].includes(explicit)) return "payment";
   if (["service_history", "customer_note"].includes(explicit)) return "service_history";
+  if (pick(row, ["source", "source_channel"]) === "line_ofc") return "service_history";
   const haystack = [
     pick(row, ["raw_line_notes", "raw_note", "note", "notes", "admin_note", "message_text", "text"]),
     pick(row, ["file_name", "filename", "attachment_name"]),
@@ -57,7 +59,9 @@ function safeRef(value, fallback) {
 function normalizeMmsHistoryRow(row = {}, index = 0, defaultSource = MMS_SOURCE) {
   const source = pick(row, ["source", "source_channel"]) || defaultSource;
   if (!["line_ofc", "line_crew", "line_group_album"].includes(source)) throw new Error("MMS_HISTORY_SOURCE_NOT_ALLOWED");
-  const kind = evidenceKind(row);
+  const kind = evidenceKind({ ...row, source });
+  const account = pick(row, ["source_account", "line_oa_account"]);
+  if (source === "line_ofc" && account && account.toLowerCase() !== "@malemassage") throw new Error("MMS_OFC_ACCOUNT_MISMATCH");
   const originalRef = pick(row, ["source_ref", "note_id", "message_ref", "message_id", "album_ref", "archive_ref", "ref"]);
   // Row positions change between exports. OA notes must carry a stable source
   // reference; never silently deduplicate two customers' notes as "row-1".
@@ -72,7 +76,12 @@ function normalizeMmsHistoryRow(row = {}, index = 0, defaultSource = MMS_SOURCE)
   const displayName = pick(row, ["line_display_name", "display_name", "display name"]);
   const renamedName = pick(row, ["current_line_rename", "line_renamed_name", "rename", "renamed_name", "nickname", "member_name"]);
   const lineUserId = pick(row, ["line_user_id", "line user id", "user_id", "userId"]);
-  const originalNote = pick(row, ["raw_line_notes", "raw_note", "note", "notes", "admin_note", "message_text", "text"]);
+  const noteKey = Object.keys(row).find(key => ["raw_line_notes", "raw_note", "note", "notes", "admin_note", "message_text", "text"].includes(key.toLowerCase()));
+  const originalNote = noteKey ? String(row[noteKey] == null ? "" : row[noteKey]) : "";
+  if (originalNote.length > 90000) throw new Error("MMS_NOTE_TOO_LONG_SPLIT_BY_ORIGINAL_EVENT");
+  const tagKey = Object.keys(row).find(key => ["line_tags_raw", "line_hashtags", "customer_hashtags", "hashtags", "tags", "legacy_tags"].includes(key.toLowerCase()));
+  const tagValue = tagKey ? row[tagKey] : "";
+  const tags = Array.isArray(tagValue) ? tagValue.map(String).join(" ") : String(tagValue || "");
   const attachmentUrl = pick(row, ["slip_url", "image_url", "attachment_url", "evidence_url"]);
   const amount = pick(row, ["amount_thb", "amount", "paid_amount", "payment_amount"]);
   const paymentRef = pick(row, ["payment_ref", "transaction_ref", "txn_ref", "provider_txn_id"]);
@@ -96,11 +105,15 @@ function normalizeMmsHistoryRow(row = {}, index = 0, defaultSource = MMS_SOURCE)
     source_ref: sourceRef,
     line_user_id: lineUserId,
     line_display_name: displayName,
+    line_tags_raw: tags,
     // The canonical MMD history intake requires identity evidence. Room-level
     // documents that have no sender identity remain review-only under the room
     // label instead of being guessed onto a customer.
     line_renamed_name: renamedName || displayName || (lineUserId || source === "line_ofc" ? "" : MMS_GROUP_NAME),
     raw_note: [provenance, originalNote].filter(Boolean).join("\n"),
+    ...(source === "line_ofc" && kind === "service_history" ? {
+      mms_service_finance: auditMmsServiceFinance(row, originalNote),
+    } : {}),
   };
 
   if (kind !== "payment") {
@@ -156,6 +169,9 @@ async function runMmsHistoryEvidenceIntake({
     source_group_name: normalized.every((row) => row.source === "line_ofc") ? null : MMS_GROUP_NAME,
     source_account: normalized.some((row) => row.source === "line_ofc") ? "@malemassage" : null,
     evidence_kinds: kinds,
+    finance_audit: normalized.filter(row => row.mms_service_finance).map(row => ({
+      source_ref: row.source_ref, ...row.mms_service_finance,
+    })),
   };
 }
 
