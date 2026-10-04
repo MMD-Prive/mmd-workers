@@ -58,6 +58,9 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - name: Verify member-only profile and portrait access
+        run: node --test member-pages-worker/member-profiles.test.mjs
+
       - name: Normalize Cloudflare and Airtable credentials
         shell: bash
         run: |
