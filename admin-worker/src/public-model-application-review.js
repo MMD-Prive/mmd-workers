@@ -539,7 +539,8 @@ function enforceSameOrigin(request) {
 }
 
 function renderReviewPage() {
-  return `<!doctype html>
+  // Preserve browser-script escapes when emitting the HTML template.
+  return String.raw`<!doctype html>
 <html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MMD · Public Model Applications</title>
 <style>
