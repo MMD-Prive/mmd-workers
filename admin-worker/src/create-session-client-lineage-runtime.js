@@ -734,7 +734,9 @@ function bestLineageMatch(needles, entries) {
       if (value === needle) quality = Math.max(quality, 100);
       else if (value.startsWith(needle)) quality = Math.max(quality, 94);
       else if (value.includes(needle)) quality = Math.max(quality, 88);
-      else if (needle.length >= 4 && needle.includes(value)) quality = Math.max(quality, 82);
+      // Reverse containment is useful for a longer query containing a full
+      // saved alias, but a one-letter name inside e.g. Blackcard is not a match.
+      else if (needle.length >= 4 && value.length >= 4 && needle.includes(value)) quality = Math.max(quality, 82);
       }
     }
     if (!quality) continue;
