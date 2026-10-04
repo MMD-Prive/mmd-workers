@@ -56,7 +56,7 @@ export function validateJobServicePricing(body) {
       client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb }))),
     client_total_amount_thb: clientTotal, model_total_payout_thb: modelTotal };
   // Reject an oversized machine envelope before grants or creation writes.
-  withJobServicePricingNote(note, snapshot);
+  withJobServicePricingNote(preservePartnerSnapshot(note, body), snapshot);
   return snapshot;
 }
 
@@ -66,18 +66,54 @@ export function withJobServicePricingNote(note, pricing) {
   // snapshots, including indented CRLF/tab-prefixed markers.
   const lines = String(note ?? "").replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ")
     .split("\n").filter(line => !line.trimStart().startsWith(SERVICE_PRICING_MARKER));
-  const membershipLines = lines.filter(line => line.trimStart().startsWith("[MMD_MEMBERSHIP_ACTION_V1]"));
-  const human = lines.filter(line => !line.trimStart().startsWith("[MMD_MEMBERSHIP_ACTION_V1]")).join("\n").trim();
+  const protectedLines = [];
+  const humanLines = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("[MMD_MEMBERSHIP_ACTION_V1]")) {
+      protectedLines.push(line);
+    } else if (trimmed.startsWith(PARTNER_SNAPSHOT_MARKER)) {
+      // Canonical partner evidence is a marker followed by single-line JSON.
+      // Keep that block immutable, including the legacy inline JSON form.
+      protectedLines.push(line);
+      if (!trimmed.slice(PARTNER_SNAPSHOT_MARKER.length).trim()) {
+        if (index + 1 < lines.length) protectedLines.push(lines[++index]);
+      }
+    } else {
+      humanLines.push(line);
+    }
+  }
+  const human = humanLines.join("\n").trim();
   // Put complete machine snapshots first. The issuer may prepend a held-job
   // marker or append SIGIL pricing before applying its 4,000-character limit.
-  const machine = [`${SERVICE_PRICING_MARKER} ${JSON.stringify(pricing)}`, ...membershipLines].join("\n");
+  const machine = [`${SERVICE_PRICING_MARKER} ${JSON.stringify(pricing)}`, ...protectedLines].join("\n");
   // Reserve room for the issuer's bounded held-job prefix as well.
   const persistedBudget = 3800;
   if (machine.length > persistedBudget) {
-    const error = new Error("Service and membership pricing snapshots exceed the persisted note limit.");
+    const error = new Error("Protected pricing snapshots exceed the persisted note limit.");
     error.code = "service_pricing_note_too_large"; error.status = 400; throw error;
   }
   const humanBudget = Math.max(0, persistedBudget - machine.length - 1);
   const boundedHuman = human.slice(0, humanBudget);
   return boundedHuman ? `${machine}\n${boundedHuman}` : machine;
+}
+
+export const PARTNER_SNAPSHOT_MARKER = "[SIGIL Partner Snapshot v1]";
+export function preservePartnerSnapshot(existingNote, body = {}) {
+  const note = String(existingNote ?? "").trim();
+  // Only the initial job snapshot is attached. Later roster/rate edits never
+  // replace historical evidence. This is internal operator evidence, not a grant.
+  if (note.includes(PARTNER_SNAPSHOT_MARKER)) return note;
+  const relationship = body.job_details?.partner_relationship;
+  const attribution = body.partner_attribution;
+  if (!relationship && !attribution) return note;
+  const snapshot = {
+    source: "sigil_jobs_operator_snapshot",
+    recorded_at: new Date().toISOString(),
+    partner_relationship: relationship || null,
+    partner_attribution: attribution || null,
+    model_payout_thb: body.model_payout_thb ?? body.pay_model_thb ?? relationship?.model_payout_thb ?? null,
+  };
+  return [note, PARTNER_SNAPSHOT_MARKER, JSON.stringify(snapshot)].filter(Boolean).join("\n");
 }

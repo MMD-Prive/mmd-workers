@@ -1,4 +1,4 @@
-import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
+import { validateJobServicePricing, withJobServicePricingNote, preservePartnerSnapshot } from "./job-service-pricing.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CREATE_JOB_PATH = "/v1/admin/job/create";
 
@@ -446,21 +446,4 @@ async function mergeJsonResponse(response, additions) {
   });
 }
 
-const PARTNER_SNAPSHOT_MARKER = "[SIGIL Partner Snapshot v1]";
-export function preservePartnerSnapshot(existingNote, body = {}) {
-  const note = clean(existingNote);
-  // Only the initial job snapshot is attached. Later roster/rate edits never
-  // replace historical evidence. This is internal operator evidence, not a grant.
-  if (note.includes(PARTNER_SNAPSHOT_MARKER)) return note;
-  const relationship = body.job_details?.partner_relationship;
-  const attribution = body.partner_attribution;
-  if (!relationship && !attribution) return note;
-  const snapshot = {
-    source: "sigil_jobs_operator_snapshot",
-    recorded_at: new Date().toISOString(),
-    partner_relationship: relationship || null,
-    partner_attribution: attribution || null,
-    model_payout_thb: body.model_payout_thb ?? body.pay_model_thb ?? relationship?.model_payout_thb ?? null,
-  };
-  return [note, PARTNER_SNAPSHOT_MARKER, JSON.stringify(snapshot)].filter(Boolean).join("\n");
-}
+export { preservePartnerSnapshot } from "./job-service-pricing.js";

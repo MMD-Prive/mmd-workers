@@ -90,7 +90,7 @@ function recordFrom(url) {
   return decodeURIComponent(parts[3] || "");
 }
 
-function makeFetch({ lineUserId = "U-line-001", existingJob = false } = {}) {
+function makeFetch({ lineUserId = "U-line-001", existingJob = false, existingJobNote = "" } = {}) {
   const calls = [];
   const fetch = async (input, init = {}) => {
     const url = urlString(input);
@@ -125,7 +125,7 @@ function makeFetch({ lineUserId = "U-line-001", existingJob = false } = {}) {
 
     if (method === "GET" && table === ENV.AIRTABLE_TABLE_JOBS) {
       if (existingJob) {
-        return json({ records: [{ id: JOB_RECORD_ID, fields: { session_id: "sess_001", job_id: "JOB-EXISTING" } }] });
+        return json({ records: [{ id: JOB_RECORD_ID, fields: { session_id: "sess_001", job_id: "JOB-EXISTING", "Internal Notes": existingJobNote } }] });
       }
       return json({ records: [] });
     }
@@ -353,6 +353,31 @@ test('persists the validated separate quote snapshot for new and existing canoni
       assert.equal((await response.json()).linkage.job_linked, true);
       const call = mock.calls.find(c => c.method === (existingJob ? 'PATCH' : 'POST') && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
       const note = call.body.fields['Internal Notes'];
+      assert.deepEqual(JSON.parse(note.split('[MMD SERVICE PRICING v1] ')[1].split('\n')[0]), pricing);
+    } finally { globalThis.fetch = originalFetch; }
+  }
+});
+
+test('long service-priced Job notes preserve original partner snapshots on create and reconciliation', async () => {
+  const originalPartner = { source: 'sigil_jobs_operator_snapshot', recorded_at: '2026-10-01T00:00:00.000Z',
+    partner_attribution: { partner_name: 'Original Partner' }, model_payout_thb: 5500 };
+  const oldNote = 'Existing operator note '.repeat(300)+'\n[SIGIL Partner Snapshot v1]\n'+JSON.stringify(originalPartner);
+  for (const existingJob of [false, true]) {
+    const originalFetch = globalThis.fetch; const mock = makeFetch({ existingJob, existingJobNote: oldNote }); globalThis.fetch = mock.fetch;
+    try {
+      const pricing = { version: 1, currency: 'THB', settlement_mode: 'direct', client_base_amount_thb: 14000,
+        model_base_payout_thb: 5000, addons: [{ option: 'mk', client_amount_thb: 1000, model_payout_thb: 500 }],
+        client_total_amount_thb: 15000, model_total_payout_thb: 5500 };
+      const response = await handleCanonicalLinkedJobCreate(request(linkedBody({ note: 'Operator note '.repeat(400),
+        partner_attribution: { partner_name: 'Current Partner' }, pay_model_thb: 5500,
+        work: { job_visibility: 'private', service_options: ['mk'] }, private_access: { settlement_mode: 'direct' }, service_pricing: pricing,
+      })), ENV, {}, { fetch: async () => json({ ok: true, session_id: 'sess_001' }) });
+      assert.equal((await response.json()).linkage.job_linked, true);
+      const write = mock.calls.find(c => c.method === (existingJob ? 'PATCH' : 'POST') && tableFrom(c.url) === ENV.AIRTABLE_TABLE_JOBS);
+      const note = write.body.fields['Internal Notes']; assert.ok(note.length <= 3800);
+      const partner = JSON.parse(note.split('[SIGIL Partner Snapshot v1]\n')[1].split('\n')[0]);
+      assert.equal(partner.partner_attribution.partner_name, existingJob ? 'Original Partner' : 'Current Partner');
+      if (existingJob) assert.deepEqual(partner, originalPartner);
       assert.deepEqual(JSON.parse(note.split('[MMD SERVICE PRICING v1] ')[1].split('\n')[0]), pricing);
     } finally { globalThis.fetch = originalFetch; }
   }
