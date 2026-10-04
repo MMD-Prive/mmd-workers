@@ -11,7 +11,7 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20261004-v4.13";
+const VERSION = "mmd-rm3-20261004-v4.14";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
@@ -525,15 +525,19 @@ async function users(env, now) {
   return classifyMmdUsers(clients, ents, now);
 }
 
-async function chunksApply(items, fn) { const unique = [...new Set(items.filter(Boolean))]; for (let i = 0; i < unique.length; i += 500) await fn(unique.slice(i, i + 500)); }
+export function validMmdLineUserId(value) { return /^U[0-9a-f]{32}$/i.test(clean(value)); }
+
+async function chunksApply(items, fn) { const unique = [...new Set(items.map(clean).filter(validMmdLineUserId))]; for (let i = 0; i < unique.length; i += 500) await fn(unique.slice(i, i + 500)); }
 async function bulkLink(env, id, ids) { return chunksApply(ids, chunk => line(env, `${LINE_API}/richmenu/bulk/link`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ richMenuId: id, userIds: chunk }) })); }
 async function bulkUnlink(env, ids) { return chunksApply(ids, chunk => line(env, `${LINE_API}/richmenu/bulk/unlink`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userIds: chunk }) })); }
 
 export async function showMmdRichMenus(env, now = new Date()) {
-  const [menus, group] = await Promise.all([ensureMenus(env), users(env, now)]);
+  const [menus, resolvedGroup] = await Promise.all([ensureMenus(env), users(env, now)]);
+  const group = Object.fromEntries(Object.entries(resolvedGroup).map(([key, ids]) => [key, [...new Set(ids.map(clean).filter(validMmdLineUserId))]]));
+  const skippedInvalid = Object.values(resolvedGroup).flat().filter(id => !validMmdLineUserId(id)).length;
   await line(env, `${LINE_API}/user/all/richmenu/${encodeURIComponent(menus.guest)}`, { method: "POST" });
   await Promise.all([bulkUnlink(env, group.guest), bulkLink(env, menus.public, group.public), bulkLink(env, menus.private, group.private)]);
-  return { visible: true, counts: { guest_known: group.guest.length, public: group.public.length, private: group.private.length } };
+  return { visible: true, skipped_invalid_line_ids: skippedInvalid, counts: { guest_known: group.guest.length, public: group.public.length, private: group.private.length } };
 }
 
 export async function hideMmdRichMenus(env) {
@@ -575,7 +579,7 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
   if (request.method === "POST" && path === THREE_LEVEL_ACTIVATE_PATH) {
     try {
       const result = await reconcileMmdRichMenus(env, new Date());
-      return json({ ok: true, version: VERSION, active: result.visible, selected_default: result.visible ? false : null, counts: result.counts || {} });
+      return json({ ok: true, version: VERSION, active: result.visible, selected_default: result.visible ? false : null, counts: result.counts || {}, skipped_invalid_line_ids: result.skipped_invalid_line_ids || 0 });
     } catch (error) {
       return json({ ok: false, error: "rich_menu_activate_failed", reason: clean(error?.message || error).slice(0, 120) }, 502);
     }
@@ -593,6 +597,7 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
   const body = await request.json().catch(() => ({}));
   const id = clean(body.line_user_id || body.lineUserId);
   if (!id) return json({ ok: false, error: "line_user_id_missing" }, 400);
+  if (!validMmdLineUserId(id)) return json({ ok: false, error: "line_user_id_invalid" }, 400);
   if (isMmdRichMenuHidden()) {
     await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]);
     return json({ ok: true, target: "hidden" });

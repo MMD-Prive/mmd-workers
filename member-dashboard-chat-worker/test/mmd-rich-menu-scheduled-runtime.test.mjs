@@ -208,7 +208,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork and Mini App MY MMD entry", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.13");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.14");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
   const map = getMmdRichMenuDestinationMap();
   assert.match(map.public[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);

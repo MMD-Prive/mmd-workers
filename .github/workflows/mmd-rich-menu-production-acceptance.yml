@@ -42,7 +42,7 @@ jobs:
         run: |
           node --check member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs
           node --check admin-worker/src/index.js
-          node --test member-dashboard-chat-worker/test/mmd-rich-menu-scheduled-runtime.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs admin-worker/rich-menu-admin-publisher.test.mjs
+          node --test member-dashboard-chat-worker/test/rich-menu-line-id-transport.test.mjs member-dashboard-chat-worker/test/mmd-rich-menu-scheduled-runtime.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs admin-worker/rich-menu-admin-publisher.test.mjs
 
       - name: Prepare objects and audit production
         run: node tools/mmd-rich-menu-production-acceptance.mjs
@@ -60,7 +60,7 @@ jobs:
         if: success()
         run: |
           echo '### MMD Rich Menu production acceptance' >> "$GITHUB_STEP_SUMMARY"
-          echo '- Current runtime: mmd-rm3-20261004-v4.13' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Current runtime: mmd-rm3-20261004-v4.14' >> "$GITHUB_STEP_SUMMARY"
           echo '- LV1 artwork: approved v4.1 MMD STORIES / Discover TMIB asset' >> "$GITHUB_STEP_SUMMARY"
           echo '- Visibility: available 24h, collapsed by default; user can open the menu anytime' >> "$GITHUB_STEP_SUMMARY"
           echo '- Menu objects/actions/images: verified against LINE production' >> "$GITHUB_STEP_SUMMARY"
