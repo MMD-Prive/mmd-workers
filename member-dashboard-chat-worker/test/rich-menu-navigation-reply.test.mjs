@@ -6,7 +6,7 @@ import { richMenuNavigation, resolveRichMenuNavigation } from "../src/rich-menu-
 const event = data => ({ type: "postback", postback: { data } });
 const active = { live_truth: true, identity_state: "matched", membership_state: "active", level: "private", private_visibility_envelope: "premium" };
 
-test("all 13 navigation taps reply with their canonical LIFF destination", async () => {
+test("all 13 navigation taps reply with their task destination; only app actions use Mini App", async () => {
   const destinations = getMmdRichMenuDestinationMap(), actions = getMmdRichMenuActionMap();
   let count = 0;
   for (const [menu, items] of Object.entries(destinations)) {
@@ -18,7 +18,7 @@ test("all 13 navigation taps reply with their canonical LIFF destination", async
       const reply = await resolveRichMenuNavigation(event(actions[menu][index].data), { getContext: async () => active });
       assert.equal(reply.cta_route, destination.uri);
       assert.ok(reply.text.endsWith(destination.uri));
-      assert.equal(new URL(reply.cta_route).hostname, "miniapp.line.me");
+      assert.equal(new URL(reply.cta_route).hostname, (menu === "guest" && index === 0) || index === 3 && menu !== "guest" || menu === "private" && index === 4 ? "miniapp.line.me" : "mmdbkk.com");
       assert.doesNotMatch(reply.text, /Kenji|เคนจิ|ยืนยันการจอง|ชำระเงินสำเร็จ/);
     }
   }
@@ -48,4 +48,17 @@ test("postback cannot supply a redirect, duplicate keys, or an unknown button", 
   for (const data of ["mmd_action=rich_menu&menu=guest&button=1&uri=https://evil.example", "mmd_action=rich_menu&menu=guest&button=1&button=2", "mmd_action=rich_menu&menu=private&button=6", "mmd_action=rich_menu&menu=unknown&button=1", "mmd_action=rich_menu&menu=guest&button=99"])
     assert.equal(richMenuNavigation(event(data)), null);
   assert.equal(richMenuNavigation({ type: "message", message: { text: "mmd_action=rich_menu&menu=guest&button=1" } }), null);
+});
+
+
+test("KENJI and SUPPORT give bounded LINE help without sending the user to Mini App", async () => {
+  const actions = getMmdRichMenuActionMap();
+  for (const [menu, button] of [["guest", 5], ["public", 5], ["private", 0], ["private", 5]]) {
+    const reply = await resolveRichMenuNavigation(event(actions[menu][button].data), {
+      getContext: async () => { throw Error("help should not request private truth"); },
+    });
+    assert.equal(reply.cta_route, "");
+    assert.doesNotMatch(reply.text, /https:/);
+    assert.match(reply.text, /เช็กสิทธิ์/);
+  }
 });
