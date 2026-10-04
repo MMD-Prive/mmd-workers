@@ -9,7 +9,10 @@ const enabled = value => /^(true|1|yes|on)$/i.test(clean(value));
 const LEVELS = { private_standard: "Standard", private_premium: "Premium", vip: "VIP", svip: "SVIP", black_card: "Black Card" };
 
 export function isRightsCommand(message = "") {
-  return /^(?:ขอ)?(?:เช็ก|เช็ค)\s*สิท(?:ธิ์|ธ์)(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู))?(?:หน่อย|ให้หน่อย)?(?:ครับ|ค่ะ|คะ|นะ)?[.!?]*$/.test(clean(message).normalize("NFKC"));
+  // LINE text can carry invisible paste separators (observed U+200B after
+  // เช็กสิทธิ์). Normalize only for command matching; preserve intake text.
+  const value = clean(message).normalize("NFKC").replace(/[\u200B\uFEFF]/g, "").trim();
+  return /^(?:ขอ)?(?:เช็ก|เช็ค)\s*สิท(?:ธิ์|ธ์)(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู))?(?:หน่อย|ให้หน่อย)?(?:ครับ|ค่ะ|คะ|นะ)?[.!?]*$/.test(value);
 }
 
 export function isLineRightsCheck(event = {}) {

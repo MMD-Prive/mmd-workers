@@ -49,7 +49,7 @@ test("actual signed ingress reaches command with general stop; invalid signature
   const previous = globalThis.fetch;
   globalThis.fetch = async (url,init={}) => { if (String(url).includes("api.line.me")) { delivered++; return Response.json({}); } assert.match(String(url),/api.airtable.com/); return Response.json({records:[]}); };
   try {
-    const body = JSON.stringify({events:[event("signed-event")]});
+    const body = JSON.stringify({events:[event("signed-event", "เช็กสิทธิ์\u200B")]});
     const req = signature => new Request("https://mmdbkk.com/webhooks/line", {method:"POST",headers:{"x-line-signature":signature},body});
     assert.equal((await handleKenjiSeedLineRequest(req("bad"),f.env,null,legacy)).status,401);
     assert.equal(intakes,0);assert.equal(truthReads,0);assert.equal(delivered,0);
@@ -65,14 +65,14 @@ function commandFixture(f) {
   f.runtime.controls.line_oa_auto_reply = true;
   return f;
 }
-for (const spelling of ["เช็กสิทธิ์", "เช็คสิทธิ์", "เช็กสิทธ์"]) test(`authorized command replies to ${spelling} with general replies stopped`, async () => {
+for (const spelling of ["เช็กสิทธิ์", "เช็คสิทธิ์", "เช็กสิทธ์", "เช็กสิทธิ์\u200B", "\uFEFFเช็คสิทธิ์\u200B", "เช็ก\u200Bสิทธ์"]) test(`authorized command replies to ${JSON.stringify(spelling)} with general replies stopped`, async () => {
   const f = commandFixture(await fixture()); f.event.message.text = spelling;
   const result = await handleLineRightsCheck(f);
   assert.equal(result.replied, true); assert.equal(f.counters.truth, 1);
   assert.match(f.counters.replies[0], /Premium/);
   assert.match(f.counters.replies[0], /คูปอง CARE BACK.*รอเปอร์ตรวจ/);
 });
-for (const text of ["ต่ออายุ", "สลิป", "เช็กสิทธิ์ให้คุณเอก", "เมื่อวานเช็กสิทธิ์แล้ว", "ขอดูโปร", "hello"]) test(`command scope excludes ${text}`, async () => {
+for (const text of ["ต่ออายุ", "สลิป", "เช็กสิทธิ์ให้คุณเอก", "เมื่อวานเช็กสิทธิ์แล้ว", "ขอดูโปร", "hello", "เช็กสิทธิ์\u200Bให้คนอื่น", "เมื่อวาน\u200Bเช็กสิทธิ์แล้ว"]) test(`command scope excludes ${text}`, async () => {
   const f = commandFixture(await fixture()); f.event.message.text = text;
   assert.equal(await handleLineRightsCheck(f), null); assert.equal(f.counters.truth, 0); assert.equal(f.counters.replies.length, 0);
 });
