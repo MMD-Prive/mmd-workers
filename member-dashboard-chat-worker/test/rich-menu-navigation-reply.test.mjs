@@ -45,7 +45,7 @@ test("Talk to Per opens a short Per-voice conversation rather than entering gene
 });
 
 test("postback cannot supply a redirect, duplicate keys, or an unknown button", () => {
-  for (const data of ["mmd_action=rich_menu&menu=guest&button=1&uri=https://evil.example", "mmd_action=rich_menu&menu=guest&button=1&button=2", "mmd_action=rich_menu&menu=private&button=5", "mmd_action=rich_menu&menu=unknown&button=1", "mmd_action=rich_menu&menu=guest&button=99"])
+  for (const data of ["mmd_action=rich_menu&menu=guest&button=1&uri=https://evil.example", "mmd_action=rich_menu&menu=guest&button=1&button=2", "mmd_action=rich_menu&menu=private&button=6", "mmd_action=rich_menu&menu=unknown&button=1", "mmd_action=rich_menu&menu=guest&button=99"])
     assert.equal(richMenuNavigation(event(data)), null);
   assert.equal(richMenuNavigation({ type: "message", message: { text: "mmd_action=rich_menu&menu=guest&button=1" } }), null);
 });

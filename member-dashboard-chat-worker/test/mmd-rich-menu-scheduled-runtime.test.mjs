@@ -208,7 +208,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork and Mini App MY MMD entry", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.14");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.15");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
   const map = getMmdRichMenuDestinationMap();
   assert.match(map.public[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);
@@ -439,3 +439,13 @@ test("three-level prepare and audit routes are recognized but remain internal-to
   assert.deepEqual(await auditResponse.json(), { ok: false, error: "internal_auth_required" });
 });
 
+
+
+test("every installed button uses the same bounded menu command, including KENJI and SUPPORT", () => {
+  for (const [menu, actions] of Object.entries(getMmdRichMenuActionMap())) {
+    actions.forEach((action, index) => {
+      assert.equal(action.type, "postback");
+      assert.equal(action.data, `mmd_action=rich_menu&menu=${menu}&button=${index}`);
+    });
+  }
+});

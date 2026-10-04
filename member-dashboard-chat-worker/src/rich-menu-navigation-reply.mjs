@@ -25,7 +25,7 @@ export function richMenuNavigation(event = {}) {
   const menu = params.get("menu"), value = params.get("button");
   if (!/^[0-5]$/.test(value || "") || !Object.hasOwn(COPY, menu || "")) return null;
   const button = Number(value), action = getMmdRichMenuDestinationMap()[menu][button];
-  if (!(action?.type === "uri" || (menu === "public" && button === 0 && action?.type === "message")) || !COPY[menu][button]) return null;
+  if (!(action?.type === "uri" || action?.type === "postback" || (menu === "public" && button === 0 && action?.type === "message")) || !COPY[menu][button]) return null;
   return { menu, button, action };
 }
 
