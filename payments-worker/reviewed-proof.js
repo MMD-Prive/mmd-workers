@@ -279,6 +279,11 @@ async function materializeRecoveredMembership(env, input) {
   if (existing.length) {
     const row=existing[0];
     if (text(row.fields?.member_id,120)!==input.member_id || canonicalPackage(row.fields?.package_code)!==input.package_code || !validDate(row.fields?.expire_at) || (lineId(row.fields?.line_user_id) && lineId(row.fields.line_user_id)!==input.line_user_id)) throw httpError(409,"recovery_existing_entitlement_conflict");
+    const currentRows = await airtableList(env, entitlementsTable(env), {
+      filterByFormula: `{member_id}='${formulaValue(input.member_id)}'`, maxRecords: 200, requireComplete: true,
+    });
+    if (currentRows.some(item => [item.fields?.entitlement_level, item.fields?.package_code, item.fields?.capability].some(isProtectedPrivateMembership))) throw httpError(409, "recovery_protected_membership_manual_review_required");
+    await reconcileRecoveredMembership(env, input, row);
     return {entitlement_record_id:row.id, expire_at:row.fields.expire_at, start_at:row.fields.start_at, membership_expiry_rule:row.fields.membership_expiry_rule, membership_term:row.fields.membership_term, promotion:null, duplicate:true};
   }
   const prior = await airtableList(env, entitlementsTable(env), {
@@ -309,7 +314,6 @@ async function materializeRecoveredMembership(env, input) {
   const membershipTermLabel = promotion?.total_years === 2 ? "2_years" : promotion
     ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
     : membershipTerm.membership_term;
-  const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
   const entitlementLevel = input.package_code === "premium" ? "premium" : "standard_basic";
 
   let entitlement = existing[0] || null;
@@ -336,11 +340,27 @@ async function materializeRecoveredMembership(env, input) {
     });
   }
 
+  await reconcileRecoveredMembership(env, input, entitlement);
+
+  return {
+    entitlement_record_id: entitlement.id,
+    start_at: validDate(entitlement.fields?.start_at)?.toISOString() || startAt.toISOString(),
+    expire_at: validDate(entitlement.fields?.expire_at)?.toISOString() || expireAt.toISOString(),
+    membership_term: membershipTermLabel,
+    membership_expiry_rule: membershipExpiryRule,
+    promotion,
+  };
+}
+
+async function reconcileRecoveredMembership(env, input, entitlement) {
+  const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
+  const expiry = validDate(entitlement.fields?.expire_at);
+  const currentlyActive = expiry && expiry.getTime() > Date.now() && ![entitlement.fields?.access_status, entitlement.fields?.member_status, entitlement.fields?.member_lifecycle_status].some(value => ["blocked", "suspended", "revoked"].includes(code(value)));
   await Promise.all([
-    airtableUpdate(env, membersTable(env), input.member_record_id, {
+    currentlyActive ? airtableUpdate(env, membersTable(env), input.member_record_id, {
       "Membership Tier": packageLabel,
       "Membership Status": "Active",
-    }),
+    }) : Promise.resolve(),
     airtableUpdate(env, renewalTable(env), input.renewal_record_id, {
       renewal_flow_status: "materialized",
       "Member Entitlement": [entitlement.id],
@@ -355,15 +375,6 @@ async function materializeRecoveredMembership(env, input) {
       verified_by: "payments-worker",
     }),
   ]);
-
-  return {
-    entitlement_record_id: entitlement.id,
-    start_at: validDate(entitlement.fields?.start_at)?.toISOString() || startAt.toISOString(),
-    expire_at: validDate(entitlement.fields?.expire_at)?.toISOString() || expireAt.toISOString(),
-    membership_term: membershipTermLabel,
-    membership_expiry_rule: membershipExpiryRule,
-    promotion,
-  };
 }
 
 async function loadProof(env, proofId) {

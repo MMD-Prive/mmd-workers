@@ -412,3 +412,16 @@ test('missing date, exact expiry anniversary, missing expiry and conflicting pac
  const plan=await resolveWriteThroughPlan(h.env,{payment_ref:'PAY-FAIL',amount_thb:1000,member_email:EMAIL,package_code:'standard'},options);assert.equal(plan.status,'review_required');assert.equal(h.writes.length,0);
  }
 });
+
+ test("recorded paid replay survives changed catalog duration",async()=>{
+  const existing=entitlement({expireAt:"2028-06-28T00:00:00Z",id:"paid_old"});
+  Object.assign(existing.fields,{entitlement_id:"pay_pay_repeat_standard",payment_ref:"PAY-REPEAT"});
+  const h=harness({entitlements:[existing],packages:[packageRecord("standard",{duration_days:999})]});
+  const plan=await resolveWriteThroughPlan(h.env,{payment_ref:"PAY-REPEAT",amount_thb:1000,member_email:EMAIL,package_code:"standard"},{paid_at:NOW});
+  assert.equal(plan.status,"ready");assert.equal(plan.proposed_expire_at,"2028-06-28T00:00:00.000Z");assert.equal(h.writes.length,0);
+ });
+
+for (const packages of [[],[packageRecord("standard",{is_active:false,require_approval:true,duration_days:999})]]) test("historical paid replay does not depend on current catalog availability",async()=>{
+ const existing=entitlement({expireAt:"2028-06-28T00:00:00Z",id:"paid_old"});Object.assign(existing.fields,{entitlement_id:"pay_pay_repeat_standard",payment_ref:"PAY-REPEAT"});
+ const h=harness({entitlements:[existing],packages});const p=await resolveWriteThroughPlan(h.env,{payment_ref:"PAY-REPEAT",amount_thb:1000,member_email:EMAIL,package_code:"standard"});assert.equal(p.status,"ready");assert.equal(h.writes.length,0);
+});

@@ -132,15 +132,6 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     });
   }
 
-  let catalog = null;
-  if (policy.private_catalog) {
-    catalog = await loadPrivatePackage(env, packageCode);
-    if (!catalog) return review("membership_package_catalog_missing", { package_code: packageCode, capability: policy.capability });
-    if (catalog.duration_days !== policy.years * 365) return review("membership_package_term_review_required", {package_code:packageCode});
-    if (catalog.active === false) return review("membership_package_inactive", { package_code: packageCode, capability: policy.capability });
-    if (catalog.require_approval === true) return review("membership_package_requires_separate_approval", { package_code: packageCode, capability: policy.capability });
-  }
-
   const members = await findMemberByEmail(env, memberEmail);
   if (members.length !== 1) {
     return review(members.length ? "canonical_member_ambiguous" : "canonical_member_not_found", {
@@ -173,6 +164,15 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     const plan={status:"ready",payment_ref:paymentRef,member_id:memberId,package_code:packageCode,capability:policy.capability,entitlement_id:deterministicEntitlementId(paymentRef,packageCode),proposed_expire_at:iso(f.expire_at),start_at:iso(f.start_at),membership_expiry_rule:f.membership_expiry_rule,membership_term:f.membership_term,action:"existing_paid",promotion:null};
     return sameMaterialization(previouslyPaid[0],plan) && plan.proposed_expire_at ? plan : review("payment_entitlement_conflict",{package_code:packageCode});
   }
+  let catalog = null;
+  if (policy.private_catalog) {
+    catalog = await loadPrivatePackage(env, packageCode);
+    if (!catalog) return review("membership_package_catalog_missing", { package_code: packageCode, capability: policy.capability });
+    if (catalog.duration_days !== policy.years * 365) return review("membership_package_term_review_required", {package_code:packageCode});
+    if (catalog.active === false) return review("membership_package_inactive", { package_code: packageCode, capability: policy.capability });
+    if (catalog.require_approval === true) return review("membership_package_requires_separate_approval", { package_code: packageCode, capability: policy.capability });
+  }
+
   if (policy.private_catalog && !paidAt) return review("canonical_payment_date_required", {package_code:packageCode});
   const priorRows = rows.filter((row) => text(row?.fields?.payment_ref, 180) !== paymentRef);
   const planningSnapshot = resolveMemberEntitlements(priorRows, { now: verifiedAt });
