@@ -26,27 +26,11 @@ jobs:
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
       WORKER_NAME: "member-dashboard-chat-worker"
-      PRESENTATION_URL: "https://my-mms-therapist.lovable.app/my-mms-work-shell.html"
+      LOGIN_URL: "https://www.mmdbkk.com/male-massage/therapists/login"
       APP_URL: "https://www.mmdbkk.com/male-massage/therapists/app"
       ACCESS_URL: "https://www.mmdbkk.com/male-massage/therapists/api/app/access"
 
     steps:
-      - name: Verify Lovable production shell before claiming routes
-        shell: bash
-        run: |
-          set -euo pipefail
-          ok=""
-          for attempt in $(seq 1 36); do
-            code="$(curl --silent --show-error --location --output "$RUNNER_TEMP/my-mms-shell.html" --write-out '%{http_code}' "$PRESENTATION_URL" || true)"
-            if [ "$code" = "200" ] && grep -Fq 'data-mms-shell="lovable-single-file-v1"' "$RUNNER_TEMP/my-mms-shell.html" && grep -Fq '/male-massage/therapists/api/app/access' "$RUNNER_TEMP/my-mms-shell.html"; then
-              ok=1
-              break
-            fi
-            sleep 5
-          done
-          test -n "$ok"
-          echo "Lovable production shell is live and contains the canonical MY MMS access gate."
-
       - name: Sync bounded MY MMS Therapist routes
         shell: bash
         run: |
@@ -58,6 +42,10 @@ jobs:
           if (!token || !zoneId || !worker) throw new Error('cloudflare_route_sync_config_missing');
 
           const desired = [
+            'mmdbkk.com/male-massage/therapists/login*',
+            'www.mmdbkk.com/male-massage/therapists/login*',
+            'mmdbkk.com/male-massage/therapists/me*',
+            'www.mmdbkk.com/male-massage/therapists/me*',
             'mmdbkk.com/male-massage/therapists/api/auth/*',
             'www.mmdbkk.com/male-massage/therapists/api/auth/*',
             'mmdbkk.com/male-massage/therapists/api/app/*',
@@ -115,6 +103,15 @@ jobs:
           console.log('MY MMS bounded Therapist routes verified.');
           NODE
 
+      - name: Verify native LINE entrance is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/login.html" --dump-header "$RUNNER_TEMP/login.headers" --write-out '%{http_code}' "$LOGIN_URL")"
+          test "$code" = "200"
+          grep -Fq 'data-mms-shell="native-workspace-v1"' "$RUNNER_TEMP/login.html"
+          grep -qi '^x-mmd-ui-source: mms-native-workspace-v1' "$RUNNER_TEMP/login.headers"
+
       - name: Verify unauthenticated app API fails closed through mms-worker
         shell: bash
         run: |
@@ -151,9 +148,10 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           ## MY MMS Therapist app production route
 
-          - Lovable presentation source: live
+          - Native Therapist workspace: live (Lovable styling can be connected later)
           - `/male-massage/therapists/app`: Worker-owned and session/access gated
           - `/male-massage/therapists/api/app/*`: same-origin delegation to `mms-worker`
           - unauthenticated access: fail-closed to Therapist LINE login
           - approved-session UI smoke: requires a real approved Therapist session and is intentionally not fabricated in CI
           EOF
+
