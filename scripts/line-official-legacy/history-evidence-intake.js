@@ -108,6 +108,8 @@ function normalizeItem(raw, index, defaultSource = "") {
     payment_ref: clean(pick(raw, ["payment_ref", "transaction_ref", "txn_ref", "provider_txn_id"])).slice(0, 120),
     slip_url: normalizeHttpsUrl(pick(raw, ["slip_url", "image_url", "attachment_url", "evidence_url"])),
     row_number: index + 1,
+    ...(/^mms:line_ofc:/.test(sourceRef) && raw.mms_service_finance?.schema === "mms_service_finance_evidence_v1"
+      ? { mms_service_finance: raw.mms_service_finance } : {}),
   };
 
   const identityEvidence = item.line_user_id || item.line_renamed_name || item.line_display_name || item.phone || item.email;
@@ -140,6 +142,7 @@ function evidenceHash(item) {
     paid_at: item.paid_at,
     payment_ref: item.payment_ref,
     slip_url: item.slip_url,
+    ...(item.mms_service_finance ? { mms_service_finance: item.mms_service_finance } : {}),
   };
   return crypto.createHash("sha256").update(stableJson(payload)).digest("hex");
 }
@@ -159,6 +162,7 @@ function redactedRawRow(item) {
     paid_at: item.paid_at,
     payment_ref: item.payment_ref,
     slip_url_present: Boolean(item.slip_url),
+    ...(item.mms_service_finance ? { mms_service_finance: item.mms_service_finance } : {}),
   };
 }
 
@@ -252,6 +256,17 @@ async function buildEvidencePlan(item, { batchId, airtable, rowIndex = 0 } = {})
     match,
   });
   stagingFields.raw_row_json = JSON.stringify(redactedRawRow(item), null, 2);
+  if (item.mms_service_finance) {
+    // Course, travel, full amount and both shares may all appear in one note.
+    // Do not sum them as several services or generate MMD points from them.
+    stagingFields.service_amount = item.mms_service_finance.calculated_full_amount_thb || 0;
+    stagingFields.proposed_points = 0;
+    stagingFields.points_eligible_amount = 0;
+    stagingFields.points_review_required = "true";
+    stagingFields.points_policy_basis = "MMS historical finance requires event review; no automatic MMD points.";
+    const detail = JSON.parse(stagingFields.customer_detail_json || "{}");
+    stagingFields.customer_detail_json = JSON.stringify({ ...detail, mms_service_finance: item.mms_service_finance });
+  }
   const proofFields = buildPaymentProofFields(item, fingerprint, stagingFields.import_id);
   assertProofIsEvidenceOnly(proofFields);
   return {
