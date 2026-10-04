@@ -1,0 +1,29 @@
+name: MMS Therapist Workspace
+on:
+  pull_request:
+    paths:
+      - 'mms-worker/**'
+      - 'member-dashboard-chat-worker/src/mms-therapist-workspace.js'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
+      - 'member-dashboard-chat-worker/wrangler.toml'
+      - 'member-dashboard-chat-worker/test/mms-therapist-workspace.test.mjs'
+      - '.github/workflows/mms-therapist-workspace.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mms-worker/**'
+      - 'member-dashboard-chat-worker/src/mms-therapist-workspace.js'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
+      - 'member-dashboard-chat-worker/wrangler.toml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check member-dashboard-chat-worker/src/mms-therapist-workspace.js
+      - run: node --experimental-global-webcrypto --test mms-worker/test/mms-job-pricing.test.mjs mms-worker/test/my-mms-availability.test.mjs mms-worker/test/therapist-auth.test.mjs mms-worker/test/my-mms-access-contract.test.mjs mms-worker/test/my-mms-dispatch-contract.test.mjs member-dashboard-chat-worker/test/mms-therapist-workspace.test.mjs member-dashboard-chat-worker/test/my-mms-customer-app.test.mjs
