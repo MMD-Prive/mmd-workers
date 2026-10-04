@@ -41,6 +41,7 @@ import {
   isOwnerPrivateJobGrantCreateRequest,
 } from "./owner-private-job-grant-create.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
 import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
 import {
   handleKenjiConversationShadowReceiptAdmin,
@@ -258,11 +259,16 @@ export default {
       // Core worker remains authoritative if URL parsing fails.
     }
 
-    if (
-      isSessionCreatorPageRequest(normalizedPath, method) ||
-      isSessionCreatorAssetRequest(normalizedPath, method)
-    ) {
+    if (isSessionCreatorAssetRequest(normalizedPath, method)) {
       return handleSessionCreatorPageRequest(request);
+    }
+
+    if (isSessionCreatorPageRequest(normalizedPath, method)) {
+      // Preserve the canonical browser credential and partner-scope gates before
+      // fetching protected presentation pages from Session Creator.
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      return handleSessionCreatorPageRequest(gate.request);
     }
 
     if (isModelDirectFirstJobGateRequest(normalizedPath, method)) {
