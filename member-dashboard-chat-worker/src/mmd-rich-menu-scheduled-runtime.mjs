@@ -11,7 +11,7 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20261004-v4.12";
+const VERSION = "mmd-rm3-20261004-v4.13";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
@@ -189,7 +189,8 @@ export function getMmdRichMenuFiveStateMatrix(now = new Date()) {
 }
 
 export function bangkokHour(now = new Date()) { return new Date(now.getTime() + 7 * 3600_000).getUTCHours(); }
-export function isMmdRichMenuHidden(now = new Date()) { const h = bangkokHour(now); return h >= 16 && h < 23; }
+// Menus stay reachable 24h; selected:false sets the initially collapsed display.
+export function isMmdRichMenuHidden(_now = new Date()) { return false; }
 
 function pngSize(buffer) {
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 24) return null;

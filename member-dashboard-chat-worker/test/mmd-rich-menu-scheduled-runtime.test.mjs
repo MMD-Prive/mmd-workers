@@ -120,11 +120,13 @@ function installRichMenuFetch(specs, canonical, livePrivate) {
   };
 }
 
-test("MMD Rich Menu hides from 16:00 until 23:00 Bangkok", () => {
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T08:59:59Z")), false);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T09:00:00Z")), true);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T15:59:59Z")), true);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T16:00:00Z")), false);
+test("MMD Rich Menu stays reachable across all Bangkok hours, including former quiet-window boundaries", () => {
+  for (let hour = 0; hour < 24; hour++) {
+    assert.equal(isMmdRichMenuHidden(new Date(`2026-10-04T${String(hour).padStart(2, "0")}:00:00+07:00`)), false);
+  }
+  for (const at of ["2026-10-04T15:59:59+07:00", "2026-10-04T16:00:00+07:00", "2026-10-04T22:59:59+07:00", "2026-10-04T23:00:00+07:00"]) {
+    assert.equal(isMmdRichMenuHidden(new Date(at)), false);
+  }
 });
 
 test("MMD 3-level Rich Menu actions match the canonical customer labels", () => {
@@ -206,7 +208,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork and Mini App MY MMD entry", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.12");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.13");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
   const map = getMmdRichMenuDestinationMap();
   assert.match(map.public[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);
