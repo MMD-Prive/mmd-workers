@@ -79,8 +79,8 @@
 
       root.querySelectorAll("button,a").forEach(function (element) {
         var text = element.textContent.trim();
-        if (/^MMD MODEL Link/i.test(text)) {
-          element.textContent = text.replace(/^MMD MODEL Link/i, "เชื่อม Model");
+        if (/^MY MODEL Link/i.test(text)) {
+          element.textContent = text.replace(/^MY MODEL Link/i, "เชื่อม Model");
         }
       });
 

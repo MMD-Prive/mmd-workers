@@ -122,9 +122,9 @@ export function modelLiffDigitalBootstrapHtml({
     ? "ลูกค้าเลือกคุณสำหรับงานนี้"
     : publicJobApplicant
       ? "ที่นี่พี่เปอร์ดูแลงานให้ครับ"
-      : "เปิด MMD APP";
+      : "เปิด MY MODEL";
   const copy = selectedJobMode
-    ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MMD APP" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MMD APP")
+    ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MY MODEL" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MY MODEL")
     : publicJobApplicant
       ? "มีทั้งงาน Public และ Private ครับ ก่อนเริ่มพี่ขอข้อมูลกับรูปปัจจุบันไว้ดูคร่าว ๆ ก่อน ถ้าผ่านแล้วครั้งต่อไปเข้ามาดูงานได้เลย ไม่ต้องกรอกใหม่"
       : "กำลังเปิดพื้นที่ทำงานของคุณ";
@@ -132,27 +132,27 @@ export function modelLiffDigitalBootstrapHtml({
     ? "กำลังเปิดรายละเอียดงานที่เลือกคุณไว้…"
     : publicJobApplicant
       ? "กำลังเปิดงานที่คุณสนใจ…"
-      : "กำลังเปิด MMD APP…";
+      : "กำลังเปิด MY MODEL…";
   const fail = selectedJobMode
     ? "ยังเปิดงานที่เลือกคุณไว้ไม่สำเร็จ"
     : publicJobApplicant
       ? "ยังเปิดหน้าส่งข้อมูลไม่สำเร็จ"
-      : "ยังเปิด MMD APP ไม่สำเร็จ";
+      : "ยังเปิด MY MODEL ไม่สำเร็จ";
   const cta = selectedJobMode
     ? "เปิดรายละเอียดงานนี้"
     : publicJobApplicant
       ? "ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า →"
-      : "เปิด MMD APP";
-  const initialPill = selectedJobMode ? "MMD APP · SELECTED JOB" : publicJobApplicant ? "พี่เปอร์ · WELCOME" : "MMD APP";
-  const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "พร้อมเริ่ม" : "MMD APP · READY";
-  const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "WELCOME" : "MMD APP";
+      : "เปิด MY MODEL";
+  const initialPill = selectedJobMode ? "MY MODEL · SELECTED JOB" : publicJobApplicant ? "พี่เปอร์ · WELCOME" : "MY MODEL";
+  const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "พร้อมเริ่ม" : "MY MODEL · READY";
+  const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "WELCOME" : "MY MODEL";
   const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "งานที่คุณกดมาถูกเก็บไว้แล้ว" : "กำลังเปิดพื้นที่ทำงาน";
   const statusHelp = selectedJobMode
     ? "นี่คืองานที่ลูกค้าเลือกคุณแล้ว · ไม่ใช่หน้าสมัครงาน และไม่ต้องสมัครเป็นโมเดลใหม่"
     : publicJobApplicant
       ? "ยังไม่สะดวกส่งรูปตอนนี้ก็ไม่เป็นไร ฝาก LINE หรือเบอร์โทรไว้ก่อนได้ เดี๋ยวพี่เปอร์คุยต่อให้เอง"
       : "กำลังเตรียมงานและโปรไฟล์ของคุณ";
-  const pageTitle = selectedJobMode ? "MMD APP · งานที่เลือกคุณ" : publicJobApplicant ? "MMD APP · พี่เปอร์ดูแลงานให้" : "MMD APP";
+  const pageTitle = selectedJobMode ? "MY MODEL · งานที่เลือกคุณ" : publicJobApplicant ? "MY MODEL · พี่เปอร์ดูแลงานให้" : "MY MODEL";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
 
   return `<!doctype html>
@@ -169,7 +169,7 @@ export function modelLiffDigitalBootstrapHtml({
 <div class="mmd-digital-app" data-mmd-app-digital="v1">
   <main class="mmd-digital-shell">
     <header class="mmd-digital-top">
-      <div class="mmd-digital-brand">MMD APP<small>DIGITAL MODEL WORKSPACE</small></div>
+      <div class="mmd-digital-brand">MY MODEL<small>DIGITAL MODEL WORKSPACE</small></div>
       <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
     <p class="mmd-digital-kicker">${kicker}</p>
@@ -196,7 +196,7 @@ export function modelLiffDigitalBootstrapHtml({
   var fallback=document.getElementById("fallback");
   var detail=document.getElementById("detail");
   function showFailure(code){
-    pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MMD APP · RETRY")};
+    pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MY MODEL · RETRY")};
     status.textContent=${JSON.stringify(fail)};
     fallback.hidden=false;
     detail.textContent=code;

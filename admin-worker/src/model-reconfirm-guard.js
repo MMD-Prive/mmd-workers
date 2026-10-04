@@ -109,7 +109,7 @@ export function parseSendFailures(followupStatus) {
 export function sendFailureStatus(count) { return `send_failed_${count}`; }
 
 const REASON_TEXT = Object.freeze({
-  model_not_connected: ["ยังไม่มีการเชื่อมต่อ LINE ของโมเดล", "ติดต่อโมเดลทางช่องทางอื่นเพื่อให้รับทราบงาน หรือเชื่อมต่อ MMD APP"],
+  model_not_connected: ["ยังไม่มีการเชื่อมต่อ LINE ของโมเดล", "ติดต่อโมเดลทางช่องทางอื่นเพื่อให้รับทราบงาน หรือเชื่อมต่อ MY MODEL"],
   model_channel_unavailable: ["ช่องทางส่งข้อความโมเดลใช้งานไม่ได้", "ตรวจการตั้งค่าช่องทาง LINE ของโมเดล แล้วแจ้งโมเดลด้วยตนเอง"],
   assigned_model_missing: ["งานนี้ยังไม่ระบุโมเดล", "เปิดงานและกำหนดโมเดลให้ชัดเจน"],
   assigned_model_ambiguous: ["งานนี้ผูกกับโมเดลมากกว่าหนึ่งคน ระบบไม่เดา", "ตรวจงานและเลือกโมเดลที่ถูกต้องเพียงคนเดียว"],

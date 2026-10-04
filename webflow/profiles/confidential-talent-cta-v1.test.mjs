@@ -7,7 +7,7 @@ const source = await readFile(new URL("./confidential-talent-cta-v1.html", impor
 test("public profile page offers a controlled confidential-work path", () => {
   assert.match(source, /FOR MMD PROFILES · CONFIDENTIAL WORK/);
   assert.match(source, /https:\/\/t\.me\/mmdapply/);
-  assert.match(source, /MMD MODEL ACCEPTANCE/);
+  assert.match(source, /MY MODEL ACCEPTANCE/);
   assert.match(source, /เรทถึงตัวจะไม่แสดงบนหน้า Public/);
 });
 

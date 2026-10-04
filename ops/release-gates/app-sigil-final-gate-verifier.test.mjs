@@ -22,7 +22,7 @@ function mockResponse({ status = 200, body = {}, text = "", responseHeaders = {}
   };
 }
 
-test("buildCampaignDestination creates the canonical MMD APP job-board campaign URL", () => {
+test("buildCampaignDestination creates the canonical MY MODEL job-board campaign URL", () => {
   const value = buildCampaignDestination({ campaignId: "app-sigil-test", source: "x_campaign" });
   const url = new URL(value);
   assert.equal(url.origin, "https://www.mmdbkk.com");
@@ -40,7 +40,7 @@ test("verifyCampaignDestination accepts a live non-404 campaign landing response
     campaignId: "app-sigil-test",
     fetchImpl: async (url) => {
       requestedUrl = String(url);
-      return mockResponse({ status: 200, text: "<html><title>MMD APP</title></html>" });
+      return mockResponse({ status: 200, text: "<html><title>MY MODEL</title></html>" });
     },
   });
 

@@ -2509,10 +2509,10 @@ async function handleServiceBoundRichMenuRoute(request, env, path) {
 function buildModelAvailabilityReminderMessage(displayName = "") {
   const name = asString(displayName).slice(0, 80);
   return [
-    "MMD MODEL · อัปเดตสถานะวันนี้",
+    "MY MODEL · อัปเดตสถานะวันนี้",
     name ? `${name} กรุณาอัปเดตสถานะที่สะดวกตอนนี้` : "กรุณาอัปเดตสถานะที่สะดวกตอนนี้",
     "",
-    "เปิด MMD MODEL > Availability แล้วเลือกสถานะปัจจุบัน เพื่อให้คิวที่ MMD เห็นตรงกับคุณ",
+    "เปิด MY MODEL > Availability แล้วเลือกสถานะปัจจุบัน เพื่อให้คิวที่ MMD เห็นตรงกับคุณ",
     "ถ้ายังไม่สะดวก ไม่ต้องเลือก “ว่าง” — ระบบจะรอการยืนยันจากคุณ",
     "",
     "https://www.mmdbkk.com/sigil/model/dashboard/availability",
@@ -2531,7 +2531,7 @@ async function handleServiceBoundModelAvailabilityReminderSmoke(request, env) {
     status: tokenPresent ? "ready" : "line_token_missing",
     line_push_sent: false,
     checks: {
-      contains_mmd_model: message.includes("MMD MODEL"),
+      contains_mmd_model: message.includes("MY MODEL"),
       contains_availability_path: message.includes("/sigil/model/dashboard/availability"),
       access_token_present: tokenPresent,
     },

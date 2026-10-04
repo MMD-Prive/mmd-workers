@@ -258,7 +258,7 @@ async function pushLineConfirmation(env, { lineUserId, role, name, url, retryKey
   const isModel = role === "model";
   const text = isModel
     ? [
-        "MMD APP · ยืนยันงาน",
+        "MY MODEL · ยืนยันงาน",
         displayName ? `${displayName} รายละเอียดงานพร้อมแล้วครับ` : "รายละเอียดงานพร้อมแล้วครับ",
         "กรุณาเปิดลิงก์นี้เพื่อตรวจและยืนยันงาน",
         url,
@@ -301,7 +301,7 @@ async function pushTelegramConfirmation(env, { telegramUserId, role, name, url }
   const isModel = role === "model";
   const text = isModel
     ? [
-        "MMD APP · ยืนยันงาน",
+        "MY MODEL · ยืนยันงาน",
         displayName ? `${displayName} รายละเอียดงานพร้อมแล้วครับ` : "รายละเอียดงานพร้อมแล้วครับ",
         "เปิดลิงก์นี้เพื่อตรวจและยืนยันงาน",
         url,
