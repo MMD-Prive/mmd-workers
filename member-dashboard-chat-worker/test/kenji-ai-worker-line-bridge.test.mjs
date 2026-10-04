@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildKenjiLineEvidenceContext,
@@ -8,6 +9,37 @@ import {
 } from "../src/kenji-ai-worker-line-bridge.mjs";
 
 const LINE_USER_ID = "U0123456789abcdef0123456789abcdef";
+
+test("dashboard AI service targets the canonical private ai-worker without renaming the binding", () => {
+  const dashboard = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+  const ai = readFileSync(new URL("../../ai-worker/wrangler.toml", import.meta.url), "utf8");
+  const canonicalName = ai.match(/^name\s*=\s*"([^"]+)"/m)?.[1];
+  const matches = [...dashboard.matchAll(/\[\[services\]\]([\s\S]*?)(?=\n\[|$)/g)]
+    .map((match) => match[1]).filter((block) => /binding\s*=\s*"KENJI_AI_WORKER"/.test(block));
+  assert.equal(matches.length, 1);
+  assert.equal(canonicalName, "ai-worker");
+  assert.equal(matches[0].match(/service\s*=\s*"([^"]+)"/)?.[1], canonicalName);
+  assert.match(ai, /^workers_dev\s*=\s*false/m);
+  assert.match(ai, /^AI_INTELLIGENCE_MODE\s*=\s*"read_only"/m);
+});
+
+test("canonical KENJI_AI_WORKER binding takes precedence and remains shadow-only", async () => {
+  const calls = [];
+  const result = await observeKenjiLineEvent({
+    env: {
+      KENJI_AI_WORKER_BRIDGE_ENABLED: "true",
+      KENJI_AI_WORKER: acceptedAiBinding(calls),
+      AI_WORKER: { fetch: async () => { throw new Error("legacy binding must not be called"); } },
+    },
+    event: userEvent(),
+    contextBuilder: canonicalContextBuilder,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.shadow_only, true);
+  assert.equal(result.customer_copy_changed, false);
+  assert.equal(result.review_required, true);
+});
 
 function userEvent(overrides = {}) {
   return {
