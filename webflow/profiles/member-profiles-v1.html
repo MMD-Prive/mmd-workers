@@ -1,0 +1,60 @@
+
+<section id="mmd-member-profiles" class="mp8-section" aria-labelledby="mmd-member-profiles-title">
+  <div class="mp8-shell">
+    <p class="mp8-kicker">MMD MEMBERS</p>
+    <h2 id="mmd-member-profiles-title">โปรไฟล์สำหรับสมาชิก MMD</h2>
+    <p data-member-profiles-note>เข้าสู่ MY MMD เพื่อดูโปรไฟล์เพิ่มเติมตามสิทธิ์สมาชิกของคุณ</p>
+    <a class="mp8-card__cta" data-member-profiles-login href="/member/liff?world=public">เข้าสู่ MY MMD ↗</a>
+    <div class="mmd-member-profiles-grid" data-member-profiles-grid hidden></div>
+  </div>
+</section>
+<style>
+#mmd-member-profiles{color:#242321;background:#f7f4ee}
+#mmd-member-profiles h2{font-size:clamp(26px,4vw,38px);color:#242321}
+#mmd-member-profiles p{color:#514b43;font-size:16px}
+#mmd-member-profiles [hidden]{display:none!important}
+#mmd-member-profiles .mmd-member-profiles-grid{display:grid;grid-auto-flow:column;grid-auto-columns:min(82vw,320px);gap:18px;overflow-x:auto;scroll-snap-type:x mandatory;padding:12px 0}
+#mmd-member-profiles article{scroll-snap-align:start;border:1px solid #ded6c9;border-radius:18px;overflow:hidden;background:#fffdf8}
+#mmd-member-profiles img{width:100%;aspect-ratio:4/5;object-fit:contain;display:block;background:#eee9df}
+#mmd-member-profiles .mmd-member-card-body{padding:20px}
+#mmd-member-profiles h3{color:#242321;font-size:25px;margin:0 0 8px}
+#mmd-member-profiles .mp8-card__cta{color:#542c30;font-size:16px}
+@media(min-width:900px){#mmd-member-profiles .mmd-member-profiles-grid{grid-auto-flow:row;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible}}
+</style>
+<script id="mmd-member-profiles-runtime-v1">
+(function(){
+"use strict";
+var root=document.getElementById("mmd-member-profiles");if(!root)return;
+var directory=document.getElementById("mp8-directory");if(directory)directory.insertAdjacentElement("afterend",root);
+var grid=root.querySelector("[data-member-profiles-grid]"),note=root.querySelector("[data-member-profiles-note]"),login=root.querySelector("[data-member-profiles-login]");
+var generation=0,urls=[];
+function clear(){generation++;grid.replaceChildren();grid.hidden=true;urls.forEach(function(u){URL.revokeObjectURL(u)});urls=[];login.hidden=false;note.textContent="เข้าสู่ MY MMD เพื่อดูโปรไฟล์เพิ่มเติมตามสิทธิ์สมาชิกของคุณ";}
+async function refresh(){
+clear();var current=generation;
+try{
+var response=await fetch("/member/api/liff/profiles",{credentials:"same-origin",cache:"no-store"});
+if(!response.ok)return;
+var payload=await response.json();if(current!==generation||!payload||payload.ok!==true||!Array.isArray(payload.items))return;
+var items=payload.items.filter(function(p){return p&&p.audience_visibility==="mmd_members"&&/^[a-z0-9ก-๙-]+$/.test(p.slug)&&p.image_url==="/member/api/liff/profiles/"+encodeURIComponent(p.slug)+"/photo"});
+if(!items.length){root.hidden=true;return;}
+root.hidden=false;login.hidden=true;note.textContent="ให้ MMD ช่วยดูความเหมาะและความพร้อมก่อนส่งคำขอ";
+for(var p of items){
+var photo=await fetch(p.image_url,{credentials:"same-origin",cache:"no-store"});
+if(current!==generation)return;
+if(photo.status===401||photo.status===403){clear();return;}
+if(!photo.ok||!/^image\/(jpeg|png|webp)(;|$)/.test(photo.headers.get("content-type")||""))continue;
+var blob=await photo.blob();if(current!==generation)return;
+var photoUrl=URL.createObjectURL(blob);urls.push(photoUrl);
+var card=document.createElement("article"),image=document.createElement("img"),body=document.createElement("div"),name=document.createElement("h3"),label=document.createElement("p"),cta=document.createElement("a");
+image.src=photoUrl;image.alt=String(p.display_name||"MMD Profile");image.decoding="async";
+body.className="mmd-member-card-body";name.textContent=String(p.display_name||"MMD Profile");label.textContent="สำหรับสมาชิก MMD";cta.className="mp8-card__cta";cta.textContent="ให้ MMD ช่วยดูรายละเอียด ↗";cta.href="/public/access?from=profiles&model="+encodeURIComponent(p.slug);
+body.append(name,label,cta);card.append(image,body);grid.append(card);grid.hidden=false;
+}
+}catch(e){if(current===generation)clear();}
+}
+refresh();
+document.addEventListener("visibilitychange",function(){if(document.hidden)clear();else refresh()});
+window.addEventListener("pagehide",clear);
+setInterval(function(){if(!document.hidden)refresh()},60000);
+})();
+</script>
