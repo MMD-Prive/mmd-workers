@@ -70,7 +70,7 @@ for (const spelling of ["เช็กสิทธิ์", "เช็คสิท
   const result = await handleLineRightsCheck(f);
   assert.equal(result.replied, true); assert.equal(f.counters.truth, 1);
   assert.match(f.counters.replies[0], /Premium/);
-  assert.match(f.counters.replies[0], /คูปองและโปร.*รอเปอร์ตรวจ/);
+  assert.match(f.counters.replies[0], /คูปอง CARE BACK.*รอเปอร์ตรวจ/);
 });
 for (const text of ["ต่ออายุ", "สลิป", "เช็กสิทธิ์ให้คุณเอก", "เมื่อวานเช็กสิทธิ์แล้ว", "ขอดูโปร", "hello"]) test(`command scope excludes ${text}`, async () => {
   const f = commandFixture(await fixture()); f.event.message.text = text;
@@ -105,4 +105,15 @@ test("only current unblocked canonical access appears in benefits", () => {
   assert.match(renderLineRightsCheck(t).text, /สิทธิ์ดู Private: Premium/);
   t.membership.member_blocked = true;
   assert.doesNotMatch(renderLineRightsCheck(t).text, /สิทธิ์ดู Private: Premium|Public Service: ใช้งานได้/);
+});
+test("own canonical coupon and approved total-two-year promo are rendered without activating anything", () => {
+  const t = truth();
+  t.coupon = { authority: "canonical_care_back_wallet_v1", status: "ready", approved_discount_percent: 5, expires_at: "2099-01-01" };
+  t.promotion = { authority: "owner_approved_october_renewal_2026_v1", status: "conditional_eligible", package_code: "premium", total_years: 2, base_years: 1, promotion_years: 1, starts_from: "existing_expiry", requires_verified_payment: true, ends_before: "2099-01-01", checkout_status: "review_required" };
+  const reply = renderLineRightsCheck(t).text;
+  assert.match(reply, /ส่วนลดที่อนุมัติ 5%/); assert.match(reply, /รวม 2 ปี/); assert.match(reply, /นับต่อจากวันหมดอายุเดิม/);
+  assert.match(reply, /ตรวจยอดและรายการชำระ.*ก่อนโอน/); assert.doesNotMatch(reply, /รวม 3 ปี|เพิ่ม 180 วัน/);
+  t.coupon.status = "used"; t.promotion.package_code = "standard";
+  const mismatch = renderLineRightsCheck(t).text;
+  assert.match(mismatch, /คูปอง CARE BACK: ใช้แล้ว/); assert.doesNotMatch(mismatch, /ส่วนลดที่อนุมัติ 5%|รวม 2 ปี/);
 });
