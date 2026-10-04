@@ -1,3 +1,6 @@
+import { handleMemberProfiles, isMemberProfilesRequest } from "./member-profiles.js";
+import { readMemberAppSession } from "./member-app-api.js";
+import { readEntitlementSnapshot } from "../../auth-worker/src/my-mmd-runtime-index.js";
 import baseWorker from "./index.js";
 import { MemberResolverDiagnosticEntrypoint } from "./resolver-diagnostic-entrypoint.js";
 import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
@@ -95,6 +98,7 @@ export function normalizeCareBackWebViewOrigin(request) {
 
 const worker = {
   async fetch(request, env, ctx) {
+    if (isMemberProfilesRequest(request)) return handleMemberProfiles(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });
     request = normalizeCareBackWebViewOrigin(request);
     const runtimeUrl = new URL(request.url);
     const runtimePath = runtimeUrl.pathname.replace(/\/+$/, "") || "/";
