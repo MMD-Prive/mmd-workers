@@ -134,26 +134,26 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
 
   assert.deepEqual(map.guest, [
     { type: "uri", label: "START HERE", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup" },
-    { type: "uri", label: "PUBLIC MODELS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fprofiles%3Fsource%3Dline%26entry_route%3Drich_menu_guest_models" },
-    { type: "uri", label: "BOOKING", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fbooking%3Fsource%3Dline%26entry_route%3Drich_menu_guest_booking" },
-    { type: "uri", label: "PUBLIC SERVICES", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fservices%2Fcompanion%3Fsource%3Dline%26entry_route%3Drich_menu_guest_services" },
-    { type: "uri", label: "MMD STORIES", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Ftmib%3Fsource%3Dline%26entry_route%3Drich_menu_guest_stories" },
+    { type: "uri", label: "PUBLIC MODELS", uri: "https://mmdbkk.com/profiles?source=line&entry_route=rich_menu_guest_models" },
+    { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking" },
+    { type: "uri", label: "PUBLIC SERVICES", uri: "https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services" },
+    { type: "uri", label: "MMD STORIES", uri: "https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_stories" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=guest&intent=ใช้บริการยังไง" },
   ]);
 
   assert.deepEqual(map.public, [
     { type: "message", label: "คุยกับ PER", text: "Hi Per" },
-    { type: "uri", label: "PUBLIC MODELS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fprofiles%3Fsource%3Dline%26entry_route%3Drich_menu_public_models" },
-    { type: "uri", label: "BOOKING", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fbooking%3Fsource%3Dline%26entry_route%3Drich_menu_public_booking" },
+    { type: "uri", label: "PUBLIC MODELS", uri: "https://mmdbkk.com/profiles?source=line&entry_route=rich_menu_public_models" },
+    { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_public_booking" },
     { type: "uri", label: "MY MMD", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
-    { type: "uri", label: "PRIVE ACCESS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fstart%3Fsource%3Dline%26entry_route%3Drich_menu_prive_access" },
+    { type: "uri", label: "PRIVE ACCESS", uri: "https://mmdbkk.com/sigil/start?source=line&entry_route=rich_menu_prive_access" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=public&intent=ใช้บริการยังไง" },
   ]);
 
   assert.deepEqual(map.private, [
     { type: "postback", label: "KENJI AI", data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" },
-    { type: "uri", label: "MODEL CARDS", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fbooking%3Fmode%3Dsearch%26scope%3Dprivate%26source%3Dline%26entry_route%3Drich_menu_model_cards" },
-    { type: "uri", label: "BOOKING", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&return_to=%2Fsigil%2Fbooking%3Fmode%3Dbooking%26scope%3Dprivate%26source%3Dline%26entry_route%3Drich_menu_private_booking" },
+    { type: "uri", label: "MODEL CARDS", uri: "https://mmdbkk.com/sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards" },
+    { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking" },
     { type: "uri", label: "MY MMD", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
     { type: "uri", label: "PRIVE UPDATE", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=home" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu" },

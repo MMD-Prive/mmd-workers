@@ -3,7 +3,7 @@ import { getMmdRichMenuDestinationMap } from "./mmd-rich-menu-scheduled-runtime.
 const MENU_HELP = "พิมพ์ เช็กสิทธิ์ เพื่อดูสิทธิ์สมาชิก หรือ สนใจ เพื่อดูแพ็กเกจ Private ได้ครับ";
 const COPY = {
   guest: ["เริ่มสมัคร MY MMD ผ่าน LINE ได้ตรงนี้ครับ", "เปิดดูน้อง ๆ ฝั่ง Public ได้ตรงนี้ครับ", "แจ้งวัน เวลา และบริการที่สนใจได้ตรงนี้ครับ", "ดูบริการ Companion และรูปแบบงานได้ตรงนี้ครับ", "เข้าไปอ่าน TRUST ME IN BANGKOK ได้ตรงนี้ครับ", MENU_HELP],
-  public: ["ที่นี่พี่เปอร์ดูแลงานให้ครับ บอกเรื่องที่อยากให้ช่วยได้เลยครับ", "เปิดดูน้อง ๆ ฝั่ง Public ได้ตรงนี้ครับ", "แจ้งวัน เวลา และรายละเอียดงานได้ตรงนี้ครับ", "ดูสิทธิ์ คะแนน และวันหมดอายุของคุณใน MY MMD ได้ตรงนี้ครับ", "เริ่มดู PRIVÉ ACCESS ได้ตรงนี้ครับ", MENU_HELP],
+  public: ["ที่นี่พี่เปอร์ดูแลงานให้ครับ บอกเรื่องที่อยากให้ช่วยได้เลยครับ", "เปิดดูน้อง ๆ ฝั่ง Public ได้ตรงนี้ครับ", "แจ้งวัน เวลา และรายละเอียดงานได้ตรงนี้ครับ", "ดูสิทธิ์ คะแนน และวันหมดอายุของคุณใน MY MMD ได้ตรงนี้ครับ", "ดูรายละเอียดฝั่ง Private ได้ตรงนี้ครับ ถ้าต้องการแพ็กเกจสมัครสมาชิก พิมพ์ สนใจ ได้เลยครับ", MENU_HELP],
   private: ["ผม Kenji พร้อมช่วยเช็กสิทธิ์ครับ พิมพ์ เช็กสิทธิ์ เพื่อดูข้อมูลล่าสุดของคุณได้เลยครับ", "เลือกดูน้อง ๆ ฝั่ง Private ตามสิทธิ์ของคุณได้ตรงนี้ครับ", "แจ้งวัน เวลา และน้องที่สนใจให้พี่เปอร์ดูแลต่อได้ตรงนี้ครับ", "ดูสิทธิ์ คะแนน และวันหมดอายุของคุณใน MY MMD ได้ตรงนี้ครับ", "ดูข่าวและอัปเดตสำหรับสมาชิกใน MY MMD ได้ตรงนี้ครับ", MENU_HELP],
 };
 
@@ -34,7 +34,8 @@ export async function resolveRichMenuNavigation(event, { getContext } = {}) {
   if (!navigation) return null;
   const { menu, button, action } = navigation;
   let route = action.uri, copy = COPY[menu][button], verified = false;
-  if (menu === "private") {
+  const needsPrivateTruth = menu === "private" && [1, 2].includes(button);
+  if (needsPrivateTruth) {
     let context;
     try { context = await getContext?.(); } catch { /* Require fresh member truth. */ }
     verified = context?.live_truth === true && context.identity_state === "matched" &&
@@ -43,7 +44,7 @@ export async function resolveRichMenuNavigation(event, { getContext } = {}) {
       Boolean(context.private_visibility_envelope && context.private_visibility_envelope !== "none");
     if (!verified) {
       route = getMmdRichMenuDestinationMap().public[4].uri;
-      copy = "กดผ่าน LINE เพื่อตรวจสิทธิ์ล่าสุดก่อนเข้าหน้า Private ได้ตรงนี้ครับ";
+      copy = "ตรวจสิทธิ์ก่อนเลือกน้อง ๆ ฝั่ง Private ได้ตรงนี้ครับ";
     }
   }
   return {
@@ -51,8 +52,8 @@ export async function resolveRichMenuNavigation(event, { getContext } = {}) {
     text: route ? `${copy}\n${route}` : copy, reply_source: "rich_menu_navigation_v1",
     cta_type: route ? "open_action_route" : "continue_in_chat", cta_route: route || "", cta_label: action.label,
     cta_appended: false, live_truth_used: verified,
-    guard_blocked: menu === "private" && !verified,
-    guard_reason: menu === "private" && !verified ? "private_navigation_requires_live_truth" : "",
+    guard_blocked: needsPrivateTruth && !verified,
+    guard_reason: needsPrivateTruth && !verified ? "private_navigation_requires_live_truth" : "",
     handoff_required: false, model_attempted: false,
   };
 }
