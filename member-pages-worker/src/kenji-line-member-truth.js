@@ -1,4 +1,5 @@
 import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
+import { projectKenjiRenewalPromotion, readKenjiCareBackCoupon } from "./kenji-member-benefits.js";
 import { resolveCanonicalRenewalOffer, renewalPriceForSpend } from "./renewal-offer.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 
@@ -346,6 +347,11 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
   }
   if (intent === "rights_check") {
+    const promotionMembership = projection.former_private_membership
+      ? { ...projection.former_private_membership, member_blocked: projection.membership.member_blocked }
+      : projection.membership;
+    projection.promotion = projectKenjiRenewalPromotion(promotionMembership);
+    projection.coupon = await readKenjiCareBackCoupon(env, lineUserId, resolved.memberId);
     const context = await readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true });
     projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance)
       ? { status: "verified", active_points: context.confirmedBalance, authority: "canonical_paid_points_source_guard_v1" }
@@ -360,6 +366,7 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
         member_profile: { tier: packageCode, membership_expires_at: m.expire_at } });
     }
     if (["vip", "svip", "black_card"].includes(m.level)) projection.renewal = { status: "review_required", reason: "protected_tier_owner_review" };
+    if (projection.promotion.checkout_status === "review_required") projection.renewal = { status: "review_required", reason: "payment_term_policy_alignment_required" };
   }
   return json(projection);
 }
