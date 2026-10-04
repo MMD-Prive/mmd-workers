@@ -6,7 +6,8 @@ export function isPrivateInterestCommand(event = {}) {
 }
 export function renderPrivateInterest(truth = {}) {
   const verified = truth.ok === true && truth.authority === "my_mmd_entitlement_resolver_v1" && truth.identity_status === "resolved";
-  const existing = verified && (MEMBERSHIP_LEVELS.has(truth.membership?.level) || MEMBERSHIP_LEVELS.has(truth.former_private_membership?.level) || truth.membership?.member_blocked === true);
+  const ownerKnown = truth.ok === true && truth.owner_membership_context?.authority === "owner_per_rename_membership_context_v1" && truth.owner_membership_context.membership_known === true;
+  const existing = ownerKnown || verified && (MEMBERSHIP_LEVELS.has(truth.membership?.level) || MEMBERSHIP_LEVELS.has(truth.former_private_membership?.level) || truth.membership?.member_blocked === true);
   const lines = [];
   if (existing) lines.push("บัญชีนี้มีข้อมูลหรือประวัติสมาชิกครับ พิมพ์ “เช็กสิทธิ์” เพื่อดูสถานะ วันหมดอายุ สิทธิ์และเงื่อนไขต่ออายุของบัญชีเดิมครับ");
   else {
