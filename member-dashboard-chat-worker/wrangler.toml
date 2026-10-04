@@ -400,6 +400,7 @@ zone_name = "mmdbkk.com"
 LINE_AUTO_REPLY_ENABLED = "false"
 KENJI_LINE_RIGHTS_CHECK_MODE = "command"
 KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
+KENJI_LINE_PRIVATE_INTEREST_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 # Owner lock 2026-09-29: customer-facing LINE may autonomously reply only to
 # direct Model name/code lookup (plus the bounded verification continuation

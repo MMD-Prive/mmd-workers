@@ -32,7 +32,7 @@ test("ordinary wallet uses existing LIFF HMAC and strict canonical member with n
   const secret = "fixture-only-secret".repeat(3); let calls = 0;
   const env = { LIFF_SESSION_SECRET: secret, CARE_BACK_STORE: {
     openOrResume() { throw new Error("no mutation allowed"); },
-    readCouponWallet: async input => { calls++; assert.equal(input.memberId, "fixture-member"); assert.equal(input.identityHash, createHmac("sha256", secret).update(`identity:${uid}`).digest("hex")); return { status: "ready", approved_discount_percent: 10, expires_at: "2099-01-01" }; },
+    readCouponWallet: async input => { calls++; assert.equal(input.memberId, "fixture-member"); assert.equal(input.identityHash, createHmac("sha256", secret).update(`identity:${uid}`).digest("hex")); return { status: "ready", code: "ABC234", approved_discount_percent: 10, expires_at: "2099-01-01" }; },
   } };
   const coupon = await readKenjiCareBackCoupon(env, uid, "fixture-member");
   assert.equal(calls, 1); assert.equal(coupon.status, "ready"); assert.equal(coupon.approved_discount_percent, 10);
@@ -58,4 +58,9 @@ test("ambiguous recovery or wrong owner is unavailable, never fallback to anothe
     const env = { AIRTABLE_API_KEY: "fixture", AIRTABLE_BASE_ID: "fixture", AIRTABLE_HTTP: { fetch: async request => request.url.includes("Recovery") ? Response.json({ records }) : Response.json({ id: "rec1234567890abcd", fields: { code: "ABC234", campaign_code: "6-years-care-back", status: "active", expires_at: "2099-01-01" } }) } };
     assert.equal((await readKenjiCareBackCoupon(env, uid, "fixture-member")).status, "unavailable");
   }
+});
+for (const code of [undefined, "", "invalid", "ABC230"]) test(`ready coupon without valid code stays unavailable: ${code}`, async () => {
+  const env = { LIFF_SESSION_SECRET: "fixture".repeat(8), CARE_BACK_STORE: { openOrResume() { throw new Error("no write"); }, readCouponWallet: async () => ({ status: "ready", code, expires_at: "2099-01-01", approved_discount_percent: 10 }) } };
+  const result = await readKenjiCareBackCoupon(env, uid, "fixture-member");
+  assert.equal(result.status, "unavailable"); assert.equal(result.approved_discount_percent, null); assert.equal(result.code, undefined);
 });

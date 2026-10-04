@@ -28,7 +28,8 @@ function couponProjection(wallet = {}) {
   const expiresAt = String(wallet.expires_at || "");
   // Never advertise an active coupon without a definite future expiry.
   const definiteExpiry = expiresAt && Number.isFinite(Date.parse(expiresAt));
-  const state = status === "ready" && (!definiteExpiry || Date.parse(expiresAt) <= Date.now()) ? "unavailable" : status;
+  const validCode = /^[A-HJ-NP-Z2-9]{6}$/.test(String(wallet.code || ""));
+  const state = status === "ready" && (!validCode || !definiteExpiry || Date.parse(expiresAt) <= Date.now()) ? "unavailable" : status;
   return { authority: "canonical_care_back_wallet_v1", status: state, approved_discount_percent: state === "ready" && percent > 0 && percent <= 10 ? percent : null, expires_at: definiteExpiry ? expiresAt : "", single_use: true };
 }
 
