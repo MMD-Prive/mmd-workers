@@ -7,6 +7,11 @@
   if(!stage)return;
   root.dataset.bound="v4";
   root.dataset.version="6";
+  root.dataset.applicationUi="digital";
+  var digitalStyle=document.createElement("style");
+  digitalStyle.id="mms-application-digital-v1";
+  digitalStyle.textContent="#mta3 .mta-form-stage{background:#f7faf7;border:1px solid #cdded3;border-radius:24px;padding:24px;max-width:800px;margin-inline:auto;scroll-margin-top:24px}#mta3 .mta-digital-head{display:grid;gap:10px;margin-bottom:20px}#mta3 .mta-digital-head strong{font-size:20px;color:#123b2f}#mta3 .mta-digital-head p{margin:0;font-size:16px;color:#405e4e}#mta3 .mta-digital-head progress{width:100%;height:8px;accent-color:#159b6b}#mta3 .mta-form-stage .mta-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0;margin:0 0 24px}#mta3 .mta-form-stage .mta-steps button{min-height:52px;border:1px solid #b7cdc0;border-radius:12px;background:#fff;color:#244a37;padding:10px;font-size:16px}#mta3 .mta-form-stage .mta-steps button[aria-current=step]{background:#123b2f;color:#fff;border-color:#123b2f}#mta3 .mta-form-stage .mta-steps span{font-size:14px}#mta3 .mta-form-stage .mta-panel[hidden]{display:none!important}#mta3 .mta-form-stage .mta-panel{border:0;background:transparent;padding:0;min-height:320px}#mta3 .mta-form-stage .mta-field>span,#mta3 .mta-form-stage legend,#mta3 .mta-form-stage p,#mta3 .mta-form-stage input,#mta3 .mta-form-stage select,#mta3 .mta-form-stage textarea{font-size:16px;line-height:1.55}#mta3 .mta-form-stage small{font-size:14px;line-height:1.6}#mta3 .mta-form-stage input:not([type=radio]):not([type=checkbox]),#mta3 .mta-form-stage select,#mta3 .mta-form-stage textarea{border-radius:12px;min-height:48px;background:#fff;color:#102018;border:1px solid #a8c2b2}#mta3 .mta-form-stage .mta-actions{position:sticky;bottom:0;background:#f7faf7;padding:16px 0 calc(16px + env(safe-area-inset-bottom));display:flex;gap:12px;z-index:2}#mta3 .mta-form-stage .mta-actions button{min-height:52px;font-size:16px;flex:1}#mta3 .mta-form-stage .mta-error{font-size:16px;color:#8b2424}#mta3 .mta-upload-progress{font-size:16px;color:#123b2f;margin:12px 0}@media(max-width:600px){#mta3 .mta-form-stage{border-radius:20px;padding:16px;width:100%;box-sizing:border-box}#mta3 .mta-form-stage .mta-grid{grid-template-columns:1fr}#mta3 .mta-form-stage .mta-span-2{grid-column:auto}#mta3 .mta-form-stage .mta-panel{min-height:55svh}}@media(prefers-reduced-motion:reduce){#mta3 .mta-form-stage *{scroll-behavior:auto!important;transition:none!important}}";
+  document.head.appendChild(digitalStyle);
 
   var skills=[
     ["aroma_therapy_oil","Aroma Therapy Oil Massage"],
@@ -104,13 +109,16 @@
   var panels=[].slice.call(form.querySelectorAll("[data-step]"));
   var nav=[].slice.call(stage.querySelectorAll("[data-step-link]"));
   var current=1;
+  stage.insertAdjacentHTML("afterbegin",'<header class="mta-digital-head"><strong>MMS · DIGITAL APPLICATION</strong><p data-digital-step>ขั้นตอน 1 จาก 6 · ข้อมูลติดต่อ</p><progress max="6" value="1" aria-label="ความคืบหน้าใบสมัคร"></progress></header>');
+  var stepNames=["ข้อมูลติดต่อ","ข้อมูลส่วนตัว","ลูกค้าและงาน","Skills และพื้นที่","ประสบการณ์","รูปและยืนยัน"];
+  var sending=false;
   var storageKey="mms_therapist_application_v4";
 
   function value(name){var el=form.elements[name];if(!el)return "";if(el.length&&typeof el.value==="undefined"){var c=[].slice.call(el).find(function(x){return x.checked;});return c?c.value:"";}if(el.type==="radio"){var r=form.querySelector('[name="'+name+'"]:checked');return r?r.value:"";}return String(el.value||"").trim();}
   function bool(name){return value(name)==="yes"||form.elements[name]&&form.elements[name].type==="checkbox"&&form.elements[name].checked;}
   function selected(name){return [].slice.call(form.querySelectorAll('[name="'+name+'"]:checked')).map(function(x){return x.value;});}
   function error(step,msg){var panel=panels[step-1];var el=panel&&panel.querySelector(".mta-error");if(el)el.textContent=msg||"";}
-  function show(step){current=Math.max(1,Math.min(6,step));panels.forEach(function(p,i){p.hidden=i!==current-1;});nav.forEach(function(b,i){b.setAttribute("aria-current",i===current-1?"step":"false");});var progress=root.querySelector("[data-branch-progress]");if(progress)progress.textContent=String(current).padStart(2,"0")+" / 06";var label=root.querySelector("[data-current-label]");if(label)label.textContent="ใบสมัคร · "+String(current).padStart(2,"0");stage.scrollIntoView({behavior:"smooth",block:"start"});}
+  function show(step){current=Math.max(1,Math.min(6,step));panels.forEach(function(p,i){p.hidden=i!==current-1;});var digitalLabel=stage.querySelector("[data-digital-step]");if(digitalLabel)digitalLabel.textContent="ขั้นตอน "+current+" จาก 6 · "+stepNames[current-1];var digitalProgress=stage.querySelector("progress");if(digitalProgress)digitalProgress.value=current;nav.forEach(function(b,i){b.setAttribute("aria-current",i===current-1?"step":"false");});var progress=root.querySelector("[data-branch-progress]");if(progress)progress.textContent=String(current).padStart(2,"0")+" / 06";var label=root.querySelector("[data-current-label]");if(label)label.textContent="ใบสมัคร · "+String(current).padStart(2,"0");stage.scrollIntoView({behavior:"smooth",block:"start"});}
   function updateConditional(){var spa=form.querySelector("[data-spa-name]");var social=form.querySelector("[data-social]");if(spa)spa.hidden=value("worked_at_spa_before")!=="yes";if(social)social.hidden=value("worked_independently_before")!=="yes";}
   function validate(step){error(step,"");var p=panels[step-1];var required=[].slice.call(p.querySelectorAll("[required]"));for(var i=0;i<required.length;i++){var el=required[i];if((el.type==="radio"&&!p.querySelector('[name="'+el.name+'"]:checked'))||(el.type==="checkbox"&&!el.checked)||(!["radio","checkbox","file"].includes(el.type)&&!String(el.value||"").trim())||(el.type==="file"&&!el.files.length)){error(step,"กรุณากรอกข้อมูลที่มีเครื่องหมาย * ให้ครบครับ");return false;}}
     if(step===1&&!value("phone")&&!value("line_id")){error(step,"กรุณาระบุเบอร์โทรหรือ LINE ID อย่างน้อยหนึ่งช่องครับ");return false;}
@@ -119,6 +127,7 @@
     if(step===4){if(selected("skills").length===0){error(step,"กรุณาเลือก Skill อย่างน้อย 1 รายการ");return false;}if(selected("availability_summary").length===0){error(step,"กรุณาเลือกช่วงเวลาที่สะดวกอย่างน้อย 1 ช่วง");return false;}if(selected("transport_modes").length===0){error(step,"กรุณาเลือกวิธีเดินทางอย่างน้อย 1 แบบ");return false;}}
     if(step===5){if(value("worked_at_spa_before")==="yes"&&!value("spa_name")){error(step,"กรุณาระบุชื่อร้านหรือสปา");return false;}if(value("worked_independently_before")==="yes"&&!value("independent_social")){error(step,"กรุณาระบุช่องทางอ้างอิงของงานที่เคยรับเอง");return false;}if(value("has_massage_experience")==="no"&&value("experience_background")!=="no_experience"){error(step,"ถ้าไม่เคยมีประสบการณ์ กรุณาเลือก “ไม่เคยมีประสบการณ์”");return false;}if(value("professional_massage_experience")==="yes"&&value("has_massage_experience")!=="yes"){error(step,"ข้อมูลประสบการณ์ยังไม่สอดคล้องกันครับ");return false;}}
     if(step===6){var profile=form.elements.profile_photo.files[0];if(!validFile(profile,false)){error(step,"รูปโปรไฟล์ต้องเป็น JPG, PNG หรือ WebP และไม่เกิน 10 MB");return false;}var extras=[].slice.call(form.elements.additional_photos.files||[]);if(extras.length>5){error(step,"รูปเพิ่มเติมแนบได้สูงสุด 5 รูปครับ");return false;}if(extras.some(function(f){return !validFile(f,false);})){error(step,"รูปเพิ่มเติมต้องเป็น JPG, PNG หรือ WebP และไม่เกิน 10 MB ต่อรูป");return false;}}
+    if(step===6&&[].slice.call(form.elements.certificates.files||[]).some(function(f){return !validFile(f,true);})){error(step,"Certificate ต้องเป็นรูปหรือ PDF ไม่เกิน 10 MB ต่อไฟล์ครับ");return false;}
     return true;}
   function validFile(file,allowPdf){if(!file)return false;var ok=["image/jpeg","image/png","image/webp"];if(allowPdf)ok.push("application/pdf");return ok.indexOf(file.type)>=0&&file.size>0&&file.size<=10*1024*1024;}
   function payload(){return {
@@ -131,8 +140,71 @@
     has_massage_experience:bool("has_massage_experience"),professional_massage_experience:bool("professional_massage_experience"),experience_background:value("experience_background"),experience_years:Number(value("experience_years")||0),experience_months:Number(value("experience_months")||0),strengths:value("strengths"),worked_at_spa_before:bool("worked_at_spa_before"),spa_name:value("spa_name"),worked_independently_before:bool("worked_independently_before"),independent_social:value("independent_social"),workshop_interest:value("workshop_interest"),motivation:value("motivation"),
     preferred_contact:value("preferred_contact"),preferred_contact_time:value("preferred_contact_time"),current_profession:value("current_profession"),qualification_note:value("qualification_note"),general_consent:form.elements.general_consent.checked,language:"th"
   };}
-  async function uploadFile(file,kind,appId,token){var endpoint=root.dataset.uploadEndpoint;var grant=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({application_ref:appId,application_token:token,kind:kind,filename:file.name,content_type:file.type,size:file.size})});var gj=await grant.json();if(!grant.ok||!gj.ok)throw new Error("upload_grant_failed");var put=await fetch(gj.upload.url,{method:"PUT",headers:{"Content-Type":file.type,"Content-Length":String(file.size)},body:file});if(!put.ok)throw new Error("upload_failed");}
-  async function submit(ev){ev.preventDefault();for(var s=1;s<=6;s++){if(!validate(s)){show(s);return;}}var btn=form.querySelector('[type="submit"]');btn.disabled=true;btn.textContent="กำลังส่ง…";try{var res=await fetch(root.dataset.applicationEndpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())});var data=await res.json();if(!res.ok||!data.ok)throw new Error(data&&data.error&&data.error.message||"submit_failed");var appId=data.application_id||data.application_ref;var token=data.application_token;await uploadFile(form.elements.profile_photo.files[0],"profile_photo",appId,token);var extras=[].slice.call(form.elements.additional_photos.files||[]);for(var i=0;i<extras.length;i++)await uploadFile(extras[i],"additional_photo",appId,token);var certs=[].slice.call(form.elements.certificates.files||[]);for(var j=0;j<certs.length;j++){if(validFile(certs[j],true))await uploadFile(certs[j],"certificate",appId,token);}var success=root.querySelector(".mta-success");if(success){var p=success.querySelector("p:not(.mta-kicker)");if(p)p.textContent="MMS ได้รับใบสมัครแล้วครับ ทีมจะตรวจข้อมูลและติดต่อกลับตามช่องทางที่ให้ไว้ การรับใบสมัครยังไม่ใช่การยืนยันเข้าทำงาน";var ref=success.querySelector("[data-reference]");if(ref)ref.textContent="Application ID: "+appId;success.hidden=false;success.focus();}stage.hidden=true;localStorage.removeItem(storageKey);}catch(e){error(6,"ส่งใบสมัครไม่สำเร็จ กรุณาลองอีกครั้ง หรือติดต่อ MMS ทาง LINE");btn.disabled=false;btn.textContent="ส่งใบสมัคร";}}
+  var acceptedApplication=null;
+  var fileUploads=new WeakMap();
+  function uploadProgress(message){
+    var node=form.querySelector("[data-upload-progress]");
+    if(!node){node=document.createElement("p");node.className="mta-upload-progress";node.setAttribute("data-upload-progress","");node.setAttribute("role","status");node.setAttribute("aria-live","polite");panels[5].appendChild(node);}
+    node.textContent=message;
+  }
+  async function uploadFile(file,kind,appId,token){
+    var state=fileUploads.get(file);
+    if(state&&state.done)return;
+    if(!state){state={url:"",done:false};fileUploads.set(file,state);}
+    if(!state.url){
+      var grant=await fetch(root.dataset.uploadEndpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({application_ref:appId,application_token:token,kind:kind,filename:file.name,content_type:file.type,size:file.size})});
+      var gj=await grant.json();
+      if(!grant.ok||!gj.ok||!gj.upload||!gj.upload.url)throw new Error("upload_grant_failed");
+      state.url=gj.upload.url;
+    }
+    var put=await fetch(state.url,{method:"PUT",headers:{"Content-Type":file.type},body:file});
+    var receipt=await put.json().catch(function(){return null;});
+    if(!put.ok||!receipt||receipt.ok!==true||receipt.application_id!==appId||receipt.kind!==kind||!receipt.storage||receipt.storage.r2!=="stored"||receipt.storage.airtable!=="synced"){
+      if(put.status===409)state.url="";
+      throw new Error("upload_not_linked");
+    }
+    state.done=true;
+  }
+  async function submit(ev){
+    ev.preventDefault();
+    if(sending)return;
+    for(var s=1;s<=6;s++){if(!validate(s)){show(s);return;}}
+    var btn=form.querySelector('[type="submit"]');
+    sending=true;btn.disabled=true;btn.textContent="กำลังส่ง…";
+    try{
+      if(!acceptedApplication){
+        var res=await fetch(root.dataset.applicationEndpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())});
+        var data=await res.json();
+        if(!res.ok||!data.ok)throw new Error("submit_failed");
+        var id=data.application_id||data.application_ref;
+        if(!/^mmsapp_[a-f0-9]{24}$/.test(id)||!data.application_token)throw new Error("application_receipt_invalid");
+        acceptedApplication={id:id,token:data.application_token};
+        [].slice.call(form.elements).forEach(function(el){if(!["file","button","submit"].includes(el.type))el.disabled=true;});
+      }
+      var appId=acceptedApplication.id,token=acceptedApplication.token;
+      var uploads=[{file:form.elements.profile_photo.files[0],kind:"profile_photo"}]
+        .concat([].slice.call(form.elements.additional_photos.files||[]).map(function(file){return {file:file,kind:"additional_photo"};}))
+        .concat([].slice.call(form.elements.certificates.files||[]).map(function(file){return {file:file,kind:"certificate"};}));
+      for(var i=0;i<uploads.length;i++){
+        uploadProgress("ได้รับข้อมูลแล้ว · กำลังส่งไฟล์ "+(i+1)+" จาก "+uploads.length);
+        await uploadFile(uploads[i].file,uploads[i].kind,appId,token);
+      }
+      uploadProgress("ข้อมูลและไฟล์ครบแล้ว");
+      var success=root.querySelector(".mta-success");
+      if(success){
+        var p=success.querySelector("p:not(.mta-kicker)");
+        if(p)p.textContent="MMS ได้รับข้อมูลและไฟล์ครบแล้วครับ ทีมจะตรวจใบสมัครและติดต่อกลับ การรับใบสมัครยังไม่ใช่การยืนยันเข้าทำงาน";
+        var ref=success.querySelector("[data-reference]");
+        if(ref)ref.textContent="Application ID: "+appId;
+        success.hidden=false;success.focus();
+      }
+      stage.hidden=true;
+      try{localStorage.removeItem(storageKey);}catch(e){}
+    }catch(e){
+      error(6,acceptedApplication?"MMS ได้รับข้อมูลแล้ว แต่ไฟล์ยังไม่ครบครับ กดลองส่งไฟล์อีกครั้งได้ในหน้านี้ ใบสมัคร "+acceptedApplication.id:"ส่งข้อมูลยังไม่สำเร็จ กรุณาลองอีกครั้ง หรือติดต่อ MMS ทาง LINE");
+      show(6);btn.disabled=false;btn.textContent=acceptedApplication?"ลองส่งไฟล์อีกครั้ง":"ส่งใบสมัคร";
+    }finally{sending=false;}
+  }
 
   form.addEventListener("change",updateConditional);
   form.addEventListener("click",function(e){var next=e.target.closest("[data-next]");var back=e.target.closest("[data-back]");if(next&&validate(current))show(current+1);if(back)show(current-1);});
@@ -142,5 +214,11 @@
   show(1);
 
   var oldStepButtons=[].slice.call(root.querySelectorAll('[data-application-step]'));
-  oldStepButtons.forEach(function(b){var n=Number(b.dataset.applicationStep);if(n>0){b.addEventListener("click",function(){show(Math.min(n,6));});}});
+  if(oldStepButtons.length===5){
+    var last=oldStepButtons[4],sixth=last.cloneNode(false);
+    sixth.dataset.applicationStep="6";last.parentNode.appendChild(sixth);oldStepButtons.push(sixth);
+  }
+  oldStepButtons.forEach(function(b){var n=Number(b.dataset.applicationStep);if(n>0){b.textContent=String(n).padStart(2,"0")+" · "+stepNames[n-1];b.addEventListener("click",function(){show(Math.min(n,6));});}});
+  var menuCopy=root.querySelector('[data-menu-branch="application"] small');
+  if(menuCopy)menuCopy.textContent="เปิดดู 6 ขั้นตอนการสมัคร";
 })();
