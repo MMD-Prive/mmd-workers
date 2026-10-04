@@ -7,6 +7,9 @@ on:
       - main
     paths:
       - "member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs"
+      - "member-dashboard-chat-worker/test/mmd-rich-menu-scheduled-runtime.test.mjs"
+      - "member-dashboard-chat-worker/src/rich-menu-navigation-reply.mjs"
+      - "member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs"
       - "member-dashboard-chat-worker/src/mms-line-front-gate-runtime.js"
       - "admin-worker/src/index.js"
       - "tools/mmd-rich-menu-production-acceptance.mjs"
@@ -39,7 +42,7 @@ jobs:
         run: |
           node --check member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs
           node --check admin-worker/src/index.js
-          node --test member-dashboard-chat-worker/test/mmd-rich-menu-scheduled-runtime.test.mjs admin-worker/rich-menu-admin-publisher.test.mjs
+          node --test member-dashboard-chat-worker/test/mmd-rich-menu-scheduled-runtime.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs admin-worker/rich-menu-admin-publisher.test.mjs
 
       - name: Prepare objects and audit production
         run: node tools/mmd-rich-menu-production-acceptance.mjs
@@ -57,7 +60,7 @@ jobs:
         if: success()
         run: |
           echo '### MMD Rich Menu production acceptance' >> "$GITHUB_STEP_SUMMARY"
-          echo '- Current runtime: mmd-rm3-20260924-v4.6' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Current runtime: mmd-rm3-20261004-v4.12' >> "$GITHUB_STEP_SUMMARY"
           echo '- LV1 artwork: approved v4.1 MMD STORIES / Discover TMIB asset' >> "$GITHUB_STEP_SUMMARY"
           echo '- Menu objects/actions/images: verified against LINE production' >> "$GITHUB_STEP_SUMMARY"
           echo '- Five-state resolver policy: Guest/Public/Private/Expired/Blocked verified' >> "$GITHUB_STEP_SUMMARY"

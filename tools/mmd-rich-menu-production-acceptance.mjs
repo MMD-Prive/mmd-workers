@@ -90,11 +90,13 @@ async function call(path, method = "GET", { acceptStatuses = [] } = {}) {
     }).catch(() => null);
     const body = response ? await response.json().catch(() => ({})) : {};
     last = { status: response?.status || 0, body };
-    if ((response?.ok && body?.ok === true) || acceptStatuses.includes(response?.status || 0)) return body;
+    const currentVersion = body?.version === VERSION;
+    if (currentVersion && ((response?.ok && body?.ok === true) || acceptStatuses.includes(response?.status || 0))) return body;
     const deterministicPrepareFailure = path.endsWith("/three-level/prepare") &&
       response?.status === 502 &&
       /^(rich_menu_repair_invalid_(guest|public|private)|image_integrity_mismatch|image_not_png|image_bad_size_\d+x\d+)$/.test(String(body?.reason || ""));
-    const retryable = !deterministicPrepareFailure && (!response || [404, 429, 502, 503, 504].includes(response.status));
+    const retryable = !deterministicPrepareFailure && (!response || [404, 429, 502, 503, 504].includes(response.status) ||
+      (body?.version && !currentVersion && [200, 409].includes(response.status)));
     if (!retryable || attempt === 30) break;
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
@@ -115,6 +117,8 @@ async function call(path, method = "GET", { acceptStatuses = [] } = {}) {
   throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${errorCode}:${reasonCode}`);
 }
 
+// Wait read-only for the matching worker revision before preparing or activating.
+await call("/v1/admin/line/rich-menu/three-level/audit", "GET", { acceptStatuses: [409] });
 const prepare = await call("/v1/admin/line/rich-menu/three-level/prepare", "POST");
 assert.equal(prepare.version, VERSION);
 assert.equal(prepare.customer_assignments_changed, false);

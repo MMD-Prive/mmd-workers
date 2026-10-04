@@ -11,7 +11,7 @@ const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260930-v4.11";
+const VERSION = "mmd-rm3-20261004-v4.12";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
 const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
@@ -106,11 +106,22 @@ const MENUS = Object.freeze({
   },
 });
 
+const DESTINATIONS = Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [key, spec.actions.map(action => ({ ...action }))]));
+for (const [key, spec] of Object.entries(MENUS)) spec.actions = replyActions(key, spec.actions);
+
+export function getMmdRichMenuDestinationMap() {
+  return Object.fromEntries(Object.entries(DESTINATIONS).map(([key, actions]) => [key, actions.map(action => ({ ...action }))]));
+}
+
+// Every navigation tap enters the reply webhook; destinations remain server-owned.
+function replyActions(key, actions) {
+  return actions.map((action, index) => action.type === "uri" || (key === "public" && index === 0 && action.type === "message")
+    ? postback(action.label, `mmd_action=rich_menu&menu=${key}&button=${index}`)
+    : { ...action });
+}
+
 export function getMmdRichMenuActionMap() {
-  return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
-    key,
-    spec.actions.map((action) => ({ ...action })),
-  ]));
+  return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [key, replyActions(key, spec.actions)]));
 }
 
 export function getMmdRichMenuImageSources() {

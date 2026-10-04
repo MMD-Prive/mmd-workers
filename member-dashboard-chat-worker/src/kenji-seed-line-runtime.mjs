@@ -1,3 +1,5 @@
+import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
+import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
 import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membership-response.mjs";
 import {
@@ -604,9 +606,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const redelivered = event?.deliveryContext?.isRedelivery === true;
     const replyToken = replyTokenOf(event);
     const support = isRichMenuSupport(event);
+    const navigation = richMenuNavigation(event);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
-    const currentIntent = support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
-    const continuity = continuityEnabled && directUser && !support
+    const currentIntent = navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
+    const continuity = continuityEnabled && directUser && !support && !navigation
       ? await resolveKenjiLineContinuity({ env, event, currentIntent })
       : {
           decision: "new_topic",
@@ -618,15 +621,19 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           available: false,
         };
     const effectiveIntent = text(continuity.effective_intent || currentIntent);
-    const liveTruth = !support && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+    const liveTruth = !support && !navigation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
-    const liveAvailability = !support && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
+    const liveAvailability = !support && !navigation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
       effectiveIntent === "availability_request"
       ? await resolveKenjiLineAvailability({ env, continuity })
       : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
 
-    const baseDecision = autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
+    const baseDecision = navigation && (autoReplyEnabled || firstContactEnabled) && directUser && eventMode !== "standby" && !redelivered && replyToken
+      ? withDecisionMetadata({}, await resolveRichMenuNavigation(event, {
+          getContext: () => resolveKenjiLiveMemberContext(env, event.source.userId, "support"),
+        }))
+      : autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: controls.model_keyword_auto_reply !== true,
           currentIntent,
@@ -647,14 +654,14 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     // Broad Seed cards intentionally cover only reviewed intents. For a direct
     // customer message with no safe Seed answer, retain First Contact so its
     // advertised intake (for example “แนะนำหน่อย”) cannot disappear.
-    const firstContactFallback = autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && directUser && !support &&
+    const firstContactFallback = autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && directUser && !support && !navigation &&
       eventMode !== "standby" && !redelivered && replyToken && !text(baseDecision.text) &&
       baseDecision.handoff_required !== true && baseDecision.guard_blocked !== true
       ? withDecisionMetadata({}, await decideKenjiFirstContactMembership(event, currentIntent, continuity, env))
       : baseDecision;
     const decision = firstContactEnabled && !autoReplyEnabled
       ? firstContactFallback
-      : support || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
+      : navigation || support || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
       intent: text(firstContactFallback.intent || effectiveIntent),
       continuity,
     });
@@ -678,7 +685,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       const outboundTurn = delivered
         ? await recordDeliveredKenjiLineReply({ env, event, replyText: decision.text }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
         : { skipped: true, reason: "reply_not_delivered" };
-      const matrix = continuityEnabled && directUser && !support && eventMode !== "standby" && !redelivered
+      const matrix = continuityEnabled && directUser && !support && !navigation && eventMode !== "standby" && !redelivered
         ? await writeKenjiLineMatrixTurn({
             env,
             continuity,

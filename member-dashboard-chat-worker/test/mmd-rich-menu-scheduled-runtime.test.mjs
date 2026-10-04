@@ -5,6 +5,7 @@ import {
   isMmdRichMenuHidden,
   classifyMmdUsers,
   getMmdRichMenuActionMap,
+  getMmdRichMenuDestinationMap,
   getMmdRichMenuTapFrames,
   getMmdRichMenuImageSources,
   getMmdRichMenuVersion,
@@ -127,7 +128,7 @@ test("MMD Rich Menu hides from 16:00 until 23:00 Bangkok", () => {
 });
 
 test("MMD 3-level Rich Menu actions match the canonical customer labels", () => {
-  const map = getMmdRichMenuActionMap();
+  const map = getMmdRichMenuDestinationMap();
 
   assert.deepEqual(map.guest, [
     { type: "uri", label: "START HERE", uri: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup" },
@@ -165,7 +166,7 @@ test("LV1 v4.1 uses the MMD Stories image and never falls back to the ABOUT MMD 
 });
 
 test("Guest and Public support stay Kenji-invisible while Private keeps a typed Kenji entry", () => {
-  const map = getMmdRichMenuActionMap();
+  const map = getMmdRichMenuDestinationMap();
   assert.equal(map.guest[5].type, "postback");
   assert.equal(map.public[5].type, "postback");
   assert.equal(JSON.stringify(map.guest[5]).includes("Hi Kenji"), false);
@@ -205,9 +206,9 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork and Mini App MY MMD entry", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260930-v4.11");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20261004-v4.12");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
-  const map = getMmdRichMenuActionMap();
+  const map = getMmdRichMenuDestinationMap();
   assert.match(map.public[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);
   assert.match(map.private[3].uri, /^https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\//);
   assert.doesNotMatch(JSON.stringify(map), /https:\/\/liff\.line\.me\/2010862595-yT4DCEMc/);
@@ -263,11 +264,7 @@ test("audit compares LINE images with pinned fingerprints without refetching mut
   }
 });
 
-test("prepare repairs wrong Guest and Public artwork once, leaving Private, default, and links untouched", async () => {
-  const canonical = pngFixture(4096, 1);
-  const wrong = pngFixture(4096, 2);
-  const specs = menuSpecs(canonical);
-  test("prepare may clone byte-exact approved prior LINE artwork when the Webflow source drifts", async () => {
+test("prepare may clone byte-exact approved prior LINE artwork when the Webflow source drifts", async () => {
   const canonical = pngFixture(4096, 1);
   const wrong = pngFixture(4096, 2);
   const specs = menuSpecs(canonical);
@@ -297,6 +294,12 @@ test("prepare repairs wrong Guest and Public artwork once, leaving Private, defa
     mock.restore();
   }
 });
+
+test("prepare repairs wrong Guest and Public artwork once, leaving Private, default, and links untouched", async () => {
+  const canonical = pngFixture(4096, 1);
+  const wrong = pngFixture(4096, 2);
+  const specs = menuSpecs(canonical);
+
 for (const key of ["guest", "public"]) {
     specs[key].repairName = `${specs[key].name} artwork-${sha256(canonical).slice(0, 8)}`;
     specs[key].images = [{
@@ -433,3 +436,4 @@ test("three-level prepare and audit routes are recognized but remain internal-to
   assert.deepEqual(await activateResponse.json(), { ok: false, error: "internal_auth_required" });
   assert.deepEqual(await auditResponse.json(), { ok: false, error: "internal_auth_required" });
 });
+
