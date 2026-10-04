@@ -46,8 +46,8 @@ const MODEL_PWA_ICON_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2a
 export function modelPwaManifest() {
   return {
     id: UI_PREFIX,
-    name: "MMD APP",
-    short_name: "MMD APP",
+    name: "MY MODEL",
+    short_name: "MY MODEL",
     description: "MMD Privé onboarding, dashboard, Wish and model-side services",
     lang: "th",
     start_url: `${UI_PREFIX}?launch=pwa`,
@@ -173,7 +173,7 @@ const TELEGRAM_CONNECT_JS = `(() => {
       '<div class="mmd-model-telegram-connect-v1__copy">' +
         '<small>JOB NOTIFICATIONS</small>' +
         '<strong data-mmd-tg-title>กำลังตรวจ Telegram…</strong>' +
-        '<span data-mmd-tg-copy>LINE ยังเป็นบัญชีหลักของ MMD APP</span>' +
+        '<span data-mmd-tg-copy>LINE ยังเป็นบัญชีหลักของ MY MODEL</span>' +
       '</div>' +
       '<div class="mmd-model-telegram-connect-v1__actions">' +
         '<button type="button" data-mmd-tg-connect hidden>เชื่อม Telegram</button>' +
@@ -713,7 +713,7 @@ function modelLineBriefsPageResponse(request) {
     "x-mmd-model-entry": "line-briefs-v1", "x-robots-tag": "noindex, nofollow",
   });
   if (!["GET", "HEAD"].includes(request.method.toUpperCase())) return new Response(null, { status: 405, headers });
-  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD APP · Model briefs</title><link rel="stylesheet" href="${MODEL_LINE_BRIEFS_CSS_PATH}"></head><body style="background:#090909;margin:0"><script src="${MODEL_LINE_BRIEFS_JS_PATH}" defer></script></body></html>`;
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MY MODEL · Model briefs</title><link rel="stylesheet" href="${MODEL_LINE_BRIEFS_CSS_PATH}"></head><body style="background:#090909;margin:0"><script src="${MODEL_LINE_BRIEFS_JS_PATH}" defer></script></body></html>`;
   return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
 
@@ -833,13 +833,13 @@ function selectedJobExternalHandoffHtml(request) {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#080907">
-<title>MMD APP · เปิดงานใน LINE</title>
+<title>MY MODEL · เปิดงานใน LINE</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#080907}body{font-family:"LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f5efe5}.wrap{min-height:100dvh;display:grid;place-items:center;padding:24px}.card{width:min(100%,440px);border:1px solid rgba(223,185,102,.28);border-radius:24px;background:linear-gradient(180deg,#15140f,#0e0e0c);padding:24px;box-shadow:0 28px 80px #0008}.k{margin:0 0 10px;color:#d8bb7f;font-size:10px;font-weight:900;letter-spacing:.14em}.card h1{margin:0;font-size:30px;line-height:1.12;color:#fff4d6}.card p{margin:12px 0 0;color:#aaa69c;font-size:13px;line-height:1.7}.btn{display:flex;align-items:center;justify-content:center;min-height:52px;margin-top:22px;border-radius:14px;background:#d8bb7f;color:#17130c;text-decoration:none;font-size:13px;font-weight:900}.note{display:block;margin-top:11px;color:#77736b;font-size:10px;line-height:1.5;text-align:center}
 </style>
 </head>
 <body><main class="wrap" data-mmd-selected-job-external-handoff="v1"><section class="card">
-<p class="k">MMD APP · SELECTED JOB</p>
+<p class="k">MY MODEL · SELECTED JOB</p>
 <h1>เปิดงานนี้ใน LINE</h1>
 <p>ลิงก์นี้เปิดมาจาก Telegram หรือเบราว์เซอร์ภายนอกครับ<br>กดปุ่มด้านล่างเพื่อเปิดงานนี้ใน LINE แล้วระบบจะพากลับมาที่งานนี้ให้เลย</p>
 <a class="btn" href="${href}">เปิดงานนี้ใน LINE →</a>
@@ -900,7 +900,7 @@ export function authenticatedJobBoardResumeHtml(request) {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#080907">
-<title>MMD APP · Opening job</title>
+<title>MY MODEL · Opening job</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#080907}body{font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif;color:#f6f0e7}.mjb-resume{min-height:100dvh;display:grid;place-items:center;padding:20px}.mjb-resume__card{width:min(100%,440px);padding:24px;border:1px solid rgba(223,185,102,.25);border-radius:22px;background:#11110e}.mjb-resume__k{margin:0 0 10px;color:#d8bb7f;font-size:9px;font-weight:900;letter-spacing:.14em}.mjb-resume h1{margin:0;font-size:28px;line-height:1.08}.mjb-resume p{margin:12px 0 0;color:#aaa69c;font-size:13px;line-height:1.65}.mjb-resume a{display:flex;align-items:center;justify-content:center;min-height:48px;margin-top:18px;border-radius:14px;background:#d8bb7f;color:#17130c;text-decoration:none;font-size:12px;font-weight:900}
 </style>
@@ -908,7 +908,7 @@ export function authenticatedJobBoardResumeHtml(request) {
 <body>
 <main class="mjb-resume" data-mmd-authenticated-job-board-resume="v1">
   <section class="mjb-resume__card" aria-live="polite">
-    <p class="mjb-resume__k">MMD APP · JOB BOARD</p>
+    <p class="mjb-resume__k">MY MODEL · JOB BOARD</p>
     <h1>กำลังเปิดงานนี้</h1>
     <p id="mjb-resume-state">พบ Model session แล้ว · กำลังยืนยันลิงก์งานเดิม</p>
     <a id="mjb-resume-retry" href=${fallbackJson} hidden>ยืนยันผ่าน LINE อีกครั้ง</a>
@@ -1027,7 +1027,7 @@ function injectModelPwaShell(html) {
     `<meta name="mobile-web-app-capable" content="yes" data-mmd-model-pwa="v1">` +
     `<meta name="apple-mobile-web-app-capable" content="yes" data-mmd-model-pwa="v1">` +
     `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" data-mmd-model-pwa="v1">` +
-    `<meta name="apple-mobile-web-app-title" content="MMD APP" data-mmd-model-pwa="v1">` +
+    `<meta name="apple-mobile-web-app-title" content="MY MODEL" data-mmd-model-pwa="v1">` +
     `<link rel="apple-touch-icon" href="${MODEL_PWA_ICON_URL}" data-mmd-model-pwa="v1">`;
   return output.replace(/<\/head\s*>/i, `${pwa}</head>`);
 }
@@ -1218,7 +1218,7 @@ async function proxyModelWishPage(request) {
   try {
     upstream = await fetchUpstream(request, modelWishPresentationUrl(request));
   } catch (_) {
-    return new Response("MMD APP Wish is temporarily unavailable.", {
+    return new Response("MY MODEL Wish is temporarily unavailable.", {
       status: 502,
       headers: {
         "content-type": "text/plain; charset=utf-8",
@@ -1387,7 +1387,7 @@ function modelPwaManifestResponse(method = "GET") {
 }
 
 function unavailable() {
-  return new Response("MMD APP Dashboard is temporarily unavailable.", {
+  return new Response("MY MODEL Dashboard is temporarily unavailable.", {
     status: 502,
     headers: {
       "content-type": "text/plain; charset=utf-8",

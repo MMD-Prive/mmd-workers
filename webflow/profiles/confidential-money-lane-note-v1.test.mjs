@@ -8,7 +8,7 @@ test("confidential work is explicitly separate from the money lane", () => {
   assert.match(source, /Confidential ไม่ได้แปลว่า Private Money โดยอัตโนมัติ/);
   assert.match(source, /PUBLIC MONEY/);
   assert.match(source, /PRIVATE MONEY/);
-  assert.match(source, /MMD MODEL จะแสดงประเภทเงินและเรทถึงตัว/);
+  assert.match(source, /MY MODEL จะแสดงประเภทเงินและเรทถึงตัว/);
 });
 
 test("copy supports Thai English and Chinese", () => {

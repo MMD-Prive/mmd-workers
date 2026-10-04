@@ -736,7 +736,7 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
   const lineToken = clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN || env.LINE_CHANNEL_ACCESS_TOKEN);
   const telegramUserId = clean(modelFields[clean(env.AT_MODELS__TELEGRAM_USER_ID || "telegram_user_id")]);
   const telegramVerified = normalizeWord(modelFields[clean(env.AT_MODELS__TELEGRAM_VERIFICATION_STATUS || "telegram_verification_status")]) === "verified";
-  const message = "MMD APP · มีงานใหม่\nเปิด MMD APP เพื่อตรวจรายละเอียดและดำเนินการ";
+  const message = "MY MODEL · มีงานใหม่\nเปิด MY MODEL เพื่อตรวจรายละเอียดและดำเนินการ";
   const modelAppUrl = buildModelJobBoardBroadcastLink({ source: "model_new_job_notification" });
   let lineFailure = "model_line_identity_or_transport_missing";
 
@@ -744,13 +744,13 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
     try {
       const messages = [{
         type: "template",
-        altText: "MMD APP · มีงานใหม่",
+        altText: "MY MODEL · มีงานใหม่",
         template: {
           type: "buttons",
           text: "มีงานใหม่รอให้ตรวจในแอป",
           actions: [{
             type: "uri",
-            label: "เปิด MMD APP",
+            label: "เปิด MY MODEL",
             uri: modelAppUrl,
           }],
         },
@@ -773,7 +773,7 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
     const endpoint = configuredEndpoint || (telegramBase ? `${telegramBase}/telegram/internal/send` : "");
     const token = clean(env.AUTH_SERVICE_EVENTS_TO_TELEGRAM || env.AUTH_SERVICE_STUDIO_TO_TELEGRAM);
     if (endpoint && token) {
-      const telegramText = `MMD APP · มีงานใหม่\nเปิด <a href="${escapeHtml(modelAppUrl)}">MMD APP</a> เพื่อตรวจรายละเอียดและดำเนินการ`;
+      const telegramText = `MY MODEL · มีงานใหม่\nเปิด <a href="${escapeHtml(modelAppUrl)}">MY MODEL</a> เพื่อตรวจรายละเอียดและดำเนินการ`;
       try {
         const response = await fetch(endpoint, {
           method: "POST",
@@ -809,8 +809,8 @@ async function pushModelReconfirm(env, sessionRecord, reminder) {
   const modelName = sessionModelName(env, fields) || "Model";
   const date = sessionJobDate(env, fields) || "วันพรุ่งนี้";
   const text = reminder
-    ? `MMD APP · Reminder\n${modelName} ยังไม่มีหลักฐานการกดรับทราบรายละเอียดล่าสุดของงานวันที่ ${date}\nกรุณาเปิด MMD APP และกด “รับทราบงานแล้ว”`
-    : `MMD APP · งานของคุณพรุ่งนี้\nงานวันที่ ${date}\nกรุณาเปิด MMD APP เพื่อตรวจรายละเอียดและกด “รับทราบงานแล้ว”`;
+    ? `MY MODEL · Reminder\n${modelName} ยังไม่มีหลักฐานการกดรับทราบรายละเอียดล่าสุดของงานวันที่ ${date}\nกรุณาเปิด MY MODEL และกด “รับทราบงานแล้ว”`
+    : `MY MODEL · งานของคุณพรุ่งนี้\nงานวันที่ ${date}\nกรุณาเปิด MY MODEL เพื่อตรวจรายละเอียดและกด “รับทราบงานแล้ว”`;
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",

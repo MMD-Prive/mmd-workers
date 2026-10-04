@@ -72,7 +72,7 @@
         setAll('[data-model-link-count]','—');
       }
       set('[data-system-state]','พร้อมใช้งาน');
-      set('[data-system-copy]','ข้อมูลหลักพร้อมแล้วครับ รวมถึงคิว MMD MODEL ที่รอ Owner Review');
+      set('[data-system-copy]','ข้อมูลหลักพร้อมแล้วครับ รวมถึงคิว MY MODEL ที่รอ Owner Review');
     }catch(error){
       if(error.message!=='auth'){
         set('[data-system-state]','ข้อมูลยังไม่ครบ');

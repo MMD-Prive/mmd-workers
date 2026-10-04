@@ -92,7 +92,7 @@ test("Telegram is used only as fallback after LINE fails and Model binding is ve
     const payload = JSON.parse(sent.init.body);
     assert.equal(payload.chat_id, "123456789");
     assert.equal(payload.intent, "model_new_job_fallback");
-    assert.match(payload.text, /MMD APP/);
+    assert.match(payload.text, /MY MODEL/);
     assert.match(payload.text, /https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?/);
     assert.doesNotMatch(payload.text, /liff\.line\.me/);
   } finally {

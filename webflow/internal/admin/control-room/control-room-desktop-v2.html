@@ -8,7 +8,7 @@
     <nav class="crx__nav" aria-label="Internal admin navigation">
       <a class="is-active" href="/internal/admin/control-room"><span>01</span>Control Room</a>
       <a href="/internal/admin/jobs/create-session"><span>02</span>Create Session</a>
-      <a href="/internal/admin/model-link"><span>03</span>MMD MODEL Link</a>
+      <a href="/internal/admin/model-link"><span>03</span>MY MODEL Link</a>
       <a href="/internal/admin/kenji?view=knowledge"><span>04</span>Kenji Knowledge</a>
       <a href="/internal/admin/kenji?view=ai20"><span>05</span>Kenji AI 2.0</a>
       <a href="/internal/admin/studio"><span>06</span>Studio</a>
@@ -49,7 +49,7 @@
     <section class="crx__metrics" aria-label="Control room metrics">
       <article><span>งานวันนี้</span><b data-metric="sessions">—</b><small>Session ที่กำลังเดิน</small></article>
       <article><span>รอตรวจยอด</span><b data-metric="payments">—</b><small>Payment ที่ต้องเปิดดู</small></article>
-      <article><span>MMD MODEL รอผูก</span><b data-model-link-count>—</b><small>LINE verified · Owner review</small></article>
+      <article><span>MY MODEL รอผูก</span><b data-model-link-count>—</b><small>LINE verified · Owner review</small></article>
       <article><span>เรื่องที่ควรระวัง</span><b data-metric="alerts">—</b><small>รายการที่ควรจัดการก่อน</small></article>
     </section>
 
@@ -62,7 +62,7 @@
 
         <div class="crx__apps">
           <a class="crx__app crx__app--gold" href="/internal/admin/model-link" data-model-link-app>
-            <small>MMD MODEL · OWNER REVIEW</small><h4>LINE Link</h4>
+            <small>MY MODEL · OWNER REVIEW</small><h4>LINE Link</h4>
             <p>Model ที่ยืนยัน LINE แล้วแต่ยังไม่ผูก canonical Model record และ Drive folder จะมารอให้เปอร์ตรวจตรงนี้</p>
             <b>รอตรวจ <span data-model-link-count>—</span> · เปิด Queue →</b>
           </a>
@@ -93,7 +93,7 @@
         <div class="crx__panelHead"><div><p class="crx__eyebrow">SYSTEM CHECK</p><h3>ระบบพร้อมไหม</h3></div></div>
         <div class="crx__health">
           <div data-health="admin"><span>Admin session</span><b>Checking</b></div>
-          <div data-health="model-link"><span>MMD MODEL LINE Link</span><b>Checking</b></div>
+          <div data-health="model-link"><span>MY MODEL LINE Link</span><b>Checking</b></div>
           <div data-health="knowledge"><span>Kenji Knowledge</span><b>Checking</b></div>
           <div data-health="preview"><span>Kenji AI 2.0</span><b>Checking</b></div>
           <div data-health="studio"><span>Studio</span><b>Checking</b></div>
@@ -104,12 +104,12 @@
     </section>
 
     <section class="crx__flow">
-      <div class="crx__panelHead"><div><p class="crx__eyebrow">SIMPLE FLOW</p><h3>คิว MMD MODEL ใช้ยังไง</h3></div></div>
+      <div class="crx__panelHead"><div><p class="crx__eyebrow">SIMPLE FLOW</p><h3>คิว MY MODEL ใช้ยังไง</h3></div></div>
       <div class="crx__steps">
-        <article><b>01</b><h4>LINE Verify</h4><p>Model ยืนยัน LINE แล้วระบบสร้าง verified_unlinked claim โดยยังไม่เปิด MMD MODEL</p></article>
+        <article><b>01</b><h4>LINE Verify</h4><p>Model ยืนยัน LINE แล้วระบบสร้าง verified_unlinked claim โดยยังไม่เปิด MY MODEL</p></article>
         <article><b>02</b><h4>เปอร์ตรวจคน</h4><p>เปิด LINE Link Queue ดูรูป/ชื่อ LINE แล้วค้น canonical Model record ที่ถูกต้อง</p></article>
         <article><b>03</b><h4>ตรวจ Folder</h4><p>ระบบ re-read Drive folder และ collision ก่อนอนุญาตให้ LINK แบบ fail-closed</p></article>
-        <article><b>04</b><h4>เข้า MMD MODEL</h4><p>เมื่อ LINK สำเร็จ Model ใช้ LINE เดิมเปิด MMD MODEL และ resolve กลับ record เดิมได้</p></article>
+        <article><b>04</b><h4>เข้า MY MODEL</h4><p>เมื่อ LINK สำเร็จ Model ใช้ LINE เดิมเปิด MY MODEL และ resolve กลับ record เดิมได้</p></article>
       </div>
     </section>
 

@@ -19,7 +19,7 @@ function req(path, body = {}, caller = "admin-worker") {
   });
 }
 
-test("admin service binding sends one bounded MMD MODEL Availability reminder", async () => {
+test("admin service binding sends one bounded MY MODEL Availability reminder", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
@@ -45,7 +45,7 @@ test("admin service binding sends one bounded MMD MODEL Availability reminder", 
     const lineBody = JSON.parse(calls[0].init.body);
     assert.equal(lineBody.to, LINE_ID);
     assert.equal(lineBody.messages.length, 1);
-    assert.match(lineBody.messages[0].text, /MMD MODEL/);
+    assert.match(lineBody.messages[0].text, /MY MODEL/);
     assert.match(lineBody.messages[0].text, /EMs16/);
     assert.match(lineBody.messages[0].text, /\/sigil\/model\/dashboard\/availability/);
     assert.equal(JSON.stringify(payload).includes("line-token"), false);

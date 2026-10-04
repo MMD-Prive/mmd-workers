@@ -49,11 +49,11 @@ export function augmentDashboardWithModelLineLinks(payload, summary) {
     const alreadyPresent = todos.some((item) => item?.href === MODEL_LINK_HREF);
     if (!alreadyPresent && todos.length < 4) {
       todos.push({
-        title: "ตรวจ MMD MODEL LINE Link",
+        title: "ตรวจ MY MODEL LINE Link",
         text: `มี Model ${waiting} รายการที่ยืนยัน LINE แล้วและกำลังรอเปอร์เลือก canonical Model record + Drive folder`,
         href: MODEL_LINK_HREF,
         icon: "M",
-        tag: modelLink.conflicts ? "MMD MODEL · CONFLICT" : "MMD MODEL",
+        tag: modelLink.conflicts ? "MY MODEL · CONFLICT" : "MY MODEL",
         color: modelLink.conflicts ? "red" : "gold",
       });
       next.todos = todos;
@@ -61,7 +61,7 @@ export function augmentDashboardWithModelLineLinks(payload, summary) {
 
     if (!next.focus || next.focus.title === "ยังไม่มีเรื่องด่วน") {
       next.focus = {
-        title: modelLink.conflicts ? "ตรวจ MMD MODEL LINE conflict" : "มี MMD MODEL รอผูก LINE",
+        title: modelLink.conflicts ? "ตรวจ MY MODEL LINE conflict" : "มี MY MODEL รอผูก LINE",
         text: modelLink.conflicts
           ? `มี ${modelLink.conflicts} เคส conflict และรวม ${waiting} เคสที่ต้องให้เปอร์ตรวจด้วยตัวเองก่อน LINK`
           : `มี Model ${waiting} รายการที่ยืนยัน LINE แล้ว รอเปอร์เลือก Model record และตรวจ Drive folder ก่อน LINK`,

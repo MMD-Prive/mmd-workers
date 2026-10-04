@@ -15,7 +15,7 @@
     <div class="smcv3-detail">
       <div class="smcv3-actions" style="display:grid!important;grid-template-columns:1fr 1fr!important">
         <a class="smcv3-btn" href="/rules/model"><span>Private / SIGIL</span></a>
-        <a class="smcv3-btn" href="/rules/public-model-work"><span>Public / MMD APP</span></a>
+        <a class="smcv3-btn" href="/rules/public-model-work"><span>Public / MY MODEL</span></a>
       </div>
     </div>`;
 

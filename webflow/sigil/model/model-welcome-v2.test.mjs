@@ -94,7 +94,7 @@ test("unauthenticated visitor sees Public self greeting and LINE Verify", async 
   assert.equal(redirects, 0);
   assert.equal(document.root.dataset.lane, "public");
   assert.equal(document.root.dataset.entrySource, "self");
-  assert.match(document.root.innerHTML, /MMD APP/);
+  assert.match(document.root.innerHTML, /MY MODEL/);
   assert.match(document.root.querySelector(".mw2-verify").href, /miniapp\.line\.me/);
 });
 
@@ -121,7 +121,7 @@ test("unsafe invite does not select Per copy even when Private lane is trusted",
 test("Welcome uses the selected artwork and keeps the full Per letter", async () => {
   const { document } = await boot({ status: 401 });
   const markup = document.root.innerHTML;
-  assert.match(markup, /MMD APP/);
+  assert.match(markup, /MY MODEL/);
   assert.match(markup, /data:image\/webp;base64,/);
   assert.match(markup, /ENTER/);
   assert.equal(document.root.querySelector(".mw2-body").children.length, 3);

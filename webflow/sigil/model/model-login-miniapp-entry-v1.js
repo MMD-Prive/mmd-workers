@@ -379,14 +379,14 @@
     const body = context
       ? "กรอกข้อมูลสั้น ๆ ในขั้นตอนถัดไป เพื่อดูรายละเอียดและไปต่อได้เลย"
       : "บอกข้อมูลพื้นฐานในขั้นตอนถัดไป แล้ว MMD จะพาคุณไปต่อ";
-    const chip = context ? "JOB BOARD" : "MMD APP";
+    const chip = context ? "JOB BOARD" : "MY MODEL";
     const meta = context
       ? "<span>เก็บงานเดิมไว้ให้</span><span>ไปต่อจากจุดเดิม</span>"
       : "<span>ใช้เวลาไม่นาน</span><span>ข้อมูลเท่าที่จำเป็น</span>";
 
     root.innerHTML =
       '<div class="mwv2-top"><div class="mwv2-brand"><b>MMD PRIVÉ</b><span>MODEL APP</span></div><span class="mwv2-chip">' + chip + '</span></div>' +
-      '<div class="mwv2-main"><p class="mwv2-kicker">MMD APP · WELCOME</p><h1>' + title + '</h1><p>' + body + '</p><div class="mwv2-meta">' + meta + '</div></div>' +
+      '<div class="mwv2-main"><p class="mwv2-kicker">MY MODEL · WELCOME</p><h1>' + title + '</h1><p>' + body + '</p><div class="mwv2-meta">' + meta + '</div></div>' +
       '<div><button class="mwv2-action" type="button">ไปต่อ</button><p class="mwv2-note">ขั้นตอนถัดไปจะพาคุณไปยังข้อมูลที่เกี่ยวข้อง</p></div>';
 
     root.querySelector(".mwv2-action").addEventListener("click", () => {

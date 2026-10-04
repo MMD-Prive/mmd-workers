@@ -39,7 +39,7 @@
       var button = document.createElement("button");
       button.type = "button";
       button.setAttribute("data-model-line-link-entry", "");
-      button.innerHTML = 'MMD MODEL Link · <b data-model-line-link-nav-count>—</b>';
+      button.innerHTML = 'MY MODEL Link · <b data-model-line-link-nav-count>—</b>';
       button.addEventListener("click", function () { window.location.assign(TARGET); });
       var advanced = nav.querySelector("[data-kso-advanced]");
       nav.insertBefore(button, advanced || null);
@@ -50,7 +50,7 @@
       entry.className = "kml-entry";
       entry.href = TARGET;
       entry.setAttribute("data-model-line-link-home-entry", "");
-      entry.innerHTML = '<div><span>MMD MODEL · OWNER REVIEW</span><strong>LINE Link Queue</strong><small>ดู Model ที่ยืนยัน LINE แล้วแต่ยังรอผูก canonical Model record + Drive folder</small></div><b class="kml-count" data-model-line-link-home-count>—</b>';
+      entry.innerHTML = '<div><span>MY MODEL · OWNER REVIEW</span><strong>LINE Link Queue</strong><small>ดู Model ที่ยืนยัน LINE แล้วแต่ยังรอผูก canonical Model record + Drive folder</small></div><b class="kml-count" data-model-line-link-home-count>—</b>';
       var first = overview.querySelector(".kso-home") || overview.firstElementChild;
       if (first) overview.insertBefore(entry, first);
       else overview.appendChild(entry);

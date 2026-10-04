@@ -57,7 +57,7 @@
   // show a visible screen with a manual button and an owner reference instead.
   function enterLiff(token, code) {
     if (insideLiff() || recentReentry()) {
-      renderBlocked("ยังยืนยันตัวตนใน LINE ไม่สำเร็จ กรุณากดปุ่มด้านล่างเพื่อเปิดงานใน MMD APP อีกครั้ง", code || "model_session_reentry_loop", liffUrl(token));
+      renderBlocked("ยังยืนยันตัวตนใน LINE ไม่สำเร็จ กรุณากดปุ่มด้านล่างเพื่อเปิดงานใน MY MODEL อีกครั้ง", code || "model_session_reentry_loop", liffUrl(token));
       return false;
     }
     markReentry();
@@ -130,7 +130,7 @@
     card.className = "mmd-dfjg__card";
     const kicker = document.createElement("p");
     kicker.className = "mmd-dfjg__k";
-    kicker.textContent = "MMD APP";
+    kicker.textContent = "MY MODEL";
     const title = document.createElement("h1");
     title.textContent = "ยังเปิดรายละเอียดงานไม่ได้";
     const text = document.createElement("p");
@@ -140,7 +140,7 @@
       const button = document.createElement("a");
       button.className = "mmd-dfjg__btn";
       button.href = actionUrl;
-      button.textContent = "เปิดใน MMD APP (LINE)";
+      button.textContent = "เปิดใน MY MODEL (LINE)";
       card.appendChild(button);
     }
     const retry = document.createElement("a");

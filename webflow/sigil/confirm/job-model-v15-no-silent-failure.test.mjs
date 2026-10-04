@@ -309,7 +309,7 @@ test("gate: first 401 redirects to LINE Mini App once; a bounce back within the 
   const overlay = h2.body.children.find((c) => c.hasAttribute("data-mmd-direct-first-job-gate"));
   assert.ok(overlay);
   assert.match(overlay.allText, /MC-G-model_session_required/);
-  assert.match(overlay.allText, /เปิดใน MMD APP/);
+  assert.match(overlay.allText, /เปิดใน MY MODEL/);
   assert.equal(h2.root.dataset.mmdState, "gate");
 });
 
