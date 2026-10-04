@@ -54,7 +54,7 @@ async function signedRun({ truth = memberTruth("none", "unresolved", "unresolved
       LINE_CHANNEL_SECRET: "test-secret", LINE_CHANNEL_ACCESS_TOKEN: "test", LINE_AUTO_REPLY_ENABLED: "true", LINE_KENJI_AI_ENABLED: "true", KENJI_LINE_CONTINUITY_ENABLED: "true", INTERNAL_TOKEN: "test",
       MEMBER_PAGES_WORKER: { fetch: async () => Response.json(truth) },
       ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: { line_oa_auto_reply: kill, all_kenji_mutations: false, model_keyword_auto_reply: false } }) },
-    });
+    }, null, { fetch: async () => Response.json({ ok: true, saved: [{ campaign_event: false }] }) });
     return { status: response.status, data: await response.json(), reads, replies, audits };
   } finally { globalThis.fetch = originalFetch; }
 }
