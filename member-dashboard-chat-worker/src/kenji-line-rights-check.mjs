@@ -52,6 +52,18 @@ export function renderLineRightsCheck(truth = {}) {
   const verified = truth.ok === true && truth.authority === AUTHORITY && truth.identity_status === "resolved";
   const m = truth.former_private_membership || truth.membership || {};
   const lines = [];
+  const owner = truth.owner_membership_context;
+  if (truth.ok === true && owner?.authority === "owner_per_rename_membership_context_v1" && owner.membership_known === true) {
+    lines.push("พบประวัติสมาชิกจาก LINE ที่เปอร์บันทึกไว้แล้วครับ");
+    const expiry = date(owner.expire_at);
+    if (expiry && owner.status === "owner_confirmed_expiry") {
+      lines.push(`${LEVELS[owner.level] ? `สมาชิก ${LEVELS[owner.level]} · ` : "สมาชิกเดิม · "}${owner.lifecycle === "expired" ? "หมดอายุแล้ว" : "ยังอยู่ในช่วงอายุสมาชิก"}`);
+      lines.push(`รอบสิทธิ์เดิมใช้ถึง ${expiry} · ตามข้อมูลที่เปอร์ยืนยัน`);
+    } else lines.push(owner.conflict ? "ข้อมูลวันที่ในชื่อ LINE กับข้อมูลที่เปอร์ยืนยันยังไม่ตรงกันครับ" : owner.start_date ? "วันเริ่มสมาชิกจากชื่อ LINE มีข้อมูลแล้ว แต่ระยะสมาชิกและวันหมดอายุยังรอเชื่อมข้อมูลครับ" : "พบประวัติสมาชิกเดิม แต่วันที่และระยะสมาชิกยังตรวจยืนยันไม่ครบครับ");
+    lines.push("ข้อมูล Member/Entitlement ยังรอเชื่อมใน MY MMD จึงยังยืนยันการเข้าใช้สิทธิ์และแต้มที่ใช้ได้ไม่ได้ครับ");
+    lines.push("หากต้องการต่ออายุ แจ้งเปอร์ในแชตนี้เพื่อยืนยันแพ็กเกจและยอดก่อนโอน หลังโอนแนบสลิปในรายการเดิม รอตรวจชำระก่อนอัปเดตสิทธิ์และแต้มครับ");
+    return { text: lines.join("\n"), missing: ["canonical_member_entitlement_sync", "canonical_paid_points", "canonical_renewal_quote"], intent: "membership_status", reply_source: "line_rights_check_v1", truth_authority: owner.authority, truth_status: "partial", handoff_required: true, handoff_reason: "rights_check:missing:canonical_member_entitlement_sync,canonical_paid_points,canonical_renewal_quote", conversation_stage: "awaiting_review" };
+  }
   const status = { active: "ใช้งานได้", expiring_soon: "ใช้งานได้", grace: "อยู่ในช่วง Grace", expired: "หมดอายุแล้ว", blocked: "ระงับการใช้งาน", revoked: "ยกเลิกสิทธิ์แล้ว" }[m.lifecycle];
   if (verified && LEVELS[m.level] && status) {
     lines.push(`สมาชิก ${LEVELS[m.level]} · ${truth.membership?.member_blocked ? "ระงับการใช้งาน" : status}`);
@@ -163,7 +175,7 @@ export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}
       } else {
         caseSaved = continuity.matrix?.handoff_required === true && clean(continuity.matrix?.handoff_reason).startsWith("rights_check:missing:");
       }
-      decision.text += caseSaved ? "\nส่งเรื่องให้เปอร์ตรวจแล้วครับ ไม่ต้องส่งสลิปซ้ำระหว่างรอตรวจ" : "\nตอนนี้ยังส่งเรื่องเข้าคิวตรวจไม่สำเร็จ รบกวนติดต่อเปอร์ในแชตนี้ครับ";
+      decision.text += caseSaved ? "\nมีเรื่องรอตรวจบันทึกในระบบแล้วครับ" : "\nตอนนี้ยังบันทึกเรื่องเข้าคิวตรวจไม่สำเร็จ รบกวนติดต่อเปอร์ในแชตนี้ครับ";
     }
     // Re-read controls and owner state after slow truth/case operations.
     const fresh = await services.continuity({ env, event, currentIntent: "membership_status" });

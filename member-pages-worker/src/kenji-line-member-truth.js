@@ -1,3 +1,4 @@
+import { readKenjiOwnerMembershipContext } from "./kenji-owner-membership-context.js";
 import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
 import { projectKenjiRenewalPromotion, readKenjiCareBackCoupon } from "./kenji-member-benefits.js";
 import { readKenjiPrivateSignupCatalog } from "./kenji-private-interest.js";
@@ -344,12 +345,16 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
 
   const resolved = await readTruthContext(env, lineUserId, intent);
   const projection = projectKenjiLineMemberTruth(resolved || {});
+  const ownerContext = !projection && ["rights_check", "private_interest"].includes(intent)
+    ? await readKenjiOwnerMembershipContext(env, lineUserId) : null;
+  const ownerProjection = ownerContext ? { ok: true, authority: RESOLVER_SCHEMA, identity_status: "owner_oa_linked", owner_membership_context: ownerContext } : null;
   if (intent === "private_interest") {
     // Read-only entitlement/catalog lane: no identity-link recovery or claim.
     const catalog = await readKenjiPrivateSignupCatalog(env);
-    return json({ ...(projection || { ok: true, authority: RESOLVER_SCHEMA, identity_status: "unresolved" }), private_signup_catalog: catalog });
+    return json({ ...(projection || ownerProjection || { ok: true, authority: RESOLVER_SCHEMA, identity_status: "unresolved" }), private_signup_catalog: catalog });
   }
   if (!projection) {
+    if (ownerProjection) return json(ownerProjection);
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
   }
   if (intent === "rights_check") {

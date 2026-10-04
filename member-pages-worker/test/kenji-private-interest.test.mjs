@@ -37,7 +37,7 @@ function request(host = "member-pages-worker.internal") {
 test("no entitlement match stays unknown with general catalog, never confirmed nonmember", async () => {
   const f = fixture(); const response = await handleKenjiLineMemberTruth(request(), f.env); const result = await response.json();
   assert.equal(response.status, 200); assert.equal(result.identity_status, "unresolved"); assert.equal(result.private_signup_catalog.status, "verified");
-  assert.equal(result.member_exists, undefined); assert.equal(f.reads.length, 2);
+  assert.equal(result.member_exists, undefined); assert.equal(f.reads.length, 4);
 });
 test("unauthorized host cannot query customer or catalog", async () => {
   const f = fixture(); assert.equal((await handleKenjiLineMemberTruth(request("mmdbkk.com"), f.env)).status, 404); assert.equal(f.reads.length, 0);
