@@ -72,6 +72,11 @@ import {
   isAdminJobBoardPublishRequest,
 } from "./job-board-owner-publish.js";
 import {
+  handleSessionCreatorPageRequest,
+  isSessionCreatorAssetRequest,
+  isSessionCreatorPageRequest,
+} from "./session-creator-page-proxy.js";
+import {
   handleModelDirectFirstJobGate,
   isModelDirectFirstJobGateRequest,
 } from "./model-direct-first-job-gate.js";
@@ -251,6 +256,13 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (
+      isSessionCreatorPageRequest(normalizedPath, method) ||
+      isSessionCreatorAssetRequest(normalizedPath, method)
+    ) {
+      return handleSessionCreatorPageRequest(request);
     }
 
     if (isModelDirectFirstJobGateRequest(normalizedPath, method)) {
