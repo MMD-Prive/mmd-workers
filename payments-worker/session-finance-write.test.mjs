@@ -4,9 +4,7 @@ import { test } from "node:test";
 
 const source = readFileSync(new URL("./index.js", import.meta.url), "utf8");
 const reviewWrapperSource = readFileSync(new URL("./index.review-wrapper.js", import.meta.url), "utf8");
-const componentSource = readFileSync(new URL("./sigil-membership-payment-components.js", import.meta.url), "utf8");
-const componentModule = await import(`data:text/javascript;base64,${Buffer.from(componentSource).toString("base64")}`);
-const { parseSigilMembershipPaymentComponents } = componentModule;
+import { parseSigilMembershipPaymentComponents } from "../shared/sigil-membership-payment-components.mjs";
 
 function block(start, end) {
   const from = source.indexOf(start);
