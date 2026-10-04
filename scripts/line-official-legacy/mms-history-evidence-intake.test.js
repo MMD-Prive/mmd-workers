@@ -147,3 +147,29 @@ test("payout date alone never creates a customer payment proof", async () => {
   assert.equal(result.plans[0].proof_id, "");
   assert.equal(airtable.writes.length, 1);
 });
+
+test("MMS OA notes retain custom hashtag aliases and long multiline history", async () => {
+  const airtable = new FakeAirtable();
+  const note = "old visit\n".repeat(1000) + "ค่าคอร์ส: 2000\nค่าเดินทาง: 500\nยอดเต็ม: 2500\nส่วน MMS: 750\nส่วน Therapist: 1750";
+  await runMmsHistoryEvidenceIntake({ source: "line_ofc", rows: [{ note_id: "customer:note", current_line_rename: "Per rename", customer_hashtags: ["#client", "#purchased", "#MMS_custom"], raw_line_notes: note }], airtable, applyEvidence: true });
+  const fields = airtable.writes[0].fields;
+  assert.ok(fields.raw_note.includes(note));
+  assert.match(fields.line_tags_raw, /#MMS_custom/);
+  const stored = JSON.parse(fields.raw_row_json).mms_service_finance;
+  assert.equal(stored.expected_mms_share_thb, 750);
+  assert.equal(stored.expected_therapist_share_thb, 1750);
+  assert.equal(fields.service_amount, 2500);
+  assert.equal(fields.proposed_points, 0);
+  assert.equal(fields.points_review_required, "true");
+  assert.equal(airtable.writes.length, 1);
+});
+test("OA note amounts without an explicit kind do not become payment proof", async () => {
+  const airtable = new FakeAirtable();
+  const result = await runMmsHistoryEvidenceIntake({ source: "line_ofc", rows: [{ note_id: "note:finance", line_renamed_name: "Customer", raw_note: "payment 2500 THB", amount_thb: 2500 }], airtable, applyEvidence: true });
+  assert.equal(result.plans[0].proof_id, "");
+  assert.equal(result.finance_audit[0].status, "review_required");
+  assert.equal(airtable.writes.length, 1);
+});
+test("MMD OA notes cannot be imported as MMS notes", () => {
+  assert.throws(() => normalizeMmsHistoryRow({ source: "line_ofc", source_account: "@mmdprive", note_id: "note:1" }), /MMS_OFC_ACCOUNT_MISMATCH/);
+});
