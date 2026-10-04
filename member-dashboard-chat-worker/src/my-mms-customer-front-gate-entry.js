@@ -1,4 +1,5 @@
 import currentWorker from "./mms-line-front-gate.js";
+import { maybeHandleTherapistWorkspace } from "./mms-therapist-workspace.js";
 import {
   handleMyMmsCustomerApi,
   handleMyMmsCustomerAsset,
@@ -29,6 +30,8 @@ async function proxyMedicalRequest(request, env) {
 export default {
   ...currentWorker,
   async fetch(request, env = {}, ctx) {
+    const therapistPage = await maybeHandleTherapistWorkspace(request, env);
+    if (therapistPage) return therapistPage;
     if (MEDICAL_REQUEST_PATHS.has(new URL(request.url).pathname)) return proxyMedicalRequest(request, env);
     if (isMyMmsCustomerApiRequest(request)) return handleMyMmsCustomerApi(request, env);
     if (isMyMmsCustomerAssetRequest(request)) return handleMyMmsCustomerAsset(request);
