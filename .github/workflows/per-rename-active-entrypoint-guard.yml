@@ -9,6 +9,9 @@ on:
       - "admin-worker/src/per-rename-client-search.js"
       - "admin-worker/wrangler.toml"
       - "admin-worker/per-rename-client-search.test.mjs"
+      - "admin-worker/customer-search-thai-variants.test.mjs"
+      - "admin-worker/src/create-session-client-lineage-runtime.js"
+      - "admin-worker/create-session-client-lineage-runtime.test.mjs"
       - "admin-worker/per-rename-entrypoint.test.mjs"
       - ".github/workflows/per-rename-active-entrypoint-guard.yml"
   push:
@@ -20,6 +23,9 @@ on:
       - "admin-worker/src/per-rename-client-search.js"
       - "admin-worker/wrangler.toml"
       - "admin-worker/per-rename-client-search.test.mjs"
+      - "admin-worker/customer-search-thai-variants.test.mjs"
+      - "admin-worker/src/create-session-client-lineage-runtime.js"
+      - "admin-worker/create-session-client-lineage-runtime.test.mjs"
       - "admin-worker/per-rename-entrypoint.test.mjs"
       - ".github/workflows/per-rename-active-entrypoint-guard.yml"
 
@@ -34,5 +40,7 @@ jobs:
           node-version: 20
       - name: Per Rename contract regression
         run: node admin-worker/per-rename-client-search.test.mjs
+      - name: Canonical Thai query variants and lineage regression
+        run: node --test admin-worker/customer-search-thai-variants.test.mjs admin-worker/create-session-client-lineage-runtime.test.mjs admin-worker/create-session-remembered-name-priority.test.mjs
       - name: Active entrypoint regression
         run: node admin-worker/per-rename-entrypoint.test.mjs

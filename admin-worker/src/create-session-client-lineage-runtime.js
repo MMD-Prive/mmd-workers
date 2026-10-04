@@ -725,15 +725,17 @@ function bestLineageMatch(needles, entries) {
 
   let best = { score: 0, priority: 0, matched_on: "", matched_value: "" };
   for (const entry of entries || []) {
-    const value = normalizeSearch(entry?.value);
-    if (!value) continue;
+    const values = searchVariants(entry?.value);
+    if (!values.length) continue;
 
     let quality = 0;
     for (const needle of needles) {
+      for (const value of values) {
       if (value === needle) quality = Math.max(quality, 100);
       else if (value.startsWith(needle)) quality = Math.max(quality, 94);
       else if (value.includes(needle)) quality = Math.max(quality, 88);
       else if (needle.length >= 4 && needle.includes(value)) quality = Math.max(quality, 82);
+      }
     }
     if (!quality) continue;
 
@@ -831,9 +833,10 @@ function stagingSearchFormula(query) {
     "matched_client_id",
   ];
   const needles = rawNeedles.map(airtableFormulaString);
-  const checks = fields.flatMap((field) => needles.map(
-    (needle) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
-  ));
+  const checks = fields.flatMap((field) => needles.flatMap((needle) => [
+    `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
+    `IFERROR(SEARCH(\"${needle}\",LOWER(SUBSTITUTE({${field}}&\"\",\" \",\"\"))),0)>0`,
+  ]));
   return `OR(${checks.join(",")})`;
 }
 
