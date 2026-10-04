@@ -4,7 +4,6 @@ const WORK_ASSET_PREFIX = "/internal/admin/work/assets/";
 const SESSION_CREATOR_PAGES = new Set([
   "/internal/admin/work",
   "/internal/admin/jobs/create-job",
-  "/internal/admin/jobs/all",
   "/internal/admin/jobs/job-board",
 ]);
 
@@ -19,7 +18,11 @@ export function isSessionCreatorPageRequest(path, method = "GET") {
 
 export function isSessionCreatorAssetRequest(path, method = "GET") {
   const verb = String(method || "GET").toUpperCase();
-  return (verb === "GET" || verb === "HEAD") && String(path || "").startsWith(WORK_ASSET_PREFIX);
+  return (
+    (verb === "GET" || verb === "HEAD") &&
+    String(path || "").startsWith(WORK_ASSET_PREFIX) &&
+    String(path || "").length > WORK_ASSET_PREFIX.length
+  );
 }
 
 function upstreamRequestHeaders(request) {

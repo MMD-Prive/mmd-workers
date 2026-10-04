@@ -10,11 +10,12 @@ import {
 test("routes only the Session Creator work and job pages", () => {
   assert.equal(isSessionCreatorPageRequest("/internal/admin/work", "GET"), true);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/create-job", "GET"), true);
-  assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/all", "GET"), true);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/job-board", "GET"), true);
+  assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/all", "GET"), false);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/dashboard", "GET"), false);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/work", "POST"), false);
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/work/assets/index.js", "GET"), true);
+  assert.equal(isSessionCreatorAssetRequest("/internal/admin/work/assets/", "GET"), false);
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/clients/assets/index.js", "GET"), false);
 });
 
