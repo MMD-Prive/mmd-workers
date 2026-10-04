@@ -9,14 +9,37 @@ import {
 
 test("routes only the Session Creator work and job pages", () => {
   assert.equal(isSessionCreatorPageRequest("/internal/admin/work", "GET"), true);
+  assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/all", "GET"), true);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/create-job", "GET"), true);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/job-board", "GET"), true);
-  assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/all", "GET"), false);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/dashboard", "GET"), false);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/work", "POST"), false);
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/work/assets/index.js", "GET"), true);
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/work/assets/", "GET"), false);
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/clients/assets/index.js", "GET"), false);
+});
+
+test("proxies All Jobs query strings to Session Creator without forwarding cookies", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamRequest;
+  globalThis.fetch = async (request) => {
+    upstreamRequest = request;
+    return new Response("<html><head></head><body>All Jobs</body></html>", {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  };
+
+  try {
+    const response = await handleSessionCreatorPageRequest(new Request(
+      "https://mmdbkk.com/internal/admin/jobs/all?session_id=sess_exact&page=2",
+      { headers: { cookie: "admin_session=private", accept: "text/html" } },
+    ));
+    assert.equal(upstreamRequest.url, "https://mmd-os.lovable.app/internal/admin/jobs/all?session_id=sess_exact&page=2");
+    assert.equal(upstreamRequest.headers.has("cookie"), false);
+    assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-session-creator-pro");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("proxies the page without forwarding operator cookies and rewrites assets to same origin", async () => {

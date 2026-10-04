@@ -67,6 +67,14 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-job*"
 zone_name = "mmdbkk.com"
 
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/all"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/all"
+zone_name = "mmdbkk.com"
+
 # First-time Model Dashboard activation. A short-lived admin-issued invite plus
 # a real LINE ID token binds the canonical Models.line_user_id exactly once.
 [[routes]]

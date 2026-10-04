@@ -3,6 +3,7 @@ const WORK_ASSET_PREFIX = "/internal/admin/work/assets/";
 
 const SESSION_CREATOR_PAGES = new Set([
   "/internal/admin/work",
+  "/internal/admin/jobs/all",
   "/internal/admin/jobs/create-job",
   "/internal/admin/jobs/job-board",
 ]);
