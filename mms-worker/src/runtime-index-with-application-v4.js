@@ -86,11 +86,11 @@ async function handleAdditionalPhotoGrant(request, env, body) {
 
 async function handleUpload(request, env, applicationId, uploadToken) {
   requirePublicOrigin(request, env);
-  if (!env.MMS_PRIVATE_UPLOADS) return jsonError(503, "UPLOAD_STORAGE_UNAVAILABLE");
+  if (!env.MMS_PRIVATE_UPLOADS) return Response.json({ ok: false, error: { code: "UPLOAD_STORAGE_UNAVAILABLE" } }, { status: 503, headers: corsHeaders(request, env) });
   const stub = coordinator(env, applicationId);
   const tokenHash = await sha256Hex(uploadToken);
   const claim = await stub.claimUploadGrant(tokenHash, Date.now());
-  if (!claim.ok) return jsonError(409, claim.code || "UPLOAD_GRANT_INVALID");
+  if (!claim.ok) return Response.json({ ok: false, error: { code: claim.code || "UPLOAD_GRANT_INVALID" } }, { status: 409, headers: corsHeaders(request, env) });
 
   try {
     const grant = claim.grant;
@@ -109,8 +109,9 @@ async function handleUpload(request, env, applicationId, uploadToken) {
         original_name: String(grant.filename || "").slice(0, 160),
       },
     });
-    await stub.completeUploadGrant(tokenHash, Date.now());
     const airtable = await attachUpload(env, applicationId, grant).catch(() => ({ status: "pending" }));
+    if (airtable.status !== "synced") throw new Error("UPLOAD_LINK_PENDING");
+    await stub.completeUploadGrant(tokenHash, Date.now());
     return Response.json({
       ok: true,
       application_ref: applicationId,
@@ -121,8 +122,8 @@ async function handleUpload(request, env, applicationId, uploadToken) {
   } catch (error) {
     await stub.releaseUploadGrant(tokenHash);
     const code = String(error?.message || "UPLOAD_FAILED");
-    const status = code === "UPLOAD_TOO_LARGE" ? 413 : 400;
-    return jsonError(status, code);
+    const status = code === "UPLOAD_LINK_PENDING" ? 503 : code === "UPLOAD_TOO_LARGE" ? 413 : 400;
+    return Response.json({ ok: false, error: { code } }, { status, headers: corsHeaders(request, env) });
   }
 }
 
