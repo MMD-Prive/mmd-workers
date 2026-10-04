@@ -8,10 +8,14 @@ const clean = value => String(value ?? "").trim();
 const enabled = value => /^(true|1|yes|on)$/i.test(clean(value));
 const LEVELS = { private_standard: "Standard", private_premium: "Premium", vip: "VIP", svip: "SVIP", black_card: "Black Card" };
 
+export function isRightsCommand(message = "") {
+  return /^(?:ขอ)?(?:เช็ก|เช็ค)\s*สิท(?:ธิ์|ธ์)(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู))?(?:หน่อย|ให้หน่อย)?(?:ครับ|ค่ะ|คะ|นะ)?[.!?]*$/.test(clean(message).normalize("NFKC"));
+}
+
 export function isLineRightsCheck(event = {}) {
   if (event.source?.type !== "user" || event.type !== "message" || event.message?.type !== "text") return false;
   const value = clean(event.message.text).normalize("NFKC");
-  return /^(?:ขอ)?(?:เช็ก|เช็ค)\s*สิทธิ์(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู))?(?:หน่อย|ให้หน่อย)?(?:ครับ|ค่ะ|คะ|นะ)?[.!?]*$/.test(value)
+  return isRightsCommand(value)
     || /^(?:ขอ)?ต่ออายุ(?:สมาชิก)?(?:ครับ|ค่ะ|คะ|นะ)?$/.test(value);
 }
 
@@ -51,6 +55,14 @@ export function renderLineRightsCheck(truth = {}) {
     if (expiry) lines.push(`รอบสิทธิ์ใช้ถึง ${expiry}`);
     else { missing.push("canonical_expiry"); lines.push("วันหมดอายุยังรอตรวจครับ"); }
   } else { missing.push("canonical_identity_membership"); lines.push("สถานะสมาชิกยังตรวจยืนยันไม่ครบครับ"); }
+  if (verified && !truth.membership?.member_blocked && ["active", "expiring_soon"].includes(truth.membership?.lifecycle)) {
+    if (truth.membership.public_service_access === true) lines.push("สิทธิ์ Public Service: ใช้งานได้");
+    const envelope = { standard: "Standard", premium: "Premium", vip: "VIP", svip: "SVIP", black_card: "Black Card" }[truth.membership.private_visibility_envelope];
+    if (envelope) lines.push(`สิทธิ์ดู Private: ${envelope}`);
+  }
+  // This canonical endpoint does not yet project account-bound coupons or
+  // approved promotions. Never imply none/eligible from a missing domain.
+  lines.push("คูปองและโปรที่ใช้ได้กับบัญชีนี้ยังรอเปอร์ตรวจครับ");
   const points = truth.points;
   if (verified && points?.status === "verified" && points.authority === POINTS_AUTHORITY && Number.isSafeInteger(points.active_points) && points.active_points >= 0) {
     lines.push(`แต้มที่ยืนยันและใช้ได้: ${points.active_points.toLocaleString("th-TH")} Points`);
@@ -86,19 +98,23 @@ async function deliver(env, event, answer) {
 }
 const defaults = { continuity: resolveKenjiLineContinuity, takeover: getLineOwnerTakeoverState, runtime: requestKenjiRuntimeStatus, truth: readTruth, matrix: writeKenjiLineMatrixTurn, deliver,
   history: recordDeliveredKenjiLineReply };
-const killed = runtime => runtime?.ok !== true || runtime.controls?.all_kenji_mutations === true || runtime.controls?.line_oa_auto_reply === true;
+const commandEnabled = env => clean(env.KENJI_LINE_RIGHTS_CHECK_MODE) === "command" && enabled(env.KENJI_LINE_RIGHTS_COMMAND_ENABLED);
+const killed = (runtime, command = false) => runtime?.ok !== true || runtime.controls?.all_kenji_mutations === true || (!command && runtime.controls?.line_oa_auto_reply === true);
 
 // Called only inside the verified MMD LINE webhook, after canonical intake.
-// The public body cannot supply services or provider identity. Pilot only;
-// missing/off settings leave the established lane completely unchanged.
+// The public body cannot supply services or provider identity. Pilot scope or
+// the separately owner-authorized exact command; missing/off stays unchanged.
 export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}, services = defaults } = {}) {
-  if (!isLineRightsCheck(event) || clean(env.KENJI_LINE_RIGHTS_CHECK_MODE) !== "pilot") return null;
+  const command = commandEnabled(env);
+  if (!isLineRightsCheck(event) || (!command && clean(env.KENJI_LINE_RIGHTS_CHECK_MODE) !== "pilot")) return null;
+  // The owner's exception is solely this command, never renewal/general chat.
+  if (command && !isRightsCommand(event.message.text)) return null;
   const silent = reason => ({ ok: true, rights_check: true, replied: false, reason });
   const userId = clean(event.source?.userId);
   const hashes = clean(env.KENJI_LINE_RIGHTS_CHECK_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
-  if (!/^U[a-f0-9]{32}$/i.test(userId) || !hashes.length || hashes.some(x => !/^[a-f0-9]{64}$/.test(x))) return silent("pilot_identity_unavailable");
-  if (!hashes.includes(await hash(userId))) return silent("outside_owner_pilot");
-  if (!enabled(env.LINE_AUTO_REPLY_ENABLED) || !enabled(env.LINE_KENJI_AI_ENABLED) || killed(runtime)) return silent("runtime_line_kill");
+  if (!/^U[a-f0-9]{32}$/i.test(userId) || (!command && (!hashes.length || hashes.some(x => !/^[a-f0-9]{64}$/.test(x))))) return silent("pilot_identity_unavailable");
+  if (!command && !hashes.includes(await hash(userId))) return silent("outside_owner_pilot");
+  if ((!command && (!enabled(env.LINE_AUTO_REPLY_ENABLED) || !enabled(env.LINE_KENJI_AI_ENABLED))) || killed(runtime, command)) return silent("runtime_line_kill");
   if (event.mode === "standby" || event.deliveryContext?.isRedelivery === true || !event.replyToken) return silent("event_not_eligible");
   const age = Date.now() - Number(event.timestamp);
   if (!Number.isFinite(age) || age < -60000 || age > 300000) return silent("stale_or_missing_event_timestamp");
@@ -129,7 +145,7 @@ export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}
     // Re-read controls and owner state after slow truth/case operations.
     const fresh = await services.continuity({ env, event, currentIntent: "membership_status" });
     const [currentRuntime, currentOwner] = await Promise.all([services.runtime(env), services.takeover(env, userId, fresh, { signal: AbortSignal.timeout(1500) })]);
-    if (killed(currentRuntime) || currentOwner.ok !== true || currentOwner.active) return silent("pre_delivery_control_or_owner_blocked");
+    if (killed(currentRuntime, command) || currentOwner.ok !== true || currentOwner.active) return silent("pre_delivery_control_or_owner_blocked");
     const replied = await services.deliver(env, event, decision.text);
     if (replied) await services.history({ env, event, replyText: decision.text }).catch(() => null);
     return { ok: true, rights_check: true, replied, case_saved: caseSaved, review_required: decision.missing.length > 0, reason: replied ? "" : "delivery_failed_no_retry" };

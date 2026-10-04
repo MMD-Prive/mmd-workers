@@ -38,10 +38,10 @@ for (const level of ["vip", "svip", "black_card"]) test(`preserves ${level} and 
 test("blocked member cannot receive renewal price", () => { const t=truth(); t.membership.member_blocked=true; assert.doesNotMatch(renderLineRightsCheck(t).text,/2,500/); });
 test("new signup classification is honest", () => { const t=truth(); t.membership.lifecycle="expired"; t.renewal={status:"review_required",classification:"new_signup"}; assert.match(renderLineRightsCheck(t).text,/สมัครใหม่/); });
 
-test("actual signed ingress reaches bounded lane; invalid signature cannot read or reply", async () => {
+test("actual signed ingress reaches command with general stop; invalid signature cannot read or reply", async () => {
   const { createLineSignature } = await import("../src/index.js");
   const { handleKenjiSeedLineRequest } = await import("../src/kenji-seed-line-runtime.mjs");
-  const f = await fixture(); let delivered = 0; let truthReads = 0; let intakes = 0;
+  const f = commandFixture(await fixture()); let delivered = 0; let truthReads = 0; let intakes = 0;
   Object.assign(f.env, { LINE_CHANNEL_SECRET: "fixture-signature-secret", LINE_CHANNEL_ACCESS_TOKEN: "fixture-line-token", INTERNAL_TOKEN: "fixture-internal",
     AIRTABLE_API_KEY: "fixture-airtable", AIRTABLE_BASE_ID: "fixture-base", KENJI_LINE_CONTINUITY_ENABLED: "true",
     ADMIN_WORKER: { fetch: async () => Response.json(f.runtime) }, MEMBER_PAGES_WORKER: { fetch: async req => { truthReads++; const body=await req.json();assert.equal(body.line_user_id,UID);assert.equal(body.intent,"rights_check");return Response.json(truth()); } } });
@@ -59,3 +59,50 @@ test("actual signed ingress reaches bounded lane; invalid signature cannot read 
 });
 
 test("old webhook cannot bypass dedupe expiry through redelivery recovery", async () => { const f = await fixture(); f.event.timestamp=Date.now()-86400000; assert.equal((await handleLineRightsCheck(f)).reason,"stale_or_missing_event_timestamp"); assert.equal(f.counters.truth,0); });
+
+function commandFixture(f) {
+  Object.assign(f.env, { KENJI_LINE_RIGHTS_CHECK_MODE: "command", KENJI_LINE_RIGHTS_COMMAND_ENABLED: "true", LINE_AUTO_REPLY_ENABLED: "false", LINE_KENJI_AI_ENABLED: "false", KENJI_LINE_RIGHTS_CHECK_PILOT_HASHES: "" });
+  f.runtime.controls.line_oa_auto_reply = true;
+  return f;
+}
+for (const spelling of ["เช็กสิทธิ์", "เช็คสิทธิ์", "เช็กสิทธ์"]) test(`authorized command replies to ${spelling} with general replies stopped`, async () => {
+  const f = commandFixture(await fixture()); f.event.message.text = spelling;
+  const result = await handleLineRightsCheck(f);
+  assert.equal(result.replied, true); assert.equal(f.counters.truth, 1);
+  assert.match(f.counters.replies[0], /Premium/);
+  assert.match(f.counters.replies[0], /คูปองและโปร.*รอเปอร์ตรวจ/);
+});
+for (const text of ["ต่ออายุ", "สลิป", "เช็กสิทธิ์ให้คุณเอก", "เมื่อวานเช็กสิทธิ์แล้ว", "ขอดูโปร", "hello"]) test(`command scope excludes ${text}`, async () => {
+  const f = commandFixture(await fixture()); f.event.message.text = text;
+  assert.equal(await handleLineRightsCheck(f), null); assert.equal(f.counters.truth, 0); assert.equal(f.counters.replies.length, 0);
+});
+test("command switch missing does not bypass general stop", async () => {
+  const f = commandFixture(await fixture()); delete f.env.KENJI_LINE_RIGHTS_COMMAND_ENABLED;
+  assert.equal(await handleLineRightsCheck(f), null); assert.equal(f.counters.truth, 0);
+});
+test("command retains global emergency stop before and after lookup", async () => {
+  const f = commandFixture(await fixture()); f.runtime.controls.all_kenji_mutations = true;
+  assert.equal((await handleLineRightsCheck(f)).reason, "runtime_line_kill"); assert.equal(f.counters.truth, 0);
+  f.runtime.controls.all_kenji_mutations = false;
+  f.services.runtime = async () => ({ ok: true, controls: { all_kenji_mutations: true } });
+  assert.equal((await handleLineRightsCheck(f)).reason, "pre_delivery_control_or_owner_blocked"); assert.equal(f.counters.replies.length, 0);
+});
+test("command sends exactly once for simultaneous retry and never reads another UID", async () => {
+  const f = commandFixture(await fixture());
+  f.services.truth = async (env, uid) => { assert.equal(uid, UID); f.counters.truth++; return truth(); };
+  f.services.deliver = async (env, e, reply) => { assert.equal(e.source.userId, UID); assert.equal(e.replyToken, "mock-only"); f.counters.replies.push(reply); return true; };
+  const result = await Promise.all([handleLineRightsCheck(f), handleLineRightsCheck(f)]);
+  assert.equal(result.filter(r => r.replied).length, 1); assert.equal(f.counters.truth, 1);
+});
+test("command does not report absent canonical membership as nonmember or invent owner expiry", async () => {
+  const f = commandFixture(await fixture()); f.services.truth = async () => ({});
+  await handleLineRightsCheck(f);
+  assert.match(f.counters.replies[0], /สถานะสมาชิกยังตรวจยืนยันไม่ครบ/);
+  assert.doesNotMatch(f.counters.replies[0], /ไม่มีสมาชิก|หมดอายุแล้ว|2571/);
+});
+test("only current unblocked canonical access appears in benefits", () => {
+  const t = truth(); Object.assign(t.membership, { public_service_access: true, private_visibility_envelope: "premium" });
+  assert.match(renderLineRightsCheck(t).text, /สิทธิ์ดู Private: Premium/);
+  t.membership.member_blocked = true;
+  assert.doesNotMatch(renderLineRightsCheck(t).text, /สิทธิ์ดู Private: Premium|Public Service: ใช้งานได้/);
+});

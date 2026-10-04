@@ -393,9 +393,13 @@ zone_name = "mmdbkk.com"
 # muted/disabled runtime value by accident. An intentional emergency mute can
 # still be made by changing this config and redeploying.
 [vars]
-# Owner-authorized customer conversation lane. Delivery stays bounded to the
-# reviewed Seed Pack / deterministic live-truth routes and the runtime kill switch.
-LINE_AUTO_REPLY_ENABLED = "true"
+# General customer replies remain off. The separately approved rights command
+# uses deterministic live truth and retains global stop and owner takeover.
+# Owner authorization 2026-10-04: exact check-rights command only. General
+# replies stay disabled; the command still obeys global stop and owner takeover.
+LINE_AUTO_REPLY_ENABLED = "false"
+KENJI_LINE_RIGHTS_CHECK_MODE = "command"
+KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 # Owner lock 2026-09-29: customer-facing LINE may autonomously reply only to
 # direct Model name/code lookup (plus the bounded verification continuation
