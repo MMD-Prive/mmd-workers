@@ -278,7 +278,7 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const memberIndexes = buildMemberIndexes(members);
   const entitlementIndexes = buildEntitlementIndexes(entitlements);
   const stagingIndexes = buildStagingIndexes(staging);
-  const needle = normalizeSearch(query);
+  const needles = searchVariants(query);
 
   const rows = clients
     .map((record) => {
@@ -300,9 +300,9 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
             matched_on: "recent",
             matched_value: "",
           }
-        : bestLineageMatch(needle, searchEntries);
+        : bestLineageMatch(needles, searchEntries);
 
-      if (!recent && needle && match.score <= 0) return null;
+      if (!recent && needles.length && match.score <= 0) return null;
       return {
         score: match.score,
         priority: match.priority,
@@ -329,7 +329,7 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
     if (linkIds(fields.matched_client).length || clean(fields.matched_client_id)) return false;
     if (/^(ignored|rejected|blocked|revoked)$/.test(normalizeSearch(fields.review_status))) return false;
     return [fields.line_renamed_name, fields.line_display_name, fields.normalized_name, fields.line_user_id]
-      .some((value) => normalizeSearch(value).includes(needle));
+      .some((value) => searchVariants(value).some((candidate) => needles.some((needle) => candidate.includes(needle))));
   }).slice(0, 8).map((record) => ({
     line_record_id: record.id,
     remembered_name: clean(record.fields?.line_renamed_name),
@@ -718,21 +718,25 @@ function lineageSearchEntries(client, member, entitlement, stagingRecords) {
   return entries;
 }
 
-function bestLineageMatch(needle, entries) {
-  if (!needle) {
+function bestLineageMatch(needles, entries) {
+  if (!needles.length) {
     return { score: 70, priority: 0, matched_on: "", matched_value: "" };
   }
 
   let best = { score: 0, priority: 0, matched_on: "", matched_value: "" };
   for (const entry of entries || []) {
-    const value = normalizeSearch(entry?.value);
-    if (!value) continue;
+    const values = searchVariants(entry?.value);
+    if (!values.length) continue;
 
     let quality = 0;
-    if (value === needle) quality = 100;
-    else if (value.startsWith(needle)) quality = 94;
-    else if (value.includes(needle)) quality = 88;
-    else if (needle.length >= 4 && needle.includes(value)) quality = 82;
+    for (const needle of needles) {
+      for (const value of values) {
+      if (value === needle) quality = Math.max(quality, 100);
+      else if (value.startsWith(needle)) quality = Math.max(quality, 94);
+      else if (value.includes(needle)) quality = Math.max(quality, 88);
+      else if (needle.length >= 4 && needle.includes(value)) quality = Math.max(quality, 82);
+      }
+    }
     if (!quality) continue;
 
     const priority = Number(entry.priority) || 0;
@@ -815,8 +819,8 @@ function stagingRecentFormula(clientRecords, limit = 24) {
 }
 
 function stagingSearchFormula(query) {
-  const needle = airtableFormulaString(normalizeSearch(query));
-  if (!needle) return "FALSE()";
+  const rawNeedles = searchVariants(query);
+  if (!rawNeedles.length) return "FALSE()";
 
   // Keep this list restricted to fields present in the verified staging schema.
   // Referencing an unknown Airtable field makes the entire staging enrichment fail.
@@ -828,9 +832,11 @@ function stagingSearchFormula(query) {
     "line_user_id",
     "matched_client_id",
   ];
-  const checks = fields.map(
-    (field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
-  );
+  const needles = rawNeedles.map(airtableFormulaString);
+  const checks = fields.flatMap((field) => needles.flatMap((needle) => [
+    `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
+    `IFERROR(SEARCH(\"${needle}\",LOWER(SUBSTITUTE({${field}}&\"\",\" \",\"\"))),0)>0`,
+  ]));
   return `OR(${checks.join(",")})`;
 }
 
@@ -989,6 +995,15 @@ function compact(object) {
 
 function normalizeSearch(value) {
   return clean(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function searchVariants(value) {
+  const normalized = normalizeSearch(value);
+  if (!normalized) return [];
+  // Operators commonly add the polite prefix "คุณ" when searching a name
+  // recorded without it. Keep original form, then try prefix-free and spacing-free forms.
+  const prefixFree = normalized.replace(/^คุณ\s*/u, "").trim() || normalized;
+  return [...new Set([normalized, normalized.replace(/\s+/g, ""), prefixFree, prefixFree.replace(/\s+/g, "")])];
 }
 
 function normalizePath(value) {

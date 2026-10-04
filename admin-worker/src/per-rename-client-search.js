@@ -2,7 +2,7 @@ import { parsePerRenameDateSuffix } from "./per-rename-date-suffix.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v7-line-guard";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v8-honorific-spacing";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
@@ -210,8 +210,8 @@ export async function resolvePerRenameAlias(env, query, options = {}) {
 export async function searchAuthoritativePerRenameRows(env, query) {
   requireStorage(env);
   const table = clean(env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID || env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX) || DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE;
-  const tokens = searchTokens(query).slice(0, 6);
-  if (!tokens.length) return [];
+  const forms = querySearchForms(query);
+  if (!forms.length) return [];
 
   // The production Airtable base rejects the former filterByFormula expression
   // with HTTP 422. The index is intentionally small and bounded, so read it in
@@ -244,7 +244,7 @@ export async function searchAuthoritativePerRenameRows(env, query) {
     if (offset) await pause(AIRTABLE_PAGE_PAUSE_MS);
   } while (offset);
 
-  return rows.filter((record) => rowContainsSearchTokens(record, tokens));
+  return rows.filter((record) => forms.some((form) => rowContainsSearchTokens(record, searchTokens(form).slice(0, 6))));
 }
 
 function rowContainsSearchTokens(record, tokens) {
@@ -252,7 +252,8 @@ function rowContainsSearchTokens(record, tokens) {
   const searchable = [fields.preferred_name, fields.line_display_name, fields.line_user_id]
     .map(normalizeAlias)
     .filter(Boolean);
-  return tokens.every((token) => searchable.some((value) => value.includes(token)));
+  return tokens.length > 0 && tokens.every((token) => searchable.some((value) =>
+    value.includes(token) || value.replace(/\s+/g, "").includes(token.replace(/\s+/g, ""))));
 }
 
 function authoritativeMatch(record, query) {
@@ -272,8 +273,9 @@ function authoritativeMatch(record, query) {
   if (lookup !== "canonical ready" && lookup !== "canonical_ready") return null;
   if (clientIds.length !== 1 || !perName || !lineUserId) return null;
 
-  const q = normalizeAlias(query);
-  const qTokens = searchTokens(query);
+  const searchForms = querySearchForms(query);
+  const q = searchForms[0];
+  const qTokens = searchTokens(q);
   const aliases = [perName, lineDisplay, lineUserId].filter(Boolean);
   const normalizedPerName = normalizeAlias(perName);
   const normalizedAliases = aliases.map(normalizeAlias).filter(Boolean);
@@ -283,10 +285,11 @@ function authoritativeMatch(record, query) {
   // Only an exact Boss/Per rename is authoritative enough to collapse the
   // candidate set. An exact LINE display name must not hide other Per Rename
   // rows that share the same broad customer token.
-  if (normalizedPerName === q) quality = 300;
+  if (searchForms.some((form) => normalizedPerName === form ||
+    normalizedPerName.replace(/\s+/g, "") === form.replace(/\s+/g, ""))) quality = 300;
   else if (qTokens.length && qTokens.every((token) => aliasTokens.has(token))) quality = 240;
-  else if (normalizedAliases.some((alias) => alias.startsWith(q) || q.startsWith(alias))) quality = 200;
-  else if (normalizedAliases.some((alias) => q.length >= 3 && alias.includes(q))) quality = 180;
+  else if (searchForms.some((form) => normalizedAliases.some((alias) => alias.startsWith(form) || form.startsWith(alias)))) quality = 200;
+  else if (searchForms.some((form) => normalizedAliases.some((alias) => form.length >= 3 && alias.includes(form)))) quality = 180;
   if (!quality) return null;
 
   const parsedRename = parsePerRenameDateSuffix(perName);
@@ -410,6 +413,15 @@ function requireStorage(env) {
 
 function searchTokens(value) {
   return normalizeAlias(value).split(" ").map(clean).filter(Boolean);
+}
+
+function querySearchForms(value) {
+  const normalized = normalizeAlias(value);
+  if (!normalized) return [];
+  // Strip before alias normalization: Thai vowel marks in คุณ are removed by
+  // normalizeAlias, so matching that prefix after normalization never works.
+  const prefixFree = normalizeAlias(clean(value).normalize("NFKC").replace(/^คุณ\s*/u, "")) || normalized;
+  return [...new Set([prefixFree, prefixFree.replace(/\s+/g, ""), normalized, normalized.replace(/\s+/g, "")])];
 }
 
 function normalizeAlias(value) {
