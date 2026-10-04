@@ -40,7 +40,8 @@ function harness() {
       renewal_amount_thb: 2500,
       Client: [CLIENT_RECORD],
     } }],
-    "tblNImdF9PKAxhXGi": [],
+    "tblNImdF9PKAxhXGi": [{id:"recPriorPremium",fields:{member_id:"inn",line_user_id:LINE_ID,package_code:"premium",expire_at:"2026-01-01T00:00:00Z",payment_ref:"PAID-PRIOR"}}],
+    "tblg2z8dENx75yHka": [{id:"recPremiumPackage",fields:{code:"premium",duration_days:730,renew_price:2500,is_active:true}}],
   };
   const writes = [];
 
@@ -197,13 +198,13 @@ test("email-less canonical LINE recovery materializes entitlement only after tru
   assert.equal(result.context_source, "liff_renewal_recovery");
   assert.equal(result.recovery_context, true);
   assert.equal(result.entitlement_materialized, true);
-  assert.equal(result.membership_expire_at, "2028-09-07T15:16:21.000Z");
-  assert.equal(result.membership_term, "2_years");
-  assert.equal(result.membership_promotion.code, "private_premium_two_year_term_2026");
+  assert.equal(result.membership_expire_at, "2029-09-07T15:16:21.000Z");
+  assert.equal(result.membership_term, "2_years_plus_1_year");
+  assert.equal(result.membership_promotion.code, "october_prepaid_premium_2026");
   assert.equal(notifyCalls, 1);
 
-  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 1);
-  const entitlement = h.tables.tblNImdF9PKAxhXGi[0].fields;
+  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 2);
+  const entitlement = h.tables.tblNImdF9PKAxhXGi.find(row=>row.fields.payment_ref===PAYMENT_REF).fields;
   assert.equal(entitlement.package_code, "premium");
   assert.equal(entitlement.access_status, "active");
   assert.equal(entitlement.telegram_access_status, "pending_invite");
@@ -227,7 +228,7 @@ test("member dashboard service may settle only a canonical LINE OFC membership p
   assert.equal(response.status, 200);
   assert.equal(result.ok, true);
   assert.equal(result.entitlement_materialized, true);
-  assert.equal(result.membership_promotion.code, "private_premium_two_year_term_2026");
+  assert.equal(result.membership_promotion.code, "october_prepaid_premium_2026");
 });
 
 test("LINE OFC settlement source rejects callers without the service identity", async () => {
@@ -235,7 +236,7 @@ test("LINE OFC settlement source rejects callers without the service identity", 
   const response = await handleReviewedProof(request({ source: "line_ofc_payment_ingress" }), h.env, {}, async () => Response.json({ ok: true }));
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error, "line_ofc_membership_settlement_only");
-  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 0);
+  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 1);
 });
 
 test("email-less recovery does not materialize entitlement if trusted notify fails", async () => {
@@ -244,14 +245,26 @@ test("email-less recovery does not materialize entitlement if trusted notify fai
   const result = await response.json();
   assert.equal(response.status, 409);
   assert.equal(result.ok, false);
-  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 0);
+  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 1);
   assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status, "pending");
 });
 
-test('active recovered renewal adds exactly two years to existing expiry',async()=>{
+test('active recovered renewal adds catalog term and tier-specific October bonus',async()=>{
   const h=harness();h.tables['tblNImdF9PKAxhXGi'].push({id:'recExisting',fields:{member_id:'inn',line_user_id:LINE_ID,package_code:'premium',expire_at:'2027-03-15T10:00:00Z',payment_ref:'OLDER'}});
-  const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const data=await response.json();assert.equal(response.status,200);assert.equal(data.membership_expire_at,'2029-03-15T10:00:00.000Z');
+  const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const data=await response.json();assert.equal(response.status,200);assert.equal(data.membership_expire_at,'2030-03-15T10:00:00.000Z');
 });
 test('protected recovered member never gets a Standard or Premium entitlement',async()=>{
-  for(const tier of ['VIP','SVIP','Black Card']){const h=harness();h.tables['tblgWc5VRon5o8Mhk'][0].fields['Membership Tier']=tier;const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));assert.equal(response.status,409);assert.equal(h.tables['tblNImdF9PKAxhXGi'].length,0);assert.equal(h.writes.length,0);}
+  for(const tier of ['VIP','SVIP','Black Card']){const h=harness();h.tables['tblgWc5VRon5o8Mhk'][0].fields['Membership Tier']=tier;const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));assert.equal(response.status,409);assert.equal(h.tables['tblNImdF9PKAxhXGi'].length,1);assert.equal(h.writes.length,0);}
+});
+
+test('recovery refuses missing payment date, unknown expiry, exact anniversary and contradictory package term',async()=>{
+ for(const mutate of [h=>delete h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at,h=>h.tables.tblNImdF9PKAxhXGi=[],h=>h.tables.tblNImdF9PKAxhXGi[0].fields.expire_at='2025-09-07T15:16:21Z',h=>h.tables.tblg2z8dENx75yHka[0].fields.duration_days=365]){
+ const h=harness();mutate(h);const count=h.tables.tblNImdF9PKAxhXGi.length;const response=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));assert.equal(response.status,409);assert.equal(h.tables.tblNImdF9PKAxhXGi.length,count);
+ }
+});
+test('recovery uses October payment cutoff and replay preserves historical expiry',async()=>{
+ const h=harness();h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at='2026-10-31T17:00:00Z';
+ const first=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const a=await first.json();assert.equal(first.status,200);assert.equal(a.membership_promotion,undefined);assert.equal(a.membership_expire_at,'2028-10-31T17:00:00.000Z');
+ const row=h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF);row.fields.expire_at='2028-06-01T00:00:00Z';
+ const second=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const b=await second.json();assert.equal(b.membership_expire_at,'2028-06-01T00:00:00Z');assert.equal(h.tables.tblNImdF9PKAxhXGi.length,2);
 });

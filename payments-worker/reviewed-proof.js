@@ -1,4 +1,4 @@
-import { applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 
 const REVIEW_SOURCE = "payment_review_console";
 const LINE_OFC_SOURCE = "line_ofc_payment_ingress";
@@ -257,26 +257,13 @@ export function membershipTermForPackage(packageCode, startAtValue) {
   const startAt = startAtValue instanceof Date ? new Date(startAtValue.getTime()) : validDate(startAtValue);
   if (!years || !startAt || Number.isNaN(startAt.getTime())) return null;
 
-  const expireAt = addUtcCalendarYears(startAt, years);
+  const expireAt = addBangkokCalendarYears(new Date(startAt), years);
   if (!expireAt) return null;
   return {
     expire_at: expireAt,
     membership_term: years === 2 ? "2_years" : "1_year",
     membership_expiry_rule: years === 2 ? "2_years_from_verified_payment" : "1_year_from_verified_payment",
   };
-}
-
-function addUtcCalendarYears(value, years) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || !Number.isInteger(years) || years < 1) return null;
-  const month = date.getUTCMonth();
-  const day = date.getUTCDate();
-  date.setUTCDate(1);
-  date.setUTCFullYear(date.getUTCFullYear() + years);
-  date.setUTCMonth(month);
-  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), month + 1, 0)).getUTCDate();
-  date.setUTCDate(Math.min(day, lastDay));
-  return date;
 }
 
 async function materializeRecoveredMembership(env, input) {
@@ -287,7 +274,13 @@ async function materializeRecoveredMembership(env, input) {
   if (existing.length > 1) throw httpError(409, "recovery_entitlement_payment_ref_ambiguous");
 
   const paidAtRaw = text(input.proof.fields?.paid_at || input.proof.fields?.["Payment Date"], 80);
-  const paidAt = validDate(paidAtRaw) || new Date();
+  const paidAt = validDate(paidAtRaw);
+  if (!paidAt && !existing.length) throw httpError(409,"recovery_canonical_payment_date_required");
+  if (existing.length) {
+    const row=existing[0];
+    if (text(row.fields?.member_id,120)!==input.member_id || canonicalPackage(row.fields?.package_code)!==input.package_code || !validDate(row.fields?.expire_at) || (lineId(row.fields?.line_user_id) && lineId(row.fields.line_user_id)!==input.line_user_id)) throw httpError(409,"recovery_existing_entitlement_conflict");
+    return {entitlement_record_id:row.id, expire_at:row.fields.expire_at, start_at:row.fields.start_at, membership_expiry_rule:row.fields.membership_expiry_rule, membership_term:row.fields.membership_term, promotion:null, duplicate:true};
+  }
   const prior = await airtableList(env, entitlementsTable(env), {
     filterByFormula:`OR({member_id}='${formulaValue(input.member_id)}',{line_user_id}='${formulaValue(input.line_user_id)}')`, maxRecords:200, requireComplete:true,
   });
@@ -296,11 +289,17 @@ async function materializeRecoveredMembership(env, input) {
   const exact = own.filter(row => canonicalPackage(row.fields?.package_code) === input.package_code);
   const expiries = exact.map(row => validDate(row.fields?.expire_at)).filter(Boolean).sort((a,b)=>b-a);
   const timing = privateRenewalTiming(expiries[0]?.toISOString(), paidAt);
-  if (timing?.expired_over_one_year) throw httpError(409, "recovery_expired_over_one_year_new_signup_required");
-  const startAt = new Date(timing?.start_at || paidAt);
+  if (timing?.expired_one_year_or_more) throw httpError(409, "recovery_expired_one_year_or_more_policy_review_required");
+  if (!timing?.expiry_known) throw httpError(409,"recovery_canonical_expiry_required");
+  const packages=await airtableList(env, env.AIRTABLE_TABLE_PACKAGES || "tblg2z8dENx75yHka", {filterByFormula:`{code}='${formulaValue(input.package_code)}'`,maxRecords:2});
+  const catalog=packages.length===1 ? packages[0].fields : null;
+  if (!catalog || catalog.is_active === false || catalog.require_approval === true || Number(catalog.duration_days)!==MEMBERSHIP_YEARS[input.package_code]*365) throw httpError(409,"recovery_package_term_review_required");
+  const expectedAmount=timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[input.package_code]) : Number(catalog.renew_price);
+  if (!(expectedAmount>0) || input.amount_thb!==expectedAmount) throw httpError(409,"recovery_renewal_price_policy_required");
+  const startAt = new Date(timing.start_at);
   const membershipTerm = membershipTermForPackage(input.package_code, startAt);
   if (!membershipTerm) throw httpError(409, "recovery_membership_term_invalid");
-  const promotion = currentPrivateMembershipPromotion({ package_code: input.package_code, verified_at: paidAt.toISOString(), action: "renewal", existing_member:true });
+  const promotion = currentPrivateMembershipPromotion({ package_code: input.package_code, paid_at: paidAt.toISOString(), action: "renewal", existing_member:true, prior_expire_at:expiries[0].toISOString() });
   const promotedExpireAt = applyMembershipPromotion(membershipTerm.expire_at, promotion, {start_at:startAt.toISOString()});
   const expireAt = promotedExpireAt || membershipTerm.expire_at;
   const membershipExpiryRule = promotion?.total_years === 2

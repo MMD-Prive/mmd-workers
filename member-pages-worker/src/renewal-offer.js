@@ -1,7 +1,5 @@
-import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { currentPrivateMembershipPromotion, privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
 
-const WINDOW_DAYS = 365;
 const PACKAGE_POLICY = Object.freeze({
   standard: Object.freeze({
     label: "Standard",
@@ -57,73 +55,20 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
   const packageCode = canonicalRenewalPackageFromTier(session?.member_profile?.tier);
   if (!packageCode) return { status: "review_required", reason: "renewal_current_package_not_supported" };
   const timing = privateRenewalTiming(session?.member_profile?.membership_expires_at, now);
-  if (timing?.expired_over_one_year) return {status:"review_required", classification:"new_signup", reason:"renewal_expired_over_one_year_new_signup_required"};
-  const promotion = currentPrivateMembershipPromotion({package_code:packageCode, verified_at:now.toISOString(), action:"renewal", existing_member:true});
-  const term = promotion?.total_years === 2 ? {membership_years:2, membership_start_at:timing?.start_at, membership_term_source:promotion.code} : {};
+  if (timing?.expired_one_year_or_more) return {status:"review_required", classification:timing.expired_over_one_year ? "new_signup" : "review_required", reason:"renewal_expired_one_year_or_more_policy_review_required"};
+  if (!timing?.expiry_known) return {status:"review_required",reason:"canonical_expiry_required"};
+  // Quote only the approved fixed-price audience. Active prices require a
+  // separately authoritative current package quote, not legacy spend estimates.
+  if (!timing.expired_less_than_one_year) return {status:"review_required",reason:"active_renewal_price_policy_required"};
+  const term = {membership_years:PACKAGE_POLICY[packageCode].years, membership_start_at:timing.start_at};
 
   const lineUserId = canonicalLineId(session?.line_user_id);
   if (!lineUserId) return { status: "review_required", reason: "renewal_line_identity_required" };
 
-  const injected = env.RENEWAL_OFFER_RESOLVER;
-  if (injected && typeof injected.resolve === "function") {
-    const offer = sanitizeInjectedOffer(await injected.resolve({ line_user_id: lineUserId, package_code: packageCode, now }), packageCode);
-    return offer.status === "ready" ? {...offer,...term} : offer;
-  }
-
-  const base = renewalPriceForSpend(packageCode, 0);
-  const history = await readClientBackedHistoryResult(env, lineUserId, now);
-  if (history?.state !== "resolved") {
-    return {
-      status: "ready",
-      ...base,
-      history_status: "checking",
-      discount_verified: false,
-      price_rule: `${base.price_rule}_history_unavailable`,
-      ...term,
-    };
-  }
-
-  const cutoff = cutoffDate(now, WINDOW_DAYS);
-  const spend = (Array.isArray(history.items) ? history.items : []).reduce((total, item) => {
-    if (item?.kind !== "booking") return total;
-    const occurredAt = String(item.occurredAt || "");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredAt) || occurredAt < cutoff) return total;
-    const amount = Number(item.totalAmountThb);
-    return Number.isFinite(amount) && amount > 0 ? total + amount : total;
-  }, 0);
-  return {
-    status: "ready",
-    ...renewalPriceForSpend(packageCode, spend),
-    history_status: "verified",
-    discount_verified: true,
-    ...term,
-  };
-}
-
-function sanitizeInjectedOffer(value, expectedPackage) {
-  if (!value || typeof value !== "object" || value.status !== "ready") {
-    return { status: "review_required", reason: "renewal_offer_resolver_unavailable" };
-  }
-  const packageCode = String(value.package_code || "").trim().toLowerCase();
-  const amount = Number(value.amount_thb);
-  const inferred = renewalPriceForSpend(expectedPackage, Number(value.service_spend_365_thb || 0));
-  if (packageCode !== expectedPackage || !Number.isFinite(amount) || amount <= 0) {
-    return { status: "review_required", reason: "renewal_offer_resolver_invalid" };
-  }
-  return {
-    status: "ready",
-    ...inferred,
-    ...value,
-    package_code: expectedPackage,
-    amount_thb: Math.round((amount + Number.EPSILON) * 100) / 100,
-  };
-}
-
-function cutoffDate(now, days) {
-  const date = now instanceof Date ? new Date(now.getTime()) : new Date(now);
-  if (!Number.isFinite(date.getTime())) return "0000-00-00";
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString().slice(0, 10);
+  return {status:"ready", ...renewalPriceForSpend(packageCode,0), ...term, price_rule:`expired_less_than_one_year_${packageCode}`, history_status:"verified", discount_verified:true,
+    // Provisional bonus at quote time; payment writer re-evaluates canonical paid_at.
+    promotion:currentPrivateMembershipPromotion({package_code:packageCode,paid_at:now.toISOString(),action:"renewal",existing_member:true,prior_expire_at:session.member_profile.membership_expires_at}),
+    promotion_requires_verified_payment:true};
 }
 
 function canonicalLineId(value) {

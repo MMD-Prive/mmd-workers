@@ -48,7 +48,7 @@ async function keyedDigest(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_token_123", signup = false } = {}) {
+async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_token_123", signup = false, expire = new Date(Date.now() - 30 * 86400000).toISOString() } = {}) {
   const secret = "test-only-liff-session-secret-1234567890";
   const token = "rotated_token_1234567890";
   const kv = new MemoryKv();
@@ -68,7 +68,7 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
     liff_intent: signup ? "signup" : "renew",
     member_exists: !signup,
     line_user_id: "U1234567890abcdef1234567890abcdef",
-    member_profile: { tier: "Premium" },
+    member_profile: { tier: "Premium", membership_expires_at: expire },
     selected_package: {
       package_code: "premium",
       amount_thb: signup ? 2999 : 2500,
@@ -151,8 +151,8 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(payload.data.redirect_to, "https://mmdbkk.com/sigil/pay?t=signed_token_123");
     assert.equal(payload.data.route_after_liff, "/member/payments");
     assert.equal(payload.data.payment_summary.payment_stage, "membership");
-    assert.equal(payload.data.payment_summary.amount_thb, 1999);
-    assert.equal(payload.data.payment_summary.renewal_price_rule, "private_premium_spend_20000");
+    assert.equal(payload.data.payment_summary.amount_thb, 2500);
+    assert.equal(payload.data.payment_summary.renewal_price_rule, "expired_less_than_one_year_premium");
     assert.equal(payload.data.payment_summary.verification_status, "pending");
     assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
 
@@ -162,10 +162,10 @@ describe("LIFF payments-worker binding", () => {
     assert.deepEqual(fx.payment.calls[0].body, {
       session_id: "liff-session-123",
       payment_stage: "membership",
-      amount: 1999,
+      amount: 2500,
       package_code: "premium",
       payment_method: "promptpay",
-      notes: "source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=private_premium_spend_20000;service_spend_365_thb=25000",
+      notes: "source=line_liff;intent=renew;requested_stage=renewal;renewal_price_rule=expired_less_than_one_year_premium;service_spend_365_thb=0",
     });
 
     assert.equal(fx.gateway.upserts.length, 1);
@@ -174,7 +174,7 @@ describe("LIFF payments-worker binding", () => {
         session_id: "liff-session-123",
         payment_intent_session_id: "liff-session-123",
         requested_package: "premium",
-        renewal_amount_thb: 1999,
+        renewal_amount_thb: 2500,
       },
       recordId: "rec_liff_1",
     });
@@ -185,11 +185,11 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(stored.payment_ref, "pay_1234567890abcdef");
     assert.equal(stored.payment_stage, "membership");
     assert.equal(stored.payment_package_code, "premium");
-    assert.equal(stored.payment_amount_thb, 1999);
+    assert.equal(stored.payment_amount_thb, 2500);
     assert.equal(stored.customer_payment_url, "https://mmdbkk.com/sigil/pay?t=signed_token_123");
     assert.ok(Date.parse(stored.payment_intent_created_at));
     assert.equal(stored.route_after_liff, "/member/payments");
-    assert.equal(stored.renewal_offer.amount_thb, 1999);
+    assert.equal(stored.renewal_offer.amount_thb, 2500);
   });
 
   it("fails closed when payments-worker does not return the canonical mmdbkk.com /sigil/pay URL", async () => {
@@ -221,3 +221,17 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(fx.gateway.upserts.length, 0);
   });
 });
+
+for (const [label, expire] of [["unknown expiry", null], ["active membership", "2028-10-01"]]) {
+  it(`does not create payment or grant rights with ${label}`, async () => {
+    const fx = await fixture({ expire });
+    const response = await completeValidatedLiffPaymentIntent(fx.request, fx.guardedResponse, fx.env);
+    const payload = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(payload.ok, false);
+    assert.equal(fx.payment.calls.length, 0);
+    assert.equal(fx.gateway.upserts.length, 0);
+    const stored = JSON.parse(fx.kv.map.get(fx.key));
+    assert.equal(stored.payment_ref, undefined);
+  });
+}

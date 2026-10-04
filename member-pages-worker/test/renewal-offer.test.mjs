@@ -31,7 +31,7 @@ test("renewal package is fixed by the verified current private tier", () => {
   assert.equal(canonicalRenewalPackageFromTier("VIP"), "");
 });
 
-test("renewal offer can use a bounded test resolver without browser pricing authority", async () => {
+test("unknown expiry cannot use an injected price resolver to create a quote", async () => {
   const session = {
     liff_intent: "renew",
     member_exists: true,
@@ -56,10 +56,8 @@ test("renewal offer can use a bounded test resolver without browser pricing auth
     },
   };
   const offer = await resolveCanonicalRenewalOffer(env, session, new Date("2026-09-15T00:00:00.000Z"));
-  assert.equal(offer.status, "ready");
-  assert.equal(offer.package_code, "premium");
-  assert.equal(offer.amount_thb, 1999);
-  assert.equal(offer.price_rule, "private_premium_spend_20000");
+  assert.equal(offer.status, "review_required");
+  assert.equal(offer.reason, "canonical_expiry_required");
 });
 
 test("unsupported private tier never silently selects a renewal package", async () => {
@@ -73,13 +71,22 @@ test("unsupported private tier never silently selects a renewal package", async 
   assert.equal(offer.reason, "renewal_current_package_not_supported");
 });
 
-test('existing Standard quote has the two-year promo term without changing inclusive price thresholds',async()=>{
+test('active quote requires authoritative current pricing rather than a legacy spend estimate',async()=>{
   const offer=await resolveCanonicalRenewalOffer({RENEWAL_OFFER_RESOLVER:{resolve:async()=>({status:'ready',package_code:'standard',amount_thb:799,service_spend_365_thb:10000})}}, {liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier:'Standard',membership_expires_at:'2026-12-31T00:00:00Z'}},new Date('2026-10-02T00:00:00Z'));
-  assert.equal(offer.membership_years,2);assert.equal(offer.membership_start_at,'2026-12-31T00:00:00.000Z');assert.equal(offer.amount_thb,799);
+  assert.equal(offer.status,'review_required');assert.equal(offer.reason,'active_renewal_price_policy_required');
 });
-test('expiry over one calendar year routes to new signup, while the exact anniversary can renew',async()=>{
+test('exact expiry anniversary and older require separate policy review',async()=>{
   const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier:'Standard',membership_expires_at:'2025-10-02T00:00:00Z'}};
   const env={RENEWAL_OFFER_RESOLVER:{resolve:async()=>({status:'ready',package_code:'standard',amount_thb:1000})}};
-  assert.equal((await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-02T00:00:00Z'))).status,'ready');
+  assert.equal((await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-02T00:00:00Z'))).status,'review_required');
   const past=await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-02T00:00:00.001Z'));assert.equal(past.classification,'new_signup');assert.equal(past.status,'review_required');
+});
+
+test('expired strictly less than1yr uses approved fixed price, ignores spend discount and keeps base term separate',async()=>{
+ for(const [tier,price,years,bonus] of [['Standard',1000,1,180],['Premium',2500,2,1]]) {
+ const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier,membership_expires_at:'2026-01-01T00:00:00Z'}};
+ const offer=await resolveCanonicalRenewalOffer({},session,new Date('2026-10-31T16:59:59Z'));
+ assert.equal(offer.status,'ready');assert.equal(offer.amount_thb,price);assert.equal(offer.membership_years,years);assert.equal(offer.promotion[tier==='Standard'?'bonus_days':'bonus_years'],bonus);assert.equal(offer.promotion_requires_verified_payment,true);
+ assert.equal((await resolveCanonicalRenewalOffer({},session,new Date('2026-10-31T17:00:00Z'))).promotion,null);
+ }
 });

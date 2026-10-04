@@ -1,6 +1,6 @@
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { inferMembershipPayment } from "../shared/payment-intelligence.mjs";
-import { applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -40,7 +40,7 @@ export async function reconcileReviewedMembershipEntitlement(request, response, 
 
   try {
     requireAirtable(env);
-    const plan = await resolveWriteThroughPlan(env, body, {verified_at:iso(payload.paid_at) || undefined});
+    const plan = await resolveWriteThroughPlan(env, body, {paid_at:iso(payload.paid_at) || undefined});
     if (plan.status !== "ready") {
       return withReceipt(response, payload, {
         status: "review_required",
@@ -65,23 +65,10 @@ export async function reconcileReviewedMembershipEntitlement(request, response, 
         return withReceipt(response, payload, failedReceipt("payment_entitlement_conflict", plan));
       }
       const existingExpiry = iso(row.fields?.expire_at);
-      if (plan.promotion?.total_years === 2 && existingExpiry) {
-        // A retry is not authorization to backfill a historical paid term.
-        plan.proposed_expire_at = existingExpiry;
-        plan.membership_expiry_rule = text(row.fields?.membership_expiry_rule, 180) || plan.membership_expiry_rule;
-      } else if (plan.promotion && existingExpiry && existingExpiry !== plan.proposed_expire_at) {
-        const existingRule = text(row.fields?.membership_expiry_rule, 180);
-        if (!existingRule.includes(plan.promotion.code) && Date.parse(existingExpiry) < Date.parse(plan.proposed_expire_at)) {
-          await airtableUpdate(env, entitlementsTable(env), row.id, {
-            expire_at: plan.proposed_expire_at,
-            membership_expiry_rule: plan.membership_expiry_rule,
-            notes: appendPromotionNote(row.fields?.notes, plan),
-          });
-        } else {
-          plan.proposed_expire_at = existingExpiry;
-          plan.membership_expiry_rule = existingRule || plan.membership_expiry_rule;
-        }
-      }
+      // Existing paid outcomes are immutable on replay, including historical promotions.
+      plan.proposed_expire_at = existingExpiry;
+      plan.membership_expiry_rule = text(row.fields?.membership_expiry_rule, 180) || plan.membership_expiry_rule;
+
       return withReceipt(response, payload, successReceipt(plan, row.id, true));
     }
 
@@ -121,7 +108,8 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
   const amountThb = positiveAmount(body.amount_thb ?? body.amount);
   const packageCode = canonicalPackage(body.package_code || body.package);
   const memberEmail = email(body.member_email || body.email);
-  const verifiedAt = iso(options.verified_at || body.verified_at || body.paid_at) || new Date().toISOString();
+  const paidAt = iso(options.paid_at || body.paid_at);
+  const verifiedAt = paidAt || iso(options.verified_at || body.verified_at) || new Date().toISOString();
   const policy = PACKAGE_POLICY[packageCode];
 
   if (!paymentRef) return review("payment_ref_required", { package_code: packageCode });
@@ -144,9 +132,11 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     });
   }
 
+  let catalog = null;
   if (policy.private_catalog) {
-    const catalog = await loadPrivatePackage(env, packageCode);
+    catalog = await loadPrivatePackage(env, packageCode);
     if (!catalog) return review("membership_package_catalog_missing", { package_code: packageCode, capability: policy.capability });
+    if (catalog.duration_days !== policy.years * 365) return review("membership_package_term_review_required", {package_code:packageCode});
     if (catalog.active === false) return review("membership_package_inactive", { package_code: packageCode, capability: policy.capability });
     if (catalog.require_approval === true) return review("membership_package_requires_separate_approval", { package_code: packageCode, capability: policy.capability });
   }
@@ -176,6 +166,14 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     return review("canonical_member_blocked", { package_code: packageCode, capability: policy.capability, confidence: inference.confidence });
   }
 
+  const previouslyPaid = rows.filter(row => text(row.fields?.payment_ref,180) === paymentRef);
+  if (previouslyPaid.length > 1) return review("payment_entitlement_payment_ref_ambiguous",{package_code:packageCode});
+  if (previouslyPaid.length === 1) {
+    const f=previouslyPaid[0].fields;
+    const plan={status:"ready",payment_ref:paymentRef,member_id:memberId,package_code:packageCode,capability:policy.capability,entitlement_id:deterministicEntitlementId(paymentRef,packageCode),proposed_expire_at:iso(f.expire_at),start_at:iso(f.start_at),membership_expiry_rule:f.membership_expiry_rule,membership_term:f.membership_term,action:"existing_paid",promotion:null};
+    return sameMaterialization(previouslyPaid[0],plan) && plan.proposed_expire_at ? plan : review("payment_entitlement_conflict",{package_code:packageCode});
+  }
+  if (policy.private_catalog && !paidAt) return review("canonical_payment_date_required", {package_code:packageCode});
   const priorRows = rows.filter((row) => text(row?.fields?.payment_ref, 180) !== paymentRef);
   const planningSnapshot = resolveMemberEntitlements(priorRows, { now: verifiedAt });
   if (priorRows.some(row => [row.fields?.entitlement_level,row.fields?.package_code,row.fields?.capability].some(isProtectedPrivateMembership))) return review("protected_membership_manual_review_required", {package_code:packageCode});
@@ -195,11 +193,18 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
 
   const futureExpiry = latestFutureExpiry(exactPackageRows, verifiedAt);
   const timing = privateRenewalTiming(futureExpiry || latestHistoricalExpiry(exactPackageRows), verifiedAt);
-  if (hasExactHistory && timing?.expired_over_one_year && inferredIntent === "renewal") return review("expired_over_one_year_new_signup_required", {package_code:packageCode, action:"signup"});
-  const action = hasExactHistory && !timing?.expired_over_one_year ? "renewal" : "signup";
+  const requiresSignupReview = policy.private_catalog ? timing?.expired_one_year_or_more : timing?.expired_over_one_year;
+  if (hasExactHistory && requiresSignupReview && inferredIntent === "renewal") return review(policy.private_catalog ? "expired_one_year_or_more_policy_review_required" : "expired_over_one_year_new_signup_required", {package_code:packageCode, action:timing.expired_over_one_year ? "signup" : "review_required"});
+  const action = hasExactHistory && !requiresSignupReview ? "renewal" : "signup";
+  if (policy.private_catalog && hasExactHistory && !timing?.expiry_known) return review("canonical_expiry_required", {package_code:packageCode});
+  if (policy.private_catalog && hasExactHistory && timing.expired_one_year_or_more) return review("expired_one_year_or_more_policy_review_required", {package_code:packageCode});
+  if (policy.private_catalog && action === "renewal") {
+    const expectedAmount = timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[packageCode]) : catalog.renew_price;
+    if (!(expectedAmount > 0) || amountThb !== expectedAmount) return review("renewal_price_policy_review_required", {package_code:packageCode});
+  }
   const startAt = timing?.start_at || verifiedAt;
-  const baseExpireAt = addCalendarYears(startAt, policy.years)?.toISOString() || "";
-  const promotion = currentPrivateMembershipPromotion({ package_code: packageCode, verified_at: verifiedAt, action, existing_member:hasExactHistory });
+  const baseExpireAt = (policy.private_catalog ? addBangkokCalendarYears(new Date(startAt),policy.years) : addCalendarYears(startAt, policy.years))?.toISOString() || "";
+  const promotion = currentPrivateMembershipPromotion({ package_code: packageCode, paid_at: paidAt, action, existing_member:hasExactHistory, prior_expire_at:futureExpiry || latestHistoricalExpiry(exactPackageRows) });
   const promotedExpireAt = applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt});
   const expireAt = (promotedExpireAt || (baseExpireAt ? new Date(baseExpireAt) : null))?.toISOString() || "";
   if (!expireAt) return review("membership_term_invalid", { package_code: packageCode, capability: policy.capability, action, confidence: inference.confidence });
@@ -285,12 +290,6 @@ function successReceipt(plan, recordId, duplicate) {
     confidence: plan.confidence,
     manual_reconciliation_required: false,
   };
-}
-
-function appendPromotionNote(value, plan) {
-  const current = text(value, 1600);
-  const marker = `promotion=${plan.promotion?.code || "none"}; reconciled_from_payment=${plan.payment_ref}`;
-  return current.includes(marker) ? current : [current, marker].filter(Boolean).join("; ");
 }
 
 function failedReceipt(reason, plan = {}) {
