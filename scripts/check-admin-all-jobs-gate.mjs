@@ -35,9 +35,32 @@ export async function checkAdminAllJobsGate(fetchImpl = fetch) {
   return results;
 }
 
+// Newly applied routes may not be visible at every edge immediately. Retry the
+// complete check; never turn an unexpected response into a successful probe.
+export async function waitForAdminAllJobsGate({
+  fetchImpl = fetch,
+  attempts = 6,
+  delayMs = 10000,
+  pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  onRetry = () => {},
+} = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return { attempt, probes: await checkAdminAllJobsGate(fetchImpl) };
+    } catch (error) {
+      if (attempt === attempts) throw error;
+      onRetry({ attempt, message: error.message });
+      await pause(delayMs);
+    }
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    console.log(JSON.stringify({ ok: true, probes: await checkAdminAllJobsGate() }));
+    const result = await waitForAdminAllJobsGate({
+      onRetry: ({ attempt, message }) => console.error(`All Jobs route check attempt ${attempt}/6: ${message}; retrying in 10s`),
+    });
+    console.log(JSON.stringify({ ok: true, ...result }));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
