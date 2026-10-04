@@ -88,7 +88,10 @@ export default {
   // for D-1 reconfirm instead of inventing browser timers or a second scheduler.
   async scheduled(controller, env, ctx) {
     const scheduledAt = Number(controller?.scheduledTime || Date.now());
-    const reconfirmJob = runModelReconfirmSweep(env, { now: scheduledAt });
+    const reconfirmJob = runModelReconfirmSweep(env, { now: scheduledAt }).then(result => {
+      if (result.review_required) console.warn(JSON.stringify({ event: "model_reconfirm_data_review", reviews: result.reviews || [], review_required: result.review_required }));
+      return result;
+    });
     const legacyJob = typeof baseWorker.scheduled === "function"
       ? baseWorker.scheduled(controller, env, ctx)
       : Promise.resolve();

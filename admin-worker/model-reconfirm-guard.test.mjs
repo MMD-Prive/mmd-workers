@@ -104,9 +104,11 @@ function harness(sessions, models = { [M1]: { line_user_id: LINE_ID } }, { lineO
         const formula = url.searchParams.get("filterByFormula") || "";
         log.listFormulas.push(formula);
         const date = formula.match(/="(\d{4}-\d{2}-\d{2})"/)?.[1];
-        const records = [...store.values()].filter((r) => !date || String(r.fields.job_date).slice(0, 10) === date);
+        const sid = formula.match(/\{session_id\}="([^"]+)"/)?.[1];
+        const records = [...store.values()].filter((r) => (!date || String(r.fields.job_date).slice(0, 10) === date) && (!sid || r.fields.session_id === sid));
         return Response.json({ records });
       }
+      if (table === "tblhQGfJc4GgiteZr") return Response.json({ records: [] });
       if (table === "sessions" && id && method === "PATCH") {
         const body = JSON.parse(init.body);
         log.patches.push(body.fields);
@@ -128,14 +130,15 @@ const env = (o = {}) => ({
   MODEL_LINE_CHANNEL_ACCESS_TOKEN: "line-token", TELEGRAM_INTERNAL_SEND_URL: "https://telegram.test/send", AUTH_SERVICE_EVENTS_TO_TELEGRAM: "svc",
   MODEL_RECONFIRM_OWNER_CHAT_ID: OWNER_CHAT, ...o,
 });
-const session = (id, fields = {}) => ({ id, fields: { session_id: id.toUpperCase(), session_state: "confirmed", job_date: "2026-10-01", "Assigned Model": [M1], model_name: "Test Model", ...fields } });
+const session = (id, fields = {}) => ({ id, fields: { session_id: id.toUpperCase(), session_state: "confirmed", job_date: "2026-10-01", start_time: "2026-10-01T09:00:00Z", end_time: "2026-10-01T10:30:00Z", "Assigned Model": [M1], model_name: "Test Model", ...fields } });
 const RECONFIRM_KEYS = new Set(["reconfirm_status", "reconfirm_required_at", "reconfirm_reminder_at", "reconfirm_overdue_at", "reconfirm_notified_at", "reconfirm_reminder_notified_at", "reconfirm_acknowledged_at", "reconfirm_followup_status", "reconfirm_risk_level", "reconfirm_backup_required", "reconfirm_ops_alerted_at"]);
 
-test("S1 guard OFF keeps legacy behavior: a past-dated job is still processed (documents what v2 fixes)", async () => {
+test("S1 guard OFF: inconsistent canonical date/time fails closed", async () => {
   const h = harness([session("recS1AAAAAAAAAAAAA", { job_date: "2026-09-29" })]);
   const result = await runModelReconfirmSweep(env(), { now: NOW });
   assert.equal(result.guard_v2, undefined);
-  assert.ok(h.log.line.length >= 1, "legacy messages the model (16:00 notice and 18:00 reminder back to back) although the job date has passed");
+  assert.equal(h.log.line.length, 0);
+  assert.equal(result.reviews[0].reason, "canonical_schedule_invalid");
   assert.equal(h.log.listFormulas[0], "", "legacy lists unfiltered");
 });
 

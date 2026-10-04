@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/model-reconfirm-freshness.js"
+      - "admin-worker/src/customer-change-resolution.js"
+      - "admin-worker/model-reconfirm-freshness.test.mjs"
+      - "admin-worker/customer-change-resolution.test.mjs"
       - "admin-worker/src/studio-telegram-worker.js"
       - "admin-worker/src/dashboard-worker.js"
       - "admin-worker/model-reconfirm-runtime.test.mjs"
@@ -17,6 +21,10 @@ on:
       - main
     paths:
       - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/model-reconfirm-freshness.js"
+      - "admin-worker/src/customer-change-resolution.js"
+      - "admin-worker/model-reconfirm-freshness.test.mjs"
+      - "admin-worker/customer-change-resolution.test.mjs"
       - "admin-worker/src/studio-telegram-worker.js"
       - "admin-worker/src/dashboard-worker.js"
       - "admin-worker/model-reconfirm-runtime.test.mjs"
@@ -36,11 +44,13 @@ jobs:
       - name: Syntax check
         run: |
           node --check admin-worker/src/model-reconfirm-runtime.js
+          node --check admin-worker/src/model-reconfirm-freshness.js
+          node --check admin-worker/src/customer-change-resolution.js
           node --check admin-worker/src/studio-telegram-worker.js
           node --check admin-worker/src/dashboard-worker.js
           node --check events-worker/src/model-eta-wrapper.js
       - name: Reconfirm contract tests
-        run: node --test admin-worker/model-reconfirm-runtime.test.mjs admin-worker/sigil-jobs-reconfirm-integration.test.mjs
+        run: node --test admin-worker/model-reconfirm-runtime.test.mjs admin-worker/model-reconfirm-freshness.test.mjs admin-worker/model-reconfirm-guard.test.mjs admin-worker/model-reconfirm-owner.test.mjs admin-worker/customer-change-resolution.test.mjs admin-worker/sigil-jobs-reconfirm-integration.test.mjs
       - name: Admin Worker dry run
         run: npx wrangler deploy --dry-run --config admin-worker/wrangler.toml
       - name: Events Worker dry run
