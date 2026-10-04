@@ -5,6 +5,7 @@ import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membershi
 import {
   inferLineIntent,
   requestKenjiRuntimeStatus,
+  getLineOwnerTakeoverState,
   resolveKenjiLineReply,
   verifyLineSignature,
 } from "./index.js";
@@ -607,6 +608,14 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const replyToken = replyTokenOf(event);
     const support = isRichMenuSupport(event);
     const navigation = richMenuNavigation(event);
+    // A deliberate menu tap is a bounded command, like เช็กสิทธิ์, not broad chat auto-reply.
+    let menuCommandEnabled = Boolean(navigation && !runtimeAllKill && directUser &&
+      eventMode !== "standby" && !redelivered && replyToken);
+    if (menuCommandEnabled) {
+      const owner = await getLineOwnerTakeoverState(env, event.source.userId, {}, { signal: AbortSignal.timeout(1500) })
+        .catch(() => ({ ok: false }));
+      menuCommandEnabled = owner.ok === true && owner.active !== true;
+    }
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
     const currentIntent = navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
     const continuity = continuityEnabled && directUser && !support && !navigation
@@ -629,11 +638,11 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       ? await resolveKenjiLineAvailability({ env, continuity })
       : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
 
-    const baseDecision = navigation && (autoReplyEnabled || firstContactEnabled) && directUser && eventMode !== "standby" && !redelivered && replyToken
+    const baseDecision = menuCommandEnabled
       ? withDecisionMetadata({}, await resolveRichMenuNavigation(event, {
           getContext: () => resolveKenjiLiveMemberContext(env, event.source.userId, "support"),
         }))
-      : autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
+      : !navigation && autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: controls.model_keyword_auto_reply !== true,
           currentIntent,
@@ -641,7 +650,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           liveTruth,
           liveAvailability,
         })
-      : firstContactEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
+      : !navigation && firstContactEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
         ? withDecisionMetadata({}, await decideKenjiFirstContactMembership(event, currentIntent, continuity, env))
       : withDecisionMetadata({}, {
         ...continuityMetadata({ continuity }, currentIntent),
@@ -667,7 +676,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     });
     // OA Manager sends the add-friend greeting. A follow event must not get a
     // second Worker greeting, even if the broader reply flag is enabled later.
-    const shouldReply = Boolean(directUser && (autoReplyEnabled || firstContactEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
+    const shouldReply = Boolean(directUser && (autoReplyEnabled || firstContactEnabled || menuCommandEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
 
