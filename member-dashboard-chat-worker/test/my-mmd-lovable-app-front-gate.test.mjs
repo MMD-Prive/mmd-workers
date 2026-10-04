@@ -6,6 +6,20 @@ import worker from "../src/my-mmd-lovable-app-front-gate.js";
 
 const realFetch = globalThis.fetch;
 
+test("Console Session selection stays on MMD Workers and adds the customer panel to MY MMD home", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response("<html><head></head><body><main>MY MMD</main></body></html>", {headers:{"content-type":"text/html"}});
+  };
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/?session_id=SESSION-A&lang=th"), {});
+  assert.deepEqual(calls, ["https://my-mmd-member-profile.lovable.app/?lang=th"]);
+  const html = await response.text();
+  assert.equal((html.match(/id="mmd-session-panel"/g)||[]).length, 1);
+  assert.match(html, /\/api\/member\/app\/session\/current/);
+  assert.doesNotMatch(html, /SESSION-A|client_id|payout_amount/);
+});
+
 afterEach(() => {
   globalThis.fetch = realFetch;
 });

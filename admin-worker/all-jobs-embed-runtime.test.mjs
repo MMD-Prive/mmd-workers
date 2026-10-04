@@ -58,6 +58,45 @@ function mount(search, responseForJobs) {
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("duplicate or empty Console scope does not fall back to an unrestricted jobs request", async () => {
+  for (const search of ["?client_id=", "?client_id=recAAAAAAAAAAAAAA&client_id=recBBBBBBBBBBBBBB", "?job_id=A&job_id=B", "?session_id="]) {
+    const app = mount(search, () => {throw new Error("jobs must not be fetched");});
+    await settle();
+    assert.deepEqual(app.requests, ["/v1/admin/auth/me"]);
+    assert.doesNotMatch(app.elements["data-all-jobs-list"].innerHTML, /MY MMD ของเจ้าของงาน/);
+  }
+});
+
+test("Console preserves client scope and rejects a response from another customer", async () => {
+  const clientId = "recAAAAAAAAAAAAAA";
+  const app = mount("?client_id=" + clientId, () => jobsResponse(null, [
+    { id: "sess_a", client_id: clientId, customer_view_href: "/my-mmd/?session_id=sess_a", title: "Selected customer" },
+  ], { filters: { client_id: clientId } }));
+  await settle();
+  assert.match(app.requests.at(-1), /client_id=recAAAAAAAAAAAAAA/);
+  assert.match(app.elements["data-all-jobs-list"].innerHTML, /\/my-mmd\/\?session_id=sess_a/);
+  app.elements["data-filter-today"].handlers.click();
+  await settle();
+  assert.match(app.requests.at(-1), /client_id=recAAAAAAAAAAAAAA/);
+
+  const wrong = mount("?client_id=" + clientId, () => jobsResponse(null, [
+    { id: "sess_b", client_id: "recBBBBBBBBBBBBBB", title: "Foreign private job" },
+  ], { filters: { client_id: clientId } }));
+  await settle();
+  assert.doesNotMatch(wrong.elements["data-all-jobs-list"].innerHTML, /Foreign private job/);
+  assert.match(wrong.elements["data-all-jobs-list"].innerHTML, /ข้อมูลที่ได้ไม่ตรง/);
+});
+
+test("Console job deep link stays exact and cannot render an external customer link", async () => {
+  const app = mount("?job_id=JOB-A", () => jobsResponse(null, [
+    { id: "sess_a", job_id: "JOB-A", customer_view_href: "https://evil.example/", title: "Selected job" },
+  ], { filters: { job_id: "JOB-A" } }));
+  await settle();
+  assert.match(app.requests.at(-1), /job_id=JOB-A/);
+  assert.match(app.elements["data-all-jobs-list"].innerHTML, /Selected job/);
+  assert.doesNotMatch(app.elements["data-all-jobs-list"].innerHTML, /evil\.example/);
+});
 const jobsResponse = (id, jobs, extra = {}) => ({
   ok: true, status: 200,
   async json() {

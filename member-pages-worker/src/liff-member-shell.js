@@ -1170,10 +1170,16 @@ function renderShell(config, nonce) {
     const mission = document.getElementById("digital-mission");
     if (mission) mission.hidden = true;
     try {
-      const response = await fetch("/api/member/app/session/current", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const selected = new URLSearchParams(location.search);
+      const references = selected.getAll("session_id");
+      const sessionId = references.length === 1 ? references[0] : null;
+      if (references.length && (sessionId === null || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(sessionId))) return;
+      const endpoint = "/api/member/app/session/current" + (sessionId ? "?session_id=" + encodeURIComponent(sessionId) : "");
+      const response = await fetch(endpoint, { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       if (response.status === 204) return;
       const session = await response.json().catch(() => null);
       if (!response.ok || !session || typeof session !== "object") return;
+      if (sessionId && session.sessionId !== sessionId) return;
       renderDigitalMission(session);
     } catch {}
   }

@@ -38,6 +38,10 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
   }
 
   const page = positiveInt(url.searchParams.get("page"), 1);
+  const clientId = String(url.searchParams.get("client_id") || "").trim();
+  if (url.searchParams.has("client_id") && (url.searchParams.getAll("client_id").length !== 1 || !/^rec[A-Za-z0-9]{14,30}$/.test(clientId))) {
+    return jobsJson({ ok: false, error: "invalid_client_id" }, 400);
+  }
   const pageSize = clamp(positiveInt(url.searchParams.get("page_size"), DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
@@ -50,6 +54,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       jobDate,
       sessionId,
       jobId,
+      clientId,
     });
 
     const body = {
@@ -62,6 +67,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
         job_date: jobDate || null,
         session_id: sessionId || null,
         job_id: jobId || null,
+        client_id: clientId || null,
       },
       pagination: result.pagination,
       counts: result.counts,
@@ -89,12 +95,13 @@ export function buildJobsPage(records, options = {}) {
   const jobDate = normalizeDateOnly(options.jobDate || "");
   const sessionId = String(options.sessionId || "").trim();
   const jobId = String(options.jobId || "").trim();
+  const clientId = String(options.clientId || "").trim();
   const allItems = projectJobs(records, now);
   const filtered = allItems.filter((item) => {
     const dateMatch = !jobDate || item.job_date === jobDate;
     const sessionMatch = !sessionId || item.id === sessionId || item.session_id === sessionId;
     const jobMatch = !jobId || item.job_id === jobId || item.id === jobId;
-    return dateMatch && sessionMatch && jobMatch;
+    return dateMatch && sessionMatch && jobMatch && (!clientId || item.client_id === clientId);
   });
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -126,6 +133,8 @@ export function buildJobsPage(records, options = {}) {
 export function projectJobs(records, now = new Date()) {
   const items = (Array.isArray(records) ? records : []).map((record) => {
     const fields = record?.fields || {};
+    const clientId = canonicalClientId(fields);
+    const customerSessionId = String(fields.session_id || "").trim();
     const jobId = firstText(fields.job_id, fields.jobId, fields["Job ID"], fields["Job Ref"], fields.job_ref);
     const sessionId = firstText(fields.session_id, fields.sid, fields["Session ID"], fields.session_ref, jobId, record?.id);
     const model = firstText(
@@ -151,6 +160,9 @@ export function projectJobs(records, now = new Date()) {
       id: sessionId,
       session_id: sessionId,
       job_id: jobId,
+      client_id: clientId || null,
+      customer_view_href: /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(customerSessionId)
+        ? `/my-mmd/?session_id=${encodeURIComponent(customerSessionId)}` : null,
       model_name: model,
       customer_name: customer,
       title: `${model} · ${customer}`,
@@ -351,6 +363,16 @@ function lower(value) {
 
 function str(value) {
   return String(value == null ? "" : value).trim();
+}
+
+function canonicalClientId(fields) {
+  const linked = fields.Client;
+  if (Array.isArray(linked) && linked.length > 1) return "";
+  const candidates = [Array.isArray(linked) ? linked[0] : linked, fields.client_record_id, fields.client_id]
+    .filter((value) => value !== undefined && value !== null && value !== "");
+  if (!candidates.length || candidates.some((value) => typeof value !== "string" || !/^rec[A-Za-z0-9]{14,30}$/.test(value))) return "";
+  const unique = [...new Set(candidates)];
+  return unique.length === 1 ? unique[0] : "";
 }
 
 function isSafeLookupToken(value, max = 139) {

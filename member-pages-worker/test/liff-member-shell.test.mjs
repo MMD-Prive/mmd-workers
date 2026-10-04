@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { runInNewContext } from "node:vm";
 
 import worker from "../src/index.js";
 import { handleCareBackLiffOrchestrator } from "../src/care-back-liff-orchestrator.js";
@@ -23,6 +24,28 @@ async function stagingShell(hostname, path, runtime) {
 }
 
 describe("same-site /member/liff shell", () => {
+  it("LINE return retains the Console Session and suppresses mismatched or malformed selection", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("async function hydrateDigitalMission()");
+    const end = html.indexOf("function digitalFeedCategory", start);
+    const hydrate = html.slice(start, end);
+    for (const [search, returnedId, expectedReads, expectedRenders] of [
+      ["?session_id=SESSION-A", "SESSION-A", 1, 1],
+      ["?session_id=SESSION-A", "SESSION-B", 1, 0],
+      ["?session_id=A&session_id=B", "SESSION-A", 0, 0],
+      ["?session_id=", "SESSION-A", 0, 0],
+    ]) {
+      const calls = [], rendered = [];
+      await runInNewContext(hydrate + "hydrateDigitalMission()", {
+        document:{getElementById:() => ({hidden:false})}, location:{search}, URLSearchParams, encodeURIComponent,
+        async fetch(url) {calls.push(url);return Response.json({sessionId:returnedId});},
+        renderDigitalMission(session) {rendered.push(session);},
+      });
+      assert.equal(calls.length, expectedReads, search);
+      assert.equal(rendered.length, expectedRenders, search);
+      if (expectedReads) assert.equal(calls[0], "/api/member/app/session/current?session_id=SESSION-A");
+    }
+  });
  it("keeps browser hints fail-closed and renders both trusted customer welcome copies", async () => {
     for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous", "?intent=signup&view=signup"]) {
       const response = await shell(`/member/liff${query}`);
@@ -332,7 +355,7 @@ describe("same-site /member/liff shell", () => {
     assert.equal(response.status, 200);
     assert.match(html, /id="digital-mission" class="digital-mission"[^>]*hidden/);
     assert.match(html, /<small>CURRENT JOB<\/small>MMD MISSION/);
-    assert.match(html, /fetch\("\/api\/member\/app\/session\/current"/);
+    assert.match(html, /const endpoint = "\/api\/member\/app\/session\/current"/);
     assert.match(html, /session\?\.missionReady !== true/);
     assert.match(html, /MISSION_VISIBLE_STATES = new Set\(\["confirmed","preparing","en_route","nearby","arrived","met_customer","final_payment_pending","final_payment_confirmed","work_started","in_progress","work_finished"\]\)/);
     assert.match(html, /final_payment_pending:"PAYMENT CHECK"/);

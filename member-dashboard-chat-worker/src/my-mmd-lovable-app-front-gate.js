@@ -2,6 +2,7 @@ import currentWorker from "./line-group-ingress-front-gate.js";
 import { isMyMmdOrdersPage, proxyMyMmdOrdersPage } from "./my-mmd-orders-webflow-page.js";
 import { isMyMmdPrivateTeaserViewerPath, myMmdPrivateTeaserViewerPage } from "./my-mmd-private-teaser-viewer.js";
 import { MY_MMD_BANGKOK_BOARD_URL, MY_MMD_BRAND_LOGO_URL } from "./my-mmd-visual-assets.js";
+import { myMmdSessionPanel } from "./my-mmd-session-panel.js";
 export { KenjiModelIdempotency } from "./line-group-ingress-front-gate.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -88,6 +89,8 @@ function presentationUrlForPage(request) {
   const upstream = new URL(MY_MMD_PRESENTATION_ORIGIN);
   upstream.pathname = suffix || "/";
   upstream.search = source.search;
+  // Selection is resolved by same-origin Workers, not the presentation host.
+  upstream.searchParams.delete("session_id");
   return upstream;
 }
 
@@ -329,6 +332,9 @@ function rewriteMyMmdHtml(html, path = "/my-mmd/") {
     if (output.includes("</head>")) output = output.replace("</head>", myMmdBangkokTheme() + "</head>");
     const layout = /^\/my-mmd(?:\/(?:profile\/?)?)?$/.test(path) ? "hero" : "quiet";
     output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes} data-mmd-board-layout="${layout}">` + myMmdBrandMarkup());
+  }
+  if (/^\/my-mmd\/?$/.test(path) && !output.includes('id="mmd-session-panel"')) {
+    output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>` + myMmdSessionPanel());
   }
   return output;
 }

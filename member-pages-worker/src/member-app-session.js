@@ -44,7 +44,18 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
   if (!identity?.lineUserId) return jsonError(401, "MEMBER_SESSION_REQUIRED", "Open MY MMD through LINE and sign in again.");
 
   if (path === `${SESSION_PATH}current`) {
-    const record = await findCurrentOwnedSession(env, identity);
+    const query = new URL(request.url).searchParams;
+    const selectedId = query.get("session_id");
+    if (query.has("client_id") || query.has("member_id") || query.has("line_user_id")) {
+      return jsonError(400, "BROWSER_AUTHORITY_REJECTED", "Customer identity comes from the verified session.");
+    }
+    if (selectedId !== null && (query.getAll("session_id").length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(selectedId))) {
+      return jsonError(400, "INVALID_SESSION_ID", "Invalid session reference.");
+    }
+    const record = selectedId === null
+      ? await findCurrentOwnedSession(env, identity)
+      : await findOwnedSessionById(env, identity, selectedId);
+    if (selectedId !== null && !record) return jsonError(404, "SESSION_NOT_FOUND", "Session is unavailable.");
     return record ? json(await projectSession(record, env)) : new Response(null, { status: 204, headers: noStoreHeaders() });
   }
 
@@ -99,7 +110,7 @@ async function findSignedSessionById(env, sessionId) {
 
 async function findOwnedSessionById(env, identity, sessionId) {
   const record = await findSignedSessionById(env, sessionId);
-  return record && owns(record, identity) ? record : null;
+  return record && clean(record.fields?.session_id, 160) === sessionId && owns(record, identity) ? record : null;
 }
 
 async function listOwnedSessions(env, identity) {

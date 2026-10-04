@@ -85,6 +85,35 @@ function request(path, init = {}) {
 
 const readIdentity = async () => IDENTITY;
 
+test("Console deep link selects only the authenticated customer's exact session", async () => {
+  const env = envWith();
+  const response = await handleMemberAppSessionApi(request("/api/member/app/session/current?session_id=SESSION-001"), env, readIdentity);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).sessionId, "SESSION-001");
+  assert.equal(env.writes.length, 0);
+
+  for (const record of [sessionRecord({ session_id: "SESSION-OTHER" }), sessionRecord({ line_user_id: "Uother", member_id: "recOther" })]) {
+    const foreign = envWith(record);
+    const denied = await handleMemberAppSessionApi(request("/api/member/app/session/current?session_id=SESSION-001"), foreign, readIdentity);
+    assert.equal(denied.status, 404);
+    assert.equal(foreign.reads.jobs, 0);
+    assert.equal(foreign.writes.length, 0);
+    assert.doesNotMatch(await denied.text(), /Mek|private_phone|payout/);
+  }
+});
+
+test("selected session requires login and rejects browser identity or malformed selectors", async () => {
+  const env = envWith();
+  const anonymous = await handleMemberAppSessionApi(request("/api/member/app/session/current?session_id=SESSION-001"), env, async () => null);
+  assert.equal(anonymous.status, 401);
+  for (const query of ["session_id=", "session_id=a&session_id=b", "session_id=%27", "session_id=" + "x".repeat(161), "session_id=SESSION-001&client_id=recOther"]) {
+    const response = await handleMemberAppSessionApi(request("/api/member/app/session/current?" + query), env, readIdentity);
+    assert.equal(response.status, 400, query);
+  }
+  assert.equal(env.reads.sessions, 0);
+  assert.equal(env.writes.length, 0);
+});
+
 test("recognizes the three bounded MY MMD session routes", () => {
   for (const suffix of ["current", "context", "ack"]) {
     assert.equal(isMemberAppSessionPath(`https://mmdbkk.com/api/member/app/session/${suffix}`), true);
