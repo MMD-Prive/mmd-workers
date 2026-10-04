@@ -299,3 +299,28 @@ test("Medical Professional policy is verified and brief-only before a public pro
   assert.equal(state.getApplication().fields[PUBLIC_MODEL_REVIEW_FIELDS.bookingMode], "brief_only");
   assert.equal(state.getApplication().fields[PUBLIC_MODEL_REVIEW_FIELDS.credentialStatus], "verified");
 });
+
+test("rendered review script compiles and starts queue and detail loading", async () => {
+  const { Script } = await import("node:vm");
+  const response = await handlePublicModelApplicationReviewRequest(new Request("https://mmdbkk.com/internal/admin/model-applications"));
+  const html = await response.text();
+  const source = html.split("<script>")[1]?.split("</script>")[0];
+  assert.ok(source, "review page must include its bootstrap script");
+  const script = new Script(source);
+  for (const query of ["", "?application_id=" + APP_ID]) {
+    const app = { className: "loading", textContent: "กำลังโหลดใบสมัคร…" };
+    const requests = [];
+    await script.runInNewContext({
+      document: { querySelector: (selector) => selector === "#app" ? app : {} },
+      location: { href: "https://mmdbkk.com/internal/admin/model-applications" + query },
+      URL,
+      fetch: async (path) => {
+        requests.push(path);
+        return { ok: false, status: 503, json: async () => ({ ok: false, error: "test_backend_unavailable" }) };
+      },
+    });
+    assert.equal(requests[0], query ? "/v1/admin/model-applications/" + APP_ID : "/v1/admin/model-applications?limit=30");
+    assert.equal(app.className, "card error");
+    assert.match(app.textContent, /test_backend_unavailable/);
+  }
+});
