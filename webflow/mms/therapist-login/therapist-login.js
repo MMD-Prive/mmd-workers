@@ -34,6 +34,30 @@
   button.dataset.ready = "true";
   setState("ยืนยันตัวตนผ่าน LINE เพื่อเข้าสู่พื้นที่ Therapist ของคุณ");
 
+  const pageUrl = new URL(window.location.href);
+  const storageKey = "mms-therapist-invite-v1";
+  const recoveryKey = "mms-therapist-line-recovery-v1";
+  const storage = {
+    get(key) { try { return window.sessionStorage.getItem(key); } catch { return null; } },
+    set(key, value) { try { window.sessionStorage.setItem(key, value); } catch {} },
+    remove(key) { try { window.sessionStorage.removeItem(key); } catch {} },
+  };
+  const nested = new URL(pageUrl.searchParams.get("liff.state") || pageUrl.searchParams.get("liff_state") || pageUrl.pathname, pageUrl.origin);
+  let inviteToken = pageUrl.searchParams.get("invite") || new URLSearchParams(pageUrl.hash.slice(1)).get("invite") || nested.searchParams.get("invite") || new URLSearchParams(nested.hash.slice(1)).get("invite") || "";
+  if (inviteToken) storage.set(storageKey, JSON.stringify({ token: inviteToken, until: Date.now() + 30 * 60 * 1000 }));
+  else {
+    try { const saved = JSON.parse(storage.get(storageKey)); if (saved?.until > Date.now()) inviteToken = saved.token || ""; else storage.remove(storageKey); } catch { storage.remove(storageKey); }
+  }
+  const redirect = new URL("/male-massage/therapists/login", pageUrl.origin);
+  if (inviteToken) redirect.hash = new URLSearchParams({ invite: inviteToken }).toString();
+  function recoverLine() {
+    if (storage.get(recoveryKey) || pageUrl.searchParams.get("line_recovery") === "1") {
+      setState("LINE ยังยืนยันบัญชีไม่ได้ครับ ติดต่อพี่เปอร์เพื่อตรวจ LINE Login"); return;
+    }
+    storage.set(recoveryKey, "1"); redirect.searchParams.set("line_recovery", "1");
+    window.liff.logout(); window.liff.login({ redirectUri: redirect.href });
+  }
+
   async function authenticate() {
     if (!window.liff || typeof window.liff.init !== "function") {
       setState("ตอนนี้ยังเริ่ม LINE Login ไม่ได้ครับ กรุณาลองใหม่อีกครั้ง");
@@ -46,20 +70,12 @@
     try {
       await window.liff.init({ liffId });
       if (!window.liff.isLoggedIn()) {
-        window.liff.login({ redirectUri: window.location.href });
+        window.liff.login({ redirectUri: redirect.href });
         return;
       }
 
       const idToken = window.liff.getIDToken();
-      if (!idToken) throw new Error("ID_TOKEN_UNAVAILABLE");
-
-      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const inviteToken = String(hash.get("invite") || "").trim();
-      if (inviteToken) {
-        hash.delete("invite");
-        const nextHash = hash.toString();
-        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash ? `#${nextHash}` : ""}`);
-      }
+      if (!idToken) { recoverLine(); return; }
 
       const response = await fetch(authEndpoint, {
         method: "POST",
@@ -76,7 +92,9 @@
 
       if (!response.ok) {
         const code = String(payload?.error?.code || "");
-        if (code === "THERAPIST_LINK_REQUIRED") {
+        if (code === "LINE_ID_TOKEN_INVALID") {
+          recoverLine();
+        } else if (code === "THERAPIST_LINK_REQUIRED") {
           setState("LINE นี้ยังไม่ได้เชื่อมกับ Therapist Profile ครับ กรุณาใช้ลิงก์เปิดสิทธิ์ที่ MMS ส่งให้");
         } else if (code === "THERAPIST_ACCESS_DENIED") {
           setState("บัญชีนี้ยังเข้า Therapist Dashboard ไม่ได้ครับ กรุณาติดต่อ MMS");
@@ -86,6 +104,8 @@
         return;
       }
 
+      storage.remove(storageKey); storage.remove(recoveryKey);
+      window.history.replaceState(null, "", pageUrl.pathname);
       const next = String(payload?.data?.next_route || postLoginRoute);
       window.location.assign(next.startsWith("/male-massage/therapists/") ? next : postLoginRoute);
     } catch {
@@ -96,4 +116,6 @@
   }
 
   button.addEventListener("click", authenticate);
+  if (["code", "liff.state", "liff_state"].some(key => pageUrl.searchParams.has(key))) authenticate();
 })();
+
