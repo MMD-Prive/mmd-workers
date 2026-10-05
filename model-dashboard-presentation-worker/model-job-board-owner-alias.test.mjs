@@ -60,7 +60,10 @@ test("public job board entry uses Per-led Welcome and contact-first intake", () 
   });
   assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
   assert.match(html, /ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า/);
-  assert.match(html, /ยังไม่สะดวกส่งรูป/);
+  assert.match(html, /กรอกรายละเอียดและอัปโหลดรูปครั้งเดียว/);
+  assert.match(html, /เลือกงานที่อยากรับได้ตามใจชอบ/);
+  assert.match(html, /กดสนใจได้ทันที/);
+  assert.match(html, /ไม่ต้องกรอกใหม่ทุกงาน/);
   assert.match(html, /t\.me\/per_mmd/);
   assert.match(html, /\/apply\/public-model/);
   assert.match(html, /source","job_board"/);

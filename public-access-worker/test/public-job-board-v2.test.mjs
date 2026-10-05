@@ -334,6 +334,23 @@ test("linked Model uses the fast lane instead of repeating an application", asyn
   assert.equal(application.applicant.fast_lane, true);
 });
 
+test("Private Model sees the Per-led entry gate before the Private brief", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { budget_disclosure_approved: true, customer_gender: "male" });
+  const cookie = await anonymousCookie(testEnv);
+  const response = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie } });
+  const page = await response.text();
+  const copy = visibleText(page);
+  assert.equal(response.status, 200);
+  assert.match(page, /data-private-entry="v1"/);
+  assert.match(copy, /งานนี้พี่เปอร์ส่งมาให้ดูครับ/);
+  assert.match(copy, /เปิดดู ≠ รับงาน/);
+  assert.match(copy, /ดูรายละเอียดงาน →/);
+  assert.match(copy, /หน้าถัดไปจะแสดงบรีฟงาน แล้วค่อยตัดสินใจได้ครับ/);
+  assert.doesNotMatch(copy, /ลูกค้าเกย์ผู้ใหญ่|10,000 ถึงตัว|สุขุมวิท/);
+  assert.doesNotMatch(copy, /สนใจงานนี้/);
+});
+
 test("Public and Private share one feed while Private teaser leaks no sensitive detail", async () => {
   const testEnv = env();
   await ownerCreate(testEnv, { budget_disclosure_approved: true, customer_gender: "male" });
@@ -386,7 +403,7 @@ test("Private reveal token expires and returns to the redacted gate", async () =
     const detail = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } });
     const page = await detail.text();
     assert.equal(detail.status, 200);
-    assert.match(page, /รายละเอียดของงานนี้จะยังไม่แสดงบนหน้ารวมครับ/);
+    assert.match(page, /งานนี้พี่เปอร์ส่งมาให้ดูครับ/);
     assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
     assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } })).status, 403);
   } finally { Date.now = realNow; }
