@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applyMyMmdCanonicalEntitlementResponse,
+  canonicalPresentationContext,
   projectProtectedEntitlement,
   protectedConnectNowActiveThrough,
   readOrCreateProtectedActiveThroughAnchor,
@@ -315,4 +316,31 @@ test("missing membership dates alone never create recovery_pending without a rec
     historyRecoveryStatus: null,
     historyReviewRequired: false,
   });
+});
+
+const approvedSvipProjection = { capability: "svip", label: "SVIP", lifecycle: "active", startAt: "2026-09-17", expiresAt: "2028-09-17", packageLabel: "SVIP Membership" };
+const fastTrustProfile = {
+  fast_trust: true,
+  tier_source: "line_oa_renamed_name_fast_trust",
+  membership_start: "2026-10-07",
+  membership_expires_at: "2028-10-07",
+  customer_360: { member: { tier_source: "line_oa_renamed_name_fast_trust", membership_start: "2026-10-07", membership_expires_at: "2028-10-07" } },
+};
+
+test("approved entitlement dates win over Fast Trust placeholder dates", () => {
+  const ctx = canonicalPresentationContext(fastTrustProfile, fastTrustProfile, approvedSvipProjection);
+  assert.equal(ctx.membershipStart, "2026-09-17");
+  assert.equal(ctx.membershipExpiresAt, "2028-09-17");
+});
+
+test("Fast Trust placeholder dates remain the fallback when no approved entitlement dates exist", () => {
+  const ctx = canonicalPresentationContext(fastTrustProfile, fastTrustProfile, { ...approvedSvipProjection, startAt: null, expiresAt: null });
+  assert.equal(ctx.membershipStart, "2026-10-07");
+  assert.equal(ctx.membershipExpiresAt, "2028-10-07");
+});
+
+test("non Fast Trust profile dates keep their existing precedence", () => {
+  const profile = { membership_start: "2026-01-01", membership_expires_at: "2027-01-01" };
+  const ctx = canonicalPresentationContext(profile, profile, approvedSvipProjection);
+  assert.equal(ctx.membershipExpiresAt, "2027-01-01");
 });
