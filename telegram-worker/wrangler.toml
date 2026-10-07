@@ -28,6 +28,8 @@ HYPE_PREVIEW_STANDARD_POINTS = "150"
 HYPE_PREVIEW_PREMIUM_POINTS = "250"
 HYPE_PREVIEW_BLACKCARD_POINTS = "350"
 HYPE_PREVIEW_CODE_TTL_DAYS = "30"
+# Codes never outlive the campaign signup deadline (matches hype_campaigns.signup_deadline).
+HYPE_PREVIEW_SIGNUP_DEADLINE = "2026-06-30T23:59:59+07:00"
 HYPE_PREVIEW_SIGNUP_URL = "https://mmdbkk.com/trust/inme"
 HYPE_PREVIEW_PACKAGES_URL = "https://mmdbkk.com/member/membership"
 HYPE_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH"

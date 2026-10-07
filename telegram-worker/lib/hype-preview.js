@@ -21,7 +21,9 @@ function nowISO() {
 }
 
 function toInt(v, fallback = 0) {
-  const n = Number(String(v ?? "").trim());
+  const raw = String(v ?? "").trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
 }
 
@@ -68,10 +70,37 @@ function addDaysISO(days) {
   return d.toISOString();
 }
 
-function getCodeExpiresAt(env) {
+function parseTime(v) {
+  const t = Date.parse(str(v));
+  return Number.isFinite(t) ? t : null;
+}
+
+// Codes never outlive the campaign signup deadline. An explicit env override wins;
+// otherwise the rolling TTL is capped at the campaign row's signup_deadline.
+function getCodeExpiresAt(env, campaign) {
   const explicit = str(env.HYPE_PREVIEW_CODE_EXPIRES_AT || env.HYPE_PREVIEW_SIGNUP_DEADLINE);
   if (explicit) return explicit;
-  return addDaysISO(toInt(env.HYPE_PREVIEW_CODE_TTL_DAYS, 30));
+  const rolling = addDaysISO(toInt(env.HYPE_PREVIEW_CODE_TTL_DAYS, 30));
+  const deadline = parseTime(campaign?.signup_deadline);
+  if (deadline !== null && deadline < Date.parse(rolling)) return new Date(deadline).toISOString();
+  return rolling;
+}
+
+async function findCampaign(env, campaignId) {
+  return env.HYPE_DB.prepare(
+    `SELECT * FROM hype_campaigns WHERE campaign_id = ? LIMIT 1`,
+  ).bind(campaignId).first();
+}
+
+// Returns "" when the campaign may issue codes now, otherwise the reason it is closed.
+function campaignClosedReason(campaign, env, now = Date.now()) {
+  if (!campaign) return "campaign_not_found";
+  if (str(campaign.status) && str(campaign.status) !== "active") return `campaign_${str(campaign.status)}`;
+  const startsAt = parseTime(campaign.issue_starts_at);
+  if (startsAt !== null && now < startsAt) return "campaign_not_started";
+  const endsAt = parseTime(env.HYPE_PREVIEW_ISSUE_ENDS_AT || campaign.issue_ends_at || campaign.signup_deadline);
+  if (endsAt !== null && now > endsAt) return "campaign_ended";
+  return "";
 }
 
 function assertDb(env) {
@@ -281,6 +310,22 @@ function joinPreviewText() {
   ].join("\n");
 }
 
+function campaignClosedText() {
+  return [
+    "ช่วงรับรหัส Preview รอบนี้ปิดแล้วครับ",
+    "",
+    "ติดตามสิทธิ์รอบถัดไปได้ที่ห้อง Preview นะครับ",
+  ].join("\n");
+}
+
+function previewChannelButton(env) {
+  return {
+    inline_keyboard: [
+      [{ text: "เข้าห้อง Preview", url: str(env.HYPE_PREVIEW_CHANNEL_URL || "https://t.me/MMDPriveTH") }],
+    ],
+  };
+}
+
 function alreadyIssuedText(code) {
   const codeLine = code ? `<code>${escapeHtml(code)}</code>` : "รหัสเดิมของคุณยังถูกบันทึกอยู่ครับ";
   return [
@@ -412,7 +457,14 @@ async function issueCodeForTelegramUser({ update, payload, env }) {
     return { handled: true, action: "preview_membership_required", verified };
   }
 
+  const campaign = await findCampaign(env, campaignId);
+  const closedReason = campaignClosedReason(campaign, env);
+
   const existing = await findExistingForTelegram(env, campaignId, telegramUserId);
+  if (!existing && closedReason) {
+    await sendMessage(chatId, campaignClosedText(), env, previewChannelButton(env));
+    return { handled: true, action: "campaign_closed", reason: closedReason, campaign_id: campaignId };
+  }
   if (existing) {
     const existingCode = await decryptCode(existing.code_enc, env);
     await sendMessage(chatId, alreadyIssuedText(existingCode), env, existingCode ? inlineButtons(existingCode, campaignId, env) : joinPreviewButtons(env));
@@ -446,7 +498,7 @@ async function issueCodeForTelegramUser({ update, payload, env }) {
 
   const id = crypto.randomUUID();
   const codeEnc = await encryptCode(code, env);
-  const expiresAt = getCodeExpiresAt(env);
+  const expiresAt = getCodeExpiresAt(env, campaign);
   const verifiedAt = verified.ok ? nowISO() : null;
 
   await env.HYPE_DB.prepare(
@@ -537,6 +589,55 @@ function isExpired(row) {
   return Number.isFinite(t) && t < Date.now();
 }
 
+async function markExpired(env, row, campaignId) {
+  await env.HYPE_DB.prepare(
+    `UPDATE hype_preview_codes SET status = 'expired', updated_at = ? WHERE id = ? AND status NOT IN ('credited', 'revoked', 'expired')`,
+  ).bind(nowISO(), row.id).run();
+
+  if (row.status !== "expired") {
+    await logEvent(env, {
+      code_id: row.id,
+      campaign_id: campaignId,
+      event_type: "code_expired",
+      old_status: row.status,
+      new_status: "expired",
+      actor_type: "system",
+    });
+  }
+}
+
+// D1 returns { meta: { changes } } from run(); treat a missing meta as "applied".
+function changedRows(result) {
+  const changes = result?.meta?.changes;
+  return typeof changes === "number" ? changes : 1;
+}
+
+const REDEEMED_STATUSES = new Set(["pending_payment", "pending_verification"]);
+const ACCOUNT_CLAIM_STATUSES = ["pending_payment", "pending_verification", "credited"];
+
+// One right per account: another code in this campaign already claimed or credited
+// by the same Memberstack / client record blocks this one.
+async function findOtherAccountClaim(env, campaignId, codeId, memberstackId, clientRecordId) {
+  const ids = [str(memberstackId), str(clientRecordId)];
+  if (!ids[0] && !ids[1]) return null;
+  return env.HYPE_DB.prepare(
+    `SELECT id, status FROM hype_preview_codes
+     WHERE campaign_id = ? AND id != ?
+       AND status IN (${ACCOUNT_CLAIM_STATUSES.map(() => "?").join(", ")})
+       AND ((? != '' AND memberstack_id = ?) OR (? != '' AND client_record_id = ?))
+     LIMIT 1`,
+  ).bind(campaignId, codeId, ...ACCOUNT_CLAIM_STATUSES, ids[0], ids[0], ids[1], ids[1]).first();
+}
+
+function sameAccount(row, body) {
+  const ms = str(body.memberstack_id);
+  const cr = str(body.client_record_id);
+  if (!ms && !cr) return false;
+  if (ms && str(row.memberstack_id) && ms !== str(row.memberstack_id)) return false;
+  if (cr && str(row.client_record_id) && cr !== str(row.client_record_id)) return false;
+  return Boolean((ms && ms === str(row.memberstack_id)) || (cr && cr === str(row.client_record_id)));
+}
+
 function publicRow(row) {
   return {
     code_id: row.id,
@@ -557,27 +658,16 @@ async function validatePreviewCode(body, env) {
 
   const campaignId = normalizeCampaign(body.campaign, env);
   const promo = str(body.promo || body.code);
-  const selectedPackage = normalizePackage(body.selected_package || body.package || body.tier);
+  const rawPackage = str(body.selected_package || body.package || body.tier);
+  const selectedPackage = normalizePackage(rawPackage);
 
   if (!promo) return { status: 400, body: { ok: false, valid: false, error: "missing_promo" } };
 
   const row = await findByPromo(env, campaignId, promo);
   if (!row) return { status: 200, body: { ok: true, valid: false, reason: "not_found" } };
 
-  if (isExpired(row)) {
-    await env.HYPE_DB.prepare(
-      `UPDATE hype_preview_codes SET status = 'expired', updated_at = ? WHERE id = ? AND status NOT IN ('credited', 'revoked')`,
-    ).bind(nowISO(), row.id).run();
-
-    await logEvent(env, {
-      code_id: row.id,
-      campaign_id: campaignId,
-      event_type: "code_expired",
-      old_status: row.status,
-      new_status: "expired",
-      actor_type: "system",
-    });
-
+  if (isExpired(row) && row.status !== "credited") {
+    await markExpired(env, row, campaignId);
     return { status: 200, body: { ok: true, valid: false, reason: "expired" } };
   }
 
@@ -588,8 +678,8 @@ async function validatePreviewCode(body, env) {
   let pendingPoints = null;
   let requiresBlackCardApproval = false;
 
-  if (selectedPackage) {
-    if (!ALLOWED_PACKAGES.has(selectedPackage)) {
+  if (rawPackage) {
+    if (!selectedPackage || !ALLOWED_PACKAGES.has(selectedPackage)) {
       return { status: 200, body: { ok: true, valid: false, reason: "package_not_eligible" } };
     }
 
@@ -600,6 +690,7 @@ async function validatePreviewCode(body, env) {
   return {
     status: 200,
     body: {
+      ...publicRow(row),
       ok: true,
       valid: true,
       promo_kind: DEFAULT_PROMO_KIND,
@@ -611,7 +702,6 @@ async function validatePreviewCode(body, env) {
       max_bonus_points: getPointsRules(env).max,
       requires_blackcard_approval: requiresBlackCardApproval,
       message: selectedPackage ? validationMessage(selectedPackage, pendingPoints) : "โค้ดนี้ใช้สำหรับสมาชิกใหม่ รับพอยท์พิเศษตามแพ็กเกจ หลังระบบตรวจสอบเรียบร้อย",
-      ...publicRow(row),
     },
   };
 }
@@ -632,9 +722,45 @@ async function redeemPreviewCode(body, env) {
 
   const row = await findByPromo(env, campaignId, promo);
   if (!row) return { status: 200, body: { ok: true, redeemed: false, reason: "not_found" } };
-  if (isExpired(row)) return { status: 200, body: { ok: true, redeemed: false, reason: "expired", ...publicRow(row) } };
-  if (["credited", "revoked", "already_redeemed"].includes(row.status)) {
-    return { status: 200, body: { ok: true, redeemed: false, reason: row.status, ...publicRow(row) } };
+  if (isExpired(row) && row.status !== "credited") {
+    await markExpired(env, row, campaignId);
+    return { status: 200, body: { ...publicRow(row), ok: true, redeemed: false, reason: "expired", status: "expired" } };
+  }
+
+  // one_time_use: a code that already moved past "issued" is only replayable by the
+  // same account with the same package (idempotent retry); anything else is rejected.
+  if (REDEEMED_STATUSES.has(row.status)) {
+    if (sameAccount(row, body) && row.selected_package === selectedPackage) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          redeemed: true,
+          idempotent_replay: true,
+          status: row.status,
+          selected_package: row.selected_package,
+          pending_bonus_points: row.pending_bonus_points,
+          max_bonus_points: getPointsRules(env).max,
+          requires_blackcard_approval: row.selected_package === "blackcard" && row.status === "pending_verification" && body.blackcard_approved !== true,
+          message: validationMessage(row.selected_package, row.pending_bonus_points),
+        },
+      };
+    }
+    await logEvent(env, {
+      code_id: row.id,
+      campaign_id: campaignId,
+      event_type: "validation_failed",
+      old_status: row.status,
+      new_status: row.status,
+      package: selectedPackage,
+      actor_type: "member_worker",
+      actor_id: actorId,
+      metadata_json: { reason: "already_redeemed" },
+    });
+    return { status: 200, body: { ...publicRow(row), ok: true, redeemed: false, reason: "already_redeemed" } };
+  }
+  if (row.status !== "issued" && row.status !== "pending_signup") {
+    return { status: 200, body: { ...publicRow(row), ok: true, redeemed: false, reason: row.status } };
   }
 
   if (body.new_member_verified === false) {
@@ -661,12 +787,18 @@ async function redeemPreviewCode(body, env) {
     return { status: 200, body: { ok: true, redeemed: false, reason: "new_member_only" } };
   }
 
+  const otherClaim = await findOtherAccountClaim(env, campaignId, row.id, body.memberstack_id, body.client_record_id);
+  if (otherClaim) {
+    return { status: 200, body: { ok: true, redeemed: false, reason: "account_already_claimed" } };
+  }
+
   const points = pointsForPackage(selectedPackage, env);
   const requiresApproval = selectedPackage === "blackcard" && body.blackcard_approved !== true;
   const nextStatus = requiresApproval ? "pending_verification" : (body.payment_ref ? "pending_verification" : "pending_payment");
   const now = nowISO();
 
-  await env.HYPE_DB.prepare(
+  // Compare-and-set on the status we read so two concurrent redeems cannot both win.
+  const redeemResult = await env.HYPE_DB.prepare(
     `UPDATE hype_preview_codes
      SET status = ?,
          selected_package = ?,
@@ -678,7 +810,7 @@ async function redeemPreviewCode(body, env) {
          signup_started_at = COALESCE(signup_started_at, ?),
          redeemed_at = COALESCE(redeemed_at, ?),
          updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND status = ?`,
   ).bind(
     nextStatus,
     selectedPackage,
@@ -691,7 +823,12 @@ async function redeemPreviewCode(body, env) {
     now,
     now,
     row.id,
+    row.status,
   ).run();
+
+  if (changedRows(redeemResult) === 0) {
+    return { status: 409, body: { ok: false, redeemed: false, error: "concurrent_redeem" } };
+  }
 
   await logEvent(env, {
     code_id: row.id,
@@ -745,6 +882,20 @@ async function creditPreviewCode(body, env) {
   if (["revoked", "expired", "rejected_existing_member"].includes(row.status)) {
     return { status: 200, body: { ok: true, credited: false, reason: row.status, ...publicRow(row) } };
   }
+  if (isExpired(row)) {
+    await markExpired(env, row, campaignId);
+    return { status: 200, body: { ...publicRow(row), ok: true, credited: false, reason: "expired", status: "expired" } };
+  }
+
+  const memberstackId = str(body.memberstack_id || row.memberstack_id);
+  const clientRecordId = str(body.client_record_id || row.client_record_id);
+  if (!memberstackId && !clientRecordId) {
+    return { status: 400, body: { ok: false, credited: false, error: "member_identity_required" } };
+  }
+  const otherClaim = await findOtherAccountClaim(env, campaignId, row.id, memberstackId, clientRecordId);
+  if (otherClaim) {
+    return { status: 200, body: { ok: true, credited: false, reason: "account_already_claimed" } };
+  }
 
   const selectedPackage = normalizePackage(body.selected_package || row.selected_package);
   if (!selectedPackage || !ALLOWED_PACKAGES.has(selectedPackage)) {
@@ -777,7 +928,7 @@ async function creditPreviewCode(body, env) {
   const points = row.pending_bonus_points || pointsForPackage(selectedPackage, env);
   const now = nowISO();
 
-  await env.HYPE_DB.prepare(
+  const creditResult = await env.HYPE_DB.prepare(
     `UPDATE hype_preview_codes
      SET status = 'credited',
          selected_package = ?,
@@ -789,7 +940,7 @@ async function creditPreviewCode(body, env) {
          payment_verified_at = COALESCE(payment_verified_at, ?),
          credited_at = ?,
          updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND status = ?`,
   ).bind(
     selectedPackage,
     points,
@@ -801,7 +952,12 @@ async function creditPreviewCode(body, env) {
     now,
     now,
     row.id,
+    row.status,
   ).run();
+
+  if (changedRows(creditResult) === 0) {
+    return { status: 409, body: { ok: false, credited: false, error: "concurrent_credit" } };
+  }
 
   await logEvent(env, {
     code_id: row.id,
