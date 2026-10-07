@@ -90,6 +90,26 @@ export async function handlePublicModelApplicationReviewRequest(request, env = {
     return method === "HEAD" ? new Response(null, { status: 200, headers: response.headers }) : response;
   }
 
+  try {
+    return await handlePublicModelApplicationApi(request, env, actor, url, path, method);
+  } catch (error) {
+    return airtableErrorResponse(error);
+  }
+}
+
+function airtableErrorResponse(error) {
+  const message = clean(error?.message);
+  if (message === "public_model_review_airtable_not_configured") {
+    return json({ ok: false, error: "public_model_review_airtable_not_configured" }, 503);
+  }
+  if (message.startsWith("public_model_review_airtable_failed:")) {
+    return json({ ok: false, error: "public_model_review_airtable_failed", provider: message.slice(message.indexOf(":") + 1) }, 502);
+  }
+  console.error("Public model application review error:", message || error);
+  return json({ ok: false, error: "public_model_review_failed" }, 500);
+}
+
+async function handlePublicModelApplicationApi(request, env, actor, url, path, method) {
   if (path === API_PREFIX && method === "GET") {
     const limit = clampInt(url.searchParams.get("limit"), 1, 50, 30);
     const records = await listPublicModelApplications(env, limit);
