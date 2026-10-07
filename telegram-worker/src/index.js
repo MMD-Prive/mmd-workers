@@ -43,6 +43,27 @@ function withCors(req, env, response) {
   return new Response(response.body, { status: response.status, headers });
 }
 
+function timingSafeEqual(a, b) {
+  const left = new TextEncoder().encode(a);
+  const right = new TextEncoder().encode(b);
+  let diff = left.length ^ right.length;
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    diff |= (left[i] ?? 0) ^ (right[i] ?? 0);
+  }
+  return diff === 0;
+}
+
+// Telegram echoes the secret_token set via setWebhook in this header on every update.
+// Fail closed: without a configured secret, nobody can forge /start updates that issue codes.
+function requireTelegramWebhookSecret(req, env) {
+  const expected = str(env.TELEGRAM_WEBHOOK_SECRET_TOKEN);
+  if (!expected) throw new HttpError(503, { ok: false, error: "telegram_webhook_secret_not_configured" });
+  const provided = str(req.headers.get("X-Telegram-Bot-Api-Secret-Token"));
+  if (!provided || !timingSafeEqual(provided, expected)) {
+    throw new HttpError(401, { ok: false, error: "invalid_telegram_webhook_secret" });
+  }
+}
+
 function isInternalServiceRequest(req) {
   try {
     const url = new URL(req.url);
@@ -196,6 +217,7 @@ export default {
       // Telegram webhook. HYPE Preview Intake handles /start preview first.
       // Falls through to existing /threadid debug handler for all other updates.
       if ((path === "/telegram/webhook" || path === "/webhooks/telegram") && req.method === "POST") {
+        requireTelegramWebhookSecret(req, env);
         const update = await safeJson(req);
         if (!update) return withCors(req, env, json({ ok: false, error: "invalid_json" }, 400));
         const hype = await handleHypePreviewWebhook(update, env);

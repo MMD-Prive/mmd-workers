@@ -207,7 +207,7 @@ INSERT OR REPLACE INTO hype_campaigns (
   150,
   250,
   350,
-  'รับรหัส 6 หลักผ่าน Telegram Preview เพื่อใช้รับ POINTS พิเศษ สูงสุดถึง 350 POINTS',
+  'รับรหัส 6 หลักผ่าน Telegram Preview เพื่อใช้รับ Points พิเศษ Standard ได้ 150 / Premium ได้ 250',
   'สำหรับสมาชิกใหม่เท่านั้น • ใช้ได้ 1 สิทธิ์ต่อบัญชี • Black Card สำหรับผู้ที่ผ่านการพิจารณาเท่านั้น • POINTS จะได้รับหลังการสมัครและการชำระเงินผ่านการตรวจสอบเรียบร้อย',
   'active',
   datetime('now')
