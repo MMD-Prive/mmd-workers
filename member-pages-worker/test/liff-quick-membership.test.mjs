@@ -59,3 +59,18 @@ test("failed membership read reports only the status code and state in the card"
   assert.equal(h.nodes["minimal-member-diag"].textContent, "อ่านข้อมูลสมาชิกไม่สำเร็จ (401 checking)");
   assert.equal(h.nodes["minimal-member-expiry"].textContent, "—");
 });
+
+test("successful read without a usable expiry reports field presence only", async () => {
+  const h = setup({ level: "svip", levelVerified: true, status: "active" }, null);
+  h.nodes["minimal-member-diag"] = { textContent: "" };
+  await h.context.readQuickMembershipStatus();
+  assert.equal(h.nodes["minimal-member-diag"].textContent, "ไม่พบวันหมดอายุ (200 status=active expiresAt=empty renewal=empty)");
+});
+
+test("an exception during the read is reported by name", async () => {
+  const h = setup(null, null);
+  h.nodes["minimal-member-diag"] = { textContent: "" };
+  h.context.fetch = async () => { throw new TypeError("boom"); };
+  await h.context.readQuickMembershipStatus();
+  assert.equal(h.nodes["minimal-member-diag"].textContent, "อ่านข้อมูลสมาชิกผิดพลาด (TypeError)");
+});
