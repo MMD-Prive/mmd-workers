@@ -156,6 +156,9 @@ function rewriteShell(html, liffId) {
     .replaceAll(PRIMARY_LIFF_ID, liffId)
     .replace(/"liffId":"[^"]*"/, `"liffId":${JSON.stringify(liffId)}`)
     .replaceAll(CANONICAL_LIFF_API_PREFIX, BACKUP_LIFF_API_PREFIX)
+    // The shell reads membership, history preview, dashboard and session data from
+    // /api/member/app/*. Without this the standby page silently calls primary routes.
+    .replaceAll(CANONICAL_MEMBER_APP_PREFIX, BACKUP_MEMBER_APP_PREFIX)
     .replaceAll("/my-mmd/", "/my-mmd-backup/");
 
   if (!output.includes("data-mmd-standby-membership")) {
