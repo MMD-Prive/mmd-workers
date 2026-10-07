@@ -49,7 +49,7 @@ test("lookup route declarations cover both production hosts",async()=>{
 test("SIGIL private aliases cannot skip the authoritative entitlement check", async()=>{
   const start=core.indexOf("async function createAdminJob(");
   const source=core.slice(start,core.indexOf("\nexport async function callPaymentsCreateLink",start));
-  const create=new Function("str","enforcePrivateCreateAccess",source+"; return createAdminJob;")(v=>String(v||"").trim(),async()=>{throw new Error("private_gate_reached")});
+  const create=new Function("str","enforcePrivateCreateAccess","validateJobServicePricing","CreateSessionAccessError",source+"; return createAdminJob;")(v=>String(v||"").trim(),async()=>{throw new Error("private_gate_reached")},()=>null,Error);
   for(const body of [{visibility:"private"},{job_details:{world:"private"}},{work:{job_visibility:"public"},visibility:"private"}])
     await assert.rejects(create({},body),/private_gate_reached/);
 });

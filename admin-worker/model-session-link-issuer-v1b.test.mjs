@@ -432,7 +432,8 @@ test("returned t works against GET /v1/model/session/current", async () => {
     assert.equal(body.session.page, "assigned");
     assert.equal(body.session.route, "/model/session/assigned");
     assert.deepEqual(body.session.allowed_actions, ["start_travel"]);
-    assert.equal(mock.calls.length, 2);
+    assert.equal(mock.calls.length, 3);
+    assert.match(mock.calls[2].url, /\/tblbIhMUXMAYlXmpi\?/);
   } finally {
     mock.restore();
   }

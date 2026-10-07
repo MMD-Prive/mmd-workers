@@ -487,9 +487,10 @@ assert.deepEqual(publicDriveSearchAgain.items.map((item) => item.model_name), ["
     privateBody("client_black", "exclusive", "recExclusiveModel1", { modelTelegram: "missing" }),
   );
   assert.equal(result.identityLinkState.model_telegram_status, "missing");
-  assert.equal(result.identityLinkState.post_link_identity_required, true);
+  // Model Telegram is required before Ready to Work, but never blocks Create Job.
+  assert.equal(result.identityLinkState.model_telegram_required_before_ready_to_work, true);
 }
 
-assert.match(await import("node:fs/promises").then((fs) => fs.readFile(new URL("../../assets/sigil/create-session.js", import.meta.url), "utf8")), /saveDraft\(\)/);
+assert.match(await import("node:fs/promises").then((fs) => fs.readFile(new URL("../immigrate-worker/public/a/create-session.js", import.meta.url), "utf8")), /saveDraft\(\)/);
 
 console.log("admin create-session access tests passed");

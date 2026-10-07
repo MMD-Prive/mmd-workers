@@ -27,7 +27,8 @@ describe("Kenji MY MMD route map", () => {
     const cta = payload.cards.find((item) => item.id === "kenji_20_002_route_map");
     assert.ok(cta);
     assert.equal(cta.response_mode, "auto_reply_allowed");
-    assert.equal(cta.source_path, "docs/knowledge/KENJI_WEBSITE_CTA_MAP_V1_20260929.md");
+    // The internal docs/knowledge source is stripped from the public runtime.
+    assert.equal(cta.source_path, undefined);
     assert.match(cta.customer_answer, /หา Model/);
     assert.match(cta.customer_answer, /TMIB/);
 
