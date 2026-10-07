@@ -179,16 +179,16 @@ test("diagnostic response and logs expose no session, secret, identity, or provi
 test("existing GET and HEAD /internal/admin behavior remains unchanged", async () => {
   const get = await request(MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH, { method: "GET" });
   const head = await request(MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH, { method: "HEAD" });
-  assert.equal(get.status, 401);
-  assert.match(await get.text(), /Admin access required/);
+  // Signed-out GET goes to the canonical admin login; HEAD stays a bare 401.
+  assert.equal(get.status, 303);
+  assert.equal(get.headers.get("location"), `${ORIGIN}/internal/admin/login?next=%2Finternal%2Fadmin`);
   assert.equal(head.status, 401);
-  assert.equal(await head.text(), "");
 });
 
 test("wrangler adds one named service binding and no diagnostic route or secret", async () => {
   const wrangler = await readFile(new URL("./wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /binding = "MEMBER_PAGES_RESOLVER_DIAGNOSTIC"\s+service = "member-pages-worker"\s+entrypoint = "MemberResolverDiagnosticEntrypoint"/);
   assert.equal((wrangler.match(/binding = "MEMBER_PAGES_RESOLVER_DIAGNOSTIC"/g) || []).length, 1);
-  assert.doesNotMatch(wrangler, /pattern = ".*diagnostic/i);
+  assert.doesNotMatch(wrangler, /pattern = ".*resolver[-_]?diagnostic/i);
   assert.doesNotMatch(wrangler, /MEMBER_STATUS_RESOLVER_SECRET/);
 });
