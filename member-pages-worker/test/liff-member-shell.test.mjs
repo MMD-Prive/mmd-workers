@@ -375,6 +375,29 @@ describe("same-site /member/liff shell", () => {
     assert.deepEqual([...orderDigitalUpdates([])], []);
   });
 
+  it("session-bound reads run one at a time so a rotated cookie is never reused in parallel", async () => {
+    const response = await shell("/member/liff?intent=status");
+    const html = await response.text();
+    const start = html.indexOf("let memberApiChain");
+    const end = html.indexOf("async function readOwnHistoryPreview(", start);
+    assert.ok(start >= 0 && end > start, "memberApiFetch must exist in the shell");
+    let active = 0;
+    let maxActive = 0;
+    const order = [];
+    const fakeFetch = async (url) => {
+      active += 1; maxActive = Math.max(maxActive, active); order.push(url);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (url === "fail") { active -= 1; throw new Error("network"); }
+      active -= 1;
+      return url;
+    };
+    const { memberApiFetch } = runInNewContext(html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout });
+    const results = await Promise.allSettled([memberApiFetch("a"), memberApiFetch("fail"), memberApiFetch("c")]);
+    assert.equal(maxActive, 1);
+    assert.deepEqual(order, ["a", "fail", "c"]);
+    assert.equal(results[2].status, "fulfilled", "a failed read must not block later reads");
+  });
+
   it("keeps MMD MISSION payment-gated, lifecycle-exact, and view-only", async () => {
     const response = await shell("/member/liff?intent=status&view=home&lang=th");
     const html = await response.text();

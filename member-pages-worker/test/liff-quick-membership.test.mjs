@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 const source = readFileSync(new URL("../src/liff-member-shell.js", import.meta.url), "utf8");
-const functions = source.slice(source.indexOf("  async function readOwnHistoryPreview("), source.indexOf("  function requestId()"));
+const functions = source.slice(source.indexOf("  let memberApiChain"), source.indexOf("  function requestId()"));
 function setup(membership, profileResponse) {
   const nodes = { "minimal-member-display":{hidden:true}, "minimal-member-expiry":{textContent:"—"}, "minimal-member-points":{textContent:"12.5 คะแนนประมาณการ"}, "profile-tier": { textContent: "SVIP" }, "profile-status": { textContent: "checking" }, "profile-points": { textContent: "—" } };
   const calls = [];
-  const context = vm.createContext({
+  const context = vm.createContext({setTimeout,
     fetch: async path => { calls.push(path); return path === "/api/member/app/membership" ? Response.json(membership) : profileResponse; },
     CONFIG: { profileEndpoint: "/member/api/liff/profile" },
     document: { getElementById: id => nodes[id] },
