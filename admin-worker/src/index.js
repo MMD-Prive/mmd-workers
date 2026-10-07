@@ -1842,6 +1842,7 @@ function num(value) {
 }
 
 function clampInt(v, min, max, fallback) {
+  if (v === null || v === undefined || String(v).trim() === "") return fallback;
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(n)));
