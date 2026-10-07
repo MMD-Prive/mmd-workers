@@ -58,7 +58,7 @@ Active Privé entitlement. Standard, Premium, VIP, SVIP and Black Card share the
 | Top-center | MODEL CARDS | `LIFF status → /sigil/booking?mode=search&scope=private&source=line&entry_route=rich_menu_model_cards` |
 | Top-right | BOOKING | `LIFF status → /sigil/booking?mode=booking&scope=private&source=line&entry_route=rich_menu_private_booking` |
 | Bottom-left | MY MMD | LINE Mini App / LIFF `intent=status&view=home` |
-| Bottom-center | PRIVÉ UPDATE | LINE Mini App / LIFF `intent=status&view=home` → MMD NEWS / curated member updates |
+| Bottom-center | PRIVÉ UPDATE | LINE Mini App / LIFF `intent=status&view=home` → MMD NOW / curated member updates |
 | Bottom-right | SUPPORT | Typed LINE postback → Kenji Member Concierge |
 
 ## State Rules
@@ -96,7 +96,7 @@ Current destinations:
 - Public `PRIVÉ ACCESS · Explore More`: LIFF-first → `/sigil/start` (Private entry; not signup/payment)
 - Privé `MODEL CARDS · Your Access`: LIFF-first → `/sigil/booking?mode=search&scope=private`
 - Privé `BOOKING · Request Service`: LIFF-first → `/sigil/booking?mode=booking&scope=private`
-- Privé `PRIVÉ UPDATE · New · Curated`: MY MMD Digital Home → MMD NEWS / curated member updates
+- Privé `PRIVÉ UPDATE · New · Curated`: MY MMD Digital Home → MMD NOW / curated member updates
 - `MY MMD`: Mini App `intent=status&view=home`
 
 Older v4.9/v4.10 return targets remain narrowly allowlisted only so already-issued links fail safely during rollout; v4.11 does not emit them.
