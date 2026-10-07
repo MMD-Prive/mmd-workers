@@ -144,3 +144,15 @@ test("standby surface is bounded and keeps UI read-only methods", async () => {
   const unknown = await worker.fetch(new Request("https://www.mmdbkk.com/webhooks/line"), {});
   assert.equal(unknown.status, 404);
 });
+
+test("backup shell routes member app reads through the backup prefix", async () => {
+  const html = `<!doctype html><html><body><main><div id="actions" class="actions" aria-label="ตัวเลือก"></div>
+<script>const CONFIG={"liffId":"${PRIMARY_ID}","historyEndpoint":"/api/member/app/history"};
+fetch("/api/member/app/membership"); fetch("/api/member/app/history/preview");</script></main></body></html>`;
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/member/liff-backup?intent=status"), runtime(async () =>
+    new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } })));
+  const body = await response.text();
+  assert.doesNotMatch(body, /\/api\/member\/app\//);
+  assert.match(body, /\/api\/member-backup\/app\/membership/);
+  assert.match(body, /\/api\/member-backup\/app\/history\/preview/);
+});
