@@ -308,7 +308,7 @@ function renderShell(config, nonce) {
     <button type="button" data-view="coupons" aria-current="false" data-copy="navCoupons">🎟 COUPONS</button>
     <button type="button" data-view="my-requests" aria-current="false">✦ MY REQUESTS</button>
   </nav>
-  <section id="minimal-member-display" class="card" aria-label="ข้อมูลสมาชิกที่มีหลักฐานแล้ว" hidden><p>ข้อมูลยังแสดงไม่ครบ</p><div><span class="label">วันหมดอายุ</span><strong id="minimal-member-expiry">—</strong></div><div><span class="label">คะแนนประวัติประมาณการ · ยังใช้แลกไม่ได้</span><strong id="minimal-member-points">—</strong></div></section>
+  <section id="minimal-member-display" class="card" aria-label="ข้อมูลสมาชิกที่มีหลักฐานแล้ว" hidden><p>ข้อมูลยังแสดงไม่ครบ</p><div><span class="label">วันหมดอายุ</span><strong id="minimal-member-expiry">—</strong></div><div><span class="label">คะแนนประวัติประมาณการ · ยังใช้แลกไม่ได้</span><strong id="minimal-member-points">—</strong></div><small id="minimal-member-diag" class="label" style="opacity:.55"></small></section>
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
@@ -863,13 +863,20 @@ function renderShell(config, nonce) {
     readQuickMembershipStatus.generation = generation;
     const minimalExpiry = document.getElementById("minimal-member-expiry");
     if (minimalExpiry) minimalExpiry.textContent = "—";
+    const staleDiag = document.getElementById("minimal-member-diag");
+    if (staleDiag) staleDiag.textContent = "";
     try {
       // Membership has no archive/contact scan or points-ledger decorator.
       // Let its canonical snapshot render while the full profile is loading.
       const response = await memberApiFetch("/api/member/app/membership", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
       if (generation !== readQuickMembershipStatus.generation) return;
-      if (!response.ok || !body || body.ok === false) return;
+      if (!response.ok || !body || body.ok === false) {
+        // Status code and state only; no member data. Shows why the card stayed empty.
+        const diag = document.getElementById("minimal-member-diag");
+        if (diag) diag.textContent = "อ่านข้อมูลสมาชิกไม่สำเร็จ (" + response.status + (body && typeof body.state === "string" ? " " + body.state.slice(0, 24) : "") + ")";
+        return;
+      }
       const membership = body.data && typeof body.data === "object" ? body.data : body;
       const minimal = document.getElementById("minimal-member-display");
       const supportedExpiry = safeDate(membership.expiresAt || membership.renewalDueAt);
