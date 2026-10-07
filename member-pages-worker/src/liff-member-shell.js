@@ -816,6 +816,18 @@ function renderShell(config, nonce) {
     await Promise.allSettled(hydrationReads);
   }
 
+  // Member session cookies rotate on every authenticated read and the prior cookie is
+  // retired immediately. Parallel reads would reuse one cookie and lose with 401, so
+  // session-bound reads run one at a time and each picks up the latest Set-Cookie.
+  let memberApiChain = Promise.resolve();
+  // A stalled read waits at most 3s so it can never block the reads behind it.
+  function memberApiFetch(url, init) {
+    const previous = memberApiChain;
+    const gate = Promise.race([previous, new Promise((resolve) => setTimeout(resolve, 3000))]);
+    const run = gate.then(() => fetch(url, init));
+    memberApiChain = run.then(() => undefined, () => undefined);
+    return run;
+  }
   async function readOwnHistoryPreview() {
     const generation = (readOwnHistoryPreview.generation || 0) + 1;
     readOwnHistoryPreview.generation = generation;
@@ -830,7 +842,7 @@ function renderShell(config, nonce) {
     amountNode.textContent = "";
     noticeNode.textContent = "ยอดประวัติเบื้องต้น อยู่ระหว่างตรวจสอบ";
     try {
-      const response = await fetch("/api/member/app/history/preview", {credentials:"same-origin", cache:"no-store", headers:{accept:"application/json"}});
+      const response = await memberApiFetch("/api/member/app/history/preview", {credentials:"same-origin", cache:"no-store", headers:{accept:"application/json"}});
       const body = await response.json().catch(() => null);
       if (generation !== readOwnHistoryPreview.generation) return;
       const data = response.ok && body?.ok === true ? body.data : null;
@@ -854,7 +866,7 @@ function renderShell(config, nonce) {
     try {
       // Membership has no archive/contact scan or points-ledger decorator.
       // Let its canonical snapshot render while the full profile is loading.
-      const response = await fetch("/api/member/app/membership", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const response = await memberApiFetch("/api/member/app/membership", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
       if (generation !== readQuickMembershipStatus.generation) return;
       if (!response.ok || !body || body.ok === false) return;
@@ -879,7 +891,7 @@ function renderShell(config, nonce) {
   async function readProfile({ hydrate = true } = {}) {
     void readQuickMembershipStatus();
     void readOwnHistoryPreview();
-    const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+    const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
@@ -1256,7 +1268,7 @@ function renderShell(config, nonce) {
     void hydrateDigitalMission();
 
     try {
-      const response = await fetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const response = await memberApiFetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
       if (response.ok && body && typeof body === "object") {
         // Digital Home display truth comes from the canonical member-app dashboard.
