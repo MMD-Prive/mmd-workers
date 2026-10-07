@@ -882,6 +882,12 @@ function renderShell(config, nonce) {
       const supportedExpiry = safeDate(membership.expiresAt || membership.renewalDueAt);
       if (minimal) minimal.hidden = false;
       if (minimalExpiry && supportedExpiry) minimalExpiry.textContent = shortDate(supportedExpiry);
+      if (!supportedExpiry) {
+        // Field presence only, never values: shows why the expiry stayed empty.
+        const diagMissing = document.getElementById("minimal-member-diag");
+        if (diagMissing) diagMissing.textContent = "ไม่พบวันหมดอายุ (" + response.status + " status=" + String(membership.status || membership.lifecycle || "-").slice(0, 16)
+          + " expiresAt=" + (membership.expiresAt ? "invalid" : "empty") + " renewal=" + (membership.renewalDueAt ? "invalid" : "empty") + ")";
+      }
       const labels = { public_member:"Member", elite:"Elite", red_card:"Red Card", trial_7d:"7 Days", standard:"Standard", premium:"Premium", vip:"VIP", svip:"SVIP", black_card:"Black Card" };
       const level = String(membership.level || "").trim().toLowerCase();
       const tierNode = document.getElementById("profile-tier");
@@ -892,7 +898,10 @@ function renderShell(config, nonce) {
         const expiry = safeDate(membership.expiresAt || membership.renewalDueAt);
         statusNode.textContent = membershipStatus(status) + (expiry ? " · ถึง " + shortDate(expiry) : "");
       }
-    } catch {}
+    } catch (error) {
+      const diagError = document.getElementById("minimal-member-diag");
+      if (diagError) diagError.textContent = "อ่านข้อมูลสมาชิกผิดพลาด (" + String(error && error.name || "error").slice(0, 24) + ")";
+    }
   }
 
   async function readProfile({ hydrate = true } = {}) {
