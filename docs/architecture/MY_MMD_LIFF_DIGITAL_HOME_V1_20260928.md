@@ -46,7 +46,7 @@ The V1 layout follows the approved compact digital preview direction:
 - verified member snapshot
 - small Kenji AI module
 - backend-backed NEEDS YOU only
-- MMD NEWS
+- MMD NOW
 - compact Quick Access
 - fixed bottom dock
 - no oversized marketing hero after verification
@@ -100,7 +100,7 @@ Unsafe, privileged, mismatched or malformed return targets fail closed **inside 
 3. Verified Member snapshot
 4. Kenji AI compact entry
 5. NEEDS YOU from bounded backend action
-6. MMD NEWS from stable Updates API
+6. MMD NOW from stable Updates API
 7. Quick Access
 8. LIFF-native member detail panels
 9. Bottom dock: Home / Jobs / Wallet / Kenji

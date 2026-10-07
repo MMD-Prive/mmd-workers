@@ -318,13 +318,13 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /sessionStorage\.setItem\([^\n]*(?:email|phone|telegram|line_user_id|entitlement|preferences)/i);
   });
 
-  it("renders MMD TODAY and MMD ROTATION while keeping personalization backend-bounded", async () => {
+  it("renders MMD TODAY and MMD NOW while keeping personalization backend-bounded", async () => {
     const response = await shell("/member/liff?intent=status&view=home&lang=th");
     const html = await response.text();
 
     assert.equal(response.status, 200);
     assert.match(html, /<p class="digital-eyebrow">MMD TODAY<\/p>/);
-    assert.match(html, /<small>PRIVATE FEED<\/small>MMD ROTATION/);
+    assert.match(html, /<small>PRIVATE FEED<\/small>MMD NOW/);
     assert.match(html, /href="\/member\/kenji"/);
     assert.doesNotMatch(html, /href="\/member\/kenji-ai-20"/);
     assert.match(html, /let digitalPersonalizedFeed = \[\]/);
@@ -334,6 +334,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /if \(personalized\) return "FOR YOU"/);
     assert.match(html, /return "MMD UPDATE"/);
     assert.match(html, /return "EDITORIAL"/);
+    assert.match(html, /rank: digitalFeedCategory\(item, false\) === "EDITORIAL" \? 1 : 0/);
+    assert.match(html, /\.sort\(\(a, b\) => a\.rank - b\.rank \|\| a\.index - b\.index\)/);
     assert.match(html, /const allowedViews = new Set\(\["history","package","care","jobs","points","credits","coupons"\]\)/);
     assert.match(html, /renderDigitalNews\(digitalPersonalizedFeed, response\.ok \? items : \[\],/);
     assert.match(html, /fetch\("\/api\/v1\/member\/updates\/list\?limit=10"/);
@@ -342,7 +344,7 @@ describe("same-site /member/liff shell", () => {
 
     const todayIndex = html.indexOf("MMD TODAY");
     const missionIndex = html.indexOf("MMD MISSION", todayIndex);
-    const rotationIndex = html.indexOf("MMD ROTATION", missionIndex);
+    const rotationIndex = html.indexOf("MMD NOW", missionIndex);
     const quickIndex = html.indexOf("QUICK ACCESS", rotationIndex);
     const kenjiIndex = html.indexOf('class="digital-kenji"', quickIndex);
     assert.ok(todayIndex >= 0 && missionIndex > todayIndex && rotationIndex > missionIndex && quickIndex > rotationIndex && kenjiIndex > quickIndex);

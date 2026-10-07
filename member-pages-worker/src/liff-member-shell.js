@@ -323,7 +323,7 @@ function renderShell(config, nonce) {
       <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">ดู MISSION ↗</button>
       <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
     </section>
-    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD ROTATION</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
+    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
     <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji">เปิด Kenji ↗</a></div></section>
@@ -1196,7 +1196,12 @@ function renderShell(config, nonce) {
     const unread = document.getElementById("digital-unread");
     if (!feed || !unread) return;
     const personalized = Array.isArray(personalizedItems) ? personalizedItems.slice(0, 2) : [];
-    const updates = Array.isArray(updateItems) ? updateItems.slice(0, 5) : [];
+    // Canon order: For You -> MMD UPDATE -> EDITORIAL. Stable sort keeps API order within each group.
+    const updates = (Array.isArray(updateItems) ? updateItems : [])
+      .map((item, index) => ({ item, index, rank: digitalFeedCategory(item, false) === "EDITORIAL" ? 1 : 0 }))
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map((entry) => entry.item)
+      .slice(0, 5);
     const safe = [
       ...personalized.map((item) => ({ item, personalized:true })),
       ...updates.map((item) => ({ item, personalized:false })),
