@@ -324,3 +324,26 @@ test("rendered review script compiles and starts queue and detail loading", asyn
     assert.match(app.textContent, /test_backend_unavailable/);
   }
 });
+
+test("queue read returns a JSON 503 instead of throwing when Airtable is not configured", async () => {
+  const response = await handlePublicModelApplicationReviewRequest(
+    new Request("https://mmdbkk.com/v1/admin/model-applications", { headers: { Origin: "https://mmdbkk.com" } }),
+    {},
+    null,
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, error: "public_model_review_airtable_not_configured" });
+});
+
+test("detail read returns a JSON 502 when Airtable rejects the request", async () => {
+  const response = await handlePublicModelApplicationReviewRequest(
+    new Request(`https://mmdbkk.com/v1/admin/model-applications/${APP_ID}`, { headers: { Origin: "https://mmdbkk.com" } }),
+    {
+      AIRTABLE_API_KEY: "test",
+      AIRTABLE_FETCH: async () => new Response(JSON.stringify({ error: { type: "INVALID_PERMISSIONS" } }), { status: 403 }),
+    },
+    null,
+  );
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { ok: false, error: "public_model_review_airtable_failed", provider: "INVALID_PERMISSIONS" });
+});
