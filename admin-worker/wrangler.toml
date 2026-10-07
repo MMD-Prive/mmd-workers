@@ -973,6 +973,13 @@ service = "mmd-slip-extractor"
 binding = "MODEL_DRIVE_DIRECTORY"
 service = "member-pages-worker"
 
+# Owner-only member resolver diagnostic (POST /internal/admin with an admin session).
+# RPC only: no route and no resolver secret on admin-worker.
+[[services]]
+binding = "MEMBER_PAGES_RESOLVER_DIAGNOSTIC"
+service = "member-pages-worker"
+entrypoint = "MemberResolverDiagnosticEntrypoint"
+
 # Bounded customer-safe Points + Coupon projection for HYPE.
 # Identity is resolved in admin-worker first; member-pages-worker owns points/coupon truth.
 [[services]]

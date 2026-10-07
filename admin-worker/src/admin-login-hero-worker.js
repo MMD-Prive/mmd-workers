@@ -11,6 +11,11 @@ import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
 import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
 import { buildAudienceBriefLive } from "./audience-brief-live.js";
+import {
+  MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH,
+  handleMemberResolverDiagnosticTrigger,
+  isMemberResolverDiagnosticTriggerRequest,
+} from "./member-resolver-diagnostic-trigger.js";
 import { maybeHandleHeldIdentityLinkRefresh } from "./sigil-jobs-identity-link-refresh.js";
 import {
   isPrivateModelAdminRequest,
@@ -96,6 +101,7 @@ import {
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 export { HypeJobDailyRunState } from "./hype-job-daily/run-state-do.js";
 
+export { MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH };
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
@@ -233,6 +239,7 @@ export default {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
     if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
