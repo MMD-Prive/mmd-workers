@@ -30,6 +30,7 @@ const ELIGIBLE_PATHS = new Set([
   "/api/member/app/membership/",
 ]);
 
+const FAST_TRUST_TIER_SOURCE = "line_oa_renamed_name_fast_trust";
 const PROTECTED_PRIORITY = ["black_card", "svip", "vip"];
 const PROTECTED_LABELS = Object.freeze({ black_card: "Black Card", svip: "SVIP", vip: "VIP" });
 
@@ -464,7 +465,7 @@ function overlayProtectedDisplay(profile, projection, displayName) {
       ...(membershipExpiresAt ? { membership_expires_at: safeCalendarDate(member.membership_expires_at) || membershipExpiresAt } : {}) } } : {}) } } : {}) };
 }
 
-function canonicalPresentationContext(serializedProfile, rawProfile, projection, protectedActiveThrough = null, recoveryStatus = null) {
+export function canonicalPresentationContext(serializedProfile, rawProfile, projection, protectedActiveThrough = null, recoveryStatus = null) {
   const source = isPlainObject(serializedProfile) ? serializedProfile : {};
   const customer360 = isPlainObject(source.customer_360) ? source.customer_360 : {};
   const member = isPlainObject(customer360.member) ? customer360.member : {};
@@ -473,8 +474,14 @@ function canonicalPresentationContext(serializedProfile, rawProfile, projection,
   const raw = isPlainObject(rawProfile) ? rawProfile : {};
   const raw360 = isPlainObject(raw.customer_360) ? raw.customer_360 : {};
   const rawMember = isPlainObject(raw360.member) ? raw360.member : {};
-  const membershipStart = safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null;
-  const canonicalExpiry = safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null;
+  // Fast Trust stamps provisional dates (today / today + 2 years) onto the profile.
+  // Those are placeholders, never authority: an approved entitlement date from the
+  // resolver snapshot must win over them.
+  const fastTrustProfile = [raw, rawMember, source, member].some((item) => item?.fast_trust === true || item?.tier_source === FAST_TRUST_TIER_SOURCE);
+  const membershipStart = (fastTrustProfile ? projection?.startAt : null)
+    || safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null;
+  const canonicalExpiry = (fastTrustProfile ? projection?.expiresAt : null)
+    || safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null;
   const membershipExpiresAt = canonicalExpiry || safeCalendarDate(protectedActiveThrough) || null;
   const recovery = projectHistoryRecoveryState(recoveryStatus, raw, rawMember);
   return { membershipStart,
