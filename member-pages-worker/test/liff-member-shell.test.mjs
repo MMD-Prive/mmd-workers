@@ -350,6 +350,31 @@ describe("same-site /member/liff shell", () => {
     assert.ok(todayIndex >= 0 && missionIndex > todayIndex && rotationIndex > missionIndex && quickIndex > rotationIndex && kenjiIndex > quickIndex);
   });
 
+  it("orders MMD NOW updates as MMD UPDATE before EDITORIAL, keeping API order within each group", async () => {
+    const response = await shell("/member/liff?intent=status&view=home&lang=th");
+    const html = await response.text();
+    const start = html.indexOf("function digitalFeedCategory(");
+    const end = html.indexOf("function renderDigitalNews(");
+    assert.ok(start >= 0 && end > start, "feed helper functions must exist in the shell");
+    const { orderDigitalUpdates } = runInNewContext(
+      html.slice(start, end) + "\n({ orderDigitalUpdates });",
+    );
+
+    const items = [
+      { id: "e1", category: "TMIB" },
+      { id: "u1", category: "promotion" },
+      { id: "e2", tag: "City Guide" },
+      { id: "u2" },
+      { id: "e3", category: "Academy" },
+      { id: "u3", category: "event" },
+    ];
+    const ordered = [...orderDigitalUpdates(items)].map((item) => item.id);
+    assert.deepEqual(ordered, ["u1", "u2", "u3", "e1", "e2", "e3"]);
+    assert.deepEqual(items.map((item) => item.id), ["e1", "u1", "e2", "u2", "e3", "u3"], "input must not be mutated");
+    assert.deepEqual([...orderDigitalUpdates(null)], []);
+    assert.deepEqual([...orderDigitalUpdates([])], []);
+  });
+
   it("keeps MMD MISSION payment-gated, lifecycle-exact, and view-only", async () => {
     const response = await shell("/member/liff?intent=status&view=home&lang=th");
     const html = await response.text();

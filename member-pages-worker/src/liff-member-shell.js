@@ -1191,17 +1191,20 @@ function renderShell(config, nonce) {
     return "MMD UPDATE";
   }
 
+  function orderDigitalUpdates(updateItems) {
+    return (Array.isArray(updateItems) ? updateItems : [])
+      .map((item, index) => ({ item, index, rank: digitalFeedCategory(item, false) === "EDITORIAL" ? 1 : 0 }))
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map((entry) => entry.item);
+  }
+
   function renderDigitalNews(personalizedItems, updateItems, unreadCount = 0) {
     const feed = document.getElementById("digital-news-feed");
     const unread = document.getElementById("digital-unread");
     if (!feed || !unread) return;
     const personalized = Array.isArray(personalizedItems) ? personalizedItems.slice(0, 2) : [];
     // Canon order: For You -> MMD UPDATE -> EDITORIAL. Stable sort keeps API order within each group.
-    const updates = (Array.isArray(updateItems) ? updateItems : [])
-      .map((item, index) => ({ item, index, rank: digitalFeedCategory(item, false) === "EDITORIAL" ? 1 : 0 }))
-      .sort((a, b) => a.rank - b.rank || a.index - b.index)
-      .map((entry) => entry.item)
-      .slice(0, 5);
+    const updates = orderDigitalUpdates(updateItems).slice(0, 5);
     const safe = [
       ...personalized.map((item) => ({ item, personalized:true })),
       ...updates.map((item) => ({ item, personalized:false })),
