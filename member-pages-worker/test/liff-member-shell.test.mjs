@@ -751,3 +751,13 @@ describe("signup intent script ordering", () => {
   });
 });
 
+describe("signup crest logo", () => {
+  it("uses the new mark with a text fallback", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    assert.ok(html.includes("05-tiny-mark-512px.webp"));
+    assert.match(html, /class="signup-crest-logo"[^>]*>/);
+    assert.doesNotMatch(html, /signup-crest-logo[^>]*onerror=/);
+    assert.ok(html.includes("crestLogo.addEventListener(\"error\""));
+  });
+});
+
