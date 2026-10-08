@@ -572,6 +572,11 @@ function renderShell(config, nonce) {
   }
   applyWorldTheme();
   welcomeContextPromise = resolveInitialWelcomeContext();
+  if (CONFIG.intent === "signup") {
+    // The package catalog is public; show it at once. LINE identity is only needed at purchase time.
+    void readSignupCatalog();
+    void welcomeContextPromise.then(() => enterApp());
+  }
   existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
   document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
   document.getElementById("service-spend-label").textContent = copy.serviceSpendLabel || "Service spend";
@@ -641,8 +646,11 @@ function renderShell(config, nonce) {
     finally { setBusy(false); }
   }
 
+  let signupCatalogState = "idle";
   async function readSignupCatalog() {
     if (CONFIG.intent !== "signup") return;
+    if (signupCatalogState === "loading" || signupCatalogState === "loaded") return;
+    signupCatalogState = "loading";
     signup.classList.remove("hidden");
     signupPackages.replaceChildren();
     try {
@@ -671,8 +679,9 @@ function renderShell(config, nonce) {
         button.addEventListener("click", () => purchasePublicMembership(item.package_code));
         card.append(top, price, period, button); signupPackages.append(card);
       }
+      signupCatalogState = "loaded";
       show(locale === "th" ? "เลือกแพ็กเกจและสมัครสมาชิกด้วยบัญชี LINE นี้ได้เลยครับ" : "Choose a package to continue with this LINE account.");
-    } catch { show("ตอนนี้ยังแสดงแพ็กเกจไม่ได้ครับ กรุณาลองเปิดใหม่อีกครั้ง"); }
+    } catch { signupCatalogState = "idle"; show("ตอนนี้ยังแสดงแพ็กเกจไม่ได้ครับ กรุณาลองเปิดใหม่อีกครั้ง"); }
   }
 
   function isDiagnosticMode() {
