@@ -2,23 +2,25 @@
 // - status:  GET  /internal/admin/hype-job-daily/status   read-only config + run-state check
 // - preview: GET  /internal/admin/hype-job-daily/preview  builds today's digest, returns it in the response, sends nothing
 // - smoke:   POST /internal/admin/hype-job-daily/smoke    sends ONE short test line (no business data) to the configured destination
+// - retry:   POST /internal/admin/hype-job-daily/retry    re-runs today's digest ONLY if today's run FAILED ({"confirm":"retry-today-run"})
 // Requires an authenticated admin browser session whose role is exactly "owner". Never writes business truth
-// and never touches the daily run-state, so it cannot cause or suppress the real digest.
+// status/preview/smoke never touch the daily run-state. retry resets ONLY a FAILED run for today, so it cannot cause a duplicate digest.
 import { readCredentialBoundAdminActor } from "../credential-bound-admin-session.js";
 import { buildDigest } from "./builder.js";
 import { collectAll, defaultSources } from "./default-sources.js";
 import { formatDigest } from "./formatter.js";
 import { durableObjectStore } from "./run-state-do.js";
-import { SEND_AT_MINUTES, isEnabled, resolveDestination, runKey, sendTelegramInternal } from "./runner.js";
+import { SEND_AT_MINUTES, isEnabled, resolveDestination, retryHypeJobDailyToday, runKey, sendTelegramInternal } from "./runner.js";
 import { clean, errorClass, ictDate, ictMinutes } from "./util.js";
 
 export const HYPE_JOB_DAILY_OWNER_BASE = "/internal/admin/hype-job-daily";
 export const SMOKE_CONFIRM = "send-smoke-test";
+export const RETRY_CONFIRM = "retry-today-run";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 
 export function isHypeJobDailyOwnerRequest(path) {
   const p = String(path || "").replace(/\/+$/g, "");
-  return p === `${HYPE_JOB_DAILY_OWNER_BASE}/status` || p === `${HYPE_JOB_DAILY_OWNER_BASE}/preview` || p === `${HYPE_JOB_DAILY_OWNER_BASE}/smoke`;
+  return p === `${HYPE_JOB_DAILY_OWNER_BASE}/status` || p === `${HYPE_JOB_DAILY_OWNER_BASE}/preview` || p === `${HYPE_JOB_DAILY_OWNER_BASE}/smoke` || p === `${HYPE_JOB_DAILY_OWNER_BASE}/retry`;
 }
 
 function json(body, status = 200, extra = {}) {
@@ -116,7 +118,7 @@ export async function handleHypeJobDailyOwnerRequest(request, env = {}, deps = {
   if (!isHypeJobDailyOwnerRequest(path)) return json({ ok: false, error: "not_found" }, 404);
   const method = String(request.method || "GET").toUpperCase();
   const action = path.slice(HYPE_JOB_DAILY_OWNER_BASE.length + 1);
-  const expected = action === "smoke" ? "POST" : "GET";
+  const expected = action === "smoke" || action === "retry" ? "POST" : "GET";
   if (method !== expected) return json({ ok: false, error: "method_not_allowed" }, 405, { Allow: expected });
 
   const actor = await (deps.readActor || readCredentialBoundAdminActor)(request, env).catch(() => null);
@@ -128,6 +130,11 @@ export async function handleHypeJobDailyOwnerRequest(request, env = {}, deps = {
     if (action === "status") return json(await buildStatus(env, now, deps));
     if (action === "preview") return json(await buildPreview(env, now, deps));
     const body = await request.json().catch(() => ({}));
+    if (action === "retry") {
+      if (clean(body?.confirm, 60) !== RETRY_CONFIRM) return json({ ok: false, error: "confirm_required", required: RETRY_CONFIRM }, 400);
+      const result = await (deps.retry || retryHypeJobDailyToday)(env, { now, deps: deps.runnerDeps });
+      return json({ ok: result?.status === "sent", result });
+    }
     if (clean(body?.confirm, 60) !== SMOKE_CONFIRM) return json({ ok: false, error: "confirm_required", required: SMOKE_CONFIRM }, 400);
     const result = await sendSmoke(env, now, deps);
     const { status, ...rest } = result;

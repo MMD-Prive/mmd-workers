@@ -31,6 +31,22 @@ function log(level, event, fields) {
   try { (level === "error" ? console.error : console.log)(line); } catch { /* logging must never throw */ }
 }
 
+// Short, non-sensitive description of a failed send, kept in the run state and logs so a 404/5xx can be traced:
+// the receiver's own error code, the path it says it did not recognise, and the endpoint host+path we called.
+// Never includes the token, the message text, or the chat id.
+export function failureDetail(body, endpoint) {
+  const parts = [];
+  const err = typeof body?.error === "string" ? clean(body.error, 40) : "";
+  if (err) parts.push(`err=${err}`);
+  const path = typeof body?.path === "string" ? clean(body.path, 60) : "";
+  if (path) parts.push(`rx_path=${path}`);
+  try {
+    const u = new URL(endpoint);
+    parts.push(`ep=${u.hostname}${u.pathname}`.slice(0, 90));
+  } catch { /* endpoint unparsable: omit */ }
+  return parts.join(" ");
+}
+
 // Sends one message through telegram-worker /telegram/internal/send (same contract as model-reconfirm-runtime).
 export async function sendTelegramInternal(env, payload) {
   const endpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL, 500);
@@ -46,7 +62,7 @@ export async function sendTelegramInternal(env, payload) {
     const body = await response.json().catch(() => ({}));
     if (response.ok && body?.telegram?.ok === true) return { ok: true, status: response.status };
     const status = response.status;
-    return { ok: false, status, error: `telegram_http_${status}`, retryable: status >= 500 || status === 429 };
+    return { ok: false, status, error: `telegram_http_${status}`, detail: failureDetail(body, endpoint), retryable: status >= 500 || status === 429 };
   } catch (error) {
     return { ok: false, error: errorClass(error), retryable: true };
   }
@@ -115,10 +131,10 @@ export async function runHypeJobDaily(env = {}, options = {}) {
       if (!result?.ok) {
         log("error", "hype_job_daily_failed", {
           date_key: dateIct, stage: "send", attempt, part: index + 1, parts: parts.length,
-          error: clean(result?.error, 120), http_status: result?.status ?? null,
+          error: clean(result?.error, 120), detail: clean(result?.detail, 160) || undefined, http_status: result?.status ?? null,
           message_length: parts[index].length, retryable: result?.retryable !== false,
         });
-        await store.mark(key, { status: "failed", now, error: `send:${clean(result?.error, 80)}`, parts_sent: sent });
+        await store.mark(key, { status: "failed", now, error: `send:${clean(result?.error, 60)}${result?.detail ? ` ${clean(result.detail, 140)}` : ""}`, parts_sent: sent });
         return { status: "failed", stage: "send", attempt, parts_sent: sent };
       }
       sent += 1;
@@ -129,6 +145,25 @@ export async function runHypeJobDaily(env = {}, options = {}) {
   } catch (error) {
     log("error", "hype_job_daily_failed", { date_key: dateIct, stage: "run_state", error: errorClass(error) });
     return { status: "failed", stage: "run_state" };
+  }
+}
+
+// Owner-triggered retry of today's failed run. Only a run that FAILED is reset (attempts back to 0, parts_sent kept);
+// a sent / late_missed / in-progress run is never touched, so it cannot cause a duplicate digest.
+export async function retryHypeJobDailyToday(env = {}, options = {}) {
+  const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
+  const deps = options.deps || {};
+  if (!isEnabled(env)) return { status: "disabled" };
+  const key = runKey(ictDate(now));
+  const store = deps.store || durableObjectStore(env.HYPE_JOB_DAILY_RUN_STATE);
+  if (!store) return { status: "not_configured", reason: "run_state_binding_missing" };
+  try {
+    const reset = await store.resetFailed(key, { now });
+    if (!reset?.changed) return { status: "not_retryable", run_status: reset?.status ?? null };
+    return await runHypeJobDaily(env, { now, deps: { ...deps, store } });
+  } catch (error) {
+    log("error", "hype_job_daily_failed", { stage: "retry", error: errorClass(error) });
+    return { status: "failed", stage: "retry" };
   }
 }
 
