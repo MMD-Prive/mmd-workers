@@ -152,50 +152,31 @@ jobs:
 
             echo "PASS: $origin Create Job canonical Per Rename lookup"
 
-            create_page="$(mktemp)"
-            board_page="$(mktemp)"
-            create_headers="$(mktemp)"
-            create_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors --compressed -sSL \
-              -D "$create_headers" -o "$create_page" -b "$cookie" -w "%{http_code}" \
-              "$origin/internal/admin/jobs/create-job?smoke=separate-job-board")"
-            if test "$create_code" != "200"; then
-              echo "::error::Create Job page HTTP $create_code (expected 200) at $origin"
-              exit 1
-            fi
-            create_missing=0
-            for marker in 'mmd-cj-split-v1' 'lv13-operational' 'clientQuery' 'modelQuery' '/v1/admin/clients/lineage-lookup' '/v1/admin/models/search'; do
-              grep -aqF -- "$marker" "$create_page" || { echo "::error::Create Job page missing marker: $marker"; create_missing=1; }
+            # Create Job and Job Board are served by Session Creator Pro
+            # (admin-worker session-creator-page-proxy, #2213), not the Webflow
+            # split pages. Assert the route owner and the work asset bundle.
+            for page in create-job job-board; do
+              page_file="$(mktemp)"
+              page_headers="$(mktemp)"
+              page_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors --compressed -sSL \
+                -D "$page_headers" -o "$page_file" -b "$cookie" -w "%{http_code}" \
+                "$origin/internal/admin/jobs/$page?smoke=session-creator")"
+              if test "$page_code" != "200"; then
+                echo "::error::$page page HTTP $page_code (expected 200) at $origin"
+                exit 1
+              fi
+              if ! grep -aiq '^x-mmd-route-owner: admin-worker-session-creator-pro' "$page_headers"; then
+                echo "::error::$page page not served by Session Creator Pro (x-mmd-route-owner header missing)"
+                exit 1
+              fi
+              if ! grep -aqF '/internal/admin/work/assets/' "$page_file"; then
+                echo "::error::$page page missing Session Creator work asset reference"
+                exit 1
+              fi
+              echo "PASS: $origin $page served by Session Creator Pro"
+              rm -f "$page_file" "$page_headers"
             done
-            for marker in 'id="job-board-form"' '/v1/admin/job-board/publish'; do
-              ! grep -aqF -- "$marker" "$create_page" || { echo "::error::Create Job page must not contain: $marker"; create_missing=1; }
-            done
-            if test "$create_missing" != "0"; then
-              echo "Create Job page bytes=$(wc -c < "$create_page") title=$(grep -ao '<title>[^<]*' "$create_page" | head -1)"
-              echo "--- final response headers (cookie values redacted)"
-              grep -ai -E '^(HTTP/|content-type|content-encoding|location|server|x-mmd|cf-ray)' "$create_headers" | tr -d '\r' || true
-              echo "--- first 400 bytes (non-printable as .)"
-              head -c 400 "$create_page" | tr -c '[:print:]\n' '.'; echo
-              echo "::notice title=create-job headers::$(grep -ai -E '^(HTTP/|content-type|content-encoding|location|server|x-mmd|cf-ray)' "$create_headers" | tr -d '\r' | tr '\n' ' ' | head -c 600)"
-              echo "::notice title=create-job head::$(head -c 300 "$create_page" | tr -c '[:print:]' '.' | tr -d '\r\n%' )"
-              exit 1
-            fi
-            echo "PASS: $origin Webflow Create Job restored with canonical Client/Model search"
 
-            board_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors --compressed -sS \
-              -o "$board_page" -b "$cookie" -w "%{http_code}" \
-              "$origin/internal/admin/jobs/job-board?smoke=separate-job-board")"
-            test "$board_code" = "200"
-            grep -q 'data-job-board-owner="separate-v1"' "$board_page"
-            grep -q 'id="job-board-form"' "$board_page"
-            grep -q 'name="board_text" maxlength="1000"' "$board_page"
-            grep -q '/v1/admin/job-board/publish' "$board_page"
-            ! grep -q 'id="job-client-query"' "$board_page"
-            ! grep -q 'id="job-model-query"' "$board_page"
-            ! grep -q '/v1/admin/clients/lineage-lookup' "$board_page"
-            ! grep -q '/v1/admin/models/search' "$board_page"
-            echo "PASS: $origin Job Board is a separate no-lookup owner surface"
-
-            rm -f "$create_page" "$board_page"
             rm -f "$cookie" "$headers" "$body"
           done
           rm -f "$request_body" /tmp/mmd-per-rename-canary.txt
