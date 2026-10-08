@@ -2,7 +2,7 @@
 import { handlePaymentReviewRequest } from "../payment-review-runtime.js";
 import { readRecoveryQueueIntelligence } from "../recovery-control.js";
 import { clean } from "./util.js";
-import { collectPayments, collectSessions } from "./sources.js";
+import { collectModels, collectPayments, collectRefundPacks, collectSessions } from "./sources.js";
 
 // Proofs awaiting review, from the canonical Payment Review queue (read-only GET).
 export async function collectPaymentReview(env = {}) {
@@ -66,9 +66,13 @@ export const defaultSources = Object.freeze({
   payments: (env, sessionIds) => collectPayments(env, sessionIds),
   review: (env) => collectPaymentReview(env),
   recovery: (env, now) => collectRecovery(env, now),
+  models: (env, modelIds) => collectModels(env, modelIds),
+  refunds: (env) => collectRefundPacks(env),
 });
 
-// Runs all collectors. Sessions must finish before payments (needs session ids).
+// Runs all collectors. Sessions must finish before payments and models (they need session / model ids).
+// `models` and `refunds` are optional sources: when a caller does not provide them they are reported as
+// undefined ("not collected"), which the builder treats as "not checked", never as "failed" or "clear".
 export async function collectAll(env, now, sources = defaultSources) {
   const guard = async (fn, code) => {
     try {
@@ -80,11 +84,16 @@ export async function collectAll(env, now, sources = defaultSources) {
   const sessionsPromise = guard(() => sources.sessions(env, now), "sessions_read_failed");
   const reviewPromise = guard(() => sources.review(env), "payment_review_read_failed");
   const recoveryPromise = guard(() => sources.recovery(env, now), "recovery_read_failed");
+  const refundsPromise = typeof sources.refunds === "function" ? guard(() => sources.refunds(env, now), "refund_read_failed") : Promise.resolve(undefined);
   const sessions = await sessionsPromise;
   const ids = sessions?.ok ? (sessions.records || []).map((r) => r.session_id).filter(Boolean) : [];
+  const modelIds = sessions?.ok ? (sessions.records || []).map((r) => (r.model_ref?.status === "one" ? r.model_ref.id : "")).filter(Boolean) : [];
   const payments = sessions?.ok
     ? await guard(() => sources.payments(env, ids), "payments_read_failed")
     : { ok: false, error: "payments_skipped_sessions_unavailable" };
-  const [review, recovery] = await Promise.all([reviewPromise, recoveryPromise]);
-  return { sessions, payments, review, recovery };
+  const models = typeof sources.models !== "function" ? undefined
+    : sessions?.ok ? await guard(() => sources.models(env, modelIds), "models_read_failed")
+    : { ok: false, error: "models_skipped_sessions_unavailable" };
+  const [review, recovery, refunds] = await Promise.all([reviewPromise, recoveryPromise, refundsPromise]);
+  return { sessions, payments, review, recovery, models, refunds };
 }

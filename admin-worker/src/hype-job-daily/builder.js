@@ -17,6 +17,9 @@ export const SECTION_ORDER = Object.freeze([
 export const P0_CAP = 3;
 export const PAYMENT_WATCH_CAP = 8;
 export const PAYMENT_REVIEW_MAX_AGE_DAYS = 3;
+export const REFUND_PACK_MAX_AGE_DAYS = 3;
+export const REFUND_PACK_CAP = 3;
+export const RATE_CHECK_CEILING_THB = 20000;
 const HOURS_72_MS = 72 * 3600 * 1000;
 
 const MODEL_READY = new Set(["confirmed", "accepted", "ready", "en_route", "travel", "on_the_way", "arrived", "working", "live"]);
@@ -92,6 +95,44 @@ function customerDisplay(name) {
   return parsed?.matched && parsed.base_name && parsed.date_label ? `${parsed.base_name} ${parsed.date_label}` : text;
 }
 
+// Rate context rule. The digest never prints a rate or quote; it only flags what Per must confirm.
+// `rateContext` is supplied by a source ({ rate_thb, prior_quote_thb }). No canonical rate/quote source exists in the
+// repo yet, so default sources supply none and this stays silent until one does (see HYPE_JOB_DAILY report).
+// - rate over 20,000 THB: not covered by the single-model-name rule, so no flag from here.
+// - rate not over 20,000 THB and no reliable prior quote: rate_review_required.
+// - rate above what Per already quoted: rate_review_required (never quote higher than the earlier quote).
+export function evaluateRateContext(rateContext) {
+  if (!rateContext || typeof rateContext !== "object") return null;
+  const rate = Number(rateContext.rate_thb);
+  if (!Number.isFinite(rate) || rate <= 0 || rate > RATE_CHECK_CEILING_THB) return null;
+  const prior = Number(rateContext.prior_quote_thb);
+  if (!Number.isFinite(prior) || prior <= 0) return { reason: "no reliable prior quote" };
+  if (rate > prior) return { reason: "rate is above the earlier quote" };
+  return null;
+}
+
+// Refund completed pack -> one PAYMENT WATCH item. URLs arrive already validated by the collector and are shown
+// exactly as read; a missing URL is shown as "unavailable" and makes the pack review_required (never rebuilt here).
+export function buildRefundItem(pack, timeMs = Infinity) {
+  const customer = customerDisplay(pack.customer_name) || "customer_review_required";
+  const linked = Boolean(pack.session_id || pack.job_id);
+  const expected = ["customer_confirmation_url", "admin_job_url", ...(linked ? ["customer_job_confirm_url", "model_job_app_url"] : [])];
+  const missing = expected.filter((key) => !pack.urls?.[key]);
+  const amount = pack.refund_amount_thb ? ` · ${formatThb(pack.refund_amount_thb)}` : "";
+  const head = `refund completed · ${customer}${amount}${pack.session_id ? ` · ${pack.session_id}` : ""}${pack.inbox_ref ? ` · ${maskRef(pack.inbox_ref)}` : ""}`;
+  const flag = missing.length ? ` · review_required (refund pack incomplete: ${missing.join(", ")})` : "";
+  const lines = expected.map((key) => `\n    ${key}: ${pack.urls?.[key] || "unavailable"}`).join("");
+  const next = missing.length
+    ? "open Refund Ops and re-check the pack links before sending anything"
+    : linked ? "send customer_job_confirm_url to the customer and model_job_app_url to the model manually (HYPE never auto-sends)"
+    : "check the pack in Refund Ops (no job links to forward)";
+  return item({
+    kind: "refund", ref: pack.inbox_ref, timeMs, p0Class: missing.length ? 3 : null,
+    text: `${head}${flag}${lines}`, next,
+    summaryTh: missing.length ? `ตรวจ refund pack ${maskRef(pack.inbox_ref)} — ลิงก์ไม่ครบ` : "",
+  });
+}
+
 function fmtTime(minutes) {
   if (minutes === null || minutes === undefined) return "time unknown";
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -146,11 +187,14 @@ export function prepareReviewItems(review, nowMs, windowSessionIds = new Set()) 
 }
 
 export function buildDigest(input = {}, nowMs = Date.now()) {
-  const { sessions, payments, review, recovery } = input;
+  const { sessions, payments, review, recovery, models, refunds } = input;
   const today = ictDate(nowMs);
   const sec = { jobs_today: [], upcoming: [], payment: [], model: [], customer: [], system: [] };
   const failed = { sessions: !sessions?.ok, payments: !payments?.ok, review: !review?.ok, recovery: !recovery?.ok };
   const allFailed = Object.values(failed).every(Boolean);
+  // Optional sources: undefined means "not collected" (not a failure, not a clean bill of health).
+  failed.models = models !== undefined && !models?.ok;
+  failed.refunds = refunds !== undefined && !refunds?.ok;
 
   const sysFail = (label, source, detail) => sec.system.push(item({
     kind: "system", p0Class: 5,
@@ -163,6 +207,8 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
   if (failed.payments && !failed.sessions) sysFail("payment source unreachable", "job money state cannot be stated", payments?.error);
   if (failed.review) sysFail("payment review queue unreachable", "unreviewed proofs may be missing", review?.error);
   if (failed.recovery) sysFail("recovery queue unreachable", "recovery cases may be missing", recovery?.error);
+  if (failed.models && !failed.sessions) sysFail("model connection source unreachable", "model LINE connection cannot be checked", models?.error);
+  if (failed.refunds) sysFail("refund pack source unreachable", "refund completed packs may be missing", refunds?.error);
 
   const counts = { jobs_today: 0, upcoming: 0 };
   const windowIds = new Set();
@@ -192,6 +238,22 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
       if (!session.session_id) reviewReasons.push("job reference missing");
       else if (seenIds.get(session.session_id) > 1) reviewReasons.push("duplicate job records");
       if (state.kind === "unknown") reviewReasons.push(state.reason);
+      // Assigned Model link + canonical connection state (read-only). Never picks one of several links.
+      let modelConn = "unchecked";
+      const mref = session.model_ref;
+      if (mref && mref.status === "multiple") reviewReasons.push("assigned model ambiguous (multiple links)");
+      else if (mref && mref.status === "invalid") reviewReasons.push("assigned model link invalid");
+      else if (mref && mref.status === "none" && !session.model_name) reviewReasons.push("assigned model missing");
+      else if (mref && mref.status === "one" && models?.ok) {
+        const found = models.records?.[mref.id];
+        if (!found) { reviewReasons.push("assigned model record unreadable"); modelConn = "unreadable"; }
+        else modelConn = found.connected ? "connected" : "not_connected";
+      }
+      const modelNotConnected = modelConn === "not_connected";
+      // model_job_app_url is only ever taken verbatim from a refund pack for this same session. Never built here.
+      const packModelUrl = refunds?.ok && session.session_id
+        ? ((refunds.items || []).find((pack) => pack.session_id === session.session_id && pack.urls?.model_job_app_url)?.urls.model_job_app_url || "")
+        : "";
       if (win.window === "unparseable") { sec.system.push(item({ kind: "system", p0Class: 6, timeMs: Infinity, text: `${ref} — review_required (job date unparseable)`, next: "verify the job date in admin", summaryTh: `${ref} — ตรวจวันที่งาน` })); continue; }
       if (win.window === "unparseable_time") reviewReasons.push("start time missing near the 72h boundary");
       if (win.window === "today" && minutes === null) reviewReasons.push("start time missing");
@@ -204,7 +266,7 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
 
       const parts = [ref, customer || "customer_review_required", session.model_name || "model not assigned", `${fmtTime(minutes)}${isToday ? "" : ` ${session.job_date}`}`];
       const moneyText = money.state === "review_required" ? `review_required (${money.reason})` : MONEY_LABEL[money.state];
-      const jobLine = [...parts, isToday ? `${moneyText}${money.lines?.length ? ` [${money.lines.join("; ")}]` : ""}` : "", `status ${state.raw || "unknown"}`].filter(Boolean).join(" · ");
+      const jobLine = [...parts, isToday ? `${moneyText}${money.lines?.length ? ` [${money.lines.join("; ")}]` : ""}` : "", reviewReasons.length ? `review_required (${reviewReasons.map((r) => clean(r, 60)).join("; ")})` : "", `status ${state.raw || "unknown"}`].filter(Boolean).join(" · ");
       const review_required = reviewReasons.length > 0 || money.state === "review_required" || !customer;
       let next = "no action";
       let p0Class = null;
@@ -215,9 +277,11 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
       } else if (isToday && ["no_record", "pending", "proof_review", "rejected"].includes(money.state)) {
         next = money.state === "proof_review" ? "review the payment proof" : money.state === "rejected" ? "decide on the rejected payment" : "check the payment for this job";
         p0Class = 1; summaryTh = `${ref} — ตรวจสถานะเงิน`;
-      } else if (isToday && (state.kind === "model_pending" || state.kind === "model_declined")) {
-        next = state.kind === "model_declined" ? "decide on the declined model" : "confirm with the model";
-        p0Class = 2; summaryTh = `${ref} — ยืนยันโมเดล`;
+      } else if (isToday && (state.kind === "model_pending" || state.kind === "model_declined" || modelNotConnected)) {
+        next = state.kind === "model_declined" ? "decide on the declined model"
+          : modelNotConnected ? (packModelUrl ? "send model_job_app_url to the model manually and confirm" : "issue a LINE activation link for the model (Calendar) and confirm")
+          : "confirm with the model";
+        p0Class = 2; summaryTh = modelNotConnected && state.kind !== "model_pending" ? `${ref} — โมเดลยังไม่เชื่อมต่อ LINE` : `${ref} — ยืนยันโมเดล`;
       } else if (state.kind === "hold") next = "review why the job is on hold";
       else if (!customer) { next = "confirm customer identity"; if (isToday) { p0Class = 6; summaryTh = `${ref} — ยืนยันตัวตนลูกค้า`; } }
       if (session.session_id) jobTimeById.set(session.session_id, timeMs);
@@ -225,9 +289,16 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
       sec[home].push(jobItem);
 
       if (!customer) sec.customer.push(item({ kind: "customer", ref, timeMs, text: `${ref} — customer_review_required (${clean(Array.isArray(session.client_name) ? "multiple customer matches" : "customer name missing", 60)})`, next: "confirm customer identity" }));
-      if (state.kind === "model_pending" || state.kind === "model_declined") {
-        sec.model.push(item({ kind: "model", ref, timeMs, text: `${session.model_name || "model not assigned"} — ${state.kind === "model_declined" ? "declined/unavailable" : "confirmation pending"} (${ref})`, next: state.kind === "model_declined" ? "decide on the declined model (owner decision)" : "confirm with the model" }));
+      if (state.kind === "model_pending" || state.kind === "model_declined" || modelNotConnected) {
+        const issues = [state.kind === "model_declined" ? "declined/unavailable" : state.kind === "model_pending" ? "confirmation pending" : "", modelNotConnected ? "not connected (no LINE link)" : ""].filter(Boolean).join("; ");
+        const urlLine = modelNotConnected ? `\n    model_job_app_url: ${packModelUrl || "unavailable"}` : "";
+        const modelNext = state.kind === "model_declined" ? "decide on the declined model (owner decision)"
+          : modelNotConnected ? (packModelUrl ? "send model_job_app_url to the model manually (owner action)" : "issue a LINE activation link for this model (Calendar: สร้าง LINE link), then send it manually")
+          : "confirm with the model";
+        sec.model.push(item({ kind: "model", ref, timeMs, text: `${session.model_name || "model not assigned"} — ${issues} (${ref})${urlLine}`, next: modelNext }));
       }
+      const rate = evaluateRateContext(session.rate_context);
+      if (rate) sec.customer.push(item({ kind: "rate", ref, timeMs, text: `${ref} — rate_review_required (${rate.reason})`, next: "confirm the base rate with Per before replying to the customer (HYPE never sends rates)" }));
       const payProblem = isToday ? ["no_record", "pending", "rejected", "review_required"].includes(money.state) : ["rejected", "review_required"].includes(money.state);
       const proofNoQueue = money.state === "proof_review" && !(money.reviewItems || []).length;
       if (payProblem || proofNoQueue) {
@@ -253,15 +324,37 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
     }
   }
 
+  const refundItems = [];
+  const refundStats = { old: 0, overflow: 0 };
+  if (refunds?.ok) {
+    const cutoff = nowMs - REFUND_PACK_MAX_AGE_DAYS * 86400000;
+    const recent = [];
+    for (const pack of refunds.items || []) {
+      const linked = Boolean(pack.session_id && windowIds.has(pack.session_id));
+      const at = Date.parse(pack.receipt_uploaded_at || "");
+      if (!linked && !(Number.isFinite(at) && at >= cutoff)) { refundStats.old += 1; continue; }
+      recent.push({ pack, at: Number.isFinite(at) ? at : 0 });
+    }
+    recent.sort((a, b) => b.at - a.at);
+    refundStats.overflow = Math.max(0, recent.length - REFUND_PACK_CAP);
+    for (const { pack } of recent.slice(0, REFUND_PACK_CAP)) refundItems.push(buildRefundItem(pack, jobTimeById.get(pack.session_id) ?? Infinity));
+  }
+
   for (const key of Object.keys(sec)) sec[key].sort((a, b) => a.timeMs - b.timeMs);
 
   // PAYMENT WATCH stays short: cap the list, then say plainly what was left out.
   const paymentOverflow = Math.max(0, sec.payment.length - PAYMENT_WATCH_CAP);
   sec.payment = sec.payment.slice(0, PAYMENT_WATCH_CAP);
+  sec.payment.push(...refundItems);
   if (paymentOverflow > 0) sec.payment.push(item({ kind: "payment_more", text: `+${paymentOverflow} more payment items not listed`, next: "open the payment review queue in admin" }));
   const left = prepared.ok ? prepared.stats : { zero: 0, old: 0, duplicates: 0 };
-  if (left.old > 0 || left.zero > 0) {
-    const bits = [left.old > 0 ? `${left.old} older/undated unreviewed proofs` : "", left.zero > 0 ? `${left.zero} zero-amount slips` : ""].filter(Boolean);
+  if (left.old > 0 || left.zero > 0 || refundStats.old > 0 || refundStats.overflow > 0) {
+    const bits = [
+      left.old > 0 ? `${left.old} older/undated unreviewed proofs` : "",
+      left.zero > 0 ? `${left.zero} zero-amount slips` : "",
+      refundStats.old > 0 ? `${refundStats.old} older refund packs` : "",
+      refundStats.overflow > 0 ? `${refundStats.overflow} more refund packs` : "",
+    ].filter(Boolean);
     sec.payment.push(item({ kind: "payment_backlog", text: `not listed: ${bits.join(" and ")}`, next: "clear the payment review queue in admin when convenient" }));
   }
 
@@ -279,7 +372,7 @@ export function buildDigest(input = {}, nowMs = Date.now()) {
     counts,
     sections: { p0, ...sec },
     p0_overflow: overflow,
-    payment_stats: { ...(prepared.ok ? prepared.stats : {}), overflow: paymentOverflow },
+    payment_stats: { ...(prepared.ok ? prepared.stats : {}), overflow: paymentOverflow, refund_old: refundStats.old, refund_overflow: refundStats.overflow },
     summary,
   };
 }
