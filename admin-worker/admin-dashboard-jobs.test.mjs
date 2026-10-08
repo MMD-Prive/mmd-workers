@@ -185,3 +185,10 @@ test("job finance is null-safe without extras, malformed notes or a discount", (
   assert.equal(page.items[0].finance.pricing.discount.type, "percent");
   assert.equal(buildJobsPage([{ id: "recS2", fields: { session_id: "S2" } }]).items[0].finance, null);
 });
+
+test("projectFinance exposes customer/model acknowledgement times only", async () => {
+  const { projectFinance, JOB_FINANCE_FIELD_IDS: F } = await import("./src/admin-dashboard-jobs.js");
+  const f = projectFinance({ [F.customerAck]: "2026-10-09T01:00:00.000Z", [F.modelAck]: "not-a-date" });
+  assert.equal(f.customer_ack_at, "2026-10-09T01:00:00.000Z");
+  assert.equal(f.model_ack_at, null);
+});
