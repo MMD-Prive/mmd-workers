@@ -134,6 +134,9 @@ function renderShell(config, nonce) {
     body:not(.app-entered) .actions,body:not(.app-entered) .member-nav,body:not(.app-entered) #profile,body:not(.app-entered) #signup{display:none!important}
     .app-status{display:none;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);color:#bdb4ad;font-size:13px;line-height:1.55}.app-entered .app-status{display:block}
     body.app-entered .intro-screen{display:none}
+    body.signup-mode.app-entered main{padding:calc(14px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom))!important}
+    body.signup-mode .app-status:empty{display:none!important}
+    body.signup-mode.app-entered #signup{width:100%;max-width:560px;margin-left:auto;margin-right:auto}
     body.app-entered.world-public main,body.app-entered.world-private main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:0;border:0;border-radius:0;display:block;box-shadow:none}
     body.app-entered.world-public,body.app-entered.world-private{min-height:100vh;min-height:100dvh;padding:0;overflow-x:clip;overflow-y:auto}
     @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
@@ -263,7 +266,7 @@ function renderShell(config, nonce) {
     @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
   </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
+<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -532,6 +535,12 @@ function renderShell(config, nonce) {
       introContinue.disabled = false;
     }
   }
+  const SIGNUP_CARD_IMAGES = {
+    mmd_member: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3dcc91556149c67c47_99ed17ff789cec831ad138da39b8c9b0_Public%20Member.webp",
+    elite: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d319a799fcab5b6aa_136e977f00415247676fd142a0061373_Elite%20Card.webp",
+    red_card: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d1796b28dfb192c4e_e015d3ed1ff4a9bc696bbccedee1881f_Red%20Card.webp",
+  };
+  let signupCatalogState = "idle";
   let appEntered = false;
   async function enterApp() {
     if (appEntered || !introContinue || introContinue.disabled) return;
@@ -555,6 +564,23 @@ function renderShell(config, nonce) {
     introContinue.setAttribute("aria-expanded", "true");
     void boot({ existingProfileChecked: true });
   }
+  // Signup links never show the MY MMD welcome screen: the page is rendered already entered, and only the LINE handshake runs here.
+  async function enterSignupDirect() {
+    if (appEntered) return;
+    appEntered = true;
+    try {
+      const existingProfile = await existingProfilePromise;
+      if (existingProfile) {
+        signupLineEntry?.classList.add("hidden");
+        void hydrateMemberHome();
+        void readSignupCatalog();
+        return;
+      }
+    } catch {
+      // No valid same-site session yet; continue into the LINE handshake.
+    }
+    void boot({ existingProfileChecked: true });
+  }
   introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {
     if (logoutButton.disabled) return;
     logoutButton.disabled = true;
@@ -573,12 +599,12 @@ function renderShell(config, nonce) {
   }
   applyWorldTheme();
   welcomeContextPromise = resolveInitialWelcomeContext();
+  existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
   if (CONFIG.intent === "signup") {
     // The package catalog is public; show it at once. LINE identity is only needed at purchase time.
     void readSignupCatalog();
-    void welcomeContextPromise.then(() => enterApp());
+    void enterSignupDirect();
   }
-  existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
   document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
   document.getElementById("service-spend-label").textContent = copy.serviceSpendLabel || "Service spend";
   document.getElementById("lifetime-spend-label").textContent = copy.lifetimeSpendLabel || "Lifetime";
@@ -647,12 +673,6 @@ function renderShell(config, nonce) {
     finally { setBusy(false); }
   }
 
-  const SIGNUP_CARD_IMAGES = {
-    mmd_member: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3dcc91556149c67c47_99ed17ff789cec831ad138da39b8c9b0_Public%20Member.webp",
-    elite: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d319a799fcab5b6aa_136e977f00415247676fd142a0061373_Elite%20Card.webp",
-    red_card: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d1796b28dfb192c4e_e015d3ed1ff4a9bc696bbccedee1881f_Red%20Card.webp",
-  };
-  let signupCatalogState = "idle";
   async function readSignupCatalog() {
     if (CONFIG.intent !== "signup") return;
     if (signupCatalogState === "loading" || signupCatalogState === "loaded") return;

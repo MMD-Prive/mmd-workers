@@ -715,7 +715,7 @@ describe("signup intent shell entry", () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" });
     const html = await response.text();
     assert.match(html, /if \(CONFIG\.intent === "signup"\) \{\s*\/\/ The package catalog is public/);
-    assert.match(html, /void readSignupCatalog\(\);\s*void welcomeContextPromise\.then\(\(\) => enterApp\(\)\);/);
+    assert.match(html, /void readSignupCatalog\(\);\s*void enterSignupDirect\(\);/);
     assert.match(html, /signupCatalogState === "loading" \|\| signupCatalogState === "loaded"/);
   });
 });
@@ -729,3 +729,25 @@ describe("signup package card art", () => {
     assert.match(html, /art\.addEventListener\("error", \(\) => art\.remove\(\)\)/);
   });
 });
+
+describe("signup intent skips the MY MMD welcome screen", () => {
+  it("renders the signup body already entered while other intents keep the welcome screen", async () => {
+    const env = { LIFF_ID: "2010862595-yT4DCEMc" };
+    const signupHtml = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), env)).text();
+    const statusHtml = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), env)).text();
+    assert.match(signupHtml, /<body class="signup-mode app-entered /);
+    assert.doesNotMatch(statusHtml, /<body class="[^"]*app-entered/);
+  });
+});
+
+describe("signup intent script ordering", () => {
+  it("declares signup state before the early catalog call (no temporal dead zone)", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    const decl = html.indexOf('let signupCatalogState = "idle"');
+    const art = html.indexOf("const SIGNUP_CARD_IMAGES");
+    const call = html.indexOf("void readSignupCatalog();\n    void enterSignupDirect();");
+    assert.ok(decl > 0 && art > 0 && call > 0);
+    assert.ok(decl < call && art < call);
+  });
+});
+
