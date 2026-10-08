@@ -709,3 +709,13 @@ describe("POST /member/liff CARE BACK orchestration", () => {
     assert.equal(called, false);
   });
 });
+
+describe("signup intent shell entry", () => {
+  it("loads the public package catalog and enters without the welcome ENTER tap", async () => {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" });
+    const html = await response.text();
+    assert.match(html, /if \(CONFIG\.intent === "signup"\) \{\s*\/\/ The package catalog is public/);
+    assert.match(html, /void readSignupCatalog\(\);\s*void welcomeContextPromise\.then\(\(\) => enterApp\(\)\);/);
+    assert.match(html, /signupCatalogState === "loading" \|\| signupCatalogState === "loaded"/);
+  });
+});
