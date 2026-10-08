@@ -188,6 +188,11 @@ function renderShell(config, nonce) {
     .my-mmd-welcome #message{max-width:680px;margin:18px 0 0;padding:12px 14px;border:1px solid rgba(201,168,102,.28);border-left:2px solid #c9a866;border-radius:0 8px 8px 0;background:rgba(201,168,102,.07);color:#eadcc1;font-size:13px;line-height:1.65}
     .my-mmd-welcome .per-letter{max-width:680px;margin:24px 0 0;padding:0;border:0;color:#f4ede1}.my-mmd-welcome .per-letter-copy{max-height:none;overflow:visible;margin:0;padding:0;white-space:pre-line;font-size:16px;line-height:1.65}
     .welcome-divider{width:min(100%,680px);height:1px;margin:30px 0 0;background:rgba(201,168,102,.34)}.my-mmd-welcome .intro-continue{width:195px;min-height:48px;margin:26px 0 0;padding:12px 20px;border:0;border-radius:999px;background:#c9a866!important;color:#171715!important;box-shadow:none;font-size:14px;font-weight:800;text-align:center;letter-spacing:.05em}.my-mmd-welcome .intro-continue:disabled{opacity:.55}
+    .hype-loader{display:none}body.context-resolving .hype-loader{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#000;color:#f6f1e8;text-align:center}
+    .hype-loader img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
+    .hype-loader-text{color:#caa45e;font-size:12px;font-weight:800;letter-spacing:.22em}.hype-loader-text::after{content:"";display:inline-block;width:1.6em;text-align:left;animation:hype-dots 1.2s steps(4,end) infinite}
+    @keyframes hype-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}}
     body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
     @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .per-letter-copy{font-size:16px;line-height:1.65}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
     @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
@@ -268,6 +273,7 @@ function renderShell(config, nonce) {
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-live="polite" aria-label="Now Loading"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -532,7 +538,6 @@ function renderShell(config, nonce) {
         if (sessionReady) resolvedAudience = await readWelcomeContext();
       }
     } finally {
-      document.body.classList.remove("context-resolving");
       introContinue.disabled = false;
     }
   }
@@ -605,6 +610,21 @@ function renderShell(config, nonce) {
   applyWorldTheme();
   welcomeContextPromise = resolveInitialWelcomeContext();
   existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+  // Keep the HYPE loader up until we know whether to open the member home directly (an existing same-site session never calls liff.login) or show the ENTER welcome.
+  if (CONFIG.intent !== "signup") {
+    const hypeImage = document.getElementById("hype-loader-img");
+    hypeImage?.addEventListener("error", () => hypeImage.remove(), { once: true });
+    void welcomeContextPromise.then(async () => {
+      try {
+        const profile = await Promise.race([existingProfilePromise, new Promise((resolve) => setTimeout(() => resolve(null), 6000))]);
+        if (profile) await enterApp();
+      } catch {
+        // Fall back to the ENTER welcome.
+      } finally {
+        document.body.classList.remove("context-resolving");
+      }
+    });
+  }
   if (CONFIG.intent === "signup") {
     // The package catalog is public; show it at once. LINE identity is only needed at purchase time.
     void readSignupCatalog();
