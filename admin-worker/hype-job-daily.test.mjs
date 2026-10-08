@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildDigest, PAYMENT_WATCH_CAP, SECTION_ORDER } from "./src/hype-job-daily/builder.js";
+import { buildDigest, evaluateRateContext, PAYMENT_WATCH_CAP, SECTION_ORDER } from "./src/hype-job-daily/builder.js";
 import { formatDigest, renderSections } from "./src/hype-job-daily/formatter.js";
-import { collectPayments, collectSessions, paymentFieldMap } from "./src/hype-job-daily/sources.js";
+import { collectModels, collectPayments, collectRefundPacks, collectSessions, normalizeRefundPack, paymentFieldMap, safeOwnerUrl } from "./src/hype-job-daily/sources.js";
 import { collectAll } from "./src/hype-job-daily/default-sources.js";
 import {
   HypeJobDailyRunState, claimRun, finalizeMissed, markRun,
@@ -127,7 +127,7 @@ test("3c: verified paid money is shown as verified with the amount exactly as re
 });
 
 // ---------- 4-5: links must never be fabricated ----------
-test("4/5: no URL is ever fabricated (refund pack / model_job_app_url / admin_job_url unavailable in source)", () => {
+test("4/5 base: with no refund pack and no model link in the sources, no URL is ever fabricated", () => {
   const d = buildDigest(input({ sessions: ok({ records: [sess("J4", { state: "pending" })] }), payments: ok({ records: [pay("J4")] }) }), NOW);
   const all = text(d);
   assert.doesNotMatch(all, /https?:\/\//);
@@ -514,7 +514,7 @@ test("payment refs are masked in the digest", () => {
   assert.match(text(d), /…4567/);
 });
 
-test("rate: digest never shows a model rate or quote (flag-only in v1, no quote source exists)", () => {
+test("rate: with no rate context in the sources, the digest never shows a model rate or quote", () => {
   const d = buildDigest(input({ sessions: ok({ records: [sess("J-amt")] }), payments: ok({ records: [pay("J-amt", { amount: 5000 })] }) }), NOW);
   assert.doesNotMatch(text(d), /\brate\b|quote/i);
 });
@@ -608,6 +608,243 @@ test("PW6: filtered proofs never affect a job's money state (0 THB slip does not
   const d = buildDigest(input({ sessions: ok({ records: [sess("JZ")] }), payments: ok({ records: [] }), review }), NOW);
   assert.match(sectionText(d, "jobs_today"), /no payment record/);
   assert.doesNotMatch(sectionText(d, "jobs_today"), /awaiting review/);
+});
+
+
+// ---------- 4: refund completed pack ----------
+const esc = (u) => String(u).replace(/&/g, "&amp;");
+const URL_OK = {
+  customer_confirmation_url: "https://www.mmdbkk.com/refund-receipt/media?id=abc&sig=def",
+  customer_job_confirm_url: "https://www.mmdbkk.com/sigil/confirm/job?t=cust-token",
+  admin_job_url: "https://www.mmdbkk.com/internal/admin/jobs/J4R",
+  model_job_app_url: "https://miniapp.line.me/2010864854-N34SgCqq/?intent=job_board&job_id=J4R",
+};
+const pack = (o = {}) => ({
+  inbox_ref: o.inbox ?? "inbox_refund_0001", customer_name: o.name ?? "คุณเอ็ม", session_id: o.session ?? "J4R", job_id: o.job ?? "",
+  receipt_uploaded: true, receipt_uploaded_at: o.at ?? new Date(NOW - 3600000).toISOString(), refund_amount_thb: o.amount === undefined ? 1500 : o.amount,
+  urls: { ...URL_OK, ...(o.urls || {}) },
+});
+
+test("4: refund completed pack lists customer_confirmation_url, admin_job_url and model_job_app_url exactly as read", () => {
+  const d = buildDigest({ ...input({ sessions: ok({ records: [sess("J4R")] }), payments: ok({ records: [pay("J4R")] }) }), refunds: ok({ items: [pack()] }) }, NOW);
+  const t = sectionText(d, "payment");
+  assert.match(t, /refund completed · คุณเอ็ม · 1,500 THB · J4R/);
+  for (const [key, url] of Object.entries(URL_OK)) assert.ok(t.includes(`${key}: ${url}`) || t.includes(`${key}: ${esc(url)}`), key);
+  assert.match(t, /send customer_job_confirm_url to the customer and model_job_app_url to the model manually \(HYPE never auto-sends\)/);
+  assert.doesNotMatch(t, /review_required/);
+  assert.equal(d.sections.p0.length, 0);
+});
+
+test("4b: incomplete refund pack -> unavailable + review_required, P0, and no URL is rebuilt", () => {
+  const d = buildDigest({ ...input(), refunds: ok({ items: [pack({ urls: { model_job_app_url: "", customer_job_confirm_url: "" } })] }) }, NOW);
+  const t = sectionText(d, "payment");
+  assert.match(t, /review_required \(refund pack incomplete: customer_job_confirm_url, model_job_app_url\)/);
+  assert.match(t, /model_job_app_url: unavailable/);
+  assert.match(t, /customer_job_confirm_url: unavailable/);
+  assert.match(t, /open Refund Ops and re-check the pack links/);
+  assert.equal(d.sections.p0.length, 1);
+  assert.ok((t.match(/https:\/\//g) || []).length === 2, "only the two URLs that were read are shown");
+});
+
+test("4c: a pack with no linked job does not expect job or model links", () => {
+  const d = buildDigest({ ...input(), refunds: ok({ items: [pack({ session: "", job: "", urls: { customer_job_confirm_url: "", model_job_app_url: "" } })] }) }, NOW);
+  const t = sectionText(d, "payment");
+  assert.doesNotMatch(t, /model_job_app_url|customer_job_confirm_url|review_required/);
+  assert.match(t, /check the pack in Refund Ops \(no job links to forward\)/);
+});
+
+test("4d: old packs are counted not listed, unless tied to a job in today's window; list is capped", () => {
+  const old = new Date(NOW - 10 * 86400000).toISOString();
+  const d1 = buildDigest({ ...input(), refunds: ok({ items: [pack({ at: old, session: "JX" })] }) }, NOW);
+  assert.doesNotMatch(sectionText(d1, "payment"), /refund completed/);
+  assert.match(sectionText(d1, "payment"), /1 older refund packs/);
+  const d2 = buildDigest({ ...input({ sessions: ok({ records: [sess("JX")] }), payments: ok({ records: [pay("JX")] }) }), refunds: ok({ items: [pack({ at: old, session: "JX" })] }) }, NOW);
+  assert.match(sectionText(d2, "payment"), /refund completed/);
+  const many = [1, 2, 3, 4, 5].map((n) => pack({ inbox: `inbox_${n}_abcd`, session: `JR${n}` }));
+  const d3 = buildDigest({ ...input(), refunds: ok({ items: many }) }, NOW);
+  assert.equal((sectionText(d3, "payment").match(/refund completed/g) || []).length, 3);
+  assert.match(sectionText(d3, "payment"), /2 more refund packs/);
+});
+
+test("4e: pack customer follows the same display rule (missing -> customer_review_required)", () => {
+  const d = buildDigest({ ...input(), refunds: ok({ items: [pack({ name: "" })] }) }, NOW);
+  assert.match(sectionText(d, "payment"), /refund completed · customer_review_required/);
+});
+
+test("4f: refund source failure -> SYSTEM WATCH review_required; source not collected -> no failure line", () => {
+  const failed = buildDigest({ ...input(), refunds: { ok: false, error: "refund_read_failed" } }, NOW);
+  assert.match(sectionText(failed, "system"), /refund pack source unreachable/);
+  const notCollected = buildDigest(input(), NOW);
+  assert.doesNotMatch(sectionText(notCollected, "system"), /refund pack|model connection/);
+});
+
+test("4g: safeOwnerUrl accepts only https project hosts and never repairs a bad URL", () => {
+  assert.equal(safeOwnerUrl("https://www.mmdbkk.com/x?t=1"), "https://www.mmdbkk.com/x?t=1");
+  assert.ok(safeOwnerUrl("https://miniapp.line.me/2010864854-N34SgCqq/?a=b"));
+  for (const bad of ["http://www.mmdbkk.com/x", "https://evil.example/x", "https://mmdbkk.com.evil.example/x", "https://u:p@www.mmdbkk.com/x", "javascript:alert(1)", "www.mmdbkk.com/x", ""]) {
+    assert.equal(safeOwnerUrl(bad), "", bad);
+  }
+});
+
+test("4h: normalizeRefundPack never copies bank details or the private receipt key out of the payload", () => {
+  const record = { fields: { inbox_id: "inbox_9", member_name: "คุณเอ็ม", payload_json: JSON.stringify({
+    session_id: "J9", bank_name: "SECRET BANK", account_number: "1234567890", account_name_masked: "SECRET NAME", account_number_masked: "xxx7890",
+    receipt_r2_key: "private/key/receipt.jpg", receipt_uploaded_at: "2026-09-30T08:00:00+07:00", owner_refund_amount: "2,000", owner_refund_currency: "THB",
+    customer_receipt_url: URL_OK.customer_confirmation_url, admin_job_url: URL_OK.admin_job_url,
+  }) } };
+  const out = normalizeRefundPack(record);
+  const dump = JSON.stringify(out);
+  for (const secret of ["SECRET BANK", "1234567890", "SECRET NAME", "xxx7890", "private/key"]) assert.ok(!dump.includes(secret), secret);
+  assert.equal(out.refund_amount_thb, 2000);
+  assert.equal(out.receipt_uploaded, true);
+  assert.equal(out.urls.admin_job_url, URL_OK.admin_job_url);
+});
+
+// ---------- 5: model not connected ----------
+const mref = (id) => ({ status: "one", id });
+const MODEL_ID = "recABCDEFGHIJKLMN1";
+const withModel = (id, o = {}) => ({ ...sess(id, o), model_ref: o.ref ?? mref(MODEL_ID) });
+const modelsOk = (connected) => ok({ records: { [MODEL_ID]: { connected } } });
+
+test("5: model not connected + model_job_app_url available -> MODEL WATCH shows that URL, P0, owner action", () => {
+  const d = buildDigest({ ...input({ sessions: ok({ records: [withModel("J5")] }), payments: ok({ records: [pay("J5")] }) }), models: modelsOk(false), refunds: ok({ items: [pack({ session: "J5" })] }) }, NOW);
+  const t = sectionText(d, "model");
+  assert.match(t, /Book EI — not connected \(no LINE link\) \(J5\)/);
+  assert.ok(t.includes(`model_job_app_url: ${esc(URL_OK.model_job_app_url)}`) || t.includes(`model_job_app_url: ${URL_OK.model_job_app_url}`));
+  assert.match(t, /send model_job_app_url to the model manually \(owner action\)/);
+  assert.equal(d.sections.p0.length, 1);
+  assert.match(d.sections.p0[0].text, /J5/);
+});
+
+test("5b: model not connected and no URL available -> 'unavailable', owner issues the LINE link, nothing fabricated", () => {
+  const d = buildDigest({ ...input({ sessions: ok({ records: [withModel("J5b")] }), payments: ok({ records: [pay("J5b")] }) }), models: modelsOk(false) }, NOW);
+  const t = sectionText(d, "model");
+  assert.match(t, /model_job_app_url: unavailable/);
+  assert.match(t, /issue a LINE activation link for this model/);
+  assert.doesNotMatch(t, /https?:\/\//);
+  assert.doesNotMatch(text(d), /https?:\/\//);
+});
+
+test("5c: a connected model adds no MODEL WATCH item; pending + not connected shows both facts in one item", () => {
+  const conn = buildDigest({ ...input({ sessions: ok({ records: [withModel("J5c")] }), payments: ok({ records: [pay("J5c")] }) }), models: modelsOk(true) }, NOW);
+  assert.equal(conn.sections.model.length, 0);
+  const both = buildDigest({ ...input({ sessions: ok({ records: [withModel("J5d", { state: "pending" })] }), payments: ok({ records: [pay("J5d")] }) }), models: modelsOk(false) }, NOW);
+  assert.equal(both.sections.model.length, 1);
+  assert.match(both.sections.model[0].text, /confirmation pending; not connected/);
+});
+
+test("5d: ambiguous / invalid / unreadable assigned model -> review_required, never 'not connected'", () => {
+  const cases = [
+    [withModel("J5m", { ref: { status: "multiple", id: "" } }), modelsOk(false), /assigned model ambiguous/],
+    [withModel("J5i", { ref: { status: "invalid", id: "" } }), modelsOk(false), /assigned model link invalid/],
+    [withModel("J5u"), ok({ records: {} }), /assigned model record unreadable/],
+  ];
+  for (const [session, models, pattern] of cases) {
+    const d = buildDigest({ ...input({ sessions: ok({ records: [session] }), payments: ok({ records: [pay(session.session_id)] }) }), models }, NOW);
+    assert.match(sectionText(d, "jobs_today"), pattern);
+    assert.equal(d.sections.model.length, 0);
+    assert.equal(d.sections.p0.length, 1);
+  }
+});
+
+test("5e: models source failure -> SYSTEM WATCH, and no connection claim is made either way", () => {
+  const d = buildDigest({ ...input({ sessions: ok({ records: [withModel("J5f")] }), payments: ok({ records: [pay("J5f")] }) }), models: { ok: false, error: "models_read_failed" } }, NOW);
+  assert.match(sectionText(d, "system"), /model connection source unreachable/);
+  assert.equal(d.sections.model.length, 0);
+  assert.doesNotMatch(sectionText(d, "jobs_today"), /not connected/);
+});
+
+// ---------- rate context ----------
+test("rate: evaluateRateContext flags missing/higher quotes and stays silent otherwise", () => {
+  assert.equal(evaluateRateContext(undefined), null);
+  assert.equal(evaluateRateContext({}), null);
+  assert.equal(evaluateRateContext({ rate_thb: 25000 }), null);
+  assert.deepEqual(evaluateRateContext({ rate_thb: 8000 }), { reason: "no reliable prior quote" });
+  assert.deepEqual(evaluateRateContext({ rate_thb: 8000, prior_quote_thb: 0 }), { reason: "no reliable prior quote" });
+  assert.deepEqual(evaluateRateContext({ rate_thb: 9000, prior_quote_thb: 8000 }), { reason: "rate is above the earlier quote" });
+  assert.equal(evaluateRateContext({ rate_thb: 8000, prior_quote_thb: 8000 }), null);
+  assert.equal(evaluateRateContext({ rate_thb: 7000, prior_quote_thb: 8000 }), null);
+});
+
+test("rate: rate_review_required is an owner action in CUSTOMER WATCH and never prints a rate or sends anything", () => {
+  const session = { ...sess("J-RATE"), rate_context: { rate_thb: 8000, prior_quote_thb: null } };
+  const d = buildDigest(input({ sessions: ok({ records: [session] }), payments: ok({ records: [pay("J-RATE")] }) }), NOW);
+  const t = sectionText(d, "customer");
+  assert.match(t, /J-RATE — rate_review_required \(no reliable prior quote\)/);
+  assert.match(t, /confirm the base rate with Per before replying to the customer \(HYPE never sends rates\)/);
+  assert.doesNotMatch(text(d), /8,?000/);
+});
+
+// ---------- new collectors: read-only ----------
+function fakeAirtable(body) {
+  const calls = [];
+  return {
+    calls,
+    env: {
+      AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "appTEST",
+      AIRTABLE_HTTP: { fetch: async (req) => { calls.push({ method: req.method, url: req.url }); return new Response(JSON.stringify(body), { status: 200 }); } },
+    },
+  };
+}
+
+test("12d: collectModels only GETs, asks for the LINE field only, and returns a boolean never the LINE id", async () => {
+  const LINE = "U" + "a".repeat(32);
+  const fake = fakeAirtable({ records: [{ id: MODEL_ID, fields: { line_user_id: LINE } }, { id: "recZZZZZZZZZZZZZZ2", fields: { line_user_id: "not-a-line-id" } }] });
+  const out = await collectModels(fake.env, [MODEL_ID, "recZZZZZZZZZZZZZZ2", "bad id", MODEL_ID]);
+  assert.ok(fake.calls.length === 1 && fake.calls.every((c) => c.method === "GET"));
+  const url = new URL(fake.calls[0].url);
+  assert.deepEqual(url.searchParams.getAll("fields[]"), ["line_user_id"]);
+  assert.deepEqual(out.records, { [MODEL_ID]: { connected: true }, recZZZZZZZZZZZZZZ2: { connected: false } });
+  assert.ok(!JSON.stringify(out).includes(LINE));
+  assert.deepEqual(await collectModels(fake.env, []), { ok: true, records: {} });
+  assert.equal((await collectModels({}, [MODEL_ID])).ok, false);
+});
+
+test("12e: collectRefundPacks only GETs the whitelisted inbox fields and keeps only completed packs", async () => {
+  const done = { fields: { inbox_id: "i1", member_name: "คุณเอ็ม", payload_json: JSON.stringify({ receipt_r2_key: "k", session_id: "J1", account_number: "999", admin_job_url: URL_OK.admin_job_url }) } };
+  const open = { fields: { inbox_id: "i2", payload_json: JSON.stringify({ session_id: "J2" }) } };
+  const fake = fakeAirtable({ records: [done, open] });
+  const out = await collectRefundPacks(fake.env);
+  assert.ok(fake.calls.length === 1 && fake.calls[0].method === "GET");
+  const url = new URL(fake.calls[0].url);
+  assert.deepEqual(url.searchParams.getAll("fields[]").sort(), ["created_at", "inbox_id", "member_name", "payload_json"]);
+  assert.match(url.searchParams.get("filterByFormula"), /refund_bank_detail/);
+  assert.deepEqual(out.items.map((i) => i.inbox_ref), ["i1"]);
+  assert.ok(!JSON.stringify(out).includes("999"));
+  const failing = await collectRefundPacks({ ...fake.env, AIRTABLE_HTTP: { fetch: async () => new Response("{}", { status: 500 }) } });
+  assert.deepEqual([failing.ok, failing.error], [false, "refund_read_failed"]);
+});
+
+test("12f: collectAll runs models after sessions, skips them when sessions fail, and leaves absent sources undefined", async () => {
+  const seen = {};
+  const base = { sessions: async () => ok({ records: [withModel("JA"), { ...sess("JB"), model_ref: { status: "multiple", id: "" } }] }), payments: async () => ok({ records: [] }), review: async () => ok({ items: [] }), recovery: async () => ok({ items: [] }) };
+  const full = await collectAll({}, NOW, { ...base, models: async (_e, ids) => { seen.ids = ids; return modelsOk(true); }, refunds: async () => ok({ items: [] }) });
+  assert.deepEqual(seen.ids, [MODEL_ID]);
+  assert.equal(full.models.ok, true);
+  assert.equal(full.refunds.ok, true);
+  const bare = await collectAll({}, NOW, base);
+  assert.equal(bare.models, undefined);
+  assert.equal(bare.refunds, undefined);
+  const down = await collectAll({}, NOW, { ...base, sessions: async () => ({ ok: false, error: "x" }), models: async () => { throw new Error("must not run"); }, refunds: async () => ok({ items: [] }) });
+  assert.equal(down.models.ok, false);
+  assert.equal(down.models.error, "models_skipped_sessions_unavailable");
+});
+
+test("12g: building a digest with refund packs, models and rate context does not mutate the input", () => {
+  const i = { ...input({ sessions: ok({ records: [{ ...withModel("J12g"), rate_context: { rate_thb: 8000 } }] }), payments: ok({ records: [pay("J12g")] }) }), models: modelsOk(false), refunds: ok({ items: [pack({ session: "J12g" })] }) };
+  const before = JSON.stringify(i);
+  formatDigest(buildDigest(i, NOW));
+  assert.equal(JSON.stringify(i), before);
+});
+
+test("17d: with the new items, sections stay in order and every bullet still has exactly one Next:", () => {
+  const i = { ...input({ sessions: ok({ records: [withModel("J17n"), { ...sess("J17r"), rate_context: { rate_thb: 8000 } }] }), payments: ok({ records: [pay("J17n"), pay("J17r")] }) }), models: modelsOk(false), refunds: ok({ items: [pack({ session: "J17n", urls: { model_job_app_url: "" } })] }) };
+  const out = text(buildDigest(i, NOW));
+  const positions = SECTION_ORDER.map(([, title]) => out.indexOf(title));
+  assert.ok(positions.every((p) => p >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  const body = out.split("HYPE SUMMARY")[0];
+  assert.equal((body.match(/^• /gm) || []).length, (body.match(/^ {2}Next: /gm) || []).length);
 });
 
 test.after(() => { globalThis.fetch = realFetch; });
