@@ -86,6 +86,7 @@ function renderShell(config, nonce) {
     body.signup-mode .member-nav,body.signup-mode #profile{display:none!important}body.signup-mode .signup{margin-top:18px;gap:15px}
     .signup-hero{position:relative;display:flex;align-items:center;min-height:150px;overflow:hidden;padding:22px;border:1px solid #e7bb8159;border-radius:18px;background:radial-gradient(circle at 85% 12%,#b6824f55,transparent 42%),linear-gradient(130deg,#292321,#131315 70%);box-shadow:0 18px 44px #0004}
     .signup-hero::before,.signup-hero::after{content:"";position:absolute;right:-43px;top:-78px;width:230px;height:230px;border:1px solid #f1cd9c45;border-radius:50%;pointer-events:none}.signup-hero::after{right:-14px;top:-49px;width:172px;height:172px;border-color:#f1cd9c30}
+    .signup-crest-logo{display:block;width:72%;height:72%;object-fit:contain;margin:auto}
     .signup-crest{position:relative;z-index:1;display:grid;place-content:center;flex:0 0 94px;height:94px;margin-right:18px;border:1px solid #ffdeae94;border-radius:50%;box-shadow:inset 0 0 0 6px #e7b97c14,0 0 24px #e0a36120;color:#f9e4c1;font:26px Georgia,serif;letter-spacing:.09em;text-align:center}.signup-crest small{font:9px Georgia,serif;letter-spacing:.3em}
     .signup-hero-copy{position:relative;z-index:1}.signup-hero-copy span{color:#d2b894;font-size:10px;letter-spacing:.17em}.signup-hero-copy strong{display:block;margin-top:8px;color:#fff6e7;font-size:18px;line-height:1.35}.signup-hero-copy p{margin:6px 0 0;color:#bdb4ad;font-size:12px}
     .signup-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:0;list-style:none}.signup-steps li{display:grid;gap:4px;padding:11px 8px;border:1px solid #e6c29224;border-radius:10px;background:#ffffff06;color:#c8c0b9;font-size:11px;text-align:center}.signup-steps b{color:#edc895;font-size:11px;letter-spacing:.12em}
@@ -290,7 +291,7 @@ function renderShell(config, nonce) {
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">
     <div class="signup-hero">
-      <div class="signup-crest" aria-hidden="true">MMD<small>PRIVÉ</small></div>
+      <div class="signup-crest" aria-hidden="true"><img class="signup-crest-logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp" alt="" width="72" height="72"></div>
       <div class="signup-hero-copy"><span>MEMBER ACCESS · LINE</span><strong>โลกของ MMD<br>เริ่มจากตรงนี้</strong><p>เลือกเส้นทางสมาชิกที่เป็นคุณ</p></div>
     </div>
     <ol class="signup-steps" aria-label="ขั้นตอนสมัคร"><li><b>01</b>ยืนยัน LINE</li><li><b>02</b>เลือกแพ็กเกจ</li><li><b>03</b>ชำระและรอตรวจ</li></ol>
@@ -541,6 +542,12 @@ function renderShell(config, nonce) {
     red_card: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d1796b28dfb192c4e_e015d3ed1ff4a9bc696bbccedee1881f_Red%20Card.webp",
   };
   let signupCatalogState = "idle";
+  const crestLogo = document.querySelector(".signup-crest-logo");
+  if (crestLogo) {
+    const crestFallback = () => { const text = document.createElement("span"); text.innerHTML = "MMD<small>PRIVÉ</small>"; crestLogo.replaceWith(text); };
+    crestLogo.addEventListener("error", crestFallback, { once: true });
+    if (crestLogo.complete && crestLogo.naturalWidth === 0) crestFallback();
+  }
   let appEntered = false;
   async function enterApp() {
     if (appEntered || !introContinue || introContinue.disabled) return;
