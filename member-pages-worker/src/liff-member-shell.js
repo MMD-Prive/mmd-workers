@@ -564,8 +564,6 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
   const SIGNUP_CARD_IMAGES = {
     mmd_member: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3dcc91556149c67c47_99ed17ff789cec831ad138da39b8c9b0_Public%20Member.webp",
-    elite: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d319a799fcab5b6aa_136e977f00415247676fd142a0061373_Elite%20Card.webp",
-    red_card: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d1796b28dfb192c4e_e015d3ed1ff4a9bc696bbccedee1881f_Red%20Card.webp",
   };
   let signupCatalogState = "idle";
   const crestLogo = document.querySelector(".signup-crest-logo");
@@ -737,11 +735,11 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.ok !== true || !Array.isArray(payload.packages)) throw new Error("catalog_unavailable");
       const packages = payload.packages.filter((item) =>
-        ["mmd_member", "elite", "red_card"].includes(item?.package_code)
+        item?.package_code === "mmd_member"
         && Number.isInteger(item.amount_thb) && item.amount_thb > 0
         && Number.isInteger(item.duration_days) && item.duration_days > 0
       );
-      if (packages.length !== 3) throw new Error("catalog_incomplete");
+      if (packages.length !== 1) throw new Error("catalog_incomplete");
       for (const item of packages) {
         const card = document.createElement("div"); card.className = "card signup-package signup-package-" + item.package_code;
         const cardArt = SIGNUP_CARD_IMAGES[item.package_code];

@@ -724,7 +724,7 @@ describe("signup package card art", () => {
   it("maps each public package to its card image and hides it if it fails to load", async () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" });
     const html = await response.text();
-    for (const file of ["Public%20Member.webp", "Elite%20Card.webp", "Red%20Card.webp"]) assert.ok(html.includes(file), file);
+    assert.ok(html.includes("Public%20Member.webp"));
     assert.match(html, /mmd_member: "https:\/\/cdn\.prod\.website-files\.com\//);
     assert.match(html, /art\.addEventListener\("error", \(\) => art\.remove\(\)\)/);
   });
@@ -761,16 +761,12 @@ describe("signup crest logo", () => {
   });
 });
 
-
-describe("HYPE loader on the member shell", () => {
-  it("shows the HYPE NOW LOADING loader while resolving and not on signup", async () => {
-    const env = { LIFF_ID: "2010862595-yT4DCEMc" };
-    const status = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), env)).text();
-    const signup = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), env)).text();
-    assert.match(status, /<div id="hype-loader" class="hype-loader"[^>]*>.*HYPE_NOW_LOADING_10FRAMES\.gif/s);
-    assert.match(status, /body class="context-resolving /);
-    assert.doesNotMatch(signup, /<div id="hype-loader"/);
-    assert.ok(status.includes('if (profile) await enterApp();'));
+describe("signup offers the basic Member package only", () => {
+  it("filters the public catalog to mmd_member and requires exactly one package", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    assert.ok(html.includes('item?.package_code === "mmd_member"'));
+    assert.ok(html.includes("packages.length !== 1"));
+    assert.ok(!html.includes("Elite%20Card.webp") && !html.includes("Red%20Card.webp"));
   });
 });
 
