@@ -175,6 +175,8 @@ jobs:
               grep -ai -E '^(HTTP/|content-type|content-encoding|location|server|x-mmd|cf-ray)' "$create_headers" | tr -d '\r' || true
               echo "--- first 400 bytes (non-printable as .)"
               head -c 400 "$create_page" | tr -c '[:print:]\n' '.'; echo
+              echo "::notice title=create-job headers::$(grep -ai -E '^(HTTP/|content-type|content-encoding|location|server|x-mmd|cf-ray)' "$create_headers" | tr -d '\r' | tr '\n' ' ' | head -c 600)"
+              echo "::notice title=create-job head::$(head -c 300 "$create_page" | tr -c '[:print:]' '.' | tr -d '\r\n%' )"
               exit 1
             fi
             echo "PASS: $origin Webflow Create Job restored with canonical Client/Model search"
