@@ -376,30 +376,28 @@ jobs:
             board_alias_headers="$(mktemp)"
             trap 'rm -f "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"' EXIT
 
+            # Create Job is served by Session Creator Pro (admin-worker
+            # session-creator-page-proxy, #2213), not the Webflow split page.
             create_verified=0
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$create_body"
               : > "$create_headers"
-              create_code="$(curl -sSL -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              create_code="$(curl --compressed -sSL -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$create_code" = "200" ] \
-                && grep -q 'mmd-cj-split-v1' "$create_body" \
-                && grep -q 'lv13-operational' "$create_body" \
-                && grep -q 'clientQuery' "$create_body" \
-                && grep -q 'modelQuery' "$create_body" \
-                && grep -q '/v1/admin/clients/lineage-lookup' "$create_body" \
-                && grep -q '/v1/admin/models/search' "$create_body" \
-                && ! grep -q 'id="job-board-form"' "$create_body" \
-                && ! grep -q '/v1/admin/job-board/publish' "$create_body"; then
-                echo "Webflow Create Job + canonical search UI verified for $origin on attempt $attempt"
+                && grep -aiq '^x-mmd-route-owner: admin-worker-session-creator-pro' "$create_headers" \
+                && grep -aqF '/internal/admin/work/assets/' "$create_body" \
+                && ! grep -aq 'id="job-board-form"' "$create_body" \
+                && ! grep -aq '/v1/admin/job-board/publish' "$create_body"; then
+                echo "Session Creator Pro Create Job verified for $origin on attempt $attempt"
                 create_verified=1
                 break
               fi
-              echo "Webflow Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
+              echo "Session Creator Pro Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
               sleep 2
             done
             if [ "$create_verified" != "1" ]; then
-              echo "Webflow Create Job production verification failed for $origin" >&2
-              head -c 700 "$create_body" >&2 || true
+              echo "Create Job (Session Creator Pro) production verification failed for $origin" >&2
+              head -c 700 "$create_headers" >&2 || true
               exit 1
             fi
 
