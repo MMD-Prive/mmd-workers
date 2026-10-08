@@ -45,3 +45,18 @@ test("canonical Create Job is Webflow-owned while Job Board remains worker-owned
   assert.doesNotMatch(boardSource, /\/v1\/admin\/clients\/lineage-lookup/);
   assert.doesNotMatch(boardSource, /\/v1\/admin\/models\/search/);
 });
+
+test("Job Board client accepts the short /j/ broadcast link and the legacy login link", async () => {
+  const pages = await readFile(pagesUrl, "utf8");
+  const start = pages.indexOf("const jobBoardScript");
+  const end = pages.indexOf("export function renderJobBoardPage");
+  const script = new Function(`return \`${pages.slice(start, end).replace(/^const jobBoardScript = `/, "").replace(/`;\s*$/, "")}\`;`)();
+  const match = script.match(/const linkOk = (\/.*\/i)\.test/);
+  assert.ok(match, "linkOk regex present in rendered client script");
+  const re = new Function(`return ${match[1]}`)();
+  assert.ok(re.test("https://mmdbkk.com/j/ABCDEF123456"));
+  assert.ok(re.test("https://www.mmdbkk.com/j/ABCDEF123456"));
+  assert.ok(re.test("https://www.mmdbkk.com/sigil/model/login?job=1"));
+  assert.ok(!re.test("https://evil.example/j/ABCDEF123456"));
+  assert.ok(!re.test("https://mmdbkk.com/j/ABCDEF1234567"));
+});

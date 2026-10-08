@@ -289,7 +289,8 @@ const jobBoardScript = `(() => {
       if (!res.ok || out.ok !== true || !out.broadcast_url) throw new Error(out.error || out.message || "job_board_publish_failed");
       broadcastLink = String(out.broadcast_url);
       boardDestination = String(out.board_destination || "");
-      if (!broadcastLink.startsWith("https://www.mmdbkk.com/sigil/model/login?")) throw new Error("broadcast_link_contract_failed");
+      const linkOk = /^https:\\/\\/(?:www\\.)?mmdbkk\\.com\\/(?:j\\/[A-F0-9]{12}$|sigil\\/model\\/login\\?)/i.test(broadcastLink);
+      if (!linkOk) throw new Error("broadcast_link_contract_failed");
       $("job-board-link").textContent = broadcastLink;
       $("job-board-link").href = broadcastLink;
       $("job-board-result").hidden = false;
