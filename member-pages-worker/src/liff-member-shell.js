@@ -93,6 +93,7 @@ function renderShell(config, nonce) {
     .signup-loading{margin:0;padding:22px;border:1px dashed #e6c29240;border-radius:14px;color:#d0c6bb;font-size:13px;text-align:center}.signup-line-entry{display:block;margin-top:12px;padding:14px;border:1px solid #eec79288;border-radius:12px;background:#e8c38e;color:#20170f;font-size:14px;font-weight:750;text-align:center;text-decoration:none}
     body.signup-mode .signup-package{position:relative;gap:10px;padding:18px;border-radius:16px;border-color:#f1d0a438;background:linear-gradient(140deg,#24201d,#141315 72%)}.signup-package::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;border-radius:16px 0 0 16px;background:#c9ac82}
     .signup-package-elite{background:linear-gradient(135deg,#352023,#171315 72%)!important}.signup-package-elite::before{background:#d28086}.signup-package-red_card{background:linear-gradient(135deg,#411b24,#191316 72%)!important}.signup-package-red_card::before{background:#d55d72}
+    .signup-package-art{display:block;width:100%;height:auto;border-radius:12px;margin-bottom:4px}
     .signup-package-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.signup-package-top strong{color:#fff6ec}.signup-package-top span{padding:4px 8px;border:1px solid #e9c8a133;border-radius:100px;color:#d7b58a;font-size:10px;letter-spacing:.11em}
     .signup-price{display:flex;align-items:baseline;gap:6px}.signup-price .value{margin:0;color:#fff7ea;font-size:30px;font-weight:700;letter-spacing:-.04em}.signup-price small{color:#b9a894;font-size:12px}.signup-period{margin:0;color:#c4b5a9;font-size:12px}
     body.signup-mode .signup-package button{margin-top:6px;border:0;border-radius:11px;background:linear-gradient(100deg,#f1d8aa,#dfb879);box-shadow:0 8px 22px #dca56021;color:#1e160f;font-size:14px;text-align:center}
@@ -646,6 +647,11 @@ function renderShell(config, nonce) {
     finally { setBusy(false); }
   }
 
+  const SIGNUP_CARD_IMAGES = {
+    mmd_member: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3dcc91556149c67c47_99ed17ff789cec831ad138da39b8c9b0_Public%20Member.webp",
+    elite: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d319a799fcab5b6aa_136e977f00415247676fd142a0061373_Elite%20Card.webp",
+    red_card: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cb3d1796b28dfb192c4e_e015d3ed1ff4a9bc696bbccedee1881f_Red%20Card.webp",
+  };
   let signupCatalogState = "idle";
   async function readSignupCatalog() {
     if (CONFIG.intent !== "signup") return;
@@ -665,6 +671,12 @@ function renderShell(config, nonce) {
       if (packages.length !== 3) throw new Error("catalog_incomplete");
       for (const item of packages) {
         const card = document.createElement("div"); card.className = "card signup-package signup-package-" + item.package_code;
+        const cardArt = SIGNUP_CARD_IMAGES[item.package_code];
+        if (cardArt) {
+          const art = document.createElement("img"); art.className = "signup-package-art"; art.src = cardArt; art.alt = ""; art.loading = "lazy"; art.decoding = "async";
+          art.addEventListener("error", () => art.remove());
+          card.append(art);
+        }
         const top = document.createElement("div"); top.className = "signup-package-top";
         const title = document.createElement("strong"); title.textContent = String(item.label || item.package_code);
         const tag = document.createElement("span"); tag.textContent = item.package_code === "mmd_member" ? "MEMBER" : item.package_code === "elite" ? "ELITE" : "RED CARD";

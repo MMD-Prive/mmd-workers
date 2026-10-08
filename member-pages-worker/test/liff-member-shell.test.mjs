@@ -719,3 +719,13 @@ describe("signup intent shell entry", () => {
     assert.match(html, /signupCatalogState === "loading" \|\| signupCatalogState === "loaded"/);
   });
 });
+
+describe("signup package card art", () => {
+  it("maps each public package to its card image and hides it if it fails to load", async () => {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" });
+    const html = await response.text();
+    for (const file of ["Public%20Member.webp", "Elite%20Card.webp", "Red%20Card.webp"]) assert.ok(html.includes(file), file);
+    assert.match(html, /mmd_member: "https:\/\/cdn\.prod\.website-files\.com\//);
+    assert.match(html, /art\.addEventListener\("error", \(\) => art\.remove\(\)\)/);
+  });
+});
