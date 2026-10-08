@@ -113,7 +113,15 @@ jobs:
                 schema: v2?.schema || null,
                 systems: [...keys],
               });
-              if (attempt === 24) throw new Error(`Control Room V2 did not converge after deploy: ${lastReason}`);
+              if (attempt === 24) {
+                const seen = [...page.headers.entries()]
+                  .filter(([name]) => /^(content-type|content-encoding|location|server|x-mmd|cf-ray)/i.test(name))
+                  .map(([name, value]) => `${name}=${value}`)
+                  .join(" ");
+                console.log(`::notice title=control-room headers::${seen.slice(0, 600)}`);
+                console.log(`::notice title=control-room head::${html.slice(0, 300).replace(/[^\x20-\x7e]/g, ".").replace(/%/g, "")}`);
+                throw new Error(`Control Room V2 did not converge after deploy: ${lastReason}`);
+              }
               await new Promise((resolve) => setTimeout(resolve, 5000));
             }
             if (v2?.schema !== "mmd.control_room_v2.system_health.v1") throw new Error("Control Room V2 schema mismatch");
