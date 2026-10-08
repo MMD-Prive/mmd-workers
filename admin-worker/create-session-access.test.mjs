@@ -337,7 +337,7 @@ installAirtableMock();
 
 assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_standard" })).allowed_folders, ["standard"]);
 assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_premium" })).allowed_folders, ["standard", "premium"]);
-assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_vip" })).allowed_folders, ["standard", "premium", "vip"]);
+assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_vip" })).allowed_folders, ["standard", "premium", "vip", "exclusive"]);
 assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_black" })).allowed_folders, ["standard", "premium", "vip", "exclusive"]);
 const svip = await resolveAuthoritativeMemberAccess(env, { client_id: "client_svip" });
 assert.equal(svip.tier, "black_card");
