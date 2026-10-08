@@ -10,7 +10,7 @@ function json(body, status = 200) {
 }
 
 function shortError(value) {
-  return String(value ?? "").replace(/[^\w:.\- ]/g, "").slice(0, 120);
+  return String(value ?? "").replace(/[^\w:.\-=/ ]/g, "").slice(0, 200);
 }
 
 // Pure transition functions so they are testable without a Durable Object runtime.
@@ -46,6 +46,12 @@ export function finalizeMissed(record, { now }) {
   if (!record) return { changed: false, record: null };
   if (record.status === RUN_STATUS.SENT || record.status === RUN_STATUS.LATE_MISSED) return { changed: false, record };
   return { changed: true, record: { ...record, status: RUN_STATUS.LATE_MISSED, updated_at: now } };
+}
+
+// Only a FAILED run can be reset for an owner retry; everything else is left exactly as it is.
+export function resetFailedRun(record, { now }) {
+  if (!record || record.status !== RUN_STATUS.FAILED) return { changed: false, record };
+  return { changed: true, record: { ...record, status: RUN_STATUS.FAILED, attempts: 0, updated_at: now } };
 }
 
 export class HypeJobDailyRunState {
@@ -86,6 +92,11 @@ export class HypeJobDailyRunState {
       if (result.changed) await this.storage.put(RUN_KEY, result.record);
       return json({ ok: true, changed: result.changed, status: result.record?.status || null });
     }
+    if (path === "/reset-failed") {
+      const result = resetFailedRun(current, { now });
+      if (result.changed) await this.storage.put(RUN_KEY, result.record);
+      return json({ ok: true, changed: result.changed, status: result.record?.status || null });
+    }
     if (path === "/state") return json({ ok: true, state: current });
     return json({ ok: false, error: "not_found" }, 404);
   }
@@ -109,6 +120,7 @@ export function durableObjectStore(binding) {
     claim: (key, opts) => call(key, "/claim", opts),
     mark: (key, opts) => call(key, "/mark", opts),
     finalizeMissed: (key, opts) => call(key, "/finalize-missed", opts),
+    resetFailed: (key, opts) => call(key, "/reset-failed", opts),
     state: async (key) => (await call(key, "/state", {})).state ?? null,
   };
 }

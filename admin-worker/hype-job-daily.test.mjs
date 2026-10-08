@@ -6,11 +6,12 @@ import { formatDigest, renderSections } from "./src/hype-job-daily/formatter.js"
 import { collectModels, collectPayments, collectRefundPacks, collectSessions, normalizeRefundPack, paymentFieldMap, safeOwnerUrl } from "./src/hype-job-daily/sources.js";
 import { collectAll } from "./src/hype-job-daily/default-sources.js";
 import {
-  HypeJobDailyRunState, claimRun, finalizeMissed, markRun,
+  HypeJobDailyRunState, claimRun, finalizeMissed, markRun, resetFailedRun,
 } from "./src/hype-job-daily/run-state-do.js";
 import {
-  MAX_ATTEMPTS, resolveDestination, runHypeJobDaily, runHypeJobDailyScheduled, sendTelegramInternal,
+  MAX_ATTEMPTS, failureDetail, resolveDestination, retryHypeJobDailyToday, runHypeJobDaily, runHypeJobDailyScheduled, sendTelegramInternal,
 } from "./src/hype-job-daily/runner.js";
+import { RETRY_CONFIRM, handleHypeJobDailyOwnerRequest, isHypeJobDailyOwnerRequest } from "./src/hype-job-daily/owner.js";
 import { parsePerRenameDateSuffix } from "./src/per-rename-date-suffix.js";
 
 // Any code path that reaches real network (Telegram or otherwise) fails loudly.
@@ -65,6 +66,12 @@ function memoryStore() {
       const r = finalizeMissed(records.get(key) || null, { now: opts.now });
       if (r.changed) records.set(key, r.record);
       return { ok: true, changed: r.changed };
+    },
+    async resetFailed(key, opts) {
+      calls.push(["reset", key]);
+      const r = resetFailedRun(records.get(key) || null, { now: opts.now });
+      if (r.changed) records.set(key, r.record);
+      return { ok: true, changed: r.changed, status: r.record?.status || null };
     },
   };
 }
@@ -848,3 +855,82 @@ test("17d: with the new items, sections stay in order and every bullet still has
 });
 
 test.after(() => { globalThis.fetch = realFetch; });
+
+
+// ---------- debug: failure detail + owner retry ----------
+test("dbg1: failureDetail keeps the receiver's error/path and our endpoint, never the token, text or chat id", () => {
+  const d = failureDetail({ ok: false, error: "not_found", path: "/telegram/internal/sendX" }, "https://telegram-worker.example.workers.dev/telegram/internal/send");
+  assert.equal(d, "err=not_found rx_path=/telegram/internal/sendX ep=telegram-worker.example.workers.dev/telegram/internal/send");
+  assert.equal(failureDetail(null, "not a url"), "");
+  assert.doesNotMatch(failureDetail({ error: "x", path: "/p" }, "https://h.example/p"), new RegExp(`${TOKEN}|${CHAT}`));
+});
+
+test("dbg2: sendTelegramInternal returns the detail on a 404 and the run state records it (stubbed fetch only)", async () => {
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, error: "not_found", path: "/telegram/internal/sendX" }), { status: 404 });
+  try {
+    const e = env({ AUTH_SERVICE_STUDIO_TO_TELEGRAM: TOKEN, TELEGRAM_INTERNAL_SEND_URL: "https://tg.example.workers.dev/telegram/internal/send" });
+    const r = await sendTelegramInternal(e, { chat_id: CHAT, text: "secret body" });
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "telegram_http_404");
+    assert.match(r.detail, /err=not_found rx_path=\/telegram\/internal\/sendX ep=tg\.example\.workers\.dev\/telegram\/internal\/send/);
+    const store = memoryStore();
+    const res = await runHypeJobDaily(e, { now: NOW, deps: { store, sources: sources(), send: async () => r } });
+    assert.equal(res.status, "failed");
+    const rec = [...store.records.values()][0];
+    assert.match(rec.last_error, /^send:telegram_http_404 err=not_found rx_path=\/telegram\/internal\/sendX ep=tg\.example/);
+    assert.doesNotMatch(JSON.stringify(rec), new RegExp(`${TOKEN}|${CHAT}|secret body`));
+  } finally { globalThis.fetch = saved; }
+});
+
+test("dbg3: resetFailedRun only touches a FAILED run (sent / late_missed / claimed stay exactly as they are)", () => {
+  const rec = (status) => ({ key: "k", status, attempts: 3, parts_sent: 1, claimed_at: 1, updated_at: 1, last_error: "e" });
+  const failed = resetFailedRun(rec("failed"), { now: 9 });
+  assert.deepEqual([failed.changed, failed.record.attempts, failed.record.parts_sent, failed.record.status], [true, 0, 1, "failed"]);
+  for (const status of ["sent", "late_missed", "claimed"]) {
+    const r = resetFailedRun(rec(status), { now: 9 });
+    assert.equal(r.changed, false);
+    assert.deepEqual(r.record, rec(status));
+  }
+  assert.equal(resetFailedRun(null, { now: 9 }).changed, false);
+});
+
+test("dbg4: retry re-runs a failed day once and sends; a sent day is never retried (no duplicate digest)", async () => {
+  const store = memoryStore(); const sent = [];
+  const e = env({ AUTH_SERVICE_STUDIO_TO_TELEGRAM: TOKEN });
+  const failing = { store, sources: sources(), send: async () => ({ ok: false, error: "telegram_http_404", status: 404 }) };
+  for (let i = 0; i < MAX_ATTEMPTS + 1; i += 1) await runHypeJobDaily(e, { now: NOW + i * 1000, deps: failing });
+  assert.equal([...store.records.values()][0].attempts, MAX_ATTEMPTS);
+  const ok = { store, sources: sources(), send: async (p) => { sent.push(p); return { ok: true }; } };
+  const first = await retryHypeJobDailyToday(e, { now: NOW + 60000, deps: ok });
+  assert.equal(first.status, "sent");
+  assert.equal(sent.length, 1);
+  const second = await retryHypeJobDailyToday(e, { now: NOW + 120000, deps: ok });
+  assert.equal(second.status, "not_retryable");
+  assert.equal(sent.length, 1);
+});
+
+test("dbg5: retry is disabled when the flag is off and does nothing when no run exists", async () => {
+  const store = memoryStore(); let count = 0;
+  const deps = { store, sources: sources(), send: async () => { count += 1; return { ok: true }; } };
+  assert.equal((await retryHypeJobDailyToday(env({ HYPE_JOB_DAILY_ENABLED: "false" }), { now: NOW, deps })).status, "disabled");
+  assert.equal((await retryHypeJobDailyToday(env({ AUTH_SERVICE_STUDIO_TO_TELEGRAM: TOKEN }), { now: NOW, deps })).status, "not_retryable");
+  assert.equal(count, 0);
+});
+
+test("dbg6: owner /retry is POST-only, owner-only, needs the confirm phrase, and runs the retry once", async () => {
+  assert.equal(isHypeJobDailyOwnerRequest("/internal/admin/hype-job-daily/retry"), true);
+  const mk = (method, body) => new Request("https://x.example/internal/admin/hype-job-daily/retry", { method, body: body === undefined ? undefined : JSON.stringify(body) });
+  const asOwner = async () => ({ role: "owner" });
+  let calls = 0;
+  const retry = async () => { calls += 1; return { status: "sent", attempt: 1, parts: 1 }; };
+  assert.equal((await handleHypeJobDailyOwnerRequest(mk("GET"), {}, { readActor: asOwner, retry })).status, 405);
+  assert.equal((await handleHypeJobDailyOwnerRequest(mk("POST", { confirm: RETRY_CONFIRM }), {}, { readActor: async () => null, retry })).status, 401);
+  assert.equal((await handleHypeJobDailyOwnerRequest(mk("POST", { confirm: RETRY_CONFIRM }), {}, { readActor: async () => ({ role: "admin" }), retry })).status, 403);
+  assert.equal((await handleHypeJobDailyOwnerRequest(mk("POST", {}), {}, { readActor: asOwner, retry })).status, 400);
+  assert.equal(calls, 0);
+  const res = await handleHypeJobDailyOwnerRequest(mk("POST", { confirm: RETRY_CONFIRM }), {}, { readActor: asOwner, retry });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, result: { status: "sent", attempt: 1, parts: 1 } });
+  assert.equal(calls, 1);
+});
