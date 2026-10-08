@@ -170,3 +170,16 @@ test('oversized new partner evidence is rejected in preflight before grant/creat
   const b = body(); b.partner_attribution = { partner_name: 'x'.repeat(4000) };
   assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_note_too_large', status: 400 });
 });
+test('accepts group as a fourth explicitly quoted service option', () => {
+  const b = body();
+  b.work.service_options = ['mk', 'burn', 'live', 'group'];
+  b.service_pricing.addons.push({ option: 'group', client_amount_thb: 3000, model_payout_thb: 1000 });
+  b.service_pricing.client_total_amount_thb = 16000; b.service_pricing.model_total_payout_thb = 7200;
+  b.amount_thb = b.service_amount_thb = b.original_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = 16000;
+  b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 7200;
+  const out = validateJobServicePricing(b);
+  assert.deepEqual(out.addons.map(a => a.option), ['mk', 'burn', 'live', 'group']);
+  assert.equal(out.client_total_amount_thb, 16000);
+  const missing = body(); missing.work.service_options = ['mk', 'burn', 'live', 'group'];
+  assert.throws(() => validateJobServicePricing(missing), { code: 'service_pricing_invalid', status: 400 });
+});
