@@ -152,10 +152,10 @@ jobs:
 
             echo "PASS: $origin Create Job canonical Per Rename lookup"
 
-            # Create Job and Job Board are served by Session Creator Pro
+            # Create Job is served by Session Creator Pro
             # (admin-worker session-creator-page-proxy, #2213), not the Webflow
             # split pages. Assert the route owner and the work asset bundle.
-            for page in create-job job-board; do
+            for page in create-job; do
               page_file="$(mktemp)"
               page_headers="$(mktemp)"
               page_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors --compressed -sSL \
@@ -176,6 +176,23 @@ jobs:
               echo "PASS: $origin $page served by Session Creator Pro"
               rm -f "$page_file" "$page_headers"
             done
+
+            # Job Board stays on the immigrate-worker separate no-lookup page.
+            board_page="$(mktemp)"
+            board_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors --compressed -sS \
+              -o "$board_page" -b "$cookie" -w "%{http_code}" \
+              "$origin/internal/admin/jobs/job-board?smoke=separate-job-board")"
+            test "$board_code" = "200"
+            grep -aq 'data-job-board-owner="separate-v1"' "$board_page"
+            grep -aq 'id="job-board-form"' "$board_page"
+            grep -aq 'name="board_text" maxlength="1000"' "$board_page"
+            grep -aq '/v1/admin/job-board/publish' "$board_page"
+            ! grep -aq 'id="job-client-query"' "$board_page"
+            ! grep -aq 'id="job-model-query"' "$board_page"
+            ! grep -aq '/v1/admin/clients/lineage-lookup' "$board_page"
+            ! grep -aq '/v1/admin/models/search' "$board_page"
+            echo "PASS: $origin Job Board is a separate no-lookup owner surface"
+            rm -f "$board_page"
 
             rm -f "$cookie" "$headers" "$body"
           done
