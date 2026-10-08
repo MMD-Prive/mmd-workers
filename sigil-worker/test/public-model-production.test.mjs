@@ -774,3 +774,161 @@ test("health advertises Public Model only after live dependency probes pass", as
   assert.equal(failedBody.capabilities.public_model_upload, false);
   assert.equal(Object.hasOwn(failedBody, "dependencies"), false);
 });
+
+// --- Job Board handoff context (job_id / application_source) ---------------
+//
+// /apply/public-model can be reached via a signed-looking but fully
+// client-controlled Job Board handoff link
+// (?source=job_board&job_id=<id>, see
+// docs/architecture/CREATE_JOB_JOB_BOARD_BOUNDARY_20260930.md). Nothing
+// upstream validates job_id/application_source before they reach Airtable and
+// the Admin Review UI (admin-worker/src/public-model-application-review.js).
+// These tests cover the sanitation added in public-model.js: format +
+// existence validation for job_id against the canonical public Job Board
+// endpoint, and an allowlist for application_source. Per the agreed design,
+// none of this may ever block an application — only null out what can't be
+// verified.
+
+function makeJobBoardFetch(behavior) {
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push(String(url));
+    if (behavior === "verified") return new Response(null, { status: 200 });
+    if (behavior === "not_found") return new Response(null, { status: 404 });
+    if (behavior === "server_error") return new Response(null, { status: 500 });
+    if (behavior === "network_error") throw new Error("network_down");
+    if (behavior === "timeout") {
+      return new Promise((_, reject) => {
+        const signal = init?.signal;
+        if (signal) signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      });
+    }
+    throw new Error(`unexpected behavior: ${behavior}`);
+  };
+  fetcher.calls = calls;
+  return fetcher;
+}
+
+test("production apply keeps a verified job_id and allowlisted application_source", async () => {
+  const jobBoardFetch = makeJobBoardFetch("verified");
+  const env = makeEnv({ PUBLIC_JOB_BOARD_FETCH: jobBoardFetch });
+  const response = await post(APPLY_URL, validApplication({
+    job_id: "job_2026_0001",
+    application_source: "job_board",
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(jobBoardFetch.calls.length, 1);
+  assert.match(jobBoardFetch.calls[0], /\/public\/api\/jobs\/job_2026_0001$/);
+
+  const fields = env.__airtable.applications[0].fields;
+  const payload = JSON.parse(fields[publicModelTestInternals.APPLICATION_FIELDS.payloadJson]);
+  assert.equal(payload.job_id, "job_2026_0001");
+  assert.equal(payload.job_id_verification, "verified");
+  assert.equal(payload.application_source, "job_board");
+});
+
+test("production apply nulls a job_id the Job Board reports as not found, without blocking", async () => {
+  const env = makeEnv({ PUBLIC_JOB_BOARD_FETCH: makeJobBoardFetch("not_found") });
+  const response = await post(APPLY_URL, validApplication({
+    job_id: "job_does_not_exist",
+    application_source: "job_board",
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  const fields = env.__airtable.applications[0].fields;
+  const payload = JSON.parse(fields[publicModelTestInternals.APPLICATION_FIELDS.payloadJson]);
+  assert.equal(payload.job_id, null);
+  assert.equal(payload.job_id_verification, "not_found");
+  assert.equal(payload.application_source, "job_board");
+});
+
+test("production apply nulls a malformed job_id without ever calling the Job Board", async () => {
+  const jobBoardFetch = makeJobBoardFetch("verified");
+  const env = makeEnv({ PUBLIC_JOB_BOARD_FETCH: jobBoardFetch });
+  const response = await post(APPLY_URL, validApplication({
+    job_id: "../not a valid id!! <script>",
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(jobBoardFetch.calls.length, 0);
+  const fields = env.__airtable.applications[0].fields;
+  const payload = JSON.parse(fields[publicModelTestInternals.APPLICATION_FIELDS.payloadJson]);
+  assert.equal(payload.job_id, null);
+  assert.equal(payload.job_id_verification, "invalid_format");
+  assert.equal(JSON.stringify(payload).includes("<script>"), false);
+});
+
+test("production apply keeps (rather than blocks on) a job_id the Job Board check could not confirm", async () => {
+  for (const behavior of ["server_error", "network_error", "timeout"]) {
+    const env = makeEnv({ PUBLIC_JOB_BOARD_FETCH: makeJobBoardFetch(behavior) });
+    const response = await post(APPLY_URL, validApplication({
+      job_id: "job_2026_0002",
+      nickname: `Unverifiable ${behavior}`,
+    }), env);
+    const body = await response.json();
+
+    assert.equal(response.status, 200, behavior);
+    assert.equal(body.ok, true, behavior);
+    const fields = env.__airtable.applications[0].fields;
+    const payload = JSON.parse(fields[publicModelTestInternals.APPLICATION_FIELDS.payloadJson]);
+    assert.equal(payload.job_id, "job_2026_0002", behavior);
+    assert.equal(payload.job_id_verification, "unverified", behavior);
+  }
+});
+
+test("production apply nulls an application_source outside the allowlist, without blocking", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    application_source: "<img src=x onerror=alert(1)>",
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  const fields = env.__airtable.applications[0].fields;
+  const payload = JSON.parse(fields[publicModelTestInternals.APPLICATION_FIELDS.payloadJson]);
+  assert.equal(payload.application_source, null);
+  assert.equal(JSON.stringify(payload).includes("onerror"), false);
+});
+
+test("production apply never calls the Job Board or touches job_id/application_source when neither field is sent", async () => {
+  const jobBoardFetch = makeJobBoardFetch("verified");
+  const env = makeEnv({ PUBLIC_JOB_BOARD_FETCH: jobBoardFetch });
+  const response = await post(APPLY_URL, validApplication({ nickname: "Organic Applicant" }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(jobBoardFetch.calls.length, 0);
+  const fields = env.__airtable.applications[0].fields;
+  const payload = JSON.parse(fields[publicModelTestInternals.APPLICATION_FIELDS.payloadJson]);
+  assert.equal(Object.hasOwn(payload, "job_id"), false);
+  assert.equal(Object.hasOwn(payload, "job_id_verification"), false);
+  assert.equal(Object.hasOwn(payload, "application_source"), false);
+});
+
+test("resolveJobId and resolveApplicationSource unit contract", async () => {
+  assert.deepEqual(await publicModelTestInternals.resolveJobId(undefined, {}), { present: false });
+  assert.deepEqual(await publicModelTestInternals.resolveJobId("", {}), { present: false });
+  assert.deepEqual(
+    await publicModelTestInternals.resolveJobId("not a valid id", {}),
+    { present: true, job_id: null, job_id_verification: "invalid_format" },
+  );
+  assert.deepEqual(
+    await publicModelTestInternals.resolveJobId("job_ok_123", { PUBLIC_JOB_BOARD_FETCH: makeJobBoardFetch("verified") }),
+    { present: true, job_id: "job_ok_123", job_id_verification: "verified" },
+  );
+
+  assert.deepEqual(publicModelTestInternals.resolveApplicationSource(undefined), { present: false });
+  assert.deepEqual(publicModelTestInternals.resolveApplicationSource(""), { present: false });
+  assert.deepEqual(publicModelTestInternals.resolveApplicationSource("job_board"), { present: true, application_source: "job_board" });
+  assert.deepEqual(publicModelTestInternals.resolveApplicationSource("line_model_group"), { present: true, application_source: null });
+  assert.deepEqual([...publicModelTestInternals.SOURCE_ALLOWLIST], ["job_board"]);
+});

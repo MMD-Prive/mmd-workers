@@ -1,3 +1,5 @@
+import { cleanModelJobBoardJobId, MODEL_JOB_BOARD_URL } from "../../shared/model-job-board-links.mjs";
+
 export const PUBLIC_MODEL_APPLY_PATH = "/v1/public-model/apply";
 export const PUBLIC_MODEL_UPLOAD_URL_PATH = "/v1/public-model/upload-url";
 export const PUBLIC_MODEL_SERVICE = "mmd_public_model_apply";
@@ -55,6 +57,15 @@ export const PUBLIC_MODEL_ROLE_KEYS = new Set([
   "medical_professional",
 ]);
 export const PUBLIC_MODEL_PROMO_CONSENT_VERSION = "mmd-public-promo-consent-v1-20260922";
+// job_id/application_source arrive on the public Job Board handoff
+// (/apply/public-model?source=job_board&job_id=<id>, see
+// docs/architecture/CREATE_JOB_JOB_BOARD_BOUNDARY_20260930.md). Both are
+// attacker-controlled query-string values forwarded verbatim by the client, so
+// they are sanitized here: format + existence checked for job_id, allowlisted
+// for application_source. Invalid/unverifiable values are nulled, never block
+// the application — this is a visibility/defense-in-depth fix, not a gate.
+export const PUBLIC_MODEL_SOURCE_ALLOWLIST = new Set(["job_board"]);
+const JOB_ID_EXISTENCE_CHECK_TIMEOUT_MS = 2500;
 const FORBIDDEN_FIELDS = new Set([
   "airtable_record_id",
   "application_id",
@@ -399,6 +410,15 @@ async function handleProductionApply(request, body, env, corsHeaders) {
 
     const now = new Date().toISOString();
     const normalized = normalizeApplication(body);
+    const jobIdResult = await resolveJobId(body.job_id, env);
+    if (jobIdResult.present) {
+      normalized.job_id = jobIdResult.job_id;
+      normalized.job_id_verification = jobIdResult.job_id_verification;
+    }
+    const sourceResult = resolveApplicationSource(body.application_source);
+    if (sourceResult.present) {
+      normalized.application_source = sourceResult.application_source;
+    }
     const payloadHash = await sha256Hex(stableJson(normalized));
     const duplicateKey = await sha256Hex(CONTACT_FIELDS.map((field) => normalizeContact(body[field])).filter(Boolean).sort().join("|"));
     const persistedApplication = await findApplicationByHash(env, payloadHash);
@@ -829,6 +849,51 @@ function applicationAirtableFields(body, normalized, uploads, context) {
   return fields;
 }
 
+// Calls the canonical public Job Board read endpoint (owned by
+// public-access-worker) to confirm a job_id refers to a real, currently
+// published job. Short timeout, never throws: any failure (timeout, network
+// error, 5xx) resolves to "unverified" rather than blocking the application.
+async function checkJobExists(env, jobId) {
+  const fetcher = typeof env.PUBLIC_JOB_BOARD_FETCH === "function" ? env.PUBLIC_JOB_BOARD_FETCH : fetch;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => { try { controller.abort(); } catch (_) {} }, JOB_ID_EXISTENCE_CHECK_TIMEOUT_MS)
+    : null;
+  try {
+    const response = await fetcher(`${MODEL_JOB_BOARD_URL}/${encodeURIComponent(jobId)}`, { signal: controller?.signal });
+    if (response.status === 404) return "not_found";
+    return response.ok ? "verified" : "unverified";
+  } catch (_) {
+    return "unverified";
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+// Sanitizes the job_id carried over from a Job Board handoff link. Returns
+// { present: false } when the field was never sent (the common, non-job-board
+// case), leaving normalizeApplication's output untouched for it. When sent,
+// a malformed id or one the Job Board reports as not found becomes job_id:
+// null rather than rejecting the submission — this is defense-in-depth
+// visibility for the admin review UI, not an application gate.
+async function resolveJobId(rawJobId, env) {
+  if (rawJobId === undefined || rawJobId === null || rawJobId === "") return { present: false };
+  const cleaned = cleanModelJobBoardJobId(typeof rawJobId === "string" ? rawJobId : "");
+  if (!cleaned) return { present: true, job_id: null, job_id_verification: "invalid_format" };
+  const verification = await checkJobExists(env, cleaned);
+  if (verification === "not_found") return { present: true, job_id: null, job_id_verification: verification };
+  return { present: true, job_id: cleaned, job_id_verification: verification };
+}
+
+// Allowlists application_source (the Job Board handoff's own `source` query
+// value, distinct from the unrelated legacy `source` field already passed
+// through unchanged). Same present/absent contract as resolveJobId.
+function resolveApplicationSource(rawSource) {
+  if (rawSource === undefined || rawSource === null || rawSource === "") return { present: false };
+  const value = typeof rawSource === "string" ? rawSource.trim() : "";
+  return { present: true, application_source: PUBLIC_MODEL_SOURCE_ALLOWLIST.has(value) ? value : null };
+}
+
 function normalizeApplication(body) {
   const output = {};
   for (const key of Object.keys(body).sort()) {
@@ -1176,7 +1241,10 @@ export const publicModelTestInternals = {
   MAX_PHOTOS: PUBLIC_MODEL_MAX_PHOTOS,
   MAX_CLIPS: PUBLIC_MODEL_MAX_CLIPS,
   PROMO_CONSENT_VERSION: PUBLIC_MODEL_PROMO_CONSENT_VERSION,
+  SOURCE_ALLOWLIST: PUBLIC_MODEL_SOURCE_ALLOWLIST,
   validateApplicationPayload,
   validateUploadMetadata,
   applicationAirtableFields,
+  resolveJobId,
+  resolveApplicationSource,
 };
