@@ -183,3 +183,41 @@ test('accepts group as a fourth explicitly quoted service option', () => {
   const missing = body(); missing.work.service_options = ['mk', 'burn', 'live', 'group'];
   assert.throws(() => validateJobServicePricing(missing), { code: 'service_pricing_invalid', status: 400 });
 });
+const discounted = (mode, extra = {}) => {
+  const b = body();
+  const amount = 1300; // 10% of 13,000
+  const model = mode === 'promotion' ? 650 : 0;
+  b.service_pricing.discount = { mode, type: 'percent', value: 10, amount_thb: amount, mmd_share_thb: amount - model, model_share_thb: model,
+    ...(mode === 'promotion' ? { reason: 'LINE promo Oct' } : {}), ...extra };
+  b.service_pricing.client_gross_amount_thb = 13000; b.service_pricing.model_gross_payout_thb = 6200;
+  b.service_pricing.client_total_amount_thb = 11700; b.service_pricing.model_total_payout_thb = 6200 - model;
+  b.amount_thb = b.service_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = 11700;
+  b.original_amount_thb = 13000;
+  b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 6200 - model;
+  return b;
+};
+test('customer-request discount: MMD absorbs it alone, model payout unchanged, pre-discount quote kept', () => {
+  const snap = validateJobServicePricing(discounted('customer_request'));
+  assert.equal(snap.client_gross_amount_thb, 13000); assert.equal(snap.client_total_amount_thb, 11700);
+  assert.equal(snap.model_total_payout_thb, 6200); assert.equal(snap.discount.mmd_share_thb, 1300);
+  assert.equal(snap.addons.length, 3); assert.equal(snap.client_base_amount_thb, 10000);
+});
+test('promotion discount splits 50/50 with the model and requires a reason', () => {
+  const snap = validateJobServicePricing(discounted('promotion'));
+  assert.equal(snap.model_gross_payout_thb, 6200); assert.equal(snap.model_total_payout_thb, 5550);
+  assert.equal(snap.discount.model_share_thb, 650); assert.equal(snap.discount.mmd_share_thb, 650);
+  const b = discounted('promotion'); delete b.service_pricing.discount.reason;
+  assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid' });
+});
+test('rejects tampered discount splits, totals and original amount', () => {
+  const muts = [
+    b => { b.service_pricing.discount.model_share_thb = 100; },
+    b => { b.service_pricing.discount.amount_thb = 99999; },
+    b => { b.service_pricing.discount.value = 11; },
+    b => { b.original_amount_thb = 11700; },
+    b => { b.pay_model_thb = 6200; },
+    b => { b.service_pricing.client_gross_amount_thb = 12000; },
+  ];
+  for (const m of muts) { const b = discounted('promotion'); m(b);
+    assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid', status: 400 }); }
+});

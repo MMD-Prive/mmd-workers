@@ -5,6 +5,22 @@ const money = value => typeof value === "number" && Number.isFinite(value) && va
 const sameMoney = (left, right) => money(left) && money(right) && Math.round(left * 100) === Math.round(right * 100);
 const total = (base, addons, key) => Math.round((base + addons.reduce((sum, a) => sum + a[key], 0)) * 100) / 100;
 
+const round2 = value => Math.round(value * 100) / 100;
+/** Optional discount record. customer_request: MMD absorbs it alone. promotion: split 50/50 with the working model. */
+function validateDiscount(d, gross, fail) {
+  if (d === undefined || d === null) return null;
+  if (typeof d !== "object" || !["customer_request", "promotion"].includes(d.mode) || !["amount", "percent"].includes(d.type)
+    || !money(d.value) || d.value <= 0 || !money(d.amount_thb) || d.amount_thb <= 0 || d.amount_thb >= gross) fail();
+  if (d.type === "percent" && (d.value > 100 || !sameMoney(Math.round(gross * d.value) / 100, d.amount_thb))) fail();
+  if (d.type === "amount" && !sameMoney(d.value, d.amount_thb)) fail();
+  const modelShare = d.mode === "promotion" ? Math.floor(d.amount_thb * 100 / 2) / 100 : 0;
+  if (!sameMoney(d.model_share_thb, modelShare) || !sameMoney(d.mmd_share_thb, round2(d.amount_thb - modelShare))) fail();
+  const reason = typeof d.reason === "string" ? d.reason.trim().slice(0, 200) : "";
+  if (d.mode === "promotion" && !reason) fail();
+  return { mode: d.mode, type: d.type, value: d.value, amount_thb: d.amount_thb, mmd_share_thb: round2(d.amount_thb - modelShare),
+    model_share_thb: modelShare, ...(reason ? { reason } : {}) };
+}
+
 /** Optional, backward-compatible quote envelope. Never grants membership or changes settlement policy. */
 export function validateJobServicePricing(body) {
   if (body?.service_pricing === undefined) return null;
@@ -23,7 +39,11 @@ export function validateJobServicePricing(body) {
   for (const a of p.addons) {
     if (!a || !requested.includes(a.option) || !money(a.client_amount_thb) || !money(a.model_payout_thb)) fail();
   }
-  const clientTotal = total(p.client_base_amount_thb, p.addons, "client_amount_thb");
+  const clientGross = total(p.client_base_amount_thb, p.addons, "client_amount_thb");
+  const discount = validateDiscount(p.discount, clientGross, fail);
+  // With a discount: client_gross_amount_thb is the pre-discount quote, client_total_amount_thb the discounted amount.
+  if (discount && p.client_gross_amount_thb !== clientGross) fail();
+  const clientTotal = discount ? round2(clientGross - discount.amount_thb) : clientGross;
   if (!money(clientTotal) || p.client_total_amount_thb !== clientTotal) fail();
   const note = body.note || body?.notes?.operation_note || body?.notes?.handling_note || body.notes || "";
   let components;
@@ -34,13 +54,18 @@ export function validateJobServicePricing(body) {
   const customerTotal = components?.customer_total_thb ?? clientTotal;
   if (components && components.service_amount_thb !== clientTotal) fail();
   if (!sameMoney(body.amount_thb, customerTotal)) fail();
-  for (const amount of [body.service_amount_thb, body.original_amount_thb, body?.payment?.service_amount_thb]) {
+  for (const amount of [body.service_amount_thb, body?.payment?.service_amount_thb]) {
     if (amount !== undefined && !sameMoney(amount, clientTotal)) fail();
   }
+  // original_amount_thb is the pre-discount amount when a discount is declared.
+  if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, discount ? clientGross : clientTotal)) fail();
   if (body?.payment?.amount_thb !== undefined && !sameMoney(body.payment.amount_thb, customerTotal)) fail();
   const needsModel = p.settlement_mode === "direct" || p.addons.length > 0;
   if (needsModel && (!money(p.model_base_payout_thb) || p.model_base_payout_thb <= 0)) fail();
-  const modelTotal = needsModel ? total(p.model_base_payout_thb, p.addons, "model_payout_thb") : null;
+  if (discount && !needsModel && discount.model_share_thb > 0) fail();
+  const modelGross = needsModel ? total(p.model_base_payout_thb, p.addons, "model_payout_thb") : null;
+  if (discount && needsModel && p.model_gross_payout_thb !== modelGross) fail();
+  const modelTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;
   if ((needsModel && !money(modelTotal)) || p.model_total_payout_thb !== modelTotal
     || (!needsModel && p.model_base_payout_thb !== null)) fail();
   if (p.settlement_mode === "direct") {
@@ -54,7 +79,8 @@ export function validateJobServicePricing(body) {
     client_base_amount_thb: p.client_base_amount_thb, model_base_payout_thb: p.model_base_payout_thb,
     addons: OPTIONS.flatMap(option => p.addons.filter(a => a.option === option).map(a => ({ option,
       client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb }))),
-    client_total_amount_thb: clientTotal, model_total_payout_thb: modelTotal };
+    client_total_amount_thb: clientTotal, model_total_payout_thb: modelTotal,
+    ...(discount ? { client_gross_amount_thb: clientGross, model_gross_payout_thb: modelGross, discount } : {}) };
   // Reject an oversized machine envelope before grants or creation writes.
   withJobServicePricingNote(preservePartnerSnapshot(note, body), snapshot);
   return snapshot;
