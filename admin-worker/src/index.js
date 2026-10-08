@@ -5051,10 +5051,9 @@ export {
 const PRIVATE_ACCESS_FOLDERS = {
   standard: ["standard"],
   premium: ["standard", "premium"],
-  vip: ["standard", "premium", "vip"],
   black_card: ["standard", "premium", "vip", "exclusive"],
 };
-const PRIVATE_ACCESS_TIER_RANK = { standard: 1, premium: 2, vip: 3, black_card: 4 };
+const PRIVATE_ACCESS_TIER_RANK = { standard: 1, premium: 2, black_card: 3 };
 const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
 const PUBLIC_MODEL_FOLDERS = new Set(["travel", "extreme"]);
 const MODEL_BLOCKED_STATUS_TOKENS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
@@ -5076,9 +5075,8 @@ function accessToken(value) {
 function membershipTierFromText(value) {
   const token = accessToken(value);
   if (!token) return "";
-  // legacy SVIP normalizes to Black Card access; check before the "vip" substring
-  if (token.includes("black") || token.includes("svip")) return "black_card";
-  if (token.includes("vip")) return "vip";
+  // MMD packages: Standard, Premium, Blackcard (= VIP). SVIP is hand-picked. There is no separate VIP tier.
+  if (token.includes("black") || token.includes("svip") || token.includes("vip")) return "black_card";
   if (token.includes("premium")) return "premium";
   if (token.includes("standard") || token.includes("lite")) return "standard";
   return "";
@@ -5160,7 +5158,7 @@ async function resolveCanonicalClientFastTrustPrivateAccess(env, clientRecordId,
 
   candidates.sort((a, b) => b.rank - a.rank);
   const packageCode = candidates[0].package_code;
-  const tier = packageCode === "svip" || packageCode === "black_card" ? "black_card" : "vip";
+  const tier = "black_card"; // Blackcard = VIP = SVIP: one top tier, no separate VIP tier
   return {
     found: true,
     tier,
