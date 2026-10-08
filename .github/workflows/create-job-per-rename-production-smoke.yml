@@ -154,8 +154,9 @@ jobs:
 
             create_page="$(mktemp)"
             board_page="$(mktemp)"
+            create_headers="$(mktemp)"
             create_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sSL \
-              -o "$create_page" -b "$cookie" -w "%{http_code}" \
+              -D "$create_headers" -o "$create_page" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/admin/jobs/create-job?smoke=separate-job-board")"
             if test "$create_code" != "200"; then
               echo "::error::Create Job page HTTP $create_code (expected 200) at $origin"
@@ -163,13 +164,17 @@ jobs:
             fi
             create_missing=0
             for marker in 'mmd-cj-split-v1' 'lv13-operational' 'clientQuery' 'modelQuery' '/v1/admin/clients/lineage-lookup' '/v1/admin/models/search'; do
-              grep -qF -- "$marker" "$create_page" || { echo "::error::Create Job page missing marker: $marker"; create_missing=1; }
+              grep -aqF -- "$marker" "$create_page" || { echo "::error::Create Job page missing marker: $marker"; create_missing=1; }
             done
             for marker in 'id="job-board-form"' '/v1/admin/job-board/publish'; do
-              ! grep -qF -- "$marker" "$create_page" || { echo "::error::Create Job page must not contain: $marker"; create_missing=1; }
+              ! grep -aqF -- "$marker" "$create_page" || { echo "::error::Create Job page must not contain: $marker"; create_missing=1; }
             done
             if test "$create_missing" != "0"; then
-              echo "Create Job page bytes=$(wc -c < "$create_page") title=$(grep -o '<title>[^<]*' "$create_page" | head -1)"
+              echo "Create Job page bytes=$(wc -c < "$create_page") title=$(grep -ao '<title>[^<]*' "$create_page" | head -1)"
+              echo "--- final response headers (cookie values redacted)"
+              grep -ai -E '^(HTTP/|content-type|content-encoding|location|server|x-mmd|cf-ray)' "$create_headers" | tr -d '\r' || true
+              echo "--- first 400 bytes (non-printable as .)"
+              head -c 400 "$create_page" | tr -c '[:print:]\n' '.'; echo
               exit 1
             fi
             echo "PASS: $origin Webflow Create Job restored with canonical Client/Model search"
