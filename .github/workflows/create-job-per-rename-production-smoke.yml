@@ -157,15 +157,21 @@ jobs:
             create_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sSL \
               -o "$create_page" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/admin/jobs/create-job?smoke=separate-job-board")"
-            test "$create_code" = "200"
-            grep -q 'mmd-cj-split-v1' "$create_page"
-            grep -q 'lv13-operational' "$create_page"
-            grep -q 'clientQuery' "$create_page"
-            grep -q 'modelQuery' "$create_page"
-            grep -q '/v1/admin/clients/lineage-lookup' "$create_page"
-            grep -q '/v1/admin/models/search' "$create_page"
-            ! grep -q 'id="job-board-form"' "$create_page"
-            ! grep -q '/v1/admin/job-board/publish' "$create_page"
+            if test "$create_code" != "200"; then
+              echo "::error::Create Job page HTTP $create_code (expected 200) at $origin"
+              exit 1
+            fi
+            create_missing=0
+            for marker in 'mmd-cj-split-v1' 'lv13-operational' 'clientQuery' 'modelQuery' '/v1/admin/clients/lineage-lookup' '/v1/admin/models/search'; do
+              grep -qF -- "$marker" "$create_page" || { echo "::error::Create Job page missing marker: $marker"; create_missing=1; }
+            done
+            for marker in 'id="job-board-form"' '/v1/admin/job-board/publish'; do
+              ! grep -qF -- "$marker" "$create_page" || { echo "::error::Create Job page must not contain: $marker"; create_missing=1; }
+            done
+            if test "$create_missing" != "0"; then
+              echo "Create Job page bytes=$(wc -c < "$create_page") title=$(grep -o '<title>[^<]*' "$create_page" | head -1)"
+              exit 1
+            fi
             echo "PASS: $origin Webflow Create Job restored with canonical Client/Model search"
 
             board_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
