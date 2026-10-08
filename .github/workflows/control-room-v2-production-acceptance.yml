@@ -82,12 +82,14 @@ jobs:
               }
 
               html = await page.text();
+              // Control Room is served by the Lovable presentation (#1940); the
+              // worker-rendered V2 headers and text markers only exist on the
+              // fallback page. V2 truth is asserted through /v1/admin/dashboard below.
               const pageReady =
                 page.status === 200 &&
-                page.headers.get("x-mmd-control-room-v2") === "system-health-v1" &&
-                page.headers.get("x-mmd-control-room-phase1") === "closed" &&
-                page.headers.get("x-mmd-owner-analytics") === "intent-truth-v1" &&
-                ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2", "data-mmd-owner-analytics=\"v1\"", "Intent ≠ Business Truth"].every((marker) => html.includes(marker));
+                (page.headers.get("x-mmd-presentation-source") || "").toLowerCase() === "lovable" &&
+                page.headers.get("x-mmd-presentation-version") === "internal-lovable-v1" &&
+                /<!doctype html|<html/i.test(html);
 
               const dashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
                 headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
