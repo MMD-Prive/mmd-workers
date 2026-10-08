@@ -398,6 +398,7 @@ jobs:
             if [ "$create_verified" != "1" ]; then
               echo "Create Job (Session Creator Pro) production verification failed for $origin" >&2
               head -c 700 "$create_headers" >&2 || true
+              echo "::error::Create Job verify failed at $origin: HTTP $create_code; headers=$(tr '\r\n' '  ' < "$create_headers" | head -c 600); assets=$(grep -acF '/internal/admin/work/assets/' "$create_body" || true)"
               exit 1
             fi
 
@@ -417,16 +418,21 @@ jobs:
             if [ "$board_verified" != "1" ]; then
               echo "Separate Job Board production verification failed for $origin" >&2
               head -c 700 "$board_body" >&2 || true
+              echo "::error::Job Board verify failed at $origin: HTTP $board_code; headers=$(tr '\r\n' '  ' < "$board_headers" | head -c 600)"
               exit 1
             fi
 
             legacy_code="$(curl -sS -D "$legacy_headers" -o /dev/null -w '%{http_code}' "$origin/internal/jobs/create-job?source=legacy-smoke")"
-            test "$legacy_code" = "308"
-            grep -Fqi "location: /internal/admin/jobs/create-job?source=legacy-smoke" "$legacy_headers"
+            if [ "$legacy_code" != "308" ] || ! grep -Fqi "location: /internal/admin/jobs/create-job?source=legacy-smoke" "$legacy_headers"; then
+              echo "::error::Legacy create-job redirect at $origin: HTTP $legacy_code; headers=$(tr '\r\n' '  ' < "$legacy_headers" | head -c 600)"
+              exit 1
+            fi
 
             board_alias_code="$(curl -sS -D "$board_alias_headers" -o /dev/null -w '%{http_code}' "$origin/internal/admin/job-board?source=legacy-smoke")"
-            test "$board_alias_code" = "308"
-            grep -Fqi "location: /internal/admin/jobs/job-board?source=legacy-smoke" "$board_alias_headers"
+            if [ "$board_alias_code" != "308" ] || ! grep -Fqi "location: /internal/admin/jobs/job-board?source=legacy-smoke" "$board_alias_headers"; then
+              echo "::error::Legacy job-board redirect at $origin: HTTP $board_alias_code; headers=$(tr '\r\n' '  ' < "$board_alias_headers" | head -c 600)"
+              exit 1
+            fi
           done
 
       - name: Verify MMD Create Session Owner v14 in production
