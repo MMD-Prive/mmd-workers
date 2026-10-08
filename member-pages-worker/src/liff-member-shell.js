@@ -191,6 +191,9 @@ function renderShell(config, nonce) {
     .hype-loader{display:none}body.context-resolving .hype-loader{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#000;color:#f6f1e8;text-align:center}
     .hype-loader img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
     .hype-loader-text{color:#caa45e;font-size:12px;font-weight:800;letter-spacing:.22em}.hype-loader-text::after{content:"";display:inline-block;width:1.6em;text-align:left;animation:hype-dots 1.2s steps(4,end) infinite}
+    .hype-progress{width:min(64vw,240px);height:3px;margin-top:6px;border-radius:99px;background:#caa45e29;overflow:hidden}.hype-progress span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#b8863f,#f0d38c);transition:width .55s cubic-bezier(.22,.8,.3,1)}
+    .hype-progress-label{color:#f6f1e8;font-size:13px;font-weight:700;letter-spacing:.08em;font-variant-numeric:tabular-nums}
+    @media(prefers-reduced-motion:reduce){.hype-progress span{transition:none}}
     @keyframes hype-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
     @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}}
     body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
@@ -273,7 +276,7 @@ function renderShell(config, nonce) {
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-live="polite" aria-label="Now Loading"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div></div>`}
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-live="polite" aria-label="Now Loading"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div><div id="hype-progress" class="hype-progress" role="progressbar" aria-label="Now Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="hype-progress-fill"></span></div><div id="hype-progress-label" class="hype-progress-label">0%</div></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -481,6 +484,21 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   let welcomeContextPromise;
   let existingProfilePromise;
 
+  // Progress follows real milestones only; it never moves backwards and reaches 100% only when loading has actually finished.
+  const hypeProgress = document.getElementById("hype-progress");
+  const hypeProgressFill = document.getElementById("hype-progress-fill");
+  const hypeProgressLabel = document.getElementById("hype-progress-label");
+  let hypePercent = 0;
+  function setHypeProgress(value) {
+    const next = Math.max(hypePercent, Math.min(100, Math.round(Number(value) || 0)));
+    if (next === hypePercent && next !== 0) return;
+    hypePercent = next;
+    if (hypeProgressFill) hypeProgressFill.style.width = next + "%";
+    if (hypeProgressLabel) hypeProgressLabel.textContent = next + "%";
+    if (hypeProgress) hypeProgress.setAttribute("aria-valuenow", String(next));
+  }
+  setHypeProgress(10);
+
   async function readWelcomeContext() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
@@ -533,10 +551,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   async function resolveInitialWelcomeContext() {
     try {
       let resolvedAudience = await readWelcomeContext();
+      setHypeProgress(45);
       if (!resolvedAudience) {
         const sessionReady = await preflightWelcomeIdentity();
+        setHypeProgress(60);
         if (sessionReady) resolvedAudience = await readWelcomeContext();
       }
+      setHypeProgress(70);
     } finally {
       introContinue.disabled = false;
     }
@@ -616,13 +637,18 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   if (CONFIG.intent !== "signup") {
     const hypeImage = document.getElementById("hype-loader-img");
     hypeImage?.addEventListener("error", () => hypeImage.remove(), { once: true });
+    if (hypeImage && hypeImage.complete && hypeImage.naturalWidth === 0) hypeImage.remove();
     void welcomeContextPromise.then(async () => {
       try {
         const profile = await Promise.race([existingProfilePromise, new Promise((resolve) => setTimeout(() => resolve(null), 6000))]);
+        setHypeProgress(90);
         if (profile) await enterApp();
       } catch {
         // Fall back to the ENTER welcome.
       } finally {
+        setHypeProgress(100);
+        // Let the bar visibly reach 100% before the loader leaves.
+        await new Promise((resolve) => setTimeout(resolve, 350));
         document.body.classList.remove("context-resolving");
       }
     });

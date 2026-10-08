@@ -773,3 +773,14 @@ describe("HYPE loader on the member shell", () => {
     assert.ok(status.includes('if (profile) await enterApp();'));
   });
 });
+
+describe("HYPE loader progress", () => {
+  it("renders an accessible progress bar driven by real milestones, 100% only at the end", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    assert.match(html, /id="hype-progress"[^>]*role="progressbar"[^>]*aria-valuemin="0"[^>]*aria-valuemax="100"[^>]*aria-valuenow="0"/);
+    assert.ok(html.includes("Math.max(hypePercent,"));
+    const order = ["setHypeProgress(10)", "setHypeProgress(45)", "setHypeProgress(60)", "setHypeProgress(70)", "setHypeProgress(90)", "setHypeProgress(100)"].map((token) => html.indexOf(token));
+    assert.ok(order.every((index, i) => index > 0 && (i === 0 || index > order[i - 1])), JSON.stringify(order));
+    assert.equal((html.match(/setHypeProgress\(100\)/g) || []).length, 1);
+  });
+});
