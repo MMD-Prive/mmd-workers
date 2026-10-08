@@ -724,7 +724,7 @@ describe("signup package card art", () => {
   it("maps each public package to its card image and hides it if it fails to load", async () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" });
     const html = await response.text();
-    for (const file of ["Public%20Member.webp", "Elite%20Card.webp", "Red%20Card.webp"]) assert.ok(html.includes(file), file);
+    assert.ok(html.includes("Public%20Member.webp"));
     assert.match(html, /mmd_member: "https:\/\/cdn\.prod\.website-files\.com\//);
     assert.match(html, /art\.addEventListener\("error", \(\) => art\.remove\(\)\)/);
   });
@@ -758,6 +758,15 @@ describe("signup crest logo", () => {
     assert.match(html, /class="signup-crest-logo"[^>]*>/);
     assert.doesNotMatch(html, /signup-crest-logo[^>]*onerror=/);
     assert.ok(html.includes("crestLogo.addEventListener(\"error\""));
+  });
+});
+
+describe("signup offers the basic Member package only", () => {
+  it("filters the public catalog to mmd_member and requires exactly one package", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    assert.ok(html.includes('item?.package_code === "mmd_member"'));
+    assert.ok(html.includes("packages.length !== 1"));
+    assert.ok(!html.includes("Elite%20Card.webp") && !html.includes("Red%20Card.webp"));
   });
 });
 
