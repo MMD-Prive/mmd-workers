@@ -2,6 +2,7 @@ import coreWorker from "./admin-login-hero-worker-core.js";
 import dashboardWorker from "./dashboard-worker.js";
 import { handleAdminDashboardJobsRequest, isAdminDashboardJobsView } from "./admin-dashboard-jobs.js";
 import { handleAdminDashboardPaymentLinkRequest, isAdminDashboardPaymentLinkView } from "./admin-dashboard-payment-link.js";
+import { handleAdminJobVoidRequest, VOID_PATH } from "./admin-job-void.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
 import { tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
@@ -111,6 +112,9 @@ export default {
     }
     if (path === ADMIN_DASHBOARD_PATH) {
       return handleCredentialBoundDashboard(request, env, ctx);
+    }
+    if (path === VOID_PATH) {
+      return handleCredentialBoundJobVoid(request, env);
     }
     if (path === CLIENT_INTELLIGENCE_PATH) {
       return handleCredentialBoundClientIntelligence(request, env);
@@ -296,6 +300,16 @@ async function handleCredentialBoundClientIntelligence(request, env) {
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("content-length");
   return new Response(null, { status: response.status, headers: responseHeaders });
+}
+
+async function handleCredentialBoundJobVoid(request, env) {
+  const url = new URL(request.url);
+  if (url.hostname !== "mmdbkk.com" && url.hostname !== "www.mmdbkk.com") {
+    return dashboardJson({ ok: false, error: "void_host_not_allowed" }, 403);
+  }
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (!actor) return dashboardJson({ ok: false, error: "unauthorized" }, 401);
+  return handleAdminJobVoidRequest(request, env, actor);
 }
 
 async function handleCredentialBoundClientIntelligenceAudit(request, env) {
