@@ -761,3 +761,15 @@ describe("signup crest logo", () => {
   });
 });
 
+
+describe("HYPE loader on the member shell", () => {
+  it("shows the HYPE NOW LOADING loader while resolving and not on signup", async () => {
+    const env = { LIFF_ID: "2010862595-yT4DCEMc" };
+    const status = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status"), env)).text();
+    const signup = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), env)).text();
+    assert.match(status, /<div id="hype-loader" class="hype-loader"[^>]*>.*HYPE_NOW_LOADING_10FRAMES\.gif/s);
+    assert.match(status, /body class="context-resolving /);
+    assert.doesNotMatch(signup, /<div id="hype-loader"/);
+    assert.ok(status.includes('if (profile) await enterApp();'));
+  });
+});
