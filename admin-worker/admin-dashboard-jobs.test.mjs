@@ -154,3 +154,34 @@ test("owner handoff accepts job_id deep links without losing the canonical sessi
   assert.equal(page.items[0].job_id, "JOB-8B799C2387-C1BC84");
   assert.equal(page.items[0].href, "/internal/admin/jobs/all?job_id=JOB-8B799C2387-C1BC84");
 });
+
+import { parsePricingHistory, projectFinance, JOB_FINANCE_FIELD_IDS as FIN } from "./src/admin-dashboard-jobs.js";
+
+const NOTE = '[MMD SERVICE PRICING v1] ' + JSON.stringify({ version: 1, currency: "THB", settlement_mode: "direct",
+  client_base_amount_thb: 20000, model_base_payout_thb: 11500, addons: [{ option: "mk", client_amount_thb: 1000, model_payout_thb: 500 }],
+  client_total_amount_thb: 18900, model_total_payout_thb: 11750, client_gross_amount_thb: 21000, model_gross_payout_thb: 12000,
+  discount: { mode: "promotion", type: "percent", value: 10, amount_thb: 2100, mmd_share_thb: 1050, model_share_thb: 1050, reason: "OCT promo" } })
+  + '\n[object Object]\n[SIGIL Pricing v1] ' + JSON.stringify({ deposit_due_thb: 5700, deposit_received_thb: 0, balance_thb: 13200 });
+
+test("job finance exposes pre-discount history, discount split and deposit, never tokens", () => {
+  const h = parsePricingHistory(NOTE);
+  assert.equal(h.client_gross_thb, 21000); assert.equal(h.client_net_thb, 18900);
+  assert.equal(h.model_gross_thb, 12000); assert.equal(h.model_net_thb, 11750);
+  assert.deepEqual(h.addons, [{ option: "mk", client_thb: 1000, model_thb: 500 }]);
+  assert.equal(h.discount.mode, "promotion"); assert.equal(h.discount.model_share_thb, 1050); assert.equal(h.discount.reason, "OCT promo");
+  const f = projectFinance({ [FIN.noteA]: NOTE, [FIN.paymentStatus]: { name: "pending" }, [FIN.amount]: 18900, [FIN.paymentRef]: "pay_x",
+    [FIN.sessionStatus]: "Pending", "https://x/?t=secret": "ignored" });
+  assert.equal(f.payment_status, "pending"); assert.equal(f.deposit_due_thb, 5700); assert.equal(f.balance_thb, 13200); assert.equal(f.amount_thb, 18900);
+  assert.equal(JSON.stringify(f).includes("secret"), false);
+});
+
+test("job finance is null-safe without extras, malformed notes or a discount", () => {
+  assert.equal(projectFinance(undefined), null);
+  assert.equal(parsePricingHistory("[MMD SERVICE PRICING v1] {not json"), null);
+  assert.equal(parsePricingHistory("hello"), null);
+  const noDiscount = parsePricingHistory('[MMD SERVICE PRICING v1] {"version":1,"client_base_amount_thb":5000,"client_total_amount_thb":5000,"addons":[]}');
+  assert.equal(noDiscount.discount, null); assert.equal(noDiscount.client_gross_thb, 5000);
+  const page = buildJobsPage([{ id: "recS1", fields: { session_id: "S1", job_date: "2026-10-10" } }], { extrasById: { recS1: { [FIN.noteA]: NOTE } } });
+  assert.equal(page.items[0].finance.pricing.discount.type, "percent");
+  assert.equal(buildJobsPage([{ id: "recS2", fields: { session_id: "S2" } }]).items[0].finance, null);
+});

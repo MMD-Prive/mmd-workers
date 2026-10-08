@@ -1,6 +1,7 @@
 import coreWorker from "./admin-login-hero-worker-core.js";
 import dashboardWorker from "./dashboard-worker.js";
 import { handleAdminDashboardJobsRequest, isAdminDashboardJobsView } from "./admin-dashboard-jobs.js";
+import { handleAdminDashboardPaymentLinkRequest, isAdminDashboardPaymentLinkView } from "./admin-dashboard-payment-link.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { tryHandleEmailLessLineRenewalRecovery } from "./payment-review-line-recovery.js";
 import { tryHandleSigilPendingClientLink } from "./sigil-jobs-pending-client-link.js";
@@ -218,6 +219,11 @@ async function handleCredentialBoundDashboard(request, env, ctx) {
   if (!actor) return dashboardJson({ ok: false, error: "unauthorized" }, 401);
   if (String(actor.role || "").toLowerCase() === "mms_partner") {
     return dashboardJson({ ok: false, error: "mms_partner_scope_forbidden" }, 403);
+  }
+
+  if (isAdminDashboardPaymentLinkView(url)) {
+    if (method === "HEAD") return dashboardJson({ ok: false, error: "method_not_allowed" }, 405);
+    return handleAdminDashboardPaymentLinkRequest(request, env, actor);
   }
 
   if (isAdminDashboardJobsView(url)) {

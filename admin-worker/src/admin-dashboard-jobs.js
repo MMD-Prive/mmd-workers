@@ -7,6 +7,18 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+// Finance/pricing columns read by field id (stable) in a second, narrow pass.
+export const JOB_FINANCE_FIELD_IDS = Object.freeze({
+  paymentRef: "fldojgjSQLaO0uQLX",
+  paymentStatus: "fldTY5lE6m0kQf72n",
+  sessionStatus: "fldmwuvOaiCFdzzRa",
+  amount: "fldhwC79ndbnEXSZz",
+  modelPayout: "fldlTO5aNfqUmlNWm",
+  noteA: "fldEcDkF7CH9VixWM",
+  noteB: "fldwl9Gs5tYlXG5ls",
+});
+const PRICING_MARKER = "[MMD SERVICE PRICING v1]";
+const SIGIL_PRICING_MARKER = "[SIGIL Pricing v1]";
 
 export function isAdminDashboardJobsView(url) {
   return String(url?.searchParams?.get("view") || "").trim().toLowerCase() === "jobs";
@@ -47,7 +59,16 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
 
   try {
     const records = await airtableListAll(env, sessionsTable);
+    // Finance columns are additive: a failure here must never break the job list.
+    let extrasById = {};
+    try {
+      const extras = await airtableListAll(env, sessionsTable, Object.values(JOB_FINANCE_FIELD_IDS));
+      extrasById = Object.fromEntries(extras.map((record) => [record.id, record.fields || {}]));
+    } catch (_) {
+      extrasById = {};
+    }
     const result = buildJobsPage(records, {
+      extrasById,
       now: new Date(),
       page,
       pageSize,
@@ -96,7 +117,7 @@ export function buildJobsPage(records, options = {}) {
   const sessionId = String(options.sessionId || "").trim();
   const jobId = String(options.jobId || "").trim();
   const clientId = String(options.clientId || "").trim();
-  const allItems = projectJobs(records, now);
+  const allItems = projectJobs(records, now, options.extrasById || {});
   const filtered = allItems.filter((item) => {
     const dateMatch = !jobDate || item.job_date === jobDate;
     const sessionMatch = !sessionId || item.id === sessionId || item.session_id === sessionId;
@@ -130,7 +151,7 @@ export function buildJobsPage(records, options = {}) {
   };
 }
 
-export function projectJobs(records, now = new Date()) {
+export function projectJobs(records, now = new Date(), extrasById = {}) {
   const items = (Array.isArray(records) ? records : []).map((record) => {
     const fields = record?.fields || {};
     const clientId = canonicalClientId(fields);
@@ -180,13 +201,83 @@ export function projectJobs(records, now = new Date()) {
       status: thaiStatus(rawStatus),
       progress: progressFromStatus(rawStatus),
       href: `/internal/admin/jobs/all?${detailQuery}`,
+      finance: projectFinance(extrasById?.[record?.id]),
     };
   });
 
   return sortJobs(items, now);
 }
 
-async function airtableListAll(env, tableName) {
+const money = (value) => {
+  const n = typeof value === "number" ? value : Number(String(value ?? "").trim());
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+};
+const choiceName = (value) => String(value && typeof value === "object" ? value.name : value ?? "").trim().toLowerCase().slice(0, 40);
+
+function markerJson(text, marker) {
+  for (const line of String(text || "").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(marker)) continue;
+    try {
+      const parsed = JSON.parse(trimmed.slice(marker.length).trim());
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Bounded, whitelisted discount / pre-discount history from the Session note. Never returns tokens or links. */
+export function parsePricingHistory(noteText) {
+  const p = markerJson(noteText, PRICING_MARKER);
+  if (!p || p.version !== 1) return null;
+  const d = p.discount && typeof p.discount === "object" ? p.discount : null;
+  return {
+    settlement_mode: p.settlement_mode === "platform" ? "platform" : p.settlement_mode === "direct" ? "direct" : null,
+    client_base_thb: money(p.client_base_amount_thb),
+    model_base_thb: money(p.model_base_payout_thb),
+    addons: (Array.isArray(p.addons) ? p.addons : []).slice(0, 6).map((a) => ({
+      option: String(a?.option || "").slice(0, 12),
+      client_thb: money(a?.client_amount_thb),
+      model_thb: money(a?.model_payout_thb),
+    })),
+    client_gross_thb: money(p.client_gross_amount_thb ?? p.client_total_amount_thb),
+    client_net_thb: money(p.client_total_amount_thb),
+    model_gross_thb: money(p.model_gross_payout_thb ?? p.model_total_payout_thb),
+    model_net_thb: money(p.model_total_payout_thb),
+    discount: d ? {
+      mode: d.mode === "promotion" ? "promotion" : "customer_request",
+      type: d.type === "percent" ? "percent" : "amount",
+      value: money(d.value),
+      amount_thb: money(d.amount_thb),
+      mmd_share_thb: money(d.mmd_share_thb),
+      model_share_thb: money(d.model_share_thb),
+      reason: typeof d.reason === "string" ? d.reason.slice(0, 200) : null,
+    } : null,
+  };
+}
+
+export function projectFinance(extra) {
+  if (!extra || typeof extra !== "object") return null;
+  const ids = JOB_FINANCE_FIELD_IDS;
+  const note = [extra[ids.noteA], extra[ids.noteB]].filter((v) => typeof v === "string").join("\n");
+  const pricing = parsePricingHistory(note);
+  const sigil = markerJson(note, SIGIL_PRICING_MARKER) || {};
+  return {
+    payment_ref: String(extra[ids.paymentRef] || "").slice(0, 120) || null,
+    payment_status: choiceName(extra[ids.paymentStatus]) || null,
+    session_status: choiceName(extra[ids.sessionStatus]) || null,
+    amount_thb: money(extra[ids.amount]) ?? pricing?.client_net_thb ?? null,
+    model_payout_thb: money(extra[ids.modelPayout]),
+    deposit_due_thb: money(sigil.deposit_due_thb),
+    deposit_received_thb: money(sigil.deposit_received_thb),
+    balance_thb: money(sigil.balance_thb),
+    pricing,
+  };
+}
+
+async function airtableListAll(env, tableName, byFieldIds = null) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !tableName) {
     throw new Error("missing_airtable_env");
   }
@@ -197,6 +288,10 @@ async function airtableListAll(env, tableName) {
 
   do {
     const qs = new URLSearchParams({ pageSize: "100" });
+    if (byFieldIds) {
+      qs.set("returnFieldsByFieldId", "true");
+      for (const id of byFieldIds) qs.append("fields[]", id);
+    }
     if (offset) qs.set("offset", offset);
     const response = await fetch(
       `${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`,
