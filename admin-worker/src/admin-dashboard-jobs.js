@@ -16,6 +16,8 @@ export const JOB_FINANCE_FIELD_IDS = Object.freeze({
   modelPayout: "fldlTO5aNfqUmlNWm",
   noteA: "fldEcDkF7CH9VixWM",
   noteB: "fldwl9Gs5tYlXG5ls",
+  customerAck: "fldJSS5GNN7quJwa8",
+  modelAck: "fldFgkHXivIAThfDz",
 });
 const PRICING_MARKER = "[MMD SERVICE PRICING v1]";
 const SIGIL_PRICING_MARKER = "[SIGIL Pricing v1]";
@@ -273,8 +275,15 @@ export function projectFinance(extra) {
     deposit_due_thb: money(sigil.deposit_due_thb),
     deposit_received_thb: money(sigil.deposit_received_thb),
     balance_thb: money(sigil.balance_thb),
+    customer_ack_at: isoOrNull(extra[ids.customerAck]),
+    model_ack_at: isoOrNull(extra[ids.modelAck]),
     pricing,
   };
+}
+
+function isoOrNull(v) {
+  const t = typeof v === "string" ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
 async function airtableListAll(env, tableName, byFieldIds = null) {
