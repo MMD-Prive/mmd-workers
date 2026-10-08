@@ -1,5 +1,5 @@
 import { parseSigilMembershipPaymentComponents } from "../../shared/sigil-membership-payment-components.mjs";
-const OPTIONS = ["mk", "burn", "live"];
+const OPTIONS = ["mk", "burn", "live", "group"];
 export const SERVICE_PRICING_MARKER = "[MMD SERVICE PRICING v1]";
 const money = value => typeof value === "number" && Number.isFinite(value) && value >= 0 && Number.isSafeInteger(Math.round(value * 100)) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
 const sameMoney = (left, right) => money(left) && money(right) && Math.round(left * 100) === Math.round(right * 100);
