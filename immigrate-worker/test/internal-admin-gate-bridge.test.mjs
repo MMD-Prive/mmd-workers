@@ -171,7 +171,8 @@ test("Job Board is a separate authenticated composer with no Client or Model loo
   assert.match(html, /name="customer_gender"/);
   assert.match(html, /name="budget_disclosure_approved"/);
   assert.match(html, /fetch\("\/v1\/admin\/job-board\/publish"/);
-  assert.match(html, /broadcastLink\.startsWith\("https:\/\/www\.mmdbkk\.com\/sigil\/model\/login\?"/);
+  assert.match(html, /broadcast_link_contract_failed/);
+  assert.match(html, /mmdbkk\\\.com\\\/\(\?:j\\\/\[A-F0-9\]\{12\}\$\|sigil\\\/model\\\/login\\\?\)/);
   assert.doesNotMatch(html, /id="job-client-query"/);
   assert.doesNotMatch(html, /id="job-model-query"/);
   assert.doesNotMatch(html, /\/v1\/admin\/clients\/lineage-lookup/);
