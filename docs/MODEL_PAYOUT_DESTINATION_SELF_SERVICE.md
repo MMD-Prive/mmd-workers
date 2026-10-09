@@ -16,19 +16,19 @@ Auth is the same signed model confirmation token as `/v1/confirm/ack` (`authoriz
 - 5 submissions per session per hour (uses `PAY_SESSIONS_KV`).
 - The full number is never returned, logged, or put in an error. Errors are stable codes.
 
-## Airtable fields to create on `Models` (not created by this PR)
+## Airtable fields on `Models` (created 2026-10-09 in base appsV1ILPRfIjkaYg, table tblI4B0bI446vp9GX)
 | Field | Type | Env var for field ID |
 |---|---|---|
-| payout_dest_type | single select: promptpay_phone, promptpay_national_id, bank_account | `AT_MODELS__PAYOUT_DEST_TYPE` |
-| payout_dest_bank | single line text | `AT_MODELS__PAYOUT_DEST_BANK` |
-| payout_dest_name | single line text | `AT_MODELS__PAYOUT_DEST_NAME` |
-| payout_dest_ref | single line text | `AT_MODELS__PAYOUT_DEST_REF` |
-| payout_dest_status | single select: pending, verified, rejected | `AT_MODELS__PAYOUT_DEST_STATUS` |
-| payout_dest_submitted_at | date time | `AT_MODELS__PAYOUT_DEST_SUBMITTED_AT` |
-| payout_dest_verified_by | single line text | `AT_MODELS__PAYOUT_DEST_VERIFIED_BY` |
-| payout_dest_verified_at | date time | `AT_MODELS__PAYOUT_DEST_VERIFIED_AT` |
+| payout_dest_type | single select: promptpay_phone, promptpay_national_id, bank_account | `AT_MODELS__PAYOUT_DEST_TYPE` = `fldk9k2qujhTefjty` |
+| payout_dest_bank | single line text | `AT_MODELS__PAYOUT_DEST_BANK` = `fld99a9MhCugaWAB2` |
+| payout_dest_name | single line text | `AT_MODELS__PAYOUT_DEST_NAME` = `fldG621U5D6juDwwY` |
+| payout_dest_ref | single line text | `AT_MODELS__PAYOUT_DEST_REF` = `fldIPkGcOUnxPDaJa` |
+| payout_dest_status | single select: pending, verified, rejected | `AT_MODELS__PAYOUT_DEST_STATUS` = `fldLDFaPgXsj614BU` |
+| payout_dest_submitted_at | date time | `AT_MODELS__PAYOUT_DEST_SUBMITTED_AT` = `fldxZUm6HkD9vSVXR` |
+| payout_dest_verified_by | single line text | `AT_MODELS__PAYOUT_DEST_VERIFIED_BY` = `fldzEBi1AAV1UtbQG` |
+| payout_dest_verified_at | date time | `AT_MODELS__PAYOUT_DEST_VERIFIED_AT` = `fldQzrE5EFX7oGhS8` |
 
-Restrict `payout_dest_ref` and `payout_dest_name` to owner/finance views. Optional overrides: `AT_MODELS__TABLE` (default `tblI4B0bI446vp9GX`), `AT_SESSIONS__CANONICAL_MODEL` (default `fldrXQAyOMPCvbOaY`).
+The IDs are set in `payments-worker/wrangler.toml` with the flag `false`. Airtable's API cannot hide fields: restrict `payout_dest_ref` and `payout_dest_name` to owner/finance views in Airtable (hide them from shared/interface views) before enabling. Optional overrides: `AT_MODELS__TABLE` (default `tblI4B0bI446vp9GX`), `AT_SESSIONS__CANONICAL_MODEL` (default `fldrXQAyOMPCvbOaY`).
 
 If any of the eight field IDs is missing the endpoints answer `payout_destination_not_configured` (503) even when the flag is on.
 
@@ -39,7 +39,7 @@ If any of the eight field IDs is missing the endpoints answer `payout_destinatio
 
 ## Rollout
 1. Merge (no behavior change; flag off).
-2. Create the Airtable fields, set the eight `AT_MODELS__PAYOUT_DEST_*` vars (non-secret field IDs).
+2. Fields exist and IDs are in wrangler.toml (done). Hide `payout_dest_ref` / `payout_dest_name` from shared views.
 3. Owner deploys. Do not run `wrangler deploy` from automation.
 4. Set `MODEL_PAYOUT_DESTINATION_ENABLED="true"` for a pilot, test with one model on a real confirm link.
 5. Paste `job-model-payout-destination-v1.js` into the Webflow page (after the existing confirm scripts).
