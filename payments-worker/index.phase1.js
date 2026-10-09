@@ -8,6 +8,12 @@ import {
 } from "./confirmation-ack.js";
 import { CONFIRM_DETAILS_PATH, handleConfirmationDetails } from "./confirmation-details.js";
 import {
+  PAYOUT_DEST_CONTEXT_PATH,
+  PAYOUT_DEST_SUBMIT_PATH,
+  handlePayoutDestinationContext,
+  handlePayoutDestinationSubmit,
+} from "./model-payout-destination.js";
+import {
   CUSTOMER_CHANGE_REQUEST_PATH,
   handleCustomerChangeRequest,
 } from "./customer-change-request.js";
@@ -54,6 +60,13 @@ export default {
     }
     if (path === CONFIRM_CONTEXT_PATH && (method === "POST" || method === "OPTIONS")) {
       return handleConfirmationContext(request, env);
+    }
+
+    if (path === PAYOUT_DEST_CONTEXT_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handlePayoutDestinationContext(request, env);
+    }
+    if (path === PAYOUT_DEST_SUBMIT_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handlePayoutDestinationSubmit(request, env);
     }
 
     if (path === CUSTOMER_CHANGE_REQUEST_PATH && (method === "POST" || method === "OPTIONS")) {
