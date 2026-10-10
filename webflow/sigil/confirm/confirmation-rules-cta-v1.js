@@ -6,6 +6,9 @@
  * Presentation only. Always-visible RULES link.
  * - Customer page: small RULES pill + a prominent featured CTA, both -> /rules/customer
  * - Model page: RULES pill -> /rules
+ * The featured CTA is shown only until the customer has opened the customer
+ * rules once (remembered per browser in localStorage; the small RULES pill
+ * stays visible always).
  * Links open in a new tab so the signed confirmation page stays open underneath;
  * closing the rules tab returns the customer to /sigil/confirm/job-confirmation.
  * It must remain available even when signed job details fail to load.
@@ -17,6 +20,15 @@
   const MODEL_ROOT = "mmd-model-confirm-v15";
   const RULES_PATH = "/rules";
   const CUSTOMER_RULES_PATH = "/rules/customer";
+  const SEEN_KEY = "mmd_customer_rules_seen_v1";
+
+  function rulesSeen() {
+    try { return window.localStorage.getItem(SEEN_KEY) === "1"; } catch (_) { return false; }
+  }
+
+  function markRulesSeen() {
+    try { window.localStorage.setItem(SEEN_KEY, "1"); } catch (_) {}
+  }
 
   function buildFeatured() {
     const wrap = document.createElement("div");
@@ -201,10 +213,18 @@
     }
 
     const link = buildLink(root, CUSTOMER_RULES_PATH);
-    if (link) tools.insertBefore(link, pill);
+    if (link) {
+      link.addEventListener("click", markRulesSeen);
+      tools.insertBefore(link, pill);
+    }
 
-    if (!root.querySelector("[data-mmd-confirm-rules-featured]")) {
-      header.insertAdjacentElement("afterend", buildFeatured());
+    if (!rulesSeen() && !root.querySelector("[data-mmd-confirm-rules-featured]")) {
+      const featured = buildFeatured();
+      featured.querySelector("a")?.addEventListener("click", () => {
+        markRulesSeen();
+        featured.remove();
+      });
+      header.insertAdjacentElement("afterend", featured);
     }
     return true;
   }
