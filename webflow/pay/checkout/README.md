@@ -37,6 +37,7 @@ Proof source is `public_pay`, which is accepted by unified payment proof intake 
 - Official Verify is required;
 - no browser-created payment ref/session;
 - no hard-coded money destination;
+- payment destinations are revealed only after the customer chooses a method: no method is preselected, the PromptPay QR URL is set on the image only when the customer picks QR, and bank name / account name / account number are written only while the bank details are opened (and cleared when closed or another method is chosen). PayPal link behaviour is unchanged.
 - no route conversion to `/sigil/pay`;
 - fail closed when signed token or backend instructions are unavailable;
 - excluded from sitemap and `noindex,nofollow`.
