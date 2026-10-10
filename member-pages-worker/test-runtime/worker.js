@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import { CareBackBirthdayWishCoordinator as CoordinatorCore } from "../src/care-back-birthday-wish-coordinator.js";
+import { MemberRememberedLoginStore as MemberRememberedLoginStoreCore } from "../src/member-remembered-login-durable-object.js";
 
 class RuntimeBirthdayWishStore {
   constructor(storage) {
@@ -33,6 +34,21 @@ class RuntimeBirthdayWishStore {
       throw new Error("runtime test: timeout after upstream commit");
     }
     return wish;
+  }
+}
+
+export class MemberRememberedLoginStore extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.store = new MemberRememberedLoginStoreCore(ctx, env);
+  }
+
+  async fetch(request) {
+    return this.store.fetch(request);
+  }
+
+  async alarm() {
+    return this.store.alarm();
   }
 }
 
