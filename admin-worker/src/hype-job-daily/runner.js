@@ -34,21 +34,28 @@ function log(level, event, fields) {
 // Short, non-sensitive description of a failed send, kept in the run state and logs so a 404/5xx can be traced:
 // the receiver's own error code, the path it says it did not recognise, and the endpoint host+path we called.
 // Never includes the token, the message text, or the chat id.
-export function failureDetail(body, endpoint) {
+export function failureDetail(body, endpoint, extra = {}) {
   const parts = [];
+  if (extra.via) parts.push(`via=${clean(extra.via, 20)}`);
+  if (extra.contentType) parts.push(`ct=${clean(extra.contentType, 40).split(";")[0]}`);
+  if (extra.server) parts.push(`srv=${clean(extra.server, 24)}`);
+  if (extra.cfRay) parts.push(`ray=${clean(extra.cfRay, 24)}`);
   const err = typeof body?.error === "string" ? clean(body.error, 40) : "";
   if (err) parts.push(`err=${err}`);
   const path = typeof body?.path === "string" ? clean(body.path, 60) : "";
   if (path) parts.push(`rx_path=${path}`);
+  // Start of a non-JSON / unrecognised response body (e.g. an edge error page). Long digit runs (ids) are redacted.
+  const snippet = clean(extra.snippet, 90).replace(/\d{6,}/g, "#");
+  if (snippet) parts.push(`body=${snippet}`);
   try {
     const u = new URL(endpoint);
-    parts.push(`ep=${u.hostname}${u.pathname}`.slice(0, 90));
+    parts.push(`ep=${u.hostname}`);
   } catch { /* endpoint unparsable: omit */ }
   return parts.join(" ");
 }
 
 // Sends one message through telegram-worker /telegram/internal/send (same contract as model-reconfirm-runtime).
-export async function sendTelegramInternal(env, payload) {
+export async function sendTelegramInternal(env, payload, via = "") {
   const endpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL, 500);
   const serviceToken = clean(env.AUTH_SERVICE_STUDIO_TO_TELEGRAM, 500);
   if (!endpoint || !serviceToken) return { ok: false, error: "telegram_send_not_configured", retryable: false };
@@ -59,10 +66,19 @@ export async function sendTelegramInternal(env, payload) {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
-    const body = await response.json().catch(() => ({}));
+    const raw = await response.text().catch(() => "");
+    let body = {};
+    try { body = JSON.parse(raw) || {}; } catch { body = {}; }
     if (response.ok && body?.telegram?.ok === true) return { ok: true, status: response.status };
     const status = response.status;
-    return { ok: false, status, error: `telegram_http_${status}`, detail: failureDetail(body, endpoint), retryable: status >= 500 || status === 429 };
+    const detail = failureDetail(body, endpoint, {
+      via,
+      contentType: response.headers?.get?.("content-type"),
+      server: response.headers?.get?.("server"),
+      cfRay: response.headers?.get?.("cf-ray"),
+      snippet: raw,
+    });
+    return { ok: false, status, error: `telegram_http_${status}`, detail, retryable: status >= 500 || status === 429 };
   } catch (error) {
     return { ok: false, error: errorClass(error), retryable: true };
   }
@@ -114,7 +130,7 @@ export async function runHypeJobDaily(env = {}, options = {}) {
       return { status: "failed", stage: "build", attempt };
     }
 
-    const send = deps.send || ((payload) => sendTelegramInternal(env, payload));
+    const send = deps.send || ((payload) => sendTelegramInternal(env, payload, options.via || "cron"));
     let sent = claim.parts_sent > 0 && claim.parts_sent < parts.length ? claim.parts_sent : 0;
     for (let index = sent; index < parts.length; index += 1) {
       const payload = {
@@ -131,10 +147,10 @@ export async function runHypeJobDaily(env = {}, options = {}) {
       if (!result?.ok) {
         log("error", "hype_job_daily_failed", {
           date_key: dateIct, stage: "send", attempt, part: index + 1, parts: parts.length,
-          error: clean(result?.error, 120), detail: clean(result?.detail, 160) || undefined, http_status: result?.status ?? null,
+          error: clean(result?.error, 120), detail: clean(result?.detail, 260) || undefined, http_status: result?.status ?? null,
           message_length: parts[index].length, retryable: result?.retryable !== false,
         });
-        await store.mark(key, { status: "failed", now, error: `send:${clean(result?.error, 60)}${result?.detail ? ` ${clean(result.detail, 140)}` : ""}`, parts_sent: sent });
+        await store.mark(key, { status: "failed", now, error: `send:${clean(result?.error, 60)}${result?.detail ? ` ${clean(result.detail, 240)}` : ""}`, parts_sent: sent });
         return { status: "failed", stage: "send", attempt, parts_sent: sent };
       }
       sent += 1;
@@ -160,7 +176,7 @@ export async function retryHypeJobDailyToday(env = {}, options = {}) {
   try {
     const reset = await store.resetFailed(key, { now });
     if (!reset?.changed) return { status: "not_retryable", run_status: reset?.status ?? null };
-    return await runHypeJobDaily(env, { now, deps: { ...deps, store } });
+    return await runHypeJobDaily(env, { now, via: "owner_retry", deps: { ...deps, store } });
   } catch (error) {
     log("error", "hype_job_daily_failed", { stage: "retry", error: errorClass(error) });
     return { status: "failed", stage: "retry" };

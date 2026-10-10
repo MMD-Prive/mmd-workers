@@ -10,7 +10,7 @@ function json(body, status = 200) {
 }
 
 function shortError(value) {
-  return String(value ?? "").replace(/[^\w:.\-=/ ]/g, "").slice(0, 200);
+  return String(value ?? "").replace(/[^\w:.\-=/ ]/g, "").slice(0, 340);
 }
 
 // Pure transition functions so they are testable without a Durable Object runtime.

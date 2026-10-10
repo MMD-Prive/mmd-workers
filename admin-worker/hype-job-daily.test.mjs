@@ -860,7 +860,7 @@ test.after(() => { globalThis.fetch = realFetch; });
 // ---------- debug: failure detail + owner retry ----------
 test("dbg1: failureDetail keeps the receiver's error/path and our endpoint, never the token, text or chat id", () => {
   const d = failureDetail({ ok: false, error: "not_found", path: "/telegram/internal/sendX" }, "https://telegram-worker.example.workers.dev/telegram/internal/send");
-  assert.equal(d, "err=not_found rx_path=/telegram/internal/sendX ep=telegram-worker.example.workers.dev/telegram/internal/send");
+  assert.equal(d, "err=not_found rx_path=/telegram/internal/sendX ep=telegram-worker.example.workers.dev");
   assert.equal(failureDetail(null, "not a url"), "");
   assert.doesNotMatch(failureDetail({ error: "x", path: "/p" }, "https://h.example/p"), new RegExp(`${TOKEN}|${CHAT}`));
 });
@@ -870,15 +870,15 @@ test("dbg2: sendTelegramInternal returns the detail on a 404 and the run state r
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, error: "not_found", path: "/telegram/internal/sendX" }), { status: 404 });
   try {
     const e = env({ AUTH_SERVICE_STUDIO_TO_TELEGRAM: TOKEN, TELEGRAM_INTERNAL_SEND_URL: "https://tg.example.workers.dev/telegram/internal/send" });
-    const r = await sendTelegramInternal(e, { chat_id: CHAT, text: "secret body" });
+    const r = await sendTelegramInternal(e, { chat_id: CHAT, text: "secret body" }, "cron");
     assert.equal(r.ok, false);
     assert.equal(r.error, "telegram_http_404");
-    assert.match(r.detail, /err=not_found rx_path=\/telegram\/internal\/sendX ep=tg\.example\.workers\.dev\/telegram\/internal\/send/);
+    assert.match(r.detail, /via=cron .*err=not_found rx_path=\/telegram\/internal\/sendX .*ep=tg\.example\.workers\.dev$/);
     const store = memoryStore();
     const res = await runHypeJobDaily(e, { now: NOW, deps: { store, sources: sources(), send: async () => r } });
     assert.equal(res.status, "failed");
     const rec = [...store.records.values()][0];
-    assert.match(rec.last_error, /^send:telegram_http_404 err=not_found rx_path=\/telegram\/internal\/sendX ep=tg\.example/);
+    assert.match(rec.last_error, /^send:telegram_http_404 via=cron .*err=not_found rx_path=\/telegram\/internal\/sendX .*ep=tg\.example/);
     assert.doesNotMatch(JSON.stringify(rec), new RegExp(`${TOKEN}|${CHAT}|secret body`));
   } finally { globalThis.fetch = saved; }
 });
@@ -933,4 +933,32 @@ test("dbg6: owner /retry is POST-only, owner-only, needs the confirm phrase, and
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ok: true, result: { status: "sent", attempt: 1, parts: 1 } });
   assert.equal(calls, 1);
+});
+
+test("dbg7: a non-JSON 404 (edge error page) is described by content-type, server, ray and a redacted body start", async () => {
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => new Response("<html>404 Not Found chat 1234567890123 nginx</html>", { status: 404, headers: { "content-type": "text/html; charset=utf-8", server: "cloudflare", "cf-ray": "abc123-BKK" } });
+  try {
+    const e = env({ AUTH_SERVICE_STUDIO_TO_TELEGRAM: TOKEN, TELEGRAM_INTERNAL_SEND_URL: "https://tg.example.workers.dev/telegram/internal/send" });
+    const r = await sendTelegramInternal(e, { chat_id: CHAT, text: "secret body" }, "owner_retry");
+    assert.equal(r.error, "telegram_http_404");
+    assert.match(r.detail, /^via=owner_retry ct=text\/html srv=cloudflare ray=abc123-BKK body=.*404 Not Found chat # nginx.* ep=tg\.example\.workers\.dev$/);
+    assert.doesNotMatch(r.detail, new RegExp(`1234567890123|${TOKEN}|${CHAT}|secret body`));
+    const store = memoryStore();
+    await runHypeJobDaily(e, { now: NOW, via: "owner_retry", deps: { store, sources: sources(), send: async () => r } });
+    const rec = [...store.records.values()][0];
+    assert.match(rec.last_error, /^send:telegram_http_404 via=owner_retry ct=text\/html srv=cloudflare/);
+    assert.ok(rec.last_error.length <= 340);
+  } finally { globalThis.fetch = saved; }
+});
+
+test("dbg8: scheduled runs identify themselves as via=cron in the failure detail", async () => {
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => new Response("nope", { status: 404 });
+  try {
+    const e = env({ AUTH_SERVICE_STUDIO_TO_TELEGRAM: TOKEN, TELEGRAM_INTERNAL_SEND_URL: "https://tg.example.workers.dev/telegram/internal/send" });
+    const store = memoryStore();
+    await runHypeJobDaily(e, { now: NOW, deps: { store, sources: sources() } });
+    assert.match([...store.records.values()][0].last_error, /^send:telegram_http_404 via=cron /);
+  } finally { globalThis.fetch = saved; }
 });
