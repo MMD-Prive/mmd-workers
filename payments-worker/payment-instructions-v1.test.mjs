@@ -459,6 +459,12 @@ test("TMIB story purchases use the job (Krungsri) profile", async () => {
   assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
 });
 
+test("job adjustment payments use the job (Krungsri) profile", async () => {
+  const payload = await instructionsFor({ ...details({ stage: "adjustment" }), payment_type: "adjustment" }, ALL_PROFILES());
+  assert.equal(payload.instruction_profile, "mmd_job_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
+});
+
 test("shop payments are unaffected by the job and membership profiles", async () => {
   const payload = await instructionsFor({ ...details({ stage: "shop", amount_due_thb: 1500 }), payment_type: "shop", shop_order: { order_id: "ORDER-9" } });
   assert.equal(payload.instruction_profile, "mmd_shop_himai_v1");

@@ -99,7 +99,7 @@ The destination (PromptPay, bank transfer, PayPal) is read server-side from the 
 | Item type | Candidates (in order) |
 | --- | --- |
 | Shop (`shop` stage / shop order) | `mmd_shop_himai_v1` |
-| Job (`deposit`, `balance`, `final`, `full`, `extension`, `points_topup`, `tmib_story`) | `mmd_job_v1` → `mmd_payment_primary_v1` |
+| Job (`deposit`, `balance`, `final`, `full`, `extension`, `adjustment`, `points_topup`, `tmib_story`) | `mmd_job_v1` → `mmd_payment_primary_v1` |
 | Membership (`membership`, `renewal`, `blackcard`, `redcard`, `elite`, `mmdmember`, or a `publicmem_*` session) | `mmd_membership_v1` → `mmd_payment_primary_v1` |
 | Anything else | `mmd_payment_primary_v1` |
 
