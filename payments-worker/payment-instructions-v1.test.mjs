@@ -309,7 +309,7 @@ test("shop payment supports server-configured static QR with customer-entered am
   assert.doesNotMatch(JSON.stringify(payload), /promptpay\.io\/|\/2500\.00\.png/);
 });
 
-test("service payment stays isolated on the primary instruction profile", async () => {
+test("service payment without a job profile row stays on the primary instruction profile", async () => {
   let formula = "";
   const env = envWith();
   env.AIRTABLE_HTTP.fetch = async (input) => {
@@ -340,4 +340,126 @@ test("does not expose payment methods when shop reservation is no longer accepti
   assert.equal(payload.reason, "payment_not_accepting");
   assert.equal("instructions" in payload, false);
   assert.equal(airtableCalled, false);
+});
+
+function profileRow(instructionId, accountNumber, extra = {}) {
+  return {
+    id: `rec_${instructionId}`,
+    fields: {
+      "Instruction ID": instructionId,
+      Status: "active",
+      Version: 1,
+      "PromptPay Ref": "0899999999",
+      "Bank Provider": `${instructionId}_bank`,
+      "Bank Name TH": `ธนาคาร ${instructionId}`,
+      "Account Name TH": "ผู้รับทดสอบ",
+      "Account Number": accountNumber,
+      "PayPal URL": "https://www.paypal.com/example",
+      Methods: ["promptpay", "bank_transfer", "paypal_card"],
+      "QR Strategy": "dynamic_amount",
+      "Effective From": "2026-01-01T00:00:00.000Z",
+      ...extra,
+    },
+  };
+}
+
+function envWithRows(rows, queried = []) {
+  const env = envWith();
+  env.AIRTABLE_HTTP.fetch = async (input) => {
+    queried.push(new URL(String(input)).searchParams.get("filterByFormula") || "");
+    return Response.json({ records: rows });
+  };
+  return env;
+}
+
+const ALL_PROFILES = () => [
+  profileRow("mmd_payment_primary_v1", "1111111111"),
+  profileRow("mmd_job_v1", "2222222222"),
+  profileRow("mmd_membership_v1", "3333333333"),
+  profileRow("mmd_shop_himai_v1", "4444444444"),
+];
+
+async function instructionsFor(detailsPayload, rows = ALL_PROFILES(), queried = []) {
+  const response = await handlePaymentInstructions(request(), envWithRows(rows, queried), detailsFetcher(detailsPayload));
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+test("job stages use the job profile, not the membership or primary account", async () => {
+  for (const stage of ["deposit", "balance", "final", "full"]) {
+    const payload = await instructionsFor(details({ stage }));
+    assert.equal(payload.instruction_profile, "mmd_job_v1", stage);
+    assert.equal(payload.instructions.bank_transfer.account_number, "2222222222", stage);
+    assert.doesNotMatch(JSON.stringify(payload), /1111111111|3333333333|4444444444/);
+  }
+});
+
+test("session extension payment uses the job profile", async () => {
+  const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: "extension" });
+  assert.equal(payload.instruction_profile, "mmd_job_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
+});
+
+test("membership, renewal and black card payments use the membership profile", async () => {
+  for (const paymentType of ["membership", "renewal", "blackcard", "black_card", "red_card", "elite", "mmd_member"]) {
+    const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: paymentType });
+    assert.equal(payload.instruction_profile, "mmd_membership_v1", paymentType);
+    assert.equal(payload.instructions.bank_transfer.account_number, "3333333333", paymentType);
+    assert.doesNotMatch(JSON.stringify(payload), /1111111111|2222222222|4444444444/);
+  }
+});
+
+test("public membership purchase sessions use the membership profile", async () => {
+  const payload = await instructionsFor({ ...details({ stage: "" }), session_id: "publicmem_elite_abc123", payment_type: "" });
+  assert.equal(payload.instruction_profile, "mmd_membership_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "3333333333");
+});
+
+test("job and membership payments fall back to the primary profile until their own row exists", async () => {
+  const onlyPrimary = [profileRow("mmd_payment_primary_v1", "1111111111")];
+  const queried = [];
+  const job = await instructionsFor(details({ stage: "final" }), onlyPrimary, queried);
+  assert.equal(job.instruction_profile, "mmd_payment_primary_v1");
+  assert.equal(job.instructions.bank_transfer.account_number, "1111111111");
+  assert.match(queried[0], /mmd_job_v1/);
+  assert.match(queried[queried.length - 1], /mmd_payment_primary_v1/);
+
+  const membership = await instructionsFor({ ...details({ stage: "" }), payment_type: "membership" }, onlyPrimary);
+  assert.equal(membership.instruction_profile, "mmd_payment_primary_v1");
+  assert.equal(membership.instructions.bank_transfer.account_number, "1111111111");
+});
+
+test("a missing membership row never falls through to the job account", async () => {
+  const rows = [profileRow("mmd_payment_primary_v1", "1111111111"), profileRow("mmd_job_v1", "2222222222")];
+  const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: "membership" }, rows);
+  assert.equal(payload.instruction_profile, "mmd_payment_primary_v1");
+  assert.doesNotMatch(JSON.stringify(payload), /2222222222/);
+});
+
+test("unknown item types stay on the primary profile and never read job or membership rows", async () => {
+  const queried = [];
+  const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: "points_topup" }, ALL_PROFILES(), queried);
+  assert.equal(payload.instruction_profile, "mmd_payment_primary_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "1111111111");
+  assert.equal(queried.length, 1);
+  assert.doesNotMatch(queried.join(" "), /mmd_job_v1|mmd_membership_v1/);
+});
+
+test("shop payments are unaffected by the job and membership profiles", async () => {
+  const payload = await instructionsFor({ ...details({ stage: "shop", amount_due_thb: 1500 }), payment_type: "shop", shop_order: { order_id: "ORDER-9" } });
+  assert.equal(payload.instruction_profile, "mmd_shop_himai_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "4444444444");
+});
+
+test("each profile controls its own methods (bank transfer can stay off for one profile)", async () => {
+  const rows = [
+    profileRow("mmd_payment_primary_v1", "1111111111", { Methods: ["promptpay", "paypal_card"] }),
+    profileRow("mmd_job_v1", "2222222222"),
+  ];
+  const membership = await instructionsFor({ ...details({ stage: "" }), payment_type: "membership" }, rows);
+  assert.equal(membership.instruction_profile, "mmd_payment_primary_v1");
+  assert.equal(membership.instructions.bank_transfer.enabled, false);
+  const job = await instructionsFor(details({ stage: "final" }), rows);
+  assert.equal(job.instruction_profile, "mmd_job_v1");
+  assert.equal(job.instructions.bank_transfer.enabled, true);
 });

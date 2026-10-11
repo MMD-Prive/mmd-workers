@@ -4,6 +4,13 @@ const DEFAULT_TABLE = "tblTPC2yV1P3CwbgU";
 const DEFAULT_CARD_FEE_PERCENT = 4;
 const PRIMARY_INSTRUCTION_ID = "mmd_payment_primary_v1";
 const SHOP_INSTRUCTION_ID = "mmd_shop_himai_v1";
+// Per-item-type destinations. Each falls back to the primary profile while its own
+// Airtable row does not exist yet, so deploying this code never removes a working destination.
+const JOB_INSTRUCTION_ID = "mmd_job_v1";
+const MEMBERSHIP_INSTRUCTION_ID = "mmd_membership_v1";
+const JOB_STAGES = new Set(["deposit", "มัดจำ", "balance", "remaining", "remainder", "คงเหลือ", "final", "finalpayment", "full", "fullpayment", "payinfull", "extension"]);
+const MEMBERSHIP_STAGES = new Set(["membership", "renewal", "renew", "blackcard", "redcard", "elite", "mmdmember"]);
+const PUBLIC_MEMBERSHIP_SESSION_PREFIX = "publicmem_";
 
 export function isPaymentInstructionsRequest(path, method) {
   const normalized = String(path || "/").replace(/\/{2,}/g, "/").replace(/\/+$/g, "") || "/";
@@ -50,7 +57,7 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     return responseJson({ ok: false, error: "payment_state_unavailable", authority: "payments-worker" }, 409, responseHeaders);
   }
 
-  const instructionId = paymentInstructionId(details, payment);
+  const instructionIds = paymentInstructionIds(details, payment);
   const base = {
     ok: true,
     authority: "payments-worker",
@@ -60,7 +67,7 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     stage: text(payment.stage, 80) || null,
     amount_due_thb: numberOrNull(payment.amount_due_thb),
     currency: "THB",
-    instruction_profile: instructionId,
+    instruction_profile: instructionIds[0],
   };
 
   if (payment.accepting_payment === false) {
@@ -76,7 +83,16 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     return responseJson({ ...base, available: false, reason: "no_amount_due" }, 200, responseHeaders);
   }
 
-  const config = await readActiveInstructions(env, instructionId);
+  let config = null;
+  let instructionId = instructionIds[instructionIds.length - 1];
+  for (const candidateId of instructionIds) {
+    const found = await readActiveInstructions(env, candidateId);
+    if (found) {
+      config = found;
+      instructionId = candidateId;
+      break;
+    }
+  }
   if (!config) {
     return responseJson({ ok: false, error: "payment_instructions_unavailable", authority: "payments-worker" }, 503, responseHeaders);
   }
@@ -133,12 +149,20 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     return responseJson({ ok: false, error: "payment_instructions_unavailable", authority: "payments-worker" }, 503, responseHeaders);
   }
 
-  return responseJson({ ...base, available: true, instructions }, 200, responseHeaders);
+  return responseJson({ ...base, instruction_profile: instructionId, available: true, instructions }, 200, responseHeaders);
 }
 
-function paymentInstructionId(details = {}, payment = {}) {
-  const stage = text(payment.stage || details.payment_type || details.payment_stage, 80).toLowerCase();
-  return stage === "shop" || details.shop_order ? SHOP_INSTRUCTION_ID : PRIMARY_INSTRUCTION_ID;
+// Ordered candidates: the first profile with an active, effective Airtable row wins.
+// Unknown item types stay on the primary profile only (never guessed into job/membership).
+function paymentInstructionIds(details = {}, payment = {}) {
+  const raw = text(payment.stage || details.payment_type || details.payment_stage, 80).toLowerCase();
+  if (raw === "shop" || details.shop_order) return [SHOP_INSTRUCTION_ID];
+  const stage = raw.replace(/[\s_-]+/g, "");
+  if (JOB_STAGES.has(stage)) return [JOB_INSTRUCTION_ID, PRIMARY_INSTRUCTION_ID];
+  if (MEMBERSHIP_STAGES.has(stage) || text(details.session_id, 200).startsWith(PUBLIC_MEMBERSHIP_SESSION_PREFIX)) {
+    return [MEMBERSHIP_INSTRUCTION_ID, PRIMARY_INSTRUCTION_ID];
+  }
+  return [PRIMARY_INSTRUCTION_ID];
 }
 
 async function readActiveInstructions(env, instructionId) {

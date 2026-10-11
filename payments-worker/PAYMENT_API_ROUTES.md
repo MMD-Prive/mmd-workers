@@ -91,3 +91,16 @@ curl -i -X POST https://sigil.mmdbkk.com/v1/pay/slip/evidence \
   -F "source_page=payment_confirmation" \
   -F "file=@/path/to/slip.jpg"
 ```
+
+## `POST /v1/confirm/payment-instructions` — instruction profile selection
+
+The destination (PromptPay, bank transfer, PayPal) is read server-side from the Payment Instructions Airtable table (`Status = active`, latest effective `Version`). The profile (`Instruction ID`) is chosen from the validated confirmation, never from the browser. Candidates are tried in order; the first with an active, effective row wins:
+
+| Item type | Candidates (in order) |
+| --- | --- |
+| Shop (`shop` stage / shop order) | `mmd_shop_himai_v1` |
+| Job (`deposit`, `balance`, `final`, `full`, `extension`) | `mmd_job_v1` → `mmd_payment_primary_v1` |
+| Membership (`membership`, `renewal`, `blackcard`, `redcard`, `elite`, `mmdmember`, or a `publicmem_*` session) | `mmd_membership_v1` → `mmd_payment_primary_v1` |
+| Anything else | `mmd_payment_primary_v1` |
+
+The fallback to `mmd_payment_primary_v1` keeps payments working until a profile's own row exists. Each row controls its own `Methods`, so one profile can disable `bank_transfer` without affecting the others. The response `instruction_profile` is the profile that was actually used.
