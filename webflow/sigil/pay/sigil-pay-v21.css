@@ -423,3 +423,28 @@
   background:none!important;
   background-image:none!important
 }
+/* CARE BACK / promo code entry (deposit stage only) */
+#sigil-pay-v21 .sp21__promo{margin-top:12px;border:1px dashed var(--sp21-line-strong);border-radius:13px;background:var(--sp21-panel-soft)}
+#sigil-pay-v21 .sp21__promo[hidden]{display:none}
+#sigil-pay-v21 .sp21__promo-toggle{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;
+  padding:0 13px;border:0;background:none;color:var(--sp21-gold);font-size:10px;font-weight:750;text-align:left;cursor:pointer
+}
+#sigil-pay-v21 .sp21__promo-toggle i{font-style:normal;font-size:16px;line-height:1}
+#sigil-pay-v21 .sp21__promo-form{padding:0 13px 13px}
+#sigil-pay-v21 .sp21__promo-form[hidden]{display:none}
+#sigil-pay-v21 .sp21__promo-label{display:block;color:var(--sp21-muted);font-size:9px}
+#sigil-pay-v21 .sp21__promo-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:6px}
+#sigil-pay-v21 .sp21__promo-input{
+  width:100%;min-height:44px;padding:0 12px;border:1px solid var(--sp21-line);border-radius:10px;
+  background:#0b0908;color:var(--sp21-text);outline:none;text-transform:uppercase;
+  font:700 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em
+}
+#sigil-pay-v21 .sp21__promo-input::placeholder{color:var(--sp21-muted);letter-spacing:.04em;font-weight:500;text-transform:none}
+#sigil-pay-v21 .sp21__promo-input:focus{border-color:var(--sp21-line-strong);box-shadow:0 0 0 3px rgba(227,189,124,.07)}
+#sigil-pay-v21 .sp21__promo-status{margin:0;padding:0 13px 13px;color:var(--sp21-muted);font-size:9px;line-height:1.5}
+#sigil-pay-v21 .sp21__promo-status:empty{display:none}
+#sigil-pay-v21 .sp21__promo-form+.sp21__promo-status{padding-top:0}
+#sigil-pay-v21 .sp21__promo-form[hidden]+.sp21__promo-status:not(:empty){padding-top:13px}
+#sigil-pay-v21 .sp21__promo-status.is-error{color:var(--sp21-danger)}
+#sigil-pay-v21 .sp21__promo-status.is-ok{color:var(--sp21-success)}

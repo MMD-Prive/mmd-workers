@@ -23,6 +23,10 @@ import {
   isTrustedCareBackBookingApproval,
 } from "./care-back-trusted-booking-approval.js";
 import {
+  handleTrustedCareBackCodeRedemption,
+  isTrustedCareBackCodeRedemption,
+} from "./care-back-code-redemption.js";
+import {
   handleKenjiLineMemberTruth,
   isKenjiLineMemberTruthRequest,
 } from "./kenji-line-member-truth.js";
@@ -149,6 +153,9 @@ const worker = {
     }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
+    }
+    if (isTrustedCareBackCodeRedemption(request)) {
+      return handleTrustedCareBackCodeRedemption(request, env);
     }
     if (isDriveReconcileRequest(request)) return handleDriveReconcile(request, env);
 

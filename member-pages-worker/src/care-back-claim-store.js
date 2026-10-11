@@ -218,11 +218,14 @@ class AirtableCareBackStore {
     modelLevel,
     jobFormat,
     publicModelPercent = null,
+    redemptionKey = "",
     now = new Date(),
   }) {
     const identity = requiredHash(identityHash);
     const member = requiredMemberId(memberId);
     const clock = requiredClock(now);
+    const bindingKey = String(redemptionKey || "").trim();
+    if (bindingKey) requiredSessionId(bindingKey);
     const secret = String(this.env.CARE_BACK_CODE_SECRET || this.env.LIFF_SESSION_SECRET || "");
     if (secret.length < 32) throw new CareBackStoreError("CARE_BACK_CODE_SECRET_MISSING");
     const derived = await deriveClaimAndCode(identity, secret);
@@ -244,6 +247,16 @@ class AirtableCareBackStore {
     if (!promoWishSubmitted(fields.payload_json)) throw new CareBackStoreError("CARE_BACK_WISH_REQUIRED");
     if (!couponIssuanceGatePassed(claimPolicy, observed, true)) throw new CareBackStoreError("CARE_BACK_ELIGIBILITY_UNRESOLVED");
 
+    // A booking that already consumed this coupon may be retried: same key = same answer.
+    const priorRedemption = promoPayload(fields.payload_json).redemption;
+    if (bindingKey && priorRedemption?.session_id === bindingKey
+      && (normalizedUseCount(fields.used_count) >= 1 || safeCodeStatus(fields.status) === "used")) {
+      const percent = validatedApprovedDiscount(fields);
+      if (percent) {
+        return { ...redemptionResult(fields, String(fields.code || derived.code), percent, true), status: "used" };
+      }
+    }
+
     const coupon = couponStateFor(claimPolicy, observed, fields, clock, true);
     if (coupon.customer_state !== "ready" || safeCodeStatus(fields.status) !== "active") {
       throw new CareBackStoreError(`CARE_BACK_COUPON_${String(coupon.customer_state || "UNAVAILABLE").toUpperCase()}`);
@@ -256,12 +269,19 @@ class AirtableCareBackStore {
     if (!approved) throw new CareBackStoreError("CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED");
 
     const payload = promoPayload(fields.payload_json);
+    // Single use: when the booking supplies its key the coupon is consumed here, bound
+    // to that booking/session, so it cannot approve a second booking.
+    const consume = bindingKey ? {
+      status: "used",
+      used_count: 1,
+    } : {};
     const desired = compactFields({
       model_level: normalizedModelLevel,
       job_format: normalizedJobFormat,
       approved_discount_percent: approved,
       benefit_type: "discount_percent",
       benefit_value: null,
+      ...consume,
       payload_json: JSON.stringify({
         ...payload,
         schema_version: 3,
@@ -270,11 +290,18 @@ class AirtableCareBackStore {
         wish_submitted: true,
         coupon_policy: couponPolicySnapshot(),
         discount_authority: "backend_verified",
+        ...(bindingKey ? { redemption: { session_id: bindingKey, percent: approved, redeemed_at: clock.toISOString(), source: "booking_confirm" } } : {}),
       }),
     });
     const updated = needsPatch(fields, desired)
       ? await this.patch(tableName(this.env, "PROMO_CODES"), promo.id, desired)
       : promo;
+    if (bindingKey) {
+      // Airtable has no compare-and-set: re-read and make sure our booking won.
+      const check = await this.list(tableName(this.env, "PROMO_CODES"), `{code}=${formulaString(derived.code)}`, 2);
+      const winner = check.length === 1 ? promoPayload(check[0].fields?.payload_json).redemption : null;
+      if (!winner || winner.session_id !== bindingKey) throw new CareBackStoreError("CARE_BACK_COUPON_USED");
+    }
     const updatedFields = updated.fields || {};
     return {
       code: String(updatedFields.code || derived.code),
@@ -286,6 +313,79 @@ class AirtableCareBackStore {
       expires_at: safeTimestamp(updatedFields.expires_at) || null,
       single_use: true,
     };
+  }
+
+  // Customer-entered 6-character code redemption (payment confirmation page).
+  // The browser only supplies the code; the discount percent is always derived
+  // here from Model level x job format. The coupon is consumed (single use) and
+  // bound to the confirming session, so replaying the same session is idempotent
+  // and any other session is rejected.
+  async redeemCouponByCode({
+    code,
+    sessionId,
+    modelLevel,
+    jobFormat,
+    publicModelPercent = null,
+    now = new Date(),
+  }) {
+    const normalizedCode = normalizeEnteredCode(code);
+    if (!normalizedCode) throw new CareBackStoreError("CARE_BACK_CODE_INVALID");
+    const session = requiredSessionId(sessionId);
+    const clock = requiredClock(now);
+    const table = tableName(this.env, "PROMO_CODES");
+    const codes = await this.list(table, `{code}=${formulaString(normalizedCode)}`, 2);
+    if (codes.length > 1) throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
+    if (!codes.length) throw new CareBackStoreError("CARE_BACK_CODE_NOT_FOUND");
+    const promo = codes[0];
+    const fields = promo.fields || {};
+    if (String(fields.campaign_code || "") !== CAMPAIGN_ID || !promoClaimId(fields.payload_json)) {
+      throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
+    }
+    if (!promoWishSubmitted(fields.payload_json)) throw new CareBackStoreError("CARE_BACK_WISH_REQUIRED");
+
+    const payload = promoPayload(fields.payload_json);
+    const status = safeCodeStatus(fields.status);
+    const used = normalizedUseCount(fields.used_count) >= 1 || status === "used";
+    if (used) {
+      const prior = payload.redemption;
+      const percent = validatedApprovedDiscount(fields);
+      if (prior && prior.session_id === session && percent) {
+        return redemptionResult(fields, normalizedCode, percent, true);
+      }
+      throw new CareBackStoreError("CARE_BACK_COUPON_USED");
+    }
+    if (["revoked", "invalid"].includes(status)) throw new CareBackStoreError("CARE_BACK_COUPON_UNAVAILABLE");
+    const activatedAt = safeTimestamp(fields.activated_at);
+    const expiresAt = safeTimestamp(fields.expires_at) || (activatedAt ? addCalendarMonths(activatedAt, COUPON_VALIDITY_MONTHS) : "");
+    if (status === "expired" || (expiresAt && Date.parse(expiresAt) <= clock.getTime())) {
+      throw new CareBackStoreError("CARE_BACK_COUPON_EXPIRED");
+    }
+    if (status !== "active") throw new CareBackStoreError("CARE_BACK_COUPON_NOT_READY");
+
+    const level = normalizeModelLevel(modelLevel);
+    const format = normalizeJobFormat(jobFormat);
+    if (!level || !format) throw new CareBackStoreError("CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED");
+    const approved = approvedDiscountFor(level, format, publicModelPercent);
+    if (!approved) throw new CareBackStoreError("CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED");
+
+    const patched = await this.patch(table, promo.id, {
+      model_level: level,
+      job_format: format,
+      approved_discount_percent: approved,
+      benefit_type: "discount_percent",
+      status: "used",
+      used_count: 1,
+      payload_json: JSON.stringify({
+        ...payload,
+        discount_authority: "backend_verified",
+        redemption: { session_id: session, percent: approved, redeemed_at: clock.toISOString(), source: "payment_confirmation_code_entry" },
+      }),
+    });
+    // Airtable has no compare-and-set: re-read and make sure our session won.
+    const confirm = await this.list(table, `{code}=${formulaString(normalizedCode)}`, 2);
+    const winner = confirm.length === 1 ? promoPayload(confirm[0].fields?.payload_json).redemption : null;
+    if (!winner || winner.session_id !== session) throw new CareBackStoreError("CARE_BACK_COUPON_USED");
+    return redemptionResult(patched.fields || fields, normalizedCode, approved, false);
   }
 
   async ensureClaimPolicy(claim, policy, observed) {
@@ -783,3 +883,25 @@ function safeReviewStatus(value) { return ["pending", "in_review", "approved", "
 function safePaymentStatus(value) { return ["pending", "verified", "not_required", "rejected"].includes(String(value)) ? String(value) : "pending"; }
 function safeClassificationGroup(value) { return ["current_member", "recently_expired", "inactive_expired", "former_member", "new_member", "manual_review"].includes(String(value)) ? String(value) : "manual_review"; }
 function safeCodeStatus(value) { return ["draft", "active", "expired", "used", "revoked", "invalid"].includes(String(value)) ? String(value) : "draft"; }
+
+function normalizeEnteredCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  return code.length === 6 && [...code].every((char) => CODE_ALPHABET.includes(char)) ? code : "";
+}
+function requiredSessionId(value) {
+  const id = String(value || "").trim();
+  if (!id || id.length > 200 || /[\u0000-\u001f\u007f]/.test(id)) throw new CareBackStoreError("CARE_BACK_SESSION_INVALID");
+  return id;
+}
+function redemptionResult(fields, code, percent, replayed) {
+  return {
+    code,
+    approved_discount_percent: percent,
+    model_level: normalizeModelLevel(fields.model_level),
+    job_format: normalizeJobFormat(fields.job_format),
+    activated_at: safeTimestamp(fields.activated_at) || null,
+    expires_at: safeTimestamp(fields.expires_at) || null,
+    single_use: true,
+    replayed: Boolean(replayed),
+  };
+}

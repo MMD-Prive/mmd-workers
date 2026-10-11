@@ -5,7 +5,7 @@ import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_DETAILS_PATH = "/v1/confirm/details";
 
-const SESSION_FIELDS = Object.freeze({
+export const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
   sessionStatus: "fldmwuvOaiCFdzzRa",
   createdAt: "flduULqxy2FIuJuaf",
@@ -257,7 +257,7 @@ function isProofReceived(...values) {
   return values.some((value) => accepted.has(text(value, 80).toLowerCase().replace(/[\s-]+/g, "_")));
 }
 
-function parseMarkedJson(note, label) {
+export function parseMarkedJson(note, label) {
   const source = String(note || "");
   const marker = `[${String(label)}]`;
   let searchEnd = source.length;
@@ -315,7 +315,7 @@ function parseMarkedJson(note, label) {
   return null;
 }
 
-async function findSession(env, sessionId) {
+export async function findSession(env, sessionId) {
   const baseId = clean(env.AIRTABLE_BASE_ID, 100);
   const tableId = clean(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", 100);
   const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
@@ -436,19 +436,19 @@ function corsHeaders(request, env = {}) {
   return headers;
 }
 
-function withCors(request, env, response) {
+export function withCors(request, env, response) {
   const headers = new Headers(response.headers);
   corsHeaders(request, env).forEach((value, key) => headers.set(key, value));
   headers.set("cache-control", "no-store, private");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-function isAllowedOrigin(request, env = {}) {
+export function isAllowedOrigin(request, env = {}) {
   const origin = clean(request.headers.get("origin"), 500);
   return Boolean(origin && allowedOrigins(env).includes(origin));
 }
 
-function errorStatus(error) {
+export function errorStatus(error) {
   if (Number.isInteger(error?.status)) return error.status;
   const code = clean(error?.message, 200);
   if (code === "confirmation_token_expired") return 410;
@@ -456,15 +456,15 @@ function errorStatus(error) {
   return 401;
 }
 
-function field(configured, fallback) {
+export function field(configured, fallback) {
   return clean(configured, 100) || fallback;
 }
 
-function formulaValue(value) {
+export function formulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-function numberOrNull(value) {
+export function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -475,21 +475,21 @@ function safeUrl(value) {
   return /^https:\/\//i.test(raw) ? raw : "";
 }
 
-function text(value, max = 5000) {
+export function text(value, max = 5000) {
   return clean(value, max).replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 
-function clean(value, max = 5000) {
+export function clean(value, max = 5000) {
   return String(value == null ? "" : value).trim().slice(0, max);
 }
 
-function httpError(status, message) {
+export function httpError(status, message) {
   const error = new Error(message);
   error.status = status;
   return error;
 }
 
-function json(payload, status = 200) {
+export function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },

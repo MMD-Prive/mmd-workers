@@ -377,3 +377,72 @@ test("CARE BACK allows continuation claims through October and closes new claims
     (error) => error?.code === "CARE_BACK_CAMPAIGN_CLOSED",
   );
 });
+
+async function stateful(promoOverrides = {}) {
+  const derived = await deriveClaimAndCode(IDENTITY, SECRET);
+  const state = {
+    patches: [],
+    promo: {
+      id: `rec${"B".repeat(14)}`,
+      fields: {
+        code: derived.code,
+        campaign_code: "6-years-care-back",
+        status: "active",
+        activated_at: "2026-08-19T00:00:00.000Z",
+        expires_at: "2026-10-19T00:00:00.000Z",
+        used_count: 0,
+        payload_json: JSON.stringify({ claim_id: derived.claimId, wish_submitted: true }),
+        ...promoOverrides,
+      },
+    },
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const table = tableFrom(input);
+    if ((init.method || "GET") === "GET") {
+      if (table === "MMD — Campaign Claims") return Response.json({ records: [currentClaim(derived)] });
+      if (table === "MMD — Promo Codes") return Response.json({ records: [state.promo] });
+      return Response.json({ records: [] });
+    }
+    const fields = JSON.parse(init.body).fields;
+    state.patches.push(fields);
+    state.promo = { ...state.promo, fields: { ...state.promo.fields, ...fields } };
+    return Response.json(state.promo);
+  };
+  return state;
+}
+
+const approve = (extra = {}) => getCareBackStore(env()).approveCouponDiscount({
+  identityHash: IDENTITY,
+  memberId: "MMD-PER-01",
+  memberProfile: { membership_status: "active", tier: "Premium" },
+  modelLevel: "Standard Models",
+  jobFormat: "PN",
+  now: BIRTHDAY_NOW,
+  ...extra,
+});
+
+test("booking approval with a key consumes the coupon (single use, bound to that booking)", async () => {
+  const state = await stateful();
+  const out = await approve({ redemptionKey: "S-001" });
+  assert.equal(out.approved_discount_percent, 5);
+  assert.equal(state.patches[0].status, "used");
+  assert.equal(state.patches[0].used_count, 1);
+  assert.equal(JSON.parse(state.patches[0].payload_json).redemption.session_id, "S-001");
+});
+
+test("a consumed coupon answers the same booking again but refuses another booking", async () => {
+  await stateful();
+  await approve({ redemptionKey: "S-001" });
+  const again = await approve({ redemptionKey: "S-001" });
+  assert.equal(again.approved_discount_percent, 5);
+  assert.equal(again.replayed, true);
+  await assert.rejects(() => approve({ redemptionKey: "S-002" }), { code: "CARE_BACK_COUPON_USED" });
+  await assert.rejects(() => approve(), { code: "CARE_BACK_COUPON_USED" });
+});
+
+test("booking approval without a key keeps the old non-consuming behaviour", async () => {
+  const state = await stateful();
+  await approve();
+  assert.equal(state.patches[0].status, undefined);
+  assert.equal(state.patches[0].used_count, undefined);
+});

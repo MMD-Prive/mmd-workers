@@ -129,3 +129,12 @@ test("Public Model exact rate is backend-owned and defaults to canonical campaig
   assert.equal(payload.approved_discount_percent, 5);
   assert.equal(calls[0].publicModelPercent, 5);
 });
+
+test("trusted booking approval binds the coupon to the booking session (session_id, else booking_ref)", async () => {
+  const { env, calls } = environment();
+  await handleTrustedCareBackBookingApproval(request(baseBody), env);
+  assert.equal(calls[0].redemptionKey, "S-001");
+  const second = environment();
+  await handleTrustedCareBackBookingApproval(request({ ...baseBody, session_id: "" }), second.env);
+  assert.equal(second.calls[0].redemptionKey, "BK-001");
+});
