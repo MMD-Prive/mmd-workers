@@ -1,22 +1,22 @@
 #sigil-pay-v21{
-  --sp21-bg:#0d0b0a;
-  --sp21-panel:rgba(18,15,13,.92);
-  --sp21-panel-strong:#16120f;
-  --sp21-panel-soft:rgba(255,248,238,.035);
-  --sp21-line:rgba(255,241,218,.15);
-  --sp21-line-strong:rgba(227,189,124,.42);
-  --sp21-text:#fff8ee;
-  --sp21-body:#eee2d4;
-  --sp21-muted:#bdae9f;
-  --sp21-gold:#e3bd7c;
-  --sp21-gold-deep:#b98b4e;
-  --sp21-danger:#e09a93;
-  --sp21-success:#c7d5b2;
+  --sp21-bg:#fbfaf8;
+  --sp21-panel:rgba(255,255,255,.94);
+  --sp21-panel-strong:#ffffff;
+  --sp21-panel-soft:rgba(24,23,27,.035);
+  --sp21-line:rgba(24,23,27,.15);
+  --sp21-line-strong:rgba(148,21,35,.42);
+  --sp21-text:#18171b;
+  --sp21-body:#555158;
+  --sp21-muted:rgba(24,23,27,.58);
+  --sp21-gold:#941523;
+  --sp21-gold-deep:#c91e35;
+  --sp21-danger:#c91e35;
+  --sp21-success:#2f6b45;
   min-height:100dvh;
   width:100%;
   background:
-    radial-gradient(circle at 15% -10%,rgba(227,189,124,.08),transparent 31rem),
-    linear-gradient(180deg,#0d0b0a 0%,#090807 100%);
+    radial-gradient(circle at 15% -10%,rgba(148,21,35,.08),transparent 31rem),
+    linear-gradient(180deg,#fbfaf8 0%,#f8f7f5 100%);
   color:var(--sp21-text);
   font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   padding:12px 12px calc(34px + env(safe-area-inset-bottom));
@@ -69,7 +69,7 @@
   padding:14px;border:1px solid var(--sp21-line);border-radius:16px;
   background:var(--sp21-panel)
 }
-#sigil-pay-v21 .sp21__state--error{border-color:rgba(224,154,147,.34)}
+#sigil-pay-v21 .sp21__state--error{border-color:rgba(201,30,53,.34)}
 #sigil-pay-v21 .sp21__spinner{
   width:22px;height:22px;flex:0 0 22px;border-radius:50%;
   border:2px solid var(--sp21-line);border-top-color:var(--sp21-gold);
@@ -78,7 +78,7 @@
 @keyframes sp21spin{to{transform:rotate(360deg)}}
 #sigil-pay-v21 .sp21__state-icon{
   display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;
-  border-radius:50%;background:rgba(224,154,147,.12);color:var(--sp21-danger);
+  border-radius:50%;background:rgba(201,30,53,.12);color:var(--sp21-danger);
   font-weight:800
 }
 #sigil-pay-v21 .sp21__state strong{display:block;font-size:13px;line-height:1.35}
@@ -91,12 +91,12 @@
   position:relative;overflow:hidden;
   padding:17px;border:1px solid var(--sp21-line);border-radius:19px;
   background:
-    linear-gradient(145deg,rgba(35,28,21,.96),rgba(13,11,9,.98));
-  box-shadow:inset 0 1px rgba(255,255,255,.025)
+    linear-gradient(145deg,#f8f7f5,#fbfaf8);
+  box-shadow:inset 0 1px rgba(24,23,27,.025)
 }
 #sigil-pay-v21 .sp21__summary::after{
   content:"";position:absolute;right:-70px;top:-90px;width:190px;height:190px;
-  border-radius:50%;background:radial-gradient(circle,rgba(227,189,124,.1),transparent 68%);
+  border-radius:50%;background:radial-gradient(circle,rgba(148,21,35,.1),transparent 68%);
   pointer-events:none
 }
 #sigil-pay-v21 .sp21__summary-head{
@@ -112,7 +112,7 @@
 #sigil-pay-v21 .sp21__status{
   position:relative;z-index:1;display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
   max-width:42%;padding:6px 8px;border:1px solid var(--sp21-line-strong);
-  border-radius:999px;background:rgba(227,189,124,.06);
+  border-radius:999px;background:rgba(148,21,35,.06);
   color:var(--sp21-gold);font-size:8px;font-weight:700;line-height:1.2;text-align:center
 }
 #sigil-pay-v21 .sp21__amount-wrap{position:relative;z-index:1;margin-top:20px}
@@ -122,18 +122,18 @@
 }
 #sigil-pay-v21 .sp21__currency{margin-top:8px;color:var(--sp21-gold);font-size:18px;font-weight:700}
 #sigil-pay-v21 .sp21__amount strong{
-  font-size:clamp(46px,15vw,64px);font-weight:750;letter-spacing:-.06em
+  font-size:clamp(46px,15vw,64px);font-weight:800;letter-spacing:-.06em
 }
 #sigil-pay-v21 .sp21__stage{margin-top:5px;color:var(--sp21-muted);font-size:9px}
 #sigil-pay-v21 .sp21__summary-bottom{
   position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;
-  gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(255,241,218,.09)
+  gap:10px;margin-top:15px;padding-top:12px;border-top:1px solid rgba(24,23,27,.09)
 }
 #sigil-pay-v21 .sp21__summary-bottom p{color:var(--sp21-body);font-size:10px;line-height:1.45}
 #sigil-pay-v21 .sp21__summary-bottom a{flex:0 0 auto;color:var(--sp21-gold);font-size:9px;font-weight:700}
 #sigil-pay-v21 .sp21__card{
   padding:16px;border:1px solid var(--sp21-line);border-radius:17px;
-  background:linear-gradient(180deg,rgba(23,19,16,.96),rgba(13,11,9,.98))
+  background:linear-gradient(180deg,#ffffff,#fbfaf8)
 }
 #sigil-pay-v21 .sp21__section-head{
   display:flex;align-items:flex-start;justify-content:space-between;gap:12px
@@ -151,7 +151,7 @@
 #sigil-pay-v21 .sp21__avatar{
   display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;
   border-radius:13px;background:linear-gradient(145deg,var(--sp21-gold),var(--sp21-gold-deep));
-  color:#17110b;font-size:15px;font-weight:800
+  color:#ffffff;font-size:15px;font-weight:800
 }
 #sigil-pay-v21 .sp21__model-copy{min-width:0}
 #sigil-pay-v21 .sp21__model-copy small{display:block;color:var(--sp21-muted);font-size:7px;letter-spacing:.13em}
@@ -161,15 +161,15 @@
 #sigil-pay-v21 .sp21__model-copy p{margin-top:2px;color:var(--sp21-muted);font-size:9px}
 #sigil-pay-v21 .sp21__facts{
   display:grid;grid-template-columns:1fr;gap:0;margin-top:11px;
-  border-top:1px solid rgba(255,241,218,.08)
+  border-top:1px solid rgba(24,23,27,.08)
 }
 #sigil-pay-v21 .sp21__fact{
   display:grid;grid-template-columns:72px minmax(0,1fr);gap:10px;
-  padding:10px 0;border-bottom:1px solid rgba(255,241,218,.08)
+  padding:10px 0;border-bottom:1px solid rgba(24,23,27,.08)
 }
 #sigil-pay-v21 .sp21__fact dt{color:var(--sp21-muted);font-size:9px}
 #sigil-pay-v21 .sp21__fact dd{
-  min-width:0;color:var(--sp21-body);font-size:11px;font-weight:600;word-break:break-word
+  min-width:0;color:var(--sp21-body);font-size:11px;font-weight:700;word-break:break-word
 }
 #sigil-pay-v21 .sp21__fact a{
   display:inline-block;margin-top:3px;color:var(--sp21-gold);font-size:9px;font-weight:700
@@ -179,17 +179,17 @@
 }
 #sigil-pay-v21 .sp21__price{
   min-width:0;padding:10px;border:1px solid var(--sp21-line);border-radius:11px;
-  background:rgba(255,255,255,.018)
+  background:rgba(24,23,27,.018)
 }
 #sigil-pay-v21 .sp21__price span{display:block;color:var(--sp21-muted);font-size:8px}
 #sigil-pay-v21 .sp21__price strong,
 #sigil-pay-v21 .sp21__price del{
   display:block;margin-top:3px;color:var(--sp21-body);font-size:12px;font-weight:700
 }
-#sigil-pay-v21 .sp21__price--accent{border-color:rgba(227,189,124,.25);background:rgba(227,189,124,.045)}
+#sigil-pay-v21 .sp21__price--accent{border-color:rgba(148,21,35,.25);background:rgba(148,21,35,.045)}
 #sigil-pay-v21 .sp21__price--accent strong{color:var(--sp21-gold);font-size:14px}
 #sigil-pay-v21 .sp21__refs{
-  margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,241,218,.08)
+  margin-top:10px;padding-top:10px;border-top:1px solid rgba(24,23,27,.08)
 }
 #sigil-pay-v21 .sp21__refs summary{
   color:var(--sp21-muted);font-size:8px;cursor:pointer;list-style:none
@@ -198,13 +198,13 @@
 #sigil-pay-v21 .sp21__refs div{display:grid;gap:4px;margin-top:7px}
 #sigil-pay-v21 .sp21__refs code{
   display:block;max-width:100%;padding:5px 7px;border-radius:8px;
-  background:#0a0807;color:var(--sp21-muted);font:500 8px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:#f8f7f5;color:var(--sp21-muted);font:500 8px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis
 }
 #sigil-pay-v21 .sp21__methods-state{
   display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 11px;
   border:1px solid var(--sp21-line);border-radius:12px;color:var(--sp21-muted);
-  background:rgba(255,255,255,.018);font-size:9px;line-height:1.45
+  background:rgba(24,23,27,.018);font-size:9px;line-height:1.45
 }
 #sigil-pay-v21 .sp21__mini-spinner{
   width:14px;height:14px;flex:0 0 14px;border-radius:50%;
@@ -217,13 +217,13 @@
 #sigil-pay-v21 .sp21__method{
   display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;
   width:100%;min-height:60px;padding:10px;border:1px solid var(--sp21-line);
-  border-radius:13px;background:rgba(255,255,255,.02);text-align:left;cursor:pointer;
+  border-radius:13px;background:rgba(24,23,27,.02);text-align:left;cursor:pointer;
   transition:border-color .16s ease,background-color .16s ease,transform .16s ease
 }
 #sigil-pay-v21 .sp21__method:active{transform:scale(.99)}
 #sigil-pay-v21 .sp21__method-icon{
   display:grid;place-items:center;width:34px;height:34px;border-radius:10px;
-  background:rgba(227,189,124,.09);color:var(--sp21-gold);font-size:10px;font-weight:800
+  background:rgba(148,21,35,.09);color:var(--sp21-gold);font-size:10px;font-weight:800
 }
 #sigil-pay-v21 .sp21__method-copy{min-width:0}
 #sigil-pay-v21 .sp21__method-copy strong{display:block;font-size:11px}
@@ -232,12 +232,12 @@
 }
 #sigil-pay-v21 .sp21__chev{color:var(--sp21-muted);font-size:18px;font-style:normal;transition:transform .16s ease}
 #sigil-pay-v21 .sp21__method.is-active{
-  border-color:var(--sp21-line-strong);background:rgba(227,189,124,.07)
+  border-color:var(--sp21-line-strong);background:rgba(148,21,35,.07)
 }
 #sigil-pay-v21 .sp21__method.is-active .sp21__chev{color:var(--sp21-gold);transform:rotate(90deg)}
 #sigil-pay-v21 .sp21__panel{
   margin-top:8px;padding:13px;border:1px solid var(--sp21-line-strong);
-  border-radius:14px;background:rgba(227,189,124,.035)
+  border-radius:14px;background:rgba(148,21,35,.035)
 }
 #sigil-pay-v21 .sp21__panel-head{
   display:flex;align-items:flex-start;justify-content:space-between;gap:10px
@@ -274,7 +274,7 @@
 #sigil-pay-v21 .sp21__bank-row,
 #sigil-pay-v21 .sp21__fee-row{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:9px 10px;border-bottom:1px solid rgba(255,241,218,.08)
+  padding:9px 10px;border-bottom:1px solid rgba(24,23,27,.08)
 }
 #sigil-pay-v21 .sp21__bank-row:last-child,
 #sigil-pay-v21 .sp21__fee-row:last-child{border-bottom:0}
@@ -284,29 +284,29 @@
 #sigil-pay-v21 .sp21__fee-row strong{
   max-width:65%;color:var(--sp21-body);font-size:10px;text-align:right;word-break:break-word
 }
-#sigil-pay-v21 .sp21__fee-row--total{background:rgba(227,189,124,.05)}
+#sigil-pay-v21 .sp21__fee-row--total{background:rgba(148,21,35,.05)}
 #sigil-pay-v21 .sp21__fee-row--total strong{color:var(--sp21-gold);font-size:14px}
 #sigil-pay-v21 .sp21__actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
 #sigil-pay-v21 .sp21__btn{
   display:inline-flex;align-items:center;justify-content:center;min-height:42px;
   padding:0 12px;border:1px solid transparent;border-radius:11px;background:none;
-  cursor:pointer;font-size:10px;font-weight:750;text-align:center
+  cursor:pointer;font-size:10px;font-weight:700;text-align:center
 }
-#sigil-pay-v21 .sp21__btn--ghost{border-color:var(--sp21-line);background:rgba(255,255,255,.025)}
+#sigil-pay-v21 .sp21__btn--ghost{border-color:var(--sp21-line);background:rgba(24,23,27,.025)}
 #sigil-pay-v21 .sp21__btn--gold{
-  background:linear-gradient(135deg,#f0d694,#c4924d);color:#17110b!important
+  background:linear-gradient(135deg,#c91e35,#8e1020);color:#ffffff!important
 }
 #sigil-pay-v21 .sp21__btn--wide{width:100%;margin-top:10px}
 #sigil-pay-v21 .sp21__btn:disabled{opacity:.38;cursor:not-allowed}
 #sigil-pay-v21 .sp21__upload{
   display:grid;place-items:center;text-align:center;gap:4px;margin-top:12px;padding:18px 12px;
-  border:1px dashed rgba(227,189,124,.4);border-radius:13px;
-  background:rgba(227,189,124,.035);cursor:pointer
+  border:1px dashed rgba(148,21,35,.4);border-radius:13px;
+  background:rgba(148,21,35,.035);cursor:pointer
 }
 #sigil-pay-v21 .sp21__upload input{display:none}
 #sigil-pay-v21 .sp21__upload-plus{
   display:grid;place-items:center;width:32px;height:32px;border-radius:50%;
-  background:rgba(227,189,124,.12);color:var(--sp21-gold);font-size:18px
+  background:rgba(148,21,35,.12);color:var(--sp21-gold);font-size:18px
 }
 #sigil-pay-v21 .sp21__upload strong{font-size:12px}
 #sigil-pay-v21 .sp21__upload small{color:var(--sp21-muted);font-size:8px}
@@ -316,7 +316,7 @@
 }
 #sigil-pay-v21 .sp21__preview{
   display:grid;place-items:center;width:44px;height:44px;border-radius:8px;
-  background:#0b0908;color:var(--sp21-muted);font-size:8px;overflow:hidden
+  background:#ffffff;color:var(--sp21-muted);font-size:8px;overflow:hidden
 }
 #sigil-pay-v21 .sp21__preview img{width:100%;height:100%;object-fit:cover}
 #sigil-pay-v21 .sp21__file-copy{min-width:0}
@@ -332,10 +332,10 @@
 #sigil-pay-v21 .sp21__field em{color:var(--sp21-muted);font-style:normal}
 #sigil-pay-v21 .sp21__field textarea{
   width:100%;min-height:76px;margin-top:5px;padding:10px;border:1px solid var(--sp21-line);
-  border-radius:10px;background:#0b0908;color:var(--sp21-text);resize:vertical;outline:none;
+  border-radius:10px;background:#ffffff;color:var(--sp21-text);resize:vertical;outline:none;
   font-size:10px;line-height:1.55
 }
-#sigil-pay-v21 .sp21__field textarea:focus{border-color:var(--sp21-line-strong);box-shadow:0 0 0 3px rgba(227,189,124,.07)}
+#sigil-pay-v21 .sp21__field textarea:focus{border-color:var(--sp21-line-strong);box-shadow:0 0 0 3px rgba(148,21,35,.07)}
 #sigil-pay-v21 .sp21__consent{
   display:flex;align-items:flex-start;gap:8px;margin-top:10px;
   color:var(--sp21-muted);font-size:8px;line-height:1.55
@@ -344,14 +344,14 @@
 #sigil-pay-v21 .sp21__submit-status{min-height:15px;margin-top:7px;color:var(--sp21-muted);font-size:8px}
 #sigil-pay-v21 .sp21__proof-state{
   margin-top:11px;padding:12px;border:1px solid var(--sp21-line-strong);border-radius:11px;
-  background:rgba(227,189,124,.045);color:var(--sp21-body);font-size:10px;line-height:1.6
+  background:rgba(148,21,35,.045);color:var(--sp21-body);font-size:10px;line-height:1.6
 }
 #sigil-pay-v21 .sp21__after{
   display:grid;grid-template-columns:1fr;gap:7px
 }
 #sigil-pay-v21 .sp21__after-card{
   display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;
-  border:1px solid var(--sp21-line);border-radius:13px;background:rgba(18,15,13,.78)
+  border:1px solid var(--sp21-line);border-radius:13px;background:rgba(255,255,255,.82)
 }
 #sigil-pay-v21 .sp21__after-card div{min-width:0}
 #sigil-pay-v21 .sp21__after-card strong{display:block;font-size:10px}
@@ -372,7 +372,7 @@
   #sigil-pay-v21 .sp21__summary,#sigil-pay-v21 .sp21__card{padding:20px}
   #sigil-pay-v21 .sp21__facts{grid-template-columns:1fr 1fr}
   #sigil-pay-v21 .sp21__fact:nth-child(odd){padding-right:14px}
-  #sigil-pay-v21 .sp21__fact:nth-child(even){padding-left:14px;border-left:1px solid rgba(255,241,218,.08)}
+  #sigil-pay-v21 .sp21__fact:nth-child(even){padding-left:14px;border-left:1px solid rgba(24,23,27,.08)}
   #sigil-pay-v21 .sp21__pricing{grid-template-columns:repeat(3,minmax(0,1fr))}
   #sigil-pay-v21 .sp21__after{grid-template-columns:1fr 1fr}
 }
@@ -428,7 +428,7 @@
 #sigil-pay-v21 .sp21__promo[hidden]{display:none}
 #sigil-pay-v21 .sp21__promo-toggle{
   display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;
-  padding:0 13px;border:0;background:none;color:var(--sp21-gold);font-size:10px;font-weight:750;text-align:left;cursor:pointer
+  padding:0 13px;border:0;background:none;color:var(--sp21-gold);font-size:10px;font-weight:700;text-align:left;cursor:pointer
 }
 #sigil-pay-v21 .sp21__promo-toggle i{font-style:normal;font-size:16px;line-height:1}
 #sigil-pay-v21 .sp21__promo-form{padding:0 13px 13px}
@@ -437,11 +437,11 @@
 #sigil-pay-v21 .sp21__promo-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:6px}
 #sigil-pay-v21 .sp21__promo-input{
   width:100%;min-height:44px;padding:0 12px;border:1px solid var(--sp21-line);border-radius:10px;
-  background:#0b0908;color:var(--sp21-text);outline:none;text-transform:uppercase;
+  background:#ffffff;color:var(--sp21-text);outline:none;text-transform:uppercase;
   font:700 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em
 }
-#sigil-pay-v21 .sp21__promo-input::placeholder{color:var(--sp21-muted);letter-spacing:.04em;font-weight:500;text-transform:none}
-#sigil-pay-v21 .sp21__promo-input:focus{border-color:var(--sp21-line-strong);box-shadow:0 0 0 3px rgba(227,189,124,.07)}
+#sigil-pay-v21 .sp21__promo-input::placeholder{color:var(--sp21-muted);letter-spacing:.04em;font-weight:400;text-transform:none}
+#sigil-pay-v21 .sp21__promo-input:focus{border-color:var(--sp21-line-strong);box-shadow:0 0 0 3px rgba(148,21,35,.07)}
 #sigil-pay-v21 .sp21__promo-status{margin:0;padding:0 13px 13px;color:var(--sp21-muted);font-size:9px;line-height:1.5}
 #sigil-pay-v21 .sp21__promo-status:empty{display:none}
 #sigil-pay-v21 .sp21__promo-form+.sp21__promo-status{padding-top:0}
