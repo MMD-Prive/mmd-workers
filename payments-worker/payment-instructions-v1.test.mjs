@@ -438,11 +438,19 @@ test("a missing membership row never falls through to the job account", async ()
 
 test("unknown item types stay on the primary profile and never read job or membership rows", async () => {
   const queried = [];
-  const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: "points_topup" }, ALL_PROFILES(), queried);
+  const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: "gift_card" }, ALL_PROFILES(), queried);
   assert.equal(payload.instruction_profile, "mmd_payment_primary_v1");
   assert.equal(payload.instructions.bank_transfer.account_number, "1111111111");
   assert.equal(queried.length, 1);
   assert.doesNotMatch(queried.join(" "), /mmd_job_v1|mmd_membership_v1/);
+});
+
+test("points top-up uses the job (Krungsri) profile with primary as fallback", async () => {
+  const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: "points_topup" }, ALL_PROFILES());
+  assert.equal(payload.instruction_profile, "mmd_job_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
+  const fallback = await instructionsFor({ ...details({ stage: "" }), payment_type: "points_topup" }, [profileRow("mmd_payment_primary_v1", "1111111111")]);
+  assert.equal(fallback.instruction_profile, "mmd_payment_primary_v1");
 });
 
 test("shop payments are unaffected by the job and membership profiles", async () => {
