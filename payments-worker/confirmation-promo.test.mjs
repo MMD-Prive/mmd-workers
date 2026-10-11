@@ -9,6 +9,7 @@ import {
   withReplacedMarkedJson,
 } from "./confirmation-promo.js";
 
+const LINE_ID = `U${"a".repeat(32)}`;
 const F = { sessionId: "fldLTq2kZbyRv22IA", amountThb: "fldhwC79ndbnEXSZz", customerAmountDueThb: "fldvJowquu8RrsOMc", paymentRef: "fldojgjSQLaO0uQLX", paymentStatus: "fldTY5lE6m0kQf72n", modelName: "flddVz6eoWRHrzIQr", jobType: "fldjK3U9bghnj7xUe", jobDate: "fldpnqoIsUMfN7y3c", note: "fldEcDkF7CH9VixWM" };
 const SECRET = "payments-to-member-pages-test-secret-1234567";
 const NOW = new Date("2026-10-11T03:00:00.000Z");
@@ -26,6 +27,8 @@ function session(overrides = {}) {
       [F.modelName]: "EI",
       [F.jobType]: "PN",
       [F.jobDate]: "2026-10-18",
+      fld5tzCzdTTh8AJyI: LINE_ID,
+      fldHsczyzr8axfwUC: "MMD-001",
       [F.note]: `create_job_v5 | work pn\n[SIGIL Pricing v1] ${JSON.stringify(PRICING)}\n[PENDING] x`,
       ...overrides,
     },
@@ -88,7 +91,7 @@ test("applies CARE BACK 5 percent: price, net amount and note are rewritten serv
   assert.equal(data.pricing.net_price_thb, 23750);
   assert.equal(data.pricing.deposit_due_thb, 7500);
   assert.equal(data.pricing.balance_thb, 16250); // net 23,750 - deposit 7,500, same convention as Create Job
-  assert.deepEqual(calls.redeems[0], { code: "GGQYHK", session_id: "sess_promo_test", selected_model_name: "EI", job_format: "PN" });
+  assert.deepEqual(calls.redeems[0], { code: "GGQYHK", session_id: "sess_promo_test", selected_model_name: "EI", job_format: "PN", line_user_id: LINE_ID, member_id: "MMD-001" });
   assert.equal(calls.patches[0][F.amountThb], 23750);
   assert.equal(calls.patches[0][F.customerAmountDueThb], undefined); // deposit stage keeps deposit amount
   const note = sess.fields[F.note];

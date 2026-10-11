@@ -211,7 +211,7 @@ export function normalizeJobFormat(value) {
   return key === "PN" || key === "VIP" ? key : "";
 }
 
-async function keyedDigest(env, value) {
+export async function keyedDigest(env, value) {
   const secret = clean(env.LIFF_SESSION_SECRET);
   if (secret.length < 32) throw new CareBackStoreError("LIFF_SESSION_SECRET_MISSING");
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);

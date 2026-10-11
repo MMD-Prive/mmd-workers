@@ -1,6 +1,7 @@
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
 import {
   canonicalModelLevel,
+  keyedDigest,
   canonicalPublicPercent,
   modelSupportsJobFormat,
   normalizeJobFormat,
@@ -8,11 +9,40 @@ import {
 } from "./care-back-trusted-booking-approval.js";
 
 const REDEEM_PATH = "/__internal/care-back/redeem-code";
+const RELEASE_PATH = "/__internal/care-back/release-code";
+const LINE_ID_RE = /^U[0-9a-f]{32}$/i;
 const SERVICE_HEADER = "x-mmd-payments-secret";
 
 export function isTrustedCareBackCodeRedemption(request) {
   const url = request instanceof Request ? new URL(request.url) : new URL(String(request));
-  return normalizePath(url.pathname) === REDEEM_PATH;
+  const path = normalizePath(url.pathname);
+  return path === REDEEM_PATH || path === RELEASE_PATH;
+}
+
+export async function handleTrustedCareBackCodeRoute(request, env = {}) {
+  const path = normalizePath(new URL(request.url).pathname);
+  return path === RELEASE_PATH
+    ? handleTrustedCareBackCodeRelease(request, env)
+    : handleTrustedCareBackCodeRedemption(request, env);
+}
+
+// Service-only: give a consumed coupon back when the job it was bound to is cancelled.
+export async function handleTrustedCareBackCodeRelease(request, env = {}) {
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, { Allow: "POST" });
+  if (!authorized(request, env)) return json({ ok: false, error: "unauthorized" }, 401);
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "airtable_not_configured" }, 503);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+  const store = getCareBackStore(env);
+  if (!store?.releaseCouponForSession) return json({ ok: false, error: "care_back_store_not_configured" }, 503);
+  try {
+    const released = await store.releaseCouponForSession({ sessionId: body.session_id, reason: clean(body.reason) });
+    return json({ ok: true, status: "released", code_status: released.status });
+  } catch (error) {
+    const code = error instanceof CareBackStoreError ? error.code : "CARE_BACK_RELEASE_UNAVAILABLE";
+    const notFound = code === "CARE_BACK_REDEMPTION_NOT_FOUND";
+    return json({ ok: false, status: notFound ? "not_found" : "unavailable", error: code }, notFound ? 404 : 503);
+  }
 }
 
 // Service-to-service only (payments-worker -> member-pages-worker). The caller
@@ -56,6 +86,19 @@ export async function handleTrustedCareBackCodeRedemption(request, env = {}) {
   const store = getCareBackStore(env);
   if (!store?.redeemCouponByCode) return json({ ok: false, error: "care_back_store_not_configured" }, 503);
 
+  // Optional customer identity taken from the Session row by payments-worker.
+  const lineUserId = clean(body.line_user_id);
+  const memberId = clean(body.member_id);
+  let lineUserIdHash = "";
+  if (lineUserId) {
+    if (!LINE_ID_RE.test(lineUserId)) return json({ ok: false, status: "review_required", error: "care_back_line_identity_unresolved" }, 409);
+    try {
+      lineUserIdHash = await keyedDigest(env, `identity:${lineUserId}`);
+    } catch {
+      return json({ ok: false, status: "unavailable", error: "care_back_identity_digest_unavailable" }, 503);
+    }
+  }
+
   try {
     const redeemed = await store.redeemCouponByCode({
       code: body.code,
@@ -63,6 +106,8 @@ export async function handleTrustedCareBackCodeRedemption(request, env = {}) {
       modelLevel,
       jobFormat,
       publicModelPercent,
+      memberId,
+      lineUserIdHash,
     });
     return json({
       ok: true,
@@ -74,6 +119,7 @@ export async function handleTrustedCareBackCodeRedemption(request, env = {}) {
       expires_at: redeemed.expires_at,
       single_use: true,
       replayed: redeemed.replayed === true,
+      identity_bound: redeemed.identity_bound === true,
       authority: "care_back_backend_verified_code_redemption_v1",
     });
   } catch (error) {
@@ -81,7 +127,7 @@ export async function handleTrustedCareBackCodeRedemption(request, env = {}) {
     const rejected = [
       "CARE_BACK_CODE_INVALID", "CARE_BACK_CODE_NOT_FOUND", "CARE_BACK_COUPON_USED",
       "CARE_BACK_COUPON_EXPIRED", "CARE_BACK_COUPON_UNAVAILABLE", "CARE_BACK_COUPON_NOT_READY",
-      "CARE_BACK_WISH_REQUIRED",
+      "CARE_BACK_WISH_REQUIRED", "CARE_BACK_CODE_OWNER_MISMATCH",
     ].includes(code);
     const review = !rejected && ["CARE_BACK_CODE_CONFLICT", "CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED", "CARE_BACK_SESSION_INVALID"].includes(code);
     return json({

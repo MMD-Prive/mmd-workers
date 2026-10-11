@@ -49,3 +49,7 @@ Card 01 shows a collapsed "มีรหัสส่วนลด / รหัส�
 - Same-session retries are idempotent. A different session cannot reuse a consumed coupon.
 
 Deploy order: member-pages-worker -> payments-worker (needs the `MEMBER_PAGES_WORKER` binding and the same 32+ char `AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES` secret on both) -> publish the three Webflow files.
+
+### Owner binding and release
+- payments-worker forwards the Session's `line_user_id` / `member_id` (when present). member-pages-worker checks them against the claim that earned the coupon; a different customer gets `CARE_BACK_CODE_OWNER_MISMATCH` and nothing is consumed. A Session with neither field cannot be checked: it falls back to signed link + code and the redemption is recorded with `identity_bound:false`.
+- `POST /__internal/care-back/release-code` (`x-mmd-payments-secret`, body `{session_id, reason}`) gives the coupon back (status `active`, `used_count` 0) when the job it was bound to is cancelled. History stays in `payload_json.releases`. It is not wired to a cancel flow yet; call it from the cancellation step.
