@@ -2,6 +2,7 @@ import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partn
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
 import { runHypeJobDailyScheduled } from "./hype-job-daily/runner.js";
 import { handleHypeJobDailyOwnerRequest, isHypeJobDailyOwnerRequest } from "./hype-job-daily/owner.js";
+import { handlePremiumGroupCleanupOwnerRequest, isPremiumGroupCleanupOwnerRequest } from "./premium-group-cleanup/owner.js";
 import { handleModelReconfirmOwnerRequest, isModelReconfirmOwnerRequest } from "./model-reconfirm-owner.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
@@ -305,6 +306,11 @@ export default {
     // HYPE_JOB_DAILY owner-only status / preview / destination smoke (owner session required).
     if (isHypeJobDailyOwnerRequest(normalizedPath)) {
       return handleHypeJobDailyOwnerRequest(request, runtimeEnv);
+    }
+
+    // PREMIUM_GROUP_ELIGIBILITY_CLEANUP (#2141) owner-only read-only dry-run audit.
+    if (isPremiumGroupCleanupOwnerRequest(normalizedPath)) {
+      return handlePremiumGroupCleanupOwnerRequest(request, runtimeEnv);
     }
 
     // MODEL_RECONFIRM guard v2 owner-only status / dry-run preview / owner-destination smoke.
