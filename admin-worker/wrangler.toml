@@ -1003,6 +1003,9 @@ service = "cal-sync-worker"
 INTERNAL_LOVABLE_ORIGIN = "https://mmd-os.lovable.app"
 MODEL_CARD_AUTO_ENABLED = "false"
 HYPE_JOB_DAILY_ENABLED = "true"
+# PREMIUM_GROUP_ELIGIBILITY_CLEANUP (#2141) phase 1: owner dry-run audit only. Sends/removes nothing.
+PREMIUM_GROUP_ELIGIBILITY_CLEANUP_ENABLED = "false"
+PREMIUM_GROUP_CLEANUP_DRY_RUN = "true"
 # MODEL_RECONFIRM guard v2 (owner preview/dry-run accuracy). Owner chat id is set in Cloudflare only, never in this file.
 MODEL_RECONFIRM_GUARD_V2 = "false"
 # Optional comma/space-separated canonical Airtable Model record IDs for a controlled production pilot. Empty means no additional allowlist.\nMODEL_CARD_PILOT_MODEL_IDS = ""\nMODEL_CARD_DAILY_LIMIT = "20"
