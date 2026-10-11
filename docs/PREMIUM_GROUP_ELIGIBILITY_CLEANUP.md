@@ -8,6 +8,6 @@ Owner-only, read-only dry-run audit. Sends nothing, removes nothing, writes no e
 - Flags (wrangler vars): `PREMIUM_GROUP_ELIGIBILITY_CLEANUP_ENABLED=false`, `PREMIUM_GROUP_CLEANUP_DRY_RUN=true`.
 - Not auto-handled (always `review_required`): VIP/SVIP/Black, blocked member, pending payment/renewal,
   owner grant/override, no single verified Telegram link, lookup failure.
-- Telegram group presence is NOT checked here (piece B: read-only getChatMember endpoint in telegram-worker).
+- Telegram group presence is checked read-only via telegram-worker `POST /telegram/internal/member-presence` (getChatMember only): absent → ignored, present → candidate, privileged/unknown → review_required.
 - Grace uses the shared resolver (currently 7 days; decided 14 — separate change).
 - Later phases (warning, follow-up, owner-approved removal) are out of scope for this PR.

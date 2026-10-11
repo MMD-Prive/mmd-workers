@@ -18,6 +18,8 @@ export const REASON = Object.freeze({
   OWNER_GRANT: "owner_grant_or_override",
   NO_TELEGRAM_MATCH: "no_reliable_telegram_match",
   SOURCE_FAILURE: "resolver_source_failure",
+  NOT_IN_GROUP: "not_in_premium_group",
+  PRIVILEGED_IN_GROUP: "privileged_in_group",
 });
 
 const PROTECTED = new Set([CAPABILITIES.VIP, CAPABILITIES.SVIP, CAPABILITIES.BLACK_CARD]);
@@ -83,7 +85,8 @@ export function classifyMember(group, { now = Date.now(), lookupTelegram } = {})
   return { group, premium, needsLookup: true };
 }
 
-export async function buildAudit(records = [], { now = Date.now(), lookupTelegram } = {}) {
+// checkPresence(telegramUserId) -> { presence: "present"|"absent"|"privileged"|"unknown" } (optional; read-only).
+export async function buildAudit(records = [], { now = Date.now(), lookupTelegram, checkPresence } = {}) {
   const items = [];
   for (const group of groupByMember(records)) {
     const first = classifyMember(group, { now, lookupTelegram });
@@ -95,11 +98,19 @@ export async function buildAudit(records = [], { now = Date.now(), lookupTelegra
     if (state === "lookup_failed") { items.push(item(group, DECISION.REVIEW, REASON.SOURCE_FAILURE)); continue; }
     const tgId = clean(match?.telegram_user_id, 40);
     if (state !== "linked" || !/^\d+$/.test(tgId)) { items.push(item(group, DECISION.REVIEW, REASON.NO_TELEGRAM_MATCH)); continue; }
+    let presence = "not_checked";
+    if (typeof checkPresence === "function") {
+      try { presence = (await checkPresence(tgId))?.presence || "unknown"; } catch { presence = "unknown"; }
+      if (presence === "absent") { items.push(item(group, DECISION.IGNORED, REASON.NOT_IN_GROUP)); continue; }
+      if (presence === "privileged") { items.push(item(group, DECISION.REVIEW, REASON.PRIVILEGED_IN_GROUP)); continue; }
+      if (presence !== "present") { items.push(item(group, DECISION.REVIEW, REASON.SOURCE_FAILURE)); continue; }
+    }
     const latest = Math.max(...first.premium.map((e) => Date.parse(e.expire_at) || 0));
     items.push(item(group, DECISION.CANDIDATE, REASON.EXPIRED_NOT_RENEWED, {
       expired_at: latest ? new Date(latest).toISOString().slice(0, 10) : null,
       days_since_expiry: latest ? Math.floor((now - latest) / DAY_MS) : null,
       telegram_user_id_masked: maskId(tgId),
+      telegram_presence: presence,
     }));
   }
   const order = { [DECISION.CANDIDATE]: 0, [DECISION.REVIEW]: 1, [DECISION.IGNORED]: 2 };
