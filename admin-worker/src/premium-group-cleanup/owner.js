@@ -1,11 +1,11 @@
 // Owner-only, read-only dry-run endpoints for PREMIUM_GROUP_ELIGIBILITY_CLEANUP (#2141, phase 1).
 //   GET /internal/admin/premium-group-cleanup/status
 //   GET /internal/admin/premium-group-cleanup/preview
-// Sends nothing, removes nothing, writes nothing. Telegram presence is NOT checked in this phase.
+// Sends nothing, removes nothing, writes nothing. Telegram presence is checked read-only (getChatMember via telegram-worker) when configured.
 import { readCredentialBoundAdminActor } from "../credential-bound-admin-session.js";
 import { clean } from "../hype-job-daily/util.js";
 import { buildAudit, isDryRun, isEnabled } from "./audit.js";
-import { makeTelegramLookup, readEntitlements } from "./sources.js";
+import { makePresenceCheck, makeTelegramLookup, readEntitlements } from "./sources.js";
 
 export const PREMIUM_GROUP_CLEANUP_OWNER_BASE = "/internal/admin/premium-group-cleanup";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
@@ -28,7 +28,7 @@ export function buildStatus(env = {}) {
     dry_run: isDryRun(env),
     sends_nothing: true,
     removes_nothing: true,
-    telegram_presence: "not_checked",
+    telegram_presence: "read_only_check_when_configured",
     read_only: true,
   };
 }
@@ -37,15 +37,16 @@ export async function buildPreview(env = {}, now = Date.now(), deps = {}) {
   const fetchImpl = deps.fetch || fetch;
   const read = deps.readEntitlements || ((e) => readEntitlements(e, fetchImpl));
   const lookup = deps.lookupTelegram || makeTelegramLookup(env, fetchImpl);
+  const checkPresence = deps.checkPresence === undefined ? makePresenceCheck(env, fetchImpl) : deps.checkPresence;
   const { records, truncated } = await read(env);
-  const audit = await buildAudit(records, { now, lookupTelegram: lookup });
+  const audit = await buildAudit(records, { now, lookupTelegram: lookup, checkPresence: checkPresence || undefined });
   return {
     ok: true,
     flag_enabled: isEnabled(env),
     dry_run: true,
     sends_nothing: true,
     removes_nothing: true,
-    telegram_presence: "not_checked",
+    telegram_presence: checkPresence ? "checked_read_only" : "not_checked",
     source_truncated: Boolean(truncated),
     counts: audit.counts,
     by_reason: audit.by_reason,

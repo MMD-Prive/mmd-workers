@@ -57,3 +57,21 @@ export function makeTelegramLookup(env, fetchImpl = fetch) {
     return { state: "not_linked" };
   };
 }
+
+// Read-only presence check via telegram-worker (getChatMember only). Returns { presence }.
+export function makePresenceCheck(env, fetchImpl = fetch) {
+  const base = clean(env.TELEGRAM_INTERNAL_SEND_URL, 500).replace(/\/telegram\/internal\/send.*$/, "");
+  const serviceToken = clean(env.AUTH_SERVICE_STUDIO_TO_TELEGRAM, 500);
+  if (!base || !serviceToken) return null;
+  return async function checkPresence(telegramUserId) {
+    const res = await fetchImpl(`${base}/telegram/internal/member-presence`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-internal-token": serviceToken },
+      body: JSON.stringify({ telegram_user_id: String(telegramUserId), room: "premium" }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || body?.ok !== true) return { presence: "unknown" };
+    return { presence: body.presence };
+  };
+}

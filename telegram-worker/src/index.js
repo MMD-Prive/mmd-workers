@@ -180,7 +180,7 @@ export default {
       }
 
       if (MEMBER_PRESENCE_PATHS.includes(path) && req.method === "POST") {
-        requireInternalToken(req, env);
+        requireInternalToken(req, env, { allowServiceSecrets: ["AUTH_SERVICE_STUDIO_TO_TELEGRAM"] });
         const body = await safeJson(req);
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         return handleMemberPresence(body, env);

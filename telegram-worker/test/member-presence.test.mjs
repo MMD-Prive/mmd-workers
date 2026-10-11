@@ -52,3 +52,9 @@ test("route requires internal token", async () => {
   const noAuth = await worker.fetch(new Request(url, { method: "POST", body, headers: { "content-type": "application/json" } }), env);
   assert.ok([401, 403].includes(noAuth.status));
 });
+
+test("admin service secret is accepted on the route", async () => {
+  const url = "https://t.test/telegram/internal/member-presence";
+  const res = await worker.fetch(new Request(url, { method: "POST", body: "{}", headers: { "content-type": "application/json", "x-internal-token": "svc" } }), { ...env, AUTH_SERVICE_STUDIO_TO_TELEGRAM: "svc" });
+  assert.equal(res.status, 400); // authenticated; invalid user id rejected
+});

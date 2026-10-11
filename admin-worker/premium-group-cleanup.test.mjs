@@ -87,3 +87,17 @@ test("owner endpoint: auth, method, dry-run output, no network write", async () 
   const st = await (await handlePremiumGroupCleanupOwnerRequest(new Request(url.replace("preview", "status")), {}, as("owner"))).json();
   assert.equal(st.flag_enabled, false);
 });
+
+test("presence check: absent ignored, present confirmed, unknown/privileged escalated", async () => {
+  const run = (presence) => one([row()], linked).then(() => buildAudit([row()], { now: NOW, lookupTelegram: linked, checkPresence: async () => ({ presence }) }));
+  const absent = (await run("absent")).items[0];
+  assert.equal(absent.decision, DECISION.IGNORED);
+  assert.equal(absent.reason, REASON.NOT_IN_GROUP);
+  const present = (await run("present")).items[0];
+  assert.equal(present.decision, DECISION.CANDIDATE);
+  assert.equal(present.telegram_presence, "present");
+  assert.equal((await run("privileged")).items[0].reason, REASON.PRIVILEGED_IN_GROUP);
+  assert.equal((await run("unknown")).items[0].reason, REASON.SOURCE_FAILURE);
+  const thrown = (await buildAudit([row()], { now: NOW, lookupTelegram: linked, checkPresence: async () => { throw new Error("x"); } })).items[0];
+  assert.equal(thrown.reason, REASON.SOURCE_FAILURE);
+});
