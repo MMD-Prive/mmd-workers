@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           node --input-type=module <<'NODE'
           const zoneId = String(process.env.CLOUDFLARE_ZONE_ID || '').trim();
-          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || '').replace(/[  \r\n]/g, '').trim();
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
           if (!zoneId || !token) throw new Error('Cloudflare route credentials are unavailable');
           const worker = 'admin-worker';
           const desired = [
