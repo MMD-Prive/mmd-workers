@@ -5,6 +5,7 @@
   data-details-path="/v1/confirm/details"
   data-instructions-path="/v1/confirm/payment-instructions"
   data-proof-path="/v1/pay/slip/evidence"
+  data-promo-path="/v1/confirm/apply-promo"
   data-payments-url="/member/payments"
   data-help-url="https://lin.ee/xRqsALs"
   aria-busy="true"
@@ -127,6 +128,21 @@
             <span>คงเหลือหลังยอดนี้</span>
             <strong data-sp21-balance>—</strong>
           </div>
+        </div>
+
+        <div class="sp21__promo" data-sp21-promo hidden>
+          <button type="button" class="sp21__promo-toggle" data-sp21-promo-toggle aria-expanded="false" aria-controls="sp21-promo-form">
+            <span>มีรหัสส่วนลด / รหัสโปรโมชั่น 6 หลัก?</span>
+            <i aria-hidden="true">+</i>
+          </button>
+          <form class="sp21__promo-form" id="sp21-promo-form" data-sp21-promo-form hidden novalidate>
+            <label class="sp21__promo-label" for="sp21-promo-input">รหัส 6 หลัก</label>
+            <div class="sp21__promo-row">
+              <input id="sp21-promo-input" class="sp21__promo-input" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="เช่น ABC234" data-sp21-promo-input aria-describedby="sp21-promo-status">
+              <button type="submit" class="sp21__btn sp21__btn--gold" data-sp21-promo-submit disabled>ใช้รหัส</button>
+            </div>
+          </form>
+          <p class="sp21__promo-status" id="sp21-promo-status" data-sp21-promo-status aria-live="polite"></p>
         </div>
 
         <details class="sp21__refs">

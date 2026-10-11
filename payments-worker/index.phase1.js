@@ -7,6 +7,7 @@ import {
   handleConfirmationContext,
 } from "./confirmation-ack.js";
 import { CONFIRM_DETAILS_PATH, handleConfirmationDetails } from "./confirmation-details.js";
+import { CONFIRM_APPLY_PROMO_PATH, handleConfirmApplyPromo } from "./confirmation-promo.js";
 import {
   PAYOUT_DEST_CONTEXT_PATH,
   PAYOUT_DEST_SUBMIT_PATH,
@@ -53,6 +54,10 @@ export default {
 
     if (path === CONFIRM_DETAILS_PATH && (method === "POST" || method === "OPTIONS")) {
       return handleConfirmationDetails(request, env);
+    }
+
+    if (path === CONFIRM_APPLY_PROMO_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handleConfirmApplyPromo(request, env);
     }
 
     if (path === CONFIRM_ACK_PATH && (method === "POST" || method === "OPTIONS")) {

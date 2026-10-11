@@ -21,6 +21,7 @@
   var DETAILS=API+clean(root.dataset.detailsPath||"/v1/confirm/details");
   var INSTRUCTIONS=API+clean(root.dataset.instructionsPath||"/v1/confirm/payment-instructions");
   var PROOF=API+clean(root.dataset.proofPath||"/v1/pay/slip/evidence");
+  var PROMO=API+clean(root.dataset.promoPath||"/v1/confirm/apply-promo");
   var params=new URLSearchParams(location.search);
   var token=tokenFromUrl();
   var payment=null;
@@ -150,6 +151,103 @@
     }
   }
 
+  function syncPromo(meta,stage,hasDiscount){
+    // The server is the only authority: it rejects anything but a fresh deposit-stage
+    // session. The browser merely avoids offering the field when it cannot apply.
+    var show=!meta.lock&&clean(stage).toLowerCase()==="deposit"&&(!hasDiscount||promoApplied);
+    setHidden("[data-sp21-promo]",!show);
+  }
+
+  var promoApplied=false;
+
+  var PROMO_ERRORS={
+    promo_code_invalid_format:"รหัสมี 6 หลัก เป็นตัวอักษรหรือตัวเลขเท่านั้นครับ",
+    CARE_BACK_CODE_INVALID:"ไม่พบรหัสนี้ ตรวจตัวอักษรอีกครั้งครับ",
+    CARE_BACK_CODE_NOT_FOUND:"ไม่พบรหัสนี้ ตรวจตัวอักษรอีกครั้งครับ",
+    CARE_BACK_COUPON_USED:"รหัสนี้ถูกใช้สิทธิ์ไปแล้วครับ",
+    CARE_BACK_COUPON_EXPIRED:"รหัสนี้หมดอายุแล้วครับ",
+    CARE_BACK_COUPON_NOT_READY:"รหัสนี้ยังไม่พร้อมใช้งานครับ ทัก MMD ได้เลย",
+    CARE_BACK_COUPON_UNAVAILABLE:"รหัสนี้ยังไม่พร้อมใช้งานครับ ทัก MMD ได้เลย",
+    CARE_BACK_WISH_REQUIRED:"รหัสนี้ยังไม่พร้อมใช้งานครับ ทัก MMD ได้เลย",
+    discount_already_applied:"รายการนี้มีส่วนลดอยู่แล้วครับ",
+    promo_already_applied:"รายการนี้ใช้รหัสส่วนลดไปแล้วครับ",
+    service_date_outside_window:"วันใช้บริการอยู่เกิน 90 วันนับจากวันนี้ ยังใช้รหัสนี้ไม่ได้ครับ",
+    payment_already_verified:"ยอดนี้ยืนยันแล้วครับ ใช้รหัสเพิ่มไม่ได้",
+    promo_only_on_deposit_stage:"รหัสนี้ใช้ได้ตอนชำระมัดจำเท่านั้นครับ"
+  };
+
+  function promoStatus(message,kind){
+    var el=$("[data-sp21-promo-status]");
+    if(!el)return;
+    el.textContent=message||"";
+    el.classList.toggle("is-error",kind==="error");
+    el.classList.toggle("is-ok",kind==="ok");
+  }
+
+  async function refreshDetails(){
+    var data=await fetchJson(DETAILS,{
+      method:"POST",
+      headers:{"Accept":"application/json","Content-Type":"application/json"},
+      body:JSON.stringify({t:token,expected_role:"customer"})
+    });
+    if(data.ok!==true||data.authority!=="payments-worker"||data.schema!=="confirmation_details_v1"||data.role!=="customer")throw new Error("confirmation_details_invalid");
+    renderDetails(data);
+  }
+
+  var promoToggle=$("[data-sp21-promo-toggle]");
+  var promoForm=$("[data-sp21-promo-form]");
+  var promoInput=$("[data-sp21-promo-input]");
+  var promoSubmit=$("[data-sp21-promo-submit]");
+  var promoBusy=false;
+
+  function promoCode(){return clean(promoInput&&promoInput.value).toUpperCase().replace(/[^A-Z0-9]/g,"");}
+  function syncPromoSubmit(){if(promoSubmit)promoSubmit.disabled=promoBusy||promoCode().length!==6;}
+
+  if(promoToggle&&promoForm)promoToggle.addEventListener("click",function(){
+    var open=promoForm.hidden;
+    promoForm.hidden=!open;
+    promoToggle.setAttribute("aria-expanded",open?"true":"false");
+    var sign=promoToggle.querySelector("i");
+    if(sign)sign.textContent=open?"−":"+";
+    if(open&&promoInput)promoInput.focus();
+  });
+
+  if(promoInput)promoInput.addEventListener("input",function(){
+    var v=promoCode();
+    if(promoInput.value!==v)promoInput.value=v;
+    promoStatus("");
+    syncPromoSubmit();
+  });
+
+  if(promoForm)promoForm.addEventListener("submit",async function(ev){
+    ev.preventDefault();
+    var code=promoCode();
+    if(promoBusy||code.length!==6||!token)return;
+    promoBusy=true;
+    syncPromoSubmit();
+    promoStatus("กำลังตรวจรหัสครับ");
+    try{
+      var res=await fetchJson(PROMO,{
+        method:"POST",
+        headers:{"Accept":"application/json","Content-Type":"application/json"},
+        body:JSON.stringify({t:token,code:code})
+      });
+      if(res.ok!==true||res.applied!==true)throw new Error("promo_apply_failed");
+      var pct=res.pricing&&num(res.pricing.discount_percent);
+      promoApplied=true;
+      await refreshDetails();
+      loadInstructions();
+      if(promoToggle)promoToggle.hidden=true;
+      promoForm.hidden=true;
+      promoStatus("ใช้รหัสสำเร็จครับ"+(pct?" ลด "+pct+"%":"")+" · ยอดอัปเดตแล้ว","ok");
+    }catch(e){
+      promoStatus(PROMO_ERRORS[clean(e&&e.message)]||"ใช้รหัสไม่สำเร็จครับ กรุณาลองอีกครั้งหรือทัก MMD","error");
+    }finally{
+      promoBusy=false;
+      syncPromoSubmit();
+    }
+  });
+
   function renderDetails(data){
     payment=data;
     var p=data.payment||{};
@@ -211,6 +309,7 @@
       if(showBalance)text("[data-sp21-balance]",money(balance));
     }
 
+    syncPromo(meta,stage,hasDiscount||(discount!=null&&discount>0));
     syncProofLock(meta);
     setHidden("[data-sp21-loading]",true);
     setHidden("[data-sp21-error]",true);

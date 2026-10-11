@@ -37,3 +37,15 @@ Payment proof submission is evidence intake only. Payment remains unverified unt
 - Payment reference/session reference are secondary and collapsed.
 - After proof submission, the customer is directed to My MMD for status.
 - Keep the final contrast safety layer at the end of the CSS.
+
+## Promo / CARE BACK code entry (deposit stage)
+
+Card 01 shows a collapsed "มีรหัสส่วนลด / รหัสโปรโมชั่น 6 หลัก?" field only while the session is a fresh **deposit** payment with no discount.
+
+- API: `POST https://sigil.mmdbkk.com/v1/confirm/apply-promo` with `{ t, code }` only. The browser never sends a percent or amount (the server rejects them).
+- payments-worker verifies the signed customer token, then asks member-pages-worker (`/__internal/care-back/redeem-code`, service binding `MEMBER_PAGES_WORKER`) to validate and consume the coupon. The percent comes from Model level x job format (Standard PN 5 / VIP 7, Premium/EM/GW PN 5 / VIP 10).
+- On success the session price line (`[SIGIL Pricing v1]`) and `amount_thb` are rewritten in place; the deposit amount does not change (deposit is based on the full price), the balance does. The page then re-reads `/v1/confirm/details`.
+- Refused server-side: another discount already on the job, payment verified, non-deposit stage (issued QR/PayPal amounts would go stale), service date > 90 days out, coupon used/expired/not ready.
+- Same-session retries are idempotent. A different session cannot reuse a consumed coupon.
+
+Deploy order: member-pages-worker -> payments-worker (needs the `MEMBER_PAGES_WORKER` binding and the same 32+ char `AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES` secret on both) -> publish the three Webflow files.
