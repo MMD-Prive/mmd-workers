@@ -453,6 +453,12 @@ test("points top-up uses the job (Krungsri) profile with primary as fallback", a
   assert.equal(fallback.instruction_profile, "mmd_payment_primary_v1");
 });
 
+test("TMIB story purchases use the job (Krungsri) profile", async () => {
+  const payload = await instructionsFor({ ...details({ stage: "tmib_story" }), payment_type: "tmib_story" }, ALL_PROFILES());
+  assert.equal(payload.instruction_profile, "mmd_job_v1");
+  assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
+});
+
 test("shop payments are unaffected by the job and membership profiles", async () => {
   const payload = await instructionsFor({ ...details({ stage: "shop", amount_due_thb: 1500 }), payment_type: "shop", shop_order: { order_id: "ORDER-9" } });
   assert.equal(payload.instruction_profile, "mmd_shop_himai_v1");
