@@ -59,7 +59,7 @@ test("scheduled sweep derives expired after grace and still reconciles downstrea
       member_email: "member@example.com",
       capability: "private_standard",
       member_lifecycle_status: "active",
-      expire_at: "2026-08-20T00:00:00.000Z",
+      expire_at: "2026-08-10T00:00:00.000Z",
     }),
   ]);
 
