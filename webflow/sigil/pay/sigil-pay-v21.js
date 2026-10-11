@@ -164,6 +164,7 @@
     promo_code_invalid_format:"รหัสมี 6 หลัก เป็นตัวอักษรหรือตัวเลขเท่านั้นครับ",
     CARE_BACK_CODE_INVALID:"ไม่พบรหัสนี้ ตรวจตัวอักษรอีกครั้งครับ",
     CARE_BACK_CODE_NOT_FOUND:"ไม่พบรหัสนี้ ตรวจตัวอักษรอีกครั้งครับ",
+    CARE_BACK_CODE_OWNER_MISMATCH:"รหัสนี้ไม่ใช่ของลูกค้ารายการนี้ครับ ตรวจรหัสอีกครั้งหรือทัก MMD",
     CARE_BACK_COUPON_USED:"รหัสนี้ถูกใช้สิทธิ์ไปแล้วครับ",
     CARE_BACK_COUPON_EXPIRED:"รหัสนี้หมดอายุแล้วครับ",
     CARE_BACK_COUPON_NOT_READY:"รหัสนี้ยังไม่พร้อมใช้งานครับ ทัก MMD ได้เลย",

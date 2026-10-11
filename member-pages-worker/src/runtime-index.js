@@ -23,7 +23,7 @@ import {
   isTrustedCareBackBookingApproval,
 } from "./care-back-trusted-booking-approval.js";
 import {
-  handleTrustedCareBackCodeRedemption,
+  handleTrustedCareBackCodeRoute,
   isTrustedCareBackCodeRedemption,
 } from "./care-back-code-redemption.js";
 import {
@@ -155,7 +155,7 @@ const worker = {
       return handleTrustedCareBackBookingApproval(request, env);
     }
     if (isTrustedCareBackCodeRedemption(request)) {
-      return handleTrustedCareBackCodeRedemption(request, env);
+      return handleTrustedCareBackCodeRoute(request, env);
     }
     if (isDriveReconcileRequest(request)) return handleDriveReconcile(request, env);
 

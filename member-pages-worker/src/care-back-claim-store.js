@@ -326,6 +326,8 @@ class AirtableCareBackStore {
     modelLevel,
     jobFormat,
     publicModelPercent = null,
+    memberId = "",
+    lineUserIdHash = "",
     now = new Date(),
   }) {
     const normalizedCode = normalizeEnteredCode(code);
@@ -342,6 +344,11 @@ class AirtableCareBackStore {
       throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
     }
     if (!promoWishSubmitted(fields.payload_json)) throw new CareBackStoreError("CARE_BACK_WISH_REQUIRED");
+
+    // Owner binding: when the session carries the customer's identity it must be the
+    // identity that earned this coupon. A session with no identity at all cannot be
+    // checked, so it falls back to "signed link + code" and is recorded as unbound.
+    const identityBound = await this.assertCodeOwner(fields, { memberId, lineUserIdHash });
 
     const payload = promoPayload(fields.payload_json);
     const status = safeCodeStatus(fields.status);
@@ -378,14 +385,59 @@ class AirtableCareBackStore {
       payload_json: JSON.stringify({
         ...payload,
         discount_authority: "backend_verified",
-        redemption: { session_id: session, percent: approved, redeemed_at: clock.toISOString(), source: "payment_confirmation_code_entry" },
+        redemption: { session_id: session, percent: approved, redeemed_at: clock.toISOString(), source: "payment_confirmation_code_entry", identity_bound: identityBound },
       }),
     });
     // Airtable has no compare-and-set: re-read and make sure our session won.
     const confirm = await this.list(table, `{code}=${formulaString(normalizedCode)}`, 2);
     const winner = confirm.length === 1 ? promoPayload(confirm[0].fields?.payload_json).redemption : null;
     if (!winner || winner.session_id !== session) throw new CareBackStoreError("CARE_BACK_COUPON_USED");
-    return redemptionResult(patched.fields || fields, normalizedCode, approved, false);
+    return { ...redemptionResult(patched.fields || fields, normalizedCode, approved, false), identity_bound: identityBound };
+  }
+
+  async assertCodeOwner(promoFields, { memberId = "", lineUserIdHash = "" } = {}) {
+    const member = String(memberId || "").trim();
+    const lineHash = String(lineUserIdHash || "").trim().toLowerCase();
+    if (!member && !lineHash) return false;
+    const claimId = promoClaimId(promoFields.payload_json);
+    const claims = await this.list(tableName(this.env, "CLAIMS"), `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{claim_id}=${formulaString(claimId)})`, 2);
+    if (claims.length !== 1) throw new CareBackStoreError(claims.length > 1 ? "CARE_BACK_CLAIM_CONFLICT" : "CARE_BACK_CLAIM_REQUIRED");
+    const claim = claims[0].fields || {};
+    if (lineHash && String(claim.line_user_id_hash || "").toLowerCase() !== lineHash) throw new CareBackStoreError("CARE_BACK_CODE_OWNER_MISMATCH");
+    if (member && String(claim.matched_member_id || "") !== member) throw new CareBackStoreError("CARE_BACK_CODE_OWNER_MISMATCH");
+    return true;
+  }
+
+  // Give a consumed coupon back (cancelled job, wrong job). Only the redemption bound
+  // to `sessionId` can be released; history is kept in payload_json.releases.
+  async releaseCouponForSession({ sessionId, reason = "", now = new Date() }) {
+    const session = requiredSessionId(sessionId);
+    const clock = requiredClock(now);
+    const table = tableName(this.env, "PROMO_CODES");
+    const rows = await this.list(table, `AND({campaign_code}=${formulaString(CAMPAIGN_ID)},FIND(${formulaString(`"session_id":${JSON.stringify(session)}`)},{payload_json})>0)`, 3);
+    const matches = rows.filter((row) => promoPayload(row.fields?.payload_json).redemption?.session_id === session);
+    if (matches.length > 1) throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
+    if (!matches.length) throw new CareBackStoreError("CARE_BACK_REDEMPTION_NOT_FOUND");
+    const promo = matches[0];
+    const fields = promo.fields || {};
+    const payload = promoPayload(fields.payload_json);
+    const expiresAt = safeTimestamp(fields.expires_at);
+    const expired = expiresAt && Date.parse(expiresAt) <= clock.getTime();
+    const { redemption, ...rest } = payload;
+    const patched = await this.patch(table, promo.id, {
+      status: expired ? "expired" : "active",
+      used_count: 0,
+      payload_json: JSON.stringify({
+        ...rest,
+        releases: [...(Array.isArray(payload.releases) ? payload.releases : []).slice(-9), {
+          session_id: session,
+          percent: redemption?.percent ?? null,
+          released_at: clock.toISOString(),
+          reason: String(reason || "").slice(0, 120),
+        }],
+      }),
+    });
+    return { code: String(patched.fields?.code || fields.code || ""), status: expired ? "expired" : "active", released: true };
   }
 
   async ensureClaimPolicy(claim, policy, observed) {
