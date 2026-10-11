@@ -1,4 +1,5 @@
 import liffFoundation from "./liff-identity-foundation.js";
+import { fixedTierExpiry } from "./fixed-tier-expiry.js";
 import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { handleMemberAppSessionApi, isMemberAppSessionPath } from "./member-app-session.js";
 import { handleMemberAppSessionExtensionApi, isMemberAppSessionExtensionPath } from "./member-app-session-extension.js";
@@ -649,7 +650,7 @@ function enrichMembership(baseMembership, session, legacy, {
 } = {}) {
   const membership = { ...baseMembership };
   const canonicalLevel = membership.levelVerified === true && membership.level !== "unknown";
-  const expiry = baseMembership.renewalDueAt || asString(session?.memberProfile?.membership_expires_at, 40) || null;
+  let expiry = baseMembership.renewalDueAt || asString(session?.memberProfile?.membership_expires_at, 40) || null;
   let displayOnly = false;
 
   if (!canonicalLevel && legacy && legacy.level !== "unknown") {
@@ -667,6 +668,13 @@ function enrichMembership(baseMembership, session, legacy, {
     lifecycle = "active";
   } else if (membership.status === "expired") {
     lifecycle = "expired";
+  }
+
+  const fixedExpiry = fixedTierExpiry(membership);
+  if (fixedExpiry) {
+    expiry = fixedExpiry.expiresAt;
+    lifecycle = fixedExpiry.lifecycle;
+    if (membership.status === "expired" || membership.status === "checking") membership.status = "active";
   }
 
   membership.lifecycle = lifecycle;
