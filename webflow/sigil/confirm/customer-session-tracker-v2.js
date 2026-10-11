@@ -98,6 +98,10 @@
 #${ROOT_ID} .mjc16__pay-method{padding:13px 14px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.018);color:#e8e1d7;font-size:12px;font-weight:700;line-height:1.55;overflow-wrap:anywhere}
 #${ROOT_ID} .mjc16__pay-method strong{display:block;color:#fff5b1;font-size:10px;letter-spacing:.08em}
 #${ROOT_ID} .mjc16__pay-qr{width:180px;max-width:70%;margin:4px auto;padding:9px;border-radius:14px;background:#fff}
+#${ROOT_ID} .mjc16__pay-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+#${ROOT_ID} .mjc16__pay-choice{padding:12px 10px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.03);color:#e8e1d7;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+#${ROOT_ID} .mjc16__pay-choice.is-active{border-color:#d7bd7a;color:#fff5b1;background:rgba(215,189,122,.1)}
+#${ROOT_ID} .mjc16__pay-detail{display:grid;gap:10px}
 #${ROOT_ID} .mjc16__proof-form{display:grid;gap:10px;margin-top:15px;padding-top:15px;border-top:1px solid rgba(255,255,255,.08)}
 #${ROOT_ID} .mjc16__proof-file{width:100%;padding:12px;border:1px dashed rgba(217,185,105,.34);border-radius:14px;background:rgba(0,0,0,.20);color:#e8e1d7;font-size:12px}
 #${ROOT_ID} .mjc16__proof-submit{min-height:52px;border:0;border-radius:16px;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108;font-size:14px;font-weight:900;cursor:pointer}
@@ -367,20 +371,39 @@
       return;
     }
     const instruction = data.instructions || {};
-    const rows = [];
-    if (instruction.promptpay?.enabled) {
-      rows.push(`<div class="mjc16__pay-method"><strong>PROMPTPAY</strong>${html(instruction.promptpay.display_ref)}</div>`);
-      if (/^https:\/\//i.test(clean(instruction.promptpay.qr_url))) {
-        rows.push(`<img class="mjc16__pay-qr" src="${html(instruction.promptpay.qr_url)}" alt="PromptPay QR สำหรับยอดคงเหลือ">`);
-      }
+    // Destinations (QR URL, PromptPay number, bank name / account name / number) are written only after the customer picks a method.
+    const cardUrl = instruction.paypal_card?.enabled ? clean(instruction.paypal_card.url) : "";
+    const choices = [];
+    if (instruction.promptpay?.enabled) choices.push(["promptpay", "QR PromptPay"]);
+    if (instruction.bank_transfer?.enabled && clean(instruction.bank_transfer.account_number)) choices.push(["bank_transfer", "โอนธนาคาร"]);
+    if (/^https:\/\//i.test(cardUrl)) choices.push(["paypal_card", "Credit Card / PayPal"]);
+    if (!choices.length) {
+      methods.innerHTML = '<div class="mjc16__pay-method">กรุณาติดต่อ MMD เพื่อรับช่องทางชำระเงิน</div>';
+      return;
     }
-    if (instruction.bank_transfer?.enabled) {
-      rows.push(`<div class="mjc16__pay-method"><strong>BANK TRANSFER</strong>${html(instruction.bank_transfer.bank_name_th)} · ${html(instruction.bank_transfer.account_name_th)} · ${html(instruction.bank_transfer.account_number)}</div>`);
-    }
-    if (instruction.paypal_card?.enabled && /^https:\/\//i.test(clean(instruction.paypal_card.url))) {
-      rows.push(`<a class="mjc16__pay-method" href="${html(instruction.paypal_card.url)}" target="_blank" rel="noopener"><strong>CARD / PAYPAL</strong>เปิดหน้าชำระเงิน ↗</a>`);
-    }
-    methods.innerHTML = rows.join("") || '<div class="mjc16__pay-method">กรุณาติดต่อ MMD เพื่อรับช่องทางชำระเงิน</div>';
+    methods.innerHTML = `<div class="mjc16__pay-method"><strong>เลือกวิธีชำระเงิน</strong>ข้อมูลจะเปิดหลังจากกดเลือก</div><div class="mjc16__pay-choices" role="tablist">${choices.map(([key, label]) => `<button type="button" class="mjc16__pay-choice" role="tab" aria-selected="false" data-final-method-choice="${key}">${html(label)}</button>`).join("")}</div><div class="mjc16__pay-detail" data-final-method-detail></div>`;
+    const detail = methods.querySelector("[data-final-method-detail]");
+    methods.querySelectorAll("[data-final-method-choice]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.finalMethodChoice;
+        methods.querySelectorAll("[data-final-method-choice]").forEach((other) => {
+          other.setAttribute("aria-selected", other === button ? "true" : "false");
+          other.classList.toggle("is-active", other === button);
+        });
+        const rows = [];
+        if (key === "promptpay") {
+          rows.push(`<div class="mjc16__pay-method"><strong>PROMPTPAY</strong>${html(instruction.promptpay.display_ref)}</div>`);
+          if (/^https:\/\//i.test(clean(instruction.promptpay.qr_url))) {
+            rows.push(`<img class="mjc16__pay-qr" src="${html(instruction.promptpay.qr_url)}" alt="PromptPay QR สำหรับยอดคงเหลือ">`);
+          }
+        } else if (key === "bank_transfer") {
+          rows.push(`<div class="mjc16__pay-method"><strong>BANK TRANSFER</strong>${html(instruction.bank_transfer.bank_name_th)} · ${html(instruction.bank_transfer.account_name_th)} · ${html(instruction.bank_transfer.account_number)}</div>`);
+        } else if (key === "paypal_card") {
+          rows.push(`<a class="mjc16__pay-method" href="${html(cardUrl)}" target="_blank" rel="noopener"><strong>CARD / PAYPAL</strong>เปิดหน้าชำระเงิน ↗</a>`);
+        }
+        detail.innerHTML = rows.join("");
+      });
+    });
   }
 
   async function loadPaymentInstructions(paymentRef) {

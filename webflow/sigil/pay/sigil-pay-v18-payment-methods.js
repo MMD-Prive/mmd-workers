@@ -25,11 +25,11 @@
   chooser.className="spkpm";
   chooser.innerHTML=`
     <div class="spkpm__tabs" role="tablist" aria-label="เลือกวิธีชำระเงิน">
-      <button type="button" class="spkpm__tab is-active" data-pay-method="promptpay" role="tab" aria-selected="true">QR PromptPay</button>
+      <button type="button" class="spkpm__tab" data-pay-method="promptpay" role="tab" aria-selected="false">QR PromptPay</button>
       <button type="button" class="spkpm__tab" data-pay-method="bank_transfer" role="tab" aria-selected="false">โอนธนาคาร</button>
       <button type="button" class="spkpm__tab" data-pay-method="paypal_card" role="tab" aria-selected="false">Credit Card +4%</button>
     </div>
-    <div class="spkpm__panel" data-method-panel="promptpay">
+    <div class="spkpm__panel" data-method-panel="promptpay" hidden>
       <div class="spkpm__head"><div><small>01 · PROMPTPAY</small><strong>สแกน QR จากแอปธนาคาร</strong></div><span>แนะนำ</span></div>
       <div class="spkpm__qr" data-method-qr-wrap><img data-method-qr alt="PromptPay QR"><p>ยอดใน QR ต้องตรงกับยอดที่ MMD ยืนยัน</p></div>
     </div>
@@ -62,7 +62,7 @@
   card.insertBefore(chooser,rule||null);
 
   let instructions=null;
-  let selected="promptpay";
+  let selected="";
 
   function setSelected(method){
     selected=method;
@@ -72,6 +72,10 @@
       btn.setAttribute("aria-selected",on?"true":"false");
     });
     chooser.querySelectorAll("[data-method-panel]").forEach(panel=>{panel.hidden=panel.dataset.methodPanel!==method});
+    // Payment destinations are written only for the method the customer chose.
+    if(method!=="bank_transfer"&&bankDetails&&bankDetails.open)bankDetails.open=false;
+    renderQr();
+    renderBank();
     const jump=$("[data-spk-upload-jump]");
     if(jump){
       if(method==="paypal_card"){
@@ -85,11 +89,23 @@
   chooser.querySelectorAll("[data-pay-method]").forEach(btn=>btn.addEventListener("click",()=>setSelected(btn.dataset.payMethod)));
 
   const bankDetails=chooser.querySelector("[data-method-bank]");
-  if(bankDetails)bankDetails.addEventListener("toggle",()=>{
+  function renderQr(){
+    const qr=chooser.querySelector("[data-method-qr]");
+    if(!qr)return;
+    const url=selected==="promptpay"&&instructions?.promptpay?.enabled===true?safeHttps(instructions.promptpay.qr_url):"";
+    if(url)qr.src=url;else qr.removeAttribute("src");
+  }
+  function renderBank(){
+    const bank=instructions?.bank_transfer||{};
+    const show=!!(bankDetails&&bankDetails.open&&selected==="bank_transfer"&&bank.enabled===true&&clean(bank.account_number));
+    const bankName=chooser.querySelector("[data-method-bank-name]");
+    const accountName=chooser.querySelector("[data-method-account-name]");
     const num=chooser.querySelector("[data-method-account-number]");
-    if(!num)return;
-    num.textContent=bankDetails.open&&instructions?.bank_transfer?.account_number?instructions.bank_transfer.account_number:"••••••••••";
-  });
+    if(bankName)bankName.textContent=show?(clean(bank.bank_name_th||bank.bank_name_en||bank.provider)||"Bank Transfer"):"—";
+    if(accountName)accountName.textContent=show?(clean(bank.account_name_th||bank.account_name_en)||"MMD Privé"):"—";
+    if(num)num.textContent=show?clean(bank.account_number):"••••••••••";
+  }
+  if(bankDetails)bankDetails.addEventListener("toggle",renderBank);
 
   const copy=chooser.querySelector("[data-method-copy]");
   if(copy)copy.addEventListener("click",async()=>{
@@ -134,14 +150,6 @@
       toggleMethod("bank_transfer",!!bankEnabled);
       toggleMethod("paypal_card",!!paypalUrl);
 
-      const qr=chooser.querySelector("[data-method-qr]");
-      if(qr&&qrUrl)qr.src=qrUrl;
-
-      const bankName=chooser.querySelector("[data-method-bank-name]");
-      const accountName=chooser.querySelector("[data-method-account-name]");
-      if(bankName)bankName.textContent=clean(bank.bank_name_th||bank.bank_name_en||bank.provider)||"Bank Transfer";
-      if(accountName)accountName.textContent=clean(bank.account_name_th||bank.account_name_en)||"MMD Privé";
-
       const cardBase=chooser.querySelector("[data-method-card-base]");
       const cardRate=chooser.querySelector("[data-method-card-rate]");
       const cardFee=chooser.querySelector("[data-method-card-fee]");
@@ -153,10 +161,9 @@
       if(cardTotal)cardTotal.textContent="฿"+money(card.amount_due_thb);
       if(paypal&&paypalUrl)paypal.href=paypalUrl;
 
-      const first=qrUrl?"promptpay":bankEnabled?"bank_transfer":paypalUrl?"paypal_card":"";
-      if(!first)throw new Error("payment_destination_missing");
-      setSelected(first);
-      if(status)status.textContent="เลือกวิธีชำระเงินได้จาก 3 ช่องทางที่ MMD เปิดให้รายการนี้";
+      if(!qrUrl&&!bankEnabled&&!paypalUrl)throw new Error("payment_destination_missing");
+      // No method is preselected: QR URL, bank name, account name and number stay out of the page until the customer chooses.
+      if(status)status.textContent="เลือกวิธีชำระเงิน ข้อมูลจะเปิดหลังจากกดเลือก";
     }catch(e){
       chooser.querySelectorAll("[data-pay-method]").forEach(btn=>btn.hidden=true);
       chooser.querySelectorAll("[data-method-panel]").forEach(panel=>panel.hidden=true);
