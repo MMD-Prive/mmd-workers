@@ -53,3 +53,7 @@ Deploy order: member-pages-worker -> payments-worker (needs the `MEMBER_PAGES_WO
 ## Payment destinations are revealed on choice
 
 No method is preselected on the signed payment surfaces (v18 chooser, Blackcard, v20, v21), the confirm popup and the customer tracker's final-payment panel. The QR URL / PromptPay number are written only after the customer picks QR; bank name, account name and account number only after they pick bank transfer and open the details. PayPal behaviour is unchanged. Guarded by `webflow/sigil/pay/reveal-on-select.test.mjs`.
+
+### Owner binding and release
+- payments-worker forwards the Session's `line_user_id` / `member_id` (when present). member-pages-worker checks them against the claim that earned the coupon; a different customer gets `CARE_BACK_CODE_OWNER_MISMATCH` and nothing is consumed. A Session with neither field cannot be checked: it falls back to signed link + code and the redemption is recorded with `identity_bound:false`.
+- `POST /__internal/care-back/release-code` (`x-mmd-payments-secret`, body `{session_id, reason}`) gives the coupon back (status `active`, `used_count` 0) when the job it was bound to is cancelled. History stays in `payload_json.releases`. It is not wired to a cancel flow yet; call it from the cancellation step.

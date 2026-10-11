@@ -20,6 +20,9 @@ const SERVICE_HEADER = "x-mmd-payments-secret";
 const PRICING_LABEL = "SIGIL Pricing v1";
 const PROMO_LABEL = "SIGIL Promo v1";
 const SERVICE_DATE_WINDOW_DAYS = 90;
+// Sessions identity fields; used only to prove the coupon belongs to this customer.
+const SESSION_LINE_USER_ID = "fld5tzCzdTTh8AJyI";
+const SESSION_MEMBER_ID = "fldHsczyzr8axfwUC";
 
 export const CONFIRM_APPLY_PROMO_PATH = "/v1/confirm/apply-promo";
 
@@ -113,6 +116,8 @@ export async function handleConfirmApplyPromo(request, env = {}, now = new Date(
         session_id: text(claims.session_id, 200),
         selected_model_name: modelName,
         job_format: jobFormat,
+        line_user_id: text(fields[SESSION_LINE_USER_ID], 80),
+        member_id: text(fields[SESSION_MEMBER_ID], 160),
       }),
     }));
     const redeemed = await upstream.json().catch(() => null);
