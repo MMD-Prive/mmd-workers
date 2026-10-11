@@ -49,3 +49,7 @@ Card 01 shows a collapsed "มีรหัสส่วนลด / รหัส�
 - Same-session retries are idempotent. A different session cannot reuse a consumed coupon.
 
 Deploy order: member-pages-worker -> payments-worker (needs the `MEMBER_PAGES_WORKER` binding and the same 32+ char `AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES` secret on both) -> publish the three Webflow files.
+
+## Payment destinations are revealed on choice
+
+No method is preselected on the signed payment surfaces (v18 chooser, Blackcard, v20, v21), the confirm popup and the customer tracker's final-payment panel. The QR URL / PromptPay number are written only after the customer picks QR; bank name, account name and account number only after they pick bank transfer and open the details. PayPal behaviour is unchanged. Guarded by `webflow/sigil/pay/reveal-on-select.test.mjs`.

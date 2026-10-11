@@ -203,8 +203,36 @@
       btn.setAttribute("aria-selected",on?"true":"false");
     });
     $$("[data-sp20-panel]").forEach(function(panel){panel.hidden=panel.dataset.sp20Panel!==name;});
+    // Payment destinations are written only for the method the customer chose.
+    if(name!=="bank_transfer")bankRevealed=false;
+    renderQr();
+    renderBank();
     var sticky=$("[data-sp20-sticky-action]");
     if(sticky)sticky.textContent=name==="paypal_card"?"ชำระด้วยบัตร":"ชำระ / ส่งสลิป";
+  }
+
+  function renderQr(){
+    var pp=(instructions&&instructions.promptpay)||{};
+    var on=pp.enabled===true&&selectedMethod==="promptpay";
+    var qr=$("[data-sp20-qr]");
+    var qrFallback=$("[data-sp20-qr-fallback]");
+    var qrUrl=on?safeHttps(pp.qr_url):"";
+    if(qr){qr.hidden=!qrUrl;if(qrUrl)qr.src=qrUrl;else qr.removeAttribute("src");}
+    if(qrFallback)qrFallback.hidden=!!qrUrl||!on;
+    text("[data-sp20-promptpay-ref]",on?(pp.display_ref||"—"):"—");
+  }
+
+  function renderBank(){
+    var bank=(instructions&&instructions.bank_transfer)||{};
+    var account=clean(bank.account_number);
+    var show=bankRevealed&&selectedMethod==="bank_transfer"&&bank.enabled===true&&account!=="";
+    text("[data-sp20-bank-name]",show?(bank.bank_name_th||bank.bank_name_en||bank.provider||"โอนธนาคาร"):"โอนเข้าบัญชีธนาคาร");
+    text("[data-sp20-account-name]",show?(bank.account_name_th||bank.account_name_en||"MMD Privé"):"—");
+    text("[data-sp20-account-number]",show?account:"••••••••••");
+    var revealBtn=$("[data-sp20-bank-reveal]");
+    var copyBtn=$("[data-sp20-bank-copy]");
+    if(revealBtn)revealBtn.textContent=show?"ซ่อนเลขบัญชี":"ดูเลขบัญชี";
+    if(copyBtn)copyBtn.disabled=!show;
   }
 
   function setMethodVisible(name,visible){
@@ -239,16 +267,6 @@
     setMethodVisible("bank_transfer",bankOn);
     setMethodVisible("paypal_card",cardOn);
 
-    var qr=$("[data-sp20-qr]");
-    var qrFallback=$("[data-sp20-qr-fallback]");
-    var qrUrl=ppOn?safeHttps(pp.qr_url):"";
-    if(qr){qr.hidden=!qrUrl;if(qrUrl)qr.src=qrUrl;}
-    if(qrFallback){qrFallback.hidden=!!qrUrl||!ppOn;}
-    text("[data-sp20-promptpay-ref]",pp.display_ref||"—");
-
-    text("[data-sp20-bank-name]",bank.bank_name_th||bank.bank_name_en||bank.provider||"โอนธนาคาร");
-    text("[data-sp20-account-name]",bank.account_name_th||bank.account_name_en||"MMD Privé");
-
     text("[data-sp20-card-rate]","+"+(num(card.fee_percent)!=null?num(card.fee_percent):4)+"%");
     text("[data-sp20-card-base]",money(card.service_amount_thb!=null?card.service_amount_thb:data.amount_due_thb));
     text("[data-sp20-card-fee]",card.fee_thb!=null?("+ "+money(card.fee_thb)):"—");
@@ -265,7 +283,7 @@
     var state=$("[data-sp20-method-state]");
     if(state)state.hidden=true;
     $("[data-sp20-tabs]").hidden=false;
-    setMethod(methods[0]);
+    // No method is preselected: QR URL, PromptPay number, bank name, account name and account digits stay out of the page until the customer chooses.
   }
 
   async function loadInstructions(){
@@ -333,9 +351,7 @@
     var account=clean(instructions&&instructions.bank_transfer&&instructions.bank_transfer.account_number);
     if(!account)return;
     bankRevealed=!bankRevealed;
-    text("[data-sp20-account-number]",bankRevealed?account:"••••••••••");
-    reveal.textContent=bankRevealed?"ซ่อนเลขบัญชี":"ดูเลขบัญชี";
-    if(copy)copy.disabled=!bankRevealed;
+    renderBank();
   });
   if(copy)copy.addEventListener("click",async function(){
     var account=clean(instructions&&instructions.bank_transfer&&instructions.bank_transfer.account_number);
