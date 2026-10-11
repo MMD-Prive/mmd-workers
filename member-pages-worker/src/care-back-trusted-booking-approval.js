@@ -162,7 +162,7 @@ async function resolveMember(env, lineUserId) {
   return payload.data || null;
 }
 
-async function resolveCanonicalModel(env, lookup) {
+export async function resolveCanonicalModel(env, lookup) {
   const table = clean(env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "tblI4B0bI446vp9GX");
   if (RECORD_ID_RE.test(lookup)) {
     const response = await airtable(env, `/${encodeURIComponent(table)}/${encodeURIComponent(lookup)}`);
@@ -180,7 +180,7 @@ async function resolveCanonicalModel(env, lookup) {
   return rows.length === 1 ? rows[0] : null;
 }
 
-function canonicalModelLevel(fields) {
+export function canonicalModelLevel(fields) {
   const explicit = clean(fields.care_back_model_level || fields["CARE BACK Model Level"]);
   const source = token(explicit || fields.model_tier || fields.sales_layer || fields.service_layer);
   if (source.includes("public")) return "Public Models";
@@ -191,21 +191,21 @@ function canonicalModelLevel(fields) {
   return "";
 }
 
-function canonicalPublicPercent(fields) {
+export function canonicalPublicPercent(fields) {
   const raw = fields.care_back_public_discount_percent ?? fields["CARE BACK Public Discount %"];
   if (raw === undefined || raw === null || raw === "") return 5;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 3 && value <= 5 ? value : 0;
 }
 
-function modelSupportsJobFormat(fields, jobFormat) {
+export function modelSupportsJobFormat(fields, jobFormat) {
   const raw = fields.job_types ?? fields["Job Types"];
   if (raw === undefined || raw === null || raw === "") return true;
   const values = Array.isArray(raw) ? raw : String(raw).split(/[;,|/]+/);
   return values.map((value) => normalizeJobFormat(value)).filter(Boolean).includes(jobFormat);
 }
 
-function normalizeJobFormat(value) {
+export function normalizeJobFormat(value) {
   const key = clean(value).toUpperCase();
   return key === "PN" || key === "VIP" ? key : "";
 }

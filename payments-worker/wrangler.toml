@@ -65,6 +65,14 @@ AT_MODELS__PAYOUT_DEST_SUBMITTED_AT = "fldxZUm6HkD9vSVXR"
 AT_MODELS__PAYOUT_DEST_VERIFIED_BY = "fldzEBi1AAV1UtbQG"
 AT_MODELS__PAYOUT_DEST_VERIFIED_AT = "fldQzrE5EFX7oGhS8"
 
+# CARE BACK code entry on the payment confirmation page. payments-worker only
+# forwards the entered code; member-pages-worker owns the coupon and the percent.
+# AUTH_SERVICE_PAYMENTS_TO_MEMBER_PAGES must be the same 32+ character secret
+# on payments-worker and member-pages-worker (wrangler secret put, never committed).
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
 [[kv_namespaces]]
 binding = "PAY_SESSIONS_KV"
 id = "e0c6b8a0785e462dad6d01f61a893e87"
