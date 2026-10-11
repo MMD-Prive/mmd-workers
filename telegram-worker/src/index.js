@@ -22,6 +22,7 @@ const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
+import { MEMBER_PRESENCE_PATHS, handleMemberPresence } from "./member-presence.js";
 const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 const TELEGRAM_WEBHOOK_LOCK_CONFIRMATION = "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1";
@@ -176,6 +177,13 @@ export default {
         }
         const result = await syncHypePremiumRoom(env, { force: body.force === true });
         return json(result, result.ok ? 200 : 502);
+      }
+
+      if (MEMBER_PRESENCE_PATHS.includes(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = await safeJson(req);
+        if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+        return handleMemberPresence(body, env);
       }
 
       if (isComplaintInternalPath(path) && req.method === "POST") {
