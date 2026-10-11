@@ -436,6 +436,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (["จองบริการ", "เริ่มจอง", "booking"].includes(actionKeyword)) return "mmd_companion";
   if (["สมาชิกสิทธิ์ของฉัน", "สิทธิ์ของฉัน", "สถานะสมาชิกของฉัน"].includes(actionKeyword)) return "membership_status";
   if (["คุยกับเปอร์", "คุยกับper", "ถามเปอร์", "ติดต่อเปอร์"].includes(actionKeyword)) return "per_continuity";
+  if (["mmdmembership", "membership", "mmdmember", "สมาชิกmmd", "mmdสมาชิก"].includes(actionKeyword)) return "membership_menu";
   if (["ชำระเงิน", "payment", "paymentcenter", "ศูนย์ชำระเงิน"].includes(actionKeyword)) return "payment_center";
   if (["ส่งสลิป", "อัปโหลดสลิป", "uploadslip"].includes(actionKeyword)) return "payment_slip";
 
@@ -1113,6 +1114,10 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   if (intent === "mmd_companion") {
     if (activeModel) return `${prefix}รับ request สำหรับ ${activeModel.working_name} (${activeModel.model_code}) ครับ ส่งวัน เวลา พื้นที่ ระยะเวลา และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจคิวและเงื่อนไขปัจจุบันก่อนยืนยันครับ`;
     return `${prefix}รับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานมาได้เลย แล้ว MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยันครับ`;
+  }
+
+  if (intent === "membership_menu") {
+    return `${prefix}MMD Membership เลือกเริ่มได้ตามนี้ครับ\n\n• สมัคร Public Membership (Member / Elite / Red Card) → ${MEMBER_SIGNUP_URL}\n• สมัคร Standard / Premium (Private Membership) → ${PRIVATE_MEMBER_SIGNUP_URL}\n• ต่ออายุสมาชิก → ${MEMBER_RENEWAL_URL}\n\nสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
   }
 
   if (intent === "membership") {
