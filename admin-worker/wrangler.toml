@@ -394,6 +394,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/hype-job-daily/*"
 zone_name = "mmdbkk.com"
 
+# PREMIUM_GROUP_ELIGIBILITY_CLEANUP (#2141) owner-only read-only dry-run audit (owner admin session required).
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/premium-group-cleanup/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/premium-group-cleanup/*"
+zone_name = "mmdbkk.com"
+
 # MODEL_RECONFIRM guard v2 owner-only status / dry-run preview / owner-destination smoke.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/model-reconfirm/*"
