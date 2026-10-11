@@ -74,14 +74,14 @@ test("canonical member_lifecycle_status is preferred over legacy member_status",
   assert.equal(normalized.member_status, "suspended");
 });
 
-test("grace is derived automatically for seven days after expiry and blocks new model reveal", () => {
+test("grace is derived automatically for fourteen days after expiry and blocks new model reveal", () => {
   const result = resolveMemberEntitlements([
     row({ entitlement_id: "vip", entitlement_level: "vip", access_status: "active", expire_at: "2026-09-01T12:00:00Z" }),
   ], { now: NOW });
 
   assert.deepEqual(result.capability_state.active, []);
   assert.deepEqual(result.capability_state.grace, [CAPABILITIES.VIP]);
-  assert.equal(result.entitlements[0].grace_until, "2026-09-08T12:00:00.000Z");
+  assert.equal(result.entitlements[0].grace_until, "2026-09-15T12:00:00.000Z");
   assert.equal(result.access.private_visibility_envelope, "none");
   assert.equal(result.access.grace_private_history_envelope, "vip");
   assert.equal(result.access.new_model_reveals_allowed, false);
@@ -92,9 +92,9 @@ test("grace is derived automatically for seven days after expiry and blocks new 
   assert.equal(result.access.existing_grants_may_continue_in_grace, true);
 });
 
-test("grace expires after the seven day window", () => {
+test("grace expires after the fourteen day window", () => {
   const result = resolveMemberEntitlements([
-    row({ entitlement_id: "premium", package_code: "private_premium", access_status: "active", expire_at: "2026-08-25T11:59:59Z" }),
+    row({ entitlement_id: "premium", package_code: "private_premium", access_status: "active", expire_at: "2026-08-18T11:59:59Z" }),
   ], { now: NOW });
 
   assert.equal(result.entitlements[0].lifecycle, "expired");

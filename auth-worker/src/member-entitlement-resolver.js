@@ -29,7 +29,7 @@ const ACTIVE_STATUSES = new Set(["active"]);
 const EXPIRING_SOON_STATUSES = new Set(["expiring_soon", "expiringsoon"]);
 const GRACE_STATUSES = new Set(["grace", "grace_period"]);
 const DEFAULT_EXPIRING_SOON_DAYS = 7;
-const GRACE_DAYS = 7;
+const GRACE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export { CAPABILITIES, DEFAULT_EXPIRING_SOON_DAYS, GRACE_DAYS };
