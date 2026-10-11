@@ -218,11 +218,14 @@ class AirtableCareBackStore {
     modelLevel,
     jobFormat,
     publicModelPercent = null,
+    redemptionKey = "",
     now = new Date(),
   }) {
     const identity = requiredHash(identityHash);
     const member = requiredMemberId(memberId);
     const clock = requiredClock(now);
+    const bindingKey = String(redemptionKey || "").trim();
+    if (bindingKey) requiredSessionId(bindingKey);
     const secret = String(this.env.CARE_BACK_CODE_SECRET || this.env.LIFF_SESSION_SECRET || "");
     if (secret.length < 32) throw new CareBackStoreError("CARE_BACK_CODE_SECRET_MISSING");
     const derived = await deriveClaimAndCode(identity, secret);
@@ -244,6 +247,16 @@ class AirtableCareBackStore {
     if (!promoWishSubmitted(fields.payload_json)) throw new CareBackStoreError("CARE_BACK_WISH_REQUIRED");
     if (!couponIssuanceGatePassed(claimPolicy, observed, true)) throw new CareBackStoreError("CARE_BACK_ELIGIBILITY_UNRESOLVED");
 
+    // A booking that already consumed this coupon may be retried: same key = same answer.
+    const priorRedemption = promoPayload(fields.payload_json).redemption;
+    if (bindingKey && priorRedemption?.session_id === bindingKey
+      && (normalizedUseCount(fields.used_count) >= 1 || safeCodeStatus(fields.status) === "used")) {
+      const percent = validatedApprovedDiscount(fields);
+      if (percent) {
+        return { ...redemptionResult(fields, String(fields.code || derived.code), percent, true), status: "used" };
+      }
+    }
+
     const coupon = couponStateFor(claimPolicy, observed, fields, clock, true);
     if (coupon.customer_state !== "ready" || safeCodeStatus(fields.status) !== "active") {
       throw new CareBackStoreError(`CARE_BACK_COUPON_${String(coupon.customer_state || "UNAVAILABLE").toUpperCase()}`);
@@ -256,12 +269,19 @@ class AirtableCareBackStore {
     if (!approved) throw new CareBackStoreError("CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED");
 
     const payload = promoPayload(fields.payload_json);
+    // Single use: when the booking supplies its key the coupon is consumed here, bound
+    // to that booking/session, so it cannot approve a second booking.
+    const consume = bindingKey ? {
+      status: "used",
+      used_count: 1,
+    } : {};
     const desired = compactFields({
       model_level: normalizedModelLevel,
       job_format: normalizedJobFormat,
       approved_discount_percent: approved,
       benefit_type: "discount_percent",
       benefit_value: null,
+      ...consume,
       payload_json: JSON.stringify({
         ...payload,
         schema_version: 3,
@@ -270,11 +290,18 @@ class AirtableCareBackStore {
         wish_submitted: true,
         coupon_policy: couponPolicySnapshot(),
         discount_authority: "backend_verified",
+        ...(bindingKey ? { redemption: { session_id: bindingKey, percent: approved, redeemed_at: clock.toISOString(), source: "booking_confirm" } } : {}),
       }),
     });
     const updated = needsPatch(fields, desired)
       ? await this.patch(tableName(this.env, "PROMO_CODES"), promo.id, desired)
       : promo;
+    if (bindingKey) {
+      // Airtable has no compare-and-set: re-read and make sure our booking won.
+      const check = await this.list(tableName(this.env, "PROMO_CODES"), `{code}=${formulaString(derived.code)}`, 2);
+      const winner = check.length === 1 ? promoPayload(check[0].fields?.payload_json).redemption : null;
+      if (!winner || winner.session_id !== bindingKey) throw new CareBackStoreError("CARE_BACK_COUPON_USED");
+    }
     const updatedFields = updated.fields || {};
     return {
       code: String(updatedFields.code || derived.code),

@@ -115,6 +115,7 @@ export async function handleTrustedCareBackBookingApproval(request, env = {}) {
       modelLevel,
       jobFormat,
       publicModelPercent,
+      redemptionKey: clean(body.session_id) || clean(body.booking_ref),
     });
     return json({
       ok: true,
