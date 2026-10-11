@@ -1530,7 +1530,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   function signedPoints(value) { const number = Number(value || 0); return (number >= 0 ? "+" : "") + new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(number) + " pts"; }
   function formatThb(value) { const number = Number(value); return Number.isFinite(number) && number >= 0 ? new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH",{style:"currency",currency:"THB",maximumFractionDigits:2}).format(number) : "—"; }
   function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-GB" : "th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }
-  function safeDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : ""; }
+  function safeDate(value) { return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(value || "")) ? String(value) : ""; }
   function safePaymentStatus(value) { return ["verified","pending_review","unavailable"].includes(String(value || "")) ? String(value) : ""; }
   function paymentStatus(value) { const labels = { th:{verified:"ตรวจสอบแล้ว",pending_review:"รอตรวจสอบ",unavailable:"ยังไม่พร้อมยืนยัน"}, en:{verified:"Verified",pending_review:"Pending review",unavailable:"Unavailable"}, zh:{verified:"已验证",pending_review:"待审核",unavailable:"暂不可确认"} }; return (labels[locale] || labels.th)[value] || "Unavailable"; }
 
