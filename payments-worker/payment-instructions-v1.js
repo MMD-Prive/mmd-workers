@@ -8,7 +8,7 @@ const SHOP_INSTRUCTION_ID = "mmd_shop_himai_v1";
 // Airtable row does not exist yet, so deploying this code never removes a working destination.
 const JOB_INSTRUCTION_ID = "mmd_job_v1";
 const MEMBERSHIP_INSTRUCTION_ID = "mmd_membership_v1";
-const JOB_STAGES = new Set(["deposit", "มัดจำ", "balance", "remaining", "remainder", "คงเหลือ", "final", "finalpayment", "full", "fullpayment", "payinfull", "extension", "pointstopup", "topup"]);
+const JOB_STAGES = new Set(["deposit", "มัดจำ", "balance", "remaining", "remainder", "คงเหลือ", "final", "finalpayment", "full", "fullpayment", "payinfull", "extension", "pointstopup", "topup", "tmibstory"]);
 const MEMBERSHIP_STAGES = new Set(["membership", "renewal", "renew", "blackcard", "redcard", "elite", "mmdmember"]);
 const PUBLIC_MEMBERSHIP_SESSION_PREFIX = "publicmem_";
 
