@@ -7,7 +7,9 @@ const LIFF_BASE = "https://miniapp.line.me/2010862595-yT4DCEMc/";
 const liff = (intent, view) => `${LIFF_BASE}?intent=${intent}&view=${view}`;
 export const MEMBERSHIP_MENU_LINKS = Object.freeze({
   signup: liff("signup", "signup"),
-  renew: liff("renew", "profile"),
+  // LIFF has no renewal purchase flow yet (its PACKAGE view only displays the
+  // current package), so renewal stays on the working web renewal page.
+  renew: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
   status: liff("status", "profile"),
 });
 
