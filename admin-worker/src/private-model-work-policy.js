@@ -55,7 +55,7 @@ export function derivePrivateServiceLevel(fields = {}, { allowPathFallback = fal
   return { level: "", source: "unclassified" };
 }
 
-export async function resolveCanonicalPrivateWork(record, env) {
+export async function resolveCanonicalPrivateWork(record, env, { allowDirectoryLookup = true } = {}) {
   const fields = record?.fields || {};
   const derived = derivePrivateServiceLevel(fields, { allowPathFallback: false });
   if (derived.level) return derived;
@@ -67,6 +67,7 @@ export async function resolveCanonicalPrivateWork(record, env) {
   if (!isActive(fields)) return derived;
   const review = normalizeToken(first(fields, ["private_review_status", "Private Review Status"]));
   if (["hidden", "rejected", "draft", "blocked"].includes(review)) return derived;
+  if (!allowDirectoryLookup) return derived;
   const folderId = first(fields, ["drive_folder_id", "Drive Folder ID"]);
   if (!folderId) return derived;
   const approved = await resolveApprovedDrivePrivateWork(env, folderId);
@@ -126,7 +127,9 @@ export async function enforcePrivateModelSearchPolicy(request, response, env) {
       const modelId = clean(item?.model_id || item?.id);
       const record = recordsResult.records.get(modelId);
       if (!record) continue;
-      const derived = await resolveCanonicalPrivateWork(record, env);
+      const derived = await resolveCanonicalPrivateWork(record, env, {
+        allowDirectoryLookup: clean(url.searchParams.get("q") || url.searchParams.get("search")).length >= 2,
+      });
       if (derived.lookup_status === 503) return policyError(503, "private_model_work_policy_unavailable", "ตรวจชนิดงานโมเดลไม่ได้ชั่วคราว กรุณาลองใหม่");
       if (!privateWorkAllowed(derived.level, requestedWork)) continue;
       kept.push({
