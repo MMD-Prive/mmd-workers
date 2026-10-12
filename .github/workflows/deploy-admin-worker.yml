@@ -103,6 +103,7 @@ jobs:
           node --check src/model-owner-review-queue.js
           node --check src/model-direct-first-job-gate.js
           node --check src/model-selected-job-handoff.js
+          node --test model-job-preview.test.mjs
           node --test model-selected-job-handoff.test.mjs
           node --experimental-global-webcrypto --test payment-issuer-diagnostic.test.mjs hype-shop-orders.test.mjs hype-handoff-runtime.test.mjs hype-recovery-picker-stale.test.mjs hype-owner-summary.test.mjs hype-cross-system-stuck-sla.test.mjs owner-actions-queue.test.mjs owner-actions-triage.test.mjs dashboard-canonical-payment-counts.test.mjs mms-owner-actions-bau.test.mjs recovery-control.test.mjs cancellation-credit-recovery.test.mjs client-credit-verification.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs create-job-fast-trust-access.test.mjs telegram-identity-bind-authority.test.mjs owner-private-job-grant-create.test.mjs
           node --test model-session-runtime-v1a.test.mjs partner-owner-console.test.mjs
@@ -369,6 +370,7 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/internal/admin/jobs/model-preview*",
             "/internal/admin/payments",
             "/internal/admin/payments*",
             "/internal/admin/jobs/all",
@@ -505,6 +507,23 @@ jobs:
         run: |
           set -euo pipefail
           node ../scripts/check-admin-all-jobs-gate.mjs
+          # Wait for exact preview routes to propagate; signed-out requests must
+          # reach the credential gate and retain session_id in the login return.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for suffix in "" "/" "?session_id=sess_route_smoke"; do
+              preview_ok=false
+              for attempt in 1 2 3 4 5 6; do
+                preview_headers="$(mktemp)"
+                preview_code="$(curl -sS --max-time 20 -D "$preview_headers" -o /dev/null -w "%{http_code}" "$origin/internal/admin/jobs/model-preview$suffix")"
+                if [ "$preview_code" = "303" ] && grep -Fqi "location: $origin/internal/admin/login?next=" "$preview_headers" && grep -Fqi "model-preview" "$preview_headers"; then
+                  preview_ok=true
+                  break
+                fi
+                sleep 2
+              done
+              test "$preview_ok" = true
+            done
+          done
           # Money Control HTML must stay on the existing credential-bound gate.
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
             for suffix in "" "/" "?proof_id=smoke-route-only"; do
