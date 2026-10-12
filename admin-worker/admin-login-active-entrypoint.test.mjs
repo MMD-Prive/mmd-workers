@@ -279,7 +279,7 @@ async function assertPagesDenied(headers, requests) {
       if (method === "GET") {
         const target = new URL(response.headers.get("location"));
         assert.equal(target.pathname, "/internal/admin/login");
-        const next = path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
+        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
           ? `${path}?page=2` : "/internal/admin/control-room";
         assert.equal(target.searchParams.get("next"), next);
         assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
