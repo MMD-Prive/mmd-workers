@@ -19,6 +19,7 @@ import {
   isConfirmationReissueRequest,
   isModelConfirmationReissueRequest,
 } from "./confirmation-link-reissue.js";
+import { handlePartnerModelLink, isPartnerModelLinkRequest } from "./partner-model-link.js";
 import { canonicalizeConfirmLinkRequest } from "./confirm-route-canonicalizer.js";
 import {
   enforceSigilSessionServiceAmount,
@@ -184,6 +185,10 @@ export default {
 
     if (isModelConfirmationReissueRequest(path, method)) {
       return handleModelConfirmationReissue(request, env);
+    }
+
+    if (isPartnerModelLinkRequest(path, method)) {
+      return handlePartnerModelLink(request, env);
     }
 
     if (isUnifiedPaymentIntentRequest(path, method)) {
