@@ -71,9 +71,16 @@ test("unsupported private tier never silently selects a renewal package", async 
   assert.equal(offer.reason, "renewal_current_package_not_supported");
 });
 
-test('active quote requires authoritative current pricing rather than a legacy spend estimate',async()=>{
-  const offer=await resolveCanonicalRenewalOffer({RENEWAL_OFFER_RESOLVER:{resolve:async()=>({status:'ready',package_code:'standard',amount_thb:799,service_spend_365_thb:10000})}}, {liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier:'Standard',membership_expires_at:'2026-12-31T00:00:00Z'}},new Date('2026-10-02T00:00:00Z'));
-  assert.equal(offer.status,'review_required');assert.equal(offer.reason,'active_renewal_price_policy_required');
+test('active (advance) renewal uses the approved fixed price, ignores spend estimates and starts from the future expiry',async()=>{
+ for(const [tier,price,rule] of [['Standard',1000,'active_advance_standard'],['Premium',2500,'active_advance_premium']]) {
+  const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier,membership_expires_at:'2027-03-01T00:00:00Z'}};
+  const env={RENEWAL_OFFER_RESOLVER:{resolve:async()=>({status:'ready',package_code:tier.toLowerCase(),amount_thb:799,service_spend_365_thb:10000})}};
+  const offer=await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-12T03:00:00Z'));
+  assert.equal(offer.status,'ready');assert.equal(offer.amount_thb,price);assert.equal(offer.price_rule,rule);
+  assert.equal(offer.membership_start_at,'2027-03-01T00:00:00.000Z');assert.equal(offer.promotion_requires_verified_payment,true);
+  assert.ok(offer.promotion,'promo applies to advance renewal paid inside the promo window');
+  assert.equal((await resolveCanonicalRenewalOffer(env,session,new Date('2027-01-05T00:00:00Z'))).promotion,null,'no promo after the honored window');
+ }
 });
 test('exact expiry anniversary and older require separate policy review',async()=>{
   const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier:'Standard',membership_expires_at:'2025-10-02T00:00:00Z'}};

@@ -57,15 +57,17 @@ export async function resolveCanonicalRenewalOffer(env = {}, session = {}, now =
   const timing = privateRenewalTiming(session?.member_profile?.membership_expires_at, now);
   if (timing?.expired_one_year_or_more) return {status:"review_required", classification:timing.expired_over_one_year ? "new_signup" : "review_required", reason:"renewal_expired_one_year_or_more_policy_review_required"};
   if (!timing?.expiry_known) return {status:"review_required",reason:"canonical_expiry_required"};
-  // Quote only the approved fixed-price audience. Active prices require a
-  // separately authoritative current package quote, not legacy spend estimates.
-  if (!timing.expired_less_than_one_year) return {status:"review_required",reason:"active_renewal_price_policy_required"};
+  // Owner-approved fixed-price audiences (2026-10-12): expired less than one
+  // year (includes the 14-day grace) and not-yet-expired advance renewals both
+  // pay the base price (Standard 1,000 / Premium 2,500); spend discounts never
+  // apply. Advance renewals extend from the future expiry (timing.start_at).
+  if (!timing.active && !timing.expired_less_than_one_year) return {status:"review_required",reason:"renewal_price_policy_review_required"};
   const term = {membership_years:PACKAGE_POLICY[packageCode].years, membership_start_at:timing.start_at};
 
   const lineUserId = canonicalLineId(session?.line_user_id);
   if (!lineUserId) return { status: "review_required", reason: "renewal_line_identity_required" };
 
-  return {status:"ready", ...renewalPriceForSpend(packageCode,0), ...term, price_rule:`expired_less_than_one_year_${packageCode}`, history_status:"verified", discount_verified:true,
+  return {status:"ready", ...renewalPriceForSpend(packageCode,0), ...term, price_rule:timing.active ? `active_advance_${packageCode}` : `expired_less_than_one_year_${packageCode}`, history_status:"verified", discount_verified:true,
     // Provisional bonus at quote time; payment writer re-evaluates canonical paid_at.
     promotion:currentPrivateMembershipPromotion({package_code:packageCode,paid_at:now.toISOString(),action:"renewal",existing_member:true,prior_expire_at:session.member_profile.membership_expires_at}),
     promotion_requires_verified_payment:true};
