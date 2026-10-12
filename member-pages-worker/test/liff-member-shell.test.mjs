@@ -770,3 +770,23 @@ describe("signup offers the basic Member package only", () => {
   });
 });
 
+
+describe("renewal card in the PACKAGE view", () => {
+  it("renders hidden markup, server-driven script and never lets the browser send an amount", async () => {
+    const html = await (await shell("/member/liff?intent=renew&view=package")).text();
+    assert.match(html, /id="renewal-card"[^>]*hidden/);
+    assert.match(html, /\/member\/api\/liff\/renewal\/offer/);
+    const purchase = html.slice(html.indexOf("async function purchaseRenewal"), html.indexOf("async function purchaseRenewal") + 1800);
+    assert.match(purchase, /body: JSON\.stringify\(\{ package_code: packageCode \}\)/);
+    assert.doesNotMatch(purchase, /amount/);
+    assert.match(purchase, /verifiedCheckoutUrl\(payload\.customer_payment_url\)/);
+    assert.match(purchase, /entitlement_granted === false/);
+  });
+});
+
+describe("renewal card hidden parts", () => {
+  it("price box stays hidden when the offer has no price (no stray THB)", async () => {
+    const html = await (await shell("/member/liff?intent=renew&view=package")).text();
+    assert.match(html, /\.renewal-price\[hidden\][^{]*\{display:none!important\}/);
+  });
+});
