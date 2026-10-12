@@ -1,6 +1,7 @@
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { inferMembershipPayment } from "../shared/payment-intelligence.mjs";
 import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -509,9 +510,7 @@ function email(value) { const v = clean(value).toLowerCase(); return /^[^\s@]+@[
 function lineId(value) { const v = text(value, 100); return /^U[A-Za-z0-9_-]{20,80}$/.test(v) ? v : ""; }
 function positiveAmount(value) { const n = Number(String(value ?? "").replace(/,/g, "")); return Number.isFinite(n) && n > 0 ? Math.round((n + Number.EPSILON) * 100) / 100 : null; }
 function iso(value) { const t = Date.parse(String(value || "")); return Number.isFinite(t) ? new Date(t).toISOString() : ""; }
-function formulaValue(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function code(value) { return clean(value, 180).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
 function text(value, max = 240) { return clean(value, max).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, max); }
 function clean(value, max = 2000) { return String(value == null ? "" : value).trim().slice(0, max); }
 function compact(value) { return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== "" && v !== null && v !== undefined)); }
-function httpError(status, message) { const error = new Error(message); error.status = status; return error; }

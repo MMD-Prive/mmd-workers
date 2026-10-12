@@ -1,4 +1,5 @@
 import { parseSigilMembershipPaymentComponents } from "../shared/sigil-membership-payment-components.mjs";
+import { formulaValue } from "./lib/payment-primitives.js";
 export { parseSigilMembershipPaymentComponents };
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MARKER = "[MMD_MEMBERSHIP_ACTION_V1]";
@@ -12,7 +13,6 @@ const DEFAULT_FIELDS = Object.freeze({
   paymentAmount: "fldvCSwrUW8OMAooS",
   paymentNotes: "fldjsZIKoJPawlb2u",
 });
-
 
 export async function reconcileSigilConfirmLinkMoneyTruth(request, response, env = {}) {
   if (!response || response.status < 200 || response.status >= 300) return response;
@@ -168,7 +168,6 @@ function optionalPositiveMoney(value) {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 function sameMoney(a, b) { return Math.abs(Number(a) - Number(b)) <= 0.009; }
-function formulaValue(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function safeCode(value) { return clean(value).toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 100); }
 function clean(value) { return String(value ?? "").trim(); }
 function moneyError(message, status = 409) { const error = new Error(message); error.status = status; return error; }

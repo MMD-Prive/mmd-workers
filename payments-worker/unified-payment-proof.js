@@ -3,6 +3,7 @@ import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationL
 import { verifyConfirmToken } from "./index.js";
 import { withPaymentEvidenceLock } from "../shared/canonical-payment-evidence.mjs";
 import { dispatchPaymentNotification, drainPaymentNotifications } from "../shared/payment-notification-outbox.mjs";
+import { formulaValue } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
@@ -213,10 +214,6 @@ function airtableTable(env, kind) {
 
 function airtableReady(env) {
   return Boolean(clean(env.AIRTABLE_BASE_ID) && clean(env.AIRTABLE_API_KEY));
-}
-
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 async function airtableFetch(env, url, init = {}) {

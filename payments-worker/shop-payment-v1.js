@@ -17,6 +17,7 @@ import {
   readMmdShopReservation,
   writeMmdShopReservation,
 } from "../shared/mmd-shop-stock-reservation.mjs";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const SHOP_INTENT_PATH = "/v1/pay/shop-intent";
@@ -613,7 +614,6 @@ export async function reconcileReviewedShopPayment(request, response, env) {
   }
 }
 
-
 function paymentReviewKey(body, orderId) {
   return text(body?.payment_ref || body?.transaction_ref || orderId, 500) || orderId;
 }
@@ -889,9 +889,6 @@ function bangkokDate() {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
 function positive(value) {
   const n = Number(String(value ?? "").replace(/,/g, "").trim());
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -908,11 +905,6 @@ function text(value, max = 5000) {
 }
 function escapeHtml(value) {
   return text(value, 1000).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
 }
 function allowedOrigins(env) {
   return text(env.ALLOWED_ORIGINS, 5000).replace(/^[\"']|[\"']$/g, "").split(",").map((value) => value.trim().replace(/^[\"']|[\"']$/g, "")).filter(Boolean);

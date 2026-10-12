@@ -1,3 +1,4 @@
+import { formulaValue } from "./lib/payment-primitives.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const CUSTOMER_SESSION_DETAILS_PATH = "/v1/confirm/details";
@@ -216,10 +217,6 @@ function normalizeCode(value) {
     .toLowerCase()
     .replace(/[\s-]+/g, "_")
     .replace(/^_+|_+$/g, "");
-}
-
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 function text(value, max = 5000) {

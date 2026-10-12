@@ -1,4 +1,5 @@
 import { awardBasePointsPhase1 } from "./points-phase1.js";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const RECOVERY_PRICES = Object.freeze({ standard: new Set([499, 799, 1000]), premium: new Set([999, 1999, 2500]) });
@@ -215,10 +216,6 @@ function put(fields, key, value) {
   fields[field] = value;
 }
 
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 function requireAirtable(env) {
   if (!clean(env.AIRTABLE_API_KEY) || !clean(env.AIRTABLE_BASE_ID) || !paymentsTable(env)) {
     throw httpError(503, "airtable_not_ready");
@@ -229,7 +226,6 @@ function text(value, max = 240) {
   return clean(value).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, max);
 }
 function clean(value) { return String(value ?? "").trim(); }
-function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,

@@ -1,6 +1,8 @@
 import { verifyConfirmToken } from "./index.js";
 import { stablePaymentRef } from "./unified-payment-proof.js";
 import { confirmationRevision } from "../shared/confirmation-revision.mjs";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
+export { formulaValue, httpError };
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_DETAILS_PATH = "/v1/confirm/details";
@@ -460,10 +462,6 @@ export function field(configured, fallback) {
   return clean(configured, 100) || fallback;
 }
 
-export function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 export function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
@@ -481,12 +479,6 @@ export function text(value, max = 5000) {
 
 export function clean(value, max = 5000) {
   return String(value == null ? "" : value).trim().slice(0, max);
-}
-
-export function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
 }
 
 export function json(payload, status = 200) {
