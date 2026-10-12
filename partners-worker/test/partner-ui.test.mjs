@@ -8,8 +8,9 @@ import {fixture,MODEL,apiModule} from './helpers/partner-fixture.mjs';
 const bundle=await build({entryPoints:[new URL('../src/public-index.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm'});
 const {default:pageWorker}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 async function settle(check){for(let n=0;n<100;n++){if(check())return;await new Promise(r=>setTimeout(r,20));}assert.ok(check(),'UI operation did not settle');}
-async function ui(t,{expired=false}={}){
+async function ui(t,{expired=false,system=null}={}){
   const f=await fixture();
+  if(system)f.db.Sessions[0].fields[apiModule.SESSION_FIELDS.referralSnapshotJson]=JSON.stringify({contract:'partner_agreement_v1',system});
   if(expired)f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='invalidated-fixture';
   const w=new Window({url:'https://www.mmdbkk.com/partner/dashboard?t='+encodeURIComponent(f.token),settings:{enableJavaScriptEvaluation:true,disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}});
   const pending=new Set();let closed=false;
@@ -69,15 +70,33 @@ test('Telegram stays optional and never hides Dashboard job state in Phase 1',as
   assert.match(q('[data-telegram]').textContent,/Telegram เชื่อมภายหลังได้/);
   assert.ok(q('[data-connect-telegram]'));
   assert.equal(q('[data-telegram-job-gate]'),null);
-  assert.match(q('[data-jobs]').textContent,/กำลังเตรียมงาน/);
+  assert.match(q('[data-jobs]').textContent,/โมเดลเป็นผู้ยืนยันงานนี้/);
+  assert.equal(q('[data-job-action]'),null);
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramId]='123456789';
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramVerificationStatus]='verified';
   w.dispatchEvent(new w.Event('focus'));
   await settle(()=>q('[data-telegram]').dataset.state==='connected');
   assert.match(q('[data-telegram]').textContent,/Telegram connected/);
-  assert.match(q('[data-jobs]').textContent,/กำลังเตรียมงาน/);
+  assert.match(q('[data-jobs]').textContent,/โมเดลเป็นผู้ยืนยันงานนี้/);
+  assert.equal(q('[data-job-action]'),null);
   assert.deepEqual(errors,[]);
 });
+for(const system of ['co_partner','profit_share']){
+  test(`Telegram stays optional while ${system} waits for payment verification`,async t=>{
+    const {q,w,f,errors}=await ui(t,{system});
+    assert.equal(q('[data-telegram]').dataset.state,'optional');
+    assert.match(q('[data-jobs]').textContent,/กำลังเตรียมงาน/);
+    assert.doesNotMatch(q('[data-jobs]').textContent,/โมเดลเป็นผู้ยืนยันงานนี้/);
+    assert.equal(q('[data-job-action]'),null);
+    f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramId]='123456789';
+    f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramVerificationStatus]='verified';
+    w.dispatchEvent(new w.Event('focus'));
+    await settle(()=>q('[data-telegram]').dataset.state==='connected');
+    assert.match(q('[data-jobs]').textContent,/กำลังเตรียมงาน/);
+    assert.equal(q('[data-job-action]'),null);
+    assert.deepEqual(errors,[]);
+  });
+}
 test('private schedule encrypts locally, refuses overlap, survives relock, and never enters shared changes',async t=>{
   const {q,w,f,errors}=await ui(t);
   q('[data-vault-pin]').value='fixture-password';q('[data-unlock-vault]').click();
