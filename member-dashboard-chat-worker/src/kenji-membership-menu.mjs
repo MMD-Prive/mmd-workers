@@ -1,9 +1,15 @@
 // Exact command "MMD Membership": a static link menu. No LLM, no truth read,
 // no entitlement lookup, nothing about the sender's own membership is said.
 const text = value => String(value ?? "").trim();
-const PUBLIC_SIGNUP_URL = "https://mmdbkk.com/pay/membership?source=line";
-const PRIVATE_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
-const RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
+// Links open the My MMD LIFF mini app so the customer stays inside LINE
+// (signup / renew / status); payment opens in the same LIFF webview.
+const LIFF_BASE = "https://miniapp.line.me/2010862595-yT4DCEMc/";
+const liff = (intent, view) => `${LIFF_BASE}?intent=${intent}&view=${view}`;
+export const MEMBERSHIP_MENU_LINKS = Object.freeze({
+  signup: liff("signup", "signup"),
+  renew: liff("renew", "profile"),
+  status: liff("status", "profile"),
+});
 
 export function isMembershipMenuCommand(event = {}) {
   if (event.type !== "message" || event.source?.type !== "user" || event.message?.type !== "text") return false;
@@ -16,9 +22,9 @@ export function renderMembershipMenu() {
     text: [
       "MMD Membership เลือกเริ่มได้ตามนี้ครับ",
       "",
-      `• สมัคร Public Membership (Member / Elite / Red Card) → ${PUBLIC_SIGNUP_URL}`,
-      `• สมัคร Standard / Premium (Private Membership) → ${PRIVATE_SIGNUP_URL}`,
-      `• ต่ออายุสมาชิก → ${RENEWAL_URL}`,
+      `• สมัครสมาชิก (Public / Private) → ${MEMBERSHIP_MENU_LINKS.signup}`,
+      `• ต่ออายุสมาชิก → ${MEMBERSHIP_MENU_LINKS.renew}`,
+      `• เช็กสถานะสมาชิก → ${MEMBERSHIP_MENU_LINKS.status}`,
       "",
       "สถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ",
     ].join("\n"),
