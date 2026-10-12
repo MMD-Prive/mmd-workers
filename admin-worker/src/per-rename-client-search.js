@@ -125,7 +125,12 @@ export async function lookupPerRenameFirst(request, env = {}) {
 }
 
 function lineageResponse(body, source, headers) {
-  body.degraded_sources = body.lineage_warnings;
+  // Successful matches and operator selection are lookup outcomes, not outages.
+  const informational = new Set([
+    "per_rename_alias_resolved_to_canonical_client",
+    "per_rename_multiple_canonical_clients_operator_selection_required",
+  ]);
+  body.degraded_sources = (body.lineage_warnings || []).filter((warning) => !informational.has(warning));
   return new Response(JSON.stringify(body), {
     status: source.status, statusText: source.statusText, headers,
   });
