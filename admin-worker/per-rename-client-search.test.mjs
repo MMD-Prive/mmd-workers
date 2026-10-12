@@ -29,6 +29,9 @@ function fallbackResponse() {
     items: [{ client_id: "", client_name: "fallback", manual_public_only: true }],
     count: 1,
     manual_fallback: true,
+    results: [{ client_id: "", client_name: "fallback", manual_public_only: true }],
+    no_canonical_match: true,
+    degraded_sources: ["manual_public_only_pending_reconcile"],
     lineage_warnings: ["manual_public_only_pending_reconcile"],
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
@@ -129,6 +132,12 @@ test("Per nickname resolves exact linked canonical Client and remains display-fi
     assert.equal(body.per_rename_alias, true);
     assert.equal(body.records.length, 1);
     assert.equal(body.records[0].client_id, "recAcTMLy1teHWMp1");
+    assert.deepEqual(body.results, body.records);
+    assert.deepEqual(body.items, body.records);
+    assert.equal(body.no_canonical_match, false);
+    assert.equal(body.records[0].confidence, 1);
+    assert.deepEqual(body.degraded_sources, body.lineage_warnings);
+    assert.ok(!body.degraded_sources.includes("manual_public_only_pending_reconcile"));
     assert.equal(body.records[0].client_name, "ก้อง - SVIP -");
     assert.equal(body.records[0].current_line_rename, "ก้อง - SVIP -");
     assert.equal(body.records[0].per_rename, "ก้อง - SVIP -");
@@ -176,6 +185,10 @@ test("broad Per nickname returns linked canonical choices without guessing", asy
     assert.equal(body.per_rename_alias_multiple, true);
     assert.equal(body.manual_fallback, false);
     assert.equal(body.records.length, 2);
+    assert.deepEqual(body.results, body.records);
+    assert.deepEqual(body.items, body.records);
+    assert.equal(body.no_canonical_match, false);
+    assert.ok(!body.degraded_sources.includes("manual_public_only_pending_reconcile"));
     assert.deepEqual(
       new Set(body.records.map((record) => record.client_id)),
       new Set(["recAcTMLy1teHWMp1", "recOtherClient"]),
@@ -328,6 +341,9 @@ test("exact Per Rename collision across canonical Clients still fails closed", a
     assert.equal(body.per_rename_alias_ambiguous, true);
     assert.equal(body.manual_fallback, true);
     assert.equal(body.records.length, 0);
+    assert.deepEqual(body.results, []);
+    assert.deepEqual(body.items, []);
+    assert.equal(body.no_canonical_match, true);
     assert.match(body.lineage_warnings.join(" "), /per_rename_alias_ambiguous_refine_search/);
   } finally {
     restore();
@@ -348,4 +364,62 @@ test("non-authoritative or unlinked index rows never become canonical Client aut
   } finally {
     restore();
   }
+});
+
+
+// Exercise the authorized runtime, rather than the post-response wrapper alone.
+import { handleCreateSessionClientLineageRequest } from "./src/create-session-client-lineage-runtime.js";
+
+for (const query of ["ก้อง SVIP", "ก้อง"]) {
+  test(`runtime queries Per Rename before legacy sources: ${query}`, async () => {
+    const restore = installResolverMock([kongIndex]);
+    try {
+      const response = await handleCreateSessionClientLineageRequest(lookupRequest(query), env, { alreadyAuthorized: true });
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(body.records[0].client_id, kongClient.id);
+      assert.deepEqual(body.results, body.records);
+      assert.equal(body.no_canonical_match, false);
+      assert.equal(body.manual_fallback, false);
+      const before = restore();
+      assert.equal(before.length, 2);
+      assert.ok(decodeURIComponent(before[0].pathname).endsWith("/pre_session"));
+      assert.ok(decodeURIComponent(before[1].pathname).endsWith(`/clients/${kongClient.id}`));
+      // The active outer wrapper must not scan the index again.
+      const wrapped = await enrichLineageWithPerRename(lookupRequest(query), response, env);
+      assert.equal(wrapped, response);
+    } finally { restore(); }
+  });
+}
+
+test("runtime fallback follows an empty Per Rename scan and never repeats it", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    calls.push(url);
+    assert.ok(!init?.method || init.method === "GET");
+    const path = decodeURIComponent(url.pathname);
+    const records = path.endsWith("/clients") ? [kongClient] : [];
+    return new Response(JSON.stringify({ records }), { headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const response = await handleCreateSessionClientLineageRequest(lookupRequest("KKKsk"), env, { alreadyAuthorized: true });
+    const body = await response.json();
+    assert.ok(decodeURIComponent(calls[0].pathname).endsWith("/pre_session"));
+    assert.equal(body.records[0].client_id, kongClient.id);
+    assert.equal(response.headers.get("x-mmd-per-rename-search"), "none");
+    const count = calls.length;
+    assert.equal(await enrichLineageWithPerRename(lookupRequest("KKKsk"), response, env), response);
+    assert.equal(calls.length, count);
+  } finally { globalThis.fetch = original; }
+});
+
+test("runtime does not access Per Rename without authorization", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("unauthorized lookup must not fetch"); };
+  try {
+    const response = await handleCreateSessionClientLineageRequest(lookupRequest("ก้อง"), env);
+    assert.equal(response.status, 401);
+  } finally { globalThis.fetch = original; }
 });
