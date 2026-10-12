@@ -10,7 +10,9 @@ for (const level of ["private_standard", "private_premium"]) {
     test(`${level} ${lifecycle} receives only a conditional approved renewal promotion`, () => {
       const result = projectKenjiRenewalPromotion({ level, lifecycle, expire_at }, now);
       assert.equal(result.status, "conditional_eligible"); assert.equal(result.requires_verified_payment, true);
-      assert.equal(result.total_years, 2); assert.equal(result.base_years, 1); assert.equal(result.promotion_years, 1);
+      const standard = level === "private_standard";
+      assert.equal(result.base_years, 1);
+      assert.equal(result.total_years, standard ? 1 : 2); assert.equal(result.promotion_years, standard ? 0 : 1); assert.equal(result.promotion_days, standard ? 180 : 0);
       assert.equal(result.checkout_status, "review_required");
       assert.equal(result.starts_from, lifecycle === "active" ? "existing_expiry" : "verified_renewal_time");
     });

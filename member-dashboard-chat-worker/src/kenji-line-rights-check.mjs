@@ -89,9 +89,13 @@ export function renderLineRightsCheck(truth = {}) {
   const promotion = truth.promotion || {};
   const currentPackage = { private_standard: "standard", private_premium: "premium" }[m.level];
   if (verified && !truth.membership?.member_blocked && ["active", "expiring_soon", "grace", "expired"].includes(m.lifecycle) && promotion.authority === "owner_approved_october_renewal_2026_v1" && promotion.status === "conditional_eligible" && promotion.package_code === currentPackage && promotion.requires_verified_payment === true && Date.parse(promotion.ends_before) > Date.now()) {
-    if (promotion.total_years === 2 && promotion.base_years === 1 && promotion.promotion_years === 1) {
+    const promotionDays = Number(promotion.promotion_days || 0), promotionYears = Number(promotion.promotion_years || 0);
+    const premiumShape = promotion.package_code === "premium" && promotion.total_years === 2 && promotion.base_years === 1 && promotionYears === 1 && promotionDays === 0;
+    const standardShape = promotion.package_code === "standard" && promotion.total_years === 1 && promotion.base_years === 1 && promotionYears === 0 && promotionDays === 180;
+    if (premiumShape || standardShape) {
+      const terms = premiumShape ? "Premium: รวม 2 ปี (สิทธิ์หลัก 1 ปี + โปร 1 ปี)" : "Standard: สิทธิ์หลัก 1 ปี + โปรแถม 180 วัน";
       const start = promotion.starts_from === "existing_expiry" ? "นับต่อจากวันหมดอายุเดิม" : "นับจากวันต่ออายุที่ตรวจชำระแล้ว";
-      lines.push(`โปรต่ออายุ ${promotion.package_code === "premium" ? "Premium" : "Standard"}: รวม 2 ปี (สิทธิ์หลัก 1 ปี + โปร 1 ปี) · ${start} เมื่อชำระตามเงื่อนไขก่อน ${date(promotion.ends_before)} และผ่านการตรวจชำระครับ ยังไม่เพิ่มสิทธิ์จากการเช็กนี้`);
+      lines.push(`โปรต่ออายุ ${terms} · ${start} เมื่อชำระตามเงื่อนไขก่อน ${date(promotion.ends_before)} และผ่านการตรวจชำระครับ ยังไม่เพิ่มสิทธิ์จากการเช็กนี้`);
       if (promotion.checkout_status !== "ready") lines.push("ให้เปอร์ตรวจยอดและรายการชำระให้ตรงโปรนี้ก่อนโอนครับ");
     }
     else lines.push("โปรต่ออายุยังรอเปอร์ตรวจเงื่อนไขครับ");

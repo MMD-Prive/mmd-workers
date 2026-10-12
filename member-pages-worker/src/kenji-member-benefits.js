@@ -14,10 +14,11 @@ export function projectKenjiRenewalPromotion(membership = {}, now = new Date()) 
   // Candidate payment time is only a preview. Payment truth re-evaluates the
   // actual paid_at; this projection neither awards nor extends membership.
   const offer = currentPrivateMembershipPromotion({ package_code: packageCode, paid_at: now.toISOString(), action: "renewal", existing_member: true, prior_expire_at: membership.expire_at });
-  // Current owner canon (docs/private-member-login-renewal-readiness-20261002.md
-  // and the Oct 4 parent-forwarded owner notes) is total 2 years, not tier bonus
-  // stacking. The payment policy still differs: keep checkout under review.
-  return offer ? { authority, status: "conditional_eligible", package_code: packageCode, total_years: 2, base_years: 1, promotion_years: 1, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", ends_before: offer.ends_before, requires_verified_payment: true, checkout_status: "review_required", reason: "payment_term_policy_alignment_required" }
+  // Owner confirmation 2026-10-12 (CARE BACK poster): Standard = 1 year + 180 days, Premium = 1 year + 1 year (total 2).
+  // Terms come from the payment policy offer so this projection never promises more than checkout would grant.
+  // Checkout stays under review (unchanged).
+  const promotionYears = Number(offer?.bonus_years || 0), promotionDays = Number(offer?.bonus_days || 0);
+  return offer ? { authority, status: "conditional_eligible", package_code: packageCode, total_years: 1 + promotionYears, base_years: 1, promotion_years: promotionYears, promotion_days: promotionDays, starts_from: timing.active ? "existing_expiry" : "verified_renewal_time", ends_before: offer.ends_before, requires_verified_payment: true, checkout_status: "review_required", reason: "payment_term_policy_alignment_required" }
     : { authority, status: "not_applicable", reason: "outside_approved_campaign_window" };
 }
 
