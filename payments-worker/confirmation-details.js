@@ -155,6 +155,9 @@ export async function handleConfirmationDetails(request, env = {}) {
       already_confirmed: Boolean(modelAcknowledgedAt),
       model_payout_thb: modelPayout,
       amount_scope: "model_payout",
+      // Partner-issued links render without MMD branding (signed claim, not a query flag).
+      neutral: claims.neutral === true,
+      issued_via: claims.via === "partner" ? "partner" : null,
     }));
   } catch (error) {
     return withCors(request, env, json({
