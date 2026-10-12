@@ -34,11 +34,12 @@ test("menu rejects groups and non-text events", () => {
   assert.equal(isMembershipMenuCommand(event("MMD Membership", { message: { type: "sticker" } })), false);
 });
 
-test("menu copy has the three links and says nothing about the sender's own membership", () => {
+test("menu copy has the three LIFF links (no web URL) and says nothing about the sender's own membership", () => {
   const { text } = renderMembershipMenu();
-  assert.match(text, /pay\/membership\?source=line/);
-  assert.match(text, /intent=signup/);
-  assert.match(text, /intent=renew/);
+  assert.match(text, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/);
+  assert.match(text, /\?intent=renew&view=profile/);
+  assert.match(text, /\?intent=status&view=profile/);
+  assert.doesNotMatch(text, /mmdbkk\.com|liff\.state|\/member\/liff/);
   assert.doesNotMatch(text, /บัญชีนี้|เช็กสิทธิ์|วันหมดอายุ|แต้ม|Welcome|1,199|2,999/);
 });
 
