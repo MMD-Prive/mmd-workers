@@ -421,9 +421,9 @@ KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 # mean a Model/job, not membership) and the known-member copy reads wrong in
 # context. Code path and tests stay; set back to "true" to re-enable.
 KENJI_LINE_PRIVATE_INTEREST_ENABLED = "false"
-# Exact command "MMD Membership" -> static signup/renewal link menu. Off until the
-# owner enables it (needs command mode above).
-KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "false"
+# Exact command "MMD Membership" -> static signup/renewal link menu. Enabled
+# 2026-10-12 by the owner (needs command mode above). Set "false" to stop.
+KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
 # Owner lock 2026-09-29: customer-facing LINE may autonomously reply only to
 # direct Model name/code lookup (plus the bounded verification continuation
