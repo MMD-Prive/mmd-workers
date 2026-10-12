@@ -26,7 +26,7 @@ test("blocked, missing expiry and Bangkok campaign cutoff do not promise benefit
   const membership = { level: "private_premium", lifecycle: "active", expire_at: "2028-01-01" };
   assert.equal(projectKenjiRenewalPromotion({ ...membership, member_blocked: true }, now).status, "not_applicable");
   assert.equal(projectKenjiRenewalPromotion({ ...membership, expire_at: "" }, now).status, "review_required");
-  assert.equal(projectKenjiRenewalPromotion(membership, new Date("2026-10-31T17:00:00Z")).status, "not_applicable");
+  assert.equal(projectKenjiRenewalPromotion(membership, new Date("2026-12-31T17:00:00Z")).status, "not_applicable");
 });
 test("ordinary wallet uses existing LIFF HMAC and strict canonical member with no issuing call", async () => {
   const secret = "fixture-only-secret".repeat(3); let calls = 0;

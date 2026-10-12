@@ -4,8 +4,17 @@ import {currentPrivateMembershipPromotion as promo,applyMembershipPromotion as a
 const renewal=(package_code,paid_at='2026-10-31T16:59:59.999Z')=>({package_code,paid_at,action:'renewal',existing_member:true,prior_expire_at:'2026-01-01T00:00:00Z'});
 test('October Bangkok cutoff is based on payment time, with tier-specific bonus',()=>{
  assert.equal(promo(renewal('standard')).bonus_days,180);assert.equal(promo(renewal('premium')).bonus_years,1);
- for(const code of ['standard','premium']) {assert.equal(promo(renewal(code,'2026-10-31T17:00:00Z')),null);assert.equal(promo(renewal(code,'2026-07-31T16:59:59Z')),null);}
+ for(const code of ['standard','premium']) {assert.equal(promo(renewal(code,'2026-07-31T16:59:59Z')),null);}
  assert.equal(promo({...renewal('premium'),paid_at:'',verified_at:'2026-10-01'}),null);
+});
+test('announced deadline stays 31 Oct but payments are honored until 31 Dec 2026 Bangkok',()=>{
+ for(const code of ['standard','premium']){
+  const late=promo(renewal(code,'2026-10-31T17:00:00Z'));assert.ok(late);assert.equal(late.ends_before,'2026-11-01T00:00:00+07:00');
+  assert.ok(promo(renewal(code,'2026-12-31T16:59:59.999Z')));
+  assert.equal(promo(renewal(code,'2026-12-31T17:00:00Z')),null);
+ }
+ assert.ok(promo({package_code:'premium',paid_at:'2026-12-31T16:59:59Z',action:'signup'}));
+ assert.equal(promo({package_code:'premium',paid_at:'2026-12-31T17:00:00Z',action:'signup'}),null);
 });
 test('new Premium total2 is not base2 plus Verify1; Standard signup has no inferred bonus',()=>{
  const p=promo({package_code:'premium',paid_at:'2026-10-01',action:'signup'});assert.equal(p.total_years,2);assert.equal(p.bonus_years,0);
