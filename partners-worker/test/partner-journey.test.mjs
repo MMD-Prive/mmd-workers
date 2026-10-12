@@ -20,7 +20,7 @@ const F = {
 
 async function fixture(t) {
   const partner = { id:PARTNER_ID, fields:{[F.partnerId]:"partner_fixture",[F.active]:"Active",[F.approval]:"recognized",[F.telegramId]:"123456789",[F.telegramVerified]:"verified",fldXs6VyfXIHxBMpQ:[CLAIM_ID]} };
-  const session = { id:SESSION_ID, fields:{[F.sessionId]:"sess_fixture",[F.paymentStatus]:"paid",[F.snapshotId]:"partner_fixture",[F.snapshot]:JSON.stringify({partner_record_id:PARTNER_ID}),[F.confirmation]:"pending",[F.revision]:1} };
+  const session = { id:SESSION_ID, fields:{[F.sessionId]:"sess_fixture",[F.paymentStatus]:"paid",[F.snapshotId]:"partner_fixture",[F.snapshot]:JSON.stringify({partner_record_id:PARTNER_ID}),fldfqNBNKkmQdr6Fp:JSON.stringify({contract:"partner_agreement_v1",system:"co_partner",source_rate_thb:12000}),[F.confirmation]:"pending",[F.revision]:1} };
   const claim = { id:CLAIM_ID, fields:{fld6PAywOhvDeelDJ:"verified_unlinked",fldGB7Raqm6O1NIhh:"published",fldaMlO1fRoazxfHg:[PARTNER_ID]} };
   const payment = {id:"recDDDDDDDDDDDDDD",fields:{[F.paymentSession]:"sess_fixture",[F.verification]:"verified",[F.stage]:"deposit",[F.amount]:2000}};
   const writes = [], notifications = [], bindRequests = [];
@@ -174,4 +174,23 @@ test("deployment preserves service credentials and never reads or writes Kendo r
   assert.match(workflow,/wrangler deploy --keep-vars --config/);
   assert.match(workflow,/secret list/);
   for(const host of ["mmdbkk.com","www.mmdbkk.com"])assert.ok(workflow.includes(host+"/sigil/model/dashboard/partner-login*"));
+});
+
+test("Bridge jobs are confirmed by the model: no Partner confirmation or Dashboard action",async t=>{
+  const f=await fixture(t);
+  f.session.fields.fldfqNBNKkmQdr6Fp=JSON.stringify({contract:"partner_agreement_v1",system:"bridge",commission_percent:10});
+  assert.equal(normalizePartnerSession(f.session,true).confirmation_allowed,false);
+  assert.equal(normalizePartnerSession(f.session,true).working_system,null);
+  const r=await worker.fetch(post("https://www.mmdbkk.com/v1/partner/jobs/action?t="+encodeURIComponent(f.token),{session_record_id:SESSION_ID,action:"confirm"}),f.env,{});
+  assert.equal(r.status,409);assert.equal((await r.json()).error.code,"model_confirms_this_job");assert.equal(f.writes.length,0);
+});
+
+test("Profit Share projection shows real figures only from the locked settlement snapshot",async t=>{
+  const f=await fixture(t);
+  f.session.fields.fldfqNBNKkmQdr6Fp=JSON.stringify({contract:"partner_agreement_v1",system:"profit_share",partner_share_percent:40});
+  const pending=normalizePartnerSession(f.session,true);
+  assert.equal(pending.profit_share.status,"pending_settlement");assert.equal(pending.profit_share.partner_amount_thb,undefined);
+  f.session.fields.fldcDwNS7e64vsPEN=JSON.stringify({contract:"partner_commission_v1",payment_amount_thb:20000,costs_total_thb:5000});
+  const done=normalizePartnerSession(f.session,true).profit_share;
+  assert.deepEqual(done,{status:"approved",revenue_thb:20000,costs_thb:5000,distributable_thb:15000,partner_share_percent:40,partner_amount_thb:6000});
 });
