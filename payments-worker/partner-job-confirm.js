@@ -12,6 +12,7 @@ const SESSION = Object.freeze({
   workType: "fldZiv3GeiafJTuRv",
   partnerIdSnapshot: "fld0jkscGAtyX7i2J",
   partnerSnapshotJson: "fldxyZ7S3tjF8chGR",
+  referralSnapshotJson: "fldfqNBNKkmQdr6Fp",
   partnerConfirmationStatus: "fldrAQxUX4pRqz6qr",
   partnerConfirmationRevision: "fldhO72ZSYcyjbLzi",
   partnerNotificationStatus: "fldv1X9HIfgUjwpJw",
@@ -42,6 +43,13 @@ export async function notifyPartnerJobAfterOfficialVerify(env, input = {}) {
   const sf = session.fields || {};
   const partnerId = field(sf, SESSION.partnerIdSnapshot);
   if (!partnerId) return { ok:true, skipped:true, reason:"partner_snapshot_missing" };
+
+  // Only Co-Partner and Profit Share are confirmed by the Partner.
+  // Bridge (and any other system) is confirmed by the model, so the Partner is not asked.
+  const agreementSystem = code(parseObject(field(sf, SESSION.referralSnapshotJson)).system);
+  if (agreementSystem && !["co_partner", "profit_share"].includes(agreementSystem)) {
+    return { ok:true, skipped:true, reason:"partner_confirmation_not_required_for_system", system:agreementSystem };
+  }
 
   const existingDelivery = code(field(sf, SESSION.partnerNotificationStatus));
   const existingMessageId = field(sf, SESSION.partnerNotificationMessageId);
