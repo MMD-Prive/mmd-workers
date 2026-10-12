@@ -104,6 +104,7 @@ jobs:
           node --check src/model-direct-first-job-gate.js
           node --check src/model-selected-job-handoff.js
           node --test create-job-drive-discovery.test.mjs
+          node --test ../scripts/deploy-uploaded-worker-version.test.mjs
           node --test model-job-preview.test.mjs model-confirmation-flow-preview.test.mjs
           node --test model-selected-job-handoff.test.mjs
           node --experimental-global-webcrypto --test payment-issuer-diagnostic.test.mjs hype-shop-orders.test.mjs hype-handoff-runtime.test.mjs hype-recovery-picker-stale.test.mjs hype-owner-summary.test.mjs hype-cross-system-stuck-sla.test.mjs owner-actions-queue.test.mjs owner-actions-triage.test.mjs dashboard-canonical-payment-counts.test.mjs mms-owner-actions-bau.test.mjs recovery-control.test.mjs cancellation-credit-recovery.test.mjs client-credit-verification.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs create-job-fast-trust-access.test.mjs telegram-identity-bind-authority.test.mjs owner-private-job-grant-create.test.mjs
@@ -322,7 +323,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npx --yes wrangler@4 versions deploy "${ADMIN_WORKER_VERSION_ID}@100%" -y \
+          node ../scripts/deploy-uploaded-worker-version.mjs admin-worker "${ADMIN_WORKER_VERSION_ID}" \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
       - name: Ensure payment notification retry schedule
