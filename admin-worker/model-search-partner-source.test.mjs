@@ -39,6 +39,8 @@ test("search labels Partner (with name) and Direct; revoked referral is Direct",
     const byName = Object.fromEntries(out.items.map((i) => [i.model_name, i]));
     assert.equal(byName["Brew TN"].source_kind, "partner");
     assert.equal(byName["Brew TN"].partner_name, "Kendo");
+    assert.equal(byName["Brew TN"].partner_record_id, "recKendo000000001");
+    assert.equal(byName["Boy PK"].partner_record_id, undefined);
     assert.equal(byName["Boy PK"].source_kind, "direct");
     assert.equal(out.source_lookup_ok, true);
   } finally { restore(); }
