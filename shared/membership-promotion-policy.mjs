@@ -25,6 +25,14 @@ export function isProtectedPrivateMembership(value) {
   return new Set(["vip", "svip", "blackcard", "black_card"]).has(token(value));
 }
 
+// Owner decision 2026-10-12: a Private renewal buys ONE year for both Standard and
+// Premium; the CARE BACK promo adds on top (Standard +180 days, Premium +1 year,
+// so Premium totals 2 years). The 2-year Premium term is the SIGNUP package only.
+const PRIVATE_RENEWAL_BASE_YEARS = Object.freeze({ standard: 1, premium: 1 });
+export function privateRenewalBaseYears(packageCode) {
+  return PRIVATE_RENEWAL_BASE_YEARS[token(packageCode)] || 0;
+}
+
 export function privateRenewalTiming(expireAtValue, renewalAtValue) {
   const renewalAt = new Date(renewalAtValue);
   const expiry = new Date(expireAtValue || "invalid");

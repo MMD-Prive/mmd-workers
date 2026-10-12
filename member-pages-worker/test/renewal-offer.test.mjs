@@ -15,14 +15,14 @@ test("renewal pricing follows verified Standard spend bands", () => {
   assert.equal(renewalPriceForSpend("standard", 50000).amount_thb, 499);
 });
 
-test("renewal pricing follows verified Premium spend bands and keeps two-year term", () => {
+test("renewal pricing follows verified Premium spend bands and keeps the one-year renewal term", () => {
   assert.equal(renewalPriceForSpend("premium", 0).amount_thb, 2500);
   assert.equal(renewalPriceForSpend("premium", 19999.99).amount_thb, 2500);
   assert.equal(renewalPriceForSpend("premium", 20000).amount_thb, 1999);
   assert.equal(renewalPriceForSpend("premium", 99999.99).amount_thb, 1999);
   const top = renewalPriceForSpend("premium", 100000);
   assert.equal(top.amount_thb, 999);
-  assert.equal(top.membership_years, 2);
+  assert.equal(top.membership_years, 1);
 });
 
 test("renewal package is fixed by the verified current private tier", () => {
@@ -90,10 +90,16 @@ test('exact expiry anniversary and older require separate policy review',async()
 });
 
 test('expired strictly less than1yr uses approved fixed price, ignores spend discount and keeps base term separate',async()=>{
- for(const [tier,price,years,bonus] of [['Standard',1000,1,180],['Premium',2500,2,1]]) {
+ for(const [tier,price,years,bonus] of [['Standard',1000,1,180],['Premium',2500,1,1]]) {
  const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier,membership_expires_at:'2026-01-01T00:00:00Z'}};
  const offer=await resolveCanonicalRenewalOffer({},session,new Date('2026-10-31T16:59:59Z'));
  assert.equal(offer.status,'ready');assert.equal(offer.amount_thb,price);assert.equal(offer.membership_years,years);assert.equal(offer.promotion[tier==='Standard'?'bonus_days':'bonus_years'],bonus);assert.equal(offer.promotion_requires_verified_payment,true);
  assert.equal((await resolveCanonicalRenewalOffer({},session,new Date('2026-12-31T17:00:00Z'))).promotion,null);
  }
+});
+
+test('Premium renewal is one purchased year plus the promo year (two years total), never three', async()=>{
+  const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier:'Premium',membership_expires_at:'2027-03-01T00:00:00Z'}};
+  const offer=await resolveCanonicalRenewalOffer({},session,new Date('2026-10-12T03:00:00Z'));
+  assert.equal(offer.membership_years,1);assert.equal(offer.promotion.bonus_years,1);
 });

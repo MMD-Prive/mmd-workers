@@ -1,9 +1,9 @@
-import { currentPrivateMembershipPromotion, privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
+import { currentPrivateMembershipPromotion, privateRenewalBaseYears, privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
 
 const PACKAGE_POLICY = Object.freeze({
   standard: Object.freeze({
     label: "Standard",
-    years: 1,
+    years: privateRenewalBaseYears("standard"),
     base_amount_thb: 1000,
     thresholds: Object.freeze([
       Object.freeze({ spend_thb: 50000, amount_thb: 499, price_rule: "private_standard_spend_50000" }),
@@ -13,7 +13,7 @@ const PACKAGE_POLICY = Object.freeze({
   }),
   premium: Object.freeze({
     label: "Premium",
-    years: 2,
+    years: privateRenewalBaseYears("premium"),
     base_amount_thb: 2500,
     thresholds: Object.freeze([
       Object.freeze({ spend_thb: 100000, amount_thb: 999, price_rule: "private_premium_spend_100000" }),
