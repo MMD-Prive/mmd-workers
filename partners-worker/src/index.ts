@@ -1551,7 +1551,25 @@ function normalizePartnerSession(record: AirtableRecord, officiallyVerified = fa
   const customerAckAt = fieldText(record, SESSION_FIELDS.customerAckAt);
   const canonicalLocation = fieldText(record, SESSION_FIELDS.locationName);
   const locationConfirmed = Boolean(customerAckAt && canonicalLocation);
-  const partnerSourceRate = isRecord(snapshot) ? readFiniteNumber(snapshot.partner_source_rate_thb) : null;
+  const agreement = parseJson(fieldText(record, SESSION_FIELDS.referralSnapshotJson) || "{}");
+  const settlement = parseJson(fieldText(record, SESSION_FIELDS.commissionSnapshotJson) || "{}");
+  const workingSystem = isRecord(agreement) ? normalizeStatus(readString(agreement, "system")) : "";
+  const knownSystem = ["co_partner", "profit_share"].includes(workingSystem) ? workingSystem : null;
+  const partnerSourceRate = (isRecord(snapshot) ? readFiniteNumber(snapshot.partner_source_rate_thb) : null)
+    ?? (knownSystem === "co_partner" && isRecord(agreement) ? readFiniteNumber(agreement.source_rate_thb) : null);
+  const sharePercent = knownSystem === "profit_share" && isRecord(agreement) ? readFiniteNumber(agreement.partner_share_percent) : null;
+  // Profit Share shows real figures only from the owner-approved, locked settlement snapshot.
+  let profitShare: Record<string, unknown> | null = null;
+  if (knownSystem === "profit_share") {
+    const revenue = isRecord(settlement) && settlement.contract === "partner_commission_v1" ? readFiniteNumber(settlement.payment_amount_thb) : null;
+    const costs = isRecord(settlement) ? readFiniteNumber(settlement.costs_total_thb) : null;
+    if (revenue !== null && costs !== null && costs >= 0 && costs <= revenue && sharePercent !== null) {
+      const distributable = roundCurrency(revenue - costs);
+      profitShare = { status: "approved", revenue_thb: revenue, costs_thb: costs, distributable_thb: distributable, partner_share_percent: sharePercent, partner_amount_thb: roundCurrency(distributable * sharePercent / 100) };
+    } else {
+      profitShare = { status: "pending_settlement", partner_share_percent: sharePercent };
+    }
+  }
   return {
     session_record_id: record.id,
     session_id: fieldText(record, SESSION_FIELDS.sessionId) || record.id,
@@ -1566,12 +1584,14 @@ function normalizePartnerSession(record: AirtableRecord, officiallyVerified = fa
     location_status: locationConfirmed ? "confirmed_with_customer" : "pending_customer_confirmation",
     location_confirmed_at: customerAckAt || null,
     partner_source_rate_thb: partnerSourceRate,
+    working_system: knownSystem,
+    profit_share: profitShare,
     work_lane: fieldText(record, SESSION_FIELDS.workLane),
     work_type: fieldText(record, SESSION_FIELDS.workType),
     status: partnerStatus,
     lifecycle_status: lifecycle || "pending",
     payment_status: paymentStatus,
-    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus) && officiallyVerified && !["confirmed", "declined"].includes(partnerStatus) && !["completed", "cancelled", "canceled", "declined", "closed", "void"].includes(lifecycle),
+    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus) && officiallyVerified && knownSystem !== null && !["confirmed", "declined"].includes(partnerStatus) && !["completed", "cancelled", "canceled", "declined", "closed", "void"].includes(lifecycle),
     confirmation_note: fieldText(record, SESSION_FIELDS.partnerConfirmationNote),
     confirmation_revision: fieldNumber(record, SESSION_FIELDS.partnerConfirmationRevision),
     notification_status: fieldText(record, SESSION_FIELDS.partnerNotificationStatus) || "pending"
@@ -2825,6 +2845,10 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
   const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || "";
   if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
     return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
+  }
+  const jobAgreement = parseJson(fieldText(session, SESSION_FIELDS.referralSnapshotJson) || "{}");
+  if (!isRecord(jobAgreement) || !["co_partner", "profit_share"].includes(normalizeStatus(readString(jobAgreement, "system")))) {
+    return errorResponse(request, env, "model_confirms_this_job", "This job is confirmed by the model, not the Partner.", 409, false);
   }
   const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
   const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);

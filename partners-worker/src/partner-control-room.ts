@@ -81,11 +81,19 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       ? '<div class="pcr-model-link"><label><span>ราคาที่โมเดลจะได้รับ (บาท)</span><input type="number" inputmode="numeric" min="1" step="1" data-model-pay placeholder="เช่น 12000"></label><button type="button" class="ghost" data-model-link>ออกลิงก์ให้โมเดล</button><small>ไม่บังคับ · ใช้เมื่อไม่สะดวกประสานงานเอง ลิงก์ไม่แสดงว่ามาจาก MMD</small><output data-model-link-out hidden></output></div>'
       : '';
     var actions = finalLabel ? '<div class="pcr-job-locked" role="status"><b>' + finalLabel + '</b></div>' + modelLink
+      : !job.working_system ? '<div class="pcr-job-locked" role="status"><b>โมเดลเป็นผู้ยืนยันงานนี้</b><span>ระบบแจ้งโมเดลโดยตรง ไม่ต้องดำเนินการ</span></div>'
       : job.confirmation_allowed === true
       ? '<div class="pcr-actions"><button type="button" data-job-action="confirm">ยืนยันงาน</button><button type="button" data-job-action="changes" class="ghost">ขอแก้ไข</button><button type="button" data-job-action="decline" class="danger">ปฏิเสธ</button></div>'
       : '<div class="pcr-job-locked" role="status"><b>กำลังเตรียมงาน</b><span>MMD กำลังตรวจข้อมูลก่อนเปิดให้ตอบรับงาน</span></div>';
     var budget = Number(job.partner_source_rate_thb);
     var budgetRow = Number.isFinite(budget) && budget > 0 ? '<div><dt>งบถึงตัว</dt><dd><b>' + esc(money(budget)) + '</b></dd></div>' : '';
+    var ps = job.profit_share;
+    var profitRows = '';
+    if (job.working_system === "profit_share" && ps) {
+      profitRows = ps.status === "approved"
+        ? '<div><dt>รายได้</dt><dd>' + esc(money(ps.revenue_thb)) + '</dd></div><div><dt>ต้นทุนที่ตกลง</dt><dd>' + esc(money(ps.costs_thb)) + '</dd></div><div><dt>กำไรที่แบ่งได้</dt><dd>' + esc(money(ps.distributable_thb)) + '</dd></div><div><dt>ส่วนแบ่ง Partner (' + esc(ps.partner_share_percent) + '%)</dt><dd><b>' + esc(money(ps.partner_amount_thb)) + '</b></dd></div>'
+        : '<div><dt>ส่วนแบ่ง Partner</dt><dd>' + esc(ps.partner_share_percent == null ? "—" : ps.partner_share_percent + "%") + ' <small>· ตัวเลขจริงแสดงหลัง MMD สรุปยอด</small></dd></div>';
+    }
     var changeAlert = job.notification_status === "pending_change"
       ? '<div class="pcr-job-change-alert" role="status"><b>รายละเอียดงานมีการเปลี่ยนแปลง</b><span>ตรวจวัน เวลา และสถานที่ล่าสุดก่อนยืนยันอีกครั้ง</span></div>'
       : '';
@@ -93,7 +101,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     return '<article class="pcr-job" data-job="' + esc(job.session_record_id) + '">' +
       '<div class="pcr-job-main"><div><span class="pcr-status">' + esc(job.status || "pending") + '</span><h3>' + esc(job.model_name) + '</h3></div><strong>' + dateTime(job.start_at || job.date) + '</strong></div>' +
       changeAlert +
-      '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div></dl>' +
+      '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div>' + profitRows + '</dl>' +
       actions +
       '<label class="pcr-private-field"><span>Private travel note · Partner-only encrypted</span><textarea data-private-travel placeholder="เช่น เดินทางถึงกรุงเทพฯ วันที่…" ' + (state.vault ? "" : "disabled") + '>' + esc(note) + '</textarea></label>' +
       '</article>';
