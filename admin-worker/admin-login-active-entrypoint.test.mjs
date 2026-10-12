@@ -241,6 +241,7 @@ test("active Refund Ops converts downstream exceptions to controlled 503 instead
 });
 
 const SESSION_CREATOR_PAGES = [
+  "/internal/admin/payments",
   "/internal/admin/work",
   "/internal/admin/jobs/all",
   "/internal/admin/jobs/create-job",
@@ -343,7 +344,7 @@ test("Session Creator pages allow signed owner GET/HEAD with stale duplicate coo
         }
       }
     }
-    assert.equal(requests.length, 16);
+    assert.equal(requests.length, SESSION_CREATOR_PAGES.length * 4);
   });
 });
 
