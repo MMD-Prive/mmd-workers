@@ -66,3 +66,15 @@ test("failed referral lookup reports unknown, never Direct", async () => {
     assert.equal(filtered.items.length, 0);
   } finally { restore(); }
 });
+
+test("job options never hide models whose ability is unknown or unset", async () => {
+  const restore = install();
+  try {
+    const baseline = await searchCreateSessionModels(env, new URL(base));
+    for (const options of ["&mk=1", "&burn=true", "&live=yes", "&mk=1&burn=1&live=1"]) {
+      const result = await searchCreateSessionModels(env, new URL(base + options));
+      assert.deepEqual(result.items.map(item => item.model_id), baseline.items.map(item => item.model_id));
+      assert.equal(result.items.find(item => item.model_name === "Brew TN").partner_record_id, "recKendo000000001");
+    }
+  } finally { restore(); }
+});
