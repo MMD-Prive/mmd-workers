@@ -1,3 +1,4 @@
+import { formulaValue } from "./lib/payment-primitives.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CAMPAIGN_ID = "promo_double_moment_sep2026";
 const POLICY_VERSION = "v1";
@@ -22,7 +23,6 @@ function baseId(env) { return clean(env.AIRTABLE_BASE_ID, 80); }
 function airtableToken(env) { return clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 2000); }
 function table(env, key) { if (key === "claims") return clean(env.AIRTABLE_TABLE_CAMPAIGN_CLAIMS || "tblTH1LGJikBI0rly", 120); if (key === "payments") return clean(env.AIRTABLE_TABLE_PAYMENTS_ID || env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", 120); if (key === "credits") return clean(env.AIRTABLE_TABLE_CLIENT_CREDITS || "tblKvhl2zZm9yYBmT", 120); throw new Error("invalid_table_key"); }
 function assertAirtable(env) { if (!baseId(env) || !airtableToken(env)) throw new Error("airtable_not_ready"); }
-function formulaValue(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 async function airtableFetch(env, url, init = {}) { assertAirtable(env); const req = new Request(url, { ...init, headers: { Authorization: `Bearer ${airtableToken(env)}`, "Content-Type": "application/json", ...(init.headers || {}) } }); const response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(req) : await fetch(req); const payload = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(`airtable_${response.status}`); error.status = response.status; throw error; } return payload; }
 async function findFirst(env, tableName, formula) { const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableName)}`); url.searchParams.set("maxRecords", "1"); url.searchParams.set("filterByFormula", formula); const data = await airtableFetch(env, url.toString(), { method: "GET" }); return data?.records?.[0] || null; }
 async function createRecord(env, tableName, fields) { const url = `${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableName)}`; const data = await airtableFetch(env, url, { method: "POST", body: JSON.stringify({ records: [{ fields }], typecast: true }) }); return data?.records?.[0] || null; }

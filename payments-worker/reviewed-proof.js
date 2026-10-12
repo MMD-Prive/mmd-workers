@@ -1,4 +1,5 @@
 import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const REVIEW_SOURCE = "payment_review_console";
 const LINE_OFC_SOURCE = "line_ofc_payment_ingress";
@@ -476,19 +477,6 @@ async function serviceAuthed(request, expected) {
   return constantTimeEqual(direct || bearer, expectedToken);
 }
 
-async function constantTimeEqual(left, right) {
-  const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(left))),
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(right))),
-  ]);
-  const aa = new Uint8Array(a);
-  const bb = new Uint8Array(b);
-  let difference = 0;
-  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
-  return difference === 0;
-}
-
 function evidenceUrl(fields = {}) {
   for (const value of [fields.receipt_url, fields.slip_url, fields.evidence_url, fields["Receipt Photo"]]) {
     if (typeof value === "string" && /^https:\/\//i.test(value)) return value.slice(0, 1200);
@@ -531,12 +519,10 @@ function parseNote(value) {
   } catch { return {}; }
 }
 
-function formulaValue(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function email(value) { const v = clean(value).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : ""; }
 function code(value) { return clean(value).toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 100); }
 function text(value, max = 240) { return clean(value).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, max); }
 function clean(value) { return String(value ?? "").trim(); }
 function normalizePath(pathname = "") { const path = String(pathname || "/").replace(/\/{2,}/g, "/"); return path.length > 1 ? path.replace(/\/+$/g, "") : path; }
-function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
 function jsonHeaders() { return new Headers({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, private", "X-MMD-Payment-Authority": "payments-worker" }); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: jsonHeaders() }); }

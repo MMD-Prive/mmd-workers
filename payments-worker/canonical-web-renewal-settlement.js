@@ -1,6 +1,7 @@
 import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { classifyPaymentOpsRoute, inferMembershipPayment } from "../shared/payment-intelligence.mjs";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAYMENTS = "tblWGGJJOx5eBvBZJ";
@@ -478,9 +479,7 @@ function recordIdValue(value) { const id = text(value, 100); return /^rec[A-Za-z
 function lineId(value) { const id = text(value, 100); return /^U[A-Za-z0-9_-]{20,80}$/.test(id) ? id : ""; }
 function email(value) { const v = clean(value, 320).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : ""; }
 function iso(value) { const n = Date.parse(String(value || "")); return Number.isFinite(n) ? new Date(n).toISOString() : ""; }
-function formulaValue(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function code(value) { return clean(value, 180).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
 function text(value, max = 240) { return clean(value, max).replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, max); }
 function clean(value, max = 4000) { return String(value == null ? "" : value).trim().slice(0, max); }
 function compact(value) { return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined && v !== null && v !== "")); }
-function httpError(status, message) { const error = new Error(message); error.status = status; return error; }

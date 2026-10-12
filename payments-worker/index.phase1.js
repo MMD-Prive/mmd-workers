@@ -19,6 +19,7 @@ import {
   handleCustomerChangeRequest,
 } from "./customer-change-request.js";
 import { notifyPartnerJobAfterOfficialVerify } from "./partner-job-confirm.js";
+import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
 const NOTIFY_PATH = "/v1/payments/notify";
@@ -505,19 +506,6 @@ async function serviceAuthed(request, expected) {
   return constantTimeEqual(direct || bearer, expectedToken);
 }
 
-async function constantTimeEqual(left, right) {
-  const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(left))),
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(right))),
-  ]);
-  const aa = new Uint8Array(a);
-  const bb = new Uint8Array(b);
-  let difference = 0;
-  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
-  return difference === 0;
-}
-
 function normalizeStage(value) {
   const stage = code(value);
   if (!PAYMENT_STAGES.has(stage)) throw httpError(400, "invalid_payment_stage");
@@ -542,10 +530,6 @@ function parseNote(value) {
   }
 }
 
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 function email(value) {
   const normalized = clean(value).toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : "";
@@ -566,12 +550,6 @@ function clean(value) {
 function normalizePath(pathname = "") {
   const path = String(pathname || "/").replace(/\/{2,}/g, "/");
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
-}
-
-function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
 }
 
 function jsonHeaders() {

@@ -1,4 +1,5 @@
 import { stablePaymentRef } from "./unified-payment-proof.js";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -410,7 +411,6 @@ function normalizePath(value) {
 }
 
 function field(configured, fallback) { return clean(configured, 120) || fallback; }
-function formulaValue(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'"); }
 function positive(value) {
   if (value == null || clean(value) === "") return null;
   const number = Number(String(value).replace(/,/g, ""));
@@ -418,7 +418,6 @@ function positive(value) {
 }
 function code(value) { return clean(value, 180).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
 function clean(value, max = 5000) { return String(value == null ? "" : value).trim().slice(0, max); }
-function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,

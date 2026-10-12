@@ -4,6 +4,7 @@ import {
   signConfirmToken,
 } from "./index.js";
 import { parseSigilMembershipPaymentComponents } from "./sigil-membership-payment-components.js";
+import { constantTimeEqual, formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_LINK_PATH = "/v1/confirm/link";
@@ -417,19 +418,6 @@ async function serviceAuthed(request, env) {
   return false;
 }
 
-async function constantTimeEqual(left, right) {
-  const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(left))),
-    crypto.subtle.digest("SHA-256", encoder.encode(clean(right))),
-  ]);
-  const aa = new Uint8Array(a);
-  const bb = new Uint8Array(b);
-  let difference = 0;
-  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
-  return difference === 0;
-}
-
 function canonicalJobWindow(jobDate, startRaw, endRaw) {
   const startClock = parseClock(startRaw);
   const endClock = parseClock(endRaw);
@@ -559,10 +547,6 @@ function compact(object) {
   return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined));
 }
 
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 function safeCode(value) {
   return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
 }
@@ -585,12 +569,6 @@ function clean(value) {
 function normalizePath(pathname = "") {
   const path = String(pathname || "/").replace(/\/{2,}/g, "/");
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
-}
-
-function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
 }
 
 function json(request, env, data, status = 200) {

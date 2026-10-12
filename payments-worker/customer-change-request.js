@@ -1,4 +1,5 @@
 import { authorizeConfirmationRequest } from "./confirmation-ack.js";
+import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CUSTOMER_CHANGE_REQUEST_PATH = "/v1/confirm/change-request";
@@ -430,10 +431,6 @@ function code(value) {
   return clean(value, 120).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -468,12 +465,6 @@ function withCors(request, env, response) {
 
 function clean(value, max = 5000) {
   return String(value == null ? "" : value).trim().slice(0, max).replace(/[\u0000-\u001F\u007F]/g, " ");
-}
-
-function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
 }
 
 function json(payload, status = 200) {

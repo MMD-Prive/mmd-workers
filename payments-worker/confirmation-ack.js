@@ -1,5 +1,6 @@
 import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 import { stablePaymentRef } from "./unified-payment-proof.js";
+import { formulaValue } from "./lib/payment-primitives.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_ACK_PATH = "/v1/confirm/ack";
 export const CONFIRM_CONTEXT_PATH = "/v1/confirm/context";
@@ -183,10 +184,6 @@ function sessionFields(env = {}) {
     endTime: clean(env.AT_SESSIONS__END_TIME || "fldiDSz0wW9Ct9I3P", 100),
     locationName: clean(env.AT_SESSIONS__LOCATION_NAME || "fldIiRpaxoafjTkFt", 100),
   };
-}
-
-function formulaValue(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 async function airtableRequest(env, path, init = {}) {
