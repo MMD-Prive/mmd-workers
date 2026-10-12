@@ -6037,6 +6037,7 @@ async function searchCreateSessionModels(env, url) {
     } else if (partner) {
       item.source_kind = "partner";
       item.partner_id = partner.partner_id;
+      item.partner_record_id = partner.partner_record_id;
       item.partner_name = partner.partner_name;
     } else {
       item.source_kind = "direct";
