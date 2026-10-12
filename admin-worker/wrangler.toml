@@ -1420,3 +1420,12 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/internal/admin/jobs/model-preview*"
 zone_name = "mmdbkk.com"
+
+# Exact owner/admin Drive selection after discovery; canonical matching occurs only on POST.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/drive-select*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/drive-select*"
+zone_name = "mmdbkk.com"

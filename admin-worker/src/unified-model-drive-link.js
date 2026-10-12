@@ -225,6 +225,10 @@ function primaryModelLane(fields = {}, lanes = []) {
   return lanes.length > 1 ? "both" : "";
 }
 
+export async function searchApprovedDriveModelCandidates(env, q, lane = 'all') {
+  return searchDriveDirectory(env, clean(q,120), normalizeLane(lane));
+}
+
 async function searchDriveDirectory(env, q, lane) {
   const url = new URL(DRIVE_SEARCH_PATH, "https://model-drive-directory.internal");
   url.searchParams.set("q", q);

@@ -1,3 +1,4 @@
+import { isCreateJobDriveDiscoveryRequest, handleCreateJobDriveDiscovery } from "./create-job-drive-discovery.js";
 import { handleModelJobPreview, isModelJobPreviewRequest } from "./model-job-preview.js";
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
@@ -243,6 +244,7 @@ export default {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
     if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
+    if (isCreateJobDriveDiscoveryRequest(request)) return handleCreateJobDriveDiscovery(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);

@@ -1,3 +1,4 @@
+import { resolveChosenJobPartner } from "./create-job-drive-discovery.js";
 import { validateJobServicePricing, withJobServicePricingNote, preservePartnerSnapshot } from "./job-service-pricing.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CREATE_JOB_PATH = "/v1/admin/job/create";
@@ -65,6 +66,16 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
     }
   }
 
+  let chosenPartner = null;
+  try {
+    chosenPartner = await resolveChosenJobPartner(env, body);
+    if (chosenPartner && !modelId) throw typedError(409, "canonical_model_required_for_source_choice");
+    if (chosenPartner?.source_kind === "partner") {
+      body.partner_attribution = { ...body.partner_attribution, partner_record_id: chosenPartner.partner_record_id, partner_name: chosenPartner.partner_name };
+      request = new Request(request, { body: JSON.stringify(body) });
+    }
+  } catch (error) { return jsonLike(request, { ok: false, error: clean(error.message || "partner_selection_invalid") }, error.status || 503); }
+
   const response = await downstream.fetch(request, env, ctx);
   if (!response.ok) return response;
 
@@ -106,9 +117,15 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
       sessionId,
       jobId,
     });
+    if (chosenPartner) {
+      await persistChosenJobSource(env, linkage.session_record_id, modelId, chosenPartner, body);
+      linkage.model_source_choice = chosenPartner.source_kind;
+      linkage.partner_record_id = chosenPartner.partner_record_id || null;
+      if (chosenPartner.source_kind === "partner") linkage.partner_dashboard_url = `https://www.mmdbkk.com/partner/dashboard?session_id=${encodeURIComponent(sessionId)}`;
+    }
     // The Partner authority reads canonical links and approved terms itself.
     // No browser-provided rate/commission/partner ID is forwarded as authority.
-    if (modelId && env.PARTNERS_WORKER?.fetch) {
+    if (modelId && chosenPartner?.source_kind !== "direct" && env.PARTNERS_WORKER?.fetch) {
       try {
         const captured = await env.PARTNERS_WORKER.fetch(new Request("https://partners-worker.internal/v1/partner/admin/agreement/capture", {
           method: "POST", headers: { "content-type": "application/json", "x-mmd-service-binding": "admin-worker", "x-mmd-owner-id": "canonical-job-create", "x-mmd-owner-role": "admin" },
@@ -447,3 +464,18 @@ async function mergeJsonResponse(response, additions) {
 }
 
 export { preservePartnerSnapshot } from "./job-service-pricing.js";
+
+async function persistChosenJobSource(env, sessionRecordId, modelId, selected, body) {
+  const table=tablesFor(env).sessions;
+  const row=await airtableGetRecord(env,table,sessionRecordId);
+  const f=row.fields || {};
+  const parse=value=>{try{return JSON.parse(value || "{}");}catch{return {};}};
+  const agreement=parse(f.referral_snapshot_json || f.fldfqNBNKkmQdr6Fp);
+  if ((f.commission_snapshot_locked || f.fldYgTgfGDpFQsKvZ) === true) throw typedError(409,"partner_source_locked");
+  if (agreement.contract === "partner_agreement_v1" && (selected.source_kind === "direct" || agreement.partner_record_id !== selected.partner_record_id)) throw typedError(409,"partner_source_agreement_mismatch");
+  const snapshot={schema:"owner_job_source_selection_v1",source_kind:selected.source_kind,model_record_id:modelId,partner_record_id:selected.partner_record_id || null,partner_name:selected.partner_name || null,selected_at:new Date().toISOString()};
+  await airtablePatchRecord(env,table,sessionRecordId,{
+    fld0jkscGAtyX7i2J:selected.partner_id || "",
+    fldxyZ7S3tjF8chGR:JSON.stringify(snapshot),
+  });
+}

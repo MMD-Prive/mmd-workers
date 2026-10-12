@@ -147,6 +147,32 @@ test("recognizes only POST /v1/admin/job/create", () => {
   assert.equal(isCanonicalLinkedJobCreate("/v1/admin/job/draft", "POST"), false);
 });
 
+test("explicit Partner selection persists canonical Partner+Model linkage for the Dashboard",async()=>{
+  const original=globalThis.fetch, mock=makeFetch();const partnerId="recjegeHuesDmm7QP";
+  globalThis.fetch=async(input,init={})=>{
+    const url=urlString(input);
+    if(tableFrom(url)==="tbl1ksDlsTiiGEHWe") return json({id:partnerId,fields:{fldXb55aiAjNPOUWc:"partner_kendo",fldpJWfASq7PfkMgC:"Kendo",fldajmg66pf2ifGPu:"Active",fldwRzdtIoPbHKr7n:"recognized"}});
+    if(tableFrom(url)===ENV.AIRTABLE_TABLE_SESSIONS && recordFrom(url)===SESSION_RECORD_ID && (init.method || "GET")==="GET") return json({id:SESSION_RECORD_ID,fields:{}});
+    return mock.fetch(input,init);
+  };
+  try {
+    const body=linkedBody({model_source_choice:"partner",partner_attribution:{partner_record_id:partnerId,partner_name:"spoof",partner_type:"bridge"}});
+    let capture=0;
+    const env={...ENV,PARTNERS_WORKER:{fetch:async()=>{capture++;return json({ok:true,partner_managed:true});}}};
+    const response=await handleCanonicalLinkedJobCreate(request(body),env,{}, {fetch:async req=>{const posted=await req.json();assert.equal(posted.partner_attribution.partner_name,"Kendo");return json({ok:true,session_id:"sess_001"});}});
+    const data=await response.json();assert.equal(data.linkage.partner_record_id,partnerId);assert.match(data.linkage.partner_dashboard_url,/\/partner\/dashboard\?session_id=sess_001$/);assert.equal(capture,1);
+    const patch=mock.calls.find(c=>c.method==="PATCH"&&c.body?.fields?.fld0jkscGAtyX7i2J);
+    const snapshot=JSON.parse(patch.body.fields.fldxyZ7S3tjF8chGR);assert.equal(snapshot.partner_record_id,partnerId);assert.equal(snapshot.model_record_id,MODEL_ID);
+  }finally{globalThis.fetch=original;}
+});
+test("explicit Direct choice cannot silently capture a Partner agreement",async()=>{
+  const original=globalThis.fetch,mock=makeFetch();globalThis.fetch=async(input,init={})=>{
+    if(tableFrom(urlString(input))===ENV.AIRTABLE_TABLE_SESSIONS&&recordFrom(urlString(input))===SESSION_RECORD_ID&&(init.method||"GET")==="GET") return json({id:SESSION_RECORD_ID,fields:{}});
+    return mock.fetch(input,init);
+  };
+  try {const env={...ENV,PARTNERS_WORKER:{fetch:async()=>{throw Error("Direct must not capture");}}};const response=await handleCanonicalLinkedJobCreate(request(linkedBody({model_source_choice:"direct"})),env,{}, {fetch:async()=>json({ok:true,session_id:"sess_001"})});const data=await response.json();assert.equal(data.linkage.model_source_choice,"direct");assert.equal(data.linkage.partner_record_id,null);assert.equal(data.linkage.partner_agreement,undefined);assert.equal(data.linkage.partner_dashboard_url,undefined);}finally{globalThis.fetch=original;}
+});
+
 test("allows typed Client and Model names without canonical IDs", async () => {
   const originalFetch = globalThis.fetch;
   const mock = makeFetch();
