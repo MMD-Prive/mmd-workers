@@ -70,6 +70,11 @@ export async function handleModelJobPreview(request,env,fetcher = fetch) {
     if (payload.records.length !== 1) return respond(409,'พบ Session ซ้ำ กรุณาให้แอดมินตรวจสอบ');
     const job = projectModelJobPreview(payload.records[0].fields || {});
     if (job.session_id !== sid) return respond(409,'ข้อมูล Session ไม่ตรงกัน');
+    if (new URL(request.url).searchParams.get('flow') === '1') {
+      return new Response(request.method === 'HEAD' ? null : renderModelConfirmationFlowPreview(job,new URL(request.url).searchParams.get('stage')),{
+        status:200,headers:{...headers,'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"},
+      });
+    }
     return respond(200,renderModelJobPreview(job));
   } catch { return respond(503,'โหลดรายละเอียดงานไม่สำเร็จ กรุณาลองใหม่'); }
 }
@@ -130,4 +135,23 @@ function parseMarkedJson(note, label) {
     searchEnd = markerIndex;
   }
   return null;
+}
+
+// Admin-only presentation replay. Every transition is a GET of this protected
+// page; there is no model-session impersonation, acknowledgement RPC or write.
+export function renderModelConfirmationFlowPreview(job,requestedStage) {
+  const stage=['confirmed','dashboard'].includes(requestedStage) ? requestedStage : 'details';
+  const url=nextStage=>`${MODEL_JOB_PREVIEW_PATH}?session_id=${encodeURIComponent(job.session_id)}&flow=1&stage=${nextStage}`;
+  const row=(label,value)=>`<div class="row"><dt>${escape(label)}</dt><dd>${escape(value || '—')}</dd></div>`;
+  const payout=job.model_payout_thb === null ? '—' : new Intl.NumberFormat('th-TH').format(job.model_payout_thb)+' บาท';
+  let date=job.job_date;
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) date=new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'long',year:'numeric'}).format(new Date(date+'T00:00:00+07:00'));
+  const time=[modelPreviewLocalTime(job.start_time),modelPreviewLocalTime(job.end_time)].filter(Boolean).join(' – ');
+  const details=`<dl>${row('ประเภทงาน',job.job_type)}${row('วันที่',date)}${row('เวลา',time)}${row('สถานที่',job.location_name)}${job.vip_detail ? row('รายละเอียด VIP',job.vip_detail) : ''}</dl><div class="payout"><small>ค่าตัวที่คุณได้รับ</small><strong>${escape(payout)}</strong></div>`;
+  const body=stage === 'details'
+    ? `<p class="eyebrow">JOB CONFIRMATION</p><h1>ยืนยันรับงาน</h1><p class="sub">สวัสดี ${escape(job.model_name)} · ตรวจรายละเอียดงานก่อนรับงาน</p>${details}<form method="get" action="${MODEL_JOB_PREVIEW_PATH}"><input type="hidden" name="session_id" value="${escape(job.session_id)}"><input type="hidden" name="flow" value="1"><input type="hidden" name="stage" value="confirmed"><label class="check"><input type="checkbox" name="reviewed" value="1" required> ฉันตรวจรายละเอียดงานแล้ว</label><button type="submit">Confirm · ดูพรีวิวหลังยืนยัน</button></form>`
+    : stage === 'confirmed'
+    ? `<div class="success-icon" aria-hidden="true">✓</div><p class="eyebrow">CONFIRMATION SUCCESS · PREVIEW</p><h1>ยืนยันรับงานแล้ว</h1><p class="sub">ตัวอย่างหน้าที่แสดงเมื่อโมเดลยืนยันสำเร็จ</p><div class="summary"><b>${escape(job.model_name)} · ${escape(job.job_type)}</b><p>${escape(date)}<br>${escape(time)}</p></div><a class="cta" href="${escape(url('dashboard'))}">ไปที่ MY MODEL · Preview</a><a class="back" href="${escape(url('details'))}">กลับไปดูรายละเอียด</a>`
+    : `<p class="eyebrow">MY MODEL · PREVIEW</p><h1>งานของฉัน</h1><p class="sub">${escape(job.model_name)}</p><article class="summary"><span class="demo-status">ตัวอย่างงานหลังยืนยัน</span><h2>${escape(job.job_type)}</h2><p>${escape(date)} · ${escape(time)}</p><p>${escape(job.location_name)}</p><strong>${escape(payout)}</strong><a class="cta" href="${escape(url('details'))}">ดูรายละเอียดงาน</a></article><p class="sub">หน้านี้จำลองจุดที่ไปต่อ MY MODEL โดยไม่ต้องเปิด LINE</p>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(job.model_name)} · Model confirmation flow preview</title><style>*{box-sizing:border-box}body{margin:0;background:#171717;color:#f6f2e8;font:15px system-ui,sans-serif;line-height:1.55}.notice{background:#ece0bd;color:#342811;padding:11px 18px;text-align:center;font-size:13px}.phone{max-width:450px;min-height:640px;margin:22px auto;border:1px solid #56462c;border-radius:24px;background:linear-gradient(145deg,#191713,#090908);overflow:hidden;box-shadow:0 24px 80px #0005}.brand{padding:18px 24px;border-bottom:1px solid #ffffff13;display:flex;justify-content:space-between;font-size:12px;letter-spacing:.15em;color:#dbc48c}.content{padding:28px 24px 24px}.eyebrow{font-size:10px;letter-spacing:.18em;color:#d8bb78;margin:0 0 10px}h1{font-size:28px;line-height:1.25;margin:0 0 10px}h2{font-size:22px}.sub{color:#b8b1a6;font-size:14px}.row{display:grid;grid-template-columns:85px 1fr;gap:14px;padding:13px 0;border-bottom:1px solid #ffffff12}dt{color:#a69f93;font-size:13px}dd{margin:0;overflow-wrap:anywhere}.payout{padding:16px 18px;margin:22px 0;border-radius:14px;border:1px solid #987e47;background:#b7913710}.payout small{display:block;color:#b8b1a6}.payout strong{display:block;font-size:27px;color:#ead59f}.check{display:flex;gap:12px;align-items:center;margin:24px 0 17px;font-size:14px}.check input{width:19px;height:19px;accent-color:#d8bb78}button,.cta{display:block;width:100%;padding:15px 14px;text-align:center;border:0;border-radius:12px;background:linear-gradient(135deg,#efdca1,#caa251);color:#1d160a;font:700 15px system-ui;text-decoration:none;cursor:pointer}.summary{border:1px solid #ffffff19;background:#ffffff05;border-radius:16px;padding:20px;margin:24px 0}.success-icon{display:grid;place-items:center;border:1px solid #b99a55;background:#b99a5512;width:70px;height:70px;border-radius:50%;margin:15px 0 28px;font-size:34px;color:#e8cf8f}.back{display:block;text-align:center;margin-top:20px;font-size:13px;color:#c8b582}.demo-status{font-size:11px;color:#dfc58b}.actual{margin:24px 24px 20px;border-top:1px solid #ffffff15;padding-top:14px;font-size:11px;color:#aaa292;overflow-wrap:anywhere}@media(max-width:500px){.phone{margin:0;min-height:calc(100vh - 65px);border:0;border-radius:0}.content{padding:25px 22px}.notice{font-size:12px}}</style></head><body><div class="notice"><b>ADMIN FLOW PREVIEW</b> · ข้อมูลงานจริง · ทุกปุ่มเป็นการจำลอง ไม่มีการยืนยันหรือเปลี่ยนงาน</div><main class="phone"><header class="brand"><b>MMD PRIVÉ</b><span>MY MODEL</span></header><div class="content">${body}</div><footer class="actual">สถานะยืนยันจริงของโมเดล: ${job.model_acknowledged_at ? escape(job.model_acknowledged_at) : 'ยังไม่มีการยืนยัน'}<br>Session: ${escape(job.session_id)}</footer></main></body></html>`;
 }
