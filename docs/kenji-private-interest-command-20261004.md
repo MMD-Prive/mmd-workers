@@ -31,3 +31,8 @@ Unavailable catalog copy replaces package prices/terms/promotion with `ราค
 Also fixes the requested #2219 review finding: a CARE BACK wallet cannot advertise `ready` unless it has a valid existing six-character coupon code and definite future backend expiry. Invalid/missing code becomes unavailable with no approved percentage. The raw code remains omitted from the LINE projection. No customer coupon is modified.
 
 Validation covers dynamic Private catalog reads, malformed/duplicate/inactive catalog, unknown-versus-member audiences, protected and former membership, exact/hidden-separator command scope, signed sender-only ingress with general replies stopped, concurrent duplicate delivery and the coupon-code regression. Release needs separate merge approval, both Worker deployments and coordinated fresh owner delivery acceptance. Config on this branch is prepared, not evidence of live enablement.
+
+
+## Paused 2026-10-12
+
+Owner paused this command in production (`KENJI_LINE_PRIVATE_INTEREST_ENABLED = "false"`): a bare `สนใจ` is ambiguous and the known-member copy appeared in an unrelated conversation. The lane is intact; flip the flag back to `true` to re-enable. `เช็กสิทธิ์` is unaffected.

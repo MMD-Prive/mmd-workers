@@ -417,7 +417,10 @@ MMS_THERAPIST_UI_SOURCE = "native"
 LINE_AUTO_REPLY_ENABLED = "false"
 KENJI_LINE_RIGHTS_CHECK_MODE = "command"
 KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
-KENJI_LINE_PRIVATE_INTEREST_ENABLED = "true"
+# 2026-10-12: owner paused the bare "สนใจ" auto-reply. Too ambiguous (customer may
+# mean a Model/job, not membership) and the known-member copy reads wrong in
+# context. Code path and tests stay; set back to "true" to re-enable.
+KENJI_LINE_PRIVATE_INTEREST_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
 # Owner lock 2026-09-29: customer-facing LINE may autonomously reply only to
 # direct Model name/code lookup (plus the bounded verification continuation
