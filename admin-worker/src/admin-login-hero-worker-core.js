@@ -1,3 +1,4 @@
+import { isJobConfirmationReissuePath, handleJobConfirmationReissue } from './job-confirmation-reissue.js';
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
 import coreWorker, { MODEL_SCHEMA_PATCH_V1_ROUTES, isAuthed as isCoreAdminAuthed } from "./index.js";
@@ -309,6 +310,10 @@ export default {
           "x-mmd-refund-error-boundary":"active-v2",
         });
       }
+    }
+
+    if (isJobConfirmationReissuePath(path)) {
+      return handleJobConfirmationReissue(request, env);
     }
 
     if (path === PAYMENT_ISSUER_DIAGNOSTIC_PATH) {

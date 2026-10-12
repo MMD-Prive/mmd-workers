@@ -1402,3 +1402,12 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/refund-receipt/media*"
 zone_name = "mmdbkk.com"
+
+# Authenticated existing-job confirmation reissue API used by MMD OS.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/jobs/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/jobs/*"
+zone_name = "mmdbkk.com"

@@ -92,6 +92,8 @@ jobs:
           node --check src/mmd-shop-operations-admin.js
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
+          node --check src/job-confirmation-reissue.js
+          node --experimental-global-webcrypto --test job-confirmation-reissue.test.mjs
           node --check src/hype-shop-orders.js
           node --check src/recovery-control.js
           node --check src/recovery-control-page.js
@@ -386,6 +388,7 @@ jobs:
             "/v1/admin/mms/*",
             "/v1/admin/auth/me",
             "/v1/admin/payment-issuer-diagnostic",
+            "/v1/admin/jobs/*",
             "/v1/admin/cancellation-credit-recovery",
             "/v1/admin/model-media/e2e-smoke",
             "/v1/admin/models/review-queue*",
