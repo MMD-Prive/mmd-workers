@@ -241,6 +241,7 @@ test("active Refund Ops converts downstream exceptions to controlled 503 instead
 });
 
 const SESSION_CREATOR_PAGES = [
+  "/internal/admin/payments",
   "/internal/admin/work",
   "/internal/admin/jobs/all",
   "/internal/admin/jobs/create-job",
@@ -278,7 +279,7 @@ async function assertPagesDenied(headers, requests) {
       if (method === "GET") {
         const target = new URL(response.headers.get("location"));
         assert.equal(target.pathname, "/internal/admin/login");
-        const next = path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
+        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
           ? `${path}?page=2` : "/internal/admin/control-room";
         assert.equal(target.searchParams.get("next"), next);
         assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
@@ -343,7 +344,7 @@ test("Session Creator pages allow signed owner GET/HEAD with stale duplicate coo
         }
       }
     }
-    assert.equal(requests.length, 16);
+    assert.equal(requests.length, SESSION_CREATOR_PAGES.length * 4);
   });
 });
 

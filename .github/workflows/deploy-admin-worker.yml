@@ -80,6 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test test/session-creator-page-proxy.test.mjs admin-login-active-entrypoint.test.mjs
           npm --prefix .. run test:payment-delivery
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
@@ -366,6 +367,8 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/internal/admin/payments",
+            "/internal/admin/payments*",
             "/internal/admin/jobs/all",
             "/internal/admin/jobs/all*",
             "/internal/admin/work/assets/*",
@@ -499,6 +502,15 @@ jobs:
         run: |
           set -euo pipefail
           node ../scripts/check-admin-all-jobs-gate.mjs
+          # Money Control HTML must stay on the existing credential-bound gate.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for suffix in "" "/" "?proof_id=smoke-route-only"; do
+              money_headers="$(mktemp)"
+              money_code="$(curl -sS --max-time 20 -D "$money_headers" -o /dev/null -w "%{http_code}" "$origin/internal/admin/payments$suffix")"
+              test "$money_code" = "303"
+              grep -Fqi "location: $origin/internal/admin/login?next=" "$money_headers"
+            done
+          done
           body_file="$(mktemp)"
           http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" "$ADMIN_DASHBOARD_PRODUCTION_URL")"
           cat "$body_file"

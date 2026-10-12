@@ -509,8 +509,27 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/membership/payment-entitlement/approve"
 zone_name = "mmdbkk.com"
 
+# Money Control presentation. The bounded prefix also covers proof_id queries;
+# only the exact payments page (or slash alias) is proxied by the runtime.
+# Historical Backfill and API destinations keep their existing handlers.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/payments"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/payments*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/payments"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/payments*"
+zone_name = "mmdbkk.com"
+
 # Payment Review Console browser facade. These are exact/narrow API routes only;
-# /internal/admin/payments remains Webflow-owned presentation. The canonical
+# /internal/admin/payments uses the authenticated Lovable presentation proxy. The canonical
 # login entrypoint applies the browser-session gate before review handling.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/payments/review-queue*"
