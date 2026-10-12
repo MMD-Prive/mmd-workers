@@ -222,7 +222,19 @@ describe("LIFF payments-worker binding", () => {
   });
 });
 
-for (const [label, expire] of [["unknown expiry", null], ["active membership", "2028-10-01"]]) {
+it("creates an advance-renewal payment (fixed price, no grants) for an active membership", async () => {
+  const fx = await fixture({ expire: "2028-10-01" });
+  const response = await completeValidatedLiffPaymentIntent(fx.request, fx.guardedResponse, fx.env);
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.data.payment_summary.amount_thb, 2500);
+  assert.equal(payload.data.payment_summary.renewal_price_rule, "active_advance_premium");
+  assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+  assert.equal(fx.payment.calls.length, 1);
+  assert.equal(fx.payment.calls[0].body.amount, 2500);
+});
+
+for (const [label, expire] of [["unknown expiry", null]]) {
   it(`does not create payment or grant rights with ${label}`, async () => {
     const fx = await fixture({ expire });
     const response = await completeValidatedLiffPaymentIntent(fx.request, fx.guardedResponse, fx.env);
