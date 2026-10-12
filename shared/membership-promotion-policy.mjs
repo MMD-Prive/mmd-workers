@@ -1,5 +1,10 @@
 const CARE_BACK_START_AT = "2026-08-01T00:00:00+07:00";
 const CARE_BACK_START_MS = Date.parse(CARE_BACK_START_AT);
+// Announced deadline (customer-facing copy, `ends_before`) vs. the date payments are actually honored through.
+// Owner decision 2026-10-12: promo is announced for 31 Oct 2026 but honored for every payment before 1 Jan 2027 (Bangkok).
+const PROMO_PUBLIC_ENDS_BEFORE = "2026-11-01T00:00:00+07:00";
+const PROMO_HONORED_BEFORE = "2027-01-01T00:00:00+07:00";
+const PROMO_HONORED_BEFORE_MS = Date.parse(PROMO_HONORED_BEFORE);
 
 const PRIVATE_CARE_BACK = Object.freeze({
   standard: Object.freeze({
@@ -35,15 +40,15 @@ export function privateRenewalTiming(expireAtValue, renewalAtValue) {
 export function currentPrivateMembershipPromotion({ package_code = "", paid_at = "", action = "", existing_member = false, prior_expire_at = "" } = {}) {
   const packageCode = token(package_code);
   const paidMs = Date.parse(String(paid_at || ""));
-  if (!Number.isFinite(paidMs) || paidMs < CARE_BACK_START_MS) return null;
+  if (!Number.isFinite(paidMs) || paidMs < CARE_BACK_START_MS || paidMs >= PROMO_HONORED_BEFORE_MS) return null;
   if (token(action) === "signup" && existing_member === false) {
     return packageCode === "premium" ? { code:"private_premium_signup_total_two_years_2026", total_years:2, bonus_days:0, bonus_years:0, label:"Premium signup total 2 years", starts_at:CARE_BACK_START_AT } : null;
   }
-  if (token(action) !== "renewal" || existing_member !== true || paidMs >= Date.parse("2026-11-01T00:00:00+07:00")) return null;
+  if (token(action) !== "renewal" || existing_member !== true) return null;
   const timing = privateRenewalTiming(prior_expire_at, paid_at);
   if (!timing?.expiry_known || timing.expired_one_year_or_more) return null;
   const policy = PRIVATE_CARE_BACK[packageCode];
-  return policy ? {...policy, code:`october_prepaid_${packageCode}_2026`, starts_at:CARE_BACK_START_AT, ends_before:"2026-11-01T00:00:00+07:00"} : null;
+  return policy ? {...policy, code:`october_prepaid_${packageCode}_2026`, starts_at:CARE_BACK_START_AT, ends_before:PROMO_PUBLIC_ENDS_BEFORE, honored_before:PROMO_HONORED_BEFORE} : null;
 }
 
 export function applyMembershipPromotion(expireAtValue, promotion, { start_at = "" } = {}) {

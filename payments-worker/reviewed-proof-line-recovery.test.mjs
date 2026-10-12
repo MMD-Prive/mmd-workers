@@ -263,8 +263,8 @@ test('recovery refuses missing payment date, unknown expiry, exact anniversary a
  }
 });
 test('recovery uses October payment cutoff and replay preserves historical expiry',async()=>{
- const h=harness();h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at='2026-10-31T17:00:00Z';
- const first=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const a=await first.json();assert.equal(first.status,200);assert.equal(a.membership_promotion,undefined);assert.equal(a.membership_expire_at,'2028-10-31T17:00:00.000Z');
+ const h=harness();h.tables.tblfJfM4Sqag9zrLi[0].fields.paid_at='2026-12-31T17:00:00Z';
+ const first=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const a=await first.json();assert.equal(first.status,200);assert.equal(a.membership_promotion,undefined);assert.equal(a.membership_expire_at,'2028-12-31T17:00:00.000Z');
  const row=h.tables.tblNImdF9PKAxhXGi.find(r=>r.fields.payment_ref===PAYMENT_REF);row.fields.expire_at='2028-06-01T00:00:00Z';
  const second=await handleReviewedProof(request(),h.env,{},async()=>Response.json({ok:true}));const b=await second.json();assert.equal(b.membership_expire_at,'2028-06-01T00:00:00Z');assert.equal(h.tables.tblNImdF9PKAxhXGi.length,2);
 });

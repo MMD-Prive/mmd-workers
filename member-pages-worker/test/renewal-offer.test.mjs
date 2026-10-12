@@ -87,6 +87,6 @@ test('expired strictly less than1yr uses approved fixed price, ignores spend dis
  const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier,membership_expires_at:'2026-01-01T00:00:00Z'}};
  const offer=await resolveCanonicalRenewalOffer({},session,new Date('2026-10-31T16:59:59Z'));
  assert.equal(offer.status,'ready');assert.equal(offer.amount_thb,price);assert.equal(offer.membership_years,years);assert.equal(offer.promotion[tier==='Standard'?'bonus_days':'bonus_years'],bonus);assert.equal(offer.promotion_requires_verified_payment,true);
- assert.equal((await resolveCanonicalRenewalOffer({},session,new Date('2026-10-31T17:00:00Z'))).promotion,null);
+ assert.equal((await resolveCanonicalRenewalOffer({},session,new Date('2026-12-31T17:00:00Z'))).promotion,null);
  }
 });

@@ -221,7 +221,7 @@ for (const [label, mutate, reason] of [
  const h=harness();mutate(h);const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
  assert.equal(body.entitlement_materialized,false);assert.equal(body.renewal_settlement.reason,reason);assert.equal(h.tables.entitlements.length,1);
 });
-for (const [paidAt,promoted] of [["2026-10-31T16:59:59.999Z",true],["2026-10-31T17:00:00.000Z",false]]) test(`signed Premium renewal Bangkok cutoff ${paidAt}`,async()=>{
+for (const [paidAt,promoted] of [["2026-10-31T16:59:59.999Z",true],["2026-12-31T17:00:00.000Z",false]]) test(`signed Premium renewal Bangkok cutoff ${paidAt}`,async()=>{
  const h=harness();Object.assign(h.tables.payments[0].fields,{amount_thb:2500,package_code:"premium",paid_at:paidAt});
  Object.assign(h.tables.renewals[0].fields,{requested_package:"premium",renewal_amount_thb:2500});
  Object.assign(h.tables.packages[0].fields,{code:"premium",duration_days:730,renew_price:2500});

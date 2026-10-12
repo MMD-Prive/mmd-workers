@@ -403,7 +403,7 @@ test('new Premium uses purchased two-year term, never inferred Verify extension'
  const h=harness();const plan=await resolveWriteThroughPlan(h.env,{payment_ref:'PAY-NEW-PREMIUM',amount_thb:2999,member_email:EMAIL,package_code:'premium'},{paid_at:NOW});assert.equal(plan.status,'ready');assert.equal(plan.proposed_expire_at,'2028-09-13T04:30:00.000Z');assert.equal(plan.promotion.bonus_years,0);
 });
 test('write-through uses canonical paid date not reviewed_at and October cutoff',async()=>{
- for(const [paid,promoted] of [['2026-10-31T16:59:59.999Z',true],['2026-10-31T17:00:00Z',false]]){
+ for(const [paid,promoted] of [['2026-10-31T16:59:59.999Z',true],['2026-12-31T17:00:00Z',false]]){
  const h=harness({entitlements:[entitlement({expireAt:'2026-01-01T00:00:00Z'})]});const response=await reconcileReviewedMembershipEntitlement(reviewedRequest({amount:1000,extra:{verified_at:'2026-12-01'}}),reviewedResponse({paid_at:paid}),h.env);const d=await response.json();assert.equal(d.entitlement_materialized,true);assert.equal(!!d.membership_write_through.promotion,promoted);
  }
 });
