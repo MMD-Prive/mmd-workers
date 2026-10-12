@@ -227,8 +227,9 @@ for (const [paidAt,promoted] of [["2026-10-31T16:59:59.999Z",true],["2026-12-31T
  Object.assign(h.tables.packages[0].fields,{code:"premium",duration_days:730,renew_price:2500});
  Object.assign(h.tables.entitlements[0].fields,{package_code:"premium",capability:"private_premium",entitlement_level:"premium",expire_at:"2026-01-01T00:00:00Z"});
  const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();assert.equal(body.entitlement_materialized,true);
- assert.equal(body.membership_expire_at,paidAt.replace("2026-",promoted?"2029-":"2028-"));
- assert.equal(body.membership_term,promoted?"2_years_plus_1_year":"2_years");
+ // Owner 2026-10-12: Premium renewal buys 1 year; the promo adds 1 more year (2 total).
+ assert.equal(body.membership_expire_at,paidAt.replace("2026-",promoted?"2028-":"2027-"));
+ assert.equal(body.membership_term,promoted?"1_year_plus_1_year":"1_year");
 });
 test("signed replay preserves historical 799 rights with missing catalog and paid date",async()=>{
  const h=harness();const recorded={id:"recPaidHistorical",fields:{entitlement_id:"pay_pay_web_renew_1_standard",member_id:MEMBER_ID,line_user_id:LINE_ID,payment_ref:"PAY-WEB-RENEW-1",package_code:"standard",capability:"private_standard",access_status:"active",expire_at:"2028-12-31T00:00:00Z",membership_expiry_rule:"old_paid_rule"}};

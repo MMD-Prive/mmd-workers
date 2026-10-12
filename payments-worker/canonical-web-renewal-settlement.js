@@ -1,4 +1,4 @@
-import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalBaseYears, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { classifyPaymentOpsRoute, inferMembershipPayment } from "../shared/payment-intelligence.mjs";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
@@ -184,12 +184,14 @@ async function materializeRenewal(env, input) {
   const expectedAmount = timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[input.snapshot.package_code]) : catalog.renew_price;
   if (!(expectedAmount > 0) || input.snapshot.amount_thb !== expectedAmount) return entitlementReview("renewal_price_policy_review_required");
   const startAt = timing.start_at;
-  const baseExpireAt = addBangkokCalendarYears(new Date(startAt), packagePolicy.years);
+  const renewalYears = privateRenewalBaseYears(input.snapshot.package_code);
+  if (!renewalYears) return entitlementReview("membership_package_term_review_required");
+  const baseExpireAt = addBangkokCalendarYears(new Date(startAt), renewalYears);
   const promotion = currentPrivateMembershipPromotion({package_code:input.snapshot.package_code,paid_at:input.paid_at,action:"renewal",existing_member:true,prior_expire_at:priorExpiry});
   const expireAt = (applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt}) || baseExpireAt)?.toISOString() || "";
   if (!expireAt) return entitlementReview("membership_term_invalid");
-  const baseRule = `${packagePolicy.years}_year${packagePolicy.years === 1 ? "" : "s"}_from_${timing.active ? "current_expiry" : "verified_payment"}`;
-  const membershipTerm = `${packagePolicy.years === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}` : ""}`;
+  const baseRule = `${renewalYears}_year${renewalYears === 1 ? "" : "s"}_from_${timing.active ? "current_expiry" : "verified_payment"}`;
+  const membershipTerm = `${renewalYears === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}` : ""}`;
   const memberEmail = email(member.fields?.["Contact Email"] || member.fields?.email);
   const fields = compact({
     entitlement_id: entitlementId,
@@ -287,7 +289,7 @@ function entitlementSuccess(row, input, policy, duplicate) {
     package_code: input.snapshot.package_code,
     member_id: text(f.member_id, 120) || null,
     membership_expire_at: iso(f.expire_at) || null,
-    membership_term: text(f.membership_term,120) || (policy.years === 2 ? "2_years" : "1_year"),
+    membership_term: text(f.membership_term,120) || (privateRenewalBaseYears(input.snapshot.package_code) === 2 ? "2_years" : "1_year"),
     membership_expiry_rule: text(f.membership_expiry_rule, 120) || null,
     manual_membership_review_required: false,
     downstream_access_reconcile_required: true,
