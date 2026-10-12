@@ -136,7 +136,7 @@ test("Per nickname resolves exact linked canonical Client and remains display-fi
     assert.deepEqual(body.items, body.records);
     assert.equal(body.no_canonical_match, false);
     assert.equal(body.records[0].confidence, 1);
-    assert.deepEqual(body.degraded_sources, body.lineage_warnings);
+    assert.deepEqual(body.degraded_sources, []);
     assert.ok(!body.degraded_sources.includes("manual_public_only_pending_reconcile"));
     assert.equal(body.records[0].client_name, "ก้อง - SVIP -");
     assert.equal(body.records[0].current_line_rename, "ก้อง - SVIP -");
@@ -185,6 +185,7 @@ test("broad Per nickname returns linked canonical choices without guessing", asy
     assert.equal(body.per_rename_alias_multiple, true);
     assert.equal(body.manual_fallback, false);
     assert.equal(body.records.length, 2);
+    assert.deepEqual(body.degraded_sources, []);
     assert.deepEqual(body.results, body.records);
     assert.deepEqual(body.items, body.records);
     assert.equal(body.no_canonical_match, false);
@@ -422,4 +423,20 @@ test("runtime does not access Per Rename without authorization", async () => {
     const response = await handleCreateSessionClientLineageRequest(lookupRequest("ก้อง"), env);
     assert.equal(response.status, 401);
   } finally { globalThis.fetch = original; }
+});
+
+
+test("Per Rename outcome does not hide genuine source failures", async () => {
+  const restore = installResolverMock([kongIndex]);
+  try {
+    const source = await fallbackResponse().json();
+    source.lineage_warnings.push("line_staging:airtable_staging_422");
+    source.degraded_sources.push("line_staging:airtable_staging_422");
+    const response = await enrichLineageWithPerRename(lookupRequest("ก้อง SVIP"),
+      Response.json(source), env);
+    const body = await response.json();
+    assert.equal(body.no_canonical_match, false);
+    assert.deepEqual(body.degraded_sources, ["line_staging:airtable_staging_422"]);
+    assert.ok(body.lineage_warnings.includes("per_rename_alias_resolved_to_canonical_client"));
+  } finally { restore(); }
 });
