@@ -1,6 +1,7 @@
 import { getLineOwnerTakeoverState, requestKenjiRuntimeStatus } from "./index.js";
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
+import { isMembershipMenuCommand, renderMembershipMenu } from "./kenji-membership-menu.mjs";
 import { isPrivateInterestCommand, renderPrivateInterest } from "./kenji-private-interest.mjs";
 
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
@@ -141,9 +142,10 @@ const killed = (runtime, command = false) => runtime?.ok !== true || runtime.con
 export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}, services = defaults } = {}) {
   const command = commandEnabled(env);
   const interest = command && enabled(env.KENJI_LINE_PRIVATE_INTEREST_ENABLED) && isPrivateInterestCommand(event);
-  if ((!isLineRightsCheck(event) && !interest) || (!command && clean(env.KENJI_LINE_RIGHTS_CHECK_MODE) !== "pilot")) return null;
+  const menu = command && enabled(env.KENJI_LINE_MEMBERSHIP_MENU_ENABLED) && isMembershipMenuCommand(event);
+  if ((!isLineRightsCheck(event) && !interest && !menu) || (!command && clean(env.KENJI_LINE_RIGHTS_CHECK_MODE) !== "pilot")) return null;
   // The owner's exception is solely this command, never renewal/general chat.
-  if (command && !isRightsCommand(event.message.text) && !interest) return null;
+  if (command && !isRightsCommand(event.message.text) && !interest && !menu) return null;
   const silent = reason => ({ ok: true, rights_check: true, replied: false, reason });
   const userId = clean(event.source?.userId);
   const hashes = clean(env.KENJI_LINE_RIGHTS_CHECK_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
@@ -160,8 +162,8 @@ export async function handleLineRightsCheck({ env = {}, event = {}, runtime = {}
     const takeover = await services.takeover(env, userId, continuity, { signal: AbortSignal.timeout(1500) });
     if (takeover.ok !== true || takeover.active) return silent("owner_takeover_or_unavailable");
     if (!await claim(env, await hash(`rights-event:${userId}:${eventId}`))) return silent("duplicate_or_claim_unavailable");
-    const truth = await services.truth(env, userId, interest ? "private_interest" : "rights_check").catch(() => ({}));
-    const decision = interest ? renderPrivateInterest(truth) : renderLineRightsCheck(truth);
+    const truth = menu ? {} : await services.truth(env, userId, interest ? "private_interest" : "rights_check").catch(() => ({}));
+    const decision = menu ? renderMembershipMenu() : interest ? renderPrivateInterest(truth) : renderLineRightsCheck(truth);
     let caseSaved = false;
     if (decision.missing.length) {
       // One actionable Conversation Matrix case per customer/day, regardless
