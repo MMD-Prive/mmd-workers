@@ -1,3 +1,4 @@
+import { handleModelJobPreview, isModelJobPreviewRequest } from "./model-job-preview.js";
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
 import { runHypeJobDailyScheduled } from "./hype-job-daily/runner.js";
@@ -265,6 +266,12 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (isModelJobPreviewRequest(normalizedPath)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      return handleModelJobPreview(gate.request, runtimeEnv);
     }
 
     if (isSessionCreatorAssetRequest(normalizedPath, method)) {

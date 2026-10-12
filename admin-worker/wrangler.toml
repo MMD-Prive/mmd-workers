@@ -1411,3 +1411,12 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/jobs/*"
 zone_name = "mmdbkk.com"
+
+# Read-only owner/admin job preview; the handler requires the existing admin cookie.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/model-preview*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/model-preview*"
+zone_name = "mmdbkk.com"

@@ -128,6 +128,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/calendar",
   "/internal/admin/applications",
   "/internal/admin/jobs/all",
+  "/internal/admin/jobs/model-preview",
   "/internal/admin/member-intelligence",
   "/internal/admin/membership-access",
   "/internal/admin/model-applications",
