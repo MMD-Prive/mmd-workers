@@ -5,6 +5,9 @@
 const ROOM_ENV = Object.freeze({
   premium: "TELEGRAM_PREMIUM_GROUP_ID",
   standard: "TELEGRAM_STANDARD_GROUP_ID",
+  black: "TELEGRAM_PRESENCE_BLACK_ROOM_ID",
+  inner: "TELEGRAM_PRESENCE_INNER_ROOM_ID",
+  preview: "TELEGRAM_PREVIEW_CHANNEL_ID",
 });
 
 export const MEMBER_PRESENCE_PATHS = Object.freeze(["/telegram/internal/member-presence", "/v1/internal/member-presence"]);

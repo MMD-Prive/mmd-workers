@@ -5,6 +5,8 @@
 import { readCredentialBoundAdminActor } from "../credential-bound-admin-session.js";
 import { clean } from "../hype-job-daily/util.js";
 import { buildAudit, isDryRun, isEnabled } from "./audit.js";
+import { renderControlPage } from "./page.js";
+import { buildRoomsPreview } from "./rooms-preview.js";
 import { makePresenceCheck, makeTelegramLookup, readEntitlements } from "./sources.js";
 
 export const PREMIUM_GROUP_CLEANUP_OWNER_BASE = "/internal/admin/premium-group-cleanup";
@@ -13,7 +15,7 @@ const ITEM_CAP = 100;
 
 export function isPremiumGroupCleanupOwnerRequest(path) {
   const p = String(path || "").replace(/\/+$/g, "");
-  return p === `${PREMIUM_GROUP_CLEANUP_OWNER_BASE}/status` || p === `${PREMIUM_GROUP_CLEANUP_OWNER_BASE}/preview`;
+  return ["status", "preview", "rooms"].some((a) => p === `${PREMIUM_GROUP_CLEANUP_OWNER_BASE}/${a}`);
 }
 
 function json(body, status = 200, extra = {}) {
@@ -55,6 +57,27 @@ export async function buildPreview(env = {}, now = Date.now(), deps = {}) {
   };
 }
 
+export async function buildRooms(env = {}, now = Date.now(), deps = {}) {
+  const fetchImpl = deps.fetch || fetch;
+  const read = deps.readEntitlements || ((e) => readEntitlements(e, fetchImpl));
+  const lookup = deps.lookupTelegram || makeTelegramLookup(env, fetchImpl);
+  const checkPresence = deps.checkPresence === undefined ? makePresenceCheck(env, fetchImpl) : deps.checkPresence;
+  const { records, truncated } = await read(env);
+  const view = await buildRoomsPreview({ records, now, env, lookupTelegram: lookup, checkPresence: checkPresence || undefined });
+  return {
+    ok: true,
+    flag_enabled: isEnabled(env),
+    dry_run: true,
+    sends_nothing: true,
+    removes_nothing: true,
+    telegram_presence: checkPresence ? "checked_read_only" : "not_checked",
+    source_truncated: Boolean(truncated),
+    ...view,
+  };
+}
+
+const wantsPage = (request, url) => url.searchParams.get("format") !== "json" && String(request.headers?.get?.("accept") || "").includes("text/html");
+
 export async function handlePremiumGroupCleanupOwnerRequest(request, env = {}, deps = {}) {
   const path = new URL(request.url).pathname.replace(/\/+$/g, "");
   if (!isPremiumGroupCleanupOwnerRequest(path)) return json({ ok: false, error: "not_found" }, 404);
@@ -65,9 +88,13 @@ export async function handlePremiumGroupCleanupOwnerRequest(request, env = {}, d
   if (clean(actor.role, 40).toLowerCase() !== "owner") return json({ ok: false, error: "owner_only" }, 403);
 
   const action = path.slice(PREMIUM_GROUP_CLEANUP_OWNER_BASE.length + 1);
+  if (action === "preview" && wantsPage(request, new URL(request.url))) {
+    return new Response(renderControlPage(PREMIUM_GROUP_CLEANUP_OWNER_BASE), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
+  }
   const now = Number.isFinite(Number(deps.now)) ? Number(deps.now) : Date.now();
   try {
     if (action === "status") return json(buildStatus(env));
+    if (action === "rooms") return json(await buildRooms(env, now, deps));
     return json(await buildPreview(env, now, deps));
   } catch (error) {
     return json({ ok: false, error: "premium_group_cleanup_failed", detail: clean(error?.message, 80) }, 500);

@@ -1015,6 +1015,8 @@ HYPE_JOB_DAILY_ENABLED = "true"
 # PREMIUM_GROUP_ELIGIBILITY_CLEANUP (#2141) phase 1: owner dry-run audit only. Sends/removes nothing.
 PREMIUM_GROUP_ELIGIBILITY_CLEANUP_ENABLED = "false"
 PREMIUM_GROUP_CLEANUP_DRY_RUN = "true"
+# Internal promo grace: expired Premium stays "grace" (never a removal candidate) through this instant. Customer-facing promo deadline stays 31 Oct 2026.
+PREMIUM_GROUP_PROMO_GRACE_UNTIL = "2026-12-31T23:59:59+07:00"
 # MODEL_RECONFIRM guard v2 (owner preview/dry-run accuracy). Owner chat id is set in Cloudflare only, never in this file.
 MODEL_RECONFIRM_GUARD_V2 = "false"
 # Optional comma/space-separated canonical Airtable Model record IDs for a controlled production pilot. Empty means no additional allowlist.\nMODEL_CARD_PILOT_MODEL_IDS = ""\nMODEL_CARD_DAILY_LIMIT = "20"
