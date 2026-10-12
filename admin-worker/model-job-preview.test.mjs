@@ -45,6 +45,9 @@ test('only marked VIP detail is included; raw notes stay private',()=>{
   const job=projectModelJobPreview({...fields,fldEcDkF7CH9VixWM:'private costs [SIGIL VIP Detail v1] {"vip_detail":"VIP model brief","margin":999999}'});
   const html=renderModelJobPreview(job);assert.match(html,/VIP model brief/);assert.doesNotMatch(html,/private costs|999999|"margin"/);
 });
+test('Airtable UTC job times are displayed in Bangkok time',()=>{
+  const html=renderModelJobPreview(projectModelJobPreview({...fields,[F.start_time]:'2026-10-18T11:00:00.000Z',[F.end_time]:'2026-10-18T12:30:00.000Z'}));assert.match(html,/18:00 – 19:30/);assert.doesNotMatch(html,/11:00:00/);
+});
 test('exact routing and login return are registered in active worker and deployment',()=>{
   assert.ok(isModelJobPreviewRequest('/internal/admin/jobs/model-preview'));assert.ok(!isModelJobPreviewRequest('/internal/admin/jobs/model-preview-extra'));
   const worker=readFileSync(new URL('./src/admin-login-hero-worker.js',import.meta.url),'utf8');assert.match(worker,/isModelJobPreviewRequest\(normalizedPath\)[\s\S]*?applyCredentialBoundAdminGate[\s\S]*?handleModelJobPreview\(gate.request/);
