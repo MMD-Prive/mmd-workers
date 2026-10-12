@@ -34,13 +34,14 @@ test("menu rejects groups and non-text events", () => {
   assert.equal(isMembershipMenuCommand(event("MMD Membership", { message: { type: "sticker" } })), false);
 });
 
-test("menu copy has the signup/status LIFF links and the working web renewal link and says nothing about the sender's own membership", () => {
+test("menu copy has the signup LIFF link, web renewal link, and a type-command status hint and says nothing about the sender's own membership", () => {
   const { text } = renderMembershipMenu();
   assert.match(text, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/);
   assert.match(text, /mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/);
-  assert.match(text, /\?intent=status&view=profile/);
+  assert.match(text, /พิมพ์ “เช็กสิทธิ์”/);
+  assert.doesNotMatch(text, /intent=status/);
   assert.doesNotMatch(text, /liff\.state|\/member\/liff/);
-  assert.doesNotMatch(text, /บัญชีนี้|เช็กสิทธิ์|วันหมดอายุ|แต้ม|Welcome|1,199|2,999/);
+  assert.doesNotMatch(text, /บัญชีนี้|แต้ม|Welcome|1,199|2,999|หมดอายุแล้ว|ใช้ถึง/);
 });
 
 test("switch off (default) stays silent", async () => {

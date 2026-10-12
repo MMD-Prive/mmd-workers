@@ -10,7 +10,6 @@ export const MEMBERSHIP_MENU_LINKS = Object.freeze({
   // LIFF has no renewal purchase flow yet (its PACKAGE view only displays the
   // current package), so renewal stays on the working web renewal page.
   renew: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
-  status: liff("status", "profile"),
 });
 
 export function isMembershipMenuCommand(event = {}) {
@@ -26,7 +25,7 @@ export function renderMembershipMenu() {
       "",
       `• สมัครสมาชิก (Public / Private) → ${MEMBERSHIP_MENU_LINKS.signup}`,
       `• ต่ออายุสมาชิก → ${MEMBERSHIP_MENU_LINKS.renew}`,
-      `• เช็กสถานะสมาชิก → ${MEMBERSHIP_MENU_LINKS.status}`,
+      "• เช็กสถานะ/วันหมดอายุ → พิมพ์ “เช็กสิทธิ์” ได้เลยครับ",
       "",
       "สถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ",
     ].join("\n"),
