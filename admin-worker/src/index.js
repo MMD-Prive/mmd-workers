@@ -5838,6 +5838,73 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState, ownerJobGrant };
 }
 
+const MODEL_PARTNER_INACTIVE_REFERRAL_STATUSES = new Set(["inactive", "revoked", "transferred", "archived"]);
+
+/**
+ * Direct / Partner attribution for Create Job model search.
+ * Authority: Airtable "Model Referrals" (Partner + Model + Ownership Status) and
+ * "Model Partners". A model is Partner only when it has a non-ended referral to a
+ * partner; otherwise Direct. If the lookup fails we return ok:false so callers
+ * report "unknown" instead of mislabelling a partner model as Direct.
+ */
+async function loadModelPartnerAttribution(env, modelIds) {
+  const wanted = new Set((modelIds || []).filter(Boolean));
+  const out = { ok: true, byModel: new Map() };
+  if (!wanted.size) return out;
+  const referralsTable = env.AIRTABLE_TABLE_MODEL_REFERRALS || "tblrmSsCZxJSCQR9n";
+  const partnersTable = env.AIRTABLE_TABLE_MODEL_PARTNERS || "tbl1ksDlsTiiGEHWe";
+  try {
+    const referrals = [];
+    let offset = "";
+    for (let page = 0; page < 10; page += 1) {
+      const qs = new URLSearchParams({ pageSize: "100" });
+      if (offset) qs.set("offset", offset);
+      const r = await airtableFetch(env, `/${encodeURIComponent(referralsTable)}?${qs.toString()}`);
+      if (!r.ok) return { ok: false, byModel: new Map() };
+      referrals.push(...(r.data?.records || []));
+      offset = r.data?.offset || "";
+      if (!offset) break;
+    }
+    const linkIds = (v) => (Array.isArray(v) ? v : []).map((x) => str(x && typeof x === "object" ? x.id : x)).filter(Boolean);
+    const partnerIds = new Set();
+    const pairs = [];
+    for (const rec of referrals) {
+      const f = rec.fields || {};
+      if (MODEL_PARTNER_INACTIVE_REFERRAL_STATUSES.has(accessToken(f["Ownership Status"]))) continue;
+      const partnerId = linkIds(f["Partner"])[0];
+      if (!partnerId) continue;
+      for (const modelId of linkIds(f["Model"])) {
+        if (wanted.has(modelId)) {
+          pairs.push([modelId, partnerId]);
+          partnerIds.add(partnerId);
+        }
+      }
+    }
+    const partners = new Map();
+    for (const id of partnerIds) {
+      const r = await airtableFetch(env, `/${encodeURIComponent(partnersTable)}/${encodeURIComponent(id)}`);
+      if (!r.ok) return { ok: false, byModel: new Map() };
+      const f = r.data?.fields || {};
+      partners.set(id, {
+        partner_id: str(f["Partner ID"]) || id,
+        partner_record_id: id,
+        partner_name: str(f["Display Name"] || f["Partner Name"] || f["Partner ID"]),
+      });
+    }
+    for (const [modelId, partnerId] of pairs) {
+      if (!out.byModel.has(modelId)) out.byModel.set(modelId, partners.get(partnerId));
+    }
+    return out;
+  } catch (_) {
+    return { ok: false, byModel: new Map() };
+  }
+}
+
+function normalizeModelSourceFilter(value) {
+  const t = accessToken(value);
+  return t === "direct" || t === "partner" ? t : "";
+}
+
 async function searchCreateSessionModels(env, url) {
   const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
   const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
@@ -5852,6 +5919,7 @@ async function searchCreateSessionModels(env, url) {
   const wantMk = flag("mk");
   const wantLive = flag("live");
   const inventoryOnly = flag("inventory_only");
+  const sourceFilter = normalizeModelSourceFilter(url.searchParams.get("source"));
 
   let allowedFolders = [];
   let memberSummary = null;
@@ -5957,7 +6025,27 @@ async function searchCreateSessionModels(env, url) {
       }
     }
     items.push(item);
-    if (items.length >= limit) break;
+    if (!sourceFilter && items.length >= limit) break;
+  }
+
+  const attribution = await loadModelPartnerAttribution(env, items.map((item) => item.model_id));
+  for (const item of items) {
+    const partner = attribution.byModel.get(item.model_id);
+    if (!attribution.ok) {
+      item.source_kind = null;
+      item.source_lookup = "unavailable";
+    } else if (partner) {
+      item.source_kind = "partner";
+      item.partner_id = partner.partner_id;
+      item.partner_name = partner.partner_name;
+    } else {
+      item.source_kind = "direct";
+    }
+  }
+  if (sourceFilter) {
+    const kept = items.filter((item) => item.source_kind === sourceFilter);
+    items.length = 0;
+    items.push(...kept.slice(0, limit));
   }
 
   let publicRecovery = null;
@@ -5972,6 +6060,8 @@ async function searchCreateSessionModels(env, url) {
     booking_visibility: bookingVisibility,
     folder: selectedFolder,
     customer_lane: lane,
+    source: sourceFilter || "all",
+    source_lookup_ok: attribution.ok,
     items,
   };
   if (memberSummary) out.private_access = memberSummary;
