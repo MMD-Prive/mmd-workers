@@ -72,6 +72,22 @@ for (const query of ['คุณ ' + name, 'ทดสอบป้ายจำล�
       assert.equal(result.records.length, 1);
       assert.equal(result.records[0].client_id, clientId);
       assert.equal(result.manual_fallback, false);
+      assert.equal(result.canonical_only, true);
+      assert.deepEqual(result.results, result.records);
+      assert.equal(result.no_canonical_match, false);
+      assert.equal(mock.calls.length, 2);
+      assert.ok(mock.calls[0].pathname.endsWith('/synthetic_index'));
+      assert.ok(mock.calls[1].pathname.endsWith('/synthetic_clients/' + clientId));
+    } finally {mock.restore();}
+  });
+  test(`strict lineage fallback retains Thai staging formula when Per Rename is absent: ${query}`, async () => {
+    const mock = mockStorage({indexes: []});
+    try {
+      const response = await handleCreateSessionClientLineageRequest(request(query), env);
+      const result = await response.json();
+      assert.equal(result.records[0].client_id, clientId);
+      assert.equal(result.no_canonical_match, false);
+      assert.ok(mock.calls[0].pathname.endsWith('/synthetic_index'));
       const staging = mock.calls.find(u => u.pathname.endsWith('/synthetic_staging'));
       assert.ok(staging.searchParams.get('filterByFormula').includes('SUBSTITUTE('));
     } finally {mock.restore();}
@@ -138,3 +154,4 @@ test('an explicit synthetic short-name query still finds its canonical record', 
     assert.equal(body.records[0].client_name, 'A');
   } finally {mock.restore();}
 });
+
