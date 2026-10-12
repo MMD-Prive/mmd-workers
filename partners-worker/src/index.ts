@@ -499,6 +499,10 @@ export default {
         return await handlePartnerJobAction(request, runtimeEnv);
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/partner/jobs/model-link") {
+        return await handlePartnerModelLink(request, runtimeEnv);
+      }
+
       if (request.method === "GET" && url.pathname === "/v1/partner/private-vault") {
         return await handlePartnerPrivateVaultGet(request, runtimeEnv);
       }
@@ -2864,6 +2868,49 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
     console.error("partner dashboard job response telegram alert failed", error);
   }
   return json(request, env, { ok: true, status: nextStatus, revision, confirmed_at: now });
+}
+
+// Optional travel aid: the Partner issues a neutral (no MMD branding) model confirmation
+// link for a job they already confirmed. Token signing stays in payments-worker.
+async function handlePartnerModelLink(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const sessionRecordId = readString(body.value, "session_record_id");
+  const payModel = Number(body.value.pay_model_thb);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) return errorResponse(request, env, "session_record_id_invalid", "Invalid session.", 400, false);
+  if (!Number.isInteger(payModel) || payModel <= 0) return errorResponse(request, env, "pay_model_thb_invalid", "Enter the amount the model receives.", 400, false);
+
+  const tableId = String(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
+  const session = await getAirtableRecord(env, tableId, sessionRecordId);
+  const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || "";
+  if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
+    return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
+  }
+  if (normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus)) !== "confirmed") {
+    return errorResponse(request, env, "partner_confirmation_required", "Confirm the job before issuing a model link.", 409, false);
+  }
+  const sessionId = fieldText(session, SESSION_FIELDS.sessionId) || "";
+  const payments = (env as RuntimeEnv & { PAYMENTS_WORKER?: Fetcher; AUTH_SERVICE_PARTNERS_TO_PAYMENTS?: string }).PAYMENTS_WORKER;
+  const secret = (env as RuntimeEnv & { AUTH_SERVICE_PARTNERS_TO_PAYMENTS?: string }).AUTH_SERVICE_PARTNERS_TO_PAYMENTS;
+  if (!sessionId || !payments?.fetch || !secret) {
+    return errorResponse(request, env, "model_link_unavailable", "Model link is temporarily unavailable.", 503, true);
+  }
+  const response = await payments.fetch(new Request("https://payments-worker.internal/v1/internal/confirm/partner-model-link", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-internal-token": secret },
+    body: JSON.stringify({ session_id: sessionId, partner_id: partnerId, pay_model_thb: payModel })
+  }));
+  const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; model_confirmation_url?: string; pay_model_thb?: number; expires_at?: number } | null;
+  if (!response.ok || !payload?.ok || !payload.model_confirmation_url) {
+    const known = new Set(["pay_model_already_set", "pay_model_exceeds_job_amount", "payment_not_official_verified", "partner_system_not_allowed"]);
+    const code = known.has(String(payload?.error)) ? String(payload?.error) : "model_link_failed";
+    return errorResponse(request, env, code, "Could not issue the model link.", response.status === 409 ? 409 : 502, response.status >= 500);
+  }
+  const res = json(request, env, { ok: true, model_confirmation_url: payload.model_confirmation_url, pay_model_thb: payload.pay_model_thb, expires_at: payload.expires_at });
+  res.headers.set("Cache-Control", "no-store, private");
+  return res;
 }
 
 async function handlePartnerPrivateVaultGet(request: Request, env: RuntimeEnv): Promise<Response> {

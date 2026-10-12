@@ -56,3 +56,9 @@ TG_THREAD_CONFIRM = "61"
 [[services]]
 binding = "TELEGRAM_BIND_AUTHORITY"
 service = "admin-worker"
+
+# Partner-issued neutral model confirmation link (token signing lives in payments-worker).
+# Requires secret AUTH_SERVICE_PARTNERS_TO_PAYMENTS on both workers.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
