@@ -5915,9 +5915,6 @@ async function searchCreateSessionModels(env, url) {
   const selectedFolder = accessToken(url.searchParams.get("selected_access_folder") || url.searchParams.get("folder"));
   const flag = (name) => ["1", "true", "yes"].includes(accessToken(url.searchParams.get(name)));
   const availableOnly = flag("available_only");
-  const wantBurn = flag("burn");
-  const wantMk = flag("mk");
-  const wantLive = flag("live");
   const inventoryOnly = flag("inventory_only");
   const sourceFilter = normalizeModelSourceFilter(url.searchParams.get("source"));
 
@@ -5997,9 +5994,8 @@ async function searchCreateSessionModels(env, url) {
     const profile = modelAccessProfile(record.fields || {});
     if (!profile.statusActive) continue;
     if (availableOnly && (!profile.availableNow || profile.explicitlyUnavailable)) continue;
-    if (wantBurn && !profile.ops.burn) continue;
-    if (wantMk && !profile.ops.mk) continue;
-    if (wantLive && !profile.ops.live) continue;
+    // Job add-ons do not filter owner/admin model discovery. Capability metadata
+    // remains descriptive; selecting MK/Burn/Live must not hide inventory.
     if (bookingVisibility === "private") {
       if (profile.bookingVisibility !== "private") continue;
       if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
