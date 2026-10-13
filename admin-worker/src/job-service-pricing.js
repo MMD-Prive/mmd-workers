@@ -1,3 +1,4 @@
+import { isPartnerManagedJob } from "./job-create-contract.js";
 import { parseSigilMembershipPaymentComponents } from "../../shared/sigil-membership-payment-components.mjs";
 const OPTIONS = ["mk", "burn", "live", "group"];
 export const SERVICE_PRICING_MARKER = "[MMD SERVICE PRICING v1]";
@@ -25,19 +26,20 @@ function validateDiscount(d, gross, fail) {
 export function validateJobServicePricing(body) {
   if (body?.service_pricing === undefined) return null;
   const p = body.service_pricing;
+  const partnerManaged = isPartnerManagedJob(body);
   const fail = () => { const error = new Error("Invalid service pricing breakdown or aggregate amounts.");
     error.code = "service_pricing_invalid"; error.status = 400; throw error; };
   if (!p || p.version !== 1 || p.currency !== "THB" || !["direct", "platform"].includes(p.settlement_mode)
-    || p.settlement_mode !== body?.private_access?.settlement_mode || !Array.isArray(p.addons)
+    || (!partnerManaged && p.settlement_mode !== body?.private_access?.settlement_mode) || !Array.isArray(p.addons)
     || p.addons.length > OPTIONS.length || !money(p.client_base_amount_thb) || p.client_base_amount_thb <= 0) fail();
   if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
-  if (p.settlement_mode === "platform" && [body.pay_model_thb, body.model_payout_thb,
+  if ((partnerManaged || p.settlement_mode === "platform") && [body.pay_model_thb, body.model_payout_thb,
     body?.model_payout?.amount_thb, body?.payment?.model_payout_thb].some(value => value !== undefined)) fail();
   const requested = body?.work?.service_options ?? [];
   if (!Array.isArray(requested) || new Set(requested).size !== requested.length || requested.some(o => !OPTIONS.includes(o))) fail();
   if (new Set(p.addons.map(a => a?.option)).size !== p.addons.length || p.addons.length !== requested.length) fail();
   for (const a of p.addons) {
-    if (!a || !requested.includes(a.option) || !money(a.client_amount_thb) || !money(a.model_payout_thb)) fail();
+    if (!a || !requested.includes(a.option) || !money(a.client_amount_thb) || (partnerManaged ? a.model_payout_thb !== null : !money(a.model_payout_thb))) fail();
   }
   const clientGross = total(p.client_base_amount_thb, p.addons, "client_amount_thb");
   const discount = validateDiscount(p.discount, clientGross, fail);
@@ -60,7 +62,8 @@ export function validateJobServicePricing(body) {
   // original_amount_thb is the pre-discount amount when a discount is declared.
   if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, discount ? clientGross : clientTotal)) fail();
   if (body?.payment?.amount_thb !== undefined && !sameMoney(body.payment.amount_thb, customerTotal)) fail();
-  const needsModel = p.settlement_mode === "direct" || p.addons.length > 0;
+  // Partner quotes cover settlement with the partner; MMD does not issue a model payout.
+  const needsModel = !partnerManaged && (p.settlement_mode === "direct" || p.addons.length > 0);
   if (needsModel && (!money(p.model_base_payout_thb) || p.model_base_payout_thb <= 0)) fail();
   if (discount && !needsModel && discount.model_share_thb > 0) fail();
   const modelGross = needsModel ? total(p.model_base_payout_thb, p.addons, "model_payout_thb") : null;
@@ -68,7 +71,7 @@ export function validateJobServicePricing(body) {
   const modelTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;
   if ((needsModel && !money(modelTotal)) || p.model_total_payout_thb !== modelTotal
     || (!needsModel && p.model_base_payout_thb !== null)) fail();
-  if (p.settlement_mode === "direct") {
+  if (!partnerManaged && p.settlement_mode === "direct") {
     for (const amount of [body.pay_model_thb, body.model_payout_thb, body?.model_payout?.amount_thb, body?.payment?.model_payout_thb]) {
       if (amount !== undefined && amount !== modelTotal) fail();
     }
