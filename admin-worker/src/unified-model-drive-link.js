@@ -254,6 +254,19 @@ async function resolveDriveDirectory(env, driveFolderId) {
     : { ok: false, status: response.status, error: clean(data.error, 120) || "drive_folder_not_approved" };
 }
 
+// Revalidate an existing canonical model's exact folder against the approved
+// server-owned directory. This does not materialize models or mutate approvals.
+export async function resolveApprovedDrivePrivateWork(env, driveFolderId) {
+  const id = clean(driveFolderId, 180);
+  if (!/^[A-Za-z0-9_-]{10,180}$/.test(id)) return { ok: false, status: 409, error: "drive_folder_id_invalid" };
+  let result;
+  try { result = await resolveDriveDirectory(env, id); }
+  catch { return { ok: false, status: 503, error: "drive_directory_unavailable" }; }
+  if (!result.ok) return { ok: false, status: result.status >= 500 ? 503 : 409, error: result.error };
+  if (!result.item || result.item.drive_folder_id !== id) return { ok: false, status: 409, error: "drive_folder_identity_mismatch" };
+  return { ok: true, level: inferDrivePrivateServiceLevel(result.item), folder: result.item };
+}
+
 function safeDriveCandidate(item) {
   if (!item || !/^[A-Za-z0-9_-]{10,180}$/.test(clean(item.drive_folder_id, 180))) return null;
   const lane = normalizeLane(item.lane);
