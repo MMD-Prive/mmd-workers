@@ -1,3 +1,11 @@
+// Reuse the existing partner settlement decision for normalization and quote validation.
+export function isPartnerManagedJob(body = {}) {
+  const relationship = body.job_details?.partner_relationship || body.partner_relationship || {};
+  const owner = String(relationship.settlement_owner || '').trim().toLowerCase();
+  const method = String(relationship.settlement_method || '').trim().toLowerCase();
+  return owner === 'modeling_partner' || method === 'partner_managed' || method === 'included_in_rate';
+}
+
 // Normalize the nested Create Job form and legacy SIGIL payloads at ingress.
 export function normalizeJobCreateBody(input = {}) {
   const body = structuredClone(input);
@@ -19,9 +27,7 @@ export function normalizeJobCreateBody(input = {}) {
   ).trim().toLowerCase();
   const publicFormat = String(publicJob.format || publicJob.job_format || '').trim().toLowerCase();
   const partnerRelationship = details.partner_relationship || body.partner_relationship || {};
-  const settlementOwner = String(partnerRelationship.settlement_owner || '').trim().toLowerCase();
-  const settlementMethod = String(partnerRelationship.settlement_method || '').trim().toLowerCase();
-  const partnerManaged = settlementOwner === 'modeling_partner' || settlementMethod === 'partner_managed' || settlementMethod === 'included_in_rate';
+  const partnerManaged = isPartnerManagedJob(body);
   if (partnerManaged) {
     for (const key of ['pay_model_thb', 'pay_model', 'model_pay_thb', 'model_pay', 'model_payout_thb', 'model_payout', 'expected_payout_thb']) {
       delete body[key];
