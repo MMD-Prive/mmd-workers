@@ -1,4 +1,4 @@
-<script id="mmd-model-welcome-v2-runtime">/* MY MODEL Model Welcome v2
+<script id="mmd-model-welcome-v2-runtime">/* MMD APP Model Welcome v2
  * Presentation-only source mirror for Webflow page 6a04caa6fdf06182e2dd739c.
  *
  * Security boundary:
@@ -13,6 +13,85 @@
   "use strict";
 
   const LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq/";
+  const LIFF = LIFF_URL;
+  const JOBS = "https://sigil.mmdbkk.com/public/api/jobs";
+  const params = new URL(location.href).searchParams;
+  function lang() {
+    const raw = String(params.get("lang") || document.documentElement.lang || "th").trim().toLowerCase();
+    if (raw === "en" || raw.startsWith("en-")) return "en";
+    if (raw === "zh" || raw.startsWith("zh-") || raw === "cn" || raw.startsWith("cn-")) return "zh";
+    return "th";
+  }
+  function safeToken(value, fallback, max) {
+    const text = String(value || "").trim().slice(0, max || 90);
+    return /^[A-Za-z0-9._:-]+$/.test(text) ? text : fallback;
+  }
+  function safeJobId(value) {
+    const text = String(value || "").trim();
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(text) ? text : "";
+  }
+  function safeNext(value, jobId) {
+    const fallback = jobId ? `${JOBS}/${encodeURIComponent(jobId)}` : JOBS;
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    try {
+      const url = new URL(raw);
+      const cleanPath = url.pathname.replace(/\/+$/, "") || "/";
+      const ok = url.protocol === "https:" && url.origin === "https://sigil.mmdbkk.com" &&
+        (cleanPath === "/public/api/jobs" || /^\/public\/api\/jobs\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(cleanPath)) &&
+        !url.username && !url.password && !url.hash;
+      if (!ok) return fallback;
+      url.search = "";
+      return url.toString();
+    } catch (_) { return fallback; }
+  }
+
+  function makeTarget() {
+    const jobId = safeJobId(params.get("job_id"));
+    const nextRaw = String(params.get("next") || "");
+    const sourceRaw = params.get("source");
+    const returnToRaw = params.get("return_to");
+    const intent = params.get("intent");
+    const isJob = intent === "job_board" || Boolean(jobId) || nextRaw.includes("/public/api/jobs");
+    const isWish = returnToRaw === "wish" || sourceRaw === "model_wish";
+    const isVerify = params.get("flow") === "verify" || isWish || sourceRaw === "model_verify";
+    const url = new URL(LIFF);
+    url.searchParams.set("lang", lang());
+
+    if (isJob) {
+      url.searchParams.set("intent", "job_board");
+      url.searchParams.set("source", safeToken(sourceRaw, "line_model_group", 90));
+      url.searchParams.set("return_to", "public_job_board");
+      if (jobId) url.searchParams.set("job_id", jobId);
+      url.searchParams.set("next", safeNext(nextRaw, jobId));
+      const campaign = safeToken(params.get("campaign_id"), "", 128);
+      if (campaign) url.searchParams.set("campaign_id", campaign);
+      return {
+        href: url.toString(),
+        mode: "job",
+        title: "เปิดงานใน MMD APP",
+        cta: "เปิดงานบนมือถือ",
+        context: "งานที่ MMD ส่งให้",
+        note: "หลังยืนยันผ่าน LINE ระบบจะพาไปดูรายละเอียดงานนี้"
+      };
+    }
+
+    url.searchParams.set("flow", "verify");
+    url.searchParams.set("source", safeToken(sourceRaw, isWish ? "model_wish" : (isVerify ? "model_verify" : "model_login"), 90));
+    if (isWish) url.searchParams.set("return_to", "wish");
+    else if (returnToRaw) url.searchParams.set("return_to", safeToken(returnToRaw, "", 60));
+    return {
+      href: url.toString(),
+      mode: isWish ? "wish" : (isVerify ? "verify" : "start"),
+      title: isWish ? "ยืนยันแล้วกลับไปส่ง Wish" : "ยืนยันตัวตนกับ MMD APP",
+      cta: isWish ? "ยืนยันแล้วไปต่อ" : "ยืนยันผ่าน LINE",
+      context: isWish ? "Wish / อวยพรให้ MMD" : "ยืนยันตัวตนกับ MMD",
+      note: isWish ? "หลังยืนยันผ่าน LINE ระบบจะพากลับไปหน้าส่ง Wish" : "ระบบจะพาไปหน้าที่เกี่ยวข้องตามข้อมูลของบัญชีนี้"
+    };
+  }
+
+
+  const entryTarget = makeTarget();
   const PROFILE_URL = "/v1/model/profile";
   const DASHBOARD_URL = "/sigil/model/dashboard";
   const MMD_LOGO = "data:image/webp;base64,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";
@@ -79,10 +158,7 @@
   }
 
   function liffTarget() {
-    const url = new URL(LIFF_URL);
-    url.searchParams.set("source", "model_login");
-    url.searchParams.set("return_to", "dashboard");
-    return url.toString();
+    return entryTarget.href;
   }
 
   function ensureStyle() {
@@ -109,7 +185,7 @@
     root.innerHTML = `
       <div class="mw2-hero" aria-hidden="true">
         <div class="mw2-brand"><img class="mw2-logo" src="${variant.lane === "private" ? SIGIL_LOGO : MMD_LOGO}" alt="">
-          <div><span class="mw2-brand-title">${variant.lane === "private" ? "SĪGIL" : "MY MODEL"}</span>
+          <div><span class="mw2-brand-title">${variant.lane === "private" ? "SĪGIL" : "MMD APP"}</span>
           <span class="mw2-brand-subtitle">${variant.lane === "private" ? "SYSTEM · PRIVATE MODEL" : "MMD PRIVÉ"}</span></div>
         </div>
       </div>
@@ -118,7 +194,7 @@
           <p class="mw2-eyebrow"></p><h1 id="mw2-title"></h1><div class="mw2-body"></div><p class="mw2-signature"></p>
         </section>
         <div class="mw2-actions">
-          <a class="mw2-verify" data-model-login-v2 href="${liffTarget()}" aria-label="ENTER เข้าสู่ MY MODEL ผ่าน LINE"><span>ENTER</span><span class="mw2-arrow" aria-hidden="true">→</span></a>
+          <a class="mw2-verify" data-model-login-v2 href="${liffTarget()}" aria-label="ENTER เข้าสู่ MMD APP ผ่าน LINE"><span>ENTER</span><span class="mw2-arrow" aria-hidden="true">→</span></a>
           <p class="mw2-status" role="status" aria-live="polite">ใช้ LINE เพื่อเข้าสู่ Dashboard หลังอ่านข้อความจากเปอร์</p>
         </div>
       </div>`;
@@ -141,6 +217,8 @@
   }
 
   async function boot() {
+    if (location.pathname.replace(/\/+$/, "") !== "/sigil/model/login") return;
+    if (entryTarget.mode !== "start") { location.replace(entryTarget.href); return; }
     render(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
