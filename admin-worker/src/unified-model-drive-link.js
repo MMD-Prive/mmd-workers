@@ -1,3 +1,4 @@
+import { canRecoverLegacyDriveModel } from "./legacy-drive-model-recovery.js";
 import { bindVerifiedModelLineClaim } from "./model-line-link-review.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -28,7 +29,12 @@ export async function listUnifiedModelLineCandidates(env, url) {
     return { ok: false, error: "model_candidate_lookup_unavailable", status: Math.max(airtable.status || 503, drive.status || 503) };
   }
 
-  const airtableItems = airtable.ok ? airtable.items : [];
+  const approvedById = new Map((drive.ok ? drive.items : []).map(item => [item.drive_folder_id, item]));
+  const airtableItems = (airtable.ok ? airtable.items : []).map(item => {
+    const folder = approvedById.get(item.drive_folder_id);
+    return item.drive_recovery_eligible && folder && ['public', 'private', 'exclusive'].includes(normalizeLane(folder.lane))
+      ? { ...item, can_recover_from_drive: true } : item;
+  });
   const canonicalDriveIds = new Set(airtableItems.map((item) => item.drive_folder_id).filter(Boolean));
   const driveItems = drive.ok
     ? drive.items.filter((item) => item.drive_folder_id && !canonicalDriveIds.has(item.drive_folder_id))
@@ -67,6 +73,7 @@ export async function materializeApprovedDriveModel(env, driveFolderId, actor = 
     };
   }
   const folder = drive.item;
+  if (clean(folder.drive_folder_id, 180) !== safeFolderId) return { ok: false, status: 409, error: "drive_folder_identity_mismatch", record: null, materialized: false };
   const lane = normalizeLane(folder.lane);
   if (lane === "all") {
     return { ok: false, status: 409, error: "drive_folder_lane_unresolved", record: null, materialized: false };
@@ -118,6 +125,7 @@ export async function materializeDriveAndBindVerifiedModelLineClaim(request, env
     return json({ ok: false, error: drive.error || "drive_folder_not_approved" }, drive.status || 409);
   }
   const folder = drive.item;
+  if (clean(folder.drive_folder_id, 180) !== driveFolderId) return json({ ok: false, error: "drive_folder_identity_mismatch" }, 409);
   const lane = normalizeLane(folder.lane);
   if (lane === "all") return json({ ok: false, error: "drive_folder_lane_unresolved" }, 409);
 
@@ -147,7 +155,7 @@ export async function materializeDriveAndBindVerifiedModelLineClaim(request, env
       confirm: true,
     }),
   });
-  const response = await bindVerifiedModelLineClaim(bindRequest, env, actor);
+  const response = await bindVerifiedModelLineClaim(bindRequest, env, actor, { approvedDriveFolder: folder });
   if (!response.ok) return response;
 
   const payload = await response.clone().json().catch(() => ({}));
@@ -186,6 +194,7 @@ function safeCanonicalModel(record) {
     model_lookup_key: firstText(fields, ["model_lookup_key", "model_code", "Model Code", "unique_key"]),
     status,
     active: /^active$/i.test(status),
+    ...(canRecoverLegacyDriveModel(record) ? { drive_recovery_eligible: true } : {}),
     lane: primaryModelLane(fields, lanes),
     lanes,
     folder_name: firstText(fields, ["folder_name"]),
