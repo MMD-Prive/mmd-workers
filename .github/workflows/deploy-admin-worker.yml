@@ -88,6 +88,7 @@ jobs:
           node --check src/telegram-identity-bind-authority.js
           node --check src/admin-login-hero-worker.js
           node --experimental-global-webcrypto --test private-work-directory-recovery.test.mjs
+          node --experimental-global-webcrypto --test model-link-drive-recovery.test.mjs model-line-link-review.test.mjs model-line-identity-recovery.test.mjs
           node --experimental-global-webcrypto --test job-service-pricing.test.mjs job-create-contract-partner-settlement.test.mjs
           node --check src/owner-private-job-grant-create.js
           node --check src/mmd-shop-orders-admin.js
