@@ -55,3 +55,20 @@ test('Internal MMS uses approved branding while shared Partner page retains SIGI
  assert.doesNotMatch(dashboard,/data-mms-dashboard-lv5/);
  const partner=renderRelaxSpaPage({partner:true});assert.match(partner,/SĪGIL \| SYSTEM/);assert.doesNotMatch(partner,/mms-ai-brand|male-massage-ai\./);
 });
+
+
+test('diagnostics launcher lives in the header instead of overlapping the AI Ops corner',()=>{
+ const page=wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()));
+ const mast=page.match(/<header class="mast">([\s\S]*?)<\/header>/)?.[1]||'';
+ assert.match(mast,/<div class="mms-header-tools">/);
+ assert.match(mast,/id="runtime"/);
+ assert.match(mast,/id="mmsDiagDock"/);
+ assert.equal((page.match(/id="mmsDiagDock"/g)||[]).length,1);
+ assert.match(page,/\.mms-diag-dock\{[^}]*position:static/);
+ assert.doesNotMatch(page,/\.mms-diag-dock\{[^}]*position:fixed/);
+ assert.match(page,/@media\(max-width:767px\)\{#mmsDiagDock\{display:none\}\}/);
+ // The existing mobile health control still opens the same diagnostics handler.
+ assert.match(page,/if\(healthButton\)healthButton\.addEventListener\('click',function\(\)\{var dock=document\.getElementById\('mmsDiagDock'\);if\(dock\)dock\.click\(\)\}/);
+ assert.match(page,/if\(dock\)dock\.onclick=function\(\)\{sheet\.classList\.add\('open'\)/);
+ assert.match(page,/background:#0b3827;color:#fff;-webkit-text-fill-color:#fff/);
+});
