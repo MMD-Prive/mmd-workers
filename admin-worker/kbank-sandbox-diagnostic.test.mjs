@@ -158,6 +158,29 @@ test('rendered browser script compiles and readiness enables smoke only when rea
   assert.equal(get('kbank-probe').disabled,true);
 });
 
+test('rendered diagnostic explains only the safe OAuth response metadata', async()=>{
+  const {Script,createContext}=await import('node:vm');
+  const h=setup(()=>{throw Error('page GET must not call payments');});
+  const html=await (await handle(await request(h.env,{method:'GET'}),h.env)).text();
+  const source=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  const elements=new Map();
+  const get=id=>{if(!elements.has(id))elements.set(id,{disabled:false,dataset:{},textContent:'',addEventListener(event,fn){this[event]=fn;}});return elements.get(id);};
+  const safe={
+    environment:'sandbox',transfers_enabled:false,ok:false,error:'kbank_oauth_failed',upstream_status:502,
+    bank_http_status:401,bank_response_media_type:'html',bank_response_body_shape:'size_limited',
+    bank_error_shape:'gateway_fault_detail',bank_error_code_recognized:false,
+  };
+  const ctx=createContext({document:{getElementById:get},fetch:async()=>({ok:false,status:502,json:async()=>safe})});
+  new Script(source).runInContext(ctx);
+  await get('kbank-probe').click.call(get('kbank-probe'));
+  assert.match(get('kbank-result').textContent,/KBank HTTP 401/);
+  assert.match(get('kbank-result').textContent,/ชนิดคำตอบธนาคาร HTML/);
+  assert.match(get('kbank-result').textContent,/ตำแหน่งรหัส ฟิลด์ fault detail errorcode/);
+  assert.match(get('kbank-result').textContent,/รหัสอยู่ในรายการที่รู้จัก ไม่ใช่/);
+  assert.doesNotMatch(get('kbank-result').textContent,/secret|raw|access_token/);
+  assert.equal(h.calls.length,0);
+});
+
 
 test('Workers-compatible Request rejects unsupported redirect modes before service IO', async () => {
   const NativeRequest = globalThis.Request;
@@ -203,3 +226,36 @@ test('admin forwards only allowlisted OAuth error categories',async()=>{
     assert.doesNotMatch(JSON.stringify(data),/secret-value|must-not-leak/);
   }
 });
+
+test('admin forwards only enumerated response metadata and the recognition boolean',async()=>{
+  const safeFields={
+    bank_response_media_type:'html',
+    bank_response_body_shape:'non_json',
+    bank_error_shape:'none',
+    bank_error_code_recognized:false,
+  };
+  const h=setup(()=>Response.json({
+    environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:401,
+    oauth_error:'invalid_client',...safeFields,
+    error_description:'must-not-leak',access_token:'must-not-leak',raw:'must-not-leak',
+  },{status:502}));
+  const response=await handle(await request(h.env),h.env);
+  assert.deepEqual(await response.json(),{
+    environment:'sandbox',transfers_enabled:false,ok:false,error:'kbank_oauth_failed',
+    upstream_status:502,bank_http_status:401,oauth_error:'invalid_client',...safeFields,
+  });
+
+  const invalid=setup(()=>Response.json({
+    environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:401,
+    bank_response_media_type:'text/html; charset=utf-8',
+    bank_response_body_shape:'<html>secret</html>',
+    bank_error_shape:'ErrorCode: secret',
+    bank_error_code_recognized:'false',
+    error_description:'must-not-leak',
+  },{status:502}));
+  const invalidResponse=await handle(await request(invalid.env),invalid.env);
+  const invalidData=await invalidResponse.json();
+  for(const key of Object.keys(safeFields)) assert.equal(invalidData[key],undefined);
+  assert.doesNotMatch(JSON.stringify(invalidData),/secret|must-not-leak|charset/);
+});
+
