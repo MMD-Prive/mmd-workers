@@ -12,8 +12,10 @@ function fixture() {
   const command = (c, b, a = owner, canonical = {}) => applySpaCommand(state, a, c, { request_key: crypto.randomUUID(), ...b }, canonical);
   const referral = command('referrals', { therapist_id: therapist.id, note: 'ให้ร้านพิจารณา' }, partner, { therapist }).id;
   command('referral-decision', { referral_id: referral, decision: 'accepted', evidence_ref: 'spa-acceptance-1' });
-  const agreement = command('agreements', { title: 'ร้าน + Partner รุ่น 1', basis: 'net_profit', shares_bps: { therapist: 5000, spa: 3000, partner: 1000, mms: 1000 }, terms_ref: 'terms-1', approval_confirmed: true }).id;
-  const service = command('services', { referral_id: referral, agreement_id: agreement, job_id: job.id, expected_amount: 100001, service_evidence: 'spa-work-order-1', costs: [{ label: 'ต้นทุนที่ตกลง', amount: 10000, evidence_ref: 'cost-1' }] }, owner, { job }).id;
+  // Persisted V1 fixture: new agreement and booking writes now require V2.
+  const agreement = 'historical-agreement', service = 'historical-service';
+  state.agreements.push({ id: agreement, title: 'Historical V1', basis: 'net_profit', shares_bps: { therapist: 5000, spa: 3000, partner: 1000, mms: 1000 }, terms_ref: 'terms-1' });
+  state.services.push({ id: service, referral_id: referral, therapist_name: therapist.name, partner_id: partner.id, job_id: job.id, expected_amount: 100001, agreement: structuredClone(state.agreements[0]), costs: [{ label: 'Historical approved cost', amount: 10000, evidence_ref: 'cost-1' }], receipts: [], payouts: [], settlement: null });
   const receipt = (amount, ref, key) => command('receipts', { service_id: service, amount, received_by: 'Relax Spa by 9', evidence_ref: ref, received_at: at, verification_confirmed: true, ...(key ? { request_key: key } : {}) });
   const settle = (canonicalJob = job) => command('settlements', { service_id: service, approval_confirmed: true }, owner, { job: canonicalJob });
   return { state, command, referral, agreement, service, receipt, settle };
@@ -68,7 +70,7 @@ test('unfinished and test jobs cannot generate approved shares', () => {
 
 test('one canonical job can only be linked once and agreement is snapshotted', () => {
   const f = fixture();
-  throws(() => f.command('services', { referral_id: f.referral, agreement_id: f.agreement, job_id: job.id }, owner, { job }), 'JOB_ALREADY_LINKED');
+  throws(() => f.command('services', { referral_id: f.referral, agreement_id: f.agreement, job_id: job.id }, owner, { job }), 'CONFIRMED_QUOTE_REQUIRED');
   f.state.agreements[0].shares_bps.partner = 9999;
   assert.equal(f.state.services[0].agreement.shares_bps.partner, 1000);
 });
@@ -102,7 +104,7 @@ test('unapproved, malformed and fractional-satang financial input fail closed', 
   const f = fixture();
   throws(() => f.receipt(0.5, 'bank-1'), 'AMOUNT_INVALID');
   throws(() => f.command('receipts', { service_id: f.service, amount: 100, evidence_ref: 'bank-1' }), 'PAYMENT_VERIFICATION_REQUIRED');
-  throws(() => f.command('agreements', { title: 'x', basis: 'net_profit', shares_bps: { therapist: 7000, spa: 3000, partner: 1000, mms: 0 }, terms_ref: 'terms-2', approval_confirmed: true }), 'SHARES_MUST_TOTAL_100');
+  throws(() => f.command('agreements', { title: 'x', basis: 'net_profit', shares_bps: { therapist: 7000, spa: 3000, partner: 1000, mms: 0 }, terms_ref: 'terms-2', approval_confirmed: true }), 'INCLUSIVE_AGREEMENT_REQUIRED');
 });
 
 class MemoryStorage {

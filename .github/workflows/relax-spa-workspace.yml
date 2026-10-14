@@ -22,5 +22,5 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --prefix partners-worker --ignore-scripts
-      - run: node --experimental-global-webcrypto --test admin-worker/relax-spa-admin.test.mjs admin-worker/mms-admin-workspace.test.mjs mms-worker/test/relax-spa-ledger.test.mjs
+      - run: node --experimental-global-webcrypto --test admin-worker/relax-spa-admin.test.mjs admin-worker/mms-admin-workspace.test.mjs mms-worker/test/relax-spa-ledger.test.mjs mms-worker/test/relax-spa-inclusive.test.mjs
       - run: npm test --prefix partners-worker
