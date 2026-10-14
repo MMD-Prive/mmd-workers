@@ -104,7 +104,7 @@ test('unapproved, malformed and fractional-satang financial input fail closed', 
   const f = fixture();
   throws(() => f.receipt(0.5, 'bank-1'), 'AMOUNT_INVALID');
   throws(() => f.command('receipts', { service_id: f.service, amount: 100, evidence_ref: 'bank-1' }), 'PAYMENT_VERIFICATION_REQUIRED');
-  throws(() => f.command('agreements', { title: 'x', basis: 'net_profit', shares_bps: { therapist: 7000, spa: 3000, partner: 1000, mms: 0 }, terms_ref: 'terms-2', approval_confirmed: true }), 'INCLUSIVE_AGREEMENT_REQUIRED');
+  throws(() => f.command('agreements', { title: 'x', basis: 'net_profit', shares_bps: { therapist: 7000, spa: 3000, partner: 1000, mms: 0 }, terms_ref: 'terms-2', approval_confirmed: true }), 'ROOM_AGREEMENT_REQUIRED');
 });
 
 class MemoryStorage {

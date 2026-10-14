@@ -26,7 +26,7 @@ test('client actor headers never replace credential-bound session', async () => 
 test('partner can refer but cannot approve money or change actor', async () => {
   let sent;
   const e = { ...env, MMS_WORKER: { fetch: async request => { sent = request; return Response.json({ ok: true }); } } };
-  for (const command of ['agreements', 'agreement-preview', 'drafts', 'quotes', 'referral-decision', 'services', 'receipts', 'refunds', 'settlements', 'payouts', 'expenses', 'close']) {
+  for (const command of ['agreements', 'agreement-preview', 'create-job', 'drafts', 'quotes', 'referral-decision', 'services', 'receipts', 'refunds', 'settlements', 'payouts', 'expenses', 'corrections', 'close']) {
     assert.equal((await handleRelaxSpaAdmin(await req('mms_partner', command, {}), e)).status, 403);
   }
   assert.equal(sent, undefined);
@@ -47,7 +47,7 @@ test('same-origin POST is required; owner read and page have no mutation', async
 test('Owner forwards v2 lifecycle and preview commands without caller actor headers', async () => {
   let seen;
   const e = { ...env, MMS_WORKER: { fetch: async r => { seen = r; return Response.json({ ok: true }); } } };
-  for (const command of ['agreement-preview', 'drafts', 'quotes', 'refunds', 'close']) {
+  for (const command of ['agreement-preview', 'create-job', 'drafts', 'quotes', 'refunds', 'close']) {
     assert.equal((await handleRelaxSpaAdmin(await req('owner', command, { request_key: 'synthetic-key' }), e)).status, 200);
     assert.equal(new URL(seen.url).pathname.endsWith('/'+command), true);
     assert.equal(seen.headers.get('x-mms-spa-role'), 'owner');
