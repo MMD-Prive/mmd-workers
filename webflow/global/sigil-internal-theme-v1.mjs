@@ -1,6 +1,6 @@
 // Shared visual layer for internal HTML served by Workers and Webflow.
 // No requests, storage, authentication, routing or business mutations.
-import { internalBrandLoader, SYSTEM_LIGHT, SYSTEM_DARK, SYMBOL_BLACK } from './sigil-brand-v1.mjs';
+import { internalBrandLoader, SYSTEM_LIGHT, SYSTEM_DARK, SYMBOL_BLACK, BRAND_SELECTOR } from './sigil-brand-v1.mjs';
 export function usesSilverWorkspace(pathname) {
   const path = String(pathname || '/').replace(/\/+$/, '') || '/';
   if (!/^\/internal\/(?:admin|ceo)(?:\/|$)/.test(path)) return false;
@@ -52,7 +52,7 @@ export function installInternalSilverTheme(doc = document, loc = location) {
     style.textContent = silver ? SILVER_WORKSPACE_CSS : SILVER_WORKSPACE_CSS.split('html[data-sigil-internal-theme=')[0];
     doc.head.appendChild(style);
   }
-  doc.querySelectorAll('.cr4__brand,.c360 .brand,#adm27 .adm27-route,.mmdop__brand,#mmd-review .mr-nav>span,main>.top>.brand,.access-card>.kicker,aside[aria-label="เมนูระบบภายใน"] > strong').forEach(node => {
+  doc.querySelectorAll(BRAND_SELECTOR).forEach(node => {
     if (node.dataset.sigilBrand === 'v1') return;
     const holder = doc.createElement('span'); holder.className = 'sigil-system-logo';
     holder.innerHTML = node.closest('.cr4__rail,aside,.access-card') ? SYSTEM_DARK : SYSTEM_LIGHT;

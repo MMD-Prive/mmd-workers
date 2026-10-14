@@ -1,3 +1,5 @@
+import { Script } from 'node:vm';
+import { internalBrandLoader } from './sigil-brand-v1.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { usesSilverWorkspace, decorateInternalSilverTheme } from './sigil-internal-theme-v1.mjs';
@@ -28,3 +30,5 @@ test('nonce-protected pages reuse their existing nonce without weakening CSP',as
   assert.match(await r.text(), /id="sigil-internal-silver-v1" nonce="test-nonce"/);
   assert.equal(r.headers.get('content-security-policy'), "script-src 'nonce-test-nonce'; style-src 'nonce-test-nonce'");
 });
+
+test('embedded brand script parses with quoted Thai sidebar selector',()=>{assert.doesNotThrow(()=>new Script(internalBrandLoader()));});
