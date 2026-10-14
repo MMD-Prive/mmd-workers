@@ -5,7 +5,8 @@
   if (path !== '/internal/admin/dashboard') return;
 
   const root = document.getElementById('adm27');
-  if (!root || root.dataset.dashboardRuntimeV3 === '1') return;
+  if (!root || root.dataset.dashboardRuntimeV4 === '1') return;
+  root.dataset.dashboardRuntimeV4 = '1';
   root.dataset.dashboardRuntimeV3 = '1';
 
   const $ = (selector) => root.querySelector(selector);
@@ -38,14 +39,23 @@
   }
 
   function hydrateDashboard(data) {
-    setApiState('ระบบพร้อม', 'is-live');
+    const partial = /บางส่วน|ยังไม่มี/.test(String(data.status?.data || ''));
+    setApiState(partial ? 'ข้อมูลบางส่วน · ตรวจสถานะระบบ' : 'ข้อมูลล่าสุดจากระบบ', partial ? 'is-bad' : 'is-live');
 
     const counts = data.counts || {};
-    ['urgent', 'payments', 'jobs', 'members'].forEach((key) => setText(`[data-count="${key}"]`, counts[key]));
+    ['payments', 'jobs', 'members'].forEach((key) => setText(`[data-count="${key}"]`, counts[key]));
+    const visibleActions = [...(data.todos || []), ...(data.boss || [])];
+    setText('[data-count="urgent"]', new Set(visibleActions.map((item) => item.href + '|' + item.title)).size);
+    setText('[data-updated-at]', data.generated_at ? 'อ่านล่าสุด ' + new Date(data.generated_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) + ' · ตัวเลขจากคิวที่อ่านได้' : 'ยังไม่มีเวลาของข้อมูล');
 
     const todos = Array.isArray(data.todos) ? data.todos : [];
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     const focus = data.focus || {};
+    const next = $('[data-focus-next]');
+    if (next) {
+      next.href = href(focus.href || todos[0]?.href, '/internal/admin/jobs/all');
+      next.textContent = todos.length ? 'เปิดเรื่องที่ต้องจัดการ →' : 'ดูงานทั้งหมด →';
+    }
     setText('[data-focus-title]', todos.length
       ? (focus.title || 'ต้องให้เปอร์จัดการ ' + todos.length + ' รายการ')
       : jobs.length ? 'คิวเร่งด่วนเคลียร์แล้ว · ตามงานวันนี้' : 'วันนี้ยังไม่มีคิวเร่งด่วน');
@@ -115,8 +125,95 @@
     const todoState = $('[data-todo-state]');
     if (todoState) {
       todoState.textContent = Array.isArray(data.todos) && data.todos.length ? `${data.todos.length} รายการ` : 'เคลียร์';
-      todoState.className = 'adm27-chip is-live';
+      todoState.className = partial ? 'adm27-chip is-wait' : 'adm27-chip is-live';
     }
+  }
+
+  function organizeDailyHome() {
+    const main = $('.adm27-main');
+    const brief = $('.adm27-brief');
+    const summary = $('.adm27-summary');
+    if (main && brief && summary) brief.after(summary);
+    const destinations = { urgent: '#daily-queue', payments: '/internal/admin/payments', jobs: '/internal/admin/jobs/all', members: '/internal/admin/member-intelligence' };
+    const labels = { urgent: 'เรื่องที่แสดงในคิว', payments: 'พร้อมตรวจเงิน', jobs: 'งานวันนี้', members: 'สมาชิกควรตรวจ' };
+    const queue = $('[data-todo-list]')?.closest('.adm27-card');
+    if (queue) queue.id = 'daily-queue';
+    if (summary) summary.querySelectorAll('[data-count]').forEach((count) => {
+      const key = count.dataset.count;
+      const card = count.closest('article');
+      if (!card || !destinations[key] || card.querySelector('a')) return;
+      const link = document.createElement('a');
+      link.href = destinations[key];
+      link.style.cssText = 'display:flex;flex-direction:column;gap:4px;color:inherit;text-decoration:none';
+      while (card.firstChild) link.appendChild(card.firstChild);
+      card.appendChild(link);
+      const label = link.querySelector('span');
+      if (label) label.textContent = labels[key];
+      const note = link.querySelector('small');
+      if (note) note.textContent = 'เปิดรายละเอียด →';
+    });
+    const actions = $('.adm27-focusbody .adm27-actions');
+    if (actions && !actions.querySelector('[data-focus-next]')) {
+      const next = document.createElement('a');
+      next.dataset.focusNext = '1';
+      next.className = 'adm27-btn is-primary';
+      next.href = '/internal/admin/jobs/all';
+      next.textContent = 'ดูงานทั้งหมด →';
+      actions.prepend(next);
+    }
+    if (brief && !$('[data-updated-at]')) {
+      const updated = document.createElement('p');
+      updated.dataset.updatedAt = '1';
+      updated.className = 'adm27-footnote';
+      updated.textContent = 'กำลังอ่านเวลาของข้อมูล';
+      brief.appendChild(updated);
+    }
+    const business = $('.adm27-business');
+    if (business && !business.closest('details')) {
+      const details = document.createElement('details');
+      details.className = 'adm27-disclosure';
+      const label = document.createElement('summary');
+      label.textContent = 'ภาพธุรกิจ · Audience · รายรับ';
+      business.before(details);
+      details.append(label, business);
+    }
+    for (const [id, label] of [['owner-all-work-20260925', 'เครื่องมือทั้งหมด'], ['owner-historical-finance-20260924', 'ยอดย้อนหลังที่มีหลักฐาน']]) {
+      const section = document.getElementById(id);
+      if (!section || section.closest('details')) continue;
+      const drawer = document.createElement('details');
+      drawer.className = 'adm27-disclosure';
+      drawer.style.cssText = 'margin:16px auto;max-width:1200px;padding:16px;border:1px solid currentColor;border-radius:14px';
+      const title = document.createElement('summary');
+      title.textContent = label;
+      title.style.cssText = 'cursor:pointer;font-weight:600';
+      section.before(drawer);
+      drawer.append(title, section);
+    }
+    if (main && !$('[data-daily-flow]')) {
+      const flow = document.createElement('nav');
+      flow.dataset.dailyFlow = '1';
+      flow.className = 'adm27-daily';
+      flow.setAttribute('aria-label', 'ขั้นตอนทำงาน');
+      flow.innerHTML = '<a href="/internal/admin/customer-data">1 · หาลูกค้า / ตรวจตัวตน</a><a href="/internal/admin/jobs/create-job">2 · สร้างงาน / ยืนยัน</a><a href="/internal/admin/payments">3 · ตรวจเงิน</a><a href="/internal/admin/jobs/all">4 · ติดตาม / ปิดงาน</a>';
+      const owner = $('.adm27-owner');
+      if (owner) owner.before(flow); else main.appendChild(flow);
+    }
+    // An in-page link must open its disclosure, including clicks after page load.
+    function revealHash() {
+      const id = location.hash.slice(1);
+      const target = id && document.getElementById(id);
+      if (!target) return;
+      if (target.tagName === 'DETAILS') target.open = true;
+      let parent = target.parentElement;
+      while (parent) { if (parent.tagName === 'DETAILS') parent.open = true; parent = parent.parentElement; }
+      target.scrollIntoView({ block: 'start' });
+    }
+    window.addEventListener('hashchange', revealHash);
+    root.addEventListener('click', (event) => {
+      const a = event.target.closest('a[href^="#"]');
+      if (a && a.getAttribute('href') === location.hash) revealHash();
+    });
+    revealHash();
   }
 
   function canonicalizePrimaryActions() {
@@ -187,16 +284,28 @@
       }
       const metrics = data.metrics || {};
       card.innerHTML = `<span>ปฏิทินวันนี้</span><strong>${esc(metrics.sessions ?? 0)}</strong><small>Hold ${esc(metrics.holds ?? 0)} · Conflict ${esc(metrics.conflicts ?? 0)} · Cal ${esc(metrics.cal_linked ?? 0)}</small>`;
-      card.onclick = () => { location.href = '/internal/admin/calendar'; };
+      const link = document.createElement('a');
+      link.href = '/internal/admin/calendar';
+      link.style.cssText = 'color:inherit;text-decoration:none';
+      while (card.firstChild) link.appendChild(card.firstChild);
+      card.appendChild(link);
       card.style.cursor = 'pointer';
     } catch (_) {}
   }
 
+  let loadSequence = 0;
+  let currentRequest;
   async function load() {
+    const sequence = ++loadSequence;
+    currentRequest?.abort();
+    const controller = new AbortController();
+    currentRequest = controller;
+    const timeout = setTimeout(() => controller.abort(), 20000);
     setApiState('กำลังเชื่อมระบบ');
     try {
-      const response = await fetch('/v1/admin/dashboard', { credentials: 'include', cache: 'no-store', headers: { accept: 'application/json' } });
+      const response = await fetch('/v1/admin/dashboard', { signal: controller.signal, credentials: 'include', cache: 'no-store', headers: { accept: 'application/json' } });
       const data = await response.json().catch(() => null);
+      if (sequence !== loadSequence) return;
       if (response.status === 401 || response.status === 403) {
         location.replace('/internal/admin/login?next=' + encodeURIComponent(location.pathname + location.search));
         return;
@@ -205,16 +314,22 @@
       hydrateDashboard(data);
       hydrateCalendar();
     } catch (error) {
+      if (sequence !== loadSequence) return;
       setApiState('ระบบยังไม่พร้อม', 'is-bad');
       setText('[data-focus-title]', 'ยังโหลดคิวไม่ได้');
       setText('[data-focus-copy]', 'กดโหลดใหม่เพื่อตรวจรายการจากระบบอีกครั้ง');
       const todoState = $('[data-todo-state]');
       if (todoState) { todoState.textContent = 'ตรวจข้อมูล'; todoState.className = 'adm27-chip is-wait'; }
       console.warn('MMD dashboard runtime v3', error);
+      ['urgent', 'payments', 'jobs', 'members'].forEach((key) => setText(`[data-count="${key}"]`, '—'));
+      ['todo', 'job', 'money', 'member', 'boss'].forEach((key) => renderList(`[data-${key}-list]`, [], 'ยังอ่านคิวไม่ได้ · กดโหลดใหม่', () => ''));
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   canonicalizePrimaryActions();
+  organizeDailyHome();
   decorateLatestUpdate();
   const observer = new MutationObserver(() => {
     decorateLatestUpdate();

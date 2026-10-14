@@ -125,7 +125,8 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   const membershipReview = ownerActionMembershipReviewItems(memberRecords);
 
   const money = buildMoneyList(ownerPaymentReview);
-  const jobs = buildJobList(sessionRecords, now);
+  const operationalJobs = buildOperationalJobList(sessionRecords, now);
+  const jobs = operationalJobs.slice(0, 6);
   const members = buildMemberList(memberRecords, now);
   const reconfirm = reconfirmSessionsResult.status === "fulfilled"
     ? buildReconfirmOverview(reconfirmSessionsResult.value, now, tomorrow)
@@ -135,14 +136,16 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
 
   const counts = {
     urgent: todos.length + boss.length,
-    payments: paymentQueue.length,
+    payments: paymentQueueResult.status === "fulfilled" ? ownerPaymentReview.length : null,
+    payment_evidence_total: paymentQueueResult.status === "fulfilled" ? paymentQueue.length : null,
     payment_review: ownerPaymentReview.length,
     // Additive owner-surface aliases for compact Internal/Lovable task cards.
     // These are projections of the same canonical Payment Review queue, not new truth.
     payment_slips_pending: ownerPaymentReview.length,
     payments_review_pending: ownerPaymentReview.length,
     historical_recovery: historicalPending.length,
-    jobs: jobs.length,
+    jobs: sessionsResult.status === "fulfilled" ? operationalJobs.filter((job) => job.job_date === bangkokDateOffset(now, 0)).length : null,
+    jobs_upcoming: sessionsResult.status === "fulfilled" ? operationalJobs.filter((job) => job.job_date > bangkokDateOffset(now, 0)).length : null,
     jobs_need_confirm: Number(reconfirm.pending || 0) + Number(reconfirm.overdue || 0),
     members: members.length,
     membership_review: membershipReview.length,
@@ -163,7 +166,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     },
     jobs_need_confirm: {
       count: counts.jobs_need_confirm,
-      href: "/internal/admin/jobs",
+      href: "/internal/admin/jobs/all?ops=confirm",
       authority: "session-reconfirm-runtime",
     },
     membership_review: {
@@ -213,6 +216,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     layer: "core",
     source: "admin-worker",
     generated_at: now.toISOString(),
+    counts_scope: "bounded_loaded_records",
     focus,
     counts,
     queues,
@@ -401,6 +405,7 @@ function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (money.length) {
     return {
       title: "ตรวจเงินก่อน",
+      href: money[0].href,
       text: `มี Payment Review รอตรวจ ${money.length} รายการ อย่าเพิ่งเปิดสิทธิ์หรือเริ่มงานที่ผูกกับยอดนี้จนกว่าจะตรวจเสร็จ`,
     };
   }
@@ -408,6 +413,7 @@ function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (historicalPending.length) {
     return {
       title: "ตรวจ Historical Recovery",
+      href: "/internal/admin/payments/historical-backfill",
       text: `มีสลิปย้อนหลังรอตรวจ ${historicalPending.length} รายการ เปิด Historical Backfill เพื่อจับคู่และยืนยันหลักฐาน`,
     };
   }
@@ -415,6 +421,7 @@ function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (boss.length) {
     return {
       title: "ส่งเคสให้ Boss Per ดู",
+      href: boss[0].href,
       text: `มีเคสพิเศษ ${boss.length} รายการที่ไม่ควรให้แอดมินตัดสินใจเอง`,
     };
   }
@@ -422,6 +429,7 @@ function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (jobs.length) {
     return {
       title: "เช็กงานวันนี้",
+      href: "/internal/admin/jobs/all",
       text: `มีงาน ${jobs.length} รายการที่ควรดูสถานะ เวลา และการคอนเฟิร์ม`,
     };
   }
@@ -429,6 +437,7 @@ function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (members.length) {
     return {
       title: "ดูสมาชิกที่ต้องต่ออายุ",
+      href: "/internal/admin/member-intelligence",
       text: `มีสมาชิก ${members.length} รายการที่ควรตรวจสถานะหรือต่ออายุ`,
     };
   }
@@ -455,7 +464,7 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
     todos.push({
       title: `ตรวจเงินของ ${money[0].title}`,
       text: money[0].text,
-      href: "/internal/admin/payments",
+      href: money[0].href || "/internal/admin/payments",
       icon: "฿",
       tag: "Payment Review",
       color: "red",
@@ -576,12 +585,14 @@ function buildMoneyList(items) {
         amount,
         proof_id: firstText(item.proof_id),
         can_approve: item.can_approve === true,
-        href: "/internal/admin/payments",
+        href: /^[A-Za-z0-9_-]{1,80}$/.test(String(item.proof_id || ""))
+          ? `/internal/admin/payments?proof_id=${encodeURIComponent(item.proof_id)}`
+          : "/internal/admin/payments",
       };
     });
 }
 
-export function buildJobList(records, now = new Date()) {
+export function buildJobList(records, now = new Date(), limit = 6) {
   const items = (Array.isArray(records) ? records : []).map((record) => {
     const fields = record.fields || {};
     const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
@@ -614,7 +625,19 @@ export function buildJobList(records, now = new Date()) {
     };
   });
 
-  return sortDashboardJobs(items, now).slice(0, 6);
+  return sortDashboardJobs(items, now).slice(0, limit);
+}
+
+// Daily home excludes terminal and past records. History remains on All Jobs.
+// Counts describe the bounded records loaded by this dashboard, not the full archive.
+export function buildOperationalJobList(records, now = new Date()) {
+  const today = bangkokDateOffset(now, 0);
+  const active = (Array.isArray(records) ? records : []).filter((record) => {
+    const fields = record.fields || {};
+    const state = normalizeWord(firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status));
+    return !/(?:^|_)(cancelled|canceled|completed|finished|closed|void|voided|rejected)(?:$|_)/.test(state);
+  });
+  return buildJobList(active, now, active.length).filter((job) => job.job_date && job.job_date >= today);
 }
 
 export function buildReconfirmOverview(records, now = new Date(), jobDate = bangkokDateOffset(now, 1)) {
