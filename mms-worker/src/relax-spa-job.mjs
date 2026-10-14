@@ -47,6 +47,7 @@ export async function produceSpaJob(env, service) {
   if (existing) {
     let stored;try{stored=JSON.parse(existing.fields?.['Internal Payload JSON'] || '{}').spa_quote;}catch{fail('JOB_SNAPSHOT_MISMATCH');}
     if (JSON.stringify(stored)!==JSON.stringify(quote) || existing.fields['Duration Minutes']!==a.duration_minutes || existing.fields['Therapist Payout THB']!==plan.shares.therapist/100) fail('JOB_SNAPSHOT_MISMATCH');
+    if (['Service','Duration Minutes','Service Start At','Safe Area Label','Travel Label','Therapist Payout THB','Payout Note'].some(key=>existing.fields[key]!==fields[key]) || existing.fields['ETA Label']) fail('JOB_SNAPSHOT_MISMATCH');
     if (['Cancelled','Expired'].includes(existing.fields['Job Status'])) fail('CANONICAL_JOB_MISMATCH');
   } else await upsert(table('JOBS'),'Job ID',fields);
   // Offers expose only the agreed Therapist amount and approved deductions.
@@ -56,6 +57,7 @@ export async function produceSpaJob(env, service) {
   if (oldOffer) {
     let stored;try{stored=JSON.parse(oldOffer.fields['Safe Payload JSON'] || '{}');}catch{fail('JOB_SNAPSHOT_MISMATCH');}
     if (!stored || typeof stored!=='object' || Array.isArray(stored) || Object.keys(stored).length!==Object.keys(safeSnapshot).length || Object.entries(safeSnapshot).some(([key,value])=>stored[key]!==value)) fail('JOB_SNAPSHOT_MISMATCH');
+    if (oldOffer.fields['Expires At']!==safeSnapshot.expires_at || oldOffer.fields['Safe Area Label']!==safeSnapshot.area_label || oldOffer.fields['Travel Label']!==safeSnapshot.travel_label || oldOffer.fields['ETA Label']) fail('JOB_SNAPSHOT_MISMATCH');
     if (oldOffer.fields['Job ID']!==c.job_id || oldOffer.fields['Therapist ID']!==a.therapist_id || oldOffer.fields['Payout THB']!==plan.shares.therapist/100) fail('JOB_SNAPSHOT_MISMATCH');
   }
   // Acceptance is immediately possible once the offer row is visible. Initialize first.

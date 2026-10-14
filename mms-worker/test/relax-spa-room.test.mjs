@@ -130,6 +130,31 @@ test('retry rejects an existing offer whose displayed snapshot differs without o
  }finally{globalThis.fetch=original;}
 });
 
+test('conflicting display fallback or expiry fields block retry without rewriting accepted records',async()=>{
+ const f=fixture(),x=externalFixture(),original=globalThis.fetch;globalThis.fetch=x.fetch;
+ f.service.job_creation={job_id:await spaJobId(f.service.id),service_start_at:new Date(Date.now()+86400000).toISOString()};
+ try{await produceSpaJob(x.env,f.service);
+ x.db.Jobs[0].fields['Job Status']='Accepted';x.db.Offers[0].fields['Offer Status']='Accepted';
+ for(const [table,key,value] of [['Jobs','Service','Wrong service'],['Jobs','Service Start At','2027-01-01T00:00:00Z'],['Jobs','Safe Area Label','Wrong venue'],['Jobs','Travel Label','extra travel charged'],['Jobs','Payout Note','Wrong deduction'],['Jobs','ETA Label','unagreed'],['Offers','Expires At','2027-01-01T00:00:00Z'],['Offers','Safe Area Label','Wrong venue'],['Offers','Travel Label',null],['Offers','ETA Label','unagreed']]){
+  const fields=x.db[table][0].fields,was=fields[key],existed=Object.hasOwn(fields,key);fields[key]=value;
+  const before=JSON.stringify(x.db),writes=x.calls.filter(c=>c.method==='PATCH').length;
+  await assert.rejects(()=>produceSpaJob(x.env,f.service),e=>e.code==='JOB_SNAPSHOT_MISMATCH',table+': '+key);
+  assert.equal(JSON.stringify(x.db),before);assert.equal(x.calls.filter(c=>c.method==='PATCH').length,writes);
+  if(existed)fields[key]=was;else delete fields[key];
+ }
+ }finally{globalThis.fetch=original;}
+});
+
+test('lost response after offer write retries the same accepted job and offer without updates',async()=>{
+ const f=fixture(),x=externalFixture(),original=globalThis.fetch;
+ f.service.job_creation={job_id:await spaJobId(f.service.id),service_start_at:new Date(Date.now()+86400000).toISOString()};
+ let lose=true;globalThis.fetch=async(url,opts)=>{const response=await x.fetch(url,opts);if(lose&&url.includes(x.env.AIRTABLE_OFFERS_TABLE_ID)&&opts?.method==='PATCH'){lose=false;throw Error('synthetic lost offer response');}return response;};
+ try{await assert.rejects(()=>produceSpaJob(x.env,f.service));assert.equal(x.db.Offers.length,1);
+ x.db.Jobs[0].fields['Job Status']='Accepted';x.db.Offers[0].fields['Offer Status']='Accepted';const before=JSON.stringify(x.db);
+ await produceSpaJob(x.env,f.service);assert.equal(JSON.stringify(x.db),before);assert.equal(x.calls.filter(c=>c.method==='PATCH').length,2);
+ }finally{globalThis.fetch=original;}
+});
+
 test('missing canonical price/travel or wrong venue cannot link a quote; approved payee required',()=>{
  const f=fixture(),j={id:'mmsjob_'+'b'.repeat(24),therapist_id:therapist.id,status:'Completed',duration_minutes:90,therapist_amount:60001,customer_amount:100002,travel_amount:0,travel_included_confirmed:true,venue_id:'relax-spa-by-9',is_test:false};
  const link={service_id:f.service.id,job_id:j.id,duration_minutes:90,service_evidence:'synthetic-work'};

@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-export function uploadMmsVersion({ config, run, tag, message, secretsFile }) {
+export function uploadMmsVersion({ config, run, tag, message, secretsFile, allowMigration = false }) {
   if (config.name !== 'mms-worker' || (config.routes || []).length || config.route || (config.triggers?.crons || []).length) {
     throw Error('MMS migration deployment must use the route-free mms-worker config');
   }
@@ -15,6 +15,7 @@ export function uploadMmsVersion({ config, run, tag, message, secretsFile }) {
   const confirmedMigration = /\[code:\s*10211\]/.test(first.output)
     && /includes a Durable Object migration, but migrations must be fully applied via a non-versioned deployment/.test(first.output);
   if (!confirmedMigration) throw Error('Version upload failed without confirmed Cloudflare migration error 10211; refusing direct deploy');
+  if (!allowMigration) throw Error('Migration requires separate explicit approval; refusing direct deploy');
   if (!(config.migrations || []).length) throw Error('Cloudflare reported migration 10211 but config has no migrations');
   const direct = run(['deploy', ...flags]);
   if (direct.status !== 0) throw Error('MMS migration deployment failed; refusing version promotion');
