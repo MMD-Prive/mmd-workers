@@ -1,3 +1,4 @@
+import { withMmsInternalBranding } from './mms-internal-branding.mjs';
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
 import { renderRelaxSpaPage } from './relax-spa-page.js';
 const PAGE = '/internal/admin/mms/relax-spa';
@@ -12,7 +13,7 @@ export async function handleRelaxSpaAdmin(request, env = {}) {
   if (!actor || !['owner', 'mms_partner'].includes(actor.role)) return json('SPA_SESSION_REQUIRED', 401);
   if (path === PAGE) {
     if (!['GET', 'HEAD'].includes(request.method)) return json('METHOD_NOT_ALLOWED', 405);
-    return new Response(request.method === 'HEAD' ? null : renderRelaxSpaPage(), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin' } });
+    return new Response(request.method === 'HEAD' ? null : withMmsInternalBranding(renderRelaxSpaPage()), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin' } });
   }
   const command = path.slice(API.length + 1);
   if (!COMMANDS.has(command)) return json('NOT_FOUND', 404);
