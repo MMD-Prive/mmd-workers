@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - "mms-worker/**"
+      - "scripts/upload-mms-worker-version.mjs"
+      - ".github/workflows/deploy-mms-worker.yml"
       - ".github/workflows/test-mms-worker.yml"
   push:
     branches-ignore:
       - main
     paths:
       - "mms-worker/**"
+      - "scripts/upload-mms-worker-version.mjs"
+      - ".github/workflows/deploy-mms-worker.yml"
       - ".github/workflows/test-mms-worker.yml"
   workflow_dispatch:
 
