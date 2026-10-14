@@ -29,6 +29,28 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @keyframes mmdPulse{from{transform:translateX(-20%);opacity:.65}to{transform:translateX(155%);opacity:1}}
 @media(max-width:359px){.mmd-digital-shell{padding-left:15px;padding-right:15px}.mmd-digital-title{font-size:25px}}
 @media(prefers-reduced-motion:reduce){.mmd-digital-meter>span{animation:none;width:62%}}
+/* Compact mobile welcome: scoped so shared page typography cannot enlarge this shell. */
+body .mmd-digital-app{width:min(100%,480px)}
+body .mmd-digital-shell{padding:calc(24px + env(safe-area-inset-top)) 24px calc(36px + env(safe-area-inset-bottom))}
+body .mmd-digital-top{align-items:flex-start;gap:16px}
+body .mmd-digital-brand{font-size:14px;letter-spacing:.08em;font-weight:700}
+body .mmd-digital-brand small{font-size:9px;line-height:1.5;letter-spacing:.1em;max-width:150px}
+body .mmd-digital-pill{font-size:10px;font-weight:500;padding:7px 10px;max-width:46%;white-space:normal;text-align:center;background:transparent}
+body .mmd-digital-kicker{margin:40px 0 12px;font-size:10px;font-weight:600;letter-spacing:.12em}
+body .mmd-digital-title{font-size:26px;line-height:1.5;letter-spacing:0;font-weight:600;text-wrap:balance}
+body .mmd-digital-sub{margin:16px 0 0;font-size:14px;line-height:1.85;color:#c0c0b5}
+body .mmd-digital-card{margin-top:28px;border-radius:14px;background:rgba(255,255,255,.035);border-color:rgba(231,204,137,.18);box-shadow:none}
+body .mmd-digital-row{display:block;padding:20px}
+body .mmd-digital-orb{display:none}
+body .mmd-digital-row strong{font-size:15px;font-weight:600;line-height:1.65}
+body .mmd-digital-row p{margin:8px 0 0;font-size:13px;line-height:1.85;color:#c0c0b5}
+body .mmd-digital-action{min-height:52px;margin-top:24px;padding:14px 20px;border-radius:12px;font-size:14px;font-weight:600;line-height:1.65;letter-spacing:0;text-align:center;text-wrap:balance}
+body .mmd-digital-detail{display:block;margin-top:18px;font-size:12px;line-height:1.85;color:#aaa99c;text-align:left}
+body .mmd-digital-detail a{color:var(--mmd-gold);text-underline-offset:3px}
+body .mmd-digital-meter{height:2px}
+body .mmd-digital-app:before{display:none}
+@media(max-width:359px){body .mmd-digital-shell{padding-left:20px;padding-right:20px}body .mmd-digital-title{font-size:24px}}
+
 `;
 
 export function modelLiffDigitalBootstrapHtml({
