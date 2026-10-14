@@ -1,0 +1,25 @@
+name: Broadcast flow contracts
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/job-board-owner-publish.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/test/*broadcast*.test.mjs"
+      - "admin-worker/test/job-board-owner-publish.test.mjs"
+      - "public-access-worker/**"
+      - "shared/model-job-board-links.mjs"
+      - ".github/workflows/broadcast-flow-ci.yml"
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test admin-worker/test/broadcast-complete-flow.test.mjs admin-worker/test/job-board-owner-publish.test.mjs public-access-worker/test/public-job-board-v2.test.mjs shared/model-job-board-links.test.mjs admin-worker/model-job-board-handoff.test.mjs model-dashboard-presentation-worker/model-job-board-owner-alias.test.mjs
+      - run: npm ci --prefix public-access-worker/test-runtime --no-audit --no-fund
+      - run: npm test --prefix public-access-worker/test-runtime

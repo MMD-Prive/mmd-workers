@@ -226,7 +226,7 @@ test("owner short link renders a Per-led job-first landing", async () => {
   assert.match(page, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
   assert.match(page, /t\.me\/per_mmd/);
   assert.doesNotMatch(page, /LINE ใช้ยืนยันตัวตน|ยืนยันตัวตน/);
-  assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
+  assert.doesNotMatch(page.replace(/<(style|script)[\s\S]*?<\/\1>|<!--[\s\S]*?-->/g, ""), /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.match(page, /https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq\//);
   assert.match(page, /intent=job_board/);
   assert.match(page, new RegExp(created.job.id));
@@ -242,8 +242,13 @@ test("owner short link renders a Per-led job-first landing", async () => {
   assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);
 
   const direct = await call(testEnv, "/public/api/jobs");
-  assert.equal(direct.status, 302);
-  const login = new URL(direct.headers.get("location"));
+  assert.equal(direct.status, 200);
+  const publicDetail = await call(testEnv, `/public/api/jobs/${created.job.id}`);
+  assert.equal(publicDetail.status, 200);
+  assert.match(await publicDetail.text(), /10,000 ถึงตัว/);
+  const application = await call(testEnv, `/public/api/jobs/${created.job.id}/apply`);
+  assert.equal(application.status, 302);
+  const login = new URL(application.headers.get("location"));
   assert.equal(login.origin, "https://www.mmdbkk.com");
   assert.equal(login.pathname, "/sigil/model/login");
   assert.equal(login.searchParams.get("intent"), "job_board");
@@ -268,7 +273,7 @@ test("branded short link renders an existing canonical job created before aliase
   assert.match(page, /สุขุมวิท/);
   assert.match(page, /miniapp\.line\.me\/2010864854-N34SgCqq/);
   assert.match(page, /MMD JOB · CONFIDENTIAL/);
-  assert.doesNotMatch(page, /PRIVATE JOB|SIGIL · PRIVATE JOB/);
+  assert.doesNotMatch(page.replace(/<(style|script)[\s\S]*?<\/\1>|<!--[\s\S]*?-->/g, ""), /PRIVATE JOB|SIGIL · PRIVATE JOB/);
   assert.doesNotMatch(page, /สวัสดีครับ|ยินดีที่ได้รู้จัก/);
   assert.match(page, /data-mmd-job-miniapp-handoff="v1"/);
   assert.match(page, /window\.location\.replace\(target\)/);
@@ -647,4 +652,23 @@ test("existing public-access health route still delegates to the original worker
   assert.equal(response.status, 200);
   assert.equal(body.worker, "public-access-worker");
   assert.equal(body.version, "v1");
+});
+
+
+test("anonymous Private teaser and interest require canonical Model login, not owner credentials", async () => {
+  const testEnv = env();
+  const created = await ownerCreate(testEnv, { title: "PRIVATE TITLE", owner_note: "OWNER-NOTE-NEVER-MODEL", budget_disclosure_approved: false });
+  const detail = await call(testEnv, `/public/api/jobs/${created.job.id}`);
+  assert.equal(detail.status, 200);
+  const page = await detail.text();
+  assert.doesNotMatch(page, /PRIVATE TITLE|10,000|OWNER-NOTE-NEVER-MODEL|สุขุมวิท/);
+  for (const action of ["reveal", "interest"]) {
+    const response = await call(testEnv, `/public/api/jobs/${created.job.id}/${action}`, { method: "POST", body: { fast_lane: true }, headers: { "x-internal-token": "owner-test-token" } });
+    assert.equal(response.status, 401);
+  }
+  const cookie = await anonymousCookie(testEnv);
+  const reveal = await call(testEnv, `/public/api/jobs/${created.job.id}/reveal`, { method: "POST", headers: { cookie } });
+  const opened = await call(testEnv, `/public/api/jobs/${created.job.id}`, { headers: { cookie: `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}` } });
+  assert.equal(opened.status, 200);
+  assert.doesNotMatch(await opened.text(), /10,000|OWNER-NOTE-NEVER-MODEL/);
 });

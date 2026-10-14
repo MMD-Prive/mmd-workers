@@ -1,5 +1,3 @@
-import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
-
 export const ADMIN_JOB_BOARD_PUBLISH_PATH = "/v1/admin/job-board/publish";
 const CUSTOMER_GENDERS = new Set(["male", "female", "couple", "mixed", "unspecified"]);
 
@@ -19,7 +17,7 @@ function json(value, status = 200) {
 }
 
 function actorAllowed(actor) {
-  return actor && (actor.role === "owner" || actor.role === "admin");
+  return actor?.id && (actor.role === "owner" || actor.role === "admin");
 }
 
 function normalizeGender(value) {
@@ -27,7 +25,7 @@ function normalizeGender(value) {
   return CUSTOMER_GENDERS.has(gender) ? gender : "unspecified";
 }
 
-function normalizePublishInput(body = {}) {
+export function normalizePublishInput(body = {}) {
   const boardText = clean(body.board_text || body.listing_description || body.brief, 1000);
   if (!boardText) throw Object.assign(new Error("job_board_text_required"), { status: 400 });
   if (String(body.board_text || body.listing_description || body.brief || "").trim().length > 1000) {
@@ -75,62 +73,59 @@ export function isAdminJobBoardPublishRequest(path, method) {
   return path === ADMIN_JOB_BOARD_PUBLISH_PATH && method === "POST";
 }
 
-export async function handleAdminJobBoardPublish(request, env, actor) {
-  if (!actorAllowed(actor)) return json({ ok: false, error: "owner_admin_session_required" }, 401);
-  if (typeof env.PUBLIC_JOB_BOARD_WORKER?.fetch !== "function") {
-    return json({ ok: false, error: "public_job_board_binding_required" }, 503);
-  }
-
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return json({ ok: false, error: "invalid_json" }, 400);
-  }
-
-  let input;
+export const ADMIN_BROADCAST_READ_PREFIX = "/v1/admin/jobs/broadcast";
+export function isAdminBroadcastReadRequest(path, method) {
+  return method === "GET" && (path === ADMIN_BROADCAST_READ_PREFIX || path.startsWith(`${ADMIN_BROADCAST_READ_PREFIX}/`));
+}
+async function ownerScope(actor) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`broadcast-owner:${actor.id}`));
+  return [...new Uint8Array(bytes)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+async function bridge(request, env, actor, path, body) {
+  if (!actorAllowed(actor)) return json({ ok: false, error: "owner_admin_session_required", outcome: "rejected" }, 401);
+  if (typeof env.PUBLIC_JOB_BOARD_WORKER?.fetch !== "function") return json({ ok: false, error: "public_job_board_binding_required", outcome: "uncertain" }, 503);
   try {
-    input = normalizePublishInput(body);
-  } catch (error) {
-    return json({ ok: false, error: clean(error?.message, 120) || "job_board_publish_invalid" }, error?.status || 400);
+    const headers = { accept: "application/json", "x-mmd-owner-scope": await ownerScope(actor) };
+    if (body) {
+      headers["content-type"] = "application/json";
+      headers["idempotency-key"] = request.headers.get("idempotency-key");
+    }
+    const upstream = await env.PUBLIC_JOB_BOARD_WORKER.fetch(new Request(`https://public-job-board.internal/__internal/job-board/${path}`, {
+      method: body ? "POST" : "GET", headers, ...(body ? { body: JSON.stringify(body) } : {}),
+    }));
+    const data = await upstream.json();
+    if (!data || typeof data !== "object") throw new Error("invalid_response");
+    if (!upstream.ok || data.ok !== true) return json(data, upstream.status >= 400 ? upstream.status : 502);
+    if (!body) return json(data);
+    if (!data.job?.id || !data.job?.broadcast_url) throw new Error("invalid_response");
+    const broadcastUrl = data.job.broadcast_url;
+    if (!/^https:\/\/(?:www\.)?mmdbkk\.com\/j\/[A-F0-9]{12}$/i.test(broadcastUrl)) throw new Error("invalid_response");
+    return json({ ...data, job_id: data.job.id, broadcast_url: broadcastUrl,
+      board_destination: `https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(data.job.id)}`,
+      authority: { listing: "public-access-worker", model_identity: "admin-worker", booking: "owner_review", payment: "payments-worker" },
+    });
+  } catch {
+    return json({ ok: false, error: "job_board_read_or_publish_unavailable", outcome: "uncertain" }, 503);
   }
-
-  const upstream = await env.PUBLIC_JOB_BOARD_WORKER.fetch(
-    new Request("https://public-job-board.internal/__internal/job-board/publish", {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(input),
-    }),
-  );
-  const data = await upstream.json().catch(() => null);
-  if (!upstream.ok || data?.ok !== true || !data?.job?.id || !data?.job?.broadcast_url) {
-    return json({
-      ok: false,
-      error: clean(data?.error, 120) || "job_board_publish_failed",
-    }, upstream.status >= 400 ? upstream.status : 502);
-  }
-
-  const fallbackBroadcastUrl = buildModelJobBoardBroadcastLink({
-    source: "line_model_group",
-    job_id: data.job.id,
-  });
-  const upstreamBroadcastUrl = clean(data.job.broadcast_url, 300);
-  const broadcastUrl = /^https:\/\/(?:www\.)?mmdbkk\.com\/j\/[A-F0-9]{12}$/i.test(upstreamBroadcastUrl)
-    ? upstreamBroadcastUrl
-    : fallbackBroadcastUrl;
-
-  return json({
-    ok: true,
-    job: {
-      ...data.job,
-      broadcast_url: broadcastUrl,
-    },
-    job_id: data.job.id,
-    broadcast_url: broadcastUrl,
-    board_destination: `https://sigil.mmdbkk.com/public/api/jobs/${encodeURIComponent(data.job.id)}`,
-    authority: {
-      listing: "public-access-worker",
-      model_identity: "admin-worker",
-      booking: "owner_review",
-      payment: "payments-worker",
-    },
-  });
+}
+export async function handleAdminBroadcastRead(request, env, actor) {
+  const url = new URL(request.url);
+  const suffix = url.pathname.slice(ADMIN_BROADCAST_READ_PREFIX.length);
+  if (suffix === "" || suffix === "/") return bridge(request, env, actor, `jobs${url.search}`);
+  if (suffix === "/status") return bridge(request, env, actor, `status${url.search}`);
+  if (/^\/[A-Za-z0-9][A-Za-z0-9_-]{2,99}$/.test(suffix)) return bridge(request, env, actor, `jobs${suffix}`);
+  return json({ ok: false, error: "not_found" }, 404);
+}
+export async function handleAdminJobBoardPublish(request, env, actor) {
+  if (!actorAllowed(actor)) return json({ ok: false, error: "owner_admin_session_required", outcome: "rejected" }, 401);
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) return json({ ok: false, error: "origin_not_allowed", outcome: "rejected" }, 403);
+  const key = request.headers.get("idempotency-key");
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(key || "")) return json({ ok: false, error: "idempotency_key_required", outcome: "rejected" }, 400);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json", outcome: "rejected" }, 400);
+  let input;
+  try { input = normalizePublishInput(body); }
+  catch (error) { return json({ ok: false, error: clean(error?.message, 120) || "job_board_publish_invalid", outcome: "rejected" }, error?.status || 400); }
+  return bridge(request, env, actor, "publish", input);
 }
