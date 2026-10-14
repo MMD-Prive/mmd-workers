@@ -41,7 +41,7 @@ tag = "points-phase1-v1"
 new_sqlite_classes = ["PointsPhase1Coordinator"]
 
 [vars]
-KBANK_SANDBOX_ENABLED = "false"
+KBANK_SANDBOX_ENABLED = "true"
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
 
@@ -133,7 +133,7 @@ service = "himai-chat-worker"
 binding = "TELEGRAM_WORKER"
 service = "telegram-worker"
 
-# Disabled until sandbox secrets and deployment have been verified.
+# Sandbox credential checks only; no transfer execution.
 [[durable_objects.bindings]]
 name = "KBANK_SANDBOX_COORDINATOR"
 class_name = "KbankSandboxCoordinator"
