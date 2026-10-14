@@ -43,7 +43,9 @@ jobs:
           import os
           from pathlib import Path
           actual=set(Path(os.environ['RUNNER_TEMP'],'mms-release-files.txt').read_text().splitlines())
-          expected={'admin-worker/src/mms-admin-page.js','admin-worker/src/mms-internal-branding.mjs','admin-worker/mms-admin-workspace.test.mjs'}
+          # These three presentation files are present in repository history but
+          # are not imported by the Admin entrypoint and no other Worker is released.
+          expected={'admin-worker/src/mms-admin-page.js','admin-worker/src/mms-internal-branding.mjs','admin-worker/mms-admin-workspace.test.mjs','model-dashboard-presentation-worker/index.test.mjs','model-dashboard-presentation-worker/model-job-board-owner-alias.test.mjs','model-dashboard-presentation-worker/src/model-liff-digital-shell.js'}
           assert actual == expected, 'Pinned source contains unexpected changes'
           PY
           node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs
