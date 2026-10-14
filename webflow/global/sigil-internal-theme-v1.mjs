@@ -23,9 +23,9 @@ html[data-sigil-internal-theme="silver-orange-v1"] :is(#adm27 p,#adm27 small,#ad
 html[data-sigil-internal-theme="silver-orange-v1"] :is(#adm27 .adm27-btn.is-primary,.cr4__btn.is-primary,.c360 .btn.primary){background:#b9470d!important;border-color:#b9470d!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
 html[data-sigil-internal-theme="silver-orange-v1"] :is(#adm27 .adm27-refresh,#adm27 .adm27-btn:not(.is-primary),.cr4__btn:not(.is-primary),.c360 .btn:not(.primary)){background:#f7f8fa!important;border-color:#c7ccd2!important;color:#272b30!important}
 html[data-sigil-internal-theme="silver-orange-v1"] :is(#adm27 .adm27-link,#adm27 .adm27-routecard b,#adm27 .adm27-opgrid b,.cr4__app b,.cr4__kicker,.cr4__details summary:after,.c360 .k){color:#a93e09!important;-webkit-text-fill-color:#a93e09!important}
-html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__rail,aside,.access-card[aria-label="เมนูระบบภายใน"]){background:#272b30!important;color:#f7f8fa!important;border-color:#454b54!important}
-html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__rail,aside,.access-card[aria-label="เมนูระบบภายใน"]) :is(a,strong,b,span,small){color:#e5e7eb!important;-webkit-text-fill-color:#e5e7eb!important}
-html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__rail,aside,.access-card[aria-label="เมนูระบบภายใน"]) a[aria-current="page"]{background:#b9470d!important;color:#fff!important}
+html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__rail,.sigil-navigation-rail,.access-card[aria-label="เมนูระบบภายใน"]){background:#272b30!important;color:#f7f8fa!important;border-color:#454b54!important}
+html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__rail,.sigil-navigation-rail,.access-card[aria-label="เมนูระบบภายใน"]) :is(a,strong,b,span,small){color:#e5e7eb!important;-webkit-text-fill-color:#e5e7eb!important}
+html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__rail,.sigil-navigation-rail,.access-card[aria-label="เมนูระบบภายใน"]) a[aria-current="page"]{background:#b9470d!important;color:#fff!important}
 html[data-sigil-internal-theme="silver-orange-v1"] :is(input,textarea,select){background-color:#f7f8fa!important;color:#272b30!important;border-color:#aeb6c0!important;caret-color:#b9470d}
 html[data-sigil-internal-theme="silver-orange-v1"] :is(.cr4__hero,.cr4__visual,.cr4__wall) :is(h2,h3,p){color:#fff!important;-webkit-text-fill-color:#fff!important}
 html[data-sigil-internal-theme="silver-orange-v1"] :focus-visible{outline-color:#b9470d!important}
@@ -40,6 +40,13 @@ html[data-sigil-internal-theme="silver-orange-v1"] :is(.mr-danger,.btn.bad){colo
 html[data-sigil-internal-theme="silver-orange-v1"] .btn.good{color:#286442!important;border-color:#286442!important}
 html[data-sigil-internal-theme="silver-orange-v1"] .btn.warn{color:#895209!important;border-color:#895209!important}
 
+/* Light surfaces must not inherit a sidebar's white glyph fill. */
+html[data-sigil-internal-theme="silver-orange-v1"] :is(.panel,.metric,.card,.record-card,.form-card,.stat,.action-card,.tree,.fact,.case-row,.mr-card,.branch-sheet,.internal-admin-theme) :where(*){-webkit-text-fill-color:currentColor}
+html[data-sigil-internal-theme="silver-orange-v1"] :is(input,textarea)::placeholder{color:#545c66!important;opacity:1}
+html[data-sigil-internal-theme="silver-orange-v1"] :is(button,input,select,textarea):disabled{opacity:1!important;background:#edf0f3!important;color:#545c66!important;-webkit-text-fill-color:#545c66!important;border-color:#c7ccd2!important;cursor:not-allowed}
+html[data-sigil-internal-theme="silver-orange-v1"] button:disabled :where(*){color:inherit!important;-webkit-text-fill-color:currentColor!important}
+html[data-sigil-internal-theme="silver-orange-v1"] :is(.mmdop,#mmd-review,.c360) :is(.muted,.hint,.meta,small){color:#545c66!important;-webkit-text-fill-color:#545c66!important}
+
 ${DASHBOARD_POLISH_CSS}
 `;
 
@@ -52,6 +59,7 @@ export function installInternalSilverTheme(doc = document, loc = location) {
   if (!/^\/internal\/(?:admin|ceo)(?:\/|$)/.test(loc.pathname)) return;
   const silver = usesSilverWorkspace(loc.pathname);
   if (silver) doc.documentElement.dataset.sigilInternalTheme = 'silver-orange-v1';
+  else delete doc.documentElement.dataset.sigilInternalTheme;
   let style = doc.getElementById('sigil-internal-silver-v1');
   if (!style) {
     style = doc.createElement('style'); style.id = 'sigil-internal-silver-v1';

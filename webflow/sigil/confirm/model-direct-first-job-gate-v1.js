@@ -61,7 +61,15 @@
       return false;
     }
     markReentry();
-    location.replace(liffUrl(token));
+    // Some LINE in-app browsers keep this document open when scripted Mini App
+    // navigation is blocked. Render a user-gesture fallback before navigating;
+    // leaving the page must not be the only way out of the loading state.
+    renderBlocked("กรุณาเปิดงานใน MY MODEL เพื่อยืนยันตัวตน หาก LINE ไม่เปิดอัตโนมัติ ให้กดปุ่มด้านล่าง", code || "model_session_required", liffUrl(token));
+    try {
+      location.replace(liffUrl(token));
+    } catch (_) {
+      // Keep the manual link and the identity gate visible; never release details.
+    }
     return true;
   }
 

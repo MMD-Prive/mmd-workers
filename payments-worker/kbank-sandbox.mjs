@@ -110,19 +110,16 @@ export async function handleKbankSandbox(request, env) {
   if (!expected || !supplied || supplied !== expected) return reply({ ok: false, error: 'service_auth_required' }, 401);
   if (path === KBANK_STATUS_PATH) {
     const checks = { enabled: env.KBANK_SANDBOX_ENABLED === 'true', consumer_id_present: Boolean(env.KBANK_SANDBOX_CONSUMER_ID), consumer_secret_present: Boolean(env.KBANK_SANDBOX_CONSUMER_SECRET), coordinator_present: Boolean(env.KBANK_SANDBOX_COORDINATOR) };
-    let cooldown = null;
+    let cooldown = { known: false };
     if (Object.values(checks).every(Boolean)) {
       try {
         const stub = env.KBANK_SANDBOX_COORDINATOR.get(env.KBANK_SANDBOX_COORDINATOR.idFromName('oauth-smoke-v1'));
-        const response = await stub.fetch(new Request('https://kbank-coordinator/status', { method: 'POST' }));
-        const data = await response.json();
-        if (!response.ok || data.bank_called !== false || !data.cooldown) throw new Error('status unavailable');
-        cooldown = data.cooldown;
-      } catch {
-        return reply({ ok: false, error: 'sandbox_status_unavailable', bank_called: false, transfers_enabled: false }, 503);
-      }
+        const result = await stub.fetch(new Request('https://kbank-coordinator/status', { method: 'POST' }));
+        const data = await result.json();
+        if (result.ok && data.environment === 'sandbox' && data.bank_called === false) cooldown = data.cooldown || cooldown;
+      } catch { /* Unknown cooldown must never enable a bank request. */ }
     }
-    return reply({ ok: true, ready: Object.values(checks).every(Boolean), checks, cooldown, bank_called: false, transfers_enabled: false });
+    return reply({ ok: true, ready: Object.values(checks).every(Boolean) && cooldown.known === true && cooldown.retry_after_seconds === 0, checks, cooldown, bank_called: false, transfers_enabled: false });
   }
   if (env.KBANK_SANDBOX_ENABLED !== 'true') return reply({ ok: false, error: 'sandbox_disabled' }, 503);
   if (!env.KBANK_SANDBOX_CONSUMER_ID || !env.KBANK_SANDBOX_CONSUMER_SECRET || !env.KBANK_SANDBOX_COORDINATOR) {
@@ -140,20 +137,19 @@ export class KbankSandboxCoordinator {
     this.pending = null;
   }
   async fetch(request) {
-    if (request.method === 'POST' && new URL(request.url).pathname === '/status') {
-      const previous = await this.state.storage.get('attempt');
-      const next = previous?.nextAttemptAt;
-      if (previous && (!Number.isSafeInteger(next) || next < WINDOW_MS || typeof previous.success !== 'boolean')) {
-        return reply({ ok: false, error: 'sandbox_status_unavailable', bank_called: false, transfers_enabled: false }, 503);
-      }
-      return reply({ ok: true, bank_called: false, transfers_enabled: false, cooldown: {
-        retry_after_seconds: previous ? Math.max(0, Math.ceil((next - Date.now()) / 1000)) : 0,
-        last_attempt_at: previous ? next - WINDOW_MS : null,
-        last_success: previous ? previous.success : null,
-        in_progress: this.pending !== null,
-      } });
+    const path = new URL(request.url).pathname;
+    if (request.method !== 'POST' || !['/smoke', '/status'].includes(path)) return reply({ ok: false, error: 'not_found' }, 404);
+    if (path === '/status') {
+      if (this.pending) return reply({ ok: true, cooldown: { known: false }, bank_called: false, transfers_enabled: false });
+      const previous = await this.state.storage.get('attempt'), now = Date.now();
+      const valid = !previous || (Number.isSafeInteger(previous.nextAttemptAt) && previous.nextAttemptAt >= WINDOW_MS && previous.nextAttemptAt <= now + WINDOW_MS + 1000 && typeof previous.success === 'boolean');
+      const cooldown = !valid ? { known: false } : { known: true,
+        retry_after_seconds: previous ? Math.max(0, Math.ceil((previous.nextAttemptAt - now) / 1000)) : 0,
+        last_attempt_at: previous ? previous.nextAttemptAt - WINDOW_MS : null,
+        next_attempt_at: previous ? previous.nextAttemptAt : null,
+        last_success: previous ? previous.success : null };
+      return reply({ ok: true, cooldown, bank_called: false, transfers_enabled: false });
     }
-    if (request.method !== 'POST' || new URL(request.url).pathname !== '/smoke') return reply({ ok: false, error: 'not_found' }, 404);
     if (this.env.KBANK_SANDBOX_ENABLED !== 'true') return reply({ ok: false, error: 'sandbox_disabled' }, 503);
     if (!this.env.KBANK_SANDBOX_CONSUMER_ID || !this.env.KBANK_SANDBOX_CONSUMER_SECRET) return reply({ ok: false, error: 'sandbox_not_configured' }, 503);
     if (!this.pending) this.pending = this.run().finally(() => { this.pending = null; });
