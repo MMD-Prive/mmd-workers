@@ -1,6 +1,7 @@
 import { buildKenjiVoiceContext } from "../../shared/kenji-customer-memory-v2.mjs";
 import {
   linkKenjiMatrixCustomerMemoryAfterTurn,
+  resolveKenjiLineClientIdentity,
   resolveKenjiLineCustomerMemoryContext,
 } from "./kenji-line-customer-memory-runtime.mjs";
 
@@ -13,6 +14,10 @@ function voiceForContext(context = {}) {
     relationship_context: text(context.relationship_context) || "unknown",
     identity_status: context.resolved === true ? "resolved" : text(context.status) === "not_found" ? "candidate" : "candidate",
   });
+}
+
+export async function resolveCanonicalKenjiLineIdentity(args = {}) {
+  return resolveKenjiLineClientIdentity(args);
 }
 
 export async function resolveCanonicalKenjiLineClient(args = {}) {
