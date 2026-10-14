@@ -43,7 +43,8 @@
     setApiState(partial ? 'ข้อมูลบางส่วน · ตรวจสถานะระบบ' : 'ข้อมูลล่าสุดจากระบบ', partial ? 'is-bad' : 'is-live');
 
     const counts = data.counts || {};
-    ['payments', 'jobs', 'members'].forEach((key) => setText(`[data-count="${key}"]`, counts[key]));
+    ['jobs', 'members'].forEach((key) => setText(`[data-count="${key}"]`, counts[key]));
+    setText('[data-count="payments"]', data.status?.payments === 'พร้อม' ? counts.payments_review_pending ?? counts.payment_review : null);
     const visibleActions = [...(data.todos || []), ...(data.boss || [])];
     setText('[data-count="urgent"]', new Set(visibleActions.map((item) => item.href + '|' + item.title)).size);
     setText('[data-updated-at]', data.generated_at ? 'อ่านล่าสุด ' + new Date(data.generated_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) + ' · ตัวเลขจากคิวที่อ่านได้' : 'ยังไม่มีเวลาของข้อมูล');

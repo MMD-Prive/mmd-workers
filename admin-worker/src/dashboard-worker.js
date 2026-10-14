@@ -136,7 +136,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
 
   const counts = {
     urgent: todos.length + boss.length,
-    payments: paymentQueueResult.status === "fulfilled" ? ownerPaymentReview.length : null,
+    payments: paymentQueue.length,
     payment_evidence_total: paymentQueueResult.status === "fulfilled" ? paymentQueue.length : null,
     payment_review: ownerPaymentReview.length,
     // Additive owner-surface aliases for compact Internal/Lovable task cards.
