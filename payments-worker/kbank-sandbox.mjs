@@ -5,7 +5,12 @@ const OAUTH_ERROR_CODES = new Set(['invalid_client', 'unauthorized_client', 'inv
 const MAX_BANK_RESPONSE_BYTES = 16 * 1024;
 const BANK_RESPONSE_MEDIA_TYPES = new Set(['json', 'html', 'text', 'other', 'missing']);
 const BANK_RESPONSE_BODY_SHAPES = new Set(['json_object', 'json_array', 'json_scalar', 'empty', 'non_json', 'size_limited']);
-const BANK_ERROR_SHAPES = new Set(['oauth_error', 'kbank_error_code', 'gateway_fault_detail', 'none']);
+const BANK_ERROR_SHAPES = new Set(['oauth_error', 'kbank_error_code', 'gateway_fault_detail', 'openapi_code_message', 'none']);
+const OPENAPI_REASONS = new Map([["Invalid ApiKey for given resource", "api_key_resource_mismatch"], ["Invalid API Key", "invalid_api_key"], ["Invalid API call as no apiproduct match found", "api_product_not_matched"], ["Invalid Consumer Secret", "invalid_consumer_secret"], ["Invalid Request Format", "invalid_request_format"], ["OAuth 2.0 Token Generate Error", "oauth_token_generation_failed"], ["Invalid Access Token", "invalid_access_token"], ["Access Token expired", "access_token_expired"], ["Access Token not approved", "access_token_not_approved"]]);
+function openapiCategory(data) {
+  return data?.code === 'openapi_error' && typeof data?.message === 'string' && data.message.length <= 200
+    ? OPENAPI_REASONS.get(data.message.trim()) : undefined;
+}
 export function safeOauthError(data) {
   const candidates = [data?.error, data?.ErrorCode, data?.fault?.detail?.errorcode];
   for (const code of candidates) {
@@ -32,6 +37,7 @@ function bankErrorShape(data) {
   for (const [code, shape] of candidates) {
     if (typeof code === 'string' && safeOauthError({ error: code })) return shape;
   }
+  if (typeof data?.code === 'string' && typeof data?.message === 'string') return 'openapi_code_message';
   for (const [code, shape] of candidates) if (typeof code === 'string') return shape;
   return 'none';
 }
@@ -93,7 +99,8 @@ async function inspectBankResponse(response) {
     bank_response_media_type: BANK_RESPONSE_MEDIA_TYPES.has(mediaType) ? mediaType : 'other',
     bank_response_body_shape: BANK_RESPONSE_BODY_SHAPES.has(bodyShape) ? bodyShape : 'non_json',
     bank_error_shape: BANK_ERROR_SHAPES.has(errorShape) ? errorShape : 'none',
-    bank_error_code_recognized: oauthError !== null,
+    bank_error_code_recognized: oauthError !== null || data?.code === 'openapi_error',
+    ...(openapiCategory(data) ? { bank_error_category: openapiCategory(data) } : {}),
   };
 }
 const WINDOW_MS = 30 * 60 * 1000;
@@ -172,7 +179,7 @@ export class KbankSandboxCoordinator {
         body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
       });
       const inspection = await inspectBankResponse(response);
-      const { data, bank_response_media_type, bank_response_body_shape, bank_error_shape, bank_error_code_recognized } = inspection;
+      const { data, bank_response_media_type, bank_response_body_shape, bank_error_shape, bank_error_code_recognized, bank_error_category } = inspection;
       const expires = Number(data?.expires_in);
       if (!response.ok || typeof data?.access_token !== 'string' || !data.access_token || String(data.token_type).toLowerCase() !== 'bearer' || !Number.isFinite(expires) || expires <= 0) {
         const oauthError = safeOauthError(data);
@@ -180,6 +187,7 @@ export class KbankSandboxCoordinator {
           ok: false, error: 'kbank_oauth_failed', upstream_status: response.status,
           bank_response_media_type, bank_response_body_shape, bank_error_shape, bank_error_code_recognized,
           ...(oauthError ? { oauth_error: oauthError } : {}),
+          ...(bank_error_category ? { bank_error_category } : {}),
         }, 502);
       }
       // This smoke verifies credentials only. Discard the token; never log or return bank payloads.
