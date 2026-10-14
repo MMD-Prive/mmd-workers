@@ -1,6 +1,7 @@
 // Shared visual layer for internal HTML served by Workers and Webflow.
 // No requests, storage, authentication, routing or business mutations.
 import { internalBrandLoader, SYSTEM_LIGHT, SYSTEM_DARK, SYMBOL_BLACK, BRAND_SELECTOR } from './sigil-brand-v1.mjs';
+import { DASHBOARD_POLISH_CSS } from './sigil-dashboard-polish-v2.mjs';
 export function usesSilverWorkspace(pathname) {
   const path = String(pathname || '/').replace(/\/+$/, '') || '/';
   if (!/^\/internal\/(?:admin|ceo)(?:\/|$)/.test(path)) return false;
@@ -37,6 +38,7 @@ html[data-sigil-internal-theme="silver-orange-v1"] :is(.mr-danger,.btn.bad){colo
 html[data-sigil-internal-theme="silver-orange-v1"] .btn.good{color:#286442!important;border-color:#286442!important}
 html[data-sigil-internal-theme="silver-orange-v1"] .btn.warn{color:#895209!important;border-color:#895209!important}
 
+${DASHBOARD_POLISH_CSS}
 `;
 
 export function silverWorkspaceLoader() {
@@ -47,11 +49,14 @@ export function installInternalSilverTheme(doc = document, loc = location) {
   if (!/^\/internal\/(?:admin|ceo)(?:\/|$)/.test(loc.pathname)) return;
   const silver = usesSilverWorkspace(loc.pathname);
   if (silver) doc.documentElement.dataset.sigilInternalTheme = 'silver-orange-v1';
-  if (!doc.getElementById('sigil-internal-silver-v1')) {
-    const style = doc.createElement('style'); style.id = 'sigil-internal-silver-v1';
-    style.textContent = silver ? SILVER_WORKSPACE_CSS : SILVER_WORKSPACE_CSS.split('html[data-sigil-internal-theme=')[0];
+  let style = doc.getElementById('sigil-internal-silver-v1');
+  if (!style) {
+    style = doc.createElement('style'); style.id = 'sigil-internal-silver-v1';
     doc.head.appendChild(style);
   }
+  const css = silver ? SILVER_WORKSPACE_CSS : SILVER_WORKSPACE_CSS.split('html[data-sigil-internal-theme=')[0];
+  // A pinned new loader must also upgrade older Worker-injected styles.
+  if (style.textContent !== css) style.textContent = css;
   doc.querySelectorAll(BRAND_SELECTOR).forEach(node => {
     if (node.dataset.sigilBrand === 'v1') return;
     const holder = doc.createElement('span'); holder.className = 'sigil-system-logo';
