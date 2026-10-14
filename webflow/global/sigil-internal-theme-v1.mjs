@@ -2,8 +2,10 @@
 // No requests, storage, authentication, routing or business mutations.
 import { internalBrandLoader, SYSTEM_LIGHT, SYSTEM_DARK, SYMBOL_BLACK, BRAND_SELECTOR } from './sigil-brand-v1.mjs';
 import { DASHBOARD_POLISH_CSS } from './sigil-dashboard-polish-v2.mjs';
+import { usesMmsWorkspace, installMmsWorkspaceTheme } from './mms-workspace-theme-v1.mjs';
 export function usesSilverWorkspace(pathname) {
   const path = String(pathname || '/').replace(/\/+$/, '') || '/';
+  if (usesMmsWorkspace(path)) return false;
   if (!/^\/internal\/(?:admin|ceo)(?:\/|$)/.test(path)) return false;
   return !['/internal/admin/jobs/create-job', '/internal/admin/jobs/create-session', '/internal/admin/jobs/job-board', '/internal/admin/job-board', '/internal/admin/jobs/broadcast', '/internal/admin/broadcast-work'].some(route => path === route || path.startsWith(route + '/'));
 }
@@ -46,6 +48,7 @@ export function silverWorkspaceLoader() {
 }
 
 export function installInternalSilverTheme(doc = document, loc = location) {
+  if (usesMmsWorkspace(loc.pathname)) installMmsWorkspaceTheme(doc);
   if (!/^\/internal\/(?:admin|ceo)(?:\/|$)/.test(loc.pathname)) return;
   const silver = usesSilverWorkspace(loc.pathname);
   if (silver) doc.documentElement.dataset.sigilInternalTheme = 'silver-orange-v1';
