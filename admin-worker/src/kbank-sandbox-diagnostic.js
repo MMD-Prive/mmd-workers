@@ -27,7 +27,11 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
       const keys = ['enabled', 'consumer_id_present', 'consumer_secret_present', 'coordinator_present'];
       if (!keys.every(key => typeof data.checks?.[key] === 'boolean')) return failure('unexpected_sandbox_response');
       const checks = Object.fromEntries(keys.map(key => [key, data.checks[key]]));
-      return reply({ ok: true, ready: Object.values(checks).every(Boolean), checks, bank_called: false });
+      const c = data.cooldown;
+      const valid = c?.known === true && Number.isInteger(c.retry_after_seconds) && c.retry_after_seconds >= 0 && c.retry_after_seconds <= 1800 &&
+        [c.last_attempt_at,c.next_attempt_at].every(x=>x === null || (Number.isSafeInteger(x) && x > 0)) && [true,false,null].includes(c.last_success);
+      const cooldown = valid ? { known:true, retry_after_seconds:c.retry_after_seconds, last_attempt_at:c.last_attempt_at, next_attempt_at:c.next_attempt_at, last_success:c.last_success } : { known:false };
+      return reply({ ok: true, ready: Object.values(checks).every(Boolean) && valid && cooldown.retry_after_seconds === 0, checks, cooldown, bank_called: false });
     }
     if (readiness && response.ok) return failure('unexpected_sandbox_response');
     if (response.status === 200 && data?.environment === 'sandbox' && data.ok === true &&
