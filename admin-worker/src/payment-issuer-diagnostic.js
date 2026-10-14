@@ -463,9 +463,22 @@ const bankMessages = {
 function bankError(data, status) {
   const known = Object.prototype.hasOwnProperty.call(bankMessages, data?.error);
   const label = known ? bankMessages[data.error] : 'คำขอไม่สำเร็จและยังระบุสาเหตุไม่ได้';
-  return label + ' (HTTP ' + status + (known ? ' · ' + data.error : '') +
+  const oauthLabels = {
+    invalid_client: 'KBank ไม่ยอมรับข้อมูลยืนยันตัวตนของแอป · ตรวจคู่ Consumer ID/Secret และสถานะแอป',
+    unauthorized_client: 'แอปไม่มีสิทธิ์ใช้วิธีขอ Token นี้',
+    invalid_request: 'คำขอ OAuth ขาดข้อมูลหรือรูปแบบไม่ถูกต้อง',
+    invalid_grant: 'ข้อมูล grant ไม่ผ่านการตรวจสอบ',
+    unsupported_grant_type: 'ธนาคารไม่รองรับ grant_type ที่ส่ง',
+    invalid_scope: 'สิทธิ์ scope ไม่ถูกต้อง',
+    server_error: 'ระบบ OAuth ของธนาคารมีข้อผิดพลาด',
+    temporarily_unavailable: 'ระบบ OAuth ของธนาคารยังไม่พร้อมชั่วคราว'
+  };
+  const oauthKnown = Object.prototype.hasOwnProperty.call(oauthLabels, data?.oauth_error);
+  const detail = oauthKnown ? oauthLabels[data.oauth_error] : label;
+  return detail + ' (HTTP ' + status + (known ? ' · ' + data.error : '') +
     (Number.isInteger(data?.upstream_status) ? ' · payments HTTP ' + data.upstream_status : '') +
-    (Number.isInteger(data?.bank_http_status) ? ' · KBank HTTP ' + data.bank_http_status : '') + ')';
+    (Number.isInteger(data?.bank_http_status) ? ' · KBank HTTP ' + data.bank_http_status : '') +
+    (oauthKnown ? ' · OAuth ' + data.oauth_error : '') + ')';
 }
 async function bankRequest(mode) {
   const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {

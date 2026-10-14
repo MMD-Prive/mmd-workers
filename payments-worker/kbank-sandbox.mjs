@@ -1,6 +1,16 @@
 export const KBANK_SMOKE_PATH = '/v1/internal/payments/kbank/sandbox/smoke';
 export const KBANK_STATUS_PATH = '/v1/internal/payments/kbank/sandbox/status';
 const TOKEN_URL = 'https://openapi-sandbox.kasikornbank.com/v2/oauth/token';
+const OAUTH_ERROR_CODES = new Set(['invalid_client', 'unauthorized_client', 'invalid_request', 'invalid_grant', 'unsupported_grant_type', 'invalid_scope', 'server_error', 'temporarily_unavailable']);
+export function safeOauthError(data) {
+  const candidates = [data?.error, data?.ErrorCode, data?.fault?.detail?.errorcode];
+  for (const code of candidates) {
+    if (typeof code !== 'string') continue;
+    if (OAUTH_ERROR_CODES.has(code)) return code;
+    if (['oauth.v2.InvalidClientIdentifier', 'steps.oauth.v2.invalid_client', 'steps.oauth.v2.invalid_client-invalid_client_id'].includes(code)) return 'invalid_client';
+  }
+  return null;
+}
 const WINDOW_MS = 30 * 60 * 1000;
 const reply = (data, status = 200) => Response.json({ environment: 'sandbox', ...data }, {
   status, headers: { 'cache-control': 'no-store, private' },
@@ -58,7 +68,8 @@ export class KbankSandboxCoordinator {
       const data = await response.json().catch(() => null);
       const expires = Number(data?.expires_in);
       if (!response.ok || typeof data?.access_token !== 'string' || !data.access_token || String(data.token_type).toLowerCase() !== 'bearer' || !Number.isFinite(expires) || expires <= 0) {
-        return reply({ ok: false, error: 'kbank_oauth_failed', upstream_status: response.status }, 502);
+        const oauthError = safeOauthError(data);
+        return reply({ ok: false, error: 'kbank_oauth_failed', upstream_status: response.status, ...(oauthError ? { oauth_error: oauthError } : {}) }, 502);
       }
       // This smoke verifies credentials only. Discard the token; never log or return bank payloads.
       await this.state.storage.put('attempt', { nextAttemptAt: now + WINDOW_MS, success: true });

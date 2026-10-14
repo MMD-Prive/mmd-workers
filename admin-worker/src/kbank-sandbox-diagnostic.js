@@ -44,6 +44,8 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
     const safe = { ok: false, error, upstream_status: response.status };
     if (error === 'kbank_oauth_failed' && Number.isInteger(data.upstream_status) && data.upstream_status >= 100 && data.upstream_status <= 599) {
       safe.bank_http_status = data.upstream_status;
+      const allowed = new Set(['invalid_client', 'unauthorized_client', 'invalid_request', 'invalid_grant', 'unsupported_grant_type', 'invalid_scope', 'server_error', 'temporarily_unavailable']);
+      if (typeof data.oauth_error === 'string' && allowed.has(data.oauth_error)) safe.oauth_error = data.oauth_error;
     }
     if (error === 'oauth_smoke_cooldown') {
       if (Number.isInteger(data.retry_after_seconds) && data.retry_after_seconds > 0 && data.retry_after_seconds <= 1800) {
