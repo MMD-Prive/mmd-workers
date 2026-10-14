@@ -1,3 +1,4 @@
+import { MMS_LOGO_PATH, mmsLogoResponse } from './mms-internal-logo-asset.mjs';
 import coreWorker, { isAuthed } from "./index.js";
 import { hasValidAdminBrowserSession } from "./admin-browser-session.js";
 import { wireMmsApproveUi } from "./mms-admin-approve-ui.js";
@@ -34,7 +35,7 @@ const MMS_JOB_LANES = new Set([
 
 export function isMmsAdminRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === PAGE_PATH || isRelaxSpaAdminRequest(path) || path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
+  return path === MMS_LOGO_PATH || path === PAGE_PATH || isRelaxSpaAdminRequest(path) || path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
 }
 
 // Phase 4D: owner-action coverage consumes only aggregate, read-only state.
@@ -83,6 +84,11 @@ export async function handleMmsAdminRequest(request, env = {}) {
       return Response.redirect(`${url.origin}/internal/admin/login?next=${encodeURIComponent(path)}`, 303);
     }
     return json({ ok: false, error: "unauthorized" }, 401);
+  }
+
+  if (path === MMS_LOGO_PATH) {
+    if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
+    return mmsLogoResponse(method);
   }
 
   if (isRelaxSpaAdminRequest(path)) return handleRelaxSpaAdmin(request, env);

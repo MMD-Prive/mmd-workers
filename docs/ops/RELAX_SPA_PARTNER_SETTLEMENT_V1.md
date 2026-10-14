@@ -197,7 +197,14 @@ The known Drive image Relax Spa by 9.png (file1NL95OSzsyJ-PlHy6VNyfqNMkPIvbX0ok)
 is a logo, not a room-rate sheet. Price, unit, room type, coverage, inclusions and
 effective date remain incomplete. Keep the rate as a draft, with no seeded price.
 
-The requested cream-letter/lime-AI Male Massage x AI logo has no confirmed source
-asset in this checkout/chat attachments. Do not invent one or use a full poster
-as a header. Internal MMS branding remains pending that asset; Partner retains
-SĪGIL System. Changing shared Partner branding is outside this patch.
+The user supplied the approved Male Massage AI PNG (1983x793), SHA256
+`4ed6770759e92887e9c6c8eec7941ccb28fa58dd332fe44fea1e06511a9fb5b6`.
+The Internal MMS header and Internal Relax Spa page use those exact bytes, without
+crop/recolor/resampling. A compact dark-green holder keeps cream text legible;
+CSS preserves the original ratio and wraps the header on mobile. The hashed PNG
+URL lives under the existing authenticated Internal MMS route tree and uses
+private caching; no Cloudflare route or storage binding is added. GET/HEAD use the
+same existing admin auth gate; other methods are refused. The shared Partner
+renderer and global SĪGIL branding are unchanged. Only Admin requires a release
+for this branding follow-up; its existing downstream deployment effects still
+require explicit release authorization.

@@ -1,6 +1,7 @@
+import { withMmsInternalBranding } from './mms-internal-branding.mjs';
 import { withMmsWorkspaceTheme } from '../../webflow/global/mms-workspace-theme-v1.mjs';
 export function renderMmsAdminPage() {
-  return withMmsWorkspaceTheme(`<!doctype html>
+  return withMmsInternalBranding(withMmsWorkspaceTheme(`<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
@@ -198,5 +199,5 @@ showTab('overview',false);boot();
 })();
 </script>
 </body>
-</html>`);
+</html>`));
 }
