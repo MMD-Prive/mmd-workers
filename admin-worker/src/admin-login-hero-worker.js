@@ -1,3 +1,4 @@
+import { decorateInternalSilverTheme } from "../../webflow/global/sigil-internal-theme-v1.mjs";
 import { isCreateJobDriveDiscoveryRequest, handleCreateJobDriveDiscovery } from "./create-job-drive-discovery.js";
 import { handleModelJobPreview, isModelJobPreviewRequest } from "./model-job-preview.js";
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
@@ -228,7 +229,7 @@ handlePaymentEntitlementApproval
 coreWorker.fetch(request, env, ctx)
 */
 
-export default {
+const adminLoginHeroWorker = {
   async scheduled(event, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
     // HYPE_JOB_DAILY is isolated: it never rejects and never blocks the jobs below. Default off.
@@ -422,5 +423,12 @@ export default {
       });
     }
     return response;
+  },
+};
+
+export default {
+  ...adminLoginHeroWorker,
+  async fetch(request, env, ctx) {
+    return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
   },
 };
