@@ -1,3 +1,5 @@
+import { handleKbankSandbox } from "./kbank-sandbox.mjs";
+export { KbankSandboxCoordinator } from "./kbank-sandbox.mjs";
 import phase1Worker from "./index.phase1.js";
 import { handlePublicSessionExtensionPayment, isPublicSessionExtensionPaymentPath } from "./public-session-extension-payment.js";
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
@@ -91,6 +93,8 @@ export default {
     if (typeof phase1Worker.scheduled === "function") await phase1Worker.scheduled(event, env, ctx);
   },
   async fetch(request, env, ctx) {
+    const kbankResponse = await handleKbankSandbox(request, env);
+    if (kbankResponse) return kbankResponse;
     env = canonicalTelegramEnv(env);
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
