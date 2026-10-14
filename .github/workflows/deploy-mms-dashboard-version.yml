@@ -1,0 +1,152 @@
+name: Deploy MMS dashboard Admin version only
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-mms-dashboard-version.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-admin-worker-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: admin-worker
+        shell: bash
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      MMS_RELEASE_SHA: c480621d241e88dc8dcecb758cabe86a79241268
+      MMS_BASELINE_SHA: ed39a52b538be5faf7e54604c11542ff1a5fb145
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: c480621d241e88dc8dcecb758cabe86a79241268
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Verify pinned UI-only source and contracts
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$MMS_RELEASE_SHA"
+          git diff --name-only "$MMS_BASELINE_SHA" "$MMS_RELEASE_SHA" > "$RUNNER_TEMP/mms-release-files.txt"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          actual=set(Path(os.environ['RUNNER_TEMP'],'mms-release-files.txt').read_text().splitlines())
+          # These three presentation files are present in repository history but
+          # are not imported by the Admin entrypoint and no other Worker is released.
+          expected={'admin-worker/src/mms-admin-page.js','admin-worker/src/mms-internal-branding.mjs','admin-worker/mms-admin-workspace.test.mjs','model-dashboard-presentation-worker/index.test.mjs','model-dashboard-presentation-worker/model-job-board-owner-alias.test.mjs','model-dashboard-presentation-worker/src/model-liff-digital-shell.js'}
+          assert actual == expected, 'Pinned source contains unexpected changes'
+          PY
+          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs
+      - name: Read active version and prepare existing bindings only
+        id: preflight
+        run: |
+          set -euo pipefail
+          umask 077
+          python - <<'PY'
+          import json,tomllib
+          from pathlib import Path
+          config=tomllib.loads(Path('wrangler.toml').read_text())
+          assert config['name']=='admin-worker'
+          assert config['main']=='src/admin-login-hero-worker.js'
+          for key in ('routes','route','triggers','workers_dev','preview_urls'):
+            config.pop(key,None)
+          Path('.wrangler-mms-version-only.json').write_text(json.dumps(config))
+          PY
+          cat > "$RUNNER_TEMP/mms-version-api.mjs" <<'JS'
+          import fs from 'node:fs';
+          export const worker='admin-worker';
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          const token=(process.env.CLOUDFLARE_API_TOKEN||'').replace(/[\u2028\u2029\r\n]/g,'').trim();
+          if(!token||!/^[a-f0-9]{32}$/.test(account||''))throw Error('Deploy credentials unavailable');
+          export async function read(path){
+            if(!/^\/(deployments|versions)(\/[-a-f0-9]+)?$/.test(path))throw Error('Read path denied');
+            const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}${path}`,{headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});
+            const d=await r.json();if(!r.ok||d.success!==true)throw Error(`Admin version read failed: ${r.status}`);return d.result;
+          }
+          export async function active(){const r=await read('/deployments');const d=r.deployments?.[0];if(d?.versions?.length!==1||d.versions[0].percentage!==100)throw Error('Expected one active version at 100%');return d.versions[0].version_id;}
+          export function bindings(v){const b=v.resources?.bindings;if(!Array.isArray(b)||!b.length)throw Error('Version bindings unavailable');return b;}
+          export function source(v){return bindings(v).find(b=>b.name==='ADMIN_WORKER_BUILD_SHA'&&b.type==='plain_text')?.text;}
+          export function stable(v){return JSON.stringify(bindings(v).map(b=>{const x={...b};if(x.name==='ADMIN_WORKER_BUILD_SHA')x.text='SOURCE_SHA';return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a.localeCompare(b)));}).sort((a,b)=>a.name.localeCompare(b.name)));}
+          export const file=(name)=>`${process.env.RUNNER_TEMP}/${name}`;
+          export const save=(name,data)=>fs.writeFileSync(file(name),JSON.stringify(data),{mode:0o600});
+          JS
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const api=await import(`file://${process.env.RUNNER_TEMP}/mms-version-api.mjs`);
+          const id=await api.active(),v=await api.read(`/versions/${id}`),sha=api.source(v);
+          if(![process.env.MMS_BASELINE_SHA,process.env.MMS_RELEASE_SHA].includes(sha))throw Error('Live source differs from reviewed baseline; stop before upload');
+          api.save('mms-active-before.json',v);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`already_live=${sha===process.env.MMS_RELEASE_SHA}\nversion=${id}\n`);
+          const c=JSON.parse(fs.readFileSync('.wrangler-mms-version-only.json','utf8'));
+          c.kv_namespaces=api.bindings(v).filter(b=>b.type==='kv_namespace').map(b=>({binding:b.name,id:b.namespace_id}));
+          if(!c.kv_namespaces.some(b=>b.binding==='SIGIL_AVAILABILITY_SNAPSHOTS'&&/^[a-f0-9]{32}$/.test(b.id)))throw Error('Existing availability KV binding unavailable');
+          c.vars=Object.fromEntries(api.bindings(v).filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));
+          c.vars.ADMIN_WORKER_BUILD_SHA=process.env.MMS_RELEASE_SHA;
+          fs.writeFileSync('.wrangler-mms-version-only.json',JSON.stringify(c),{mode:0o600});
+          fs.appendFileSync(process.env.GITHUB_ENV,`CLOUDFLARE_API_TOKEN=${(process.env.CLOUDFLARE_API_TOKEN||'').replace(/[\u2028\u2029\r\n]/g,'').trim()}\n`);
+          console.log(`Verified active Admin version ${id}; source ${sha}`);
+          JS
+      - name: Pin existing Kenji shell assets to source SHA
+        if: steps.preflight.outputs.already_live != 'true'
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const f='src/index.js';let s=fs.readFileSync(f,'utf8');
+          for(const ext of ['css','js']){const url=`https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.${ext}`;if(!s.includes(url))throw Error('Kenji asset marker missing');s=s.replace(url,`${url}?v=${process.env.MMS_RELEASE_SHA}`);}
+          fs.writeFileSync(f,s);
+          JS
+      - name: Dry run and upload Admin version only
+        if: steps.preflight.outputs.already_live != 'true'
+        run: |
+          set -euo pipefail
+          umask 077
+          npx --yes wrangler@4.105.0 versions upload --dry-run --keep-vars --config .wrangler-mms-version-only.json > "$RUNNER_TEMP/mms-dry-run.log" 2>&1
+          npx --yes wrangler@4.105.0 versions upload --keep-vars --config .wrangler-mms-version-only.json --tag "mms-${MMS_RELEASE_SHA:0:12}" --message "MMS dashboard ${MMS_RELEASE_SHA}" > "$RUNNER_TEMP/mms-upload.log" 2>&1
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const s=fs.readFileSync(`${process.env.RUNNER_TEMP}/mms-upload.log`,'utf8');
+          const id=s.match(/Worker Version ID:\s*([a-f0-9-]{36})/i)?.[1];if(!id)throw Error('Upload version ID unavailable');
+          fs.appendFileSync(process.env.GITHUB_ENV,`MMS_UPLOADED_VERSION=${id}\n`);console.log(`Uploaded Admin version ${id}`);
+          JS
+      - name: Verify bindings and deploy exact uploaded version
+        if: steps.preflight.outputs.already_live != 'true'
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const api=await import(`file://${process.env.RUNNER_TEMP}/mms-version-api.mjs`);
+          const before=JSON.parse(fs.readFileSync(api.file('mms-active-before.json'),'utf8'));
+          if(await api.active()!==before.id)throw Error('Live deployment moved; stop before traffic change');
+          const uploaded=await api.read(`/versions/${process.env.MMS_UPLOADED_VERSION}`);
+          if(api.source(uploaded)!==process.env.MMS_RELEASE_SHA||api.stable(before)!==api.stable(uploaded))throw Error('Source or bindings differ; stop before traffic change');
+          JS
+          node ../scripts/deploy-uploaded-worker-version.mjs admin-worker "$MMS_UPLOADED_VERSION"
+      - name: Verify active receipt and auth guard
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const api=await import(`file://${process.env.RUNNER_TEMP}/mms-version-api.mjs`);
+          const id=await api.active(),v=await api.read(`/versions/${id}`);
+          if(api.source(v)!==process.env.MMS_RELEASE_SHA)throw Error('Active source SHA mismatch');
+          if(process.env.MMS_UPLOADED_VERSION&&id!==process.env.MMS_UPLOADED_VERSION)throw Error('Active version mismatch');
+          const r=await fetch('https://www.mmdbkk.com/v1/admin/mms/snapshot',{redirect:'manual',signal:AbortSignal.timeout(30000)});
+          if(r.status!==401)throw Error(`MMS auth guard returned ${r.status}`);
+          const receipt=`Admin Worker version-only release\nSource: ${process.env.MMS_RELEASE_SHA}\nActive version: ${id}\nTraffic: 100%\nRoutes/secrets/triggers/resources: no mutation commands\nMMS unauthenticated guard: 401\n`;
+          console.log(receipt);fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,receipt);
+          JS
+      - name: Remove ephemeral configuration and logs
+        if: always()
+        run: |
+          rm -f .wrangler-mms-version-only.json "$RUNNER_TEMP/mms-active-before.json" "$RUNNER_TEMP/mms-version-api.mjs" "$RUNNER_TEMP/mms-dry-run.log" "$RUNNER_TEMP/mms-upload.log"

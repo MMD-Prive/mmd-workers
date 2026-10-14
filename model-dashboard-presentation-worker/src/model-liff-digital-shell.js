@@ -92,9 +92,6 @@ body .mmd-applicant-compact .mmd-digital-row strong{font-size:15px;line-height:1
 body .mmd-applicant-compact .mmd-digital-row p,body .mmd-applicant-compact .mmd-digital-detail{font-size:13px;line-height:1.65}
 body .mmd-applicant-compact .mmd-digital-action{font-size:16px;line-height:1.5}
 
-body .mmd-digital-brand{display:flex;align-items:center;gap:8px}
-body .mmd-digital-brand .mmd-brand-mark{display:block;width:24px;height:24px;flex:0 0 24px;object-fit:contain;border:0;border-radius:0;background:transparent}
-
 `;
 
 export function modelLiffDigitalBootstrapHtml({
