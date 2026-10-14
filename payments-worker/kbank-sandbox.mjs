@@ -2,6 +2,10 @@ export const KBANK_SMOKE_PATH = '/v1/internal/payments/kbank/sandbox/smoke';
 export const KBANK_STATUS_PATH = '/v1/internal/payments/kbank/sandbox/status';
 const TOKEN_URL = 'https://openapi-sandbox.kasikornbank.com/v2/oauth/token';
 const OAUTH_ERROR_CODES = new Set(['invalid_client', 'unauthorized_client', 'invalid_request', 'invalid_grant', 'unsupported_grant_type', 'invalid_scope', 'server_error', 'temporarily_unavailable']);
+const MAX_BANK_RESPONSE_BYTES = 16 * 1024;
+const BANK_RESPONSE_MEDIA_TYPES = new Set(['json', 'html', 'text', 'other', 'missing']);
+const BANK_RESPONSE_BODY_SHAPES = new Set(['json_object', 'json_array', 'json_scalar', 'empty', 'non_json', 'size_limited']);
+const BANK_ERROR_SHAPES = new Set(['oauth_error', 'kbank_error_code', 'gateway_fault_detail', 'none']);
 export function safeOauthError(data) {
   const candidates = [data?.error, data?.ErrorCode, data?.fault?.detail?.errorcode];
   for (const code of candidates) {
@@ -10,6 +14,87 @@ export function safeOauthError(data) {
     if (['oauth.v2.InvalidClientIdentifier', 'steps.oauth.v2.invalid_client', 'steps.oauth.v2.invalid_client-invalid_client_id'].includes(code)) return 'invalid_client';
   }
   return null;
+}
+function bankResponseMediaType(contentType) {
+  if (contentType == null || !contentType.trim()) return 'missing';
+  const mime = contentType.split(';', 1)[0].trim().toLowerCase();
+  if (mime === 'application/json' || mime.endsWith('+json')) return 'json';
+  if (mime === 'text/html' || mime === 'application/xhtml+xml') return 'html';
+  if (mime.startsWith('text/')) return 'text';
+  return 'other';
+}
+function bankErrorShape(data) {
+  const candidates = [
+    [data?.error, 'oauth_error'],
+    [data?.ErrorCode, 'kbank_error_code'],
+    [data?.fault?.detail?.errorcode, 'gateway_fault_detail'],
+  ];
+  for (const [code, shape] of candidates) {
+    if (typeof code === 'string' && safeOauthError({ error: code })) return shape;
+  }
+  for (const [code, shape] of candidates) if (typeof code === 'string') return shape;
+  return 'none';
+}
+async function readBoundedBankBody(response) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks = [];
+  let length = 0;
+  let truncated = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const remaining = MAX_BANK_RESPONSE_BYTES - length;
+      if (value.byteLength > remaining) {
+        if (remaining > 0) {
+          chunks.push(value.subarray(0, remaining));
+          length += remaining;
+        }
+        truncated = true;
+        await reader.cancel().catch(() => {});
+        break;
+      }
+      chunks.push(value);
+      length += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { text: new TextDecoder().decode(bytes), truncated };
+}
+async function inspectBankResponse(response) {
+  const mediaType = bankResponseMediaType(response.headers.get('content-type'));
+  const body = await readBoundedBankBody(response);
+  const text = typeof body === 'string' ? body : body.text;
+  let data = null;
+  let bodyShape = typeof body === 'string' || !body.truncated ? 'empty' : 'size_limited';
+  if (text.trim()) {
+    bodyShape = typeof body === 'string' || !body.truncated ? 'non_json' : 'size_limited';
+    if (typeof body === 'string' || !body.truncated) {
+      try {
+        data = JSON.parse(text);
+        bodyShape = data === null || typeof data !== 'object'
+          ? 'json_scalar'
+          : Array.isArray(data) ? 'json_array' : 'json_object';
+      } catch { /* Keep malformed or capped bodies unclassified beyond safe shape metadata. */ }
+    }
+  }
+  const errorShape = bankErrorShape(data);
+  const oauthError = safeOauthError(data);
+  return {
+    data,
+    bank_response_media_type: BANK_RESPONSE_MEDIA_TYPES.has(mediaType) ? mediaType : 'other',
+    bank_response_body_shape: BANK_RESPONSE_BODY_SHAPES.has(bodyShape) ? bodyShape : 'non_json',
+    bank_error_shape: BANK_ERROR_SHAPES.has(errorShape) ? errorShape : 'none',
+    bank_error_code_recognized: oauthError !== null,
+  };
 }
 const WINDOW_MS = 30 * 60 * 1000;
 const reply = (data, status = 200) => Response.json({ environment: 'sandbox', ...data }, {
@@ -65,11 +150,16 @@ export class KbankSandboxCoordinator {
         headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded', 'x-test-mode': 'true', 'env-id': 'OAUTH2' },
         body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
       });
-      const data = await response.json().catch(() => null);
+      const inspection = await inspectBankResponse(response);
+      const { data, bank_response_media_type, bank_response_body_shape, bank_error_shape, bank_error_code_recognized } = inspection;
       const expires = Number(data?.expires_in);
       if (!response.ok || typeof data?.access_token !== 'string' || !data.access_token || String(data.token_type).toLowerCase() !== 'bearer' || !Number.isFinite(expires) || expires <= 0) {
         const oauthError = safeOauthError(data);
-        return reply({ ok: false, error: 'kbank_oauth_failed', upstream_status: response.status, ...(oauthError ? { oauth_error: oauthError } : {}) }, 502);
+        return reply({
+          ok: false, error: 'kbank_oauth_failed', upstream_status: response.status,
+          bank_response_media_type, bank_response_body_shape, bank_error_shape, bank_error_code_recognized,
+          ...(oauthError ? { oauth_error: oauthError } : {}),
+        }, 502);
       }
       // This smoke verifies credentials only. Discard the token; never log or return bank payloads.
       await this.state.storage.put('attempt', { nextAttemptAt: now + WINDOW_MS, success: true });
@@ -79,3 +169,4 @@ export class KbankSandboxCoordinator {
     }
   }
 }
+

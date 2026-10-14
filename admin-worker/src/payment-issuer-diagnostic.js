@@ -475,10 +475,23 @@ function bankError(data, status) {
   };
   const oauthKnown = Object.prototype.hasOwnProperty.call(oauthLabels, data?.oauth_error);
   const detail = oauthKnown ? oauthLabels[data.oauth_error] : label;
+  const responseMediaLabels = { json: 'JSON', html: 'HTML', text: 'ข้อความ', other: 'ชนิดอื่น', missing: 'ไม่มี Content-Type' };
+  const responseShapeLabels = { json_object: 'JSON object', json_array: 'JSON array', json_scalar: 'JSON scalar', empty: 'ว่าง', non_json: 'ไม่ใช่ JSON', size_limited: 'เกินขนาดที่อ่านได้อย่างปลอดภัย' };
+  const errorShapeLabels = { oauth_error: 'ฟิลด์ OAuth error', kbank_error_code: 'ฟิลด์ ErrorCode', gateway_fault_detail: 'ฟิลด์ fault detail errorcode', none: 'ไม่พบฟิลด์รหัสที่รองรับ' };
+  const responseMedia = Object.hasOwn(responseMediaLabels, data?.bank_response_media_type) ? responseMediaLabels[data.bank_response_media_type] : null;
+  const responseShape = Object.hasOwn(responseShapeLabels, data?.bank_response_body_shape) ? responseShapeLabels[data.bank_response_body_shape] : null;
+  const errorShape = Object.hasOwn(errorShapeLabels, data?.bank_error_shape) ? errorShapeLabels[data.bank_error_shape] : null;
+  const responseDetails = [
+    responseMedia && 'ชนิดคำตอบธนาคาร ' + responseMedia,
+    responseShape && 'รูปแบบเนื้อหา ' + responseShape,
+    errorShape && 'ตำแหน่งรหัส ' + errorShape,
+    typeof data?.bank_error_code_recognized === 'boolean' && 'รหัสอยู่ในรายการที่รู้จัก ' + (data.bank_error_code_recognized ? 'ใช่' : 'ไม่ใช่')
+  ].filter(Boolean).join(' · ');
   return detail + ' (HTTP ' + status + (known ? ' · ' + data.error : '') +
     (Number.isInteger(data?.upstream_status) ? ' · payments HTTP ' + data.upstream_status : '') +
     (Number.isInteger(data?.bank_http_status) ? ' · KBank HTTP ' + data.bank_http_status : '') +
-    (oauthKnown ? ' · OAuth ' + data.oauth_error : '') + ')';
+    (oauthKnown ? ' · OAuth ' + data.oauth_error : '') +
+    (responseDetails ? ' · ' + responseDetails : '') + ')';
 }
 async function bankRequest(mode) {
   const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {
@@ -557,4 +570,5 @@ issueForm.addEventListener('submit', async function (event) {
     "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   } });
 }
+
 

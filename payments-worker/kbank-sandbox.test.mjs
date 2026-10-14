@@ -55,31 +55,64 @@ test('bank redirect is not followed and consumes cooldown without exposing desti
     const req=()=>new Request('https://kbank-coordinator/smoke',{method:'POST'});
     const result=await worker.fetch(req());
     assert.equal(result.status,502);
-    assert.deepEqual(await result.json(),{environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:302});
+    assert.deepEqual(await result.json(),{
+      environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:302,
+      bank_response_media_type:'json',bank_response_body_shape:'json_object',
+      bank_error_shape:'none',bank_error_code_recognized:false,
+    });
     assert.equal((await worker.fetch(req())).status,429);
     assert.equal(calls,1);
   } finally {globalThis.fetch=original;}
 });
 
 
-test('only recognized OAuth errors survive response redaction', async () => {
+test('OAuth response metadata classifies JSON, HTML, malformed, scalar, and unknown error bodies without retaining content', async () => {
   const original=globalThis.fetch;
   try {
-    for(const [body, expected] of [
-      [{error:'invalid_client',error_description:'secret-value'},'invalid_client'],
-      [{ErrorCode:'unauthorized_client',Error:'secret-value'},'unauthorized_client'],
-      [{fault:{faultstring:'secret-value',detail:{errorcode:'oauth.v2.InvalidClientIdentifier'}}},'invalid_client'],
-      [{error:'secret-value',access_token:'secret-value'},undefined],
-    ]) {
+    const cases = [
+      { name:'recognized OAuth object', body:'{"error":"invalid_client","error_description":"secret-description","access_token":"secret-token"}', contentType:'application/json; charset=utf-8', metadata:['json','json_object','oauth_error',true], oauthError:'invalid_client' },
+      { name:'HTML gateway page', body:'<html>secret-html</html>', contentType:'text/html; charset=utf-8', metadata:['html','non_json','none',false] },
+      { name:'malformed JSON', body:'{"error":"invalid_client"', contentType:'application/json', metadata:['json','non_json','none',false] },
+      { name:'JSON scalar', body:'null', contentType:'application/json', metadata:['json','json_scalar','none',false] },
+      { name:'unknown OAuth code', body:'{"error":"opaque-secret","error_description":"secret-description","access_token":"secret-token"}', contentType:'application/json', metadata:['json','json_object','oauth_error',false] },
+      { name:'recognized KBank ErrorCode', body:'{"ErrorCode":"unauthorized_client","Error":"secret-error"}', contentType:'application/json', metadata:['json','json_object','kbank_error_code',true], oauthError:'unauthorized_client' },
+      { name:'recognized code after unknown error', body:'{"error":"opaque-secret","ErrorCode":"unauthorized_client"}', contentType:'application/json', metadata:['json','json_object','kbank_error_code',true], oauthError:'unauthorized_client' },
+      { name:'recognized gateway fault detail', body:'{"fault":{"faultstring":"secret-fault","detail":{"errorcode":"oauth.v2.InvalidClientIdentifier"}}}', contentType:'application/json', metadata:['json','json_object','gateway_fault_detail',true], oauthError:'invalid_client' },
+      { name:'empty body with no content type', body:null, contentType:null, metadata:['missing','empty','none',false] },
+    ];
+    for (const entry of cases) {
       const data=new Map(), state={storage:{get:async k=>data.get(k),put:async(k,v)=>data.set(k,v)}};
-      globalThis.fetch=async()=>Response.json(body,{status:401});
+      globalThis.fetch=async()=>new Response(entry.body,{status:401,headers:entry.contentType?{'content-type':entry.contentType}:{}});
       const worker=new KbankSandboxCoordinator(state,{KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'});
       const response=await worker.fetch(new Request('https://kbank-coordinator/smoke',{method:'POST'}));
       assert.equal(response.status,502);
       const result=await response.json();
       assert.equal(result.upstream_status,401);
-      assert.equal(result.oauth_error,expected);
-      assert.doesNotMatch(JSON.stringify(result),/secret-value/);
+      assert.deepEqual(
+        [result.bank_response_media_type,result.bank_response_body_shape,result.bank_error_shape,result.bank_error_code_recognized],
+        entry.metadata,
+        entry.name,
+      );
+      assert.equal(result.oauth_error,entry.oauthError);
+      assert.doesNotMatch(JSON.stringify(result),/secret-(?:description|token|html|error|fault)|opaque-secret/);
     }
   } finally {globalThis.fetch=original;}
 });
+
+test('oversized JSON is marked size-limited and its body is not exposed', async () => {
+  const original=globalThis.fetch;
+  const body=JSON.stringify({error:'invalid_client',payload:'secret-payload'.repeat(3000)});
+  try {
+    globalThis.fetch=async()=>new Response(body,{status:401,headers:{'content-type':'application/json'}});
+    const state={storage:{get:async()=>undefined,put:async()=>{}}};
+    const worker=new KbankSandboxCoordinator(state,{KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'});
+    const response=await worker.fetch(new Request('https://kbank-coordinator/smoke',{method:'POST'}));
+    const result=await response.json();
+    assert.equal(result.bank_response_media_type,'json');
+    assert.equal(result.bank_response_body_shape,'size_limited');
+    assert.equal(result.bank_error_shape,'none');
+    assert.equal(result.bank_error_code_recognized,false);
+    assert.doesNotMatch(JSON.stringify(result),/secret-payload|invalid_client/);
+  } finally {globalThis.fetch=original;}
+});
+
