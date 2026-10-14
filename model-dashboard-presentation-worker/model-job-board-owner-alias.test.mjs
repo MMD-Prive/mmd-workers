@@ -58,9 +58,9 @@ test("public job board entry uses Per-led Welcome and contact-first intake", () 
       next: "https://sigil.mmdbkk.com/public/api/jobs/JOB-20260929-05F8B7666EC7",
     },
   });
-  assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
+  assert.match(html, /ส่งข้อมูลส่วนตัว/);
   assert.match(html, /เริ่มส่งข้อมูล/);
-  assert.match(html, /ยังไม่สะดวกส่งรูป/);
+  assert.match(html, /ต้องการแก้ไขหรือลบข้อมูล/);
   assert.match(html, /t\.me\/per_mmd/);
   assert.match(html, /\/apply\/public-model/);
   assert.match(html, /source","job_board"/);
