@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const workflow=readFileSync(new URL('../../.github/workflows/deploy-member-dashboard-chat-worker.yml',import.meta.url),'utf8');
 const routeBlock=workflow.split('- name: Sync MMS Therapist auth and AI smoke routes')[1].split('- name: Smoke production LINE and MMS route ownership')[0];
 const script=routeBlock.split("<<'NODE'\n")[1].split('\n          NODE')[0].replace(/^          /gm,'');
-const expected=['mmdbkk.com','www.mmdbkk.com'].flatMap(host=>['','/login*','/me*','/app*','/api/auth/*','/api/app/*'].map(suffix=>host+'/male-massage/therapists'+suffix));
+const expected=['mmdbkk.com','www.mmdbkk.com'].flatMap(host=>['*','/login*','/me*','/app*','/api/auth/*','/api/app/*'].map(suffix=>host+'/male-massage/therapists'+suffix));
 async function simulate(existing=[]) {
  const routes=existing.map(r=>({...r})), writes=[];
  const context={process:{env:{CLOUDFLARE_ROUTES_API_TOKEN:'test',CLOUDFLARE_ZONE_ID:'test-zone',WORKER_NAME:'member-dashboard-chat-worker'}},console:{log(){}},setTimeout:fn=>fn(),fetch:async(url,options={})=>{
