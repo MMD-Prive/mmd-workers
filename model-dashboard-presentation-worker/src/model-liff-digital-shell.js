@@ -1,4 +1,6 @@
 export const MMD_APP_DIGITAL_CSS = `
+@font-face{font-family:"MY MODEL Thai";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"MY MODEL Thai";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
 :root{color-scheme:dark;--mmd-bg:#080907;--mmd-surface:#151712;--mmd-surface-2:#202019;--mmd-line:#404032;--mmd-gold:#e7cc89;--mmd-cream:#f6f1e3;--mmd-muted:#a7a899;--mmd-green:#b4d8b5;--mmd-danger:#e3a4a4}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%;background:var(--mmd-bg);color:var(--mmd-cream);font-family:system-ui,-apple-system,"LINE Seed Sans TH","Noto Sans Thai",sans-serif}
@@ -76,6 +78,19 @@ body .mmd-applicant-compact .mmd-digital-meter{display:none}
 body .mmd-applicant-compact .mmd-digital-action{margin-top:16px;min-height:50px;background:linear-gradient(135deg,#edd69a,#c5a36b);box-shadow:0 6px 18px rgba(196,158,92,.16)}
 body .mmd-applicant-compact .mmd-digital-detail{margin-top:12px;font-size:12px;line-height:1.6;text-align:center}
 @media(max-height:620px){body .mmd-welcome-art{height:76px;margin-top:12px}body .mmd-applicant-compact .mmd-digital-title{margin-top:12px}}
+
+/* Load a consistent Thai face; use real regular/bold weights and natural Thai spacing. */
+body .mmd-digital-app{font-family:"MY MODEL Thai","LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif;font-weight:400;letter-spacing:0}
+body .mmd-digital-app button,body .mmd-digital-app input,body .mmd-digital-app select,body .mmd-digital-app textarea{font-family:inherit}
+body .mmd-digital-brand,body .mmd-welcome-art span{font-family:system-ui,-apple-system,sans-serif}
+body .mmd-digital-title,body .mmd-digital-row strong,body .mmd-digital-action{font-weight:700}
+body .mmd-digital-pill{font-size:12px;line-height:1.5;letter-spacing:0;font-weight:400}
+body .mmd-applicant-compact .mmd-digital-title{font-size:24px;line-height:1.45}
+body .mmd-applicant-compact .mmd-digital-sub{font-size:15px;line-height:1.65}
+body .mmd-applicant-compact .mmd-welcome-steps li{font-size:13px;line-height:1.5}
+body .mmd-applicant-compact .mmd-digital-row strong{font-size:15px;line-height:1.6}
+body .mmd-applicant-compact .mmd-digital-row p,body .mmd-applicant-compact .mmd-digital-detail{font-size:13px;line-height:1.65}
+body .mmd-applicant-compact .mmd-digital-action{font-size:16px;line-height:1.5}
 
 `;
 
