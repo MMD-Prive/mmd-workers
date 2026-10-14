@@ -67,7 +67,7 @@ test('cooldown remains a non-success and raw upstream payloads never escape', as
   const response = await handle(await request(h.env), h.env);
   assert.equal(response.status, 429);
   assert.deepEqual(await response.json(), { environment: 'sandbox', transfers_enabled: false, ok: false,
-    error: 'oauth_smoke_cooldown', retry_after_seconds: 1750, last_success: true });
+    error: 'oauth_smoke_cooldown', upstream_status: 429, retry_after_seconds: 1750, last_success: true });
   for (const status of [200, 302, 502]) {
     const bad = setup(() => Response.json({ ok: true, access_token: 'must-not-leak', error: 'must-not-leak' }, { status }));
     const result = await handle(await request(bad.env), bad.env);
@@ -96,4 +96,64 @@ test('missing config and transport exceptions never retry or use public fallback
     assert.equal(h.calls.length, 1);
     assert.equal(publicCalls, 0);
   } finally { globalThis.fetch = original; }
+});
+
+test('readiness authenticates and checks booleans without bank or coordinator IO', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw Error('bank must never be called'); };
+  try {
+    for (const enabled of ['false', 'true']) {
+      const bankEnv = { AUTH_SERVICE_ADMIN_TO_PAYMENTS: 'test-service', KBANK_SANDBOX_ENABLED: enabled,
+        KBANK_SANDBOX_CONSUMER_ID: 'hidden-id', KBANK_SANDBOX_CONSUMER_SECRET: 'hidden-secret',
+        KBANK_SANDBOX_COORDINATOR: { get() { throw Error('must not call coordinator'); } } };
+      const h = setup(req => handleKbankSandbox(req, bankEnv));
+      const response = await handle(await request(h.env, { body: { mode: 'kbank_sandbox_status' } }), h.env);
+      assert.equal(response.status, 200);
+      const data = await response.json();
+      assert.equal(data.ready, enabled === 'true');
+      assert.equal(data.bank_called, false);
+      assert.deepEqual(data.checks, { enabled: enabled === 'true', consumer_id_present: true, consumer_secret_present: true, coordinator_present: true });
+      assert.doesNotMatch(JSON.stringify(data), /hidden-id|hidden-secret/);
+      assert.equal(h.calls.length, 1);
+      for (const options of [{auth:false}, {role:'mms_partner'}, {origin:'https://attacker.example'}, {body:{mode:'kbank_sandbox_status',url:'https://attacker.example'}}]) {
+        assert.ok((await handle(await request(h.env, {body:{mode:'kbank_sandbox_status'},...options}),h.env)).status >= 400);
+      }
+      assert.equal(h.calls.length, 1);
+      const noAuth = await handleKbankSandbox(new Request('https://internal/v1/internal/payments/kbank/sandbox/status', {method:'POST'}), bankEnv);
+      assert.equal(noAuth.status,401);
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+test('missing settings remain not ready and HTML failures expose status only', async () => {
+  const h = setup(req => handleKbankSandbox(req, {AUTH_SERVICE_ADMIN_TO_PAYMENTS:'test-service'}));
+  const data = await (await handle(await request(h.env,{body:{mode:'kbank_sandbox_status'}}),h.env)).json();
+  assert.equal(data.ready,false);
+  assert.deepEqual(data.checks,{enabled:false,consumer_id_present:false,consumer_secret_present:false,coordinator_present:false});
+  const broken = setup(() => new Response('<html>secret-detail</html>',{status:502}));
+  const response=await handle(await request(broken.env),broken.env);
+  assert.deepEqual(await response.json(),{environment:'sandbox',transfers_enabled:false,ok:false,error:'sandbox_non_json_response',upstream_status:502});
+});
+
+test('rendered browser script compiles and readiness enables smoke only when ready', async () => {
+  const { Script, createContext } = await import('node:vm');
+  const h=setup(() => {throw Error('GET must not probe');});
+  const html=await (await handle(await request(h.env,{method:'GET'}),h.env)).text();
+  assert.match(html, /id="kbank-probe" type="button" disabled/);
+  const source=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+  const script=new Script(source);
+  const elements=new Map();
+  const get=id=>{if(!elements.has(id))elements.set(id,{disabled:id==='kbank-probe',dataset:{},textContent:'',addEventListener(event,fn){this[event]=fn;}});return elements.get(id);};
+  let calls=0, ready=false;
+  const ctx=createContext({document:{getElementById:get},fetch:async()=>{calls++;return {ok:true,status:200,json:async()=>({ok:true,ready,checks:{enabled:ready,consumer_id_present:true,consumer_secret_present:true,coordinator_present:true}})};}});
+  script.runInContext(ctx);
+  assert.equal(calls,0);
+  await get('kbank-status').click.call(get('kbank-status'));
+  assert.equal(get('kbank-probe').disabled,true);
+  ready=true;
+  await get('kbank-status').click.call(get('kbank-status'));
+  assert.equal(get('kbank-probe').disabled,false);
+  get('kbank-probe').dataset.attempted='true';
+  await get('kbank-status').click.call(get('kbank-status'));
+  assert.equal(get('kbank-probe').disabled,true);
 });
