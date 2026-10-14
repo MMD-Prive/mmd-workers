@@ -1,3 +1,4 @@
+import { build } from 'esbuild';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
@@ -10,7 +11,7 @@ const therapist = { id: 'mmst_' + 'a'.repeat(24), name: 'Therapist QA', status: 
 const owner = { id: 'per', role: 'owner' };
 const job = { id: 'mmsjob_' + 'b'.repeat(24), therapist_id: therapist.id, venue_id: 'relax-spa-by-9', status: 'Completed', duration_minutes: 60, therapist_amount: 20000, travel_amount: 0, travel_included_confirmed: true, customer_amount: 100000, is_test: false };
 async function waitFor(fn) { for (let n = 0; n < 100; n++) { if (fn()) return; await new Promise(r => setTimeout(r, 10)); } assert.ok(fn(), 'UI did not complete'); }
-async function ui(t, partner = false, seed = {}) {
+async function ui(t, partner = false, seed = {}, renderPage = renderRelaxSpaPage) {
   const actor = partner ? { id: 'partner:recPPPPPPPPPPPPPP', role: 'spa_partner' } : { id: 'per', role: 'owner' };
   const state = { referrals: [], agreements: [], services: [], events: [], requests: {}, ...seed }, calls = [], errors = [], createBodies=[], correctionBodies=[];
   const w = new Window({ url: partner ? 'https://www.mmdbkk.com/partner/dashboard/relax-spa?t=fixture-token' : 'https://www.mmdbkk.com/internal/admin/mms/relax-spa', settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
@@ -26,7 +27,7 @@ async function ui(t, partner = false, seed = {}) {
     try { return Response.json({ ok: true, data: applySpaCommand(state, actor, command, JSON.parse(opts.body), { therapist, job }) }); }
     catch (e) { return Response.json({ ok: false, error: { code: e.code } }, { status: e.status || 503 }); }
   };
-  w.document.write(renderRelaxSpaPage({ partner })); await waitFor(() => w.document.querySelector('form[data-command="referrals"]'));
+  w.document.write(renderPage({ partner })); await waitFor(() => w.document.querySelector('form[data-command="referrals"]'));
   const q = s => w.document.querySelector(s);
   const submit = async (command, values, done, submitterValue) => {
     const form = q('form[data-command="' + command + '"]'); assert.ok(form, command);
@@ -164,4 +165,16 @@ test('resuming a draft preserves Bangkok assessment time and supports removing c
   assert.equal(f.q('[name="travel_estimate"]').value,'0.00');
   f.q('[data-adjustment-row] [data-remove-adjustment]').click();
   assert.equal(f.q('[data-adjustment-row]'),null);
+});
+
+test('Wrangler keepNames bundle initializes Owner and Partner browser pages', async t => {
+  const result=await build({entryPoints:[new URL('../../admin-worker/src/relax-spa-page.js',import.meta.url).pathname],bundle:true,write:false,platform:'browser',format:'esm',keepNames:true});
+  const renderer=await import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0].text).toString('base64'));
+  for (const partner of [false,true]) {
+    const html=renderer.renderRelaxSpaPage({partner});
+    assert.match(html,/__name\(/,'exercise serialized compiler name helpers');
+    const f=await ui(t,partner,{},renderer.renderRelaxSpaPage);
+    assert.ok(f.calls.some(u=>u.pathname.endsWith('/snapshot')));
+    assert.deepEqual(f.errors,[]);
+  }
 });
