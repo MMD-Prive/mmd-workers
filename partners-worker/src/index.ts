@@ -1,4 +1,5 @@
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { handleRelaxSpaPartner, isRelaxSpaPartnerRequest } from './relax-spa-partner.mjs';
 
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
@@ -6,7 +7,7 @@ type OptionalVarName =
   | "PUBLIC_SITE_URL"
   | "TELEGRAM_PUBLIC_MODEL_THREAD_ID"
   | "TELEGRAM_ADMIN_THREAD_ID";
-type RuntimeEnv = Env & Partial<Record<SecretName | OptionalVarName | "AIRTABLE_TABLE_SESSIONS" | "AIRTABLE_TABLE_PAYMENTS", string>>;
+type RuntimeEnv = Env & { MMS_WORKER?: Fetcher } & Partial<Record<SecretName | OptionalVarName | "AIRTABLE_TABLE_SESSIONS" | "AIRTABLE_TABLE_PAYMENTS", string>>;
 
 type AirtableFieldValue = string | number | boolean | string[] | null;
 type AirtableFields = Record<string, AirtableFieldValue>;
@@ -378,6 +379,14 @@ export default {
     const url = new URL(request.url);
 
     try {
+      if (isRelaxSpaPartnerRequest(url.pathname)) {
+        const verified = await verifyPartnerTokenFromRequest(request, runtimeEnv);
+        if (!verified.ok) {
+          if (url.pathname === '/partner/dashboard/relax-spa' && ['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 302, headers: { location: PARTNER_LINE_LOGIN_URL, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } });
+          return verified.response;
+        }
+        return handleRelaxSpaPartner(request, runtimeEnv, verified.value.partnerRecord.id);
+      }
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders(request, runtimeEnv) });
       }

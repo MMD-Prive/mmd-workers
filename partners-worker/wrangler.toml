@@ -22,6 +22,10 @@ routes = [
 binding = "TELEGRAM_WORKER"
 service = "telegram-worker"
 
+[[services]]
+binding = "MMS_WORKER"
+service = "mms-worker"
+
 [[r2_buckets]]
 binding = "PARTNER_ASSETS"
 bucket_name = "mmd-sigil-partner-assets"
