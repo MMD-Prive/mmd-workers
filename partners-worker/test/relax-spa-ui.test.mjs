@@ -4,12 +4,50 @@ import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { Window } from 'happy-dom';
 import { renderRelaxSpaPage } from '../../admin-worker/src/relax-spa-page.js';
+import { renderMmsAdminPage } from '../../admin-worker/src/mms-admin-page.js';
+import { wireMmsApproveUi } from '../../admin-worker/src/mms-admin-approve-ui.js';
+import { wireMmsAdminMobileBundle } from '../../admin-worker/src/mms-admin-mobile-bundle.js';
+import { wireMmsJobsUi } from '../../admin-worker/src/mms-admin-jobs-ui.js';
+import { wireMmsWorkspaceUi } from '../../admin-worker/src/mms-admin-workspace-ui.js';
 import { applySpaCommand } from '../../mms-worker/src/relax-spa-ledger.mjs';
 import { agreementV2, agreementV3 } from '../../mms-worker/src/relax-spa-agreement.mjs';
 
 const therapist = { id: 'mmst_' + 'a'.repeat(24), name: 'Therapist QA', status: 'Active' };
 const owner = { id: 'per', role: 'owner' };
 const job = { id: 'mmsjob_' + 'b'.repeat(24), therapist_id: therapist.id, venue_id: 'relax-spa-by-9', status: 'Completed', duration_minutes: 60, therapist_amount: 20000, travel_amount: 0, travel_included_confirmed: true, customer_amount: 100000, is_test: false };
+
+test('Owner MMS overview initializes with nested Therapist workspace header', async t => {
+  const errors = [], calls = [];
+  const w = new Window({ url: 'https://www.mmdbkk.com/internal/admin/mms', settings: { enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true, disableCSSFileLoading: true, disableJavaScriptFileLoading: true } });
+  t.after(() => w.happyDOM.close());
+  w.addEventListener('error', e => errors.push(e.error || e.message));
+  w.fetch = async (path, init = {}) => {
+    assert.equal(init.method || 'GET', 'GET', 'overview initialization must remain read-only');
+    const u = new URL(path, w.location.href); calls.push(u.pathname);
+    if (u.pathname.endsWith('/workspace')) return Response.json({ ok: true, therapists: [], jobs: [], offers: [], complete: true });
+    if (u.pathname.endsWith('/jobs')) return Response.json({ ok: true, jobs: [] });
+    if (u.pathname.endsWith('/catalog')) return Response.json({ ok: true, data: { skills: [], zones: [] } });
+    return Response.json({ ok: true, applications: [], therapists: [], prebookings: [] });
+  };
+  // Preserve the production assembly order: workspace markup precedes the overview header.
+  w.document.write(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())))));
+  await waitFor(() => w.document.readyState === 'complete');
+  const overview = w.document.querySelector('#overview');
+  const root = overview.querySelector('.mms-ops-home');
+  assert.ok(root, 'operations home must attach to the overview');
+  assert.equal(root.parentElement, overview);
+  assert.equal(root.previousElementSibling.querySelector('#overviewTitle')?.id, 'overviewTitle');
+  assert.equal(overview.querySelectorAll('.mms-ops-home').length, 1);
+  assert.ok(overview.querySelector('[data-mms-workspace-admin-v1] .section-head'));
+  await waitFor(() => root.querySelector('#opsJobsCount').textContent === '0');
+  assert.ok(calls.includes('/v1/admin/mms/jobs'));
+  assert.match(root.querySelector('#opsJobs').textContent, /ยังไม่มีงาน MMS/);
+  root.querySelector('[data-ops-refresh]').click();
+  await waitFor(() => calls.filter(p => p === '/v1/admin/mms/jobs').length >= 2);
+  await w.happyDOM.waitUntilComplete();
+  assert.equal(overview.querySelectorAll('.mms-ops-home').length, 1);
+  assert.deepEqual(errors, []);
+});
 async function waitFor(fn) { for (let n = 0; n < 100; n++) { if (fn()) return; await new Promise(r => setTimeout(r, 10)); } assert.ok(fn(), 'UI did not complete'); }
 async function ui(t, partner = false, seed = {}, renderPage = renderRelaxSpaPage) {
   const actor = partner ? { id: 'partner:recPPPPPPPPPPPPPP', role: 'spa_partner' } : { id: 'per', role: 'owner' };
