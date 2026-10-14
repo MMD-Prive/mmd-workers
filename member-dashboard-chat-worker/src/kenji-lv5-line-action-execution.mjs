@@ -127,6 +127,17 @@ export async function executeKenjiLv5LineBookingAction({ env = {}, event = {}, m
   }
 }
 
+export function canonicalClientRecheckFailure(canonical = {}) {
+  return {
+    attempted: true,
+    executed: false,
+    status: "canonical_client_recheck_failed",
+    identity_resolution_status: text(canonical?.status || "unavailable", 40),
+    identity_resolution_reason: text(canonical?.reason || "canonical_client_resolution_failed", 80),
+    ...(Number.isInteger(canonical?.http_status) ? { identity_http_status: canonical.http_status } : {}),
+  };
+}
+
 export function applyKenjiLv5BookingActionToDecision(decision = {}, actionResult = {}) {
   if (actionResult?.attempted !== true) return decision;
   const operational = {
@@ -136,6 +147,11 @@ export function applyKenjiLv5BookingActionToDecision(decision = {}, actionResult
     action_executed: actionResult.executed === true,
     action_status: text(actionResult.status, 80),
     action_receipt: actionResult.receipt || null,
+    ...(actionResult.status === "canonical_client_recheck_failed" ? {
+      identity_resolution_status: text(actionResult.identity_resolution_status, 40),
+      identity_resolution_reason: text(actionResult.identity_resolution_reason, 80),
+      ...(Number.isInteger(actionResult.identity_http_status) ? { identity_http_status: actionResult.identity_http_status } : {}),
+    } : {}),
   };
 
   if (actionResult.executed === true) {
@@ -178,10 +194,12 @@ export function applyKenjiLv5BookingActionToDecision(decision = {}, actionResult
 
   return {
     ...decision,
-    text: "รายละเอียดครบแล้วครับ และคิวที่ขอไม่ชนกับงานที่เห็นตอนนี้ แต่ขั้นตอนบันทึก Booking Request ยังไม่ผ่านครบ ผมจึงยังไม่บอกว่าเปิดรายการสำเร็จหรือคอนเฟิร์มงานครับ รายละเอียดเดิมยังคงใช้ต่อได้",
+    text: actionResult.status === "canonical_client_recheck_failed"
+      ? "ตอนนี้ผมยังตรวจบัญชีลูกค้าที่เชื่อมกับ LINE นี้ให้ครบไม่ได้ครับ จึงยังไม่บันทึกรายการจอง รายละเอียดเดิมยังอยู่และผมส่งต่อให้ตรวจแล้วครับ"
+      : "รายละเอียดครบแล้วครับ และคิวที่ขอไม่ชนกับงานที่เห็นตอนนี้ แต่ขั้นตอนบันทึก Booking Request ยังไม่ผ่านครบ ผมจึงยังไม่บอกว่าเปิดรายการสำเร็จหรือคอนเฟิร์มงานครับ รายละเอียดเดิมยังคงใช้ต่อได้",
     reply_source: "lv5_p4_action_degraded",
     handoff_required: true,
-    handoff_reason: `lv5_p4:${text(actionResult.status, 80) || "action_failed"}`,
+    handoff_reason: `lv5_p4:${text(actionResult.status, 80) || "action_failed"}${actionResult.identity_resolution_reason ? `:${text(actionResult.identity_resolution_reason, 80)}` : ""}`,
     truth_status: "verified_live_action_not_executed",
     operational,
   };

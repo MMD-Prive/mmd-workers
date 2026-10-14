@@ -36,6 +36,15 @@ function routeForDecision(env = {}, decision = {}) {
       action: "Review Payment Inbox; do not change money/access from LINE reply.",
     };
   }
+  if (decision?.operational?.action_status === "canonical_client_recheck_failed"
+    && decision?.operational?.identity_resolution_status === "unavailable") {
+    return {
+      event: "auth_system_degraded",
+      flow: "alert",
+      thread_id: Number(env.TELEGRAM_ALERTS_THREAD_ID || env.TG_THREAD_ALERTS || 9) || 9,
+      action: "Inspect canonical identity lookup availability/configuration; retry after recovery. Do not rename or relink Clients based on this transport failure.",
+    };
+  }
   if (primary === "resolve_identity" || /canonical_client|client_360|identity/i.test(reason)) {
     return {
       event: "identity_client_verification_failed",
@@ -87,6 +96,7 @@ export async function notifyKenjiLv5Hype(env = {}, event = {}, decision = {}) {
       `Intent: ${intent}`,
       ref ? `Reference: ${ref}` : "",
       `Reason: ${reason}`,
+      Number.isInteger(decision?.operational?.identity_http_status) ? `Identity lookup HTTP: ${decision.operational.identity_http_status}` : "",
       `Action: ${route.action}`,
       "Authority: notification_only · Per/canonical backend remains final authority.",
     ].filter(Boolean).join("\n"),
