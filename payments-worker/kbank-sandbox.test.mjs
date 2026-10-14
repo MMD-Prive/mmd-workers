@@ -116,3 +116,20 @@ test('oversized JSON is marked size-limited and its body is not exposed', async 
   } finally {globalThis.fetch=original;}
 });
 
+
+test('read-only cooldown status never writes storage or calls the bank, including restart and pending states',async()=>{
+ const original=globalThis.fetch;let writes=0,bank=0;
+ globalThis.fetch=async()=>{bank++;throw Error('no bank in status');};
+ try{
+  for(const previous of [undefined,{nextAttemptAt:Date.now()+60000,success:false},{nextAttemptAt:Date.now()-1000,success:true},{nextAttemptAt:'invalid',success:false}]){
+   const worker=new KbankSandboxCoordinator({storage:{get:async()=>previous,put:async()=>{writes++;}}},{});
+   const result=await(await worker.fetch(new Request('https://kbank-coordinator/status',{method:'POST'}))).json();
+   assert.equal(result.bank_called,false);assert.equal(result.cooldown.known,previous?.nextAttemptAt!=='invalid');
+   if(previous?.success===false&&typeof previous.nextAttemptAt==='number')assert.ok(result.cooldown.retry_after_seconds>0);
+   if(!previous||previous.success===true)assert.equal(result.cooldown.retry_after_seconds,0);
+  }
+  const pending=new KbankSandboxCoordinator({storage:{get:async()=>{throw Error('pending should fail closed');}}},{});pending.pending=Promise.resolve();
+  assert.deepEqual((await(await pending.fetch(new Request('https://kbank-coordinator/status',{method:'POST'}))).json()).cooldown,{known:false});
+  assert.equal(writes,0);assert.equal(bank,0);
+ }finally{globalThis.fetch=original;}
+});

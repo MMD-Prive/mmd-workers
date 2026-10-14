@@ -98,14 +98,14 @@ test('missing config and transport exceptions never retry or use public fallback
   } finally { globalThis.fetch = original; }
 });
 
-test('readiness authenticates and checks booleans without bank or coordinator IO', async () => {
+test('readiness authenticates and checks booleans without bank IO and reads coordinator status only', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => { throw Error('bank must never be called'); };
   try {
     for (const enabled of ['false', 'true']) {
       const bankEnv = { AUTH_SERVICE_ADMIN_TO_PAYMENTS: 'test-service', KBANK_SANDBOX_ENABLED: enabled,
         KBANK_SANDBOX_CONSUMER_ID: 'hidden-id', KBANK_SANDBOX_CONSUMER_SECRET: 'hidden-secret',
-        KBANK_SANDBOX_COORDINATOR: { get() { throw Error('must not call coordinator'); } } };
+        KBANK_SANDBOX_COORDINATOR: { idFromName:n=>n,get:()=>({fetch:async r=>{assert.equal(new URL(r.url).pathname,'/status');return Response.json({environment:'sandbox',bank_called:false,cooldown:{known:true,retry_after_seconds:0,last_attempt_at:null,next_attempt_at:null,last_success:null}});}}) } };
       const h = setup(req => handleKbankSandbox(req, bankEnv));
       const response = await handle(await request(h.env, { body: { mode: 'kbank_sandbox_status' } }), h.env);
       assert.equal(response.status, 200);
@@ -144,8 +144,8 @@ test('rendered browser script compiles and readiness enables smoke only when rea
   const script=new Script(source);
   const elements=new Map();
   const get=id=>{if(!elements.has(id))elements.set(id,{disabled:id==='kbank-probe',dataset:{},textContent:'',addEventListener(event,fn){this[event]=fn;}});return elements.get(id);};
-  let calls=0, ready=false;
-  const ctx=createContext({document:{getElementById:get},fetch:async()=>{calls++;return {ok:true,status:200,json:async()=>({ok:true,ready,checks:{enabled:ready,consumer_id_present:true,consumer_secret_present:true,coordinator_present:true}})};}});
+  let calls=0, ready=false, cooldownSeconds=0, cooldownKnown=true;
+  const ctx=createContext({document:{getElementById:get},fetch:async()=>{calls++;return {ok:true,status:200,json:async()=>({ok:true,ready,cooldown:{known:cooldownKnown,retry_after_seconds:cooldownSeconds},checks:{enabled:ready,consumer_id_present:true,consumer_secret_present:true,coordinator_present:true}})};}});
   script.runInContext(ctx);
   assert.equal(calls,0);
   await get('kbank-status').click.call(get('kbank-status'));
@@ -153,6 +153,9 @@ test('rendered browser script compiles and readiness enables smoke only when rea
   ready=true;
   await get('kbank-status').click.call(get('kbank-status'));
   assert.equal(get('kbank-probe').disabled,false);
+  cooldownSeconds=60;await get('kbank-status').click.call(get('kbank-status'));assert.equal(get('kbank-probe').disabled,true);
+  cooldownSeconds=0;cooldownKnown=false;await get('kbank-status').click.call(get('kbank-status'));assert.equal(get('kbank-probe').disabled,true);
+  cooldownKnown=true;
   get('kbank-probe').dataset.attempted='true';
   await get('kbank-status').click.call(get('kbank-status'));
   assert.equal(get('kbank-probe').disabled,true);
@@ -259,3 +262,13 @@ test('admin forwards only enumerated response metadata and the recognition boole
   assert.doesNotMatch(JSON.stringify(invalidData),/secret|must-not-leak|charset/);
 });
 
+
+
+test('readiness requires known cooldown and strips untrusted extra status fields',async()=>{
+ const empty={known:true,retry_after_seconds:0,last_attempt_at:null,next_attempt_at:null,last_success:null};
+ for(const [cooldown,ready] of [[empty,true],[{...empty,retry_after_seconds:60},false],[undefined,false],[{...empty,retry_after_seconds:1801},false]]){
+  const h=setup(()=>Response.json({environment:'sandbox',ok:true,bank_called:false,transfers_enabled:false,checks:{enabled:true,consumer_id_present:true,consumer_secret_present:true,coordinator_present:true},cooldown:cooldown?{...cooldown,access_token:'must-not-leak'}:undefined,access_token:'must-not-leak'}));
+  const data=await(await handle(await request(h.env,{body:{mode:'kbank_sandbox_status'}}),h.env)).json();
+  assert.equal(data.ready,ready);assert.doesNotMatch(JSON.stringify(data),/must-not-leak|access_token/);assert.equal(h.calls.length,1);
+ }
+});
