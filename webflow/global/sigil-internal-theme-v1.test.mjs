@@ -2,7 +2,7 @@ import { Script } from 'node:vm';
 import { internalBrandLoader } from './sigil-brand-v1.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { usesSilverWorkspace, decorateInternalSilverTheme } from './sigil-internal-theme-v1.mjs';
+import { usesSilverWorkspace, decorateInternalSilverTheme, installInternalSilverTheme, SILVER_WORKSPACE_CSS } from './sigil-internal-theme-v1.mjs';
 const html='<html lang="th"><head><title>Internal</title></head><body><main>Workspace</main></body></html>';
 const response=()=>new Response(html,{headers:{'content-type':'text/html','cache-control':'no-store','content-security-policy':"default-src 'self'",'set-cookie':'existing=unchanged; Secure'}});
 test('internal spaces share silver while all job creation/broadcast aliases retain colors',()=>{
@@ -32,3 +32,12 @@ test('nonce-protected pages reuse their existing nonce without weakening CSP',as
 });
 
 test('embedded brand script parses with quoted Thai sidebar selector',()=>{assert.doesNotThrow(()=>new Script(internalBrandLoader()));});
+
+test('a pinned loader upgrades an existing Worker style instead of leaving stale dark surfaces',()=>{
+  const style={textContent:'old dark style'}, icon={};
+  const doc={documentElement:{dataset:{}},getElementById:()=>style,querySelectorAll:()=>[],querySelector:()=>icon};
+  installInternalSilverTheme(doc,{pathname:'/internal/admin/dashboard'});
+  assert.equal(style.textContent,SILVER_WORKSPACE_CSS);
+  installInternalSilverTheme(doc,{pathname:'/internal/admin/jobs/create-job'});
+  assert.doesNotMatch(style.textContent, /#adm27/);
+});
