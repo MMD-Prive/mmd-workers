@@ -6,8 +6,8 @@ import { usesSilverWorkspace, decorateInternalSilverTheme, installInternalSilver
 const html='<html lang="th"><head><title>Internal</title></head><body><main>Workspace</main></body></html>';
 const response=()=>new Response(html,{headers:{'content-type':'text/html','cache-control':'no-store','content-security-policy':"default-src 'self'",'set-cookie':'existing=unchanged; Secure'}});
 test('internal spaces share silver while all job creation/broadcast aliases retain colors',()=>{
-  for(const p of ['/internal/admin/dashboard','/internal/admin/payments','/internal/admin/mms','/internal/admin/kenji','/internal/ceo/models'])assert.equal(usesSilverWorkspace(p),true);
-  for(const p of ['/','/member/dashboard','/internal/admin/jobs/create-job','/internal/admin/jobs/create-job/','/internal/admin/jobs/create-session','/internal/admin/jobs/job-board'])assert.equal(usesSilverWorkspace(p),false);
+  for(const p of ['/internal/admin/dashboard','/internal/admin/payments','/internal/admin/kenji','/internal/ceo/models'])assert.equal(usesSilverWorkspace(p),true);
+  for(const p of ['/internal/admin/mms','/internal/admin/mms/relax-spa','/','/member/dashboard','/internal/admin/jobs/create-job','/internal/admin/jobs/create-job/','/internal/admin/jobs/create-session','/internal/admin/jobs/job-board'])assert.equal(usesSilverWorkspace(p),false);
 });
 test('theme decoration preserves the backend cookie, CSP and no-store policy',async()=>{
   const r=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/payments'),response());

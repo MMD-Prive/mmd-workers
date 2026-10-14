@@ -200,3 +200,27 @@ receipt and promote only MMS. Rollback is promotion of the captured previous MMS
 version (currently `3e3cd902-9dfd-4bb1-bd35-49d697173419`) without rebuilding,
 route sync, secret rotation or data rollback. Refresh that rollback target if
 another release intervenes. #2378 must not be rolled out again as a new release.
+
+
+### Owner session follow-up and bundled-script failure
+
+The existing Chrome session subsequently reached the Owner dashboard and opened
+`/internal/admin/mms/relax-spa`. The page shell loaded, but remained at the loading
+message. Browser console showed `ReferenceError: __name is not defined` inside
+`spaBrowser`. No snapshot, preview or monetary action was submitted.
+
+The renderer serializes a function with `toString()`. Bundling with function-name
+preservation injects references to the Worker's naming helper, which is absent in
+the rendered browser script. The rendered script now provides a block-scoped
+identity helper. A regression bundles the renderer with `keepNames:true` and boots
+both Owner and Partner DOMs; this failed before the fix and passes after it.
+Nine focused UI tests pass locally. This is source-level repair, not evidence that
+the deployed page is fixed. Preserve the newer shared theme merged in #2381;
+this patch does not redesign or revert it.
+
+The enlarged patch now includes the shared Admin/Partner renderer. Its merge
+would therefore also trigger Admin and Partner deployment workflows, including
+Admin's downstream Kenji workflow; the earlier MMS-only release boundary no
+longer describes this head. Keep the PR unmerged until a code-only release for
+all affected Workers is reviewed and authorized. No workflow was disabled and no
+production deploy, route, resource or secret mutation was performed.
