@@ -60,3 +60,26 @@ test('bank redirect is not followed and consumes cooldown without exposing desti
     assert.equal(calls,1);
   } finally {globalThis.fetch=original;}
 });
+
+
+test('only recognized OAuth errors survive response redaction', async () => {
+  const original=globalThis.fetch;
+  try {
+    for(const [body, expected] of [
+      [{error:'invalid_client',error_description:'secret-value'},'invalid_client'],
+      [{ErrorCode:'unauthorized_client',Error:'secret-value'},'unauthorized_client'],
+      [{fault:{faultstring:'secret-value',detail:{errorcode:'oauth.v2.InvalidClientIdentifier'}}},'invalid_client'],
+      [{error:'secret-value',access_token:'secret-value'},undefined],
+    ]) {
+      const data=new Map(), state={storage:{get:async k=>data.get(k),put:async(k,v)=>data.set(k,v)}};
+      globalThis.fetch=async()=>Response.json(body,{status:401});
+      const worker=new KbankSandboxCoordinator(state,{KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'});
+      const response=await worker.fetch(new Request('https://kbank-coordinator/smoke',{method:'POST'}));
+      assert.equal(response.status,502);
+      const result=await response.json();
+      assert.equal(result.upstream_status,401);
+      assert.equal(result.oauth_error,expected);
+      assert.doesNotMatch(JSON.stringify(result),/secret-value/);
+    }
+  } finally {globalThis.fetch=original;}
+});
