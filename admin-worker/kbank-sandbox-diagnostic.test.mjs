@@ -175,3 +175,19 @@ test('Workers-compatible Request rejects unsupported redirect modes before servi
     assert.equal(h.calls[0].redirect, 'manual');
   } finally { globalThis.Request = NativeRequest; }
 });
+
+
+test('bank HTTP status survives the admin proxy while bank body and secrets stay redacted', async () => {
+  for (const status of [200, 302, 400, 401, 403, 429, 500]) {
+    const h=setup(() => Response.json({ environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:status,
+      access_token:'must-not-leak',error_description:'must-not-leak' },{status:502}));
+    const response=await handle(await request(h.env),h.env);
+    assert.equal(response.status,502);
+    assert.deepEqual(await response.json(),{environment:'sandbox',transfers_enabled:false,ok:false,error:'kbank_oauth_failed',upstream_status:502,bank_http_status:status});
+  }
+  for (const status of ['secret', '401', 999, -1, 200.5, null]) {
+    const h=setup(() => Response.json({environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:status},{status:502}));
+    const response=await handle(await request(h.env),h.env);
+    assert.equal((await response.json()).bank_http_status,undefined);
+  }
+});
