@@ -1,9 +1,8 @@
+import { build } from 'esbuild';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { Window } from 'happy-dom';
-import { build } from 'esbuild';
-import { fileURLToPath } from 'node:url';
 import { renderRelaxSpaPage } from '../../admin-worker/src/relax-spa-page.js';
 import { applySpaCommand } from '../../mms-worker/src/relax-spa-ledger.mjs';
 import { agreementV2, agreementV3 } from '../../mms-worker/src/relax-spa-agreement.mjs';
@@ -168,14 +167,14 @@ test('resuming a draft preserves Bangkok assessment time and supports removing c
   assert.equal(f.q('[data-adjustment-row]'),null);
 });
 
-
-test('bundled browser script boots Owner and Partner pages without Worker helper dependencies', async t => {
-  const bundle = await build({entryPoints:[fileURLToPath(new URL('../../admin-worker/src/relax-spa-page.js',import.meta.url))],bundle:true,write:false,format:'esm',platform:'browser',keepNames:true});
-  const {renderRelaxSpaPage: bundledRender}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
-  for(const partner of [false,true]){
-    const f=await ui(t,partner,{},bundledRender);
+test('Wrangler keepNames bundle initializes Owner and Partner browser pages', async t => {
+  const result=await build({entryPoints:[new URL('../../admin-worker/src/relax-spa-page.js',import.meta.url).pathname],bundle:true,write:false,platform:'browser',format:'esm',keepNames:true});
+  const renderer=await import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0].text).toString('base64'));
+  for (const partner of [false,true]) {
+    const html=renderer.renderRelaxSpaPage({partner});
+    assert.match(html,/__name\(/,'exercise serialized compiler name helpers');
+    const f=await ui(t,partner,{},renderer.renderRelaxSpaPage);
+    assert.ok(f.calls.some(u=>u.pathname.endsWith('/snapshot')));
     assert.deepEqual(f.errors,[]);
-    assert.ok(f.q('form[data-command="referrals"]'));
-    assert.equal(f.calls.some(u=>u.pathname.endsWith('/snapshot')),true);
   }
 });
