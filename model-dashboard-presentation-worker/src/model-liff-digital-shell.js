@@ -232,7 +232,7 @@ export function modelLiffDigitalBootstrapHtml({
 <div class="mmd-digital-app ${publicJobApplicant ? "mmd-applicant-compact" : ""}" data-mmd-app-digital="v1">
   <main class="mmd-digital-shell">
     <header class="mmd-digital-top">
-      <div class="mmd-digital-brand">MY MODEL<small>DIGITAL MODEL WORKSPACE</small></div>
+      <div class="mmd-digital-brand"><img class="mmd-brand-mark" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa58901dd74f803af616444_05-tiny-mark-256px.webp" alt="MMD" width="24" height="24" decoding="async"><span>MY MODEL<small>DIGITAL MODEL WORKSPACE</small></span></div>
       <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
     ${publicJobApplicant ? '<div class="mmd-welcome-art"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6ac671f1a02046b10f47ceba_Boss%20Writing-p-500.webp" alt="" width="500" height="281" decoding="async"/><span>MY MODEL</span></div>' : ""}
