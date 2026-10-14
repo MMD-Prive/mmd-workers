@@ -94,6 +94,42 @@ test('quote producer creates one MMS job and single Therapist offer, never appli
  jf['Job Status']='Accepted';await produceSpaJob(x.env,f.service);assert.equal(jf['Job Status'],'Accepted');
  }finally{globalThis.fetch=original;}});
 
+test('an offer becomes visible only after its dispatch job is ready for immediate acceptance',async()=>{
+ const f=fixture(),x=externalFixture(),original=globalThis.fetch;
+ f.service.job_creation={job_id:await spaJobId(f.service.id),service_start_at:new Date(Date.now()+86400000).toISOString()};
+ globalThis.fetch=async(url,opts)=>{
+  if(url.includes(x.env.AIRTABLE_OFFERS_TABLE_ID)&&opts?.method==='PATCH')
+   assert.equal(x.initializations.length,1,'a Therapist can read/accept the offer as soon as this write succeeds');
+  return x.fetch(url,opts);
+ };
+ try{await produceSpaJob(x.env,f.service);assert.equal(x.db.Offers.length,1);}finally{globalThis.fetch=original;}
+});
+
+test('failed dispatch initialization leaves no visible offer and the same job can be retried',async()=>{
+ const f=fixture(),x=externalFixture(),original=globalThis.fetch;globalThis.fetch=x.fetch;
+ f.service.job_creation={job_id:await spaJobId(f.service.id),service_start_at:new Date(Date.now()+86400000).toISOString()};
+ const ready=x.env.MMS_DISPATCH_COORDINATOR.get;
+ x.env.MMS_DISPATCH_COORDINATOR.get=()=>({initialize:async()=>({job:null})});
+ try{await assert.rejects(()=>produceSpaJob(x.env,f.service),e=>e.code==='DISPATCH_INITIALIZATION_UNCONFIRMED');
+ assert.equal(x.db.Jobs.length,1);assert.equal(x.db.Offers.length,0);
+ x.env.MMS_DISPATCH_COORDINATOR.get=ready;await produceSpaJob(x.env,f.service);
+ assert.equal(x.db.Jobs.length,1);assert.equal(x.db.Offers.length,1);
+ }finally{globalThis.fetch=original;}
+});
+
+test('retry rejects an existing offer whose displayed snapshot differs without overwriting an accepted offer',async()=>{
+ const f=fixture(),x=externalFixture(),original=globalThis.fetch;globalThis.fetch=x.fetch;
+ f.service.job_creation={job_id:await spaJobId(f.service.id),service_start_at:new Date(Date.now()+86400000).toISOString()};
+ try{await produceSpaJob(x.env,f.service);
+ const offer=x.db.Offers[0].fields;offer['Offer Status']='Accepted';
+ const safe=JSON.parse(offer['Safe Payload JSON']);safe.payout_thb=1;offer['Safe Payload JSON']=JSON.stringify(safe);
+ const before=JSON.stringify(x.db),writes=x.calls.filter(c=>c.method==='PATCH').length;
+ await assert.rejects(()=>produceSpaJob(x.env,f.service),e=>e.code==='JOB_SNAPSHOT_MISMATCH');
+ assert.equal(JSON.stringify(x.db),before);assert.equal(x.calls.filter(c=>c.method==='PATCH').length,writes);
+ for(const invalid of ['null','{broken']){offer['Safe Payload JSON']=invalid;await assert.rejects(()=>produceSpaJob(x.env,f.service),e=>e.code==='JOB_SNAPSHOT_MISMATCH');}
+ }finally{globalThis.fetch=original;}
+});
+
 test('missing canonical price/travel or wrong venue cannot link a quote; approved payee required',()=>{
  const f=fixture(),j={id:'mmsjob_'+'b'.repeat(24),therapist_id:therapist.id,status:'Completed',duration_minutes:90,therapist_amount:60001,customer_amount:100002,travel_amount:0,travel_included_confirmed:true,venue_id:'relax-spa-by-9',is_test:false};
  const link={service_id:f.service.id,job_id:j.id,duration_minutes:90,service_evidence:'synthetic-work'};
