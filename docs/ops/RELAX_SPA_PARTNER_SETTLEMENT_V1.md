@@ -1,8 +1,8 @@
 # Relax Spa by 9: room-only pricing and revenue settlement
 
 New work uses schema v3. The spa rate is **room only, excluding Therapist**.
-No rate image was available for this implementation, so no room prices are
-seeded. Owner must enter the actual terms and rate evidence. This document is
+The available Drive image `Relax Spa by 9.png` was inspected on 2026-10-14
+and contains only the logo, not a rate sheet. No room prices are seeded. Owner must enter the actual terms and rate evidence. This document is
 not deployment, bank verification or authenticated customer acceptance evidence.
 
 ## Formula and agreement
@@ -69,6 +69,14 @@ readback refuses conflicting snapshots and never rewrites an accepted job status
 A partial write retains the reservation for reconciliation; it never produces
 another Job ID.
 
+Dispatch initialization must succeed before a new Offer row becomes visible;
+otherwise a Therapist can accept before dispatch has a job. Initialization failure
+leaves no visible offer, and retry reuses the existing Job ID. Existing offers must
+match the complete safe display snapshot (including payout, deductions, duration,
+start, expiry and included travel), not just their payout column. Conflicts fail
+with `JOB_SNAPSHOT_MISMATCH`; retry never repairs them by overwriting an accepted
+offer. Reconcile conflicting records through a separately reviewed operation.
+
 The producer uses existing MMS Jobs, Offers and Dispatch Coordinator bindings.
 It creates one offer for the agreed Therapist; it does not accept for them. The
 Therapist sees T, explicitly agreed deductions and the resulting payable amount,
@@ -107,39 +115,89 @@ identity from existing sessions. Request fingerprints, normalized unique evidenc
 canonical Job uniqueness, storage transactions and append-only audits protect
 retries and cross-account access. Existing archive limits remain in force.
 
-## Workflow audit and approval-bound rollout
+## Current review and release boundary (2026-10-14)
 
-A merge affecting these paths triggers the existing MMS, Admin and Partner deploy
-workflows. MMS now defaults to code-only deployment with retained vars and no
-secret file. Telegram rotation and missing Therapist secret initialization each
-require separate explicit workflow-dispatch inputs, default false. Normal deploy
-only verifies R2 availability and never creates the bucket. No binding/config
-migration is needed for this release. Optional rotation retains the existing
-shared concurrency lock.
+PR #2386 merged at `7ff1c49565ef79e017a87dc4509a4ce6ea62f677` fixes the
+serialized browser `__name` dependency and adds the post-bundle Owner/Partner
+regression with keepNames. PR #2382 retains those main changes exactly; it does
+not add a second helper, revert the white/green/light-gray theme, or require
+another release of the same UI fix. Local bundled UI tests pass (9 cases).
 
-The existing **Admin** workflow can provision private media/KV and sync missing
-routes. The existing **Partner** workflow can create missing routes. Those broader
-operations are not authorized by this change. Before an approved production merge,
-use the following controlled release plan:
+The real signed Owner session now loads the Relax Spa snapshot and shows
+“อ่านรายการจากระบบแล้ว”, with zero referrals/agreements/jobs. The previous
+loading/error result is superseded. No actual room agreement is available for a
+valid production preview. Do not invent rate evidence to claim a successful
+monetary preview. Two Partner sessions and a Therapist session are still needed;
+authenticated account isolation and complete service/payment E2E are unverified.
 
-1. Obtain approval for the exact PR head and code-only release of mms-worker,
-   admin-worker and partners-worker, including temporary suspension/restoration of
-   their three automatic deploy workflows. Record current enabled states.
-2. Pause those deploy workflows, merge the reviewed head, and read back the merge
-   SHA. This avoids triggering unrelated provisioning or route synchronization.
-3. Read deployed settings and exact existing bindings for all three Workers into
-   private temporary configs. Preserve the runtime-generated Admin availability
-   KV binding; stop on missing/ambiguous binding identity. Do not create resources.
-4. Build and validate the three code bundles at the approved merge SHA. Use
-   version uploads with retained vars and all existing bindings/secrets, no secret
-   file and no route/provisioning step. Do not use direct-deploy migration fallback.
-5. Promote only the approved versions, MMS first, then Admin and Partner. Record
-   version IDs and 100% traffic readbacks. Verify bindings/route inventory unchanged
-   and restore only workflows that were previously enabled.
-6. Run authorized read-only Owner and two-Partner session checks on mobile. Real
-   receipt/refund/payout acceptance needs separate authorization and human evidence;
-   never create fake financial events in production.
+Only MMS producer/release code, their tests and this document remain in #2382.
+The producer initializes dispatch before making a new offer visible. Retry checks
+the complete safe payload plus the real job/offer fallback fields: service,
+duration, start, venue, travel inclusion, payable amount, deduction note and
+expiry. Unagreed ETA fields are rejected. Conflicts fail without rewriting an
+accepted record. Lost replies after Job or Offer writes reuse the same IDs.
 
-Rollback promotes recorded prior Worker versions; it does not rewrite ledger data
-or rate snapshots. No merge, workflow suspension, deploy, route/secret mutation or
-production money event has been performed by writing this guide.
+### Release method and automatic effects
+
+Merging this final scope triggers **Deploy mms-worker** only. Admin/Partner paths,
+the shared renderer/theme, and their workflow files are unchanged from main.
+There is no reason to invoke their provisioning, route-sync or downstream Kenji
+workflows. Do not pause workflows during this read-only audit or rerun #2378/#2386.
+
+Use the reviewed exact head with green CI. Existing MMS workflow uploads a version
+with `--keep-vars` and no secrets file on normal pushes; Telegram rotation and
+Therapist secret initialization are explicit default-false dispatch inputs. It
+reads R2 availability and does not create the bucket. Promotion reuses the existing
+`deploy-uploaded-worker-version.mjs` helper: only the deployments API is written,
+with exact version/100% readback; Wrangler non-versioned settings sync is avoided.
+The uploader now refuses
+migration error 10211 by default instead of falling back to a direct deployment.
+The separate library migration path requires explicit `allowMigration:true`; the
+production CLI does not set it. Upload failures must stop promotion.
+
+Before an authorized release, read back and retain the active version/100% traffic,
+routes, named bindings with resource identities, compatibility settings and secret
+names. Compare all candidate binding targets with this baseline; `--keep-vars`
+alone is not evidence of resource-binding preservation. Refuse an unresolved or
+changed binding and do not create it. Candidate config/DO migrations are unchanged
+from deployed main. Current expected resource targets are:
+
+- MMS_COORDINATOR -> mms-worker_MmsCoordinator
+- MMS_DISPATCH_COORDINATOR -> mms-worker_MmsDispatchCoordinator
+- RELAX_SPA_LEDGER -> mms-worker_RelaxSpaLedger
+- MMS_PRIVATE_UPLOADS -> mms-private-uploads
+- TELEGRAM_WORKER -> telegram-worker
+
+MMS has no custom routes. Use existing credentials without printing values. Do not
+call route, secret-write, resource-provisioning or non-versioned settings mutation
+commands. Capture upload receipt, promote only that new MMS version, then compare
+the same baseline and traffic. No release was performed by preparing this patch.
+Local CLI credentials are unavailable/expired, so the production binding comparison
+and execution are still release gates rather than a claim of completed validation.
+
+Rollback promotes the MMS version captured immediately before the authorized
+release, currently `3e3cd902-9dfd-4bb1-bd35-49d697173419`, without rebuilding,
+changing settings or reverting ledger data. Refresh the target if another release
+intervenes. This is an emergency rollback target, not authorization to re-rollout
+#2378 for evidence.
+
+### Evidence and open inputs
+
+#2378 receipts: MMS38533343085 / Admin38533343021 / Partner38533343122. Its MMS
+rotation/auth-initialization steps were skipped. Admin sync processed146/146,
+created0; Partner processed6/6, created0. Those are processed pattern counts, not
+full inventory or proof that all historical settings stayed identical. A complete
+pre-#2378 baseline was not available; historical equality is unproven.
+
+Subsequent #2386 Admin38539050931 and Partner38539050995 succeeded at7ff1c495.
+Those receipts are distinct from live traffic/readback and authenticated checks.
+Sanitized audit evidence remains under local output/relax-spa-audit/.
+
+The known Drive image Relax Spa by 9.png (file1NL95OSzsyJ-PlHy6VNyfqNMkPIvbX0ok)
+is a logo, not a room-rate sheet. Price, unit, room type, coverage, inclusions and
+effective date remain incomplete. Keep the rate as a draft, with no seeded price.
+
+The requested cream-letter/lime-AI Male Massage x AI logo has no confirmed source
+asset in this checkout/chat attachments. Do not invent one or use a full poster
+as a header. Internal MMS branding remains pending that asset; Partner retains
+SĪGIL System. Changing shared Partner branding is outside this patch.

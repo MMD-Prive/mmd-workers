@@ -13,7 +13,7 @@ test('ordinary version uploads never perform a direct deployment', () => {
   assert.equal(calls.length, 1); assert.equal(result.migrationApplied, false);
 });
 test('confirmed migration applies with identical secrets and retained vars, then uploads the promotable version', () => {
-  const { calls, result } = run([migration, { status: 0, output: 'Current Version ID: direct' }, { status: 0, output: 'Worker Version ID: promotable' }]);
+  const { calls, result } = run([migration, { status: 0, output: 'Current Version ID: direct' }, { status: 0, output: 'Worker Version ID: promotable' }], {allowMigration:true});
   assert.equal(calls[1][0], 'deploy'); assert.deepEqual(calls[1].slice(1), calls[0].slice(2));
   assert.ok(calls[1].includes('--keep-vars')); assert.equal(calls[1].at(-1), '/tmp/mms-test.env');
   assert.deepEqual(calls[0], calls[2]); assert.equal(result.output, 'Worker Version ID: promotable');
@@ -33,9 +33,16 @@ test('route mutation and wrong-worker configurations are rejected before any upl
 });
 test('failed direct migration cannot upload or promote another version', () => {
   let calls = 0;
-  assert.throws(() => uploadMmsVersion({ config, run() { calls++; return calls === 1 ? migration : { status: 1, output: 'deploy failed' }; } }), /migration deployment failed/);
+  assert.throws(() => uploadMmsVersion({ config, allowMigration:true, run() { calls++; return calls === 1 ? migration : { status: 1, output: 'deploy failed' }; } }), /migration deployment failed/);
   assert.equal(calls, 2);
 });
 test('failed post-migration upload cannot masquerade as successful version upload', () => {
-  assert.throws(() => run([migration, { status: 0, output: 'direct' }, { status: 1, output: 'network failure' }]), /after migration deployment/);
+  assert.throws(() => run([migration, { status: 0, output: 'direct' }, { status: 1, output: 'network failure' }], {allowMigration:true}), /after migration deployment/);
+});
+
+
+test('normal code-only release refuses even a confirmed migration without direct deployment',()=>{
+ let calls=0;
+ assert.throws(()=>uploadMmsVersion({config,run(){calls++;return migration;}}),/separate explicit approval; refusing direct deploy/);
+ assert.equal(calls,1);
 });

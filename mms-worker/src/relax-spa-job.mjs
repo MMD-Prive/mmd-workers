@@ -47,22 +47,29 @@ export async function produceSpaJob(env, service) {
   if (existing) {
     let stored;try{stored=JSON.parse(existing.fields?.['Internal Payload JSON'] || '{}').spa_quote;}catch{fail('JOB_SNAPSHOT_MISMATCH');}
     if (JSON.stringify(stored)!==JSON.stringify(quote) || existing.fields['Duration Minutes']!==a.duration_minutes || existing.fields['Therapist Payout THB']!==plan.shares.therapist/100) fail('JOB_SNAPSHOT_MISMATCH');
+    if (['Service','Duration Minutes','Service Start At','Safe Area Label','Travel Label','Therapist Payout THB','Payout Note'].some(key=>existing.fields[key]!==fields[key]) || existing.fields['ETA Label']) fail('JOB_SNAPSHOT_MISMATCH');
     if (['Cancelled','Expired'].includes(existing.fields['Job Status'])) fail('CANONICAL_JOB_MISMATCH');
   } else await upsert(table('JOBS'),'Job ID',fields);
   // Offers expose only the agreed Therapist amount and approved deductions.
   const expires=Date.parse(c.service_start_at)+a.duration_minutes*60000;
+  const safeSnapshot={job_id:c.job_id,service_label:fields.Service,duration_minutes:a.duration_minutes,service_start_at:c.service_start_at,area_label:'Relax Spa by 9',travel_label:fields['Travel Label'],payout_thb:plan.shares.therapist/100,payout_note:note,expires_at:new Date(expires).toISOString()};
   const oldOffer=await lookup(table('OFFERS'),'Offer ID',offerId);
   if (oldOffer) {
+    let stored;try{stored=JSON.parse(oldOffer.fields['Safe Payload JSON'] || '{}');}catch{fail('JOB_SNAPSHOT_MISMATCH');}
+    if (!stored || typeof stored!=='object' || Array.isArray(stored) || Object.keys(stored).length!==Object.keys(safeSnapshot).length || Object.entries(safeSnapshot).some(([key,value])=>stored[key]!==value)) fail('JOB_SNAPSHOT_MISMATCH');
+    if (oldOffer.fields['Expires At']!==safeSnapshot.expires_at || oldOffer.fields['Safe Area Label']!==safeSnapshot.area_label || oldOffer.fields['Travel Label']!==safeSnapshot.travel_label || oldOffer.fields['ETA Label']) fail('JOB_SNAPSHOT_MISMATCH');
     if (oldOffer.fields['Job ID']!==c.job_id || oldOffer.fields['Therapist ID']!==a.therapist_id || oldOffer.fields['Payout THB']!==plan.shares.therapist/100) fail('JOB_SNAPSHOT_MISMATCH');
-  } else await upsert(table('OFFERS'),'Offer ID',{
-    'Offer ID':offerId,'Job ID':c.job_id,'Therapist ID':a.therapist_id,'Offer Status':'Offered','Offered At':now,
-    'Expires At':new Date(expires).toISOString(),'Match Rank':1,'Payout THB':plan.shares.therapist/100,
-    'Safe Area Label':'Relax Spa by 9','Travel Label':'รวมเดินทางไปกลับในค่าตัวแล้ว',
-    'Safe Payload JSON':JSON.stringify({job_id:c.job_id,service_label:fields.Service,duration_minutes:a.duration_minutes,service_start_at:c.service_start_at,area_label:'Relax Spa by 9',travel_label:fields['Travel Label'],payout_thb:plan.shares.therapist/100,payout_note:note,expires_at:new Date(expires).toISOString()}),
-    Version:1,'Created At':now,'Updated At':now,
-  });
+  }
+  // Acceptance is immediately possible once the offer row is visible. Initialize first.
   const stub=env.MMS_DISPATCH_COORDINATOR.get(env.MMS_DISPATCH_COORDINATOR.idFromName(c.job_id));
   const initialized=await stub.initialize(c.job_id,[{therapist_id:a.therapist_id,offer_id:offerId,expires_at:expires}],Date.now());
   if (!initialized?.job || initialized.job.job_id!==c.job_id || !['OFFERED','ACCEPTED','IN_PROGRESS','COMPLETED'].includes(initialized.job.state)) fail('DISPATCH_INITIALIZATION_UNCONFIRMED');
+  if (!oldOffer) await upsert(table('OFFERS'),'Offer ID',{
+    'Offer ID':offerId,'Job ID':c.job_id,'Therapist ID':a.therapist_id,'Offer Status':'Offered','Offered At':now,
+    'Expires At':new Date(expires).toISOString(),'Match Rank':1,'Payout THB':plan.shares.therapist/100,
+    'Safe Area Label':'Relax Spa by 9','Travel Label':'รวมเดินทางไปกลับในค่าตัวแล้ว',
+    'Safe Payload JSON':JSON.stringify(safeSnapshot),
+    Version:1,'Created At':now,'Updated At':now,
+  });
   return {job_id:c.job_id};
 }

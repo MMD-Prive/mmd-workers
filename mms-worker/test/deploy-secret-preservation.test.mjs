@@ -34,3 +34,10 @@ test('code-only upload retains vars and does not provide a secrets file', () => 
   assert.ok(calls[0].includes('--keep-vars'));
   assert.ok(!calls[0].includes('--secrets-file'));
 });
+
+
+test('MMS promotion uses the deployment-only API helper rather than syncing non-versioned settings',()=>{
+ const step=workflow.split('      - name: Deploy uploaded mms-worker version')[1].split('      - name:')[0];
+ assert.match(step,/node \.\.\/scripts\/deploy-uploaded-worker-version\.mjs mms-worker "\$MMS_WORKER_VERSION_ID"/);
+ assert.doesNotMatch(step,/wrangler versions deploy|wrangler deploy|secret|route/);
+});
