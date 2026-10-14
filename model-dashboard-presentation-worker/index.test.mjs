@@ -220,7 +220,7 @@ test("Job Board Mini App callback exchanges LINE session then opens the exact jo
 
   const html = liffPrimaryBootstrapHtml(callback);
   assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
-  assert.match(html, /ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า/);
+  assert.match(html, /เริ่มส่งข้อมูล/);
   assert.match(html, /t\.me\/per_mmd/);
   assert.match(html, /\/apply\/public-model/);
   assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้|ยืนยันตัวตน|กำลังตรวจสอบตัวตน/);
