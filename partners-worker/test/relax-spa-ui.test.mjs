@@ -27,7 +27,7 @@ test('Owner MMS overview initializes with nested Therapist workspace header', as
     if (u.pathname.endsWith('/workspace')) return Response.json({ ok: true, therapists: [], jobs: [], offers: [], complete: true });
     if (u.pathname.endsWith('/jobs')) return Response.json({ ok: true, jobs: [] });
     if (u.pathname.endsWith('/catalog')) return Response.json({ ok: true, data: { skills: [], zones: [] } });
-    return Response.json({ ok: true, applications: [], therapists: [], prebookings: [] });
+    return Response.json({ ok: true, applications: [{ application_id: 'app-theme-qa', nickname: 'Applicant QA', status: 'Submitted' }], therapists: [], prebookings: [] });
   };
   // Preserve the production assembly order: workspace markup precedes the overview header.
   w.document.write(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())))));
@@ -41,6 +41,14 @@ test('Owner MMS overview initializes with nested Therapist workspace header', as
   assert.ok(overview.querySelector('[data-mms-workspace-admin-v1] .section-head'));
   await waitFor(() => root.querySelector('#opsJobsCount').textContent === '0');
   assert.ok(calls.includes('/v1/admin/mms/jobs'));
+  await waitFor(() => root.querySelector('[data-ops-open-app]'));
+  const row = root.querySelector('[data-ops-open-app]');
+  // A clickable data row must not inherit solid action-button styling.
+  assert.equal(w.getComputedStyle(row).backgroundColor, '#fff');
+  assert.equal(w.getComputedStyle(row.querySelector('strong')).color, '#253a2e');
+  assert.equal(w.getComputedStyle(row.querySelector('p')).color, '#66736c');
+  assert.equal(w.getComputedStyle(row.querySelector('.mms-ops-pill.warn')).color, '#756022');
+
   assert.match(root.querySelector('#opsJobs').textContent, /ยังไม่มีงาน MMS/);
   root.querySelector('[data-ops-refresh]').click();
   await waitFor(() => calls.filter(p => p === '/v1/admin/mms/jobs').length >= 2);
