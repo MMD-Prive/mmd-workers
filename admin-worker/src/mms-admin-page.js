@@ -30,7 +30,7 @@ export function renderMmsAdminPage() {
   <section class="hero" aria-labelledby="pageTitle">
     <div class="hero-copy">
       <p class="eyebrow">MMS · INTERNAL OPERATIONS</p>
-      <h1 id="pageTitle">วันนี้มีอะไร<br>ให้ดูบ้าง</h1>
+      <h1 id="pageTitle">MMS Jobs Today</h1>
       <p class="hero-lead">ผมรวม <strong>ใบสมัคร Therapist</strong>, คนที่เปิดรับงาน และ <strong>Pre-booking</strong> ไว้ตรงนี้ครับ เช็กข้อมูลให้ครบก่อนกดอนุมัติ — ระบบจะไม่ข้ามขั้นตอนให้เอง</p>
       <div class="hero-note">Pre-booking ยังไม่ใช่คิวยืนยันครับ ถ้ายังประสานคน เวลา หรือพื้นที่ไม่ครบ ให้ค้างสถานะไว้ก่อน</div>
     </div>
