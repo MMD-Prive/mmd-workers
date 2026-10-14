@@ -98,7 +98,6 @@ test('missing config and transport exceptions never retry or use public fallback
   } finally { globalThis.fetch = original; }
 });
 
-test('readiness authenticates and reads coordinator status without bank IO', async () => {
 test('readiness authenticates and checks booleans without bank IO and reads coordinator status only', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => { throw Error('bank must never be called'); };
