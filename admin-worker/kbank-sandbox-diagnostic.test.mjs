@@ -47,7 +47,7 @@ test('authorized smoke uses existing service binding and exposes only safe succe
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].url, 'https://sigil.mmdbkk.com/v1/internal/payments/kbank/sandbox/smoke');
   assert.equal(h.calls[0].headers.get('x-internal-token'), 'test-service');
-  assert.equal(h.calls[0].redirect, 'error');
+  assert.equal(h.calls[0].redirect, 'manual');
   assert.equal(await h.calls[0].text(), '');
 });
 
@@ -156,4 +156,22 @@ test('rendered browser script compiles and readiness enables smoke only when rea
   get('kbank-probe').dataset.attempted='true';
   await get('kbank-status').click.call(get('kbank-status'));
   assert.equal(get('kbank-probe').disabled,true);
+});
+
+
+test('Workers-compatible Request rejects unsupported redirect modes before service IO', async () => {
+  const NativeRequest = globalThis.Request;
+  globalThis.Request = class extends NativeRequest {
+    constructor(input, init) {
+      if (init?.redirect && !['follow', 'manual'].includes(init.redirect)) throw new TypeError('Invalid redirect value');
+      super(input, init);
+    }
+  };
+  try {
+    const h = setup(() => Response.json({environment:'sandbox', ok:false, error:'sandbox_disabled'}, {status:503}));
+    const result = await handle(await request(h.env), h.env);
+    assert.equal((await result.json()).error, 'sandbox_disabled');
+    assert.equal(h.calls.length, 1);
+    assert.equal(h.calls[0].redirect, 'manual');
+  } finally { globalThis.Request = NativeRequest; }
 });

@@ -51,7 +51,7 @@ export class KbankSandboxCoordinator {
       const bytes = new TextEncoder().encode(`${this.env.KBANK_SANDBOX_CONSUMER_ID}:${this.env.KBANK_SANDBOX_CONSUMER_SECRET}`);
       const basic = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
       const response = await fetch(TOKEN_URL, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+        method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
         headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded', 'x-test-mode': 'true', 'env-id': 'OAUTH2' },
         body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
       });

@@ -17,7 +17,7 @@ test('OAuth is sandbox-only, redacted, serialized and cooldown survives restart'
   globalThis.fetch=async(url,init)=>{
     calls++;
     assert.equal(url,'https://openapi-sandbox.kasikornbank.com/v2/oauth/token');
-    assert.equal(init.redirect,'error');
+    assert.equal(init.redirect,'manual');
     assert.equal(init.body,'grant_type=client_credentials');
     assert.equal(init.headers.authorization,'Basic '+btoa('test-id:test-secret'));
     return Response.json({access_token:'must-not-leak',token_type:'Bearer',expires_in:'1799'});
@@ -38,4 +38,25 @@ test('upstream failures remain redacted and consume cooldown', async()=>{
   const env={KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'};
   const original=globalThis.fetch;globalThis.fetch=async()=>{throw new Error('secret');};
   try {const worker=new KbankSandboxCoordinator(state,env);const req=()=>new Request('https://kbank-coordinator/smoke',{method:'POST'});const r=await worker.fetch(req());assert.equal(r.status,502);assert.ok(!(await r.text()).includes('secret'));assert.equal((await worker.fetch(req())).status,429);}finally{globalThis.fetch=original;}
+});
+
+
+test('bank redirect is not followed and consumes cooldown without exposing destination', async () => {
+  const data=new Map();
+  const state={storage:{get:async k=>data.get(k),put:async(k,v)=>data.set(k,v)}};
+  const env={KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'};
+  const original=globalThis.fetch; let calls=0;
+  globalThis.fetch=async(url,init)=>{
+    calls++; assert.equal(init.redirect,'manual');
+    return Response.json({access_token:'must-not-leak',token_type:'Bearer',expires_in:1799},{status:302,headers:{Location:'https://must-not-leak.example'}});
+  };
+  try {
+    const worker=new KbankSandboxCoordinator(state,env);
+    const req=()=>new Request('https://kbank-coordinator/smoke',{method:'POST'});
+    const result=await worker.fetch(req());
+    assert.equal(result.status,502);
+    assert.deepEqual(await result.json(),{environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:302});
+    assert.equal((await worker.fetch(req())).status,429);
+    assert.equal(calls,1);
+  } finally {globalThis.fetch=original;}
 });
