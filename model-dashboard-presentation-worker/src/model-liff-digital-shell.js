@@ -92,6 +92,9 @@ body .mmd-applicant-compact .mmd-digital-row strong{font-size:15px;line-height:1
 body .mmd-applicant-compact .mmd-digital-row p,body .mmd-applicant-compact .mmd-digital-detail{font-size:13px;line-height:1.65}
 body .mmd-applicant-compact .mmd-digital-action{font-size:16px;line-height:1.5}
 
+body .mmd-digital-brand{display:flex;align-items:center;gap:8px}
+body .mmd-digital-brand .mmd-brand-mark{display:block;width:24px;height:24px;flex:0 0 24px;object-fit:contain;border:0;border-radius:0;background:transparent}
+
 `;
 
 export function modelLiffDigitalBootstrapHtml({
@@ -232,7 +235,7 @@ export function modelLiffDigitalBootstrapHtml({
 <div class="mmd-digital-app ${publicJobApplicant ? "mmd-applicant-compact" : ""}" data-mmd-app-digital="v1">
   <main class="mmd-digital-shell">
     <header class="mmd-digital-top">
-      <div class="mmd-digital-brand">MY MODEL<small>DIGITAL MODEL WORKSPACE</small></div>
+      <div class="mmd-digital-brand"><img class="mmd-brand-mark" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa58901dd74f803af616444_05-tiny-mark-256px.webp" alt="MMD" width="24" height="24" decoding="async"><span>MY MODEL<small>DIGITAL MODEL WORKSPACE</small></span></div>
       <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
     ${publicJobApplicant ? '<div class="mmd-welcome-art"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6ac671f1a02046b10f47ceba_Boss%20Writing-p-500.webp" alt="" width="500" height="281" decoding="async"/><span>MY MODEL</span></div>' : ""}
