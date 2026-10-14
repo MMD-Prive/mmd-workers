@@ -9,6 +9,7 @@ on:
     paths:
       - "shared/posthog-authority-events.mjs"
       - "mms-worker/**"
+      - "scripts/upload-mms-worker-version.mjs"
       - ".github/workflows/deploy-mms-worker.yml"
 
 concurrency:
@@ -201,11 +202,11 @@ jobs:
           set -euo pipefail
           tag="gha-${GITHUB_SHA:0:12}"
           echo "MMS_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
-          args=(versions upload --keep-vars --env="" --tag "$tag" --message "GitHub Actions ${GITHUB_SHA}")
+          args=()
           if [ "${{ steps.runtime-secrets.outputs.configured }}" = "true" ]; then
-            args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
+            args+=("$RUNNER_TEMP/mms-worker.env")
           fi
-          npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-upload.log"
+          node ../scripts/upload-mms-worker-version.mjs "${args[@]}"
           echo "url=https://mms-worker.malemodel-bkk.workers.dev" >> "$GITHUB_OUTPUT"
 
       - name: Resolve uploaded version ID
