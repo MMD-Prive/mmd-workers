@@ -116,3 +116,36 @@ test('oversized JSON is marked size-limited and its body is not exposed', async 
   } finally {globalThis.fetch=original;}
 });
 
+
+test('coordinator status reads shared history without writes or bank IO, including pending and restart', async () => {
+  let previous; let writes=0, calls=0;
+  const state={storage:{get:async()=>previous,put:async()=>{writes++;}}};
+  const original=globalThis.fetch; globalThis.fetch=async()=>{calls++;throw Error('unexpected bank call');};
+  try {
+    const status=()=>new Request('https://kbank-coordinator/status',{method:'POST'});
+    const worker=new KbankSandboxCoordinator(state,{});
+    let data=await (await worker.fetch(status())).json();
+    assert.deepEqual(data.cooldown,{retry_after_seconds:0,last_attempt_at:null,last_success:null,in_progress:false});
+    const now=Date.now(); previous={nextAttemptAt:now+100000,success:false};
+    worker.pending=Promise.resolve(); data=await (await worker.fetch(status())).json();
+    assert.equal(data.cooldown.in_progress,true); assert.ok(data.cooldown.retry_after_seconds>0);
+    assert.equal(data.cooldown.last_attempt_at,previous.nextAttemptAt-1800000);
+    data=await (await new KbankSandboxCoordinator(state,{}).fetch(status())).json();
+    assert.equal(data.cooldown.last_success,false); assert.ok(data.cooldown.retry_after_seconds>0);
+    previous={nextAttemptAt:now-1,success:true};
+    data=await (await worker.fetch(status())).json(); assert.equal(data.cooldown.retry_after_seconds,0);
+    previous={nextAttemptAt:'bad',success:false}; assert.equal((await worker.fetch(status())).status,503);
+    assert.equal(writes,0);assert.equal(calls,0);
+  } finally {globalThis.fetch=original;}
+});
+
+test('authenticated status fails closed on coordinator failure without bank IO', async () => {
+  const original=globalThis.fetch; let calls=0;
+  globalThis.fetch=async()=>{calls++;throw Error('bank must not be called');};
+  try {
+    const env={AUTH_SERVICE_ADMIN_TO_PAYMENTS:'internal',KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret',
+      KBANK_SANDBOX_COORDINATOR:{idFromName:n=>n,get:()=>({fetch:async req=>{assert.equal(new URL(req.url).pathname,'/status');throw Error('secret');}})}};
+    const response=await handleKbankSandbox(new Request('https://payments/v1/internal/payments/kbank/sandbox/status',{method:'POST',headers:{'x-internal-token':'internal'}}),env);
+    assert.equal(response.status,503);assert.equal((await response.json()).error,'sandbox_status_unavailable');assert.equal(calls,0);
+  } finally {globalThis.fetch=original;}
+});

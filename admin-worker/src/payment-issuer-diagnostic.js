@@ -516,7 +516,11 @@ document.getElementById('kbank-status').addEventListener('click', async function
     }
     const labels = { enabled: 'เปิด Sandbox', consumer_id_present: 'บันทึก Consumer ID', consumer_secret_present: 'บันทึก Consumer Secret', coordinator_present: 'ระบบควบคุมการทดสอบ' };
     result.textContent = 'แอดมินเชื่อมต่อ payments-worker ได้' + '\\n' + Object.entries(labels).map(([key, label]) => label + ': ' + (data.checks[key] === true ? 'พร้อม' : 'ยังไม่พร้อม')).join('\\n') + '\\nยังไม่ได้ติดต่อธนาคาร';
-    probe.disabled = data.ready !== true || probe.dataset.attempted === 'true';
+    const c = data.cooldown;
+    result.textContent += '\\nCooldown: ' + (c ? c.retry_after_seconds + ' วินาที' : 'ยังตรวจไม่ได้');
+    if (c?.last_attempt_at !== null && c?.last_attempt_at !== undefined) result.textContent += '\\nคำขอล่าสุด: ' + new Date(c.last_attempt_at).toISOString();
+    if (c?.in_progress) result.textContent += '\\nมีการทดสอบที่กำลังทำงาน';
+    probe.disabled = data.ready !== true || !c || c.retry_after_seconds !== 0 || c.in_progress !== false || probe.dataset.attempted === 'true';
   } catch {
     result.textContent = 'เบราว์เซอร์ติดต่อแอดมินไม่สำเร็จ · ยังตรวจความพร้อมไม่ได้';
   } finally { this.disabled = false; }

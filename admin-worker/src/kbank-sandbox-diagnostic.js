@@ -27,7 +27,17 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
       const keys = ['enabled', 'consumer_id_present', 'consumer_secret_present', 'coordinator_present'];
       if (!keys.every(key => typeof data.checks?.[key] === 'boolean')) return failure('unexpected_sandbox_response');
       const checks = Object.fromEntries(keys.map(key => [key, data.checks[key]]));
-      return reply({ ok: true, ready: Object.values(checks).every(Boolean), checks, bank_called: false });
+      const configured = Object.values(checks).every(Boolean);
+      const c = data.cooldown;
+      const valid = c && Number.isInteger(c.retry_after_seconds) && c.retry_after_seconds >= 0 && c.retry_after_seconds <= 1800 &&
+        (c.last_attempt_at === null || (Number.isSafeInteger(c.last_attempt_at) && c.last_attempt_at >= 0)) &&
+        (c.last_success === null || typeof c.last_success === 'boolean') && typeof c.in_progress === 'boolean' &&
+        ((c.last_attempt_at === null) === (c.last_success === null));
+      if (configured && !valid) return failure('sandbox_status_unavailable', 503);
+      const cooldown = valid ? { retry_after_seconds: c.retry_after_seconds, last_attempt_at: c.last_attempt_at,
+        last_success: c.last_success, in_progress: c.in_progress } : null;
+      return reply({ ok: true, ready: configured && cooldown.retry_after_seconds === 0 && !cooldown.in_progress,
+        checks, cooldown, bank_called: false });
     }
     if (readiness && response.ok) return failure('unexpected_sandbox_response');
     if (response.status === 200 && data?.environment === 'sandbox' && data.ok === true &&
@@ -36,7 +46,7 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
       return reply({ ok: true, oauth: 'connected', expires_in: data.expires_in });
     }
     const expectedStatuses = {
-      service_auth_required: 401, sandbox_disabled: 503, sandbox_not_configured: 503,
+      sandbox_status_unavailable: 503, service_auth_required: 401, sandbox_disabled: 503, sandbox_not_configured: 503,
       oauth_smoke_cooldown: 429, kbank_oauth_failed: 502, kbank_oauth_unavailable: 502,
     };
     const error = data?.error;
