@@ -55,6 +55,28 @@ body .mmd-welcome-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr
 body .mmd-welcome-steps li{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 6px;border:1px solid rgba(231,204,137,.16);border-radius:12px;background:rgba(255,255,255,.025);color:var(--mmd-muted);font-size:12px;line-height:1.5}
 body .mmd-welcome-steps svg{width:26px;height:26px;fill:none;stroke:var(--mmd-gold);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 
+/* Applicant landing stays compact; allow scroll for short screens / enlarged text. */
+body .mmd-applicant-compact .mmd-digital-shell{padding:calc(16px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom))}
+body .mmd-applicant-compact .mmd-digital-brand small{display:none}
+body .mmd-applicant-compact .mmd-digital-kicker{display:none}
+body .mmd-applicant-compact .mmd-digital-title{font-size:24px;line-height:1.5;margin-top:18px}
+body .mmd-applicant-compact .mmd-digital-sub{font-size:14px;line-height:1.7;margin-top:6px}
+body .mmd-welcome-art{height:112px;position:relative;overflow:hidden;border-radius:16px;margin-top:20px;background:#23251e}
+body .mmd-welcome-art img{width:100%;height:100%;object-fit:cover;object-position:center 40%;opacity:.72}
+body .mmd-welcome-art:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,9,7,.7),transparent)}
+body .mmd-welcome-art span{position:absolute;z-index:1;left:18px;bottom:16px;color:#fff5dc;font-size:12px;letter-spacing:.18em}
+body .mmd-applicant-compact .mmd-welcome-steps{margin-top:18px;gap:8px}
+body .mmd-applicant-compact .mmd-welcome-steps li{padding:10px 4px;gap:6px;font-size:11px}
+body .mmd-applicant-compact .mmd-welcome-steps svg{width:22px;height:22px}
+body .mmd-applicant-compact .mmd-digital-card{margin-top:16px}
+body .mmd-applicant-compact .mmd-digital-row{padding:14px 16px}
+body .mmd-applicant-compact .mmd-digital-row strong{font-size:14px}
+body .mmd-applicant-compact .mmd-digital-row p{font-size:12px;line-height:1.6;margin-top:4px}
+body .mmd-applicant-compact .mmd-digital-meter{display:none}
+body .mmd-applicant-compact .mmd-digital-action{margin-top:16px;min-height:50px;background:linear-gradient(135deg,#edd69a,#c5a36b);box-shadow:0 6px 18px rgba(196,158,92,.16)}
+body .mmd-applicant-compact .mmd-digital-detail{margin-top:12px;font-size:12px;line-height:1.6;text-align:center}
+@media(max-height:620px){body .mmd-welcome-art{height:76px;margin-top:12px}body .mmd-applicant-compact .mmd-digital-title{margin-top:12px}}
+
 `;
 
 export function modelLiffDigitalBootstrapHtml({
@@ -147,12 +169,12 @@ export function modelLiffDigitalBootstrapHtml({
   const title = selectedJobMode
     ? "ลูกค้าเลือกคุณสำหรับงานนี้"
     : publicJobApplicant
-      ? "ที่นี่พี่เปอร์ดูแลงานให้ครับ"
+      ? "ส่งข้อมูลส่วนตัว"
       : "เปิด MY MODEL";
   const copy = selectedJobMode
     ? (ownerAlias ? "งานนี้ส่งตรงถึง " + ownerAlias + " · เปิดรายละเอียดและตอบรับงานใน MY MODEL" : "งานนี้ส่งตรงถึงคุณ · เปิดรายละเอียดและตอบรับงานใน MY MODEL")
     : publicJobApplicant
-      ? "ส่งข้อมูลและรูปปัจจุบันให้เปอร์ตรวจครั้งแรก เมื่อผ่านแล้วกลับมาดูงานได้เลย"
+      ? "รบกวนอัปโหลดรูปปัจจุบันที่ชัดเจน"
       : "กำลังเปิดพื้นที่ทำงานของคุณ";
   const success = selectedJobMode
     ? "กำลังเปิดรายละเอียดงานที่เลือกคุณไว้…"
@@ -172,11 +194,11 @@ export function modelLiffDigitalBootstrapHtml({
   const initialPill = selectedJobMode ? "MY MODEL · SELECTED JOB" : publicJobApplicant ? "เริ่มต้น" : "MY MODEL";
   const readyPill = selectedJobMode ? "SELECTED JOB · READY" : publicJobApplicant ? "พร้อมเริ่ม" : "MY MODEL · READY";
   const kicker = selectedJobMode ? "SELECTED JOB" : publicJobApplicant ? "ยินดีต้อนรับ" : "MY MODEL";
-  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "เก็บลิงก์งานนี้ไว้แล้ว" : "กำลังเปิดพื้นที่ทำงาน";
+  const statusLead = selectedJobMode ? "กำลังเปิดงานของคุณ" : publicJobApplicant ? "ประกาศที่คุณเปิดมา" : "กำลังเปิดพื้นที่ทำงาน";
   const statusHelp = selectedJobMode
     ? "นี่คืองานที่ลูกค้าเลือกคุณแล้ว · ไม่ใช่หน้าสมัครงาน และไม่ต้องสมัครเป็นโมเดลใหม่"
     : publicJobApplicant
-      ? "ยังไม่สะดวกส่งรูป ฝาก LINE หรือเบอร์โทรไว้ก่อนได้"
+      ? "ต้องการแก้ไขหรือลบข้อมูล ติดต่อเปอร์"
       : "กำลังเตรียมงานและโปรไฟล์ของคุณ";
   const pageTitle = selectedJobMode ? "MY MODEL · งานที่เลือกคุณ" : publicJobApplicant ? "MY MODEL · พี่เปอร์ดูแลงานให้" : "MY MODEL";
   const initOptions = primary ? `{liffId:${safeId}}` : `{liffId:${safeId},withLoginOnExternalBrowser:true}`;
@@ -192,12 +214,13 @@ export function modelLiffDigitalBootstrapHtml({
 <style>${MMD_APP_DIGITAL_CSS}</style>
 </head>
 <body>
-<div class="mmd-digital-app" data-mmd-app-digital="v1">
+<div class="mmd-digital-app ${publicJobApplicant ? "mmd-applicant-compact" : ""}" data-mmd-app-digital="v1">
   <main class="mmd-digital-shell">
     <header class="mmd-digital-top">
       <div class="mmd-digital-brand">MY MODEL<small>DIGITAL MODEL WORKSPACE</small></div>
       <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
+    ${publicJobApplicant ? '<div class="mmd-welcome-art"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6ac671f1a02046b10f47ceba_Boss%20Writing-p-500.webp" alt="" width="500" height="281" decoding="async"/><span>MY MODEL</span></div>' : ""}
     <p class="mmd-digital-kicker">${kicker}</p>
     <h1 class="mmd-digital-title">${title}</h1>
     <p class="mmd-digital-sub">${copy}</p>
@@ -212,7 +235,7 @@ export function modelLiffDigitalBootstrapHtml({
       <div class="mmd-digital-meter" aria-hidden="true"><span></span></div>
     </section>
     <a class="mmd-digital-action" id="fallback" href=${safeFallback} ${publicJobApplicant ? "" : "hidden"}>${cta}</a>
-    ${publicJobApplicant ? '<small class="mmd-digital-detail">ต้องการคุยเป็นส่วนตัว? <a href="https://t.me/per_mmd" rel="noreferrer">ติดต่อเปอร์</a></small>' : ""}
+    ${publicJobApplicant ? '<small class="mmd-digital-detail">ต้องการสอบถามเป็นการส่วนตัว <a href="https://t.me/per_mmd" rel="noreferrer">ติดต่อเปอร์</a></small>' : ""}
     <small class="mmd-digital-detail" id="detail"></small>
   </main>
 </div>
