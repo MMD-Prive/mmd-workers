@@ -9,7 +9,7 @@ export function renderRelaxSpaPage({ partner = false } = {}) {
 <div class="stats" id="stats"><article class="stat"><small>รายการแนะนำ</small><b>—</b></article><article class="stat"><small>ร้านตอบรับ</small><b>—</b></article><article class="stat"><small>งานที่เชื่อมแล้ว</small><b>—</b></article><article class="stat"><small>รอตรวจส่วนแบ่ง</small><b>—</b></article></div>
 <nav class="nav" aria-label="ขั้นตอน Relax Spa"><a href="?view=referrals" data-view="referrals">แนะนำคน</a><a href="?view=agreements" data-view="agreements" data-owner>ข้อตกลง</a><a href="?view=services" data-view="services">งานและเงิน</a><a href="?view=shares" data-view="shares">ส่วนแบ่ง</a></nav>
 <div id="notice" class="alert" role="status" aria-live="polite">กำลังอ่านรายการ…</div><div class="actions"><button id="refresh" type="button">รีเฟรชรายการ</button></div><section id="content" class="space" aria-label="รายการ Relax Spa"></section>
-<footer class="muted space">ยอดแบ่งอ้างข้อตกลงที่อนุมัติของงานนั้น การบันทึกหลักฐานรับเงินหรือจ่ายเงินผ่านหน้านี้เป็นการตรวจโดย Owner และมีประวัติผู้บันทึก</footer></main><script>(${spaBrowser.toString()})(${JSON.stringify(config)});</script></body></html>`);
+<footer class="muted space">ยอดแบ่งอ้างข้อตกลงที่อนุมัติของงานนั้น การบันทึกหลักฐานรับเงินหรือจ่ายเงินผ่านหน้านี้เป็นการตรวจโดย Owner และมีประวัติผู้บันทึก</footer></main><script>(()=>{const __name=(fn,name)=>Object.defineProperty(fn,"name",{value:name,configurable:true});(${spaBrowser.toString()})(${JSON.stringify(config)});})();</script></body></html>`);
 }
 
 function spaBrowser(config) {
