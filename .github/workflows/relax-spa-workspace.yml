@@ -1,0 +1,26 @@
+name: Relax Spa referral and settlement workspace
+on:
+  pull_request:
+    paths:
+      - 'admin-worker/src/relax-spa-*'
+      - 'admin-worker/src/mms-admin-runtime.js'
+      - 'admin-worker/src/admin-login-hero-worker-core.js'
+      - 'admin-worker/relax-spa-admin.test.mjs'
+      - 'mms-worker/**'
+      - 'partners-worker/**'
+      - '.github/workflows/relax-spa-workspace.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: npm install --prefix partners-worker --ignore-scripts
+      - run: node --experimental-global-webcrypto --test admin-worker/relax-spa-admin.test.mjs admin-worker/mms-admin-workspace.test.mjs mms-worker/test/relax-spa-ledger.test.mjs
+      - run: npm test --prefix partners-worker

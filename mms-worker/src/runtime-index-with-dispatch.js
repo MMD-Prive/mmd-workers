@@ -2,6 +2,8 @@ import runtime from "./runtime-index-with-application-v4.js";
 import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleWorkspaceAdmin } from "./workspace-admin-runtime.mjs";
+import { maybeHandleRelaxSpaLedger } from "./relax-spa-ledger.mjs";
+export { RelaxSpaLedger } from "./relax-spa-ledger.mjs";
 import { maybeHandleMmsServiceZones } from "./service-zones-runtime.mjs";
 import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./canonical-zone-booking-runtime.mjs";
 import { canonicalZoneApplicationErrorResponse, maybeHandleCanonicalZoneApplication } from "./canonical-zone-application-runtime.mjs";
@@ -88,6 +90,8 @@ async function autoDispatchPrebooking(request, response, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    const spaResponse = await maybeHandleRelaxSpaLedger(request, env);
+    if (spaResponse) return spaResponse;
     const workspaceAdminResponse = await maybeHandleWorkspaceAdmin(request, env);
     if (workspaceAdminResponse) return workspaceAdminResponse;
     const serviceZoneResponse = await maybeHandleMmsServiceZones(request, env);

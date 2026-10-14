@@ -459,7 +459,7 @@ function isGateBypassedAdminPath(path, method) {
 }
 
 function isMmsPartnerAllowedPath(path) {
-  return path === MMS_PARTNER_PAGE_PATH || path === MMS_PARTNER_API_PREFIX || path.startsWith(`${MMS_PARTNER_API_PREFIX}/`);
+  return path === MMS_PARTNER_PAGE_PATH || path === '/internal/admin/mms/relax-spa' || path === MMS_PARTNER_API_PREFIX || path.startsWith(`${MMS_PARTNER_API_PREFIX}/`);
 }
 
 function isBrowserAdminPath(path) {

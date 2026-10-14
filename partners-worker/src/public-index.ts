@@ -250,7 +250,7 @@ function renderSystemActions(page: string, tokenQuery: string, reviewHref: strin
     return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">เปิด Partner Dashboard</a></p>";
   }
   if (page === "dashboard") {
-    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a></p>";
+    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"/partner/dashboard/relax-spa" + escapeHtml(tokenQuery) + "\">Relax Spa by 9 · แนะนำ Therapist</a></p>";
   }
   return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Partner Home</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">เปิด Partner Dashboard</a></p>" : "");
 }
