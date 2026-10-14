@@ -272,3 +272,12 @@ test('readiness requires known cooldown and strips untrusted extra status fields
   assert.equal(data.ready,ready);assert.doesNotMatch(JSON.stringify(data),/must-not-leak|access_token/);assert.equal(h.calls.length,1);
  }
 });
+
+test('generic KBank categories pass only the allowlist and never raw code/message',async()=>{
+ for(const [category,expected] of [['api_product_not_matched','api_product_not_matched'],['secret-untrusted',undefined]]){
+  const h=setup(()=>Response.json({environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:401,bank_error_shape:'openapi_code_message',bank_error_category:category,code:'secret-code',message:'secret-message'},{status:502}));
+  const result=await(await handle(await request(h.env),h.env)).json();assert.equal(result.bank_error_shape,'openapi_code_message');assert.equal(result.bank_error_category,expected);assert.doesNotMatch(JSON.stringify(result),/secret-code|secret-message|secret-untrusted/);
+ }
+ const h=setup(()=>Response.json({environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:401,bank_error_category:'__proto__'},{status:502}));
+ assert.equal((await(await handle(await request(h.env),h.env)).json()).bank_error_category,undefined);
+});

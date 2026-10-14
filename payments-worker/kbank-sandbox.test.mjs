@@ -133,3 +133,19 @@ test('read-only cooldown status never writes storage or calls the bank, includin
   assert.equal(writes,0);assert.equal(bank,0);
  }finally{globalThis.fetch=original;}
 });
+
+test('documented code/message replies expose exact safe categories without retaining messages or tokens', async()=>{
+ const original=globalThis.fetch;
+ try{
+  for(const [message,category] of [['Invalid ApiKey for given resource','api_key_resource_mismatch'],['Invalid API Key','invalid_api_key'],['Invalid API call as no apiproduct match found','api_product_not_matched'],['Invalid Consumer Secret','invalid_consumer_secret'],['secret-opaque-message',undefined]]){
+   let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({code:'openapi_error',message,access_token:'must-not-leak'},{status:401});};
+   const worker=new KbankSandboxCoordinator({storage:{get:async()=>undefined,put:async()=>{}}},{KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'});
+   const result=await(await worker.fetch(new Request('https://coordinator/smoke',{method:'POST'}))).json();
+   assert.equal(result.bank_error_shape,'openapi_code_message');assert.equal(result.bank_error_code_recognized,true);assert.equal(result.bank_error_category,category);assert.equal(result.upstream_status,401);assert.equal(calls,1);
+   assert.doesNotMatch(JSON.stringify(result),/must-not-leak|secret-opaque-message|openapi_error|"message"/);
+  }
+  globalThis.fetch=async()=>Response.json({code:'opaque-secret',message:'Invalid API Key'},{status:401});
+  const worker=new KbankSandboxCoordinator({storage:{get:async()=>undefined,put:async()=>{}}},{KBANK_SANDBOX_ENABLED:'true',KBANK_SANDBOX_CONSUMER_ID:'id',KBANK_SANDBOX_CONSUMER_SECRET:'secret'});
+  const result=await(await worker.fetch(new Request('https://coordinator/smoke',{method:'POST'}))).json();assert.equal(result.bank_error_code_recognized,false);assert.equal(result.bank_error_category,undefined);
+ }finally{globalThis.fetch=original;}
+});

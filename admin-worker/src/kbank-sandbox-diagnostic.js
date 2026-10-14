@@ -4,7 +4,8 @@ export const KBANK_STATUS_MODE = 'kbank_sandbox_status';
 const PATH = '/v1/internal/payments/kbank/sandbox/smoke';
 const BANK_RESPONSE_MEDIA_TYPES = new Set(['json', 'html', 'text', 'other', 'missing']);
 const BANK_RESPONSE_BODY_SHAPES = new Set(['json_object', 'json_array', 'json_scalar', 'empty', 'non_json', 'size_limited']);
-const BANK_ERROR_SHAPES = new Set(['oauth_error', 'kbank_error_code', 'gateway_fault_detail', 'none']);
+const BANK_ERROR_SHAPES = new Set(['oauth_error', 'kbank_error_code', 'gateway_fault_detail', 'openapi_code_message', 'none']);
+const BANK_ERROR_CATEGORIES = new Set(["api_key_resource_mismatch", "invalid_api_key", "api_product_not_matched", "invalid_consumer_secret", "invalid_request_format", "oauth_token_generation_failed", "invalid_access_token", "access_token_expired", "access_token_not_approved"]);
 const reply = (body, status = 200) => Response.json({
   environment: 'sandbox', transfers_enabled: false, ...body,
 }, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -56,6 +57,7 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
       if (BANK_RESPONSE_MEDIA_TYPES.has(data.bank_response_media_type)) safe.bank_response_media_type = data.bank_response_media_type;
       if (BANK_RESPONSE_BODY_SHAPES.has(data.bank_response_body_shape)) safe.bank_response_body_shape = data.bank_response_body_shape;
       if (BANK_ERROR_SHAPES.has(data.bank_error_shape)) safe.bank_error_shape = data.bank_error_shape;
+      if (BANK_ERROR_CATEGORIES.has(data.bank_error_category)) safe.bank_error_category = data.bank_error_category;
       if (typeof data.bank_error_code_recognized === 'boolean') safe.bank_error_code_recognized = data.bank_error_code_recognized;
     }
     if (error === 'oauth_smoke_cooldown') {

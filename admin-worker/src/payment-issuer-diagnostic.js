@@ -477,11 +477,14 @@ function bankError(data, status) {
   const detail = oauthKnown ? oauthLabels[data.oauth_error] : label;
   const responseMediaLabels = { json: 'JSON', html: 'HTML', text: 'ข้อความ', other: 'ชนิดอื่น', missing: 'ไม่มี Content-Type' };
   const responseShapeLabels = { json_object: 'JSON object', json_array: 'JSON array', json_scalar: 'JSON scalar', empty: 'ว่าง', non_json: 'ไม่ใช่ JSON', size_limited: 'เกินขนาดที่อ่านได้อย่างปลอดภัย' };
-  const errorShapeLabels = { oauth_error: 'ฟิลด์ OAuth error', kbank_error_code: 'ฟิลด์ ErrorCode', gateway_fault_detail: 'ฟิลด์ fault detail errorcode', none: 'ไม่พบฟิลด์รหัสที่รองรับ' };
+  const errorShapeLabels = { oauth_error: 'ฟิลด์ OAuth error', kbank_error_code: 'ฟิลด์ ErrorCode', gateway_fault_detail: 'ฟิลด์ fault detail errorcode', openapi_code_message: 'ฟิลด์ code/message', none: 'ไม่พบฟิลด์รหัสที่รองรับ' };
   const responseMedia = Object.hasOwn(responseMediaLabels, data?.bank_response_media_type) ? responseMediaLabels[data.bank_response_media_type] : null;
   const responseShape = Object.hasOwn(responseShapeLabels, data?.bank_response_body_shape) ? responseShapeLabels[data.bank_response_body_shape] : null;
   const errorShape = Object.hasOwn(errorShapeLabels, data?.bank_error_shape) ? errorShapeLabels[data.bank_error_shape] : null;
+  const categoryLabels = {"api_key_resource_mismatch": "API key ไม่ตรงกับ resource", "invalid_api_key": "API key ไม่ถูกต้อง", "api_product_not_matched": "ไม่พบ API product ที่จับคู่", "invalid_consumer_secret": "Consumer Secret ไม่ถูกต้อง", "invalid_request_format": "รูปแบบคำขอไม่ถูกต้อง", "oauth_token_generation_failed": "ธนาคารสร้าง OAuth token ไม่สำเร็จ", "invalid_access_token": "Access token ไม่ถูกต้อง", "access_token_expired": "Access token หมดอายุ", "access_token_not_approved": "Access token ไม่ได้รับอนุมัติ"};
+  const category = Object.hasOwn(categoryLabels, data?.bank_error_category) ? categoryLabels[data.bank_error_category] : null;
   const responseDetails = [
+    category && 'หมวดข้อความธนาคาร ' + category,
     responseMedia && 'ชนิดคำตอบธนาคาร ' + responseMedia,
     responseShape && 'รูปแบบเนื้อหา ' + responseShape,
     errorShape && 'ตำแหน่งรหัส ' + errorShape,
