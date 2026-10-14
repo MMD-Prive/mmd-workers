@@ -24,14 +24,14 @@ test("admin job board publish preserves the short broadcast URL", async () => {
   const response = await handleAdminJobBoardPublish(
     new Request("https://mmdbkk.com/v1/admin/job-board/publish", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "idempotency-key": "test-publish-key-0001" },
       body: JSON.stringify({
         board_text: "งานถ่ายแบบ 2 ชั่วโมง\nลูกค้านิสัยดี มีมารยาท",
         customer_gender: "male",
       }),
     }),
     env,
-    { role: "owner" },
+    { role: "owner", id: "per" },
   );
 
   assert.equal(response.status, 200);

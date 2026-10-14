@@ -78,6 +78,8 @@ import {
 } from "./model-selected-job-handoff.js";
 
 import {
+  handleAdminBroadcastRead,
+  isAdminBroadcastReadRequest,
   handleAdminJobBoardPublish,
   isAdminJobBoardPublishRequest,
 } from "./job-board-owner-publish.js";
@@ -326,6 +328,11 @@ const adminLoginHeroWorker = {
     // MODEL_RECONFIRM guard v2 owner-only status / dry-run preview / owner-destination smoke.
     if (isModelReconfirmOwnerRequest(normalizedPath)) {
       return handleModelReconfirmOwnerRequest(request, runtimeEnv);
+    }
+
+    if (isAdminBroadcastReadRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleAdminBroadcastRead(request, runtimeEnv, actor);
     }
 
     if (isAdminJobBoardPublishRequest(normalizedPath, method)) {
