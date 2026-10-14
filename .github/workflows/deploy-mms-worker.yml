@@ -229,7 +229,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler versions deploy "${MMS_WORKER_VERSION_ID}@100%" -y --env="" \
+          node ../scripts/deploy-uploaded-worker-version.mjs mms-worker "$MMS_WORKER_VERSION_ID" \
             2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
           echo "url=https://mms-worker.malemodel-bkk.workers.dev" >> "$GITHUB_OUTPUT"
 

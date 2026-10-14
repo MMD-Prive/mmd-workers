@@ -147,7 +147,10 @@ workflows. Do not pause workflows during this read-only audit or rerun #2378/#23
 Use the reviewed exact head with green CI. Existing MMS workflow uploads a version
 with `--keep-vars` and no secrets file on normal pushes; Telegram rotation and
 Therapist secret initialization are explicit default-false dispatch inputs. It
-reads R2 availability and does not create the bucket. The uploader now refuses
+reads R2 availability and does not create the bucket. Promotion reuses the existing
+`deploy-uploaded-worker-version.mjs` helper: only the deployments API is written,
+with exact version/100% readback; Wrangler non-versioned settings sync is avoided.
+The uploader now refuses
 migration error 10211 by default instead of falling back to a direct deployment.
 The separate library migration path requires explicit `allowMigration:true`; the
 production CLI does not set it. Upload failures must stop promotion.
