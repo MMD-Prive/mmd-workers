@@ -191,3 +191,15 @@ test('bank HTTP status survives the admin proxy while bank body and secrets stay
     assert.equal((await response.json()).bank_http_status,undefined);
   }
 });
+
+
+test('admin forwards only allowlisted OAuth error categories',async()=>{
+  for(const [code,expected] of [['invalid_client','invalid_client'],['unauthorized_client','unauthorized_client'],['secret-value',undefined]]) {
+    const h=setup(()=>Response.json({environment:'sandbox',ok:false,error:'kbank_oauth_failed',upstream_status:401,oauth_error:code,error_description:'must-not-leak'},{status:502}));
+    const response=await handle(await request(h.env),h.env);
+    const data=await response.json();
+    assert.equal(data.oauth_error,expected);
+    assert.equal(data.bank_http_status,401);
+    assert.doesNotMatch(JSON.stringify(data),/secret-value|must-not-leak/);
+  }
+});
