@@ -1,4 +1,5 @@
 export const KBANK_SMOKE_PATH = '/v1/internal/payments/kbank/sandbox/smoke';
+export const KBANK_STATUS_PATH = '/v1/internal/payments/kbank/sandbox/status';
 const TOKEN_URL = 'https://openapi-sandbox.kasikornbank.com/v2/oauth/token';
 const WINDOW_MS = 30 * 60 * 1000;
 const reply = (data, status = 200) => Response.json({ environment: 'sandbox', ...data }, {
@@ -6,11 +7,16 @@ const reply = (data, status = 200) => Response.json({ environment: 'sandbox', ..
 });
 
 export async function handleKbankSandbox(request, env) {
-  if (new URL(request.url).pathname !== KBANK_SMOKE_PATH) return null;
+  const path = new URL(request.url).pathname;
+  if (path !== KBANK_SMOKE_PATH && path !== KBANK_STATUS_PATH) return null;
   if (request.method !== 'POST') return reply({ ok: false, error: 'method_not_allowed' }, 405);
   const expected = env.AUTH_SERVICE_ADMIN_TO_PAYMENTS;
   const supplied = request.headers.get('x-internal-token') || request.headers.get('authorization')?.replace(/^Bearer /, '');
   if (!expected || !supplied || supplied !== expected) return reply({ ok: false, error: 'service_auth_required' }, 401);
+  if (path === KBANK_STATUS_PATH) {
+    const checks = { enabled: env.KBANK_SANDBOX_ENABLED === 'true', consumer_id_present: Boolean(env.KBANK_SANDBOX_CONSUMER_ID), consumer_secret_present: Boolean(env.KBANK_SANDBOX_CONSUMER_SECRET), coordinator_present: Boolean(env.KBANK_SANDBOX_COORDINATOR) };
+    return reply({ ok: true, ready: Object.values(checks).every(Boolean), checks, bank_called: false, transfers_enabled: false });
+  }
   if (env.KBANK_SANDBOX_ENABLED !== 'true') return reply({ ok: false, error: 'sandbox_disabled' }, 503);
   if (!env.KBANK_SANDBOX_CONSUMER_ID || !env.KBANK_SANDBOX_CONSUMER_SECRET || !env.KBANK_SANDBOX_COORDINATOR) {
     return reply({ ok: false, error: 'sandbox_not_configured' }, 503);

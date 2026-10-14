@@ -1,4 +1,4 @@
-import { KBANK_SANDBOX_MODE, requestKbankSandboxDiagnostic } from "./kbank-sandbox-diagnostic.js";
+import { KBANK_SANDBOX_MODE, KBANK_STATUS_MODE, requestKbankSandboxDiagnostic } from "./kbank-sandbox-diagnostic.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { paymentIssuerTransport, requestPaymentsConfirmLink, requestPaymentsConfirmationReissue } from "./payments-issuer-transport.js";
 
@@ -54,9 +54,9 @@ export async function handlePaymentIssuerDiagnostic(request, env = {}) {
     return json({ ok: false, error: "diagnostic_empty_object_required" }, 400);
   }
 
-  if (body.mode === KBANK_SANDBOX_MODE) {
+  if (body.mode === KBANK_SANDBOX_MODE || body.mode === KBANK_STATUS_MODE) {
     if (Object.keys(body).length !== 1) return json({ ok: false, error: "unsupported_sandbox_field" }, 400);
-    return requestKbankSandboxDiagnostic(env);
+    return requestKbankSandboxDiagnostic(env, body.mode === KBANK_STATUS_MODE);
   }
 
   if (Object.keys(body).length === 0) return handleEmptyDiagnostic(env);
@@ -411,7 +411,9 @@ function diagnosticPage() {
 <section aria-labelledby="kbank-heading" style="margin:40px 0;padding-top:24px;border-top:1px solid #514737">
 <h2 id="kbank-heading">เชื่อมต่อกสิกร · Sandbox</h2>
 <p>ตรวจว่าบัญชีทดสอบเชื่อมต่อได้ โดยไม่มีการโอนเงิน หากเพิ่งทดสอบ OAuth ผ่านเว็บธนาคาร ให้เว้น 30 นาทีก่อนกดปุ่มนี้</p>
-<button id="kbank-probe" type="button">ทดสอบการเชื่อมต่อกสิกร</button>
+<button id="kbank-status" type="button">ตรวจความพร้อม</button>
+<pre id="kbank-readiness" role="status" aria-live="polite">ตรวจความพร้อมก่อนทดสอบ · ขั้นนี้ไม่เรียกธนาคาร</pre>
+<button id="kbank-probe" type="button" disabled>ทดสอบการเชื่อมต่อกสิกร</button>
 <pre id="kbank-result" role="status" aria-live="polite">ยังไม่ได้ทดสอบ</pre>
 </section>
 <section aria-labelledby="issue-heading" style="margin:40px 0;padding-top:24px;border-top:1px solid #514737">
@@ -442,33 +444,71 @@ document.getElementById('probe').addEventListener('click', async function () {
     result.textContent = 'ตรวจไม่สำเร็จ · ไม่ได้ส่งคำขอซ้ำ';
   }
 });
+const bankMessages = {
+  unauthorized: 'กรุณาเข้าสู่ระบบแอดมินอีกครั้ง', forbidden: 'บัญชีนี้ไม่มีสิทธิ์ทดสอบ',
+  forbidden_origin: 'คำขอถูกปฏิเสธเพราะที่มาของหน้าไม่ตรงกัน',
+  sandbox_disabled: 'ยังไม่ได้เปิด Sandbox ที่ payments-worker',
+  sandbox_not_configured: 'การตั้งค่า Sandbox ยังไม่ครบ',
+  service_auth_required: 'สิทธิ์เชื่อมต่อแอดมินกับ payments-worker ไม่ตรงกัน',
+  sandbox_service_token_missing: 'แอดมินยังไม่มี Secret สำหรับเชื่อมต่อ payments-worker',
+  sandbox_binding_missing: 'แอดมินยังไม่มีช่องทางเชื่อมต่อ payments-worker',
+  sandbox_transport_unavailable: 'แอดมินติดต่อ payments-worker ไม่สำเร็จหรือหมดเวลารอ',
+  sandbox_endpoint_missing: 'payments-worker ยังไม่มี endpoint รุ่นนี้ · ตรวจ deployment',
+  sandbox_non_json_response: 'payments-worker ตอบกลับในรูปแบบที่อ่านไม่ได้ · ตรวจ deployment และเส้นทาง',
+  unexpected_sandbox_response: 'คำตอบจาก payments-worker ไม่ตรงรูปแบบที่คาดไว้',
+  kbank_oauth_failed: 'ธนาคารยังไม่ยืนยัน OAuth · เว้น 30 นาทีก่อนทดสอบอีกครั้ง',
+  kbank_oauth_unavailable: 'payments-worker ติดต่อธนาคารไม่สำเร็จ · เว้น 30 นาทีก่อนทดสอบอีกครั้ง',
+  diagnostic_empty_object_required: 'หน้าแอดมินกับระบบหลังบ้านเป็นคนละรุ่น · ตรวจ deployment'
+};
+function bankError(data, status) {
+  const known = Object.prototype.hasOwnProperty.call(bankMessages, data?.error);
+  const label = known ? bankMessages[data.error] : 'คำขอไม่สำเร็จและยังระบุสาเหตุไม่ได้';
+  return label + ' (HTTP ' + status + (known ? ' · ' + data.error : '') +
+    (Number.isInteger(data?.upstream_status) ? ' · payments HTTP ' + data.upstream_status : '') + ')';
+}
+async function bankRequest(mode) {
+  const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {
+    method: 'POST', credentials: 'same-origin', redirect: 'error',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode })
+  });
+  const data = await response.json().catch(() => null);
+  return { response, data };
+}
+document.getElementById('kbank-status').addEventListener('click', async function () {
+  if (this.disabled) return;
+  this.disabled = true;
+  const probe = document.getElementById('kbank-probe');
+  probe.disabled = true;
+  const result = document.getElementById('kbank-readiness');
+  result.textContent = 'กำลังตรวจความพร้อม · ไม่เรียกธนาคาร…';
+  try {
+    const { response, data } = await bankRequest('${KBANK_STATUS_MODE}');
+    if (!response.ok || data?.ok !== true || !data.checks) {
+      result.textContent = data ? bankError(data, response.status) : 'ระบบตอบกลับเป็นข้อมูลที่อ่านไม่ได้ (HTTP ' + response.status + ')';
+      return;
+    }
+    const labels = { enabled: 'เปิด Sandbox', consumer_id_present: 'บันทึก Consumer ID', consumer_secret_present: 'บันทึก Consumer Secret', coordinator_present: 'ระบบควบคุมการทดสอบ' };
+    result.textContent = 'แอดมินเชื่อมต่อ payments-worker ได้' + '\\n' + Object.entries(labels).map(([key, label]) => label + ': ' + (data.checks[key] === true ? 'พร้อม' : 'ยังไม่พร้อม')).join('\\n') + '\\nยังไม่ได้ติดต่อธนาคาร';
+    probe.disabled = data.ready !== true || probe.dataset.attempted === 'true';
+  } catch {
+    result.textContent = 'เบราว์เซอร์ติดต่อแอดมินไม่สำเร็จ · ยังตรวจความพร้อมไม่ได้';
+  } finally { this.disabled = false; }
+});
 document.getElementById('kbank-probe').addEventListener('click', async function () {
   if (this.disabled) return;
   this.disabled = true;
+  this.dataset.attempted = 'true';
   const result = document.getElementById('kbank-result');
   result.textContent = 'กำลังทดสอบการเชื่อมต่อกสิกร…';
   try {
-    const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {
-      method: 'POST', credentials: 'same-origin', redirect: 'error',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: '${KBANK_SANDBOX_MODE}' })
-    });
-    const data = await response.json();
-    const messages = {
-      sandbox_disabled: 'ยังไม่ได้เปิด Sandbox ที่ payments-worker',
-      sandbox_not_configured: 'การตั้งค่า Sandbox ยังไม่ครบ',
-      service_auth_required: 'สิทธิ์เชื่อมต่อระหว่างระบบยังไม่พร้อม',
-      sandbox_transport_not_configured: 'ช่องทางเชื่อมต่อจากแอดมินยังไม่พร้อม',
-      kbank_oauth_failed: 'ธนาคารยังไม่ยืนยันการเชื่อมต่อ · เว้น 30 นาทีก่อนทดสอบอีกครั้ง',
-      kbank_oauth_unavailable: 'ยังติดต่อธนาคารไม่สำเร็จ · เว้น 30 นาทีก่อนทดสอบอีกครั้ง'
-    };
-    result.textContent = response.ok && data.ok === true && data.oauth === 'connected'
+    const { response, data } = await bankRequest('${KBANK_SANDBOX_MODE}');
+    result.textContent = response.ok && data?.ok === true && data.oauth === 'connected'
       ? 'เชื่อมต่อกสิกร Sandbox สำเร็จ · ยังไม่มีการโอนเงิน'
-      : data.error === 'oauth_smoke_cooldown'
+      : data?.error === 'oauth_smoke_cooldown'
         ? 'อยู่ระหว่างพักการทดสอบ · รอประมาณ ' + Math.ceil((data.retry_after_seconds || 1800) / 60) + ' นาที · รอบนี้ไม่ได้ส่งคำขอไปธนาคาร'
-        : messages[data.error] || 'ยังยืนยันผลไม่ได้ · ไม่ได้ส่งคำขอซ้ำ';
+        : data ? bankError(data, response.status) : 'ระบบตอบกลับเป็นข้อมูลที่อ่านไม่ได้ (HTTP ' + response.status + ') · ไม่ได้ส่งคำขอซ้ำ';
   } catch {
-    result.textContent = 'ยังยืนยันผลไม่ได้ · เว้น 30 นาทีก่อนลองอีกครั้ง';
+    result.textContent = 'เบราว์เซอร์ติดต่อแอดมินไม่สำเร็จหรือมีการเปลี่ยนเส้นทาง · ยังยืนยันไม่ได้ว่าคำขอถึงธนาคารหรือไม่ · ไม่ได้ส่งคำขอซ้ำ';
   }
 });
 const issueForm = document.getElementById('issue-form');
@@ -503,3 +543,4 @@ issueForm.addEventListener('submit', async function (event) {
     "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   } });
 }
+
