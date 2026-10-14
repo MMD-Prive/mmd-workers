@@ -194,14 +194,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/male-massage/bookings*"
 zone_name = "mmdbkk.com"
 
-# Exact Therapist directory app route only. Do not wildcard this route: the
-# nested /therapists/login, /me, /app and public service pages have separate owners.
+# The registered LIFF endpoint returns with query parameters. Cloudflare matches
+# the entire URL, so the callback requires a trailing wildcard. The entrypoint
+# sends unowned nested/public paths directly to origin; explicit API/page routes
+# keep their existing owners.
 [[routes]]
-pattern = "mmdbkk.com/male-massage/therapists"
+pattern = "mmdbkk.com/male-massage/therapists*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/male-massage/therapists"
+pattern = "www.mmdbkk.com/male-massage/therapists*"
 zone_name = "mmdbkk.com"
 
 [[routes]]

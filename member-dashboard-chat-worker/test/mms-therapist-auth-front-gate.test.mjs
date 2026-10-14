@@ -207,7 +207,7 @@ test("MY MMS app sends an unauthenticated browser back through Therapist LINE lo
   assert.equal(new URL(response.headers.get("location")).pathname, "/male-massage/therapists/login");
 });
 
-test("wrangler claims only bounded Therapist auth, app API, and work-app routes on apex and www", async () => {
+test("wrangler includes query-bearing LIFF callbacks and bounded Therapist auth/app routes on both hosts", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   for (const route of [
     "mmdbkk.com/male-massage/therapists/api/auth/*",
@@ -220,5 +220,7 @@ test("wrangler claims only bounded Therapist auth, app API, and work-app routes 
     assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
   }
   assert.match(wrangler, /binding = "MMS_WORKER"\s+service = "mms-worker"/);
-  assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/male-massage\/therapists\*"/);
+  for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
+    assert.ok(wrangler.includes(`pattern = "${host}/male-massage/therapists*"`));
+  }
 });

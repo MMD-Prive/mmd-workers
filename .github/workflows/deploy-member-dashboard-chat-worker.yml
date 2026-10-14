@@ -269,12 +269,12 @@ jobs:
           const desired = [
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
-            "mmdbkk.com/male-massage/therapists",
+            "mmdbkk.com/male-massage/therapists*",
             "mmdbkk.com/male-massage/therapists/login*",
             "mmdbkk.com/male-massage/therapists/me*",
             "mmdbkk.com/male-massage/therapists/app*",
             "mmdbkk.com/male-massage/therapists/api/app/*",
-            "www.mmdbkk.com/male-massage/therapists",
+            "www.mmdbkk.com/male-massage/therapists*",
             "www.mmdbkk.com/male-massage/therapists/login*",
             "www.mmdbkk.com/male-massage/therapists/me*",
             "www.mmdbkk.com/male-massage/therapists/app*",
@@ -468,6 +468,7 @@ jobs:
             for suffix in '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
               url="https://${host}/male-massage/therapists${suffix}"
               code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-ui.headers" -o "$RUNNER_TEMP/therapist-ui.html" -w '%{http_code}' "$url")"
+              echo "MY THERAPIST entrance: $url HTTP $code"
               test "$code" = '200'
               grep -Fq 'data-mms-shell="native-workspace-v1"' "$RUNNER_TEMP/therapist-ui.html"
               grep -Fq 'data-login="true"' "$RUNNER_TEMP/therapist-ui.html"
