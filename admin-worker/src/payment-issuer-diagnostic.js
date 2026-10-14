@@ -464,7 +464,8 @@ function bankError(data, status) {
   const known = Object.prototype.hasOwnProperty.call(bankMessages, data?.error);
   const label = known ? bankMessages[data.error] : 'คำขอไม่สำเร็จและยังระบุสาเหตุไม่ได้';
   return label + ' (HTTP ' + status + (known ? ' · ' + data.error : '') +
-    (Number.isInteger(data?.upstream_status) ? ' · payments HTTP ' + data.upstream_status : '') + ')';
+    (Number.isInteger(data?.upstream_status) ? ' · payments HTTP ' + data.upstream_status : '') +
+    (Number.isInteger(data?.bank_http_status) ? ' · KBank HTTP ' + data.bank_http_status : '') + ')';
 }
 async function bankRequest(mode) {
   const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {

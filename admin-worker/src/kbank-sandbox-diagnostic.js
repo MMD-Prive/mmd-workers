@@ -42,6 +42,9 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
       return failure(response.status === 404 ? 'sandbox_endpoint_missing' : 'unexpected_sandbox_response');
     }
     const safe = { ok: false, error, upstream_status: response.status };
+    if (error === 'kbank_oauth_failed' && Number.isInteger(data.upstream_status) && data.upstream_status >= 100 && data.upstream_status <= 599) {
+      safe.bank_http_status = data.upstream_status;
+    }
     if (error === 'oauth_smoke_cooldown') {
       if (Number.isInteger(data.retry_after_seconds) && data.retry_after_seconds > 0 && data.retry_after_seconds <= 1800) {
         safe.retry_after_seconds = data.retry_after_seconds;
