@@ -14,7 +14,7 @@ export async function requestKbankSandboxDiagnostic(env, readiness = false) {
   try {
     // Fixed service binding and path: no public HTTP fallback or caller-supplied URL.
     const response = await env.PAYMENTS_WORKER.fetch(new Request('https://sigil.mmdbkk.com' + (readiness ? PATH.replace('/smoke', '/status') : PATH), {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20000),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(20000),
       headers: { 'x-internal-token': token, Accept: 'application/json' },
     }));
     const data = await response.json().catch(() => null);
