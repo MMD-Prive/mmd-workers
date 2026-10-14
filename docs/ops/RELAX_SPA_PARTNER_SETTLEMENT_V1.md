@@ -117,41 +117,10 @@ retries and cross-account access. Existing archive limits remain in force.
 
 ## Workflow audit and approval-bound rollout
 
-A merge affecting these paths triggers the existing MMS, Admin and Partner deploy
-workflows. MMS now defaults to code-only deployment with retained vars and no
-secret file. Telegram rotation and missing Therapist secret initialization each
-require separate explicit workflow-dispatch inputs, default false. Normal deploy
-only verifies R2 availability and never creates the bucket. No binding/config
-migration is needed for this release. Optional rotation retains the existing
-shared concurrency lock.
-
-The existing **Admin** workflow can provision private media/KV and sync missing
-routes. The existing **Partner** workflow can create missing routes. Those broader
-operations are not authorized by this change. Before an approved production merge,
-use the following controlled release plan:
-
-1. Obtain approval for the exact PR head and code-only release of mms-worker,
-   admin-worker and partners-worker, including temporary suspension/restoration of
-   their three automatic deploy workflows. Record current enabled states.
-2. Pause those deploy workflows, merge the reviewed head, and read back the merge
-   SHA. This avoids triggering unrelated provisioning or route synchronization.
-3. Read deployed settings and exact existing bindings for all three Workers into
-   private temporary configs. Preserve the runtime-generated Admin availability
-   KV binding; stop on missing/ambiguous binding identity. Do not create resources.
-4. Build and validate the three code bundles at the approved merge SHA. Use
-   version uploads with retained vars and all existing bindings/secrets, no secret
-   file and no route/provisioning step. Do not use direct-deploy migration fallback.
-5. Promote only the approved versions, MMS first, then Admin and Partner. Record
-   version IDs and 100% traffic readbacks. Verify bindings/route inventory unchanged
-   and restore only workflows that were previously enabled.
-6. Run authorized read-only Owner and two-Partner session checks on mobile. Real
-   receipt/refund/payout acceptance needs separate authorization and human evidence;
-   never create fake financial events in production.
-
-Rollback promotes recorded prior Worker versions; it does not rewrite ledger data
-or rate snapshots. No merge, workflow suspension, deploy, route/secret mutation or
-production money event has been performed by writing this guide.
-
+The earlier three-Worker rollout plan is superseded by the observed #2378
+receipts and the follow-up release boundary below. Do not pause workflows or
+repeat that rollout to collect evidence. The current patch changes only the MMS
+producer, its tests and this document; it does not require an Admin/Partner release.
 
 ## Read-only follow-up audit — 2026-10-14
 
