@@ -24,12 +24,12 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
-      MMS_RELEASE_SHA: c480621d241e88dc8dcecb758cabe86a79241268
-      MMS_BASELINE_SHA: ed39a52b538be5faf7e54604c11542ff1a5fb145
+      MMS_RELEASE_SHA: 45f2912bf2e6f4f9fffe5ef34558fae720f93a48
+      MMS_BASELINE_SHA: c480621d241e88dc8dcecb758cabe86a79241268
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: c480621d241e88dc8dcecb758cabe86a79241268
+          ref: 45f2912bf2e6f4f9fffe5ef34558fae720f93a48
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
@@ -43,12 +43,12 @@ jobs:
           import os
           from pathlib import Path
           actual=set(Path(os.environ['RUNNER_TEMP'],'mms-release-files.txt').read_text().splitlines())
-          # These three presentation files are present in repository history but
-          # are not imported by the Admin entrypoint and no other Worker is released.
-          expected={'admin-worker/src/mms-admin-page.js','admin-worker/src/mms-internal-branding.mjs','admin-worker/mms-admin-workspace.test.mjs','model-dashboard-presentation-worker/index.test.mjs','model-dashboard-presentation-worker/model-job-board-owner-alias.test.mjs','model-dashboard-presentation-worker/src/model-liff-digital-shell.js'}
+          # The earlier release workflow and unrelated model header are in history;
+          # neither adds an Admin runtime change or releases another Worker.
+          expected={'.github/workflows/deploy-mms-dashboard-version.yml','admin-worker/src/mms-admin-approve-ui.js','admin-worker/mms-admin-workspace.test.mjs','model-dashboard-presentation-worker/src/model-liff-digital-shell.js'}
           assert actual == expected, 'Pinned source contains unexpected changes'
           PY
-          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs
+          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-approve-ui.test.mjs mms-admin-mobile-bundle.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs
       - name: Read active version and prepare existing bindings only
         id: preflight
         run: |
