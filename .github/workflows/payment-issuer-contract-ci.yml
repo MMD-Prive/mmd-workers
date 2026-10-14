@@ -5,6 +5,8 @@ on:
     paths:
       - "admin-worker/src/payments-issuer-transport.js"
       - "admin-worker/src/payment-issuer-diagnostic.js"
+      - "admin-worker/src/kbank-sandbox-diagnostic.js"
+      - "admin-worker/kbank-sandbox-diagnostic.test.mjs"
       - "admin-worker/src/admin-login-hero-worker-core.js"
       - "admin-worker/src/index.js"
       - "admin-worker/src/job-create-contract.js"
@@ -37,5 +39,6 @@ jobs:
         run: |
           node --check admin-worker/src/payments-issuer-transport.js
           node --check admin-worker/src/payment-issuer-diagnostic.js
+          node --test admin-worker/kbank-sandbox-diagnostic.test.mjs payments-worker/kbank-sandbox.test.mjs
           node --test admin-worker/payment-issuer-diagnostic.test.mjs admin-worker/service-auth-contract.test.mjs payments-worker/canonical-confirm-link.test.mjs payments-worker/session-finance-write.test.mjs
           node --test admin-worker/job-create-flow.test.mjs admin-worker/sigil-jobs-pending-client-link.test.mjs admin-worker/create-session-canonical-link.test.mjs admin-worker/model-reconfirm-runtime.test.mjs immigrate-worker/test/create-job-canonical-client.test.mjs
