@@ -18,7 +18,7 @@ test('recognized MY Partner opens spa page and refers under their canonical reco
 test('MY Partner cannot call spa finance or submit cross-origin', async t => {
   const f = await fixture(); t.after(() => f.restore());
   let calls = 0; f.env.MMS_WORKER = { fetch: async () => { calls++; return Response.json({ ok: true }); } };
-  for (const command of ['services', 'agreements', 'receipts', 'settlements', 'payouts']) assert.equal((await f.call('/v1/partner/relax-spa/' + command, { body: {} })).status, 403);
+  for (const command of ['agreement-preview', 'drafts', 'quotes', 'services', 'agreements', 'receipts', 'refunds', 'settlements', 'payouts', 'expenses', 'close']) assert.equal((await f.call('/v1/partner/relax-spa/' + command, { body: {} })).status, 403);
   assert.equal((await f.call('/v1/partner/relax-spa/referrals', { body: {}, headers: { origin: 'https://other.example' } })).status, 403);
   assert.equal(calls, 0);
 });
