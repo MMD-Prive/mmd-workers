@@ -39,11 +39,19 @@ test('approved MMS logo serves exact original bytes behind existing admin authen
 test('Internal MMS uses approved branding while shared Partner page retains SIGIL and current theme',async()=>{
  const {withMmsInternalBranding}=await import('./src/mms-internal-branding.mjs');
  const {renderRelaxSpaPage}=await import('./src/relax-spa-page.js');
- for(const html of [renderMmsAdminPage(),withMmsInternalBranding(renderRelaxSpaPage())]){
+ for(const html of [withMmsInternalBranding(renderRelaxSpaPage())]){
   assert.match(html,/data-mms-theme="white-green-v1"/);
   assert.match(html,/class="mms-ai-brand"/);assert.match(html,/alt="Male Massage AI"/);
   assert.match(html,/width="1983" height="793"/);assert.match(html,/height:auto/);assert.match(html,/object-fit:contain/);
   assert.doesNotMatch(html,/<span class="brand">SĪGIL/);
  }
+ const dashboard=renderMmsAdminPage();
+ assert.match(dashboard,/class="mms-ai-brand mms-dashboard-brand"/);
+ assert.match(dashboard,/alt="MMS Male Massage" width="500" height="500"/);
+ assert.match(dashboard,/692e16d627f53343708d9aec__Logo%20MMS%202025\.webp/);
+ assert.match(dashboard,/6a9a47224e8a2b5b9bfeabfd_MMS%20Login\.webp/);
+ assert.match(dashboard,/6aa42b070147068d37da9cdb_MMS%20Home%2004\.webp/);
+ assert.match(dashboard,/data-mms-dashboard-rebuilt/);
+ assert.doesNotMatch(dashboard,/data-mms-dashboard-lv5/);
  const partner=renderRelaxSpaPage({partner:true});assert.match(partner,/SĪGIL \| SYSTEM/);assert.doesNotMatch(partner,/mms-ai-brand|male-massage-ai\./);
 });
