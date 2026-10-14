@@ -176,7 +176,8 @@ test("dashboard reuses canonical payment-review and historical-recovery queues f
   assert.match(historicalTodo?.text || "", /มัดจำ K\+ 4,500 บาท เพื่อเครดิต/);
   assert.equal(historicalTodo?.href, "/internal/admin/payments/historical-backfill?proof_id=hist_pending_01");
 
-  assert.equal(dashboard.todos.some((item) => item.href === "/internal/admin/payments"), true);
+  assert.equal(dashboard.todos.some((item) => item.href === "/internal/admin/payments?proof_id=line_current_01"), true);
+  assert.equal(dashboard.focus.href, "/internal/admin/payments?proof_id=line_current_01");
   assert.equal(dashboard.todos.some((item) => item.href.startsWith("/internal/admin/payments/historical-backfill")), true);
   assert.equal(dashboard.status.payments, "พร้อม");
   assert.equal(dashboard.status.historical_recovery, "พร้อม");
