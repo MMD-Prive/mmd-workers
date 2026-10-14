@@ -7,6 +7,7 @@ const detail = v => { if (typeof v !== 'string' || !v.trim() || v.length > 1000 
 const account = v => /^(?:mms-partner:[A-Za-z0-9_.-]{3,80}|partner:rec[A-Za-z0-9]{14,24})$/.test(v || '');
 
 export function inclusivePlan(a) {
+  if (a.schema_version === 3) return roomPlan(a);
   const gross = satang(a.customer_amount), therapist = satang(a.therapist_amount);
   if (!gross || therapist > gross) fail('ALLOCATION_EXCEEDS_REVENUE');
   if (!['remaining_revenue', 'received_revenue'].includes(a.basis)) fail('BASIS_INVALID');
@@ -59,6 +60,23 @@ export function agreementV2(body, actor, now) {
   if (a.spa_id !== 'relax-spa-by-9') fail('SPA_SCOPE_MISMATCH');
   // Drafts carry incomplete data, but never act as a rate or quote authority.
   if (draft) return a;
+  confirmCommon(a, body, actor, now);
+  a.preview = inclusivePlan(a);
+  return { ...a, approved_by: actor.id, approved_at: now };
+}
+
+export function inclusiveActual(service) {
+  if (service.agreement.formula_version !== (service.agreement.schema_version === 3 ? 'room-fixed-v3' : 'inclusive-travel-v2')) fail('FORMULA_VERSION_UNSUPPORTED');
+  const plan = inclusivePlan(service.agreement);
+  if (JSON.stringify(plan) !== JSON.stringify(service.quote_preview)) fail('QUOTE_SNAPSHOT_MISMATCH');
+  const grossReceived = service.receipts.reduce((s, r) => s + satang(r.amount), 0);
+  const refunded = (service.refunds || []).reduce((s, r) => s + satang(r.amount), 0);
+  if (grossReceived !== plan.expected_amount || refunded !== plan.refund_due) fail('FULL_PAYMENT_REQUIRED');
+  if (service.costs?.length) fail('INCLUSIVE_TRAVEL_NO_EXTRA_COSTS');
+  return { ...plan, received: grossReceived - refunded, gross_received: grossReceived, refunded };
+}
+
+function confirmCommon(a, body, actor, now) {
   if (!/^mmst_[a-f0-9]{24}$/.test(a.therapist_id || '')) fail('THERAPIST_SCOPE_REQUIRED');
   if (!Number.isSafeInteger(a.duration_minutes) || a.duration_minutes <= 0 || a.duration_minutes > 1440) fail('DURATION_REQUIRED');
   if (body.approval_confirmed !== true) fail('AGREEMENT_APPROVAL_REQUIRED');
@@ -71,17 +89,61 @@ export function agreementV2(body, actor, now) {
   if (!Number.isFinite(assessed) || assessed > Date.parse(now)) fail('TRAVEL_ASSESSMENT_REQUIRED');
   a.travel = { estimate_amount: travel.estimate_amount, method: detail(travel.method), assessed_at: new Date(assessed).toISOString(),
     evidence_ref: detail(travel.evidence_ref), origin_scope: 'therapist_home_roundtrip', confirmed_by: actor.id, confirmed_at: now };
-  a.preview = inclusivePlan(a);
-  return { ...a, approved_by: actor.id, approved_at: now };
 }
 
-export function inclusiveActual(service) {
-  if (service.agreement.formula_version !== 'inclusive-travel-v2') fail('FORMULA_VERSION_UNSUPPORTED');
-  const plan = inclusivePlan(service.agreement);
-  if (JSON.stringify(plan) !== JSON.stringify(service.quote_preview)) fail('QUOTE_SNAPSHOT_MISMATCH');
-  const grossReceived = service.receipts.reduce((s, r) => s + satang(r.amount), 0);
-  const refunded = (service.refunds || []).reduce((s, r) => s + satang(r.amount), 0);
-  if (grossReceived !== plan.expected_amount || refunded !== plan.refund_due) fail('FULL_PAYMENT_REQUIRED');
-  if (service.costs?.length) fail('INCLUSIVE_TRAVEL_NO_EXTRA_COSTS');
-  return { ...plan, received: grossReceived - refunded, gross_received: grossReceived, refunded };
+export function roomPlan(a) {
+  const T = satang(a.therapist_amount), R = satang(a.room?.amount), P = satang(a.partner_amount);
+  if (P > 0 ? !account(a.referrer_id) : !!a.referrer_id) fail('REFERRER_EXPLICIT_REQUIRED');
+  let C, M;
+  if (a.mms_mode === 'fixed_fee') {
+    M = satang(a.mms_amount); C = satang(T + R + P + M);
+    if (a.customer_amount != null && satang(a.customer_amount) !== C) fail('ALLOCATION_MUST_BALANCE');
+  } else if (a.mms_mode === 'residual') {
+    C = satang(a.customer_amount); M = C - T - R - P;
+    if (M < 0) fail('ALLOCATION_EXCEEDS_REVENUE');
+    if (a.mms_amount != null && satang(a.mms_amount) !== M) fail('ALLOCATION_MUST_BALANCE');
+  } else fail('MMS_MODE_REQUIRED');
+  if (C <= 0) fail('SERVICE_AMOUNT_REQUIRED');
+  const shares = { therapist: T, spa: R, partner: P, mms: M };
+  if (!Array.isArray(a.adjustments) || a.adjustments.length > 20) fail('ADJUSTMENTS_INVALID');
+  let discount = 0, refund = 0, costs = 0;
+  for (const adj of a.adjustments) {
+    if (!['fee','discount','tax','refund'].includes(adj.kind) || !ROLES.includes(adj.bearer) || adj.basis !== 'fixed_satang') fail('ADJUSTMENT_BASIS_REQUIRED');
+    const amount = satang(adj.amount); detail(adj.evidence_ref);
+    shares[adj.bearer] -= amount;
+    if (shares[adj.bearer] < 0) fail('NEGATIVE_PARTY_SHARE');
+    if (adj.kind === 'discount') discount += amount;
+    else if (adj.kind === 'refund') refund += amount;
+    else costs += amount;
+  }
+  const expected = C - discount, received = expected - refund;
+  const allocated = Object.values(shares).reduce((n,v) => n+v,0);
+  if (received < 0 || allocated + costs !== received) fail('ALLOCATION_MUST_BALANCE');
+  return { formula_version: 'room-fixed-v3', rounding: 'exact_integer_satang_no_proration', customer_amount: C,
+    therapist_amount: T, room_amount: R, partner_amount: P, mms_amount: M,
+    received, costs, basis_amount: C, shares, total_allocated: allocated, expected_amount: expected, refund_due: refund };
+}
+
+export function agreementV3(body, actor, now) {
+  if (body.schema_version !== 3) fail('ROOM_AGREEMENT_REQUIRED');
+  const a = agreementV2({ ...body, schema_version: 2, status: 'draft' }, actor, now);
+  Object.assign(a, { schema_version: 3, formula_version: 'room-fixed-v3', status: body.status,
+    room: structuredClone(body.room ?? null), partner_amount: body.partner_amount ?? null,
+    mms_mode: body.mms_mode ?? null, mms_amount: body.mms_amount ?? null,
+    payees: structuredClone(body.payees ?? null) });
+  delete a.basis; delete a.shares_bps;
+  if (!['draft','confirmed'].includes(a.status)) fail('AGREEMENT_STATUS_REQUIRED');
+  if (a.status === 'draft') return a;
+  if (!a.room) fail('ROOM_TERMS_REQUIRED');
+  const r=a.room;
+  detail(r.type); detail(r.unit_description); detail(r.includes); detail(r.rate_evidence_ref);
+  if (!Number.isSafeInteger(r.fixed_units) || r.fixed_units <= 0 || !Number.isSafeInteger(r.covered_minutes) || r.covered_minutes < a.duration_minutes) fail('ROOM_COVERAGE_REQUIRED');
+  const plan = roomPlan(a); a.customer_amount = plan.customer_amount; a.mms_amount = plan.mms_amount;
+  confirmCommon(a, body, actor, now);
+  for (const role of ROLES) if (plan.shares[role] > 0 || role !== 'partner') {
+    detail(a.payees?.[role]); if(a.payees[role].length>120) fail('PAYEE_INVALID');
+    a.payees[role]=a.payees[role].trim();
+  }
+  a.preview=plan;
+  return { ...a, approved_by: actor.id, approved_at: now };
 }

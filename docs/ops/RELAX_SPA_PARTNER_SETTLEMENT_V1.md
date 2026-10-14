@@ -1,126 +1,145 @@
-# Relax Spa by 9: referrals, agreements and settlement
+# Relax Spa by 9: room-only pricing and revenue settlement
 
-The Owner page and MY Partner page present the existing spa ledger. This guide
-records the v2 operating contract. It is not evidence of deployment, spa
-acceptance, real receipts, refunds or transfers.
+New work uses schema v3. The spa rate is **room only, excluding Therapist**.
+No rate image was available for this implementation, so no room prices are
+seeded. Owner must enter the actual terms and rate evidence. This document is
+not deployment, bank verification or authenticated customer acceptance evidence.
 
-## Access and scope
+## Formula and agreement
 
-- MY Partner: `/partner/dashboard/relax-spa?t=<existing-partner-token>`. Partners
-  can submit and read only their own referrals and referral payouts. They cannot
-  approve agreements, quote, link jobs, record money, settle or close services.
-- MMS Owner: `/internal/admin/mms/relax-spa`, using the existing signed browser
-  session. All financial and lifecycle commands are Owner-only.
-- Public Relax Spa pages and the customer MY MMS app keep their routes.
+All amounts are integer satang. Define C = agreed customer price before explicit
+discounts; T = Therapist fee including home-to-spa round-trip travel; R = agreed
+room total; P = explicit referral fee (zero allowed); M = MMS amount.
 
-## V2 operating sequence
+- Fixed MMS fee: C = T + R + P + M. A supplied C must match exactly.
+- Residual MMS: M = C - T - R - P, never negative. A supplied M must match.
+- No percentages, default rates, automatic travel additions, hourly multiplication
+  or minute prorating are used for new room agreements. No net profit is asserted.
 
-1. Partner recommends an existing Active Therapist. Owner records the spa's
-   acceptance or refusal with an evidence reference.
-2. Owner creates a v2 agreement. A draft can be incomplete and cannot be quoted.
-   A confirmed agreement requires the Therapist, spa `relax-spa-by-9`, positive
-   integer duration, a fixed Therapist amount inclusive of travel, customer amount
-   before discounts, an explicit share basis and allocation among spa, Partner
-   and MMS, terms reference, and confirmed round-trip travel evidence from the
-   Therapist's home. The travel method records the actual transport mode. Travel is
-   included in the Therapist amount and is never an extra deductible cost.
-3. Allocation and amounts have no defaults. For `remaining_revenue`, the share
-   basis is customer price before discounts minus the fixed Therapist amount
-   including travel. For `received_revenue`, the share basis is customer price
-   before discounts, and the complete allocation must exactly account for the
-   customer price. The Owner enters share rates as percentages; the Therapist
-   amount stays fixed and has no percentage field. A non-zero Partner share requires the explicit Partner
-   account id. Agreement versions are immutable; make a new version for changed
-   terms.
-4. Owner creates a service draft from an accepted referral. The draft does not
-   create an agreement or MMS Job. Owner selects a confirmed, scoped v2 agreement
-   to produce a quote preview. Review the planned receipt, basis, fees/taxes and
-   allocations before confirming the quote.
-5. Owner links an existing canonical MMS Job for the same Therapist. The
-   observed service duration must match the agreement. This ledger does not
-   create, dispatch, start or complete a Job. The canonical payout must equal the
-   Therapist amount already including travel; the Job must not also carry a travel
-   charge, and a recorded full customer price must match the v2 customer amount.
-   These checks prevent the existing generic booking/pricing path from silently
-   adding travel or replacing the approved payout. The spa ledger only checks this
-   existing Job data; keep generic booking/pricing routes and their records in
-   their existing workflow. Legacy v1 service records remain
-   historical and are not a basis for new v2 links; their existing receipt,
-   settlement, payout and close controls remain available under historical
-   revenue-share labels.
-6. Owner records each actual receipt after inspecting amount, recipient,
-   timestamp and unique transaction evidence. Partial receipts are shown. Only
-   booked services accept receipts. Settlement requires the net amount to match
-   the quote after approved discounts and refunds.
-7. Owner may record a manual, inspected refund before settlement. It must match
-   an approved refund adjustment, have evidence and timestamp, and remain within
-   received amounts. No automatic payment or bank action occurs.
-8. Owner approves settlement only after the canonical Job is Completed and
-   net receipts match the approved expected amount. Largest-remainder allocation
-   uses the server quote preview. Owner records each actual payout with recipient,
-   time and unique evidence. Fee and tax adjustments also reserve an amount for
-   a named bearer; record the actual expense payment and its evidence before
-   closing. Close requires the completed canonical Job, approved settlement, all
-   nonzero share payouts and all fee/tax expense evidence recorded.
+Room terms record type, total R, agreed unit count, covered minutes, unit
+meaning, inclusions and rate evidence. Coverage must include the service duration.
+Travel assessment records estimate (including confirmed zero), actual transport
+mode, assessment date, round-trip evidence and the confirming Owner. Unknown
+travel is not zero. Travel remains inside T and is not an additional charge.
+Named payees identify the actual recipients for Therapist, room, referral and MMS.
+The spa and referrer are distinct roles even when both pay the same actual account.
 
-Adjustments are explicit fixed-amount fee, discount, tax or refund entries, each
-with a named bearer and evidence reference. The Owner form accepts amounts in
-baht and converts them to integer satang for storage. Costs are not supported in v2. Fees
-and taxes remain explicit named-bearer adjustments; discounts and refunds affect
-expected net receipts. Historical v1 records remain labeled as historical
-revenue shares and must not be described as net profit where cost evidence is
-incomplete.
+Discounts, refunds, fees and tax use fixed-satang entries with an explicit bearer
+and evidence. After C/T/R/P/M allocation, subtract each entry from its bearer.
+Negative party allocations fail. Required gross receipts equal C minus discounts;
+actual pre-settlement refunds must equal approved refunds. Final shares plus
+fee/tax reserves must equal gross receipts minus refunds exactly. V3 rounds
+nothing: input precision beyond one satang fails. V1/V2 retain their own frozen
+formula and largest-remainder policy.
 
-## Persistence and limits
+## Existing pages and lifecycle
 
-`RELAX_SPA_LEDGER` is a SQLite-backed Durable Object in mms-worker. One object
-serializes writes in storage transactions. Scoped request keys, payload
-fingerprints, unique evidence checks, immutable agreements and unique canonical
-Job links prevent duplicate decisions. An append-only action trail records the
-verified actor and time. Failed transactions do not retain partial decisions.
-Same-origin JSON POST is required at both browser gateways.
+Owner: `/internal/admin/mms/relax-spa`, using the existing signed credential-bound
+session. Partner: `/partner/dashboard/relax-spa?t=<existing-token>`, using existing
+recognized Partner checks. No domains, accounts or public route ownership change.
 
-Receipt, payout and refund recording are manual evidence review, not bank
-verification and not a mutation of the global Payments table. Do not book the
-same earning through both this ledger and Model Partner Commissions. Storage or
-catalog errors show unavailable, never a fake empty or paid state.
+1. Partner recommends an existing Active Therapist; Owner records spa acceptance.
+2. Owner prepares T, room terms, P/M, payees and adjustments. An incomplete draft
+   can be saved and copied to a new version. It cannot confirm or quote.
+3. A non-persisting server preview shows C/T/R/P/M, adjustments and balanced totals.
+   Changing fields invalidates the preview. Owner explicitly confirms the terms.
+4. Quote freezes the approved agreement, payees, formula, exact allocation preview
+   and approver in the service. Changing rates creates new versions only.
+5. Create a job from the frozen quote or link a verified existing MMS job.
+6. Therapist accepts, starts and completes service through the existing MMS app.
+7. Owner inspects and records actual receipts with the actual receiver and unique
+   transaction evidence. Partial receipts and outstanding amounts remain visible.
+8. Settlement rechecks canonical Completed status, Therapist, duration, venue,
+   customer price, payable Therapist amount and confirmed inclusive travel. Full
+   inspected receipts and approved refunds are required.
+9. Owner records actual share payouts to agreed payees and expense payments for
+   fee/tax reserves. Closing requires every payable amount to reconcile.
 
-## Rollout evidence
+No command in this ledger transfers money. Recorded payment events are manual
+Owner evidence review, not automatic bank/slip verification or global Payments
+writes. Do not record the same earning in Model Partner Commissions as well.
 
-Review and merge, then deploy the relevant Workers
-under the separate approvals required for those actions. Verify Owner and two
-Partner scopes on mobile, including that one Partner cannot read another's
-records. Production receipt, refund, payout, closure, publication or deployment
-requires its own authorization and evidence; a local test or HTTP 200 does not
-provide that authorization.
+## Quote-to-job producer and retry boundary
 
-## Formula and compatibility
+`create-job` is Owner-only and uses a deterministic canonical Job ID per service.
+The ledger transaction reserves the immutable start/evidence/quote and a bounded
+creation lease. Concurrent clicks return pending. Failed/ambiguous operations
+retry the same reservation. Airtable `performUpsert` matches Job ID / Offer ID;
+readback refuses conflicting snapshots and never rewrites an accepted job status.
+A partial write retains the reservation for reconciliation; it never produces
+another Job ID.
 
-Let C be the agreed customer price before discount and T the fixed Therapist
-amount inclusive of home-to-spa round-trip travel. For remaining revenue, allocate
-C - T across spa / referring Partner / MMS with explicit basis points totaling
-10,000. For gross revenue, T + C * sum(basis points) / 10,000 must equal C exactly.
-Floor each proportional share in integer satang, then allocate remaining satang
-by largest fractional remainder; ties use spa, Partner, MMS order.
+The producer uses existing MMS Jobs, Offers and Dispatch Coordinator bindings.
+It creates one offer for the agreed Therapist; it does not accept for them. The
+Therapist sees T, explicitly agreed deductions and the resulting payable amount,
+with travel labeled included. Private room/customer/MMS details remain outside
+the offer projection. Generic dispatch still uses its existing pricing path;
+this producer never invokes the general 70/30 formula.
 
-Subtract each fixed-satang adjustment from its named bearer after allocation.
-No percentage fee/tax is inferred. Gross receipts must equal C minus discounts,
-actual refunded amounts must equal approved refunds, and final shares plus
-fee/tax reserves must equal gross receipts minus actual refunds. Negative party
-shares and unallocated amounts fail closed. Before close, payout evidence and
-fee/tax expense evidence must reconcile to that received net amount. No net
-profit is asserted: the full business cost model is not available here.
+Existing-job linking must verify Therapist, venue, duration, C, payable T and
+explicit travel inclusion from canonical data. Missing prices/travel fail as
+unconfirmed. A confirmed zero additional travel amount is allowed; absent
+metadata is never converted to zero or used to skip C verification.
 
-The same existing object name `relax-spa-by-9:v1` and `state` storage key are
-retained. V2 is additive JSON schema, with no namespace or Cloudflare migration
-change. Historical v1 agreements, services, settlements and paid amounts are not
-rewritten. New v1 agreement creation/job linking is refused. New agreements and
-quotes are immutable versions; canonical duration, payout and any explicit price
-are rechecked before approval and payout. Formula version, rounding policy and
-allocation preview are frozen at quote; a mismatch blocks settlement.
+## Compatibility, corrections and access
 
-Refunds are supported only within the explicitly approved refund adjustments
-before settlement. An unagreed refund, reversal or change after settlement needs
-separate reviewed reconciliation; the API refuses to rewrite approved or paid
-amounts. Recorded references identify individual transactions, not a general
-folder or a reusable screenshot. Evidence review remains Owner responsibility.
+The same `relax-spa-by-9:v1` object and `state` key remain. No Cloudflare migration,
+new namespace, Airtable field or destructive data migration is introduced.
+Persisted v1/v2 jobs and approved/paid snapshots are not rewritten or recomputed
+with v3. Existing quoted v2 jobs retain their own link/settlement formula; new
+agreement creation and quoting require v3.
+
+After approval/payment, Owner records customer-refund and payee-return corrections
+as new immutable, evidenced entries with the exact role, fixed-satang amount,
+reason, terms reference, time and explicit approval. Original settlement/payouts
+remain unchanged. A refund reduces only its named role's reviewed target; money
+already paid beyond that target becomes due back. Actual returned cash is capped
+by that due amount. Unpaid roles pay the corrected target. The job reopens as
+reconciling and can close only when corrected net payouts and expenses balance.
+Other post-approval rate/price/expense changes require a separate reviewed plan;
+the API refuses silent amendments to original records.
+
+Only Owner can quote, create/link jobs, record money, approve, correct or close.
+Partner snapshots include only their referrals, own share/net payout/return due
+and scoped status; they exclude agreement/travel, receipts, other payouts, private
+job creation claims and correction evidence. Same-origin gateways derive actor
+identity from existing sessions. Request fingerprints, normalized unique evidence,
+canonical Job uniqueness, storage transactions and append-only audits protect
+retries and cross-account access. Existing archive limits remain in force.
+
+## Workflow audit and approval-bound rollout
+
+A merge affecting these paths triggers the existing MMS, Admin and Partner deploy
+workflows. MMS now defaults to code-only deployment with retained vars and no
+secret file. Telegram rotation and missing Therapist secret initialization each
+require separate explicit workflow-dispatch inputs, default false. Normal deploy
+only verifies R2 availability and never creates the bucket. No binding/config
+migration is needed for this release. Optional rotation retains the existing
+shared concurrency lock.
+
+The existing **Admin** workflow can provision private media/KV and sync missing
+routes. The existing **Partner** workflow can create missing routes. Those broader
+operations are not authorized by this change. Before an approved production merge,
+use the following controlled release plan:
+
+1. Obtain approval for the exact PR head and code-only release of mms-worker,
+   admin-worker and partners-worker, including temporary suspension/restoration of
+   their three automatic deploy workflows. Record current enabled states.
+2. Pause those deploy workflows, merge the reviewed head, and read back the merge
+   SHA. This avoids triggering unrelated provisioning or route synchronization.
+3. Read deployed settings and exact existing bindings for all three Workers into
+   private temporary configs. Preserve the runtime-generated Admin availability
+   KV binding; stop on missing/ambiguous binding identity. Do not create resources.
+4. Build and validate the three code bundles at the approved merge SHA. Use
+   version uploads with retained vars and all existing bindings/secrets, no secret
+   file and no route/provisioning step. Do not use direct-deploy migration fallback.
+5. Promote only the approved versions, MMS first, then Admin and Partner. Record
+   version IDs and 100% traffic readbacks. Verify bindings/route inventory unchanged
+   and restore only workflows that were previously enabled.
+6. Run authorized read-only Owner and two-Partner session checks on mobile. Real
+   receipt/refund/payout acceptance needs separate authorization and human evidence;
+   never create fake financial events in production.
+
+Rollback promotes recorded prior Worker versions; it does not rewrite ledger data
+or rate snapshots. No merge, workflow suspension, deploy, route/secret mutation or
+production money event has been performed by writing this guide.

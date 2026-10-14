@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inclusivePlan, agreementV2 } from '../src/relax-spa-agreement.mjs';
+import { inclusivePlan, agreementV2, agreementV3 } from '../src/relax-spa-agreement.mjs';
 import { applySpaCommand, RelaxSpaLedger, maybeHandleRelaxSpaLedger } from '../src/relax-spa-ledger.mjs';
 const owner = { id: 'per', role: 'owner' }, partner = { id: 'mms-partner:qaa', role: 'mms_partner' };
 const therapist = { id: 'mmst_' + 'a'.repeat(24), name: 'Synthetic Therapist', status: 'Active' };
@@ -12,15 +12,19 @@ const agreement = (extra = {}) => ({ schema_version: 2, status: 'confirmed', tit
 const throws = (fn, code) => assert.throws(fn, e => e.code === code);
 function fixture(extra = {}, book = true) {
   const state = { referrals: [], agreements: [], services: [], events: [], requests: {} };
-  const cmd = (c, b, actor = owner, canonical = { therapist, job }) => applySpaCommand(state, actor, c, { request_key: crypto.randomUUID(), ...b }, canonical);
+  const cmd = (c, b, actor = owner, canonical = { therapist, job: {...job,customer_amount:100002,venue_id:'relax-spa-by-9',travel_included_confirmed:true} }) => applySpaCommand(state, actor, c, { request_key: crypto.randomUUID(), ...b }, canonical);
   const referral = cmd('referrals', { therapist_id: therapist.id }, partner).id;
   cmd('referral-decision', { referral_id: referral, decision: 'accepted', evidence_ref: 'synthetic-accept' });
-  const aid = cmd('agreements', agreement(extra)).id;
+  const legacy = agreement(extra), split=inclusivePlan(legacy);
+  const v3={...legacy,schema_version:3,room:{type:'Synthetic room',amount:split.shares.spa,fixed_units:1,covered_minutes:90,unit_description:'Agreed booking',includes:'Room only',rate_evidence_ref:'synthetic-room-terms'},partner_amount:split.shares.partner,mms_mode:'fixed_fee',mms_amount:split.shares.mms,payees:{therapist:'Synthetic therapist',spa:'Synthetic spa',partner:'Synthetic partner',mms:'Synthetic mms'}};
+  // Carry adjustments once: split above is used only for unadjusted base components.
+  const base=inclusivePlan({...legacy,adjustments:[]});v3.room.amount=base.shares.spa;v3.partner_amount=base.shares.partner;v3.mms_amount=base.shares.mms;
+  const aid = cmd('agreements', v3).id;
   const sid = cmd('drafts', { referral_id: referral }).id;
   const service = state.services[0];
   if (book) { cmd('quotes', { service_id: sid, agreement_id: aid, approval_confirmed: true }); cmd('services', { service_id: sid, job_id: job.id, duration_minutes: 90, service_evidence: 'synthetic-work-order' }); }
   const receipt = (amount, evidence = 'synthetic-receipt', key = crypto.randomUUID()) => cmd('receipts', { service_id: sid, amount, evidence_ref: evidence, received_by: 'Synthetic spa', received_at: at, verification_confirmed: true, request_key: key });
-  const settle = (j = job) => cmd('settlements', { service_id: sid, approval_confirmed: true }, owner, { job: j });
+  const settle = (j = job) => cmd('settlements', { service_id: sid, approval_confirmed: true }, owner, { job: {...j, customer_amount:j.customer_amount ?? 100002,venue_id:'relax-spa-by-9',travel_included_confirmed:true} });
   return { state, cmd, referral, aid, sid, service, receipt, settle };
 }
 
@@ -36,11 +40,11 @@ test('inclusive therapist fixed amount varies per therapist and duration; no tra
 
 test('zero travel can confirm, unknown travel only saves draft; legacy rates are never new defaults', () => {
   const f = fixture({}, false);
-  const draft = f.cmd('agreements', { schema_version: 2, status: 'draft', title: 'Unknown roundtrip' }).id;
+  const draft = f.cmd('agreements', { schema_version: 3, status: 'draft', title: 'Unknown roundtrip' }).id;
   assert.equal(f.state.agreements.at(-1).travel, null);
   throws(() => f.cmd('quotes', { service_id: f.sid, agreement_id: draft, approval_confirmed: true }), 'CONFIRMED_AGREEMENT_REQUIRED');
-  throws(() => f.cmd('agreements', agreement({ travel: { ...agreement().travel, estimate_amount: null } })), 'TRAVEL_ASSESSMENT_REQUIRED');
-  throws(() => f.cmd('agreements', { title: 'Old unsupported terms', basis: 'net_profit' }), 'INCLUSIVE_AGREEMENT_REQUIRED');
+  throws(() => agreementV3({...f.state.agreements[0],travel:{...agreement().travel,estimate_amount:null},approval_confirmed:true},owner,new Date().toISOString()), 'TRAVEL_ASSESSMENT_REQUIRED');
+  throws(() => f.cmd('agreements', { title: 'Old unsupported terms', basis: 'net_profit' }), 'ROOM_AGREEMENT_REQUIRED');
   assert.equal(f.service.status, 'draft');
 });
 
@@ -89,7 +93,7 @@ test('explicit burdens conserve receipt minus refund, fee and tax; never deduct 
 
 test('quote scope locks therapist, spa, duration and referrer; referrer never automatically paid', () => {
   const f = fixture({}, false);
-  assert.equal(f.state.agreements[0].shares_bps.partner, 0);
+  assert.equal(f.state.agreements[0].partner_amount, 0);
   f.state.agreements[0].therapist_id = 'mmst_' + 'c'.repeat(24);
   throws(() => f.cmd('quotes', { service_id: f.sid, agreement_id: f.aid, approval_confirmed: true }), 'AGREEMENT_SCOPE_MISMATCH');
   f.state.agreements[0].therapist_id = therapist.id;
@@ -121,7 +125,7 @@ test('changed rates after quote cannot change this job; approved and paid snapsh
   f.receipt(100002); f.settle();
   assert.equal(f.service.settlement.shares.therapist, 60001);
   throws(() => f.cmd('close', { service_id: f.sid, approval_confirmed: true }), 'PAYOUTS_INCOMPLETE');
-  for (const [role, amount] of Object.entries(f.service.settlement.shares)) if (amount) f.cmd('payouts', { service_id: f.sid, role, amount, recipient: 'Synthetic '+role, evidence_ref: 'synthetic-out-'+role, paid_at: at, verification_confirmed: true });
+  for (const [role, amount] of Object.entries(f.service.settlement.shares)) if (amount) f.cmd('payouts', { service_id: f.sid, role, amount, recipient: f.service.agreement.payees[role], evidence_ref: 'synthetic-out-'+role, paid_at: at, verification_confirmed: true });
   const close = { service_id: f.sid, approval_confirmed: true, request_key: 'close-retry-key' };
   f.cmd('close', close); assert.equal(f.cmd('close', close).duplicate, true);
   assert.equal(f.service.status, 'closed');
@@ -178,9 +182,9 @@ test('legacy generic travel and conflicting canonical payout cannot override agr
   const f = fixture({}, false);
   f.cmd('quotes', { service_id: f.sid, agreement_id: f.aid, approval_confirmed: true });
   const body = { service_id: f.sid, job_id: job.id, duration_minutes: 90, service_evidence: 'synthetic' };
-  throws(() => f.cmd('services', body, owner, { job: { ...job, travel_amount: 20000 } }), 'CANONICAL_TRAVEL_ALREADY_ADDED');
-  throws(() => f.cmd('services', body, owner, { job: { ...job, therapist_amount: 70000 } }), 'CANONICAL_PAYOUT_MISMATCH');
-  throws(() => f.cmd('services', body, owner, { job: { ...job, customer_amount: 99999 } }), 'CANONICAL_PRICE_MISMATCH');
+  throws(() => f.cmd('services', body, owner, { job: { ...job, travel_amount: 20000,customer_amount:100002,venue_id:'relax-spa-by-9',travel_included_confirmed:true } }), 'CANONICAL_TRAVEL_ALREADY_ADDED');
+  throws(() => f.cmd('services', body, owner, { job: { ...job, therapist_amount: 70000,customer_amount:100002,venue_id:'relax-spa-by-9',travel_included_confirmed:true } }), 'CANONICAL_PAYOUT_MISMATCH');
+  throws(() => f.cmd('services', body, owner, { job: { ...job, customer_amount: 99999,venue_id:'relax-spa-by-9',travel_included_confirmed:true } }), 'CANONICAL_PRICE_MISMATCH');
   f.cmd('services', body);
   f.receipt(100002);
   throws(() => f.settle({ ...job, therapist_amount: 70000 }), 'CANONICAL_PAYOUT_MISMATCH');
@@ -190,7 +194,7 @@ test('legacy generic travel and conflicting canonical payout cannot override agr
 test('agreement preview is owner-only and does not write ledger storage', async () => {
   let writes = 0;
   const env = { RELAX_SPA_LEDGER: { idFromName: n => n, get: () => ({ fetch: async () => { writes++; throw Error('must not persist'); } }) } };
-  const request = role => new Request('https://mms.internal/internal/mms/admin/relax-spa/agreement-preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-mms-spa-actor': 'per', 'x-mms-spa-role': role }, body: JSON.stringify(agreement()) });
+  const request = role => new Request('https://mms.internal/internal/mms/admin/relax-spa/agreement-preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-mms-spa-actor': 'per', 'x-mms-spa-role': role }, body: JSON.stringify({...agreement(),schema_version:3,room:{type:'Synthetic',amount:20001,fixed_units:1,covered_minutes:90,unit_description:'booking',includes:'room only',rate_evidence_ref:'synthetic'},partner_amount:0,mms_mode:'residual',payees:{therapist:'Synthetic therapist',spa:'Synthetic spa',mms:'Synthetic mms'}}) });
   const r = await maybeHandleRelaxSpaLedger(request('owner'), env);
   assert.equal(r.status, 200); const p = await r.json();
   assert.equal(p.data.agreement.status, 'preview'); assert.equal(p.data.preview.shares.therapist, 60001);
@@ -201,7 +205,7 @@ test('agreement preview is owner-only and does not write ledger storage', async 
 test('fee and tax payments require inspected exact evidence before closure, never silent net profit', () => {
   const f = fixture({ adjustments: [{ kind: 'fee', amount: 1000, bearer: 'spa', basis: 'fixed_satang', evidence_ref: 'synthetic-fee-terms' }] });
   f.receipt(100002); f.settle();
-  for (const [role, amount] of Object.entries(f.service.settlement.shares)) if (amount) f.cmd('payouts', { service_id: f.sid, role, amount, recipient: 'Synthetic '+role, evidence_ref: 'synthetic-out-'+role, paid_at: at, verification_confirmed: true });
+  for (const [role, amount] of Object.entries(f.service.settlement.shares)) if (amount) f.cmd('payouts', { service_id: f.sid, role, amount, recipient: f.service.agreement.payees[role], evidence_ref: 'synthetic-out-'+role, paid_at: at, verification_confirmed: true });
   throws(() => f.cmd('close', { service_id: f.sid, approval_confirmed: true }), 'EXPENSES_INCOMPLETE');
   const expense = { service_id: f.sid, adjustment_index: 0, amount: 1000, recipient: 'Synthetic fee collector', evidence_ref: 'synthetic-expense', paid_at: at, verification_confirmed: true, request_key: 'expense-retry-key' };
   throws(() => f.cmd('expenses', { ...expense, amount: 1 }), 'EXPENSE_AMOUNT_MISMATCH');
@@ -216,7 +220,7 @@ test('formula or allocation snapshot drift blocks approval without rewriting old
   const f = fixture(); f.receipt(100002);
   f.service.agreement.formula_version = 'unknown-future-formula';
   throws(() => f.settle(), 'FORMULA_VERSION_UNSUPPORTED');
-  f.service.agreement.formula_version = 'inclusive-travel-v2';
+  f.service.agreement.formula_version = 'room-fixed-v3';
   f.service.quote_preview.shares.therapist++;
   throws(() => f.settle(), 'QUOTE_SNAPSHOT_MISMATCH');
   assert.equal(f.service.settlement, null);

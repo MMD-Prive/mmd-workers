@@ -2,7 +2,7 @@ import { readCredentialBoundAdminActor } from './credential-bound-admin-session.
 import { renderRelaxSpaPage } from './relax-spa-page.js';
 const PAGE = '/internal/admin/mms/relax-spa';
 const API = '/v1/admin/mms/relax-spa';
-const COMMANDS = new Set(['snapshot', 'catalog', 'agreement-preview', 'referrals', 'referral-decision', 'agreements', 'drafts', 'quotes', 'services', 'receipts', 'refunds', 'settlements', 'payouts', 'expenses', 'close']);
+const COMMANDS = new Set(['snapshot', 'catalog', 'agreement-preview', 'create-job', 'referrals', 'referral-decision', 'agreements', 'drafts', 'quotes', 'services', 'receipts', 'refunds', 'settlements', 'payouts', 'expenses', 'corrections', 'close']);
 const json = (code, status) => Response.json({ ok: false, error: { code } }, { status, headers: { 'cache-control': 'no-store' } });
 export function isRelaxSpaAdminRequest(path) { return path === PAGE || path === API || path.startsWith(API + '/'); }
 export async function handleRelaxSpaAdmin(request, env = {}) {
