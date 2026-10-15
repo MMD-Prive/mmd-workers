@@ -638,6 +638,7 @@ function safeQueueItem(record) {
     evidence_amount_thb: amountThb,
     status: status || "pending",
     channel: safeCode(fields.channel || fields.source || ""),
+    ...(note.schema === "mmd_admin_slip_upload_v1" && ["line_ofc", "cdm_paper"].includes(note.source_channel) ? { source_channel: note.source_channel } : {}),
     paid_at: isoOrText(fields.paid_at || fields["Payment Date"]),
     created_at: isoOrText(fields.created_at || fields["Created At"] || fields.createdTime || record.createdTime),
     session_id: safeText(fields.session_id, 180),

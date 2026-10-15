@@ -3,6 +3,7 @@ const INTAKE_PATH = `${API_PREFIX}/intake`;
 const REPROCESS_PATH = `${API_PREFIX}/reprocess`;
 const REVIEW_PATH = `${API_PREFIX}/review`;
 const SCHEMA = "mmd_historical_slip_backfill_v1";
+const MANUAL_SCHEMA = "mmd_admin_slip_upload_v1";
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MAX_AMOUNT_THB = 10_000_000;
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
@@ -49,6 +50,18 @@ export async function handleHistoricalSlipBackfillRequest(request, env = {}, ctx
   }
 }
 
+// Called only through the existing credential-bound /studio/api/* transport.
+// Shares private extraction/storage, but is a current manual upload, not historical import.
+export async function handleAdminSlipUploadRequest(request, env = {}, ctx = null) {
+  try {
+    return await ingestHistoricalProof(request, env, ctx, true);
+  } catch (error) {
+    const status = Number(error?.status || 500);
+    return json({ ok: false, error: safeCode(error?.message || "slip_upload_failed") },
+      Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
+  }
+}
+
 async function listBackfillProofs(request, env) {
   requireAirtable(env);
   const url = new URL(request.url);
@@ -74,7 +87,7 @@ async function listBackfillProofs(request, env) {
   });
 }
 
-async function ingestHistoricalProof(request, env, ctx) {
+async function ingestHistoricalProof(request, env, ctx, manual = false) {
   requireAirtable(env);
   requirePrivateEvidenceRuntime(env);
   const contentType = clean(request.headers.get("Content-Type")).toLowerCase();
@@ -92,14 +105,23 @@ async function ingestHistoricalProof(request, env, ctx) {
   if (!bytes.byteLength) throw httpError(400, "slip_image_empty");
   if (bytes.byteLength > maxBytes) throw httpError(413, "slip_image_too_large");
 
-  const sourceType = normalizeSourceType(form.get("source_type"));
-  const sourceRef = safeText(form.get("source_ref") || file.name, 300);
+  const sourceChannel = manual ? safeCode(form.get("source_channel")) : "";
+  if (manual && !["line_ofc", "cdm_paper"].includes(sourceChannel)) throw httpError(400, "invalid_slip_source");
+  const sourceType = manual ? "admin_upload" : normalizeSourceType(form.get("source_type"));
+  const sourceRef = manual ? safeText(`admin-upload:${sourceChannel}:${file.name || "slip"}`, 300)
+    : safeText(form.get("source_ref") || file.name, 300);
   if (!sourceRef) throw httpError(400, "source_ref_required");
 
   const evidenceSha256 = await sha256Hex(bytes);
-  const proofId = `hist_${evidenceSha256.slice(0, 24)}`;
+  const proofId = `${manual ? "upload" : "hist"}_${evidenceSha256.slice(0, 24)}`;
   const duplicate = await findHistoricalDuplicate(env, { proofId, evidenceSha256 });
   if (duplicate) {
+    if (manual) {
+      const existingId = safeText(duplicate.fields?.proof_id, 120);
+      if (!existingId) throw httpError(409, "duplicate_slip_reference_unavailable");
+      const lane = parseNote(duplicate.fields?.note).schema === SCHEMA ? "/internal/admin/payments/historical-backfill" : "/internal/admin/payments";
+      return json({ ok: true, duplicate: true, proof_id: existingId, state: "existing", review_path: `${lane}?proof_id=${encodeURIComponent(existingId)}` }, 200);
+    }
     const repaired = await ensureDuplicateEvidence(env, duplicate, { proofId, bytes, mimeType, evidenceSha256 }).catch(() => duplicate);
     return json({ ok: true, duplicate: true, proof: safeProofSummary(repaired), state: "pending" }, 200);
   }
@@ -110,7 +132,7 @@ async function ingestHistoricalProof(request, env, ctx) {
     line_user_id: safeText(form.get("line_user_id"), 180),
     member_email: normalizeEmail(form.get("member_email")),
     payment_stage: normalizePaymentStage(form.get("payment_stage"), true),
-    context_text: safeText(form.get("context_text"), 1000),
+    context_text: safeText(manual ? form.get("note") : form.get("context_text"), 1000),
   };
 
   const extraction = await extractSlip(env, { bytes, mimeType });
@@ -147,8 +169,9 @@ async function ingestHistoricalProof(request, env, ctx) {
   });
 
   const note = {
-    schema: SCHEMA,
+    schema: manual ? MANUAL_SCHEMA : SCHEMA,
     source_type: sourceType,
+    ...(manual ? { source_channel: sourceChannel, uploaded_by: "internal_admin" } : {}),
     source_ref: sourceRef,
     source_file_name: safeText(file.name, 240),
     evidence_sha256: evidenceSha256,
@@ -173,7 +196,7 @@ async function ingestHistoricalProof(request, env, ctx) {
 
   const fields = {
     proof_id: proofId,
-    channel: "line_ofc",
+    channel: manual ? "web_pay" : "line_ofc",
     status: "pending",
     note: JSON.stringify(note),
   };
@@ -206,7 +229,7 @@ async function ingestHistoricalProof(request, env, ctx) {
     guardrails: guardrails(),
   };
 
-  const notifyPromise = sourceRef.startsWith("github-actions-controlled-smoke:")
+  const notifyPromise = manual || sourceRef.startsWith("github-actions-controlled-smoke:")
     ? Promise.resolve({ ok: false, skipped: true, reason: "controlled_smoke" })
     : notifyOps(env, {
         title: reviewRequired ? "HISTORICAL SLIP REVIEW REQUIRED" : "HISTORICAL SLIP READY FOR REVIEW",
@@ -685,7 +708,7 @@ async function storeHistoricalEvidence(env, key, bytes, { mimeType, proofId, evi
       evidence_sha256: safeText(evidenceSha256, 64),
       source_type: safeCode(sourceType),
       source_ref: safeText(sourceRef, 240),
-      provenance: "historical_slip_backfill",
+      provenance: sourceType === "admin_upload" ? "admin_slip_upload" : "historical_slip_backfill",
     },
   });
 }
