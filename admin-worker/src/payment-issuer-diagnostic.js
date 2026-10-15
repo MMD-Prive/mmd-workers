@@ -402,7 +402,7 @@ function diagnosticPage() {
   const nonce = crypto.randomUUID();
   return new Response(`<!doctype html><html lang="th"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Payment connection check · MMD Privé</title>
+<title>Payment connection check · SĪGIL System</title>
 <style>
 :root{color-scheme:dark;--bg:#101112;--surface:#1b1d1f;--raised:#222529;--line:#3b3e40;--text:#f2f1ee;--muted:#b7b9b9;--silver:#d3d5d5;--orange:#ef8a4c}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse 80% 36% at 52% -10%,#35383a 0%,transparent 75%),var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -416,7 +416,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:18px 0 0;padding:16px 17p
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}button{transition:none}}
 </style>
 <main class="shell">
-<header class="topbar"><a class="brand" href="/internal/admin/control-room" aria-label="SĪGIL System · Control Room"><span class="brand-mark" aria-hidden="true">S</span><span><span class="brand-name">SĪGIL SYSTEM</span><span class="brand-sub">MMD PRIVÉ · INTERNAL</span></span></a><a class="top-link" href="/internal/admin/control-room">← กลับ Control Room</a></header>
+<header class="topbar"><a class="brand" href="/internal/admin/control-room" aria-label="SĪGIL System · Control Room"><span class="brand-mark" aria-hidden="true">S</span><span><span class="brand-name">SĪGIL SYSTEM</span><span class="brand-sub">INTERNAL · PAYMENT</span></span></a><a class="top-link" href="/internal/admin/control-room">← กลับ Control Room</a></header>
 <div class="hero"><p class="eyebrow">PAYMENT / DIAGNOSTICS</p><h1>ตรวจการเชื่อมต่อชำระเงิน</h1><p>เช็กความพร้อมของระบบและ KBank Sandbox ตามลำดับ ผลตรวจความพร้อมยังไม่ยืนยันว่าเชื่อมต่อกับธนาคารสำเร็จ</p></div>
 <section class="card" aria-labelledby="kbank-heading">
 <div class="card-header"><p class="section-kicker">01 / BANK CONNECTION</p><h2 id="kbank-heading">KBank Sandbox</h2><p>ตรวจสถานะการตั้งค่าและช่วงพักก่อนพิจารณาทดสอบ OAuth การทดสอบกับธนาคารเป็นคำขอแยกต่างหากและไม่มีการโอนเงิน</p></div>
