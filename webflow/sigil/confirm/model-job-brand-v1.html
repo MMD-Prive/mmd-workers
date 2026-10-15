@@ -1,0 +1,38 @@
+<!-- Install in job-model head; identity and money authority stay server-side. -->
+<style id="sigil-model-job-brand-v1-css">
+#mmd-model-confirm-v15 .mm15__brand::before{display:none!important}
+#mmd-model-confirm-v15 .mm15__brand img{display:block!important;width:auto!important;height:26px!important;max-width:170px!important;object-fit:contain!important}
+#mmd-model-confirm-v15 .mm15__brand{min-height:26px!important}
+</style>
+<script id="sigil-model-job-brand-v1">
+(()=>{
+  "use strict";
+  let lane="";
+  const sigil="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6acf0158f8542b2f0fe110ad_SIGIL-System-Light-Transparent.svg";
+  const mmd="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa588f4208043f282642ad8_04-compact-symbol-256px.webp";
+  function paint(){
+    if(document.documentElement.hasAttribute("data-mmd-neutral"))return;
+    const brand=document.querySelector("#mmd-model-confirm-v15 .mm15__brand");
+    const name=lane==="private_model"?"SĪGIL System":lane==="public_model"?"MMD":"MY MODEL";
+    document.title=name+" · ยืนยันงาน";
+    if(!brand)return;
+    brand.replaceChildren();
+    if(!lane){brand.textContent=name;return;}
+    const img=document.createElement("img");
+    img.src=lane==="private_model"?sigil:mmd;img.alt=name;
+    brand.appendChild(img);
+    if(lane==="public_model")brand.appendChild(document.createTextNode(" MMD"));
+    document.documentElement.dataset.modelJobBrand=lane;
+  }
+  window.addEventListener("mmd:model-job-brand",event=>{
+    const data=event.detail;
+    if(data?.ok!==true||data.schema!=="model_job_day_rules_ack_v1")return;
+    const canonical=data.model_work_lane;
+    // Old gate responses identify Private explicitly; never infer Public from not_private_model.
+    lane=["private_model","public_model"].includes(canonical)?canonical:
+      !canonical&&(data.applies===true||data.reason==="partner_managed_private_job")?"private_model":"";
+    paint();
+  });
+  document.readyState==="loading"?document.addEventListener("DOMContentLoaded",paint,{once:true}):paint();
+})();
+</script>
