@@ -777,3 +777,41 @@ test("serves the MY MODEL history add-on with no customer-facing or raw-chat con
   assert.equal(css.status, 200);
   assert.match(await css.text(), /#mmd-model-history-v1/);
 });
+
+
+test("normal Mini App bootstrap exchanges LINE identity before dashboard navigation", async () => {
+  const { modelLiffDigitalBootstrapHtml } = await import("./src/model-liff-digital-shell.js");
+  const { runInNewContext } = await import("node:vm");
+  for (const outcome of ["success", "missing-token", "rejected", "invalid-json"]) {
+    const nodes = Object.fromEntries(["status", "session-pill", "fallback", "detail"].map(id => [id, { textContent: "", hidden: true }]));
+    const calls = [], redirects = [];
+    const html = modelLiffDigitalBootstrapHtml({
+      liffId: "2010864854-N34SgCqq", sdk: "https://static.line-scdn.net/liff/edge/2/sdk.js",
+      fallback: "https://miniapp.line.me/2010864854-N34SgCqq", environment: "review", mode: "primary",
+    });
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    await runInNewContext(script, {
+      URL, setTimeout, clearTimeout,
+      document: { getElementById: id => nodes[id] },
+      window: {
+        liff: { init: async () => {}, getIDToken: () => outcome === "missing-token" ? "" : "fixture-token" },
+        location: { origin: "https://mmdbkk.com", replace: url => redirects.push(url) },
+      },
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        return { ok: outcome !== "rejected", json: async () => outcome === "invalid-json" ? null : { ok: outcome === "success" } };
+      },
+    });
+    if (outcome === "success") {
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].url, "/v1/model/liff/exchange");
+      assert.equal(calls[0].init.credentials, "include");
+      assert.deepEqual(JSON.parse(calls[0].init.body), { idToken: "fixture-token", environment: "review" });
+      assert.deepEqual(redirects, ["/sigil/model/dashboard?liff_env=review"]);
+    } else {
+      assert.equal(redirects.length, 0);
+      assert.equal(nodes.fallback.hidden, false);
+      assert.doesNotMatch(nodes.detail.textContent, /fixture-token/);
+    }
+  }
+});
