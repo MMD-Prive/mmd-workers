@@ -454,7 +454,7 @@ test("selected-job intent survives a LIFF OAuth reload that strips the query str
 
 test("invalid remembered selected-job cookie cannot suppress normal onboarding", async () => {
   const worker = (await import("./src/index.js")).default;
-  const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+  const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard?flow=apply", {
     headers: {
       cookie: `mmd_liff_boot=1; mmd_model_selected_job=${encodeURIComponent("/internal/admin?t=bad")}`,
     },
@@ -595,7 +595,7 @@ test("dashboard stays on presentation when a Model session or real LINE redirect
   assert.equal(shouldHandoffToMiniApp(oauth), false);
 });
 
-test("authenticated dashboard is worker-rendered digital LIFF and does not fetch Lovable", async () => {
+test("nested dashboard is worker-rendered digital LIFF and does not fetch Lovable", async () => {
   const worker = (await import("./src/index.js")).default;
   const originalFetch = globalThis.fetch;
   let upstreamCalls = 0;
@@ -604,7 +604,7 @@ test("authenticated dashboard is worker-rendered digital LIFF and does not fetch
     throw new Error("unexpected_upstream_fetch");
   };
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard/jobs", {
       headers: { cookie: "mmd_model_session_v1=opaque-session" },
     }));
     assert.equal(response.status, 200);
@@ -819,3 +819,4 @@ test("normal Mini App bootstrap exchanges LINE identity before dashboard navigat
     }
   }
 });
+
