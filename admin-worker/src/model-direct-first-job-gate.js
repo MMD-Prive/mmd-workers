@@ -64,25 +64,27 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
   }
 
   const lane = clean(fields[SESSION_FIELDS.modelWorkLane], 80).toLowerCase();
-  if (!lane) return json({ ok:false, error:"job_lane_unresolved" }, 409, request, env);
+  // Legacy Sessions may predate work-lane and job-id metadata. Require the
+  // existing rules acknowledgement conservatively; never infer a money lane.
+  const responseLane = lane || "needs_review";
 
   const partnerManaged = hasText(fields[SESSION_FIELDS.partnerIdSnapshot])
     || hasText(fields[SESSION_FIELDS.partnerReferralSnapshot])
     || hasPartnerSnapshot(fields[SESSION_FIELDS.partnerSnapshotJson]);
 
-  if (lane !== "private_model" || partnerManaged) {
+  if (lane === "public_model" || partnerManaged) {
     return gateResponse(request, env, {
-      modelWorkLane:lane,
+      modelWorkLane:responseLane,
       applies:false,
       required:false,
       jobId:clean(fields[SESSION_FIELDS.jobId], 160) || null,
       acknowledgedAt:null,
-      reason:lane !== "private_model" ? "not_private_model" : "partner_managed_private_job",
+      reason:lane === "public_model" ? "not_private_model" : "partner_managed_private_job",
     });
   }
 
   const jobId = clean(fields[SESSION_FIELDS.jobId], 160);
-  if (!jobId) return json({ ok:false, error:"job_id_unresolved" }, 409, request, env);
+  // The validated canonical session_id is sufficient to audit acknowledgement.
 
   const modelId = clean(auth.payload.model_record_id, 80);
   const key = idempotencyKey(modelId);
@@ -91,7 +93,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
 
   if (path === STATUS_PATH) {
     return gateResponse(request, env, {
-      modelWorkLane:lane,
+      modelWorkLane:responseLane,
       applies:true,
       required:!existing.record,
       jobId,
@@ -109,7 +111,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
 
   if (existing.record) {
     return gateResponse(request, env, {
-      modelWorkLane:lane,
+      modelWorkLane:responseLane,
       applies:true,
       required:false,
       jobId,
@@ -124,7 +126,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
     ack_id: ackId,
     model_record_id: modelId,
     Model: [modelId],
-    job_id: jobId,
+    ...(jobId ? {job_id:jobId} : {}),
     session_id: confirmation.session_id,
     source: SOURCE,
     rules_url: RULES_URL,
@@ -135,7 +137,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
   if (!created.ok) return json({ ok:false, error:created.error }, created.status, request, env);
 
   return gateResponse(request, env, {
-      modelWorkLane:lane,
+      modelWorkLane:responseLane,
     applies:true,
     required:false,
     jobId,
