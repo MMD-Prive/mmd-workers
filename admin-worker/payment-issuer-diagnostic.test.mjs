@@ -122,8 +122,10 @@ test('diagnostic page requires admin auth and never probes on GET', async () => 
   assert.match(response.headers.get('content-type'), /text\/html/);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.match(response.headers.get('content-security-policy'), /font-src https:\/\/cdn\.prod\.website-files\.com/);
   const html = await response.text();
   assert.match(html, /<svg[^>]*class="sigil-system-logo"[^>]*>/);
+  assert.match(html, /@font-face\{font-family:"LINE Seed Sans TH"/);
   assert.match(html, /<path fill="#FFFFFF"/i);
   assert.doesNotMatch(html, /class="brand-mark"|MMD PRIVÉ/);
   assert.deepEqual(h.calls, []);
