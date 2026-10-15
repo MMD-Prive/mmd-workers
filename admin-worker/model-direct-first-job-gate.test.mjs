@@ -107,7 +107,7 @@ test("first direct Private job requires current-version acknowledgement without 
   assert.equal(body.job_id,JOB_ID);
   assert.equal(body.job_state_changed,false);
   assert.deepEqual(Object.keys(body).sort(),[
-    "acknowledged_at","applies","authority","job_id","job_state_changed","ok","reason","required","rules_url","rules_version","schema","source"
+    "acknowledged_at","applies","authority","job_id","job_state_changed","model_work_lane","ok","reason","required","rules_url","rules_version","schema","source"
   ].sort());
 });
 
@@ -155,3 +155,11 @@ test("ack refuses a stale rules version",async()=>{
   assert.equal((await response.json()).error,"job_day_rules_version_mismatch");
   assert.equal(writes.length,0);
 });
+
+for (const lane of ["public_model", "private_model", "needs_review"]) {
+  test("brand projection preserves canonical job lane: " + lane, async () => {
+    const {env}=memoryEnv({lane});
+    const response=await handleModelDirectFirstJobGate(await request("/v1/model/direct-job-gate/status"),env);
+    assert.equal((await response.json()).model_work_lane,lane);
+  });
+}
