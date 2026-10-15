@@ -235,7 +235,7 @@ export function modelLiffDigitalBootstrapHtml({
       <div class="mmd-digital-brand"><img class="mmd-brand-mark" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa58901dd74f803af616444_05-tiny-mark-256px.webp" alt="MMD" width="24" height="24" decoding="async"><span>MY MODEL<small>DIGITAL MODEL WORKSPACE</small></span></div>
       <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
-    ${publicJobApplicant ? '<div class="mmd-welcome-art"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6ac671f1a02046b10f47ceba_Boss%20Writing-p-500.webp" alt="" width="500" height="281" decoding="async"/><span>MY MODEL</span></div>' : ""}
+    ${publicJobApplicant ? '<div class="mmd-welcome-art"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6abe018f9cd0657b75e96242_Bangkok%2027-p-800.webp" alt="" width="500" height="281" decoding="async"/><span>MY MODEL</span></div>' : ""}
     <p class="mmd-digital-kicker">${kicker}</p>
     <h1 class="mmd-digital-title">${title}</h1>
     <p class="mmd-digital-sub">${copy}</p>
