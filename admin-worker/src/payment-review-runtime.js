@@ -1,3 +1,4 @@
+import { correctPaymentEvidence } from "./payment-evidence-correction.js";
 import { inferMembershipPayment, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
 import {
   hasOperatorPaymentContext,
@@ -159,6 +160,24 @@ async function listReviewQueue(request, env, actor) {
 async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
+  if (body.action === "correct_evidence") return json(await correctPaymentEvidence({ ...body, idempotency_key: request.headers.get("Idempotency-Key") || body.idempotency_key }, actor, {
+    load: id => loadProof(env, id), parseNote,
+    reviewable: proof => Boolean(safeQueueItem(proof)?.reviewable),
+    audit: entry => airtableCreate(env, accessLogTable(env), {
+      Action: "payment_evidence_correction", Target: "payment_proof", Result: "success", Reason: "correct_evidence",
+      "Event ID": `evidence_${entry.key}`, "Created At (ISO)": entry.corrected_at,
+      "Source Ref": `payment-evidence:${entry.key}`, Actor: actor.id,
+      "Before JSON": JSON.stringify({ proof_id: entry.proof_id, proof_record_id: entry.proof_record_id, ...entry.before }),
+      "After JSON": JSON.stringify({ ...entry, phase: "correction_prepared", settlement_performed: false }),
+    }),
+    patch: async (recordId, fields) => {
+      const response = await airtableFetch(env, new Request(`${airtableUrl(env, paymentProofTable(env))}/${encodeURIComponent(recordId)}`, {
+        method: "PATCH", headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields, typecast: false }),
+      }));
+      if (!response.ok) throw httpError(503, "evidence_correction_write_unconfirmed");
+    },
+  }));
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
   if (body.action === "resolve_customer_change") return json(await resolveCustomerChange(env, body, changeDependencies(env, actor)));
 
