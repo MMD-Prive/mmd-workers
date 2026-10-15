@@ -65,7 +65,8 @@ intro.insertAdjacentElement("afterend",nav);
 const en=(document.documentElement.lang||"").startsWith("en");
 const links=nav.querySelectorAll("a");
 for(const a of links){
-const path=new URL(a.href,location.origin).pathname;
+const destination=new URL(a.href,location.origin);const path=destination.pathname;
+if(["/sigil/model/console","/sigil/model/dashboard/jobs","/rules/model"].includes(path))a.href="https://mmdbkk.com"+path+destination.search;
 if(path==="/sigil/model/console"){const sub=document.createElement("small");sub.textContent=en?"Manage your work":"จัดการงานของคุณ";a.appendChild(sub);}
 if(path==="/rules/model"){const sub=document.createElement("small");sub.textContent=en?"Before accepting a job":"กติกาก่อนรับงาน";a.appendChild(sub);}
 }
