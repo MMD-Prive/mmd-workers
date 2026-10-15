@@ -72,6 +72,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
 
   if (lane !== "private_model" || partnerManaged) {
     return gateResponse(request, env, {
+      modelWorkLane:lane,
       applies:false,
       required:false,
       jobId:clean(fields[SESSION_FIELDS.jobId], 160) || null,
@@ -90,6 +91,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
 
   if (path === STATUS_PATH) {
     return gateResponse(request, env, {
+      modelWorkLane:lane,
       applies:true,
       required:!existing.record,
       jobId,
@@ -107,6 +109,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
 
   if (existing.record) {
     return gateResponse(request, env, {
+      modelWorkLane:lane,
       applies:true,
       required:false,
       jobId,
@@ -132,6 +135,7 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
   if (!created.ok) return json({ ok:false, error:created.error }, created.status, request, env);
 
   return gateResponse(request, env, {
+      modelWorkLane:lane,
     applies:true,
     required:false,
     jobId,
@@ -140,10 +144,11 @@ export async function handleModelDirectFirstJobGate(request, env = {}) {
   });
 }
 
-function gateResponse(request, env, { applies, required, jobId, acknowledgedAt, reason }) {
+function gateResponse(request, env, { applies, required, jobId, acknowledgedAt, reason, modelWorkLane }) {
   return json({
     ok:true,
     schema:"model_job_day_rules_ack_v1",
+    model_work_lane:modelWorkLane,
     authority:"MMD — Model Job Day Rules Acks",
     applies:Boolean(applies),
     required:Boolean(required),
