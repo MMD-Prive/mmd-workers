@@ -58,10 +58,12 @@ body:has(#mmd-model-home-v3[data-model-brand-lane="private"]){background:#0c0c0e
 #mmd-model-self-service .model-profile-details summary{padding:18px;min-height:54px;cursor:pointer;font-size:14px;line-height:1.6;color:inherit}
 #mmd-model-self-service :is(input,textarea,select){font-size:16px}
 #mmd-media-upload-v1{width:100%;margin:16px 0;font-family:"LINE Seed Sans TH","Noto Sans Thai",sans-serif}
-body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"]) #mmd-media-upload-v1{background:#fff;border-color:#d7ccba;color:#29231c}
-body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"]) #mmd-media-upload-v1 :is(h2,p,label,.mmu-name){color:#514638;-webkit-text-fill-color:#514638;background-image:none}
-body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"]) #mmd-media-upload-v1 :is(input,.mmu-note,li){background:#f6f4ee;border-color:#cdbf9f;color:#514638;-webkit-text-fill-color:#514638}
-body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"]) #mmd-model-self-service :is(.mss__status,.mss__readonly span,.mss__readonly small){color:#655b4f;-webkit-text-fill-color:#655b4f}
+body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"])) #mmd-media-upload-v1{background:#fff;border-color:#d7ccba;color:#29231c}
+body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"])) #mmd-media-upload-v1 :is(h2,p,label,.mmu-name){color:#514638;-webkit-text-fill-color:#514638;background-image:none}
+body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"])) #mmd-media-upload-v1 :is(input,.mmu-note,li){background:#f6f4ee;border-color:#cdbf9f;color:#514638;-webkit-text-fill-color:#514638}
+body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"])) #mmd-model-self-service :is(.mss__status,.mss__readonly span,.mss__readonly small){color:#655b4f;-webkit-text-fill-color:#655b4f}
 body:has(#mmd-model-home-v3[data-model-brand-lane="private"]) #mmd-model-self-service .model-profile-details{border-color:#514737}
 #mmd-media-upload-v1 .mmu-error{color:#b33327!important;-webkit-text-fill-color:#b33327!important}
 body:has(#mmd-model-home-v3[data-model-brand-lane="private"]) #mmd-media-upload-v1 .mmu-error{color:#ffb9ae!important;-webkit-text-fill-color:#ffb9ae!important}
+
+#mmd-model-self-service [hidden]{display:none!important}
