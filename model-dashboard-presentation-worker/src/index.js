@@ -1199,6 +1199,40 @@ async function proxyPage(request) {
   return new Response(html, { status: upstream.status, statusText: upstream.statusText, headers });
 }
 
+export function shouldServeWebflowDashboard(request) {
+  const url = new URL(request.url);
+  if (normalizePath(url.pathname).replace(/\/$/, "") !== UI_PREFIX) return false;
+  // The Webflow page owns the normal home and its embedded LIFF lifecycle.
+  // Keep explicit application, selected-job and job-board entry contracts.
+  if (isPwaLaunchRequest(request)) return false;
+  if (["flow", "activation", "intent", "handoff", "brief_id", "briefs", "return_to"]
+    .some((name) => Boolean(boundedParam(url, name)))) return false;
+  return !selectedJobReturnTo(request) && !selectedJobSessionId(request);
+}
+
+async function proxyWebflowDashboard(request) {
+  const method = request.method.toUpperCase();
+  if (!["GET", "HEAD"].includes(method)) {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
+  }
+  // Fetch only public presentation: never send the browser's callback query,
+  // cookies or Authorization to Webflow. The embedded LIFF sees the original
+  // same-origin browser URL and exchanges identity with /v1/model/* itself.
+  let upstream;
+  try {
+    upstream = await fetchUpstream(request, new URL(`${UI_PREFIX}`, WISH_PRESENTATION_ORIGIN));
+  } catch (_) {
+    return unavailable();
+  }
+  const headers = modelWishResponseHeaders(upstream.headers);
+  headers.set("x-mmd-ui-source", "webflow-dashboard-proxy");
+  headers.set("x-mmd-page", "model-dashboard");
+  headers.set("x-mmd-page-source", `${WISH_PRESENTATION_ORIGIN}${UI_PREFIX}`);
+  return new Response(method === "HEAD" ? null : upstream.body, {
+    status: upstream.status, statusText: upstream.statusText, headers,
+  });
+}
+
 async function proxyModelWishPage(request) {
   const method = request.method.toUpperCase();
   if (!new Set(["GET", "HEAD"]).has(method)) {
@@ -1411,6 +1445,7 @@ export default {
     if (isModelMediaUploadAssetPath(path)) return modelMediaUploadAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
+      if (shouldServeWebflowDashboard(request)) return proxyWebflowDashboard(request);
       if (isModelOnboardingPhaseARequest(request)) {
         if (!hasLineRedirectContext(request) && !hasLiffPrimaryBootstrapCookie(request) && !hasModelSessionCookie(request)) return miniAppHandoff(request);
         return modelOnboardingPhaseAResponse(request);
@@ -1431,3 +1466,4 @@ export default {
     });
   },
 };
+
