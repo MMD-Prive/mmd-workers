@@ -86,7 +86,7 @@ jobs:
             const matches=apps.filter(a=>a.durable_objects?.namespace_id===binding.namespace_id);
             if(matches.length!==1)throw Error('Expected one existing production container application');
             const app=matches[0];
-            if(app.max_instances!==2||app.configuration?.instance_type!=='basic')throw Error('Existing container capacity differs from reviewed configuration');
+            if(!Number.isInteger(app.max_instances)||app.max_instances<1||!['lite','basic','standard-1','standard-2','standard-3','standard-4'].includes(app.configuration?.instance_type))throw Error('Existing container capacity unavailable: '+JSON.stringify({max_instances:app.max_instances??null,instance_type:app.configuration?.instance_type??null,configuration_keys:Object.keys(app.configuration||{})}));
             return {settings,subdomain,app};
           }
           export const file=`${process.env.RUNNER_TEMP}/extractor-before.json`;
@@ -97,15 +97,19 @@ jobs:
           if(config.name!=='mmd-slip-extractor'||config.workers_dev!==false||config.preview_urls!==false||config.routes?.length!==0||config.vars?.MMD_RUNTIME_SCOPE!=='production')throw Error('Private production boundary mismatch');
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
           const before=await api.snapshot();fs.writeFileSync(api.file,JSON.stringify(before),{mode:0o600});
+          config.containers[0].max_instances=before.app.max_instances;
+          config.containers[0].instance_type=before.app.configuration.instance_type;
+          fs.writeFileSync('services/mmd-slip-extractor/cloudflare/.wrangler-existing-production.json',JSON.stringify(config),{mode:0o600});
+          console.log('Preserving existing container capacity: '+JSON.stringify({max_instances:before.app.max_instances,instance_type:before.app.configuration.instance_type}));
           fs.appendFileSync(process.env.GITHUB_ENV,`CLOUDFLARE_API_TOKEN=${(process.env.CLOUDFLARE_API_TOKEN||'').replace(/[\u2028\u2029\r\n]/g,'').trim()}\n`);
           console.log('Verified existing private extractor and container; no new resources required');
           JS
       - name: Validate production bundle
         working-directory: services/mmd-slip-extractor/cloudflare
-        run: npx --yes wrangler@4.124.0 deploy --dry-run --config wrangler.production.jsonc
+        run: npx --yes wrangler@4.124.0 deploy --dry-run --config .wrangler-existing-production.json
       - name: Deploy reviewed image to existing private production extractor
         working-directory: services/mmd-slip-extractor/cloudflare
-        run: npx --yes wrangler@4.124.0 deploy --config wrangler.production.jsonc --keep-vars
+        run: npx --yes wrangler@4.124.0 deploy --config .wrangler-existing-production.json --keep-vars
       - name: Verify unchanged bindings and capacity; record image/version receipt
         run: |
           node --input-type=module <<'JS'
@@ -113,7 +117,7 @@ jobs:
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
           const before=JSON.parse(fs.readFileSync(api.file,'utf8')),after=await api.snapshot();
           const bindings=x=>[...x.settings.bindings].sort((a,b)=>a.name.localeCompare(b.name));
-          if(api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id)throw Error('Private production boundary changed');
+          if(api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id||before.app.max_instances!==after.app.max_instances)throw Error('Private production boundary changed');
           const withoutImage=x=>({...x.app.configuration,image:'IMAGE'});
           if(api.canonical(withoutImage(before))!==api.canonical(withoutImage(after)))throw Error('Container configuration changed beyond image');
           const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
@@ -123,4 +127,4 @@ jobs:
           JS
       - name: Remove private preflight files
         if: always()
-        run: rm -f "$RUNNER_TEMP/extractor-before.json" "$RUNNER_TEMP/extractor-boundary.mjs"
+        run: rm -f services/mmd-slip-extractor/cloudflare/.wrangler-existing-production.json "$RUNNER_TEMP/extractor-before.json" "$RUNNER_TEMP/extractor-boundary.mjs"
