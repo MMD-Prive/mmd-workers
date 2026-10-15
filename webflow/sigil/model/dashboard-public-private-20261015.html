@@ -1,0 +1,84 @@
+<!-- Presentation-only Public MMD / Private SĪGIL variants. The switch changes no account, permissions, login, or API. Trusted future welcome_context can choose the initial lane via the existing session-ready event; current profile response does not provide this context. Default Public; no persistence or URL-based inference. -->
+<style id="my-model-public-private-20261015">
+/* Account-resolved Public MMD / Private SĪGIL presentation */
+#mmd-model-home-v3:not([data-model-brand-lane="private"]) [data-mmd-sigil-dashboard-v2]{display:none!important}
+#mmd-model-home-v3 .mdhome__top:before{background-image:none}
+#mmd-model-home-v3[data-model-brand-lane="public"]{--blend-ink:#29231c;--blend-muted:#655b4f;--blend-gold:#806127;background:#f4efe5}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__top{background:#e9dfcb;border-color:#cdbf9f}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__top:before{background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa1695b9172e0ef05688e67_Tart%20Model%20Application%20v9.webp");background-position:center 28%}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__top:after{background:linear-gradient(0deg,#f2eada 0%,rgba(242,234,218,.94) 21%,rgba(242,234,218,0) 68%)}
+#mmd-model-home-v3[data-model-brand-lane="public"] :is(.mdhome__identity,.mdhome__rail-card,.mdhome__summary-card,.model-blend-guide){background:#fffaf1;border-color:#d7ccba}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__job{background:linear-gradient(125deg,#e8dbc2,#fffbf3);border-color:#baa477}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__avatar{background:#eadfc9}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__auth{background:rgba(255,250,241,.94);border-color:#c0aa7f;color:#654d24;-webkit-text-fill-color:#654d24}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__copy{color:#4f4435;-webkit-text-fill-color:#4f4435}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__console{background:#806127;color:#fffaf2;-webkit-text-fill-color:#fffaf2}
+#mmd-model-home-v3[data-model-brand-lane="private"] .mdhome__top:before{background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a35f70ba2c1ec636a446949_ChatGPT%20Image%20Jun%2020%2C%202026%2C%2005_32_07%20AM.webp");background-position:center 24%}
+#mmd-model-home-v3 .mdhome__title{white-space:pre-line}
+#mmd-model-home-v3 .model-lane-status{font-size:12px;line-height:1.7;color:var(--blend-muted);margin:12px 2px 0}
+@media(min-width:768px){
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__top:before{background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a43e57014aeed32f7db357e_Tart-Onboard.webp");background-position:center right}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__top:after{background:linear-gradient(90deg,#f2eada 0%,rgba(242,234,218,.94) 30%,rgba(242,234,218,.08) 80%)}
+#mmd-model-home-v3[data-model-brand-lane="private"] .mdhome__top:before{background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a35aa646f6c76556523d7fe_Tart%20Model%20Console.webp");background-position:center right}
+}
+/* FINAL lane contrast */
+#mmd-model-home-v3[data-model-brand-lane] :is(h1,h2,h3,strong){color:var(--blend-ink);-webkit-text-fill-color:var(--blend-ink);background-image:none}
+#mmd-model-home-v3[data-model-brand-lane] :is(.mdhome__eyebrow,.mdhome__mini,.mdhome__rail-num,.mdhome__summary-label,.mdhome__edit){color:var(--blend-gold);-webkit-text-fill-color:var(--blend-gold)}
+#mmd-model-home-v3[data-model-brand-lane] :is(.mdhome__meta,.mdhome__rail-copy,.mdhome__summary-copy,.mdhome__job-copy,.model-blend-guide small){color:var(--blend-muted);-webkit-text-fill-color:var(--blend-muted)}
+#mmd-model-home-v3[data-model-brand-lane="public"] .mdhome__console{color:#fffaf2;-webkit-text-fill-color:#fffaf2}
+
+#mmd-model-home-v3 .model-lane-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:14px;padding:5px;border:1px solid #61513a;border-radius:14px;background:#181614}
+#mmd-model-home-v3 .model-lane-switch button{min-width:0;min-height:44px;padding:10px 8px;border:0;border-radius:10px;background:transparent;color:#dbcfbb;-webkit-text-fill-color:#dbcfbb;font:500 12px/1.5 "LINE Seed Sans TH","Noto Sans Thai",sans-serif;cursor:pointer}
+#mmd-model-home-v3 .model-lane-switch button[aria-pressed="true"]{background:#dfc18b;color:#241a0c;-webkit-text-fill-color:#241a0c}
+#mmd-model-home-v3 .model-lane-switch button:focus-visible{outline:2px solid #dfc18b;outline-offset:3px}
+body:has(#mmd-model-home-v3[data-model-brand-lane="public"]) #mmd-model-self-service{background:#f4efe5;color:#29231c}
+body:has(#mmd-model-home-v3[data-model-brand-lane="public"]) #mmd-model-self-service .mss__card{background:#fffaf1;border-color:#d7ccba}
+body:has(#mmd-model-home-v3[data-model-brand-lane="public"]) #mmd-model-self-service :is(input,textarea,select){background:#fffdf7;color:#29231c;border-color:#cdbf9f}
+/* FINAL public profile contrast, following existing embed overrides. */
+body:has(#mmd-model-home-v3[data-model-brand-lane="public"]) #mmd-model-self-service :is(h2,h3,label,legend,.mss__head p,.mss__hint,.mss__empty,.mss__card-head>span){color:#514638!important;-webkit-text-fill-color:#514638!important;background-image:none}
+body:has(#mmd-model-home-v3[data-model-brand-lane="public"]) #mmd-model-self-service .mss__notice{background:#e8dbc2;color:#51402a!important;-webkit-text-fill-color:#51402a!important}
+</style>
+<script id="my-model-public-private-runtime-20261015">(function modelDashboardLanes(global){
+'use strict';
+function resolveLane(payload){
+ const c=payload&&payload.welcome_context;
+ if(!c||c.authority!=='admin-worker'||c.resolved!==true||c.subject_bound!==true||c.version!=='model_welcome_v2')return null;
+ if(c.model_lane==='public'||c.model_lane==='private')return c.model_lane;
+ if(c.model_lane==='both'&&(c.primary_welcome_lane==='public'||c.primary_welcome_lane==='private'))return c.primary_welcome_lane;
+ return null;
+}
+if(typeof module!=='undefined'&&module.exports)module.exports={resolveLane};
+if(!global.document)return;
+const root=document.getElementById('mmd-model-home-v3');
+if(!root||global.__MY_MODEL_DASHBOARD_LANES__)return;
+global.__MY_MODEL_DASHBOARD_LANES__=true;
+const q=s=>root.querySelector(s);
+const set=(s,v)=>{const e=q(s);if(e)e.textContent=v;};
+const tabs=document.createElement('div');tabs.className='model-lane-switch';tabs.setAttribute('role','group');tabs.setAttribute('aria-label','รูปแบบ Dashboard');
+tabs.innerHTML='<button type="button" data-lane-view="public">MMD · Public Model</button><button type="button" data-lane-view="private">SĪGIL · Private Model</button>';
+q('.mdhome__top').before(tabs);
+let selectedByUser=false;
+function render(lane){
+ if(lane)root.dataset.modelBrandLane=lane;else delete root.dataset.modelBrandLane;
+ set('.mdhome__eyebrow',lane==='private'?'SĪGIL · PRIVATE MODEL':lane==='public'?'MMD · PUBLIC MODEL':'MY MODEL');
+ set('.mdhome__title',lane==='private'?'งานของคุณ\nต้าช่วยดูแล':lane==='public'?'พื้นที่ของคุณ\nเติบโตไปด้วยกัน':'พื้นที่ของคุณ');
+ set('.mdhome__copy',lane==='private'?'เช็กบรีฟ เตรียมตัว และดูแลงานไปด้วยกันครับ':lane==='public'?'ดูโปรไฟล์ รูป และความพร้อมสำหรับงานครั้งต่อไปครับ':'กำลังตรวจประเภทโมเดลจากบัญชีของคุณ');
+ const links=root.querySelectorAll('.model-blend-guide');
+ if(links.length>=2){
+  links[0].href=lane==='private'?'/rules/model/private/job-day':'#mmd-model-self-service';
+  links[1].href=lane==='private'?'/rules/model':'https://t.me/mmdprivebot';
+  links[0].querySelector('strong').textContent=lane==='private'?'งานแรก มีต้าช่วยเตรียมตัว':'เตรียมโปรไฟล์ให้พร้อม';
+  links[0].querySelector('small').textContent=lane==='private'?'บรีฟ · เดินทาง · ระหว่างงาน':'ข้อมูล · รูปภาพ · สถานะรับงาน';
+  links[1].querySelector('strong').textContent=lane==='private'?'กติกาการทำงาน':'ถามเรื่องงานกับต้า';
+  links[1].querySelector('small').textContent=lane==='private'?'อ่านก่อนรับงาน และกลับมาดูได้เสมอ':'มีเรื่องสงสัย ทักมาคุยได้ครับ';
+ }
+ tabs.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.laneView===lane)));
+}
+render('public');
+tabs.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{selectedByUser=true;render(button.dataset.laneView);}));
+global.addEventListener('mmd:model-session-ready',event=>{
+ const lane=resolveLane(event.detail);
+ if(lane&&!selectedByUser)render(lane);
+});
+})(typeof window==='undefined'?globalThis:window);
+</script>
