@@ -46,7 +46,9 @@ function rewritePageAssets(html) {
     /<script\b(?=[^>]*\bsrc=['"]\/~flock\.js['"])[^>]*>\s*<\/script>/gi,
     "",
   );
-  return output;
+  // Hydration manifests and inline module imports also contain root asset URLs.
+  // They must use the same app-scoped namespace as src/href attributes.
+  return rewriteAssetReferences(output);
 }
 
 function rewriteAssetReferences(source) {
@@ -102,7 +104,7 @@ export async function handleSessionCreatorPageRequest(request) {
 
   const headers = withoutSetCookie(upstream.headers);
   if (isAsset) {
-    headers.set("cache-control", "public, max-age=3600");
+    headers.set("cache-control", upstream.ok ? "public, max-age=3600" : "no-store");
     const contentType = String(headers.get("content-type") || "").toLowerCase();
     if ((contentType.includes("javascript") || contentType.includes("ecmascript") || contentType.includes("text/css")) && request.method !== "HEAD") {
       const source = await upstream.text();

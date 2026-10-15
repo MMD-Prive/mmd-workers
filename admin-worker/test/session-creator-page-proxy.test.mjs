@@ -144,3 +144,32 @@ test("Money Control preserves proof_id, strips credentials and serves same-origi
     }
   } finally { globalThis.fetch = original; }
 });
+
+
+test("rewrites hydration manifests and inline imports without changing API or external URLs", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    '<html><link href="/assets/styles.css"><script>window.manifest={preloads:["/assets/index.js"],src:"/assets/client.js"};import("/assets/route.js");const api="/v1/admin/auth/me";const external="https://example.com/assets/keep.js";</script></html>',
+    { headers: { "content-type": "text/html" } },
+  );
+  try {
+    const response = await handleSessionCreatorPageRequest(new Request("https://www.mmdbkk.com/internal/admin/jobs/job-board"));
+    const html = await response.text();
+    for (const file of ["styles.css", "index.js", "client.js", "route.js"])
+      assert.ok(html.includes("/internal/admin/work/assets/" + file));
+    assert.ok(html.includes('"/v1/admin/auth/me"'));
+    assert.ok(html.includes('"https://example.com/assets/keep.js"'));
+    assert.doesNotMatch(html, /["']\/assets\//);
+    assert.doesNotMatch(html, /\/internal\/admin\/work\/internal\/admin\/work/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("does not cache missing asset responses", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response("missing", { status: 404 });
+  try {
+    const response = await handleSessionCreatorPageRequest(new Request("https://mmdbkk.com/internal/admin/work/assets/missing.js"));
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  } finally { globalThis.fetch = original; }
+});
