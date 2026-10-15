@@ -67,3 +67,13 @@ body:has(#mmd-model-home-v3[data-model-brand-lane="private"]) #mmd-model-self-se
 body:has(#mmd-model-home-v3[data-model-brand-lane="private"]) #mmd-media-upload-v1 .mmu-error{color:#ffb9ae!important;-webkit-text-fill-color:#ffb9ae!important}
 
 #mmd-model-self-service [hidden]{display:none!important}
+
+/* Initial paint: also install this block in the Webflow page head. */
+body:has(#mmd-model-home-v3:not([data-model-brand-lane="private"])){background:#fff!important;color:#29231c!important}
+#mmd-model-home-v3:not([data-model-brand-lane="private"]){--blend-ink:#29231c;--blend-muted:#655b4f;--blend-gold:#806127;background:#fff!important;color:#29231c!important}
+#mmd-model-home-v3:not([data-model-brand-lane="private"]) :is(.mdhome__identity,.mdhome__rail-card,.mdhome__summary-card,.model-blend-guide){background:#fff!important;border-color:#d7ccba!important}
+#mmd-model-home-v3:not([data-model-brand-lane="private"]) .mdhome__job{background:#f6f4ee!important;border-color:#d7ccba!important}
+#mmd-model-home-v3:not([data-model-brand-lane="private"]) :is(h1,h2,h3,strong,.mdhome__title,.mdhome__rail-title,.mdhome__summary-title){color:#29231c!important;-webkit-text-fill-color:#29231c!important}
+#mmd-model-home-v3:not([data-model-brand-lane="private"]) :is(p,.mdhome__meta,.mdhome__rail-copy,.mdhome__summary-copy,.mdhome__job-copy){color:#655b4f!important;-webkit-text-fill-color:#655b4f!important}
+#mmd-model-home-v3 [data-mdhome-avatar]:not(:has(img,a)){font-size:0}
+#mmd-model-home-v3 [data-mdhome-avatar]:not(:has(img,a)):before{content:"＋";font-size:28px;color:#806127;line-height:1}
