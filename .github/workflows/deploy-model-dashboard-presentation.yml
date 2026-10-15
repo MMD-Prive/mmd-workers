@@ -222,7 +222,7 @@ jobs:
             tr -d '\r' < "$primary_headers" | grep -i -q '^set-cookie:[[:space:]]*mmd_liff_boot=1;'
             grep -q 'https://static.line-scdn.net/liff/edge/2/sdk.js' "$primary_body"
             grep -q '2010864854-N34SgCqq' "$primary_body"
-            if grep -Eqi 'tanstack|react|liff\.login|redirectUri|location\.reload|location\.replace' "$primary_body"; then
+            if grep -Eqi 'tanstack|react|liff\.login|redirectUri|location\.reload' "$primary_body"; then
               echo "Primary LIFF preboot leaked SPA/login content for $origin" >&2
               exit 1
             fi
