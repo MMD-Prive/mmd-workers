@@ -28,3 +28,11 @@ test("Model Console exposes only the two world-level rules links",()=>{
   assert.doesNotMatch(consoleLinks,/rules\/model\/private\/job-day/);
   assert.equal((consoleLinks.match(/<a class=/g)||[]).length,2);
 });
+
+
+test("first-job status and acknowledgement both use the canonical session host with credentials", () => {
+  assert.match(confirm, /const STATUS = "https:\/\/mmdbkk\.com\/v1\/model\/direct-job-gate\/status"/);
+  assert.match(jobDay, /const ACK = "https:\/\/mmdbkk\.com\/v1\/model\/direct-job-gate\/ack"/);
+  assert.match(confirm, /credentials: "include"/);
+  assert.match(jobDay, /credentials: "include"/);
+});
