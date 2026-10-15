@@ -1,5 +1,6 @@
+import { readTransferAmount, readTransferTime, readBankReference } from "./slip-text-fields.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdtemp } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -107,12 +108,8 @@ function firstMatch(text, expressions) {
 export function normalizeOcrText(text, confidence = 0) {
   const raw = clean(text).replace(/\r/g, "");
   const result = emptyResult();
-  result.amount_thb = (() => {
-    const value = firstMatch(raw, [/(?:จำนวนเงิน|ยอดเงิน|amount)\s*[:：]?\s*(?:THB|฿)?\s*([\d,]+(?:\.\d{1,2})?)/i, /(?:THB|฿)\s*([\d,]+(?:\.\d{1,2})?)/i]);
-    const amount = Number(value.replace(/,/g, ""));
-    return Number.isFinite(amount) && amount > 0 ? amount : null;
-  })();
-  result.payment_ref = firstMatch(raw, [/(?:เลขที่รายการ|รหัสรายการ|transaction\s*(?:id|ref(?:erence)?)|reference)\s*[:：#]?\s*([A-Z0-9-]{6,64})/i]);
+  result.amount_thb = readTransferAmount(raw);
+  result.payment_ref = readBankReference(raw);
   result.payer_name = firstMatch(raw, [/(?:จาก|ผู้โอน|ชื่อผู้โอน|sender|from)\s*[:：]?\s*([^\n]{2,80})/i]);
   result.sender_bank = firstMatch(raw, [/(?:ธนาคารผู้โอน|sender\s*bank|from\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]);
   result.receiver_bank = firstMatch(raw, [/(?:ธนาคารผู้รับ|receiver\s*bank|to\s*bank)\s*[:：]?\s*([^\n]{2,60})/i]);
@@ -126,7 +123,7 @@ export function normalizeOcrText(text, confidence = 0) {
   result.account_bank = firstMatch(raw, [
     /(?:ธนาคาร|bank)\s*[:：]?\s*([^\n]{2,60})/i,
   ]);
-  result.paid_at = firstMatch(raw, [/(20\d{2}[-/]\d{1,2}[-/]\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2})?)/]);
+  result.paid_at = readTransferTime(raw);
   result.provider = /พร้อมเพย์|promptpay/i.test(raw) ? "promptpay" : "bank_transfer";
   const useful = [result.payment_ref, result.amount_thb, result.paid_at, result.payer_name, result.account_number, result.account_name].filter(Boolean).length;
   result.confidence_score = useful ? clamp((Number(confidence) / 100) * Math.min(1, 0.55 + useful * 0.12)) : 0;
@@ -137,11 +134,16 @@ function languageFile(language) {
   return require.resolve(`@tesseract.js-data/${language}/4.0.0/${language}.traineddata.gz`);
 }
 
+let languagePath;
 async function localLanguagePath() {
-  const target = join(tmpdir(), "mmd-slip-extractor-tessdata");
-  await mkdir(target, { recursive: true });
-  await Promise.all(["tha", "eng"].map((language) => copyFile(languageFile(language), join(target, `${language}.traineddata.gz`))));
-  return target;
+  // Never overwrite a language file while another OCR worker is reading it.
+  // Each process owns one fully initialized directory of bundled language data.
+  languagePath ??= (async () => {
+    const target = await mkdtemp(join(tmpdir(), "mmd-slip-extractor-tessdata-"));
+    await Promise.all(["tha", "eng"].map((language) => copyFile(languageFile(language), join(target, `${language}.traineddata.gz`))));
+    return target;
+  })().catch(error => { languagePath = null; throw error; });
+  return languagePath;
 }
 
 export async function extractOcr(bytes, workerFactory = createWorker) {

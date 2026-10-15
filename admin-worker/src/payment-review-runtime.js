@@ -1,5 +1,6 @@
 import { internalEvidenceReference, slipTransferAt, transferTimestamp } from "./slip-transfer-evidence.js";
 import { correctPaymentEvidence } from "./payment-evidence-correction.js";
+import { extractSlip } from "./historical-slip-backfill-runtime.js";
 import { inferMembershipPayment, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
 import {
   hasOperatorPaymentContext,
@@ -97,6 +98,36 @@ async function getPaymentEvidence(request, env) {
   return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });
 }
 
+// Read-only OCR retry of the original private image. This fills a review draft;
+// it does not patch evidence, certify the reading, settle money or notify anyone.
+async function previewSlipExtraction(env, actor, body) {
+  if (!["owner", "admin"].includes(actor.role)) throw httpError(403, "evidence_extraction_forbidden");
+  const proofId = safeText(body.proof_id, 120);
+  if (!proofId) throw httpError(400, "proof_id_required");
+  const proof = await loadProof(env, proofId);
+  if (!proof) throw httpError(404, "payment_proof_not_found");
+  const item = safeQueueItem(proof);
+  if (!item?.reviewable || item.historical_backfill) throw httpError(409, "payment_proof_not_reviewable");
+  const note = parseNote(proof.fields?.note);
+  const key = safeEvidenceKey(note.r2_key);
+  if (!key || !/^[a-f0-9]{64}$/.test(note.evidence_sha256 || "")) throw httpError(409, "payment_evidence_integrity_unavailable");
+  if (typeof env.LINE_SLIP_EVIDENCE?.get !== "function") throw httpError(503, "payment_evidence_storage_unavailable");
+  const object = await env.LINE_SLIP_EVIDENCE.get(key);
+  if (!object) throw httpError(404, "payment_evidence_not_found");
+  const mimeType = safeImageContentType(object.httpMetadata?.contentType || note.mime_type);
+  if (!mimeType) throw httpError(415, "payment_evidence_mime_unsupported");
+  const maxBytes = 10 * 1024 * 1024;
+  if (object.size > maxBytes) throw httpError(413, "payment_evidence_too_large");
+  const bytes = new Uint8Array(await new Response(object.body).arrayBuffer());
+  if (!bytes.length || bytes.length > maxBytes) throw httpError(413, "payment_evidence_size_invalid");
+  const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(x => x.toString(16).padStart(2, "0")).join("");
+  if (digest !== note.evidence_sha256) throw httpError(409, "payment_evidence_sha_mismatch");
+  const extraction = await extractSlip(env, { bytes, mimeType });
+  return { ok: true, action: "extract_evidence", proof_id: proofId, result: {
+    amount_thb: extraction.amount_thb, paid_at: extraction.paid_at, payment_ref: extraction.payment_ref,
+  }, extraction_error: extraction.extraction_error || "", money_truth_changed: false, evidence_changed: false };
+}
+
 async function listReviewQueue(request, env, actor) {
   const url = new URL(request.url);
   if (url.searchParams.get("view") === "change_request") {
@@ -184,6 +215,7 @@ async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
   if (body.action === "correct_evidence") return json(await saveEvidenceCorrection(request, env, actor, body));
+  if (body.action === "extract_evidence") return json(await previewSlipExtraction(env, actor, body));
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
   if (body.action === "resolve_customer_change") return json(await resolveCustomerChange(env, body, changeDependencies(env, actor)));
 
