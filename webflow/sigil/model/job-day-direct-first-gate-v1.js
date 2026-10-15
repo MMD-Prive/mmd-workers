@@ -10,7 +10,8 @@
   const token = String(params.get("t") || "").trim();
   const rulesVersion = String(params.get("rules_version") || "job-day-v2").trim();
   const rawReturn = String(params.get("return_to") || "").trim();
-  const ACK = "/v1/model/direct-job-gate/ack";
+  // Use the same host-only model session as the LINE exchange, even on www.
+  const ACK = "https://mmdbkk.com/v1/model/direct-job-gate/ack";
   const LIFF = "https://miniapp.line.me/2010864854-N34SgCqq/";
 
   function safeReturnTo(value) {

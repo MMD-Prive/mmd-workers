@@ -9,7 +9,9 @@
   window.__mmdDirectPrivateFirstJobGateV1 = true;
 
   const nativeFetch = window.fetch.bind(window);
-  const STATUS = "/v1/model/direct-job-gate/status";
+  // MY MODEL creates a host-only session on the canonical apex API.
+  // Webflow redirects the confirmation view to www; keep cookie reads on apex.
+  const STATUS = "https://mmdbkk.com/v1/model/direct-job-gate/status";
   const DETAILS = "/v1/confirm/details";
   const LIFF = "https://miniapp.line.me/2010864854-N34SgCqq/";
   const STATUS_TIMEOUT_MS = 15000;
