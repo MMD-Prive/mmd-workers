@@ -22,11 +22,11 @@ async function sessionToken(modelId=MODEL){
   const encoded=Buffer.from(JSON.stringify(payload)).toString("base64url");
   return encoded+"."+await hmacHex(encoded,SECRET);
 }
-function memoryEnv({lane="private_model",modelId=MODEL,partner=false,acks=[]}={}){
+function memoryEnv({lane="private_model",jobId=JOB_ID,modelId=MODEL,partner=false,acks=[]}={}){
   const writes=[];
   const session={id:"recSession123456",fields:{
     fldLTq2kZbyRv22IA:SESSION_ID,
-    fldHw5HdDDdkHXMhG:JOB_ID,
+    fldHw5HdDDdkHXMhG:jobId,
     fldzYGziqLqTQaoaK:lane,
     fldrXQAyOMPCvbOaY:[modelId],
     fld0jkscGAtyX7i2J:partner?"partner-1":"",
@@ -161,5 +161,24 @@ for (const lane of ["public_model", "private_model", "needs_review"]) {
     const {env}=memoryEnv({lane});
     const response=await handleModelDirectFirstJobGate(await request("/v1/model/direct-job-gate/status"),env);
     assert.equal((await response.json()).model_work_lane,lane);
+  });
+}
+
+for (const lane of ["", "needs_review", "private_model"]) {
+  test("legacy job without job id still requires explicit rules acknowledgement: " + lane, async () => {
+    const {env,writes}=memoryEnv({lane,jobId:""});
+    const status=await handleModelDirectFirstJobGate(await request("/v1/model/direct-job-gate/status"),env);
+    assert.equal(status.status,200);
+    const body=await status.json();
+    assert.equal(body.required,true);assert.equal(body.applies,true);
+    assert.equal(body.model_work_lane,lane||"needs_review");assert.equal(body.job_id,null);
+    assert.equal(writes.length,0);
+    const incomplete=await handleModelDirectFirstJobGate(await request("/v1/model/direct-job-gate/ack"),env);
+    assert.equal(incomplete.status,400);assert.equal(writes.length,0);
+    const ack=await handleModelDirectFirstJobGate(await request("/v1/model/direct-job-gate/ack",{body:{completed:true,rules_version:MODEL_DIRECT_JOB_GATE_RULES_VERSION}}),env);
+    assert.equal(ack.status,200);assert.equal(writes.length,1);
+    assert.equal(writes[0].session_id,SESSION_ID);assert.equal(writes[0].job_id,undefined);
+    const after=await handleModelDirectFirstJobGate(await request("/v1/model/direct-job-gate/status"),env);
+    assert.equal((await after.json()).required,false);
   });
 }
