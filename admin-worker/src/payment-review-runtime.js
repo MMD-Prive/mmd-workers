@@ -1,3 +1,4 @@
+import { internalEvidenceReference, slipTransferAt, transferTimestamp } from "./slip-transfer-evidence.js";
 import { correctPaymentEvidence } from "./payment-evidence-correction.js";
 import { inferMembershipPayment, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
 import {
@@ -157,10 +158,9 @@ async function listReviewQueue(request, env, actor) {
   });
 }
 
-async function commitReview(request, env, actor) {
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
-  if (body.action === "correct_evidence") return json(await correctPaymentEvidence({ ...body, idempotency_key: request.headers.get("Idempotency-Key") || body.idempotency_key }, actor, {
+async function saveEvidenceCorrection(request, env, actor, body, internalReference = null) {
+  return correctPaymentEvidence({ ...body, idempotency_key: request.headers.get("Idempotency-Key") || body.idempotency_key }, actor, {
+    internalReference,
     load: id => loadProof(env, id), parseNote,
     reviewable: proof => Boolean(safeQueueItem(proof)?.reviewable),
     audit: entry => airtableCreate(env, accessLogTable(env), {
@@ -177,7 +177,13 @@ async function commitReview(request, env, actor) {
       }));
       if (!response.ok) throw httpError(503, "evidence_correction_write_unconfirmed");
     },
-  }));
+  });
+}
+
+async function commitReview(request, env, actor) {
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
+  if (body.action === "correct_evidence") return json(await saveEvidenceCorrection(request, env, actor, body));
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
   if (body.action === "resolve_customer_change") return json(await resolveCustomerChange(env, body, changeDependencies(env, actor)));
 
@@ -233,6 +239,14 @@ async function commitReview(request, env, actor) {
   }
 
   const approval = await buildApprovalContext(env, proof, item, actor, operatorContext);
+  if (approval.complete_manual_evidence) {
+    await saveEvidenceCorrection(new Request(request.url, { method: "POST", headers: { "Idempotency-Key": await internalEvidenceReference(`review:${proofId}:${idempotencyKey}`) } }), env, actor, {
+      proof_id: proofId, payment_ref: "", amount_thb: approval.amount_thb,
+      paid_at: approval.manual_paid_at, evidence_checked: true,
+      admin_reason: reason.length >= 10 ? reason : `Owner reviewed original slip: ${reason}`,
+      expected: { payment_ref: "", amount_thb: approval.amount_thb, paid_at: slipTransferAt(proof.fields, parseNote(proof.fields?.note)) },
+    }, approval.payment_ref);
+  }
   const paymentsResponse = await sendReviewedProofToPayments(env, {
     ...approval,
     proof_id: proofId,
@@ -311,9 +325,16 @@ async function commitReview(request, env, actor) {
 
 async function buildApprovalContext(env, proof, item, actor, operatorContext = {}) {
   const fields = proof.fields || {};
-  const paymentRef = safeText(fields.payment_ref || fields.transaction_ref, 180);
+  let paymentRef = safeText(fields.payment_ref || fields.transaction_ref, 180);
   const amountThb = positiveAmount(fields.amount_thb ?? fields.amount ?? fields.total_thb);
-  if (!paymentRef) throw httpError(409, "payment_proof_reference_missing");
+  const completeManualEvidence = !paymentRef;
+  const manualPaidAt = transferTimestamp(slipTransferAt(fields, parseNote(fields.note)));
+  if (completeManualEvidence) {
+    if (!RECOVERY_APPROVER_ROLES.has(actor.role)) throw httpError(403, "evidence_correction_forbidden");
+    if (!manualPaidAt) throw httpError(409, "payment_proof_datetime_missing");
+    if (!operatorContext.payment_stage) throw httpError(409, "operator_context_payment_stage_required");
+    paymentRef = await internalEvidenceReference(item.proof_id);
+  }
   if (amountThb == null) throw httpError(409, "payment_proof_amount_missing");
 
   const linkedPayment = linkedRecordId(fields.payment || fields.Payment || fields["Payment"]);
@@ -322,6 +343,7 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
   if (!paymentRecord) paymentRecord = await findPaymentByRef(env, paymentRef);
 
   let paymentFields = paymentRecord?.fields || null;
+  if (completeManualEvidence && paymentFields) paymentRef = safeText(paymentFields.payment_ref || paymentFields["Payment Reference"], 180) || paymentRef;
   let contextSource = "canonical_payment";
   let renewalSessionId = "";
   let operatorContextAudit = hasOperatorPaymentContext(operatorContext) ? operatorPaymentContextForAudit(operatorContext) : null;
@@ -398,6 +420,8 @@ async function buildApprovalContext(env, proof, item, actor, operatorContext = {
   if (paymentStage === "membership" && !packageCode) throw httpError(409, "canonical_package_context_missing");
 
   return {
+    complete_manual_evidence: completeManualEvidence,
+    manual_paid_at: manualPaidAt,
     source: "payment_review_console",
     decision: "approved",
     payment_ref: paymentRef,
@@ -636,7 +660,7 @@ function safeQueueItem(record) {
   const contextIssues = [];
   if (!previewUrl) contextIssues.push("evidence_preview_missing");
   if (amountThb == null) contextIssues.push("amount_not_extracted");
-  if (!paymentRef) contextIssues.push("payment_reference_missing");
+  if (!paymentRef && !transferTimestamp(slipTransferAt(fields, note))) contextIssues.push("transfer_datetime_missing");
   const linkedPaymentPresent = Boolean(linkedRecordId(fields.payment || fields.Payment || fields["Payment"]));
   const linkedSessionPresent = Boolean(linkedRecordId(fields.session || fields.Session || fields["Session"]));
   const linkedRenewalPresent = renewalIds.length === 1;
@@ -658,7 +682,9 @@ function safeQueueItem(record) {
     status: status || "pending",
     channel: safeCode(fields.channel || fields.source || ""),
     ...(note.schema === "mmd_admin_slip_upload_v1" && ["line_ofc", "cdm_paper"].includes(note.source_channel) ? { source_channel: note.source_channel } : {}),
-    paid_at: isoOrText(fields.paid_at || fields["Payment Date"]),
+    paid_at: slipTransferAt(fields, note) || null,
+    bank_reference_optional: true,
+    reference_kind: note.manual_evidence_review?.reference_kind || null,
     created_at: isoOrText(fields.created_at || fields["Created At"] || fields.createdTime || record.createdTime),
     session_id: safeText(fields.session_id, 180),
     member_email: normalizeEmail(fields.member_email || fields.email),
