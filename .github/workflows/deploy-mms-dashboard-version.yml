@@ -1,4 +1,4 @@
-name: Deploy MMS dashboard Admin version only
+name: Deploy Admin reviewed version only
 
 on:
   workflow_dispatch:
@@ -24,17 +24,17 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
-      MMS_RELEASE_SHA: 9fe0bd88ac74f697601997c678aeabdaa556d044
-      MMS_BASELINE_SHA: 45f2912bf2e6f4f9fffe5ef34558fae720f93a48
+      MMS_RELEASE_SHA: dd7faf1a4807c1ee6245971de944576354d07401
+      MMS_BASELINE_SHA: 9fe0bd88ac74f697601997c678aeabdaa556d044
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: 9fe0bd88ac74f697601997c678aeabdaa556d044
+          ref: dd7faf1a4807c1ee6245971de944576354d07401
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-      - name: Verify pinned UI-only source and contracts
+      - name: Verify pinned reviewed source and contracts
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$MMS_RELEASE_SHA"
@@ -43,11 +43,12 @@ jobs:
           import os
           from pathlib import Path
           actual=set(Path(os.environ['RUNNER_TEMP'],'mms-release-files.txt').read_text().splitlines())
-          # Only the hero focal point changes Admin runtime code.
-          expected={'.github/workflows/deploy-mms-dashboard-version.yml','admin-worker/src/mms-admin-page.js'}
+          # Exact reviewed changes; model and confirmation presentation files in
+          # repository history do not release any additional Worker.
+          expected={'.github/workflows/deploy-mms-dashboard-version.yml','admin-worker/admin-slip-upload.test.mjs','admin-worker/src/admin-login-hero-worker-core.js','admin-worker/src/historical-slip-backfill-runtime.js','admin-worker/src/payment-review-runtime.js','admin-worker/src/studio-telegram-worker.js','model-dashboard-presentation-worker/src/model-liff-digital-shell.js','webflow/sigil/confirm/model-work-navigation-v1.js','webflow/sigil/confirm/model-work-navigation-v1.test.mjs'}
           assert actual == expected, 'Pinned source contains unexpected changes'
           PY
-          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-approve-ui.test.mjs mms-admin-mobile-bundle.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs
+          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-approve-ui.test.mjs mms-admin-mobile-bundle.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs admin-slip-upload.test.mjs historical-slip-backfill-route.test.mjs historical-slip-backfill-private-evidence.test.mjs historical-slip-backfill-reprocess.test.mjs historical-slip-backfill-queue-order.test.mjs historical-slip-backfill-handoff-probe.test.mjs payment-inbox-admin-session.test.mjs payment-review-auto-context.test.mjs payment-review-owner-context.test.mjs
       - name: Read active version and prepare existing bindings only
         id: preflight
         run: |
@@ -86,6 +87,7 @@ jobs:
           const api=await import(`file://${process.env.RUNNER_TEMP}/mms-version-api.mjs`);
           const id=await api.active(),v=await api.read(`/versions/${id}`),sha=api.source(v);
           if(![process.env.MMS_BASELINE_SHA,process.env.MMS_RELEASE_SHA].includes(sha))throw Error('Live source differs from reviewed baseline; stop before upload');
+          if(!api.bindings(v).some(b=>b.name==='SLIP_EXTRACTOR'&&b.type==='service')||!api.bindings(v).some(b=>b.name==='LINE_SLIP_EVIDENCE'&&b.type==='r2_bucket'))throw Error('Existing private slip bindings unavailable; stop before upload');
           api.save('mms-active-before.json',v);
           fs.appendFileSync(process.env.GITHUB_OUTPUT,`already_live=${sha===process.env.MMS_RELEASE_SHA}\nversion=${id}\n`);
           const c=JSON.parse(fs.readFileSync('.wrangler-mms-version-only.json','utf8'));
@@ -142,7 +144,9 @@ jobs:
           if(process.env.MMS_UPLOADED_VERSION&&id!==process.env.MMS_UPLOADED_VERSION)throw Error('Active version mismatch');
           const r=await fetch('https://www.mmdbkk.com/v1/admin/mms/snapshot',{redirect:'manual',signal:AbortSignal.timeout(30000)});
           if(r.status!==401)throw Error(`MMS auth guard returned ${r.status}`);
-          const receipt=`Admin Worker version-only release\nSource: ${process.env.MMS_RELEASE_SHA}\nActive version: ${id}\nTraffic: 100%\nRoutes/secrets/triggers/resources: no mutation commands\nMMS unauthenticated guard: 401\n`;
+          const uploadGuard=await fetch('https://www.mmdbkk.com/studio/api/payments/slip-intake',{method:'POST',headers:{origin:'https://www.mmdbkk.com'},redirect:'manual',signal:AbortSignal.timeout(30000)});
+          if(uploadGuard.status!==401)throw Error(`Manual slip auth guard returned ${uploadGuard.status}`);
+          const receipt=`Admin Worker version-only release\nSource: ${process.env.MMS_RELEASE_SHA}\nActive version: ${id}\nTraffic: 100%\nRoutes/secrets/triggers/resources: no mutation commands\nMMS unauthenticated guard: 401\nManual slip unauthenticated guard: 401\n`;
           console.log(receipt);fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,receipt);
           JS
       - name: Remove ephemeral configuration and logs
