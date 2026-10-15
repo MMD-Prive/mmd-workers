@@ -1,3 +1,5 @@
+import { transferTimestamp } from "./slip-transfer-evidence.js";
+
 const API_PREFIX = "/v1/admin/payments/historical-backfill";
 const INTAKE_PATH = `${API_PREFIX}/intake`;
 const REPROCESS_PATH = `${API_PREFIX}/reprocess`;
@@ -625,14 +627,33 @@ async function validateHistoricalHandoff(proof, note, body, env, reviewReason) {
   });
 }
 
-async function extractSlip(env, image) {
+export async function extractSlip(env, image) {
   const maxAmount = Number(env.HISTORICAL_SLIP_MAX_AMOUNT_THB || env.LINE_SLIP_MAX_AMOUNT_THB) || DEFAULT_MAX_AMOUNT_THB;
   const qr = await callPrivateExtractor(env, image, "/v1/extract/qr", "qr", maxAmount);
-  if (clean(qr.result?.payment_ref)) return { ...qr.result, extraction_error: "" };
+  if (qr.result?.amount_thb != null && transferTimestamp(qr.result?.paid_at)) {
+    return { ...qr.result, extraction_error: "" };
+  }
 
   const ocr = await callPrivateExtractor(env, image, "/v1/extract/ocr", "ocr", maxAmount);
-  if (extractionUseful(ocr.result)) return { ...ocr.result, extraction_error: qr.error || "" };
-  if (qr.result?.amount_thb != null) return { ...qr.result, extraction_error: ocr.error || "" };
+  if (extractionUseful(ocr.result)) {
+    // A recipient/payment QR often contains no transfer date or time. Complete
+    // its missing fields from the image, but never resolve conflicting evidence
+    // by silently choosing one source.
+    const merged = { ...ocr.result };
+    const conflicts = [];
+    for (const key of ["amount_thb", "paid_at", "payment_ref"]) {
+      const left = qr.result?.[key], right = ocr.result[key];
+      const present = value => value != null && value !== "";
+      const comparable = value => key === "paid_at" ? transferTimestamp(value) : value;
+      if (present(left) && present(right) && comparable(left) !== comparable(right)) {
+        merged[key] = key === "amount_thb" ? null : "";
+        conflicts.push(`qr_ocr_${key}_conflict`);
+      } else if (!present(right) && present(left)) merged[key] = left;
+    }
+    if (conflicts.length) merged.confidence_score = 0;
+    return { ...merged, extraction_error: [qr.error, ...conflicts].filter(Boolean).join(",") };
+  }
+  if (extractionUseful(qr.result)) return { ...qr.result, extraction_error: ocr.error || "" };
 
   return {
     payment_ref: "",
@@ -679,7 +700,7 @@ function normalizeExtraction(payload, method, maxAmount) {
   const data = payload?.result && typeof payload.result === "object" ? payload.result : payload || {};
   const amountThb = normalizeAmount(data.amount_thb ?? data.amount, maxAmount);
   const paymentRef = safeText(data.payment_ref || data.provider_txn_id || data.transaction_ref, 180);
-  const paidAt = safeText(data.paid_at || data.transfer_at, 80);
+  const paidAt = transferTimestamp(safeText(data.paid_at || data.transfer_at, 80)) || "";
   const payerName = safeText(data.payer_name || data.sender_name, 180);
   const confidence = Math.max(0, Math.min(1, Number(data.confidence_score ?? data.confidence) || 0));
   return {
@@ -1027,6 +1048,8 @@ function parseNote(value) {
 }
 
 function dateOnly(value) {
+  const timestamp = transferTimestamp(value);
+  if (timestamp) return new Date(Date.parse(timestamp) + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const match = clean(value).match(/^(\d{4}-\d{2}-\d{2})/);
   if (match) return match[1];
   const date = new Date(value);

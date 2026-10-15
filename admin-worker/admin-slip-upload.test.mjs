@@ -17,7 +17,7 @@ function fixture(){
    assert.equal(req.method,'POST');assert.equal(table,'Proofs','intake may only write pending evidence');
    const body=await req.json();const record={id:'rec_upload',fields:body.fields,createdTime:'2026-10-15T02:00:00Z'};proofs.push(record);return Response.json(record,{status:201});
   }},
-  SLIP_EXTRACTOR:{async fetch(req){extracts.push(req.url);return Response.json({result:{payment_ref:'SYNTHETIC_REF',amount_thb:100,confidence_score:.99,provider:'bank_qr'}})}},
+  SLIP_EXTRACTOR:{async fetch(req){extracts.push(req.url);return Response.json({result:{payment_ref:'SYNTHETIC_REF',amount_thb:100,paid_at:'2026-10-15T09:25:00+07:00',confidence_score:.99,provider:'bank_qr'}})}},
   LINE_SLIP_EVIDENCE:{async put(key,bytes,opts){writes.push({key,opts});blobs.set(key,new Uint8Array(bytes));},async delete(key){blobs.delete(key);},async get(key){return blobs.has(key)?{body:blobs.get(key),httpMetadata:{contentType:'image/png'}}:null;}},
   PAYMENTS_WORKER:{fetch(){throw Error('intake must never approve or call payment mutations')}},
  };
@@ -79,4 +79,26 @@ test('duplicate historical evidence links to its actual review lane instead of d
  const f=fixture();const added=await (await handleAdminSlipUploadRequest(upload(),f.env)).json();
  const note=JSON.parse(f.proofs[0].fields.note);note.schema='mmd_historical_slip_backfill_v1';f.proofs[0].fields.note=JSON.stringify(note);
  const d=await(await handleAdminSlipUploadRequest(upload(),f.env)).json();assert.equal(d.duplicate,true);assert.equal(d.review_path,'/internal/admin/payments/historical-backfill?proof_id='+added.proof_id);assert.equal(f.writes.length,1);
+});
+
+
+test('partial QR never skips OCR and fills amount and real transfer timestamp without bank reference',async()=>{
+ for(const qr of [{payment_ref:'QR-REF-ONLY'},{amount_thb:6000},{}]){
+  const f=fixture();f.env.SLIP_EXTRACTOR.fetch=async req=>{f.extracts.push(req.url);return Response.json({result:req.url.endsWith('/qr')?qr:{amount_thb:6000,paid_at:'2026-10-15T00:25:00+07:00',confidence_score:.9}})};
+  const r=await handleAdminSlipUploadRequest(upload(),f.env);assert.equal(r.status,201,await r.clone().text());
+  assert.equal(f.extracts.length,2);assert.match(f.extracts[1],/\/ocr$/);
+  const fields=f.proofs[0].fields,note=JSON.parse(fields.note);
+  assert.equal(fields.amount_thb,6000);assert.equal(fields.paid_at,'2026-10-15');assert.equal(note.extraction.paid_at,'2026-10-14T17:25:00Z');assert.equal(fields.status,'pending');
+  if(qr.payment_ref)assert.equal(fields.payment_ref,qr.payment_ref);
+ }
+});
+test('conflicting QR and OCR amounts stay missing for review instead of choosing a source',async()=>{
+ const f=fixture();f.env.SLIP_EXTRACTOR.fetch=async req=>Response.json({result:req.url.endsWith('/qr')?{amount_thb:100}:{amount_thb:6000,paid_at:'2026-10-15T09:25:00+07:00',confidence_score:.9}});
+ await handleAdminSlipUploadRequest(upload(),f.env);
+ const fields=f.proofs[0].fields,note=JSON.parse(fields.note);assert.equal(fields.amount_thb,undefined);assert.equal(note.extraction.amount_thb,null);assert.match(note.extraction.extraction_error,/amount_thb_conflict/);assert.equal(note.review_required,true);assert.equal(fields.status,'pending');
+});
+test('failed OCR preserves useful QR evidence with a retryable extraction error',async()=>{
+ const f=fixture();f.env.SLIP_EXTRACTOR.fetch=async req=>req.url.endsWith('/qr')?Response.json({result:{payment_ref:'PARTIAL-REF'}}):Response.json({error:'unavailable'},{status:503});
+ await handleAdminSlipUploadRequest(upload(),f.env);
+ const note=JSON.parse(f.proofs[0].fields.note);assert.equal(note.extraction.payment_ref,'PARTIAL-REF');assert.match(note.extraction.extraction_error,/ocr_private_extractor_failed_503/);assert.equal(note.review_required,true);
 });
