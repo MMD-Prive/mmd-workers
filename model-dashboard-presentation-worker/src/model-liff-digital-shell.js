@@ -302,7 +302,14 @@ export function modelLiffDigitalBootstrapHtml({
       status.textContent=${JSON.stringify(success)};
       ${jobBoardScript}
       ${selectedSessionScript || returnScript}
-      ${!jobBoardScript && !selectedSessionScript && !returnScript ? 'setTimeout(function(){showFailure("line_redirect_timeout");},12000);' : ""}
+      ${!jobBoardScript && !selectedSessionScript && !returnScript ? `var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
+      if(!idToken)throw new Error("id_token_missing");
+      var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
+      var exchangeBody=await exchange.json().catch(function(){return null});
+      if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error("model_session_exchange_failed");
+      var dashboard=new URL("/sigil/model/dashboard",window.location.origin);
+      if(${safeEnvironment}!=="published")dashboard.searchParams.set("liff_env",${safeEnvironment});
+      window.location.replace(dashboard.pathname+dashboard.search);return;` : ""}
     }catch(error){
       // Never echo SDK errors: they can include credential-bearing URLs.
       var code=String(error&&error.message||"");
