@@ -3,11 +3,8 @@ name: Deploy MMD Slip Extractor Production
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - "services/mmd-slip-extractor/**"
-      - ".github/workflows/deploy-mmd-slip-extractor-production.yml"
+    branches: [main]
+    paths: [".github/workflows/deploy-mmd-slip-extractor-production.yml"]
 
 permissions:
   contents: read
@@ -21,65 +18,109 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.MMD_SLIP_EXTRACTOR_PRODUCTION_CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.MMD_SLIP_EXTRACTOR_PRODUCTION_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       WRANGLER_SEND_METRICS: "false"
       NO_COLOR: "1"
+      EXTRACTOR_RELEASE_SHA: 1f477f56fba7a7f438ec74e1965ea82056b36024
+      EXTRACTOR_REVIEW_BASE_SHA: 64bde2654fb4eb149eccc082e7231670875cb92c
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Validate production deploy credential
+      - uses: actions/checkout@v4
+        with:
+          ref: 1f477f56fba7a7f438ec74e1965ea82056b36024
+          fetch-depth: 0
+      - name: Validate exact reviewed source
         run: |
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::MMD_SLIP_EXTRACTOR_PRODUCTION_CLOUDFLARE_API_TOKEN is not configured"
-            exit 1
-          fi
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXTRACTOR_RELEASE_SHA"
+          git diff --name-only "$EXTRACTOR_REVIEW_BASE_SHA" "$EXTRACTOR_RELEASE_SHA" > "$RUNNER_TEMP/extractor-files.txt"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          expected=set(["services/mmd-slip-extractor/lib/extractor.mjs","services/mmd-slip-extractor/lib/slip-text-fields.mjs","services/mmd-slip-extractor/test/slip-text-fields.test.mjs","services/mmd-slip-extractor/test/image-date-ocr.test.mjs","admin-worker/src/historical-slip-backfill-runtime.js","admin-worker/src/payment-review-runtime.js","admin-worker/admin-slip-upload.test.mjs","admin-worker/payment-evidence-extraction.test.mjs"])
+          actual=set(Path(os.environ['RUNNER_TEMP'],'extractor-files.txt').read_text().splitlines())
+          assert actual==expected, 'Unexpected release source changes'
+          PY
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
             services/mmd-slip-extractor/package-lock.json
             services/mmd-slip-extractor/cloudflare/package-lock.json
-
-      - name: Install dependencies
+      - name: Install pinned dependencies
         run: |
           npm ci --prefix services/mmd-slip-extractor
           npm ci --prefix services/mmd-slip-extractor/cloudflare
-
-      - name: Test extraction library and Cloudflare adapter
+      - name: Test extraction and private adapter
         run: |
-          node --test services/mmd-slip-extractor/test/*.test.mjs
-          node --test services/mmd-slip-extractor/cloudflare/test/*.test.mjs
+          node --test services/mmd-slip-extractor/test/*.test.mjs services/mmd-slip-extractor/cloudflare/test/*.test.mjs
           node --check services/mmd-slip-extractor/cloudflare/worker-core.mjs
           node --check services/mmd-slip-extractor/cloudflare/worker.mjs
           node --check services/mmd-slip-extractor/cloudflare/container-server.mjs
-
-      - name: Lock private production boundary
-        working-directory: services/mmd-slip-extractor/cloudflare
+      - name: Verify existing private production resources before upload
         run: |
-          node <<'NODE'
-          const fs = require("node:fs");
-          const config = JSON.parse(fs.readFileSync("wrangler.production.jsonc", "utf8"));
-          if (config.name !== "mmd-slip-extractor") throw new Error("production worker name required");
-          if (config.workers_dev !== false) throw new Error("workers_dev must remain false");
-          if (config.preview_urls !== false) throw new Error("preview URLs must remain disabled");
-          if (!Array.isArray(config.routes) || config.routes.length !== 0) throw new Error("public/custom routes are forbidden");
-          if (config.vars?.MMD_RUNTIME_SCOPE !== "production") throw new Error("production runtime scope required");
-          NODE
-
+          set -euo pipefail
+          umask 077
+          cat > "$RUNNER_TEMP/extractor-boundary.mjs" <<'JS'
+          import fs from 'node:fs';
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          const token=(process.env.CLOUDFLARE_API_TOKEN||'').replace(/[\u2028\u2029\r\n]/g,'').trim();
+          if(!token||!/^[a-f0-9]{32}$/.test(account||''))throw Error('Deploy credential unavailable');
+          const worker='mmd-slip-extractor';
+          export async function read(path){
+            const allowed=[`/workers/scripts/${worker}/settings`,`/workers/scripts/${worker}/subdomain`,`/workers/scripts/${worker}/deployments`,'/containers/applications'];
+            if(!allowed.includes(path))throw Error('Read path denied');
+            const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`,{headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});
+            const d=await r.json();if(!r.ok||d.success!==true)throw Error(`Production preflight read failed: ${r.status}`);return d.result;
+          }
+          export const canonical=x=>JSON.stringify(sort(x));
+          function sort(x){if(Array.isArray(x))return x.map(sort);if(x&&typeof x==='object')return Object.fromEntries(Object.keys(x).sort().map(k=>[k,sort(x[k])]));return x}
+          export async function snapshot(){
+            const settings=await read(`/workers/scripts/${worker}/settings`);
+            const subdomain=await read(`/workers/scripts/${worker}/subdomain`);
+            if(subdomain.enabled!==false||subdomain.previews_enabled===true)throw Error('Extractor must remain private');
+            const binding=settings.bindings?.find(b=>b.name==='SLIP_EXTRACTOR'&&b.type==='durable_object_namespace');
+            if(!binding?.namespace_id||binding.class_name!=='SlipExtractorContainer')throw Error('Existing production DO binding required');
+            const apps=await read('/containers/applications');
+            const matches=apps.filter(a=>a.durable_objects?.namespace_id===binding.namespace_id);
+            if(matches.length!==1)throw Error('Expected one existing production container application');
+            const app=matches[0];
+            if(app.max_instances!==2||app.configuration?.instance_type!=='basic')throw Error('Existing container capacity differs from reviewed configuration');
+            return {settings,subdomain,app};
+          }
+          export const file=`${process.env.RUNNER_TEMP}/extractor-before.json`;
+          JS
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const config=JSON.parse(fs.readFileSync('services/mmd-slip-extractor/cloudflare/wrangler.production.jsonc','utf8'));
+          if(config.name!=='mmd-slip-extractor'||config.workers_dev!==false||config.preview_urls!==false||config.routes?.length!==0||config.vars?.MMD_RUNTIME_SCOPE!=='production')throw Error('Private production boundary mismatch');
+          const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
+          const before=await api.snapshot();fs.writeFileSync(api.file,JSON.stringify(before),{mode:0o600});
+          fs.appendFileSync(process.env.GITHUB_ENV,`CLOUDFLARE_API_TOKEN=${(process.env.CLOUDFLARE_API_TOKEN||'').replace(/[\u2028\u2029\r\n]/g,'').trim()}\n`);
+          console.log('Verified existing private extractor and container; no new resources required');
+          JS
       - name: Validate production bundle
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --dry-run --config wrangler.production.jsonc
-
-      - name: Deploy private production extractor
+      - name: Deploy reviewed image to existing private production extractor
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --config wrangler.production.jsonc --keep-vars
-
-      - name: Record deployment boundary
+      - name: Verify unchanged bindings and capacity; record image/version receipt
         run: |
-          echo "mmd-slip-extractor deployed as Cloudflare-only production service." >> "$GITHUB_STEP_SUMMARY"
-          echo "workers.dev: disabled; custom routes: none; consumers: private service bindings only." >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
+          const before=JSON.parse(fs.readFileSync(api.file,'utf8')),after=await api.snapshot();
+          const bindings=x=>[...x.settings.bindings].sort((a,b)=>a.name.localeCompare(b.name));
+          if(api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id)throw Error('Private production boundary changed');
+          const withoutImage=x=>({...x.app.configuration,image:'IMAGE'});
+          if(api.canonical(withoutImage(before))!==api.canonical(withoutImage(after)))throw Error('Container configuration changed beyond image');
+          const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
+          if(active?.versions?.length!==1||active.versions[0].percentage!==100)throw Error('Expected one active extractor version');
+          const receipt=`Extractor release source: ${process.env.EXTRACTOR_RELEASE_SHA}\nActive Worker version: ${active.versions[0].version_id}\nContainer image: ${after.app.configuration.image}\nExisting DO/container application, bindings, secrets and private access preserved.\nNo customer evidence or payment operations in deployment smoke.\n`;
+          console.log(receipt);fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,receipt);
+          JS
+      - name: Remove private preflight files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/extractor-before.json" "$RUNNER_TEMP/extractor-boundary.mjs"
