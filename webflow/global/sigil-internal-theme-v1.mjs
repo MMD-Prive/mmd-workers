@@ -47,6 +47,21 @@ html[data-sigil-internal-theme="silver-orange-v1"] :is(button,input,select,texta
 html[data-sigil-internal-theme="silver-orange-v1"] button:disabled :where(*){color:inherit!important;-webkit-text-fill-color:currentColor!important}
 html[data-sigil-internal-theme="silver-orange-v1"] :is(.mmdop,#mmd-review,.c360) :is(.muted,.hint,.meta,small){color:#545c66!important;-webkit-text-fill-color:#545c66!important}
 
+/* Model Link keeps every expanded review surface readable under silver tokens. */
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page{--ok:#286442;--danger:#a12535;--blue:#245e88;--burg:#89334f;background:#e5e7eb!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(.origin-section,.pill,.badge,.folder-tree,.candidate,.avatar,.empty,.notice){background:#f7f8fa!important;color:#545c66!important;border-color:#c7ccd2!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(.card,.tree-lane,.folder-children,.claim-workflow,.mini,.back){border-color:#c7ccd2!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(.category-btn,.lane-btn,.folder-pick,button.secondary){background:#edf0f3!important;color:#272b30!important;border:1px solid #c7ccd2!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(button:not(.secondary):not(.category-btn):not(.lane-btn):not(.folder-pick),.category-btn.active,.lane-btn.active,.folder-pick.active){background:#b9470d!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border-color:#b9470d!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(button.secondary){background:#edf0f3!important;color:#272b30!important;-webkit-text-fill-color:#272b30!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page button:disabled{opacity:1!important;background:#edf0f3!important;color:#545c66!important;-webkit-text-fill-color:#545c66!important;border:1px solid #c7ccd2!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(.status,.eyebrow,.origin-count,.claim-workflow>summary,.origin-section>summary:after,.claim-workflow>summary:after,.avatar .initial,.mini.drive){color:#a93e09!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(.notice.ok,.verified,.mini.airtable){color:#286442!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page .notice.err{color:#a12535!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page .mini.public{color:#245e88!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page .mini.private{color:#89334f!important}
+html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(button,a,input,summary):focus-visible{outline:3px solid #b9470d!important;outline-offset:3px}
+
 ${DASHBOARD_POLISH_CSS}
 `;
 

@@ -12,6 +12,8 @@ on:
       - "admin-worker/src/model-liff-manual-review-worker.js"
       - "admin-worker/src/model-liff-worker-pre-manual-review.js"
       - "admin-worker/model-line-link-review.test.mjs"
+      - "webflow/global/sigil-internal-theme-v1.mjs"
+      - "webflow/global/sigil-internal-theme-v1.test.mjs"
       - ".github/workflows/model-line-link-review-ci.yml"
   workflow_dispatch:
 
@@ -35,6 +37,6 @@ jobs:
           node --check admin-worker/src/admin-model-line-link-worker.js
           node --check admin-worker/src/model-liff-manual-review-worker.js
       - name: Contract tests
-        run: node --test admin-worker/model-line-link-review.test.mjs admin-worker/model-dashboard-policy.test.mjs
+        run: node --test admin-worker/model-line-link-review.test.mjs admin-worker/model-dashboard-policy.test.mjs webflow/global/sigil-internal-theme-v1.test.mjs
       - name: Admin Worker dry run
         run: npx wrangler deploy --dry-run --config admin-worker/wrangler.toml

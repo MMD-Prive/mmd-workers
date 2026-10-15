@@ -41,3 +41,20 @@ test('a pinned loader upgrades an existing Worker style instead of leaving stale
   installInternalSilverTheme(doc,{pathname:'/internal/admin/jobs/create-job'});
   assert.doesNotMatch(style.textContent, /#adm27/);
 });
+
+test('Model Link decoration keeps scoped typography, font policy and review behavior intact', async () => {
+  const { renderModelLineLinkPageWithAvatar } = await import('../../admin-worker/src/model-line-avatar-review.js');
+  const original = renderModelLineLinkPageWithAvatar();
+  const before = await original.clone().text();
+  const r = await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/model-link'), original);
+  const after = await r.text();
+  assert.match(after, /body class="model-line-link-page"/);
+  assert.match(after, /font-family:"LINE Seed Sans TH","Noto Sans Thai"/);
+  for (const weight of [400, 700, 800]) assert.match(after, new RegExp('font-weight:' + weight + ';font-display:swap;src:url'));
+  assert.match(r.headers.get('content-security-policy'), /font-src https:\/\/cdn\.prod\.website-files\.com;/);
+  assert.equal(r.headers.get('cache-control'), 'no-store, private');
+  assert.equal(r.headers.get('x-frame-options'), 'DENY');
+  const scripts = text => [...text.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+  assert.deepEqual(scripts(after), scripts(before), 'theme must preserve the owner review script');
+  assert.match(after, /\.model-line-link-page :is\(\.origin-section,\.pill,\.badge,\.folder-tree,\.candidate/);
+});
