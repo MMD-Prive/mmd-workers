@@ -24,6 +24,8 @@ jobs:
       NO_COLOR: "1"
       EXTRACTOR_RELEASE_SHA: 1f477f56fba7a7f438ec74e1965ea82056b36024
       EXTRACTOR_REVIEW_BASE_SHA: 64bde2654fb4eb149eccc082e7231670875cb92c
+      EXTRACTOR_VERIFY_IMAGE: registry.cloudflare.com/b176eda1172b741fd2e58904cc9d77c5/mmd-slip-extractor-slipextractorcontainer@sha256:a03b1f298a4cb355f1f209266d5a823da4564512d0bcc67e1e5d0e4405f940d9
+      EXTRACTOR_VERIFY_VERSION: d5f29855-c0c3-45aa-aa77-bc7c208364e5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +61,7 @@ jobs:
           node --check services/mmd-slip-extractor/cloudflare/worker.mjs
           node --check services/mmd-slip-extractor/cloudflare/container-server.mjs
       - name: Verify existing private production resources before upload
+        id: preflight
         run: |
           set -euo pipefail
           umask 077
@@ -102,6 +105,14 @@ jobs:
           if(config.name!=='mmd-slip-extractor'||config.workers_dev!==false||config.preview_urls!==false||config.routes?.length!==0||config.vars?.MMD_RUNTIME_SCOPE!=='production')throw Error('Private production boundary mismatch');
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
           const before=await api.snapshot();fs.writeFileSync(api.file,JSON.stringify(before),{mode:0o600});
+          // This source/image was deployed successfully in run 38680910746.
+          // Finish its receipt without uploading or redeploying the same runtime.
+          const verifyImage=process.env.EXTRACTOR_VERIFY_IMAGE||'';
+          if(verifyImage){
+            const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
+            if(before.app.configuration.image!==verifyImage||active?.versions?.length!==1||active.versions[0].percentage!==100||active.versions[0].version_id!==process.env.EXTRACTOR_VERIFY_VERSION)throw Error('Reviewed image/version moved; verify-only release must not redeploy');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`verify_only=${!!verifyImage}\n`);
           config.containers[0].max_instances=before.app.max_instances;
           config.containers[0].instance_type=before.instanceType;
           fs.writeFileSync('services/mmd-slip-extractor/cloudflare/.wrangler-existing-production.json',JSON.stringify(config),{mode:0o600});
@@ -110,9 +121,11 @@ jobs:
           console.log('Verified existing private extractor and container; no new resources required');
           JS
       - name: Validate production bundle
+        if: steps.preflight.outputs.verify_only != 'true'
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --dry-run --config .wrangler-existing-production.json
       - name: Deploy reviewed image to existing private production extractor
+        if: steps.preflight.outputs.verify_only != 'true'
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --config .wrangler-existing-production.json --keep-vars
       - name: Verify unchanged bindings and capacity; record image/version receipt
@@ -123,10 +136,17 @@ jobs:
           const before=JSON.parse(fs.readFileSync(api.file,'utf8')),after=await api.snapshot();
           const bindings=x=>[...x.settings.bindings].sort((a,b)=>a.name.localeCompare(b.name));
           if(api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id||before.app.max_instances!==after.app.max_instances)throw Error('Private production boundary changed');
-          const withoutImage=x=>({...x.app.configuration,image:'IMAGE'});
-          if(api.canonical(withoutImage(before))!==api.canonical(withoutImage(after)))throw Error('Container configuration changed beyond image');
+          const withoutImage=x=>{
+            const c={...x.app.configuration,image:'IMAGE',instance_type:x.instanceType};
+            // Same canonicalization as official Wrangler cleanForInstanceType:
+            // CPU/RAM/disk values may be expanded or represented by their preset.
+            for(const key of ['vcpu','memory','memory_mib','disk'])delete c[key];
+            return c;
+          };
+          if(api.canonical(withoutImage(before))!==api.canonical(withoutImage(after)))throw Error('Container configuration changed beyond image: '+Object.keys({...withoutImage(before),...withoutImage(after)}).filter(k=>api.canonical(withoutImage(before)[k])!==api.canonical(withoutImage(after)[k])).join(','));
           const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
           if(active?.versions?.length!==1||active.versions[0].percentage!==100)throw Error('Expected one active extractor version');
+          if(process.env.EXTRACTOR_VERIFY_IMAGE&&(after.app.configuration.image!==process.env.EXTRACTOR_VERIFY_IMAGE||active.versions[0].version_id!==process.env.EXTRACTOR_VERIFY_VERSION))throw Error('Reviewed deployment moved during verification');
           const receipt=`Extractor release source: ${process.env.EXTRACTOR_RELEASE_SHA}\nActive Worker version: ${active.versions[0].version_id}\nContainer image: ${after.app.configuration.image}\nExisting DO/container application, bindings, secrets and private access preserved.\nNo customer evidence or payment operations in deployment smoke.\n`;
           console.log(receipt);fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,receipt);
           JS
