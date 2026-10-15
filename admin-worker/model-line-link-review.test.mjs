@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import {
   MODEL_IDENTITY_FIRST_POLICY,
   normalizeLinePictureUrl,
@@ -260,4 +261,33 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /button:focus-visible/);
   assert.match(html, /@media\(max-width:700px\).*white-space:normal/);
   assert.doesNotMatch(html, /notice\('เชื่อมไม่สำเร็จ: '\+\(e\.message/);
+});
+
+
+test("mobile result presentation hides opaque lookup keys and keeps escaped paths in closed details", async () => {
+  const html = await renderModelLineLinkPageWithAvatar().text();
+  const renderer = html.split("\n").filter(line => /^(const esc=|function (candidateHtml|candidateStatus|laneBadges)\()/.test(line)).join("\n");
+  const render = runInNewContext(renderer + "\ncandidateHtml");
+  const result = render({source:"drive", working_name:"Model ทดสอบ", model_lookup_key:"private:drive:opaque-key", drive_folder_id:"fixture-folder", folder_path:"Private / <Model> & Review", lanes:["private"]});
+  assert.doesNotMatch(result, /private:drive:opaque-key/);
+  assert.match(result, /class="meta candidate-status"/);
+  assert.match(result, /<details class="candidate-folder-details"><summary>รายละเอียดโฟลเดอร์<\/summary>/);
+  assert.doesNotMatch(result, /candidate-folder-details" open/);
+  assert.match(result, /Private \/ &lt;Model&gt; &amp; Review/);
+  assert.match(result, /data-action="materialize-model" data-folder-id="fixture-folder"/);
+  const withoutPath = render({source:"drive", drive_folder_id:"fixture-folder", model_lookup_key:"private:drive:opaque-key"});
+  assert.doesNotMatch(withoutPath.replace(/<[^>]*>/g, ""), /fixture-folder|private:drive:/);
+});
+
+test("compact results preserve existing bind, recovery, materialize and disabled action contracts", async () => {
+  const html = await renderModelLineLinkPageWithAvatar().text();
+  const renderer = html.split("\n").filter(line => /^(const esc=|function (candidateHtml|candidateStatus|laneBadges)\()/.test(line)).join("\n");
+  const render = runInNewContext(renderer + "\ncandidateHtml");
+  for (const [item, expected] of [
+    [{source:"airtable",active:true,status:"active",model_record_id:"recFixture",drive_folder_id:"folder",model_lookup_key:"EMs01"}, '<button type="button" data-action="bind-model" data-model-id="recFixture" >เชื่อม LINE</button>'],
+    [{source:"airtable",active:false,model_record_id:"recPending"}, '<button type="button" data-action="bind-model" data-model-id="recPending" disabled>ยังไม่พร้อม</button>'],
+    [{source:"drive",drive_folder_id:"folder"}, '<button class="action-drive" type="button" data-action="materialize-model" data-folder-id="folder">สร้าง Model + เชื่อม LINE</button>'],
+    [{source:"drive",drive_folder_id:"folder",can_recover_from_drive:true}, '<button class="action-drive" type="button" data-action="materialize-model" data-recovery="1" data-folder-id="folder">ตรวจ Drive + เชื่อม LINE</button>'],
+  ]) assert.ok(render(item).includes(expected));
+  assert.match(render({source:"airtable",model_lookup_key:"EMs01"}), /EMs01/);
 });
