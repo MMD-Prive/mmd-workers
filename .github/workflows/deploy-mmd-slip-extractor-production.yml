@@ -86,8 +86,13 @@ jobs:
             const matches=apps.filter(a=>a.durable_objects?.namespace_id===binding.namespace_id);
             if(matches.length!==1)throw Error('Expected one existing production container application');
             const app=matches[0];
-            if(!Number.isInteger(app.max_instances)||app.max_instances<1||!['lite','basic','standard-1','standard-2','standard-3','standard-4'].includes(app.configuration?.instance_type))throw Error('Existing container capacity unavailable: '+JSON.stringify({max_instances:app.max_instances??null,instance_type:app.configuration?.instance_type??null,configuration_keys:Object.keys(app.configuration||{})}));
-            return {settings,subdomain,app};
+            // Wrangler 4.124.0 inferInstanceType: the API may return expanded resources
+            // instead of an instance_type name. Match all three values exactly.
+            const presets={lite:[0.0625,256,2000],basic:[0.25,1024,4000],'standard-1':[0.5,4096,8000],'standard-2':[1,6144,12000],'standard-3':[2,8192,16000],'standard-4':[4,12288,20000]};
+            const c=app.configuration||{};
+            const instanceType=c.instance_type||Object.keys(presets).find(k=>{const [cpu,memory,disk]=presets[k];return c.vcpu===cpu&&c.memory_mib===memory&&c.disk?.size_mb===disk});
+            if(!Number.isInteger(app.max_instances)||app.max_instances<1||!Object.hasOwn(presets,instanceType||''))throw Error('Existing container capacity unavailable: '+JSON.stringify({max_instances:app.max_instances??null,instance_type:c.instance_type??null,vcpu:c.vcpu??null,memory_mib:c.memory_mib??null,disk_mb:c.disk?.size_mb??null}));
+            return {settings,subdomain,app,instanceType};
           }
           export const file=`${process.env.RUNNER_TEMP}/extractor-before.json`;
           JS
@@ -98,9 +103,9 @@ jobs:
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
           const before=await api.snapshot();fs.writeFileSync(api.file,JSON.stringify(before),{mode:0o600});
           config.containers[0].max_instances=before.app.max_instances;
-          config.containers[0].instance_type=before.app.configuration.instance_type;
+          config.containers[0].instance_type=before.instanceType;
           fs.writeFileSync('services/mmd-slip-extractor/cloudflare/.wrangler-existing-production.json',JSON.stringify(config),{mode:0o600});
-          console.log('Preserving existing container capacity: '+JSON.stringify({max_instances:before.app.max_instances,instance_type:before.app.configuration.instance_type}));
+          console.log('Preserving existing container capacity: '+JSON.stringify({max_instances:before.app.max_instances,instance_type:before.instanceType}));
           fs.appendFileSync(process.env.GITHUB_ENV,`CLOUDFLARE_API_TOKEN=${(process.env.CLOUDFLARE_API_TOKEN||'').replace(/[\u2028\u2029\r\n]/g,'').trim()}\n`);
           console.log('Verified existing private extractor and container; no new resources required');
           JS
