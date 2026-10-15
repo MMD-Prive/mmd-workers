@@ -213,6 +213,7 @@
       renderBlocked("ระบบยังตรวจ First Direct Job Gate ไม่ครบ กรุณาเปิดงานผ่าน LINE อีกครั้ง", clean(body.error) || `http_${response.status}`);
       throw new Error(clean(body.error) || "direct_job_gate_unavailable");
     }
+    if (typeof CustomEvent === "function" && window.dispatchEvent) window.dispatchEvent(new CustomEvent("mmd:model-job-brand", { detail:body }));
     if (body.applies !== true || body.required !== true) return true;
     renderGate(body, token);
     return false;
