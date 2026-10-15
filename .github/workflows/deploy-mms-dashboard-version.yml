@@ -24,12 +24,12 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
-      MMS_RELEASE_SHA: dd7faf1a4807c1ee6245971de944576354d07401
-      MMS_BASELINE_SHA: 9fe0bd88ac74f697601997c678aeabdaa556d044
+      MMS_RELEASE_SHA: c60016f81011c706869e2093e2c7e58190020eca
+      MMS_BASELINE_SHA: dd7faf1a4807c1ee6245971de944576354d07401
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: dd7faf1a4807c1ee6245971de944576354d07401
+          ref: c60016f81011c706869e2093e2c7e58190020eca
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
@@ -45,10 +45,10 @@ jobs:
           actual=set(Path(os.environ['RUNNER_TEMP'],'mms-release-files.txt').read_text().splitlines())
           # Exact reviewed changes; model and confirmation presentation files in
           # repository history do not release any additional Worker.
-          expected={'.github/workflows/deploy-mms-dashboard-version.yml','admin-worker/admin-slip-upload.test.mjs','admin-worker/src/admin-login-hero-worker-core.js','admin-worker/src/historical-slip-backfill-runtime.js','admin-worker/src/payment-review-runtime.js','admin-worker/src/studio-telegram-worker.js','model-dashboard-presentation-worker/src/model-liff-digital-shell.js','webflow/sigil/confirm/model-work-navigation-v1.js','webflow/sigil/confirm/model-work-navigation-v1.test.mjs'}
+          expected={'.github/workflows/deploy-mms-dashboard-version.yml','admin-worker/src/payment-review-runtime.js','admin-worker/src/payment-evidence-correction.js','admin-worker/payment-evidence-correction.test.mjs'}
           assert actual == expected, 'Pinned source contains unexpected changes'
           PY
-          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-approve-ui.test.mjs mms-admin-mobile-bundle.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs admin-slip-upload.test.mjs historical-slip-backfill-route.test.mjs historical-slip-backfill-private-evidence.test.mjs historical-slip-backfill-reprocess.test.mjs historical-slip-backfill-queue-order.test.mjs historical-slip-backfill-handoff-probe.test.mjs payment-inbox-admin-session.test.mjs payment-review-auto-context.test.mjs payment-review-owner-context.test.mjs
+          node --experimental-global-webcrypto --test ../scripts/deploy-uploaded-worker-version.test.mjs ../mms-worker/test/workspace-admin.test.mjs mms-admin-workspace.test.mjs mms-admin-approve-ui.test.mjs mms-admin-mobile-bundle.test.mjs mms-admin-my-mms-access.test.mjs mms-admin-inline-syntax.test.mjs admin-slip-upload.test.mjs historical-slip-backfill-route.test.mjs historical-slip-backfill-private-evidence.test.mjs historical-slip-backfill-reprocess.test.mjs historical-slip-backfill-queue-order.test.mjs historical-slip-backfill-handoff-probe.test.mjs payment-inbox-admin-session.test.mjs payment-review-auto-context.test.mjs payment-review-owner-context.test.mjs payment-evidence-correction.test.mjs payment-review-simple.test.mjs
       - name: Read active version and prepare existing bindings only
         id: preflight
         run: |
