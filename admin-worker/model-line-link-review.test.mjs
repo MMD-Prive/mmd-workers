@@ -291,3 +291,19 @@ test("compact results preserve existing bind, recovery, materialize and disabled
   ]) assert.ok(render(item).includes(expected));
   assert.match(render({source:"airtable",model_lookup_key:"EMs01"}), /EMs01/);
 });
+
+
+test("folder tree starts collapsed on mobile and open on desktop without changing claim identity", async () => {
+  const html = await renderModelLineLinkPageWithAvatar().text();
+  const renderer = html.split("\n").filter(line => /^(const esc=|function (claimCard|laneTabs|originGroupLabel|compactDate|claimLabel)\()/.test(line)).join("\n");
+  const item = {claim_id:"fixture-claim",line_display_name:"Model ทดสอบ",selected_session_id:"sess_fixture"};
+  for (const mobile of [true, false]) {
+    const render = runInNewContext(renderer + "\nclaimCard", {matchMedia:()=>({matches:mobile}), avatar:()=>""});
+    const result = render(item);
+    assert.match(result, mobile ? /<details class="folder-tree-disclosure">/ : /<details class="folder-tree-disclosure" open>/);
+    assert.match(result, /<summary>ดูโฟลเดอร์ที่พบ<\/summary><div class="folder-tree"/);
+    assert.match(result, /data-claim="fixture-claim" data-session="sess_fixture"/);
+    assert.match(result, /<div class="results" aria-live="polite">/);
+    assert.match(result, /data-action="search-model"/);
+  }
+});
