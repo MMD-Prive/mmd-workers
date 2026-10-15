@@ -479,7 +479,9 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.match(html, /2010864854-N34SgCqq/);
   assert.doesNotMatch(html, /liff\.login/);
   assert.doesNotMatch(html, /redirectUri/);
-  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
+  assert.doesNotMatch(html, /location\.reload\s*\(/);
+  assert.match(html, /window\.location\.replace\(dashboard\.pathname\+dashboard\.search\)/);
+  assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.doesNotMatch(html, /tanstack|react/i);
   assert.match(html, /data-mmd-app-digital="v1"/);
   assert.match(html, /DIGITAL MODEL WORKSPACE/);
@@ -530,7 +532,9 @@ test("installed PWA uses external-browser LIFF bootstrap instead of sending its 
   assert.match(html, /2010864854-N34SgCqq/);
   assert.doesNotMatch(html, /liff\.login/);
   assert.doesNotMatch(html, /redirectUri/);
-  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
+  assert.doesNotMatch(html, /location\.reload\s*\(/);
+  assert.match(html, /window\.location\.replace\(dashboard\.pathname\+dashboard\.search\)/);
+  assert.match(html, /\/v1\/model\/liff\/exchange/);
 
   const worker = (await import("./src/index.js")).default;
   const response = await worker.fetch(request);
