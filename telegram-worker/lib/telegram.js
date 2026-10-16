@@ -163,6 +163,9 @@ export async function sendTelegramMessage(payload, env) {
 
   if (payload.disable_notification === true) body.disable_notification = true;
 
+  const replyToMessageId = int(payload.reply_to_message_id);
+  if (replyToMessageId > 0) body.reply_to_message_id = replyToMessageId;
+
   const threadId = int(payload.message_thread_id || payload.thread_id);
   if (threadId) body.message_thread_id = threadId;
   if (payload.reply_markup) body.reply_markup = payload.reply_markup;

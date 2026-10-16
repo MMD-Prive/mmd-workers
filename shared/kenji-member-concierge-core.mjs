@@ -100,7 +100,7 @@ export function classifyKenjiMemberIntent(input, memberSummary = {}) {
     return { intent: INTENTS.SVIP, confidence: 0.98 };
   }
 
-  if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment proof", "โอนแล้ว", "โอน", "ชำระ", "จ่ายแล้ว", "paid"])) {
+  if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment", "payment proof", "transfer", "โอนแล้ว", "โอน", "ชำระ", "จ่ายแล้ว", "paid"])) {
     return { intent: INTENTS.PAYMENT_SLIP, confidence: 0.96 };
   }
 
