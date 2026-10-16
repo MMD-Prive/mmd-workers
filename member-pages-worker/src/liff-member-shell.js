@@ -306,7 +306,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
     ${config.liffId ? `<a id="signup-line-entry" class="signup-line-entry" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">เปิดใน LINE เพื่อสมัคร</a>` : ""}
     <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
-    <div class="card signup-private"><strong>Standard / Premium / Private Access</strong><p class="signup-note">สนใจ Standard หรือ Premium? เริ่มจากบัญชี LINE นี้ได้ครับ ระบบจะแสดงเฉพาะข้อมูลแพ็กเกจที่ตรวจจาก MMD และสถานะยังต้องรอการตรวจอย่างเป็นทางการ</p><a class="private-link" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">ดู Standard / Premium ใน My MMD</a></div>
+    <div class="card signup-private"><strong>Standard / Premium / Private Access</strong><p class="signup-note">ให้เปอร์ช่วยตรวจตัวเลือกและเงื่อนไข Standard / Premium ก่อนครับ เปิดแชต MMD แล้วพิมพ์ “ขอคุยกับเปอร์ สนใจ Standard / Premium” ขั้นตอนนี้ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์</p><a id="private-review-chat" class="private-link" href="https://lin.ee/xRqsALs" rel="noreferrer">เปิดแชต MMD เพื่อส่งเรื่องให้เปอร์</a></div>
     <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
   </section>
   <nav class="member-nav" aria-label="Member sections">

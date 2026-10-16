@@ -770,10 +770,14 @@ describe("signup offers the basic Member package only", () => {
     assert.ok(!html.includes("Elite%20Card.webp") && !html.includes("Red%20Card.webp"));
   });
 
-  it("keeps the Standard and Premium next step inside the dedicated LIFF", async () => {
+  it("hands Standard and Premium interest to the existing MMD chat without looping or claiming submission", async () => {
     const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
     assert.match(html, /Standard \/ Premium \/ Private Access/);
-    assert.match(html, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&amp;view=signup/);
+    const card = html.match(/<div class="card signup-private">(.*?)<\/div>/s)[1];
+    assert.match(card, /href="https:\/\/lin\.ee\/xRqsALs"/);
+    assert.match(card, /ขอคุยกับเปอร์ สนใจ Standard \/ Premium/);
+    assert.match(card, /ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์/);
+    assert.doesNotMatch(card, /miniapp\.line\.me|ส่งเรื่องแล้ว|ได้รับคำขอแล้ว/);
     assert.doesNotMatch(html, /href="\/sigil\/member\/membership/);
   });
 });
