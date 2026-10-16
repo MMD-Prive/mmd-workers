@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import path from "node:path";
 import test from "node:test";
 
-const source = fs.readFileSync(path.join(import.meta.dirname, "model-console-v3-i18n.js"), "utf8");
+const source = fs.readFileSync(new URL("./model-console-v3-i18n.js", import.meta.url), "utf8");
 
 test("Model Console offers registered Mini App recovery without initializing at a sibling endpoint", () => {
   assert.match(source, /new Set\(\["\/v1\/model\/session\/current","\/v1\/model\/session\/action"\]\)/);
