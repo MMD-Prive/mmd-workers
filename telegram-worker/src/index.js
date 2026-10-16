@@ -2,6 +2,7 @@ import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
 import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
+import { buildKenjiMemberReply, classifyKenjiMemberIntent, INTENTS } from "../../shared/kenji-member-concierge-core.mjs";
 import {
   HYPE_CONVERSATIONAL_UNDERSTANDING_VERSION,
   routeHypeConversationalUnderstandingV2,
@@ -17,6 +18,12 @@ import { buildTelegramRouterHealth, HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA } from ".
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
+const MEMBERSHIP_CHAT_INTENTS = new Set([
+  INTENTS.MEMBERSHIP_PACKAGE,
+  INTENTS.MEMBERSHIP_SIGNUP,
+  INTENTS.MEMBERSHIP_DETAILS,
+  INTENTS.PUBLIC_PACKAGE_UNAVAILABLE,
+]);
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
@@ -729,7 +736,16 @@ async function handleTelegramWebhook(update, env) {
     }, env);
   }
 
+  // Only the new public-information replies opt out of semantic domain routing.
+  // Explicit commands, owner transitions and transaction starts above stay first.
+  const membershipIntent = update.message && message.text
+    && message.chat?.type === "private" && message.from?.is_bot === false
+    && !text.startsWith("/")
+    ? classifyKenjiMemberIntent(text).intent : null;
   const conversationalRoute = routeHypeConversationalUnderstandingV2(text);
+  const membershipChatReply = MEMBERSHIP_CHAT_INTENTS.has(membershipIntent)
+    && (!conversationalRoute.routed || conversationalRoute.command === "membership"
+      || (membershipIntent === INTENTS.PUBLIC_PACKAGE_UNAVAILABLE && conversationalRoute.command === "payment"));
   if (conversationalRoute.ambiguous === true) {
     return handleHypeIntentClarification({ chatId, route: conversationalRoute }, env);
   }
@@ -739,7 +755,7 @@ async function handleTelegramWebhook(update, env) {
   ) {
     return handleHypeIntentClarification({ chatId, route: conversationalRoute }, env);
   }
-  if (conversationalRoute.routed === true && conversationalRoute.command) {
+  if (conversationalRoute.routed === true && conversationalRoute.command && !membershipChatReply) {
     return handleHypeOperatingCommand({
       message,
       chatId,
@@ -756,7 +772,7 @@ async function handleTelegramWebhook(update, env) {
 
   const sharedCapability = detectSharedConciergeCapability(text);
   const sharedCommand = sharedCapabilityToHypeCommand(sharedCapability, text);
-  if (sharedCommand) {
+  if (sharedCommand && (!membershipChatReply || sharedCommand !== "membership")) {
     return handleHypeOperatingCommand({
       message,
       chatId,
@@ -818,6 +834,17 @@ async function handleTelegramWebhook(update, env) {
       contextResult,
       route: contextualRoute,
     }, env);
+  }
+
+  // Pending transaction drafts and contextual follow-ups above retain ownership.
+  if (membershipChatReply) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: escapeHtml(buildKenjiMemberReply(text)),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }, env);
+    return { handled: true, flow: "membership_chat", intent: membershipIntent, telegram };
   }
 
   if (
