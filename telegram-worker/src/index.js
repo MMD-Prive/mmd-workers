@@ -2,6 +2,7 @@ import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
 import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
+import { buildKenjiMemberReply, classifyKenjiMemberIntent, INTENTS } from "../../shared/kenji-member-concierge-core.mjs";
 import {
   HYPE_CONVERSATIONAL_UNDERSTANDING_VERSION,
   routeHypeConversationalUnderstandingV2,
@@ -26,6 +27,12 @@ import { MEMBER_PRESENCE_PATHS, handleMemberPresence } from "./member-presence.j
 const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 const TELEGRAM_WEBHOOK_LOCK_CONFIRMATION = "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1";
+const MEMBERSHIP_CHAT_INTENTS = new Set([
+  INTENTS.MEMBERSHIP_PACKAGE,
+  INTENTS.MEMBERSHIP_SIGNUP,
+  INTENTS.MEMBERSHIP_DETAILS,
+  INTENTS.PUBLIC_PACKAGE_UNAVAILABLE,
+]);
 
 export default {
   async fetch(req, env) {
@@ -673,10 +680,22 @@ async function handleTelegramWebhook(update, env) {
   const chatId = clean(message.chat?.id);
   if (!chatId) return { handled: false, reason: "missing_chat_id" };
 
+  const text = clean(message.text || message.caption || "");
+  const chatType = clean(message.chat?.type).toLowerCase();
+  if ((chatType === "group" || chatType === "supergroup") && isConfiguredPreviewDiscussion(message, env)) {
+    return handlePreviewDiscussionFaq(update, message, chatId, env);
+  }
+  if (
+    update.message
+    && (chatType === "group" || chatType === "supergroup")
+    && extractPreviewDiscussionQuestion(message, text, env)
+  ) {
+    return { handled: false, flow: "preview_discussion_ignored", reason: "discussion_group_not_configured" };
+  }
+
   const joinCleanup = await cleanupConfiguredGroupJoinMessage(message, env);
   if (joinCleanup) return joinCleanup;
 
-  const text = clean(message.text || message.caption || "");
   const startArg = parseStartArg(text);
   if (startArg.toLowerCase() === PREVIEW_START) {
     const telegram = await sendTelegramMessage({
@@ -696,6 +715,11 @@ async function handleTelegramWebhook(update, env) {
 
   if (/^bind_[A-Za-z0-9_-]{20,60}$/.test(startArg)) {
     return handleTelegramIdentityBindStart({ message, chatId, startArg }, env);
+  }
+
+  if (update.message && clean(message.chat?.type).toLowerCase() === "private" && message.from?.is_bot === false) {
+    const faq = await sendMembershipFaqReply({ message, chatId, text }, env);
+    if (faq) return faq;
   }
 
   const handoffTransition = parseHypeOwnerHandoffTransition(text);
@@ -847,6 +871,93 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+function isConfiguredPreviewDiscussion(message, env) {
+  const configured = clean(env.TELEGRAM_PREVIEW_DISCUSSION_CHAT_ID || env.TELEGRAM_MMD_CHAT_GROUP_ID);
+  const channelId = clean(env.TELEGRAM_PREVIEW_CHANNEL_ID);
+  return clean(message?.chat?.type).toLowerCase() === "supergroup"
+    && /^-100\d{6,15}$/.test(configured)
+    && configured !== channelId
+    && clean(message?.chat?.id) === configured;
+}
+
+async function handlePreviewDiscussionFaq(update, message, chatId, env) {
+  if (
+    !update.message
+    || message.from?.is_bot !== false
+    || message.sender_chat
+    || message.is_automatic_forward === true
+    || message.forward_origin
+    || message.forward_from
+    || message.forward_from_chat
+  ) {
+    return { handled: false, flow: "preview_discussion_ignored", reason: "not_a_new_human_message" };
+  }
+
+  const text = clean(message.text || "");
+  const question = extractPreviewDiscussionQuestion(message, text, env);
+  if (!question || isProtectedPreviewFaqQuestion(question)) {
+    return { handled: false, flow: "preview_discussion_ignored", reason: "not_an_approved_faq" };
+  }
+
+  const faq = await sendMembershipFaqReply({ message, chatId, text: question, replyToMessage: true }, env);
+  return faq || { handled: false, flow: "preview_discussion_ignored", reason: "not_an_approved_faq" };
+}
+
+function extractPreviewDiscussionQuestion(message, text, env) {
+  const username = botUsername(env).replace(/^@/, "").toLowerCase();
+  if (!username || !text) return "";
+  const entities = Array.isArray(message.entities) ? message.entities : [];
+
+  const addressedCommand = entities.find((entity) => {
+    if (entity.type !== "bot_command" || entity.offset !== 0) return false;
+    const command = text.slice(entity.offset, entity.offset + entity.length);
+    return new RegExp(`^/(?:ask|faq|kenji)@${escapeRegex(username)}$`, "i").test(command);
+  });
+  if (addressedCommand) return text.slice(addressedCommand.length).trim();
+
+  const mention = entities.find((entity) => {
+    if (entity.type === "mention") {
+      const value = text.slice(entity.offset, entity.offset + entity.length);
+      return value.toLowerCase() === `@${username}`;
+    }
+    return entity.type === "text_mention"
+      && entity.user?.is_bot === true
+      && clean(entity.user?.username).toLowerCase() === username;
+  });
+  if (mention) {
+    return `${text.slice(0, mention.offset)} ${text.slice(mention.offset + mention.length)}`.trim();
+  }
+
+  const repliedToBot = message.reply_to_message?.from?.is_bot === true
+    && clean(message.reply_to_message.from.username).toLowerCase() === username;
+  return repliedToBot ? text : "";
+}
+
+function isProtectedPreviewFaqQuestion(text) {
+  return /(?:สถานะ|status|active|inactive|ต่ออายุ|renew(?:al)?|หมดอายุ|payment|paid|slip|สลิป|ชำระ|โอน|จอง|booking|\bbook\b|คิว|นัด|available|availability|อนุมัติ|approve|approved|ยืนยัน|confirm|verified|verification|eligible|eligibility|grant|granted|access|entitlement|สิทธิ์เข้า|ได้รับสิทธิ|ผ่านไหม|ผ่านหรือยัง|แต้ม|points|คะแนน|vip|svip|black\s*card)/i.test(text);
+}
+
+async function sendMembershipFaqReply({ message, chatId, text, replyToMessage = false }, env) {
+  const { intent } = classifyKenjiMemberIntent(text);
+  if (!MEMBERSHIP_CHAT_INTENTS.has(intent)) return null;
+
+  const payload = {
+    chat_id: chatId,
+    text: escapeHtml(buildKenjiMemberReply(text)),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  if (replyToMessage && Number.isInteger(message.message_id)) {
+    payload.reply_to_message_id = message.message_id;
+  }
+  const telegram = await sendTelegramMessage(payload, env);
+  return { handled: true, flow: "membership_chat", intent, telegram };
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function handlePartnerJobConfirmCallback(callback, env) {

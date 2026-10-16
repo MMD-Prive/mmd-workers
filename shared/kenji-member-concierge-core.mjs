@@ -1,3 +1,5 @@
+import { MEMBERSHIP_WELCOME_COPY, classifyMembershipWelcomeIntent } from "./membership-welcome-copy.mjs";
+
 const HIGH_POINTS_THRESHOLD = 1200;
 
 const INTENTS = Object.freeze({
@@ -10,6 +12,10 @@ const INTENTS = Object.freeze({
   SVIP: "svip",
   BLACK_CARD: "black_card",
   MEMBERSHIP_RENEWAL: "membership_renewal",
+  MEMBERSHIP_PACKAGE: "membership_package",
+  MEMBERSHIP_SIGNUP: "membership_signup",
+  MEMBERSHIP_DETAILS: "membership_details",
+  PUBLIC_PACKAGE_UNAVAILABLE: "public_package_unavailable",
   PRICING_RATE: "pricing_rate",
   MODEL_AVAILABILITY: "model_availability",
   TALK_TO_PER_AI: "talk_to_per_ai",
@@ -81,6 +87,8 @@ export function classifyKenjiMemberIntent(input, memberSummary = {}) {
 
   if (!text) return { intent: INTENTS.EMPTY, confidence: 1 };
 
+  const membershipIntent = classifyMembershipWelcomeIntent(text);
+
   if (includesAny(text, ["black card", "blackcard", "บัตรดำ"])) {
     return { intent: INTENTS.BLACK_CARD, confidence: 0.98 };
   }
@@ -89,13 +97,19 @@ export function classifyKenjiMemberIntent(input, memberSummary = {}) {
     return { intent: INTENTS.SVIP, confidence: 0.98 };
   }
 
-  if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment proof", "โอนแล้ว", "โอน", "ชำระ", "จ่ายแล้ว", "paid"])) {
+  if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment", "payment proof", "transfer", "โอนแล้ว", "โอน", "ชำระ", "จ่ายแล้ว", "paid"])) {
     return { intent: INTENTS.PAYMENT_SLIP, confidence: 0.96 };
   }
 
   if (includesAny(text, ["จอง", "booking", "book", "reserve", "appointment", "session", "คิว", "นัด", "ว่าง", "available", "availability", "เช็กคิว", "เช็คคิว"])) {
     return { intent: INTENTS.BOOKING, confidence: 0.95 };
   }
+
+  if (membershipIntent === INTENTS.PUBLIC_PACKAGE_UNAVAILABLE) {
+    return { intent: membershipIntent, confidence: 0.99 };
+  }
+
+  if (membershipIntent) return { intent: membershipIntent, confidence: 0.94 };
 
   if (includesAny(text, ["สมาชิก", "ต่ออายุ", "renew", "renewal", "membership", "member", "status hub", "หมดอายุ"])) {
     return { intent: INTENTS.MEMBERSHIP_RENEWAL, confidence: 0.92 };
@@ -155,12 +169,18 @@ export function buildKenjiMemberReply(input, memberSummary = {}, options = {}) {
   const lineOfficialChatUrl = toText(options.lineOfficialChatUrl);
 
   switch (classified.intent) {
+    case INTENTS.PUBLIC_PACKAGE_UNAVAILABLE:
+      return MEMBERSHIP_WELCOME_COPY.publicUnavailable;
     case INTENTS.EMPTY:
-      return `สวัสดีครับ ${name} เลือกหัวข้อจากเมนูได้เลยครับ ผมจะพาไปยังขั้นตอนที่ตรงกับเรื่องที่ต้องการครับ`;
     case INTENTS.GREETING:
-      return `สวัสดีครับ ${name} วันนี้ต้องการให้ช่วยเรื่องไหนครับ เลือกจากเมนูด้านล่างได้เลยครับ`;
     case INTENTS.TALK_TO_PER_AI:
-      return `ได้ครับ ${name} ผม Kenji ผู้ช่วยสมาชิกของ MMD Privé ครับ บอกเรื่องที่ต้องการได้เลยครับ ผมจะช่วยจัดเข้าขั้นตอนที่ถูกต้องให้ครับ`;
+      return MEMBERSHIP_WELCOME_COPY.welcome;
+    case INTENTS.MEMBERSHIP_PACKAGE:
+      return MEMBERSHIP_WELCOME_COPY.package;
+    case INTENTS.MEMBERSHIP_SIGNUP:
+      return MEMBERSHIP_WELCOME_COPY.signup;
+    case INTENTS.MEMBERSHIP_DETAILS:
+      return MEMBERSHIP_WELCOME_COPY.details;
     case INTENTS.BOOKING:
       return `ได้ครับ ${name} ถ้าต้องการจอง ส่งบริการหรือนายแบบที่สนใจ พร้อมวัน เวลา และโซนมาได้เลยครับ ผมจะรวบรวมบรีฟให้ตรวจความพร้อมก่อนยืนยันครับ${statusLine}`;
     case INTENTS.MODEL_AVAILABILITY:
