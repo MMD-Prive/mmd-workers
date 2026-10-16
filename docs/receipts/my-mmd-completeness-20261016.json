@@ -1,0 +1,55 @@
+{
+  "checked_at": "2026-10-16",
+  "coverage": {
+    "Members": {
+      "read": 22,
+      "total": 22,
+      "complete": true
+    },
+    "Clients": {
+      "read": 426,
+      "total": 426,
+      "complete": true
+    },
+    "MMD — Member Entitlements": {
+      "read": 15,
+      "total": 15,
+      "complete": true
+    },
+    "MMD — Points Ledger": {
+      "read": 12,
+      "total": 12,
+      "complete": true
+    },
+    "MMD — Auth Identities": {
+      "read": 1,
+      "total": 1,
+      "complete": true
+    }
+  },
+  "member_classification": {
+    "structurally_complete": 8,
+    "missing_data": 2,
+    "identity_review": 12
+  },
+  "member_issue_counts": {
+    "missing_line_identity": 8,
+    "missing_membership_status": 8,
+    "no_entitlement_record": 9,
+    "canonical_client_link_not_single": 6,
+    "missing_member_id": 2,
+    "missing_profile_expiry": 5,
+    "missing_display_name": 2
+  },
+  "clients": {
+    "total": 426,
+    "missing_line": 33,
+    "duplicate_line_groups": 2,
+    "without_member_link": 410
+  },
+  "ledger": {
+    "total": 12,
+    "without_member_id": 5
+  },
+  "note": "Structural inspection only. Complete does not certify identity ownership, entitlement validity, names, balance, or historical evidence."
+}

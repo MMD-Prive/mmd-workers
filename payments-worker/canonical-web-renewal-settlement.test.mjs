@@ -18,8 +18,8 @@ function harness() {
         amount_thb: 1000,
         paid_at: "2026-09-13T04:30:00.000Z",
         package_code: "standard",
-        "Payment Status": "pending",
-        "Verification Status": "pending",
+        "Payment Status": "paid",
+        "Verification Status": "verified",
       },
     }],
     proofs: [{
@@ -27,7 +27,7 @@ function harness() {
       fields: {
         proof_id: "webproof_123456",
         payment_ref: "PAY-WEB-RENEW-1",
-        status: "submitted",
+        status: "verified",
         note: "schema=mmd_web_payment_proof_v1",
       },
     }],
@@ -153,7 +153,7 @@ function json(value, status) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
-test("signed Standard renewal accepts slip money truth and materializes one entitlement", async () => {
+test("already verified Standard renewal materializes one entitlement", async () => {
   const h = harness();
   const response = await reconcileCanonicalWebRenewalProof(renewalRequest(), slipResponse(), h.env);
   const body = await response.json();
@@ -162,7 +162,7 @@ test("signed Standard renewal accepts slip money truth and materializes one enti
   assert.equal(body.verification_status, "verified");
   assert.equal(body.entitlement_materialized, true);
   assert.equal(body.manual_membership_review_required, false);
-  assert.equal(body.renewal_settlement.owner_policy, "membership_slip_simple_accept_v1");
+  assert.equal(body.renewal_settlement.owner_policy, "membership_verified_before_entitlement_v2");
   assert.equal(body.renewal_settlement.package_code, "standard");
 
   assert.equal(h.tables.payments[0].fields["Payment Status"], "paid");
@@ -186,7 +186,7 @@ test("amount/package conflict stays pending and never materializes", async () =>
   assert.equal(body.entitlement_materialized, false);
   assert.equal(body.manual_membership_review_required, true);
   assert.equal(body.renewal_settlement.reason, "renewal_payment_context_not_safe");
-  assert.equal(h.tables.payments[0].fields["Payment Status"], "pending");
+  assert.equal(h.tables.payments[0].fields["Payment Status"], "paid");
   assert.equal(h.tables.entitlements.filter((row) => String(row.fields?.source_ref || "").startsWith("payment:")).length, 0);
 });
 
@@ -241,3 +241,12 @@ test("expired Standard uses fixed1000 plus180days on purchased base year",async(
  const h=harness();h.tables.entitlements[0].fields.expire_at="2026-01-01T00:00:00Z";h.tables.packages[0].fields.renew_price=799;
  const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();assert.equal(body.entitlement_materialized,true);assert.equal(body.membership_expire_at,"2028-03-11T04:30:00.000Z");assert.equal(body.membership_term,"1_year_plus_180_days");
 });
+
+for (const paymentState of ["pending", "rejected"]) {
+ test(`unverified ${paymentState} slip cannot change money, expiry or entitlement`, async () => {
+  const h=harness();h.tables.payments[0].fields["Payment Status"]=paymentState;h.tables.payments[0].fields["Verification Status"]="pending";h.tables.proofs[0].fields.status="submitted";
+  const before=JSON.stringify(h.tables);
+  const body=await(await reconcileCanonicalWebRenewalProof(renewalRequest(),slipResponse(),h.env)).json();
+  assert.equal(body.entitlement_materialized,false);assert.equal(body.payment_status,paymentState==="rejected"?"rejected":"pending_review");assert.equal(body.renewal_settlement.reason,"canonical_payment_verification_required");assert.equal(JSON.stringify(h.tables),before);
+ });
+}
