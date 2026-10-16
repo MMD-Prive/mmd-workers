@@ -149,6 +149,19 @@ jobs:
           node --test member-dashboard-chat-worker/test/eligible-recommendation-smoke-policy.test.mjs
           node --experimental-global-webcrypto --test member-pages-worker/private-teaser.test.mjs webflow/profiles/private-teaser-handoff.test.mjs
 
+      - name: Verify Kenji production model-off contract
+        id: kenji_contextual_shadow_smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
+          node --test scripts/kenji-model-off-workflow.test.mjs
+          node --test member-dashboard-chat-worker/test/kenji-membership-sales-conversation.test.mjs
+          node --test member-dashboard-chat-worker/test/kenji-line-contextual-understanding-shadow.test.mjs
+          node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
+
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         working-directory: member-dashboard-chat-worker
@@ -672,19 +685,6 @@ jobs:
             }
           ' "$response"
 
-      - name: Verify Kenji production model-off contract
-        id: kenji_contextual_shadow_smoke
-        if: always() && steps.route_sync.outcome == 'success'
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
-          grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
-          grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
-          node --test member-dashboard-chat-worker/test/kenji-membership-sales-conversation.test.mjs
-          node --test member-dashboard-chat-worker/test/kenji-line-contextual-understanding-shadow.test.mjs
-          node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
-
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
@@ -715,6 +715,8 @@ jobs:
             stopped="cloudflare token verification"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             stopped="tests"
+          elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="Kenji production model-off contract"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
             stopped="versions dry-run"
           elif [ "$UPLOAD_OUTCOME" != "success" ] && [ "$MIGRATION_DEPLOY_OUTCOME" != "success" ]; then
@@ -729,8 +731,6 @@ jobs:
             stopped="production smoke"
           elif [ "$PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME" != "success" ]; then
             stopped="MY MMD Private Teaser Viewer live route acceptance"
-          elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
-            stopped="Kenji production model-off contract"
           else
             stopped="none — live verified"
           fi
@@ -790,7 +790,12 @@ jobs:
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           THERAPIST_UI_SMOKE_OUTCOME: ${{ steps.therapist_ui_smoke.outcome }}
           PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
+          KENJI_MODEL_OFF_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
         run: |
+          if [ "$KENJI_MODEL_OFF_OUTCOME" != "success" ]; then
+            echo "Kenji production model-off contract did not pass" >&2
+            exit 1
+          fi
           if [ "$THERAPIST_UI_SMOKE_OUTCOME" != "success" ]; then
             echo "native MY THERAPIST entrance/callback smoke did not pass" >&2
             exit 1
@@ -806,6 +811,7 @@ jobs:
       - name: Record verified deployment and route receipt
         if: >-
           ${{ !cancelled() &&
+              steps.kenji_contextual_shadow_smoke.outcome == 'success' &&
               ((steps.resolve_version.outcome == 'success' && steps.deploy.outcome == 'success') ||
                steps.migration_deploy.outcome == 'success') &&
               steps.route_sync.outcome == 'success' &&
