@@ -2180,7 +2180,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         const result = await startAndRoute(runtime);
         assert.deepEqual(result.payload, {
           decision: "dashboard",
-          destination: "https://mmdbkk.com/member/dashboard",
+          destination: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview",
           reason_code: `${status}_member`,
         });
         assert.equal(runtime.LIFF_GATEWAY_STORE.reviewCalls.length, 0);
@@ -2192,7 +2192,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       const result = await startAndRoute(runtime);
       assert.deepEqual(result.payload, {
         decision: "renew",
-        destination: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
+        destination: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
         reason_code: "expired_member",
       });
       assert.equal(runtime.LIFF_GATEWAY_STORE.reviewCalls.length, 0);
@@ -2251,7 +2251,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         const result = await startAndRoute(runtime);
         assert.deepEqual(result.payload, {
           decision: "signup",
-          destination: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+          destination: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
           reason_code: "no_member_or_pending_review",
         }, sourceState);
       }
