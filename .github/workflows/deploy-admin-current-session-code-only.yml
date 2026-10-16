@@ -1,0 +1,96 @@
+name: Release current-session code only
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for admin-worker code-only release; no config or business writes'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this exact release'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main SHA approved for release'
+        type: string
+        required: true
+      expected_version:
+        description: 'Active admin-worker version UUID from fresh approved preflight'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Active admin-worker deployment UUID from fresh approved preflight'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-admin-worker-production
+  cancel-in-progress: false
+
+jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify existing reviewer protection (GET only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/admin-production-approval.mjs
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Code-only and current-session contracts (no production credentials)
+        run: |
+          node --test scripts/admin-production-approval.test.mjs scripts/admin-current-session-code-only.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/model-current-session.test.mjs admin-worker/model-session-runtime-v1a.test.mjs
+      - name: Install pinned local bundler
+        run: npm install --global wrangler@4.105.0 --no-audit --no-fund
+      - name: Release exact code; preserve configuration; no retry or migration fallback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/admin-current-session-code-only.mjs --execute-approved
+      - name: Upload sanitized release receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-session-code-only-receipt
+          path: ${{ runner.temp }}/current-session-code-only-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
