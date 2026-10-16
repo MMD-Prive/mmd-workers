@@ -141,10 +141,10 @@ function durableBinding(options = {}) {
   };
 }
 
-test("owner-approved rollout keeps LLM and card leads off while gated model lookup is on", () => {
+test("owner-approved rollout enables the model switch while exact-hash access remains gated", () => {
   const lineWrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
-  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_BRAIN_V1_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_ENABLED\s*=\s*"true"$/m);
