@@ -81,19 +81,20 @@ function bookingPayload() {
 function expectedCareBackKeyboard(baseUrl = "https://www.mmdbkk.com", previewChannelUrl = "https://t.me/MMDPriveTH") {
   return [
     [{
-      text: "🎁 CARE BACK Phase 2 · เช็กสิทธิ์",
+      text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
       url: `${baseUrl}/promotion/6-years-care-back`,
     }],
     [{
-      text: "MY MMD / Status",
+      text: "My Code / Status",
       url: `${baseUrl}/member/dashboard`,
     }],
     [{
       text: "Preview Models",
       url: `${baseUrl}/profiles`,
-    }, {
+    }],
+    [{
       text: "Apply / Renew Membership",
-      url: `${baseUrl}/sigil/member/membership`,
+      url: `${baseUrl}/pay/membership`,
     }],
     [{
       text: "Help / How It Works",
@@ -784,8 +785,8 @@ test("/telegram/preview/post remains protected by INTERNAL_API_TOKEN", async () 
   assert.doesNotMatch(allowedBody.text, /โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้น/);
   assert.deepEqual(allowedBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
   const urls = flattenKeyboardUrls(allowedBody.reply_markup);
-  assert.deepEqual(urls.filter((url) => url.includes("/sigil/")), ["https://www.mmdbkk.com/sigil/member/membership"]);
-  assert.equal(urls.some((url) => url.includes("/pay/membership")), false);
+  assert.equal(urls.some((url) => url.includes("/sigil/")), false);
+  assert.equal(urls.includes("https://www.mmdbkk.com/pay/membership"), true);
 });
 
 test("/telegram/preview/post uses configured public and preview channel URLs", async () => {
@@ -805,8 +806,8 @@ test("/telegram/preview/post uses configured public and preview channel URLs", a
   assert.equal(response.status, 200);
   assert.deepEqual(body.reply_markup.inline_keyboard, expectedCareBackKeyboard("https://mmd.example", "https://t.me/examplePreview"));
   const urls = flattenKeyboardUrls(body.reply_markup);
-  assert.deepEqual(urls.filter((url) => url.includes("/sigil/")), ["https://mmd.example/sigil/member/membership"]);
-  assert.equal(urls.some((url) => url.includes("/pay/membership")), false);
+  assert.equal(urls.some((url) => url.includes("/sigil/")), false);
+  assert.equal(urls.includes("https://mmd.example/pay/membership"), true);
 });
 
 

@@ -4987,19 +4987,20 @@ function previewButtonMarkup(env) {
   return {
     inline_keyboard: [
       [{
-        text: "🎁 CARE BACK Phase 2 · เช็กสิทธิ์",
+        text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
         url: publicUrl(env, "/promotion/6-years-care-back"),
       }],
       [{
-        text: "MY MMD / Status",
+        text: "My Code / Status",
         url: publicUrl(env, "/member/dashboard"),
       }],
       [{
         text: "Preview Models",
         url: publicUrl(env, "/profiles"),
-      }, {
+      }],
+      [{
         text: "Apply / Renew Membership",
-        url: publicUrl(env, "/sigil/member/membership"),
+        url: publicUrl(env, "/pay/membership"),
       }],
       [{
         text: "Help / How It Works",
