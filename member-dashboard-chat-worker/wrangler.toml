@@ -454,10 +454,10 @@ KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
 # never changes the LINE response path and stays fail-closed when unavailable.
 KENJI_LINE_CONVERSATION_SHADOW_ENABLED = "true"
 AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
-# Phase 2 semantic understanding stays shadow-only. It may classify how the
-# latest message relates to prior turns, but it has no customer-copy field,
-# cannot mutate domain truth or bypass the reply decision and entitlement gates.
-KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "true"
+# Phase 2 OpenAI semantic shadow is disabled in production. Deterministic
+# conversation routing remains active and no customer LINE text is sent to
+# OpenAI from the webhook observer while this switch is false.
+KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"
 KENJI_LINE_BRAIN_V1_ENABLED = "true"
 KENJI_LINE_MESSAGE_AGGREGATION_ENABLED = "true"
 KENJI_LINE_MESSAGE_AGGREGATION_WAIT_MS = "650"
