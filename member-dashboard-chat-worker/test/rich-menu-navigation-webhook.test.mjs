@@ -35,7 +35,7 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
   } finally { globalThis.fetch = original; }
 }
 
-test("signed navigation taps send exactly one topic reply without knowledge, continuity or appended CTA", async () => {
+test("signed navigation taps send exactly one topic reply without knowledge or appended CTA", async () => {
   const destinations = getMmdRichMenuDestinationMap();
   for (const [menu, actions] of Object.entries(getMmdRichMenuActionMap())) {
     for (const [index, action] of actions.entries()) {
@@ -48,7 +48,7 @@ test("signed navigation taps send exactly one topic reply without knowledge, con
       assert.equal(result.body.saved[0].reply_source, "rich_menu_navigation_v1");
       assert.equal(result.body.saved[0].cta_appended, false);
       assert.equal(result.body.saved[0].continuity_topic, "");
-      assert.ok(result.reads.every(url => url.includes("tbljCYfYqfm8gBTPq") || url.includes("processing")));
+      assert.ok(result.reads.every(url => /tbljCYfYqfm8gBTPq|processing|tblS6iRgPjYLBqZJh|tblVv58TCbwh5j1fS|conversation_id/.test(decodeURIComponent(url))));
     }
   }
 });

@@ -1,4 +1,5 @@
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
+import { richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
 import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membership-response.mjs";
@@ -512,7 +513,7 @@ async function sendReply(env = {}, replyToken = "", replyText = "") {
   }
 }
 
-async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody) {
+async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events = []) {
   if (!legacyWorker?.fetch) return null;
   const shadowRequest = new Request(request.url, {
     method: "POST",
@@ -520,7 +521,10 @@ async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody) {
     body: rawBody,
   });
   const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false" };
-  const response = await legacyWorker.fetch(shadowRequest, shadowEnv, ctx).catch(() => null);
+  // Finish the menu tap's intake state before the reply owner writes its
+  // delivered context. A deferred legacy write could otherwise overwrite it.
+  const intakeCtx = events.some(event => richMenuNavigation(event)) ? null : ctx;
+  const response = await legacyWorker.fetch(shadowRequest, shadowEnv, intakeCtx).catch(() => null);
   if (!response?.ok) return null;
   return response.json().catch(() => null);
 }
@@ -577,8 +581,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const legacyOutcome = await runLegacyShadow(request, env, ctx, legacyWorker, rawBody);
   const events = Array.isArray(body.events) ? body.events : [];
+  const legacyOutcome = await runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events);
   if (!Array.isArray(legacyOutcome?.saved) || legacyOutcome.saved.length !== events.length) {
     return json({ ok: false, error: "line_intake_unavailable" }, 503);
   }
@@ -611,14 +615,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     // A deliberate menu tap is a bounded command, like เช็กสิทธิ์, not broad chat auto-reply.
     let menuCommandEnabled = Boolean(navigation && !runtimeAllKill && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
-    if (menuCommandEnabled) {
-      const owner = await getLineOwnerTakeoverState(env, event.source.userId, {}, { signal: AbortSignal.timeout(1500) })
-        .catch(() => ({ ok: false }));
-      menuCommandEnabled = owner.ok === true && owner.active !== true;
-    }
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
     const currentIntent = navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
-    const continuity = continuityEnabled && directUser && !support && !navigation
+    const continuity = continuityEnabled && directUser && ((!support && !navigation) || menuCommandEnabled)
       ? await resolveKenjiLineContinuity({ env, event, currentIntent })
       : {
           decision: "new_topic",
@@ -630,18 +629,34 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           available: false,
         };
     const effectiveIntent = text(continuity.effective_intent || currentIntent);
-    const liveTruth = !support && !navigation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+    const menuConversation = !navigation && !support && !runtimeLineKill &&
+      enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
+      directUser && eventMode !== "standby" && !redelivered && replyToken
+      ? resolveRichMenuConversation(event, continuity) : null;
+    // Check canonical takeover for both the menu tap and every bounded follow-up.
+    let menuOwnerClear = false;
+    if (menuCommandEnabled || menuConversation) {
+      const owner = await getLineOwnerTakeoverState(env, event.source.userId, continuity, { signal: AbortSignal.timeout(1500) })
+        .catch(() => ({ ok: false }));
+      menuOwnerClear = owner.ok === true && owner.active !== true;
+      menuCommandEnabled = menuCommandEnabled && menuOwnerClear;
+    }
+    const menuConversationEnabled = Boolean(menuConversation && menuOwnerClear);
+    const liveTruth = !support && !navigation && !menuConversation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
-    const liveAvailability = !support && !navigation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
+    const liveAvailability = !support && !navigation && !menuConversation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
       effectiveIntent === "availability_request"
       ? await resolveKenjiLineAvailability({ env, continuity })
       : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
 
     const baseDecision = menuCommandEnabled
-      ? withDecisionMetadata({}, await resolveRichMenuNavigation(event, {
+      ? withDecisionMetadata({}, { ...await resolveRichMenuNavigation(event, {
           getContext: () => resolveKenjiLiveMemberContext(env, event.source.userId, "support"),
-        }))
+        }), ...(continuity.matrix?.handoff_required !== true && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED)
+          ? { rich_menu_state: richMenuConversationStart(navigation) } : {}) })
+      : menuConversation
+        ? withDecisionMetadata({}, menuConversationEnabled ? menuConversation : { text: "", reply_source: "silent", guard_blocked: true, guard_reason: "owner_takeover" })
       : !navigation && autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: controls.model_keyword_auto_reply !== true,
@@ -663,20 +678,20 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     // Broad Seed cards intentionally cover only reviewed intents. For a direct
     // customer message with no safe Seed answer, retain First Contact so its
     // advertised intake (for example “แนะนำหน่อย”) cannot disappear.
-    const firstContactFallback = autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && directUser && !support && !navigation &&
+    const firstContactFallback = autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && directUser && !support && !navigation && !menuConversation &&
       eventMode !== "standby" && !redelivered && replyToken && !text(baseDecision.text) &&
       baseDecision.handoff_required !== true && baseDecision.guard_blocked !== true
       ? withDecisionMetadata({}, await decideKenjiFirstContactMembership(event, currentIntent, continuity, env))
       : baseDecision;
     const decision = firstContactEnabled && !autoReplyEnabled
       ? firstContactFallback
-      : navigation || support || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
+      : navigation || support || menuConversation || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
       intent: text(firstContactFallback.intent || effectiveIntent),
       continuity,
     });
     // OA Manager sends the add-friend greeting. A follow event must not get a
     // second Worker greeting, even if the broader reply flag is enabled later.
-    const shouldReply = Boolean(directUser && (autoReplyEnabled || firstContactEnabled || menuCommandEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
+    const shouldReply = Boolean(directUser && (autoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
 
@@ -694,7 +709,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       const outboundTurn = delivered
         ? await recordDeliveredKenjiLineReply({ env, event, replyText: decision.text }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
         : { skipped: true, reason: "reply_not_delivered" };
-      const matrix = continuityEnabled && directUser && !support && !navigation && eventMode !== "standby" && !redelivered
+      const matrix = continuityEnabled && directUser &&
+        ((!support && !navigation && !menuConversation) || (delivered && decision.rich_menu_state)) && eventMode !== "standby" && !redelivered
         ? await writeKenjiLineMatrixTurn({
             env,
             continuity,

@@ -580,6 +580,7 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
     [F.MATRIX_VERSION]: matrix.version,
     [F.MATRIX_PAYLOAD]: JSON.stringify({
       ...payloadBase,
+      ...(delivered && decision.rich_menu_state ? { rich_menu_v1: decision.rich_menu_state } : {}),
       ...(openingState ? { first_contact_v2: openingState } : {}),
       ...(activeModelState?.model_code && activeModelState?.working_name ? { active_model_v1: activeModelState } : {}),
       ...(modelBrowseState?.awaiting ? { model_browse_v1: modelBrowseState } : {}),
@@ -717,6 +718,14 @@ export async function writeKenjiLineMatrixTurn({
       reason: "continuity_storage_unavailable",
       recovery_attempted: text(continuity.storage_status) !== "ready" && Boolean(text(continuity.conversation_hash)),
     };
+  }
+
+  // The intake-only legacy pass must not replace a delivered menu conversation
+  // or its pending Per handoff with a silent classification of the next turn.
+  const menuState = parseObject(writeContinuity.matrix?.payload_json).rich_menu_v1;
+  if (menuState && !decision.rich_menu_state && !delivered && !attempted &&
+      (menuState.closed === true || Date.parse(menuState.expires_at) > Date.parse(text(now) || new Date().toISOString()))) {
+    return { skipped: true, reason: "delivered_rich_menu_state_preserved" };
   }
 
   const matrix = buildKenjiPostTurnMatrix({ continuity: writeContinuity, decision, delivered, attempted, lastEventId, now });
