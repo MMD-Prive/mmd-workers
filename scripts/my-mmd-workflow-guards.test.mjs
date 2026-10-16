@@ -98,7 +98,7 @@ test('read-only CI runs runtime regression and guard tests on Node 18/20/22', ()
 test('effective merge push and downstream chain cannot reach unreviewed production jobs', () => {
   const changed = ['member-pages-worker/src/runtime-index.js', 'member-pages-worker/test/member-attention-entrypoint.test.mjs',
     'scripts/my-mmd-workflow-guards.test.mjs', '.github/workflows/my-mmd-phase456-ci.yml', '.github/workflows/my-mmd-mutation-safety-ci.yml',
-    'scripts/admin-workflow-safety.test.mjs', 'scripts/redirect-route-retirement-scope.mjs',
+    'scripts/admin-workflow-safety.test.mjs', 'shared/phase1-route-owner-lock.test.mjs', 'scripts/redirect-route-retirement-scope.mjs',
     'scripts/redirect-route-retirement-scope.test.mjs', 'scripts/redirect-route-retirement-execution.test.mjs',
     'webflow/member/dashboard/current/footer.html', 'webflow/member/dashboard/member-attention-coupons.test.mjs',
     ...Object.keys(protectedJobs).map(file => '.github/workflows/' + file), '.github/workflows/smoke-my-mmd-liff-start.yml'];
