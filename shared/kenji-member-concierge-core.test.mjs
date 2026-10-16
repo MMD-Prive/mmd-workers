@@ -35,22 +35,52 @@ assert.equal(isKenjiMemberLineCandidate("เคนจิ"), true);
 assert.equal(isKenjiMemberLineCandidate("ส่งสลิปแล้ว"), true);
 assert.equal(isKenjiMemberLineCandidate("random note only"), false);
 
+for (const keyword of ["Public", "Membership Package Public", "Membership Packcage PUBLIC ราคาเท่าไร", "สมัครแพค public", "ต่ออายุ Public", "Public Access", "แพ็กเกจพับลิก", "แพคพับลิค", "จอง public", "ชำระแพค public"]) {
+  assert.equal(classifyKenjiMemberIntent(keyword).intent, "public_package_unavailable", keyword);
+  const reply = buildKenjiMemberReply(keyword);
+  assert.match(reply, /ยังไม่เปิดขายแพ็กเกจ Public/);
+  assert.doesNotMatch(reply, /สมัครสมาชิกใหม่|ขั้นตอนสมัคร|https?:|\d+\s*บาท|ส่งสลิป|เลขบัญชี/);
+}
+
+for (const keyword of ["Membership Package", "Membership Packcage", "MEMBERSHIP   PACKAGE", "Membership", "แพ็กเกจสมาชิก", "แพคเกจสมาชิก"]) {
+  assert.equal(classifyKenjiMemberIntent(keyword).intent, "membership_package", keyword);
+  assert.equal(isKenjiMemberLineCandidate(keyword), true, keyword);
+  assert.match(buildKenjiMemberReply(keyword), /สมัครสมาชิกใหม่.*ต่ออายุสมาชิกเดิม/);
+}
+for (const keyword of ["สมัครสมาชิก", "สมัครใหม่", "สมาชิกใหม่", "Membership Package สมัครใหม่"]) {
+  assert.equal(classifyKenjiMemberIntent(keyword).intent, "membership_signup", keyword);
+  assert.doesNotMatch(buildKenjiMemberReply(keyword), /ครั้งนี้ต้องการสมัครสมาชิกใหม่/);
+}
+for (const keyword of ["Membership Packcage ราคาเท่าไร", "สวัสดีครับ Membership Package ขอรายละเอียด", "แพ็กเกจสมาชิก มีสิทธิอะไร"]) {
+  assert.equal(classifyKenjiMemberIntent(keyword).intent, "membership_details", keyword);
+  assert.doesNotMatch(buildKenjiMemberReply(keyword), /ยินดีต้อนรับ|ครั้งนี้ต้องการสมัครสมาชิกใหม่|\d+\s*บาท/);
+}
+assert.equal(classifyKenjiMemberIntent("Membership Package ต่ออายุ").intent, "membership_renewal");
+assert.equal(classifyKenjiMemberIntent("Membership status").intent, "membership_renewal");
+assert.equal(classifyKenjiMemberIntent("Membership Package ส่งสลิปแล้ว").intent, "payment_slip");
+assert.equal(classifyKenjiMemberIntent("Membership Package จอง").intent, "booking");
+assert.equal(classifyKenjiMemberIntent("Membership Black Card").intent, "black_card");
+for (const greeting of ["", "สวัสดีครับ", "Hi Per", "เคนจิ"]) {
+  assert.match(buildKenjiMemberReply(greeting), /Per.*Membership Package/);
+  assert.doesNotMatch(buildKenjiMemberReply(greeting), /Kenji|เคนจิ|HYPE/);
+}
+
 const paymentReply = buildKenjiMemberReply("ส่งสลิปแล้ว", summary);
-assert.match(paymentReply, /supporting evidence/);
-assert.match(paymentReply, /official verification/);
-assert.match(paymentReply, /fund matching/);
+assert.match(paymentReply, /รอตรวจสอบ/);
+assert.match(paymentReply, /จนกว่า MMD จะยืนยันยอด/);
+assert.match(paymentReply, /03 PAYMENT PROOF/);
 
 const svipReply = buildKenjiMemberReply("SVIP มีแต้ม 1200", summary);
 assert.match(svipReply, /Boss Per/);
-assert.match(svipReply, /ไม่ได้ปลดล็อกจากแต้มอัตโนมัติ/);
+assert.match(svipReply, /ไม่เปิดสิทธิ์อัตโนมัติ/);
 
 const blackCardReply = buildKenjiMemberReply("Black Card VIP", summary);
 assert.match(blackCardReply, /private review/);
-assert.match(blackCardReply, /automatic approval/);
+assert.match(blackCardReply, /ไม่ใช่การอนุมัติอัตโนมัติ/);
 
 const bookingReply = buildKenjiMemberReply("จอง", summary);
-assert.match(bookingReply, /ผมช่วยพาไปขั้นตอนการจองได้ครับ/);
-assert.match(bookingReply, /ขอเช็กสถานะสมาชิก/);
+assert.match(bookingReply, /ตรวจความพร้อมก่อนยืนยัน/);
+assert.match(bookingReply, /พร้อมวัน เวลา และโซน/);
 
 const pointsReply = buildKenjiMemberReply("แต้ม", summary);
 assert.match(pointsReply, /1,280/);
