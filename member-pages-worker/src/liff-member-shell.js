@@ -1003,12 +1003,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   async function readProfile({ hydrate = true } = {}) {
     void readQuickMembershipStatus();
-    const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+    const profileRead = memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+    void readOwnHistoryPreview();
+    const response = await profileRead;
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
     renderCustomerContact(payload.data || {});
-    void readOwnHistoryPreview();
     if (hydrate) await hydrateMemberHome();
     return payload.data || {};
   }

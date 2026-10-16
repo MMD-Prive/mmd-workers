@@ -1,23 +1,9 @@
-# MY MMD LIFF immediate member readback repair
+# MY MMD LIFF readback repair — 2026-10-16
 
-## Confirmed existing implementation
+Existing LINE verification resolves canonical identity and session before membership, points and history reads. No identity or ledger changes.
 
-The customer LIFF flow already verifies LINE, resolves canonical member identity through MEMBER_STATUS_RESOLVER -> mmd-auth-worker, creates the same-site session, reads membership/points and schedules history recovery on access. The structural member census is not evidence this flow does not exist. No identity matching, member creation, membership policy or points calculation is added here.
+Removed the 3-second queue escape: one credentialed read remains in flight through response body; stalled requests abort at 10 seconds, responses are bounded at 2 MiB and errors release the queue. Membership/profile reads have priority over history preview. Preview is enqueued independently of profile success.
 
-Live public inspection on 2026-10-16 confirmed `/member/liff?intent=status` returns 200 through member-dashboard-chat-worker and contains the 3-second queue escape plus the existing LIFF start and dashboard API paths. `/my-mmd/` still identifies Lovable presentation. No routing was changed.
+Validation: full test:member-pages-liff suite 508/508 passed locally, plus 3/3 focused queue regression tests. VM harnesses supply the browser globals used by the production shell. The stale history regression now releases the first queued response and awaits both reads; its stale-data assertions are retained.
 
-## Defect and repair
-
-The Worker-rendered LIFF shell serializes rotating-cookie reads but releases a queued read after 3 seconds even if the preceding request remains active. It also queues a historical preview ahead of the full member profile. A slow upstream can therefore reintroduce concurrent reads with the same old cookie, yielding 401 or leaving member data undisplayed after successful verification.
-
-- Keep one credentialed read in flight through both headers and body.
-- Abort a stalled request after 10 seconds; release the lane only after settlement.
-- Bound buffered JSON response bytes to 2 MiB.
-- Preserve response status/headers/body and recover the queue after errors.
-- Prioritize canonical membership/profile before the historical estimate preview.
-
-## Validation
-
-67 local tests passed: slow body never overlaps the next member read, deadline abort ordering, queue recovery, profile priority, existing LINE/customer isolation, fresh resolver status/points changes, null versus zero, blocked/expired access, on-access history scheduling and LIFF shell regressions.
-
-No production deployment or real-customer/session claim. Browser plugin connection failed with `Sheep MCP session closed: RPC INTERNAL`, so authenticated visual acceptance remains unavailable in this run. Production version provenance must be checked before deployment. Do not describe the repair as live merely because it is merged.
+Live inspection before release: /member/liff?intent=status returned 200 with the old queue escape. No authenticated customer acceptance performed. Browser connector failed with Sheep MCP session closed: RPC INTERNAL. Deployment must use the main-branch guarded workflow and retain environment reviewer protection. Source commits/tests do not establish deployment.

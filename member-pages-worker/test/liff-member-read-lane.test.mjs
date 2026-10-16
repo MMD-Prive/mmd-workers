@@ -13,7 +13,7 @@ test('deadline aborts the stalled request before releasing the queue; next read 
  const order=[];const l=lane((url,init)=>{order.push(url);if(url==='stalled')return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>{order.push('aborted');reject(new Error('aborted'))}));return Promise.resolve(Response.json({ok:true}))});
  const first=l.memberApiFetch('stalled');const rejected=assert.rejects(first,/aborted/);const second=l.memberApiFetch('next');await tick();assert.deepEqual(order,['stalled']);l.timers[0].fn();await rejected;assert.equal((await(await second).json()).ok,true);assert.deepEqual(order,['stalled','aborted','next']);
 });
-test('history preview is queued after profile rendering so archive work cannot delay first member readback',()=>{
+test('history preview queues after the profile read and remains independent of profile success',()=>{
  const s=source.slice(source.indexOf('  async function readProfile('),source.indexOf('  function requestId()'));
- assert.ok(s.indexOf('renderProfile(')<s.indexOf('void readOwnHistoryPreview()'));assert.ok(s.indexOf('memberApiFetch(CONFIG.profileEndpoint')<s.indexOf('void readOwnHistoryPreview()'));
+ assert.ok(s.indexOf('void readOwnHistoryPreview()')<s.indexOf('await profileRead')); assert.ok(s.indexOf('memberApiFetch(CONFIG.profileEndpoint')<s.indexOf('void readOwnHistoryPreview()'));
 });
