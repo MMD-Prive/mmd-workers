@@ -1,3 +1,4 @@
+import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
 import {isMemberCompletenessRequest, handleMemberCompleteness} from "./member-completeness.js";
 import { decorateInternalSilverTheme } from "../../webflow/global/sigil-internal-theme-v1.mjs";
 import { isCreateJobDriveDiscoveryRequest, handleCreateJobDriveDiscovery } from "./create-job-drive-discovery.js";
@@ -246,6 +247,7 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
     if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
     if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
