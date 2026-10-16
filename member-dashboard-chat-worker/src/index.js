@@ -471,6 +471,13 @@ export function inferLineIntent(text = "", event = {}) {
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
+  // Personal balance/status questions use the verified member-truth reader.
+  // Keep earning rules, historical calculations, and payment-credit questions
+  // on their separate informational intents above.
+  if (
+    /^(?:(?:ขอ)?\s*)?(?:เช็ก|เช็ค|ดู|ตรวจสอบ|ตรวจ|สอบถาม)?\s*(?:(?:ยอด|จำนวน)\s*)?(?:แต้ม|คะแนน|points?)(?:\s*(?:ของ)?(?:ผม|ฉัน|หนู|เรา))?(?:\s*(?:ตอนนี้|ปัจจุบัน|ล่าสุด))?(?:\s*(?:มี|เหลือ|คงเหลือ|อยู่)?\s*(?:เท่าไหร่|เท่าไร|กี่แต้ม|กี่คะแนน|กี่\s*points?))?\s*(?:ครับ|ค่ะ|หน่อย)?$/i.test(normalized) ||
+    /^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)
+  ) return "points_status";
   if (
     (isCareBack || isPersonalCareBackStatus) &&
     /(?:ผม|หนู|ฉัน|เรา|ของผม|ของหนู|ของฉัน).{0,20}(?:ได้อะไร|ได้ไหม|ได้กี่|สถานะ|สิทธิ์|เข้าเกณฑ์|กลุ่มไหน)|(?:เช็ก|ตรวจ|ดู).{0,16}(?:สิทธิ์|สถานะ|คะแนน|แต้ม).{0,24}(?:ผม|หนู|ฉัน|ให้หน่อย)|(?:ผม|หนู|ฉัน).{0,12}(?:อยู่กลุ่ม|เป็นกลุ่ม)/i.test(normalized)
@@ -499,7 +506,6 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
   if (/^(?:ผม|ฉัน|หนู|เรา)?\s*(?:จ่าย|ชำระ|โอน)(?:เงิน)?\s*(?:แล้ว|เรียบร้อยแล้ว)(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "payment_status";
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
-  if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(?:after\s*care|aftercare|ดูแลหลัง(?:การ)?บริการ|หลัง(?:ใช้|รับ)บริการ|ให้คะแนน(?:บริการ|session|เซสชัน)|(?:feedback|ฟีดแบ็ก).{0,16}(?:บริการ|session|เซสชัน))/i.test(normalized)) return "aftercare";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
