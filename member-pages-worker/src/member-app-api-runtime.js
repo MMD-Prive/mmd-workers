@@ -1029,7 +1029,9 @@ async function adaptHistory(request, env, delegate) {
 async function adaptCoupons(request, env, delegate) {
   const result = await readUpstream(request, env, delegate, "/member/api/liff/care-back/wallet");
   if (!result.ok) return result.response;
-  return responseFrom(result.upstream, couponsFromWallet(result.payload));
+  const coupons = couponsFromWallet(result.payload);
+  // Missing wallet fields are not evidence that a customer has no benefit.
+  return responseFrom(result.upstream, coupons.length ? coupons : { state: 'checking', items: [] });
 }
 
 async function adaptCare(request, env, delegate) {

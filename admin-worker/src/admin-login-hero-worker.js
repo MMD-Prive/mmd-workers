@@ -1,3 +1,4 @@
+import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
 import {isMemberCompletenessRequest, handleMemberCompleteness} from "./member-completeness.js";
 import { decorateInternalSilverTheme } from "../../webflow/global/sigil-internal-theme-v1.mjs";
 import { isCreateJobDriveDiscoveryRequest, handleCreateJobDriveDiscovery } from "./create-job-drive-discovery.js";
@@ -235,7 +236,6 @@ coreWorker.fetch(request, env, ctx)
 const adminLoginHeroWorker = {
   async scheduled(event, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
-    if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     // HYPE_JOB_DAILY is isolated: it never rejects and never blocks the jobs below. Default off.
     const hypeJobDaily = runHypeJobDailyScheduled(runtimeEnv, event);
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(hypeJobDaily);
@@ -247,6 +247,8 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
+    if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
     if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
     if (isCreateJobDriveDiscoveryRequest(request)) return handleCreateJobDriveDiscovery(request, runtimeEnv);
