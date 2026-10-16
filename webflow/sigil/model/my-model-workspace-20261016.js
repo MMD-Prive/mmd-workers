@@ -100,6 +100,7 @@
   }
   function fill(model) {
     profile = model; workspace.hidden = false;
+    q('[data-mss-save]').disabled = false;
     q('[data-mm-primary]').hidden = true; q('[data-mm-apply]').hidden = true;
     status('บัญชี MY MODEL เชื่อมแล้ว', 'อัปเดตโปรไฟล์และสถานะรับงานได้ แม้ยังไม่มีงานปัจจุบัน');
     text('[data-mm-auth]', 'บัญชีเชื่อมแล้ว · สถานะความพร้อมตรวจแยกตามรายการ');
@@ -188,7 +189,7 @@
           if (image.tagName === 'VIDEO') { image.controls = true; image.preload = 'metadata'; } else { image.alt = 'รูป Public ของฉัน'; image.loading = 'lazy'; }
           card.append(image);
         }
-        const actions = media.media_type === 'intro_video' ? [] : [['ขอใช้เป็นรูปหลัก', 'set-main', 'POST']];
+        const actions = media.can_request_main === true && media.media_type !== 'intro_video' ? [['ขอใช้เป็นรูปหลัก', 'set-main', 'POST']] : [];
         if (media.can_delete === true) actions.push(['ลบรายการนี้', 'delete', 'DELETE']);
         for (const [label, action, method] of actions) {
           const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
@@ -209,12 +210,19 @@
   }
   form.addEventListener('submit', async event => {
     event.preventDefault(); if (!profile) return;
+    const identity = profile;
+    const current = () => alive && profile === identity;
     const button = q('[data-mss-save]'); button.disabled = true;
     try {
       const data = await request('/v1/model/profile', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(profilePatch(form))});
+      // Lock/reverification replaces this snapshot; an old save cannot restore it.
+      if (!current()) return;
       if (!data.model) throw new Error('profile_invalid'); fill(data.model); text('[data-mm-save-status]', 'บันทึกข้อมูลแล้ว');
-    } catch (error) { if (['login','denied'].includes(classify(error))) locked(error); text('[data-mm-save-status]', 'ยังยืนยันการบันทึกไม่ได้ ตรวจสถานะก่อนส่งอีกครั้ง'); }
-    finally { button.disabled = false; }
+    } catch (error) {
+      if (!current()) return;
+      if (['login','denied'].includes(classify(error))) locked(error);
+      text('[data-mm-save-status]', 'ยังยืนยันการบันทึกไม่ได้ ตรวจสถานะก่อนส่งอีกครั้ง');
+    } finally { if (current()) button.disabled = false; }
   });
   q('[data-mm-telegram-connect]').addEventListener('click', async event => {
     if (!profile) return; const button = event.currentTarget; button.disabled = true;
