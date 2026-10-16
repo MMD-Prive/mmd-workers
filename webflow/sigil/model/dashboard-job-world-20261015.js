@@ -18,10 +18,18 @@ const root=document.getElementById('mmd-model-home-v3');
 if(!root||global.__MODEL_JOB_WORLD_V1__)return;global.__MODEL_JOB_WORLD_V1__=true;
 const q=s=>root.querySelector(s),text=(s,v)=>{const e=q(s);if(e)e.textContent=v;};
 root.querySelectorAll('.model-lane-switch').forEach(x=>x.remove());
+function supportCard(){
+ if(root.querySelector('[data-model-support-card]'))return;
+ const card=document.createElement('aside');card.dataset.modelSupportCard='1';
+ const link=document.createElement('a');link.href='https://lin.ee/xRqsALs';link.textContent='ให้ MMD ช่วย';card.appendChild(link);
+ (q('.mdhome__shell')||root).appendChild(card);
+}
+supportCard();
 function renderWorld(world,hasJob=false){
  root.dataset.modelBrandLane=world;
  text('.mdhome__eyebrow',world==='private'?'SĪGIL · PRIVATE MODEL':hasJob?'MMD · PUBLIC MODEL':'MMD Privé');
- text('.mdhome__title',world==='private'?'งานของคุณ MMD ช่วยดูแล':'พื้นที่ของคุณ');
+ const title=q('.mdhome__title');
+ if(title){title.innerHTML='<span class="model-guide-title">Your guide application</span><span class="model-guide-name">MY MODEL</span>';}
  text('.mdhome__copy',world==='private'?'เช็กบรีฟและเตรียมตัวสำหรับงานของคุณครับ':'โปรไฟล์ รูป และงานของคุณ อยู่ที่นี่ครับ');
  const links=root.querySelectorAll('.model-blend-guide');
  if(links.length>=2){

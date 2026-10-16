@@ -92,3 +92,18 @@ test('exact login/confirmation front gates preserve apex without forwarding toke
   }
  }finally{globalThis.fetch=original;}
 });
+
+test('help recovery creates one card at the app bottom, not a top entry action',()=>{
+ const line=html.split('\n').find(l=>l.includes('function entryAction('));
+ let card=null;const shell={children:[],appendChild(node){this.children.push(node);card=node;}};
+ const host={querySelector:s=>s==='[data-model-support-card]'?card:s==='.mdhome__shell'?shell:null,prepend(){throw Error('Help must not prepend');}};
+ const document={getElementById:()=>host,createElement:()=>({dataset:{},children:[],appendChild(node){this.children.push(node);}})};
+ const context={document,root:host};vm.runInNewContext(line+';entryAction("ให้ MMD ช่วย","https://lin.ee/xRqsALs");entryAction("ให้ MMD ช่วย","https://lin.ee/xRqsALs");',context);
+ assert.equal(shell.children.length,1);assert.equal(card.children[0].textContent,'ให้ MMD ช่วย');assert.equal(card.children[0].href,'https://lin.ee/xRqsALs');
+});
+test('Hero uses the exact two-line heading and support card exists for normal home too',()=>{
+ const source=fs.readFileSync(new URL('./dashboard-job-world-20261015.js',import.meta.url),'utf8');
+ assert.match(source,/Your guide application<\/span><span class="model-guide-name">MY MODEL<\/span>/);
+ assert.doesNotMatch(source,/text\('\.mdhome__title',world/);
+ assert.match(source,/supportCard\(\);/);assert.match(source,/\(q\('\.mdhome__shell'\)\|\|root\)\.appendChild\(card\)/);
+});
