@@ -1,4 +1,5 @@
 import * as runtime from "./member-app-api-runtime.js";
+import { projectCouponPresentation } from './member-coupon-presentation.js';
 export * from "./member-app-api-runtime.js";
 import stableLiffFoundation from "./liff-stable-session-binding.js";
 import { getCareBackStore } from "./care-back-claim-store.js";
@@ -109,7 +110,7 @@ async function tryRecoveryMemberAppResponse(request, env) {
   try {
     const recovery = await readCareBackPhase1RecoveryForRequest(request, env);
     if (!recovery) return null;
-    if (isCouponRead(request)) return recoveryResponse(memberAppRecoveryCoupons(recovery));
+    if (isCouponRead(request)) return recoveryResponse(memberAppRecoveryCoupons(recovery).map(coupon => projectCouponPresentation(coupon)));
     return recoveryResponse(memberAppRecoveryCare(recovery));
   } catch (error) {
     console.warn({
@@ -154,7 +155,14 @@ export async function handleMemberAppApi(request, env = {}, delegate = stableLif
   if (recoveryResponseOverride) return recoveryResponseOverride;
 
   if (isCouponRead(request)) await reconcileCompletedWishCoupon(request, env);
-  if (!isCareRead(request)) return runtime.handleMemberAppApi(request, env, delegate);
+  if (!isCareRead(request)) {
+    const result = await runtime.handleMemberAppApi(request, env, delegate);
+    if (!isCouponRead(request) || !result.ok) return result;
+    const payload = await result.clone().json().catch(() => null);
+    if (!Array.isArray(payload)) return result;
+    const headers = new Headers(result.headers); headers.delete('content-length');
+    return new Response(JSON.stringify(payload.map(coupon => projectCouponPresentation(coupon))), { status: result.status, headers });
+  }
   const snapshot = await readWishIdentitySnapshot(request, env);
   const response = await runtime.handleMemberAppApi(request, env, delegate);
   if (!response.ok || !snapshot) return response;
