@@ -16,6 +16,7 @@ function fixture({profile={ok:true,model}, job={status:404,error:'active_session
     addEventListener(key,fn){this.listeners[key]=fn;},querySelectorAll(){return [];},reset(){},remove(){}};}
   const root=element();root.querySelector=selector=>{if(!nodes.has(selector))nodes.set(selector,element());return nodes.get(selector);};
   const form=root.querySelector('[data-mss-profile-form]'); form.elements={};
+  root.querySelector('[data-mm-save-status]');
   for(const key of ['height_cm','weight_kg','skills_summary','experience_summary','availability_status','available_now']) form.elements[key]=element('input');
   form.querySelectorAll=()=>[];
   const window={document:{title:'',getElementById:id=>id==='mmd-model-home-v4'?root:null,createElement:element},
@@ -33,6 +34,89 @@ function fixture({profile={ok:true,model}, job={status:404,error:'active_session
   return {calls,nodes,form,window,events};
 }
 async function settle(){for(let n=0;n<8;n++)await new Promise(setImmediate);}
+function deferredResponse(){let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};}
+
+for(const status of [401,403])test(`late successful profile PATCH cannot reopen workspace after media ${status}`,async()=>{
+  const f=fixture();await settle();const pending=deferredResponse();
+  f.window.fetch=async(url,options={})=>options.method==='PATCH'?pending.promise:Response.json({ok:false,error:status===401?'model_session_expired':'private_access_required'},{status});
+  const saving=f.form.listeners.submit({preventDefault(){}});
+  f.window.dispatchEvent({type:'mmd:model-media-updated'});await settle();
+  assert.equal(f.nodes.get('[data-mm-workspace]').hidden,true);
+  let reopened=0;
+  f.window.addEventListener('mmd:model-profile-ready',()=>{if(!f.nodes.get('[data-mm-workspace]').hidden)reopened++;});
+  pending.resolve(Response.json({ok:true,model:{...model,working_name:'Stale Model'}}));await saving;await settle();
+  assert.equal(reopened,0,'stale save must not emit profile-ready or restart uploader');
+  assert.equal(f.nodes.get('[data-mm-workspace]').hidden,true);
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'');
+  assert.equal(f.nodes.get('[data-mm-gallery]').children.length,0);
+  assert.notEqual(f.nodes.get('[data-mm-save-status]').textContent,'บันทึกข้อมูลแล้ว');
+});
+
+for(const oldStatus of [200,403])test(`old PATCH ${oldStatus} cannot replace or lock a reverified profile or enable its pending save`,async()=>{
+  const f=fixture();await settle();const old=deferredResponse(),fresh=deferredResponse();let writes=0,expired=true;
+  f.window.fetch=async(url,options={})=>{
+    if(options.method==='PATCH')return ++writes===1?old.promise:fresh.promise;
+    if(String(url).includes('/media'))return expired?Response.json({ok:false,error:'model_session_expired'},{status:401}):Response.json({ok:true,media:[]});
+    if(String(url).includes('/session/current'))return Response.json({ok:false,error:'active_session_not_found'},{status:404});
+    return Response.json({ok:true,model:{...model,working_name:'Reverified Model'}});
+  };
+  const savingOld=f.form.listeners.submit({preventDefault(){}});
+  f.window.dispatchEvent({type:'mmd:model-media-updated'});await settle();
+  assert.equal(f.nodes.get('[data-mm-workspace]').hidden,true);
+  expired=false;await f.nodes.get('[data-mm-refresh]').listeners.click();await settle();
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'Reverified Model');
+  const savingFresh=f.form.listeners.submit({preventDefault(){}});
+  old.resolve(oldStatus===200?Response.json({ok:true,model:{...model,working_name:'Stale Model'}}):Response.json({ok:false,error:'private_access_required'},{status:403}));
+  await savingOld;await settle();
+  const afterOld={hidden:f.nodes.get('[data-mm-workspace]').hidden,name:f.nodes.get('[data-mm-name]').textContent,saveDisabled:f.nodes.get('[data-mss-save]').disabled};
+  fresh.resolve(Response.json({ok:true,model:{...model,working_name:'Fresh Saved Model'}}));await savingFresh;await settle();
+  assert.equal(afterOld.hidden,false,'stale denial must not lock the freshly verified profile');
+  assert.equal(afterOld.name,'Reverified Model','stale success must not replace the freshly verified profile');
+  assert.equal(afterOld.saveDisabled,true,'stale finally must not enable another pending save');
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'Fresh Saved Model');
+  assert.equal(f.nodes.get('[data-mss-save]').disabled,false);
+  assert.equal(writes,2,'no automatic PATCH replay');
+});
+
+test('current profile save still enforces auth denial and surfaces ordinary source failures',async()=>{
+  for(const status of [401,403,503]){
+    const f=fixture();await settle();
+    f.window.fetch=async()=>Response.json({ok:false,error:status===401?'model_session_expired':status===403?'private_access_required':'upstream_unavailable'},{status});
+    await f.form.listeners.submit({preventDefault(){}});await settle();
+    assert.equal(f.nodes.get('[data-mm-workspace]').hidden,status!==503);
+    assert.match(f.nodes.get('[data-mm-save-status]').textContent,/ยังยืนยันการบันทึกไม่ได้/);
+    if(status===503)assert.equal(f.nodes.get('[data-mss-save]').disabled,false);
+  }
+});
+
+test('primary media action requires explicit backend capability; delete remains independent',async()=>{
+  for(const capability of [undefined,null,false,'true',true]){
+    const f=fixture();await settle();
+    f.window.fetch=async()=>Response.json({ok:true,media:[{media_id:'media_fixture',media_type:'public_gallery',self_managed:true,review_status:capability===true?'approved':'pending_review',can_request_main:capability,can_delete:true}]});
+    f.window.dispatchEvent({type:'mmd:model-media-updated'});await settle();
+    const buttons=f.nodes.get('[data-mm-gallery]').children[0].children.filter(node=>node.tagName==='BUTTON');
+    assert.equal(buttons.some(node=>node.textContent==='ขอใช้เป็นรูปหลัก'),capability===true,String(capability));
+    assert.equal(buttons.some(node=>node.textContent==='ลบรายการนี้'),true);
+  }
+});
+
+test('approved primary action uses the existing endpoint and videos never get a primary action',async()=>{
+  const f=fixture();await settle();const writes=[];
+  f.window.fetch=async(url,options={})=>{
+    if(options.method){writes.push({url:String(url),method:options.method});return Response.json({ok:true});}
+    return Response.json({ok:true,media:[
+      {media_id:'media_photo',media_type:'public_gallery',self_managed:true,can_request_main:true,can_delete:false},
+      {media_id:'media_clip',media_type:'intro_video',self_managed:true,can_request_main:true,can_delete:false},
+    ]});
+  };
+  f.window.dispatchEvent({type:'mmd:model-media-updated'});await settle();
+  const cards=f.nodes.get('[data-mm-gallery]').children;
+  const buttons=cards[0].children.filter(node=>node.tagName==='BUTTON');
+  assert.equal(buttons.length,1);
+  assert.equal(cards[1].children.filter(node=>node.tagName==='BUTTON').length,0);
+  await buttons[0].listeners.click();
+  assert.deepEqual(writes,[{url:'/v1/model/media/media_photo/set-main',method:'POST'}]);
+});
 
 test('linked account with no job retains profile, availability and Telegram entry without signup or auth exchange',async()=>{
   const f=fixture();await settle();
