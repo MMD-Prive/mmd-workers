@@ -3,6 +3,7 @@
 import { internalBrandLoader, SYSTEM_LIGHT, SYSTEM_DARK, SYMBOL_BLACK, BRAND_SELECTOR } from './sigil-brand-v1.mjs';
 import { DASHBOARD_POLISH_CSS } from './sigil-dashboard-polish-v2.mjs';
 import { usesMmsWorkspace, installMmsWorkspaceTheme } from './mms-workspace-theme-v1.mjs';
+import { internalWorkspaceLoader } from './sigil-internal-workspace-v3.mjs';
 export function usesSilverWorkspace(pathname) {
   const path = String(pathname || '/').replace(/\/+$/, '') || '/';
   if (usesMmsWorkspace(path)) return false;
@@ -105,7 +106,8 @@ export async function decorateInternalSilverTheme(request, response) {
   const branded = silver ? html.replace(/<html\b/i, '<html data-sigil-internal-theme="silver-orange-v1"') : html;
   const nonceValue = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
   const nonce = nonceValue ? ` nonce="${nonceValue}"` : '';
-  const themed = branded.replace(/<\/head>/i, `<style id="sigil-internal-silver-v1"${nonce}>${css}</style><script data-sigil-brand="v1"${nonce}>${internalBrandLoader()}</script></head>`);
+  const workspace = `<script data-sigil-workspace="v3"${nonce}>document.addEventListener('DOMContentLoaded',()=>{${internalWorkspaceLoader()}});</script>`;
+  const themed = branded.replace(/<\/head>/i, `<style id="sigil-internal-silver-v1"${nonce}>${css}</style><script data-sigil-brand="v1"${nonce}>${internalBrandLoader()}</script>${workspace}</head>`);
   const headers = new Headers(response.headers);
   headers.delete('content-length'); headers.delete('content-encoding'); headers.delete('etag');
   headers.set('x-sigil-internal-theme', silver ? 'silver-orange-v1' : 'preserved-job-theme');
