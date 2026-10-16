@@ -2,6 +2,7 @@ const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 1600;
 const LIVE_TRUTH_INTENTS = new Set(["membership_status", "points_status"]);
+const POINTS_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points";
 
 function text(value) {
   return value == null ? "" : String(value).trim();
@@ -174,8 +175,9 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     }
     if (value === "points_status" && liveTruth?.points?.status === "verified") {
       const points = Number(liveTruth.points.active_points) || 0;
+      const name = text(liveTruth.display_name);
       return {
-        text: `ตอนนี้มี ${points.toLocaleString("th-TH")} Points ครับ`,
+        text: `${name ? `คุณ${name} ` : ""}ตอนนี้มี ${points.toLocaleString("th-TH")} Points ครับ\nดูรายละเอียดใน My MMD > Points ได้ที่นี่ครับ → ${POINTS_LIFF_URL}`,
         reply_source: "live_truth",
         guard_blocked: false,
         guard_reason: "",
@@ -189,12 +191,24 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     }
   }
 
-  if (knownIdentity(continuity)) {
-    const message = value === "points_status"
-      ? "ผมเจอบัญชีที่ผูกไว้แล้วครับ แต่ยอด Points ล่าสุดยังอ่านจากข้อมูลทางการไม่สำเร็จ เลยยังไม่บอกตัวเลขให้ผิดครับ"
-      : "ผมเจอบัญชีที่ผูกไว้แล้วครับ แต่สถานะล่าสุดยังอ่านจากตัวตรวจสิทธิ์ไม่สำเร็จ เลยยังไม่ยืนยันระดับหรือวันหมดอายุให้ผิดครับ";
+  if (value === "points_status") {
     return {
-      text: message,
+      text: `ตอนนี้ยังอ่านยอดล่าสุดจากระบบไม่ได้ครับ เลยยังไม่ยืนยันตัวเลขให้ผิด เปิด My MMD > Points เพื่อตรวจสอบได้ที่นี่ครับ → ${POINTS_LIFF_URL}`,
+      reply_source: "live_truth_unavailable",
+      guard_blocked: false,
+      guard_reason: knownIdentity(continuity) ? "live_truth_unavailable_known_identity" : "live_truth_unavailable",
+      handoff_required: knownIdentity(continuity),
+      handoff_reason: knownIdentity(continuity) ? `${value}:live_truth_unavailable` : "",
+      truth_authority: AUTHORITY,
+      truth_status: "unavailable",
+      live_truth_used: false,
+      live_truth_verified: false,
+    };
+  }
+
+  if (knownIdentity(continuity)) {
+    return {
+      text: "ผมเจอบัญชีที่ผูกไว้แล้วครับ แต่สถานะล่าสุดยังอ่านจากตัวตรวจสิทธิ์ไม่สำเร็จ เลยยังไม่ยืนยันระดับหรือวันหมดอายุให้ผิดครับ",
       reply_source: "live_truth_unavailable",
       guard_blocked: false,
       guard_reason: "live_truth_unavailable_known_identity",

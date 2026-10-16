@@ -21,10 +21,10 @@ const membership = applyKenjiNextAction({
   },
 });
 assert.equal(membership.cta_type, "open_action_route");
-assert.equal(membership.cta_route, "https://mmdbkk.com/member/dashboard");
+assert.equal(membership.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview");
 assert.equal(membership.cta_appended, true);
 assert.match(membership.text, /MY MMD Home/);
-assert.match(membership.text, /https:\/\/mmdbkk\.com\/member\/dashboard/);
+assert.match(membership.text, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=overview/);
 assert.equal(membership.next_action_policy.max_primary_cta, 1);
 assert.equal(membership.next_action_policy.relationship_mode, "known_customer_continuation");
 assert.doesNotMatch(membership.text, /อนุมัติสิทธิ์|ได้รับสิทธิ์แล้ว|เปิดสิทธิ์แล้ว/i);
@@ -34,31 +34,31 @@ const points = applyKenjiNextAction({
   intent: "points_status",
 }, { continuity: {} });
 assert.equal(points.cta_type, "open_action_route");
-assert.equal(points.cta_route, "https://mmdbkk.com/my-mmd/points");
+assert.equal(points.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points");
 assert.match(points.text, /My MMD > Points/);
 
 const signup = applyKenjiNextAction({
-  text: "สมัครสมาชิกได้ที่นี่ครับ → https://mmdbkk.com/pay/membership?source=line",
+  text: "สมัครสมาชิกได้ที่นี่ครับ → https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
   intent: "membership_signup",
 }, { continuity: {} });
 assert.equal(signup.cta_type, "open_action_route");
-assert.equal(signup.cta_route, "https://mmdbkk.com/pay/membership?source=line");
+assert.equal(signup.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup");
 
 const privateSignup = applyKenjiNextAction({
-  text: "สมัคร Private Membership ได้ที่นี่ครับ → https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+  text: "สมัคร Private Membership ได้ที่นี่ครับ → https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
   intent: "private_membership_signup",
 }, { continuity: {} });
 assert.equal(privateSignup.cta_type, "open_action_route");
-assert.equal(privateSignup.cta_route, "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup");
+assert.equal(privateSignup.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup");
 assert.match(privateSignup.text, /Private Membership/);
 assert.equal(signup.cta_appended, false);
 
 const renewal = applyKenjiNextAction({
-  text: "เริ่มขั้นตอนต่ออายุสมาชิกได้ที่นี่ครับ → https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
+  text: "เริ่มขั้นตอนต่ออายุสมาชิกได้ที่นี่ครับ → https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
   intent: "membership_renewal",
 }, { continuity: {} });
 assert.equal(renewal.cta_type, "open_action_route");
-assert.equal(renewal.cta_route, "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew");
+assert.equal(renewal.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package");
 assert.equal(renewal.cta_appended, false);
 assert.doesNotMatch(renewal.text, /สถานะ.*(?:เปลี่ยนแล้ว|active แล้ว)|อนุมัติแล้ว/i);
 
@@ -102,12 +102,12 @@ assert.match(paymentNeedsAction.customer_text, /ไม่ต้องสร้�
 assert.doesNotMatch(paymentNeedsAction.customer_text, /confirm\/payment-proof/);
 
 const existingCta = applyKenjiNextAction({
-  text: "ดูสถานะล่าสุดได้ที่ https://mmdbkk.com/member/dashboard ครับ",
+  text: "ดูสถานะล่าสุดได้ที่ https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview ครับ",
   intent: "membership_status",
 }, { continuity: {} });
 assert.equal(existingCta.cta_type, "open_action_route");
 assert.equal(existingCta.cta_appended, false);
-assert.equal((existingCta.text.match(/https:\/\/mmdbkk\.com\/member\/dashboard/g) || []).length, 1);
+assert.equal((existingCta.text.match(/https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=overview/g) || []).length, 1);
 
 const availability = applyKenjiNextAction({
   text: "ส่งวัน เวลา โซน และชื่อคนที่อยากเช็กมาได้เลยครับ",

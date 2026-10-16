@@ -13,7 +13,8 @@ export const SALES_CARD_IDS = Object.freeze({
   payment: `${SALES_CARD_PREFIX}07_payment_pending`,
   coupon: `${SALES_CARD_PREFIX}08_wish_coupon`,
 });
-export const SALES_ROUTES = Object.freeze({
+// Retain the exact reviewed card URLs for digest validation only.
+const REVIEWED_CARD_ROUTES = Object.freeze({
   status: "https://mmdbkk.com/my-mmd/",
   signup: "https://mmdbkk.com/pay/membership?source=line",
   privateSignup: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
@@ -21,6 +22,18 @@ export const SALES_ROUTES = Object.freeze({
   membership: "https://mmdbkk.com/sigil/member/membership",
   payment: "https://mmdbkk.com/member/payments",
 });
+export const SALES_ROUTES = Object.freeze({
+  status: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview",
+  signup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
+  privateSignup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
+  renewal: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
+  membership: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview",
+  payment: REVIEWED_CARD_ROUTES.payment,
+});
+export function currentSalesRoute(url) {
+  const key = Object.keys(REVIEWED_CARD_ROUTES).find(key => REVIEWED_CARD_ROUTES[key] === url);
+  return key ? SALES_ROUTES[key] : url;
+}
 const PROTECTED = new Set([
   "privacy_request", "internal_access", "human_handoff", "manual_review",
   "complaint_escalation", "payment_dispute", "availability_request",
@@ -84,7 +97,7 @@ export function publishedSalesCard(card, expectedId, now = Date.now()) {
   const answer = clean(card.customer_answer);
   if (!answer || answer.length > 1400 || /\{\{|\}\}|bearer|authorization|secret|record[_\s-]?id|api[_\s-]?key/i.test(answer)) return false;
   const links = answer.match(/https?:\/\/[^\s<>]+/g) || [];
-  if (links.length !== 1 || !Object.values(SALES_ROUTES).includes(links[0])) return false;
+  if (links.length !== 1 || !Object.values(REVIEWED_CARD_ROUTES).includes(links[0])) return false;
   let payload;
   try { payload = typeof card.payload_json === "string" ? JSON.parse(card.payload_json) : card.payload_json; } catch { return false; }
   if (!payload || payload.internal_only || payload.superseded || payload.superseded_by || payload.seed_pack?.version !== SALES_REPLY_VERSION) return false;

@@ -86,12 +86,26 @@ test("known identity never gets a reverification instruction when live truth is 
   assert.doesNotMatch(decision.text, /ยืนยันตัวตน|สมัครใหม่/);
 });
 
-test("verified Points truth renders only the canonical value", () => {
+test("verified Points truth renders the canonical value and dedicated LIFF route", () => {
   const decision = buildKenjiLiveTruthDecision("points_status", truthPayload(), {
     client_record_id: "recKnownCustomer",
   });
   assert.equal(decision.reply_source, "live_truth");
-  assert.equal(decision.text, "ตอนนี้มี 88 Points ครับ");
+  assert.equal(decision.text, "คุณJoeka ตอนนี้มี 88 Points ครับ\nดูรายละเอียดใน My MMD > Points ได้ที่นี่ครับ → https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points");
+  assert.doesNotMatch(decision.text, /workers\.dev|careback/i);
+});
+
+test("unavailable Points truth fails closed with the dedicated LIFF route and no number", () => {
+  const decision = buildKenjiLiveTruthDecision("points_status", {
+    ok: false,
+    status: "unavailable",
+    authority: "my_mmd_entitlement_resolver_v1",
+  }, {});
+  assert.equal(decision.reply_source, "live_truth_unavailable");
+  assert.equal(decision.live_truth_verified, false);
+  assert.match(decision.text, /ยังไม่ยืนยันตัวเลข/);
+  assert.match(decision.text, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/);
+  assert.doesNotMatch(decision.text, /\b\d[\d,]*\s*Points\b/);
 });
 
 

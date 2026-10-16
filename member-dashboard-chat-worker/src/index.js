@@ -48,9 +48,11 @@ const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_PAYMENTS_API_PATHS = new Set(["/v1/member/payments", "/v1/member/payments/"]);
 const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
-const MEMBER_SIGNUP_URL = "https://mmdbkk.com/pay/membership?source=line";
-const PRIVATE_MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
-const MEMBER_RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
+const MEMBER_SIGNUP_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=signup&view=signup`;
+const PRIVATE_MEMBER_SIGNUP_URL = MEMBER_SIGNUP_URL;
+const MEMBER_RENEWAL_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`;
+const MEMBER_STATUS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=overview`;
+const MEMBER_POINTS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=points`;
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -1104,11 +1106,11 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_status") {
-    return "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อนครับ";
+    return `ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อนครับ → ${MEMBER_STATUS_URL}`;
   }
 
   if (intent === "points_status") {
-    return "ผมยังยืนยันยอดแต้มและประวัติรายการจากข้อความนี้ไม่ได้ครับ ต้องตรวจจากข้อมูลสมาชิกที่ยืนยันตัวตนและ Points Ledger ทางการก่อนครับ";
+    return `ตอนนี้ยังอ่านยอดล่าสุดจากระบบไม่ได้ครับ เลยยังไม่ยืนยันตัวเลขให้ผิด เปิด My MMD > Points เพื่อตรวจสอบได้ที่นี่ครับ → ${MEMBER_POINTS_URL}`;
   }
 
   if (intent === "membership_signup") {
@@ -1161,7 +1163,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership") {
-    return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
+    return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ ${MEMBER_STATUS_URL} ครับ ใช้เส้นทางใน LINE นี้เพื่อดูสถานะ สมัคร หรือต่ออายุ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
   }
 
   if (intent === "pricing_review") {

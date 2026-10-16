@@ -561,7 +561,7 @@ test("expired member may continue a brief without new private disclosure", async
   });
   assert.match(decision.text, /คุยเรื่องนายแบบและส่งบรีฟ/);
   assert.match(decision.text, /ก่อนยืนยันงานหรือเปิดข้อมูลใหม่/);
-  assert.match(decision.text, /sigil\/member\/membership\?source=line&intent=renew/);
+  assert.match(decision.text, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/);
   assert.doesNotMatch(decision.text, /MX17|น้องซิน|Private Model.*ชื่อ/i);
   assert.equal(decision.reply_source, "model_access_renewal");
   assert.equal(decision.clear_model_context, true);

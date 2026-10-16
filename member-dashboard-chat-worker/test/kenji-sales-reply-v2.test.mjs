@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { APPROVED_ANSWERS } from "./fixtures/kenji-sales-v2-approved.mjs";
-import { SALES_CARD_IDS, SALES_ROUTES, SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, refineKenjiSalesIntent, publishedSalesCard } from "../src/kenji-sales-reply-v2-policy.mjs";
+import { SALES_CARD_IDS, SALES_ROUTES, SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, currentSalesRoute, refineKenjiSalesIntent, publishedSalesCard } from "../src/kenji-sales-reply-v2-policy.mjs";
 import { SALES_REPLY_HASHES, validateSalesCard, resolveKenjiSalesReply, inspectKenjiSalesPublication } from "../src/kenji-sales-reply-v2-runtime.mjs";
 import { createLineSignature } from "../src/index.js";
 import { resolveKenjiSeedDecision, handleKenjiSeedLineRequest as seedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
@@ -18,6 +18,7 @@ const handleKenjiSeedLineRequestWithRedeliveryRecovery = (request, env, ctx) =>
   seedLineRequestWithRecovery(request, env, ctx, legacyWorker);
 
 const NOW = Date.parse("2026-09-14T12:00:00+07:00");
+const routedAnswer = key => APPROVED_ANSWERS[key].replace(/https?:\/\/[^\s<>]+/g, currentSalesRoute);
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 function card(key, changes = {}) {
   return { knowledge_id: SALES_CARD_IDS[key], customer_answer: APPROVED_ANSWERS[key], status: "active", response_mode: "auto_reply_allowed", workflow_stage: "published", workflow_version: 2, allowed_channels: ["LINE_OFC"], allowed_audience: ["Guest", "Standard", "Premium", "Inactive / Expired"], effective_from: "2026-09-14", payload_json: { seed_pack: { version: SALES_REPLY_VERSION }, effective_to: "2026-09-30T16:59:59.999Z" }, ...changes };
@@ -29,6 +30,15 @@ function truth(state, changes = {}) {
   return { ok: true, identity_status: "resolved", authority: AUTHORITY, display_name: "ทดสอบ", membership: { level: "private_premium", label: "Premium", lifecycle: state, expire_at: "2026-12-31", member_blocked: false, ...changes } };
 }
 const ENV = { LINE_KENJI_KNOWLEDGE_ENABLED: "true" };
+test("expired campaign fallback stays in LIFF without reviving reviewed benefits", async () => {
+  const result = await resolveKenjiSalesReply(event("CARE BACK"), ENV, {
+    intent: "care_back_overview", now: Date.parse("2026-10-16T00:00:00Z"), readCard: async () => card("care_back"),
+  });
+  assert.equal(result.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview");
+  assert.match(result.text, /ต้องตรวจเงื่อนไขล่าสุด/);
+  assert.doesNotMatch(result.text, /180 วัน|เพิ่มอีก 1 ปี|https:\/\/mmdbkk\.com/);
+  assert.equal(result.model_attempted, false);
+});
 const options = (intent, extra = {}) => ({ intent, now: NOW, readCard: async (_, key) => card(key), readTruth: async () => ({ ok: false, status: "unavailable" }), ...extra });
 function oneSafeCta(decision) {
   assert.ok(decision.text.length < 1600);
@@ -89,7 +99,7 @@ for (const [message, prior, expected] of [
 }
 test("general CARE BACK answers without requiring a personal lookup", async () => {
   const result = await resolveKenjiSalesReply(event("CARE BACK"), ENV, options("care_back_overview", { readTruth: async () => { throw new Error("Public explanation must not read personal truth"); } }));
-  assert.equal(result.text, APPROVED_ANSWERS.care_back);
+  assert.equal(result.text, routedAnswer("care_back"));
   assert.match(result.text, /180 วัน/);
   assert.match(result.text, /ปกติ 2 ปี/);
   assert.equal(result.live_truth_used, false);
@@ -104,7 +114,7 @@ test("current member is not pitched a new signup or unsolicited renewal", async 
   oneSafeCta(result);
 });
 
-test("generic signup uses Public Membership while explicit Private signup stays in SIGIL", async () => {
+test("generic and Private signup both stay in the dedicated LIFF", async () => {
   const generic = await resolveKenjiSalesReply(event("สมัครสมาชิก"), ENV, options("membership_signup"));
   assert.equal(generic.cta_route, SALES_ROUTES.signup);
   assert.match(generic.text, /Public Membership/);
@@ -197,7 +207,7 @@ test("primary seed decision selects the actual V2 CARE BACK record", async () =>
   const result = await resolveKenjiSeedDecision(event("CARE BACK"), env);
   assert.equal(result.reply_pack_version, SALES_REPLY_VERSION);
   assert.deepEqual(result.selected_knowledge_ids, [SALES_CARD_IDS.care_back]);
-  assert.equal(result.text, APPROVED_ANSWERS.care_back);
+  assert.equal(result.text, routedAnswer("care_back"));
 }));
 test("valid LINE signature reaches one reviewed reply and its single CTA", async () => mockedRuntime(async (env, calls) => {
   const result = await handleKenjiSeedLineRequest(await signedRequest(env, event("CARE BACK")), env);
@@ -205,7 +215,7 @@ test("valid LINE signature reaches one reviewed reply and its single CTA", async
   assert.equal(result.status, 200);
   assert.equal(payload.saved[0].reply_pack_version, SALES_REPLY_VERSION);
   assert.equal(calls.line.length, 1);
-  assert.equal(calls.line[0].messages[0].text, APPROVED_ANSWERS.care_back);
+  assert.equal(calls.line[0].messages[0].text, routedAnswer("care_back"));
 }));
 test("missing durable intake result blocks a LINE reply", async () => mockedRuntime(async (env, calls) => {
   const result = await seedLineRequest(await signedRequest(env, event("CARE BACK")), env);
