@@ -78,6 +78,7 @@ test('Wrangler entrypoint dispatches Attention with real session gates and canon
       assert.equal(denied.status, 401);
       assert.equal((await denied.json()).items, undefined);
 
+      base.fetch = allowedReader;
       const authenticated = () => new Request(url, { headers: { cookie: '__Host-mmd_liff_session=fixture' } });
       const validSession = storedSession;
       for (const invalid of [null, {}, { ...validSession, line_user_id: 'ambiguous' }, { ...validSession, expires_at: 0 }]) {
@@ -91,7 +92,7 @@ test('Wrangler entrypoint dispatches Attention with real session gates and canon
         deniedPath = path; calls.length = 0;
         const rejected = await worker.fetch(authenticated(), env, {});
         assert.equal(rejected.status, 401); assert.equal((await rejected.json()).items, undefined);
-        assert.equal(calls.length, 3); assert.match(rejected.headers.get('cache-control'), /no-store/);
+        assert.deepEqual(calls.sort(), ['/api/member/app/membership', '/api/member/app/session/current', '/v1/member/payments'], 'denied source=' + path); assert.match(rejected.headers.get('cache-control'), /no-store/);
       }
     } finally { base.fetch = original; }
   `;
