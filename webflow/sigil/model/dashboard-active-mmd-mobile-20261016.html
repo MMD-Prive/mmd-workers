@@ -1,0 +1,201 @@
+<div id="tart-dashboard-v2" class="tdb" data-api-base="" data-model-brand-lane="public">
+  <div class="tdb-shell">
+    <header class="tdb-top">
+      <div>
+        <p class="tdb-eyebrow">MMD Privé</p>
+        <h1>งานนี้ MMD สรุปไว้ให้แล้วครับ</h1>
+        <p id="mmdModelStatusText" class="tdb-lead">เช็กเวลา สถานที่ และบรีฟให้ครบก่อนออกเดินทางนะครับ</p>
+      </div>
+      <span id="mmdModelTokenBadge" class="tdb-badge">Connecting</span>
+    </header>
+
+    <section class="tdb-now">
+      <div>
+        <span class="tdb-label">สถานะตอนนี้</span>
+        <strong id="mmdModelStatusTitle">กำลังเชื่อม LINE ครับ</strong>
+      </div>
+      <div class="tdb-now-meta">
+        <span>Session</span><b id="mmdSessionId">—</b>
+      </div>
+    </section>
+
+    <nav class="tdb-tabs" aria-label="Dashboard sections">
+      <button class="is-active" data-tab="brief">บรีฟ</button>
+      <button data-tab="travel">เดินทาง</button>
+      <button data-tab="work">ระหว่างงาน</button>
+      <button data-tab="support">ให้MMD ช่วย</button>
+    </nav>
+
+    <main>
+      <section class="tdb-panel is-active" data-panel="brief">
+        <div class="tdb-grid tdb-grid--2">
+          <article class="tdb-card tdb-card--hero">
+            <span class="tdb-label">งานของคุณ</span>
+            <h2 id="mmdJobTitle">กำลังโหลดรายละเอียดงาน</h2>
+            <div class="tdb-facts">
+              <div><span>วันและเวลา</span><b id="mmdJobDateTime">—</b></div>
+              <div><span>สถานที่</span><b id="mmdJobLocation">—</b></div>
+              <div><span>ลูกค้า</span><b id="mmdClientName">ข้อมูลจะแสดงเท่าที่จำเป็น</b></div>
+            </div>
+          </article>
+          <article class="tdb-card">
+            <span class="tdb-label">บรีฟสั้น</span>
+            <p id="mmdClientBrief">อ่านส่วนนี้ก่อนออกเดินทาง ถ้ามีอะไรไม่ตรง ทักMMD ก่อนได้เลยครับ</p>
+            <a id="mmdMapLink" class="tdb-link" href="#" target="_blank" rel="noopener">เปิดแผนที่</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="tdb-panel" data-panel="travel">
+        <div class="tdb-card">
+          <span class="tdb-label">อัปเดตการเดินทาง</span>
+          <h2>ถึงขั้นไหนแล้วครับ</h2>
+          <div class="tdb-actions">
+            <button data-action="accept_job">รับงานนี้</button>
+            <button data-action="start_travel">กำลังออกเดินทาง</button>
+            <button data-action="mark_arrived">ถึงสถานที่แล้ว</button>
+            <button data-action="mark_met_customer">พบลูกค้าแล้ว</button>
+          </div>
+          <div class="tdb-inline">
+            <input id="mmdEtaInput" type="number" min="1" max="240" inputmode="numeric" placeholder="ETA นาที">
+            <button id="mmdSendEta">ส่ง ETA</button>
+          </div>
+          <div class="tdb-actions tdb-actions--minor">
+            <button id="mmdShareLocation">แชร์ตำแหน่ง</button>
+            <button id="mmdReportDelay">แจ้งว่าจะช้า</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="tdb-panel" data-panel="work">
+        <div class="tdb-card">
+          <span class="tdb-label">ระหว่างงาน</span>
+          <h2>อัปเดตตามสิ่งที่เกิดขึ้นจริงนะครับ</h2>
+          <div class="tdb-actions">
+            <button data-action="start_work">เริ่มงานแล้ว</button>
+            <button data-action="mark_work_finished">งานเสร็จแล้ว</button>
+            <button data-action="confirm_separated">แยกย้ายเรียบร้อย</button>
+          </div>
+          <p class="tdb-note">ถ้าบรีฟเปลี่ยน ลูกค้าขอเพิ่ม หรือรู้สึกไม่โอเค หยุดก่อนแล้วกดให้MMD ช่วยได้ทันทีครับ</p>
+        </div>
+      </section>
+
+      <section class="tdb-panel" data-panel="support">
+        <div class="tdb-grid tdb-grid--2">
+          <article class="tdb-card">
+            <span class="tdb-label">ให้MMD ช่วย</span>
+            <h2>เลือกเรื่องที่เกิดขึ้นได้เลยครับ</h2>
+            <div class="tdb-actions tdb-actions--support">
+              <button data-support="brief_mismatch">บรีฟไม่ตรง</button>
+              <button data-support="cannot_find_client">หาลูกค้าไม่พบ</button>
+              <button data-support="place_changed">สถานที่เปลี่ยน</button>
+              <button data-support="unsafe">รู้สึกไม่ปลอดภัย</button>
+            </div>
+          </article>
+          <article class="tdb-card">
+            <span class="tdb-label">การจ่ายค่าตัว</span>
+            <h2 id="mmdPayoutStatus">รอข้อมูลหลังจบงาน</h2>
+            <p>สถานะจะอัปเดตเมื่อทีมตรวจงานและยอดเรียบร้อยแล้วครับ</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+(function(){
+  'use strict';
+  var root=document.getElementById('tart-dashboard-v2');
+  if(!root)return;
+  document.querySelectorAll('[data-mmd-model-dashboard],#mmd-model-dashboard').forEach(function(el){if(!root.contains(el))el.remove();});
+  var LIFF_IDS={developing:'2010864852-MuzunIKU',review:'2010864853-7SqCQVxy',published:'2010864854-N34SgCqq'};
+  var env='published';
+  var p=new URLSearchParams(location.search);var forced=(p.get('liff_env')||'').toLowerCase();
+  if(forced==='review')env='review';else if(forced==='developing'||forced==='dev')env='developing';
+  function q(s){return root.querySelector(s)}
+  function text(id,v){var e=document.getElementById(id);if(e&&v!=null)e.textContent=v}
+  function setState(title,copy){text('mmdModelStatusTitle',title);text('mmdModelStatusText',copy)}
+  function switchTab(name){root.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('is-active',b.dataset.tab===name)});root.querySelectorAll('[data-panel]').forEach(function(x){x.classList.toggle('is-active',x.dataset.panel===name)});}
+  root.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){switchTab(b.dataset.tab)})});
+  async function request(url,options){var r=await fetch(url,Object.assign({credentials:'include',cache:'no-store',headers:{Accept:'application/json'}},options||{}));var d=await r.json().catch(function(){return {}});if(!r.ok||d.ok===false)throw new Error(d.error||'request_failed');return d;}
+  function render(data){var s=data.session||{};var lanes=[s.model_work_lane,s.payout_terms&&s.payout_terms.money_lane].filter(Boolean);var isPrivate=data.ok===true&&!!s.session_id&&lanes.length>0&&lanes.every(function(lane){return lane==='private_model'});root.dataset.modelBrandLane=isPrivate?'private':'public';var brand=q('.tdb-eyebrow');if(brand)brand.textContent=isPrivate?'SĪGIL · PRIVATE MODEL':s.session_id?'MMD · PUBLIC MODEL':'MMD Privé';text('mmdSessionId',s.session_id||'—');text('mmdSessionStatus',s.normalized_state||s.state||'confirmed');text('mmdModelTokenBadge','Verified');var b=document.getElementById('mmdModelTokenBadge');if(b)b.classList.add('is-live');setState('พร้อมดูแลงานนี้ครับ','อ่านบรีฟให้ครบก่อน แล้วค่อยอัปเดตตามสิ่งที่เกิดขึ้นจริงนะครับ');}
+  async function action(name,extra){await request('/v1/model/session/action',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(Object.assign({action:name},extra||{}))});await load();}
+  async function load(){var d=await request('/v1/model/session/current');render(d);window.dispatchEvent(new CustomEvent('mmd:model-session-ready',{detail:d}));return d;}
+  root.querySelectorAll('[data-action]').forEach(function(b){b.addEventListener('click',async function(){b.disabled=true;try{await action(b.dataset.action)}catch(e){setState('ยังอัปเดตไม่ได้ครับ','ลองอีกครั้ง หรือกดให้MMD ช่วยได้เลยครับ')}finally{b.disabled=false}})});
+  q('#mmdSendEta').addEventListener('click',async function(){var v=Number(q('#mmdEtaInput').value||0);if(!v)return;try{await request('/v1/model/session/eta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({etaMinutes:v})});setState('ส่ง ETA แล้วครับ','เดินทางปลอดภัยนะครับ')}catch(e){setState('ยังส่ง ETA ไม่ได้ครับ','ลองอีกครั้ง หรือแจ้งMMD ผ่านปุ่มช่วยเหลือได้เลยครับ')}});
+  q('#mmdShareLocation').addEventListener('click',function(){if(!navigator.geolocation)return;setState('กำลังขอตำแหน่งครับ','กดอนุญาตได้เลยนะครับ');navigator.geolocation.getCurrentPosition(async function(pos){try{await request('/v1/model/session/location',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,capturedAt:new Date().toISOString()})});setState('ส่งตำแหน่งแล้วครับ','MMD จะใช้เพื่อช่วยดูการเดินทางครั้งนี้เท่านั้นครับ')}catch(e){setState('ยังส่งตำแหน่งไม่ได้ครับ','ลองอีกครั้งได้เลยครับ')}},function(){setState('ยังไม่ได้รับตำแหน่งครับ','อนุญาต Location แล้วลองอีกครั้งนะครับ')})});
+  q('#mmdReportDelay').addEventListener('click',function(){switchTab('support')});
+  root.querySelectorAll('[data-support]').forEach(function(b){b.addEventListener('click',async function(){try{await request('/v1/model/session/support',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:b.dataset.support})});setState('ส่งให้MMD ดูแล้วครับ','เดี๋ยวMMD ตามต่อให้นะครับ')}catch(e){setState('ยังส่งไม่ได้ครับ','ติดต่อทีม MMD ผ่านช่องทางเดิมได้เลยครับ')}})});
+  async function boot(){try{await liff.init({liffId:LIFF_IDS[env],withLoginOnExternalBrowser:true});if(!liff.isLoggedIn()){liff.login({redirectUri:location.href});return;}var idToken=liff.getIDToken();if(!idToken)throw new Error('id_token_unavailable');await request('/v1/model/liff/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:idToken,environment:env})});await load();}catch(e){console.error(e);var c=String(e.message||e);if(c.indexOf('model_not_linked')>-1)setState('ยังไม่เจอข้อมูลนายแบบครับ','บัญชี LINE นี้ยังไม่ได้เชื่อมกับข้อมูลนายแบบ กรุณาติดต่อทีม MMD');else if(c.indexOf('active_session_not_found')>-1)setState('ยังไม่มีงานที่กำลังใช้งานครับ','เมื่อมีงานใหม่ หน้านี้จะแสดงรายละเอียดให้ทันทีครับ');else setState('ยังเปิดงานนี้ไม่ได้ครับ','ปิดแล้วเปิดใหม่จากลิงก์ Model Dashboard ใน LINE อีกครั้งนะครับ');}}
+  boot();
+})();
+</script>
+<!-- Webflow separate style embed: -->
+<style>
+html.mmd-sigil-model-dashboard,body{background:#0b0b0d!important}
+body>*:not(.w-embed){font-family:"LINE Seed Sans TH","LINE Seed Sans","Noto Sans Thai",Arial,sans-serif!important}
+#tart-dashboard-v2,#tart-dashboard-v2 *{box-sizing:border-box}
+#tart-dashboard-v2{--bg:#0b0b0d;--panel:#141417;--panel2:#19191d;--line:rgba(255,255,255,.09);--text:#f6f3ee;--muted:#a9a4a0;--gold:#d8b879;--danger:#e8a7a7;min-height:100vh;background:radial-gradient(circle at top right,rgba(120,78,39,.18),transparent 35%),var(--bg);color:var(--text);font-family:"LINE Seed Sans TH","LINE Seed Sans","Noto Sans Thai",Arial,sans-serif!important;padding:18px 14px 96px}
+.tdb-shell{width:min(100%,1080px);margin:0 auto}
+.tdb-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:8px 2px 16px}
+.tdb-eyebrow,.tdb-label{margin:0 0 6px;font-size:11px;line-height:1.2;letter-spacing:.13em;text-transform:uppercase;color:var(--gold);font-weight:700}
+.tdb-top h1,.tdb-card h2{margin:0;font-weight:650;letter-spacing:-.03em}
+.tdb-top h1{font-size:clamp(25px,7vw,42px);line-height:1.08;max-width:780px}
+.tdb-lead{margin:9px 0 0;color:var(--muted);font-size:14px;line-height:1.55;max-width:680px}
+.tdb-badge{flex:none;border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--muted);background:rgba(255,255,255,.03)}
+.tdb-badge.is-live{color:#d9f0df;border-color:rgba(132,202,149,.34);background:rgba(132,202,149,.1)}
+.tdb-now{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.06),rgba(255,255,255,.025));box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.tdb-now strong{display:block;font-size:18px;line-height:1.25}
+.tdb-now-meta{text-align:right;min-width:86px}.tdb-now-meta span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}.tdb-now-meta b{display:block;margin-top:3px;font-size:12px;max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tdb-tabs{position:sticky;top:8px;z-index:10;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:14px 0;padding:6px;border:1px solid var(--line);border-radius:16px;background:rgba(12,12,14,.88);backdrop-filter:blur(18px)}
+.tdb-tabs button,.tdb-actions button,.tdb-inline button{appearance:none;border:0;font:inherit;cursor:pointer}
+.tdb-tabs button{padding:10px 5px;border-radius:11px;background:transparent;color:var(--muted);font-size:12px;white-space:nowrap}.tdb-tabs button.is-active{background:#f0ece5;color:#111;font-weight:700}
+.tdb-panel{display:none}.tdb-panel.is-active{display:block;animation:tdbIn .22s ease both}@keyframes tdbIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.tdb-grid{display:grid;gap:12px}.tdb-card{border:1px solid var(--line);border-radius:20px;background:var(--panel);padding:17px;min-width:0}.tdb-card--hero{background:linear-gradient(145deg,var(--panel2),#121215)}
+.tdb-card h2{font-size:21px;line-height:1.22}.tdb-card p{margin:10px 0 0;color:var(--muted);font-size:14px;line-height:1.6}
+.tdb-facts{display:grid;gap:10px;margin-top:16px}.tdb-facts div{padding-top:10px;border-top:1px solid var(--line)}.tdb-facts span{display:block;color:var(--muted);font-size:11px}.tdb-facts b{display:block;margin-top:4px;font-size:14px;line-height:1.45}
+.tdb-link{display:inline-flex;margin-top:14px;padding:9px 12px;border-radius:999px;background:rgba(216,184,121,.12);color:var(--gold);text-decoration:none;font-size:13px;font-weight:700}
+.tdb-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}.tdb-actions button,.tdb-inline button{min-height:46px;border-radius:13px;background:#f1ede6;color:#111;padding:10px 12px;font-weight:700;font-size:13px}.tdb-actions button:disabled{opacity:.45}.tdb-actions--minor button,.tdb-actions--support button{background:#202025;color:var(--text);border:1px solid var(--line)}
+.tdb-inline{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px}.tdb-inline input{width:100%;min-height:46px;border:1px solid var(--line);border-radius:13px;background:#0f0f12;color:var(--text);padding:0 13px;font:inherit;outline:none}.tdb-inline input:focus{border-color:rgba(216,184,121,.55)}
+.tdb-note{padding:12px;border-radius:13px;background:rgba(216,184,121,.08);color:#d7c8ae!important}
+@media(min-width:720px){#tart-dashboard-v2{padding:32px 24px 110px}.tdb-grid--2{grid-template-columns:1.2fr .8fr}.tdb-card{padding:22px}.tdb-actions{grid-template-columns:repeat(4,1fr)}.tdb-actions--support{grid-template-columns:1fr 1fr}.tdb-tabs{max-width:620px;margin:18px auto}.tdb-now{padding:18px 20px}}
+@media(max-width:390px){.tdb-tabs button{font-size:11px;padding:9px 3px}.tdb-top{display:block}.tdb-badge{display:inline-block;margin-top:12px}.tdb-actions{grid-template-columns:1fr}.tdb-now{grid-template-columns:1fr}.tdb-now-meta{text-align:left}}
+</style>
+<style id="mmd-active-mobile-bangkok-20261016">
+body:has(#tart-dashboard-v2){background:#fff!important}
+body:has(#tart-dashboard-v2[data-model-brand-lane="private"]){background:#090a0d!important}
+#tart-dashboard-v2{--bg:#fff;--panel:#fff;--panel2:#f7f4ed;--line:#d7ccba;--text:#29231c;--muted:#655b4f;--gold:#806127;min-height:100svh;padding:12px 12px max(24px,env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(255,253,248,.86),rgba(255,253,248,.96)),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe018f9cd0657b75e96242_Bangkok%2027.webp") 62% top/cover no-repeat;color:var(--text)}
+#tart-dashboard-v2[data-model-brand-lane="private"]{--bg:#090a0d;--panel:#141417;--panel2:#19191d;--line:#484137;--text:#f7f1e7;--muted:#c6beb1;--gold:#dfc18b;background:linear-gradient(180deg,rgba(9,10,13,.66),rgba(9,10,13,.96)),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe018f9cd0657b75e96242_Bangkok%2027.webp") 62% top/cover no-repeat}
+#tart-dashboard-v2 .tdb-shell{width:min(100%,540px)}
+#tart-dashboard-v2 .tdb-top{display:flex;position:relative;isolation:isolate;overflow:hidden;min-height:190px;padding:56px 16px 16px;align-items:flex-end;border:1px solid var(--line);border-radius:18px;margin-bottom:10px;background:linear-gradient(0deg,rgba(255,253,248,.99),rgba(255,253,248,.86) 30%,rgba(255,253,248,.06) 88%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe018f9cd0657b75e96242_Bangkok%2027.webp") 62% 35%/cover no-repeat}
+#tart-dashboard-v2[data-model-brand-lane="private"] .tdb-top{background:linear-gradient(0deg,rgba(9,10,13,.99),rgba(9,10,13,.78) 30%,rgba(9,10,13,.1) 88%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe018f9cd0657b75e96242_Bangkok%2027.webp") 62% 35%/cover no-repeat}
+#tart-dashboard-v2 .tdb-top h1{font-size:24px;line-height:1.4}
+#tart-dashboard-v2 .tdb-lead{font-size:12px;line-height:1.65;margin-top:6px}
+#tart-dashboard-v2 .tdb-badge{position:absolute;right:12px;top:12px;font-size:10px;background:var(--panel);color:var(--muted);margin:0}
+#tart-dashboard-v2 .tdb-badge.is-live{color:#27713b}
+#tart-dashboard-v2[data-model-brand-lane="private"] .tdb-badge.is-live{color:#cbe8d2}
+#tart-dashboard-v2 .tdb-now{padding:12px;border-radius:16px;background:var(--panel);box-shadow:none;grid-template-columns:minmax(0,1fr) auto}
+#tart-dashboard-v2 .tdb-now strong{font-size:16px;line-height:1.5}
+#tart-dashboard-v2 .tdb-tabs{top:8px;margin:10px 0;padding:5px;gap:4px;background:var(--panel);grid-template-columns:repeat(4,minmax(0,1fr));border-radius:15px}
+#tart-dashboard-v2 .tdb-tabs button{min-height:44px;font-size:11px;padding:8px 3px;white-space:normal;line-height:1.5}
+#tart-dashboard-v2 .tdb-tabs button.is-active{background:#806127;color:#fffaf2}
+#tart-dashboard-v2[data-model-brand-lane="private"] .tdb-tabs button.is-active{background:#dfc18b;color:#1d160c}
+#tart-dashboard-v2 .tdb-grid{gap:10px;grid-template-columns:1fr}
+#tart-dashboard-v2 .tdb-card{padding:14px;border-radius:16px;background:var(--panel)}
+#tart-dashboard-v2 .tdb-card h2{font-size:18px;line-height:1.5}
+#tart-dashboard-v2 .tdb-card p{font-size:13px;line-height:1.65}
+#tart-dashboard-v2 .tdb-facts{gap:8px;margin-top:10px}
+#tart-dashboard-v2 .tdb-facts b{font-size:13px;overflow-wrap:anywhere}
+#tart-dashboard-v2 .tdb-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#tart-dashboard-v2 .tdb-actions button,#tart-dashboard-v2 .tdb-inline button{min-height:46px;background:#806127;color:#fffaf2}
+#tart-dashboard-v2 .tdb-actions--minor button,#tart-dashboard-v2 .tdb-actions--support button{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+#tart-dashboard-v2 .tdb-inline input{font-size:16px;min-width:0;background:var(--panel);color:var(--text)}
+#tart-dashboard-v2 .tdb-note{color:var(--muted)!important}
+#tart-dashboard-v2 :is(h1,h2,strong,b){color:var(--text);-webkit-text-fill-color:var(--text);background-image:none}
+#tart-dashboard-v2 :is(.tdb-lead,.tdb-card p,.tdb-facts span){color:var(--muted);-webkit-text-fill-color:var(--muted)}
+#tart-dashboard-v2 :is(button,a):focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+@media(min-width:768px){#tart-dashboard-v2{padding:24px 24px 40px}#tart-dashboard-v2 .tdb-shell{width:min(100%,1040px)}#tart-dashboard-v2 .tdb-top{min-height:240px;padding:54px 26px 22px}#tart-dashboard-v2 .tdb-top h1{font-size:30px}#tart-dashboard-v2 .tdb-grid--2{grid-template-columns:1.2fr .8fr}#tart-dashboard-v2 .tdb-actions{grid-template-columns:repeat(4,minmax(0,1fr))}#tart-dashboard-v2 .tdb-actions--support{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){#tart-dashboard-v2 .tdb-panel{animation:none}}
+</style>
