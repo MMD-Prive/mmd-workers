@@ -37,6 +37,7 @@ const protectedJobs = {
 const sha = 'a'.repeat(40);
 const approved = { production_approved: true, approval_ref: 'fixture-owner-approval', approved_sha: sha, confirm: 'DEPLOY' };
 function allows(expression, event = 'workflow_dispatch', inputs = approved, override = {}) {
+  if (expression === false) return false;
   return vm.runInNewContext(expression.replace(/^\s*\$\{\{([\s\S]*)\}\}\s*$/, '$1'), {
     github: { event_name: event, ref: 'refs/heads/main', sha,
       event: { workflow_run: { conclusion: 'success', head_branch: 'main' } }, ...override }, inputs,
@@ -83,6 +84,11 @@ test('LIFF-start automatic POST/issue smoke stays held with no new dispatch path
   assert.equal(Object.hasOwn(workflow.on, 'workflow_dispatch'), false);
   for (const event of ['push', 'workflow_run', 'workflow_dispatch']) assert.equal(allows(workflow.jobs.smoke.if, event), false);
 });
+test('legacy one-shot redirect deployment remains held on every trigger', () => {
+  const workflow = workflows['retire-mmd-redirect-worker-once.yml'];
+  assert.equal(Object.hasOwn(workflow.on, 'workflow_dispatch'), false);
+  assert.equal(workflow.jobs.retire.if, false);
+});
 test('read-only CI runs runtime regression and guard tests on Node 18/20/22', () => {
   const workflow = workflows['my-mmd-phase456-ci.yml'];
   assert.deepEqual(workflow.permissions, { contents: 'read' });
@@ -98,6 +104,7 @@ test('read-only CI runs runtime regression and guard tests on Node 18/20/22', ()
 test('effective merge push and downstream chain cannot reach unreviewed production jobs', () => {
   const changed = ['member-pages-worker/src/runtime-index.js', 'member-pages-worker/test/member-attention-entrypoint.test.mjs',
     'scripts/my-mmd-workflow-guards.test.mjs', '.github/workflows/my-mmd-phase456-ci.yml', '.github/workflows/my-mmd-mutation-safety-ci.yml',
+    '.github/workflows/retire-mmd-redirect-worker-once.yml',
     'scripts/admin-workflow-safety.test.mjs', 'shared/phase1-route-owner-lock.test.mjs', 'scripts/redirect-route-retirement-scope.mjs',
     'scripts/redirect-route-retirement-scope.test.mjs', 'scripts/redirect-route-retirement-execution.test.mjs',
     'webflow/member/dashboard/current/footer.html', 'webflow/member/dashboard/member-attention-coupons.test.mjs',
@@ -129,7 +136,8 @@ test('effective merge push and downstream chain cannot reach unreviewed producti
   assert.ok(reached.has('hype-shop-production-smoke.yml'));
   for (const file of reached) {
     if (readOnly.has(file)) continue;
-    assert.ok(protectedJobs[file] || file === 'smoke-my-mmd-liff-start.yml', 'Review newly reachable workflow: ' + file);
+    assert.ok(protectedJobs[file] || file === 'smoke-my-mmd-liff-start.yml' || file === 'retire-mmd-redirect-worker-once.yml',
+      'Review newly reachable workflow: ' + file);
     for (const [id, job] of Object.entries(workflows[file].jobs)) {
       if (file === 'deploy-my-mmd-standby-worker.yml' && id === 'validate') continue;
       for (const event of ['push', 'workflow_run', 'pull_request']) assert.equal(allows(job.if, event), false, `${file}:${id}:${event}`);
