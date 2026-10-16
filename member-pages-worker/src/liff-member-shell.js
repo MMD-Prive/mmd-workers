@@ -1,3 +1,5 @@
+import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
+
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
@@ -271,6 +273,7 @@ function renderShell(config, nonce) {
     @media(max-width:699px){body.app-entered:not(.signup-mode),body.app-entered:not(.signup-mode) main{width:100%;max-width:100%;min-height:100dvh}body.app-entered:not(.signup-mode) main{margin:0;border:0;border-radius:0}.digital-dock{width:100%;max-width:100%}}
     @media(min-width:700px){body.app-entered:not(.signup-mode) #app-status,body.app-entered:not(.signup-mode) #actions,body.app-entered:not(.signup-mode) #profile,body.app-entered:not(.signup-mode) #status{width:min(100%,var(--digital-shell-max));margin-left:auto;margin-right:auto}}
     @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
+    ${MY_MMD_LOVABLE_DESIGN_CSS}
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">

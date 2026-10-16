@@ -4,7 +4,8 @@ import { runInNewContext } from "node:vm";
 
 import worker from "../src/index.js";
 import { handleCareBackLiffOrchestrator } from "../src/care-back-liff-orchestrator.js";
-import { resolveTrustedWelcomeWorld } from "../src/liff-member-shell.js";
+import { resolveTrustedWelcomeWorld, handleLiffMemberShell } from "../src/liff-member-shell.js";
+import { MY_MMD_LOVABLE_DESIGN_CSS as css } from "../src/liff-lovable-design.js";
 
 function env(overrides = {}) {
   return {
@@ -801,4 +802,30 @@ describe("renewal card hidden parts", () => {
     const html = await (await shell("/member/liff?intent=renew&view=package")).text();
     assert.match(html, /\.renewal-price\[hidden\][^{]*\{display:none!important\}/);
   });
+});
+
+it('Lovable adapter is inert scoped CSS without external resources or hidden-state overrides', () => {
+  assert.doesNotMatch(css, /url\s*\(|@import|<script|fetch\s*\(|localStorage|sessionStorage|display\s*:|visibility\s*:/i);
+  for (const rule of css.split('}')) {
+    if (!rule.includes('{')) continue;
+    const selector = rule.slice(0, rule.lastIndexOf('{'));
+    assert.match(selector, /body\.app-entered:not\(\.signup-mode\)/);
+  }
+});
+
+it('desktop dock centers controls while retaining full-width existing chrome', () => {
+  assert.match(css, /--digital-reading-max: 520px/);
+  assert.match(css, /@media \(min-width: 700px\)/);
+  assert.match(css, /padding-left: max\(16px, env\(safe-area-inset-left\), calc\(\(100% - 520px\) \/ 2\)\)/);
+  assert.match(css, /padding-right: max\(16px, env\(safe-area-inset-right\), calc\(\(100% - 520px\) \/ 2\)\)/);
+});
+
+it('shell embeds design as style only and retains no-store and same-origin API configuration', async () => {
+  const response = handleLiffMemberShell(new Request('https://mmdbkk.com/member/liff?world=private'), {});
+  const html = await response.text();
+  assert.match(response.headers.get('cache-control'), /no-store/);
+  assert.ok(html.slice(html.indexOf('<style>'), html.indexOf('</style>')).includes(css));
+  assert.match(html, /"world":"public"/);
+  assert.match(html, /"startEndpoint":"\/member\/api\/liff\/start"/);
+  assert.doesNotMatch(html, /https:\/\/[^"\s]*lovable/);
 });
