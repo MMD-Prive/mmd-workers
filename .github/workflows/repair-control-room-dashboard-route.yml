@@ -1,23 +1,26 @@
 name: Repair Control Room dashboard route
 
 on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for this workflow and its production side effects only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this workflow and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this workflow'
+        type: string
+        required: true
   pull_request:
     paths:
       - ".github/workflows/repair-control-room-dashboard-route.yml"
       - "immigrate-worker/src/control-room-owner-ui-legacy.ts"
       - "admin-worker/src/dashboard-worker.js"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/repair-control-room-dashboard-route.yml"
-  workflow_dispatch:
-  workflow_run:
-    workflows:
-      - Deploy admin-worker
-    types:
-      - completed
-
 concurrency:
   group: repair-control-room-dashboard-route-production
   cancel-in-progress: false
@@ -26,6 +29,13 @@ permissions:
   contents: read
 
 jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
   validate-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -44,8 +54,9 @@ jobs:
           grep -Fq 'BACKEND WAITING' immigrate-worker/src/control-room-owner-ui-legacy.ts
 
   repair-and-smoke:
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
-    needs: validate-contract
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval, validate-contract]
+    environment: mmd-production-mutation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

@@ -222,7 +222,8 @@ test("Job Board Mini App callback exchanges LINE session then opens the exact jo
   assert.match(html, /ส่งข้อมูลส่วนตัว/);
   assert.match(html, /เริ่มส่งข้อมูล/);
   assert.match(html, /t\.me\/per_mmd/);
-  assert.match(html, /\/apply\/public-model/);
+  assert.match(html, /intake\.searchParams\.set\("flow","apply"\)/);
+  assert.match(html, /intake\.searchParams\.set\("intent","job_board"\)/);
   assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้|ยืนยันตัวตน|กำลังตรวจสอบตัวตน/);
   assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.match(html, /\/v1\/model\/job-board\/handoff/);

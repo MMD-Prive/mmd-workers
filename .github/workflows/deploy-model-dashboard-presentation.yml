@@ -39,6 +39,7 @@ jobs:
           set -euo pipefail
           node --check src/index.js
           node --test index.test.mjs model-webflow-home.test.mjs
+          node --test ../webflow/sigil/model/model-webflow-entry-recovery.test.mjs ../webflow/sigil/model/model-console-v3-identity-first.test.mjs
 
   deploy:
     if: github.event_name != 'pull_request'
@@ -128,6 +129,8 @@ jobs:
             "mmdbkk.com/sigil/model/dashboard*",
             "www.mmdbkk.com/sigil/model/dashboard*",
             "mmdbkk.com/sigil/model/wish*",
+            "mmdbkk.com/sigil/model/login",
+            "mmdbkk.com/sigil/confirm/job-model",
             "mmdbkk.com/assets/*",
             "www.mmdbkk.com/assets/*",
             "mmdbkk.com/_build/*",

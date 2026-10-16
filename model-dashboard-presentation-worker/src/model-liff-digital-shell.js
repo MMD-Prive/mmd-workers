@@ -121,7 +121,7 @@ export function modelLiffDigitalBootstrapHtml({
       }
     : null;
   const directAssignedModel = Boolean(safeJobBoard && safeJobBoard.model_record_id);
-  const directConfirmedJob = Boolean(returnTo || selectedSession);
+  const directConfirmedJob = Boolean((returnTo && returnTo !== "/sigil/model/console") || selectedSession);
   const publicJobApplicant = Boolean(safeJobBoard && !directAssignedModel);
   const selectedJobMode = directAssignedModel || directConfirmedJob;
   const jobBoardScript = safeJobBoard ? `
@@ -132,7 +132,9 @@ export function modelLiffDigitalBootstrapHtml({
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true){
       if(${JSON.stringify(publicJobApplicant)}&&exchange.status===202&&exchangeBody&&exchangeBody.state==="identity_review_required"){
-        var intake=new URL("/apply/public-model","https://mmdbkk.com");
+        var intake=new URL("/sigil/model/dashboard","https://mmdbkk.com");
+        intake.searchParams.set("flow","apply");
+        intake.searchParams.set("intent","job_board");
         intake.searchParams.set("source","job_board");
         ${safeJobBoard.job_id ? `intake.searchParams.set("job_id",${JSON.stringify(safeJobBoard.job_id)});` : ""}
         window.location.replace(intake.toString());return;
@@ -156,7 +158,7 @@ export function modelLiffDigitalBootstrapHtml({
     status.textContent="กำลังเปิดรายละเอียดงาน…";
     var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
     var exchangeBody=await exchange.json().catch(function(){return null});
-    if(!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
+    if(exchange.status===202||!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
     window.location.replace(${safeReturnTo});return;` : "";
   const selectedSessionScript = selectedSession ? `
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
@@ -265,6 +267,11 @@ export function modelLiffDigitalBootstrapHtml({
     status.textContent=${JSON.stringify(fail)};
     fallback.hidden=false;
     detail.textContent=code;
+    if(code==="identity_review_required"){
+      status.textContent="MMD กำลังตรวจสอบการเชื่อมข้อมูลเดิม ไม่ต้องสมัครซ้ำครับ";
+      fallback.href="https://lin.ee/xRqsALs";
+      fallback.textContent="ให้ MMD ช่วยตรวจข้อมูลเดิม";
+    }
   }
   function loadSdk(){
     if(window.liff&&typeof window.liff.init==="function")return Promise.resolve();
@@ -313,7 +320,7 @@ export function modelLiffDigitalBootstrapHtml({
     }catch(error){
       // Never echo SDK errors: they can include credential-bearing URLs.
       var code=String(error&&error.message||"");
-      showFailure(/^line_(sdk_timeout|sdk_unavailable|init_timeout)$/.test(code)?code:"line_connection_failed");
+      showFailure(code==="identity_review_required"?code:/^line_(sdk_timeout|sdk_unavailable|init_timeout)$/.test(code)?code:"line_connection_failed");
     }
   }
 

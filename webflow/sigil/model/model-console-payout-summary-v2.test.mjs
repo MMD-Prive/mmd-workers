@@ -7,7 +7,8 @@ const source = await readFile(new URL("./model-console-payout-summary-v2.html", 
 test("payout summary accepts canonical model payout and terms", () => {
   assert.match(source, /expected_payout_thb\?\?session\.pay_model_thb/);
   assert.match(source, /session&&session\.payout_terms/);
-  assert.match(source, /PAYOUT SUMMARY · คุณได้รับ/);
+  assert.match(source, /smcv3-payout-only__label">ยอดเงินถึงตัวคุณ<\/span>/);
+  assert.match(source, /ยอดนี้คือค่าตัวที่คุณได้รับตามงานนี้ ไม่ใช่ราคาที่ลูกค้าจ่าย/);
   assert.match(source, /เวลาจบที่ MMD ยืนยัน/);
 });
 

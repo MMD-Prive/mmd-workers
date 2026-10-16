@@ -1,17 +1,37 @@
 name: Owner Book EI payment verification
 on:
-  workflow_run:
-    workflows: [Deploy admin-worker]
-    types: [completed]
   workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for this workflow and its production side effects only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this workflow and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this workflow'
+        type: string
+        required: true
 permissions:
   contents: read
 concurrency:
   group: owner-book-ei-verify-20261012
   cancel-in-progress: false
 jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
   verify-owner-request:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && contains(github.event.workflow_run.head_commit.message, '[book-ei-verify]'))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval]
+    environment: mmd-production-mutation
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

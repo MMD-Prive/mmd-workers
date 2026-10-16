@@ -25,7 +25,7 @@ async function boundedJson(response) {
   catch(e){await reader.cancel();throw e;}
   const bytes=new Uint8Array(size);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length;}return JSON.parse(new TextDecoder().decode(bytes));
 }
-export async function listMmdNowItems(env, live) {
+async function list(env, live) {
   let offset=0;const items=[];
   for(let page=0;page<10;page++){
     const endpoint=`https://api.webflow.com/v2/collections/${COLLECTION}/items${live?'/live':''}?limit=100&offset=${offset}`;
@@ -42,7 +42,7 @@ export async function handleMemberUpdates(request, env, readSession) {
   if(!session?.lineUserId || session.memberExists!==true || !session.memberId)return respond({ok:false,error:{code:'MEMBER_SESSION_REQUIRED'}},401);
   if(!env.WEBFLOW_CMS_TOKEN)return respond({ok:false,error:{code:'CMS_NOT_CONFIGURED'}},503);
   try {
-    const [live,staged]=await Promise.all([listMmdNowItems(env,true),listMmdNowItems(env,false)]);
+    const [live,staged]=await Promise.all([list(env,true),list(env,false)]);
     const n=Number(new URL(request.url).searchParams.get('limit') || 10);const limit=Number.isInteger(n)?Math.max(1,Math.min(20,n)):10;
     return respond({ok:true,items:projectPublishedUpdates(live,staged,limit),source:'webflow_mmd_now',checked_at:new Date().toISOString()});
   } catch { return respond({ok:false,error:{code:'CMS_UNAVAILABLE'}},503); }
