@@ -21,7 +21,7 @@ root.querySelectorAll('.model-lane-switch').forEach(x=>x.remove());
 function renderWorld(world,hasJob=false){
  root.dataset.modelBrandLane=world;
  text('.mdhome__eyebrow',world==='private'?'SĪGIL · PRIVATE MODEL':hasJob?'MMD · PUBLIC MODEL':'MMD Privé');
- text('.mdhome__title',world==='private'?'งานของคุณ ต้าช่วยดูแล':'พื้นที่ของคุณ');
+ text('.mdhome__title',world==='private'?'งานของคุณ MMD ช่วยดูแล':'พื้นที่ของคุณ');
  text('.mdhome__copy',world==='private'?'เช็กบรีฟและเตรียมตัวสำหรับงานของคุณครับ':'โปรไฟล์ รูป และงานของคุณ อยู่ที่นี่ครับ');
  const links=root.querySelectorAll('.model-blend-guide');
  if(links.length>=2){
@@ -29,7 +29,7 @@ function renderWorld(world,hasJob=false){
   links[1].href=world==='private'?'/rules/model':'https://t.me/mmdprivebot';
   links[0].querySelector('strong').textContent=world==='private'?'คู่มือวันงาน':'รูปและคลิปของฉัน';
   links[0].querySelector('small').textContent=world==='private'?'บรีฟ · เดินทาง · ระหว่างงาน':'จัดการ Public และ Private media';
-  links[1].querySelector('strong').textContent=world==='private'?'กติกาการทำงาน':'ให้ต้าช่วย';
+  links[1].querySelector('strong').textContent=world==='private'?'กติกาการทำงาน':'ให้ MMD ช่วย';
   links[1].querySelector('small').textContent=world==='private'?'อ่านก่อนรับงาน':'มีเรื่องสงสัย ทักได้เลยครับ';
  }
 }
