@@ -5,21 +5,24 @@ import assert from 'node:assert/strict';
 import { buildBundle } from '../../../scripts/build-my-model-workspace-bundle.mjs';
 
 const source = fs.readFileSync(new URL('./my-model-workspace-20261016.js', import.meta.url), 'utf8');
+const legacyJobWorld = fs.readFileSync(new URL('./dashboard-job-world-20261015.js', import.meta.url), 'utf8');
 const common = {module:{exports:{}},URL,URLSearchParams}; vm.runInNewContext(source, common);
 const {classify, world, safeUrl, miniAppLink, profilePatch} = common.module.exports;
 const model = {working_name:'Fixture Model',readiness:{line_identity_verified:true},languages:['thai'],availability_status:'available',available_now:true,telegram_connected:false};
 
-function fixture({profile={ok:true,model}, job={status:404,error:'active_session_not_found'}, origin='https://mmdbkk.com', search='', loggedIn=false} = {}) {
+function fixture({profile={ok:true,model}, job={status:404,error:'active_session_not_found'}, origin='https://mmdbkk.com', search='', loggedIn=false, legacyRoot=false, workspaceRoot=true} = {}) {
   const calls=[], events=new Map(), nodes=new Map();
   function element(tag='DIV') {return {tagName:tag.toUpperCase(),dataset:{},hidden:false,disabled:false,textContent:'',value:'',checked:false,children:[],listeners:{},
     append(...items){this.children.push(...items);},replaceChildren(...items){this.children=[...items];this.textContent='';},removeAttribute(key){delete this[key];},
     addEventListener(key,fn){this.listeners[key]=fn;},querySelectorAll(){return [];},reset(){},remove(){}};}
   const root=element();root.querySelector=selector=>{if(!nodes.has(selector))nodes.set(selector,element());return nodes.get(selector);};
+  const roots=new Map(workspaceRoot?[['mmd-model-home-v4',root]]:[]);
+  if(legacyRoot){const legacy=element('section');legacy.remove=()=>{roots.delete('mmd-model-home-v3');calls.push({retired:'mmd-model-home-v3'});};roots.set('mmd-model-home-v3',legacy);}
   const form=root.querySelector('[data-mss-profile-form]'); form.elements={};
   root.querySelector('[data-mm-save-status]');
   for(const key of ['height_cm','weight_kg','skills_summary','experience_summary','availability_status','available_now']) form.elements[key]=element('input');
   form.querySelectorAll=()=>[];
-  const window={document:{title:'',getElementById:id=>id==='mmd-model-home-v4'?root:null,createElement:element},
+  const window={document:{title:'',getElementById:id=>roots.get(id)||null,createElement:element},
     location:{origin,search,assign(url){calls.push({navigation:url});}},
     liff:{async init(){calls.push({sdk:'init'});},isLoggedIn:()=>loggedIn,getIDToken:()=> 'fixture-id-token'},
     addEventListener(name,fn){if(!events.has(name))events.set(name,[]);events.get(name).push(fn);},
@@ -29,12 +32,59 @@ function fixture({profile={ok:true,model}, job={status:404,error:'active_session
       const payload=String(url).includes('/session/current')?job:String(url).includes('/media')?{ok:true,media:[]}:profile;
       return new Response(JSON.stringify(payload),{status:payload.status||200});
     }};
-  const context={window,URL,URLSearchParams,AbortController,setTimeout,clearTimeout,Intl,CustomEvent:class {constructor(type,init={}){this.type=type;this.detail=init.detail;}}};
+  const context={window,document:window.document,URL,URLSearchParams,AbortController,setTimeout,clearTimeout,Intl,CustomEvent:class {constructor(type,init={}){this.type=type;this.detail=init.detail;}}};
   vm.runInNewContext(source,context);
-  return {calls,nodes,form,window,events};
+  return {calls,nodes,form,window,events,roots,run:script=>vm.runInNewContext(script,context)};
 }
 async function settle(){for(let n=0;n<8;n++)await new Promise(setImmediate);}
 function deferredResponse(){let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};}
+
+// MMDModelHomeV3 1.0.0's entry contract: missing v3 root returns before
+// scheduling load() or subscribing to model-session-ready. Use the existing
+// footer runtime above, and a sentinel for the external loader's side effects.
+const legacyHomeEntry=`(()=>{const r=document.getElementById('mmd-model-home-v3');if(!r)return;throw Error('legacy home loader still active');})();`;
+
+test('Dashboard retires the v3 root before reads and saved legacy entrypoints cannot start',async()=>{
+  const f=fixture({legacyRoot:true});
+  assert.equal(f.roots.has('mmd-model-home-v3'),false);
+  assert.deepEqual(f.calls[0],{retired:'mmd-model-home-v3'});
+  f.run(legacyJobWorld);f.run(legacyHomeEntry);await settle();
+  assert.equal(f.window.__MODEL_JOB_WORLD_V1__,undefined,'saved footer must return before it initializes');
+  assert.equal(f.events.has('mmd:model-session-ready'),false,'no legacy session listener');
+  const counts={};for(const c of f.calls.filter(c=>c.url))counts[c.url]=(counts[c.url]||0)+1;
+  assert.deepEqual(counts,{'/v1/model/profile':1,'/v1/model/media':1,'https://mmdbkk.com/v1/model/session/current':1});
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'Fixture Model');
+  assert.equal(f.calls.some(c=>c.options?.method),false,'no write or auth exchange from retirement');
+});
+
+test('repeated workspace initialization does not restart reads or add listeners',async()=>{
+  const f=fixture({legacyRoot:true});await settle();
+  assert.equal(f.roots.has('mmd-model-home-v3'),false);
+  const calls=f.calls.length, listeners=[...f.events].map(([name,handlers])=>[name,handlers.length]);
+  f.run(source);f.run(legacyJobWorld);f.run(legacyHomeEntry);await settle();
+  assert.equal(f.calls.length,calls);
+  assert.deepEqual([...f.events].map(([name,handlers])=>[name,handlers.length]),listeners);
+  assert.equal(f.calls.filter(c=>c.retired).length,1);
+});
+
+test('pages without the v4 workspace keep their legacy root and perform no workspace work',async()=>{
+  const f=fixture({legacyRoot:true,workspaceRoot:false});await settle();
+  assert.equal(f.roots.has('mmd-model-home-v3'),true);
+  assert.equal(f.calls.length,0);
+  assert.equal(f.events.size,0);
+});
+
+for(const status of [401,403])test(`legacy shutdown stays effective when Dashboard identity returns ${status}`,async()=>{
+  const f=fixture({legacyRoot:true,profile:{ok:false,status,error:status===401?'model_session_expired':'private_access_required'}});
+  assert.equal(f.roots.has('mmd-model-home-v3'),false);
+  f.run(legacyJobWorld);f.run(legacyHomeEntry);await settle();
+  assert.equal(f.roots.has('mmd-model-home-v3'),false);
+  assert.equal(f.nodes.get('[data-mm-workspace]').hidden,true);
+  assert.equal(f.nodes.get('[data-mm-name]').textContent,'');
+  assert.equal(f.calls.filter(c=>c.url).length,1,'only the authoritative profile read');
+  assert.equal(f.calls.some(c=>c.options?.method),false);
+  assert.equal(f.window.__MODEL_JOB_WORLD_V1__,undefined);
+});
 
 for(const status of [401,403])test(`late successful profile PATCH cannot reopen workspace after media ${status}`,async()=>{
   const f=fixture();await settle();const pending=deferredResponse();

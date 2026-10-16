@@ -53,6 +53,9 @@
   if (!global.document) return;
   const document = global.document, root = document.getElementById('mmd-model-home-v4');
   if (!root || root.dataset.bundleReady) return;
+  // CSS hiding is not retirement: saved footer/site loaders still bind to v3.
+  // Remove its root before those later scripts can subscribe or read Model APIs.
+  document.getElementById('mmd-model-home-v3')?.remove();
   root.dataset.bundleReady = '1';
   const q = selector => root.querySelector(selector);
   const text = (selector, value) => { const node = q(selector); if (node) node.textContent = value; };
