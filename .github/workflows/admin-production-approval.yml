@@ -1,0 +1,33 @@
+name: Admin production approval preflight
+
+on:
+  workflow_call:
+    inputs:
+      approval_ref:
+        type: string
+        required: true
+      approved_sha:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-protection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Fail closed unless production reviewer protection exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/admin-production-approval.mjs

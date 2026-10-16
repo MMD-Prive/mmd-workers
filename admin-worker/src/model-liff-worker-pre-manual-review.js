@@ -1,3 +1,4 @@
+import { readCanonicalCurrentSession } from "./model-current-session.js";
 import legacyWorker, {
   modelMediaPolicy,
   normalizeEtaMinutes,
@@ -23,19 +24,6 @@ const MODELS_TABLE_DEFAULT = "Models";
 const CLAIMS_TABLE_DEFAULT = "tbluoZ5JiRcoUP6WT";
 const CLAIM_VERSION = "model_liff_identity_first_v1";
 const CLAIM_SOURCE = "mmd_model_liff_exchange";
-const ACTIVE_SESSION_STATES = new Set([
-  "confirmed",
-  "accepted",
-  "en_route",
-  "traveling",
-  "nearby",
-  "arrived",
-  "met_customer",
-  "final_payment_pending",
-  "final_payment_confirmed",
-  "work_started",
-  "work_finished",
-]);
 const DEFAULT_R2_CATEGORY_PATHS = [
   "MMD Public Models/MMD Travel Compcard",
   "MMD Public Models/MMD Travel Models",
@@ -442,22 +430,15 @@ async function bindLineUserIdAtomic(env, { modelRecordId, lineUserId, lineHash }
 }
 
 async function findActiveSessionForModel(env, modelRecord) {
-  const table = clean(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
-  const assignedField = clean(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model");
-  const formula = `FIND("${escapeFormula(modelRecord.id)}",ARRAYJOIN({${assignedField}}))`;
-  const result = await airtableList(env, table, formula, 20);
-  if (!result.ok) return { ok: false, status: 503, error: "session_lookup_unavailable" };
-  const sessionIdField = clean(env.AT_SESSIONS__SESSION_ID || "session_id");
-  const stateFields = unique([env.AT_SESSIONS__STATE, env.AT_SESSIONS__STATUS, "session_state", "status"].map(clean).filter(Boolean));
-  const paymentField = clean(env.AT_SESSIONS__PAYMENT_REF || "payment_ref");
-  for (const record of result.records) {
-    const state = firstText(record.fields || {}, stateFields).toLowerCase();
-    if (state && !ACTIVE_SESSION_STATES.has(state)) continue;
-    const sessionId = firstText(record.fields || {}, [sessionIdField]);
-    if (!sessionId) continue;
-    return { ok: true, status: 200, record, sessionId, paymentRef: firstText(record.fields || {}, [paymentField]), state: state || "confirmed" };
-  }
-  return { ok: false, status: 404, error: "active_session_not_found" };
+  const result = await readCanonicalCurrentSession(env, modelRecord.id);
+  if (!result.ok) return result;
+  const fields = result.record.fields || {};
+  return {
+    ok: true, status: 200, record: result.record,
+    sessionId: clean(fields[env.AT_SESSIONS__SESSION_ID || "session_id"]),
+    paymentRef: clean(fields[env.AT_SESSIONS__PAYMENT_REF || "payment_ref"]),
+    state: clean(fields[env.AT_SESSIONS__CANONICAL_STATE || "model_session_state"]),
+  };
 }
 
 async function findR2Evidence(env, displayName) {
