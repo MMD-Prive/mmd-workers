@@ -285,11 +285,13 @@ test("feature flag keeps conversation transcript capture off by default", async 
   assert.equal(result.reason, "conversation_shadow_disabled");
 });
 
-test("production config observes conversation history while general LINE replies stay off", () => {
+test("production config observes conversation history while external model use stays off", () => {
   const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /^KENJI_LINE_CONVERSATION_SHADOW_ENABLED\s*=\s*"true"$/m);
   assert.match(wrangler, /^KENJI_AI_WORKER_BRIDGE_ENABLED\s*=\s*"true"$/m);
-  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
+  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m);
+  assert.match(wrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
+  assert.match(wrangler, /^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"false"$/m);
   assert.match(wrangler, /^KENJI_LINE_RIGHTS_CHECK_MODE\s*=\s*"command"$/m);
   assert.match(wrangler, /^KENJI_LINE_RIGHTS_COMMAND_ENABLED\s*=\s*"true"$/m);
 });
