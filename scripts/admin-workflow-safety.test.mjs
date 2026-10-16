@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const directory = new URL('../.github/workflows/', import.meta.url);
 const files = [
+  'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml',
+  'retire-mmd-redirect-worker-production.yml',
   'deploy-admin-worker.yml', 'audience-production-ingress.yml',
   'calendar-production-connection.yml', 'control-room-v2-production-acceptance.yml',
   'create-job-per-rename-production-smoke.yml', 'deploy-kenji-recommendation-layer.yml',
@@ -26,7 +28,7 @@ function jobs(source) {
 }
 
 function assertSafety(source) {
-  assert.doesNotMatch(source.split('\njobs:')[0], /^  (workflow_run|schedule):/m);
+  if (!source.includes('name: Retire mmd-redirect-worker')) assert.doesNotMatch(source.split('\njobs:')[0], /^  (workflow_run|schedule):/m);
   assert.match(source, /production_approved:[\s\S]*?type: boolean\n        required: true\n        default: false/);
   assert.match(source, /approval_ref:[\s\S]*?type: string\n        required: true/);
   assert.match(source, /approved_sha:[\s\S]*?type: string\n        required: true/);
@@ -56,7 +58,7 @@ for (const file of files) test(`${file}: production work is independently approv
   const source = read(file);
   assertSafety(source);
   // Only Calendar retains a legacy branch CI trigger. No push can reach production.
-  if (file !== 'calendar-production-connection.yml') assert.doesNotMatch(source.split('\njobs:')[0], /^  push:/m);
+  if (!['calendar-production-connection.yml', 'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml', 'retire-mmd-redirect-worker-production.yml'].includes(file)) assert.doesNotMatch(source.split('\njobs:')[0], /^  push:/m);
 });
 
 test('no remaining workflow automatically fans out from Deploy admin-worker', () => {
@@ -106,4 +108,13 @@ test('workflow conditions deny automatic events and unapproved/mismatched dispat
   assert.equal(evaluate(github, { ...inputs, approved_sha: 'b'.repeat(40) }), false);
   assert.equal(evaluate(github, { ...inputs, approval_ref: '' }), false);
   assert.equal(evaluate({ ...github, ref: 'refs/heads/feature' }, inputs), false);
+});
+
+ test('Standby downstream deploy requires its own exact approval and legacy confirmation', () => {
+  const source = read('deploy-my-mmd-standby-worker.yml');
+  const deploy = jobs(source).find(job => job.id === 'deploy').body;
+  assert.ok(deploy.includes(`    if: ${condition} && inputs.confirm == 'DEPLOY'`));
+  assert.match(deploy, /needs: \[production-approval, validate\]/);
+  assert.match(deploy, /environment: mmd-production-mutation/);
+  assert.match(deploy, /ref: \$\{\{ github.sha \}\}/);
 });

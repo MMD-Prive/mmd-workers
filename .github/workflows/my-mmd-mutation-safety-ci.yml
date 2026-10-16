@@ -1,0 +1,44 @@
+name: MY MMD mutation safety CI
+
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/src/runtime-index.js'
+      - 'member-pages-worker/src/member-attention.js'
+      - 'member-pages-worker/test/member-attention-entrypoint.test.mjs'
+      - '.github/workflows/**'
+      - 'scripts/admin-production-approval*'
+      - 'scripts/admin-workflow-safety.test.mjs'
+      - 'scripts/redirect-route-retirement*'
+      - 'scripts/my-mmd-workflow-guards.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - 'member-pages-worker/src/runtime-index.js'
+      - 'member-pages-worker/src/member-attention.js'
+      - 'member-pages-worker/test/member-attention-entrypoint.test.mjs'
+      - '.github/workflows/**'
+      - 'scripts/admin-production-approval*'
+      - 'scripts/admin-workflow-safety.test.mjs'
+      - 'scripts/redirect-route-retirement*'
+      - 'scripts/my-mmd-workflow-guards.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Local runtime and mutation safety contracts (no production access)
+        run: |
+          node --experimental-vm-modules --test member-pages-worker/test/member-attention-entrypoint.test.mjs scripts/redirect-route-retirement-execution.test.mjs
+          node --check scripts/redirect-route-retirement-scope.mjs
+          node --test scripts/redirect-route-retirement-scope.test.mjs scripts/my-mmd-workflow-guards.test.mjs
