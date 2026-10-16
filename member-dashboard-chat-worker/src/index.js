@@ -457,6 +457,10 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
+  if (/(?:ดารา|นักแสดง|วงการบันเทิง|celebrity|actor|entertainment).{0,28}(?:มี|ใคร|ดู|สนใจ|สมัคร|black\s*card|บัตรดำ)|(?:black\s*card|บัตรดำ).{0,28}(?:ดารา|นักแสดง|วงการบันเทิง|celebrity|actor)/i.test(normalized)) return "black_card_private_access";
+  if (/(?:comp\s*card|คอมพ์?การ์ด|คอมการ์ด).{0,24}(?:ดู|ขอดู|ตัวอย่าง|standard|สแตนดาร์ด)|(?:อยาก|ขอ).{0,12}(?:ดู|เห็น).{0,12}(?:model|นายแบบ|โปรไฟล์)/i.test(normalized)) return "standard_comp_card_preview";
+  if (/(?:เคยใช้บริการที่ไหน|เคยใช้ที่ไหน|ใช้บริการที่ไหนมาก่อน|ไม่เคยใช้บริการ|เคยใช้บริการ)/i.test(normalized)) return "membership_experience";
+  if (/(?:งบ|บัดเจต|บัทเจท|budget).{0,24}(?:ต่อครั้ง|ครั้งละ|บริการ)|(?:ครั้งละ|ต่อครั้ง).{0,18}(?:กี่บาท|เท่าไหร่|เท่าไร|งบ|budget)/i.test(normalized)) return "membership_budget";
   var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
   if (!membershipAcquisitionHasBenefitQuestion && /(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(normalized)) return "private_membership_signup";
   if (!membershipAcquisitionHasBenefitQuestion && (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized) || /(?:สมัคร|join).{0,16}(?:public\s*membership|public|mmd\s*member|elite|red\s*card|เรด\s*การ์ด)/i.test(normalized))) return "membership_signup";
@@ -505,6 +509,9 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
   if (/(dinner|dining|drinks|event|appearance|social|ทานข้าว|ดินเนอร์|ดื่ม|อีเวนต์|ออกงาน|จอง|book|booking|คิว|นัด|reserve)/i.test(normalized)) return "mmd_companion";
+  if (/(?:ราคา|price|เท่าไร|เท่าไหร่|กี่บาท).{0,18}(?:สมาชิก|membership|standard|premium|แพ็กเกจสมาชิก|แพคเกจสมาชิก)|(?:สมาชิก|membership|standard|premium|แพ็กเกจสมาชิก|แพคเกจสมาชิก).{0,18}(?:ราคา|price|เท่าไร|เท่าไหร่|กี่บาท)/i.test(normalized)) {
+    return "membership_pricing";
+  }
   if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด|standard|premium)/i.test(normalized)) return "membership";
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
@@ -944,7 +951,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     : inferredIntent;
   const activeModel = contextualModelForTurn(text, intent, options);
   const name = asString(profile?.displayName).split(/\s+/).filter(Boolean)[0] || "";
-  const prefix = name ? `คุณ${name} ` : "";
+  const prefix = name ? `คุณ ${name} ` : "";
 
   if (event?.type === "follow") {
     return `ครับ ${prefix}พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ`;
@@ -1047,6 +1054,26 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `${prefix}ผมยังยืนยันจากข้อความนี้ไม่ได้ว่าคุณอยู่กลุ่มไหน ได้สิทธิ์ใด หรือมียอดเท่าไรครับ ต้องตรวจสถานะสมาชิก วันหมดอายุ ประวัติบริการ และรายการชำระที่ยืนยันแล้วของคุณก่อน`;
   }
 
+  if (intent === "black_card_private_access") {
+    return `${prefix}ทาง MMD มีผู้ให้บริการบางท่านที่ทำงานในวงการบันเทิงครับ แต่เปอร์ไม่เปิดเผยหรือบอกใบ้ว่าเป็นใครก่อนผ่านการตรวจสิทธิ์นะครับ ถ้าสนใจบริการแบบ Private สมัครเพื่อรับการพิจารณา Black Card ได้ โดยการสมัครไม่ได้รับประกันการอนุมัติหรือการเข้าถึงบุคคลใดครับ`;
+  }
+
+  if (intent === "standard_comp_card_preview") {
+    return `${prefix}ก่อนสมัคร เปอร์ให้ดูได้เฉพาะตัวอย่าง Comp Card แบบ Standard ที่อนุมัติให้เปิดเผยครับ ส่วนข้อมูลเพิ่มเติมทาง MMD จะเปิดตามสิทธิ์หลังสมัครและยืนยันตัวตน เพื่อดูแลความเป็นส่วนตัวของทุกฝ่ายครับ`;
+  }
+
+  if (intent === "membership_experience") {
+    return `${prefix}ก่อนหน้านี้เคยใช้บริการลักษณะนี้ที่ไหนมาบ้างครับ`;
+  }
+
+  if (intent === "membership_budget") {
+    return `${prefix}ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ เดี๋ยวเปอร์ช่วยดูตัวเลือกที่เหมาะให้`;
+  }
+
+  if (intent === "membership_pricing") {
+    return `${prefix}สนใจ Standard หรือ Premium อยู่ครับ หรือให้เปอร์ช่วยเทียบสองแบบให้ดูก่อนได้ ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
+  }
+
   if (intent === "payment_center") {
     return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → https://mmdbkk.com/member/payments
 
@@ -1088,7 +1115,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
-    return `${prefix}อยากดูข้อมูลทั่วไปของระดับสมาชิก หรือให้ตรวจสถานะส่วนตัวครับ`;
+    return `${prefix}ถ้าสนใจบริการแบบ Private สมัครเพื่อรับการพิจารณา Black Card ได้ครับ แต่ไม่ได้อนุมัติอัตโนมัติและไม่ได้รับประกันว่าจะเปิดดูหรือจองบุคคลใดได้ เปอร์ขอทราบก่อนว่าปกติใช้บริการแบบไหน และตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
   }
 
   if (intent === "mms_wellness") {
