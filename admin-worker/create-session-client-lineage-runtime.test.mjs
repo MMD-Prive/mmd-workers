@@ -211,7 +211,7 @@ function installAirtableMock({ failTable = "" } = {}) {
 
 test("query lookup reads independent Airtable sources concurrently", async () => {
   const source = await readFile(join(here, "src/create-session-client-lineage-runtime.js"), "utf8");
-  const queryBlock = source.split("if (query) {")[1].split("} else {")[0];
+  const queryBlock = source.split("async function buildClientLineageRecords")[1].split("if (query) {")[1].split("} else {")[0];
   assert.match(queryBlock, /Promise\.all\(\[/);
   assert.match(queryBlock, /tables\.clients/);
   assert.match(queryBlock, /tables\.members/);
@@ -343,3 +343,4 @@ test("active composed worker wires lineage before studio fallback", async () => 
     "lineage handler must run before the legacy fallback",
   );
 });
+

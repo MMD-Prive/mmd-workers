@@ -5,6 +5,7 @@ import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-jso
 import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
+import { MEMBERSHIP_WELCOME_COPY, classifyMembershipWelcomeIntent } from "../../shared/membership-welcome-copy.mjs";
 import { readMmsCustomerHistory } from "./mms-customer-history.js";
 import { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 import { publicMmdShopReservation, readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
@@ -27,9 +28,10 @@ const MEMBER_PROFILE_RESOLVER_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PAYMENT_BINDING_STATUS = "contract_unavailable";
 const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
-const MEMBERSHIP_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
-const MEMBERSHIP_RENEW_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
-const MEMBER_DASHBOARD_URL = "https://mmdbkk.com/member/dashboard";
+const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
+const MEMBERSHIP_SIGNUP_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=signup&view=signup`;
+const MEMBERSHIP_RENEW_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`;
+const MEMBER_DASHBOARD_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=overview`;
 const MMD_SHOP_MEMBER_CONTEXT_PATH = "/__internal/mmd-shop/member-context";
 const MMD_SHOP_ORDERS_PATHS = new Set(["/member/api/shop/orders", "/member/api/shop/orders/"]);
 const SHOP_AIRTABLE_API = "https://api.airtable.com/v0";
@@ -1884,7 +1886,7 @@ function fallbackScreen(key) {
   if (key === "signup_package") {
     return {
       key,
-      copy: "HYPE จะช่วยแนะนำแพ็กเกจที่เหมาะกับขั้นตอนนี้ครับ",
+      copy: MEMBERSHIP_WELCOME_COPY.signup,
       actions: [{ id: "select_package", label: "เลือกแพ็กเกจ", endpoint: "/member/api/liff/package", method: "POST" }],
     };
   }
@@ -1931,7 +1933,7 @@ function fallbackScreen(key) {
   }
   return {
     key: "start_intent",
-    copy: "ยินดีต้อนรับสู่ MMD Privé\nHYPE จะช่วยพาคุณไปยังขั้นตอนที่เหมาะกับคุณที่สุดครับ",
+    copy: MEMBERSHIP_WELCOME_COPY.welcome,
     actions: [
       { id: "signup", label: "สมัครสมาชิกใหม่", endpoint: "/member/api/liff/intent", method: "POST" },
       { id: "renew", label: "ต่ออายุสมาชิก", endpoint: "/member/api/liff/intent", method: "POST" },
@@ -2153,9 +2155,17 @@ async function safeSessionView(gatewayStore, session) {
 }
 
 async function resolveScreen(gatewayStore, screenKey) {
+  // Keep the agreed welcome/signup copy and actions server-owned.
+  if (screenKey === "start_intent" || screenKey === "signup_package") return fallbackScreen(screenKey);
   try {
     const configured = await gatewayStore.loadScreen(screenKey);
-    if (configured) return configured;
+    if (configured) {
+      const customerText = [configured.copy, ...(configured.actions || []).flatMap(action => [action.id, action.label, action.endpoint])].join(" ");
+      if (classifyMembershipWelcomeIntent(customerText) === "public_package_unavailable") {
+        return { key: screenKey, copy: MEMBERSHIP_WELCOME_COPY.publicUnavailable, actions: [] };
+      }
+      return configured;
+    }
   } catch {
     // A missing copy record must never weaken routing or identity decisions.
   }

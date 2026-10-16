@@ -1,8 +1,9 @@
+import {fileURLToPath} from 'node:url';
 import {readFile} from 'node:fs/promises';
 import {build} from 'esbuild';
 export const MODEL='recMMMMMMMMMMMMMM',PARTNER='recPPPPPPPPPPPPPP',SESSION='recSSSSSSSSSSSSSS',OTHER='recOOOOOOOOOOOOOO';
 const source=await readFile(new URL('../../src/index.ts',import.meta.url),'utf8');
-const js=(await build({stdin:{contents:source+'\nexport {generatePartnerToken,sha256Hex,MODEL_PARTNERS,MODEL_REFERRALS,MODELS,SESSION_FIELDS,PARTNER_MODEL_CHANGES,PARTNER_ASSETS,PARTNER_COMMISSIONS,MODEL_OFFER_RULES,PAYMENT_FIELDS};',loader:'ts',resolveDir:new URL('../../src/',import.meta.url).pathname},bundle:true,write:false,format:'esm',platform:'neutral'})).outputFiles[0].text;
+const js=(await build({stdin:{contents:source+'\nexport {generatePartnerToken,sha256Hex,MODEL_PARTNERS,MODEL_REFERRALS,MODELS,SESSION_FIELDS,PARTNER_MODEL_CHANGES,PARTNER_ASSETS,PARTNER_COMMISSIONS,MODEL_OFFER_RULES,PAYMENT_FIELDS};',loader:'ts',resolveDir:fileURLToPath(new URL('../../src/',import.meta.url))},bundle:true,write:false,format:'esm',platform:'neutral'})).outputFiles[0].text;
 export const apiModule=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 const {default:worker,generatePartnerToken,sha256Hex,MODEL_PARTNERS:P,MODEL_REFERRALS:R,MODELS:M,SESSION_FIELDS:S,PARTNER_MODEL_CHANGES:C,PARTNER_ASSETS:A,PARTNER_COMMISSIONS:L}=apiModule;
 export async function fixture(){

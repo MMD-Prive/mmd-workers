@@ -1,0 +1,7 @@
+{
+  "name": "mmd-broadcast-r2-tests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test broadcast-r2.test.mjs" },
+  "devDependencies": { "miniflare": "4.20260730.0" }
+}

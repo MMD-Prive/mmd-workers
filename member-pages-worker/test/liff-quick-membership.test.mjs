@@ -7,7 +7,7 @@ const functions = source.slice(source.indexOf("  let memberApiChain"), source.in
 function setup(membership, profileResponse) {
   const nodes = { "minimal-member-display":{hidden:true}, "minimal-member-expiry":{textContent:"—"}, "minimal-member-points":{textContent:"12.5 คะแนนประมาณการ"}, "profile-tier": { textContent: "SVIP" }, "profile-status": { textContent: "checking" }, "profile-points": { textContent: "—" } };
   const calls = [];
-  const context = vm.createContext({setTimeout,
+  const context = vm.createContext({setTimeout,clearTimeout,AbortController,Response,Uint8Array,
     fetch: async path => { calls.push(path); return path === "/api/member/app/membership" ? Response.json(membership) : profileResponse; },
     CONFIG: { profileEndpoint: "/member/api/liff/profile" },
     document: { getElementById: id => nodes[id] },

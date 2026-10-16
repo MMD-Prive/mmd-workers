@@ -1,3 +1,8 @@
+import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
+import {isMemberCompletenessRequest, handleMemberCompleteness} from "./member-completeness.js";
+import { decorateInternalSilverTheme } from "../../webflow/global/sigil-internal-theme-v1.mjs";
+import { isCreateJobDriveDiscoveryRequest, handleCreateJobDriveDiscovery } from "./create-job-drive-discovery.js";
+import { handleModelJobPreview, isModelJobPreviewRequest } from "./model-job-preview.js";
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
 import { runHypeJobDailyScheduled } from "./hype-job-daily/runner.js";
@@ -75,6 +80,8 @@ import {
 } from "./model-selected-job-handoff.js";
 
 import {
+  handleAdminBroadcastRead,
+  isAdminBroadcastReadRequest,
   handleAdminJobBoardPublish,
   isAdminJobBoardPublishRequest,
 } from "./job-board-owner-publish.js";
@@ -226,7 +233,7 @@ handlePaymentEntitlementApproval
 coreWorker.fetch(request, env, ctx)
 */
 
-export default {
+const adminLoginHeroWorker = {
   async scheduled(event, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
     // HYPE_JOB_DAILY is isolated: it never rejects and never blocks the jobs below. Default off.
@@ -240,8 +247,11 @@ export default {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
+    if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
     if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
+    if (isCreateJobDriveDiscoveryRequest(request)) return handleCreateJobDriveDiscovery(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);
@@ -265,6 +275,12 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (isModelJobPreviewRequest(normalizedPath)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      return handleModelJobPreview(gate.request, runtimeEnv);
     }
 
     if (isSessionCreatorAssetRequest(normalizedPath, method)) {
@@ -316,6 +332,11 @@ export default {
     // MODEL_RECONFIRM guard v2 owner-only status / dry-run preview / owner-destination smoke.
     if (isModelReconfirmOwnerRequest(normalizedPath)) {
       return handleModelReconfirmOwnerRequest(request, runtimeEnv);
+    }
+
+    if (isAdminBroadcastReadRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleAdminBroadcastRead(request, runtimeEnv, actor);
     }
 
     if (isAdminJobBoardPublishRequest(normalizedPath, method)) {
@@ -413,5 +434,12 @@ export default {
       });
     }
     return response;
+  },
+};
+
+export default {
+  ...adminLoginHeroWorker,
+  async fetch(request, env, ctx) {
+    return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
   },
 };

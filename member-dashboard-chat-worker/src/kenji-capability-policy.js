@@ -34,6 +34,7 @@ const PUBLIC_KNOWLEDGE_INTENTS = new Set([
 const DETERMINISTIC_INTENTS = new Set([
   "new_follow", "postback", "line_event", "greeting", "pricing_review", "service_guidance",
   "per_continuity", "membership_signup", "private_membership_signup", "membership_renewal",
+  "black_card_private_access", "standard_comp_card_preview", "membership_interest", "membership_experience", "membership_budget", "membership_pricing",
   "aftercare",
   "model_lookup", "model_access_verification",
   "vip", "svip", "black_card",

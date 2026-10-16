@@ -13,7 +13,8 @@ permissions:
 
 jobs:
   smoke:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Hold automatic production POST and issue writes; no new dispatch is introduced.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

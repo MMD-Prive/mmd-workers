@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { maybeHandleTherapistWorkspace, renderTherapistWorkspace, therapistClient } from '../src/mms-therapist-workspace.js';
+import productionWorker, { isTherapistOriginPassthroughRequest } from '../src/my-mms-customer-front-gate-entry.js';
 const origin='https://www.mmdbkk.com';
 const path='/male-massage/therapists';
 test('native work route gates session, entitlement and backend failure before returning a work page',async()=>{
@@ -17,6 +18,43 @@ test('native pages own only login/profile/app and can defer to Lovable',async()=
   assert.equal(await maybeHandleTherapistWorkspace(new Request(origin+'/male-massage'),{MMS_THERAPIST_UI_SOURCE:'native'}),null);
   for(const suffix of ['login','me']){const res=await maybeHandleTherapistWorkspace(new Request(origin+path+'/'+suffix),{MMS_THERAPIST_UI_SOURCE:'native'});assert.equal(res.status,200);assert.match(await res.text(),/native-workspace-v1/);}
   const head=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me',{method:'HEAD'}),{MMS_THERAPIST_UI_SOURCE:'native'});assert.equal(await head.text(),'');
+});
+test('query-bearing registered LIFF endpoint reaches native login through the configured Cloudflare route', async () => {
+  const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  const patterns = [...config.matchAll(/pattern = "([^"]+)"/g)].map(m => m[1]);
+  for (const host of ['mmdbkk.com', 'www.mmdbkk.com']) {
+    for (const suffix of ['?liff.state=%3Finvite%3Dtest-invite', '?liff_state=%3Finvite%3Dtest-invite', '?code=test-code&state=test-state', '/?liff.state=%3Finvite%3Dtest-invite']) {
+      const url = `https://${host}${path}${suffix}`;
+      // Cloudflare matches the complete URL, including query strings.
+      assert.ok(patterns.some(pattern => new RegExp('^https?://' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(url)), url);
+      const response = await productionWorker.fetch(new Request(url), { MMS_THERAPIST_UI_SOURCE: 'native' });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('x-mmd-ui-source'), 'mms-native-workspace-v1');
+      const html = await response.text();
+      assert.ok(html.includes('data-login="true"'));
+      assert.ok(html.includes('mms-therapist-invite-v1'));
+    }
+  }
+});
+test('callback wildcard passes unrelated public pages and prefix lookalikes directly to origin', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async request => { calls.push(request); return new Response('original public page', { status: 200, headers: { 'x-public-origin': 'unchanged' } }); };
+  const env = { MMS_THERAPIST_UI_SOURCE: 'native', MMS_WORKER: { async fetch() { throw new Error('public pages must not enter Therapist APIs'); } } };
+  try {
+    for (const suffix of ['/public-profile?source=line', '/login-help', '-directory?view=public', '/api/public/catalog']) {
+      const request = new Request(origin + path + suffix);
+      assert.equal(isTherapistOriginPassthroughRequest(request), true);
+      const response = await productionWorker.fetch(request, env);
+      assert.equal(await response.text(), 'original public page');
+      assert.equal(response.headers.get('x-public-origin'), 'unchanged');
+      assert.equal(calls.at(-1), request);
+    }
+    for (const suffix of ['', '?liff.state=test', '/login', '/me', '/app', '/api/auth/me', '/api/app/access']) {
+      assert.equal(isTherapistOriginPassthroughRequest(new Request(origin + path + suffix)), false);
+    }
+    assert.equal(isTherapistOriginPassthroughRequest(new Request(origin + '/member/kenji')), false);
+  } finally { globalThis.fetch = originalFetch; }
 });
 test('rendered client parses without interpolating backend data',()=>{
   for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>\(([\s\S]*)\)\(\);<\/script>/)[1];new vm.Script('('+script+')');assert.equal(html.includes('innerHTML'),false);}

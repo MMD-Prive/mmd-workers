@@ -258,7 +258,8 @@ function renderShell(config, nonce) {
     .digital-hello{margin-top:18px}.digital-eyebrow{margin:0 0 5px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.16em}.digital-hello h1{margin:0 0 4px;color:var(--digital-cream);font-size:27px;line-height:1.12;letter-spacing:-.04em}.digital-sub{margin:0;color:var(--digital-muted);font-size:11px;line-height:1.5}
     .digital-snapshot{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface)}.digital-snapshot-icon{font-size:20px;color:var(--digital-gold)}.digital-snapshot strong{display:block;color:var(--digital-cream);font-size:12px}.digital-snapshot p{margin:3px 0 0;color:var(--digital-muted);font-size:10px}.digital-points{color:var(--digital-gold)!important;font-size:19px!important;text-align:right}
     .digital-kenji{display:grid;grid-template-columns:72px 1fr;align-items:center;gap:13px;margin:10px 0;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-raised)}.digital-orb{position:relative;width:66px;height:66px;display:grid;place-items:center;border-radius:50%;background:radial-gradient(circle,rgba(229,199,133,.28),rgba(88,66,29,.14) 42%,transparent 72%)}.digital-orb::before,.digital-orb::after{content:"";position:absolute;border-radius:50%}.digital-orb::before{inset:5px;border:1px solid rgba(231,204,137,.65);border-left-color:transparent}.digital-orb::after{inset:15px;border:1px dashed rgba(201,158,88,.62)}.digital-core{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#fff5cf,#e5bd6e 48%,#4d3618);box-shadow:0 0 20px rgba(223,185,102,.55)}.digital-kenji strong{display:block;font-size:13px}.digital-kenji p{margin:3px 0 8px;color:var(--digital-muted);font-size:10px;line-height:1.5}.digital-kenji a{display:inline-block;border:1px solid rgba(209,183,117,.48);border-radius:99px;padding:7px 10px;color:var(--digital-gold);background:#27251b;font-size:10px;font-weight:700;text-decoration:none}
-    .digital-needs[hidden]{display:none!important}.digital-needs{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d}.digital-needs b{display:block;font-size:11px}.digital-needs span{font-size:10px;color:#514330}.digital-needs button{width:auto;flex:none;border:1px solid #725a30;border-radius:99px;padding:7px 10px;background:#201b13;color:#f4dfa9;font-size:10px}
+        .renewal-card[hidden]{display:none!important}body.app-entered:not(.signup-mode) .digital-view>.renewal-card{width:100%;margin:0 0 14px;padding:16px;border:1px solid var(--digital-gold);border-radius:14px;background:linear-gradient(180deg,#1f1d17,#161612)}.renewal-card h2{margin:4px 0 10px;font-size:19px;color:var(--digital-cream)}.renewal-rows{display:grid}.renewal-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(216,189,137,.22);font-size:13px}.renewal-row span{color:var(--digital-muted)}.renewal-row b{text-align:right;color:var(--digital-cream)}.renewal-price{display:flex;align-items:baseline;gap:6px;margin:12px 0 4px}.renewal-amount{font-size:34px;font-weight:800;color:var(--digital-gold)}.renewal-price small{color:var(--digital-muted)}.renewal-promo{margin:8px 0 12px;padding:8px 10px;border-radius:8px;background:rgba(216,178,106,.11);color:#e8d3a2;font-size:12px}.renewal-note{margin:10px 0 0;color:var(--digital-muted);font-size:11px;line-height:1.5}.renewal-action{display:block;box-sizing:border-box;width:100%;min-height:46px;margin-top:6px;padding:13px;border:0;border-radius:11px;background:linear-gradient(100deg,#f1d8aa,#dfb879);color:#1e160f;font-weight:800;font-size:15px;text-align:center;text-decoration:none}.renewal-action[hidden],.renewal-price[hidden],.renewal-promo[hidden]{display:none!important}
+.digital-needs[hidden]{display:none!important}.digital-needs{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-radius:var(--digital-radius);background:var(--digital-gold);color:#17140d}.digital-needs b{display:block;font-size:11px}.digital-needs span{font-size:10px;color:#514330}.digital-needs button{width:auto;flex:none;border:1px solid #725a30;border-radius:99px;padding:7px 10px;background:#201b13;color:#f4dfa9;font-size:10px}
     .digital-mission[hidden]{display:none!important}.digital-mission{padding:13px;border:1px solid rgba(231,204,137,.32);border-radius:var(--digital-radius);background:linear-gradient(145deg,rgba(55,46,28,.58),var(--digital-surface))}.digital-mission-state{border:1px solid rgba(231,204,137,.34);border-radius:99px;padding:5px 8px;color:var(--digital-gold);font-size:9px;font-weight:800;letter-spacing:.06em}.digital-mission-head{margin-top:10px}.digital-mission-head strong{display:block;color:var(--digital-cream);font-size:15px}.digital-mission-head p{margin:4px 0 0;color:var(--digital-muted);font-size:10px;line-height:1.45}.digital-mission-head #digital-mission-eta{color:var(--digital-gold);font-weight:800}.digital-mission-toggle{width:100%;margin-top:10px;border:1px solid rgba(231,204,137,.34);border-radius:99px;padding:9px 11px;background:#201b13;color:#f4dfa9;font-size:10px;font-weight:800;text-align:center}.digital-mission-detail[hidden]{display:none!important}.digital-mission-detail{margin-top:10px;padding-top:9px;border-top:1px solid var(--digital-line)}.digital-mission-timeline{display:grid;gap:6px;margin:0;padding:0;list-style:none}.digital-mission-step{display:grid;grid-template-columns:12px 1fr;gap:8px;align-items:center;color:#7f7972;font-size:9px}.digital-mission-step::before{content:"";width:7px;height:7px;border:1px solid rgba(231,204,137,.28);border-radius:50%;background:transparent}.digital-mission-step.is-done{color:#a59d91}.digital-mission-step.is-done::before{background:rgba(231,204,137,.34)}.digital-mission-step.is-current{color:var(--digital-gold);font-weight:900}.digital-mission-step.is-current::before{background:var(--digital-gold);box-shadow:0 0 10px rgba(231,204,137,.45)}
     .digital-sectionline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}.digital-sectionline h2{margin:0;color:var(--digital-cream);font-size:20px}.digital-sectionline h2 small{display:block;margin-bottom:3px;color:var(--digital-gold);font-size:8px;letter-spacing:.15em}.digital-unread{border:1px solid rgba(231,204,137,.3);border-radius:99px;padding:5px 7px;color:var(--digital-gold);font-size:9px}
     .digital-news-feed{display:grid;gap:8px}.digital-news-card{width:100%;padding:12px;border:1px solid var(--digital-line);border-radius:var(--digital-radius);background:var(--digital-surface);color:var(--digital-cream);text-align:left}.digital-news-card.is-for-you{border-color:rgba(231,204,137,.5);background:linear-gradient(145deg,rgba(71,59,34,.58),var(--digital-surface))}.digital-news-card[data-feed-view]{cursor:pointer}.digital-news-card .meta{display:flex;justify-content:space-between;gap:8px;color:var(--digital-gold);font-size:9px}.digital-news-card h3{margin:7px 0 4px;font-size:13px}.digital-news-card p{margin:0;color:#c9c6b9;font-size:10px;line-height:1.5}.digital-feed-cta{display:block;margin-top:8px;color:var(--digital-gold);font-size:9px;font-weight:800}.digital-quiet{padding:20px 12px;border:1px dashed rgba(231,204,137,.32);border-radius:14px;color:var(--digital-muted);font-size:11px;text-align:center}
@@ -305,7 +306,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
     ${config.liffId ? `<a id="signup-line-entry" class="signup-line-entry" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">เปิดใน LINE เพื่อสมัคร</a>` : ""}
     <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
-    <div class="card signup-private"><strong>Private Access / Black Card</strong><p class="signup-note">สนใจเส้นทาง Private? ดูรายละเอียดและส่งคำขอผ่านระบบสมาชิก</p><a class="private-link" href="/sigil/member/membership?source=line&amp;intent=signup">ดู Private Membership</a></div>
+    <div class="card signup-private"><strong>Standard / Premium / Private Access</strong><p class="signup-note">ให้เปอร์ช่วยตรวจตัวเลือกและเงื่อนไข Standard / Premium ก่อนครับ เปิดแชต MMD แล้วพิมพ์ “ขอคุยกับเปอร์ สนใจ Standard / Premium” ขั้นตอนนี้ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์</p><a id="private-review-chat" class="private-link" href="https://lin.ee/xRqsALs" rel="noreferrer">เปิดแชต MMD เพื่อส่งเรื่องให้เปอร์</a></div>
     <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
   </section>
   <nav class="member-nav" aria-label="Member sections">
@@ -357,6 +358,16 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <div class="card"><span class="label" data-copy="creditRecentLabel">รายการล่าสุด</span><div id="credit-wallet" class="history"><p class="empty" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p></div></div>
     </section>
     <section id="package" class="panel digital-view" aria-label="Package">
+      <div id="renewal-card" class="card renewal-card" hidden aria-live="polite">
+        <span class="label">RENEW</span><h2 id="renewal-title">ต่ออายุสมาชิก</h2>
+        <div id="renewal-rows" class="renewal-rows"></div>
+        <div id="renewal-price" class="renewal-price" hidden><span id="renewal-amount" class="renewal-amount"></span><small>THB</small></div>
+        <p id="renewal-promo" class="renewal-promo" hidden></p>
+        <p id="renewal-note" class="renewal-note"></p>
+        <button id="renewal-action" class="renewal-action" type="button" hidden>ต่ออายุเลย  →</button>
+        <a id="renewal-signup" class="renewal-action renewal-link" hidden>สมัครสมาชิกใหม่  →</a>
+        <p id="renewal-message" class="renewal-note" role="status"></p>
+      </div>
       <div class="card"><h2 data-copy="packageTitle">📦 Package</h2><div id="current-package" class="stack"></div></div>
       <details class="card details"><summary data-copy="packageHistoryLabel">Package history</summary><div id="package-history" class="stack"></div></details>
     </section>
@@ -886,11 +897,31 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // retired immediately. Parallel reads would reuse one cookie and lose with 401, so
   // session-bound reads run one at a time and each picks up the latest Set-Cookie.
   let memberApiChain = Promise.resolve();
-  // A stalled read waits at most 3s so it can never block the reads behind it.
-  function memberApiFetch(url, init) {
-    const previous = memberApiChain;
-    const gate = Promise.race([previous, new Promise((resolve) => setTimeout(resolve, 3000))]);
-    const run = gate.then(() => fetch(url, init));
+  // Keep the credential lane locked through headers AND body. A timeout aborts
+  // the actual request; it must never release a second read alongside a live one.
+  function memberApiFetch(url, init = {}) {
+    const run = memberApiChain.then(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        const reader = response.body?.getReader();
+        if (!reader) return response;
+        const chunks = []; let size = 0;
+        try {
+          while (true) {
+            const part = await reader.read();
+            if (part.done) break;
+            size += part.value.byteLength;
+            if (size > 2 * 1024 * 1024) throw new Error("member_response_too_large");
+            chunks.push(part.value);
+          }
+        } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+        const bytes = new Uint8Array(size); let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        return new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
+      } finally { clearTimeout(timer); }
+    });
     memberApiChain = run.then(() => undefined, () => undefined);
     return run;
   }
@@ -972,8 +1003,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   async function readProfile({ hydrate = true } = {}) {
     void readQuickMembershipStatus();
+    const profileRead = memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     void readOwnHistoryPreview();
-    const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+    const response = await profileRead;
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
@@ -1442,6 +1474,92 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     show(copy.ready || "ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ");
     if (CONFIG.intent === "promo") showView("care", false);
     else showView(CONFIG.view || "home", false);
+    loadRenewalCard();
+  }
+
+  // Renewal card: every number and date below comes from the server offer
+  // (/member/api/liff/renewal/offer). The browser sends only package_code.
+  async function loadRenewalCard() {
+    const card = document.getElementById("renewal-card");
+    if (!card) return;
+    try {
+      const response = await fetch("/member/api/liff/renewal/offer", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const offer = response.ok ? await response.json().catch(() => null) : null;
+      if (!offer || offer.ok !== true) { card.hidden = true; return; }
+      renderRenewalCard(card, offer);
+    } catch { card.hidden = true; }
+  }
+
+  function renewalDate(value) {
+    const time = Date.parse(String(value || ""));
+    if (!Number.isFinite(time)) return "";
+    return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { day:"numeric", month:"short", year:"numeric", timeZone:"Asia/Bangkok" }).format(new Date(time));
+  }
+
+  function renderRenewalCard(card, offer) {
+    const rows = document.getElementById("renewal-rows");
+    const priceBox = document.getElementById("renewal-price");
+    const promo = document.getElementById("renewal-promo");
+    const note = document.getElementById("renewal-note");
+    const action = document.getElementById("renewal-action");
+    const signupLink = document.getElementById("renewal-signup");
+    const messageBox = document.getElementById("renewal-message");
+    rows.replaceChildren(); priceBox.hidden = true; promo.hidden = true; action.hidden = true; signupLink.hidden = true; note.textContent = ""; messageBox.textContent = "";
+    const addRow = (label, value) => {
+      if (!value) return;
+      const row = document.createElement("div"); row.className = "renewal-row";
+      const name = document.createElement("span"); name.textContent = label;
+      const val = document.createElement("b"); val.textContent = value;
+      row.append(name, val); rows.append(row);
+    };
+    if (offer.status === "ready" && offer.payment_available === true && Number.isInteger(offer.amount_thb) && offer.amount_thb > 0) {
+      document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก " + String(offer.package_label || "");
+      addRow("ใช้ได้ถึง (ปัจจุบัน)", renewalDate(offer.current_expires_at));
+      addRow("ใช้ได้ถึง (หลังต่อ)", renewalDate(offer.new_expires_at));
+      document.getElementById("renewal-amount").textContent = new Intl.NumberFormat("th-TH").format(offer.amount_thb);
+      priceBox.hidden = false;
+      if (offer.promotion_label) { promo.textContent = String(offer.promotion_label); promo.hidden = false; }
+      note.textContent = "กดแล้วไปหน้าชำระเงินใน LINE ต่อทันที · สิทธิ์จะอัปเดตหลัง MMD ตรวจสอบการชำระเรียบร้อยแล้ว";
+      action.hidden = false;
+      action.onclick = () => purchaseRenewal(String(offer.package_code || ""));
+      const needs = document.getElementById("digital-needs");
+      if (needs && needs.hidden) {
+        document.getElementById("digital-needs-label").textContent = "ต่ออายุสมาชิก";
+        document.getElementById("digital-needs-action").onclick = () => showView("package");
+        needs.hidden = false;
+      }
+    } else if (offer.status === "signup_instead") {
+      document.getElementById("renewal-title").textContent = "สมัครสมาชิกใหม่";
+      note.textContent = "สมาชิกหมดอายุเกิน 1 ปีนับเป็นการสมัครใหม่ครับ";
+      if (CONFIG.liffId) { signupLink.href = "https://miniapp.line.me/" + CONFIG.liffId + "/?intent=signup&view=signup"; signupLink.hidden = false; }
+    } else {
+      document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก";
+      note.textContent = "ขอให้เปอร์ช่วยตรวจและยืนยันการต่ออายุให้ในแชต LINE ครับ";
+    }
+    card.hidden = false;
+  }
+
+  async function purchaseRenewal(packageCode) {
+    if (busy || !packageCode) return;
+    setBusy(true);
+    const action = document.getElementById("renewal-action");
+    const messageBox = document.getElementById("renewal-message");
+    if (action) action.disabled = true;
+    messageBox.textContent = "กำลังเตรียมหน้าชำระเงินใน LINE ครับ";
+    try {
+      const response = await fetch("/member/api/liff/renewal/purchase", {
+        method:"POST", credentials:"same-origin",
+        headers:{ "content-type":"application/json", "accept":"application/json" },
+        body: JSON.stringify({ package_code: packageCode }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.status === 401) { messageBox.textContent = "กรุณาเปิดจาก Rich Menu ใน LINE อีกครั้งเพื่อยืนยันตัวตนครับ"; return; }
+      const url = response.ok && payload && payload.ok === true && payload.official_verification_required === true
+        && payload.entitlement_granted === false ? verifiedCheckoutUrl(payload.customer_payment_url) : "";
+      if (!url) { messageBox.textContent = "ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง"; return; }
+      window.location.assign(url);
+    } catch { messageBox.textContent = "ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง"; }
+    finally { setBusy(false); if (action) action.disabled = false; }
   }
 
   function legacyCustomerView(data) {

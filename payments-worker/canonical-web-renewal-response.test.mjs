@@ -10,7 +10,7 @@ function response(payload) {
   });
 }
 
-test("entitlement review does not turn an accepted renewal payment back into pending", async () => {
+test("entitlement authority label cannot promote unverified money to paid", async () => {
   const input = response({
     ok: true,
     evidence_submitted: true,
@@ -28,12 +28,12 @@ test("entitlement review does not turn an accepted renewal payment back into pen
   });
   const output = await preserveCanonicalWebRenewalPaymentSuccess(input);
   const body = await output.json();
-  assert.equal(body.payment_status, "paid");
-  assert.equal(body.verification_status, "verified");
+  assert.equal(body.payment_status, "pending");
+  assert.equal(body.verification_status, "pending_verification");
   assert.equal(body.evidence_submitted, true);
   assert.equal(body.entitlement_materialized, false);
   assert.equal(body.manual_membership_review_required, true);
-  assert.equal(body.owner_policy, "membership_slip_simple_accept_v1");
+  assert.equal(body.owner_policy, undefined);
 });
 
 test("pre-money-truth review remains pending", async () => {
@@ -53,3 +53,5 @@ test("pre-money-truth review remains pending", async () => {
   assert.equal(body.verification_status, "pending_verification");
   assert.equal(body.owner_policy, undefined);
 });
+
+test("canonical paid outcome survives the response adapter unchanged", async()=>{const input=response({ok:true,payment_status:"paid",verification_status:"verified"});assert.equal(await preserveCanonicalWebRenewalPaymentSuccess(input),input)});

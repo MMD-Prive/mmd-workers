@@ -276,12 +276,33 @@ test("Phase 2 model deadline is bounded to the post-response shadow budget", () 
   assert.equal(KENJI_CONTEXTUAL_SHADOW_INTERNALS.MODEL_TIMEOUT_MS, 12_000);
 });
 
-test("contextual understanding remains shadow-only while only the approved rights command is enabled", () => {
+test("disabled contextual shadow makes zero OpenAI requests", async () => {
+  let calls = 0;
+  const result = await observeKenjiLineContextualUnderstandingShadow({
+    env: {
+      KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED: "false",
+      OPENAI_API_KEY: "test-key",
+    },
+    event: event("สนใจสมาชิกครับ"),
+    fetchImpl: async () => {
+      calls += 1;
+      throw new Error("OpenAI must not be called while the shadow is disabled");
+    },
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(result.enabled, false);
+  assert.equal(result.analysis_source, "disabled");
+  assert.equal(result.model_attempted, false);
+  assert.equal(result.model_success, false);
+});
+
+test("production disables contextual OpenAI shadow while only the approved rights command is enabled", () => {
   const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(wrangler, /^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"true"$/m);
+  assert.match(wrangler, /^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"false"$/m);
   assert.match(wrangler, /^KENJI_CONTEXTUAL_OPENAI_MODEL\s*=\s*"gpt-4\.1-mini"$/m);
   assert.match(wrangler, /^KENJI_LINE_CONVERSATION_SHADOW_ENABLED\s*=\s*"true"$/m);
-  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
+  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m);
   assert.match(wrangler, /^KENJI_LINE_RIGHTS_CHECK_MODE\s*=\s*"command"$/m);
   assert.match(wrangler, /^KENJI_LINE_RIGHTS_COMMAND_ENABLED\s*=\s*"true"$/m);
 });

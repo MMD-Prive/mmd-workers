@@ -1,0 +1,73 @@
+/* TMIB black edition for /sigil/confirm/job-model.
+ * Presentation only. Layer after the restored bridge v2 design.
+ */
+html body #mmd-model-confirm-v15{
+  --bg:#050505;--bg2:#0b0b0b;--bg3:#141414;
+  --panel:#0d0d0d;--panel-strong:#101010;
+  --ivory:#f5f1e9;--stone:#c5c0b7;--muted:#a6a199;
+  --honey:#c8b58e;--amber:#d6c49f;--line:rgba(245,241,233,.13);
+  background:#050505!important;
+  color:var(--ivory);
+  font-family:"LINE Seed Sans TH","Noto Sans Thai",sans-serif;
+}
+html body #mmd-model-confirm-v15::before,
+html body #mmd-model-confirm-v15::after{
+  display:none!important;
+  background:none!important;
+  animation:none!important;
+}
+html body #mmd-model-confirm-v15 .mm15__header{
+  background:none;border-bottom-color:rgba(245,241,233,.13);
+}
+html body #mmd-model-confirm-v15 .mm15__card,
+html body #mmd-model-confirm-v15 .mm15__payout,
+html body #mmd-model-confirm-v15 .mm15__confirm{
+  background:#0d0d0d;
+  border-color:rgba(245,241,233,.13);
+  border-radius:18px;
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
+html body #mmd-model-confirm-v15 .mm15__payout{
+  border-color:rgba(200,181,142,.38);background:#10100f;
+}
+html body #mmd-model-confirm-v15 .mm15__rows>div:nth-child(3),
+html body #mmd-model-confirm-v15 .mm15__rows>div:nth-child(4),
+html body #mmd-model-confirm-v15 .mm15__rows>div:nth-child(5){
+  background:rgba(245,241,233,.025);border-bottom-color:rgba(245,241,233,.07);
+}
+html body #mmd-model-confirm-v15 .mm15__primary,
+html body #mmd-model-confirm-v15 [data-mmd-model-work-nav] a:first-child{
+  background:#d6c49f;
+  border-color:#d6c49f;
+  color:#11100d;-webkit-text-fill-color:#11100d;
+  box-shadow:none;
+}
+html body #mmd-model-confirm-v15 .mm15__primary:hover:not(:disabled){
+  background:#e1d2b6;box-shadow:none;filter:none;
+}
+html body #mmd-model-confirm-v15 [data-mmd-model-work-nav] a:not(:first-child),
+html body #mmd-model-confirm-v15 .mm15__map,
+html body #mmd-model-confirm-v15 .mm15__retry{
+  background:#101010;border-color:rgba(200,181,142,.3);
+  color:#ded2ba;-webkit-text-fill-color:#ded2ba;
+}
+html body #mmd-model-confirm-v15 .mm15__success{
+  background:#101713;border-color:rgba(167,207,181,.25);
+}
+html body #mmd-model-confirm-v15 .mmd-model-current-photo-v1{
+  background:#101010;border-color:rgba(245,241,233,.13);
+}
+html body #mmd-model-confirm-v15 .mm15__intro::before,
+html body #mmd-model-confirm-v15 .mm15__payout::before,
+html body #mmd-model-confirm-v15 .mm15__confirm::after{
+  color:#c8b58e;-webkit-text-fill-color:#c8b58e;
+}
+html body #mmd-model-confirm-v15 .mm15__payout>strong{
+  color:#e1d2b6;-webkit-text-fill-color:#e1d2b6;
+}
+/* Keep the existing server-required first-job guide consistent with this edition. */
+.mmd-dfjg{background:#050505}
+.mmd-dfjg__card{background:#0d0d0d;border-color:rgba(200,181,142,.3);box-shadow:none}
+.mmd-dfjg__btn{background:#d6c49f;color:#11100d}

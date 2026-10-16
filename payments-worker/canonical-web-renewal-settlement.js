@@ -1,4 +1,4 @@
-import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalBaseYears, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { classifyPaymentOpsRoute, inferMembershipPayment } from "../shared/payment-intelligence.mjs";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
@@ -11,7 +11,7 @@ const MEMBERS = "tblgWc5VRon5o8Mhk";
 const ENTITLEMENTS = "tblNImdF9PKAxhXGi";
 const PACKAGES = "tblg2z8dENx75yHka";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
-const OWNER_POLICY = "membership_slip_simple_accept_v1";
+const OWNER_POLICY = "membership_verified_before_entitlement_v2";
 const EXTENDABLE = new Set(["active", "expiring_soon", "pending"]);
 const BLOCKED = new Set(["blocked", "suspended", "revoked"]);
 const POLICY = Object.freeze({
@@ -68,23 +68,18 @@ export async function reconcileCanonicalWebRenewalProof(request, response, env =
     const proof = await resolveProof(env, payload, paymentRef);
     if (!proof) return withSettlement(response, payload, reviewReceipt("canonical_payment_proof_not_found"));
 
-    // Owner policy: a real membership/renewal slip with a positive numeric amount
-    // and no payment-classification conflict is accepted as money truth. Identity
-    // and entitlement materialization remain separate, exact, fail-closed steps.
+    // Upload is evidence only. Only the canonical payment authority may verify money.
+    // Reuse the existing reviewed-proof path for approval; this intake never writes paid.
+    const pf = payment.fields || {};
+    if (code(pf["Payment Status"]) !== "paid" || code(pf["Verification Status"]) !== "verified") {
+      const rejected = code(pf["Payment Status"]) === "rejected" || code(pf["Verification Status"]) === "rejected";
+      return withSettlement(response, {...payload, payment_status: rejected ? "rejected" : "pending_review", verification_status: rejected ? "rejected" : "pending_verification"}, reviewReceipt("canonical_payment_verification_required"));
+    }
+    if (code(proof.fields?.status) !== "verified") {
+      return withSettlement(response, payload, reviewReceipt("canonical_proof_verification_required"));
+    }
     const verifiedAt = new Date().toISOString();
-    const paidAt = iso(firstValue(payment.fields || {}, ["Payment Date", "paid_at"]) || firstValue(proof.fields || {}, ["paid_at", "Payment Date"]));
-    await airtableUpdate(env, paymentsTable(env), payment.id, {
-      "Payment Status": "paid",
-      "Verification Status": "verified",
-      "Payment Intent Status (AI)": "owner_membership_policy_verified",
-      ...(paidAt ? { "Payment Date": paidAt } : {}),
-    });
-    await airtableUpdate(env, proofsTable(env), proof.id, {
-      status: "verified",
-      verified_at: verifiedAt.slice(0, 10),
-      verified_by: "payments-worker-web-renewal",
-      note: appendPolicyNote(proof.fields?.note),
-    });
+    const paidAt = iso(firstValue(pf, ["Payment Date", "paid_at"]));
 
     const moneyReceipt = {
       status: "paid",
@@ -184,12 +179,14 @@ async function materializeRenewal(env, input) {
   const expectedAmount = timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[input.snapshot.package_code]) : catalog.renew_price;
   if (!(expectedAmount > 0) || input.snapshot.amount_thb !== expectedAmount) return entitlementReview("renewal_price_policy_review_required");
   const startAt = timing.start_at;
-  const baseExpireAt = addBangkokCalendarYears(new Date(startAt), packagePolicy.years);
+  const renewalYears = privateRenewalBaseYears(input.snapshot.package_code);
+  if (!renewalYears) return entitlementReview("membership_package_term_review_required");
+  const baseExpireAt = addBangkokCalendarYears(new Date(startAt), renewalYears);
   const promotion = currentPrivateMembershipPromotion({package_code:input.snapshot.package_code,paid_at:input.paid_at,action:"renewal",existing_member:true,prior_expire_at:priorExpiry});
   const expireAt = (applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt}) || baseExpireAt)?.toISOString() || "";
   if (!expireAt) return entitlementReview("membership_term_invalid");
-  const baseRule = `${packagePolicy.years}_year${packagePolicy.years === 1 ? "" : "s"}_from_${timing.active ? "current_expiry" : "verified_payment"}`;
-  const membershipTerm = `${packagePolicy.years === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}` : ""}`;
+  const baseRule = `${renewalYears}_year${renewalYears === 1 ? "" : "s"}_from_${timing.active ? "current_expiry" : "verified_payment"}`;
+  const membershipTerm = `${renewalYears === 2 ? "2_years" : "1_year"}${promotion ? `_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}` : ""}`;
   const memberEmail = email(member.fields?.["Contact Email"] || member.fields?.email);
   const fields = compact({
     entitlement_id: entitlementId,
@@ -287,7 +284,7 @@ function entitlementSuccess(row, input, policy, duplicate) {
     package_code: input.snapshot.package_code,
     member_id: text(f.member_id, 120) || null,
     membership_expire_at: iso(f.expire_at) || null,
-    membership_term: text(f.membership_term,120) || (policy.years === 2 ? "2_years" : "1_year"),
+    membership_term: text(f.membership_term,120) || (privateRenewalBaseYears(input.snapshot.package_code) === 2 ? "2_years" : "1_year"),
     membership_expiry_rule: text(f.membership_expiry_rule, 120) || null,
     manual_membership_review_required: false,
     downstream_access_reconcile_required: true,

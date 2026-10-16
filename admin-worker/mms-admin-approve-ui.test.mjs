@@ -103,7 +103,7 @@ test('MMS jobs wiring adds a canonical work lane and explicit create-job action'
 test('MMS ops home surfaces real applicant, coordination, and canonical work lanes', () => {
   const wired = wireMmsJobsUi(renderMmsAdminPage());
   assert.match(wired, /MMS TODAY/);
-  assert.match(wired, /คนสมัครใหม่/);
+  assert.match(wired, /ใบสมัครรอตรวจ/);
   assert.match(wired, /ต้องประสานต่อ/);
   assert.match(wired, /งาน MMS ล่าสุด/);
   assert.match(wired, /Promise\.allSettled\(\[snapshotTask,api\('\/jobs'\)\]\)/);

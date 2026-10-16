@@ -29,11 +29,12 @@ function fakeDocument() {
         [".mw2-eyebrow", "h1", ".mw2-signature", ".mw2-body", ".mw2-verify", ".mw2-status"]
           .map((selector) => [selector, makeNode()]),
       );
-      root.childrenBySelector[".mw2-verify"].href = "https://miniapp.line.me/2010864854-N34SgCqq/";
+      root.childrenBySelector[".mw2-verify"].href = value.match(/data-model-login-v2 href="([^"]+)"/)?.[1];
     },
   });
   return {
     readyState: "complete",
+    documentElement: {lang: "th"},
     head: makeNode(),
     body: { prepend(node) { nodes.set(node.id, node); } },
     createElement: (tag) => tag === "main" ? root : makeNode(),
@@ -50,26 +51,19 @@ async function boot(response, options = {}) {
   let redirects = 0;
   const context = {
     document,
-    window: { innerWidth: options.desktop === true ? 1280 : 390 },
+    window: {},
     module: { exports: {} },
     URL,
     AbortController,
     fetch: async () => response,
     setTimeout: () => 1,
     clearTimeout: () => {},
-    location: { replace: () => { redirects++; } },
+    location: { href: options.url || "https://www.mmdbkk.com/sigil/model/login", pathname: "/sigil/model/login", replace: (href) => { redirects++; context.redirectHref = href; } },
   };
   vm.runInNewContext(script, context);
   for (let i = 0; i < 6; i++) await Promise.resolve();
-  return { document, redirects, api: context.module.exports };
+  return { document, redirects, api: context.module.exports, redirectHref: context.redirectHref };
 }
-
-test("desktop keeps the existing Webflow page and does not mount Welcome V2", async () => {
-  const { document, redirects } = await boot({ status: 401 }, { desktop: true });
-  assert.equal(redirects, 0);
-  assert.equal(document.getElementById("mmd-model-welcome-v2"), undefined);
-  assert.equal(document.getElementById("mmd-model-welcome-v2-style"), undefined);
-});
 
 test("verified invited Private Model sees Per's Welcome before choosing Dashboard", async () => {
   const { document, redirects } = await boot({
@@ -128,3 +122,12 @@ test("Welcome uses the selected artwork and keeps the full Per letter", async ()
   assert.match(document.root.querySelector(".mw2-body").children[0].textContent, /ประสบการณ์กว่า 5 ปี/);
   assert.match(document.root.querySelector(".mw2-body").children[2].textContent, /ไม่มีลูกน้อง/);
 });
+
+test("Job entry preserves safe context without generic Welcome", async () => {
+ const {document,redirects,redirectHref}=await boot({status:401},{url:"https://www.mmdbkk.com/sigil/model/login?intent=job_board&job_id=JOB-1&source=line_model_group&campaign_id=abc&lang=zh&next=https%3A%2F%2Fsigil.mmdbkk.com%2Fpublic%2Fapi%2Fjobs%2FJOB-1"});
+ assert.equal(redirects,1); assert.equal(document.getElementById("mmd-model-welcome-v2"),undefined);
+ const u=new URL(redirectHref); assert.equal(u.pathname,"/2010864854-N34SgCqq/");assert.equal(u.searchParams.get("job_id"),"JOB-1");assert.equal(u.searchParams.get("lang"),"zh");assert.equal(u.searchParams.get("campaign_id"),"abc");assert.equal(u.searchParams.get("next"),"https://sigil.mmdbkk.com/public/api/jobs/JOB-1");
+});
+test("Wish entry resumes Wish",async()=>{const {redirectHref}=await boot({status:401},{url:"https://www.mmdbkk.com/sigil/model/login?source=model_wish&return_to=wish"});assert.equal(new URL(redirectHref).searchParams.get("return_to"),"wish");});
+test("Hostile job next stays on canonical job",async()=>{const {redirectHref}=await boot({status:401},{url:"https://www.mmdbkk.com/sigil/model/login?intent=job_board&job_id=JOB-1&next=https://evil.example/x"});assert.equal(new URL(redirectHref).searchParams.get("next"),"https://sigil.mmdbkk.com/public/api/jobs/JOB-1");});
+test("URL cannot choose Private greeting",async()=>{const {document}=await boot({status:401},{url:"https://www.mmdbkk.com/sigil/model/login?lane=private&entry_source=per_invite"});assert.equal(document.root.dataset.lane,"public");assert.equal(document.root.dataset.entrySource,"self");});

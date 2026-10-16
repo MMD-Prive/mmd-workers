@@ -15,6 +15,17 @@ export { SvipPhotoRevealModeAudit } from "./svip-photo-reveal-mode-audit.mjs";
 
 const MEDICAL_REQUEST_PATHS = new Set(["/api/member/medical-request", "/api/member/medical-request/"]);
 
+// The Cloudflare callback route must end in * to match query strings. Keep
+// unrelated public pages (and prefix lookalikes) on their original web origin.
+export function isTherapistOriginPassthroughRequest(request) {
+  const path = new URL(request.url).pathname.replace(/\/$/, "");
+  const prefix = "/male-massage/therapists";
+  if (!path.startsWith(prefix)) return false;
+  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`].includes(path)) return false;
+  if (path.startsWith(`${prefix}/api/auth/`) || path.startsWith(`${prefix}/api/app/`)) return false;
+  return true;
+}
+
 async function proxyMedicalRequest(request, env) {
   if (!env.MEMBER_PAGES_WORKER?.fetch) {
     return Response.json({ ok: false, error: { code: "LIFF_UPSTREAM_NOT_CONFIGURED" } }, { status: 503, headers: { "cache-control": "no-store" } });
@@ -30,6 +41,7 @@ async function proxyMedicalRequest(request, env) {
 export default {
   ...currentWorker,
   async fetch(request, env = {}, ctx) {
+    if (isTherapistOriginPassthroughRequest(request)) return globalThis.fetch(request);
     const therapistPage = await maybeHandleTherapistWorkspace(request, env);
     if (therapistPage) return therapistPage;
     if (MEDICAL_REQUEST_PATHS.has(new URL(request.url).pathname)) return proxyMedicalRequest(request, env);

@@ -1,3 +1,4 @@
+import { handleBroadcastOwnerBridge } from "./broadcast-owner-store.js";
 import { buildModelJobBoardBroadcastLink, buildModelJobBoardMiniAppLink, resolveModelJobBoardNext } from "../../shared/model-job-board-links.mjs";
 
 const PREFIX = "/public/api/jobs";
@@ -29,13 +30,17 @@ export async function handlePublicJobBoardV2Request(request, env = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
 
-  if (url.hostname === "public-job-board.internal" && path === "/__internal/job-board/publish") {
-    if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-    requireStore(env);
-    const input = await readJson(request);
-    const job = createJobRecord({ ...input, status: input.status || "published" });
-    await persistNewJob(env, job);
-    return json({ ok: true, job: ownerJobView(job) }, 201);
+  // Service-binding-only bridge; never reachable through a public hostname.
+  if (url.hostname === "public-job-board.internal" && path.startsWith("/__internal/job-board/")) {
+    try {
+      requireStore(env);
+      return await handleBroadcastOwnerBridge(request, env, {
+        createJobRecord, ownerJobView, getJson, putJson, jobKey, shortJobKey,
+        reserveShortCode, applyOwnerConfirmedJobCorrections,
+      });
+    } catch (error) {
+      return json({ ok: false, error: safeCode(error), outcome: "uncertain" }, statusFor(error));
+    }
   }
 
   if (SHORT_HOSTS.has(url.hostname) && (path === SHORT_PREFIX || path.startsWith(`${SHORT_PREFIX}/`))) {
@@ -543,6 +548,14 @@ async function requireOwnedApplication(request, env, jobId, applicationRef) {
 
 function publicJobView(job, { detail = false } = {}) {
   const view = { id: job.id, status: job.status, ...structuredClone(job.public) };
+  if (view.world === "private" && !view.budget_disclosure_approved) {
+    const budget = view.compensation;
+    view.compensation = "";
+    for (const field of ["title", "listing_description", "safe_customer_description", "required_appearance_profile"]) {
+      view[field] = String(view[field] || "").split("\n").filter(line => !/💰|ค่าตอบแทน|budget|\bTHB\b|฿|[0-9,]+\s*บาท/i.test(line)).join("\n");
+      if (budget) view[field] = view[field].split(budget).join("");
+    }
+  }
   if (view.world === "private" && !detail) {
     // Private teaser is deliberately metadata-free. Sensitive job data is only
     // projected after the approved Model explicitly opens the job.
@@ -585,7 +598,7 @@ async function persistNewJob(env, job) {
 
 async function reserveShortCode(env, jobId) {
   const preferred = canonicalShortCode(jobId);
-  const candidates = [preferred, makeShortCode(), makeShortCode(), makeShortCode(), makeShortCode()].filter(Boolean);
+  const candidates = [preferred, ...await Promise.all([1, 2, 3, 4].map(async (n) => (await sha256(`short:${jobId}:${n}`)).slice(0, 12).toUpperCase()))].filter(Boolean);
   for (const code of candidates) {
     try {
       await putJson(env, shortJobKey(code), {
@@ -1028,6 +1041,10 @@ async function enforceModelBoardGate(request, env, parts = []) {
       },
     });
   }
+
+  // Public reads and private teasers are safe projections. Application,
+  // reveal and interest still require the signed canonical Model gate.
+  if (request.method === "GET" && (parts.length === 0 || (parts.length === 1 && parts[0] !== "events"))) return null;
 
   const next = requestedBoardNext(url, parts);
   const loginUrl = buildModelJobBoardBroadcastLink({

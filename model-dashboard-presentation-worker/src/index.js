@@ -594,6 +594,7 @@ function safeMiniAppUrlForBootstrap(request) {
   const lang = boundedParam(source, "lang");
   if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
   if (["verify", "apply"].includes(boundedParam(source, "flow"))) params.set("flow", boundedParam(source, "flow"));
+  if (modelConsoleReturnTo(request)) params.set("return_to", "console");
   if (boundedParam(source, "handoff") === "job-confirmed") params.set("handoff", "job-confirmed");
   const activation = boundedParam(source, "activation");
   if (activation && activation.length <= 4096) params.set("activation", activation);
@@ -627,12 +628,18 @@ export function liffPrimaryBootstrapHtml(request) {
     liffId: MODEL_LIFF_IDS[environment],
     fallback: safeMiniAppUrlForBootstrap(request),
     sdk: LIFF_SDK_URL,
-    returnTo: jobBoard ? "" : selectedJobReturnTo(request),
+    returnTo: jobBoard ? "" : selectedJobReturnTo(request) || modelConsoleReturnTo(request),
     selectedSessionId: jobBoard ? "" : selectedJobSessionId(request),
     jobBoard,
     environment,
     mode: "primary",
   });
+}
+
+// Navigation hint only; exchange/profile still decide Model access.
+function modelConsoleReturnTo(request) {
+  return boundedParam(new URL(request.url), "return_to") === "console"
+    ? "/sigil/model/console" : "";
 }
 
 export function liffPwaBootstrapHtml(request) {
@@ -703,7 +710,8 @@ function modelOnboardingPhaseAResponse(request) {
     return new Response(null, { status: 405, headers });
   }
   const briefId = boundedParam(new URL(request.url), "brief_id");
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : modelOnboardingPhaseAHtml(resolveLiffEnvironmentFromRequest(request), briefId), { status: 200, headers });
+  const jobBoard = resolveJobBoardContextFromRequest(request);
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : modelOnboardingPhaseAHtml(resolveLiffEnvironmentFromRequest(request), briefId, jobBoard?.job_id || ""), { status: 200, headers });
 }
 
 function modelLineBriefsPageResponse(request) {
@@ -752,6 +760,7 @@ export function modelMiniAppHandoffUrl(request) {
   if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
 
   if (["verify", "apply"].includes(source.searchParams.get("flow"))) params.set("flow", source.searchParams.get("flow"));
+  if (modelConsoleReturnTo(request)) params.set("return_to", "console");
   if (source.searchParams.get("handoff") === "job-confirmed") {
     params.set("handoff", "job-confirmed");
   }
@@ -1199,6 +1208,48 @@ async function proxyPage(request) {
   return new Response(html, { status: upstream.status, statusText: upstream.statusText, headers });
 }
 
+export function shouldServeWebflowDashboard(request) {
+  const url = new URL(request.url);
+  if (normalizePath(url.pathname).replace(/\/$/, "") !== UI_PREFIX) return false;
+  // The Webflow page owns the normal home and its embedded LIFF lifecycle.
+  // Keep explicit application, selected-job and job-board entry contracts.
+  if (isPwaLaunchRequest(request)) return false;
+  const flow = boundedParam(url, "flow");
+  if (flow && flow !== "verify") return false;
+  // Consume the first verify callback before displaying the Webflow home.
+  if (flow === "verify" && shouldServeLiffPrimaryBootstrap(request)) return false;
+  if (["activation", "intent", "handoff", "brief_id", "briefs", "return_to"]
+    .some((name) => Boolean(boundedParam(url, name)))) return false;
+  return !selectedJobReturnTo(request) && !selectedJobSessionId(request);
+}
+
+async function proxyWebflowDashboard(request) {
+  return proxyWebflowModelDocument(request, UI_PREFIX, "model-dashboard");
+}
+
+async function proxyWebflowModelDocument(request, pagePath, pageName) {
+  const method = request.method.toUpperCase();
+  if (!["GET", "HEAD"].includes(method)) {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
+  }
+  // Fetch only public presentation: never send the browser's callback query,
+  // cookies or Authorization to Webflow. The embedded LIFF sees the original
+  // same-origin browser URL and exchanges identity with /v1/model/* itself.
+  let upstream;
+  try {
+    upstream = await fetchUpstream(request, new URL(pagePath, WISH_PRESENTATION_ORIGIN));
+  } catch (_) {
+    return unavailable();
+  }
+  const headers = modelWishResponseHeaders(upstream.headers);
+  headers.set("x-mmd-ui-source", pageName === "model-dashboard" ? "webflow-dashboard-proxy" : "webflow-model-entry-proxy");
+  headers.set("x-mmd-page", pageName);
+  headers.set("x-mmd-page-source", `${WISH_PRESENTATION_ORIGIN}${pagePath}`);
+  return new Response(method === "HEAD" ? null : upstream.body, {
+    status: upstream.status, statusText: upstream.statusText, headers,
+  });
+}
+
 async function proxyModelWishPage(request) {
   const method = request.method.toUpperCase();
   if (!new Set(["GET", "HEAD"]).has(method)) {
@@ -1402,6 +1453,11 @@ function unavailable() {
 export default {
   async fetch(request) {
     const path = normalizePath(new URL(request.url).pathname);
+    // Exact public documents only. Preserve browser host/query; strip credentials
+    // from the presentation fetch just as for the canonical dashboard.
+    if (path === "/sigil/model/login" || path === "/sigil/confirm/job-model") {
+      return proxyWebflowModelDocument(request, path, path.endsWith("login") ? "model-login" : "model-confirmation");
+    }
     if (isModelWishPath(path)) return proxyModelWishPage(request);
     if (isModelPwaManifestPath(path)) return modelPwaManifestResponse(request.method);
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
@@ -1411,12 +1467,14 @@ export default {
     if (isModelMediaUploadAssetPath(path)) return modelMediaUploadAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
+      if (shouldServeWebflowDashboard(request)) return proxyWebflowDashboard(request);
       if (isModelOnboardingPhaseARequest(request)) {
         if (!hasLineRedirectContext(request) && !hasLiffPrimaryBootstrapCookie(request) && !hasModelSessionCookie(request)) return miniAppHandoff(request);
         return modelOnboardingPhaseAResponse(request);
       }
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
+      if (modelConsoleReturnTo(request) && hasLiffPrimaryBootstrapCookie(request)) return liffPrimaryBootstrapResponse(request);
       if (resolveJobBoardContextFromRequest(request) && hasModelSessionCookie(request)) return authenticatedJobBoardResumeResponse(request);
       if (shouldResumeSelectedJobAfterBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
@@ -1431,3 +1489,4 @@ export default {
     });
   },
 };
+

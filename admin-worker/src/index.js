@@ -1,3 +1,4 @@
+import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
@@ -2417,66 +2418,16 @@ async function modelSessionFindOne(env, tableName, filterByFormula) {
   return { ok: true, record: record ? { id: record.id, fields: record.fields || {} } : null };
 }
 
-const MODEL_SESSION_MODEL_CURRENT_STATES = new Set([
-  "offered",
-  "confirmed",
-  "en_route",
-  "nearby",
-  "arrived",
-  "met_customer",
-  "final_payment_pending",
-  "final_payment_confirmed",
-  "work_started",
-  "work_finished",
-  "separated",
-  "under_review",
-  "payout_pending",
-]);
 
 async function modelSessionFindCurrentByModel(env, tables, payload) {
   if (payload?.kind !== "model_session") return { ok: true, record: null, eligible: false };
-
-  const modelRecordId = str(payload?.model_record_id || payload?.model_id);
-  if (!modelRecordId) return { ok: true, record: null, eligible: false };
-
-  const assignedField = tables.sessions.fields.modelRecordId;
-  if (!assignedField) return { ok: false, detail: { error: "model_assignment_field_missing" } };
-
-  const params = new URLSearchParams();
-  params.set("pageSize", "20");
-  params.set(
-    "filterByFormula",
-    `FIND("${escapeFormulaValue(modelRecordId)}",ARRAYJOIN({${assignedField}}))`,
-  );
-
-  const result = await airtableFetch(
-    env,
-    `/${encodeURIComponent(tables.sessions.table)}?${params.toString()}`,
-  );
-  if (!result.ok) return { ok: false, detail: result };
-
-  const records = Array.isArray(result.data?.records) ? result.data.records : [];
-  for (const raw of records) {
-    const record = { id: raw?.id || "", fields: raw?.fields || {} };
-    const recordModelIds = modelSessionFieldValues(record.fields, [
-      assignedField,
-      "Model Record ID",
-      "model_record_id",
-      "model_id",
-      "Model",
-    ]);
-    // The fallback is identity-bound, not name-bound. If Airtable does not
-    // return the exact canonical Model record id, fail closed for that row.
-    if (!recordModelIds.includes(modelRecordId)) continue;
-
-    const stateInfo = modelSessionStateFromRecord(tables, record);
-    const normalizedState = normalizeSessionState(stateInfo.state);
-    if (!MODEL_SESSION_MODEL_CURRENT_STATES.has(normalizedState)) continue;
-
-    return { ok: true, record, eligible: true };
+  const modelId = str(payload?.model_record_id || payload?.model_id);
+  const result = await readCanonicalCurrentSession(env, modelId);
+  if (!result.ok) {
+    if (result.status === 404) return { ok: true, record: null, eligible: true };
+    return { ok: false, status: result.status, error: result.error };
   }
-
-  return { ok: true, record: null, eligible: true };
+  return { ok: true, record: result.record, eligible: true };
 }
 
 function modelSessionOwnsRecord(env, payload, record) {
@@ -2488,6 +2439,10 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
+  if (Object.prototype.hasOwnProperty.call(fields, "Canonical Model")) {
+    const canonical = canonicalModelIds(record);
+    return Boolean(payloadModelId && canonical.length === 1 && fields["Canonical Model"].length === 1 && canonical[0] === payloadModelId);
+  }
   const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_record_id", "model_id", "Model"]);
   if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
 
@@ -2513,10 +2468,13 @@ async function resolveModelSessionContext(req, env, body = null) {
   // the normal no-active-job state instead of misclassifying identity as forbidden.
   if (!formulas.length) {
     const currentByModel = await modelSessionFindCurrentByModel(env, tables, payload);
-    if (!currentByModel.ok) return { ok: false, status: 503, error: "schema_not_ready" };
+    if (!currentByModel.ok) return { ok: false, status: currentByModel.status || 503, error: currentByModel.error || "schema_not_ready" };
     if (!currentByModel.eligible) return { ok: false, status: 403, error: "forbidden" };
     if (!currentByModel.record) return { ok: false, status: 404, error: "session_not_found" };
-    return { ok: true, payload, session: currentByModel.record, tables };
+    const currentTables = { ...tables, sessions: { ...tables.sessions, fields: {
+      ...tables.sessions.fields, state: str(env.AT_SESSIONS__CANONICAL_STATE || "model_session_state"),
+    } } };
+    return { ok: true, payload, session: currentByModel.record, tables: currentTables };
   }
 
   for (const formula of formulas) {
@@ -5838,6 +5796,73 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState, ownerJobGrant };
 }
 
+const MODEL_PARTNER_INACTIVE_REFERRAL_STATUSES = new Set(["inactive", "revoked", "transferred", "archived"]);
+
+/**
+ * Direct / Partner attribution for Create Job model search.
+ * Authority: Airtable "Model Referrals" (Partner + Model + Ownership Status) and
+ * "Model Partners". A model is Partner only when it has a non-ended referral to a
+ * partner; otherwise Direct. If the lookup fails we return ok:false so callers
+ * report "unknown" instead of mislabelling a partner model as Direct.
+ */
+async function loadModelPartnerAttribution(env, modelIds) {
+  const wanted = new Set((modelIds || []).filter(Boolean));
+  const out = { ok: true, byModel: new Map() };
+  if (!wanted.size) return out;
+  const referralsTable = env.AIRTABLE_TABLE_MODEL_REFERRALS || "tblrmSsCZxJSCQR9n";
+  const partnersTable = env.AIRTABLE_TABLE_MODEL_PARTNERS || "tbl1ksDlsTiiGEHWe";
+  try {
+    const referrals = [];
+    let offset = "";
+    for (let page = 0; page < 10; page += 1) {
+      const qs = new URLSearchParams({ pageSize: "100" });
+      if (offset) qs.set("offset", offset);
+      const r = await airtableFetch(env, `/${encodeURIComponent(referralsTable)}?${qs.toString()}`);
+      if (!r.ok) return { ok: false, byModel: new Map() };
+      referrals.push(...(r.data?.records || []));
+      offset = r.data?.offset || "";
+      if (!offset) break;
+    }
+    const linkIds = (v) => (Array.isArray(v) ? v : []).map((x) => str(x && typeof x === "object" ? x.id : x)).filter(Boolean);
+    const partnerIds = new Set();
+    const pairs = [];
+    for (const rec of referrals) {
+      const f = rec.fields || {};
+      if (MODEL_PARTNER_INACTIVE_REFERRAL_STATUSES.has(accessToken(f["Ownership Status"]))) continue;
+      const partnerId = linkIds(f["Partner"])[0];
+      if (!partnerId) continue;
+      for (const modelId of linkIds(f["Model"])) {
+        if (wanted.has(modelId)) {
+          pairs.push([modelId, partnerId]);
+          partnerIds.add(partnerId);
+        }
+      }
+    }
+    const partners = new Map();
+    for (const id of partnerIds) {
+      const r = await airtableFetch(env, `/${encodeURIComponent(partnersTable)}/${encodeURIComponent(id)}`);
+      if (!r.ok) return { ok: false, byModel: new Map() };
+      const f = r.data?.fields || {};
+      partners.set(id, {
+        partner_id: str(f["Partner ID"]) || id,
+        partner_record_id: id,
+        partner_name: str(f["Display Name"] || f["Partner Name"] || f["Partner ID"]),
+      });
+    }
+    for (const [modelId, partnerId] of pairs) {
+      if (!out.byModel.has(modelId)) out.byModel.set(modelId, partners.get(partnerId));
+    }
+    return out;
+  } catch (_) {
+    return { ok: false, byModel: new Map() };
+  }
+}
+
+function normalizeModelSourceFilter(value) {
+  const t = accessToken(value);
+  return t === "direct" || t === "partner" ? t : "";
+}
+
 async function searchCreateSessionModels(env, url) {
   const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
   const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
@@ -5848,10 +5873,8 @@ async function searchCreateSessionModels(env, url) {
   const selectedFolder = accessToken(url.searchParams.get("selected_access_folder") || url.searchParams.get("folder"));
   const flag = (name) => ["1", "true", "yes"].includes(accessToken(url.searchParams.get(name)));
   const availableOnly = flag("available_only");
-  const wantBurn = flag("burn");
-  const wantMk = flag("mk");
-  const wantLive = flag("live");
   const inventoryOnly = flag("inventory_only");
+  const sourceFilter = normalizeModelSourceFilter(url.searchParams.get("source"));
 
   let allowedFolders = [];
   let memberSummary = null;
@@ -5929,9 +5952,8 @@ async function searchCreateSessionModels(env, url) {
     const profile = modelAccessProfile(record.fields || {});
     if (!profile.statusActive) continue;
     if (availableOnly && (!profile.availableNow || profile.explicitlyUnavailable)) continue;
-    if (wantBurn && !profile.ops.burn) continue;
-    if (wantMk && !profile.ops.mk) continue;
-    if (wantLive && !profile.ops.live) continue;
+    // Job add-ons do not filter owner/admin model discovery. Capability metadata
+    // remains descriptive; selecting MK/Burn/Live must not hide inventory.
     if (bookingVisibility === "private") {
       if (profile.bookingVisibility !== "private") continue;
       if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
@@ -5957,7 +5979,28 @@ async function searchCreateSessionModels(env, url) {
       }
     }
     items.push(item);
-    if (items.length >= limit) break;
+    if (!sourceFilter && items.length >= limit) break;
+  }
+
+  const attribution = await loadModelPartnerAttribution(env, items.map((item) => item.model_id));
+  for (const item of items) {
+    const partner = attribution.byModel.get(item.model_id);
+    if (!attribution.ok) {
+      item.source_kind = null;
+      item.source_lookup = "unavailable";
+    } else if (partner) {
+      item.source_kind = "partner";
+      item.partner_id = partner.partner_id;
+      item.partner_record_id = partner.partner_record_id;
+      item.partner_name = partner.partner_name;
+    } else {
+      item.source_kind = "direct";
+    }
+  }
+  if (sourceFilter) {
+    const kept = items.filter((item) => item.source_kind === sourceFilter);
+    items.length = 0;
+    items.push(...kept.slice(0, limit));
   }
 
   let publicRecovery = null;
@@ -5972,6 +6015,8 @@ async function searchCreateSessionModels(env, url) {
     booking_visibility: bookingVisibility,
     folder: selectedFolder,
     customer_lane: lane,
+    source: sourceFilter || "all",
+    source_lookup_ok: attribution.ok,
     items,
   };
   if (memberSummary) out.private_access = memberSummary;

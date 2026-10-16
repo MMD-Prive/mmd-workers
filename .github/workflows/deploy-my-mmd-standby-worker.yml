@@ -18,6 +18,19 @@ on:
       - completed
   workflow_dispatch:
     inputs:
+      production_approved:
+        description: 'Owner approval for this workflow and its production side effects only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this workflow and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this workflow'
+        type: string
+        required: true
       confirm:
         description: "Type DEPLOY after the backup LIFF app exists in channel 2011691294"
         required: true
@@ -27,10 +40,20 @@ permissions:
   contents: read
 
 jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -47,13 +70,10 @@ jobs:
             --var LINE_LIFF_BACKUP_ID:2011691294-GCxAQ2yW
 
   deploy:
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
-    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.confirm == 'DEPLOY'
+    needs: [production-approval, validate]
     runs-on: ubuntu-latest
-    environment: production
+    environment: mmd-production-mutation
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
@@ -62,6 +82,9 @@ jobs:
       BACKUP_LIFF_ID: "2011691294-GCxAQ2yW"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

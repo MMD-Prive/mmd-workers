@@ -1,0 +1,25 @@
+{
+  "environment": "mmd-production-mutation",
+  "applied": false,
+  "configuration_change_authorized": false,
+  "approval_state": "Reviewer selected for preparation only; application approval requires clarification",
+  "desired_protection": {
+    "reviewers": [{ "type": "User", "id": 216427112, "login": "mmdprive" }],
+    "prevent_self_review": true,
+    "can_admins_bypass": false,
+    "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true },
+    "deployment_branch_policies": [{ "name": "main", "type": "branch" }]
+  },
+  "verified_candidates": [
+    { "login": "mmdprive", "id": 216427112, "role": "admin" },
+    { "login": "kullateeb", "id": 317187251, "role": "admin" },
+    { "login": "ic111nm", "id": 286945879, "role": "read" }
+  ],
+  "constraints": [
+    "This file is a desired-state plan, not an API payload or an apply script.",
+    "Reviewers need at least read access; current access must be checked again before applying.",
+    "If mmdprive is the reviewer, another authorized user must initiate the validation/release run.",
+    "Do not substitute the unprotected production environment.",
+    "No secrets are needed for validation; do not provision or copy any."
+  ]
+}

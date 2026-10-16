@@ -1,3 +1,4 @@
+import { readCanonicalCurrentSession } from "./model-current-session.js";
 import dashboardWorker from "./dashboard-worker.js";
 import { planPrivateUpload, uploadPrivateMedia } from "../../shared/private-media.mjs";
 import { claimModelMediaSlot, commitModelMediaSlot, releaseModelMediaSlot, removeModelMediaSlot } from "../../shared/model-media-slot-coordinator.mjs";
@@ -52,19 +53,6 @@ const MODEL_MEDIA_PUBLIC_SELF_MANAGED_TYPES = new Set(["profile_photo", "public_
 const MODEL_MEDIA_PER_APPROVAL_TYPES = new Set(["private_gallery", "flash_preview"]);
 const MODEL_IMAGE_MIME_ALLOWLIST = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const MODEL_VIDEO_MIME_ALLOWLIST = new Set(["video/mp4", "video/quicktime", "video/webm"]);
-const ACTIVE_SESSION_STATES = new Set([
-  "confirmed",
-  "accepted",
-  "en_route",
-  "traveling",
-  "nearby",
-  "arrived",
-  "met_customer",
-  "final_payment_pending",
-  "final_payment_confirmed",
-  "work_started",
-  "work_finished",
-]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -1452,30 +1440,15 @@ function isActiveModel(fields, env) {
 }
 
 async function findActiveSessionForModel(env, modelRecord) {
-  const table = String(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX").trim();
-  const assignedField = String(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model").trim();
-  const formula = `FIND("${escapeFormula(modelRecord.id)}", ARRAYJOIN({${assignedField}}))`;
-  const result = await airtableList(env, table, formula, 20);
-  if (!result.ok) return { ok: false, status: 503, error: "session_lookup_unavailable" };
-
-  const sessionIdField = String(env.AT_SESSIONS__SESSION_ID || "session_id");
-  const stateFields = unique([env.AT_SESSIONS__STATE, env.AT_SESSIONS__STATUS, "session_state", "status"].map(clean).filter(Boolean));
-  const paymentField = String(env.AT_SESSIONS__PAYMENT_REF || "payment_ref");
-
-  for (const record of result.records) {
-    const state = firstText(record.fields || {}, stateFields).toLowerCase();
-    if (state && !ACTIVE_SESSION_STATES.has(state)) continue;
-    const sessionId = firstText(record.fields || {}, [sessionIdField]);
-    if (!sessionId) continue;
-    return {
-      ok: true,
-      record,
-      sessionId,
-      paymentRef: firstText(record.fields || {}, [paymentField]),
-      state: state || "confirmed",
-    };
-  }
-  return { ok: false, status: 404, error: "active_session_not_found" };
+  const result = await readCanonicalCurrentSession(env, modelRecord.id);
+  if (!result.ok) return result;
+  const fields = result.record.fields || {};
+  return {
+    ok: true, status: 200, record: result.record,
+    sessionId: clean(fields[env.AT_SESSIONS__SESSION_ID || "session_id"]),
+    paymentRef: clean(fields[env.AT_SESSIONS__PAYMENT_REF || "payment_ref"]),
+    state: clean(fields[env.AT_SESSIONS__CANONICAL_STATE || "model_session_state"]),
+  };
 }
 
 async function airtableList(env, table, formula, pageSize) {

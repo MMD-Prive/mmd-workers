@@ -1,5 +1,6 @@
 import {
   inferDrivePrivateServiceLevel,
+  resolveApprovedDrivePrivateWork,
   listUnifiedModelLineCandidates,
   materializeApprovedDriveModel,
 } from "./unified-model-drive-link.js";
@@ -54,6 +55,27 @@ export function derivePrivateServiceLevel(fields = {}, { allowPathFallback = fal
   return { level: "", source: "unclassified" };
 }
 
+export async function resolveCanonicalPrivateWork(record, env, { allowDirectoryLookup = true } = {}) {
+  const fields = record?.fields || {};
+  const derived = derivePrivateServiceLevel(fields, { allowPathFallback: false });
+  if (derived.level) return derived;
+  // Explicit canonical decisions (including case-by-case / Per-only / No) are
+  // never overwritten by a directory fallback or a browser selection.
+  if (first(fields, ["private_service_level", "Private Service Level", "private_work_format", "Private Work Format", "work_format", "Work Format"])) return derived;
+  const pn = normalizeToken(first(fields, ["pn_ability", "PN Ability", "pn_compatible", "PN Compatible", "can_pn"]));
+  if (pn && !["unknown", "unclassified"].includes(pn)) return derived;
+  if (!isActive(fields)) return derived;
+  const review = normalizeToken(first(fields, ["private_review_status", "Private Review Status"]));
+  if (["hidden", "rejected", "draft", "blocked"].includes(review)) return derived;
+  if (!allowDirectoryLookup) return derived;
+  const folderId = first(fields, ["drive_folder_id", "Drive Folder ID"]);
+  if (!folderId) return derived;
+  const approved = await resolveApprovedDrivePrivateWork(env, folderId);
+  if (!approved.ok) return { ...derived, lookup_status: approved.status };
+  if (!approved.level) return derived;
+  return { level: approved.level, source: "approved_drive_directory_recheck" };
+}
+
 export function privateWorkCapabilities(level) {
   const v = normalizePrivateWork(level);
   if (v === "vip") return ["vip", "pn"];
@@ -105,7 +127,10 @@ export async function enforcePrivateModelSearchPolicy(request, response, env) {
       const modelId = clean(item?.model_id || item?.id);
       const record = recordsResult.records.get(modelId);
       if (!record) continue;
-      const derived = derivePrivateServiceLevel(record.fields || {}, { allowPathFallback: false });
+      const derived = await resolveCanonicalPrivateWork(record, env, {
+        allowDirectoryLookup: clean(url.searchParams.get("q") || url.searchParams.get("search")).length >= 2,
+      });
+      if (derived.lookup_status === 503) return policyError(503, "private_model_work_policy_unavailable", "ตรวจชนิดงานโมเดลไม่ได้ชั่วคราว กรุณาลองใหม่");
       if (!privateWorkAllowed(derived.level, requestedWork)) continue;
       kept.push({
         ...item,
@@ -190,9 +215,10 @@ export async function guardPrivateJobCreateWork(request, env) {
     return policyError(recordResult.status === 404 ? 409 : 503, "canonical_model_lookup_failed", "Unable to verify the selected canonical Model.");
   }
 
-  const derived = derivePrivateServiceLevel(recordResult.record.fields || {}, { allowPathFallback: false });
+  const derived = await resolveCanonicalPrivateWork(recordResult.record, env);
+  if (derived.lookup_status === 503) return policyError(503, "private_model_work_policy_unavailable", "ตรวจชนิดงานโมเดลจากแหล่งอนุมัติไม่ได้ชั่วคราว กรุณาลองใหม่");
   if (!derived.level) {
-    return policyError(409, "private_model_service_level_unclassified", "The selected Model does not have a canonical private service level yet.");
+    return policyError(409, "private_model_service_level_unclassified", "โมเดลนี้ยังไม่มีข้อมูลชนิดงาน PN/VIP ที่ยืนยันได้ กรุณาตรวจข้อมูลโมเดลก่อนสร้างงาน", { model_id: modelId, model_name: first(recordResult.record.fields || {}, ["working_name", "model_name"]), required_model_field: "private_service_level" });
   }
   if (!privateWorkAllowed(derived.level, requestedWork)) {
     return policyError(409, "private_model_work_not_allowed", requestedWork === "vip"

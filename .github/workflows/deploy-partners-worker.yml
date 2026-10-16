@@ -7,6 +7,8 @@ on:
     paths:
       - "shared/posthog-authority-events.mjs"
       - "partners-worker/**"
+      - "admin-worker/src/relax-spa-page.js"
+      - "webflow/global/mms-workspace-theme-v1.mjs"
       - "shared/model-sales-control-v1.mjs"
       - "shared/model-sales-control-v1.d.mts"
       - ".github/workflows/deploy-partners-worker.yml"

@@ -9,7 +9,9 @@
   window.__mmdDirectPrivateFirstJobGateV1 = true;
 
   const nativeFetch = window.fetch.bind(window);
-  const STATUS = "/v1/model/direct-job-gate/status";
+  // MY MODEL creates a host-only session on the canonical apex API.
+  // Webflow redirects the confirmation view to www; keep cookie reads on apex.
+  const STATUS = "https://mmdbkk.com/v1/model/direct-job-gate/status";
   const DETAILS = "/v1/confirm/details";
   const LIFF = "https://miniapp.line.me/2010864854-N34SgCqq/";
   const STATUS_TIMEOUT_MS = 15000;
@@ -61,7 +63,15 @@
       return false;
     }
     markReentry();
-    location.replace(liffUrl(token));
+    // Some LINE in-app browsers keep this document open when scripted Mini App
+    // navigation is blocked. Render a user-gesture fallback before navigating;
+    // leaving the page must not be the only way out of the loading state.
+    renderBlocked("กรุณาเปิดงานใน MY MODEL เพื่อยืนยันตัวตน หาก LINE ไม่เปิดอัตโนมัติ ให้กดปุ่มด้านล่าง", code || "model_session_required", liffUrl(token));
+    try {
+      location.replace(liffUrl(token));
+    } catch (_) {
+      // Keep the manual link and the identity gate visible; never release details.
+    }
     return true;
   }
 
@@ -203,6 +213,7 @@
       renderBlocked("ระบบยังตรวจ First Direct Job Gate ไม่ครบ กรุณาเปิดงานผ่าน LINE อีกครั้ง", clean(body.error) || `http_${response.status}`);
       throw new Error(clean(body.error) || "direct_job_gate_unavailable");
     }
+    if (typeof CustomEvent === "function" && window.dispatchEvent) window.dispatchEvent(new CustomEvent("mmd:model-job-brand", { detail:body }));
     if (body.applies !== true || body.required !== true) return true;
     renderGate(body, token);
     return false;

@@ -12,6 +12,9 @@ permissions:
 
 jobs:
   retire:
+    # Hold this legacy one-shot deploy until it is replaced by an explicitly
+    # approved production workflow. A main push must never deploy implicitly.
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

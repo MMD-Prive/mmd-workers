@@ -141,10 +141,11 @@ function durableBinding(options = {}) {
   };
 }
 
-test("owner-approved rollout keeps LLM and card leads off while gated model lookup is on", () => {
+test("owner-approved rollout uses deterministic conversation while the external model stays off", () => {
   const lineWrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_BRAIN_V1_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_ENABLED\s*=\s*"true"$/m);
@@ -560,7 +561,7 @@ test("expired member may continue a brief without new private disclosure", async
   });
   assert.match(decision.text, /คุยเรื่องนายแบบและส่งบรีฟ/);
   assert.match(decision.text, /ก่อนยืนยันงานหรือเปิดข้อมูลใหม่/);
-  assert.match(decision.text, /sigil\/member\/membership\?source=line&intent=renew/);
+  assert.match(decision.text, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/);
   assert.doesNotMatch(decision.text, /MX17|น้องซิน|Private Model.*ชื่อ/i);
   assert.equal(decision.reply_source, "model_access_renewal");
   assert.equal(decision.clear_model_context, true);

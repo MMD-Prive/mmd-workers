@@ -29,6 +29,7 @@ import {
 } from "./model-reconfirm-runtime.js";
 import {
   handleHistoricalSlipBackfillRequest,
+  handleAdminSlipUploadRequest,
   isHistoricalSlipBackfillRequest,
 } from "./historical-slip-backfill-runtime.js";
 import {
@@ -59,6 +60,13 @@ export default {
     // creating/publishing any source of truth from Webflow.
     if (isModelAssetReadinessRequest(path, method)) {
       return handleModelAssetReadinessRequest(request, env, ctx, studioWorker);
+    }
+
+    // Exact manual evidence upload; the existing /studio/api/* admin gate and
+    // Cloudflare route own this transport. It never approves a payment.
+    if (path === "/studio/api/payments/slip-intake") {
+      if (method !== "POST") return Response.json({ ok: false, error: "method_not_allowed" }, { status: 405, headers: { allow: "POST", "cache-control": "no-store" } });
+      return handleAdminSlipUploadRequest(request, env, ctx);
     }
 
     // /studio/api/* is already a credential-bound, explicitly routed admin

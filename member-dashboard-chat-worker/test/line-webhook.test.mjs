@@ -223,7 +223,11 @@ test("canonical personal payment, membership, and points status fail closed dete
   const cases = [
     ["ผมจ่ายแล้ว", "payment_status", "payment", /ไม่ยืนยันการชำระ/],
     ["สถานะผมเป็นยังไง", "membership_status", "membership", /ยังยืนยันสถานะ/],
-    ["แต้มเข้าไหม", "points_status", "points", /ยังยืนยันยอดแต้ม/],
+    ["แต้มเข้าไหม", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["เช็กแต้ม", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["เช็คคะแนนครับ", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["แต้มของผมมีเท่าไหร่", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["ดูยอด Points ล่าสุด", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
   ];
   for (const [text, intent, domain, replyPattern] of cases) {
     const event = lineTextEvent(text);
@@ -264,13 +268,13 @@ test("membership signup and renewal webhooks reply once without model use", asyn
   };
   try {
     const cases = [
-      ["สมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
-      ["อยากสมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
-      ["ขอสมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
-      ["สมัคร Premium", "private_membership_signup", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/],
-      ["ต่ออายุ", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
-      ["ต่ออายุสมาชิก", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
-      ["ขอต่ออายุสมาชิก", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
+      ["สมัครสมาชิก", "membership_signup", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/],
+      ["อยากสมัครสมาชิก", "membership_signup", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/],
+      ["ขอสมัครสมาชิก", "membership_signup", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/],
+      ["สมัคร Premium", "private_membership_signup", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/],
+      ["ต่ออายุ", "membership_renewal", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/],
+      ["ต่ออายุสมาชิก", "membership_renewal", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/],
+      ["ขอต่ออายุสมาชิก", "membership_renewal", /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/],
     ];
     for (const [text, intent, routePattern] of cases) {
       calls.length = 0;
@@ -549,7 +553,7 @@ test("Kenji trigger phrases route to talk_to_per_ai intent", async () => {
 
 test("Per Voice replies stay short and do not expose internal markers or the hidden Kenji identity", () => {
   const reply = buildKenjiLineReply(lineTextEvent("Hi Per"), { displayName: "Test User" });
-  assert.equal(reply, "ครับ คุณTest พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ");
+  assert.equal(reply, "ครับ คุณ Test พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ");
   assert.doesNotMatch(reply, /สวัสดี|ยินดีต้อนรับ|MMD Privé/);
   assert.doesNotMatch(reply, /kenji|เคนจิ|ทีม(?:งาน)?|ระบบ|airtable|record_id|secret|token|authorization|bearer|telegram|gmail|r2|kv/i);
 });

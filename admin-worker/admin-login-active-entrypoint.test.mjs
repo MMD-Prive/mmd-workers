@@ -241,6 +241,7 @@ test("active Refund Ops converts downstream exceptions to controlled 503 instead
 });
 
 const SESSION_CREATOR_PAGES = [
+  "/internal/admin/payments",
   "/internal/admin/work",
   "/internal/admin/jobs/all",
   "/internal/admin/jobs/create-job",
@@ -278,7 +279,7 @@ async function assertPagesDenied(headers, requests) {
       if (method === "GET") {
         const target = new URL(response.headers.get("location"));
         assert.equal(target.pathname, "/internal/admin/login");
-        const next = path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
+        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
           ? `${path}?page=2` : "/internal/admin/control-room";
         assert.equal(target.searchParams.get("next"), next);
         assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
@@ -343,7 +344,7 @@ test("Session Creator pages allow signed owner GET/HEAD with stale duplicate coo
         }
       }
     }
-    assert.equal(requests.length, 16);
+    assert.equal(requests.length, SESSION_CREATOR_PAGES.length * 4);
   });
 });
 
@@ -378,4 +379,30 @@ test("Session Creator assets remain public for anonymous GET/HEAD", async () => 
     }
     assert.equal(requests.length, 2);
   });
+});
+
+test("scheduled entrypoint runs without an HTTP request and registers background work", async () => {
+  const pending = [];
+  await worker.scheduled(
+    { cron: "*/5 * * * *", scheduledTime: Date.now() },
+    {},
+    { waitUntil(promise) { pending.push(promise); } },
+  );
+  assert.equal(pending.length, 1);
+  await Promise.all(pending);
+  // The fallback without a Workers ExecutionContext must also complete.
+  await worker.scheduled({ cron: "*/5 * * * *", scheduledTime: Date.now() }, {}, {});
+});
+
+test("active fetch routes completeness API and page to their owner-only handler", async () => {
+  for (const path of ["/v1/admin/my-mmd/completeness", "/internal/admin/my-mmd/completeness"]) {
+    for (const suffix of ["", "/"]) {
+      const response = await worker.fetch(new Request(`https://mmdbkk.com${path}${suffix}`), runtimeEnv(), {});
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { ok: false, error: "owner_required" });
+    }
+    const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`, { method: "POST" }), runtimeEnv(), {});
+    assert.equal(response.status, 405);
+    assert.deepEqual(await response.json(), { ok: false, error: "method_not_allowed" });
+  }
 });

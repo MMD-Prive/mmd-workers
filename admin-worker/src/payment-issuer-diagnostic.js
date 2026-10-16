@@ -1,5 +1,7 @@
+import { KBANK_SANDBOX_MODE, KBANK_STATUS_MODE, requestKbankSandboxDiagnostic } from "./kbank-sandbox-diagnostic.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { paymentIssuerTransport, requestPaymentsConfirmLink, requestPaymentsConfirmationReissue } from "./payments-issuer-transport.js";
+import { SIGIL_SYSTEM_LOGO } from "./sigil-system-logo.js";
 
 export const PAYMENT_ISSUER_DIAGNOSTIC_PATH = "/v1/admin/payment-issuer-diagnostic";
 export const ISSUE_EXISTING_SESSION_MODE = "issue_existing_session";
@@ -51,6 +53,11 @@ export async function handlePaymentIssuerDiagnostic(request, env = {}) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return json({ ok: false, error: "diagnostic_empty_object_required" }, 400);
+  }
+
+  if (body.mode === KBANK_SANDBOX_MODE || body.mode === KBANK_STATUS_MODE) {
+    if (Object.keys(body).length !== 1) return json({ ok: false, error: "unsupported_sandbox_field" }, 400);
+    return requestKbankSandboxDiagnostic(env, body.mode === KBANK_STATUS_MODE);
   }
 
   if (Object.keys(body).length === 0) return handleEmptyDiagnostic(env);
@@ -396,24 +403,36 @@ function diagnosticPage() {
   const nonce = crypto.randomUUID();
   return new Response(`<!doctype html><html lang="th"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Payment connection check · MMD Privé</title>
-<style>body{margin:0;background:#11100e;color:#f5f1e8;font:16px/1.65 system-ui,sans-serif}main{max-width:640px;margin:10vh auto;padding:24px}h1{font-size:28px;line-height:1.3}p{color:#ccc5b9}button{padding:14px 20px;border:0;border-radius:12px;background:#dfc28c;color:#19140c;font:inherit;cursor:pointer}button:disabled{opacity:.6;cursor:default}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:18px;border:1px solid #514737;border-radius:12px;font-size:14px}a{color:#dfc28c}</style>
-<main><p>MMD PRIVÉ · PAYMENT</p><h1>ตรวจการเชื่อมต่อชำระเงิน</h1>
-<p>ตรวจด้วยข้อมูลว่าง {} โดยไม่สร้างรายการชำระเงินหรือรัน Job</p>
-<button id="probe" type="button">ตรวจการเชื่อมต่อ</button>
-<pre id="result" role="status" aria-live="polite">พร้อมตรวจ · ยังไม่ได้ส่งคำขอ</pre>
-<section aria-labelledby="issue-heading" style="margin:40px 0;padding-top:24px;border-top:1px solid #514737">
-<h2 id="issue-heading">ออกลิงก์ยืนยันของงานเดิม</h2>
-<p>ใช้รายละเอียดล่าสุดจากงานที่บันทึกไว้ ระบบจะเก็บลิงก์ลูกค้าและโมเดลไว้ในรายการเดิม พร้อมสร้างรายการชำระเงินที่รอตรวจ หากมีลิงก์ครบแล้วจะใช้รายการเดิม</p>
-<form id="issue-form">
-<label for="issue-session">รหัส Session ของงาน</label>
-<input id="issue-session" name="session_id" type="text" maxlength="200" required autocomplete="off" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit">
-<p style="padding:12px;border:1px solid #70624c;border-radius:8px;background:#191713"><strong>มัดจำลูกค้า 30%</strong><br>ระบบปัดยอดขึ้นทุก 500 บาทอัตโนมัติ</p>
-<button id="issue" type="submit">ออกลิงก์ของงานเดิม</button>
-</form>
-<pre id="issue-result" role="status" aria-live="polite">ยังไม่ได้ออกลิงก์</pre>
+<title>Payment connection check · SĪGIL System</title>
+<style>
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-weight:800;font-style:normal;font-display:swap}
+:root{color-scheme:dark;--bg:#101112;--surface:#1b1d1f;--raised:#222529;--line:#3b3e40;--text:#f2f1ee;--muted:#b7b9b9;--silver:#d3d5d5;--orange:#ef8a4c}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse 80% 36% at 52% -10%,#35383a 0%,transparent 75%),var(--bg);color:var(--text);font:16px/1.6 "LINE Seed Sans TH","Noto Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--silver);text-underline-offset:4px}a:hover{color:#fff}button,input{font:inherit}button{min-height:48px;padding:11px 20px;border:1px solid #e69a68;border-radius:10px;background:var(--orange);color:#201b18;font-weight:700;cursor:pointer;transition:background .18s,border-color .18s,transform .18s}button:hover:not(:disabled){background:#ffa76d;transform:translateY(-1px)}button:disabled{background:#3b3d3f;border-color:#535658;color:#aaacad;cursor:not-allowed;transform:none}button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid #ffb685;outline-offset:3px}
+.shell{max-width:1120px;margin:0 auto;padding:0 28px 72px}.topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-bottom:1px solid var(--line)}.brand{display:block;text-decoration:none;color:var(--text)}.sigil-system-logo{display:block;width:190px;max-width:100%;height:auto}.brand-sub{display:block;margin-top:3px;font-size:10px;letter-spacing:.18em;color:var(--muted)}.top-link{font-size:13px;text-decoration:none;color:var(--muted)}.top-link:hover{color:var(--text)}
+.hero{padding:60px 0 37px;max-width:810px}.eyebrow,.section-kicker{margin:0 0 14px;color:var(--orange);font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:700}.hero h1{margin:0;font-size:clamp(32px,4.2vw,52px);letter-spacing:-.035em;line-height:1.25;font-weight:700}.hero p:last-child{max-width:660px;margin:16px 0 0;color:var(--muted);font-size:17px}
+.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(165deg,#222528 0%,var(--surface) 38%);box-shadow:0 18px 45px #0002;overflow:hidden}.card + .card{margin-top:22px}.card-header{padding:27px 30px 22px;border-bottom:1px solid var(--line)}.card-header h2{margin:3px 0 7px;font-size:24px;line-height:1.45;letter-spacing:-.015em}.card-header p:last-child{margin:0;color:var(--muted);font-size:15px;line-height:1.6;max-width:770px}.card-body{padding:28px 30px 30px}.bank-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.step{display:flex;flex-direction:column;min-width:0;padding:23px;border:1px solid var(--line);border-radius:14px;background:#191b1d}.step-number{display:inline-grid;place-items:center;width:29px;height:29px;border:1px solid #6d7275;border-radius:50%;color:var(--silver);font-size:12px;font-weight:800}.step h3{margin:17px 0 8px;font-size:18px;line-height:1.5}.step p{margin:0 0 20px;min-height:66px;color:var(--muted);font-size:15px;line-height:1.6}.step button{align-self:flex-start}.step-secondary{background:#1b1c1e}.step-secondary button:not(:disabled){background:transparent;color:#f5e0d1;border-color:#a96843}.step-secondary button:hover:not(:disabled){background:#3d2c24}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:18px 0 0;padding:16px 17px;min-height:76px;border:1px solid #454a4d;border-radius:10px;background:#141718;color:#d9dcda;font:14px/1.65 "LINE Seed Sans TH","Noto Sans Thai",ui-monospace,SFMono-Regular,Consolas,monospace;font-variant-numeric:tabular-nums}.step pre{flex:1;width:100%}.note{display:flex;align-items:flex-start;gap:10px;margin:20px 0 0;padding:14px 16px;border-left:3px solid var(--orange);border-radius:0 8px 8px 0;background:#34271f;color:#f1dbcb;font-size:14px;line-height:1.6}.note strong{white-space:nowrap}.lower-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:22px}.lower-grid .card{margin:0}.lower-grid .card-body{padding-top:24px}.lower-grid .card-header{min-height:150px}.lower-grid button{max-width:100%}label{display:block;margin:0 0 8px;color:#e2e4e3;font-size:14px;font-weight:700}input{display:block;width:100%;min-height:48px;padding:11px 13px;border:1px solid #686d70;border-radius:9px;background:#111315;color:var(--text)}input::placeholder{color:#93989a}.deposit{margin:17px 0 21px;padding:14px 16px;border:1px solid #4e5050;border-radius:10px;background:#26282a;color:var(--muted);font-size:14px;line-height:1.6}.deposit strong{color:var(--text);font-size:14px}.footer{display:flex;justify-content:space-between;gap:12px;margin-top:34px;padding-top:22px;border-top:1px solid var(--line);color:#929799;font-size:12px}.footer a{text-decoration:none}
+@media(max-width:740px){.shell{padding:0 18px 48px}.topbar{padding:18px 0}.sigil-system-logo{width:160px}.top-link{font-size:12px}.hero{padding:42px 0 30px}.hero p:last-child{font-size:15px}.bank-grid,.lower-grid{grid-template-columns:1fr}.card-header{padding:23px 22px 19px}.card-body{padding:21px}.lower-grid .card-header{min-height:0}.lower-grid .card-body{padding:21px}.step{padding:19px}.step p{min-height:0}.footer{flex-direction:column}}
+@media(max-width:380px){.shell{padding-inline:14px}.topbar{gap:8px}.brand-sub{font-size:9px;letter-spacing:.12em}.top-link{max-width:78px;text-align:right}.card-header,.card-body,.lower-grid .card-body{padding-inline:17px}.step{padding:16px}.note{flex-wrap:wrap}button{width:100%}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}button{transition:none}}
+</style>
+<main class="shell">
+<header class="topbar"><a class="brand" href="/internal/admin/control-room" aria-label="SĪGIL System · Control Room">${SIGIL_SYSTEM_LOGO}<span class="brand-sub">INTERNAL · PAYMENT</span></a><a class="top-link" href="/internal/admin/control-room">← กลับ Control Room</a></header>
+<div class="hero"><p class="eyebrow">PAYMENT / DIAGNOSTICS</p><h1>ตรวจการเชื่อมต่อชำระเงิน</h1><p>เช็กความพร้อมของระบบและ KBank Sandbox ตามลำดับ ผลตรวจความพร้อมยังไม่ยืนยันว่าเชื่อมต่อกับธนาคารสำเร็จ</p></div>
+<section class="card" aria-labelledby="kbank-heading">
+<div class="card-header"><p class="section-kicker">01 / BANK CONNECTION</p><h2 id="kbank-heading">KBank Sandbox</h2><p>ตรวจสถานะการตั้งค่าและช่วงพักก่อนพิจารณาทดสอบ OAuth การทดสอบกับธนาคารเป็นคำขอแยกต่างหากและไม่มีการโอนเงิน</p></div>
+<div class="card-body"><div class="bank-grid">
+<div class="step"><span class="step-number" aria-hidden="true">1</span><h3>ตรวจความพร้อม</h3><p>อ่านสถานะจาก payments-worker และ cooldown โดยไม่ติดต่อธนาคาร</p><button id="kbank-status" type="button">ตรวจความพร้อม</button><pre id="kbank-readiness" role="status" aria-live="polite">ยังไม่ได้ตรวจความพร้อม · ขั้นนี้ไม่เรียกธนาคาร</pre></div>
+<div class="step step-secondary"><span class="step-number" aria-hidden="true">2</span><h3>ทดสอบการเชื่อมต่อ</h3><p>ส่งคำขอ OAuth ไป KBank Sandbox เมื่อได้รับอนุญาต และตรวจความพร้อมผ่านแล้วเท่านั้น</p><button id="kbank-probe" type="button" disabled>ทดสอบการเชื่อมต่อกสิกร</button><pre id="kbank-result" role="status" aria-live="polite">ยังไม่ได้ทดสอบ · ยังไม่ยืนยัน connected</pre></div>
+</div><p class="note"><strong>ช่วงพักการทดสอบ</strong><span>หากเพิ่งทดสอบ OAuth ผ่านเว็บธนาคาร ให้เว้นอย่างน้อย 30 นาทีก่อนส่งคำขอใหม่</span></p></div>
 </section>
-<a href="/internal/admin/control-room">กลับ Control Room</a></main>
+<div class="lower-grid">
+<section class="card" aria-labelledby="system-heading"><div class="card-header"><p class="section-kicker">02 / INTERNAL CHECK</p><h2 id="system-heading">ตรวจทางเชื่อมระบบ</h2><p>ตรวจด้วยข้อมูลว่าง {} โดยไม่สร้างรายการชำระเงินหรือรัน Job</p></div><div class="card-body"><button id="probe" type="button">ตรวจการเชื่อมต่อ</button><pre id="result" role="status" aria-live="polite">พร้อมตรวจ · ยังไม่ได้ส่งคำขอ</pre></div></section>
+<section class="card" aria-labelledby="issue-heading"><div class="card-header"><p class="section-kicker">03 / EXISTING SESSION</p><h2 id="issue-heading">ออกลิงก์ยืนยันของงานเดิม</h2><p>ใช้รายละเอียดล่าสุดจากงานที่บันทึกไว้ พร้อมสร้างรายการชำระเงินที่รอตรวจ หากมีลิงก์ครบแล้วจะใช้รายการเดิม</p></div><div class="card-body"><form id="issue-form"><label for="issue-session">รหัส Session ของงาน</label><input id="issue-session" name="session_id" type="text" maxlength="200" required autocomplete="off" placeholder="กรอกรหัส Session"><p class="deposit"><strong>มัดจำลูกค้า 30%</strong><br>ระบบปัดยอดขึ้นทุก 500 บาทอัตโนมัติ</p><button id="issue" type="submit">ออกลิงก์ของงานเดิม</button></form><pre id="issue-result" role="status" aria-live="polite">ยังไม่ได้ออกลิงก์</pre></div></section>
+</div><footer class="footer"><span>SĪGIL SYSTEM · INTERNAL PAYMENT TOOLS</span><a href="/internal/admin/control-room">กลับ Control Room ↑</a></footer></main>
 <script nonce="${nonce}">
 document.getElementById('probe').addEventListener('click', async function () {
   this.disabled = true;
@@ -428,6 +447,106 @@ document.getElementById('probe').addEventListener('click', async function () {
     result.textContent = JSON.stringify({ http_status: response.status, ...data }, null, 2);
   } catch {
     result.textContent = 'ตรวจไม่สำเร็จ · ไม่ได้ส่งคำขอซ้ำ';
+  }
+});
+const bankMessages = {
+  unauthorized: 'กรุณาเข้าสู่ระบบแอดมินอีกครั้ง', forbidden: 'บัญชีนี้ไม่มีสิทธิ์ทดสอบ',
+  forbidden_origin: 'คำขอถูกปฏิเสธเพราะที่มาของหน้าไม่ตรงกัน',
+  sandbox_disabled: 'ยังไม่ได้เปิด Sandbox ที่ payments-worker',
+  sandbox_not_configured: 'การตั้งค่า Sandbox ยังไม่ครบ',
+  service_auth_required: 'สิทธิ์เชื่อมต่อแอดมินกับ payments-worker ไม่ตรงกัน',
+  sandbox_service_token_missing: 'แอดมินยังไม่มี Secret สำหรับเชื่อมต่อ payments-worker',
+  sandbox_binding_missing: 'แอดมินยังไม่มีช่องทางเชื่อมต่อ payments-worker',
+  sandbox_transport_unavailable: 'แอดมินติดต่อ payments-worker ไม่สำเร็จหรือหมดเวลารอ',
+  sandbox_endpoint_missing: 'payments-worker ยังไม่มี endpoint รุ่นนี้ · ตรวจ deployment',
+  sandbox_non_json_response: 'payments-worker ตอบกลับในรูปแบบที่อ่านไม่ได้ · ตรวจ deployment และเส้นทาง',
+  unexpected_sandbox_response: 'คำตอบจาก payments-worker ไม่ตรงรูปแบบที่คาดไว้',
+  kbank_oauth_failed: 'ธนาคารยังไม่ยืนยัน OAuth · เว้น 30 นาทีก่อนทดสอบอีกครั้ง',
+  kbank_oauth_unavailable: 'payments-worker ติดต่อธนาคารไม่สำเร็จ · เว้น 30 นาทีก่อนทดสอบอีกครั้ง',
+  diagnostic_empty_object_required: 'หน้าแอดมินกับระบบหลังบ้านเป็นคนละรุ่น · ตรวจ deployment'
+};
+function bankError(data, status) {
+  const known = Object.prototype.hasOwnProperty.call(bankMessages, data?.error);
+  const label = known ? bankMessages[data.error] : 'คำขอไม่สำเร็จและยังระบุสาเหตุไม่ได้';
+  const oauthLabels = {
+    invalid_client: 'KBank ไม่ยอมรับข้อมูลยืนยันตัวตนของแอป · ตรวจคู่ Consumer ID/Secret และสถานะแอป',
+    unauthorized_client: 'แอปไม่มีสิทธิ์ใช้วิธีขอ Token นี้',
+    invalid_request: 'คำขอ OAuth ขาดข้อมูลหรือรูปแบบไม่ถูกต้อง',
+    invalid_grant: 'ข้อมูล grant ไม่ผ่านการตรวจสอบ',
+    unsupported_grant_type: 'ธนาคารไม่รองรับ grant_type ที่ส่ง',
+    invalid_scope: 'สิทธิ์ scope ไม่ถูกต้อง',
+    server_error: 'ระบบ OAuth ของธนาคารมีข้อผิดพลาด',
+    temporarily_unavailable: 'ระบบ OAuth ของธนาคารยังไม่พร้อมชั่วคราว'
+  };
+  const oauthKnown = Object.prototype.hasOwnProperty.call(oauthLabels, data?.oauth_error);
+  const detail = oauthKnown ? oauthLabels[data.oauth_error] : label;
+  const responseMediaLabels = { json: 'JSON', html: 'HTML', text: 'ข้อความ', other: 'ชนิดอื่น', missing: 'ไม่มี Content-Type' };
+  const responseShapeLabels = { json_object: 'JSON object', json_array: 'JSON array', json_scalar: 'JSON scalar', empty: 'ว่าง', non_json: 'ไม่ใช่ JSON', size_limited: 'เกินขนาดที่อ่านได้อย่างปลอดภัย' };
+  const errorShapeLabels = { oauth_error: 'ฟิลด์ OAuth error', kbank_error_code: 'ฟิลด์ ErrorCode', gateway_fault_detail: 'ฟิลด์ fault detail errorcode', openapi_code_message: 'ฟิลด์ code/message', none: 'ไม่พบฟิลด์รหัสที่รองรับ' };
+  const responseMedia = Object.hasOwn(responseMediaLabels, data?.bank_response_media_type) ? responseMediaLabels[data.bank_response_media_type] : null;
+  const responseShape = Object.hasOwn(responseShapeLabels, data?.bank_response_body_shape) ? responseShapeLabels[data.bank_response_body_shape] : null;
+  const errorShape = Object.hasOwn(errorShapeLabels, data?.bank_error_shape) ? errorShapeLabels[data.bank_error_shape] : null;
+  const categoryLabels = {"api_key_resource_mismatch": "API key ไม่ตรงกับ resource", "invalid_api_key": "API key ไม่ถูกต้อง", "api_product_not_matched": "ไม่พบ API product ที่จับคู่", "invalid_consumer_secret": "Consumer Secret ไม่ถูกต้อง", "invalid_request_format": "รูปแบบคำขอไม่ถูกต้อง", "oauth_token_generation_failed": "ธนาคารสร้าง OAuth token ไม่สำเร็จ", "invalid_access_token": "Access token ไม่ถูกต้อง", "access_token_expired": "Access token หมดอายุ", "access_token_not_approved": "Access token ไม่ได้รับอนุมัติ"};
+  const category = Object.hasOwn(categoryLabels, data?.bank_error_category) ? categoryLabels[data.bank_error_category] : null;
+  const responseDetails = [
+    category && 'หมวดข้อความธนาคาร ' + category,
+    responseMedia && 'ชนิดคำตอบธนาคาร ' + responseMedia,
+    responseShape && 'รูปแบบเนื้อหา ' + responseShape,
+    errorShape && 'ตำแหน่งรหัส ' + errorShape,
+    typeof data?.bank_error_code_recognized === 'boolean' && 'รหัสอยู่ในรายการที่รู้จัก ' + (data.bank_error_code_recognized ? 'ใช่' : 'ไม่ใช่')
+  ].filter(Boolean).join(' · ');
+  return detail + ' (HTTP ' + status + (known ? ' · ' + data.error : '') +
+    (Number.isInteger(data?.upstream_status) ? ' · payments HTTP ' + data.upstream_status : '') +
+    (Number.isInteger(data?.bank_http_status) ? ' · KBank HTTP ' + data.bank_http_status : '') +
+    (oauthKnown ? ' · OAuth ' + data.oauth_error : '') +
+    (responseDetails ? ' · ' + responseDetails : '') + ')';
+}
+async function bankRequest(mode) {
+  const response = await fetch('${PAYMENT_ISSUER_DIAGNOSTIC_PATH}', {
+    method: 'POST', credentials: 'same-origin', redirect: 'error',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode })
+  });
+  const data = await response.json().catch(() => null);
+  return { response, data };
+}
+document.getElementById('kbank-status').addEventListener('click', async function () {
+  if (this.disabled) return;
+  this.disabled = true;
+  const probe = document.getElementById('kbank-probe');
+  probe.disabled = true;
+  const result = document.getElementById('kbank-readiness');
+  result.textContent = 'กำลังตรวจความพร้อม · ไม่เรียกธนาคาร…';
+  try {
+    const { response, data } = await bankRequest('${KBANK_STATUS_MODE}');
+    if (!response.ok || data?.ok !== true || !data.checks) {
+      result.textContent = data ? bankError(data, response.status) : 'ระบบตอบกลับเป็นข้อมูลที่อ่านไม่ได้ (HTTP ' + response.status + ')';
+      return;
+    }
+    const labels = { enabled: 'เปิด Sandbox', consumer_id_present: 'บันทึก Consumer ID', consumer_secret_present: 'บันทึก Consumer Secret', coordinator_present: 'ระบบควบคุมการทดสอบ' };
+    result.textContent = 'แอดมินเชื่อมต่อ payments-worker ได้' + '\\n' + Object.entries(labels).map(([key, label]) => label + ': ' + (data.checks[key] === true ? 'พร้อม' : 'ยังไม่พร้อม')).join('\\n') + '\\nยังไม่ได้ติดต่อธนาคาร';
+    result.textContent += data.cooldown?.known === true
+      ? '\\nCooldown: ' + (data.cooldown.retry_after_seconds > 0 ? 'รอ ' + data.cooldown.retry_after_seconds + ' วินาที' : 'พร้อม') + '\\nคำขอล่าสุด: ' + (data.cooldown.last_attempt_at ? new Date(data.cooldown.last_attempt_at).toLocaleString('th-TH', {timeZone:'Asia/Bangkok'}) : 'ยังไม่มี')
+      : '\\nยังอ่าน cooldown ไม่ได้ · ห้ามทดสอบธนาคาร';
+    probe.disabled = data.ready !== true || data.cooldown?.known !== true || data.cooldown.retry_after_seconds !== 0 || probe.dataset.attempted === 'true';
+  } catch {
+    result.textContent = 'เบราว์เซอร์ติดต่อแอดมินไม่สำเร็จ · ยังตรวจความพร้อมไม่ได้';
+  } finally { this.disabled = false; }
+});
+document.getElementById('kbank-probe').addEventListener('click', async function () {
+  if (this.disabled) return;
+  this.disabled = true;
+  this.dataset.attempted = 'true';
+  const result = document.getElementById('kbank-result');
+  result.textContent = 'กำลังทดสอบการเชื่อมต่อกสิกร…';
+  try {
+    const { response, data } = await bankRequest('${KBANK_SANDBOX_MODE}');
+    result.textContent = response.ok && data?.ok === true && data.oauth === 'connected'
+      ? 'เชื่อมต่อกสิกร Sandbox สำเร็จ · ยังไม่มีการโอนเงิน'
+      : data?.error === 'oauth_smoke_cooldown'
+        ? 'อยู่ระหว่างพักการทดสอบ · รอประมาณ ' + Math.ceil((data.retry_after_seconds || 1800) / 60) + ' นาที · รอบนี้ไม่ได้ส่งคำขอไปธนาคาร'
+        : data ? bankError(data, response.status) : 'ระบบตอบกลับเป็นข้อมูลที่อ่านไม่ได้ (HTTP ' + response.status + ') · ไม่ได้ส่งคำขอซ้ำ';
+  } catch {
+    result.textContent = 'เบราว์เซอร์ติดต่อแอดมินไม่สำเร็จหรือมีการเปลี่ยนเส้นทาง · ยังยืนยันไม่ได้ว่าคำขอถึงธนาคารหรือไม่ · ไม่ได้ส่งคำขอซ้ำ';
   }
 });
 const issueForm = document.getElementById('issue-form');
@@ -459,6 +578,8 @@ issueForm.addEventListener('submit', async function (event) {
 </script></html>`, { headers: {
     "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
-    "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+    "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; font-src https://cdn.prod.website-files.com; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   } });
 }
+
+

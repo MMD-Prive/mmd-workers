@@ -88,6 +88,9 @@ export function classifyKenjiMemberIntent(input, memberSummary = {}) {
   if (!text) return { intent: INTENTS.EMPTY, confidence: 1 };
 
   const membershipIntent = classifyMembershipWelcomeIntent(text);
+  if (membershipIntent === INTENTS.PUBLIC_PACKAGE_UNAVAILABLE) {
+    return { intent: membershipIntent, confidence: 0.99 };
+  }
 
   if (includesAny(text, ["black card", "blackcard", "บัตรดำ"])) {
     return { intent: INTENTS.BLACK_CARD, confidence: 0.98 };
@@ -103,10 +106,6 @@ export function classifyKenjiMemberIntent(input, memberSummary = {}) {
 
   if (includesAny(text, ["จอง", "booking", "book", "reserve", "appointment", "session", "คิว", "นัด", "ว่าง", "available", "availability", "เช็กคิว", "เช็คคิว"])) {
     return { intent: INTENTS.BOOKING, confidence: 0.95 };
-  }
-
-  if (membershipIntent === INTENTS.PUBLIC_PACKAGE_UNAVAILABLE) {
-    return { intent: membershipIntent, confidence: 0.99 };
   }
 
   if (membershipIntent) return { intent: membershipIntent, confidence: 0.94 };

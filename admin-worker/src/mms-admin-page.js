@@ -1,5 +1,7 @@
+import { withMmsInternalBranding } from './mms-internal-branding.mjs';
+import { withMmsWorkspaceTheme } from '../../webflow/global/mms-workspace-theme-v1.mjs';
 export function renderMmsAdminPage() {
-  return `<!doctype html>
+  return withMmsInternalBranding(withMmsWorkspaceTheme(`<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
@@ -15,7 +17,95 @@ export function renderMmsAdminPage() {
 @media(min-width:1024px){.hero{grid-template-columns:minmax(0,1.4fr) 390px}.action-grid{gap:12px}.record-top{grid-template-columns:92px minmax(0,1fr)}.thumb{width:92px;height:108px}.list{gap:12px}.editor{padding:7px 0 9px}.detail-grid{grid-template-columns:repeat(3,1fr)}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.branch-backdrop,.branch-sheet,.record-edit summary span{transition:none}.skeleton:after{animation:none}}
 </style>
-</head>
+
+<style data-mms-dashboard-rebuilt>
+
+html[data-mms-theme="white-green-v1"]:root .mms-admin{background:radial-gradient(ellipse at 8% 0%,#e1f0e7 0,transparent 38%),radial-gradient(ellipse at 96% 22%,#eaf1ee 0,transparent 35%),#f4f6f5!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .shell{max-width:1320px;padding:24px 24px 120px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .brand-row{margin-bottom:20px;align-items:center}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .brand{width:190px;max-width:44vw}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .runtime{background:#fff!important;border-color:#d6e6dc!important;box-shadow:0 3px 12px rgb(34 76 52 / .04);font-size:11px;font-weight:700}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .stats{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0 0!important;padding:0!important;overflow:visible!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .stat{position:relative;min-width:0!important;padding:20px 24px!important;border-radius:22px;border:1px solid #dce7e0!important;box-shadow:inset 0 1px 0 #fff,0 8px 24px rgb(35 66 46 / .045)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .stat:before{content:"";position:absolute;right:22px;top:22px;width:25px;height:25px;border:1px solid #c6ddce;border-radius:8px;background:linear-gradient(135deg,#e6f1ea,#f6faf7);box-shadow:inset 0 1px 0 #fff}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .stat span{font-size:12px;font-weight:700;color:#526b5b}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .stat b{font-size:38px;line-height:1.2;color:#24583d;margin:10px 0 6px;letter-spacing:-.04em}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .stat small{font-size:11px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav{margin:22px 0 14px;gap:8px;padding:10px;border:1px solid #dce7e0;border-radius:20px;background:#f4f7f5!important;box-shadow:0 8px 24px rgb(30 66 45 / .045);top:10px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button,.btn,.sheet-actions button,.mms-ops-refresh,.mms-ops-go):not(.mms-ops-item-button){background:#0b3827!important;border:1px solid #275e41!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border-radius:12px;min-height:42px;padding:10px 16px;font-size:12px;font-weight:700;box-shadow:inset 0 1px 0 rgb(255 255 255 / .2),0 4px 10px rgb(36 89 58 / .14)!important;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button,.btn):not(.mms-ops-item-button) :is(span,strong,b){color:inherit!important;-webkit-text-fill-color:inherit!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-tab{background:#e5eee8!important;color:#3f5948!important;-webkit-text-fill-color:#3f5948!important;border-color:#d3e2d8!important;border-radius:12px;box-shadow:inset 0 1px 0 #fff!important;white-space:nowrap}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-tab.active{background:#0b3827!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border-color:#275e41!important;box-shadow:0 5px 14px rgb(36 89 58 / .2)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button,.btn).reject{background:#934b44!important;border-color:#804039!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button,.btn):disabled{background:#e5ebe7!important;border-color:#d9e1dc!important;color:#87968b!important;-webkit-text-fill-color:#87968b!important;box-shadow:none!important;opacity:1!important;cursor:not-allowed;transform:none}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .section-head{gap:18px;margin-bottom:18px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .section-head h2{font-size:clamp(24px,2.5vw,32px);line-height:1.25;font-weight:650}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .section-head p{font-size:12px;max-width:640px;line-height:1.7}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home{padding:24px!important;border-radius:26px;border:1px solid #d0e4d6!important;background:linear-gradient(130deg,#edf6f0,#e6f1ea)!important;color:#253a2e!important;box-shadow:inset 0 1px 0 #fff,0 12px 32px rgb(35 81 52 / .06)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head{align-items:center;margin-bottom:20px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head h3{font-size:26px;font-weight:700}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head p{font-size:12px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-kicker{color:#37754f!important;font-size:9px;letter-spacing:.18em}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lanes{align-items:start;gap:14px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lane{border:1px solid #d8e6dd;border-radius:20px;background:#fff;box-shadow:0 6px 18px rgb(42 78 56 / .045)}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lane-head{padding:17px 18px;background:#f9fcfa;border-bottom:1px solid #e2ebe5}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lane-head h4{font-size:16px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-count{width:36px;height:36px;background:#0b3827!important;color:#fff!important;-webkit-text-fill-color:#fff!important;border:1px solid #275e41;box-shadow:0 4px 10px rgb(36 89 58 / .13)}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-item-button{border:0!important;border-bottom:1px solid #e7eee9!important;border-radius:0!important;min-height:0;background:#fff!important;color:#253a2e!important;-webkit-text-fill-color:#253a2e!important;box-shadow:none!important;text-align:left;padding:16px 18px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-item strong{font-size:13px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-item p{font-size:11px;line-height:1.6}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-item small{font-size:10px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-pill{font-size:10px;padding:5px 9px;min-height:26px;background:#e9f2ec!important;color:#0b3827!important;-webkit-text-fill-color:#0b3827!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-pill.warn{background:#f4eed9!important;color:#756022!important;-webkit-text-fill-color:#756022!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-pill.danger{background:#f6e9e6!important;color:#8d3e38!important;-webkit-text-fill-color:#8d3e38!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lane-foot{padding:12px 16px;background:#f7faf8;align-items:center}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lane-foot small{font-size:10px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-go{font-size:10px;padding:8px 11px;min-height:34px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-empty{font-size:12px;padding:26px 18px;line-height:1.7}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(.record-card,.form-card,.action-card){border-radius:22px;border:1px solid #dce7e0!important;box-shadow:0 7px 22px rgb(33 72 49 / .04)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin [aria-labelledby="workspaceAdminTitle"]{padding:24px!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin [aria-labelledby="workspaceAdminTitle"] .record-card{padding:20px!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin [aria-labelledby="workspaceAdminTitle"] .record-card p{font-size:12px;line-height:1.7;margin:8px 0}
+html[data-mms-theme="white-green-v1"]:root .mms-admin [aria-labelledby="workspaceAdminTitle"] .record-card h3{font-size:18px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .checks{gap:14px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .action-card{padding:22px!important;background:#fff!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .action-card h3{font-size:18px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .action-card p{font-size:12px;line-height:1.7}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(input,select,textarea){border-radius:12px!important;box-shadow:inset 0 1px 3px rgb(37 58 46 / .025);min-height:44px}
+@media(hover:hover){html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button,.btn):not(.mms-ops-item-button):hover:not(:disabled){transform:translateY(-1px);background:#275c40!important;box-shadow:inset 0 1px 0 rgb(255 255 255 / .2),0 7px 16px rgb(36 89 58 / .2)!important}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-item-button:hover:not(:disabled){background:#f0f7f2!important;box-shadow:none!important;transform:none}}
+@media(prefers-reduced-motion:reduce){html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button,.btn){transition:none!important;transform:none!important}}
+
+
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero{display:block!important;position:relative;isolation:isolate;overflow:hidden;min-height:350px!important;border:1px solid #254c38!important;border-radius:30px;background:#08271c!important;box-shadow:0 18px 48px rgb(7 29 22 / .16)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .mms-hero-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:68% top;z-index:-2}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero:before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#08271c 0%,rgb(8 39 28 / .94) 28%,rgb(8 39 28 / .65) 53%,rgb(8 39 28 / .08) 80%)}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero:after{content:"";position:absolute;left:0;top:30px;bottom:30px;width:3px;border-radius:0 3px 3px 0;background:#c7f447;box-shadow:0 0 24px rgb(199 244 71 / .18);pointer-events:none}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero-copy{position:relative;max-width:720px;padding:42px 40px!important;z-index:1}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .hero-copy h1{color:#fff9e6!important;-webkit-text-fill-color:#fff9e6!important;font-size:clamp(34px,4.3vw,58px)!important;font-weight:750;line-height:1.12;letter-spacing:-.045em;margin:14px 0 20px;max-width:620px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .hero-copy .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:7px 11px;border:1px solid #365239;border-radius:8px;background:#173c29;color:#dec476!important;-webkit-text-fill-color:#dec476!important;font-size:9px;font-weight:800;letter-spacing:.17em}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .hero-copy .eyebrow:before{content:"";width:6px;height:6px;background:#c7f447;border-radius:2px;box-shadow:0 0 9px rgb(199 244 71 / .28)}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .hero-copy .hero-lead{color:#d2ddcf!important;-webkit-text-fill-color:#d2ddcf!important;font-size:14px;line-height:1.75;max-width:490px;margin:0}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .hero-copy .hero-note{background:#173d2d!important;border:1px solid #315241!important;border-left:3px solid #c7f447!important;border-radius:12px;color:#dce6d8!important;-webkit-text-fill-color:#dce6d8!important;padding:10px 14px;margin-top:20px;font-size:12px;line-height:1.6;max-width:480px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav{background:#0a281e!important;border-color:#254639;box-shadow:0 8px 24px rgb(7 29 22 / .12)}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav .desktop-tab{background:#193c2d!important;border-color:#335440!important;color:#e7eddc!important;-webkit-text-fill-color:#e7eddc!important;box-shadow:inset 0 1px 0 rgb(255 249 230 / .06)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav .desktop-tab.active{background:#c7f447!important;border-color:#bbdf53!important;color:#17301b!important;-webkit-text-fill-color:#17301b!important;box-shadow:0 4px 14px rgb(199 244 71 / .12)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head .mms-ops-refresh,html[data-mms-theme="white-green-v1"]:root .mms-admin button.approve,html[data-mms-theme="white-green-v1"]:root .mms-admin .btn.approve{background:#c7f447!important;border-color:#b7d94e!important;color:#17301b!important;-webkit-text-fill-color:#17301b!important;box-shadow:inset 0 1px 0 rgb(255 255 255 / .45),0 5px 12px rgb(72 103 28 / .12)!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-lane .mms-ops-list button.mms-ops-item-button{background:#fff!important;color:#253a2e!important;-webkit-text-fill-color:#253a2e!important;border:0!important;border-bottom:1px solid #e1e9e1!important;box-shadow:none!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-item-button .mms-ops-item-main strong{color:#253a2e!important;-webkit-text-fill-color:#253a2e!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-item-button .mms-ops-item-main :is(p,small){color:#66736c!important;-webkit-text-fill-color:#66736c!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-item-button .mms-ops-pill{color:#2f6b4b!important;-webkit-text-fill-color:#2f6b4b!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-item-button .mms-ops-pill.warn{color:#756022!important;-webkit-text-fill-color:#756022!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-item-button .mms-ops-pill.danger{color:#8d3e38!important;-webkit-text-fill-color:#8d3e38!important}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band{display:flex;align-items:center;min-height:82px;border-radius:20px;overflow:hidden;position:relative;margin-top:18px;background:#0b281f;border:1px solid #244a38;isolation:isolate}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 54%;z-index:-2}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0b281f,rgb(11 40 31 / .82) 45%,rgb(11 40 31 / .26));z-index:-1}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band div{padding:16px 24px;display:flex;align-items:center;gap:16px}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band span{color:#c7f447;font-size:10px;font-weight:800;letter-spacing:.13em}
+html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band p{color:#fff9e6!important;-webkit-text-fill-color:#fff9e6!important;font-size:12px;margin:0;border-left:1px solid #55705a;padding-left:16px}
+@media(hover:hover){html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home .mms-ops-lane .mms-ops-list button.mms-ops-item-button:hover{background:#f0f6ed!important;box-shadow:none!important;transform:none}html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav .desktop-tab:hover:not(:disabled){background:#294b36!important;color:#fff9e6!important;-webkit-text-fill-color:#fff9e6!important}html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav .desktop-tab.active:hover:not(:disabled),html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head .mms-ops-refresh:hover:not(:disabled),html[data-mms-theme="white-green-v1"]:root .mms-admin button.approve:hover:not(:disabled),html[data-mms-theme="white-green-v1"]:root .mms-admin .btn.approve:hover:not(:disabled){background:#d5ff67!important;color:#17301b!important;-webkit-text-fill-color:#17301b!important}}
+html[data-mms-theme="white-green-v1"]:root .mms-admin :is(button.approve,.btn.approve,.mms-ops-refresh):disabled{background:#e5ebe7!important;border-color:#d9e1dc!important;color:#87968b!important;-webkit-text-fill-color:#87968b!important;box-shadow:none!important}
+@media(max-width:760px){html[data-mms-theme="white-green-v1"]:root .mms-admin .shell{padding:16px 14px 120px}html[data-mms-theme="white-green-v1"]:root .mms-admin .hero{min-height:390px!important;border-radius:24px}html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .mms-hero-photo{object-position:68% top;opacity:.58}html[data-mms-theme="white-green-v1"]:root .mms-admin .hero:before{background:linear-gradient(90deg,rgb(8 39 28 / .96),rgb(8 39 28 / .65)),linear-gradient(0deg,#08271c,transparent)}html[data-mms-theme="white-green-v1"]:root .mms-admin .hero-copy{padding:28px 24px!important}html[data-mms-theme="white-green-v1"]:root .mms-admin .hero .hero-copy h1{font-size:36px!important;max-width:360px}html[data-mms-theme="white-green-v1"]:root .mms-admin .stats{gap:8px}html[data-mms-theme="white-green-v1"]:root .mms-admin .stat{padding:15px 12px!important;border-radius:16px}html[data-mms-theme="white-green-v1"]:root .mms-admin .stat:before{display:none}html[data-mms-theme="white-green-v1"]:root .mms-admin .stat span{font-size:10px}html[data-mms-theme="white-green-v1"]:root .mms-admin .stat b{font-size:30px}html[data-mms-theme="white-green-v1"]:root .mms-admin .stat small{font-size:10px}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-home{padding:18px!important}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head{align-items:flex-start;gap:12px}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head h3{font-size:22px}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-head p{font-size:11px}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-refresh{padding:10px 12px;white-space:nowrap;font-size:10px}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-ops-lanes{grid-auto-flow:row;grid-template-columns:1fr;grid-auto-columns:auto;margin:0;padding:0;overflow:visible}html[data-mms-theme="white-green-v1"]:root .mms-admin .desktop-nav{top:6px}html[data-mms-theme="white-green-v1"]:root .mms-admin [aria-labelledby="workspaceAdminTitle"]{padding:18px!important}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band div{align-items:flex-start;flex-direction:column;gap:5px}html[data-mms-theme="white-green-v1"]:root .mms-admin .mms-city-band p{border:0;padding:0}}
+</style></head>
 <body>
 <div class="mms-admin" id="mmsAdmin">
 <a class="skip" href="#adminContent">ข้ามไปที่เนื้อหา</a>
@@ -25,23 +115,21 @@ export function renderMmsAdminPage() {
     <img class="brand" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a8d54313e98a92e8d74d11f_mms-logo-horizontal-dark.svg" alt="MMS Male Massage">
     <div id="runtime" class="runtime" role="status" aria-live="polite">กำลังเชื่อมงานวันนี้…</div>
   </div>
-  <section class="hero" aria-labelledby="pageTitle">
+  <section class="hero" aria-labelledby="pageTitle"><img class="mms-hero-photo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9a47224e8a2b5b9bfeabfd_MMS%20Login.webp" alt="" width="1672" height="941" fetchpriority="high" decoding="async">
     <div class="hero-copy">
       <p class="eyebrow">MMS · INTERNAL OPERATIONS</p>
-      <h1 id="pageTitle">วันนี้มีอะไร<br>ให้ดูบ้าง</h1>
-      <p class="hero-lead">ผมรวม <strong>ใบสมัคร Therapist</strong>, คนที่เปิดรับงาน และ <strong>Pre-booking</strong> ไว้ตรงนี้ครับ เช็กข้อมูลให้ครบก่อนกดอนุมัติ — ระบบจะไม่ข้ามขั้นตอนให้เอง</p>
-      <div class="hero-note">Pre-booking ยังไม่ใช่คิวยืนยันครับ ถ้ายังประสานคน เวลา หรือพื้นที่ไม่ครบ ให้ค้างสถานะไว้ก่อน</div>
+      <h1 id="pageTitle">MMS Jobs Today</h1>
+      <p class="hero-lead">ใบสมัคร ทีม Therapist และงานวันนี้<br>ดูสถานะจริง แล้วเลือกเรื่องที่ต้องจัดการต่อ</p>
+      <div class="hero-note">Pre-booking จะยืนยันเมื่อคน เวลา และสถานที่ครบ</div>
     </div>
-    <figure class="hero-media">
-      <img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a8d0ec38bde11ab1bf00a04_12%20MMS%20Booking.webp" alt="Male Therapist กำลังตรวจงานที่ได้รับก่อนเริ่มการประสานงาน" loading="eager" decoding="async">
-    </figure>
+
   </section>
   <div class="stats" aria-label="MMS snapshot">
     <article class="stat"><span>ใบสมัครทั้งหมด</span><b id="sApps">–</b><small id="sAppsSub">กำลังอ่านข้อมูล</small></article>
     <article class="stat"><span>Therapists</span><b id="sTher">–</b><small id="sTherSub">กำลังอ่านข้อมูล</small></article>
     <article class="stat"><span>Pre-booking</span><b id="sPre">–</b><small id="sPreSub">กำลังอ่านข้อมูล</small></article>
   </div>
-  <div id="globalNotice" class="global-notice" role="alert"></div>
+  <div class="mms-city-band"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa42b070147068d37da9cdb_MMS%20Home%2004.webp" alt="" width="1916" height="821" loading="lazy" decoding="async"><div><span>MALE MASSAGE AI</span><p>Bangkok · Partner Operations</p></div></div><div id="globalNotice" class="global-notice" role="alert"></div>
 </header>
 
 <nav class="desktop-nav" aria-label="MMS admin sections">
@@ -197,5 +285,5 @@ showTab('overview',false);boot();
 })();
 </script>
 </body>
-</html>`;
+</html>`), { dashboard: true });
 }

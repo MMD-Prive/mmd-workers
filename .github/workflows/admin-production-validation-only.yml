@@ -1,0 +1,56 @@
+name: Admin production validation only
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/admin-production-validation-only.yml'
+      - '.github/workflows/deploy-admin-current-session-code-only.yml'
+      - 'scripts/admin-production-validation*'
+      - 'scripts/admin-current-session-code-only*'
+      - 'scripts/admin-production-environment-plan.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  protection-read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      ready: ${{ steps.inspect.outputs.ready }}
+      status: ${{ steps.inspect.outputs.status }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Inspect exact protection with runner token; GET only
+        id: inspect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/admin-production-validation.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-production-validation
+          path: ${{ runner.temp }}/admin-production-validation.json
+          retention-days: 14
+      - name: Distinguish blocked preflight from successful deployment acceptance
+        env:
+          STATUS: ${{ steps.inspect.outputs.status }}
+        run: echo "Protection inspection completed; status=$STATUS. No deployment or production acceptance is claimed."
+
+  reviewer-gate:
+    # Never reference/create a missing or unprotected environment on a PR run.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.protection-read.outputs.ready == 'true'
+    needs: [protection-read]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Reviewer approval reached; no credentials and no mutation steps
+        run: echo 'Environment reviewer gate passed. Validation only; no Cloudflare or business API was called.'

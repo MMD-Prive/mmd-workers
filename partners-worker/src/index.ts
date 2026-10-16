@@ -1,4 +1,5 @@
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { handleRelaxSpaPartner, isRelaxSpaPartnerRequest } from './relax-spa-partner.mjs';
 
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
@@ -6,7 +7,7 @@ type OptionalVarName =
   | "PUBLIC_SITE_URL"
   | "TELEGRAM_PUBLIC_MODEL_THREAD_ID"
   | "TELEGRAM_ADMIN_THREAD_ID";
-type RuntimeEnv = Env & Partial<Record<SecretName | OptionalVarName | "AIRTABLE_TABLE_SESSIONS" | "AIRTABLE_TABLE_PAYMENTS", string>>;
+type RuntimeEnv = Env & { MMS_WORKER?: Fetcher } & Partial<Record<SecretName | OptionalVarName | "AIRTABLE_TABLE_SESSIONS" | "AIRTABLE_TABLE_PAYMENTS", string>>;
 
 type AirtableFieldValue = string | number | boolean | string[] | null;
 type AirtableFields = Record<string, AirtableFieldValue>;
@@ -378,6 +379,14 @@ export default {
     const url = new URL(request.url);
 
     try {
+      if (isRelaxSpaPartnerRequest(url.pathname)) {
+        const verified = await verifyPartnerTokenFromRequest(request, runtimeEnv);
+        if (!verified.ok) {
+          if (url.pathname === '/partner/dashboard/relax-spa' && ['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 302, headers: { location: PARTNER_LINE_LOGIN_URL, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' } });
+          return verified.response;
+        }
+        return handleRelaxSpaPartner(request, runtimeEnv, verified.value.partnerRecord.id);
+      }
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders(request, runtimeEnv) });
       }
@@ -497,6 +506,10 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/v1/partner/jobs/action") {
         return await handlePartnerJobAction(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/jobs/model-link") {
+        return await handlePartnerModelLink(request, runtimeEnv);
       }
 
       if (request.method === "GET" && url.pathname === "/v1/partner/private-vault") {
@@ -1547,7 +1560,25 @@ function normalizePartnerSession(record: AirtableRecord, officiallyVerified = fa
   const customerAckAt = fieldText(record, SESSION_FIELDS.customerAckAt);
   const canonicalLocation = fieldText(record, SESSION_FIELDS.locationName);
   const locationConfirmed = Boolean(customerAckAt && canonicalLocation);
-  const partnerSourceRate = isRecord(snapshot) ? readFiniteNumber(snapshot.partner_source_rate_thb) : null;
+  const agreement = parseJson(fieldText(record, SESSION_FIELDS.referralSnapshotJson) || "{}");
+  const settlement = parseJson(fieldText(record, SESSION_FIELDS.commissionSnapshotJson) || "{}");
+  const workingSystem = isRecord(agreement) ? normalizeStatus(readString(agreement, "system")) : "";
+  const knownSystem = ["co_partner", "profit_share"].includes(workingSystem) ? workingSystem : null;
+  const partnerSourceRate = (isRecord(snapshot) ? readFiniteNumber(snapshot.partner_source_rate_thb) : null)
+    ?? (knownSystem === "co_partner" && isRecord(agreement) ? readFiniteNumber(agreement.source_rate_thb) : null);
+  const sharePercent = knownSystem === "profit_share" && isRecord(agreement) ? readFiniteNumber(agreement.partner_share_percent) : null;
+  // Profit Share shows real figures only from the owner-approved, locked settlement snapshot.
+  let profitShare: Record<string, unknown> | null = null;
+  if (knownSystem === "profit_share") {
+    const revenue = isRecord(settlement) && settlement.contract === "partner_commission_v1" ? readFiniteNumber(settlement.payment_amount_thb) : null;
+    const costs = isRecord(settlement) ? readFiniteNumber(settlement.costs_total_thb) : null;
+    if (revenue !== null && costs !== null && costs >= 0 && costs <= revenue && sharePercent !== null) {
+      const distributable = roundCurrency(revenue - costs);
+      profitShare = { status: "approved", revenue_thb: revenue, costs_thb: costs, distributable_thb: distributable, partner_share_percent: sharePercent, partner_amount_thb: roundCurrency(distributable * sharePercent / 100) };
+    } else {
+      profitShare = { status: "pending_settlement", partner_share_percent: sharePercent };
+    }
+  }
   return {
     session_record_id: record.id,
     session_id: fieldText(record, SESSION_FIELDS.sessionId) || record.id,
@@ -1562,12 +1593,14 @@ function normalizePartnerSession(record: AirtableRecord, officiallyVerified = fa
     location_status: locationConfirmed ? "confirmed_with_customer" : "pending_customer_confirmation",
     location_confirmed_at: customerAckAt || null,
     partner_source_rate_thb: partnerSourceRate,
+    working_system: knownSystem,
+    profit_share: profitShare,
     work_lane: fieldText(record, SESSION_FIELDS.workLane),
     work_type: fieldText(record, SESSION_FIELDS.workType),
     status: partnerStatus,
     lifecycle_status: lifecycle || "pending",
     payment_status: paymentStatus,
-    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus) && officiallyVerified && !["confirmed", "declined"].includes(partnerStatus) && !["completed", "cancelled", "canceled", "declined", "closed", "void"].includes(lifecycle),
+    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus) && officiallyVerified && knownSystem !== null && !["confirmed", "declined"].includes(partnerStatus) && !["completed", "cancelled", "canceled", "declined", "closed", "void"].includes(lifecycle),
     confirmation_note: fieldText(record, SESSION_FIELDS.partnerConfirmationNote),
     confirmation_revision: fieldNumber(record, SESSION_FIELDS.partnerConfirmationRevision),
     notification_status: fieldText(record, SESSION_FIELDS.partnerNotificationStatus) || "pending"
@@ -2822,6 +2855,10 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
   if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
     return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
   }
+  const jobAgreement = parseJson(fieldText(session, SESSION_FIELDS.referralSnapshotJson) || "{}");
+  if (!isRecord(jobAgreement) || !["co_partner", "profit_share"].includes(normalizeStatus(readString(jobAgreement, "system")))) {
+    return errorResponse(request, env, "model_confirms_this_job", "This job is confirmed by the model, not the Partner.", 409, false);
+  }
   const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
   const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);
   const paymentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.paymentStatus));
@@ -2864,6 +2901,49 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
     console.error("partner dashboard job response telegram alert failed", error);
   }
   return json(request, env, { ok: true, status: nextStatus, revision, confirmed_at: now });
+}
+
+// Optional travel aid: the Partner issues a neutral (no MMD branding) model confirmation
+// link for a job they already confirmed. Token signing stays in payments-worker.
+async function handlePartnerModelLink(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const sessionRecordId = readString(body.value, "session_record_id");
+  const payModel = Number(body.value.pay_model_thb);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) return errorResponse(request, env, "session_record_id_invalid", "Invalid session.", 400, false);
+  if (!Number.isInteger(payModel) || payModel <= 0) return errorResponse(request, env, "pay_model_thb_invalid", "Enter the amount the model receives.", 400, false);
+
+  const tableId = String(env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
+  const session = await getAirtableRecord(env, tableId, sessionRecordId);
+  const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || "";
+  if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
+    return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
+  }
+  if (normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus)) !== "confirmed") {
+    return errorResponse(request, env, "partner_confirmation_required", "Confirm the job before issuing a model link.", 409, false);
+  }
+  const sessionId = fieldText(session, SESSION_FIELDS.sessionId) || "";
+  const payments = (env as RuntimeEnv & { PAYMENTS_WORKER?: Fetcher; AUTH_SERVICE_PARTNERS_TO_PAYMENTS?: string }).PAYMENTS_WORKER;
+  const secret = (env as RuntimeEnv & { AUTH_SERVICE_PARTNERS_TO_PAYMENTS?: string }).AUTH_SERVICE_PARTNERS_TO_PAYMENTS;
+  if (!sessionId || !payments?.fetch || !secret) {
+    return errorResponse(request, env, "model_link_unavailable", "Model link is temporarily unavailable.", 503, true);
+  }
+  const response = await payments.fetch(new Request("https://payments-worker.internal/v1/internal/confirm/partner-model-link", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-internal-token": secret },
+    body: JSON.stringify({ session_id: sessionId, partner_id: partnerId, pay_model_thb: payModel })
+  }));
+  const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string; model_confirmation_url?: string; pay_model_thb?: number; expires_at?: number } | null;
+  if (!response.ok || !payload?.ok || !payload.model_confirmation_url) {
+    const known = new Set(["pay_model_already_set", "pay_model_exceeds_job_amount", "payment_not_official_verified", "partner_system_not_allowed"]);
+    const code = known.has(String(payload?.error)) ? String(payload?.error) : "model_link_failed";
+    return errorResponse(request, env, code, "Could not issue the model link.", response.status === 409 ? 409 : 502, response.status >= 500);
+  }
+  const res = json(request, env, { ok: true, model_confirmation_url: payload.model_confirmation_url, pay_model_thb: payload.pay_model_thb, expires_at: payload.expires_at });
+  res.headers.set("Cache-Control", "no-store, private");
+  return res;
 }
 
 async function handlePartnerPrivateVaultGet(request: Request, env: RuntimeEnv): Promise<Response> {

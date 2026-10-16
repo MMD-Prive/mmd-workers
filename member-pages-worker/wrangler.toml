@@ -7,6 +7,8 @@ workers_dev = true
 routes = []
 
 [vars]
+# LIFF renewal card (PACKAGE view). Off until the owner has tried it on a real phone.
+LIFF_RENEWAL_CARD_ENABLED = "false"
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"

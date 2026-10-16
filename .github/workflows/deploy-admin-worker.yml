@@ -2,28 +2,20 @@ name: Deploy admin-worker
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "admin-worker/**"
-      - "shared/mmd-shop-stock-reservation.mjs"
-      - "shared/control-room-v2-system-health.mjs"
-      - "shared/posthog-conversion-canon.mjs"
-      - "shared/posthog-conversion-canon.test.mjs"
-      - "shared/mmd-shop-fulfillment.mjs"
-      - "shared/mmd-shop-stock-reconciliation.mjs"
-      - "shared/private-media.mjs"
-      - "scripts/ensure-private-media-bucket.mjs"
-      - "knowledge/kenji/**"
-      - ".github/workflows/deploy-admin-worker.yml"
-      - ".github/workflows/model-media-real-e2e-production-smoke.yml"
-      - "shared/payment-intelligence.mjs"
-      - "shared/payment-notification-outbox*"
-      - "shared/kenji-continuity-operator-draft*"
-      - "shared/test/payment-memory-r2.mjs"
-      - "scripts/ensure-payment-notification-cron*"
-
+    inputs:
+      production_approved:
+        description: 'Owner approval for this workflow and its production side effects only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this workflow and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this workflow'
+        type: string
+        required: true
 concurrency:
   group: deploy-admin-worker-production
   cancel-in-progress: false
@@ -33,7 +25,17 @@ permissions:
   issues: write
 
 jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
   validate-and-deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval]
+    environment: mmd-production-mutation
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -80,17 +82,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test test/session-creator-page-proxy.test.mjs admin-login-active-entrypoint.test.mjs
           npm --prefix .. run test:payment-delivery
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
           node --check src/payment-approved-job-link-dispatch.js
           node --check src/telegram-identity-bind-authority.js
           node --check src/admin-login-hero-worker.js
+          node --experimental-global-webcrypto --test private-work-directory-recovery.test.mjs
+          node --experimental-global-webcrypto --test model-link-drive-recovery.test.mjs model-line-link-review.test.mjs model-line-identity-recovery.test.mjs
+          node --experimental-global-webcrypto --test job-service-pricing.test.mjs job-create-contract-partner-settlement.test.mjs
           node --check src/owner-private-job-grant-create.js
           node --check src/mmd-shop-orders-admin.js
           node --check src/mmd-shop-operations-admin.js
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
+          node --check src/job-confirmation-reissue.js
+          node --experimental-global-webcrypto --test job-confirmation-reissue.test.mjs
           node --check src/hype-shop-orders.js
           node --check src/recovery-control.js
           node --check src/recovery-control-page.js
@@ -100,6 +108,9 @@ jobs:
           node --check src/model-owner-review-queue.js
           node --check src/model-direct-first-job-gate.js
           node --check src/model-selected-job-handoff.js
+          node --test create-job-drive-discovery.test.mjs
+          node --test ../scripts/deploy-uploaded-worker-version.test.mjs
+          node --test model-job-preview.test.mjs model-confirmation-flow-preview.test.mjs
           node --test model-selected-job-handoff.test.mjs
           node --experimental-global-webcrypto --test payment-issuer-diagnostic.test.mjs hype-shop-orders.test.mjs hype-handoff-runtime.test.mjs hype-recovery-picker-stale.test.mjs hype-owner-summary.test.mjs hype-cross-system-stuck-sla.test.mjs owner-actions-queue.test.mjs owner-actions-triage.test.mjs dashboard-canonical-payment-counts.test.mjs mms-owner-actions-bau.test.mjs recovery-control.test.mjs cancellation-credit-recovery.test.mjs client-credit-verification.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs create-job-fast-trust-access.test.mjs telegram-identity-bind-authority.test.mjs owner-private-job-grant-create.test.mjs
           node --test model-session-runtime-v1a.test.mjs partner-owner-console.test.mjs
@@ -317,7 +328,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npx --yes wrangler@4 versions deploy "${ADMIN_WORKER_VERSION_ID}@100%" -y \
+          node ../scripts/deploy-uploaded-worker-version.mjs admin-worker "${ADMIN_WORKER_VERSION_ID}" \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
       - name: Ensure payment notification retry schedule
@@ -366,6 +377,10 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/v1/admin/models/drive-select*",
+            "/internal/admin/jobs/model-preview*",
+            "/internal/admin/payments",
+            "/internal/admin/payments*",
             "/internal/admin/jobs/all",
             "/internal/admin/jobs/all*",
             "/internal/admin/work/assets/*",
@@ -383,6 +398,7 @@ jobs:
             "/v1/admin/mms/*",
             "/v1/admin/auth/me",
             "/v1/admin/payment-issuer-diagnostic",
+            "/v1/admin/jobs/*",
             "/v1/admin/cancellation-credit-recovery",
             "/v1/admin/model-media/e2e-smoke",
             "/v1/admin/models/review-queue*",
@@ -499,6 +515,32 @@ jobs:
         run: |
           set -euo pipefail
           node ../scripts/check-admin-all-jobs-gate.mjs
+          # Wait for exact preview routes to propagate; signed-out requests must
+          # reach the credential gate and retain session_id in the login return.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for suffix in "" "/" "?session_id=sess_route_smoke"; do
+              preview_ok=false
+              for attempt in 1 2 3 4 5 6; do
+                preview_headers="$(mktemp)"
+                preview_code="$(curl -sS --max-time 20 -D "$preview_headers" -o /dev/null -w "%{http_code}" "$origin/internal/admin/jobs/model-preview$suffix")"
+                if [ "$preview_code" = "303" ] && grep -Fqi "location: $origin/internal/admin/login?next=" "$preview_headers" && grep -Fqi "model-preview" "$preview_headers"; then
+                  preview_ok=true
+                  break
+                fi
+                sleep 2
+              done
+              test "$preview_ok" = true
+            done
+          done
+          # Money Control HTML must stay on the existing credential-bound gate.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            for suffix in "" "/" "?proof_id=smoke-route-only"; do
+              money_headers="$(mktemp)"
+              money_code="$(curl -sS --max-time 20 -D "$money_headers" -o /dev/null -w "%{http_code}" "$origin/internal/admin/payments$suffix")"
+              test "$money_code" = "303"
+              grep -Fqi "location: $origin/internal/admin/login?next=" "$money_headers"
+            done
+          done
           body_file="$(mktemp)"
           http_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body_file" -w "%{http_code}" "$ADMIN_DASHBOARD_PRODUCTION_URL")"
           cat "$body_file"

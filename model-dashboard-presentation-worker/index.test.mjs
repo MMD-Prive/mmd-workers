@@ -219,10 +219,11 @@ test("Job Board Mini App callback exchanges LINE session then opens the exact jo
   assert.equal(context?.next, next);
 
   const html = liffPrimaryBootstrapHtml(callback);
-  assert.match(html, /ที่นี่พี่เปอร์ดูแลงานให้ครับ/);
-  assert.match(html, /ส่งรูปและข้อมูลเพิ่มเติมให้พี่เปอร์ดูหน่อยน้า/);
+  assert.match(html, /ส่งข้อมูลส่วนตัว/);
+  assert.match(html, /เริ่มส่งข้อมูล/);
   assert.match(html, /t\.me\/per_mmd/);
-  assert.match(html, /\/apply\/public-model/);
+  assert.match(html, /intake\.searchParams\.set\("flow","apply"\)/);
+  assert.match(html, /intake\.searchParams\.set\("intent","job_board"\)/);
   assert.doesNotMatch(html, /ลูกค้าเลือกคุณสำหรับงานนี้|ยืนยันตัวตน|กำลังตรวจสอบตัวตน/);
   assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.match(html, /\/v1\/model\/job-board\/handoff/);
@@ -454,7 +455,7 @@ test("selected-job intent survives a LIFF OAuth reload that strips the query str
 
 test("invalid remembered selected-job cookie cannot suppress normal onboarding", async () => {
   const worker = (await import("./src/index.js")).default;
-  const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+  const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard?flow=apply", {
     headers: {
       cookie: `mmd_liff_boot=1; mmd_model_selected_job=${encodeURIComponent("/internal/admin?t=bad")}`,
     },
@@ -479,7 +480,9 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.match(html, /2010864854-N34SgCqq/);
   assert.doesNotMatch(html, /liff\.login/);
   assert.doesNotMatch(html, /redirectUri/);
-  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
+  assert.doesNotMatch(html, /location\.reload\s*\(/);
+  assert.match(html, /window\.location\.replace\(dashboard\.pathname\+dashboard\.search\)/);
+  assert.match(html, /\/v1\/model\/liff\/exchange/);
   assert.doesNotMatch(html, /tanstack|react/i);
   assert.match(html, /data-mmd-app-digital="v1"/);
   assert.match(html, /DIGITAL MODEL WORKSPACE/);
@@ -530,7 +533,9 @@ test("installed PWA uses external-browser LIFF bootstrap instead of sending its 
   assert.match(html, /2010864854-N34SgCqq/);
   assert.doesNotMatch(html, /liff\.login/);
   assert.doesNotMatch(html, /redirectUri/);
-  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
+  assert.doesNotMatch(html, /location\.reload\s*\(/);
+  assert.match(html, /window\.location\.replace\(dashboard\.pathname\+dashboard\.search\)/);
+  assert.match(html, /\/v1\/model\/liff\/exchange/);
 
   const worker = (await import("./src/index.js")).default;
   const response = await worker.fetch(request);
@@ -591,7 +596,7 @@ test("dashboard stays on presentation when a Model session or real LINE redirect
   assert.equal(shouldHandoffToMiniApp(oauth), false);
 });
 
-test("authenticated dashboard is worker-rendered digital LIFF and does not fetch Lovable", async () => {
+test("nested dashboard is worker-rendered digital LIFF and does not fetch Lovable", async () => {
   const worker = (await import("./src/index.js")).default;
   const originalFetch = globalThis.fetch;
   let upstreamCalls = 0;
@@ -600,7 +605,7 @@ test("authenticated dashboard is worker-rendered digital LIFF and does not fetch
     throw new Error("unexpected_upstream_fetch");
   };
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard/jobs", {
       headers: { cookie: "mmd_model_session_v1=opaque-session" },
     }));
     assert.equal(response.status, 200);
@@ -777,3 +782,42 @@ test("serves the MY MODEL history add-on with no customer-facing or raw-chat con
   assert.equal(css.status, 200);
   assert.match(await css.text(), /#mmd-model-history-v1/);
 });
+
+
+test("normal Mini App bootstrap exchanges LINE identity before dashboard navigation", async () => {
+  const { modelLiffDigitalBootstrapHtml } = await import("./src/model-liff-digital-shell.js");
+  const { runInNewContext } = await import("node:vm");
+  for (const outcome of ["success", "missing-token", "rejected", "invalid-json"]) {
+    const nodes = Object.fromEntries(["status", "session-pill", "fallback", "detail"].map(id => [id, { textContent: "", hidden: true }]));
+    const calls = [], redirects = [];
+    const html = modelLiffDigitalBootstrapHtml({
+      liffId: "2010864854-N34SgCqq", sdk: "https://static.line-scdn.net/liff/edge/2/sdk.js",
+      fallback: "https://miniapp.line.me/2010864854-N34SgCqq", environment: "review", mode: "primary",
+    });
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    await runInNewContext(script, {
+      URL, setTimeout, clearTimeout,
+      document: { getElementById: id => nodes[id] },
+      window: {
+        liff: { init: async () => {}, getIDToken: () => outcome === "missing-token" ? "" : "fixture-token" },
+        location: { origin: "https://mmdbkk.com", replace: url => redirects.push(url) },
+      },
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        return { ok: outcome !== "rejected", json: async () => outcome === "invalid-json" ? null : { ok: outcome === "success" } };
+      },
+    });
+    if (outcome === "success") {
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].url, "/v1/model/liff/exchange");
+      assert.equal(calls[0].init.credentials, "include");
+      assert.deepEqual(JSON.parse(calls[0].init.body), { idToken: "fixture-token", environment: "review" });
+      assert.deepEqual(redirects, ["/sigil/model/dashboard?liff_env=review"]);
+    } else {
+      assert.equal(redirects.length, 0);
+      assert.equal(nodes.fallback.hidden, false);
+      assert.doesNotMatch(nodes.detail.textContent, /fixture-token/);
+    }
+  }
+});
+

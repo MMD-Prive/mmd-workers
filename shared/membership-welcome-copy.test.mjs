@@ -9,8 +9,8 @@ for (const text of ["Membership Package", "Membership Packcage", "แพ็ก�
 assert.equal(classifyKenjiMemberIntent("สมัครสมาชิกใหม่").intent, "membership_signup");
 assert.equal(classifyKenjiMemberIntent("Membership Package ราคาเท่าไร").intent, "membership_details");
 assert.equal(classifyKenjiMemberIntent("Membership Package Public").intent, "public_package_unavailable");
-assert.equal(classifyKenjiMemberIntent("Public package payment").intent, "payment_slip");
-assert.equal(classifyKenjiMemberIntent("Public package booking").intent, "booking");
+assert.equal(classifyKenjiMemberIntent("Public package payment").intent, "public_package_unavailable");
+assert.equal(classifyKenjiMemberIntent("Public package booking").intent, "public_package_unavailable");
 assert.equal(classifyKenjiMemberIntent("Membership Package ต่ออายุ").intent, "membership_renewal");
 assert.equal(classifyKenjiMemberIntent("Membership Package ส่งสลิปแล้ว").intent, "payment_slip");
 assert.equal(classifyKenjiMemberIntent("Membership Package จอง").intent, "booking");

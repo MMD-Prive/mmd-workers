@@ -149,6 +149,19 @@ jobs:
           node --test member-dashboard-chat-worker/test/eligible-recommendation-smoke-policy.test.mjs
           node --experimental-global-webcrypto --test member-pages-worker/private-teaser.test.mjs webflow/profiles/private-teaser-handoff.test.mjs
 
+      - name: Verify Kenji production model-off contract
+        id: kenji_contextual_shadow_smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
+          node --test scripts/kenji-model-off-workflow.test.mjs
+          node --test member-dashboard-chat-worker/test/kenji-membership-sales-conversation.test.mjs
+          node --test member-dashboard-chat-worker/test/kenji-line-contextual-understanding-shadow.test.mjs
+          node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
+
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         working-directory: member-dashboard-chat-worker
@@ -269,12 +282,12 @@ jobs:
           const desired = [
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
-            "mmdbkk.com/male-massage/therapists",
+            "mmdbkk.com/male-massage/therapists*",
             "mmdbkk.com/male-massage/therapists/login*",
             "mmdbkk.com/male-massage/therapists/me*",
             "mmdbkk.com/male-massage/therapists/app*",
             "mmdbkk.com/male-massage/therapists/api/app/*",
-            "www.mmdbkk.com/male-massage/therapists",
+            "www.mmdbkk.com/male-massage/therapists*",
             "www.mmdbkk.com/male-massage/therapists/login*",
             "www.mmdbkk.com/male-massage/therapists/me*",
             "www.mmdbkk.com/male-massage/therapists/app*",
@@ -468,6 +481,7 @@ jobs:
             for suffix in '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
               url="https://${host}/male-massage/therapists${suffix}"
               code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-ui.headers" -o "$RUNNER_TEMP/therapist-ui.html" -w '%{http_code}' "$url")"
+              echo "MY THERAPIST entrance: $url HTTP $code"
               test "$code" = '200'
               grep -Fq 'data-mms-shell="native-workspace-v1"' "$RUNNER_TEMP/therapist-ui.html"
               grep -Fq 'data-login="true"' "$RUNNER_TEMP/therapist-ui.html"
@@ -671,136 +685,6 @@ jobs:
             }
           ' "$response"
 
-      - name: Smoke Kenji Phase 2 contextual understanding shadow
-        id: kenji_contextual_shadow_smoke
-        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$RUNNER_TEMP/kenji-contextual-shadow-smoke.json"
-          response_code="$(curl --retry 2 --retry-delay 2 --retry-all-errors --silent --show-error \
-            -o "$response_file" -w "%{http_code}" \
-            -X POST \
-            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data '{"mode":"contextual_understanding_shadow"}' \
-            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
-          response="$(cat "$response_file")"
-          echo "Kenji contextual shadow smoke HTTP: ${response_code}"
-          echo "Kenji contextual shadow smoke body: ${response}"
-          node -e '
-            const httpStatus = Number(process.argv[2]);
-            const body = JSON.parse(process.argv[1]);
-            if (httpStatus !== 200) {
-              throw new Error(`Kenji contextual shadow smoke HTTP ${httpStatus}: ${process.argv[1]}`);
-            }
-            if (
-              body.ok !== true ||
-              body.mode !== "contextual_understanding_shadow" ||
-              body.schema !== "mmd.kenji_line_contextual_understanding.v1" ||
-              body.shadow_only !== true ||
-              body.customer_side_effects !== false ||
-              body.auto_send_allowed !== false ||
-              body.model_attempted !== true ||
-              body.model_success !== true ||
-              body.analysis_source !== "model" ||
-              !["comparison", "referential_followup"].includes(body.relation) ||
-              body.topic_relation !== "same_topic" ||
-              body.wants_similar !== true ||
-              body.price_direction !== "lower"
-            ) {
-              throw new Error(`Unexpected Kenji contextual shadow smoke response: ${process.argv[1]}`);
-            }
-            if ("answer" in body || "reply" in body || "customer_copy" in body) {
-              throw new Error("Contextual shadow smoke exposed customer-facing copy");
-            }
-          ' "$response" "$response_code"
-
-      - name: Smoke real canonical Kenji recommendation service binding
-        id: kenji_recommendation_shadow_smoke
-        if: always() && steps.route_sync.outcome == 'success'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${AI_SERVICE_SMOKE_TOKEN}"
-          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
-            -X POST \
-            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data '{"mode":"real_kenji_recommendation"}' \
-            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
-          node -e '
-            const body = JSON.parse(process.argv[1]);
-            const receipt = body.recommendation_receipt || {};
-            const context = body.context_receipt || {};
-            const guard = body.guardrails || {};
-            if (
-              body.ok !== true ||
-              body.mode !== "real_kenji_recommendation" ||
-              body.read_only !== true ||
-              body.shadow_only !== true ||
-              body.caller !== "member-dashboard-chat-worker" ||
-              body.canonical_context_real !== true ||
-              body.customer_side_effects !== false ||
-              context.identity_state !== "known" ||
-              receipt.upstream_ok !== true ||
-              receipt.deployment_mode !== "shadow" ||
-              guard.auto_send_allowed !== false ||
-              guard.booking_confirmed !== false ||
-              guard.payment_confirmed !== false ||
-              guard.entitlement_mutated !== false ||
-              guard.source_rate_exposed !== false ||
-              guard.raw_notes_exposed !== false
-            ) {
-              throw new Error(`Unexpected real Kenji recommendation shadow smoke response: ${process.argv[1]}`);
-            }
-            console.log(JSON.stringify({
-              ok: body.ok,
-              mode: body.mode,
-              caller: body.caller,
-              context_receipt: context,
-              recommendation_receipt: receipt,
-              guardrails: guard,
-              customer_side_effects: body.customer_side_effects,
-            }, null, 2));
-          ' "$response"
-
-      - name: Smoke eligible-client Kenji recommendations
-        id: kenji_eligible_recommendation_shadow_smoke
-        if: always() && steps.kenji_recommendation_shadow_smoke.outcome == 'success'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${AI_SERVICE_SMOKE_TOKEN}"
-          response_file="$RUNNER_TEMP/kenji-eligible-shadow-smoke.json"
-          response_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
-            -o "$response_file" -w "%{http_code}" \
-            -X POST \
-            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data '{"mode":"eligible_kenji_recommendation"}' \
-            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
-          response="$(cat "$response_file")"
-          echo "Eligible Kenji smoke HTTP: ${response_code}"
-          echo "Eligible Kenji smoke body: ${response}"
-          node --input-type=module -e '
-            import { assertEligibleRecommendationSmoke } from "./member-dashboard-chat-worker/src/eligible-recommendation-smoke-policy.mjs";
-            const body = JSON.parse(process.argv[1]);
-            const httpStatus = Number(process.argv[2]);
-            const result = assertEligibleRecommendationSmoke(body, httpStatus);
-            if (result.classification === "review_only") {
-              console.warn("::warning::Eligible recommendation pipeline is healthy but current live data is review-only (for example missing/stale availability or another safe offer gate).");
-            }
-            console.log(JSON.stringify({
-              ...result,
-              mode: body.mode,
-              attempted_eligible_clients: body.attempted_eligible_clients,
-              diagnostics: body.diagnostics || null,
-              recommendation_receipt: body.recommendation_receipt || null,
-              customer_side_effects: body.customer_side_effects,
-            }, null, 2));
-          ' "$response" "$response_code"
-
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
@@ -822,8 +706,6 @@ jobs:
           PAYMENT_CENTER_ACCEPTANCE_OUTCOME: ${{ steps.member_payments_authenticated.outcome }}
           PAYMENT_CENTER_ACCEPTANCE_STATUS: ${{ steps.member_payments_authenticated.outputs.status }}
           KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
-          KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
-          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
         run: |
           set -euo pipefail
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -833,6 +715,8 @@ jobs:
             stopped="cloudflare token verification"
           elif [ "$TESTS_OUTCOME" != "success" ]; then
             stopped="tests"
+          elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="Kenji production model-off contract"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
             stopped="versions dry-run"
           elif [ "$UPLOAD_OUTCOME" != "success" ] && [ "$MIGRATION_DEPLOY_OUTCOME" != "success" ]; then
@@ -847,12 +731,6 @@ jobs:
             stopped="production smoke"
           elif [ "$PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME" != "success" ]; then
             stopped="MY MMD Private Teaser Viewer live route acceptance"
-          elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
-            stopped="Kenji Phase 2 contextual understanding shadow smoke"
-          elif [ "$KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
-            stopped="real Kenji recommendation shadow smoke"
-          elif [ "$KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
-            stopped="eligible-client Kenji recommendation shadow smoke"
           else
             stopped="none — live verified"
           fi
@@ -895,9 +773,7 @@ jobs:
           - Private Teaser live route acceptance: \`${PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME}\`
           - Payment Center authenticated acceptance step: \`${PAYMENT_CENTER_ACCEPTANCE_OUTCOME}\`
           - Payment Center authenticated acceptance status: \`${PAYMENT_CENTER_ACCEPTANCE_STATUS:-NOT_RUN}\`
-          - Kenji contextual shadow smoke: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
-          - Kenji canonical recommendation smoke: \`${KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
-          - Kenji eligible-client recommendation smoke: \`${KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji production model-off contract: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
           Cloudflare/Wrangler detail:
@@ -914,7 +790,12 @@ jobs:
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           THERAPIST_UI_SMOKE_OUTCOME: ${{ steps.therapist_ui_smoke.outcome }}
           PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
+          KENJI_MODEL_OFF_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
         run: |
+          if [ "$KENJI_MODEL_OFF_OUTCOME" != "success" ]; then
+            echo "Kenji production model-off contract did not pass" >&2
+            exit 1
+          fi
           if [ "$THERAPIST_UI_SMOKE_OUTCOME" != "success" ]; then
             echo "native MY THERAPIST entrance/callback smoke did not pass" >&2
             exit 1
@@ -930,6 +811,7 @@ jobs:
       - name: Record verified deployment and route receipt
         if: >-
           ${{ !cancelled() &&
+              steps.kenji_contextual_shadow_smoke.outcome == 'success' &&
               ((steps.resolve_version.outcome == 'success' && steps.deploy.outcome == 'success') ||
                steps.migration_deploy.outcome == 'success') &&
               steps.route_sync.outcome == 'success' &&
@@ -940,8 +822,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
-          KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
-          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -958,10 +838,8 @@ jobs:
           - MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`
           - verified scope: version deployment + MMD LINE/MMS route ownership smoke
           - required routes: verified by route_sync
-          - Kenji contextual shadow smoke: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
-          - Kenji canonical recommendation smoke: \`${KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
-          - Kenji eligible-client recommendation smoke: \`${KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
-          - acceptance boundary: this receipt does not attest Kenji contextual/recommendation acceptance or Card 21829530 pilot/human E2E; see the deploy diagnosis for those outcomes
+          - Kenji production model-off contract: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
+          - acceptance boundary: this receipt does not attest provider-backed Kenji contextual/recommendation acceptance or Card 21829530 pilot/human E2E; model-backed production smoke is intentionally not run while the production flags are off
           EOF
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
 

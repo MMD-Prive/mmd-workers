@@ -87,7 +87,7 @@ function jsonResponse(status, body) {
   return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), json: async () => body };
 }
 
-function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", withRoot = true, readyState = "complete", sessionStore = new Map(), withGate = false }) {
+function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", withRoot = true, readyState = "complete", sessionStore = new Map(), withGate = false, host = "mmdbkk.com" }) {
   const calls = [];
   const { root, el } = buildRoot();
   const body = new FakeEl("body");
@@ -108,12 +108,12 @@ function harness({ routes = {}, token = TOKEN, ua = "Mozilla/5.0 Line/14.0.0", w
     createElement: (tag) => new FakeEl(tag),
     addEventListener: (type, fn) => (docListeners[type] ||= []).push(fn),
   };
-  const href = `https://mmdbkk.com/sigil/confirm/job-model?t=${encodeURIComponent(token)}`;
+  const href = `https://${host}/sigil/confirm/job-model?t=${encodeURIComponent(token)}`;
   const location = { href, pathname: "/sigil/confirm/job-model", search: `?t=${encodeURIComponent(token)}`, replace: (u) => replaced.push(u) };
   const fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, href);
     const payload = init.body ? JSON.parse(init.body) : null;
-    calls.push({ path: url.pathname, payload, credentials: init.credentials });
+    calls.push({ path: url.pathname, origin: url.origin, payload, credentials: init.credentials });
     const route = routes[url.pathname];
     const next = Array.isArray(route) ? route.shift() : route;
     if (!next) throw new TypeError("Failed to fetch");
@@ -300,8 +300,11 @@ test("gate: first 401 redirects to LINE Mini App once; a bounce back within the 
   await settle();
   assert.equal(h1.replaced.length, 1);
   assert.match(h1.replaced[0], /miniapp\.line\.me/);
-  assert.equal(h1.root.dataset.mmdState, "reentry");
-  assert.match(status(h1).textContent, /กำลังเปิดใน LINE/);
+  assert.equal(h1.root.dataset.mmdState, "gate");
+  const firstOverlay = h1.body.children.find((c) => c.hasAttribute("data-mmd-direct-first-job-gate"));
+  assert.ok(firstOverlay, "manual fallback is visible even if navigation does not leave the page");
+  assert.match(firstOverlay.allText, /เปิดใน MY MODEL/);
+  assert.equal(h1.calls.filter(c => c.path === "/v1/confirm/details").length, 0, "no details read before LINE identity succeeds");
 
   const h2 = harness({ withGate: true, sessionStore: store, routes: { "/v1/model/direct-job-gate/status": unauth } });
   await settle();
@@ -365,4 +368,33 @@ test("missing model payout shows the clear warning and keeps the rate row visibl
   assert.equal(warn.textContent, "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน");
   assert.equal(h.el["data-m-payout-card"].hidden, false);
   assert.equal(h.el["data-m-payout"].textContent, "—");
+});
+
+
+test("gate: ordinary LINE in-app browser never stalls on loading when Mini App navigation stays on page", async () => {
+  const h = harness({ withGate: true, ua: "Mozilla/5.0 iPhone Line/15.0.0", routes: { "/v1/model/direct-job-gate/status": { status: 401, body: { ok: false, error: "model_session_required" } } } });
+  await settle();
+  const overlay = h.body.children.find(c => c.hasAttribute("data-mmd-direct-first-job-gate"));
+  assert.ok(overlay);
+  assert.match(overlay.allText, /หาก LINE ไม่เปิดอัตโนมัติ/);
+  assert.match(overlay.allText, /เปิดใน MY MODEL/);
+  assert.equal(h.root.dataset.mmdState, "gate");
+  assert.equal(h.calls.some(c => c.path === "/v1/confirm/details"), false);
+  assert.equal(h.replaced.length, 1);
+  const handoff = new URL(h.replaced[0]);
+  assert.equal(handoff.searchParams.get("return_to"), "/sigil/confirm/job-model?t=" + encodeURIComponent(TOKEN));
+});
+
+
+test("www Webflow confirmation checks the host-only session on canonical apex before releasing details", async () => {
+  const h = harness({ host: "www.mmdbkk.com", withGate: true, routes: {
+    "/v1/model/direct-job-gate/status": { status: 200, body: { ok: true, required: false } },
+    "/v1/confirm/details": DETAILS_OK,
+  } });
+  await settle();
+  const gate = h.calls.find(c => c.path === "/v1/model/direct-job-gate/status");
+  assert.equal(gate.origin, "https://mmdbkk.com");
+  assert.equal(gate.credentials, "include");
+  assert.equal(h.root.dataset.mmdState, "ready");
+  assert.equal(h.replaced.length, 0);
 });

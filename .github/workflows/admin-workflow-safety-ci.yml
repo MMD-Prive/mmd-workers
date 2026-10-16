@@ -1,0 +1,41 @@
+name: Admin workflow safety CI
+
+on:
+  pull_request:
+    paths:
+      - 'admin-worker/**'
+      - '.github/workflows/**'
+      - 'scripts/admin-production-approval*'
+      - 'scripts/admin-current-session-code-only*'
+      - 'scripts/admin-production-validation*'
+      - 'scripts/admin-workflow-safety.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - 'admin-worker/**'
+      - '.github/workflows/**'
+      - 'scripts/admin-production-approval*'
+      - 'scripts/admin-current-session-code-only*'
+      - 'scripts/admin-production-validation*'
+      - 'scripts/admin-workflow-safety.test.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Workflow approval and current-session contracts (no production access)
+        run: |
+          node --check scripts/admin-production-approval.mjs
+          node --test scripts/admin-production-approval.test.mjs scripts/admin-workflow-safety.test.mjs
+          node --test scripts/admin-current-session-code-only.test.mjs scripts/admin-production-validation.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/model-current-session.test.mjs admin-worker/model-session-runtime-v1a.test.mjs

@@ -1,3 +1,4 @@
+import { MMS_LOGO_PATH, mmsLogoResponse } from './mms-internal-logo-asset.mjs';
 import coreWorker, { isAuthed } from "./index.js";
 import { hasValidAdminBrowserSession } from "./admin-browser-session.js";
 import { wireMmsApproveUi } from "./mms-admin-approve-ui.js";
@@ -5,6 +6,7 @@ import { wireMmsAdminMobileBundle } from "./mms-admin-mobile-bundle.js";
 import { wireMmsJobsUi } from "./mms-admin-jobs-ui.js";
 import { renderMmsAdminPage } from "./mms-admin-page.js";
 import { wireMmsWorkspaceUi } from "./mms-admin-workspace-ui.js";
+import { handleRelaxSpaAdmin, isRelaxSpaAdminRequest } from "./relax-spa-admin.js";
 import {
   appendMmsJobReceipt,
   buildMmsCanonicalJobPayload,
@@ -33,7 +35,7 @@ const MMS_JOB_LANES = new Set([
 
 export function isMmsAdminRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === PAGE_PATH || path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
+  return path === MMS_LOGO_PATH || path === PAGE_PATH || isRelaxSpaAdminRequest(path) || path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
 }
 
 // Phase 4D: owner-action coverage consumes only aggregate, read-only state.
@@ -78,16 +80,24 @@ export async function handleMmsAdminRequest(request, env = {}) {
 
   const adminAuthenticated = (await isAuthed(request, env)) || (await hasValidAdminBrowserSession(request, env));
   if (!adminAuthenticated) {
-    if (path === PAGE_PATH && (method === "GET" || method === "HEAD")) {
-      return Response.redirect(`${url.origin}/internal/admin/login?next=${encodeURIComponent(PAGE_PATH)}`, 303);
+    if ((path === PAGE_PATH || path === '/internal/admin/mms/relax-spa') && (method === "GET" || method === "HEAD")) {
+      return Response.redirect(`${url.origin}/internal/admin/login?next=${encodeURIComponent(path)}`, 303);
     }
     return json({ ok: false, error: "unauthorized" }, 401);
   }
 
+  if (path === MMS_LOGO_PATH) {
+    if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
+    return mmsLogoResponse(method);
+  }
+
+  if (isRelaxSpaAdminRequest(path)) return handleRelaxSpaAdmin(request, env);
+
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
     const build = mmsAdminBuild(env);
-    const page = stampMmsAdminBuild(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())))), build);
+    const page = stampMmsAdminBuild(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())))), build)
+      .replace('<div id="attentionList"', '<a class="btn primary" href="/internal/admin/mms/relax-spa">Relax Spa by 9 · แนะนำคนและส่วนแบ่ง</a><div id="attentionList"');
     const response = html(page);
     response.headers.set("x-mmd-admin-build", build);
     response.headers.set("x-mmd-admin-surface", "mms-admin");

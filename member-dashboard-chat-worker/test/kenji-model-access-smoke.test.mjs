@@ -202,7 +202,7 @@ test("synthetic full-chain expired canonical entitlement sends only renewal guid
   assert.equal(result.networkCalls.filter((call) => call.url.includes("/v2/bot/message/push")).length, 0);
   const body = JSON.parse(replies[0].init.body);
   assert.match(body.messages[0].text, /ต่ออายุ/);
-  assert.match(body.messages[0].text, /sigil\/member\/membership/);
+  assert.match(body.messages[0].text, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/);
   assert.doesNotMatch(body.messages[0].text, /MX17|น้องซิน/);
 });
 

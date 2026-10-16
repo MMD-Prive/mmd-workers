@@ -122,7 +122,7 @@ async function findExactClient(env = {}, lineUserId = "") {
     pageSize: 2,
     filterByFormula: `{line_user_id}=\"${escapeFormulaValue(lineUserId)}\"`,
   });
-  if (!result.ok) return { ok: false, status: "unavailable", reason: result.reason, records: [] };
+  if (!result.ok) return { ok: false, status: "unavailable", reason: result.reason, http_status: result.status, records: [] };
   if (result.records.length > 1) return { ok: false, status: "ambiguous", reason: "multiple_exact_clients", records: result.records };
   if (result.records.length === 0) return { ok: true, status: "not_found", reason: "exact_client_not_found", records: [] };
   return { ok: true, status: "resolved", reason: "exact_clients_line_user_id", record: result.records[0], records: result.records };
@@ -133,13 +133,13 @@ async function findExactClient(env = {}, lineUserId = "") {
 async function findPerRename(env = {}, lineUserId = "", clientRecordId = "") {
   const source = resolveFastTrustAirtableSource(env);
   const formula = fastTrustLineFormula(lineUserId, source);
-  if (!formula) return { status: "unavailable" };
+  if (!formula) return { status: "unavailable", reason: "line_user_identity_invalid" };
   const result = await airtableList(env, source.table, {
     maxRecords: 2,
     pageSize: 2,
     filterByFormula: formula,
   });
-  if (!result.ok) return { status: "unavailable" };
+  if (!result.ok) return { status: "unavailable", reason: result.reason, http_status: result.status };
   if (!result.records.length) return { status: "not_found" };
   if (result.records.length !== 1) return { status: "conflict" };
   const fields = result.records[0]?.fields || {};
@@ -394,6 +394,28 @@ async function patchMatrixIdentityLinks(env = {}, row = null, context = {}) {
   return result.ok
     ? { ok: true, id: row.id, updated: true }
     : { ok: false, reason: result.reason, http_status: result.status };
+}
+
+// P4 must recheck canonical identity without reading or writing conversation memory.
+// An unavailable rename lookup still blocks execution: it cannot prove that the
+// LINE import agrees with the canonical Client.
+export async function resolveKenjiLineClientIdentity({ env = {}, event = {} } = {}) {
+  const lineUserId = lineUserIdOf(event);
+  if (!lineUserId) return { resolved: false, status: "not_user_context", reason: "line_user_identity_unavailable" };
+  if (!/^U[0-9a-f]{32}$/i.test(lineUserId)) return { resolved: false, status: "not_user_context", reason: "line_user_identity_invalid" };
+  const exact = await findExactClient(env, lineUserId);
+  if (!exact.ok || exact.status !== "resolved" || !exact.record?.id) {
+    return { resolved: false, status: exact.status || "unavailable", reason: exact.reason || "canonical_client_unresolved", http_status: exact.http_status };
+  }
+  const clientRecordId = text(exact.record.id);
+  const perRename = await findPerRename(env, lineUserId, clientRecordId);
+  if (perRename.status === "conflict") {
+    return { resolved: false, status: "ambiguous", reason: "per_rename_client_conflict" };
+  }
+  if (perRename.status === "unavailable") {
+    return { resolved: false, status: "unavailable", reason: perRename.reason || "per_rename_lookup_unavailable", http_status: perRename.http_status };
+  }
+  return { resolved: true, status: "resolved", reason: "exact_clients_line_user_id", client_record_id: clientRecordId, per_rename_status: perRename.status };
 }
 
 export async function resolveKenjiLineCustomerMemoryContext({ env = {}, event = {}, now = "" } = {}) {

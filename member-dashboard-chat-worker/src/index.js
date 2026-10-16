@@ -48,9 +48,11 @@ const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_PAYMENTS_API_PATHS = new Set(["/v1/member/payments", "/v1/member/payments/"]);
 const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
-const MEMBER_SIGNUP_URL = "https://mmdbkk.com/pay/membership?source=line";
-const PRIVATE_MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
-const MEMBER_RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
+const MEMBER_SIGNUP_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=signup&view=signup`;
+const PRIVATE_MEMBER_SIGNUP_URL = MEMBER_SIGNUP_URL;
+const MEMBER_RENEWAL_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`;
+const MEMBER_STATUS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=overview`;
+const MEMBER_POINTS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=points`;
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -457,6 +459,11 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
+  if (/(?:ดารา|นักแสดง|วงการบันเทิง|celebrity|actor|entertainment).{0,28}(?:มี|ใคร|ดู|สนใจ|สมัคร|black\s*card|บัตรดำ)|(?:black\s*card|บัตรดำ).{0,28}(?:ดารา|นักแสดง|วงการบันเทิง|celebrity|actor)/i.test(normalized)) return "black_card_private_access";
+  if (/(?:comp\s*card|คอมพ์?การ์ด|คอมการ์ด).{0,24}(?:ดู|ขอดู|ตัวอย่าง|standard|สแตนดาร์ด)|(?:อยาก|ขอ).{0,12}(?:ดู|เห็น).{0,12}(?:model|นายแบบ|โปรไฟล์)/i.test(normalized)) return "standard_comp_card_preview";
+  if (/(?:เคยใช้บริการที่ไหน|เคยใช้ที่ไหน|ใช้บริการที่ไหนมาก่อน|ไม่เคยใช้บริการ|เคยใช้บริการ)/i.test(normalized)) return "membership_experience";
+  if (/(?:งบ|บัดเจต|บัทเจท|budget).{0,24}(?:ต่อครั้ง|ครั้งละ|บริการ)|(?:ครั้งละ|ต่อครั้ง).{0,18}(?:กี่บาท|เท่าไหร่|เท่าไร|งบ|budget)/i.test(normalized)) return "membership_budget";
+  if (/(?:สนใจ|อยากรู้|สอบถาม|อยากดู).{0,18}(?:สมาชิก|membership|standard|premium|private)/i.test(normalized)) return "membership_interest";
   var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
   if (!membershipAcquisitionHasBenefitQuestion && /(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(normalized)) return "private_membership_signup";
   if (!membershipAcquisitionHasBenefitQuestion && (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized) || /(?:สมัคร|join).{0,16}(?:public\s*membership|public|mmd\s*member|elite|red\s*card|เรด\s*การ์ด)/i.test(normalized))) return "membership_signup";
@@ -464,6 +471,13 @@ export function inferLineIntent(text = "", event = {}) {
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
+  // Personal balance/status questions use the verified member-truth reader.
+  // Keep earning rules, historical calculations, and payment-credit questions
+  // on their separate informational intents above.
+  if (
+    /^(?:(?:ขอ)?\s*)?(?:เช็ก|เช็ค|ดู|ตรวจสอบ|ตรวจ|สอบถาม)?\s*(?:(?:ยอด|จำนวน)\s*)?(?:แต้ม|คะแนน|points?)(?:\s*(?:ของ)?(?:ผม|ฉัน|หนู|เรา))?(?:\s*(?:ตอนนี้|ปัจจุบัน|ล่าสุด))?(?:\s*(?:มี|เหลือ|คงเหลือ|อยู่)?\s*(?:เท่าไหร่|เท่าไร|กี่แต้ม|กี่คะแนน|กี่\s*points?))?\s*(?:ครับ|ค่ะ|หน่อย)?$/i.test(normalized) ||
+    /^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)
+  ) return "points_status";
   if (
     (isCareBack || isPersonalCareBackStatus) &&
     /(?:ผม|หนู|ฉัน|เรา|ของผม|ของหนู|ของฉัน).{0,20}(?:ได้อะไร|ได้ไหม|ได้กี่|สถานะ|สิทธิ์|เข้าเกณฑ์|กลุ่มไหน)|(?:เช็ก|ตรวจ|ดู).{0,16}(?:สิทธิ์|สถานะ|คะแนน|แต้ม).{0,24}(?:ผม|หนู|ฉัน|ให้หน่อย)|(?:ผม|หนู|ฉัน).{0,12}(?:อยู่กลุ่ม|เป็นกลุ่ม)/i.test(normalized)
@@ -492,7 +506,6 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
   if (/^(?:ผม|ฉัน|หนู|เรา)?\s*(?:จ่าย|ชำระ|โอน)(?:เงิน)?\s*(?:แล้ว|เรียบร้อยแล้ว)(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "payment_status";
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
-  if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (/(?:after\s*care|aftercare|ดูแลหลัง(?:การ)?บริการ|หลัง(?:ใช้|รับ)บริการ|ให้คะแนน(?:บริการ|session|เซสชัน)|(?:feedback|ฟีดแบ็ก).{0,16}(?:บริการ|session|เซสชัน))/i.test(normalized)) return "aftercare";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
@@ -505,6 +518,9 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
   if (/(dinner|dining|drinks|event|appearance|social|ทานข้าว|ดินเนอร์|ดื่ม|อีเวนต์|ออกงาน|จอง|book|booking|คิว|นัด|reserve)/i.test(normalized)) return "mmd_companion";
+  if (/(?:ราคา|price|เท่าไร|เท่าไหร่|กี่บาท).{0,18}(?:สมาชิก|membership|standard|premium|แพ็กเกจสมาชิก|แพคเกจสมาชิก)|(?:สมาชิก|membership|standard|premium|แพ็กเกจสมาชิก|แพคเกจสมาชิก).{0,18}(?:ราคา|price|เท่าไร|เท่าไหร่|กี่บาท)/i.test(normalized)) {
+    return "membership_pricing";
+  }
   if (/(สมัคร|member|สมาชิก|renew|ต่ออายุ|upgrade|อัปเกรด|อัพเกรด|standard|premium)/i.test(normalized)) return "membership";
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
@@ -939,12 +955,18 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const text = getLineEventText(event);
   const inferredIntent = inferLineIntent(text, event);
   const continuityIntent = asString(options?.continuity?.effective_intent);
-  const intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
+  let intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
     ? continuityIntent
     : inferredIntent;
+  const priorIntent = asString(options?.continuity?.matrix?.last_customer_intent).toLowerCase();
+  if (/^\s*\d[\d,]*(?:\s*(?:บาท|thb))?\s*(?:ครับ|ค่ะ|นะ)?\s*$/i.test(text) && [
+    "membership_interest", "membership_experience", "membership_budget", "membership_pricing",
+  ].includes(priorIntent)) {
+    intent = "membership_budget";
+  }
   const activeModel = contextualModelForTurn(text, intent, options);
   const name = asString(profile?.displayName).split(/\s+/).filter(Boolean)[0] || "";
-  const prefix = name ? `คุณ${name} ` : "";
+  const prefix = name ? `คุณ ${name} ` : "";
 
   if (event?.type === "follow") {
     return `ครับ ${prefix}พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ`;
@@ -1047,6 +1069,32 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `${prefix}ผมยังยืนยันจากข้อความนี้ไม่ได้ว่าคุณอยู่กลุ่มไหน ได้สิทธิ์ใด หรือมียอดเท่าไรครับ ต้องตรวจสถานะสมาชิก วันหมดอายุ ประวัติบริการ และรายการชำระที่ยืนยันแล้วของคุณก่อน`;
   }
 
+  if (intent === "black_card_private_access") {
+    return `${prefix}ทาง MMD มีผู้ให้บริการบางท่านที่ทำงานในวงการบันเทิงครับ แต่เปอร์ไม่เปิดเผยหรือบอกใบ้ว่าเป็นใครก่อนผ่านการตรวจสิทธิ์นะครับ ถ้าสนใจบริการแบบ Private สมัครเพื่อรับการพิจารณา Black Card ได้ โดยการสมัครไม่ได้รับประกันการอนุมัติหรือการเข้าถึงบุคคลใดครับ`;
+  }
+
+  if (intent === "standard_comp_card_preview") {
+    return `${prefix}ก่อนสมัคร เปอร์ให้ดูได้เฉพาะตัวอย่าง Comp Card แบบ Standard ที่อนุมัติให้เปิดเผยครับ ส่วนข้อมูลเพิ่มเติมทาง MMD จะเปิดตามสิทธิ์หลังสมัครและยืนยันตัวตน เพื่อดูแลความเป็นส่วนตัวของทุกฝ่ายครับ`;
+  }
+
+  if (intent === "membership_experience") {
+    return `${prefix}รับทราบครับ ปกติตั้งงบใช้บริการต่อครั้งไว้ประมาณเท่าไหร่ครับ เดี๋ยวเปอร์ช่วยดูตัวเลือกที่เหมาะให้`;
+  }
+
+  if (intent === "membership_budget") {
+    const budget = text.match(/\d[\d,]*/)?.[0] || "";
+    if (budget) return `${prefix}รับงบประมาณ ${budget} บาทต่อครั้งครับ เดี๋ยวเปอร์เริ่มจากตัวอย่าง Comp Card แบบ Standard ที่เปิดเผยได้ให้ดูก่อน ถ้าถูกใจค่อยไปขั้นสมัครและยืนยันตัวตนครับ`;
+    return `${prefix}ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ เดี๋ยวเปอร์ช่วยดูตัวเลือกที่เหมาะให้`;
+  }
+
+  if (intent === "membership_interest") {
+    return `${prefix}ได้ครับ ก่อนหน้านี้เคยใช้บริการลักษณะนี้ที่ไหนมาบ้าง หรือยังไม่เคยครับ`;
+  }
+
+  if (intent === "membership_pricing") {
+    return `${prefix}สนใจ Standard หรือ Premium อยู่ครับ หรือให้เปอร์ช่วยเทียบสองแบบให้ดูก่อนได้ ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
+  }
+
   if (intent === "payment_center") {
     return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → https://mmdbkk.com/member/payments
 
@@ -1064,11 +1112,11 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_status") {
-    return "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อนครับ";
+    return `ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อนครับ → ${MEMBER_STATUS_URL}`;
   }
 
   if (intent === "points_status") {
-    return "ผมยังยืนยันยอดแต้มและประวัติรายการจากข้อความนี้ไม่ได้ครับ ต้องตรวจจากข้อมูลสมาชิกที่ยืนยันตัวตนและ Points Ledger ทางการก่อนครับ";
+    return `ตอนนี้ยังอ่านยอดล่าสุดจากระบบไม่ได้ครับ เลยยังไม่ยืนยันตัวเลขให้ผิด เปิด My MMD > Points เพื่อตรวจสอบได้ที่นี่ครับ → ${MEMBER_POINTS_URL}`;
   }
 
   if (intent === "membership_signup") {
@@ -1088,7 +1136,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
-    return `${prefix}อยากดูข้อมูลทั่วไปของระดับสมาชิก หรือให้ตรวจสถานะส่วนตัวครับ`;
+    return `${prefix}ถ้าสนใจบริการแบบ Private สมัครเพื่อรับการพิจารณา Black Card ได้ครับ แต่ไม่ได้อนุมัติอัตโนมัติและไม่ได้รับประกันว่าจะเปิดดูหรือจองบุคคลใดได้ เปอร์ขอทราบก่อนว่าปกติใช้บริการแบบไหน และตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
   }
 
   if (intent === "mms_wellness") {
@@ -1121,7 +1169,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership") {
-    return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
+    return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ ${MEMBER_STATUS_URL} ครับ ใช้เส้นทางใน LINE นี้เพื่อดูสถานะ สมัคร หรือต่ออายุ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
   }
 
   if (intent === "pricing_review") {
@@ -1405,9 +1453,28 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     }
   }
 
-  // Silence is intentional. If there is no real answer, no necessary
-  // clarification, or the message requires Per/MMD review, acknowledge the
-  // webhook with HTTP 200 but never call LINE Reply or Push APIs.
+  // The deterministic conversation prompt is opt-in and applies only to
+  // unprotected safe conversation. Protected and handoff paths have already
+  // failed closed above and can never fall through to this sales prompt.
+  if (
+    isEnabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
+    capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION &&
+    eventText
+  ) {
+    return {
+      text: "สนใจสอบถามเรื่องสมาชิก ราคา หรือใช้บริการแบบไหนครับ บอกเปอร์ได้เลย เดี๋ยวช่วยดูทางที่เหมาะให้ครับ",
+      fallback: false,
+      reply_source: "deterministic_conversation",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  // When deterministic conversation is disabled, silence remains intentional:
+  // acknowledge the webhook with HTTP 200 without calling Reply or Push APIs.
   return {
     text: "",
     fallback: false,

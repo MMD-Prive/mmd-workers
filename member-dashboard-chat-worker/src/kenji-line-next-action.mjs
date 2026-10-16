@@ -1,13 +1,13 @@
 import { buildKenjiNextActionPolicy } from "../../shared/kenji-customer-memory-v2.mjs";
 
 const ROUTES = Object.freeze({
-  dashboard: "https://mmdbkk.com/member/dashboard",
-  membership: "https://mmdbkk.com/pay/membership?source=line",
-  membershipSignup: "https://mmdbkk.com/pay/membership?source=line",
-  privateMembership: "https://mmdbkk.com/sigil/member/membership",
-  privateMembershipSignup: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
-  membershipRenewal: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
-  points: "https://mmdbkk.com/my-mmd/points",
+  dashboard: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview",
+  membership: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
+  membershipSignup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
+  privateMembership: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
+  privateMembershipSignup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
+  membershipRenewal: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
+  points: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points",
   payments: "https://mmdbkk.com/member/payments",
   history: "https://mmdbkk.com/my-mmd/history",
   mms: "https://mmdbkk.com/male-massage/home",

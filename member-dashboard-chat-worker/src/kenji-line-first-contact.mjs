@@ -2,7 +2,7 @@
 // event; this lane responds only after a customer sends a text message.
 const ROUTES = Object.freeze({
   profiles: "https://mmdbkk.com/profiles",
-  membership: "https://mmdbkk.com/sigil/member/membership",
+  membership: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
   mmsLine: "https://lin.ee/NkfXMu7",
 });
 

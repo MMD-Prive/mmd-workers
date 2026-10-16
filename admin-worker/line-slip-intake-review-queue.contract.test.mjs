@@ -199,7 +199,7 @@ test("queue keeps a missing amount as null and routes incomplete evidence to sys
   assert.equal(payload.items[0].can_approve, false);
   assert.deepEqual(payload.items[0].context_issues, [
     "amount_not_extracted",
-    "payment_reference_missing",
+    "transfer_datetime_missing",
     "customer_or_job_not_linked",
   ]);
 });

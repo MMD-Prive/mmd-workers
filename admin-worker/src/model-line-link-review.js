@@ -1,3 +1,4 @@
+import { canRecoverLegacyDriveModel } from "./legacy-drive-model-recovery.js";
 import { handleCanonicalLinkedJobCreate } from "./create-session-canonical-link-runtime.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -67,7 +68,7 @@ export async function listModelLineCandidates(env, url) {
   return { ok: true, count: items.length, items };
 }
 
-export async function bindVerifiedModelLineClaim(request, env, actor) {
+export async function bindVerifiedModelLineClaim(request, env, actor, { approvedDriveFolder = null } = {}) {
   const body = await request.json().catch(() => null);
   if (!isModelLineLinkBindPayload(body)) return json({ ok: false, error: "unsupported_mode" }, 400);
   if (body.confirm !== true) return json({ ok: false, error: "explicit_confirmation_required" }, 400);
@@ -111,15 +112,30 @@ export async function bindVerifiedModelLineClaim(request, env, actor) {
   const model = await airtableGetRecord(env, modelsTable(env), modelRecordId);
   if (!model.ok) return json({ ok: false, error: model.status === 404 ? "model_not_found" : "model_lookup_unavailable" }, model.status || 503);
   const candidate = safeModelCandidate(model.record, env);
-  if (!candidate.active) return json({ ok: false, error: "model_not_active" }, 409);
+  const recoverLegacyStatus = !candidate.active && approvedDriveFolder && canRecoverLegacyDriveModel(model.record, approvedDriveFolder);
+  if (!candidate.active && !recoverLegacyStatus) return json({ ok: false, error: "model_not_active" }, 409);
   if (!candidate.drive_folder_id && !candidate.drive_folder_url) return json({ ok: false, error: "model_drive_folder_required" }, 409);
   const existingLineUserId = linkedModelLineUserId(model.record, env);
+  if (recoverLegacyStatus && existingLineUserId) return json({ ok: false, error: "model_not_active" }, 409);
 
   const collision = await findModelsByLineUserId(env, lineUserId);
   if (!collision.ok) return json({ ok: false, error: "model_line_collision_lookup_unavailable" }, collision.status || 503);
   if (collision.records.length > 1) return json({ ok: false, error: "line_identity_collision" }, 409);
   if (collision.records.length === 1 && collision.records[0].id !== modelRecordId) {
     return json({ ok: false, error: "line_identity_already_linked" }, 409);
+  }
+
+  if (recoverLegacyStatus) {
+    // Claim, selected-job context and identity collision checks above must succeed first.
+    const coordinator = env.MODEL_ACTIVATION_COORDINATOR;
+    if (!coordinator?.idFromName || !coordinator?.get) return json({ ok: false, error: "activation_coordinator_not_ready" }, 503);
+    const fresh = await airtableGetRecord(env, modelsTable(env), modelRecordId);
+    if (!fresh.ok || !canRecoverLegacyDriveModel(fresh.record, approvedDriveFolder)) return json({ ok: false, error: "legacy_model_changed" }, 409);
+    const recoveryNote = `[MMD DRIVE STATUS RECOVERY v1] Owner ${clean(actor?.id || actor?.email || "owner").slice(0,80)} confirmed approved folder ${candidate.drive_folder_id}; claim ${claimId}; ${new Date().toISOString()}`;
+    const activated = await airtableUpdateRecord(env, modelsTable(env), modelRecordId, {
+      status: "active", internal_notes: [fresh.record.fields?.internal_notes, recoveryNote].filter(Boolean).join("\n"),
+    }, false);
+    if (!activated.ok) return json({ ok: false, error: "legacy_model_recovery_failed" }, activated.status || 503);
   }
 
   let binding;

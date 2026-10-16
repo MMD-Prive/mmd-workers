@@ -221,3 +221,74 @@ test('rejects tampered discount splits, totals and original amount', () => {
   for (const m of muts) { const b = discounted('promotion'); m(b);
     assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid', status: 400 }); }
 });
+
+// Production Co-Partner payload: customer PN 15,000 + MK 3,000;
+// the separate partner quote is not an MMD-to-model payout.
+function partnerQuote() {
+  return {
+    amount_thb: 18000, service_amount_thb: 18000, original_amount_thb: 18000,
+    private_access: { selected_private_folder: 'premium' },
+    work: { job_visibility: 'private', service_options: ['mk'] },
+    payment: { amount_thb: 18000, service_amount_thb: 18000 },
+    job_details: { partner_relationship: {
+      settlement_method: 'partner_managed', settlement_owner: 'modeling_partner', partner_quoted_rate_thb: 12000,
+    } },
+    service_pricing: { version: 1, currency: 'THB', settlement_mode: 'direct',
+      client_base_amount_thb: 15000, model_base_payout_thb: null,
+      addons: [{ option: 'mk', client_amount_thb: 3000, model_payout_thb: null }],
+      client_total_amount_thb: 18000, model_total_payout_thb: null },
+  };
+}
+test('Co-Partner MK quote validates without manufacturing model payouts', () => {
+  const b = partnerQuote();
+  const p = validateJobServicePricing(b);
+  assert.deepEqual(p, b.service_pricing);
+  const note = withJobServicePricingNote(preservePartnerSnapshot('', b), p);
+  assert.ok(note.includes('"partner_quoted_rate_thb":12000'));
+  assert.equal(p.model_total_payout_thb, null);
+});
+test('normalized Co-Partner quote keeps customer total and discards stale payout aliases', async () => {
+  const { normalizeJobCreateBody } = await import('./src/job-create-contract.js');
+  const b = partnerQuote();
+  b.pay_model_thb = 12000;
+  b.payment.model_payout_thb = 12000;
+  const normalized = normalizeJobCreateBody(b);
+  assert.equal(validateJobServicePricing(normalized).client_total_amount_thb, 18000);
+  assert.equal(normalized.pay_model_thb, undefined);
+  assert.equal(normalized.payment.model_payout_thb, undefined);
+});
+test('Co-Partner pricing still rejects bad customer totals, option rates, and model payout claims', () => {
+  const mutations = [
+    b => { b.amount_thb = 15000; },
+    b => { b.payment.amount_thb = 15000; },
+    b => { b.service_pricing.client_total_amount_thb = 15000; },
+    b => { b.service_pricing.addons[0].client_amount_thb = null; },
+    b => { b.work.service_options = []; },
+    b => { b.service_pricing.model_base_payout_thb = 12000; },
+    b => { b.service_pricing.model_total_payout_thb = 12000; },
+    b => { b.service_pricing.addons[0].model_payout_thb = 0; },
+    b => { b.pay_model_thb = 12000; },
+    b => { delete b.job_details.partner_relationship; },
+    b => { b.job_details.partner_relationship = { settlement_method: 'direct' }; },
+  ];
+  for (const mutate of mutations) {
+    const b = partnerQuote(); mutate(b);
+    assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid', status: 400 });
+  }
+});
+test('Co-Partner customer discount is validated without a model share', () => {
+  const b = partnerQuote();
+  b.amount_thb = b.service_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = 17100;
+  Object.assign(b.service_pricing, { client_gross_amount_thb: 18000, client_total_amount_thb: 17100,
+    discount: { mode: 'customer_request', type: 'percent', value: 5, amount_thb: 900, mmd_share_thb: 900, model_share_thb: 0 } });
+  assert.equal(validateJobServicePricing(b).client_total_amount_thb, 17100);
+  Object.assign(b.service_pricing.discount, { mode: 'promotion', reason: 'promo', mmd_share_thb: 450, model_share_thb: 450 });
+  assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid' });
+});
+test('Co-Partner without addons and legacy included-in-rate use the same settlement contract', () => {
+  const b = partnerQuote();
+  b.work.service_options = []; b.service_pricing.addons = [];
+  b.amount_thb = b.service_amount_thb = b.original_amount_thb = b.payment.amount_thb = b.payment.service_amount_thb = b.service_pricing.client_total_amount_thb = 15000;
+  b.job_details.partner_relationship = { settlement_method: 'included_in_rate', partner_quoted_rate_thb: 12000 };
+  assert.equal(validateJobServicePricing(b).client_total_amount_thb, 15000);
+});

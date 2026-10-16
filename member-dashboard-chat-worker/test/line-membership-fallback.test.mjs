@@ -22,7 +22,7 @@ test("membership signup and renewal use separate deterministic actions", () => {
       requested_domain: "none",
       requires_truth: false,
     });
-    assert.match(buildKenjiLineReply(event), /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/);
+    assert.match(buildKenjiLineReply(event), /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/);
   }
   for (const text of ["ต่ออายุ", "ต่ออายุสมาชิก", "ขอต่ออายุสมาชิก"]) {
     const event = lineTextEvent(text);
@@ -33,7 +33,7 @@ test("membership signup and renewal use separate deterministic actions", () => {
       requires_truth: false,
     });
     const reply = buildKenjiLineReply(event);
-    assert.match(reply, /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/);
+    assert.match(reply, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=renew&view=package/);
     assert.doesNotMatch(reply, /ต่ออายุ(?:สมาชิก)?(?:สำเร็จ|เรียบร้อย)|ยืนยัน(?:การ)?ชำระ|สมาชิก.*active/i);
   }
 });
@@ -66,6 +66,6 @@ test("explicit Private membership signup is separated from generic Public signup
       requested_domain: "none",
       requires_truth: false,
     });
-    assert.match(buildKenjiLineReply(event), /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/);
+    assert.match(buildKenjiLineReply(event), /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/);
   }
 });

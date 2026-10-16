@@ -1,3 +1,5 @@
+import { isMemberAttentionRequest, handleMemberAttention } from "./member-attention.js";
+import { isMemberUpdatesRequest, handleMemberUpdates } from "./member-updates.js";
 import { handleMemberProfiles, isMemberProfilesRequest } from "./member-profiles.js";
 import { readMemberAppSession } from "./member-app-api.js";
 import { readEntitlementSnapshot } from "../../auth-worker/src/my-mmd-runtime-index.js";
@@ -102,6 +104,8 @@ export function normalizeCareBackWebViewOrigin(request) {
 
 const worker = {
   async fetch(request, env, ctx) {
+    if (isMemberAttentionRequest(request)) return handleMemberAttention(request, env);
+    if (isMemberUpdatesRequest(request)) return handleMemberUpdates(request, env, readMemberAppSession);
     if (isMemberProfilesRequest(request)) return handleMemberProfiles(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });
     request = normalizeCareBackWebViewOrigin(request);
     const runtimeUrl = new URL(request.url);

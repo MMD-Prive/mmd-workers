@@ -2,7 +2,7 @@ import { parsePerRenameDateSuffix } from "./per-rename-date-suffix.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v8-honorific-spacing";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v9-first-canonical-contract";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
@@ -24,6 +24,8 @@ const INDEX_FIELDS = [
 
 export async function enrichLineageWithPerRename(request, response, env = {}) {
   if (!isLookupPost(request) || response.status !== 200) return response;
+  // The authorized lineage runtime already attempted Per Rename first.
+  if (response.headers.get("X-MMD-Per-Rename-Search-Version") === PER_RENAME_CLIENT_SEARCH_VERSION) return response;
 
   const payload = await request.json().catch(() => ({}));
   const query = clean(payload?.query).slice(0, 160);
@@ -38,10 +40,12 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
 
     if (resolved.state === "multiple") {
       const headers = lineageHeaders(response.headers, "multiple");
-      return new Response(JSON.stringify({
+      return lineageResponse({
         ...body,
         records: resolved.records,
+        results: resolved.records,
         items: resolved.records,
+        no_canonical_match: false,
         count: resolved.records.length,
         manual_fallback: false,
         per_rename_alias: true,
@@ -53,15 +57,17 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
             : []),
           "per_rename_multiple_canonical_clients_operator_selection_required",
         ]),
-      }), { status: response.status, statusText: response.statusText, headers });
+      }, response, headers);
     }
 
     if (resolved.state === "ambiguous") {
       const headers = lineageHeaders(response.headers, "ambiguous");
-      return new Response(JSON.stringify({
+      return lineageResponse({
         ...body,
         records: [],
+        results: [],
         items: [],
+        no_canonical_match: true,
         count: 0,
         manual_fallback: true,
         per_rename_alias: false,
@@ -70,14 +76,16 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
           ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings : []),
           "per_rename_alias_ambiguous_refine_search",
         ]),
-      }), { status: response.status, statusText: response.statusText, headers });
+      }, response, headers);
     }
 
     const headers = lineageHeaders(response.headers, "resolved");
-    return new Response(JSON.stringify({
+    return lineageResponse({
       ...body,
       records: [resolved.record],
+      results: [resolved.record],
       items: [resolved.record],
+      no_canonical_match: false,
       count: 1,
       manual_fallback: false,
       per_rename_alias: true,
@@ -88,7 +96,7 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
           : []),
         "per_rename_alias_resolved_to_canonical_client",
       ]),
-    }), { status: response.status, statusText: response.statusText, headers });
+    }, response, headers);
   } catch (error) {
     const headers = new Headers(response.headers);
     headers.set("X-MMD-Per-Rename-Search", "unavailable");
@@ -99,6 +107,33 @@ export async function enrichLineageWithPerRename(request, response, env = {}) {
       headers,
     });
   }
+}
+
+// Called only after the lineage runtime has validated operator authorization.
+export async function lookupPerRenameFirst(request, env = {}) {
+  const payload = await request.clone().json().catch(() => ({}));
+  const canonicalOnly = payload.canonical_only === true || payload.allow_manual_fallback === false;
+  const seed = new Response(JSON.stringify({ ok: true, records: [], results: [], items: [], count: 0,
+    manual_fallback: false, no_canonical_match: true, lineage_warnings: [],
+    source: "canonical_client_lineage", authority: "airtable_operational_records",
+    entitlement_policy: "display_snapshot_only_backend_rechecks",
+    ...(canonicalOnly ? { canonical_only: true, line_candidates: [] } : {}),
+  }), {
+    headers: { "Content-Type": "application/json", "X-MMD-Client-Lineage": "canonical-v3-remembered-name-first" },
+  });
+  return enrichLineageWithPerRename(request, seed, env);
+}
+
+function lineageResponse(body, source, headers) {
+  // Successful matches and operator selection are lookup outcomes, not outages.
+  const informational = new Set([
+    "per_rename_alias_resolved_to_canonical_client",
+    "per_rename_multiple_canonical_clients_operator_selection_required",
+  ]);
+  body.degraded_sources = (body.lineage_warnings || []).filter((warning) => !informational.has(warning));
+  return new Response(JSON.stringify(body), {
+    status: source.status, statusText: source.statusText, headers,
+  });
 }
 
 export async function resolvePerRenameAlias(env, query, options = {}) {
@@ -365,7 +400,7 @@ function toCanonicalPerRenameRecord(record, match, query) {
     legacy_tags: ["per_rename", "canonical_client_linked"],
     customer_telegram_username: firstText(fields.telegram_username),
     customer_telegram_status: "missing",
-    confidence: 100,
+    confidence: 1,
     lineage_source: "line_ofc_per_rename_linked_client",
     entitlement_snapshot_source: "none",
     identity_status: "canonical_client_linked",
@@ -491,3 +526,4 @@ function clean(value) {
   }
   return String(value ?? "").trim();
 }
+

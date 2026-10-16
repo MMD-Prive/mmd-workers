@@ -1,6 +1,6 @@
 import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 import { inferMembershipPayment } from "../shared/payment-intelligence.mjs";
-import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
+import { addBangkokCalendarYears, applyMembershipPromotion, currentPrivateMembershipPromotion, isProtectedPrivateMembership, privateRenewalBaseYears, privateRenewalTiming } from "../shared/membership-promotion-policy.mjs";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -204,7 +204,9 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     if (!(expectedAmount > 0) || amountThb !== expectedAmount) return review("renewal_price_policy_review_required", {package_code:packageCode});
   }
   const startAt = timing?.start_at || verifiedAt;
-  const baseExpireAt = (policy.private_catalog ? addBangkokCalendarYears(new Date(startAt),policy.years) : addCalendarYears(startAt, policy.years))?.toISOString() || "";
+  const baseYears = policy.private_catalog && action === "renewal" ? privateRenewalBaseYears(packageCode) : policy.years;
+  if (!baseYears) return review("membership_package_term_review_required", { package_code: packageCode });
+  const baseExpireAt = (policy.private_catalog ? addBangkokCalendarYears(new Date(startAt),baseYears) : addCalendarYears(startAt, baseYears))?.toISOString() || "";
   const promotion = currentPrivateMembershipPromotion({ package_code: packageCode, paid_at: paidAt, action, existing_member:hasExactHistory, prior_expire_at:futureExpiry || latestHistoricalExpiry(exactPackageRows) });
   const promotedExpireAt = applyMembershipPromotion(baseExpireAt, promotion, {start_at:startAt});
   const expireAt = (promotedExpireAt || (baseExpireAt ? new Date(baseExpireAt) : null))?.toISOString() || "";
@@ -235,13 +237,13 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
     start_at: startAt,
     proposed_expire_at: expireAt,
     membership_term: promotion?.total_years === 2 ? "2_years" : promotion
-      ? `${policy.years === 2 ? "2_years" : "1_year"}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
-      : policy.years === 2 ? "2_years" : "1_year",
+      ? `${baseYears === 2 ? "2_years" : "1_year"}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
+      : baseYears === 2 ? "2_years" : "1_year",
     membership_expiry_rule: promotion?.total_years === 2
       ? `2_years_from_${futureExpiry ? "current_expiry" : "verified_payment"}_${promotion.code}`
       : action === "renewal" && futureExpiry
-      ? `${policy.years}_year${policy.years === 1 ? "" : "s"}_from_current_expiry${promotion ? `_plus_${promotion.code}` : ""}`
-      : `${policy.years}_year${policy.years === 1 ? "" : "s"}_from_verified_payment${promotion ? `_plus_${promotion.code}` : ""}`,
+      ? `${baseYears}_year${baseYears === 1 ? "" : "s"}_from_current_expiry${promotion ? `_plus_${promotion.code}` : ""}`
+      : `${baseYears}_year${baseYears === 1 ? "" : "s"}_from_verified_payment${promotion ? `_plus_${promotion.code}` : ""}`,
     promotion,
     entitlement_id: deterministicEntitlementId(paymentRef, packageCode),
     entitlement_rows: rows,

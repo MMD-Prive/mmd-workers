@@ -1,3 +1,4 @@
+import { lookupPerRenameFirst, PER_RENAME_CLIENT_SEARCH_VERSION } from "./per-rename-client-search.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -141,13 +142,26 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
 
   let query = "";
   let canonicalOnly = false;
+  let lookupPayload = {};
+  let perRenameState = "";
   if (path === CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH) {
     const body = await request.json().catch(() => ({}));
+    lookupPayload = body;
     query = clean(body?.query).slice(0, 160);
     canonicalOnly = body?.canonical_only === true || body?.allow_manual_fallback === false;
   }
 
   try {
+    if (query) {
+      // Query the authoritative Per Rename index before the legacy staging scan.
+      // This also fetches the linked canonical Client by ID, beyond scan limits.
+      const rename = await lookupPerRenameFirst(new Request(request.url, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(lookupPayload),
+      }), env);
+      perRenameState = rename.headers.get("X-MMD-Per-Rename-Search") || "none";
+      if (["resolved", "multiple", "ambiguous"].includes(perRenameState)) return rename;
+    }
     const snapshot = await buildClientLineageRecords(env, {
       query,
       limit: path === CREATE_SESSION_CLIENT_RECENT_PATH ? 24 : 40,
@@ -168,7 +182,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       : snapshot.warnings;
 
     const noCanonicalMatch = records.every((record) => !/^rec[A-Za-z0-9]{6,}$/.test(clean(record?.client_id)));
-    return json({
+    const response = json({
       ok: true,
       source: "canonical_client_lineage",
       authority: "airtable_operational_records",
@@ -187,6 +201,11 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       manual_fallback: useManualFallback,
       ...(canonicalOnly ? { canonical_only: true, line_candidates: snapshot.lineCandidates } : {}),
     });
+    if (perRenameState) {
+      response.headers.set("X-MMD-Per-Rename-Search", perRenameState);
+      response.headers.set("X-MMD-Per-Rename-Search-Version", PER_RENAME_CLIENT_SEARCH_VERSION);
+    }
+    return response;
   } catch (error) {
     return json({
       ok: false,
@@ -1031,3 +1050,4 @@ function json(data, status = 200) {
     },
   });
 }
+

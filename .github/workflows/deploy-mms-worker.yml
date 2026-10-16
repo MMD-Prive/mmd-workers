@@ -3,12 +3,24 @@ name: Deploy mms-worker
 
 on:
   workflow_dispatch:
+    inputs:
+      rotate_telegram_secret:
+        description: "Rotate AUTH_SERVICE_MMS_TO_TELEGRAM in both Workers"
+        required: false
+        type: boolean
+        default: false
+      initialize_therapist_auth_secrets:
+        description: "Create missing persistent therapist auth secrets"
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - main
     paths:
       - "shared/posthog-authority-events.mjs"
       - "mms-worker/**"
+      - "scripts/upload-mms-worker-version.mjs"
       - ".github/workflows/deploy-mms-worker.yml"
 
 concurrency:
@@ -121,12 +133,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! npx wrangler r2 bucket info mms-private-uploads >/dev/null 2>&1; then
-            npx wrangler r2 bucket create mms-private-uploads
-          fi
+          npx wrangler r2 bucket info mms-private-uploads >/dev/null
 
       - name: Ensure persistent Therapist auth secrets
         id: therapist-secrets
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize_therapist_auth_secrets == true }}
         working-directory: mms-worker
         shell: bash
         run: |
@@ -146,6 +157,7 @@ jobs:
           printf 'configured=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Rotate MMS-to-Telegram service secret
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rotate_telegram_secret == true }}
         shell: bash
         run: |
           set -euo pipefail
@@ -168,29 +180,18 @@ jobs:
 
       - name: Prepare optional runtime secrets
         id: runtime-secrets
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.rotate_telegram_secret == true }}
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
-          const token = clean(process.env.AIRTABLE_API_TOKEN);
           const routerSecret = clean(process.env.MMS_TELEGRAM_ROUTER_SECRET);
-          const lineChannelSecret = clean(process.env.LINE_CHANNEL_SECRET);
-          const lineChannelAccessToken = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN);
+          if (!routerSecret) throw new Error("Telegram rotation was requested but its new secret is missing");
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
-          const lines = [];
-          if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
-          if (routerSecret) {
-            console.log(`::add-mask::${routerSecret}`);
-            lines.push(`AUTH_SERVICE_MMS_TO_TELEGRAM=${routerSecret}`);
-          }
-          if (lineChannelSecret && lineChannelAccessToken) {
-            console.log(`::add-mask::${lineChannelSecret}`);
-            console.log(`::add-mask::${lineChannelAccessToken}`);
-            lines.push(`LINE_CHANNEL_SECRET=${lineChannelSecret}`, `LINE_CHANNEL_ACCESS_TOKEN=${lineChannelAccessToken}`);
-          }
-          fs.writeFileSync(path, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
-          fs.appendFileSync(process.env.GITHUB_STEP_OUTPUT || process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
+          console.log(`::add-mask::${routerSecret}`);
+          fs.writeFileSync(path, `AUTH_SERVICE_MMS_TO_TELEGRAM=${routerSecret}\n`, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, "configured=true\n");
           NODE
 
       - name: Upload mms-worker version
@@ -201,11 +202,11 @@ jobs:
           set -euo pipefail
           tag="gha-${GITHUB_SHA:0:12}"
           echo "MMS_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
-          args=(versions upload --keep-vars --env="" --tag "$tag" --message "GitHub Actions ${GITHUB_SHA}")
+          args=()
           if [ "${{ steps.runtime-secrets.outputs.configured }}" = "true" ]; then
-            args+=(--secrets-file "$RUNNER_TEMP/mms-worker.env")
+            args+=("$RUNNER_TEMP/mms-worker.env")
           fi
-          npx wrangler "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/mms-worker-upload.log"
+          node ../scripts/upload-mms-worker-version.mjs "${args[@]}"
           echo "url=https://mms-worker.malemodel-bkk.workers.dev" >> "$GITHUB_OUTPUT"
 
       - name: Resolve uploaded version ID
@@ -228,7 +229,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler versions deploy "${MMS_WORKER_VERSION_ID}@100%" -y --env="" \
+          node ../scripts/deploy-uploaded-worker-version.mjs mms-worker "$MMS_WORKER_VERSION_ID" \
             2>&1 | tee "$RUNNER_TEMP/mms-worker-deploy.log"
           echo "url=https://mms-worker.malemodel-bkk.workers.dev" >> "$GITHUB_OUTPUT"
 

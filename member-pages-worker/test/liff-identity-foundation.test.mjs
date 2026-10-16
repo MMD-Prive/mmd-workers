@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { afterEach, describe, it } from "node:test";
 
 import worker, { createHallRouteToken, verifyHallRouteToken } from "../src/liff-identity-foundation.js";
+import { MEMBERSHIP_WELCOME_COPY } from "../../shared/membership-welcome-copy.mjs";
 import { RememberedLoginDevice } from "../src/liff-remembered-login-device.js";
 
 const realFetch = globalThis.fetch;
@@ -1019,18 +1020,42 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.doesNotMatch(JSON.stringify(result.payload), /Uprivate-line-sub|private-id-token|private-signed-t/i);
   });
 
-  it("prefers a bounded mock flow-screen spec over the fallback copy", async () => {
+  it("uses the shared Per welcome and server-owned actions even with configured sales copy", async () => {
     const runtime = env();
     runtime.LIFF_GATEWAY_STORE.screens.set("start_intent", {
       key: "start_intent",
-      copy: "ข้อความจาก Flow Screens ครับ",
-      actions: [{ id: "signup", label: "สมัคร", endpoint: "/member/api/liff/intent", method: "POST" }],
+      copy: "ซื้อ Public Package ตอนนี้",
+      actions: [{ id: "public", label: "ซื้อ Public", endpoint: "/member/api/liff/package", method: "POST" }],
     });
     const result = await start(runtime);
 
     assert.equal(result.response.status, 200);
-    assert.equal(result.payload.data.screen.copy, "ข้อความจาก Flow Screens ครับ");
-    assert.deepEqual(result.payload.data.screen.actions, [{ id: "signup", label: "สมัคร", endpoint: "/member/api/liff/intent", method: "POST" }]);
+    assert.equal(result.payload.data.screen.copy, MEMBERSHIP_WELCOME_COPY.welcome);
+    assert.deepEqual(result.payload.data.screen.actions.map(action => action.id), ["signup", "renew", "status"]);
+    assert.doesNotMatch(JSON.stringify(result.payload.data.screen), /Public|Kenji|HYPE/);
+  });
+
+  it("suppresses Public sales copy or actions from configured HYPE audience screens", async () => {
+    for (const screen of [
+      { copy: "Membership Packcage Public", actions: [] },
+      { copy: "เลือกประเภทการใช้งาน", actions: [{ id: "buy", label: "ซื้อแพค Public", endpoint: "/member/api/liff/package", method: "POST" }] },
+    ]) {
+      const runtime = env();
+      runtime.LIFF_GATEWAY_STORE.screens.set("audience_select", { key: "audience_select", ...screen });
+      const result = await start(runtime, { id_token: "valid", liff_intent: "signup" });
+      assert.equal(result.response.status, 200);
+      assert.equal(result.payload.data.screen.copy, MEMBERSHIP_WELCOME_COPY.publicUnavailable);
+      assert.deepEqual(result.payload.data.screen.actions, []);
+      assert.deepEqual(result.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+    }
+  });
+
+  it("preserves unrelated configured HYPE audience copy", async () => {
+    const runtime = env();
+    const screen = { key: "audience_select", copy: "เลือกประเภทการใช้งาน", actions: [] };
+    runtime.LIFF_GATEWAY_STORE.screens.set("audience_select", screen);
+    const result = await start(runtime, { id_token: "valid", liff_intent: "signup" });
+    assert.deepEqual(result.payload.data.screen, screen);
   });
 
   it("missing, invalid, expired, wrong-audience, missing-sub, non-2xx, malformed, and timeout LINE verification fail closed", async () => {
@@ -1447,6 +1472,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
 
   it("stores a bounded Hall audience decision without exposing its internal labels to the customer", async () => {
     const runtime = env();
+    runtime.LIFF_GATEWAY_STORE.screens.set("signup_package", { key: "signup_package", copy: "ซื้อ Public", actions: [] });
     runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");
     const started = await start(runtime, { id_token: "valid", liff_intent: "signup" });
     const result = await request("/member/api/liff/audience", {
@@ -1457,6 +1483,8 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(result.response.status, 200);
     assert.equal(result.payload.data.next_screen_key, "signup_package");
     assert.equal(result.payload.data.screen.key, "signup_package");
+    assert.equal(result.payload.data.screen.copy, MEMBERSHIP_WELCOME_COPY.signup);
+    assert.deepEqual(result.payload.data.screen.actions.map(action => action.id), ["select_package"]);
     assert.equal(result.payload.data.route_after_liff, "/sigil/member/membership");
     assert.doesNotMatch(JSON.stringify(result.payload), /female_view|show_female_profiles|believe_member_2999/i);
     const stored = runtime.LIFF_GATEWAY_STORE.records[0];
@@ -2152,7 +2180,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         const result = await startAndRoute(runtime);
         assert.deepEqual(result.payload, {
           decision: "dashboard",
-          destination: "https://mmdbkk.com/member/dashboard",
+          destination: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview",
           reason_code: `${status}_member`,
         });
         assert.equal(runtime.LIFF_GATEWAY_STORE.reviewCalls.length, 0);
@@ -2164,7 +2192,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       const result = await startAndRoute(runtime);
       assert.deepEqual(result.payload, {
         decision: "renew",
-        destination: "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew",
+        destination: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
         reason_code: "expired_member",
       });
       assert.equal(runtime.LIFF_GATEWAY_STORE.reviewCalls.length, 0);
@@ -2223,7 +2251,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         const result = await startAndRoute(runtime);
         assert.deepEqual(result.payload, {
           decision: "signup",
-          destination: "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup",
+          destination: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
           reason_code: "no_member_or_pending_review",
         }, sourceState);
       }

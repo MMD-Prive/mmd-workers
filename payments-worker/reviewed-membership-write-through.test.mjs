@@ -218,15 +218,15 @@ test("legacy discounted Standard renewal requires a current price policy", async
   assert.equal(review.reason, "renewal_history_not_found");
 });
 
-test("Premium paid renewal applies catalog base two years plus October bonus one year", async () => {
+test("Premium paid renewal buys one year plus the October bonus year (two years total)", async () => {
   const h = harness({ entitlements: [entitlement({ packageCode: "premium", capability: "private_premium", expireAt: "2027-02-28T08:15:00.000Z" })] });
   const plan = await resolveWriteThroughPlan(h.env, {
     payment_stage: "membership", payment_ref: "PAY-PREM-1", amount_thb: 2500, member_email: EMAIL, package_code: "premium",
   }, { paid_at: NOW });
   assert.equal(plan.status, "ready");
   assert.equal(plan.action, "renewal");
-  assert.equal(plan.proposed_expire_at, "2030-02-28T08:15:00.000Z");
-  assert.equal(plan.membership_term, "2_years_plus_1_year");
+  assert.equal(plan.proposed_expire_at, "2029-02-28T08:15:00.000Z");
+  assert.equal(plan.membership_term, "1_year_plus_1_year");
   assert.equal(plan.promotion.code, "october_prepaid_premium_2026");
 });
 

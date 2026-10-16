@@ -138,7 +138,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /id="signup-packages"/);
     assert.match(html, /href="https:\/\/miniapp\.line\.me\/2000000000-AbCdEfGh\/\?intent=signup&amp;view=signup"/);
     assert.match(html, /CONFIG\.intent === "signup" && !window\.liff\.isInClient\(\)/);
-    assert.match(html, /\/sigil\/member\/membership\?source=line&amp;intent=signup/);
+    assert.match(html, /https:\/\/miniapp\.line\.me\/2000000000-AbCdEfGh\/\?intent=signup&amp;view=signup/);
+    assert.doesNotMatch(html, /href="\/sigil\/member\/membership/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
     assert.match(html, /JSON\.stringify\(\{ package_code: packageCode \}\)/);
@@ -391,7 +392,7 @@ describe("same-site /member/liff shell", () => {
       active -= 1;
       return url;
     };
-    const { memberApiFetch } = runInNewContext(html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout });
+    const { memberApiFetch } = runInNewContext(html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout, clearTimeout, AbortController, Response, Uint8Array });
     const results = await Promise.allSettled([memberApiFetch("a"), memberApiFetch("fail"), memberApiFetch("c")]);
     assert.equal(maxActive, 1);
     assert.deepEqual(order, ["a", "fail", "c"]);
@@ -768,5 +769,36 @@ describe("signup offers the basic Member package only", () => {
     assert.ok(html.includes("packages.length !== 1"));
     assert.ok(!html.includes("Elite%20Card.webp") && !html.includes("Red%20Card.webp"));
   });
+
+  it("hands Standard and Premium interest to the existing MMD chat without looping or claiming submission", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    assert.match(html, /Standard \/ Premium \/ Private Access/);
+    const card = html.match(/<div class="card signup-private">(.*?)<\/div>/s)[1];
+    assert.match(card, /href="https:\/\/lin\.ee\/xRqsALs"/);
+    assert.match(card, /ขอคุยกับเปอร์ สนใจ Standard \/ Premium/);
+    assert.match(card, /ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์/);
+    assert.doesNotMatch(card, /miniapp\.line\.me|ส่งเรื่องแล้ว|ได้รับคำขอแล้ว/);
+    assert.doesNotMatch(html, /href="\/sigil\/member\/membership/);
+  });
 });
 
+
+describe("renewal card in the PACKAGE view", () => {
+  it("renders hidden markup, server-driven script and never lets the browser send an amount", async () => {
+    const html = await (await shell("/member/liff?intent=renew&view=package")).text();
+    assert.match(html, /id="renewal-card"[^>]*hidden/);
+    assert.match(html, /\/member\/api\/liff\/renewal\/offer/);
+    const purchase = html.slice(html.indexOf("async function purchaseRenewal"), html.indexOf("async function purchaseRenewal") + 1800);
+    assert.match(purchase, /body: JSON\.stringify\(\{ package_code: packageCode \}\)/);
+    assert.doesNotMatch(purchase, /amount/);
+    assert.match(purchase, /verifiedCheckoutUrl\(payload\.customer_payment_url\)/);
+    assert.match(purchase, /entitlement_granted === false/);
+  });
+});
+
+describe("renewal card hidden parts", () => {
+  it("price box stays hidden when the offer has no price (no stray THB)", async () => {
+    const html = await (await shell("/member/liff?intent=renew&view=package")).text();
+    assert.match(html, /\.renewal-price\[hidden\][^{]*\{display:none!important\}/);
+  });
+});

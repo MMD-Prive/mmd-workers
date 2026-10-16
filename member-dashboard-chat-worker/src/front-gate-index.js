@@ -465,7 +465,7 @@ export default {
     if (path.startsWith(THERAPIST_AUTH_PREFIX)) return forwardMmsTherapistAuth(request, env);
     if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });
     if (isMyMmdUiPath(path)) return proxyMyMmdPresentation(request);
-    if (PUBLIC_CARE_BACK_PATHS.has(path) || path.startsWith(MEMBER_APP_API_PREFIX)) {
+    if (PUBLIC_CARE_BACK_PATHS.has(path) || path === "/api/v1/member/updates/list" || path === "/api/v1/member/updates/list/" || path.startsWith(MEMBER_APP_API_PREFIX)) {
       return forwardMemberPages(request, env, ctx);
     }
 

@@ -1,3 +1,4 @@
+import { isJobConfirmationReissuePath, handleJobConfirmationReissue } from './job-confirmation-reissue.js';
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
 import coreWorker, { MODEL_SCHEMA_PATCH_V1_ROUTES, isAuthed as isCoreAdminAuthed } from "./index.js";
@@ -127,6 +128,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/calendar",
   "/internal/admin/applications",
   "/internal/admin/jobs/all",
+  "/internal/admin/jobs/model-preview",
   "/internal/admin/member-intelligence",
   "/internal/admin/membership-access",
   "/internal/admin/model-applications",
@@ -173,6 +175,7 @@ export default {
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
     const paymentReviewRequest = isPaymentReviewRequest(path, method);
+    const manualSlipUploadRequest = path === "/studio/api/payments/slip-intake";
 
     // Service-binding-only Telegram identity authority. This path has no public
     // production route and the handler also requires admin-worker.internal.
@@ -256,10 +259,10 @@ export default {
 
     // Payment Review is deliberately browser-session-only. Never let service
     // bearer/confirm credentials become an alternate browser path for money review.
-    if (paymentReviewRequest && (request.headers.get("Authorization") || request.headers.get("X-Confirm-Key"))) {
+    if ((paymentReviewRequest || manualSlipUploadRequest) && (request.headers.get("Authorization") || request.headers.get("X-Confirm-Key"))) {
       return strictJson(request, env, { ok: false, error: "browser_admin_session_required" }, 403);
     }
-    if (paymentReviewRequest && method === "POST") {
+    if ((paymentReviewRequest || manualSlipUploadRequest) && method === "POST") {
       const origin = request.headers.get("Origin") || "";
       if (origin !== url.origin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(origin)) {
         return strictJson(request, env, { ok: false, error: "forbidden_origin" }, 403);
@@ -309,6 +312,10 @@ export default {
           "x-mmd-refund-error-boundary":"active-v2",
         });
       }
+    }
+
+    if (isJobConfirmationReissuePath(path)) {
+      return handleJobConfirmationReissue(request, env);
     }
 
     if (path === PAYMENT_ISSUER_DIAGNOSTIC_PATH) {
@@ -453,11 +460,11 @@ function isGateBypassedAdminPath(path, method) {
 }
 
 function isMmsPartnerAllowedPath(path) {
-  return path === MMS_PARTNER_PAGE_PATH || path === MMS_PARTNER_API_PREFIX || path.startsWith(`${MMS_PARTNER_API_PREFIX}/`);
+  return path === MMS_PARTNER_PAGE_PATH || path === '/internal/admin/mms/relax-spa' || path === MMS_PARTNER_API_PREFIX || path.startsWith(`${MMS_PARTNER_API_PREFIX}/`);
 }
 
 function isBrowserAdminPath(path) {
-  return path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
+  return path === "/studio/api/payments/slip-intake" || path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
 }
 
 function isApiAdminPath(path) {

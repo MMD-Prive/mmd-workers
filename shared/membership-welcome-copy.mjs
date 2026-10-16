@@ -11,6 +11,7 @@ export function classifyMembershipWelcomeIntent(input) {
   const text = String(input ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
   if (/\bpublic\b|พับลิก|พับลิค/.test(text)) return "public_package_unavailable";
   const membership = /\bmembership\b|แพ็กเกจสมาชิก|แพคเกจสมาชิก|สมัครสมาชิก|สมัครใหม่|สมาชิกใหม่/.test(text);
+  // Preserve renewal/status handling in the existing concierge.
   if (/ต่ออายุ|หมดอายุ|สถานะ|\b(?:renew|renewal|status)\b/.test(text)) return "";
   if (!membership) return "";
   if (/ราคา|เท่าไร|เท่าไหร่|กี่บาท|สิทธิ|รายละเอียด|ระยะเวลา|\b(?:price|pricing|cost|benefits|details)\b/.test(text)) return "membership_details";
