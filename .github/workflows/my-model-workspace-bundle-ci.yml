@@ -1,0 +1,55 @@
+name: MY MODEL Webflow workspace bundle CI
+
+on:
+  pull_request:
+    paths:
+      - "webflow/sigil/model/my-model-workspace-20261016.*"
+      - "webflow/sigil/model/dashboard-home-media-20261015.js"
+      - "webflow/sigil/confirm/confirmation-handoff*"
+      - "scripts/build-my-model-workspace-bundle.mjs"
+      - ".github/workflows/my-model-workspace-bundle-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "webflow/sigil/model/my-model-workspace-20261016.*"
+      - "webflow/sigil/model/dashboard-home-media-20261015.js"
+      - "webflow/sigil/confirm/confirmation-handoff*"
+      - "scripts/build-my-model-workspace-bundle.mjs"
+      - ".github/workflows/my-model-workspace-bundle-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Check syntax and build scoped Webflow embed
+        run: |
+          node --check webflow/sigil/model/my-model-workspace-20261016.js
+          node --check scripts/build-my-model-workspace-bundle.mjs
+          node scripts/build-my-model-workspace-bundle.mjs "$RUNNER_TEMP/MY_MODEL_Dashboard_Bundle.html"
+          git diff --check
+      - name: Verify workspace, identity, media, Console and confirmation contracts
+        env:
+          NODE_OPTIONS: --experimental-global-webcrypto
+        run: |
+          node --test \
+            webflow/sigil/model/my-model-workspace-20261016.test.mjs \
+            webflow/sigil/model/dashboard-job-world-20261015.test.mjs \
+            webflow/sigil/model/model-console-v3-identity-first.test.mjs \
+            webflow/sigil/model/model-console-travel-flow.test.mjs \
+            webflow/sigil/model/model-console-payout-summary-v2.test.mjs \
+            webflow/sigil/confirm/confirmation-handoff.test.mjs \
+            webflow/sigil/confirm/confirmation-route-guard.test.mjs \
+            webflow/sigil/confirm/job-model-payout-destination-v1.test.mjs \
+            webflow/sigil/confirm/job-model-v15-no-silent-failure.test.mjs
