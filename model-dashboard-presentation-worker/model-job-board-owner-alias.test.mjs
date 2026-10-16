@@ -62,7 +62,8 @@ test("public job board entry uses Per-led Welcome and contact-first intake", () 
   assert.match(html, /เริ่มส่งข้อมูล/);
   assert.match(html, /ต้องการแก้ไขหรือลบข้อมูล/);
   assert.match(html, /t\.me\/per_mmd/);
-  assert.match(html, /\/apply\/public-model/);
+  assert.match(html, /intake\.searchParams\.set\("flow","apply"\)/);
+  assert.match(html, /intake\.searchParams\.set\("intent","job_board"\)/);
   assert.match(html, /source","job_board"/);
   assert.match(html, /job_id/);
   assert.match(html, /intent:"job_board"/);

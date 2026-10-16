@@ -116,10 +116,10 @@
   if(forced==='review')env='review';else if(forced==='developing'||forced==='dev')env='developing';
   function q(s){return root.querySelector(s)}
   function text(id,v){var e=document.getElementById(id);if(e&&v!=null)e.textContent=v}
-  function setState(title,copy){text('mmdModelStatusTitle',title);text('mmdModelStatusText',copy)}
+  function setState(title,copy){text('mmdModelStatusTitle',title);text('mmdModelStatusText',copy);var home=document.getElementById('mmd-model-home-v3');if(home){var status=home.querySelector('[data-mdhome-auth]');if(status)status.textContent=title;var message=home.querySelector('.mdhome__copy');if(message)message.textContent=copy;}window.dispatchEvent(new CustomEvent('mmd:model-entry-state',{detail:{title:title,copy:copy}}));}
   function switchTab(name){root.querySelectorAll('[data-tab]').forEach(function(b){b.classList.toggle('is-active',b.dataset.tab===name)});root.querySelectorAll('[data-panel]').forEach(function(x){x.classList.toggle('is-active',x.dataset.panel===name)});}
   root.querySelectorAll('[data-tab]').forEach(function(b){b.addEventListener('click',function(){switchTab(b.dataset.tab)})});
-  async function request(url,options){var r=await fetch(url,Object.assign({credentials:'include',cache:'no-store',headers:{Accept:'application/json'}},options||{}));var d=await r.json().catch(function(){return {}});if(!r.ok||d.ok===false)throw new Error(d.error||'request_failed');return d;}
+  async function request(url,options){var c=new AbortController(),timer=setTimeout(function(){c.abort();},12000);try{var r=await fetch(url,Object.assign({credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:c.signal},options||{}));var d=await r.json().catch(function(){return {}});if(!r.ok||d.ok===false){var e=new Error(d.error||'request_failed');e.status=r.status;throw e;}return d;}finally{clearTimeout(timer);}}
   function render(data){var s=data.session||{};var lanes=[s.model_work_lane,s.payout_terms&&s.payout_terms.money_lane].filter(Boolean);var isPrivate=data.ok===true&&!!s.session_id&&lanes.length>0&&lanes.every(function(lane){return lane==='private_model'});root.dataset.modelBrandLane=isPrivate?'private':'public';var brand=q('.tdb-eyebrow');if(brand)brand.textContent=isPrivate?'SĪGIL · PRIVATE MODEL':s.session_id?'MMD · PUBLIC MODEL':'MMD Privé';text('mmdSessionId',s.session_id||'—');text('mmdSessionStatus',s.normalized_state||s.state||'confirmed');text('mmdModelTokenBadge','Verified');var b=document.getElementById('mmdModelTokenBadge');if(b)b.classList.add('is-live');setState('พร้อมดูแลงานนี้ครับ','อ่านบรีฟให้ครบก่อน แล้วค่อยอัปเดตตามสิ่งที่เกิดขึ้นจริงนะครับ');}
   async function action(name,extra){await request('/v1/model/session/action',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(Object.assign({action:name},extra||{}))});await load();}
   async function load(){var d=await request('/v1/model/session/current');render(d);window.dispatchEvent(new CustomEvent('mmd:model-session-ready',{detail:d}));return d;}
@@ -128,12 +128,34 @@
   q('#mmdShareLocation').addEventListener('click',function(){if(!navigator.geolocation)return;setState('กำลังขอตำแหน่งครับ','กดอนุญาตได้เลยนะครับ');navigator.geolocation.getCurrentPosition(async function(pos){try{await request('/v1/model/session/location',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy,capturedAt:new Date().toISOString()})});setState('ส่งตำแหน่งแล้วครับ','MMD จะใช้เพื่อช่วยดูการเดินทางครั้งนี้เท่านั้นครับ')}catch(e){setState('ยังส่งตำแหน่งไม่ได้ครับ','ลองอีกครั้งได้เลยครับ')}},function(){setState('ยังไม่ได้รับตำแหน่งครับ','อนุญาต Location แล้วลองอีกครั้งนะครับ')})});
   q('#mmdReportDelay').addEventListener('click',function(){switchTab('support')});
   root.querySelectorAll('[data-support]').forEach(function(b){b.addEventListener('click',async function(){try{await request('/v1/model/session/support',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:b.dataset.support})});setState('ส่งให้MMD ดูแล้วครับ','เดี๋ยวMMD ตามต่อให้นะครับ')}catch(e){setState('ยังส่งไม่ได้ครับ','ติดต่อทีม MMD ผ่านช่องทางเดิมได้เลยครับ')}})});
-  async function boot(){try{await liff.init({liffId:LIFF_IDS[env],withLoginOnExternalBrowser:true});if(!liff.isLoggedIn()){liff.login({redirectUri:location.href});return;}var idToken=liff.getIDToken();if(!idToken)throw new Error('id_token_unavailable');await request('/v1/model/liff/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:idToken,environment:env})});await load();}catch(e){console.error(e);var c=String(e.message||e);if(c.indexOf('model_not_linked')>-1)setState('ยังไม่เจอข้อมูลนายแบบครับ','บัญชี LINE นี้ยังไม่ได้เชื่อมกับข้อมูลนายแบบ กรุณาติดต่อทีม MMD');else if(c.indexOf('active_session_not_found')>-1)setState('ยังไม่มีงานที่กำลังใช้งานครับ','เมื่อมีงานใหม่ หน้านี้จะแสดงรายละเอียดให้ทันทีครับ');else setState('ยังเปิดงานนี้ไม่ได้ครับ','ปิดแล้วเปิดใหม่จากลิงก์ Model Dashboard ใน LINE อีกครั้งนะครับ');}}
+  function entryAction(label,href){var host=document.getElementById('mmd-model-home-v3')||root;var box=host.querySelector('[data-model-entry-actions]');if(!box){box=document.createElement('nav');box.dataset.modelEntryActions='1';box.setAttribute('aria-label','ขั้นตอนถัดไป');host.prepend(box);}var a=document.createElement('a');a.textContent=label;a.href=href;box.appendChild(a);}
+  function reviewState(){setState('กำลังรอ MMD ตรวจสอบ','ถ้ามีข้อมูลโมเดลเดิม ทีมจะตรวจและเชื่อมให้ ไม่ต้องสมัครซ้ำครับ');entryAction('ให้ MMD ช่วยตรวจข้อมูลเดิม','https://lin.ee/xRqsALs');}
+  async function boot(){try{
+    setState('กำลังตรวจบัญชีของคุณ','กำลังอ่านสถานะจากระบบ MMD');
+    var profile;
+    try{profile=await request('/v1/model/profile');}catch(error){if(error.status!==401&&!(error.status===403&&/^model_session_(required|invalid|expired)$/.test(error.message)))throw error;}
+    if(!profile){
+      // Only the registered apex endpoint initializes LINE; never another host.
+      if(location.origin!=='https://mmdbkk.com'){setState('เปิด MY MODEL บนโดเมนหลัก','ยืนยัน LINE บน mmdbkk.com เพื่อรักษาบัญชีเดิม');entryAction('เปิด MY MODEL','https://mmdbkk.com/sigil/model/dashboard');return;}
+      if(!window.liff)throw new Error('line_sdk_unavailable');
+      var timer;try{await Promise.race([liff.init({liffId:LIFF_IDS[env]}),new Promise(function(_,reject){timer=setTimeout(function(){reject(new Error('line_init_timeout'));},12000);})]);}finally{clearTimeout(timer);}
+      if(!liff.isLoggedIn()){setState('ยังไม่ได้เชื่อม LINE','กดยืนยันเพื่อเปิดบัญชีโมเดลของคุณ ไม่มีการสมัครหรืออนุมัติอัตโนมัติ');entryAction('ยืนยันผ่าน LINE','https://miniapp.line.me/'+LIFF_IDS[env]);return;}
+      var idToken=liff.getIDToken();if(!idToken)throw new Error('id_token_unavailable');
+      var exchange=await request('/v1/model/liff/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:idToken,environment:env})});
+      if(exchange.state==='identity_review_required'||exchange.state==='pending_review'){reviewState();return;}
+      profile=await request('/v1/model/profile');
+    }
+    if(profile.state==='pending_review'||profile.state==='identity_review_required'){reviewState();return;}
+    await load();
+  }catch(e){var code=String(e.message||'');if(/identity_review|ambiguous|pending_review/.test(code)){reviewState();}else if(/model_not_linked|model_not_found|verified_unlinked/.test(code)){setState('ยังไม่มีข้อมูลโมเดลที่เชื่อมกับ LINE นี้','ถ้าเคยทำงานกับ MMD ให้ทีมตรวจข้อมูลเดิมก่อน หรือเลือกสมัครใหม่เมื่อยังไม่เคยสมัคร');entryAction('เคยทำงานแล้ว · ให้ MMD เชื่อมข้อมูลเดิม','https://lin.ee/xRqsALs');entryAction('สมัครโมเดลใหม่','https://miniapp.line.me/'+LIFF_IDS[env]+'/?flow=apply');}else if(code==='active_session_not_found'){setState('ยังไม่มีงานที่กำลังใช้งาน','บัญชีเชื่อมแล้ว ดูโปรไฟล์หรือ Jobs Today ต่อได้ครับ');}else if(e.status===403){setState('ยังไม่มีสิทธิ์เปิดส่วนนี้','ให้ MMD ตรวจสิทธิ์ของบัญชีนี้ก่อน ไม่ต้องสมัครซ้ำ');entryAction('ให้ MMD ช่วย','https://lin.ee/xRqsALs');}else if(e.status===401||/invalid_line|id_token/.test(code)){setState('ยืนยัน LINE ยังไม่สำเร็จ','บัญชียังไม่ผ่านการยืนยัน กดเชื่อม LINE อีกครั้งได้โดยไม่สร้างใบสมัครซ้ำ');entryAction('ยืนยันผ่าน LINE','https://miniapp.line.me/'+LIFF_IDS[env]);}else{setState('ระบบยังเชื่อมต่อไม่สำเร็จ','ยังสรุปไม่ได้ว่าไม่มีงานหรือไม่มีโปรไฟล์ ลองเปิดหน้านี้ใหม่ หรือให้ MMD ช่วย');entryAction('ให้ MMD ช่วย','https://lin.ee/xRqsALs');}}}
   boot();
 })();
 </script>
 <!-- Webflow separate style embed: -->
 <style>
+[data-model-entry-actions]{display:grid;gap:10px;padding:16px}
+[data-model-entry-actions] a{display:flex;align-items:center;justify-content:center;min-height:48px;padding:12px;border:1px solid #806127;border-radius:12px;background:#f8f4eb;color:#241c10;-webkit-text-fill-color:#241c10;text-decoration:none;font:600 15px/1.5 "Noto Sans Thai",sans-serif}
+[data-model-entry-actions] a:focus-visible{outline:3px solid #806127;outline-offset:3px}
 html.mmd-sigil-model-dashboard,body{background:#0b0b0d!important}
 body>*:not(.w-embed){font-family:"LINE Seed Sans TH","LINE Seed Sans","Noto Sans Thai",Arial,sans-serif!important}
 #tart-dashboard-v2,#tart-dashboard-v2 *{box-sizing:border-box}
