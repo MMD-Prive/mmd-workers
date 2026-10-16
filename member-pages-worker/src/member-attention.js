@@ -29,7 +29,7 @@ export function projectAttention(membership, payments, session) {
     && !(payments?.records || []).some(p => ['awaiting_payment', 'pending_review'].includes(p.official_status))) {
     items.push({ id: 'membership-renew', kind: 'renewal', title: 'ต่ออายุสมาชิก', label: 'ดูแพ็กเกจสมาชิก', url: action.url, priority: 60, authority: 'member-app-membership', status: 'expired' });
   }
-  return [...new Map(items.map(item => [item.id, item])).values()].sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id));
+  return [...new Map(items.map(item => [item.id, item])).values()].sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id)).slice(0, 3);
 }
 
 export async function handleMemberAttention(request, env = {}, dependencies = {}) {

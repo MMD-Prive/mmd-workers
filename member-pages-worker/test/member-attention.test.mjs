@@ -32,3 +32,26 @@ test('failed sources remain partial, expired session fails closed, and no reques
   deps.readers.payments = async () => new Response(null, { status: 401 });
   assert.equal((await handleMemberAttention(new Request(url, { headers: { cookie: 'session=A' } }), {}, deps)).status, 401);
 });
+test('attention API returns at most three stable backend actions when several payments are pending', async () => {
+  let reads = 0;
+  const records = ['pay_d', 'pay_b', 'pay_a', 'pay_c', 'pay_a'].map(id => ({
+    ...payment, id, customer_payment_url: `https://mmdbkk.com/pay/checkout?t=signed_${id}`,
+  }));
+  const readers = {
+    membership: async () => { reads++; return Response.json(member); },
+    payments: async () => { reads++; return Response.json({ ok: true, records }); },
+    booking: async () => { reads++; return Response.json({ sessionId: 'sess_1', acknowledgement: { customerAckAllowed: true } }); },
+  };
+  const response = await handleMemberAttention(new Request(url), {}, {
+    readSession: async () => ({ lineUserId: 'A' }), readers,
+  });
+  const data = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(reads, 3);
+  assert.equal(data.total, 3);
+  assert.deepEqual(data.items.map(row => row.id), ['pay_a', 'pay_b', 'pay_c']);
+  for (const row of data.items) {
+    assert.equal(new URL(row.url).searchParams.get('t'), `signed_${row.id}`);
+  }
+  assert.match(response.headers.get('cache-control'), /no-store/);
+});
