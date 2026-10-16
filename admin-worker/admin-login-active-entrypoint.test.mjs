@@ -380,3 +380,29 @@ test("Session Creator assets remain public for anonymous GET/HEAD", async () => 
     assert.equal(requests.length, 2);
   });
 });
+
+test("scheduled entrypoint runs without an HTTP request and registers background work", async () => {
+  const pending = [];
+  await worker.scheduled(
+    { cron: "*/5 * * * *", scheduledTime: Date.now() },
+    {},
+    { waitUntil(promise) { pending.push(promise); } },
+  );
+  assert.equal(pending.length, 1);
+  await Promise.all(pending);
+  // The fallback without a Workers ExecutionContext must also complete.
+  await worker.scheduled({ cron: "*/5 * * * *", scheduledTime: Date.now() }, {}, {});
+});
+
+test("active fetch routes completeness API and page to their owner-only handler", async () => {
+  for (const path of ["/v1/admin/my-mmd/completeness", "/internal/admin/my-mmd/completeness"]) {
+    for (const suffix of ["", "/"]) {
+      const response = await worker.fetch(new Request(`https://mmdbkk.com${path}${suffix}`), runtimeEnv(), {});
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { ok: false, error: "owner_required" });
+    }
+    const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`, { method: "POST" }), runtimeEnv(), {});
+    assert.equal(response.status, 405);
+    assert.deepEqual(await response.json(), { ok: false, error: "method_not_allowed" });
+  }
+});
