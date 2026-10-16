@@ -141,10 +141,11 @@ function durableBinding(options = {}) {
   };
 }
 
-test("owner-approved rollout enables the model switch while exact-hash access remains gated", () => {
+test("owner-approved rollout uses deterministic conversation while the external model stays off", () => {
   const lineWrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
-  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"true"$/m);
+  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_BRAIN_V1_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^KENJI_LINE_MESSAGE_AGGREGATION_ENABLED\s*=\s*"true"$/m);

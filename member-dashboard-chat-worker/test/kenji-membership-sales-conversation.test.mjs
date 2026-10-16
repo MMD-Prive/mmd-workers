@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildKenjiLineReply, inferLineIntent } from "../src/index.js";
+import { buildKenjiLineReply, inferLineIntent, resolveKenjiLineReply } from "../src/index.js";
 import { decideKenjiCapability } from "../src/kenji-capability-policy.js";
 
 function event(text) {
@@ -20,10 +20,20 @@ test("membership sales uses a natural Per voice and one budget question", () => 
 });
 
 test("experience and budget discovery remain short deterministic questions", () => {
-  assert.equal(inferLineIntent("เคยใช้บริการที่ไหนมาก่อน"), "membership_experience");
-  assert.match(buildKenjiLineReply(event("เคยใช้บริการที่ไหนมาก่อน"), profile), /เคยใช้บริการลักษณะนี้ที่ไหน/);
+  assert.equal(inferLineIntent("สนใจสมาชิกครับ"), "membership_interest");
+  assert.match(buildKenjiLineReply(event("สนใจสมาชิกครับ"), profile), /เคยใช้บริการลักษณะนี้ที่ไหน/);
+  assert.equal(inferLineIntent("ไม่เคยใช้บริการ"), "membership_experience");
+  assert.match(buildKenjiLineReply(event("ไม่เคยใช้บริการ"), profile), /งบใช้บริการต่อครั้ง/);
   assert.equal(inferLineIntent("มีบัทเจทต่อครั้งประมาณ 5,000"), "membership_budget");
-  assert.match(buildKenjiLineReply(event("มีบัทเจทต่อครั้งประมาณ 5,000"), profile), /งบต่อครั้ง/);
+  assert.match(buildKenjiLineReply(event("มีบัทเจทต่อครั้งประมาณ 5,000"), profile), /รับงบประมาณ 5,000 บาทต่อครั้ง/);
+});
+
+test("numeric budget follow-up uses current deterministic sales continuity", () => {
+  const reply = buildKenjiLineReply(event("5000"), profile, {
+    continuity: { matrix: { last_customer_intent: "membership_experience" } },
+  });
+  assert.match(reply, /รับงบประมาณ 5000 บาทต่อครั้ง/);
+  assert.match(reply, /Comp Card แบบ Standard/);
 });
 
 test("unverified customers receive only the Standard Comp Card boundary", () => {
@@ -54,9 +64,20 @@ test("new sales intents are deterministic and cannot enter free-form model gener
   }
 });
 
-test("model switch is enabled but exact-hash and knowledge allowlists remain empty", () => {
+test("deterministic conversation is enabled while the external model stays off", () => {
   const config = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(config, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"true"$/m);
+  assert.match(config, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
+  assert.match(config, /^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED\s*=\s*"true"$/m);
   assert.match(config, /^LINE_KENJI_MODEL_CANARY_HASHES\s*=\s*""$/m);
   assert.match(config, /^LINE_KENJI_MODEL_KNOWLEDGE_IDS\s*=\s*""$/m);
+});
+
+test("ordinary unresolved text gets one useful deterministic Per Voice prompt with zero model use", async () => {
+  const decision = await resolveKenjiLineReply(event("สนใจครับ ขอรายละเอียดหน่อย"), profile, {
+    LINE_KENJI_MODEL_ENABLED: "false",
+    LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: "true",
+  });
+  assert.equal(decision.reply_source, "deterministic_conversation");
+  assert.match(decision.text, /สมาชิก ราคา หรือใช้บริการแบบไหน/);
+  assert.equal(decision.model_attempted, false);
 });

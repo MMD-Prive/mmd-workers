@@ -494,9 +494,10 @@ TELEGRAM_ALERTS_THREAD_ID = "9"
 TG_THREAD_PAYMENTS_CONFIRM = "22"
 TG_THREAD_MEMBERSHIP = "20"
 TG_THREAD_ALERTS = "9"
-# Model generation remains gated by the exact-hash canary allowlist below.
-# Enabling this switch alone does not make any customer model-eligible.
-LINE_KENJI_MODEL_ENABLED = "true"
+# Customer conversation runs on deterministic Per Voice routing. The external
+# model remains disabled until its provider account and bounded canary pass.
+LINE_KENJI_MODEL_ENABLED = "false"
+LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"
 # Deterministic membership-gated Model code/name lookup is owner-authorized.
 # GWs/EMs remain default-deny unless one current Per approval matches this exact
 # verified client and Model. LLM generation remains separately disabled below.
