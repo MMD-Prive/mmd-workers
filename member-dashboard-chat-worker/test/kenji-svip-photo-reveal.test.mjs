@@ -38,12 +38,67 @@ test("ready response contains only controlled MMD preview links and no raw priva
       { viewer_url: "https://drive.google.com/private-folder" },
     ],
   });
-  assert.equal(messages.length, 3);
+  assert.ok(messages.length >= 1 && messages.length <= 5);
   const serialized = JSON.stringify(messages);
   assert.match(serialized, /private-preview\/view\?g=svip_photo_.*#t=/);
   assert.doesNotMatch(serialized, /drive\.google|r2|private-model-media|storage_key/i);
 });
 
+test("ready response keeps the complete approved album in a single LINE reply payload", () => {
+  const photos = Array.from({ length: 7 }, (_, index) => ({
+    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view?g=svip_photo_123e4567-e89b-12d3-a456-4266141740${String(index).padStart(2, "0")}#t=token-${index + 1}`,
+  }));
+  const messages = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.perVoiceMessages({
+    status: "ready",
+    model: { working_name: "Album Model" },
+    photos,
+  });
+  assert.ok(messages.length >= 1 && messages.length <= 5);
+  const serialized = messages.map((item) => item.text).join("\n");
+  assert.match(serialized, /ครบทั้งชุดที่อนุมัติ/);
+  assert.match(serialized, /รูป 1\/7/);
+  assert.match(serialized, /รูป 7\/7/);
+  for (const photo of photos) assert.ok(serialized.includes(photo.viewer_url));
+});
+
+test("packed album transport uses one LINE reply call and never needs push batching", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (input, init) => {
+    seen.push({ url: String(input), body: JSON.parse(init.body) });
+    return new Response("", { status: 200 });
+  };
+  try {
+    const photos = Array.from({ length: 20 }, (_, index) =>
+      `https://www.mmdbkk.com/api/member/app/private-preview/view?g=svip_photo_123e4567-e89b-12d3-a456-42661417${String(index).padStart(4, "0")}#t=token-${index + 1}`
+    );
+    const messages = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.packApprovedAlbumMessages("Album Model", photos);
+    assert.ok(messages.length >= 1 && messages.length <= 5);
+    const result = await KENJI_SVIP_PHOTO_REVEAL_INTERNALS.sendLineReply(
+      { LINE_CHANNEL_ACCESS_TOKEN: "synthetic-token" },
+      "synthetic-reply-token",
+      messages,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].url, "https://api.line.me/v2/bot/message/reply");
+    assert.equal(seen[0].body.messages.length, messages.length);
+    assert.ok(seen[0].body.messages.length <= 5);
+    assert.equal(seen.filter((call) => call.url.includes("/message/push")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("LINE reply fails closed instead of silently truncating more than five packed messages", async () => {
+  const result = await KENJI_SVIP_PHOTO_REVEAL_INTERNALS.sendLineReply(
+    { LINE_CHANNEL_ACCESS_TOKEN: "synthetic-token" },
+    "synthetic-reply-token",
+    Array.from({ length: 6 }, (_, index) => ({ type: "text", text: `m${index + 1}` })),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "line_reply_message_limit_exceeded");
+});
 test("photo reveal decision never grants sales, availability, booking or payment authority", () => {
   const decision = KENJI_SVIP_PHOTO_REVEAL_INTERNALS.decisionFor(
     {},

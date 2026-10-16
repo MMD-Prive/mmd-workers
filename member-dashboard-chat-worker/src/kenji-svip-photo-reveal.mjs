@@ -95,23 +95,35 @@ async function callHypePhotoResolver(env = {}, event = {}, query = "", context =
   }
 }
 
+function packApprovedAlbumMessages(modelName = "", photos = []) {
+  const header = `ได้ครับ รูปของ ${modelName || "นายแบบที่ขอ"} ชุดนี้ผ่านการอนุมัติสำหรับดูแล้วครับ ผมส่งให้ครบทั้งชุดที่อนุมัติสำหรับบัญชีนี้นะครับ ลิงก์แต่ละรูปเปิดดูได้ 1 ครั้งและจะหมดอายุอัตโนมัติครับ`;
+  const lines = photos.map((url, index) => `รูป ${index + 1}/${photos.length}\n${url}`);
+  const messages = [];
+  let current = header;
+
+  for (const line of lines) {
+    const candidate = current ? `${current}\n\n${line}` : line;
+    if (candidate.length <= 4500) {
+      current = candidate;
+      continue;
+    }
+    if (current) messages.push({ type: "text", text: current });
+    current = line;
+  }
+  if (current) messages.push({ type: "text", text: current });
+
+  // LINE reply supports up to five messages. 4500-char packing leaves ample room
+  // for ordinary MMD albums while preventing silent truncation.
+  return messages.length <= 5 ? messages : [];
+}
+
 function perVoiceMessages(result = {}) {
   if (result.status === "ready") {
     const modelName = text(result?.model?.working_name || result?.model?.model_code, 120) || "นายแบบที่ขอ";
-    const photos = Array.isArray(result.photos) ? result.photos.slice(0, 4) : [];
-    const messages = [{
-      type: "text",
-      text: `ได้ครับ รูปของ ${modelName} ชุดนี้ผ่านการอนุมัติสำหรับดูแล้วครับ ผมส่งให้เฉพาะบัญชีนี้นะครับ ลิงก์แต่ละรูปเปิดดูได้ 1 ครั้งและจะหมดอายุอัตโนมัติครับ`,
-    }];
-    for (let index = 0; index < photos.length; index += 1) {
-      const url = text(photos[index]?.viewer_url, 1200);
-      if (!/^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view\?g=svip_photo_[A-Za-z0-9-]+#t=/.test(url)) continue;
-      messages.push({
-        type: "text",
-        text: `รูป ${index + 1}/${photos.length}\n${url}`,
-      });
-    }
-    return messages.length > 1 ? messages : [];
+    const photos = (Array.isArray(result.photos) ? result.photos : [])
+      .map((item) => text(item?.viewer_url, 1200))
+      .filter((url) => /^https:\/\/www\.mmdbkk\.com\/api\/member\/app\/private-preview\/view\?g=svip_photo_[A-Za-z0-9-]+#t=/.test(url));
+    return photos.length ? packApprovedAlbumMessages(modelName, photos) : [];
   }
 
   if (result.status === "review_required") {
@@ -134,6 +146,7 @@ function perVoiceMessages(result = {}) {
 async function sendLineReply(env = {}, replyToken = "", messages = []) {
   const channelToken = text(env.LINE_CHANNEL_ACCESS_TOKEN, 2400);
   if (!channelToken || !replyToken || !messages.length) return { ok: false, error: "reply_not_configured" };
+  if (messages.length > 5) return { ok: false, error: "line_reply_message_limit_exceeded" };
   try {
     const response = await fetch(LINE_REPLY_URL, {
       method: "POST",
@@ -141,7 +154,7 @@ async function sendLineReply(env = {}, replyToken = "", messages = []) {
         authorization: `Bearer ${channelToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ replyToken, messages: messages.slice(0, 5) }),
+      body: JSON.stringify({ replyToken, messages }),
     });
     return response.ok
       ? { ok: true, status: response.status }
@@ -264,6 +277,7 @@ export const KENJI_SVIP_PHOTO_REVEAL_INTERNALS = Object.freeze({
   photoRevealMode,
   pilotAllows,
   perVoiceMessages,
+  packApprovedAlbumMessages,
   sendLineReply,
   decisionFor,
 });
