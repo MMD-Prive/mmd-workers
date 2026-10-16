@@ -58,7 +58,7 @@ test("unavailable, restricted, and unresolved truth never claim a tier", async (
 
 test("a new signup keeps safe navigation when no member record is found", async () => {
   const decision = await decideKenjiFirstContactMembership(event("อยากสมัครสมาชิก"), "membership_signup", {}, {});
-  assert.match(decision.text, /sigil\/member\/membership/);
+  assert.match(decision.text, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&view=signup/);
   assert.equal(decision.live_truth_used, undefined);
   const known = await decideKenjiFirstContactMembership(event("อยากสมัครสมาชิก"), "membership_signup", { client_record_id: "recKnown" }, {});
   assert.equal(known.handoff_required, true);
