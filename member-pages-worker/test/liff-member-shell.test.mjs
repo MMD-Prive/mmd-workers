@@ -138,7 +138,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /id="signup-packages"/);
     assert.match(html, /href="https:\/\/miniapp\.line\.me\/2000000000-AbCdEfGh\/\?intent=signup&amp;view=signup"/);
     assert.match(html, /CONFIG\.intent === "signup" && !window\.liff\.isInClient\(\)/);
-    assert.match(html, /\/sigil\/member\/membership\?source=line&amp;intent=signup/);
+    assert.match(html, /https:\/\/miniapp\.line\.me\/2000000000-AbCdEfGh\/\?intent=signup&amp;view=signup/);
+    assert.doesNotMatch(html, /href="\/sigil\/member\/membership/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
     assert.match(html, /JSON\.stringify\(\{ package_code: packageCode \}\)/);
@@ -767,6 +768,13 @@ describe("signup offers the basic Member package only", () => {
     assert.ok(html.includes('item?.package_code === "mmd_member"'));
     assert.ok(html.includes("packages.length !== 1"));
     assert.ok(!html.includes("Elite%20Card.webp") && !html.includes("Red%20Card.webp"));
+  });
+
+  it("keeps the Standard and Premium next step inside the dedicated LIFF", async () => {
+    const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
+    assert.match(html, /Standard \/ Premium \/ Private Access/);
+    assert.match(html, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=signup&amp;view=signup/);
+    assert.doesNotMatch(html, /href="\/sigil\/member\/membership/);
   });
 });
 
