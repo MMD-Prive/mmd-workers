@@ -1,0 +1,31 @@
+name: Configure MY MMD CMS secret
+on:
+  workflow_dispatch:
+    inputs:
+      expected_worker_version:
+        description: "Current member-pages-worker version ID (100% traffic); prevents changing an unexpected version"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: deploy-member-pages-worker-production
+  cancel-in-progress: false
+jobs:
+  configure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test configuration guard
+        run: node --test scripts/configure-my-mmd-cms.test.mjs
+      - name: Configure CMS read secret and verify binding
+        env:
+          WEBFLOW_CMS_TOKEN: ${{ secrets.WEBFLOW_CMS_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EXPECTED_WORKER_VERSION: ${{ inputs.expected_worker_version }}
+        run: node scripts/configure-my-mmd-cms.mjs

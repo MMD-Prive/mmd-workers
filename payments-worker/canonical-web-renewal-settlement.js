@@ -11,7 +11,7 @@ const MEMBERS = "tblgWc5VRon5o8Mhk";
 const ENTITLEMENTS = "tblNImdF9PKAxhXGi";
 const PACKAGES = "tblg2z8dENx75yHka";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
-const OWNER_POLICY = "membership_slip_simple_accept_v1";
+const OWNER_POLICY = "membership_verified_before_entitlement_v2";
 const EXTENDABLE = new Set(["active", "expiring_soon", "pending"]);
 const BLOCKED = new Set(["blocked", "suspended", "revoked"]);
 const POLICY = Object.freeze({
@@ -68,23 +68,18 @@ export async function reconcileCanonicalWebRenewalProof(request, response, env =
     const proof = await resolveProof(env, payload, paymentRef);
     if (!proof) return withSettlement(response, payload, reviewReceipt("canonical_payment_proof_not_found"));
 
-    // Owner policy: a real membership/renewal slip with a positive numeric amount
-    // and no payment-classification conflict is accepted as money truth. Identity
-    // and entitlement materialization remain separate, exact, fail-closed steps.
+    // Upload is evidence only. Only the canonical payment authority may verify money.
+    // Reuse the existing reviewed-proof path for approval; this intake never writes paid.
+    const pf = payment.fields || {};
+    if (code(pf["Payment Status"]) !== "paid" || code(pf["Verification Status"]) !== "verified") {
+      const rejected = code(pf["Payment Status"]) === "rejected" || code(pf["Verification Status"]) === "rejected";
+      return withSettlement(response, {...payload, payment_status: rejected ? "rejected" : "pending_review", verification_status: rejected ? "rejected" : "pending_verification"}, reviewReceipt("canonical_payment_verification_required"));
+    }
+    if (code(proof.fields?.status) !== "verified") {
+      return withSettlement(response, payload, reviewReceipt("canonical_proof_verification_required"));
+    }
     const verifiedAt = new Date().toISOString();
-    const paidAt = iso(firstValue(payment.fields || {}, ["Payment Date", "paid_at"]) || firstValue(proof.fields || {}, ["paid_at", "Payment Date"]));
-    await airtableUpdate(env, paymentsTable(env), payment.id, {
-      "Payment Status": "paid",
-      "Verification Status": "verified",
-      "Payment Intent Status (AI)": "owner_membership_policy_verified",
-      ...(paidAt ? { "Payment Date": paidAt } : {}),
-    });
-    await airtableUpdate(env, proofsTable(env), proof.id, {
-      status: "verified",
-      verified_at: verifiedAt.slice(0, 10),
-      verified_by: "payments-worker-web-renewal",
-      note: appendPolicyNote(proof.fields?.note),
-    });
+    const paidAt = iso(firstValue(pf, ["Payment Date", "paid_at"]));
 
     const moneyReceipt = {
       status: "paid",
