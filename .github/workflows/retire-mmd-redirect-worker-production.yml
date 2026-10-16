@@ -2,6 +2,20 @@ name: Retire mmd-redirect-worker production routes
 
 on:
   workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for this workflow and its production side effects only'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this workflow and commit'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for this workflow'
+        type: string
+        required: true
   push:
     branches:
       - main
@@ -21,8 +35,17 @@ permissions:
   contents: read
 
 jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
   retire:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval]
+    environment: mmd-production-mutation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -33,7 +56,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require owner-approved exact route manifest before any Cloudflare access
+        env:
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { validateRetirementScope } from './scripts/redirect-route-retirement-scope.mjs';
+          const scope = JSON.parse(fs.readFileSync('ops/approved-mmd-redirect-retirement.json', 'utf8'));
+          validateRetirementScope(scope, { zone: process.env.CLOUDFLARE_ZONE_ID, approvalRef: process.env.APPROVAL_REF });
+          NODE
 
       - name: Verify legacy Worker is hard-disabled
         shell: bash
@@ -82,8 +117,10 @@ jobs:
           grep -Eqi '^x-mmd-admin-login-canonical:[[:space:]]*/internal/admin/login' "$admin_headers"
           grep -Eqi '^location:[[:space:]]*https://mmdbkk\.com/internal/admin/login' "$admin_headers"
 
-      - name: Snapshot and retire every mmd-redirect-worker route
+      - name: Snapshot and retire exact approved mmd-redirect-worker routes
         id: retire_routes
+        env:
+          APPROVAL_REF: ${{ inputs.approval_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -102,20 +139,38 @@ jobs:
             return payload.result || [];
           }
 
+          const { validateRetirementScope, selectRetirementRoutes, assertRouteStillApproved } = await import('./scripts/redirect-route-retirement-scope.mjs');
+          const scope = validateRetirementScope(JSON.parse(fs.readFileSync('ops/approved-mmd-redirect-retirement.json', 'utf8')), { zone, approvalRef: process.env.APPROVAL_REF });
+          const pendingPath = process.env.RUNNER_TEMP + "/mmd-redirect-routes.pending.json";
+          if (fs.existsSync(pendingPath)) throw new Error("pending route mutation requires manual reconciliation before any further access");
           const routes = await list();
-          const legacy = routes.filter((route) => route.script === "mmd-redirect-worker");
+          const legacy = selectRetirementRoutes(scope, routes);
           const snapshot = legacy.map(({ id, pattern, script }) => ({ id, pattern, script }));
           const snapshotPath = process.env.RUNNER_TEMP + "/mmd-redirect-routes.snapshot.json";
           fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
 
+          const deletedPath = process.env.RUNNER_TEMP + "/mmd-redirect-routes.deleted.json";
+          const deleted = [];
+          fs.writeFileSync(deletedPath, JSON.stringify(deleted));
           console.log(`retiring ${legacy.length} mmd-redirect-worker route(s)`);
           for (const route of legacy) {
-            const response = await fetch(`${base}/${route.id}`, { method: "DELETE", headers });
-            const payload = await response.json().catch(() => null);
-            if (!response.ok || payload?.success !== true) {
-              throw new Error(`failed to delete ${route.pattern}: ${JSON.stringify(payload)}`);
+            const inventory = await list();
+            const remaining = scope.routes.filter(item => !deleted.some(done => done.id === item.id));
+            selectRetirementRoutes({ ...scope, routes: remaining }, inventory);
+            assertRouteStillApproved(scope, route, inventory);
+            // GET is not atomic with DELETE. A controlled route-change window remains required.
+            fs.writeFileSync(pendingPath, JSON.stringify({ zone, approval_ref: scope.approval_ref, route }), { flag: 'wx' });
+            try {
+              const response = await fetch(`${base}/${route.id}`, { method: "DELETE", headers });
+              const payload = await response.json().catch(() => null);
+              if (!response.ok || payload?.success !== true) throw new Error("DELETE outcome is not confirmed");
+              deleted.push({ id: route.id, pattern: route.pattern, script: route.script });
+              fs.writeFileSync(deletedPath, JSON.stringify(deleted));
+              fs.unlinkSync(pendingPath);
+              console.log(`retired ${route.pattern}`);
+            } catch {
+              throw new Error("route DELETE/journal outcome requires manual inventory reconciliation; no automatic retry or restore");
             }
-            console.log(`retired ${route.pattern}`);
           }
 
           const after = await list();
@@ -239,21 +294,32 @@ jobs:
           console.log("mmd-redirect-worker production routes = 0");
           NODE
 
-      - name: Roll back legacy routes if acceptance fails
+      - name: Roll back only confirmed deletions if acceptance fails
+        env:
+          APPROVAL_REF: ${{ inputs.approval_ref }}
         if: ${{ failure() }}
         shell: bash
         run: |
           set -euo pipefail
-          snapshot="$RUNNER_TEMP/mmd-redirect-routes.snapshot.json"
+          if [ -e "$RUNNER_TEMP/mmd-redirect-routes.pending.json" ]; then
+            echo "::error::Pending DELETE/journal outcome: manual inventory reconciliation required; automatic rollback blocked."
+            exit 1
+          fi
+          snapshot="$RUNNER_TEMP/mmd-redirect-routes.deleted.json"
           if [ ! -s "$snapshot" ]; then
-            echo "No route snapshot exists; no route mutation needs rollback."
+            echo "No confirmed deletion journal exists; automatic rollback is blocked."
             exit 0
           fi
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           const zone = process.env.CLOUDFLARE_ZONE_ID;
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
-          const snapshot = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mmd-redirect-routes.snapshot.json", "utf8"));
+          const { validateRetirementScope, selectRollbackRoutes } = await import('./scripts/redirect-route-retirement-scope.mjs');
+          const scope = validateRetirementScope(JSON.parse(fs.readFileSync('ops/approved-mmd-redirect-retirement.json', 'utf8')), { zone, approvalRef: process.env.APPROVAL_REF });
+          if (fs.existsSync(process.env.RUNNER_TEMP + "/mmd-redirect-routes.pending.json")) {
+            throw new Error("pending DELETE/journal outcome requires manual reconciliation; automatic rollback blocked");
+          }
+          const snapshot = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mmd-redirect-routes.deleted.json", "utf8"));
           const base = `https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`;
           const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
           async function list() {
@@ -263,7 +329,11 @@ jobs:
             return payload.result || [];
           }
           let routes = await list();
+          // Validate all evidence before the first rollback write.
+          selectRollbackRoutes(scope, snapshot, routes);
           for (const route of snapshot) {
+            routes = await list();
+            if (!selectRollbackRoutes(scope, [route], routes).length) continue;
             const occupied = routes.find((item) => item.pattern === route.pattern);
             if (occupied) {
               if (occupied.script === "mmd-redirect-worker") continue;
@@ -277,12 +347,27 @@ jobs:
             });
             const payload = await response.json().catch(() => null);
             if (!response.ok || payload?.success !== true) {
-              console.error(`rollback failed for ${route.pattern}: ${JSON.stringify(payload)}`);
+              throw new Error("approved route rollback failed; owner review required");
             }
             routes = await list();
+            if (!routes.some(item => item.pattern === route.pattern && item.script === route.script)) {
+              throw new Error("route rollback readback unconfirmed; manual reconciliation required");
+            }
           }
           console.log("legacy route rollback attempt complete");
           NODE
+
+      - name: Preserve route mutation evidence for owner reconciliation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmd-redirect-route-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/mmd-redirect-routes.snapshot.json
+            ${{ runner.temp }}/mmd-redirect-routes.deleted.json
+            ${{ runner.temp }}/mmd-redirect-routes.pending.json
 
       - name: Retirement receipt
         if: ${{ success() }}

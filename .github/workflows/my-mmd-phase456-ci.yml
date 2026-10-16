@@ -4,6 +4,7 @@ on:
     paths:
       - 'member-pages-worker/src/**'
       - 'member-pages-worker/test/member-attention.test.mjs'
+      - 'member-pages-worker/test/member-attention-entrypoint.test.mjs'
       - 'member-pages-worker/test/member-coupon-presentation.test.mjs'
       - 'admin-worker/src/my-mmd-operations-queue.js'
       - 'admin-worker/src/admin-login-hero-worker.js'
@@ -26,8 +27,9 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Read-only contracts and regression
         run: >-
-          node --experimental-global-webcrypto --test
+          node --experimental-global-webcrypto --experimental-vm-modules --test
           member-pages-worker/test/member-attention.test.mjs
+          member-pages-worker/test/member-attention-entrypoint.test.mjs
           member-pages-worker/test/member-coupon-presentation.test.mjs
           member-pages-worker/test/member-app-api.test.mjs
           member-pages-worker/test/member-payments-bff.test.mjs
