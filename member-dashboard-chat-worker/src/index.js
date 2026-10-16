@@ -461,6 +461,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:comp\s*card|คอมพ์?การ์ด|คอมการ์ด).{0,24}(?:ดู|ขอดู|ตัวอย่าง|standard|สแตนดาร์ด)|(?:อยาก|ขอ).{0,12}(?:ดู|เห็น).{0,12}(?:model|นายแบบ|โปรไฟล์)/i.test(normalized)) return "standard_comp_card_preview";
   if (/(?:เคยใช้บริการที่ไหน|เคยใช้ที่ไหน|ใช้บริการที่ไหนมาก่อน|ไม่เคยใช้บริการ|เคยใช้บริการ)/i.test(normalized)) return "membership_experience";
   if (/(?:งบ|บัดเจต|บัทเจท|budget).{0,24}(?:ต่อครั้ง|ครั้งละ|บริการ)|(?:ครั้งละ|ต่อครั้ง).{0,18}(?:กี่บาท|เท่าไหร่|เท่าไร|งบ|budget)/i.test(normalized)) return "membership_budget";
+  if (/(?:สนใจ|อยากรู้|สอบถาม|อยากดู).{0,18}(?:สมาชิก|membership|standard|premium|private)/i.test(normalized)) return "membership_interest";
   var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
   if (!membershipAcquisitionHasBenefitQuestion && /(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(normalized)) return "private_membership_signup";
   if (!membershipAcquisitionHasBenefitQuestion && (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized) || /(?:สมัคร|join).{0,16}(?:public\s*membership|public|mmd\s*member|elite|red\s*card|เรด\s*การ์ด)/i.test(normalized))) return "membership_signup";
@@ -946,9 +947,15 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const text = getLineEventText(event);
   const inferredIntent = inferLineIntent(text, event);
   const continuityIntent = asString(options?.continuity?.effective_intent);
-  const intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
+  let intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
     ? continuityIntent
     : inferredIntent;
+  const priorIntent = asString(options?.continuity?.matrix?.last_customer_intent).toLowerCase();
+  if (/^\s*\d[\d,]*(?:\s*(?:บาท|thb))?\s*(?:ครับ|ค่ะ|นะ)?\s*$/i.test(text) && [
+    "membership_interest", "membership_experience", "membership_budget", "membership_pricing",
+  ].includes(priorIntent)) {
+    intent = "membership_budget";
+  }
   const activeModel = contextualModelForTurn(text, intent, options);
   const name = asString(profile?.displayName).split(/\s+/).filter(Boolean)[0] || "";
   const prefix = name ? `คุณ ${name} ` : "";
@@ -1063,11 +1070,17 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_experience") {
-    return `${prefix}ก่อนหน้านี้เคยใช้บริการลักษณะนี้ที่ไหนมาบ้างครับ`;
+    return `${prefix}รับทราบครับ ปกติตั้งงบใช้บริการต่อครั้งไว้ประมาณเท่าไหร่ครับ เดี๋ยวเปอร์ช่วยดูตัวเลือกที่เหมาะให้`;
   }
 
   if (intent === "membership_budget") {
+    const budget = text.match(/\d[\d,]*/)?.[0] || "";
+    if (budget) return `${prefix}รับงบประมาณ ${budget} บาทต่อครั้งครับ เดี๋ยวเปอร์เริ่มจากตัวอย่าง Comp Card แบบ Standard ที่เปิดเผยได้ให้ดูก่อน ถ้าถูกใจค่อยไปขั้นสมัครและยืนยันตัวตนครับ`;
     return `${prefix}ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ เดี๋ยวเปอร์ช่วยดูตัวเลือกที่เหมาะให้`;
+  }
+
+  if (intent === "membership_interest") {
+    return `${prefix}ได้ครับ ก่อนหน้านี้เคยใช้บริการลักษณะนี้ที่ไหนมาบ้าง หรือยังไม่เคยครับ`;
   }
 
   if (intent === "membership_pricing") {
@@ -1432,9 +1445,28 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     }
   }
 
-  // Silence is intentional. If there is no real answer, no necessary
-  // clarification, or the message requires Per/MMD review, acknowledge the
-  // webhook with HTTP 200 but never call LINE Reply or Push APIs.
+  // The deterministic conversation prompt is opt-in and applies only to
+  // unprotected safe conversation. Protected and handoff paths have already
+  // failed closed above and can never fall through to this sales prompt.
+  if (
+    isEnabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
+    capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION &&
+    eventText
+  ) {
+    return {
+      text: "สนใจสอบถามเรื่องสมาชิก ราคา หรือใช้บริการแบบไหนครับ บอกเปอร์ได้เลย เดี๋ยวช่วยดูทางที่เหมาะให้ครับ",
+      fallback: false,
+      reply_source: "deterministic_conversation",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  // When deterministic conversation is disabled, silence remains intentional:
+  // acknowledge the webhook with HTTP 200 without calling Reply or Push APIs.
   return {
     text: "",
     fallback: false,
