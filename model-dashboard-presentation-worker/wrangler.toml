@@ -5,6 +5,15 @@ workers_dev = true
 
 # Canonical Model Dashboard presentation only. API authority remains on
 # admin-worker under /v1/model/*.
+# Proposed exact apex front gates; production route activation needs separate approval.
+[[routes]]
+pattern = "mmdbkk.com/sigil/model/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/confirm/job-model"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/sigil/model/dashboard*"
 zone_name = "mmdbkk.com"

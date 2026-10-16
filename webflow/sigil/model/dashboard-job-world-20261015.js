@@ -18,10 +18,18 @@ const root=document.getElementById('mmd-model-home-v3');
 if(!root||global.__MODEL_JOB_WORLD_V1__)return;global.__MODEL_JOB_WORLD_V1__=true;
 const q=s=>root.querySelector(s),text=(s,v)=>{const e=q(s);if(e)e.textContent=v;};
 root.querySelectorAll('.model-lane-switch').forEach(x=>x.remove());
+function supportCard(){
+ if(root.querySelector('[data-model-support-card]'))return;
+ const card=document.createElement('aside');card.dataset.modelSupportCard='1';
+ const link=document.createElement('a');link.href='https://lin.ee/xRqsALs';link.textContent='ให้ MMD ช่วย';card.appendChild(link);
+ (q('.mdhome__shell')||root).appendChild(card);
+}
+supportCard();
 function renderWorld(world,hasJob=false){
  root.dataset.modelBrandLane=world;
  text('.mdhome__eyebrow',world==='private'?'SĪGIL · PRIVATE MODEL':hasJob?'MMD · PUBLIC MODEL':'MMD Privé');
- text('.mdhome__title',world==='private'?'งานของคุณ MMD ช่วยดูแล':'พื้นที่ของคุณ');
+ const title=q('.mdhome__title');
+ if(title){title.innerHTML='<span class="model-guide-title">Your guide application</span><span class="model-guide-name">MY MODEL</span>';}
  text('.mdhome__copy',world==='private'?'เช็กบรีฟและเตรียมตัวสำหรับงานของคุณครับ':'โปรไฟล์ รูป และงานของคุณ อยู่ที่นี่ครับ');
  const links=root.querySelectorAll('.model-blend-guide');
  if(links.length>=2){
@@ -49,9 +57,9 @@ if(profileForm&&!profileForm.closest('details')){
  const details=document.createElement('details');details.className='model-profile-details';const summary=document.createElement('summary');summary.textContent='แก้ข้อมูลโปรไฟล์และสถานะรับงาน';profileForm.before(details);details.append(summary,profileForm);
  root.querySelectorAll('a[href="#mmd-model-self-service"]').forEach(a=>a.addEventListener('click',()=>{details.open=true;}));
 }
-let pending=false,retryTimer,alive=true;
+let pending=false,retryTimer,alive=true,entryState=null;
 const controllers=new Set();
-async function read(endpoint){const controller=new AbortController();controllers.add(controller);const timer=setTimeout(()=>controller.abort(),8000);try{const response=await fetch(endpoint,{credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:controller.signal});return response.ok?await response.json():null;}catch{return null;}finally{clearTimeout(timer);controllers.delete(controller);}}
+async function read(endpoint){const controller=new AbortController();controllers.add(controller);const timer=setTimeout(()=>controller.abort(),8000);try{const response=await fetch(endpoint,{credentials:'include',cache:'no-store',headers:{Accept:'application/json'},signal:controller.signal});if(!response.ok)return {ok:false,status:response.status};return await response.json();}catch{return {ok:false,status:0};}finally{clearTimeout(timer);controllers.delete(controller);}}
 async function refresh(){
  if(pending||!alive)return;pending=true;
  try{
@@ -60,6 +68,14 @@ async function refresh(){
   const signed=params.get('t');if(signed)endpoint.searchParams.set('t',signed);
   const [job,profile]=await Promise.all([read(endpoint.href),read('/v1/model/profile')]);
   if(!alive)return;
+  if(profile?.ok!==true||job?.ok!==true){
+   renderWorld('public');
+   text('[data-mdhome-job]','ยังตรวจงานไม่สำเร็จ');
+   text('[data-mdhome-job-copy]','ยังสรุปไม่ได้ว่าไม่มีงาน กรุณายืนยัน LINE หรือลองใหม่');
+   text('[data-mdhome-ready]','ยังไม่ยืนยันข้อมูล');
+   if(entryState)text('.mdhome__copy',entryState.copy);
+   return;
+  }
   const expected=params.get('session_id')||'';
   const valid=job?.ok===true&&Boolean(job.session?.session_id)&&(!expected||job.session.session_id===expected);
   renderWorld(resolveJobWorld(job,expected),valid);
@@ -67,6 +83,12 @@ async function refresh(){
  }finally{pending=false;}
 }
 global.addEventListener('mmd:model-session-ready',()=>{clearTimeout(retryTimer);retryTimer=setTimeout(refresh,150);});
+global.addEventListener('mmd:model-entry-state',event=>{
+ entryState=event.detail;
+ text('[data-mdhome-auth]',event.detail.title);
+ text('.mdhome__copy',event.detail.copy);
+ text('[data-mdhome-job]','รอยืนยันบัญชีและข้อมูลงาน');
+});
 global.addEventListener('pageshow',()=>{alive=true;refresh();});
 global.addEventListener('pagehide',()=>{alive=false;clearTimeout(retryTimer);controllers.forEach(c=>c.abort());});
 refresh();
