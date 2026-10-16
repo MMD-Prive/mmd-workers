@@ -1,0 +1,236 @@
+/*
+ * MMD Profiles / Step 01
+ * Apple-inspired editorial motion layer.
+ * Presentation only: no profile eligibility, pricing, booking, or entitlement logic.
+ */
+#mmdProfilesV8{
+  --mp8-step-ease:cubic-bezier(.22,1,.36,1);
+  --mp8-step-spring:cubic-bezier(.16,1,.3,1);
+  --mp8-step-fast:320ms;
+  --mp8-step-med:620ms;
+  --mp8-step-slow:900ms;
+}
+#mmdProfilesV8 .mp8-step01-head{
+  display:grid;
+  gap:18px;
+  align-items:stretch;
+  margin:0 0 20px;
+}
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  max-width:none;
+  margin:0;
+  min-width:0;
+}
+#mmdProfilesV8 .mp8-step01-visual{
+  position:relative;
+  min-height:360px;
+  margin:0;
+  overflow:hidden;
+  border-radius:30px;
+  background:#1b1618;
+  box-shadow:0 28px 70px rgba(33,24,28,.16);
+  isolation:isolate;
+  transform:translate3d(0,18px,0) scale(.985);
+  opacity:0;
+  transition:
+    opacity var(--mp8-step-med) ease,
+    transform var(--mp8-step-slow) var(--mp8-step-ease),
+    box-shadow var(--mp8-step-med) ease;
+}
+#mmdProfilesV8 .mp8-step01-visual::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(15,11,13,.03) 38%,rgba(17,10,13,.72) 100%),
+    linear-gradient(115deg,rgba(159,16,40,.10),transparent 48%);
+}
+#mmdProfilesV8 .mp8-step01-visual img{
+  width:100%;
+  height:100%;
+  min-height:360px;
+  object-fit:cover;
+  object-position:50% 18%;
+  transform:scale(1.055);
+  filter:blur(8px) saturate(.9);
+  transition:
+    transform 1.15s var(--mp8-step-ease),
+    filter .9s var(--mp8-step-ease);
+  will-change:transform,filter;
+}
+#mmdProfilesV8 .mp8-step01-visual__badge{
+  position:absolute;
+  z-index:2;
+  left:18px;
+  top:18px;
+  display:inline-flex;
+  align-items:center;
+  min-height:30px;
+  padding:0 11px;
+  border:1px solid rgba(255,255,255,.26);
+  border-radius:999px;
+  background:rgba(20,14,17,.22);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  color:#fff;
+  font-size:9px;
+  font-weight:850;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+}
+#mmdProfilesV8 .mp8-step01-visual figcaption{
+  position:absolute;
+  z-index:2;
+  left:18px;
+  right:18px;
+  bottom:17px;
+  color:rgba(255,255,255,.88);
+  font-size:11px;
+  line-height:1.5;
+  letter-spacing:.01em;
+  opacity:0;
+  transform:translate3d(0,10px,0);
+  transition:
+    opacity var(--mp8-step-med) ease 120ms,
+    transform var(--mp8-step-med) var(--mp8-step-ease) 120ms;
+}
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-step01-visual{
+  opacity:1;
+  transform:none;
+}
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-step01-visual img{
+  transform:scale(1.01);
+  filter:none;
+}
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-step01-visual figcaption{
+  opacity:1;
+  transform:none;
+}
+
+/* Typography: blur-to-crisp + tracking settle, kept subtle. */
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro>.mp8-kicker,
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro>h2,
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro>p{
+  opacity:0;
+  transform:translate3d(0,16px,0);
+  filter:blur(5px);
+  transition:
+    opacity var(--mp8-step-med) ease,
+    transform var(--mp8-step-slow) var(--mp8-step-ease),
+    filter var(--mp8-step-med) ease,
+    letter-spacing var(--mp8-step-slow) var(--mp8-step-ease);
+}
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro>.mp8-kicker{
+  transition-delay:30ms;
+}
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro>h2{
+  letter-spacing:-.065em;
+  transition-delay:90ms;
+}
+#mmdProfilesV8 .mp8-step01-head .mp8-role-intro>p{
+  transition-delay:150ms;
+}
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-role-intro>.mp8-kicker,
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-role-intro>h2,
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-role-intro>p{
+  opacity:1;
+  transform:none;
+  filter:none;
+}
+#mmdProfilesV8 .mp8-step01-head.is-inview .mp8-role-intro>h2{
+  letter-spacing:-.045em;
+}
+
+/* Card motion uses one controlled stagger; no bouncing. */
+#mmdProfilesV8 .mp8-role-grid .mp8-role-card{
+  transform:translate3d(0,10px,0);
+  opacity:0;
+  transition:
+    opacity 420ms ease,
+    transform 620ms var(--mp8-step-spring),
+    border-color 320ms ease,
+    background 320ms ease,
+    box-shadow 420ms ease;
+  transition-delay:var(--mp8-step-delay,0ms);
+  will-change:transform;
+}
+#mmdProfilesV8 .mp8-role-first.is-step01-visible .mp8-role-grid .mp8-role-card{
+  transform:none;
+  opacity:1;
+}
+@media(hover:hover) and (pointer:fine){
+  #mmdProfilesV8 .mp8-role-first.is-step01-visible .mp8-role-grid .mp8-role-card:hover{
+    transform:translate3d(0,-4px,0) scale(1.006);
+    box-shadow:0 18px 42px rgba(31,21,25,.10);
+  }
+}
+
+/* Soft cross-fade while language copy changes. */
+#mmdProfilesV8 .mp8-role-first.is-language-swapping .mp8-role-intro,
+#mmdProfilesV8 .mp8-role-first.is-language-swapping .mp8-role-grid,
+#mmdProfilesV8 .mp8-role-first.is-language-swapping .mp8-step01-visual figcaption{
+  opacity:.34;
+  transform:translate3d(0,-3px,0);
+  filter:blur(2px);
+  transition:
+    opacity 150ms ease,
+    transform 180ms ease,
+    filter 180ms ease;
+}
+#mmdProfilesV8 .mp8-role-intro,
+#mmdProfilesV8 .mp8-role-grid,
+#mmdProfilesV8 .mp8-step01-visual figcaption{
+  transition:
+    opacity 320ms ease,
+    transform 420ms var(--mp8-step-ease),
+    filter 320ms ease;
+}
+
+@media(min-width:820px){
+  #mmdProfilesV8 .mp8-step01-head{
+    grid-template-columns:minmax(0,1.02fr) minmax(320px,.98fr);
+    gap:clamp(26px,4vw,54px);
+    align-items:center;
+  }
+  #mmdProfilesV8 .mp8-step01-visual{
+    min-height:520px;
+  }
+  #mmdProfilesV8 .mp8-step01-visual img{
+    min-height:520px;
+  }
+}
+@media(max-width:819px){
+  #mmdProfilesV8 .mp8-step01-head{
+    grid-template-columns:1fr;
+  }
+  #mmdProfilesV8 .mp8-step01-visual{
+    min-height:0;
+    aspect-ratio:4/5;
+    border-radius:24px;
+  }
+  #mmdProfilesV8 .mp8-step01-visual img{
+    min-height:0;
+    height:100%;
+    object-position:50% 16%;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  #mmdProfilesV8 .mp8-step01-visual,
+  #mmdProfilesV8 .mp8-step01-visual img,
+  #mmdProfilesV8 .mp8-step01-visual figcaption,
+  #mmdProfilesV8 .mp8-step01-head .mp8-role-intro>*,
+  #mmdProfilesV8 .mp8-role-grid .mp8-role-card,
+  #mmdProfilesV8 .mp8-role-first.is-language-swapping .mp8-role-intro,
+  #mmdProfilesV8 .mp8-role-first.is-language-swapping .mp8-role-grid{
+    animation:none!important;
+    transition:none!important;
+    transform:none!important;
+    filter:none!important;
+    opacity:1!important;
+  }
+}
