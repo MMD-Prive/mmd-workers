@@ -51,7 +51,7 @@ async function signedModelT(overrides = {}, secret = CONFIRM_KEY) {
     role: "model",
     session_id: "session_runtime_v1a",
     payment_ref: "payment_runtime_v1a",
-    model_record_id: "model_runtime_v1a",
+    model_record_id: "recRuntimeModel",
     exp: Math.floor(Date.now() / 1000) + 3600,
     ...overrides,
   }));
@@ -64,7 +64,9 @@ function makeSession(state) {
     fields: {
       session_id: "session_runtime_v1a",
       payment_ref: "payment_runtime_v1a",
-      model_record_id: "model_runtime_v1a",
+      model_record_id: "recRuntimeModel",
+      "Canonical Model": ["recRuntimeModel"],
+      model_session_state: state,
       model_name: "Book EI",
       job_type: "LIVE JOB",
       job_date: "2026-09-17",
@@ -85,6 +87,7 @@ function installRuntimeFetchMock({
   paymentTruth = null,
   finalActivation = null,
   expectedPaymentServiceToken = AUTH_SERVICE_ADMIN_TO_PAYMENTS,
+  currentRecords = null,
 } = {}) {
   const previousFetch = globalThis.fetch;
   const calls = [];
@@ -127,7 +130,7 @@ function installRuntimeFetchMock({
     const table = decodeURIComponent(parts[2] || parts.at(-1) || "");
 
     if (table === "sessions" && method === "GET") {
-      return jsonResponse({ records: [session] });
+      return jsonResponse({ records: currentRecords || [session] });
     }
 
     if (table === "sessions" && method === "PATCH") {
@@ -360,6 +363,9 @@ test("LINE-linked model session without job keys resolves the current job by can
     payment_ref: undefined,
   });
   const mock = installRuntimeFetchMock({ initialState: "assigned" });
+  const upcoming = new Date(Date.now() + 86400000).toISOString();
+  mock.session.fields.start_time = upcoming;
+  mock.session.fields.job_date = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(upcoming));
   try {
     const { response, body } = await getCurrent(t);
     assert.equal(response.status, 200);
@@ -370,7 +376,7 @@ test("LINE-linked model session without job keys resolves the current job by can
     assert.equal(
       mock.calls.some((call) =>
         call.method === "GET" &&
-        decodeURIComponent(call.url).includes('FIND("model_runtime_v1a",ARRAYJOIN({model_record_id}))')
+        decodeURIComponent(call.url.replaceAll('+', '%20')).includes('FIND("recRuntimeModel",ARRAYJOIN({Canonical Model}))')
       ),
       true,
     );
@@ -394,6 +400,45 @@ test("LINE-linked model session without an active job returns session_not_found,
   } finally {
     mock.restore();
   }
+});
+
+test("current handler: BOOK EI missing lifecycle returns review, not legacy Confirmed or an older job", async () => {
+  const t = await signedModelT({kind:'model_session',session_id:undefined,payment_ref:undefined});
+  const record = makeSession('confirmed');
+  delete record.fields.model_session_state;
+  record.fields['Session Status']='Confirmed';
+  record.fields.start_time=new Date(Date.now()+86400000).toISOString();
+  delete record.fields.job_date;
+  const before=JSON.stringify(record);
+  const stale=makeSession('confirmed');stale.fields.session_id='old-book-job';stale.fields.start_time='2026-09-17T11:00:00Z';
+  const mock=installRuntimeFetchMock({currentRecords:[stale,record]});
+  try {
+    const {response,body}=await getCurrent(t,{...BASE_ENV,AT_SESSIONS__STATE:'model_session_state'});
+    assert.equal(response.status,409);assert.equal(body.error,'current_session_review_required');
+    assert.equal(body.session,undefined);assert.equal(JSON.stringify(record),before);
+    assert.ok(mock.calls.every(c=>c.method==='GET'));
+  } finally {mock.restore();}
+});
+
+test("current handler: Bank EI returns canonical job and leaves private payout terms unchanged", async () => {
+  const t = await signedModelT({kind:'model_session',session_id:undefined,payment_ref:undefined});
+  const record=makeSession('confirmed');record.fields.model_name='Bank EI';record.fields['Assigned Model']='Bank EI';
+  record.fields.model_work_lane='private_model';record.fields.start_time=new Date(Date.now()+86400000).toISOString();delete record.fields.job_date;
+  const old=makeSession('confirmed');old.fields.session_id='stale';old.fields.start_time='2026-09-17T11:00:00Z';
+  const mock=installRuntimeFetchMock({currentRecords:[old,record]});
+  try {
+    const {response,body}=await getCurrent(t,{...BASE_ENV,AT_SESSIONS__STATE:'model_session_state'});
+    assert.equal(response.status,200);assert.equal(body.session.session_id,record.fields.session_id);
+    assert.equal(body.session.normalized_state,'confirmed');assert.equal(body.session.model_work_lane,'private_model');
+    assert.equal(body.session.pay_model_thb,10000);assert.equal(body.session.payout_terms.public_package_matrix_applies,false);
+    assert.ok(mock.calls.every(c=>c.method==='GET'));
+  } finally {mock.restore();}
+});
+
+test("explicit session lookup rejects another Canonical Model even when legacy name/id matches", async () => {
+  const t=await signedModelT({kind:'model_session'});const record=makeSession('confirmed');record.fields['Canonical Model']=['recOtherModel'];
+  const mock=installRuntimeFetchMock({currentRecords:[record]});
+  try {const {response}=await getCurrent(t);assert.equal(response.status,403);assert.ok(mock.calls.every(c=>c.method==='GET'));} finally {mock.restore();}
 });
 
 test("valid transition: offered + accept_job -> confirmed", async () => {
