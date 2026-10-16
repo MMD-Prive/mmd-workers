@@ -13,6 +13,7 @@ function configuredEnv() {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret",
     INTERNAL_API_TOKEN: "svc-secret-router-health-test",
     AUTH_SERVICE_PAYMENTS_TO_TELEGRAM: "payments-service-secret",
+    AUTH_SERVICE_LINE_TO_TELEGRAM: "line-service-secret",
     AUTH_SERVICE_MMS_TO_TELEGRAM: "mms-service-secret",
     AUTH_SERVICE_SIGIL_TO_TELEGRAM: "sigil-service-secret",
     AUTH_SERVICE_HIMAI_TO_TELEGRAM: "himai-service-secret",
@@ -39,7 +40,7 @@ function configuredEnv() {
 test("router health is configured after active direct senders are fully migrated", async () => {
   const result = await buildTelegramRouterHealth(configuredEnv());
   assert.equal(result.schema, HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA);
-  assert.equal(result.registry_version, "2026-09-21.2");
+  assert.equal(result.registry_version, "2026-10-01.1");
   assert.equal(result.status, "configured");
   assert.equal(result.ok, true);
   assert.equal(result.counts.unavailable, 0);
@@ -62,15 +63,27 @@ test("missing bot token makes router degraded", async () => {
 test("all migrated domain lanes require and report canonical service auth", async () => {
   const result = await buildTelegramRouterHealth(configuredEnv());
   const byKey = Object.fromEntries(result.lanes.map((lane) => [lane.key, lane]));
-  for (const key of ["payments","membership","booking","public_model","mms_applications","mms_ops","partner_ops","himai_orders","himai_payments","himai_alerts","mmd_shop_orders","mmd_shop_payments","mmd_shop_alerts"]) {
+  for (const key of ["payments","membership","booking","public_model","mms_applications","mms_ops","henna_customer_watch","partner_ops","himai_orders","himai_payments","himai_alerts","mmd_shop_orders","mmd_shop_payments","mmd_shop_alerts"]) {
     assert.equal(byKey[key].status, "configured", key);
   }
-  for (const key of ["public_model","mms_applications","mms_ops","partner_ops","himai_orders","himai_payments","himai_alerts","mmd_shop_orders","mmd_shop_payments","mmd_shop_alerts"]) {
+  for (const key of ["public_model","mms_applications","mms_ops","henna_customer_watch","partner_ops","himai_orders","himai_payments","himai_alerts","mmd_shop_orders","mmd_shop_payments","mmd_shop_alerts"]) {
     assert.equal(byKey[key].service_auth_configured, true, key);
     assert.equal(byKey[key].migration_state, "canonical_internal_send", key);
   }
 });
 
+
+test("missing LINE-to-Telegram auth makes HENNA customer watch unavailable without changing MMS authority lanes", async () => {
+  const env = configuredEnv();
+  delete env.AUTH_SERVICE_LINE_TO_TELEGRAM;
+  const result = await buildTelegramRouterHealth(env);
+  const byKey = Object.fromEntries(result.lanes.map((lane) => [lane.key, lane]));
+  assert.equal(result.status, "degraded");
+  assert.equal(byKey.henna_customer_watch.status, "unavailable");
+  assert.equal(byKey.henna_customer_watch.service_auth_configured, false);
+  assert.equal(byKey.mms_ops.status, "configured");
+  assert.ok(result.causes.includes("one_or_more_lane_service_auth_missing"));
+});
 
 test("missing migrated domain service auth degrades only because the route requirement is incomplete", async () => {
   const env = configuredEnv();
@@ -94,7 +107,7 @@ test("router health never exposes raw chat ids or thread ids", async () => {
     assert.equal(new RegExp('\"thread_id\"\\s*:\\s*' + thread).test(serialized), false);
   }
   assert.equal(serialized.includes("test-bot-token"), false);
-  for (const secret of ["svc-secret-router-health-test","payments-service-secret","mms-service-secret","sigil-service-secret","himai-service-secret","partners-service-secret"]) {
+  for (const secret of ["svc-secret-router-health-test","payments-service-secret","line-service-secret","mms-service-secret","sigil-service-secret","himai-service-secret","partners-service-secret"]) {
     assert.equal(serialized.includes(secret), false);
   }
 });
