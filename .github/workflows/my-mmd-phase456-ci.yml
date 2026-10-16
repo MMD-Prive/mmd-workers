@@ -1,0 +1,44 @@
+name: MY MMD attention and operations contracts
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/src/**'
+      - 'member-pages-worker/test/member-attention.test.mjs'
+      - 'member-pages-worker/test/member-coupon-presentation.test.mjs'
+      - 'admin-worker/src/my-mmd-operations-queue.js'
+      - 'admin-worker/src/admin-login-hero-worker.js'
+      - 'admin-worker/my-mmd-operations.test.mjs'
+      - 'webflow/member/dashboard/**'
+      - 'webflow/internal/admin/dashboard/my-mmd-operations.js'
+      - '.github/workflows/my-mmd-phase456-ci.yml'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Read-only contracts and regression
+        run: >-
+          node --experimental-global-webcrypto --test
+          member-pages-worker/test/member-attention.test.mjs
+          member-pages-worker/test/member-coupon-presentation.test.mjs
+          member-pages-worker/test/member-app-api.test.mjs
+          member-pages-worker/test/member-payments-bff.test.mjs
+          member-pages-worker/test/member-app-session.test.mjs
+          member-pages-worker/test/member-updates.test.mjs
+          member-pages-worker/test/care-back-code-redemption.test.mjs
+          member-pages-worker/test/care-back-claim-store.test.mjs
+          member-pages-worker/test/care-back-phase1-recovery.test.mjs
+          admin-worker/member-completeness.test.mjs
+          admin-worker/my-mmd-operations.test.mjs
+          webflow/member/dashboard/member-attention-coupons.test.mjs
+          webflow/member/dashboard/mmd-now-feed.test.mjs
+      - name: Check presentation syntax
+        run: node --check webflow/internal/admin/dashboard/my-mmd-operations.js
