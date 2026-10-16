@@ -391,7 +391,7 @@ describe("same-site /member/liff shell", () => {
       active -= 1;
       return url;
     };
-    const { memberApiFetch } = runInNewContext(html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout });
+    const { memberApiFetch } = runInNewContext(html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout, clearTimeout, AbortController, Response, Uint8Array });
     const results = await Promise.allSettled([memberApiFetch("a"), memberApiFetch("fail"), memberApiFetch("c")]);
     assert.equal(maxActive, 1);
     assert.deepEqual(order, ["a", "fail", "c"]);

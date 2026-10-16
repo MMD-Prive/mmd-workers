@@ -897,11 +897,31 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // retired immediately. Parallel reads would reuse one cookie and lose with 401, so
   // session-bound reads run one at a time and each picks up the latest Set-Cookie.
   let memberApiChain = Promise.resolve();
-  // A stalled read waits at most 3s so it can never block the reads behind it.
-  function memberApiFetch(url, init) {
-    const previous = memberApiChain;
-    const gate = Promise.race([previous, new Promise((resolve) => setTimeout(resolve, 3000))]);
-    const run = gate.then(() => fetch(url, init));
+  // Keep the credential lane locked through headers AND body. A timeout aborts
+  // the actual request; it must never release a second read alongside a live one.
+  function memberApiFetch(url, init = {}) {
+    const run = memberApiChain.then(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        const reader = response.body?.getReader();
+        if (!reader) return response;
+        const chunks = []; let size = 0;
+        try {
+          while (true) {
+            const part = await reader.read();
+            if (part.done) break;
+            size += part.value.byteLength;
+            if (size > 2 * 1024 * 1024) throw new Error("member_response_too_large");
+            chunks.push(part.value);
+          }
+        } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+        const bytes = new Uint8Array(size); let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        return new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
+      } finally { clearTimeout(timer); }
+    });
     memberApiChain = run.then(() => undefined, () => undefined);
     return run;
   }
@@ -983,8 +1003,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   async function readProfile({ hydrate = true } = {}) {
     void readQuickMembershipStatus();
+    const profileRead = memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     void readOwnHistoryPreview();
-    const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+    const response = await profileRead;
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
