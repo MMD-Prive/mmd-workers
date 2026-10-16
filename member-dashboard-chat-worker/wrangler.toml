@@ -412,11 +412,10 @@ zone_name = "mmdbkk.com"
 # still be made by changing this config and redeploying.
 [vars]
 MMS_THERAPIST_UI_SOURCE = "native"
-# General customer replies remain off. The separately approved rights command
-# uses deterministic live truth and retains global stop and owner takeover.
-# Owner authorization 2026-10-04: exact check-rights command only. General
-# replies stay disabled; the command still obeys global stop and owner takeover.
-LINE_AUTO_REPLY_ENABLED = "false"
+# Bounded LINE concierge replies are enabled. Replies remain deterministic:
+# First Contact and the external model lane stay off; protected matters fail
+# closed to Per/MMD review, and runtime stop/owner-takeover controls still apply.
+LINE_AUTO_REPLY_ENABLED = "true"
 KENJI_LINE_RIGHTS_CHECK_MODE = "command"
 KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 # 2026-10-12: owner paused the bare "สนใจ" auto-reply. Too ambiguous (customer may
@@ -427,12 +426,11 @@ KENJI_LINE_PRIVATE_INTEREST_ENABLED = "false"
 # 2026-10-12 by the owner (needs command mode above). Set "false" to stop.
 KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
-# Owner lock 2026-09-29: customer-facing LINE may autonomously reply only to
-# direct Model name/code lookup (plus the bounded verification continuation
-# required by that lookup). All ordinary payment, membership, service, browse,
-# confirmation and free-conversation text stays silent for Per/manual handling.
-KENJI_LINE_MODEL_ONLY_ENABLED = "true"
-# First Contact is disabled while the owner model-only lock is active.
+# The model-only restriction is disabled for the bounded deterministic concierge
+# lane. This does not enable external model calls; LINE_KENJI_MODEL_ENABLED stays
+# false and the separate First Contact lane remains disabled.
+KENJI_LINE_MODEL_ONLY_ENABLED = "false"
+# Keep the separate First Contact flow off; ordinary replies use reviewed intents.
 LINE_FIRST_CONTACT_ENABLED = "false"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
