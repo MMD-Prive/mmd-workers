@@ -1,5 +1,5 @@
 import { resolveKenjiLineLiveTruth } from "./kenji-line-live-truth.mjs";
-import { SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, SALES_CARD_IDS, SALES_ROUTES, salesCardKey, publishedSalesCard } from "./kenji-sales-reply-v2-policy.mjs";
+import { SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, SALES_CARD_IDS, SALES_ROUTES, currentSalesRoute, salesCardKey, publishedSalesCard } from "./kenji-sales-reply-v2-policy.mjs";
 
 const clean = (value) => String(value ?? "").trim();
 const ACTIVE = new Set(["active", "expiring_soon"]);
@@ -46,7 +46,7 @@ export async function readSalesCard(env, key) {
 }
 
 function answerDecision(text, intent, { card = null, key = "", route = SALES_ROUTES.status, label = "ดูสิทธิ์ใน MY MMD", reason = "reviewed_reply", live = false, handoff = false } = {}) {
-  const answer = clean(text);
+  const answer = clean(text).replace(/https?:\/\/[^\s<>]+/g, currentSalesRoute);
   const withCta = answer && !/https?:\/\//i.test(answer) ? `${answer}\n\n${label} → ${route}` : answer;
   return {
     text: withCta, intent, reply_pack_version: SALES_REPLY_VERSION, reply_source: "kenji_reply_pack_v2",
@@ -64,7 +64,7 @@ function answerDecision(text, intent, { card = null, key = "", route = SALES_ROU
   };
 }
 function cardRoute(card) {
-  return clean(card?.customer_answer).match(/https?:\/\/[^\s<>]+/)?.[0] || SALES_ROUTES.status;
+  return currentSalesRoute(clean(card?.customer_answer).match(/https?:\/\/[^\s<>]+/)?.[0] || SALES_ROUTES.status);
 }
 function handoffRequested(continuity = {}) {
   const stage = clean(continuity.conversation_stage || continuity.matrix?.conversation_stage);
