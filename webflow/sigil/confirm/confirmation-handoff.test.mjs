@@ -21,3 +21,14 @@ test("confirmation handoff does not route success back to legacy or web-only das
   assert.doesNotMatch(source, /MY_MMD_PATH/);
   assert.doesNotMatch(source, /location\.(?:assign|replace)\(/);
 });
+
+test("customer payment link is only on success and carries the existing signed token", () => {
+  assert.match(source, /PAYMENT_LIFF_URL = "https:\/\/miniapp\.line\.me\/2010830159-0n1O3ANK"/);
+  assert.match(source, /function wireCustomerPayment\(\)/);
+  assert.match(source, /if \(path !== CUSTOMER_CONFIRM_PATH\) return;/);
+  assert.match(source, /root\.querySelector\("\[data-c-success\]"\)/);
+  assert.match(source, /target\.searchParams\.set\("t", token\)/);
+  assert.match(source, /link\.textContent = "ชำระเงิน \/ Payment"/);
+  assert.match(source, /wireCustomerPayment\(\)/);
+  assert.doesNotMatch(source, /window\.location\.href\s*=\s*PAYMENT_LIFF_URL/);
+});
