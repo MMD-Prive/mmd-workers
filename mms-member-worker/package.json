@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/index.js && node --check src/runtime.mjs && node --check src/account-store.mjs && node --check src/member-page.mjs",
+    "check": "node --check src/index.js && node --check src/runtime.mjs && node --check src/account-store.mjs && node --check src/member-page.mjs && node --check src/member-client-source.mjs",
     "dry-run": "wrangler deploy --dry-run",
     "types": "wrangler types"
   },

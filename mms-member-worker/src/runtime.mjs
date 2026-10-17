@@ -20,7 +20,7 @@ export async function handleMemberRequest(request, env = {}) {
     return new Response(request.method === 'HEAD' ? null : path.endsWith('/privacy') ? privacyPage() : memberPage(), {
       headers: {
         ...securityHeaders(), 'content-type': 'text/html; charset=utf-8',
-        'content-security-policy': "default-src 'none'; script-src 'self' 'unsafe-inline' https://static.line-scdn.net; connect-src 'self' https://*.line.me https://*.line-scdn.net https://*.line.biz; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.line-scdn.net; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+        'content-security-policy': "default-src 'none'; script-src 'self' 'unsafe-inline' https://static.line-scdn.net; connect-src 'self' https://*.line.me https://*.line-scdn.net https://*.line.biz; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.line-scdn.net https://cdn.prod.website-files.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       },
     });
   }
