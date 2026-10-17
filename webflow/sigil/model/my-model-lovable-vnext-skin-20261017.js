@@ -6,7 +6,7 @@ if(!root||root.dataset.mmLovableSkin)return;
 const shell=root.querySelector('.mmhome-shell');
 if(!shell)return;
 const source='lovable-vnext-20261017';
-root.dataset.mmLovableSkin=source;root.dataset.mmLvLane='neutral';
+root.dataset.mmLovableSkin=source;root.dataset.mmLvLane='neutral';root.dataset.mmPremiumSkin='atelier-v2';
 const picture=doc.createElement('img');
 picture.className='mm-lv-atmosphere';picture.alt='';picture.setAttribute('aria-hidden','true');
 picture.src='https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ad1028480c73d0f43f1c960_Midnight%20Bangkok%20Through%20Rainy%20Glass.webp';
@@ -37,13 +37,20 @@ if(workspace){
   you.before(quick);
  }
 }
+// Keep secondary rules accessible but not above the primary operational surface.
+const guideLinks=shell.querySelector('.mmshortcuts');
+if(guideLinks&&!guideLinks.closest('.mm-lv-guides')){
+ const guides=doc.createElement('details');guides.className='mm-lv-guides';guides.id='mm-lv-guides';
+ const summary=doc.createElement('summary');summary.dataset.mmLvText='guides';summary.textContent='คู่มือและกติกา';
+ guideLinks.before(guides);guides.append(summary,guideLinks);
+}
 const dock=doc.createElement('nav');dock.className='mm-lv-dock';dock.setAttribute('aria-label','เมนูหลัก');
 dock.innerHTML='<a href="#mmd-model-home-v4" aria-current="page" data-mm-lv-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/></svg><span>HOME</span></a><a href="/sigil/model/dashboard/jobs" data-mm-lv-nav="jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg><span>JOBS</span></a><a href="/sigil/model/console" data-mm-lv-nav="console"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v4m0 10v4m-9-9h4m10 0h4"/></svg><span>CONSOLE</span></a><a href="#mm-lv-you" data-mm-lv-nav="you" data-mm-lv-open="mm-lv-you"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg><span>YOU</span></a>';
 root.append(dock);
 const messages={
- th:{space:'พื้นที่ของคุณ',homeTitle:'งานปัจจุบัน',homeDescription:'งาน ความพร้อม และข้อมูลของคุณอยู่ที่นี่',you:'ข้อมูลของคุณ',media:'รูปภาพและคลิป',quickYou:'ข้อมูลของฉัน',quickMedia:'รูปและคลิป'},
- en:{space:'Your space',homeTitle:'Current work',homeDescription:'Jobs, availability and your profile in one place',you:'Your profile',media:'Photos and videos',quickYou:'My profile',quickMedia:'Photos & videos'},
- zh:{space:'你的空间',homeTitle:'当前工作',homeDescription:'在这里查看工作、接单状态和个人资料',you:'你的资料',media:'照片与视频',quickYou:'个人资料',quickMedia:'照片与视频'}
+ th:{space:'พื้นที่ของคุณ',homeTitle:'งานปัจจุบัน',homeDescription:'งาน ความพร้อม และข้อมูลของคุณอยู่ที่นี่',you:'ข้อมูลของคุณ',media:'รูปภาพและคลิป',quickYou:'ข้อมูลของฉัน',quickMedia:'รูปและคลิป',guides:'คู่มือและกติกา'},
+ en:{space:'Your space',homeTitle:'Current work',homeDescription:'Jobs, availability and your profile in one place',you:'Your profile',media:'Photos and videos',quickYou:'My profile',quickMedia:'Photos & videos',guides:'Guides & policies'},
+ zh:{space:'你的空间',homeTitle:'当前工作',homeDescription:'在这里查看工作、接单状态和个人资料',you:'你的资料',media:'照片与视频',quickYou:'个人资料',quickMedia:'照片与视频',guides:'指南与规定'}
 };
 const params=new URLSearchParams(win.location.search);
 let lang=messages[params.get('lang')]?params.get('lang'):'th';
