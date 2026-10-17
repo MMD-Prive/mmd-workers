@@ -63,3 +63,10 @@
 #mmd-model-home-v4#mmd-model-home-v4 #mmd-model-self-service :is(input,textarea,select){background:var(--bg)!important;color:var(--ink)!important;border-color:var(--line)!important}
 #mmd-model-home-v4 :is(a,button,input,select,textarea):focus-visible{outline:3px solid #9b783d;outline-offset:4px}
 @media(max-width:640px){#mmd-model-home-v4{padding:10px 12px 32px}#mmd-model-home-v4 .mmhome-hero{padding:120px 16px 22px}#mmd-model-home-v4 :is(.mmcard,#mmd-media-upload-v1){padding:20px}#mmd-model-home-v4 :is(.mmshortcuts,.mmfields){grid-template-columns:1fr}#mmd-model-home-v4 .mmsecondary{display:flex;margin:0}#mmd-model-home-v4 .mmgallery{grid-template-columns:1fr 1fr}#mmd-model-home-v4 .mmverify-actions>*{width:100%}}
+
+/* iOS LINE: native file input covers the CTA, avoiding programmatic picker opening. */
+#mmd-model-home-v4#mmd-model-home-v4 #mmd-media-upload-v1 .mmu-native-picker{position:relative;display:flex!important;align-items:center;justify-content:center;min-height:52px;margin:14px 0 10px;border-radius:12px;background:#b9470d!important;overflow:hidden;cursor:pointer}
+#mmd-model-home-v4#mmd-model-home-v4 #mmd-media-upload-v1 .mmu-native-picker>span{color:#fff!important;-webkit-text-fill-color:#fff!important;font-size:16px;font-weight:700;pointer-events:none}
+#mmd-model-home-v4#mmd-model-home-v4 #mmd-media-upload-v1 .mmu-native-picker input[type=file]{position:absolute!important;inset:0!important;display:block!important;z-index:2;width:100%!important;height:100%!important;min-height:0!important;padding:0!important;margin:0!important;border:0!important;opacity:0!important;background:transparent!important;cursor:pointer;pointer-events:auto!important}
+#mmd-model-home-v4#mmd-model-home-v4 #mmd-media-upload-v1 .mmu-native-picker:focus-within{outline:3px solid #b9470d;outline-offset:3px}
+#mmd-model-home-v4#mmd-model-home-v4 #mmd-media-upload-v1 :is(#mmu-upload,#mmu-private-upload)[hidden]{display:none!important}
