@@ -833,7 +833,7 @@ test("selected-job LIFF handoff sends exact Session and opens verified confirmat
     sdk:"https://static.line-scdn.net/liff/edge/2/sdk.js",
     selectedSessionId:sessionId,environment:"published",mode:"primary",
   });
-  const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)[1];
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   const nodes = Object.fromEntries(["status","session-pill","fallback","detail"].map(id => [id,{textContent:"",hidden:true}]));
   const calls = [], redirects = [];
   await runInNewContext(script, {
@@ -868,7 +868,7 @@ test("selected-job LIFF request timeout stops loading and shows retry without le
     sdk:"https://static.line-scdn.net/liff/edge/2/sdk.js",
     selectedSessionId:"sess_mu8oo9ao_a97c529604a34602",mode:"primary",
   });
-  const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)[1];
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   const nodes = Object.fromEntries(["status","session-pill","fallback","detail"].map(id => [id,{textContent:"",hidden:true}]));
   const redirects = [];
   await runInNewContext(script, {
