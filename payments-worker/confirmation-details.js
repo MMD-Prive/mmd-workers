@@ -2,6 +2,7 @@ import { verifyConfirmToken } from "./index.js";
 import { stablePaymentRef } from "./unified-payment-proof.js";
 import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
+import { readVerifiedSessionBalance, shouldResolveCustomerBalance, customerBalanceProjection } from "./verified-session-balance.js";
 export { formulaValue, httpError };
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -113,7 +114,7 @@ export async function handleConfirmationDetails(request, env = {}) {
 
     if (expectedRole === "customer") {
       const net = numberOrNull(fields[field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]);
-      const safePricing = customerPricing(pricing, net);
+      let safePricing = customerPricing(pricing, net);
       let paymentRecord = null;
       let proofRecord = null;
       let activePaymentRef = text(claims.payment_ref, 200);
@@ -125,25 +126,48 @@ export async function handleConfirmationDetails(request, env = {}) {
         } else {
           paymentRecord = await findPayment(env, claims.payment_ref, claims.session_id);
         }
-      } catch {}
+      } catch (error) { throw error; }
+      let balanceProjection = null;
+      if (shouldResolveCustomerBalance(paymentRecord, env)) {
+        const summary = await readVerifiedSessionBalance(env, session);
+        balanceProjection = customerBalanceProjection(summary, paymentRecord, finalPaymentRef, env);
+        activePaymentRef = balanceProjection.payment_ref;
+        paymentRecord = balanceProjection.paymentRecord;
+        safePricing = {
+          ...safePricing,
+          net_price_thb: summary.total_amount_thb,
+          deposit_received_thb: summary.verified_deposit_thb,
+          balance_thb: summary.remaining_amount_thb,
+        };
+      }
       try {
         proofRecord = await findProofEvidence(env, activePaymentRef);
-      } catch {}
+      } catch (error) {
+        // A failed proof lookup must not reopen a balance already awaiting review.
+        if (balanceProjection) throw error;
+      }
       const customerAmountDue = numberOrNull(fields[SESSION_FIELDS.customerAmountDueThb]);
+      const display = customerPaymentDisplay({
+        paymentRecord, pricing: safePricing, customerAmountDue,
+        claimedPaymentType: claims.payment_type,
+        sessionPaymentStatus: common.payment_status,
+        paymentRef: activePaymentRef, proofRecord,
+      });
+      if (balanceProjection) Object.assign(display, {
+        stage: balanceProjection.payment_type,
+        amount_due_thb: balanceProjection.amount_due_thb,
+        verified: balanceProjection.verified,
+        // Payment Instructions generates the current amount QR, not an old stored QR.
+        qr_url: null,
+      });
       return withCors(request, env, json({
         ...common,
         payment_ref: activePaymentRef,
         amount_thb: net,
         pricing: safePricing,
-        payment: customerPaymentDisplay({
-          paymentRecord,
-          pricing: safePricing,
-          customerAmountDue,
-          claimedPaymentType: claims.payment_type,
-          sessionPaymentStatus: common.payment_status,
-          paymentRef: activePaymentRef,
-          proofRecord,
-        }),
+        payment_type: balanceProjection?.payment_type || common.payment_type,
+        ...(balanceProjection ? { balance_summary: balanceProjection.summary } : {}),
+        payment: display,
       }));
     }
 
@@ -366,12 +390,12 @@ async function findProofEvidence(env, paymentRef) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(response.status >= 500 ? 503 : 500, "airtable_proof_request_failed");
   const records = Array.isArray(data?.records) ? data.records : [];
-  if (records.length > 1) return null;
+  if (records.length > 1) throw httpError(409, "payment_evidence_ambiguous");
   return records[0] || null;
 }
 
 function isProofEvidenceRecord(record) {
-  const status = text(record?.fields?.status, 80).toLowerCase().replace(/[\s-]+/g, "_");
+  const status = text(record?.fields?.status, 80).toLowerCase().replace(/[\s-]+/g, "_"));
   if (!record?.id) return false;
   if (!status) return true;
   return new Set([
@@ -412,7 +436,7 @@ async function findPayment(env, paymentRef, sessionId) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(response.status >= 500 ? 503 : 500, "airtable_payment_request_failed");
   const records = Array.isArray(data?.records) ? data.records : [];
-  if (records.length > 1) return null;
+  if (records.length > 1) throw httpError(409, "payment_evidence_ambiguous");
   const record = records[0] || null;
   if (!record?.fields) return null;
   const recordRef = text(record.fields[PAYMENT_FIELDS.paymentRef], 200);
