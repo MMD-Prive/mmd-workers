@@ -165,7 +165,7 @@ export function modelLiffDigitalBootstrapHtml({
     if(!idToken)throw new Error("id_token_missing");
     status.textContent="กำลังเปิดงานนี้…";
     for(var selectedAttempt=0;selectedAttempt<60;selectedAttempt+=1){
-      var selected=await fetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession},idToken:idToken,environment:${safeEnvironment}})});
+      var selected=await boundedFetch("/v1/model/selected-job/handoff",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({session_id:${safeSelectedSession},idToken:idToken,environment:${safeEnvironment}})},15000);
       var selectedBody=await selected.json().catch(function(){return null});
       if(selected.status===202&&selectedBody&&selectedBody.state==="owner_confirmation_required"){
         pill.textContent="รอพี่เปอร์";
@@ -301,6 +301,17 @@ export function modelLiffDigitalBootstrapHtml({
     }finally{clearTimeout(timer);}
   }
 
+  async function boundedFetch(url,init,timeoutMs){
+    var controller=new AbortController();
+    var timer=setTimeout(function(){controller.abort();},timeoutMs||15000);
+    try{
+      return await fetch(url,Object.assign({},init,{signal:controller.signal}));
+    }catch(error){
+      if(error&&error.name==="AbortError")throw new Error("model_job_request_timeout");
+      throw error;
+    }finally{clearTimeout(timer);}
+  }
+
   async function continueIntoApp(){
     try{
       fallback.hidden=true;
@@ -320,7 +331,12 @@ export function modelLiffDigitalBootstrapHtml({
     }catch(error){
       // Never echo SDK errors: they can include credential-bearing URLs.
       var code=String(error&&error.message||"");
-      showFailure(code==="identity_review_required"?code:/^line_(sdk_timeout|sdk_unavailable|init_timeout)$/.test(code)?code:"line_connection_failed");
+      var safeCode=code==="identity_review_required"?code:/^line_(sdk_timeout|sdk_unavailable|init_timeout)$/.test(code)?code:code==="model_job_request_timeout"?code:code==="selected_job_owner_confirmation_timeout"?code:"line_connection_failed";
+      showFailure(safeCode);
+      if(${JSON.stringify(selectedJobMode)}&&safeCode==="model_job_request_timeout"){
+        status.textContent="เปิดรายละเอียดงานไม่สำเร็จในเวลาที่กำหนด ลองอีกครั้งได้ครับ";
+        detail.textContent="ระบบเชื่อม LINE ช้า หรือเปิดงานไม่สำเร็จ หากยังติดอยู่ กรุณาทัก MMD พร้อมแจ้งชื่อโมเดล ไม่ต้องสมัครใหม่";
+      }
     }
   }
 

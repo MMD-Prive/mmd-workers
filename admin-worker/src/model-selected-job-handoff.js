@@ -7,6 +7,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const SESSIONS_TABLE_DEFAULT = "tblC98mKWbzmPuNzX";
 const CANONICAL_MODEL_FIELD = "fldrXQAyOMPCvbOaY";
 const SESSION_NOTES_FIELD = "fldwl9Gs5tYlXG5ls";
+const MODEL_CONFIRMATION_URL_FIELD = "fld0mFma9J9yfEaKb";
 const SELECTED_HOLD_MARKER = "[MMD_SELECTED_MODEL_HOLD_V1]";
 const SESSION_RE = /^sess_[A-Za-z0-9._-]{8,180}$/;
 const MODEL_RECORD_RE = /^rec[A-Za-z0-9]{14,24}$/;
@@ -260,6 +261,37 @@ async function reissueModelConfirmation(env, sessionId) {
   };
 }
 
+
+/**
+ * Availability-only recovery for a Model identity already matched to this
+ * canonical Session. Never trust the stored URL by itself: payment authority
+ * must validate its signature, model role and exact Session before redirect.
+ * This creates no new tokens and does not change payment/session state.
+ */
+async function recoverVerifiedExistingModelLink(env, session, sessionId) {
+  const raw = session?.record?.fields?.[MODEL_CONFIRMATION_URL_FIELD];
+  const redirectUrl = safeModelConfirmationUrl(raw);
+  if (!redirectUrl || typeof env.PAYMENTS_WORKER?.fetch !== "function") return null;
+  try {
+    const token = new URL(redirectUrl).searchParams.get("t");
+    const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.internal/v1/confirm/details", {
+      method: "POST",
+      headers: { "content-type": "application/json", "accept": "application/json", "origin": "https://mmdbkk.com" },
+      body: JSON.stringify({ t: token, expected_role: "model" }),
+    }));
+    const details = await response.json().catch(() => null);
+    if (!response.ok || details?.ok !== true
+      || details?.authority !== "payments-worker"
+      || details?.schema !== "confirmation_details_v1"
+      || details?.role !== "model"
+      || details?.session_id !== sessionId) return null;
+    if (["cancelled", "canceled", "void"].includes(clean(details.session_status, 40).toLowerCase())) return null;
+    return redirectUrl;
+  } catch {
+    return null;
+  }
+}
+
 export function isModelSelectedJobHandoffRequest(path, method) {
   return String(path || "").replace(/\/+$/g, "") === MODEL_SELECTED_JOB_HANDOFF_PATH
     && String(method || "").toUpperCase() === "POST";
@@ -350,7 +382,16 @@ export async function handleModelSelectedJobHandoff(request, env = {}, coreFetch
   }
 
   const confirmation = await reissueModelConfirmation(env, sessionId);
-  if (!confirmation.ok) return json({ ok:false, error:confirmation.error }, confirmation.status);
+  if (!confirmation.ok) {
+    const existing = await recoverVerifiedExistingModelLink(env, session, sessionId);
+    if (!existing) return json({ ok:false, error:confirmation.error }, confirmation.status);
+    return json({
+      ok:true,
+      session_id:sessionId,
+      redirect_url:existing,
+      handoff_source:"verified_existing_model_link",
+    }, 200, identity.set_cookie ? { "set-cookie": identity.set_cookie } : null);
+  }
 
   return json({
     ok:true,
