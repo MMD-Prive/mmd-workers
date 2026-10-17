@@ -1,0 +1,64 @@
+name: MMS customer membership
+
+on:
+  pull_request:
+    paths:
+      - 'mms-member-worker/**'
+      - 'member-dashboard-chat-worker/src/mms-membership-front-gate.js'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
+      - 'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js'
+      - 'member-dashboard-chat-worker/test/mms-membership-front-gate.test.mjs'
+      - 'member-dashboard-chat-worker/test/my-mms-customer-app.test.mjs'
+      - '.github/workflows/mms-membership.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_member_worker:
+        description: 'Deploy the isolated MMS member Worker and its new SQLite namespace (main only)'
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mms-member-worker/package-lock.json
+      - run: npm ci --prefix mms-member-worker --ignore-scripts
+      - run: npm run check --prefix mms-member-worker && npm test --prefix mms-member-worker
+      - run: node --test member-dashboard-chat-worker/test/mms-membership-front-gate.test.mjs member-dashboard-chat-worker/test/my-mms-customer-app.test.mjs
+      - working-directory: mms-member-worker
+        run: npx wrangler deploy --dry-run
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_member_worker && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    environment: mmd-production-mutation
+    concurrency:
+      group: deploy-mms-member-worker
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: npm ci --prefix mms-member-worker --ignore-scripts
+      - name: Deploy isolated customer account storage and runtime
+        working-directory: mms-member-worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          CLOUDFLARE_API_TOKEN: ${{ secrets.MMS_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx wrangler deploy --keep-vars --message "GitHub Actions $GITHUB_SHA"
+      - name: Record ordered follow-up
+        run: |
+          echo 'MMS member runtime deployed from source SHA '${{ github.sha }} >> "$GITHUB_STEP_SUMMARY"
+          echo 'Next deploy member-dashboard-chat-worker, then verify anonymous boundaries and configure only the Developing MINI App endpoint.' >> "$GITHUB_STEP_SUMMARY"

@@ -167,6 +167,19 @@ jobs:
         working-directory: member-dashboard-chat-worker
         run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 
+      # The gateway's new binding must have an owner before its version upload.
+      # This is a new, route-free Worker and namespace; existing MMS objects are untouched.
+      - name: Validate and deploy isolated MMS customer membership service
+        working-directory: mms-member-worker
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+          npm test
+          npx wrangler deploy --dry-run
+          npx wrangler deploy --keep-vars --message "GitHub Actions ${GITHUB_SHA}"
+
       - name: Upload member-dashboard-chat-worker version
         id: upload
         continue-on-error: true
@@ -280,6 +293,10 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "mmdbkk.com/male-massage/member*",
+            "www.mmdbkk.com/male-massage/member*",
+            "mmdbkk.com/api/mms/app/*",
+            "www.mmdbkk.com/api/mms/app/*",
             "mmdbkk.com/male-massage/therapists/api/auth/*",
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
             "mmdbkk.com/male-massage/therapists*",
@@ -347,6 +364,24 @@ jobs:
           const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
           console.log(`verified ${desired.length}/${desired.length} required worker routes`);
+          NODE
+
+      - name: Verify native MY MMS anonymous membership boundaries
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const base = 'https://www.mmdbkk.com';
+          const page = await fetch(base + '/male-massage/member');
+          if (!page.ok || !(await page.text()).includes('เข้าสู่ระบบด้วย LINE')) throw new Error('MY MMS native membership page unavailable');
+          const config = await fetch(base + '/api/mms/app/membership/config');
+          const data = await config.json();
+          if (!config.ok || data.data?.liff_id !== '2011388357-ft2o17gf') throw new Error('Wrong MY MMS customer LIFF');
+          const me = await fetch(base + '/api/mms/app/membership/me');
+          if (me.status !== 401) throw new Error('Anonymous MY MMS membership is not closed');
+          const foreign = await fetch(base + '/api/mms/app/membership/line', {method:'POST',headers:{origin:'https://example.invalid','content-type':'application/json'},body:'{}'});
+          if (foreign.status !== 403) throw new Error('Foreign-origin MY MMS login was not rejected');
+          console.log('MY MMS native page/config and anonymous boundaries passed; no member account was created');
           NODE
 
       - name: Smoke production LINE and MMS route ownership
