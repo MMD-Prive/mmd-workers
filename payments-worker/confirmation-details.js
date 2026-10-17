@@ -395,7 +395,7 @@ async function findProofEvidence(env, paymentRef) {
 }
 
 function isProofEvidenceRecord(record) {
-  const status = text(record?.fields?.status, 80).toLowerCase().replace(/[\s-]+/g, "_"));
+  const status = text(record?.fields?.status, 80).toLowerCase().replace(/[\s-]+/g, "_");
   if (!record?.id) return false;
   if (!status) return true;
   return new Set([
