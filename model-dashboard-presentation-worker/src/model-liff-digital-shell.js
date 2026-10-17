@@ -333,7 +333,7 @@ export function modelLiffDigitalBootstrapHtml({
       var code=String(error&&error.message||"");
       var safeCode=code==="identity_review_required"?code:/^line_(sdk_timeout|sdk_unavailable|init_timeout)$/.test(code)?code:code==="model_job_request_timeout"?code:code==="selected_job_owner_confirmation_timeout"?code:"line_connection_failed";
       showFailure(safeCode);
-      if(${JSON.stringify(selectedJobMode)})&&safeCode==="model_job_request_timeout"){
+      if(${JSON.stringify(selectedJobMode)}&&safeCode==="model_job_request_timeout"){
         status.textContent="เปิดรายละเอียดงานไม่สำเร็จในเวลาที่กำหนด ลองอีกครั้งได้ครับ";
         detail.textContent="ระบบเชื่อม LINE ช้า หรือเปิดงานไม่สำเร็จ หากยังติดอยู่ กรุณาทัก MMD พร้อมแจ้งชื่อโมเดล ไม่ต้องสมัครใหม่";
       }
