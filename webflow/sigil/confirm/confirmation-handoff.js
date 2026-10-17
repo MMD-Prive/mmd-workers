@@ -11,6 +11,7 @@
   const CUSTOMER_CONFIRM_PATH = "/sigil/confirm/job-confirmation";
   const MODEL_LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq";
   const MEMBER_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?view=jobs";
+  const PAYMENT_LIFF_URL = "https://miniapp.line.me/2010830159-0n1O3ANK";
 
   function currentModelLang() {
     const queryLang = new URL(window.location.href).searchParams.get("lang");
@@ -54,9 +55,30 @@
     success.appendChild(link);
   }
 
+  function wireCustomerPayment() {
+    if (path !== CUSTOMER_CONFIRM_PATH) return;
+    const root = document.getElementById("mmd-job-confirm-v16");
+    if (!root || root.querySelector("[data-mmd-payment-liff]")) return;
+    const success = root.querySelector("[data-c-success]");
+    if (!success) return;
+    const token = new URL(window.location.href).searchParams.get("t");
+    if (!token || !/^[A-Za-z0-9_-]+\.[A-Fa-f0-9]{64}$/.test(token)) return;
+    const target = new URL(PAYMENT_LIFF_URL);
+    target.searchParams.set("t", token);
+    const link = document.createElement("a");
+    const seed = root.querySelector("[data-c-confirm]");
+    link.href = target.toString();
+    link.textContent = "ชำระเงิน / Payment";
+    link.setAttribute("data-mmd-payment-liff", "1");
+    link.setAttribute("data-mmd-canonical-target", "sigil-payment-line-miniapp");
+    if (seed?.className) link.className = seed.className;
+    success.appendChild(link);
+  }
+
   function wire() {
     wireModel();
     wireCustomer();
+    wireCustomerPayment();
   }
 
   if (document.readyState === "loading") {
