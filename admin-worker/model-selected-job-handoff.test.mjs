@@ -21,13 +21,14 @@ function request(body = { session_id: SESSION_ID }, { cookie = true } = {}) {
   });
 }
 
-function runtime({ canonicalModelIds = [MODEL_ID], modelLineMatches = [] } = {}) {
+function runtime({ canonicalModelIds = [MODEL_ID], modelLineMatches = [], reissueFailure = false, existingModelUrl = "", existingDetailsSession = SESSION_ID, existingDetailsRole = "model" } = {}) {
   let paymentsCalls = 0;
   const state = {
     holdWrites: [],
     claimWrites: [],
     canonicalModelIds,
     modelLineMatches,
+    existingModelUrl,
   };
   const env = {
     AIRTABLE_BASE_ID: "app-test",
@@ -41,9 +42,24 @@ function runtime({ canonicalModelIds = [MODEL_ID], modelLineMatches = [] } = {})
       async fetch(input) {
         paymentsCalls += 1;
         const req = input instanceof Request ? input : new Request(input);
-        assert.equal(new URL(req.url).pathname, "/v1/internal/confirm/reissue-model");
+        const path = new URL(req.url).pathname;
+        if (path === "/v1/confirm/details") {
+          const body = await req.json();
+          assert.equal(body.expected_role, "model");
+          assert.equal(body.t, new URL(existingModelUrl).searchParams.get("t"));
+          return Response.json({
+            ok: true,
+            authority: "payments-worker",
+            schema: "confirmation_details_v1",
+            role: existingDetailsRole,
+            session_id: existingDetailsSession,
+            session_status: "scheduled",
+          });
+        }
+        assert.equal(path, "/v1/internal/confirm/reissue-model");
         assert.equal(req.headers.get("x-internal-token"), "service-test");
         assert.deepEqual(await req.json(), { session_id: SESSION_ID });
+        if (reissueFailure) return Response.json({ ok:false, error:"service_auth_required" }, {status:401});
         return Response.json({
           ok: true,
           session_id: SESSION_ID,
@@ -86,6 +102,7 @@ function installExternal(env) {
               fldLTq2kZbyRv22IA: SESSION_ID,
               fldrXQAyOMPCvbOaY: env.__state.canonicalModelIds.map((id) => ({ id, name: id === MODEL_ID ? "EMs16" : "Other" })),
               fldwl9Gs5tYlXG5ls: "existing note",
+              fld0mFma9J9yfEaKb: env.__state.existingModelUrl,
             },
           }],
         });
@@ -303,4 +320,91 @@ test("selected-job handoff accepts only canonical MMD Session ids", async () => 
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "session_id_invalid");
   assert.equal(env.__paymentsCalls(), 0);
+});
+
+
+test("verified existing model token safely recovers selected job if model reissue fails", async () => {
+  const existingModelUrl = "https://mmdbkk.com/sigil/confirm/job-model?t=verified.stub_token_123";
+  const env = runtime({ reissueFailure:true, existingModelUrl });
+  const restore = installExternal(env);
+  try {
+    const response = await handleModelSelectedJobHandoff(
+      request({session_id:SESSION_ID,idToken:"real-line-id-token",environment:"published"}, {cookie:false}),
+      env,
+      async () => Response.json({ok:true,model:{id:MODEL_ID}}, {
+        headers: {"content-type":"application/json", "set-cookie":"mmd_model_session_v1=linked; Path=/v1/model; Secure; HttpOnly"},
+      }),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.redirect_url, existingModelUrl);
+    assert.equal(body.handoff_source, "verified_existing_model_link");
+    assert.match(response.headers.get("set-cookie") || "", /mmd_model_session_v1=linked/);
+    assert.equal(env.__paymentsCalls(), 2);
+    assert.equal(env.__state.holdWrites.length, 0);
+    assert.equal(env.__state.claimWrites.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("fallback rejects a token that payment authority resolves to another Session", async () => {
+  const env = runtime({
+    reissueFailure:true,
+    existingModelUrl:"https://mmdbkk.com/sigil/confirm/job-model?t=verified.stub_token_123",
+    existingDetailsSession:"sess_other_unrelated123",
+  });
+  const restore = installExternal(env);
+  try {
+    const response = await handleModelSelectedJobHandoff(
+      request(),
+      env,
+      async () => Response.json({ok:true,model:{id:MODEL_ID}}),
+    );
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error, "service_auth_required");
+    assert.equal(env.__paymentsCalls(), 2);
+  } finally {
+    restore();
+  }
+});
+
+test("fallback rejects a customer token even when stored under model URL", async () => {
+  const env = runtime({
+    reissueFailure:true,
+    existingModelUrl:"https://mmdbkk.com/sigil/confirm/job-model?t=verified.stub_token_123",
+    existingDetailsRole:"customer",
+  });
+  const restore = installExternal(env);
+  try {
+    const response = await handleModelSelectedJobHandoff(
+      request(),
+      env,
+      async () => Response.json({ok:true,model:{id:MODEL_ID}}),
+    );
+    assert.equal(response.status, 401);
+    assert.equal(env.__paymentsCalls(), 2);
+  } finally {
+    restore();
+  }
+});
+
+test("model ownership mismatch cannot use an existing signed URL fallback", async () => {
+  const env = runtime({
+    reissueFailure:true,
+    existingModelUrl:"https://mmdbkk.com/sigil/confirm/job-model?t=verified.stub_token_123",
+  });
+  const restore = installExternal(env);
+  try {
+    const response = await handleModelSelectedJobHandoff(
+      request({session_id:SESSION_ID,idToken:"real-line-id-token",environment:"published"}, {cookie:false}),
+      env,
+      async () => Response.json({ok:true,model:{id:OTHER_MODEL_ID}}),
+    );
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).state, "owner_confirmation_required");
+    assert.equal(env.__paymentsCalls(), 0);
+  } finally {
+    restore();
+  }
 });
