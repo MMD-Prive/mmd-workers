@@ -13,7 +13,7 @@ test('exact Lovable design provenance and safe compact design',()=>{
  assert.match(css,/oklch\(\.82 \.078 82\)/);
  assert.match(css,/min\(100%,520px\)/);
  assert.match(css,/safe-area-inset-bottom/);
- assert.match(source,/Midnight%20Bangkok%20Through%20Rainy%20Glass\.webp/);
+ assert.match(css,/\.mm-lv-atmosphere\{[^}]*opacity:\.10;filter:brightness\(1\.10\);/);\n assert.match(source,/Midnight%20Bangkok%20Through%20Rainy%20Glass\.webp/);
 });
 test('four canonical tabs and locale controls stay presentation-only',()=>{
  for(const key of ['home','jobs','console','you'])assert.ok(source.includes('data-mm-lv-nav="'+key+'"'),key);
