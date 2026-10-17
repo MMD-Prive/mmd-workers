@@ -193,8 +193,11 @@ function renderShell(config, nonce) {
     .hype-loader{display:none}body.context-resolving .hype-loader{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#000;color:#f6f1e8;text-align:center}
     .hype-loader img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
     .hype-loader-text{color:#caa45e;font-size:12px;font-weight:800;letter-spacing:.22em}.hype-loader-text::after{content:"";display:inline-block;width:1.6em;text-align:left;animation:hype-dots 1.2s steps(4,end) infinite}
+    .hype-progress{display:flex;align-items:center;gap:12px;width:min(72vw,280px);margin-top:10px;color:#f6f1e8;font-size:14px;font-variant-numeric:tabular-nums}
+    .hype-progress progress{flex:1;height:8px;appearance:none;border:1px solid #61543c;border-radius:999px;background:#29251d;overflow:hidden}
+    .hype-progress progress::-webkit-progress-bar{background:#29251d}.hype-progress progress::-webkit-progress-value{background:#caa45e;border-radius:999px;transition:width .2s ease-out}.hype-progress progress::-moz-progress-bar{background:#caa45e;border-radius:999px}
     @keyframes hype-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
-    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}}
+    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}.hype-progress progress::-webkit-progress-value{transition:none}}
     body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
     @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .per-letter-copy{font-size:16px;line-height:1.65}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
     @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
@@ -277,7 +280,7 @@ function renderShell(config, nonce) {
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-live="polite" aria-label="Now Loading"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div></div>`}
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div><div class="hype-progress"><progress id="hype-progress" max="100" value="10" aria-label="ความคืบหน้าการเปิดหน้า"></progress><span id="hype-progress-number" aria-hidden="true">10%</span></div></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -627,15 +630,31 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // Keep the HYPE loader up until we know whether to open the member home directly (an existing same-site session never calls liff.login) or show the ENTER welcome.
   if (CONFIG.intent !== "signup") {
     const hypeImage = document.getElementById("hype-loader-img");
+    const progress = document.getElementById("hype-progress");
+    const progressNumber = document.getElementById("hype-progress-number");
+    let loadingPercent = 10;
+    function setLoadingPercent(value) {
+      loadingPercent = Math.max(loadingPercent, Math.min(100, value));
+      if (progress) progress.value = loadingPercent;
+      if (progressNumber) progressNumber.textContent = loadingPercent + "%";
+    }
+    // Estimated page-opening progress only. The session and member status still
+    // come exclusively from the backend; never mark the opening complete early.
+    const progressTimer = window.setInterval(() => {
+      if (loadingPercent < 90) setLoadingPercent(loadingPercent + (loadingPercent < 60 ? 3 : 1));
+    }, 180);
     hypeImage?.addEventListener("error", () => hypeImage.remove(), { once: true });
-    void welcomeContextPromise.then(async () => {
+    void welcomeContextPromise.catch(() => false).then(async () => {
+      setLoadingPercent(55);
       try {
         const profile = await Promise.race([existingProfilePromise, new Promise((resolve) => setTimeout(() => resolve(null), 6000))]);
         if (profile) await enterApp();
       } catch {
         // Fall back to the ENTER welcome.
       } finally {
-        document.body.classList.remove("context-resolving");
+        window.clearInterval(progressTimer);
+        setLoadingPercent(100);
+        window.setTimeout(() => document.body.classList.remove("context-resolving"), 240);
       }
     });
   }
