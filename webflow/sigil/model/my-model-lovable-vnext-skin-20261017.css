@@ -22,7 +22,7 @@
 }
 #mmd-model-home-v4#mmd-model-home-v4 *{box-sizing:border-box}
 #mmd-model-home-v4#mmd-model-home-v4 [hidden]{display:none!important}
-#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-atmosphere{position:fixed;inset:0;width:100%;height:100svh;object-fit:cover;opacity:.10;pointer-events:none;z-index:0}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-atmosphere{position:fixed;inset:0;width:100%;height:100svh;object-fit:cover;opacity:.10;filter:brightness(1.10);pointer-events:none;z-index:0}
 #mmd-model-home-v4#mmd-model-home-v4 .mmhome-shell{position:relative;z-index:1;display:flex;flex-direction:column;width:min(100%,520px);max-width:520px;margin:auto;padding:0 20px 18px}
 #mmd-model-home-v4#mmd-model-home-v4 :is(h1,h2,h3,p,dt,dd){margin:0}
 #mmd-model-home-v4#mmd-model-home-v4 :is(h1,h2,h3,p,dt,dd,label,legend,a,summary){color:inherit;-webkit-text-fill-color:currentColor}
