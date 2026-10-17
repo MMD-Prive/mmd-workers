@@ -1,0 +1,11 @@
+{
+  "name": "sigil-pay-proxy-worker",
+  "main": "index.mjs",
+  "compatibility_date": "2026-10-17",
+  "workers_dev": false,
+  "routes": [
+    {"pattern": "sigil.mmdbkk.com/sigil/pay", "zone_name": "mmdbkk.com"},
+    {"pattern": "sigil.mmdbkk.com/sigil/pay/", "zone_name": "mmdbkk.com"}
+  ],
+  "observability": {"enabled": true, "redact_query_string": true}
+}
