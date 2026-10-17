@@ -332,7 +332,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
     <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><div><span class="digital-session" id="digital-session">● LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
     <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
-    <section class="digital-snapshot" aria-label="Verified member snapshot"><span class="digital-snapshot-icon">◇</span><div><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div><strong id="profile-points" class="digital-points">—</strong></section>
+    <section class="digital-snapshot" aria-label="สถานะสมาชิก"><div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
     <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>
@@ -1394,6 +1394,15 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     }
   }
 
+  function setDigitalPointsDisplay(value, verified) {
+    const pointsNode = document.getElementById("profile-points");
+    const noteNode = document.getElementById("profile-points-note");
+    if (!pointsNode || !noteNode) return;
+    const confirmed = verified === true && Number.isInteger(value) && value >= 0;
+    pointsNode.textContent = confirmed ? new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(value) : "—";
+    noteNode.textContent = confirmed ? "ยอดที่ยืนยันจากระบบ" : "กำลังตรวจสอบยอด";
+  }
+
   async function hydrateDigitalHome(profileData = {}) {
     const greeting = document.getElementById("digital-greeting");
     const needs = document.getElementById("digital-needs");
@@ -1417,7 +1426,6 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         const level = String(membership.level || "").trim().toLowerCase();
         const tierNode = document.getElementById("profile-tier");
         const statusNode = document.getElementById("profile-status");
-        const pointsNode = document.getElementById("profile-points");
         if (tierNode && membership.levelVerified === true && tierLabels[level]) tierNode.textContent = tierLabels[level];
         if (statusNode) {
           const status = String(membership.status || membership.lifecycle || "").trim();
@@ -1426,12 +1434,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
             statusNode.textContent = membershipStatus(status) + (expiry ? " · ถึง " + shortDate(expiry) : "");
           }
         }
-        if (pointsNode) {
-          const confirmed = dashboard.points?.confirmedBalance;
-          pointsNode.textContent = Number.isInteger(confirmed) && confirmed >= 0
-            ? new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(confirmed)
-            : "—";
-        }
+        setDigitalPointsDisplay(dashboard.points?.confirmedBalance, true);
 
         const homeFeed = dashboard.homeFeed && typeof dashboard.homeFeed === "object" ? dashboard.homeFeed : null;
         digitalPersonalizedFeed = homeFeed
@@ -1479,7 +1482,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     const contact = data.contactProfile || data.contact_profile || {};
     document.getElementById("profile-email").textContent = String(contact.email || "—");
     document.getElementById("profile-phone").textContent = String(contact.phone || "—");
-    document.getElementById("profile-points").textContent = points.status === "verified" && Number.isInteger(points.active_points) ? new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(points.active_points) : "—";
+    setDigitalPointsDisplay(points.active_points, points.status === "verified");
     document.getElementById("profile-status").textContent = membershipStatus(member.membership_status || data.membership_status);
     const expiry = safeDate(member.membership_expires_at || data.membership_expires_at);
     const payment = safePaymentStatus(payments.status || data.payment_status);

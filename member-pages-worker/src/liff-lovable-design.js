@@ -44,6 +44,26 @@ body.app-entered:not(.signup-mode) .digital-dock { background: var(--mmd-base); 
 }
 body.app-entered:not(.signup-mode) .digital-dock button,
 body.app-entered:not(.signup-mode) .digital-dock a { font-size: var(--mmd-type-caption); }
+body.app-entered:not(.signup-mode) .digital-snapshot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--mmd-space-4);
+  padding: var(--mmd-space-4);
+  border-color: var(--mmd-line);
+  background: var(--mmd-graphite);
+}
+body.app-entered:not(.signup-mode) .digital-snapshot-member { display: flex; align-items: center; gap: var(--mmd-space-3); min-width: 0; }
+body.app-entered:not(.signup-mode) .digital-snapshot-member > div { min-width: 0; }
+body.app-entered:not(.signup-mode) .digital-snapshot-icon { flex: none; }
+body.app-entered:not(.signup-mode) .digital-snapshot-label,
+body.app-entered:not(.signup-mode) .digital-points-note { display: block; color: var(--mmd-muted); font-size: var(--mmd-type-caption); line-height: 1.4; }
+body.app-entered:not(.signup-mode) .digital-snapshot-points { min-width: 86px; text-align: right; }
+body.app-entered:not(.signup-mode) .digital-points { font-variant-numeric: tabular-nums; }
+@media (max-width: 360px) {
+  body.app-entered:not(.signup-mode) .digital-snapshot { grid-template-columns: 1fr; }
+  body.app-entered:not(.signup-mode) .digital-snapshot-points { padding-top: var(--mmd-space-3); border-top: 1px solid var(--mmd-line); text-align: left; }
+  body.app-entered:not(.signup-mode) .digital-points { text-align: left; }
+}
 body.app-entered:not(.signup-mode) .digital-sub,
 body.app-entered:not(.signup-mode) .digital-snapshot p,
 body.app-entered:not(.signup-mode) .digital-news-card p { font-size: var(--mmd-type-body); line-height: 1.5; }

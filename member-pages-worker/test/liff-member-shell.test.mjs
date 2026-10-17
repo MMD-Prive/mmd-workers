@@ -474,6 +474,11 @@ describe("same-site /member/liff shell", () => {
 
     // Membership snapshot dimensions remain byte-for-byte locked while only the shell viewport changes.
     assert.match(html, /\.digital-snapshot\{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;margin-top:14px;padding:12px;border:1px solid var\(--digital-line\);border-radius:var\(--digital-radius\);background:var\(--digital-surface\)\}/);
+    assert.match(html, /class="digital-snapshot-member"/);
+    assert.match(html, /class="digital-snapshot-points"[^>]*><span class="digital-snapshot-label">Points<\/span><strong id="profile-points"/);
+    assert.match(html, /id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด/);
+    assert.match(html, /setDigitalPointsDisplay\(dashboard\.points\?\.confirmedBalance, true\)/);
+    assert.match(html, /setDigitalPointsDisplay\(points\.active_points, points\.status === "verified"\)/);
     assert.match(html, /body\.app-entered:not\(\.signup-mode\) #status\{display:none!important;margin:0\}/);
 
     // Width contracts mirror the requested inspection breakpoints, including simulated iPhone side insets.
@@ -805,11 +810,32 @@ describe("renewal card hidden parts", () => {
 });
 
 it('Lovable adapter is inert scoped CSS without external resources or hidden-state overrides', () => {
-  assert.doesNotMatch(css, /url\s*\(|@import|<script|fetch\s*\(|localStorage|sessionStorage|display\s*:|visibility\s*:/i);
+  assert.doesNotMatch(css, /url\s*\(|@import|<script|fetch\s*\(|localStorage|sessionStorage|\[hidden\]|display\s*:\s*none|visibility\s*:\s*hidden/i);
   for (const rule of css.split('}')) {
     if (!rule.includes('{')) continue;
     const selector = rule.slice(0, rule.lastIndexOf('{'));
     assert.match(selector, /body\.app-entered:not\(\.signup-mode\)/);
+  }
+});
+
+it('shows only verified nonnegative Points and keeps unknown balances under review', async () => {
+  const html = await (await shell('/member/liff?intent=status')).text();
+  const start = html.indexOf('function setDigitalPointsDisplay(');
+  const end = html.indexOf('async function hydrateDigitalHome(', start);
+  assert.ok(start > 0 && end > start);
+  const value = { textContent: '' };
+  const note = { textContent: '' };
+  const document = { getElementById: (id) => id === 'profile-points' ? value : id === 'profile-points-note' ? note : null };
+  for (const [balance, verified, expected, expectedNote] of [
+    [0, true, '0', 'ยอดที่ยืนยันจากระบบ'],
+    [12, true, '12', 'ยอดที่ยืนยันจากระบบ'],
+    [null, true, '—', 'กำลังตรวจสอบยอด'],
+    [-1, true, '—', 'กำลังตรวจสอบยอด'],
+    [12, false, '—', 'กำลังตรวจสอบยอด'],
+  ]) {
+    await runInNewContext(html.slice(start, end) + `setDigitalPointsDisplay(${JSON.stringify(balance)}, ${verified});`, { document, Intl, Number, locale: 'th' });
+    assert.equal(value.textContent, expected);
+    assert.equal(note.textContent, expectedNote);
   }
 });
 
