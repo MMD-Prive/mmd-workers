@@ -5,16 +5,20 @@ on:
     paths:
       - "webflow/sigil/model/my-model-workspace-20261016.*"
       - "webflow/sigil/model/dashboard-home-media-20261015.js"
+      - "webflow/sigil/model/my-model-lovable-vnext-skin-20261017.*"
       - "webflow/sigil/confirm/confirmation-handoff*"
       - "scripts/build-my-model-workspace-bundle.mjs"
+      - "scripts/build-my-model-lovable-skin-embed.mjs"
       - ".github/workflows/my-model-workspace-bundle-ci.yml"
   push:
     branches: [main]
     paths:
       - "webflow/sigil/model/my-model-workspace-20261016.*"
       - "webflow/sigil/model/dashboard-home-media-20261015.js"
+      - "webflow/sigil/model/my-model-lovable-vnext-skin-20261017.*"
       - "webflow/sigil/confirm/confirmation-handoff*"
       - "scripts/build-my-model-workspace-bundle.mjs"
+      - "scripts/build-my-model-lovable-skin-embed.mjs"
       - ".github/workflows/my-model-workspace-bundle-ci.yml"
 
 permissions:
@@ -37,6 +41,9 @@ jobs:
         run: |
           node --check webflow/sigil/model/my-model-workspace-20261016.js
           node --check scripts/build-my-model-workspace-bundle.mjs
+          node --check webflow/sigil/model/my-model-lovable-vnext-skin-20261017.js
+          node --check scripts/build-my-model-lovable-skin-embed.mjs
+          node scripts/build-my-model-lovable-skin-embed.mjs "$RUNNER_TEMP/MY_MODEL_Lovable_Skin.html"
           node scripts/build-my-model-workspace-bundle.mjs "$RUNNER_TEMP/MY_MODEL_Dashboard_Bundle.html"
           git diff --check
       - name: Verify workspace, identity, media, Console and confirmation contracts
@@ -45,6 +52,7 @@ jobs:
         run: |
           node --test \
             webflow/sigil/model/my-model-workspace-20261016.test.mjs \
+            webflow/sigil/model/my-model-lovable-vnext-skin-20261017.test.mjs \
             webflow/sigil/model/dashboard-job-world-20261015.test.mjs \
             webflow/sigil/model/model-console-v3-identity-first.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \
