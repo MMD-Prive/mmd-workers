@@ -1,0 +1,36 @@
+name: SIGIL verified balance contract
+on:
+  pull_request:
+    paths:
+      - 'payments-worker/**'
+      - 'webflow/sigil/confirm/**'
+      - '.github/workflows/sigil-verified-balance-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'payments-worker/**'
+      - 'webflow/sigil/confirm/**'
+      - '.github/workflows/sigil-verified-balance-contract.yml'
+permissions:
+  contents: read
+jobs:
+  balance-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Validate changed payment runtime
+        run: |
+          node --check payments-worker/confirmation-details.js
+          node --check payments-worker/verified-session-balance.js
+          node --check webflow/sigil/confirm/customer-payment-access.js
+      - name: Synthetic balance and existing confirmation contracts
+        run: |
+          node --test payments-worker/verified-session-balance.test.mjs payments-worker/confirmation-details.test.mjs payments-worker/payment-instructions-v1.test.mjs
+          node --test webflow/sigil/confirm/customer-payment-access.test.cjs
