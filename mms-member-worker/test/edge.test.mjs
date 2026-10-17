@@ -4,11 +4,12 @@ import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions, Response as EdgeResponse } from 'miniflare';
 import { fileURLToPath } from 'node:url';
 import { NOTICE_VERSION } from '../src/runtime.mjs';
+import { browserFixture, settle } from './support/client-fixture.mjs';
 
 test('real Workers RPC + SQLite runtime completes customer enrollment and session revocation', async t => {
   const bundle = await build({
     entryPoints: [fileURLToPath(new URL('../src/index.js', import.meta.url))],
-    bundle: true, write: false, format: 'esm', platform: 'browser', external: ['cloudflare:workers'],
+    bundle: true, keepNames: true, write: false, format: 'esm', platform: 'browser', external: ['cloudflare:workers'],
   });
   const outbound = [];
   const mf = new Miniflare(convertV4MiniflareOptions({
@@ -25,6 +26,13 @@ test('real Workers RPC + SQLite runtime completes customer enrollment and sessio
     },
   }));
   t.after(() => mf.dispose());
+  // Execute the client returned by the compiled Worker, with Wrangler-style
+  // keepNames helpers enabled. Source-only client tests miss this failure.
+  const page = await mf.dispatchFetch('https://www.mmdbkk.com/male-massage/member');
+  const browser = browserFixture(await page.text());
+  await settle();
+  assert.equal(browser.node('editor').hidden, false);
+  assert.equal(browser.node('name').value, 'Ton');
   const base = 'https://www.mmdbkk.com/api/mms/app/membership/';
   const post = (action, body, cookie) => mf.dispatchFetch(base+action, { method: 'POST',
     headers: { origin: 'https://www.mmdbkk.com', 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
