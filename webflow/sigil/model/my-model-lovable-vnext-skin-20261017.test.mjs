@@ -47,3 +47,36 @@ test('both Webflow embeds parse and stay below 50KB',()=>{
  new vm.Script(source);
  for(const m of skin.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);
 });
+
+
+test('premium atelier v2 is restrained, accessible and preserves both verified lanes',()=>{
+ assert.match(css,/PREMIUM ATELIER v2/);
+ assert.match(css,/--lv-bg:#0b0e10/);
+ assert.match(css,/--lv-text:#f3f0e8/);
+ assert.match(css,/--lv-gold:#c9b38b/);
+ assert.match(css,/\[data-mm-lv-lane="public"\]\{/);
+ assert.match(css,/--lv-bg:#f8f7f3/);
+ assert.match(css,/\.mm-lv-work\{/);
+ assert.match(css,/\.mm-lv-work\s+\.mmprimary\{/);
+ assert.match(css,/\.mm-lv-guides\[open\]>/);
+ assert.match(css,/min-height:52px/);
+ assert.match(css,/min-width:44px/);
+ assert.match(css,/prefers-reduced-motion:reduce/);
+ assert.match(css,/opacity:\.10;filter:brightness\(1\.10\)/);
+ assert.doesNotMatch(css,/\.mm-lv-atmosphere\{[^}]*opacity:\.2/);
+});
+test('guides are accessible, localized and do not steal operational authority',()=>{
+ assert.match(source,/root\.dataset\.mmPremiumSkin='atelier-v2'/);
+ assert.match(source,/guideLinks=shell\.querySelector\('\.mmshortcuts'\)/);
+ assert.match(source,/doc\.createElement\('details'\)/);
+ assert.match(source,/summary\.dataset\.mmLvText='guides'/);
+ assert.match(source,/guides:'คู่มือและกติกา'/);
+ assert.match(source,/guides:'Guides & policies'/);
+ assert.match(source,/guides:'指南与规定'/);
+ assert.match(source,/guideLinks\.before\(guides\);guides\.append\(summary,guideLinks\)/);
+ assert.doesNotMatch(source,/\b(?:fetch|XMLHttpRequest|localStorage|indexedDB|supabase)\b/);
+ assert.match(source,/mmd:model-session-ready/);
+ assert.match(source,/mmd:model-workspace-locked/);
+ assert.match(source,/mm-lv-dock/);
+ assert.ok(Buffer.byteLength(skin,'utf8')<50000);
+});
