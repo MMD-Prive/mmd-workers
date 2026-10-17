@@ -1,3 +1,5 @@
+import { MODEL_JSON_DEADLINE_RUNTIME } from "./model-json-deadline-runtime.js";
+
 export const MMD_APP_DIGITAL_CSS = `
 @font-face{font-family:"MY MODEL Thai";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:"MY MODEL Thai";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
@@ -156,7 +158,7 @@ export function modelLiffDigitalBootstrapHtml({
     var idToken=typeof window.liff.getIDToken==="function"?window.liff.getIDToken():"";
     if(!idToken)throw new Error("id_token_missing");
     status.textContent="กำลังเปิดรายละเอียดงาน…";
-    var exchange=await fetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})});
+    var exchange=await boundedFetch("/v1/model/liff/exchange",{method:"POST",credentials:"include",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:JSON.stringify({idToken:idToken,environment:${safeEnvironment}})},15000);
     var exchangeBody=await exchange.json().catch(function(){return null});
     if(exchange.status===202||!exchange.ok||!exchangeBody||exchangeBody.ok!==true)throw new Error(exchangeBody&&exchangeBody.error||"model_session_exchange_failed");
     window.location.replace(${safeReturnTo});return;` : "";
@@ -249,7 +251,7 @@ export function modelLiffDigitalBootstrapHtml({
           <strong id="status">${statusLead}</strong>\n          <p>${statusHelp}</p>
         </div>
       </div>
-      <div class="mmd-digital-meter" aria-hidden="true"><span></span></div>
+      <div class="mmd-digital-meter" id="loading-meter" aria-hidden="true"><span></span></div>
     </section>
     <a class="mmd-digital-action" id="fallback" href=${safeFallback} ${publicJobApplicant ? "" : "hidden"}>${cta}</a>
     ${publicJobApplicant ? '<small class="mmd-digital-detail">ต้องการสอบถามเป็นการส่วนตัว <a href="https://t.me/per_mmd" rel="noreferrer">ติดต่อเปอร์</a></small>' : ""}
@@ -262,10 +264,13 @@ export function modelLiffDigitalBootstrapHtml({
   var pill=document.getElementById("session-pill");
   var fallback=document.getElementById("fallback");
   var detail=document.getElementById("detail");
+  var meter=document.getElementById("loading-meter");
   function showFailure(code){
+    if(meter)meter.hidden=true;
     pill.textContent=${JSON.stringify(selectedJobMode ? "SELECTED JOB · RETRY" : publicJobApplicant ? "ลองอีกครั้ง" : "MY MODEL · RETRY")};
     status.textContent=${JSON.stringify(fail)};
     fallback.hidden=false;
+    if(${JSON.stringify(selectedJobMode)})fallback.textContent="ลองเปิดงานอีกครั้ง";
     detail.textContent=code;
     if(code==="identity_review_required"){
       status.textContent="MMD กำลังตรวจสอบการเชื่อมข้อมูลเดิม ไม่ต้องสมัครซ้ำครับ";
@@ -301,20 +306,12 @@ export function modelLiffDigitalBootstrapHtml({
     }finally{clearTimeout(timer);}
   }
 
-  async function boundedFetch(url,init,timeoutMs){
-    var controller=new AbortController();
-    var timer=setTimeout(function(){controller.abort();},timeoutMs||15000);
-    try{
-      return await fetch(url,Object.assign({},init,{signal:controller.signal}));
-    }catch(error){
-      if(error&&error.name==="AbortError")throw new Error("model_job_request_timeout");
-      throw error;
-    }finally{clearTimeout(timer);}
-  }
+${MODEL_JSON_DEADLINE_RUNTIME}
 
   async function continueIntoApp(){
     try{
       fallback.hidden=true;
+      if(meter)meter.hidden=false;
       await initializeLine();
       pill.textContent=${JSON.stringify(readyPill)};
       status.textContent=${JSON.stringify(success)};
