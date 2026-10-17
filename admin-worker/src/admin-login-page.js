@@ -1,4 +1,5 @@
 import { ADMIN_LOGIN_DUO_DATA, ADMIN_LOGIN_MMS_LOGO_DATA } from "./admin-login-image-a-assets.js";
+import { ADMIN_LOGIN_CALM_CSS } from "./admin-login-calm-design.js";
 
 export const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 export const APPROVED_ADMIN_LOGIN_PAGE_ID = "admin-login-approved-hero";
@@ -410,6 +411,7 @@ export function renderApprovedAdminLogin(
     }
 
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+    ${ADMIN_LOGIN_CALM_CSS}
   </style>
 </head>
 <body data-initial-lane="${partnerFirst ? "partner" : "owner"}">
