@@ -313,6 +313,21 @@ test("original signed customer link resolves the separate final intent after arr
     [P.promptPayUrl]: "https://payments.example.com/qr/final.png",
   });
   const { env, customerToken } = await envAndTokens({ payment: finalPayment, paymentType: "deposit" });
+  const priorFetch = env.AIRTABLE_HTTP.fetch;
+  const verifiedDeposit = paymentRecord({
+    [P.amountThb]: 13500,
+    [P.verificationStatus]: "verified",
+    [P.paymentStatus]: "Paid",
+    [P.intentStatus]: "Confirmed",
+  });
+  verifiedDeposit.id = "rec_verified_deposit";
+  env.AIRTABLE_HTTP.fetch = async request => {
+    const url = new URL(request.url);
+    if (url.pathname.includes("tblWGGJJOx5eBvBZJ") && url.searchParams.has("pageSize")) {
+      return Response.json({ records: [verifiedDeposit, finalPayment] });
+    }
+    return priorFetch(request);
+  };
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
   const data = await response.json();
@@ -322,6 +337,8 @@ test("original signed customer link resolves the separate final intent after arr
   assert.equal(data.payment.amount_due_thb, 27000);
   assert.equal(data.payment.proof_received, false);
   assert.equal(data.payment.verified, false);
+  assert.equal(data.balance_summary.verified_paid_thb, 13500);
+  assert.equal(data.payment.qr_url, null, "fresh Payment Instructions owns the amount-specific QR");
 });
 
 test("payment enrichment never exposes a payment record bound to another session", async () => {
