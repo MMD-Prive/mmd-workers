@@ -7,6 +7,12 @@ on:
       - main
     paths:
       - "events-worker/**"
+      - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/model-reconfirm-guard.js"
+      - "admin-worker/src/model-reconfirm-freshness.js"
+      - "admin-worker/src/model-current-session.js"
+      - "admin-worker/src/modelSessionContractV1.js"
+      - "shared/model-job-board-links.mjs"
       - ".github/workflows/deploy-events-worker.yml"
 
 concurrency:
@@ -62,6 +68,7 @@ jobs:
           node --check src/model-eta-wrapper.js
           node --check src/customer-aftercare-v2.js
           node --test model-eta-policy.test.mjs aftercare-v2.test.mjs
+          node --test ../admin-worker/model-reconfirm-runtime.test.mjs ../admin-worker/model-reconfirm-guard.test.mjs ../admin-worker/model-reconfirm-freshness.test.mjs ../admin-worker/model-reconfirm-canonical-source.test.mjs ../admin-worker/model-new-job-notification.test.mjs
 
       - name: Validate direct deploy
         shell: bash

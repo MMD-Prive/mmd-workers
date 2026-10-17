@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/model-reconfirm-guard.js"
+      - "admin-worker/src/model-current-session.js"
+      - "admin-worker/src/modelSessionContractV1.js"
+      - "admin-worker/model-reconfirm-canonical-source.test.mjs"
       - "admin-worker/src/model-reconfirm-freshness.js"
       - "admin-worker/src/customer-change-resolution.js"
       - "admin-worker/model-reconfirm-freshness.test.mjs"
@@ -21,6 +25,10 @@ on:
       - main
     paths:
       - "admin-worker/src/model-reconfirm-runtime.js"
+      - "admin-worker/src/model-reconfirm-guard.js"
+      - "admin-worker/src/model-current-session.js"
+      - "admin-worker/src/modelSessionContractV1.js"
+      - "admin-worker/model-reconfirm-canonical-source.test.mjs"
       - "admin-worker/src/model-reconfirm-freshness.js"
       - "admin-worker/src/customer-change-resolution.js"
       - "admin-worker/model-reconfirm-freshness.test.mjs"
@@ -50,7 +58,7 @@ jobs:
           node --check admin-worker/src/dashboard-worker.js
           node --check events-worker/src/model-eta-wrapper.js
       - name: Reconfirm contract tests
-        run: node --test admin-worker/model-reconfirm-runtime.test.mjs admin-worker/model-reconfirm-freshness.test.mjs admin-worker/model-reconfirm-guard.test.mjs admin-worker/model-reconfirm-owner.test.mjs admin-worker/customer-change-resolution.test.mjs admin-worker/sigil-jobs-reconfirm-integration.test.mjs
+        run: node --test admin-worker/model-reconfirm-runtime.test.mjs admin-worker/model-reconfirm-freshness.test.mjs admin-worker/model-reconfirm-guard.test.mjs admin-worker/model-reconfirm-canonical-source.test.mjs admin-worker/model-new-job-notification.test.mjs admin-worker/model-reconfirm-owner.test.mjs admin-worker/customer-change-resolution.test.mjs admin-worker/sigil-jobs-reconfirm-integration.test.mjs
       - name: Admin Worker dry run
         run: npx wrangler deploy --dry-run --config admin-worker/wrangler.toml
       - name: Events Worker dry run

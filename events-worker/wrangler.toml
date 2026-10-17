@@ -13,11 +13,16 @@ PAYMENTS_WORKER_BASE = "https://payments-worker.malemodel-bkk.workers.dev"
 ADMIN_WORKER_BASE = "https://admin-worker.malemodel-bkk.workers.dev"
 RT_BASE_URL = "https://realtime-worker.malemodel-bkk.workers.dev"
 
+# Canonical MMD storage for the pre-job reconfirm scheduler.
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_MODELS = "tblI4B0bI446vp9GX"
+
 # Pre-job reconfirm reuses this Worker's existing 15-minute cron.
 MODEL_RECONFIRM_ENABLED = "true"
 # Guard v2: next-ICT-day only, no model guessing, owner-only fallback, bounded retries. Off = legacy behavior unchanged.
 # MODEL_RECONFIRM_OWNER_CHAT_ID is a Cloudflare secret/var (fallback HYPE_JOB_DAILY_CHAT_ID); never hardcoded here.
-MODEL_RECONFIRM_GUARD_V2 = "false"
+MODEL_RECONFIRM_GUARD_V2 = "true"
 MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 
 # Secrets: AUTH_SERVICE_EVENTS_TO_PAYMENTS, AUTH_SERVICE_EVENTS_TO_REALTIME,
@@ -27,5 +32,5 @@ MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 # Reconfirm additionally needs MODEL_LINE_CHANNEL_ACCESS_TOKEN (or LINE_CHANNEL_ACCESS_TOKEN)
 # plus the canonical Airtable Sessions/Models bindings.
 
-# Airtable/other env names should be set in dashboard or wrangler environment
-# e.g. AIRTABLE_API_KEY, AIRTABLE_BASE_ID, AIRTABLE_TABLE_SESSIONS, AIRTABLE_TABLE_MODELS, AIRTABLE_TABLE_CLIENTS, AIRTABLE_TABLE_ACTIVITY_LOGS
+# AIRTABLE_API_KEY remains a Cloudflare secret. Other optional table bindings,
+# such as AIRTABLE_TABLE_CLIENTS and AIRTABLE_TABLE_ACTIVITY_LOGS, stay in dashboard config.

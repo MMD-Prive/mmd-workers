@@ -14,6 +14,8 @@ import {
   sendFailureStatus,
 } from "./model-reconfirm-guard.js";
 import { checkReconfirmFreshness, reconfirmRevision, reconfirmSnapshot } from "./model-reconfirm-freshness.js";
+import { CANONICAL_MODEL_FIELD, canonicalModelIds } from "./model-current-session.js";
+import { normalizeSessionState } from "./modelSessionContractV1.js";
 import { buildModelJobBoardBroadcastLink } from "../../shared/model-job-board-links.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -432,14 +434,15 @@ export async function collectReconfirmDecisions(env, { now = Date.now(), maxReco
   const items = [];
   for (const record of listed.records) {
     const fields = record.fields || {};
+    const modelRef = sessionModelRef(env, fields);
     // Cheap pre-check so we never read a Model for a job that will be skipped anyway.
     const pre = decideReconfirmAction({
       lifecycleState: sessionLifecycleState(env, fields), jobDate: sessionJobDate(env, fields), now,
       reconfirm: reconfirmFromFields(env, fields, now),
       followupStatus: fields?.[reconfirmFields(env).followupStatus],
-      modelRef: fields?.[names.modelRecordId], model: { line_user_id: "" }, lineTransportReady: transport,
+      modelRef, model: { line_user_id: "" }, lineTransportReady: transport,
     });
-    const ref = classifyModelRef(fields?.[names.modelRecordId]);
+    const ref = classifyModelRef(modelRef);
     let model = null;
     if (ref.status === "one" && (pre.action !== GUARD_ACTIONS.SKIP)) {
       if (!modelCache.has(ref.id)) {
@@ -452,7 +455,7 @@ export async function collectReconfirmDecisions(env, { now = Date.now(), maxReco
       lifecycleState: sessionLifecycleState(env, fields), jobDate: sessionJobDate(env, fields), now,
       reconfirm: reconfirmFromFields(env, fields, now),
       followupStatus: fields?.[reconfirmFields(env).followupStatus],
-      modelRef: fields?.[names.modelRecordId], model, lineTransportReady: transport,
+      modelRef, model, lineTransportReady: transport,
     });
     items.push({ record, decision });
   }
@@ -865,10 +868,9 @@ async function sendOpsReconfirmOverdue(env, sessionRecord) {
 }
 
 async function resolveModelLineUserId(env, sessionFieldsValue) {
-  const fields = sessionFields(env);
-  const ref = sessionFieldsValue?.[fields.modelRecordId];
-  const recordId = Array.isArray(ref) ? clean(ref[0]) : clean(ref);
-  if (!recordId || !/^rec[A-Za-z0-9]+$/.test(recordId)) return "";
+  const ref = classifyModelRef(sessionModelRef(env, sessionFieldsValue));
+  if (ref.status !== "one") return "";
+  const recordId = ref.id;
   const result = await airtable(env, modelTable(env), `/${encodeURIComponent(recordId)}`);
   if (!result.ok) return "";
   const modelFields = result.data?.fields || {};
@@ -905,7 +907,28 @@ function modelTable(env) { return clean(env.AIRTABLE_TABLE_MODELS || MODEL_TABLE
 function sessionIdFromFields(env, fields) { return clean(fields?.[sessionFields(env).sessionId]); }
 function sessionJobDate(env, fields) { return clean(fields?.[sessionFields(env).jobDate] || fields?.service_date || fields?.date); }
 function sessionModelName(env, fields) { return clean(fields?.[sessionFields(env).modelName] || fields?.["Model Name"]); }
-function sessionLifecycleState(env, fields) { return normalizeWord(fields?.[sessionFields(env).state] || fields?.[sessionFields(env).status]); }
+function sessionModelRef(env, fields) {
+  if (Object.prototype.hasOwnProperty.call(fields || {}, CANONICAL_MODEL_FIELD)) {
+    const value = fields[CANONICAL_MODEL_FIELD];
+    const ids = canonicalModelIds({ fields });
+    // A present canonical link is authoritative, including empty/invalid values.
+    // Give the existing guard an invalid reference instead of a usable legacy one.
+    return Array.isArray(value) && ids.length === value.length && new Set(ids).size === ids.length
+      ? ids : "invalid_canonical_model";
+  }
+  return fields?.[sessionFields(env).modelRecordId];
+}
+function sessionLifecycleState(env, fields) {
+  const names = sessionFields(env);
+  const keys = unique([clean(env.AT_SESSIONS__CANONICAL_STATE || "model_session_state"), names.state, names.status, "Session Status"]);
+  for (const key of keys) {
+    const value = clean(fields?.[key]);
+    // Only absent states may fall through; terminal and unknown newer values
+    // must never be replaced by a stale legacy Confirmed value.
+    if (value) return normalizeSessionState(value) || normalizeWord(value);
+  }
+  return "";
+}
 function isReconfirmLifecycleState(value) { return RECONFIRM_LIFECYCLE_STATES.has(normalizeWord(value)); }
 
 function mergeJsonResponse(response, original, additions) {
