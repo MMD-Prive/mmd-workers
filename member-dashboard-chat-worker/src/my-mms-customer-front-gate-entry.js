@@ -1,5 +1,6 @@
 import currentWorker from "./mms-line-front-gate.js";
 import { maybeHandleTherapistWorkspace } from "./mms-therapist-workspace.js";
+import { isMmsMembershipRequest, isMmsMembershipOriginPassthrough, proxyMmsMembership } from './mms-membership-front-gate.js';
 import {
   handleMyMmsCustomerApi,
   handleMyMmsCustomerAsset,
@@ -41,6 +42,8 @@ async function proxyMedicalRequest(request, env) {
 export default {
   ...currentWorker,
   async fetch(request, env = {}, ctx) {
+    if (isMmsMembershipRequest(request)) return proxyMmsMembership(request, env);
+    if (isMmsMembershipOriginPassthrough(request)) return globalThis.fetch(request);
     if (isTherapistOriginPassthroughRequest(request)) return globalThis.fetch(request);
     const therapistPage = await maybeHandleTherapistWorkspace(request, env);
     if (therapistPage) return therapistPage;

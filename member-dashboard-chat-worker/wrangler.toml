@@ -30,6 +30,10 @@ service = "ai-worker"
 binding = "MMS_WORKER"
 service = "mms-worker"
 
+[[services]]
+binding = "MMS_MEMBER_WORKER"
+service = "mms-member-worker"
+
 # Downstream-only notification path for pending LINE payment evidence. Telegram
 # never becomes payment or entitlement truth; it only alerts the operator after
 # a pending Payment Proof row has been persisted successfully.
@@ -175,8 +179,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/api/member/app/*"
 zone_name = "mmdbkk.com"
 
-# MY MMS customer app. The exact /male-massage route becomes the authenticated
-# customer workspace sourced from MMD-Prive/my-mms-therapist. Public marketing
+# Native customer membership keeps informational Webflow pages on their origin.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/member*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/member*"
+zone_name = "mmdbkk.com"
+
+# MY MMS customer workspace sourced from MMD-Prive/my-mms-therapist. Public marketing
 # pages such as /male-massage/home and /male-massage/how-to-use remain Webflow-owned.
 [[routes]]
 pattern = "mmdbkk.com/male-massage"

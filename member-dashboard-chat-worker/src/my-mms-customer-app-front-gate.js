@@ -3,7 +3,7 @@ const CUSTOMER_UI_PREFIX = "/male-massage";
 const CUSTOMER_ASSET_PREFIX = "/male-massage-assets/";
 const CUSTOMER_API_BASE = "/api/mms/app";
 const PRESENTATION_ORIGIN = "https://my-mms-therapist.lovable.app";
-const MEMBER_PROFILE_PATH = "/api/member/app/profile";
+const MEMBER_PROFILE_PATH = "/api/mms/app/membership/me";
 const MMS_MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
 const MMS_INTERNAL_ORIGIN = "https://mms.internal";
 const MEMBER_REF_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,119}$/;
@@ -219,17 +219,27 @@ function memberServiceHeaders(request) {
 }
 
 async function readMemberProfile(request, env) {
-  if (!env.MEMBER_PAGES_WORKER?.fetch) return { status: 503, data: null };
+  if (!env.MMS_MEMBER_WORKER?.fetch) return { status: 503, data: null };
   const url = new URL(request.url);
   url.pathname = MEMBER_PROFILE_PATH;
   url.search = "";
-  const response = await env.MEMBER_PAGES_WORKER.fetch(new Request(url.toString(), {
+  let response;
+  try { response = await env.MMS_MEMBER_WORKER.fetch(new Request(url.toString(), {
     method: "GET",
     headers: memberServiceHeaders(request),
     redirect: "manual",
-  }));
+  })); } catch { return { status: 503, data: null }; }
   const payload = await response.clone().json().catch(() => null);
-  return { status: response.status, data: payload && typeof payload === "object" ? payload : null };
+  if (response.status !== 200) return { status: response.status, data: null };
+  const profile = payload?.data?.profile;
+  if (!payload?.ok || !payload?.data?.registered || !/^mmsmem_[a-f0-9]{32}$/.test(profile?.member_id || '')) return { status: 409, data: null };
+  return { status: 200, data: {
+    match_state: 'matched', displayName: profile.display_name,
+    lineDisplayName: payload.data.line_display_name,
+    memberRef: profile.member_id, memberSince: profile.created_at,
+    emailMasked: profile.email || null, emailVerified: false, emailSafeToDisplay: true,
+    phoneMasked: profile.phone || null, phoneVerified: false, phoneSafeToDisplay: true,
+  } };
 }
 
 function safeString(value, max = 160) {

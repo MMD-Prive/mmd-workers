@@ -53,33 +53,33 @@ test("presentation rewrite keeps assets and app navigation same-origin", () => {
   assert.match(html, /href='\/male-massage\/bookings\/abc'/);
 });
 
-test("customer profile is projected from member authority without MMD tier or points", async () => {
+test("customer profile is projected from MMS customer authority without MMD tier or points", async () => {
   const env = {
-    MEMBER_PAGES_WORKER: {
+    MEMBER_PAGES_WORKER: { fetch: () => { throw new Error('MMD authority must never be used'); } },
+    MMS_MEMBER_WORKER: {
       fetch: async () => Response.json({
-        match_state: "matched",
-        displayName: "คุณต้น",
-        lineDisplayName: "Ton",
-        memberRef: "member_abc123",
+        ok: true, data: { registered: true, line_display_name: 'Ton', profile: {
+        display_name: "คุณต้น",
+        member_id: "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         membership_tier: "premium",
         points_confirmed: 1200,
-        emailMasked: "t***@example.com",
-        emailVerified: true,
-        emailSafeToDisplay: true,
+        email: "ton@example.test",
+        } },
       }),
     },
   };
 
   const response = await handleMyMmsCustomerApi(req("/api/mms/app/customer", {
-    headers: { cookie: "__Host-mmd_liff_session=test" },
+    headers: { cookie: "__Host-mms_customer_published=test" },
   }), env);
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.data.displayName, "คุณต้น");
   assert.equal(body.data.identityState, "verified");
-  assert.equal(body.data.customerRefDisplay, "member_abc123");
-  assert.equal(body.data.email.value, "t***@example.com");
+  assert.equal(body.data.customerRefDisplay, "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(body.data.email.value, "ton@example.test");
+  assert.equal(body.data.email.verified, false);
   assert.equal("membership_tier" in body.data, false);
   assert.equal("points_confirmed" in body.data, false);
 });
@@ -87,10 +87,10 @@ test("customer profile is projected from member authority without MMD tier or po
 test("booking reads resolve member identity server-side then call mms-worker", async () => {
   const calls = [];
   const env = {
-    MEMBER_PAGES_WORKER: {
+    MMS_MEMBER_WORKER: {
       fetch: async (request) => {
         calls.push(request.url);
-        return Response.json({ match_state: "matched", memberRef: "member_abc123" });
+        return Response.json({ ok: true, data: { registered: true, profile: { member_id: 'mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } } });
       },
     },
     MMS_WORKER: {
@@ -114,7 +114,7 @@ test("booking reads resolve member identity server-side then call mms-worker", a
   };
 
   const response = await handleMyMmsCustomerApi(req("/api/mms/app/bookings/current", {
-    headers: { cookie: "__Host-mmd_liff_session=test" },
+    headers: { cookie: "__Host-mms_customer_published=test" },
   }), env);
   const body = await response.json();
   assert.equal(response.status, 200);
@@ -122,8 +122,15 @@ test("booking reads resolve member identity server-side then call mms-worker", a
   assert.equal(body.data.status, "confirmed");
   assert.equal(body.data.serviceLabel, "Aroma Oil");
   assert.equal(body.data.paymentState, "checking");
-  assert.match(calls[0], /\/api\/member\/app\/profile$/);
-  assert.match(calls[1], /^https:\/\/mms\.internal\/internal\/mms\/member\/prebookings\?member_ref=member_abc123$/);
+  assert.match(calls[0], /\/api\/mms\/app\/membership\/me$/);
+  assert.match(calls[1], /^https:\/\/mms\.internal\/internal\/mms\/member\/prebookings\?member_ref=mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$/);
+});
+
+test('MMD membership alone cannot unlock customer profile or bookings', async () => {
+  const env = { MEMBER_PAGES_WORKER: { fetch: () => { throw new Error('MMD must not be queried'); } } };
+  for (const path of ['/api/mms/app/customer', '/api/mms/app/bookings']) {
+    assert.equal((await handleMyMmsCustomerApi(req(path, { headers: { cookie: '__Host-mmd_liff_session=test' } }), env)).status, 503);
+  }
 });
 
 test("unconnected customer contracts fail closed", async () => {
