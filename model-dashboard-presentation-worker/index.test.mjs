@@ -821,3 +821,65 @@ test("normal Mini App bootstrap exchanges LINE identity before dashboard navigat
   }
 });
 
+
+
+test("selected-job LIFF handoff sends exact Session and opens verified confirmation", async () => {
+  const { modelLiffDigitalBootstrapHtml } = await import("./src/model-liff-digital-shell.js");
+  const { runInNewContext } = await import("node:vm");
+  const sessionId = "sess_mu8oo9ao_a97c529604a34602";
+  const html = modelLiffDigitalBootstrapHtml({
+    liffId:"2010864854-N34SgCqq",
+    fallback:"https://miniapp.line.me/2010864854-N34SgCqq/?handoff=job-confirmed",
+    sdk:"https://static.line-scdn.net/liff/edge/2/sdk.js",
+    selectedSessionId:sessionId,environment:"published",mode:"primary",
+  });
+  const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)[1];
+  const nodes = Object.fromEntries(["status","session-pill","fallback","detail"].map(id => [id,{textContent:"",hidden:true}]));
+  const calls = [], redirects = [];
+  await runInNewContext(script, {
+    URL,URLSearchParams,AbortController,setTimeout,clearTimeout,
+    document:{getElementById:id=>nodes[id]},
+    window:{
+      liff:{init:async()=>{},getIDToken:()=>"test-id-token"},
+      location:{replace:url=>redirects.push(url)},
+    },
+    fetch:async (url,init)=>{
+      calls.push({url,init});
+      return {ok:true,status:200,json:async()=>({
+        ok:true,redirect_url:"https://mmdbkk.com/sigil/confirm/job-model?t=fixture.signed-model",
+      })};
+    },
+  });
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,"/v1/model/selected-job/handoff");
+  assert.equal(JSON.parse(calls[0].init.body).session_id,sessionId);
+  assert.equal(calls[0].init.credentials,"include");
+  assert.ok(calls[0].init.signal);
+  assert.deepEqual(redirects,["/sigil/confirm/job-model?t=fixture.signed-model"]);
+  assert.equal(nodes.fallback.hidden,true);
+});
+
+test("selected-job LIFF request timeout stops loading and shows retry without leaking token", async () => {
+  const { modelLiffDigitalBootstrapHtml } = await import("./src/model-liff-digital-shell.js");
+  const { runInNewContext } = await import("node:vm");
+  const html = modelLiffDigitalBootstrapHtml({
+    liffId:"2010864854-N34SgCqq",
+    fallback:"https://miniapp.line.me/2010864854-N34SgCqq/",
+    sdk:"https://static.line-scdn.net/liff/edge/2/sdk.js",
+    selectedSessionId:"sess_mu8oo9ao_a97c529604a34602",mode:"primary",
+  });
+  const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)[1];
+  const nodes = Object.fromEntries(["status","session-pill","fallback","detail"].map(id => [id,{textContent:"",hidden:true}]));
+  const redirects = [];
+  await runInNewContext(script, {
+    URL,URLSearchParams,AbortController,setTimeout,clearTimeout,
+    document:{getElementById:id=>nodes[id]},
+    window:{liff:{init:async()=>{},getIDToken:()=>"private-token"},location:{replace:url=>redirects.push(url)}},
+    fetch:async ()=>{const error=new Error("request interrupted");error.name="AbortError";throw error;},
+  });
+  assert.equal(nodes.fallback.hidden,false);
+  assert.match(nodes.status.textContent,/เปิดรายละเอียดงานไม่สำเร็จ/);
+  assert.match(nodes.detail.textContent,/ไม่ต้องสมัครใหม่/);
+  assert.doesNotMatch(nodes.detail.textContent,/private-token/);
+  assert.deepEqual(redirects,[]);
+});
