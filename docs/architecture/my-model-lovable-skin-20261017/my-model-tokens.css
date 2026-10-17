@@ -1,0 +1,85 @@
+/* MY MODEL — presentation-only. Values match src/styles.css. */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.1384 0.0055 128.3);
+  --foreground: oklch(0.95 0.008 85);
+
+  --surface: oklch(0.2 0.006 60);
+  --surface-raised: oklch(0.235 0.007 65);
+
+  --card: oklch(0.2 0.006 60);
+  --card-foreground: oklch(0.95 0.008 85);
+  --popover: oklch(0.19 0.006 60);
+  --popover-foreground: oklch(0.95 0.008 85);
+
+  --primary: oklch(0.82 0.078 82);
+  --primary-foreground: oklch(0.19 0.02 70);
+
+  --secondary: oklch(0.27 0.008 65);
+  --secondary-foreground: oklch(0.93 0.008 85);
+
+  --muted: oklch(0.25 0.006 65);
+  --muted-foreground: oklch(0.7 0.012 80);
+
+  --accent: oklch(0.29 0.014 70);
+  --accent-foreground: oklch(0.95 0.008 85);
+
+  --destructive: oklch(0.6 0.16 25);
+  --destructive-foreground: oklch(0.97 0.005 85);
+
+  --border: oklch(0.32 0.008 70 / 60%);
+  --input: oklch(0.3 0.008 70 / 70%);
+  --ring: oklch(0.82 0.078 82 / 60%);
+
+  --gold: oklch(0.82 0.078 82);
+  --gold-soft: oklch(0.82 0.078 82 / 22%);
+  --amber-warm: oklch(0.72 0.11 65 / 45%);
+  --success: oklch(0.75 0.11 155);
+  --pending: oklch(0.8 0.1 90);
+  color-scheme: dark;
+  --content-max: 520px;
+  --touch-min: 44px;
+  --dock-height: 72px;
+  --font-sans: "LINE Seed Sans TH", "Noto Sans Thai", "Noto Sans SC", system-ui, sans-serif;
+  --glass-fill: color-mix(in oklab, var(--background) 92%, transparent);
+  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 12px 30px -24px oklch(0 0 0 / 90%);
+  --public-background: oklch(0.98 0.003 85);
+  --public-foreground: oklch(0.2 0.005 60);
+}
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--foreground); background: var(--background); font: 400 15px/1.6 var(--font-sans); }
+.mmd-shell { width: min(100%, var(--content-max)); margin-inline: auto; position: relative; padding-bottom: calc(var(--dock-height) + env(safe-area-inset-bottom) + 24px); }
+.mmd-atmosphere { position: fixed; inset: 0; width: 100%; height: 100svh; object-fit: cover; opacity: .1; pointer-events: none; }
+.mmd-header, .mmd-dock { background: var(--glass-fill); backdrop-filter: blur(18px); border-color: var(--border); }
+.mmd-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(env(safe-area-inset-top) + 14px) 20px 12px; border-bottom: 1px solid var(--border); }
+.mmd-brand { font-size: 13px; font-weight: 650; }
+.mmd-languages { display: flex; border: 1px solid var(--border); border-radius: 99px; background: var(--surface-raised); padding: 2px; }
+.mmd-language { display: grid; place-items: center; min-width: 44px; height: 44px; font-size: 11px; }
+.mmd-language[aria-checked="true"] { background: var(--primary); color: var(--primary-foreground); border-radius: 99px; }
+.mmd-main { position: relative; padding: 16px 20px; }
+h1 { margin: 0 0 20px; font-size: 20px; line-height: 1.4; }
+h2 { margin: 0 0 8px; font-size: 12px; color: var(--muted-foreground); }
+p { margin: 0 0 12px; }
+.mmd-band { margin-bottom: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
+.mmd-command { padding: 20px 0; border-block: 1px solid var(--border); }
+.mmd-status { font-size: 20px; font-weight: 650; }
+.mmd-muted { color: var(--muted-foreground); }
+.mmd-primary, .mmd-secondary { display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 6px; font: 650 15px/1.5 var(--font-sans); text-decoration: none; cursor: pointer; }
+.mmd-primary { color: var(--primary-foreground); background: var(--primary); }
+.mmd-secondary { color: var(--foreground); background: var(--secondary); }
+.mmd-primary:disabled, .mmd-secondary:disabled { opacity: .5; cursor: not-allowed; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.mmd-review { color: var(--pending); }
+.mmd-error { color: var(--destructive); }
+.mmd-success { color: var(--success); }
+.mmd-row { display: flex; justify-content: space-between; align-items: center; min-height: 64px; gap: 12px; border-bottom: 1px solid var(--border); color: var(--foreground); text-decoration: none; }
+.mmd-ring { width: 56px; height: 56px; border: 2px solid var(--muted); border-top-color: var(--primary); border-radius: 50%; display: grid; place-items: center; color: var(--primary); font-size: 12px; font-weight: 650; }
+.mmd-dock { position: fixed; inset: auto 0 0; width: min(100%, var(--content-max)); margin-inline: auto; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); border-top: 1px solid var(--border); }
+.mmd-dock a { display: flex; min-height: 56px; justify-content: center; align-items: center; gap: 4px; flex-direction: column; color: var(--muted-foreground); text-decoration: none; font-size: 11px; }
+.mmd-dock a[aria-current="page"] { color: var(--primary); }
+.mmd-preview-label { position: relative; padding: 8px 20px; background: var(--surface-raised); color: var(--muted-foreground); font-size: 11px; }
+.mmd-private-mark { width: auto; height: 24px; margin-right: 8px; vertical-align: middle; }
+.mmd-lane-public { background: var(--public-background); color: var(--public-foreground); padding: 16px; }
+.mmd-lane-private { background: var(--background); color: var(--foreground); padding: 16px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
