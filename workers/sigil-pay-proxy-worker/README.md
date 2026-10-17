@@ -19,7 +19,10 @@ Responses are private/no-store with no-referrer, and observability redacts query
 `payments-worker` remains the money authority and owns the existing `/v1/pay/*`,
 `/v1/payments/*`, `/v1/confirm/*` routes. This Worker cannot create payment refs,
 verify payments, receive slips, modify bank details or grant membership.
-Renewal and compatibility routes retain their current owners. DNS is unchanged.
+Cloudflare needs a trailing wildcard to match requests with query parameters.
+The route pattern is `/sigil/pay*`, while the handler accepts only `/sigil/pay`
+and `/sigil/pay/`. The existing, more-specific renewal route keeps its owner;
+unrecognized suffixes return 404. DNS is unchanged.
 
 ## Validation
 
@@ -32,7 +35,7 @@ A valid real customer payment still requires a mobile LINE acceptance check.
 ## Deployment and rollback
 
 Deploy `index.mjs` as a module Worker using `wrangler.jsonc`, or upload the exact
-module through the Cloudflare Workers API and add the two exact routes.
+module through the Cloudflare Workers API and add the guarded wildcard route.
 Keep the deployed source SHA in the deployment receipt/description.
-Rollback is removal of those two routes and the dedicated Worker. It does not
+Rollback is removal of that route and the dedicated Worker. It does not
 roll back or redeploy an existing backend Worker.
