@@ -29,8 +29,11 @@ jobs:
         run: |
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/verified-session-balance.js
+          node --check payments-worker/final-payment-flow.js
           node --check webflow/sigil/confirm/customer-payment-access.js
-      - name: Synthetic balance and existing confirmation contracts
+      - name: Synthetic balance, signed instructions and final activation contracts
         run: |
-          node --test payments-worker/verified-session-balance.test.mjs payments-worker/confirmation-details.test.mjs payments-worker/payment-instructions-v1.test.mjs
-          node --test webflow/sigil/confirm/customer-payment-access.test.cjs
+          node --test payments-worker/verified-session-balance.test.mjs payments-worker/verified-balance.integration.test.mjs payments-worker/confirmation-details.test.mjs payments-worker/payment-instructions-v1.test.mjs payments-worker/final-payment-flow.test.mjs
+      - name: Customer bank and QR DOM contracts (no external requests)
+        run: |
+          node --test webflow/sigil/confirm/customer-payment-access.test.cjs webflow/sigil/confirm/customer-payment-qr.test.cjs
