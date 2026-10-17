@@ -1,17 +1,11 @@
 import { stablePaymentRef } from "./unified-payment-proof.js";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
+import { BALANCE_FIELDS, readVerifiedSessionBalance, balancePayment } from "./verified-session-balance.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const FINAL_PAYMENT_ACTIVATE_PATH = "/v1/internal/payments/final/activate";
 export const FINAL_PAYMENT_STATUS_PATH = "/v1/internal/payments/final/status";
-
-const SESSION_FIELDS = Object.freeze({
-  sessionId: "fldLTq2kZbyRv22IA",
-  amountThb: "fldhwC79ndbnEXSZz",
-  note: "fldEcDkF7CH9VixWM",
-  notes: "fldwl9Gs5tYlXG5ls",
-});
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
@@ -27,7 +21,6 @@ const PAYMENT_FIELDS = Object.freeze({
   paymentType: "fldydUWHhqVLMkNSC",
 });
 
-const VERIFIED_STATES = new Set(["paid", "verified", "approved", "success", "completed", "complete"]);
 const FINAL_WAITING_STATES = new Set(["arrived", "met_customer", "final_payment_pending"]);
 
 export function isFinalPaymentFlowRequest(path, method) {
@@ -71,23 +64,22 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
   const session = await findSession(env, sessionId, true);
   if (!session?.id) throw httpError(404, "session_not_found");
 
-  const fields = session.fields || {};
-  const note = clean(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes], 12000);
-  const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
-  const sessionAmount = positive(fields[SESSION_FIELDS.amountThb]);
-  const balance = positive(pricing?.balance_thb)
-    || inferBalance(pricing, sessionAmount);
-  if (!(balance > 0)) throw httpError(409, "final_payment_amount_missing");
+  const summary = await readVerifiedSessionBalance(env, session);
+  const balance = summary.remaining_amount_thb;
+  if (balance > 0 && summary.verified_deposit_thb <= 0) throw httpError(409, "verified_deposit_required");
 
   const paymentRef = await stablePaymentRef(sessionId, "final");
   const existing = await findPaymentByRef(env, paymentRef, true);
   if (existing?.id) {
     const snapshot = paymentSnapshot(existing);
-    if (snapshot.session_id && snapshot.session_id !== sessionId) throw httpError(409, "final_payment_session_mismatch");
-    if (snapshot.stage && snapshot.stage !== "final") throw httpError(409, "final_payment_stage_mismatch");
-    if (snapshot.amount_thb && Math.abs(snapshot.amount_thb - balance) > 0.009) {
+    if (["cancelled", "canceled", "void", "failed", "rejected"].includes(balancePayment(existing, env).status)) throw httpError(409, "final_payment_not_payable");
+    if (snapshot.session_id !== sessionId) throw httpError(409, "final_payment_session_mismatch");
+    if (snapshot.stage !== "final") throw httpError(409, "final_payment_stage_mismatch");
+    if (paymentVerified(existing) && balance > 0) throw httpError(409, "balance_after_final_review_required");
+    if (!paymentVerified(existing) && snapshot.amount_thb && Math.abs(snapshot.amount_thb - balance) > 0.009) {
       throw httpError(409, "final_payment_amount_mismatch");
     }
+    await syncDerivedBalance(env, session.id, summary);
     return {
       schema: "final_payment_intent_v1",
       activated: true,
@@ -100,6 +92,7 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
     };
   }
 
+  if (!(balance > 0)) throw httpError(409, "no_amount_due");
   const now = new Date().toISOString();
   const created = await createRecord(env, paymentsTable(env), {
     [field(env.AT_PAYMENTS__PAYMENT_REF, PAYMENT_FIELDS.paymentRef)]: paymentRef,
@@ -108,13 +101,14 @@ export async function ensureFinalPaymentIntent(env, sessionId) {
     [field(env.AT_PAYMENTS__PAYMENT_STATUS, PAYMENT_FIELDS.paymentStatus)]: "Pending",
     [field(env.AT_PAYMENTS__PAYMENT_METHOD, PAYMENT_FIELDS.paymentMethod)]: "PromptPay",
     [field(env.AT_PAYMENTS__NOTES, PAYMENT_FIELDS.notes)]: "Final balance activated when Model marked arrived.",
-    [field(env.AT_PAYMENTS__VERIFICATION_STATUS, PAYMENT_FIELDS.verificationStatus)]: "pending",
+    [field(env.AT_PAYMENTS__VERIFICATION_STATUS, PAYMENT_FIELDS.verificationStatus)]: "pending_review",
     [field(env.AT_PAYMENTS__PAYMENT_INTENT_STATUS, PAYMENT_FIELDS.intentStatus)]: "Pending Confirmation",
     [field(env.AT_PAYMENTS__CREATED_AT, PAYMENT_FIELDS.createdAt)]: now,
     [PAYMENT_FIELDS.paymentStage]: "final",
     [PAYMENT_FIELDS.paymentType]: "final",
   });
 
+  await syncDerivedBalance(env, session.id, summary);
   return {
     schema: "final_payment_intent_v1",
     activated: true,
@@ -142,7 +136,7 @@ export async function finalPaymentSnapshot(env, sessionId) {
     };
   }
   const snapshot = paymentSnapshot(payment);
-  if (snapshot.session_id && snapshot.session_id !== sessionId) throw httpError(409, "final_payment_session_mismatch");
+  if (snapshot.session_id !== sessionId) throw httpError(409, "final_payment_session_mismatch");
   return {
     schema: "final_payment_status_v1",
     session_id: sessionId,
@@ -218,12 +212,6 @@ export async function promoteFinalPaymentLifecycle(env, sessionId) {
   };
 }
 
-function inferBalance(pricing, fallback) {
-  const net = positive(pricing?.net_price_thb) || positive(fallback);
-  const deposit = positive(pricing?.deposit_received_thb) || positive(pricing?.deposit_due_thb);
-  return net && deposit && net > deposit ? net - deposit : null;
-}
-
 function paymentSnapshot(record) {
   const fields = record?.fields || {};
   return {
@@ -235,15 +223,16 @@ function paymentSnapshot(record) {
 }
 
 function paymentVerified(record) {
-  const fields = record?.fields || {};
-  return [
-    fields[PAYMENT_FIELDS.paymentStatus],
-    fields[PAYMENT_FIELDS.verificationStatus],
-    fields["Payment Status"],
-    fields["Verification Status"],
-    fields.payment_status,
-    fields.verification_status,
-  ].some((value) => VERIFIED_STATES.has(code(value)));
+  return balancePayment(record).verified;
+}
+
+// Derived display snapshots only. Never changes payment/session verification,
+// overwrites the original deposit reference, or creates a second received amount.
+async function syncDerivedBalance(env, sessionRecordId, summary) {
+  await patchRecord(env, sessionsTable(env), sessionRecordId, {
+    [BALANCE_FIELDS.paidSum]: summary.verified_paid_thb,
+    [BALANCE_FIELDS.customerDue]: summary.remaining_amount_thb,
+  });
 }
 
 function resolveLifecycleField(fields = {}) {
@@ -350,43 +339,6 @@ async function constantTimeEqual(left, right) {
   let diff = 0;
   for (let i = 0; i < aa.length; i += 1) diff |= aa[i] ^ bb[i];
   return diff === 0;
-}
-
-function parseMarkedJson(note, label) {
-  const source = String(note || "");
-  const marker = `[${String(label)}]`;
-  let end = source.length;
-  while (end > 0) {
-    const markerIndex = source.lastIndexOf(marker, end - 1);
-    if (markerIndex < 0) return null;
-    let start = markerIndex + marker.length;
-    while (start < source.length && /\s/.test(source[start])) start += 1;
-    if (source[start] !== "{") { end = markerIndex; continue; }
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let index = start; index < source.length; index += 1) {
-      const char = source[index];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (char === "\\") escaped = true;
-        else if (char === '"') inString = false;
-        continue;
-      }
-      if (char === '"') { inString = true; continue; }
-      if (char === "{") depth += 1;
-      if (char !== "}") continue;
-      depth -= 1;
-      if (depth !== 0) continue;
-      try {
-        const parsed = JSON.parse(source.slice(start, index + 1));
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-      } catch {}
-      break;
-    }
-    end = markerIndex;
-  }
-  return null;
 }
 
 function inferResponseHeaders(response) {
