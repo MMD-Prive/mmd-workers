@@ -223,6 +223,9 @@ test("canonical personal payment, membership, and points status fail closed dete
   const cases = [
     ["ผมจ่ายแล้ว", "payment_status", "payment", /ไม่ยืนยันการชำระ/],
     ["สถานะผมเป็นยังไง", "membership_status", "membership", /ยังยืนยันสถานะ/],
+    ["เช็กสิทธิ์", "membership_status", "membership", /ยังยืนยันสถานะ/],
+    ["เช็คสิทธิ์", "membership_status", "membership", /ยังยืนยันสถานะ/],
+    ["ตรวจสอบสิทธิ์สมาชิกของฉัน", "membership_status", "membership", /ยังยืนยันสถานะ/],
     ["แต้มเข้าไหม", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
     ["เช็กแต้ม", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
     ["เช็คคะแนนครับ", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
