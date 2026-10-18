@@ -67,6 +67,10 @@ jobs:
           node --check src/index.js
           node --check src/model-eta-wrapper.js
           node --check src/customer-aftercare-v2.js
+          node --check src/compcard-daily.js
+          node --check src/compcard-policy.js
+          node --check src/compcard-journal.js
+          node --test compcard-policy.test.mjs compcard-journal.test.mjs compcard-daily.test.mjs
           node --test model-eta-policy.test.mjs aftercare-v2.test.mjs
           node --test ../admin-worker/model-reconfirm-runtime.test.mjs ../admin-worker/model-reconfirm-guard.test.mjs ../admin-worker/model-reconfirm-freshness.test.mjs ../admin-worker/model-reconfirm-canonical-source.test.mjs ../admin-worker/model-new-job-notification.test.mjs
 

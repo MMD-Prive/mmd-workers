@@ -1,0 +1,33 @@
+name: HYPE daily compcard CI
+
+on:
+  pull_request:
+    paths:
+      - "events-worker/**"
+      - "telegram-worker/src/compcard-photo.js"
+      - "telegram-worker/src/index.js"
+      - "telegram-worker/test/compcard-photo.test.mjs"
+      - "telegram-worker/test/compcard-text.test.mjs"
+      - ".github/workflows/hype-compcard-ci.yml"
+      - ".github/workflows/deploy-events-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  routing-and-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify schedules, approvals, recipients and durable delivery
+        run: |
+          node --check events-worker/src/compcard-daily.js
+          node --check events-worker/src/compcard-journal.js
+          node --check telegram-worker/src/compcard-photo.js
+          node --test events-worker/compcard-policy.test.mjs events-worker/compcard-journal.test.mjs events-worker/compcard-daily.test.mjs
+          node --test telegram-worker/test/compcard-photo.test.mjs telegram-worker/test/compcard-text.test.mjs
+          node --test events-worker/model-eta-policy.test.mjs events-worker/aftercare-v2.test.mjs

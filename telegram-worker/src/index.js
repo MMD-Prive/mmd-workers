@@ -15,6 +15,7 @@ import {
 } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 import { detectHypeTransactionStart, extractHypeTransactionFields, transactionMissingQuestion, transactionModeLabel } from "./hype-transaction-assistant.js";
 import { buildTelegramRouterHealth, HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA } from "./hype-telegram-router-health.js";
+import { COMPCARD_PHOTO_PATH, COMPCARD_TEXT_PATH, COMPCARD_DESTINATIONS_PATH, handleCompcardPhoto, handleCompcardText, handleCompcardDestinations } from "./compcard-photo.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
@@ -55,6 +56,9 @@ export default {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
             payments_proof_document: ["/telegram/internal/payments/proof-document"],
+            compcard_photo: [COMPCARD_PHOTO_PATH],
+            compcard_text: [COMPCARD_TEXT_PATH],
+            compcard_destinations: [COMPCARD_DESTINATIONS_PATH],
             complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
             topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
@@ -134,6 +138,18 @@ export default {
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         const tg = await telegramNotify(body, env);
         return json({ ok: true, telegram: tg }, 200);
+      }
+
+      if (path === COMPCARD_PHOTO_PATH && req.method === "POST") {
+        return await handleCompcardPhoto(req, env);
+      }
+
+      if (path === COMPCARD_TEXT_PATH && req.method === "POST") {
+        return await handleCompcardText(req, env);
+      }
+
+      if (path === COMPCARD_DESTINATIONS_PATH && req.method === "GET") {
+        return await handleCompcardDestinations(req, env);
       }
 
       if (isPaymentsProofDocumentPath(path) && req.method === "POST") {
