@@ -113,6 +113,19 @@ test("runtime readiness classifies failures without persisting raw exception det
   assert.equal(f.sends.length, 0);
 });
 
+test("a service redirect after a send remains uncertain and is not followed", async () => {
+  let calls = 0;
+  const result = await sendApprovedCompcard({ AUTH_SERVICE_EVENTS_TO_TELEGRAM: "test-only" }, CARD, "premium", "Approved caption", { bytes: BYTES }, async request => {
+    calls += 1;
+    assert.equal(request.method, "POST");
+    assert.equal(request.redirect, "manual");
+    return Response.json({ delivery_state: "sent", destination: "premium", chat_id: ROOM_IDS.premium, approved_sha256: CARD.sha256, message_id: 123 }, { status: 302, headers: { location: "https://unapproved.example/collect" } });
+  }, ROOM_IDS.premium);
+  assert.equal(result.delivery_state, "delivery_uncertain");
+  assert.equal(result.message_id, undefined);
+  assert.equal(calls, 1);
+});
+
 test("Bangkok calendar boundary and explicit default publishing times", () => {
   assert.deepEqual(compcardClock(Date.parse("2026-10-17T17:00:00Z")), { date: "2026-10-18", minutes: 0, time: "00:00" });
   assert.equal(compcardSchedule({}).model, "16:30");

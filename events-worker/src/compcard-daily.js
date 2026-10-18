@@ -151,7 +151,7 @@ async function telegramCall(env, path, { form, jsonBody, http, timeout = 95000 }
     redirect: "manual", signal: AbortSignal.timeout(timeout),
   });
   const response = await (http || env.TELEGRAM_ROUTER?.fetch?.bind(env.TELEGRAM_ROUTER) || runtimeFetch)(request);
-  if (response.status >= 300 && response.status < 400) return { status: response.status, ok: false, body: { delivery_state: "not_sent", error: "compcard_telegram_redirect_rejected" } };
+  if (response.status >= 300 && response.status < 400) return { status: response.status, ok: false, body: { delivery_state: request.method === "GET" ? "not_sent" : "delivery_uncertain", error: "compcard_telegram_redirect_rejected" } };
   const body = await response.json().catch(() => null);
   return { status: response.status, ok: response.ok, body };
 }
