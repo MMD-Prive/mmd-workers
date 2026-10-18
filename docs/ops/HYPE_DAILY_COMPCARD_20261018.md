@@ -116,6 +116,10 @@ The scheduled preflight refreshes at most every 30 minutes, additionally keyed
 by build, manifest revision and Bangkok date. Verify this private record after
 deployment and then inspect real per-room receipts after the first scheduled
 slot. A green readiness record is readiness evidence, not a sent-message receipt.
+The stored snapshot wraps the report in `success: true, result: {...}` so R2 API
+clients do not interpret the report's operational `errors` array as an API failure.
+Business readiness remains `result.ready`; envelope success only means the report
+can be read. The runner also accepts earlier unwrapped snapshots during upgrade.
 The runner logs only bounded machine status codes, never tokens or captions.
 
 ## Release checks
@@ -128,3 +132,4 @@ both new transport suites through `test/*.test.mjs`.
 
 All test transports are mocked. Deployment uses the existing events and Telegram
 workflows; it requires no manual test post in a customer room.
+
