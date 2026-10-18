@@ -106,8 +106,8 @@
     const qrPanel = el('figure'); qrPanel.hidden = true; qrPanel.setAttribute('data-mmd-pay-qr', '1');
     const qrImage = el('img'); qrImage.alt = 'QR ชำระเงิน'; qrImage.referrerPolicy = 'no-referrer';
     const qrCaption = el('figcaption');
-    const qrOpen = el('a', 'เปิด QR เต็มจอ / บันทึกรูป'); qrOpen.target = '_blank'; qrOpen.rel = 'noopener noreferrer';
-    qrPanel.append(qrImage, qrCaption, qrOpen);
+    // The destination is an image source only, never a navigation link.
+    qrPanel.append(qrImage, qrCaption);
     const output = el('div'); output.hidden = true;
     const provider = el('p'), name = el('p'), number = el('strong');
     const copy = el('button', 'คัดลอกเลขบัญชี'); copy.type = 'button';
@@ -131,7 +131,7 @@
       if (busy) return;
       busy = true; reveal.disabled = true; output.hidden = true; account = '';
       amountLabel.hidden = true; amountLabel.textContent = '';
-      qrPanel.hidden = true; qrImage.removeAttribute('src'); qrOpen.removeAttribute('href');
+      qrPanel.hidden = true; qrImage.removeAttribute('src');
       provider.textContent = name.textContent = number.textContent = '';
       status.textContent = 'กำลังตรวจยอดและโหลดเลขบัญชี…';
       try {
@@ -144,7 +144,7 @@
         }
         if (view.qr) {
           qrCaption.textContent = view.qr.embedded ? 'QR ระบุยอดด้านบนแล้ว ตรวจชื่อผู้รับและยอดในแอปธนาคารก่อนยืนยันครับ' : 'QR นี้ต้องกรอกยอดเอง ใช้ยอดที่แสดงด้านบนครับ';
-          qrImage.hidden = false; qrImage.src = view.qr.url; qrOpen.href = view.qr.url; qrPanel.hidden = false;
+          qrImage.hidden = false; qrImage.src = view.qr.url; qrPanel.hidden = false;
         }
         if (view.bank) {
           provider.textContent = view.bank.provider; name.textContent = view.bank.name; number.textContent = view.bank.number;
