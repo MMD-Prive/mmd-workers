@@ -80,7 +80,7 @@ test("before 16:30 only readiness is recorded; it does not reserve a daily plan"
   const f = fixture();
   assert.equal((await run(f, "2026-10-18", "16:29")).status, "not_due");
   assert.equal(f.sends.length, 0);
-  assert.equal(f.bucket.read("readiness/latest.json").ready, true);
+  assert.equal(f.bucket.read("readiness/latest.json").result.ready, true);
   assert.equal(f.bucket.read("plans/2026-10-18/model.json"), null);
 });
 
@@ -160,7 +160,7 @@ test("an unrelated Preview outage does not stop a Premium-only card", async () =
   f.deps.destinations = async () => (await original()).map((row) => row.destination === "preview" ? { ...row, ok: false, can_send_photo: false } : row);
   assert.equal((await run(f)).results[0].status, "sent");
   assert.deepEqual(f.sends.map((row) => row.destination), ["premium"]);
-  assert.equal(f.bucket.read("readiness/latest.json").all_destinations_ready, false);
+  assert.equal(f.bucket.read("readiness/latest.json").result.all_destinations_ready, false);
 });
 
 test("a changed frozen plan is held before retrying any destination", async () => {
@@ -236,8 +236,8 @@ test("approved text promotion can run while model data is unavailable and never 
   assert.equal(f.sends[0].card.kind, "text");
   assert.equal(f.sends[0].caption, promotion.captions.premium);
   assert.equal(f.sends[0].asset.sha256, await compcardSha256(new TextEncoder().encode(promotion.captions.premium)));
-  assert.equal(f.bucket.read("readiness/latest.json").model_ready, false);
-  assert.equal(f.bucket.read("readiness/latest.json").promotion_ready, true);
+  assert.equal(f.bucket.read("readiness/latest.json").result.model_ready, false);
+  assert.equal(f.bucket.read("readiness/latest.json").result.promotion_ready, true);
 });
 
 test("CARE BACK text stops after 31 October while model cards continue", async () => {
@@ -281,6 +281,13 @@ test("preflight reports safe machine codes without leaking arbitrary fetch error
   const result = await preflightCompcardDaily(f.env, { now: at("2026-10-18", "01:00"), deps: f.deps });
   assert.equal(result.ready, false);
   assert.doesNotMatch(JSON.stringify(result), /SUPER_SECRET|api\.example/);
+  const stored = f.bucket.read("readiness/latest.json");
+  assert.equal(stored.success, true);
+  assert.equal(stored.errors, undefined);
+  assert.deepEqual(stored.result, result);
+  f.deps.destinations = async () => { throw new Error("must not refresh the cached report"); };
+  const cached = await preflightCompcardDaily(f.env, { now: at("2026-10-18", "01:15"), deps: f.deps });
+  assert.deepEqual(cached, result);
 });
 
 test("source bytes must match the approved original; HTML, changed image and unsafe redirects are held", async () => {
@@ -330,3 +337,4 @@ test("text sender uses the dedicated endpoint with exact approved copy and pinne
   assert.deepEqual(requestBody, { destination: "premium", expected_chat_id: ROOM_IDS.premium, text: promotion.captions.premium, approved_sha256: promotion.sha256 });
   assert.equal(outcome.delivery_state, "sent");
 });
+

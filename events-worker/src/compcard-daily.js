@@ -205,9 +205,10 @@ export async function preflightCompcardDaily(env, options = {}) {
   if (!bucket) return { ready: false, error: "compcard_state_not_configured", sends: 0, business_writes: 0 };
   const date = compcardClock(now).date;
   const build = String(env.EVENTS_WORKER_BUILD_SHA || "local");
-  const previous = await readCompcardJson(bucket, "readiness/latest.json");
-  if (!options.force && previous?.record.date === date && previous.record.build_sha === build && previous.record.manifest_revision === manifest.revision
-      && previous.record.updated_at <= now && now - previous.record.updated_at < READINESS_TTL_MS) return previous.record;
+  const stored = (await readCompcardJson(bucket, "readiness/latest.json"))?.record;
+  const previous = stored?.schema === "hype_compcard_snapshot_v1" ? stored.result : stored;
+  if (!options.force && previous?.date === date && previous.build_sha === build && previous.manifest_revision === manifest.revision
+      && previous.updated_at <= now && now - previous.updated_at < READINESS_TTL_MS) return previous;
   const report = { schema: "hype_compcard_readiness_v1", date, build_sha: build, manifest_revision: manifest.revision, updated_at: now,
     schedule: compcardSchedule(env), source_folder_id: manifest.source_folder_id, ready: false, sends: 0, business_writes: 0,
     model_ready: false, promotion_ready: false, destinations: [], eligible_counts: {}, excluded: [], asset_probe: null,
@@ -250,7 +251,9 @@ export async function preflightCompcardDaily(env, options = {}) {
   }
   report.ready = report.model_ready || report.promotion_ready;
   report.all_destinations_ready = ["premium", "standard", "preview"].every(readyRoom) && !identityConflict;
-  await writeCompcardJson(bucket, "readiness/latest.json", report);
+  // R2 returns the object body directly. Keep operational errors inside an API
+  // envelope so API clients do not mistake them for provider request failures.
+  await writeCompcardJson(bucket, "readiness/latest.json", { schema: "hype_compcard_snapshot_v1", success: true, result: report });
   return report;
 }
 
@@ -399,3 +402,4 @@ export async function runCompcardDailyScheduled(env, controller) {
   // end-of-window guard by relying on an old scheduledTime.
   return runCompcardDaily(env, { now: Date.now(), wallClock: Date.now });
 }
+
