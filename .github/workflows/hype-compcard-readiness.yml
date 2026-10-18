@@ -1,0 +1,61 @@
+name: Read HYPE compcard production readiness
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "codex/hype-compcard-readiness-*"
+    paths:
+      - ".github/workflows/hype-compcard-readiness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  read-production-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Read private scheduled preflight without sending messages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = String(process.env.CLOUDFLARE_API_TOKEN || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          if (!token) throw new Error("Cloudflare read credential is not configured");
+          const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/r2/buckets/mmd-hype-compcard-state/objects/hype-compcards/v1/readiness/latest.json`;
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(20000) });
+          if (response.status === 404) { console.log("HYPE readiness has not been recorded yet"); process.exit(0); }
+          if (!response.ok) throw new Error(`Readiness read failed with HTTP ${response.status}`);
+          const text = await response.text();
+          if (text.length > 65536) throw new Error("Readiness response is unexpectedly large");
+          const data = JSON.parse(text);
+          const report = data.schema === "hype_compcard_readiness_v1" ? data : data.result;
+          if (report?.schema !== "hype_compcard_readiness_v1") throw new Error("Readiness schema is unrecognized");
+          const code = value => /^compcard_[a-z0-9_]{1,100}$/.test(String(value || "")) ? value : "compcard_redacted_error";
+          const summary = {
+            schema: report.schema, date: report.date, updated_at: report.updated_at,
+            build_sha: report.build_sha, manifest_revision: report.manifest_revision,
+            ready: report.ready, model_ready: report.model_ready, promotion_ready: report.promotion_ready,
+            all_destinations_ready: report.all_destinations_ready, schedule: report.schedule,
+            sends: report.sends, business_writes: report.business_writes,
+            eligible_counts: report.eligible_counts, asset_probe: report.asset_probe,
+            promotion: report.promotion,
+            destinations: (report.destinations || []).map(row => ({
+              destination: row.destination, chat_id: row.chat_id, chat_type: row.chat_type,
+              title: String(row.title || "").slice(0, 256), identity_verified: row.identity_verified,
+              can_send_photo: row.can_send_photo, bot_status: row.bot_status, ok: row.ok,
+              error: row.error ? code(row.error) : null,
+            })),
+            errors: (report.errors || report.issues || []).map(code),
+          };
+          console.log(JSON.stringify(summary, null, 2));
+          if (!report.ready || !report.all_destinations_ready) console.log("::warning::HYPE scheduled readiness needs attention; see bounded diagnostic above");
+          NODE
