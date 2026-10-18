@@ -1,0 +1,36 @@
+name: SIGIL Booking Cloud Proxy Release CI
+
+on:
+  push:
+    branches:
+      - release/sigil-booking-webflow-cloud-proxy-20261018
+    paths:
+      - "workers/sigil-booking-proxy-worker/**"
+      - ".github/workflows/sigil-booking-proxy-release-ci.yml"
+  pull_request:
+    paths:
+      - "workers/sigil-booking-proxy-worker/**"
+      - ".github/workflows/sigil-booking-proxy-release-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proxy-safe-release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify focused canonical proxy tests and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check workers/sigil-booking-proxy-worker/src/index.js
+          node --test workers/sigil-booking-proxy-worker/test/index.test.mjs
+      - name: Wrangler dry run without secrets or deployment
+        shell: bash
+        run: npx --yes wrangler@4 deploy --dry-run --config workers/sigil-booking-proxy-worker/wrangler.toml
