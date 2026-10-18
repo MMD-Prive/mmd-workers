@@ -1,0 +1,52 @@
+name: Model Console V3 presentation CI
+
+on:
+  pull_request:
+    paths:
+      - "webflow/sigil/model/model-console-*"
+      - "webflow/sigil/model/console-atelier/**"
+      - "scripts/build-model-console-atelier-embed.mjs"
+      - "scripts/preview-model-console-atelier.mjs"
+      - ".github/workflows/model-console-v3-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "webflow/sigil/model/model-console-*"
+      - "webflow/sigil/model/console-atelier/**"
+      - "scripts/build-model-console-atelier-embed.mjs"
+      - "scripts/preview-model-console-atelier.mjs"
+      - ".github/workflows/model-console-v3-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax and local bundle build only
+        run: |
+          node --check webflow/sigil/model/model-console-v3-i18n.js
+          node --check webflow/sigil/model/model-console-atelier-v3.js
+          node --check scripts/build-model-console-atelier-embed.mjs
+          node --check scripts/preview-model-console-atelier.mjs
+          node scripts/build-model-console-atelier-embed.mjs "$RUNNER_TEMP/console-v3"
+          git diff --check
+      - name: Console presentation and existing safety regressions
+        run: |
+          node --test \
+            webflow/sigil/model/model-console-atelier-v3.test.mjs \
+            webflow/sigil/model/model-console-state-presentation.test.mjs \
+            webflow/sigil/model/model-console-travel-flow.test.mjs \
+            webflow/sigil/model/model-console-v3-identity-first.test.mjs \
+            webflow/sigil/model/model-console-payout-summary-v2.test.mjs \
+            webflow/sigil/model/model-webflow-entry-recovery.test.mjs
