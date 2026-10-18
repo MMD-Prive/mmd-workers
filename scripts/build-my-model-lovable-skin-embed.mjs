@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { minify_sync } from 'terser';
+import CleanCSS from 'clean-css';
+import { travelClientBundle, travelClientCss } from '../shared/model-travel-client-source.mjs';
 const repo=fileURLToPath(new URL('../',import.meta.url));
 const read=name=>fs.readFileSync(path.join(repo,'webflow/sigil/model',name),'utf8');
 export function validateAtelierAssets(assets){
@@ -26,7 +29,15 @@ export function buildLovableSkinEmbed(){
  const assets=Object.fromEntries(['current-job-etching','no-current-job','media-review-motif','icons'].map(name=>[name,read('atelier/'+name+'.svg').trim()]));
  validateAtelierAssets(assets);
  const js=read('my-model-lovable-vnext-skin-20261017.js').replace('/* MY_MODEL_ATELIER_ASSETS */{}',JSON.stringify(assets));
- return '<style id="my-model-lovable-vnext-skin-20261017">\n'+css+'\n</style>\n<script id="my-model-lovable-vnext-skin-20261017">\n'+js+'\n</script>\n';
+ const compactCss=new CleanCSS({level:2}).minify(css+travelClientCss);
+ if(compactCss.errors.length)throw Error(compactCss.errors.join('; '));
+ const prefix='#mmd-model-home-v4#mmd-model-home-v4';
+ const template=compactCss.styles.replaceAll(prefix,'$ROOT$');
+ const init=`if(!document.querySelector('style[id="my-model-lovable-vnext-skin-20261017"]')){const s=document.createElement('style');s.id='my-model-lovable-vnext-skin-20261017';s.textContent=${JSON.stringify(template)}.replaceAll('$ROOT$',${JSON.stringify(prefix)});document.head.append(s);}`;
+ const script=minify_sync('(()=>{'+init+travelClientBundle(true)+'\n'+js+'})();',{compress:{passes:2},mangle:{properties:{regex:/^_tr/}},format:{comments:false,ascii_only:false,quote_style:2}}).code;
+ const embed='<script id="my-model-lovable-vnext-skin-20261017">\n'+script+'\n</script>\n';
+ if(Buffer.byteLength(embed,'utf8')>=50000)throw Error('Webflow skin >50KB: '+Buffer.byteLength(embed,'utf8'));
+ return embed;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const dest=process.argv[2];if(!dest)throw Error('Usage: node scripts/build-my-model-lovable-skin-embed.mjs /absolute/output.html');

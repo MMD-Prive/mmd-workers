@@ -11,6 +11,9 @@ on:
       - "webflow/sigil/confirm/confirmation-handoff*"
       - "scripts/build-my-model-workspace-bundle.mjs"
       - "scripts/build-my-model-lovable-skin-embed.mjs"
+      - "shared/model-travel*.mjs"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/my-model-workspace-bundle-ci.yml"
   push:
     branches: [main]
@@ -23,6 +26,9 @@ on:
       - "webflow/sigil/confirm/confirmation-handoff*"
       - "scripts/build-my-model-workspace-bundle.mjs"
       - "scripts/build-my-model-lovable-skin-embed.mjs"
+      - "shared/model-travel*.mjs"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/my-model-workspace-bundle-ci.yml"
 
 permissions:
@@ -41,6 +47,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - run: npm ci --ignore-scripts
       - name: Check syntax and build scoped Webflow embed
         run: |
           node --check webflow/sigil/model/my-model-workspace-20261016.js
