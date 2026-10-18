@@ -1,4 +1,5 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
+import { projectTravel, travelJson, travelPhotoResponse } from '../../shared/model-travel-store.mjs';
 const DEFAULT_SESSIONS_TABLE = "Sessions";
 const DEFAULT_JOBS_TABLE = "Jobs";
 const SESSION_PATH = "/api/member/app/session/";
@@ -17,11 +18,26 @@ export function isMemberAppSessionPath(input) {
   const path = normalizePath(url.pathname);
   return path === `${SESSION_PATH}current`
     || path === `${SESSION_PATH}context`
+    || path === `${SESSION_PATH}travel`
+    || path === `${SESSION_PATH}travel/photo`
     || path === `${SESSION_PATH}ack`;
 }
 
 export async function handleMemberAppSessionApi(request, env = {}, readSession) {
   const path = normalizePath(new URL(request.url).pathname);
+  if (path === `${SESSION_PATH}travel` || path === `${SESSION_PATH}travel/photo`) {
+    try {
+      if (request.method !== 'GET') return travelJson({ ok: false, error: 'method_not_allowed' }, 405);
+      const identity = await readSession(request, env);
+      if (!identity?.lineUserId) return travelJson({ ok: false, error: 'member_session_required' }, 401);
+      const params = new URL(request.url).searchParams;
+      const id = params.get('session_id');
+      if (params.has('client_id') || params.has('member_id') || params.has('line_user_id') || params.getAll('session_id').length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(id || '')) return travelJson({ ok: false, error: 'invalid_session_selector' }, 400);
+      const record = await findOwnedSessionById(env, identity, id);
+      if (!record) return travelJson({ ok: false, error: 'session_not_found' }, 404);
+      return path.endsWith('/photo') ? await travelPhotoResponse(env, record, params.get('media_id')) : travelJson(await projectTravel(env, record));
+    } catch (error) { return travelJson({ ok: false, error: error.code || 'travel_unavailable' }, error.status || 503); }
+  }
   const allowed = path === `${SESSION_PATH}ack` ? "POST" : "GET";
   if (request.method !== allowed) return jsonError(405, "METHOD_NOT_ALLOWED", `${allowed} required.`, { allow: allowed });
 

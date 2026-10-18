@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runInNewContext } from "node:vm";
+import { JSDOM } from "jsdom";
 import { myMmdSessionPanel } from "../src/my-mmd-session-panel.js";
 
 async function render(search, response) {
-  const nodes = Object.fromEntries(["status", "summary", "eta", "login"].map(key => [key, {textContent:"",hidden:true,href:""}]));
-  const panel = {hidden:true,querySelector(selector) {return nodes[selector.match(/data-session-(\w+)/)[1]];}};
-  const calls = [];
-  const script = myMmdSessionPanel().match(/<script[^>]*>([\s\S]*)<\/script>/)[1];
-  runInNewContext(script, {
-    document:{getElementById:() => panel}, location:{search}, URLSearchParams, encodeURIComponent,
-    async fetch(url, options) {calls.push({url,options});return response;},
-  });
-  await new Promise(resolve => setImmediate(resolve));
+  const dom = new JSDOM(myMmdSessionPanel(), {url:"https://mmdbkk.com/my-mmd/"+search,runScripts:"outside-only",pretendToBeVisual:true});
+  const panel=dom.window.document.getElementById("mmd-session-panel");
+  const nodes=Object.fromEntries(["status","summary","eta","login"].map(key=>[key,panel.querySelector("[data-session-"+key+"]")]));
+  const calls=[];
+  dom.window.fetch=async(url,options)=>{calls.push({url,options});if(String(url).includes("/travel?"))return Response.json({ok:true,session_id:"SESSION-A",state:"en_route",server_now:new Date().toISOString(),revision:0,binding:"fixture",submissions:[],eta:{status:"missing"}});return response;};
+  const script=dom.window.document.getElementById("mmd-session-panel-runtime").textContent;
+  dom.window.eval(script);
+  for(let n=0;n<6;n++)await new Promise(resolve=>setImmediate(resolve));
+  dom.window.close();
   return {nodes,panel,calls};
 }
 
@@ -24,7 +24,7 @@ test("MY MMD reads the selected Console Session and only renders the customer pr
   assert.equal(app.panel.hidden, false);
   assert.equal(app.nodes.status.textContent, "กำลังเดินทาง");
   assert.match(app.nodes.summary.textContent, /Model A/);
-  assert.doesNotMatch(JSON.stringify(app.nodes), /secret|private-client|9999/);
+  assert.doesNotMatch(Object.values(app.nodes).map(n=>n.textContent).join(" "), /secret|private-client|9999/);
 });
 
 test("unpaid, foreign, unknown and failed responses never show customer details", async () => {
@@ -36,14 +36,14 @@ test("unpaid, foreign, unknown and failed responses never show customer details"
   ]) {
     const app = await render("?session_id=SESSION-A", response);
     assert.equal(app.nodes.summary.textContent, "");
-    assert.doesNotMatch(JSON.stringify(app.nodes), /Foreign model|Pending model|Unknown model|secret server/);
+    assert.doesNotMatch(Object.values(app.nodes).map(n=>n.textContent).join(" "), /Foreign model|Pending model|Unknown model|secret server/);
     assert.equal(app.calls.length, 1);
   }
 });
 
 test("unauthenticated selection returns through LINE without granting access or writing", async () => {
   const app = await render("?session_id=SESSION-A", Response.json({ok:false},{status:401}));
-  assert.equal(app.nodes.login.href, "/member/liff?intent=status&session_id=SESSION-A");
+  assert.equal(app.nodes.login.getAttribute('href'), "/member/liff?intent=status&session_id=SESSION-A");
   assert.equal(app.nodes.login.hidden, false);
   assert.equal(app.nodes.summary.textContent, "");
   const hidden = await render("", Response.json({ok:false},{status:401}));

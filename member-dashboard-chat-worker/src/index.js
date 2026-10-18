@@ -1,3 +1,4 @@
+import { deliverTravelNotice } from '../../shared/model-travel-line.mjs';
 import {
   isRenewalRoute,
   renderRenewalResponse,
@@ -3521,6 +3522,15 @@ export default {
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_PATH) {
       return handleServiceBoundShopShipping(request, env);
+    }
+
+    if (url.pathname === '/__internal/line/model-travel-notify') {
+      if (!hasServiceBindingAuth(request, ['admin-worker']) || !hasBearerInternalAuth(request, env)) return json({ ok: false, error: 'internal_auth_required' }, 401);
+      if (request.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405);
+      try {
+        const result = await deliverTravelNotice(env, await request.json());
+        return json(result, result.ok ? 200 : 502);
+      } catch (error) { return json({ ok: false, error: error.code || 'travel_line_unavailable' }, error.status || 503); }
     }
 
     if (

@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { travelClientBundle, travelClientCss } from '../shared/model-travel-client-source.mjs';
+import { minify_sync } from 'terser';
+import CleanCSS from 'clean-css';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
@@ -13,7 +16,18 @@ export function buildConsoleEmbed() {
   const css = fs.readFileSync(path.join(source, 'model-console-atelier-v3.css'), 'utf8');
   const skin = fs.readFileSync(path.join(source, 'model-console-atelier-v3.js'), 'utf8');
   const runtime = fs.readFileSync(path.join(source, 'model-console-v3-i18n.js'), 'utf8');
-  return '<!-- Console V3 presentation candidate; not a deployment receipt -->\n<style>' + css + '</style>\n<script>(()=>{const consoleAtelierAssets=' + JSON.stringify(illustrations) + ';\n' + skin + '\n' + runtime + '\n})();</script>';
+  const compactCss = new CleanCSS({ level: 2 }).minify(css + travelClientCss);
+  if (compactCss.errors.length) throw new Error(compactCss.errors.join('; '));
+  // Store repeated selectors once without changing their specificity or using
+  // CSS nesting unsupported by older LIFF webviews. One guarded style owner.
+  const prefix = '#sigil-model-console-v3[data-console-atelier]';
+  const cssTemplate = compactCss.styles.replaceAll(prefix, '$ROOT$');
+  const style = `if(!document.getElementById('mmd-console-lv9-css')){const s=document.createElement('style');s.id='mmd-console-lv9-css';s.textContent=${JSON.stringify(cssTemplate)}.replaceAll('$ROOT$',${JSON.stringify(prefix)});document.head.append(s);}`;
+  const js = '(()=>{' + style + 'const consoleAtelierAssets=' + JSON.stringify(illustrations) + ';\n' + skin + '\n' + travelClientBundle() + '\n' + runtime + '\n})();';
+  const compact = minify_sync(js, { compress: { passes: 2 }, mangle: { reserved: ['consoleAtelierAssets', 'renderConsoleAtelier'], properties: { regex: /^_tr/ } }, format: { comments: false, ascii_only: false } }).code;
+  const embed = '<!-- MY MODEL LV9 travel + Console V3 -->\n<script>' + compact + '</script>';
+  if (Buffer.byteLength(embed, 'utf8') >= 50000) throw new Error(`Console Embed exceeds 50,000 bytes: ${Buffer.byteLength(embed, 'utf8')}`);
+  return embed;
 }
 export function assetManifest() {
   return { version: 'console-atelier-v3', delivery: 'inline SVG; no additional image requests', attribution: 'Project-authored geometry; job/support shapes reuse MY MODEL icon family', files: [...Object.values(names), 'icons.svg'].map(file => {

@@ -73,5 +73,10 @@
     "test:model-media-upload": "node --experimental-global-webcrypto --test admin-worker/model-media-upload.test.mjs model-dashboard-presentation-worker/model-upload-mobile-mime.test.mjs",
     "test:create-job-webflow": "node --test webflow/internal/admin/jobs/create-job/lv10-public-care-controls.test.mjs webflow/internal/admin/jobs/create-job/lv10-draft-kenji-patch.test.mjs webflow/internal/admin/jobs/create-job/lv10-profile-gallery.test.mjs",
     "test:app-sigil-release-gate": "node scripts/check-app-sigil-always-on-gate.mjs"
+  },
+  "devDependencies": {
+    "clean-css": "5.3.3",
+    "jsdom": "24.1.3",
+    "terser": "5.44.0"
   }
 }

@@ -102,6 +102,15 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/session/current*"
 zone_name = "mmdbkk.com"
 
+# LV9 travel messages and authenticated private image reads.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/session/travel*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/session/travel*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/model/session/action"
 zone_name = "mmdbkk.com"
