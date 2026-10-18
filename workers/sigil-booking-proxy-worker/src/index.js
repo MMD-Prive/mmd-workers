@@ -34,13 +34,13 @@ export function isSigilBookingPath(url) {
   return normalizePath(url.pathname).toLowerCase() === SIGIL_BOOKING_PATH;
 }
 
-export export function isCloudReleaseAssetPath(url) {
+export function isCloudReleaseAssetPath(url) {
   // Only canonical-host assets are proxied; arbitrary Webflow paths are forbidden.
   return url.hostname.toLowerCase() === CANONICAL_HOST
     && url.pathname.startsWith(WEBFLOW_BOOKING_PATH + "/");
 }
 
-function isFrontGateHost(url) {
+export function isFrontGateHost(url) {
   return FRONT_GATE_HOSTS.has(url.hostname.toLowerCase());
 }
 
