@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia } from "./src/model-image-policy-worker.js";
 import { buildCustomerDurationOffer, sanitizeModelForBooking } from "./src/index.js";
-import { requestedScope } from "./src/runtime-index.js";
+import runtimeWorker, { requestedScope } from "./src/runtime-index.js";
 
 const modelId = "recModel000000001";
 const secondModelId = "recModel000000002";
@@ -386,6 +386,7 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         booking_ref: "search_001",
+        request_status: "confirmed", // forged customer input must be ignored
         search_mode: "search",
         lane: "private",
         model_scope: "private",
@@ -407,8 +408,11 @@ test("SIGIL Search intake requires budget, strips customer-supplied storage URLs
       }),
     }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
     assert.equal(accepted.status, 200);
-    assert.equal((await accepted.json()).ok, true);
+    const acceptedPayload = await accepted.json();
+    assert.equal(acceptedPayload.ok, true);
+    assert.equal(acceptedPayload.request_status, "request_pending_admin_review");
     const fields = persisted.at(-1);
+    assert.equal(fields["Request Status"], "draft");
     assert.equal(fields.Source, "sigil_search");
     assert.equal(Object.hasOwn(fields, "resolved_image_url"), false);
     assert.equal(Object.hasOwn(fields, "drive_folder_id_snapshot"), false);
@@ -568,4 +572,28 @@ test("Public Model intake restores MMD Public Job V2 and rejects PN/VIP semantic
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("SIGIL private denial is readable to approved browser origins without leaking cross-origin CORS", async () => {
+  const env = {
+    ALLOWED_ORIGINS: "https://mmdprive.webflow.io,https://sigil-booking.lovable.app",
+  };
+  for (const origin of ["https://mmdprive.webflow.io", "https://sigil-booking.lovable.app"]) {
+    const denied = await runtimeWorker.fetch(new Request(
+      "https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&booking_ref=not-a-stored-record",
+      { headers: { Origin: origin } },
+    ), env);
+    assert.equal(denied.status, 200);
+    assert.equal((await denied.json()).blocked, true);
+    assert.equal(denied.headers.get("access-control-allow-origin"), origin);
+    assert.equal(denied.headers.get("cache-control"), "no-store");
+    assert.equal(denied.headers.get("vary"), "Origin");
+  }
+  const blocked = await runtimeWorker.fetch(new Request(
+    "https://sigil.mmdbkk.com/sigil/api/models/search?scope=private",
+    { headers: { Origin: "https://untrusted.example" } },
+  ), env);
+  assert.equal((await blocked.json()).blocked, true);
+  assert.equal(blocked.headers.get("access-control-allow-origin"), null);
 });

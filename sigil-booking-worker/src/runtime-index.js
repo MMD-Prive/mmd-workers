@@ -1,4 +1,5 @@
 import entitlementRuntime from "./entitlement-runtime-worker.js";
+import { withBrowserCors } from "./index.js";
 import modelImagePolicyWorker from "./model-image-policy-worker.js";
 import { attachCareBackApprovalToConfirmedBooking } from "./care-back-trusted-caller.js";
 import { handlePublicProfilesCatalogRequest, isPublicProfilesCatalogRequest } from "./public-profiles-catalog.js";
@@ -35,7 +36,7 @@ export default {
       if (scope === "private") {
         const allowed = await canonicalStoredPrivateAccess(env, request, url).catch(() => false);
         if (!allowed) {
-          return json({
+          return withBrowserCors(json({
             ok: true,
             matched: false,
             blocked: true,
@@ -43,7 +44,7 @@ export default {
             access_scope: "public_only",
             member_status: "unknown",
             items: [],
-          });
+          }), request, env);
         }
       }
       return modelImagePolicyWorker.fetch(request, env, ctx);
