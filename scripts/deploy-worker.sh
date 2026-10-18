@@ -4,122 +4,103 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NOTIFIER="$ROOT_DIR/shared/deploy-notify.js"
 WORKER_NAME="${1:-}"
-ENVIRONMENT="${DEPLOY_ENVIRONMENT:-Production}"
-
-if [[ -z "$WORKER_NAME" ]]; then
-  echo "Usage: scripts/deploy-worker.sh <worker-name>" >&2
-  exit 64
-fi
-
+[[ -n "$WORKER_NAME" && "$#" -eq 1 ]] || { echo 'Usage: bash scripts/deploy-worker.sh <worker-name>' >&2; exit 64; }
 cd "$ROOT_DIR"
-TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mmd-deploy-notify.XXXXXX")"
+
+# All configuration checks happen before tests or Cloudflare mutation.
+config_path="$(node "$NOTIFIER" config "$WORKER_NAME" config)" || exit 64
+node "$NOTIFIER" preflight || exit 64
+test_command="$(node "$NOTIFIER" config "$WORKER_NAME" test)" || exit 64
+lint_command="$(node "$NOTIFIER" config "$WORKER_NAME" lint)" || exit 64
+smoke_command="${DEPLOY_SMOKE_COMMAND:-}"
+for command in "$test_command" "$lint_command" "$smoke_command"; do
+  if [[ -z "${command//[[:space:]]/}" ]]; then
+    echo 'Tests, lint and DEPLOY_SMOKE_COMMAND are required before deployment.' >&2
+    exit 64
+  fi
+done
+
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mmd-deploy-notify.XXXXXX")" || exit 73
+trap 'rm -rf "$TEMP_DIR"' EXIT
 LOG_FILE="$TEMP_DIR/deploy.log"
 PAYLOAD_FILE="$TEMP_DIR/payload.json"
-cleanup() {
-  rm -f "$LOG_FILE" "$PAYLOAD_FILE"
-  rmdir "$TEMP_DIR" 2>/dev/null || true
+# Persist independent deployment and delivery facts, including ambiguous activation.
+receipt_dir="${DEPLOY_RECEIPT_DIR:-$ROOT_DIR/.deploy-receipts}"
+mkdir -p "$receipt_dir" || exit 73
+RECEIPT_FILE="$(mktemp "$receipt_dir/$WORKER_NAME.XXXXXX.json")" || exit 73
+export WORKER_NAME
+export GIT_SHA="$(git rev-parse HEAD)"
+export DEPLOY_BRANCH="$(git branch --show-current)"
+export DEPLOY_STATE=NOT_DEPLOYED VERSION_ID='' SMOKE_RESULT=NOT_RUN NOTIFICATION_STATE=NOT_SENT
+current_stage=preflight
+write_receipt() {
+  RECEIPT_FILE="$RECEIPT_FILE" STAGE="$current_stage" node -e '
+    const fs = require("node:fs"), e = process.env;
+    fs.writeFileSync(e.RECEIPT_FILE, JSON.stringify({worker:e.WORKER_NAME, gitSha:e.GIT_SHA,
+      branch:e.DEPLOY_BRANCH, stage:e.STAGE, deployState:e.DEPLOY_STATE, versionId:e.VERSION_ID,
+      smokeResult:e.SMOKE_RESULT, notificationState:e.NOTIFICATION_STATE, timestamp:new Date().toISOString()}, null, 2)+"\n");
+  '
 }
-trap cleanup EXIT
-
-git_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-branch="$(git branch --show-current 2>/dev/null || echo detached)"
-deploy_user="${DEPLOY_USER:-${GITHUB_ACTOR:-${USER:-unknown}}}"
-current_command="initialization"
-
+write_receipt || exit 73
 notify_failure() {
-  local exit_code="$1"
-  local log_lines
-  log_lines="$(tail -n 12 "$LOG_FILE" 2>/dev/null || true)"
-  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-    log_lines="${log_lines//${TELEGRAM_BOT_TOKEN}/[REDACTED]}"
-  fi
-  PAYLOAD_FILE="$PAYLOAD_FILE" WORKER_NAME="$WORKER_NAME" CURRENT_COMMAND="$current_command" \
-    EXIT_CODE="$exit_code" GIT_SHA="$git_sha" LOG_LINES="$log_lines" node -e '
-      const fs = require("node:fs");
-      fs.writeFileSync(process.env.PAYLOAD_FILE, JSON.stringify({
-        worker: process.env.WORKER_NAME, command: process.env.CURRENT_COMMAND,
-        exitCode: process.env.EXIT_CODE, gitSha: process.env.GIT_SHA,
-        lastLogLines: process.env.LOG_LINES
-      }));
-    '
-  node "$NOTIFIER" failure "$PAYLOAD_FILE" || echo "Warning: failure notification could not be sent" >&2
+  STAGE="$current_stage" EXIT_CODE="$1" PAYLOAD_FILE="$PAYLOAD_FILE" node -e '
+    const fs = require("node:fs"), e = process.env;
+    fs.writeFileSync(e.PAYLOAD_FILE, JSON.stringify({worker:e.WORKER_NAME, command:e.STAGE,
+      exitCode:e.EXIT_CODE, gitSha:e.GIT_SHA, deployState:e.DEPLOY_STATE, versionId:e.VERSION_ID}));
+  ' || return 1
+  # Do not send command strings or captured logs: either can contain credentials.
+  if node "$NOTIFIER" failure "$PAYLOAD_FILE"; then NOTIFICATION_STATE=SENT; else NOTIFICATION_STATE=FAILED; fi
+  write_receipt
 }
-
 run_gate() {
-  local label="$1"
-  local command="$2"
-  [[ -z "$command" ]] && return 0
-  current_command="$command"
-  echo "== $label: $WORKER_NAME ==" | tee -a "$LOG_FILE"
-  bash -lc "$command" 2>&1 | tee -a "$LOG_FILE"
-  local status="${PIPESTATUS[0]}"
+  current_stage="$1"
+  bash -c "$2" >"$LOG_FILE" 2>&1
+  local status="$?"
+  cat "$LOG_FILE"
   if [[ "$status" -ne 0 ]]; then
+    [[ "$current_stage" != smoke ]] || SMOKE_RESULT=FAIL
     notify_failure "$status"
     exit "$status"
   fi
 }
-
-config_path="$(node "$NOTIFIER" config "$WORKER_NAME" config 2>>"$LOG_FILE")" || {
-  notify_failure 64
-  exit 64
-}
-for required in "$NOTIFIER" "$config_path"; do
-  if [[ ! -f "$required" ]]; then
-    current_command="validate deployment configuration"
-    echo "Required file not found: $required" | tee -a "$LOG_FILE" >&2
-    notify_failure 66
-    exit 66
-  fi
-done
-
-test_command="$(node "$NOTIFIER" config "$WORKER_NAME" test)"
-lint_command="$(node "$NOTIFIER" config "$WORKER_NAME" lint)"
-smoke_command="${DEPLOY_SMOKE_COMMAND:-$(node "$NOTIFIER" config "$WORKER_NAME" smoke)}"
-
-run_gate "Tests" "$test_command"
-run_gate "Lint" "$lint_command"
-
-current_command="npx wrangler deploy --config $config_path"
-echo "== Deploy: $WORKER_NAME ==" | tee -a "$LOG_FILE"
-npx wrangler deploy --config "$config_path" 2>&1 | tee -a "$LOG_FILE"
-deploy_status="${PIPESTATUS[0]}"
+run_gate tests "$test_command"
+run_gate lint "$lint_command"
+current_stage=deploy
+DEPLOY_STATE=ACTIVATION_UNKNOWN
+write_receipt || exit 73
+npx wrangler deploy --config "$config_path" >"$LOG_FILE" 2>&1
+deploy_status="$?"
+cat "$LOG_FILE"
+VERSION_ID="$(node "$NOTIFIER" version "$LOG_FILE")"
 if [[ "$deploy_status" -ne 0 ]]; then
   notify_failure "$deploy_status"
   exit "$deploy_status"
 fi
-
-version_id="$(sed -nE 's/.*(Version ID|Current Version ID):[[:space:]]*([0-9a-fA-F-]{36}).*/\2/p' "$LOG_FILE" | tail -n 1)"
-if [[ -z "$version_id" ]]; then
-  current_command="capture Cloudflare Version ID"
-  echo "Wrangler deploy succeeded but no Cloudflare Version ID was found" | tee -a "$LOG_FILE" >&2
+DEPLOY_STATE=DEPLOYED
+if [[ -z "$VERSION_ID" ]]; then
+  current_stage=capture_version
   notify_failure 65
   exit 65
 fi
-
-smoke_result="SKIP (not configured)"
-if [[ -n "$smoke_command" ]]; then
-  run_gate "Smoke Test" "$smoke_command"
-  smoke_result="PASS"
+write_receipt || exit 73
+run_gate smoke "$smoke_command"
+SMOKE_RESULT=PASS
+current_stage=notification
+write_receipt || exit 73
+PAYLOAD_FILE="$PAYLOAD_FILE" node -e '
+  const fs = require("node:fs"), e = process.env;
+  fs.writeFileSync(e.PAYLOAD_FILE, JSON.stringify({worker:e.WORKER_NAME,
+    environment:e.DEPLOY_ENVIRONMENT || "Production", gitSha:e.GIT_SHA, versionId:e.VERSION_ID,
+    timestamp:new Date().toISOString(), deployUser:e.DEPLOY_USER || e.GITHUB_ACTOR || e.USER,
+    branch:e.DEPLOY_BRANCH, routes:(e.DEPLOY_CHANGED_ROUTES || "").split("\n").filter(Boolean),
+    smokeResult:e.SMOKE_RESULT, rollbackVersion:e.ROLLBACK_VERSION_ID}));
+' || exit 73
+if node "$NOTIFIER" success "$PAYLOAD_FILE"; then
+  NOTIFICATION_STATE=SENT
+else
+  NOTIFICATION_STATE=FAILED
+  echo 'Warning: deployment and smoke passed; Telegram delivery failed. Do not redeploy to retry notification.' >&2
 fi
-
-routes="${DEPLOY_CHANGED_ROUTES:-}"
-PAYLOAD_FILE="$PAYLOAD_FILE" WORKER_NAME="$WORKER_NAME" ENVIRONMENT="$ENVIRONMENT" \
-  GIT_SHA="$git_sha" VERSION_ID="$version_id" DEPLOY_USER_VALUE="$deploy_user" BRANCH="$branch" \
-  ROUTES="$routes" SMOKE_RESULT="$smoke_result" ROLLBACK_VERSION="${ROLLBACK_VERSION_ID:-}" node -e '
-    const fs = require("node:fs");
-    fs.writeFileSync(process.env.PAYLOAD_FILE, JSON.stringify({
-      worker: process.env.WORKER_NAME, environment: process.env.ENVIRONMENT,
-      gitSha: process.env.GIT_SHA, versionId: process.env.VERSION_ID,
-      timestamp: new Date().toISOString(), deployUser: process.env.DEPLOY_USER_VALUE,
-      branch: process.env.BRANCH, routes: process.env.ROUTES ? process.env.ROUTES.split("\n") : [],
-      smokeResult: process.env.SMOKE_RESULT, rollbackVersion: process.env.ROLLBACK_VERSION
-    }));
-  '
-current_command="send Telegram deployment success notification"
-node "$NOTIFIER" success "$PAYLOAD_FILE" || {
-  status="$?"
-  notify_failure "$status"
-  exit "$status"
-}
-
-echo "Deployment completed: $WORKER_NAME ($version_id)"
+current_stage=complete
+write_receipt || exit 73
+echo "Deployment completed: $WORKER_NAME ($VERSION_ID); notification=$NOTIFICATION_STATE; receipt=$RECEIPT_FILE"
