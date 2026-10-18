@@ -308,6 +308,7 @@ test("no approved Promotion asset records an explicit hold and sends nothing", a
 
 test("approved active promotions rotate rooms and expire without inventing a replacement", async () => {
   const promo = { ...CARD, id: "promotion-art-001", model_id: undefined, category: "promotion", approved: true,
+    status: "active", availability_mode: "bounded",
     captions: { premium: "Approved Premium promotion", standard: "Approved Standard promotion", preview: "Approved public teaser" },
     valid_from: "2026-10-18T00:00:00+07:00", valid_to: "2026-10-21T00:00:00+07:00" };
   const f = fixture({ promotions: [promo] });
@@ -337,11 +338,12 @@ test("approved text promotion can run while model data is unavailable and never 
 test("CARE BACK text stops after 31 October while model cards continue", async () => {
   const f = fixture({ promotions: APPROVED_COMPCARD_MANIFEST.promotions });
   await run(f, "2026-10-31", "20:00");
-  const expired = await run(f, "2026-11-01", "20:00");
-  assert.equal(expired.results[0].status, "no_approved_promotion");
-  assert.equal(f.sends.length, 1);
+  const continued = await run(f, "2026-11-01", "20:00");
+  assert.equal(continued.results[0].status, "sent");
+  assert.equal(continued.results[0].card_id, "double-moment-continues-2026-telegram");
+  assert.equal(f.sends.length, 2);
   await run(f, "2026-11-02", "16:30");
-  assert.equal(f.sends.length, 3);
+  assert.equal(f.sends.length, 4);
 });
 
 test("a known-down promotion room preserves its attempts until readiness recovers", async () => {
@@ -358,7 +360,7 @@ test("a known-down promotion room preserves its attempts until readiness recover
 });
 
 test("a promotion that expires during preparation cannot send even inside its daily slot", async () => {
-  const promo = { ...CARD, id: "promotion-art-001", approved: true,
+  const promo = { ...CARD, id: "promotion-art-001", approved: true, status: "active", availability_mode: "bounded",
     captions: { premium: "Approved promotion" }, valid_from: "2026-10-18T00:00:00+07:00", valid_to: "2026-10-18T20:01:00+07:00" };
   const f = fixture({ cards: [], promotions: [promo] });
   let wall = at("2026-10-18", "20:00");
@@ -367,6 +369,87 @@ test("a promotion that expires during preparation cannot send even inside its da
   await run(f, "2026-10-18", "20:00", { wallClock: () => wall });
   assert.equal(f.sends.length, 0);
   assert.equal(f.bucket.read("deliveries/2026-10-18/promotion/premium.json").status, "blocked");
+});
+
+test("explicit continuous promotion remains available after the CARE BACK cutoff and rotates rooms", async () => {
+  const double = APPROVED_COMPCARD_MANIFEST.promotions.find((item) => item.id === "double-moment-continues-2026-telegram");
+  const f = fixture({ cards: [], promotions: [double] });
+  for (const date of ["2026-11-01", "2027-01-01", "2036-01-01"]) await run(f, date, "20:00");
+  assert.deepEqual(f.sends.map((row) => row.destination), ["preview", "premium", "preview"]);
+  for (const row of f.sends) {
+    assert.equal(row.card.financial_campaign_id, "promo_double_moment_sep2026");
+    assert.equal(row.asset.sha256, double.sha256);
+    assert.equal(row.asset.sha256, await compcardSha256(new TextEncoder().encode(row.caption)));
+  }
+});
+
+test("two active campaigns alternate deterministically and Double continues after CARE BACK", async () => {
+  const f = fixture({ cards: [], promotions: APPROVED_COMPCARD_MANIFEST.promotions });
+  const selected = [];
+  for (const date of ["2026-10-18", "2026-10-19", "2026-10-20", "2026-11-01", "2026-11-02"]) {
+    const result = await run(f, date, "20:00");
+    selected.push(result.results[0].card_id);
+  }
+  assert.deepEqual(selected, [
+    "care-back-continues-2026-telegram",
+    "double-moment-continues-2026-telegram",
+    "care-back-continues-2026-telegram",
+    "double-moment-continues-2026-telegram",
+    "double-moment-continues-2026-telegram",
+  ]);
+  assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "standard", "preview", "preview", "premium"]);
+});
+
+test("missing, malformed, paused, revoked and before-start promotion windows fail closed", async () => {
+  const base = { ...CARD, id: "promotion-art-001", model_id: undefined, category: "promotion", approved: true,
+    status: "active", availability_mode: "bounded", captions: { premium: "Approved" }, valid_from: "2026-10-18T00:00:00+07:00",
+    valid_to: "2026-10-21T00:00:00+07:00" };
+  const invalid = [
+    { ...base, valid_to: undefined }, { ...base, valid_to: "not-a-date" },
+    { ...base, status: "paused" }, { ...base, status: "revoked" }, { ...base, paused: true }, { ...base, revoked: true },
+    { ...base, availability_mode: "continuous", valid_to: undefined },
+  ];
+  for (const promotion of invalid) {
+    const f = fixture({ cards: [], promotions: [promotion] });
+    const result = await run(f, "2026-10-18", "20:00");
+    assert.ok(result.status === "not_ready" || result.results?.[0]?.status === "no_approved_promotion");
+    assert.equal(f.sends.length, 0);
+  }
+  const future = fixture({ cards: [], promotions: [{ ...base, valid_from: "2026-10-19T00:00:00+07:00" }] });
+  const beforeStart = await run(future, "2026-10-18", "20:00");
+  assert.ok(beforeStart.status === "not_ready" || beforeStart.results?.[0]?.status === "no_approved_promotion");
+});
+
+test("manifest revision changes preserve an unchanged frozen promotion plan and receipts", async () => {
+  const promo = { ...CARD, id: "promotion-art-001", model_id: undefined, category: "promotion", approved: true,
+    status: "active", availability_mode: "bounded", captions: { premium: "Approved promotion" },
+    valid_from: "2026-10-18T00:00:00+07:00", valid_to: "2026-10-21T00:00:00+07:00" };
+  const f = fixture({ cards: [], promotions: [promo], send: (card, destination, _caption, _asset, chat, attempt) => attempt === 1
+    ? { delivery_state: "not_sent", error: "compcard_mock_rejected" }
+    : { ok: true, delivery_state: "sent", destination, chat_id: chat, message_id: attempt, approved_sha256: card.sha256 } });
+  await run(f, "2026-10-18", "20:00");
+  const key = `${COMPCARD_JOURNAL_ROOT}plans/2026-10-18/promotion.json`;
+  const original = f.bucket.records.get(key);
+  const digest = JSON.parse(original.value).digest;
+  f.manifest.revision = "approved-v2-with-another-campaign";
+  f.manifest.promotions.push({ ...APPROVED_COMPCARD_MANIFEST.promotions.find((item) => item.id === "double-moment-continues-2026-telegram") });
+  await run(f, "2026-10-18", "20:15");
+  assert.equal(f.sends.length, 2);
+  assert.equal(f.sends[1].card.id, promo.id);
+  assert.equal(JSON.parse(f.bucket.records.get(key).value).digest, digest);
+  assert.equal(f.bucket.read("deliveries/2026-10-18/promotion/premium.json").status, "sent");
+});
+
+test("revoking an approved frozen promotion blocks the unfinished delivery", async () => {
+  const promo = { ...CARD, id: "promotion-art-001", model_id: undefined, category: "promotion", approved: true,
+    status: "active", availability_mode: "bounded", captions: { premium: "Approved promotion" },
+    valid_from: "2026-10-18T00:00:00+07:00", valid_to: "2026-10-21T00:00:00+07:00" };
+  const f = fixture({ cards: [], promotions: [promo], send: () => ({ delivery_state: "not_sent", error: "compcard_mock_rejected" }) });
+  await run(f, "2026-10-18", "20:00");
+  f.manifest.promotions[0] = { ...promo, status: "revoked" };
+  const blocked = await run(f, "2026-10-18", "20:15");
+  assert.equal(blocked.results[0].outcomes[0].status, "blocked");
+  assert.equal(f.sends.length, 1);
 });
 
 test("preflight reports safe machine codes without leaking arbitrary fetch errors", async () => {

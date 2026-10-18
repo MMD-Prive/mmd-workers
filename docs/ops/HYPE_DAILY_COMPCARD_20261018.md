@@ -61,7 +61,7 @@ image disclaimers remain intact. Captions do not repeat unverified marketing,
 availability, price or eligibility claims. A Preview teaser shortens the caption;
 it does not redact text already printed inside the owner's approved image.
 
-## Initial promotion and expiry
+## Promotion availability and campaign terms
 
 The first campaign is the existing owner-reviewed, `ready_to_send` CARE BACK copy
 from `ops/campaigns/care-back-telegram-post-20260929.json`. Its plain-text version
@@ -69,13 +69,48 @@ removes only the `<b>` tags, retains exact wording and the MY MMD login link, an
 uses the new audience rotation rather than the old post pack's routing metadata.
 It does not promise numeric benefits or expose payment or membership state.
 
-The manifest expiry is exclusive `2026-11-01T00:00:00+07:00`. This matches
+CARE BACK has `availability_mode: "bounded"` and an exclusive end of
+`2026-11-01T00:00:00+07:00`. This matches
 `docs/knowledge/CARE_BACK_2026_FINAL_LOCK.md` and the public campaign cutoff in
 `member-pages-worker/src/care-back-claim-store.js`. No new CARE BACK promotion is
 sent after 31 October. Later private payment honoring rules do not extend this
-public campaign. When it expires, the slot records `no_approved_promotion` and
-model-card rotation continues. Add another approved, dated campaign before then
-to keep promotion publishing continuous.
+public campaign.
+
+Double Moment uses an explicit `availability_mode: "continuous"`, an approved
+start time, `valid_to: null`, and `status: "active"`. It remains eligible until
+the owner pauses it or revokes approval. Missing or malformed dates never imply
+continuous availability; bounded campaigns require a valid exclusive end. The
+same availability predicate is used by readiness, campaign selection and the
+last pre-send check. All campaigns still require approved copy/hash and verified
+destination identity and permissions.
+
+The advertising entry is `double-moment-continues-2026-telegram`; its financial
+identity remains `promo_double_moment_sep2026`, package `double_moment_20000`,
+policy `v1`. The approved copy states: pay THB 20,000 for total credit THB
+27,000 (paid credit THB 20,000 plus two separate THB 3,500 Moment bonuses);
+each bonus is for a different confirmed booking with service amount at least
+THB 20,000; credit validity is 180 days from verified payment as recorded by
+the existing system; one package per verified member per campaign. Existing
+Official Verify and credit ledger remain authoritative. Advertising continuity
+does not create/renew a purchase, extend credit validity, or issue credits or
+points. No payment-worker logic was changed.
+
+The Double Moment plain-text message is identical for Premium, Standard and
+Preview and pinned by SHA-256 in the approved manifest. It links to the existing
+MY MMD entry at `https://www.mmdbkk.com/member/login`.
+
+When CARE BACK expires, Double Moment continues through the existing daily room
+rotation with no gap; model-card rotation is independent. A scheduled promotion
+can still be paused using `HYPE_PROMOTION_ENABLED=false`, or an individual card
+can be paused/revoked in the approved manifest. Do not use a far-future end date
+to simulate continuous availability.
+
+With both campaigns active, selection is deterministic by Bangkok date and
+sorted campaign ID. For the initial six rounds this yields CARE BACK / Premium
+on 18 Oct, Double Moment / Standard on 19 Oct, CARE BACK / Preview on 20 Oct,
+Double Moment / Premium on 21 Oct, CARE BACK / Standard on 22 Oct, and Double
+Moment / Preview on 23 Oct. From 1 Nov, Double Moment is selected each day while
+the same room rotation continues from the 18 Oct Premium anchor.
 
 ## Delivery and verification
 
@@ -111,6 +146,12 @@ twice. A confirmed `not_sent` failure can retry at most three times with a
 `delivery_uncertain`; it never retries automatically. Other rooms may complete.
 Do not delete an uncertain delivery record or clear its cooldown to force a
 resend: inspect the actual destination and reconcile the original receipt first.
+Adding or changing a campaign changes the manifest revision but does not itself
+invalidate an unchanged frozen plan. The original digest and journal entries are
+preserved. A frozen plan can continue only when its card identity, approval,
+content/hash, destination and chat ID still match; changed or paused/revoked
+content blocks unfinished sends. Successful receipts remain idempotent, and
+`delivery_uncertain` is never retried automatically.
 
 The scheduled preflight refreshes at most every 30 minutes, additionally keyed
 by build, manifest revision and Bangkok date. Verify this private record after

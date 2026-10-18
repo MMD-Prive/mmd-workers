@@ -97,9 +97,33 @@ test('the approved manifest contains unique matched models, pinned image bytes a
   assert.equal(manifest.cards.length, 19);
   assert.equal(new Set(manifest.cards.map(c => c.model_id)).size, 19);
   assert.equal(new Set(manifest.cards.map(c => c.file_id)).size, 19);
-  assert.equal(manifest.promotions.length, 1);
-  assert.equal(manifest.promotions[0].kind, 'text');
-  assert.equal(manifest.promotions[0].valid_to, '2026-11-01T00:00:00+07:00');
+  assert.equal(manifest.promotions.length, 2);
+  const careBack = manifest.promotions.find(c => c.id === 'care-back-continues-2026-telegram');
+  assert.equal(careBack.kind, 'text');
+  assert.equal(careBack.availability_mode, 'bounded');
+  assert.equal(careBack.valid_to, '2026-11-01T00:00:00+07:00');
+  const doubleMoment = manifest.promotions.find(c => c.id === 'double-moment-continues-2026-telegram');
+  assert.ok(doubleMoment);
+  assert.equal(doubleMoment.availability_mode, 'continuous');
+  assert.equal(doubleMoment.status, 'active');
+  assert.equal(doubleMoment.valid_to, null);
+  assert.equal(doubleMoment.financial_campaign_id, 'promo_double_moment_sep2026');
+  assert.equal(doubleMoment.package_code, 'double_moment_20000');
+  assert.equal(doubleMoment.policy_version, 'v1');
+  assert.deepEqual(doubleMoment.terms, {
+    paid_amount_thb: 20000,
+    total_credit_thb: 27000,
+    paid_credit_thb: 20000,
+    moment_bonus_count: 2,
+    moment_bonus_each_thb: 3500,
+    minimum_service_per_confirmed_booking_thb: 20000,
+    credit_valid_days_after_verified_payment: 180,
+    limit_per_verified_member_per_campaign: 1,
+    verification_and_ledger: 'existing_official_verify_flow',
+  });
+  assert.equal(new Set(Object.values(doubleMoment.captions)).size, 1);
+  assert.match(doubleMoment.captions.preview, /27,000 บาท/);
+  assert.match(doubleMoment.captions.preview, /180 วัน/);
   for (const c of manifest.cards) {
     assert.equal(c.id, c.file_id);
     assert.match(c.model_id, /^rec[A-Za-z0-9]{14}$/);

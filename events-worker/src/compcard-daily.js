@@ -256,7 +256,8 @@ export async function preflightCompcardDaily(env, options = {}) {
   const readyRoom = (destination) => report.destinations.some((row) => row.destination === destination && row.ok && row.identity_verified && row.can_send_photo && String(row.chat_id) === manifest.destinations?.[destination]);
   const anyRoomReady = ["premium", "standard", "preview"].some(readyRoom);
   report.model_ready = !identityConflict && anyRoomReady && report.asset_probe?.verified === true;
-  const promotion = choosePromotion(manifest, date, now);
+  const frozenPromotionPlan = (await readCompcardJson(bucket, `plans/${date}/promotion.json`))?.record;
+  const promotion = choosePromotion(manifest, date, now, frozenPromotionPlan);
   if (promotion) {
     try {
       await preparePromotion(promotion.card, promotion.destination, deps.asset || readApprovedCompcardAsset);
@@ -274,12 +275,25 @@ function promotionDestination(date) {
   const day = Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.parse("2026-10-18T00:00:00Z")) / 86400000);
   return ["premium", "standard", "preview"][((day % 3) + 3) % 3];
 }
-function choosePromotion(manifest, date, now) {
+function promotionAvailable(card, now) {
+  if (card.approved !== true || card.status !== "active" || card.paused === true || card.revoked === true) return false;
+  const start = Date.parse(card.valid_from);
+  if (!Number.isFinite(start) || now < start) return false;
+  if (card.availability_mode === "continuous") return card.valid_to === null;
+  if (card.availability_mode !== "bounded") return false;
+  const end = Date.parse(card.valid_to);
+  return Number.isFinite(end) && start < end && now < end;
+}
+
+function choosePromotion(manifest, date, now, frozenPlan = null) {
   const destination = promotionDestination(date);
-  const cards = manifest.promotions.filter((card) => card.approved === true && card.captions?.[destination]
-    && Number.isFinite(Date.parse(card.valid_from)) && Number.isFinite(Date.parse(card.valid_to))
-    && Date.parse(card.valid_from) <= now && now < Date.parse(card.valid_to));
+  const cards = manifest.promotions.filter((card) => promotionAvailable(card, now) && card.captions?.[destination]);
   cards.sort((a, b) => a.id.localeCompare(b.id));
+  if (frozenPlan) {
+    const frozen = cards.find((card) => card.id === frozenPlan.card_id && card.sha256 === frozenPlan.sha256 && card.file_id === frozenPlan.file_id);
+    return frozen && frozenPlan.destinations?.length === 1 && frozenPlan.destinations[0] === destination
+      ? { card: frozen, destination } : null;
+  }
   if (!cards.length) return null;
   const day = Math.floor(Date.parse(`${date}T00:00:00Z`) / 86400000);
   return { card: cards[day % cards.length], destination };
@@ -322,7 +336,9 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
   const { digest, ...payload } = plan;
   if (!/^[a-f0-9]{64}$/.test(digest || "") || await jsonDigest(payload) !== digest) return { date, slot, status: "blocked", error: "compcard_plan_integrity_failed", sent: 0 };
   const card = (slot === "model" ? manifest.cards : manifest.promotions).find((item) => item.id === plan.card_id && item.sha256 === plan.sha256 && item.file_id === plan.file_id);
-  if (!card || plan.manifest_revision !== manifest.revision || plan.date !== date || plan.slot !== slot) return { date, slot, status: "blocked", error: "compcard_plan_approval_changed", sent: 0 };
+  const approvedCardStillMatches = card && plan.model_id === (slot === "model" ? card.model_id : null)
+    && plan.category === (slot === "model" ? card.category : "promotion");
+  if (!approvedCardStillMatches || plan.date !== date || plan.slot !== slot) return { date, slot, status: "blocked", error: "compcard_plan_approval_changed", sent: 0 };
   const expected = slot === "model" ? destinationsForCategory(card.category) : [promotionDestination(date)];
   if (JSON.stringify(expected) !== JSON.stringify(plan.destinations)) return { date, slot, status: "blocked", error: "compcard_plan_destinations_changed", sent: 0 };
   const outcomes = [];
@@ -347,7 +363,7 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
           const check = evaluateCard(card, model);
           if (!check.ok) throw problem(`compcard_fresh_${check.reason}`, false);
           if (captionForLiveCard(card, destination, model) !== plan.captions[destination]) throw problem("compcard_caption_facts_changed", false);
-        } else if (!choosePromotion({ ...manifest, promotions: [card] }, date, wallClock())) throw problem("compcard_promotion_expired", false);
+        } else if (!promotionAvailable(card, wallClock()) || card.captions?.[destination] !== plan.captions[destination]) throw problem("compcard_promotion_expired", false);
         const beforeSend = compcardClock(wallClock());
         if (beforeSend.date !== date || !due(beforeSend, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
         if (slot === "model") await reserveCompcardExposure(bucket, card, date, now);

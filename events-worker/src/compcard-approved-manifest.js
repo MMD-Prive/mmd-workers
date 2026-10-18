@@ -2,7 +2,7 @@
 // Statistics are printed-card facts. Revalidate current model eligibility and the exact image SHA256 before every send.
 export const APPROVED_COMPCARD_MANIFEST = {
   "schema": "hype_compcards_v1",
-  "revision": "2026-10-18-owner-source-v1",
+  "revision": "2026-10-18-owner-source-v2-double-moment-continuous",
   "approved_at": "2026-10-17T17:45:04Z",
   "source_folder_id": "1r1yfSjwhuKqzPh7278wn-OmRwqtDdQ-Z",
   "destinations": {
@@ -357,6 +357,8 @@ export const APPROVED_COMPCARD_MANIFEST = {
       "id": "care-back-continues-2026-telegram",
       "kind": "text",
       "approved": true,
+      "status": "active",
+      "availability_mode": "bounded",
       "file_id": null,
       "sha256": "05072c06c706063265416d91713c30edb841243a37323ac7b06ae71697b2cfce",
       "valid_from": "2026-09-01T00:00:00+07:00",
@@ -368,6 +370,37 @@ export const APPROVED_COMPCARD_MANIFEST = {
       },
       "source_post_pack": "ops/campaigns/care-back-telegram-post-20260929.json",
       "source_rules": "docs/knowledge/CARE_BACK_2026_FINAL_LOCK.md"
+    },
+    {
+      "id": "double-moment-continues-2026-telegram",
+      "kind": "text",
+      "approved": true,
+      "status": "active",
+      "availability_mode": "continuous",
+      "valid_from": "2026-10-18T00:00:00+07:00",
+      "valid_to": null,
+      "financial_campaign_id": "promo_double_moment_sep2026",
+      "package_code": "double_moment_20000",
+      "policy_version": "v1",
+      "terms": {
+        "paid_amount_thb": 20000,
+        "total_credit_thb": 27000,
+        "paid_credit_thb": 20000,
+        "moment_bonus_count": 2,
+        "moment_bonus_each_thb": 3500,
+        "minimum_service_per_confirmed_booking_thb": 20000,
+        "credit_valid_days_after_verified_payment": 180,
+        "limit_per_verified_member_per_campaign": 1,
+        "verification_and_ledger": "existing_official_verify_flow"
+      },
+      "approval_provenance": "Owner instruction in CODEXMIN_HYPE_DOUBLE_MOMENT_CONTINUOUS_20261018.md; advertisement continues until owner pauses or revokes it.",
+      "file_id": null,
+      "sha256": "9f73928285d48f8e3683c6177566a3f4fb23cf850f730175ca7150f0a837b81c",
+      "captions": {
+        "premium": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตจากยอดชำระ 20,000 บาท\n• โบนัส Moment 1 จำนวน 3,500 บาท\n• โบนัส Moment 2 จำนวน 3,500 บาท\n\nโบนัสทั้งสองสิทธิ์ใช้กับคนละงานที่ยืนยันแล้ว แต่ละครั้งมียอดบริการอย่างน้อย 20,000 บาท\nเครดิตมีอายุ 180 วัน โดยอ้างอิงวันหมดอายุที่ระบบยืนยัน\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดและเช็กสิทธิ์ผ่าน MY MMD\nhttps://www.mmdbkk.com/member/login",
+        "standard": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตจากยอดชำระ 20,000 บาท\n• โบนัส Moment 1 จำนวน 3,500 บาท\n• โบนัส Moment 2 จำนวน 3,500 บาท\n\nโบนัสทั้งสองสิทธิ์ใช้กับคนละงานที่ยืนยันแล้ว แต่ละครั้งมียอดบริการอย่างน้อย 20,000 บาท\nเครดิตมีอายุ 180 วัน โดยอ้างอิงวันหมดอายุที่ระบบยืนยัน\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดและเช็กสิทธิ์ผ่าน MY MMD\nhttps://www.mmdbkk.com/member/login",
+        "preview": "MMD PRIVÉ · DOUBLE MOMENT\n\nวางแผนโมเมนต์ถัดไปกับ MMD\nชำระ 20,000 บาท รับเครดิตรวม 27,000 บาท\n\n• เครดิตจากยอดชำระ 20,000 บาท\n• โบนัส Moment 1 จำนวน 3,500 บาท\n• โบนัส Moment 2 จำนวน 3,500 บาท\n\nโบนัสทั้งสองสิทธิ์ใช้กับคนละงานที่ยืนยันแล้ว แต่ละครั้งมียอดบริการอย่างน้อย 20,000 บาท\nเครดิตมีอายุ 180 วัน โดยอ้างอิงวันหมดอายุที่ระบบยืนยัน\nจำกัดหนึ่งแพ็กเกจต่อสมาชิกที่ยืนยันแล้วต่อแคมเปญ\n\nดูรายละเอียดและเช็กสิทธิ์ผ่าน MY MMD\nhttps://www.mmdbkk.com/member/login"
+      }
     }
   ]
 };
