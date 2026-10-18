@@ -26,7 +26,7 @@
   };
 
   function modelReturnTo(token) {
-    return "/sigil/confirm/job-model?t=" + encodeURIComponent(token);
+    return "/sigil/confirm/job-model?t=" + encodeURIComponent(token) + "&lang=" + lang();
   }
 
   function liffUrl(token) {
@@ -58,6 +58,11 @@
   // bounced here within the window, a second automatic redirect would loop, so
   // show a visible screen with a manual button and an owner reference instead.
   function enterLiff(token, code) {
+    // Desktop LINE shows a QR wall; retain an explicit user-gesture handoff.
+    if (!/Android|iPhone|iPad|iPod/i.test(String(navigator.userAgent || ""))) {
+      renderBlocked("เปิด MY MODEL ผ่าน LINE บนมือถือเพื่อยืนยันตัวตน แล้วระบบจะพากลับมาดูรายละเอียดงานนี้ก่อนยืนยันรับงาน", code || "model_session_required", liffUrl(token));
+      return false;
+    }
     if (insideLiff() || recentReentry()) {
       renderBlocked("ยังยืนยันตัวตนใน LINE ไม่สำเร็จ กรุณากดปุ่มด้านล่างเพื่อเปิดงานใน MY MODEL อีกครั้ง", code || "model_session_reentry_loop", liffUrl(token));
       return false;
@@ -142,7 +147,7 @@
     kicker.className = "mmd-dfjg__k";
     kicker.textContent = "MY MODEL";
     const title = document.createElement("h1");
-    title.textContent = "ยังเปิดรายละเอียดงานไม่ได้";
+    title.textContent = "ยืนยันตัวตนเพื่อดูงาน";
     const text = document.createElement("p");
     text.textContent = message || "ระบบยังตรวจสิทธิ์ของงานนี้ไม่ครบ กรุณาเปิดลิงก์ผ่าน LINE อีกครั้ง";
     card.append(kicker, title, text);
@@ -150,6 +155,7 @@
       const button = document.createElement("a");
       button.className = "mmd-dfjg__btn";
       button.href = actionUrl;
+      button.referrerPolicy = "no-referrer";
       button.textContent = "เปิดใน MY MODEL (LINE)";
       card.appendChild(button);
     }
