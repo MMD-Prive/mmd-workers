@@ -1,4 +1,5 @@
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
+import { notifyTravelEvent } from "./model-travel-notification.js";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
@@ -3039,9 +3040,14 @@ async function handleModelSessionAction(req, env) {
   const updated = await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);
   if (!updated.ok) return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
 
+  const notification = ["start_travel", "mark_nearby", "mark_arrived"].includes(action)
+    ? await notifyTravelEvent(env, { id: updated.id, fields: { ...reread.session.fields, ...updated.fields } }, action, action)
+    : null;
+
   return modelSessionJson({
     ok: true,
     session: modelSessionResponseSession(reread.tables, { id: updated.id, fields: updated.fields }),
+    ...(notification ? { notification } : {}),
   });
 }
 

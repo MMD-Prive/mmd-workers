@@ -16,6 +16,12 @@ const next = { confirmed: ['start_travel'], en_route: ['mark_arrived'], nearby: 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1:4187');
   const context = new URL(req.headers.referer || url);
+  if (url.pathname === '/v1/model/session/travel') {
+    res.setHeader('content-type','application/json');
+    if(req.method!=='GET'){res.writeHead(405);res.end(JSON.stringify({ok:false,error:'fixture_mutations_blocked'}));return;}
+    const state=context.searchParams.get('state')||'confirmed',now=Date.now();
+    res.end(JSON.stringify({ok:true,session_id:'sess_LOCAL_FIXTURE_ONLY',state,revision:1,binding:'local-fixture',server_now:new Date(now).toISOString(),can_send:['en_route','nearby'].includes(state),messages_remaining:3,photos_remaining:3,text_max:500,image_max_bytes:5242880,submissions:[],eta:{status:'active',arrival_at:new Date(now+85*60000).toISOString(),updated_at:new Date(now).toISOString()}}));return;
+  }
   if (url.pathname === '/v1/model/session/current') {
     const state = context.searchParams.get('state') || 'confirmed';
     res.setHeader('content-type', 'application/json');

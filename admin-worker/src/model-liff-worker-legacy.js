@@ -8,6 +8,9 @@ import {
 import { issueModelTelegramBind, telegramConnectedFromFields } from "./telegram-identity-bind-authority.js";
 import { writeSigilAvailabilitySnapshot } from "./sigil-availability-snapshot.js";
 import { enqueuePrimaryCard, readModelCardStatus } from "./model-card-automation.js";
+import { handleModelTravelApi, isModelTravelPath } from "./model-travel-api.js";
+import { readTravelSession } from "../../shared/model-travel-store.mjs";
+import { notifyTravelEvent } from "./model-travel-notification.js";
 
 const EXCHANGE_PATH = "/v1/model/liff/exchange";
 const CURRENT_PATH = "/v1/model/session/current";
@@ -59,6 +62,8 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isModelTravelPath(path)) return handleModelTravelApi(request, env, requireModelSession, isAllowedOrigin);
 
     if (["/v1/model/media/private-upload-plan", "/v1/model/media/private-upload"].includes(path)) {
       const origin = request.headers.get("origin");
@@ -1192,6 +1197,7 @@ async function handleSendEta(request, env, ctx, body) {
   if (!allowed.includes("send_eta")) return json({ ok: false, error: "invalid_transition" }, 409, request, env);
   const sessionId = clean(session.session_id || auth.payload.session_id);
   if (!sessionId) return json({ ok: false, error: "active_session_not_found" }, 404, request, env);
+  if (body?.session_id && body.session_id !== sessionId) return json({ ok: false, error: "session_changed" }, 409, request, env);
 
   if (!env.EVENTS_WORKER || typeof env.EVENTS_WORKER.fetch !== "function") {
     return json({ ok: false, error: "eta_service_not_ready" }, 503, request, env);
@@ -1212,10 +1218,14 @@ async function handleSendEta(request, env, ctx, body) {
   const eta = await upstream.json().catch(() => ({}));
   if (!upstream.ok) return json({ ok: false, error: eta.error || "eta_update_failed", detail: eta }, upstream.status, request, env);
 
+  let delivery = { delivered: false, status: "unavailable" };
+  try { delivery = await notifyTravelEvent(env, await readTravelSession(env, sessionId), `eta:${eta.eta_updated_at}`, "eta"); } catch {}
+
   return json({
     ok: true,
     session,
-    eta: { owner: "events-worker", eta_minutes: etaMinutes, updated_at: eta.eta_updated_at || null },
+    eta: { owner: "events-worker", eta_minutes: etaMinutes, updated_at: eta.eta_updated_at || null, arrival_at: eta.eta_arrival_at || null, server_now: eta.server_now || null },
+    delivery,
   }, 200, request, env);
 }
 

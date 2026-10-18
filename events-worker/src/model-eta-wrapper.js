@@ -82,6 +82,8 @@ export default {
       job_id: clean(patched.record.fields?.job_id || job.record.fields?.job_id),
       eta_minutes: etaMinutes,
       eta_updated_at: updatedAt,
+      eta_arrival_at: new Date(Date.parse(updatedAt) + etaMinutes * 60000).toISOString(),
+      server_now: new Date().toISOString(),
     }, 200);
   },
 
@@ -445,7 +447,7 @@ async function findJobBySessionId(env, sessionId) {
   if (!baseId || !table || !apiKey) return { ok: false, status: 503, error: "eta_storage_not_ready" };
 
   const params = new URLSearchParams();
-  params.set("pageSize", "1");
+  params.set("pageSize", "2");
   params.set("filterByFormula", `{session_id}="${escapeFormula(sessionId)}"`);
   const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`, {
     headers: { authorization: `Bearer ${apiKey}` },
@@ -454,6 +456,7 @@ async function findJobBySessionId(env, sessionId) {
   if (!response.ok) return { ok: false, status: 503, error: "eta_storage_lookup_failed" };
   const record = data.records?.[0];
   if (!record) return { ok: false, status: 404, error: "eta_job_not_found" };
+  if (data.records.length !== 1 || data.offset || clean(record.fields?.session_id) !== sessionId) return { ok: false, status: 409, error: "eta_job_review_required" };
   return { ok: true, status: 200, record };
 }
 

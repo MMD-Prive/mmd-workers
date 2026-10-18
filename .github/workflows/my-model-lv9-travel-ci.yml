@@ -1,0 +1,52 @@
+name: MY MODEL LV9 travel contracts
+on:
+  pull_request:
+    paths:
+      - "shared/model-travel*.mjs"
+      - "admin-worker/src/model-travel*.js"
+      - "admin-worker/src/model-liff-worker-legacy.js"
+      - "admin-worker/src/index.js"
+      - "admin-worker/wrangler.toml"
+      - "events-worker/src/model-eta-wrapper.js"
+      - "member-pages-worker/src/member-app-session.js"
+      - "member-pages-worker/src/liff-member-shell.js"
+      - "member-dashboard-chat-worker/src/index.js"
+      - "member-dashboard-chat-worker/src/my-mmd-session-panel.js"
+      - "member-dashboard-chat-worker/test/my-mmd-session-panel.test.mjs"
+      - "scripts/build-model-console-atelier-embed.mjs"
+      - "scripts/build-my-model-lovable-skin-embed.mjs"
+      - "scripts/build-model-travel-client-source.mjs"
+      - "package*.json"
+      - ".github/workflows/my-model-lv9-travel-ci.yml"
+permissions:
+  contents: read
+jobs:
+  travel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Auth, quotas, concurrency, private media, clock and UI contracts
+        run: |
+          node scripts/build-model-travel-client-source.mjs --check
+          node --experimental-global-webcrypto --test \
+            shared/model-travel.test.mjs \
+            shared/model-travel-client.test.mjs \
+            member-dashboard-chat-worker/test/my-mmd-session-panel.test.mjs \
+            member-pages-worker/test/member-app-session.test.mjs \
+            events-worker/model-eta-policy.test.mjs \
+            shared/payment-notification-outbox.test.mjs
+      - name: Build exact Webflow candidates; no deploy or writes
+        run: |
+          node scripts/build-model-console-atelier-embed.mjs "$RUNNER_TEMP/model-lv9"
+          node scripts/build-my-model-lovable-skin-embed.mjs "$RUNNER_TEMP/model-lv9/MY_MODEL_LV9_Skin.html"
+          git diff --check

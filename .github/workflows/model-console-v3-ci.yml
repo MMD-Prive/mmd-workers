@@ -8,6 +8,9 @@ on:
       - "scripts/build-model-console-atelier-embed.mjs"
       - "scripts/preview-model-console-atelier.mjs"
       - ".github/workflows/model-console-v3-ci.yml"
+      - "shared/model-travel*.mjs"
+      - "package.json"
+      - "package-lock.json"
   push:
     branches: [main]
     paths:
@@ -16,6 +19,9 @@ on:
       - "scripts/build-model-console-atelier-embed.mjs"
       - "scripts/preview-model-console-atelier.mjs"
       - ".github/workflows/model-console-v3-ci.yml"
+      - "shared/model-travel*.mjs"
+      - "package.json"
+      - "package-lock.json"
 
 permissions:
   contents: read
@@ -33,6 +39,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - run: npm ci --ignore-scripts
       - name: Syntax and local bundle build only
         run: |
           node --check webflow/sigil/model/model-console-v3-i18n.js

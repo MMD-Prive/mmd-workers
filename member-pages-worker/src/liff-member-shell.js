@@ -1,4 +1,5 @@
 import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
+import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
@@ -277,7 +278,8 @@ function renderShell(config, nonce) {
     @media(min-width:700px){body.app-entered:not(.signup-mode) #app-status,body.app-entered:not(.signup-mode) #actions,body.app-entered:not(.signup-mode) #profile,body.app-entered:not(.signup-mode) #status{width:min(100%,var(--digital-shell-max));margin-left:auto;margin-right:auto}}
     @media(max-height:690px){body.app-entered:not(.signup-mode) main{padding-top:12px}.digital-hello{margin-top:12px}.digital-kenji{margin:7px 0}}
     ${MY_MMD_LOVABLE_DESIGN_CSS}
-  </style>
+  ${travelClientCss}
+</style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
 ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div><div class="hype-progress"><progress id="hype-progress" max="100" value="10" aria-label="ความคืบหน้าการเปิดหน้า"></progress><span id="hype-progress-number" aria-hidden="true">10%</span></div></div>`}
@@ -1238,6 +1240,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH", { year:"numeric", month:"short", day:"numeric" }).format(date);
   }
 
+  ${travelClientBundle()}
   const MISSION_VISIBLE_STATES = new Set(["confirmed","preparing","en_route","nearby","arrived","met_customer","final_payment_pending","final_payment_confirmed","work_started","in_progress","work_finished"]);
   const MISSION_CANONICAL_SEQUENCE = ["confirmed","en_route","nearby","arrived","met_customer","final_payment_pending","final_payment_confirmed","work_started","work_finished","separated"];
   const MISSION_LEGACY_SEQUENCE = ["confirmed","preparing","en_route","nearby","arrived","met_customer","in_progress"];
@@ -1276,6 +1279,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     const missionTimeline = document.getElementById("digital-mission-timeline");
     if (!mission || !missionState || !missionModel || !missionMeta || !missionEta || !missionToggle || !missionDetail || !missionTimeline) return;
     const state = String(session?.lifecycle || "").trim().toLowerCase();
+    mountTravelPanel(mission, {role:"customer",sessionId:session?.missionReady === true && MISSION_VISIBLE_STATES.has(state) ? session.sessionId : null,state,locale});
     if (session?.missionReady !== true || !MISSION_VISIBLE_STATES.has(state)) {
       mission.hidden = true;
       return;
@@ -1285,7 +1289,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     missionModel.textContent = modelName || "MMD";
     const jobDate = safeDate(session?.jobDate);
     missionMeta.textContent = [jobDate ? shortDate(jobDate) : "", String(session?.jobTimeLabel || "").trim(), String(session?.locationDisplay || "").trim()].filter(Boolean).join(" · ");
-    const eta = String(session?.etaLabel || "").trim();
+    const eta = ""; // The shared travel panel owns the live, server-anchored ETA.
     missionEta.textContent = eta;
     missionEta.hidden = !eta;
     const sequence = missionTimelineSequence(state);

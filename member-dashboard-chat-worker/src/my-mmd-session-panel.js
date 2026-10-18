@@ -1,9 +1,11 @@
 // Same-origin, read-only customer projection of the Console's canonical Session.
+import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 export function myMmdSessionPanel() {
-  return `<section id="mmd-session-panel" hidden aria-live="polite" style="margin:16px;padding:18px;border:1px solid #e6ddd0;border-radius:18px;background:#fffaf3;color:#2b2723;font-family:system-ui,sans-serif">
+  return `<style>${travelClientCss}</style><section id="mmd-session-panel" hidden style="margin:16px;padding:18px;border:1px solid #e6ddd0;border-radius:18px;background:#fffaf3;color:#2b2723;font-family:system-ui,sans-serif">
 <h2 style="font-size:18px;margin:0 0 10px">งานของคุณ</h2><p data-session-status></p><p data-session-summary></p><p data-session-eta></p><a data-session-login hidden>เข้าสู่ MY MMD ผ่าน LINE</a>
 </section><script id="mmd-session-panel-runtime">
 (() => {
+  ${travelClientBundle()}
   const panel = document.getElementById("mmd-session-panel");
   if (!panel) return;
   const status = panel.querySelector("[data-session-status]");
@@ -40,7 +42,9 @@ export function myMmdSessionPanel() {
         status.textContent = labels[session.lifecycle];
         const model = session.model?.displayAllowed === true ? session.model.displayName : "";
         summary.textContent = [model,session.jobDate,session.jobTimeLabel,session.locationDisplay].filter(value => typeof value === "string" && value).join(" · ");
-        eta.textContent = typeof session.etaLabel === "string" ? session.etaLabel : "";
+        eta.hidden = true;
+        const language = new URLSearchParams(location.search).get('lang') || 'th';
+        mountTravelPanel(panel, { role:'customer', sessionId:session.sessionId, state:session.lifecycle, locale:language });
       }
       panel.hidden = false;
     } catch {

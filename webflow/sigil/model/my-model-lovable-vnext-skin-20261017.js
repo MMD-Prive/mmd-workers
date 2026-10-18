@@ -40,6 +40,7 @@ if(workspace){
   // Exact backend-owned 404 projection from the existing workspace runtime; never infer from URL or missing data.
   function syncWork(){
    const confirmedEmpty=!workspace.hidden&&work.querySelector('[data-mm-job]')?.textContent==='ยังไม่มีงานที่กำลังใช้งาน';
+   if(confirmedEmpty||workspace.hidden)work._mmdTravel?.destroy();
    empty.hidden=!confirmedEmpty;work.dataset.mmLvEmpty=String(confirmedEmpty);
    if(workspace.hidden||work.querySelector('[data-mm-job]')?.textContent!=='มีงานของคุณใน Console')root.dataset.mmLvLane='neutral';
   }
@@ -94,10 +95,16 @@ const messages={
 };
 const params=new URLSearchParams(win.location.search);
 let lang=messages[params.get('lang')]?params.get('lang'):'th';
+let travelSession=null;
+function renderTravel(){
+ const host=workspace?.querySelector('[aria-label="งานของคุณ"]');
+ if(host&&typeof mountTravelPanel==='function')mountTravelPanel(host,{role:'model',summaryOnly:true,sessionId:travelSession?.session_id||null,state:travelSession?.normalized_state||travelSession?.state||'',locale:lang});
+}
 function updateLanguage(){
  root.querySelectorAll('[data-mm-lv-text]').forEach(el=>{const v=messages[lang][el.dataset.mmLvText];if(v)el.textContent=v;});
  root.querySelectorAll('[data-mm-lv-lang]').forEach(el=>el.setAttribute('aria-checked',String(el.dataset.mmLvLang===lang)));
  root.dataset.mmLvLang=lang;
+ if(travelSession)renderTravel();
 }
 updateLanguage();
 function setNavCurrent(tab){dock.querySelectorAll('a').forEach(a=>{if(a.dataset.mmLvNav===tab)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});}
@@ -120,10 +127,11 @@ root.addEventListener('click',event=>{
 win.addEventListener('mmd:model-session-ready',event=>{
  const p=event.detail,s=p?.session;
  if(p?.ok!==true||!s?.session_id)return;
+ travelSession=s;renderTravel();
  const lanes=[s.model_work_lane,s.payout_terms?.money_lane].filter(Boolean);
  root.dataset.mmLvLane=lanes.length&&lanes.every(x=>x==='private_model')?'private':lanes.length&&lanes.every(x=>x==='public_model')?'public':'neutral';
  const orig=root.querySelector('[data-mm-console]'),consoleLink=dock.querySelector('[data-mm-lv-nav="console"]');
  if(orig&&consoleLink)consoleLink.href=orig.href;
 });
-win.addEventListener('mmd:model-workspace-locked',()=>{root.dataset.mmLvLane='neutral';setNavCurrent('home');});
+win.addEventListener('mmd:model-workspace-locked',()=>{travelSession=null;renderTravel();root.dataset.mmLvLane='neutral';setNavCurrent('home');});
 })(window,document);
