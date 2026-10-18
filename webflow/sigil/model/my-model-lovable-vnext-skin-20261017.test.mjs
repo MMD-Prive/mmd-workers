@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,4 +80,50 @@ test('guides are accessible, localized and do not steal operational authority',(
  assert.match(source,/mmd:model-workspace-locked/);
  assert.match(source,/mm-lv-dock/);
  assert.ok(Buffer.byteLength(skin,'utf8')<50000);
+});
+
+test('compact vectors are small, local, decorative, single-family and embedded without requests',()=>{
+ const manifest=JSON.parse(fs.readFileSync(new URL('./atelier/manifest.json',import.meta.url),'utf8'));
+ for(const name of ['current-job-etching','no-current-job','media-review-motif','icons']){
+  const svg=fs.readFileSync(new URL('./atelier/'+name+'.svg',import.meta.url),'utf8').trim();
+  assert.ok(Buffer.byteLength(svg)<2400,name);
+  assert.match(svg,/^<svg\b/);
+  assert.doesNotMatch(svg,/<(?:script|image|foreignObject|text)\b|\bon\w+=|\b(?:href|src)=/i);
+  assert.ok(skin.includes(svg.replaceAll('"','\\"')),name+' in built JS');
+  const bytes=fs.readFileSync(new URL('./atelier/'+name+'.svg',import.meta.url));
+  const entry=manifest.files.find(x=>x.file===name+'.svg');assert.equal(entry.bytes,bytes.length);assert.equal(entry.sha256,createHash('sha256').update(bytes).digest('hex'));
+ }
+ for(const key of ['home','jobs','console','you','profile','media','availability','support'])assert.ok(fs.readFileSync(new URL('./atelier/icons.svg',import.meta.url),'utf8').includes('id="'+key+'"'));
+ assert.match(source,/setAttribute\('aria-hidden','true'\)/);
+ assert.match(source,/setAttribute\('focusable','false'\)/);
+ assert.match(css,/\.mm-lv-art \*\{pointer-events:none\}/);
+ assert.ok(Buffer.byteLength(skin)<50000);
+ assert.doesNotMatch(skin,/MY_MODEL_ATELIER_ASSETS \*\/\{\}/);
+});
+
+test('only the exact confirmed empty projection displays empty art; unresolved state resets stale lane',()=>{
+ const body=source.match(/function syncWork\(\)\{([\s\S]*?)\n  \}/)[1];
+ const run=new Function('workspace','work','empty','root',body);
+ for(const [label,hidden,emptyExpected] of [
+  ['ยังไม่มีงานที่กำลังใช้งาน',false,true],['ยังไม่มีงานที่กำลังใช้งาน',true,false],
+  ['กำลังตรวจงานของคุณ',false,false],['ยังตรวจงานไม่สำเร็จ',false,false],
+  ['MMD กำลังตรวจข้อมูลงาน',false,false],['401',false,false],['403',false,false],['pending_review',false,false],['timeout',false,false],
+ ]){
+  const root={dataset:{mmLvLane:'private'}},empty={},work={dataset:{},querySelector:()=>({textContent:label})};
+  run({hidden},work,empty,root);assert.equal(!empty.hidden,emptyExpected,label);assert.equal(root.dataset.mmLvLane,'neutral',label);
+ }
+ const root={dataset:{mmLvLane:'private'}},empty={},work={dataset:{},querySelector:()=>({textContent:'มีงานของคุณใน Console'})};
+ run({hidden:false},work,empty,root);assert.equal(empty.hidden,true);assert.equal(root.dataset.mmLvLane,'private');
+});
+
+test('compact disclosures move original identity controls and retain native media and availability inputs',()=>{
+ assert.match(source,/Array\.from\(identity.children\).*el\.matches\('dl,button,\.mmhint,a'\)/);
+ assert.match(source,/panel\.append\(summary,verification\)/);
+ assert.match(source,/panel\.open=workspace.hidden/);
+ assert.match(source,/data-mm-lv-focus="availability_status"/);
+ assert.match(source,/media\.append\(mediaTitle,graphic\('media-review-motif'/);
+ assert.match(source,/mmCompactGraphics='atelier-v1'/);
+ assert.doesNotMatch(source,/cloneNode|\.click\(\)|\.disabled\s*=|\.checked\s*=|\.required\s*=/);
+ assert.match(css,/FINAL MMD CONTRAST SAFETY/);
+ assert.match(css,/repeat\(4,minmax\(0,1fr\)\)/);
 });

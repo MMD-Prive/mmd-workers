@@ -389,3 +389,49 @@
     scroll-behavior:auto!important;
   }
 }
+
+/* Compact graphics v1 — inline vectors, backend-owned state, original controls. */
+#mmd-model-home-v4#mmd-model-home-v4 .mmhome-hero{position:absolute;width:1px;height:1px;min-height:0;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);border:0}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-header{min-height:0;flex-wrap:wrap;gap:3px 8px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:7px;backdrop-filter:blur(10px)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-header-status{flex-basis:100%;margin:0;font-size:11px;line-height:1.4;color:var(--lv-muted)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-brand small{display:none}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work{isolation:isolate;margin:12px 0 8px;padding:18px 17px 12px;border-radius:14px;overflow:visible;background:var(--lv-surface);box-shadow:0 1px 0 var(--lv-sheen) inset}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work h2{font-size:21px;line-height:1.4;margin:8px 0 6px}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work p{line-height:1.6}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work .mmverify-actions{padding-top:12px;gap:0}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work .mmprimary{min-height:48px}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work .mmverify-actions>a:not(.mmprimary){min-height:44px;font-size:13px}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-art{display:block;color:var(--lv-gold);pointer-events:none;user-select:none}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-art *{pointer-events:none}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-art svg{display:block;width:100%;height:100%}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-work-art{position:absolute;z-index:-1;right:0;top:0;width:150px;height:90px;opacity:.12;border-radius:14px;overflow:hidden}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-empty-art{width:110px;height:51px;opacity:.35;margin:-4px 0 0 auto}
+#mmd-model-home-v4#mmd-model-home-v4 .mmidentity{padding:11px 0 8px;grid-template-columns:42px minmax(0,1fr);gap:4px 10px}
+#mmd-model-home-v4#mmd-model-home-v4 .mmidentity>img{width:40px;height:46px;border-radius:9px}
+#mmd-model-home-v4#mmd-model-home-v4 .mmidentity:has(>img[hidden])>div{grid-column:1/-1}
+#mmd-model-home-v4#mmd-model-home-v4 .mmidentity [data-mm-name]{font-size:17px;margin:0}
+#mmd-model-home-v4#mmd-model-home-v4 .mmidentity [data-mm-availability]{font-size:13px}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-account{grid-column:1/-1;min-width:0}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-account>summary{min-height:44px;display:flex;align-items:center;font-size:12px;cursor:pointer;color:var(--lv-muted)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-account>a{display:flex;align-items:center;min-height:44px;text-decoration:underline}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-account button{max-width:100%;white-space:normal}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-quick{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:8px 0}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-quick a{flex-direction:column;justify-content:center;gap:6px;min-width:0;min-height:70px;padding:8px 3px;border-radius:10px;font-size:11px;line-height:1.4;text-align:center;box-shadow:none}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-quick a span:last-child{font:inherit;color:var(--lv-text)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-quick svg{width:21px;height:21px;flex-shrink:0;color:var(--lv-gold)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-panel>summary,#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-guides>summary,#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-verification>summary{min-height:48px;display:flex;align-items:center;font-size:13px;cursor:pointer;list-style:none;color:var(--lv-text)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-guides{margin-top:0}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-verification{order:3;border-top:1px solid var(--lv-hairline)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-verification>.mmverify{margin:0 0 8px;padding:14px}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-verification>summary::after{content:"＋";margin-left:auto;color:var(--lv-gold)}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-verification[open]>summary::after{content:"−"}
+#mmd-model-home-v4#mmd-model-home-v4 #mm-lv-media{position:relative}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-media-art{display:none;width:100px;height:60px;margin:0 0 0 auto;opacity:.22}
+#mmd-model-home-v4#mmd-model-home-v4 #mm-lv-media[open]>.mm-lv-media-art{display:block}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-dock svg{stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#mmd-model-home-v4#mmd-model-home-v4 .mm-lv-dock{padding-bottom:calc(36px + env(safe-area-inset-bottom))}
+#mmd-model-home-v4#mmd-model-home-v4{padding-bottom:calc(120px + env(safe-area-inset-bottom))}
+#mmd-model-home-v4#mmd-model-home-v4[data-mm-lv-lane="public"] .mm-lv-work{background:var(--lv-surface)}
+/* FINAL MMD CONTRAST SAFETY — limited to presentation-owned text roles. */
+#mmd-model-home-v4#mmd-model-home-v4 :is(.mm-lv-header strong,.mm-lv-quick a span,.mm-lv-panel>summary,.mm-lv-verification>summary,.mm-lv-work h2){color:var(--lv-text)!important;-webkit-text-fill-color:var(--lv-text)!important;background-image:none!important}
+#mmd-model-home-v4#mmd-model-home-v4 :is(.mm-lv-header-status,.mm-lv-account>summary){color:var(--lv-muted)!important;-webkit-text-fill-color:var(--lv-muted)!important}
