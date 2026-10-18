@@ -26,13 +26,13 @@ function setup(){
 }
 test('explicit reveal shows final 14,000 amount with server URL, bank and embedded-amount caption',async()=>{
   const h=setup();assert.equal(h.amount.hidden,true);assert.equal(h.qr.hidden,true);assert.equal(h.bank.hidden,true);
-  await h.button.click();assert.equal(h.amount.hidden,false);assert.match(h.amount.textContent,/ยอดคงเหลือ.*14,000\.00/);assert.equal(h.qr.hidden,false);assert.equal(h.qr.children[0].src,fixture().instructions.promptpay.qr_url);assert.match(h.qr.children[1].textContent,/QR ระบุยอด/);assert.equal(h.qr.children[2].href,h.qr.children[0].src);assert.equal(h.bank.hidden,false);
+  await h.button.click();assert.equal(h.amount.hidden,false);assert.match(h.amount.textContent,/ยอดคงเหลือ.*14,000\.00/);assert.equal(h.qr.hidden,false);assert.equal(h.qr.children[0].src,fixture().instructions.promptpay.qr_url);assert.match(h.qr.children[1].textContent,/QR ระบุยอด/);assert.equal(h.qr.children.length,2);assert.equal(nodes(h.qr).some(n=>n.tagName==='a'),false);assert.equal(nodes(h.card).some(n=>n.textContent.includes(fixture().instructions.promptpay.qr_url)),false);assert.equal(h.bank.hidden,false);
 });
 test('static QR explicitly instructs customer to enter amount rather than claiming embedded amount',async()=>{
   const h=setup(),f=fixture();f.instructions.promptpay.qr_strategy='static_url';f.instructions.promptpay.amount_entry='customer_manual';h.env.fetch=async()=>({ok:true,json:async()=>f});await h.button.click();assert.match(h.qr.children[1].textContent,/ต้องกรอกยอดเอง/);
 });
 test('pending final evidence clears previously displayed QR and bank so stale payment cannot be reused',async()=>{
-  const h=setup();await h.button.click();h.env.fetch=async()=>({ok:true,json:async()=>({...fixture(),available:false,reason:'proof_received_waiting_verification'})});await h.button.click();assert.equal(h.qr.hidden,true);assert.equal(h.qr.children[0].src,undefined);assert.equal(h.qr.children[2].href,undefined);assert.equal(h.amount.hidden,true);assert.equal(h.bank.hidden,true);
+  const h=setup();await h.button.click();h.env.fetch=async()=>({ok:true,json:async()=>({...fixture(),available:false,reason:'proof_received_waiting_verification'})});await h.button.click();assert.equal(h.qr.hidden,true);assert.equal(h.qr.children[0].src,undefined);assert.equal(h.amount.hidden,true);assert.equal(h.bank.hidden,true);
 });
 test('verified, no-due and unavailable states never include a QR in the view model',()=>{
   for(const reason of ['payment_verified','no_amount_due','payment_not_accepting']){const r=api.paymentView({...fixture(),available:false,reason});assert.equal(r.qr,undefined);assert.equal(r.bank,null);}
