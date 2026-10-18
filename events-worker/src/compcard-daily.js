@@ -13,13 +13,22 @@ const MODEL_FIELDS = ["working_name", "status", "sales_layer", "private_tier", "
 const MAX_PHOTO_BYTES = 10_000_000;
 const MAX_CATCHUP_MINUTES = 90;
 const READINESS_TTL_MS = 30 * 60 * 1000;
+// Workers native fetch needs its runtime receiver when called via an injected
+// function parameter. Preserve it while retaining explicit test overrides.
+const runtimeFetch = (input, init) => globalThis.fetch(input, init);
 
 function problem(code, retryable = true) {
   return Object.assign(new Error(code), { code, retryable });
 }
 function safeError(error) {
   const code = String(error?.code || error?.message || error || "");
-  return /^compcard_[a-z0-9_]{1,100}$/.test(code) ? code : "compcard_operation_failed";
+  if (/^compcard_[a-z0-9_]{1,100}$/.test(code)) return code;
+  const message = String(error?.message || "");
+  if (/illegal invocation|invalid.*receiver/i.test(message)) return "compcard_runtime_receiver_invalid";
+  if (/redirect/i.test(message) && /unsupported|invalid|not implemented/i.test(message)) return "compcard_runtime_redirect_unsupported";
+  if (["AbortError", "TimeoutError"].includes(error?.name)) return "compcard_request_timed_out";
+  if (error?.name === "TypeError") return "compcard_runtime_type_error";
+  return "compcard_operation_failed";
 }
 function enabled(value) { return String(value || "").trim().toLowerCase() === "true"; }
 function hhmm(value, fallback) {
@@ -50,7 +59,7 @@ export async function compcardSha256(bytes) {
 }
 async function jsonDigest(value) { return compcardSha256(new TextEncoder().encode(JSON.stringify(value))); }
 
-export async function readApprovedCompcardAsset(card, http = fetch) {
+export async function readApprovedCompcardAsset(card, http = runtimeFetch) {
   if (!/^[A-Za-z0-9_-]{10,180}$/.test(card.file_id || "") || !/^[a-f0-9]{64}$/.test(card.sha256 || "")
       || !["image/jpeg", "image/png"].includes(card.content_type) || !Number.isSafeInteger(card.bytes) || card.bytes < 1 || card.bytes > MAX_PHOTO_BYTES) {
     throw problem("compcard_manifest_asset_invalid", false);
@@ -104,7 +113,7 @@ function airtableConfig(env) {
   if (!/^app[A-Za-z0-9]+$/.test(base) || !/^tbl[A-Za-z0-9]+$/.test(table) || !token) throw problem("compcard_models_not_configured");
   return { base, table, token };
 }
-export async function readCompcardModels(env, http = fetch) {
+export async function readCompcardModels(env, http = runtimeFetch) {
   const { base, table, token } = airtableConfig(env);
   let offset = "";
   const rows = [];
@@ -113,7 +122,7 @@ export async function readCompcardModels(env, http = fetch) {
     url.searchParams.set("pageSize", "100");
     for (const field of MODEL_FIELDS) url.searchParams.append("fields[]", field);
     if (offset) url.searchParams.set("offset", offset);
-    const response = await http(url.href, { headers: { authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(15000) });
+    const response = await http(url.href, { headers: { authorization: `Bearer ${token}` }, redirect: "manual", signal: AbortSignal.timeout(15000) });
     const body = await response.json().catch(() => null);
     if (!response.ok || !Array.isArray(body?.records)) throw problem("compcard_models_read_failed");
     rows.push(...body.records);
@@ -122,11 +131,11 @@ export async function readCompcardModels(env, http = fetch) {
   }
   throw problem("compcard_models_pagination_incomplete");
 }
-async function readCompcardModel(env, modelId, http = fetch) {
+async function readCompcardModel(env, modelId, http = runtimeFetch) {
   const { base, table, token } = airtableConfig(env);
   if (!/^rec[A-Za-z0-9]+$/.test(modelId || "")) throw problem("compcard_model_id_invalid", false);
   const response = await http(`https://api.airtable.com/v0/${base}/${table}/${modelId}`, {
-    headers: { authorization: `Bearer ${token}` }, redirect: "error", signal: AbortSignal.timeout(15000),
+    headers: { authorization: `Bearer ${token}` }, redirect: "manual", signal: AbortSignal.timeout(15000),
   });
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.id !== modelId) throw problem("compcard_model_refresh_failed");
@@ -139,9 +148,10 @@ async function telegramCall(env, path, { form, jsonBody, http, timeout = 95000 }
   const request = new Request(`${TELEGRAM_ORIGIN}${path}`, {
     method: form || jsonBody ? "POST" : "GET", headers: { "x-internal-token": token, ...(jsonBody ? { "content-type": "application/json" } : {}) },
     body: jsonBody ? JSON.stringify(jsonBody) : form,
-    redirect: "error", signal: AbortSignal.timeout(timeout),
+    redirect: "manual", signal: AbortSignal.timeout(timeout),
   });
-  const response = await (http || env.TELEGRAM_ROUTER?.fetch?.bind(env.TELEGRAM_ROUTER) || fetch)(request);
+  const response = await (http || env.TELEGRAM_ROUTER?.fetch?.bind(env.TELEGRAM_ROUTER) || runtimeFetch)(request);
+  if (response.status >= 300 && response.status < 400) return { status: response.status, ok: false, body: { delivery_state: request.method === "GET" ? "not_sent" : "delivery_uncertain", error: "compcard_telegram_redirect_rejected" } };
   const body = await response.json().catch(() => null);
   return { status: response.status, ok: response.ok, body };
 }

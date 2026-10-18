@@ -201,7 +201,7 @@ async function telegramRequest(env, method, body) {
       method: "POST",
       headers: body instanceof FormData ? undefined : { "Content-Type": "application/json" },
       body: body instanceof FormData ? body : JSON.stringify(body),
-      redirect: "error",
+      redirect: "manual",
       signal: controller.signal,
     });
     const bounded = await readBoundedBody(response.body, 262_144);
@@ -363,3 +363,4 @@ export async function handleCompcardText(req, env) {
     telegram_date: Number.isSafeInteger(message.date) && message.date > 0 ? message.date : null,
   });
 }
+

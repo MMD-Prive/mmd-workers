@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   compcardClock, compcardSchedule, compcardSha256, preflightCompcardDaily,
-  readApprovedCompcardAsset, readCompcardModels, runCompcardDaily, sendApprovedCompcard,
+  readApprovedCompcardAsset, readCompcardDestinations, readCompcardModels, runCompcardDaily, sendApprovedCompcard,
 } from "./src/compcard-daily.js";
 import { COMPCARD_JOURNAL_ROOT } from "./src/compcard-journal.js";
 import { APPROVED_COMPCARD_MANIFEST } from "./src/compcard-approved-manifest.js";
@@ -59,6 +59,72 @@ function fixture({ cards = [CARD], promotions = [], send } = {}) {
   return { bucket, sends, models, manifest, env, deps };
 }
 const run = (f, date = "2026-10-18", time = "16:30", options = {}) => runCompcardDaily(f.env, { now: at(date, time), deps: f.deps, ...options });
+
+test("default network readers preserve the native fetch receiver and never auto-follow credentials", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async function (input, init) {
+    assert.equal(this, globalThis, "native fetch receiver must remain the runtime global");
+    const url = new URL(input instanceof Request ? input.url : input);
+    calls.push(url.hostname);
+    assert.equal(input instanceof Request ? input.redirect : init.redirect, "manual");
+    if (url.hostname === "api.airtable.com") return Response.json({ records: [recordFor(CARD)] });
+    if (url.hostname === "drive.google.com") return new Response(BYTES, { headers: { "content-type": CARD.content_type } });
+    return Response.json({ destinations: [{ destination: "premium", chat_id: ROOM_IDS.premium, ok: true }] });
+  };
+  try {
+    const rows = await readCompcardModels({ AIRTABLE_BASE_ID: "appExample", AIRTABLE_TABLE_MODELS: "tblExample", AIRTABLE_API_KEY: "test-only" });
+    assert.equal(rows[0].id, CARD.model_id);
+    assert.equal((await readApprovedCompcardAsset(CARD)).sha256, HASH);
+    const rooms = await readCompcardDestinations({ AUTH_SERVICE_EVENTS_TO_TELEGRAM: "test-only" });
+    assert.equal(rooms[0].chat_id, ROOM_IDS.premium);
+    assert.deepEqual(calls, ["api.airtable.com", "drive.google.com", "telegram-worker.malemodel-bkk.workers.dev"]);
+  } finally { globalThis.fetch = original; }
+});
+
+test("credential-bearing reads reject redirects even when the body looks valid", async () => {
+  let airtableCalls = 0;
+  await assert.rejects(readCompcardModels({ AIRTABLE_BASE_ID: "appExample", AIRTABLE_TABLE_MODELS: "tblExample", AIRTABLE_API_KEY: "test-only" }, async (_url, init) => {
+    airtableCalls += 1;
+    assert.equal(init.redirect, "manual");
+    return Response.json({ records: [recordFor(CARD)] }, { status: 302, headers: { location: "https://unapproved.example/collect" } });
+  }), /compcard_models_read_failed/);
+  let serviceCalls = 0;
+  const binding = { async fetch(request) {
+    serviceCalls += 1;
+    assert.equal(this, binding, "service fetch must retain its binding receiver");
+    assert.equal(request.redirect, "manual");
+    return Response.json({ destinations: [{ destination: "premium", chat_id: ROOM_IDS.premium, ok: true }] }, { status: 302, headers: { location: "https://unapproved.example/collect" } });
+  } };
+  await assert.rejects(readCompcardDestinations({ AUTH_SERVICE_EVENTS_TO_TELEGRAM: "test-only", TELEGRAM_ROUTER: binding }), /compcard_destinations_unavailable/);
+  assert.equal(airtableCalls, 1);
+  assert.equal(serviceCalls, 1);
+});
+
+test("runtime readiness classifies failures without persisting raw exception details", async () => {
+  const f = fixture();
+  f.deps.destinations = async () => { throw new TypeError("Illegal invocation: sensitive-detail"); };
+  f.deps.models = async () => { throw new Error("Request redirect mode not implemented: sensitive-detail"); };
+  await run(f, "2026-10-18", "16:15");
+  const snapshot = f.bucket.read("readiness/latest.json");
+  assert.ok(snapshot.result.errors.includes("compcard_runtime_receiver_invalid"));
+  assert.ok(snapshot.result.errors.includes("compcard_runtime_redirect_unsupported"));
+  assert.doesNotMatch(JSON.stringify(snapshot), /sensitive-detail/);
+  assert.equal(f.sends.length, 0);
+});
+
+test("a service redirect after a send remains uncertain and is not followed", async () => {
+  let calls = 0;
+  const result = await sendApprovedCompcard({ AUTH_SERVICE_EVENTS_TO_TELEGRAM: "test-only" }, CARD, "premium", "Approved caption", { bytes: BYTES }, async request => {
+    calls += 1;
+    assert.equal(request.method, "POST");
+    assert.equal(request.redirect, "manual");
+    return Response.json({ delivery_state: "sent", destination: "premium", chat_id: ROOM_IDS.premium, approved_sha256: CARD.sha256, message_id: 123 }, { status: 302, headers: { location: "https://unapproved.example/collect" } });
+  }, ROOM_IDS.premium);
+  assert.equal(result.delivery_state, "delivery_uncertain");
+  assert.equal(result.message_id, undefined);
+  assert.equal(calls, 1);
+});
 
 test("Bangkok calendar boundary and explicit default publishing times", () => {
   assert.deepEqual(compcardClock(Date.parse("2026-10-17T17:00:00Z")), { date: "2026-10-18", minutes: 0, time: "00:00" });

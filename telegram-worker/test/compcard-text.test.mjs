@@ -45,7 +45,7 @@ function mockTelegram(t, overrides = {}) {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
     assert.ok(String(url).startsWith("https://api.telegram.org/bot"));
-    assert.equal(init.redirect, "error");
+    assert.equal(init.redirect, "manual");
     assert.equal(init.headers["Content-Type"], "application/json");
     const method = String(url).split("/").at(-1);
     const body = JSON.parse(init.body);
@@ -163,6 +163,23 @@ for (const errorCode of [400, 403, 429]) {
   });
 }
 
+test("Telegram redirects are not followed or accepted as a confirmed text receipt", async t => {
+  const calls = mockTelegram(t, {
+    sendMessage: ({ body, chat }) => Response.json(
+      { ok: true, result: { message_id: 815, chat, text: body.text, date: 1792332000 } },
+      { status: 302, headers: { Location: "https://unexpected.example/receive" } },
+    ),
+  });
+  const response = await worker.fetch(request(), ENV);
+  const body = await response.json();
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.delivery_state, "delivery_uncertain");
+  assert.equal(body.message_id, undefined);
+  assert.deepEqual(calls.map(call => call.method), ["getChat", "getMe", "getChatMember", "sendMessage"]);
+  assert.equal(globalThis.fetch.mock.callCount(), 4);
+});
+
 for (const [name, outcome] of [
   ["different text", ({ chat }) => Response.json({ ok: true, result: { message_id: 815, chat, text: "different" } })],
   ["missing text", ({ chat }) => Response.json({ ok: true, result: { message_id: 815, chat } })],
@@ -184,3 +201,4 @@ for (const [name, outcome] of [
     assert.deepEqual(calls.map(call => call.method), ["getChat", "getMe", "getChatMember", "sendMessage"]);
   });
 }
+
