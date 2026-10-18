@@ -1,0 +1,32 @@
+{
+  "version": "console-atelier-v3",
+  "delivery": "inline SVG; no additional image requests",
+  "attribution": "Project-authored geometry; job/support shapes reuse MY MODEL icon family",
+  "files": [
+    {
+      "file": "console-session-etching.svg",
+      "bytes": 397,
+      "sha256": "efcec1323e42d3f83f7b4ef50bf106d26090469ceaf6aaad8073f45825f5e966"
+    },
+    {
+      "file": "console-travel-arc.svg",
+      "bytes": 387,
+      "sha256": "70b5e491b2155c25d7d1340c87dcb08969c37c2111d01a1538cc814b152d3cb3"
+    },
+    {
+      "file": "console-no-session.svg",
+      "bytes": 372,
+      "sha256": "226ff6b9af222da8fa548f483fd7fce63c50349e8032bad6f194d891465af399"
+    },
+    {
+      "file": "console-after-job.svg",
+      "bytes": 343,
+      "sha256": "5a9d560c935e729eb596c1a54c99b4e620283bf60ca93f8f77ba17685286b313"
+    },
+    {
+      "file": "icons.svg",
+      "bytes": 973,
+      "sha256": "17a28018f1fe3ff02d1a3d44c9d8d027af5b9e16c03aee998e3e21b93a615991"
+    }
+  ]
+}

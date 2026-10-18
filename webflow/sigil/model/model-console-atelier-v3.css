@@ -1,0 +1,56 @@
+#sigil-model-console-v3[data-console-atelier]{--ca-ink:#F3F0E8;--ca-muted:#BEBBB1;--ca-panel:#171B1D;--ca-raised:#232729;--ca-brass:#C9B38B;--ca-line:#5f5d56;color:var(--ca-ink);font-family:"LINE Seed Sans TH","Noto Sans Thai",sans-serif}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"]{--ca-ink:#171B1D;--ca-muted:#535750;--ca-panel:#F3F0E8;--ca-raised:#fff;--ca-brass:#725a32;--ca-line:#bab5aa}
+#sigil-model-console-v3[data-console-atelier] *{box-sizing:border-box}
+#sigil-model-console-v3[data-console-atelier] [hidden]{display:none!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-shell{width:min(760px,calc(100% - 32px));margin:auto;padding:16px 0 max(24px,env(safe-area-inset-bottom))}
+#sigil-model-console-v3[data-console-atelier] .smcv3-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 16px;padding:0;min-height:44px}
+#sigil-model-console-v3[data-console-atelier] .smcv3-brand img{width:28px;height:28px;object-fit:contain}
+#sigil-model-console-v3[data-console-atelier] .smcv3-brand-title{font-size:1rem}
+#sigil-model-console-v3[data-console-atelier] .smcv3-brand small{display:none}
+#sigil-model-console-v3[data-console-atelier] .ca-back{display:inline-flex;align-items:center;gap:6px;min-height:44px;color:var(--ca-ink);font-weight:700;text-decoration:none}
+#sigil-model-console-v3[data-console-atelier] .ca-back+ .smcv3-brand{margin-right:auto}
+#sigil-model-console-v3[data-console-atelier] .smcv3-card,#sigil-model-console-v3[data-console-atelier] .smcv3-state{position:relative;isolation:isolate;border:1px solid var(--ca-line);border-radius:18px;background:var(--ca-panel);color:var(--ca-ink);padding:20px;margin:0 0 12px;box-shadow:none;min-width:0}
+#sigil-model-console-v3[data-console-atelier] .smcv3-summary{padding-right:24px}
+#sigil-model-console-v3[data-console-atelier] .smcv3-h1,#sigil-model-console-v3[data-console-atelier] .smcv3-h2{font-size:clamp(1.35rem,3vw,1.8rem);line-height:1.35;margin:6px 0 10px;color:var(--ca-ink);overflow-wrap:anywhere}
+#sigil-model-console-v3[data-console-atelier] .smcv3-kicker,#sigil-model-console-v3[data-console-atelier] .smcv3-label,#sigil-model-console-v3[data-console-atelier] .smcv3-copy,#sigil-model-console-v3[data-console-atelier] .smcv3-helper{color:var(--ca-muted);line-height:1.65}
+#sigil-model-console-v3[data-console-atelier] .smcv3-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+#sigil-model-console-v3[data-console-atelier] .smcv3-fact{min-width:0;overflow-wrap:anywhere}
+#sigil-model-console-v3[data-console-atelier] .smcv3-label{display:block;font-size:.8rem}
+#sigil-model-console-v3[data-console-atelier] .smcv3-value{font-size:.95rem;color:var(--ca-ink)}
+#sigil-model-console-v3[data-console-atelier] .smcv3-actions,#sigil-model-console-v3[data-console-atelier] [data-primary-actions]{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+#sigil-model-console-v3[data-console-atelier] button,#sigil-model-console-v3[data-console-atelier] .smcv3-btn,#sigil-model-console-v3[data-console-atelier] .smcv3-primary{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+#sigil-model-console-v3[data-console-atelier] [data-primary-actions] button{flex:1;min-width:0;background:var(--ca-brass);color:#0B0E10;border:1px solid var(--ca-brass);border-radius:12px;padding:12px 18px;font:700 1rem/1.5 inherit}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] [data-primary-actions] button{color:#fff}
+#sigil-model-console-v3[data-console-atelier] .smcv3-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border:1px solid var(--ca-line);border-radius:12px;background:var(--ca-raised);color:var(--ca-ink);text-decoration:none}
+#sigil-model-console-v3[data-console-atelier] button:disabled{opacity:.5;cursor:wait}
+#sigil-model-console-v3[data-console-atelier] summary{cursor:pointer;min-height:44px;padding:10px 0;line-height:1.5;color:var(--ca-ink);font-weight:700}
+#sigil-model-console-v3[data-console-atelier] details[open] summary{border-bottom:1px solid var(--ca-line);margin-bottom:12px}
+#sigil-model-console-v3[data-console-atelier] .smcv3-detail{padding:0;overflow-wrap:anywhere}
+#sigil-model-console-v3[data-console-atelier] textarea{color:var(--ca-ink);background:var(--ca-raised);width:100%;min-height:100px;font:inherit;border:1px solid var(--ca-line)}
+#sigil-model-console-v3[data-console-atelier] :is(a,button,summary,textarea):focus-visible{outline:3px solid var(--ca-brass);outline-offset:4px}
+#sigil-model-console-v3[data-console-atelier] .ca-accent,#sigil-model-console-v3[data-console-atelier] .ca-accent *{pointer-events:none!important}
+#sigil-model-console-v3[data-console-atelier] .ca-accent{position:absolute;right:0;top:0;width:180px;max-width:45%;color:var(--ca-muted);opacity:.10;z-index:-1}
+#sigil-model-console-v3[data-console-atelier] .ca-accent svg{display:block;width:100%;height:auto}
+#sigil-model-console-v3[data-console-atelier] .ca-icon,#sigil-model-console-v3[data-console-atelier] .ca-icon *{pointer-events:none}
+#sigil-model-console-v3[data-console-atelier] .ca-icon{display:inline-block;width:21px;height:21px;flex:0 0 21px;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#sigil-model-console-v3[data-console-atelier] .ca-back .ca-icon{margin-right:4px}
+#sigil-model-console-v3[data-console-atelier] .ca-loading{height:3px;margin-top:16px;background:var(--ca-brass);opacity:.6}
+/* The existing Webflow/global contrast layer uses !important. Override only scoped surfaces, not its background image/filter. */
+#sigil-model-console-v3[data-console-atelier] :is(.smcv3-card,.smcv3-state){background:var(--ca-panel)!important;border-color:var(--ca-line)!important;color:var(--ca-ink)!important;box-shadow:none!important}
+#sigil-model-console-v3[data-console-atelier] :is(.smcv3-h1,.smcv3-h2,.smcv3-value,.smcv3-summary-row,.smcv3-brand-title,.ca-back,.smcv3-btn,.smcv3-dd){color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important}
+#sigil-model-console-v3[data-console-atelier] :is(.smcv3-kicker,.smcv3-label,.smcv3-copy,.smcv3-helper,.smcv3-dt){color:var(--ca-muted)!important;-webkit-text-fill-color:var(--ca-muted)!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-fact{display:grid!important;grid-template-columns:6rem minmax(0,1fr);align-items:start;gap:8px;padding:8px 0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important}
+#sigil-model-console-v3[data-console-atelier] [data-primary-actions] button{background:var(--ca-brass)!important;color:#0B0E10!important;-webkit-text-fill-color:#0B0E10!important;border-color:var(--ca-brass)!important}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] [data-primary-actions] button{color:#fff!important;-webkit-text-fill-color:#fff!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-actions .smcv3-btn{background:var(--ca-raised)!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-facts{grid-template-columns:1fr}
+#sigil-model-console-v3[data-console-atelier] .mmd-lang button{min-width:44px;min-height:44px;font-size:.75rem!important}
+#sigil-model-console-v3[data-console-atelier] [data-primary-actions] button{font:inherit;font-size:1rem!important;font-weight:700;line-height:1.5}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] .smcv3-head{background:var(--ca-panel)!important;border:1px solid var(--ca-line);border-radius:14px;padding:10px}
+#sigil-model-console-v3[data-console-atelier] .ca-icon{margin-right:5px}
+/* Legacy financial markup retains dark-theme colors. Override text only inside
+   the Public financial disclosure; leave visible warnings/decisions untouched. */
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] details :is(.smcv3-payout-only,[data-model-payout-row]),#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] details :is(.smcv3-payout-only,[data-model-payout-row]) *{color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] details :is(.smcv3-payout-only,[data-model-payout-row]) :is(.smcv3-payout-only__label,.smcv3-payout-only__status,.smcv3-payout-only__note,.smcv3-payout-terms__title,.smcv3-payout-terms__row span,.smcv3-payout-terms__foot,.smcv3-payout-terms__lock,.smcv3-label){color:var(--ca-muted)!important;-webkit-text-fill-color:var(--ca-muted)!important}
+@media(max-width:480px){#sigil-model-console-v3[data-console-atelier] .smcv3-shell{width:calc(100% - 24px)}#sigil-model-console-v3[data-console-atelier] .smcv3-card,#sigil-model-console-v3[data-console-atelier] .smcv3-state{padding:16px}#sigil-model-console-v3[data-console-atelier] .smcv3-facts{grid-template-columns:1fr;gap:8px}#sigil-model-console-v3[data-console-atelier] .smcv3-head .mmd-lang{order:4}#sigil-model-console-v3[data-console-atelier] .smcv3-actions>*{flex:1}#sigil-model-console-v3[data-console-atelier] .smcv3-actions a{width:100%}}
+@media(prefers-reduced-motion:reduce){#sigil-model-console-v3[data-console-atelier],#sigil-model-console-v3[data-console-atelier] *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
