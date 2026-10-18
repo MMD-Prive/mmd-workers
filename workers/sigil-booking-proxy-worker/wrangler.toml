@@ -22,3 +22,9 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/sigil/booking*"
 zone_name = "mmdbkk.com"
+
+# Canonical-host static assets for the frozen Webflow Cloud release. This
+# allows module scripts/styles to load same-origin without unsafe CORS hacks.
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil-booking-release/*"
+zone_name = "mmdbkk.com"

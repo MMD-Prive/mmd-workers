@@ -17,11 +17,11 @@ export const CANONICAL_HOST = "sigil.mmdbkk.com";
 export const CANONICAL_PROTOCOL = "https:";
 export const SIGIL_BOOKING_PATH = "/sigil/booking";
 export const WEBFLOW_ORIGIN = "https://mmdprive.webflow.io";
-export const WEBFLOW_BOOKING_PATH = "/sigil/booking";
+export const WEBFLOW_BOOKING_PATH = "/sigil-booking-release";
 
 export const FRONT_GATE_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 export const CANONICAL_HOSTS = new Set([CANONICAL_HOST]);
-export const SAFE_FRONT_GATE_PARAMS = new Set(["t", "code", "promo", "model_id", "request_id"]);
+export const SAFE_FRONT_GATE_PARAMS = new Set(["t", "code", "promo", "model_id", "request_id", "mode", "scope", "model", "service", "telegram", "booking_ref", "session_id"]);
 
 export function normalizePath(pathname) {
   let path = pathname || "/";
@@ -32,6 +32,12 @@ export function normalizePath(pathname) {
 
 export function isSigilBookingPath(url) {
   return normalizePath(url.pathname).toLowerCase() === SIGIL_BOOKING_PATH;
+}
+
+export function isCloudReleaseAssetPath(url) {
+  // Only canonical-host assets are proxied; arbitrary Webflow paths are forbidden.
+  return url.hostname.toLowerCase() === CANONICAL_HOST
+    && url.pathname.startsWith(WEBFLOW_BOOKING_PATH + "/");
 }
 
 export function isFrontGateHost(url) {
@@ -92,7 +98,7 @@ function withProxyHeaders(response, extra = {}) {
   }
 
   headers.set("x-mmd-origin", WEBFLOW_ORIGIN);
-  headers.set("x-mmd-booking-source", "webflow-live");
+  headers.set("x-mmd-booking-source", "webflow-cloud-release");
   headers.set("x-mmd-page-source", `${WEBFLOW_ORIGIN}${WEBFLOW_BOOKING_PATH}`);
   headers.delete("content-length");
 
@@ -101,8 +107,8 @@ function withProxyHeaders(response, extra = {}) {
 
 function injectPageMarkers(html) {
   const marker = `<meta name="mmd-page-owner" content="${WORKER_NAME}">
-<meta name="mmd-page-source" content="mmdprive.webflow.io/sigil/booking">
-<meta name="mmd-page-version" content="sigil-booking-next">`;
+<meta name="mmd-page-source" content="mmdprive.webflow.io/sigil-booking-release">
+<meta name="mmd-page-version" content="sigil-booking-cloud-release">`;
 
   if (html.includes("mmd-page-owner")) return html;
   if (html.includes("</head>")) return html.replace("</head>", `${marker}\n</head>`);
@@ -154,6 +160,31 @@ async function fetchBookingFromWebflow(request, url) {
   });
 }
 
+async function fetchCloudReleaseAsset(request, url) {
+  const upstream = new URL(url.pathname + url.search, WEBFLOW_ORIGIN);
+  const headers = new Headers({
+    accept: request.headers.get("accept") || "*/*",
+  });
+  // Support normal browser asset revalidation and byte ranges.
+  for (const key of ["range", "if-none-match", "if-modified-since"]) {
+    const value = request.headers.get(key);
+    if (value) headers.set(key, value);
+  }
+  const response = await fetch(new Request(upstream.toString(), {
+    method: request.method.toUpperCase(),
+    headers,
+  }));
+  const out = new Headers(response.headers);
+  out.delete("set-cookie");
+  out.set("x-mmd-route-owner", WORKER_NAME);
+  out.set("x-mmd-booking-source", "webflow-cloud-release");
+  out.delete("content-length");
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : response.body, {
+    status: response.status,
+    headers: out,
+  });
+}
+
 function methodNotAllowed() {
   return new Response(JSON.stringify({ ok: false, error: "METHOD_NOT_ALLOWED" }), {
     status: 405,
@@ -179,6 +210,10 @@ export default {
       return new Response(null, { status: 204, headers: pageHeaders({ allow: "GET, HEAD, OPTIONS" }) });
     }
 
+    if (isCloudReleaseAssetPath(url)) {
+      if (!isSafePageMethod(request)) return methodNotAllowed();
+      return fetchCloudReleaseAsset(request, url);
+    }
     if (!isSigilBookingPath(url)) return notFound(url);
     if (!isSafePageMethod(request)) return methodNotAllowed();
 
