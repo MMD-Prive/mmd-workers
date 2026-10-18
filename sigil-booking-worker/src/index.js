@@ -255,7 +255,7 @@ async function handleBookingIntake(req, env, ctx) {
 
   const fields = compact({
     "Request ID": bookingRef,
-    "Request Status": normalizeRequestStatus(body.request_status),
+    "Request Status": normalizeRequestStatus("draft"), // Customer intake is never an authority to confirm a booking.
     "Created At": new Date().toISOString(),
     "Source": str(body.source || (intent.mode === "search" ? "sigil_search" : "sigil_booking")),
     "Source Path": str(body.source_path || "/sigil/booking"),
@@ -331,6 +331,7 @@ async function handleBookingIntake(req, env, ctx) {
 
   return {
     ok: true,
+    request_status: "request_pending_admin_review",
     record_id: rec?.id || null,
     ...(publicJob ? { public_job: publicJob } : {}),
     booking_ref: bookingRef,
@@ -870,6 +871,10 @@ async function airtableFetch(env, path, init = {}) {
 }
 
 function requireAirtable(env) { if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) throw new Error("missing_airtable_env"); }
+export function withBrowserCors(response, request, env) {
+  return withCors(response, corsHeaders(request, env));
+}
+
 function corsHeaders(req, env) {
   const origin = req.headers.get("Origin") || "";
   const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean);
