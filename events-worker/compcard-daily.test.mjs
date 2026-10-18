@@ -172,6 +172,34 @@ test("duplicate and concurrent cron ticks send one card once per destination", a
   assert.equal(f.bucket.read("deliveries/2026-10-18/model/premium.json").status, "sent");
 });
 
+test("a repeated tick rebuilds a readable summary from durable receipts without sending again", async () => {
+  const f = fixture();
+  const first = await run(f);
+  assert.equal(f.sends.length, 2);
+  const protectedKeys = [
+    "plans/2026-10-18/model.json", `history/${CARD.model_id}.json`,
+    "deliveries/2026-10-18/model/premium.json", "deliveries/2026-10-18/model/preview.json",
+  ];
+  const durable = new Map(protectedKeys.map(key => [key, f.bucket.records.get(`${COMPCARD_JOURNAL_ROOT}${key}`)]));
+  // Model an existing unwrapped report written before the snapshot envelope.
+  await f.bucket.put(`${COMPCARD_JOURNAL_ROOT}summaries/2026-10-18/model.json`, JSON.stringify(first.results[0]));
+  const repeated = await run(f, "2026-10-18", "16:45");
+  const snapshot = f.bucket.read("summaries/2026-10-18/model.json");
+  assert.deepEqual(snapshot, { schema: "hype_compcard_snapshot_v1", success: true, result: repeated.results[0] });
+  assert.equal(snapshot.result.status, "sent");
+  assert.equal(snapshot.result.sent, 2);
+  assert.equal(f.sends.length, 2);
+  for (const outcome of snapshot.result.outcomes) {
+    const record = f.bucket.read(`deliveries/2026-10-18/model/${outcome.destination}.json`);
+    assert.equal(outcome.duplicate, true);
+    assert.deepEqual(outcome.receipt, record.receipt);
+    assert.equal(outcome.receipt.chat_id, ROOM_IDS[outcome.destination]);
+    assert.equal(outcome.receipt.message_id, first.results[0].outcomes.find(row => row.destination === outcome.destination).receipt.message_id);
+    assert.equal(outcome.receipt.approved_sha256, CARD.sha256);
+  }
+  for (const [key, original] of durable) assert.deepEqual(f.bucket.records.get(`${COMPCARD_JOURNAL_ROOT}${key}`), original);
+});
+
 test("known failure retries the unfinished room; refreshed readiness reuses the frozen plan", async () => {
   let previewTries = 0;
   const f = fixture({ send: (card, destination, caption, asset, chat, n) => {
@@ -181,7 +209,7 @@ test("known failure retries the unfinished room; refreshed readiness reuses the 
   await run(f);
   await run(f, "2026-10-18", "17:00");
   assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "preview", "preview"]);
-  assert.equal(f.bucket.read("summaries/2026-10-18/model.json").status, "sent");
+  assert.equal(f.bucket.read("summaries/2026-10-18/model.json").result.status, "sent");
 });
 
 test("uncertain delivery never automatically retries that room while its sibling completes", async () => {
@@ -191,7 +219,7 @@ test("uncertain delivery never automatically retries that room while its sibling
   await run(f);
   await run(f, "2026-10-18", "17:00");
   assert.deepEqual(f.sends.map((row) => row.destination), ["premium", "preview"]);
-  assert.equal(f.bucket.read("summaries/2026-10-18/model.json").status, "delivery_uncertain");
+  assert.equal(f.bucket.read("summaries/2026-10-18/model.json").result.status, "delivery_uncertain");
 });
 
 test("fresh category or visibility changes stop a planned card before Telegram", async () => {
