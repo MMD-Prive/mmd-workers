@@ -6,6 +6,8 @@ on:
       - "webflow/sigil/model/my-model-workspace-20261016.*"
       - "webflow/sigil/model/dashboard-home-media-20261015.js"
       - "webflow/sigil/model/my-model-lovable-vnext-skin-20261017.*"
+      - "webflow/sigil/model/atelier/**"
+      - "webflow/sigil/model/my-model-ios-native-picker.test.mjs"
       - "webflow/sigil/confirm/confirmation-handoff*"
       - "scripts/build-my-model-workspace-bundle.mjs"
       - "scripts/build-my-model-lovable-skin-embed.mjs"
@@ -16,6 +18,8 @@ on:
       - "webflow/sigil/model/my-model-workspace-20261016.*"
       - "webflow/sigil/model/dashboard-home-media-20261015.js"
       - "webflow/sigil/model/my-model-lovable-vnext-skin-20261017.*"
+      - "webflow/sigil/model/atelier/**"
+      - "webflow/sigil/model/my-model-ios-native-picker.test.mjs"
       - "webflow/sigil/confirm/confirmation-handoff*"
       - "scripts/build-my-model-workspace-bundle.mjs"
       - "scripts/build-my-model-lovable-skin-embed.mjs"
@@ -53,6 +57,7 @@ jobs:
           node --test \
             webflow/sigil/model/my-model-workspace-20261016.test.mjs \
             webflow/sigil/model/my-model-lovable-vnext-skin-20261017.test.mjs \
+            webflow/sigil/model/my-model-ios-native-picker.test.mjs \
             webflow/sigil/model/dashboard-job-world-20261015.test.mjs \
             webflow/sigil/model/model-console-v3-identity-first.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \

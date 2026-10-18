@@ -5,7 +5,8 @@ const repo=fileURLToPath(new URL('../',import.meta.url));
 const read=name=>fs.readFileSync(path.join(repo,'webflow/sigil/model',name),'utf8');
 export function buildLovableSkinEmbed(){
  const css=read('my-model-lovable-vnext-skin-20261017.css');
- const js=read('my-model-lovable-vnext-skin-20261017.js');
+ const assets=Object.fromEntries(['current-job-etching','no-current-job','media-review-motif','icons'].map(name=>[name,read('atelier/'+name+'.svg').trim()]));
+ const js=read('my-model-lovable-vnext-skin-20261017.js').replace('/* MY_MODEL_ATELIER_ASSETS */{}',JSON.stringify(assets));
  return '<style id="my-model-lovable-vnext-skin-20261017">\n'+css+'\n</style>\n<script id="my-model-lovable-vnext-skin-20261017">\n'+js+'\n</script>\n';
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
