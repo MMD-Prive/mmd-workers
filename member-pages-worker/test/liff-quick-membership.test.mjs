@@ -18,7 +18,7 @@ function setup(membership, profileResponse) {
   return { nodes, calls, context };
 }
 
-test("canonical membership renders before the full profile completes", async () => {
+test("canonical membership renders before the full profile completes without opening history review", async () => {
   let release;
   const pending = new Promise(resolve => { release = resolve; });
   const h = setup({ level:"premium", levelVerified:true, status:"expired", expiresAt:"2026-09-01" }, pending);
@@ -27,7 +27,7 @@ test("canonical membership renders before the full profile completes", async () 
   assert.equal(h.nodes["profile-tier"].textContent, "Premium");
   assert.equal(h.nodes["profile-status"].textContent, "expired · ถึง 2026-09-01");
   assert.equal(h.nodes["profile-points"].textContent, "—");
-  assert.equal(h.nodes["minimal-member-display"].hidden,false);
+  assert.equal(h.nodes["minimal-member-display"].hidden,true);
   assert.equal(h.nodes["minimal-member-expiry"].textContent,"2026-09-01");
   assert.equal(h.nodes["minimal-member-points"].textContent,"12.5 คะแนนประมาณการ");
   assert.deepEqual(h.calls, ["/api/member/app/membership", "/member/api/liff/profile"]);
@@ -49,7 +49,7 @@ test("active canonical status carries its authoritative expiry", async () => {
   assert.equal(h.nodes["profile-tier"].textContent, "VIP");
   assert.equal(h.nodes["profile-status"].textContent, "active · ถึง 2027-01-01");
 });
-test('missing expiry leaves an independently supported provisional points field visible',async()=>{const h=setup({level:'svip',levelVerified:true,status:'active'},null);await h.context.readQuickMembershipStatus();assert.equal(h.nodes['minimal-member-expiry'].textContent,'—');assert.equal(h.nodes['minimal-member-points'].textContent,'12.5 คะแนนประมาณการ');assert.equal(h.nodes['profile-tier'].textContent,'SVIP');assert.equal(h.nodes['minimal-member-display'].hidden,false);});
+test('missing expiry leaves provisional points data intact without opening history review',async()=>{const h=setup({level:'svip',levelVerified:true,status:'active'},null);await h.context.readQuickMembershipStatus();assert.equal(h.nodes['minimal-member-expiry'].textContent,'—');assert.equal(h.nodes['minimal-member-points'].textContent,'12.5 คะแนนประมาณการ');assert.equal(h.nodes['profile-tier'].textContent,'SVIP');assert.equal(h.nodes['minimal-member-display'].hidden,true);});
 
 test("failed membership read reports only the status code and state in the card", async () => {
   const h = setup(null, null);

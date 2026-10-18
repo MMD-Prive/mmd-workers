@@ -281,7 +281,7 @@ function renderShell(config, nonce) {
   ${travelClientCss}
 </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3">
+<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4">
 ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div><div class="hype-progress"><progress id="hype-progress" max="100" value="10" aria-label="ความคืบหน้าการเปิดหน้า"></progress><span id="hype-progress-number" aria-hidden="true">10%</span></div></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
@@ -328,13 +328,24 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <button type="button" data-view="coupons" aria-current="false" data-copy="navCoupons">🎟 COUPONS</button>
     <button type="button" data-view="my-requests" aria-current="false">✦ MY REQUESTS</button>
   </nav>
-  <section id="minimal-member-display" class="card" aria-label="ข้อมูลสมาชิกที่มีหลักฐานแล้ว" hidden><p>ข้อมูลยังแสดงไม่ครบ</p><div><span class="label">วันหมดอายุ</span><strong id="minimal-member-expiry">—</strong></div><div><span class="label">คะแนนประวัติประมาณการ · ยังใช้แลกไม่ได้</span><strong id="minimal-member-points">—</strong></div><small id="minimal-member-diag" class="label" style="opacity:.55"></small></section>
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
     <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><div><span class="digital-session" id="digital-session">● LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
+    <svg class="digital-bangkok-trace" viewBox="0 0 520 34" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false" role="presentation">
+      <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
+    </svg>
     <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
     <section class="digital-snapshot" aria-label="สถานะสมาชิก"><div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
+    <details id="minimal-member-display" class="digital-history-review" aria-label="ข้อมูลย้อนหลังอยู่ระหว่างตรวจสอบ" hidden>
+      <summary>ข้อมูลประวัติยังอยู่ระหว่างตรวจสอบ</summary>
+      <div class="digital-history-review-content">
+        <div><span>วันหมดอายุที่ระบบอ่านได้</span><strong id="minimal-member-expiry">—</strong></div>
+        <div><span>คะแนนประวัติประมาณการ · ยังใช้แลกไม่ได้</span><strong id="minimal-member-points">—</strong></div>
+        <small id="minimal-member-diag" class="label" hidden></small>
+      </div>
+    </details>
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
     <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>
@@ -343,7 +354,12 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">ดู MISSION ↗</button>
       <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
     </section>
-    <section aria-labelledby="digital-news-title"><div class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></div><div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div></section>
+    <details class="digital-news-disclosure" id="digital-news-disclosure">
+      <summary class="digital-news-summary">
+        <span class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
+      </summary>
+      <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
+    </details>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
     <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji">เปิด Kenji ↗</a></div></section>
@@ -499,6 +515,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   applyWorldTheme();
   let welcomeContextPromise;
   let existingProfilePromise;
+  let preflightVerifiedSession = false;
 
   async function readWelcomeContext() {
     const controller = new AbortController();
@@ -542,6 +559,10 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.ok !== true) return false;
+      // The LINE SDK was logged in and its ID token was accepted by the Worker.
+      // This flag can ONLY skip the redundant intro for a confirmed returning
+      // audience; it never grants member status, payout, Points or access.
+      preflightVerifiedSession = true;
       existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
       return true;
     } catch {
@@ -640,21 +661,22 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       if (progress) progress.value = loadingPercent;
       if (progressNumber) progressNumber.textContent = loadingPercent + "%";
     }
-    // Estimated page-opening progress only. The session and member status still
-    // come exclusively from the backend; never mark the opening complete early.
-    const progressTimer = window.setInterval(() => {
-      if (loadingPercent < 90) setLoadingPercent(loadingPercent + (loadingPercent < 60 ? 3 : 1));
-    }, 180);
+    // Milestone-only progress: the bar changes after actual context/profile
+    // checks. No fake timer advances it while requests are unresolved.
     hypeImage?.addEventListener("error", () => hypeImage.remove(), { once: true });
     void welcomeContextPromise.catch(() => false).then(async () => {
       setLoadingPercent(55);
       try {
         const profile = await Promise.race([existingProfilePromise, new Promise((resolve) => setTimeout(() => resolve(null), 6000))]);
-        if (profile) await enterApp();
+        if (profile || (preflightVerifiedSession && document.body.dataset.welcomeAudience === "existing")) {
+          setLoadingPercent(85);
+          await enterApp();
+        }
       } catch {
         // Fall back to the ENTER welcome.
       } finally {
-        window.clearInterval(progressTimer);
+        // The opening decision is complete: either signed-in Home is ready
+        // or a manual ENTER remains available for an unverified visitor.
         setLoadingPercent(100);
         window.setTimeout(() => document.body.classList.remove("context-resolving"), 240);
       }
@@ -695,7 +717,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   function show(text) {
     const value = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
     message.textContent = value;
-    if (appStatus) appStatus.textContent = value;
+    if (appStatus) { appStatus.textContent = value; appStatus.dataset.mmdStatusKind = "notice"; }
   }
 
   function setBusy(value) {
@@ -999,9 +1021,10 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         return;
       }
       const membership = body.data && typeof body.data === "object" ? body.data : body;
-      const minimal = document.getElementById("minimal-member-display");
+      // Membership may be fully verified; never expose a second partial-data
+      // card merely because an expiry date arrived. Only the authoritative
+      // history-preview recovery lane may reveal the folded history note.
       const supportedExpiry = safeDate(membership.expiresAt || membership.renewalDueAt);
-      if (minimal) minimal.hidden = false;
       if (minimalExpiry && supportedExpiry) minimalExpiry.textContent = shortDate(supportedExpiry);
       if (!supportedExpiry) {
         // Field presence only, never values: shows why the expiry stayed empty.
@@ -1501,6 +1524,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     renderJobs(jobs, view.requests || {}, view.mms || {});
     renderHistory(historyView, payments);
     show(copy.ready || "ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ");
+    if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
     if (CONFIG.intent === "promo") showView("care", false);
     else showView(CONFIG.view || "home", false);
     loadRenewalCard();
