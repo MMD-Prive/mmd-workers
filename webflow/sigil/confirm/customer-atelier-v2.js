@@ -53,6 +53,7 @@
 .mmd-atelier::before{content:"";position:absolute;z-index:-1;inset:0 0 auto;height:460px;pointer-events:none;background:linear-gradient(180deg,rgba(16,18,20,.76),var(--bg)),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aae16d800a522b95e70e5be_Group%20Payment%20Ver.webp") center 34%/cover no-repeat}
 .mmd-atelier *, .mmd-atelier *::before, .mmd-atelier *::after{box-sizing:border-box;letter-spacing:0}
 .mmd-atelier [hidden]{display:none!important}
+.mmd-atelier [data-final-payment]{display:none!important}
 .mmd-atelier h1,.mmd-atelier h2,.mmd-atelier h3,.mmd-atelier p,.mmd-atelier button,.mmd-atelier input,.mmd-atelier summary{font-family:inherit;letter-spacing:0}
 .mmd-atelier h1,.mmd-atelier h2,.mmd-atelier h3{color:var(--heading);background:none;-webkit-text-fill-color:var(--heading)}
 .mmd-atelier p{font-size:14px;font-weight:400;margin:0;color:var(--muted)}
