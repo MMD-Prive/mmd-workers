@@ -4,10 +4,20 @@ import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildBundle} from '../../../scripts/build-my-model-workspace-bundle.mjs';
-import {buildLovableSkinEmbed} from '../../../scripts/build-my-model-lovable-skin-embed.mjs';
+import {buildLovableSkinEmbed,validateAtelierAssets} from '../../../scripts/build-my-model-lovable-skin-embed.mjs';
 const source=fs.readFileSync(new URL('./my-model-lovable-vnext-skin-20261017.js',import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('./my-model-lovable-vnext-skin-20261017.css',import.meta.url),'utf8');
 const bundle=buildBundle(), skin=buildLovableSkinEmbed();
+test('V3 build rejects oversized UTF-8 vectors, wrong dimensions and embedded content',()=>{
+ const assets=Object.fromEntries(['current-job-etching','no-current-job','media-review-motif','icons'].map(name=>[name,fs.readFileSync(new URL('./atelier/'+name+'.svg',import.meta.url),'utf8').trim()]));
+ assert.doesNotThrow(()=>validateAtelierAssets(assets));
+ assert.throws(()=>validateAtelierAssets({...assets,'current-job-etching':assets['current-job-etching'].replace('</svg>','<!--'+ 'ก'.repeat(3000)+'--></svg>')}),/byte budget/);
+ assert.throws(()=>validateAtelierAssets({...assets,'no-current-job':assets['no-current-job'].replace('240 112','240 144')}),/viewBox/);
+ for(const payload of ['<image href="x"/>','<script/>','<foreignObject/>','<path onload = "x"/>']){
+  assert.throws(()=>validateAtelierAssets({...assets,'media-review-motif':assets['media-review-motif'].replace('</svg>',payload+'</svg>')}),/Non-geometric/);
+ }
+ assert.throws(()=>validateAtelierAssets({...assets,icons:assets.icons.replace('id="support"','id="missing"')}),/Missing or oversized icon/);
+});
 test('exact Lovable design provenance and safe compact design',()=>{
  assert.match(css,/bedd3eba6645ae088b37e225dea441780ad4bc61/);
  assert.match(css,/oklch\(\.1384 \.0055 128\.3\)/);

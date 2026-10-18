@@ -293,10 +293,10 @@ test("runtime pasted in <head> waits for DOMContentLoaded instead of exiting", a
   assert.ok(h.body.children.find((c) => c.hasAttribute("data-mmd-model-confirm-fallback")), "after DOM ready it renders, never silent");
 });
 
-test("gate: first 401 redirects to LINE Mini App once; a bounce back within the window shows a manual screen instead of looping", async () => {
+test("gate: mobile first 401 redirects to LINE Mini App once; a bounce back within the window shows a manual screen instead of looping", async () => {
   const store = new Map();
   const unauth = { status: 401, body: { ok: false, error: "model_session_required" } };
-  const h1 = harness({ withGate: true, sessionStore: store, routes: { "/v1/model/direct-job-gate/status": unauth } });
+  const h1 = harness({ withGate: true, ua: "Mozilla/5.0 iPhone", sessionStore: store, routes: { "/v1/model/direct-job-gate/status": unauth } });
   await settle();
   assert.equal(h1.replaced.length, 1);
   assert.match(h1.replaced[0], /miniapp\.line\.me/);
@@ -306,7 +306,7 @@ test("gate: first 401 redirects to LINE Mini App once; a bounce back within the 
   assert.match(firstOverlay.allText, /เปิดใน MY MODEL/);
   assert.equal(h1.calls.filter(c => c.path === "/v1/confirm/details").length, 0, "no details read before LINE identity succeeds");
 
-  const h2 = harness({ withGate: true, sessionStore: store, routes: { "/v1/model/direct-job-gate/status": unauth } });
+  const h2 = harness({ withGate: true, ua: "Mozilla/5.0 iPhone", sessionStore: store, routes: { "/v1/model/direct-job-gate/status": unauth } });
   await settle();
   assert.equal(h2.replaced.length, 0, "no second automatic redirect");
   const overlay = h2.body.children.find((c) => c.hasAttribute("data-mmd-direct-first-job-gate"));
@@ -382,7 +382,10 @@ test("gate: ordinary LINE in-app browser never stalls on loading when Mini App n
   assert.equal(h.calls.some(c => c.path === "/v1/confirm/details"), false);
   assert.equal(h.replaced.length, 1);
   const handoff = new URL(h.replaced[0]);
-  assert.equal(handoff.searchParams.get("return_to"), "/sigil/confirm/job-model?t=" + encodeURIComponent(TOKEN));
+  const returnTo = new URL(handoff.searchParams.get("return_to"), "https://mmdbkk.com");
+  assert.equal(returnTo.pathname, "/sigil/confirm/job-model");
+  assert.equal(returnTo.searchParams.get("t"), TOKEN);
+  assert.equal(returnTo.searchParams.get("lang"), "th");
 });
 
 
