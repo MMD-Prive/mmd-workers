@@ -142,7 +142,6 @@ async function projectSession(record, env) {
   const start = clock(fields.start_time || fields["Start Time"]);
   const end = clock(fields.end_time || fields["End Time"]);
   const eventEta = await resolveCustomerEtaEvent(env, sessionId);
-  const legacyEtaLabel = clean(fields.customer_eta_label, 120) || null;
   return {
     sessionId,
     lifecycle,
@@ -156,9 +155,11 @@ async function projectSession(record, env) {
       modelAckAt,
       customerAckAllowed: !customerAckAt && ["pending_confirmation", "confirmed"].includes(lifecycle),
     },
-    // ETA events are the live source of truth. The old Session label remains
-    // only as a backwards-compatible fallback before an ETA event exists.
-    etaLabel: eventEta.hasEvent ? eventEta.label : legacyEtaLabel,
+    // Jobs events are the only live ETA authority. An old Session label has
+    // no verified update time and must not appear as current tracking.
+    etaLabel: eventEta.label,
+    etaUpdatedAt: eventEta.updatedAt,
+    etaStale: eventEta.hasEvent && !eventEta.label,
     missionReady: sessionPaymentConfirmed(fields),
     nextMessage: clean(fields.customer_next_message, 500) || null,
   };
@@ -179,7 +180,7 @@ function sessionPaymentConfirmed(fields = {}) {
 }
 
 async function resolveCustomerEtaEvent(env, sessionId) {
-  if (!sessionId) return { hasEvent: false, label: null };
+  if (!sessionId) return { hasEvent: false, label: null, updatedAt: null };
   try {
     // This read happens only after canonical customer ownership of the Session
     // has been established. Raw Job/event data is never returned to MY MMD.
@@ -188,12 +189,12 @@ async function resolveCustomerEtaEvent(env, sessionId) {
       filterByFormula: `{session_id}=${formulaString(sessionId)}`,
       maxRecords: 2,
     });
-    if (records.length !== 1) return { hasEvent: false, label: null };
+    if (records.length !== 1) return { hasEvent: false, label: null, updatedAt: null };
     return customerEtaFromEvents(records[0]?.fields?.events_json);
   } catch {
-    // Do not make the customer Session unavailable because the derived Jobs
-    // read is temporarily unavailable. The legacy label remains the fallback.
-    return { hasEvent: false, label: null };
+    // Keep the owned Session visible while the Jobs read is unavailable.
+    // Unknown ETA remains absent rather than falling back to an old label.
+    return { hasEvent: false, label: null, updatedAt: null };
   }
 }
 
@@ -212,11 +213,12 @@ export function customerEtaFromEvents(value, now = Date.now()) {
     if (!latest || updatedAt >= latest.updatedAt) latest = { etaMinutes, updatedAt };
   }
 
-  if (!latest) return { hasEvent: false, label: null };
+  if (!latest) return { hasEvent: false, label: null, updatedAt: null };
   const remainingMs = (latest.updatedAt + latest.etaMinutes * 60_000) - currentMs;
-  if (remainingMs <= 0) return { hasEvent: true, label: null };
+  const updatedAt = new Date(latest.updatedAt).toISOString();
+  if (remainingMs <= 0) return { hasEvent: true, label: null, updatedAt };
   const remainingMinutes = Math.max(1, Math.ceil(remainingMs / 60_000));
-  return { hasEvent: true, label: `ถึงโดยประมาณในอีก ${remainingMinutes} นาที` };
+  return { hasEvent: true, label: `ถึงโดยประมาณในอีก ${remainingMinutes} นาที`, updatedAt };
 }
 
 function parseEvents(value) {
@@ -238,8 +240,9 @@ function validEtaMinutes(value) {
 }
 
 function lifecycleOf(fields = {}) {
-  const raw = clean(fields.session_state || fields["Session Status"], 80)
-    .toLowerCase().replace(/[\s-]+/g, "_");
+  // The exact Session path and the canonical Model path can use different
+  // state fields. Without a verified ordering timestamp, disagreement must
+  // not become a customer-visible claim about which state is current.
   const aliases = {
     pending: "pending_confirmation", pending_confirm: "pending_confirmation",
     ready: "confirmed", confirm: "confirmed", confirmed: "confirmed",
@@ -247,7 +250,14 @@ function lifecycleOf(fields = {}) {
     meeting: "met_customer", started: "in_progress", complete: "completed",
     done: "completed", canceled: "cancelled",
   };
-  const value = aliases[raw] || raw;
+  const normalized = (input) => {
+    const raw = clean(input, 80).toLowerCase().replace(/[\s-]+/g, "_");
+    return aliases[raw] || raw;
+  };
+  const modelState = normalized(fields.model_session_state);
+  const sessionState = normalized(fields.session_state);
+  if (modelState && sessionState && modelState !== sessionState) return "checking";
+  const value = modelState || sessionState || normalized(fields["Session Status"]);
   return DISPLAYABLE.has(value) ? value : "checking";
 }
 

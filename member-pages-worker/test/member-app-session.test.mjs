@@ -178,6 +178,46 @@ test("MISSION preserves exact customer-safe lifecycle states instead of collapsi
   }
 });
 
+test("MY MMD reads an unambiguous Model Console state without a customer write", async () => {
+  for (const lifecycle of ["en_route", "arrived", "met_customer", "work_started", "work_finished", "separated"]) {
+    const env = envWith(sessionRecord({ session_state: lifecycle, model_session_state: lifecycle }));
+    const response = await handleMemberAppSessionApi(request("/api/member/app/session/current"), env, readIdentity);
+    assert.equal(response.status, 200, lifecycle);
+    const body = await response.json();
+    assert.equal(body.lifecycle, lifecycle);
+    assert.equal(env.writes.length, 0);
+    assert.doesNotMatch(JSON.stringify(body), /private_phone|payout_amount|must-never-leak/i);
+  }
+
+  const modelOnly = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(sessionRecord({ session_state: null, model_session_state: "en_route" })),
+    readIdentity,
+  );
+  assert.equal((await modelOnly.json()).lifecycle, "en_route");
+
+  const equivalentAliases = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(sessionRecord({ session_state: "on_the_way", model_session_state: "en_route" })),
+    readIdentity,
+  );
+  assert.equal((await equivalentAliases.json()).lifecycle, "en_route");
+
+  const unknown = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(sessionRecord({ session_state: "confirmed", model_session_state: "unrecognized_internal_state" })),
+    readIdentity,
+  );
+  assert.equal((await unknown.json()).lifecycle, "checking");
+
+  const conflict = await handleMemberAppSessionApi(
+    request("/api/member/app/session/current"),
+    envWith(sessionRecord({ session_state: "confirmed", model_session_state: "en_route" })),
+    readIdentity,
+  );
+  assert.equal((await conflict.json()).lifecycle, "checking");
+});
+
 test("MY MMD derives its ETA label from the newest active ETA event", async () => {
   const now = Date.now();
   const env = envWith(sessionRecord({ customer_eta_label: "legacy label must not win" }), {
@@ -191,6 +231,8 @@ test("MY MMD derives its ETA label from the newest active ETA event", async () =
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.etaLabel, "ถึงโดยประมาณในอีก 25 นาที");
+  assert.equal(body.etaUpdatedAt, new Date(now).toISOString());
+  assert.equal(body.etaStale, false);
   assert.equal(env.reads.jobs, 1);
   assert.doesNotMatch(JSON.stringify(body), /events_json|model_private_gps|mmd_model_dashboard|legacy label/i);
 });
@@ -207,6 +249,27 @@ test("expired ETA events clear stale labels instead of falling back to customer_
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.etaLabel, null);
+  assert.equal(body.etaUpdatedAt, new Date(now - 21 * 60_000).toISOString());
+  assert.equal(body.etaStale, true);
+});
+
+test("missing or unavailable Jobs events never revive an unverified legacy ETA", async () => {
+  const env = envWith(sessionRecord({ customer_eta_label: "old ETA must not appear" }));
+  const response = await handleMemberAppSessionApi(request("/api/member/app/session/current"), env, readIdentity);
+  const body = await response.json();
+  assert.equal(body.etaLabel, null);
+  assert.equal(body.etaUpdatedAt, null);
+  assert.equal(body.etaStale, false);
+  assert.doesNotMatch(JSON.stringify(body), /old ETA must not appear/);
+
+  const unavailable = envWith(sessionRecord({ customer_eta_label: "old ETA must not appear" }));
+  unavailable.AIRTABLE_HTTP.fetch = async (request) => {
+    if (decodeURIComponent(new URL(request.url).pathname.split("/").at(-1) || "") === "Jobs") throw new Error("offline");
+    return Response.json({ records: [sessionRecord({ customer_eta_label: "old ETA must not appear" })] });
+  };
+  const failedRead = await handleMemberAppSessionApi(request("/api/member/app/session/current"), unavailable, readIdentity);
+  assert.equal(failedRead.status, 200);
+  assert.equal((await failedRead.json()).etaLabel, null);
 });
 
 test("ETA event parser ignores malformed entries and chooses the newest valid timestamp", () => {
@@ -217,7 +280,7 @@ test("ETA event parser ignores malformed entries and chooses the newest valid ti
     { ts: new Date(now - 60_000).toISOString(), event: "eta_update", eta_minutes: 12 },
     { ts: new Date(now).toISOString(), event: "other_event", eta_minutes: 240 },
   ]), now);
-  assert.deepEqual(eta, { hasEvent: true, label: "ถึงโดยประมาณในอีก 11 นาที" });
+  assert.deepEqual(eta, { hasEvent: true, label: "ถึงโดยประมาณในอีก 11 นาที", updatedAt: new Date(now - 60_000).toISOString() });
 });
 
 test("current returns 204 when no owned active Session exists", async () => {
