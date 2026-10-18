@@ -1,0 +1,60 @@
+/* Model counterpart of Customer Atelier v8. Presentation only.
+ * Preserve the existing root background, root pseudo-elements, photo URLs,
+ * mobile crop, neutral branding, hidden states and all runtime data hooks.
+ */
+html body #mmd-model-confirm-v15{
+  --ivory:#fff8ee;--stone:#eee2d4;--muted:#bdae9f;--honey:#e3bd7c;--amber:#e3bd7c;
+  --line:rgba(255,241,218,.15);--panel:rgba(26,29,31,.94);
+  padding:0 0 calc(24px + env(safe-area-inset-bottom))!important;
+  font-family:"LINE Seed Sans TH","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
+  color:var(--ivory);font-synthesis:none;
+}
+html body #mmd-model-confirm-v15 *{box-sizing:border-box}
+html body #mmd-model-confirm-v15 [hidden]{display:none!important}
+html body #mmd-model-confirm-v15 :is(h1,h2,h3,p,span,strong,b,a,button,input,label,small){font-family:inherit!important;letter-spacing:0!important}
+html body #mmd-model-confirm-v15 .mm15__wrap{
+  display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:16px!important;
+  width:calc(100% - 32px)!important;max-width:1120px!important;margin:0 auto!important;padding:12px 0 0!important;
+}
+html body #mmd-model-confirm-v15 .mm15__header{
+  display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;
+  margin:0!important;min-height:64px;padding:0 0 12px!important;border-bottom:1px solid var(--line);background:none!important;
+}
+html body #mmd-model-confirm-v15 .mm15__brand{font-size:13px!important;font-weight:600!important;color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important}
+html body #mmd-model-confirm-v15 .mm15__tools{display:flex!important;align-items:flex-end!important;flex-direction:column!important;gap:6px!important;max-width:60%!important;margin-left:auto}
+html body #mmd-model-confirm-v15 .mm15__pill{font-size:11px!important;border:0!important;border-radius:0!important;background:none!important;color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important;padding:0!important;min-height:0!important;white-space:normal;text-align:right}
+html body #mmd-model-confirm-v15 .mmd-lang{border:1px solid var(--line)!important;border-radius:6px!important;background:rgba(16,18,20,.7)!important;padding:2px!important}
+html body #mmd-model-confirm-v15 .mmd-lang button{min-width:38px!important;min-height:32px!important;background:transparent!important;border-radius:4px!important;color:var(--stone)!important;-webkit-text-fill-color:var(--stone)!important;font-size:11px!important}
+html body #mmd-model-confirm-v15 .mmd-lang button[aria-pressed="true"]{background:rgba(227,189,124,.16)!important;color:var(--honey)!important;-webkit-text-fill-color:var(--honey)!important}
+html body #mmd-model-confirm-v15 .mm15__intro{margin:0!important;padding:12px 0 8px!important}
+html body #mmd-model-confirm-v15 .mm15__intro::before{font-family:inherit!important;font-size:10px!important;font-weight:500!important;letter-spacing:0!important;color:var(--honey)!important;-webkit-text-fill-color:var(--honey)!important}
+html body #mmd-model-confirm-v15 h1{font-size:30px!important;font-weight:500!important;line-height:1.3!important;margin:8px 0 0!important;color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important;background:none!important}
+html body #mmd-model-confirm-v15 h2{font-size:18px!important;font-weight:500!important;line-height:1.4!important;margin:0 0 12px!important;color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important;background:none!important}
+html body #mmd-model-confirm-v15 .mm15__intro p{display:block!important;margin:10px 0 0!important;font-size:13px!important;line-height:1.65!important;color:var(--stone)!important;-webkit-text-fill-color:var(--stone)!important}
+html body #mmd-model-confirm-v15 :is(.mm15__card,.mm15__confirm){min-width:0;padding:22px!important;margin:0!important;border:1px solid var(--line)!important;border-radius:8px!important;background:var(--panel)!important;box-shadow:none!important;backdrop-filter:blur(8px);align-self:start}
+html body #mmd-model-confirm-v15 .mm15__confirm::after{display:none!important}
+html body #mmd-model-confirm-v15 .mm15__rows{display:block!important}
+html body #mmd-model-confirm-v15 .mm15__rows>div{display:grid!important;grid-template-columns:76px minmax(0,1fr)!important;align-items:baseline!important;gap:16px!important;padding:11px 0!important;margin:0!important;border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0!important;background:none!important;min-height:0!important}
+html body #mmd-model-confirm-v15 .mm15__rows>div:last-child{border-bottom:0!important}
+html body #mmd-model-confirm-v15 .mm15__rows span{font-size:13px!important;font-weight:400!important;line-height:1.6!important;color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important}
+html body #mmd-model-confirm-v15 .mm15__rows :is(b,strong){font-size:14px!important;font-weight:500!important;line-height:1.6!important;text-align:right!important;min-width:0;overflow-wrap:anywhere;color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important}
+html body #mmd-model-confirm-v15 .mm15__payout{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:16px!important;margin:12px 0 0!important;padding:18px 0 0!important;border:0!important;border-top:1px solid var(--line)!important;border-radius:0!important;background:none!important;box-shadow:none!important;min-width:0}
+html body #mmd-model-confirm-v15 .mm15__payout::before{display:none!important}
+html body #mmd-model-confirm-v15 .mm15__payout>span{font-size:13px!important;color:var(--stone)!important;-webkit-text-fill-color:var(--stone)!important}
+html body #mmd-model-confirm-v15 .mm15__payout strong{font-size:28px!important;line-height:1.2!important;font-weight:500!important;color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important;font-variant-numeric:tabular-nums}
+html body #mmd-model-confirm-v15 :is(.mm15__status,[data-m-status],.mm15__feedback){font-size:13px!important;line-height:1.65!important;color:var(--stone);overflow-wrap:anywhere}
+html body #mmd-model-confirm-v15 .mm15__check{display:flex!important;align-items:flex-start!important;gap:10px!important;min-height:52px!important;margin:12px 0!important;padding:0!important;font-size:13px!important;line-height:1.65!important;color:var(--stone)!important;-webkit-text-fill-color:var(--stone)!important}
+html body #mmd-model-confirm-v15 .mm15__check input{width:20px!important;height:20px!important;flex:0 0 20px!important;margin:2px 0 0!important;accent-color:var(--honey)}
+html body #mmd-model-confirm-v15 .mm15__primary{display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;min-height:56px!important;padding:14px 16px!important;border:0!important;border-radius:6px!important;background:linear-gradient(110deg,#f0d39d,#d7a65d)!important;color:#211d17!important;-webkit-text-fill-color:#211d17!important;font-size:16px!important;font-weight:600!important;line-height:1.4!important;box-shadow:none!important;white-space:normal!important}
+html body #mmd-model-confirm-v15 .mm15__primary:disabled{opacity:1!important;background:#41413d!important;color:#ded9cf!important;-webkit-text-fill-color:#ded9cf!important;cursor:not-allowed!important}
+html body #mmd-model-confirm-v15 :is([data-m-map],[data-m-retry],.mm15__success a){display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:rgba(255,248,238,.035);font-size:13px;color:var(--honey);text-decoration:none}
+html body #mmd-model-confirm-v15 .mm15__success{margin-top:16px!important;border-color:var(--line)!important;border-radius:6px!important;background:rgba(178,201,189,.07)!important}
+html body #mmd-model-confirm-v15 .mmd-model-current-photo-v1{margin:16px 0 0!important;padding:12px 0 0!important;border:0!important;border-top:1px solid var(--line)!important;border-radius:0!important;background:none!important}
+html body #mmd-model-confirm-v15 .mmd-model-current-photo-v1 a{min-height:44px!important;border-radius:6px!important;font-size:13px!important;font-weight:500!important}
+html body #mmd-model-confirm-v15 [data-mmd-model-work-nav]{grid-column:1/-1!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;width:100%!important;max-width:1120px!important;margin:0 auto!important}
+html body #mmd-model-confirm-v15 [data-mmd-model-work-nav] a{display:flex!important;align-items:center!important;justify-content:center!important;flex-direction:column!important;min-width:0;min-height:48px!important;padding:10px 8px!important;border:1px solid var(--line)!important;border-radius:6px!important;background:rgba(26,29,31,.94)!important;color:var(--stone)!important;-webkit-text-fill-color:var(--stone)!important;font-size:12px!important;font-weight:500!important;line-height:1.4!important;box-shadow:none!important;text-align:center!important;overflow-wrap:anywhere;text-decoration:none}
+html body #mmd-model-confirm-v15 [data-mmd-model-work-nav] a::after{display:none!important}
+html body #mmd-model-confirm-v15 [data-mmd-model-work-nav] small{font-size:10px!important;color:var(--muted)!important;-webkit-text-fill-color:var(--muted)!important}
+html body #mmd-model-confirm-v15 :is(a,button,input):focus-visible{outline:2px solid #f0d39d!important;outline-offset:4px!important}
+@media(min-width:768px){html body #mmd-model-confirm-v15 .mm15__wrap{width:calc(100% - 64px)!important;padding-top:20px!important;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)!important;gap:24px!important}html body #mmd-model-confirm-v15 :is(.mm15__header,.mm15__intro){grid-column:1/-1!important}html body #mmd-model-confirm-v15 .mm15__intro{padding:12px 0 6px!important}html body #mmd-model-confirm-v15 h1{font-size:36px!important}html body #mmd-model-confirm-v15 .mm15__card{padding:28px!important}}
+@media(prefers-reduced-motion:reduce){html body #mmd-model-confirm-v15 *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
