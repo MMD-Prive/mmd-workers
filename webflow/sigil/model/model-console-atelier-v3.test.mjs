@@ -6,6 +6,30 @@ import { buildConsoleEmbed, assetManifest } from '../../../scripts/build-model-c
 const base = new URL('./console-atelier/', import.meta.url);
 const skin = fs.readFileSync(new URL('./model-console-atelier-v3.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('./model-console-atelier-v3.css', import.meta.url), 'utf8');
+test('legacy payout text overrides are confined to Public financial disclosures', () => {
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)].filter(([, selector]) => selector.includes('details :is(.smcv3-payout-only,[data-model-payout-row])'));
+  assert.equal(rules.length, 2);
+  for (const [, selector, declarations] of rules) {
+    assert.equal((selector.match(/\[data-console-lane="public"\] details/g) || []).length, selector.includes(' *') ? 2 : 1);
+    assert.doesNotMatch(selector, /payment-alert|extension-request/);
+    assert.match(declarations, /color:var\(--ca-(ink|muted)\)!important/);
+    assert.match(declarations, /-webkit-text-fill-color:var\(--ca-(ink|muted)\)!important/);
+    assert.equal(declarations.split(';').filter(Boolean).length, 2);
+  }
+  for (const role of ['__label', '__status', '__note', '__title', '__row span', '__foot', '__lock', '.smcv3-label']) assert.ok(rules[1][1].includes(role));
+});
+
+test('Public financial ink and secondary text meet 4.5:1 against the actual panel token', () => {
+  const palette = css.match(/\[data-console-lane="public"\]\{([^}]+)\}/)[1];
+  const token = name => palette.match(new RegExp('--ca-' + name + ':(#[A-Fa-f0-9]{6})'))[1];
+  const luminance = hex => hex.slice(1).match(/../g).map(n => parseInt(n, 16) / 255).map(n => n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4).reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+  const background = luminance(token('panel'));
+  for (const role of ['ink', 'muted']) {
+    const foreground = luminance(token(role));
+    const ratio = (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05);
+    assert.ok(ratio >= 4.5, `${role} contrast ${ratio.toFixed(2)}:1`);
+  }
+});
 test('decorative SVG is vector-only, accessible and inside individual/aggregate budgets', () => {
   const limits = [8192, 6144, 6144, 4096, 12288];
   const viewBoxes = ['240 144', '240 96', '240 112', '160 96'];
