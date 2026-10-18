@@ -1,5 +1,6 @@
 import baseWorker from "./index.js";
 import { runModelReconfirmSweep, sendModelNewJobNotification } from "../../admin-worker/src/model-reconfirm-runtime.js";
+import { runCompcardDailyScheduled } from "./compcard-daily.js";
 import {
   handleCustomerAftercare,
   isCustomerAftercareRequest,
@@ -95,7 +96,8 @@ export default {
     const legacyJob = typeof baseWorker.scheduled === "function"
       ? baseWorker.scheduled(controller, env, ctx)
       : Promise.resolve();
-    const job = Promise.allSettled([reconfirmJob, legacyJob]);
+    const compcardJob = runCompcardDailyScheduled(env, controller);
+    const job = Promise.allSettled([reconfirmJob, legacyJob, compcardJob]);
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(job);
     else await job;
   },

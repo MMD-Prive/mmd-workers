@@ -25,6 +25,13 @@ MODEL_RECONFIRM_ENABLED = "true"
 MODEL_RECONFIRM_GUARD_V2 = "true"
 MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 
+# Owner-approved New Card 2026 source. One model rotates daily; campaign copy
+# or art is sent only while its approved manifest entry remains current.
+HYPE_COMPCARD_ENABLED = "true"
+HYPE_COMPCARD_SEND_AT_ICT = "16:30"
+HYPE_PROMOTION_ENABLED = "true"
+HYPE_PROMOTION_SEND_AT_ICT = "20:00"
+
 # Secrets: AUTH_SERVICE_EVENTS_TO_PAYMENTS, AUTH_SERVICE_EVENTS_TO_REALTIME,
 # AUTH_SERVICE_EVENTS_TO_TELEGRAM, AUTH_SERVICE_ADMIN_TO_EVENTS
 # ETA auth falls back to the existing CONFIRM_KEY until the dedicated service
@@ -34,3 +41,12 @@ MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 
 # AIRTABLE_API_KEY remains a Cloudflare secret. Other optional table bindings,
 # such as AIRTABLE_TABLE_CLIENTS and AIRTABLE_TABLE_ACTIVITY_LOGS, stay in dashboard config.
+
+# Private receipts and immutable daily plans. Do not use the public model-asset bucket.
+[[r2_buckets]]
+binding = "HYPE_COMPCARD_STATE"
+bucket_name = "mmd-hype-compcard-state"
+
+[[services]]
+binding = "TELEGRAM_ROUTER"
+service = "telegram-worker"
