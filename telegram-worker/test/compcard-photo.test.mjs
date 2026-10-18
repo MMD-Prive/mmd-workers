@@ -61,7 +61,7 @@ function telegramMock(t, overrides = {}) {
   t.mock.method(globalThis, "fetch", async (url, init) => {
     const method = String(url).split("/").at(-1);
     assert.ok(String(url).startsWith("https://api.telegram.org/bot"));
-    assert.equal(init.redirect, "error");
+    assert.equal(init.redirect, "manual");
     const payload = init.body instanceof FormData ? init.body : JSON.parse(init.body);
     calls.push({ method, payload });
     const configuredId = payload instanceof FormData ? payload.get("chat_id") : payload.chat_id;
@@ -324,3 +324,4 @@ test("group default restrictions and mismatched bot identities block delivery", 
     t.mock.restoreAll();
   }
 });
+
