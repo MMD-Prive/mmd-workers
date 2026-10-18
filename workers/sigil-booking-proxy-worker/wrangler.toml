@@ -3,6 +3,10 @@ main = "src/index.js"
 compatibility_date = "2026-06-07"
 workers_dev = false
 
+# Default OFF even after merge/deploy: require explicit production release approval.
+[vars]
+SIGIL_BOOKING_CLOUD_RELEASE_ENABLED = "false"
+
 [observability]
 enabled = true
 head_sampling_rate = 1

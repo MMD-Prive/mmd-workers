@@ -22,8 +22,8 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-async function request(url, init) {
-  return worker.fetch(new Request(url, init));
+async function request(url, init, env = {}) {
+  return worker.fetch(new Request(url, init), env);
 }
 
 describe("sigil-booking-proxy-worker", () => {
@@ -43,11 +43,11 @@ describe("sigil-booking-proxy-worker", () => {
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-page"), "sigil-booking");
-    assert.equal(response.headers.get("x-mmd-booking-source"), "webflow-cloud-release");
-    assert.equal(response.headers.get("x-mmd-page-source"), "https://mmdprive.webflow.io/sigil-booking-release");
+    assert.equal(response.headers.get("x-mmd-booking-source"), "webflow-live");
+    assert.equal(response.headers.get("x-mmd-page-source"), "https://mmdprive.webflow.io/sigil/booking");
     assert.match(html, /Choose Your Preference/);
     assert.match(html, /mmd-page-owner/);
-    assert.equal(upstreamRequests.at(-1).url, "https://mmdprive.webflow.io/sigil-booking-release?t=diag&cb=123");
+    assert.equal(upstreamRequests.at(-1).url, "https://mmdprive.webflow.io/sigil/booking?t=diag&cb=123");
   });
 
   it("returns no body for HEAD while keeping route headers", async () => {
@@ -57,7 +57,7 @@ describe("sigil-booking-proxy-worker", () => {
     assert.equal(response.status, 200);
     assert.equal(body, "");
     assert.equal(response.headers.get("x-mmd-page"), "sigil-booking");
-    assert.equal(response.headers.get("x-mmd-booking-source"), "webflow-cloud-release");
+    assert.equal(response.headers.get("x-mmd-booking-source"), "webflow-live");
   });
 
   it("rejects non-page paths", async () => {
@@ -73,10 +73,13 @@ describe("sigil-booking-proxy-worker", () => {
   // New Webflow Cloud mount assets are loaded via the canonical host.
   // No Webflow preview runtime is exposed as a second booking authority.
 test("serves only Cloud Release asset paths on SIGIL canonical host", async () => {
-  const response = await request("https://sigil.mmdbkk.com/sigil-booking-release/assets/index.js?v=1");
+  const response = await request("https://sigil.mmdbkk.com/sigil-booking-release/assets/index.js?v=1", undefined, { SIGIL_BOOKING_CLOUD_RELEASE_ENABLED: "true" });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-booking-source"), "webflow-cloud-release");
   assert.equal(upstreamRequests.at(-1).url, "https://mmdprive.webflow.io/sigil-booking-release/assets/index.js?v=1");
+  assert.equal(upstreamRequests.length, 1);
+  const disabled = await request("https://sigil.mmdbkk.com/sigil-booking-release/assets/index.js?v=1");
+  assert.equal(disabled.status, 404);
   assert.equal(upstreamRequests.length, 1);
   const bypass = await request("https://sigil.mmdbkk.com/private/internal.js");
   assert.equal(bypass.status, 404);
@@ -86,7 +89,27 @@ test("serves only Cloud Release asset paths on SIGIL canonical host", async () =
 test("refuses unsafe mutations to Cloud Release assets", async () => {
   const response = await request("https://sigil.mmdbkk.com/sigil-booking-release/assets/index.js", {
     method: "POST", body: "blocked",
-  });
+  }, { SIGIL_BOOKING_CLOUD_RELEASE_ENABLED: "true" });
   assert.equal(response.status, 405);
   assert.equal(upstreamRequests.length, 0);
+});
+
+
+test("Cloud release must be explicitly enabled before serving the frozen page", async () => {
+  const url = "https://sigil.mmdbkk.com/sigil/booking?t=synthetic";
+  const enabled = await request(url, undefined, { SIGIL_BOOKING_CLOUD_RELEASE_ENABLED: "true" });
+  assert.equal(enabled.status, 200);
+  assert.equal(enabled.headers.get("x-mmd-booking-source"), "webflow-cloud-release");
+  assert.equal(enabled.headers.get("x-mmd-page-source"), "https://mmdprive.webflow.io/sigil-booking-release");
+  assert.equal(upstreamRequests.at(-1).url, "https://mmdprive.webflow.io/sigil-booking-release?t=synthetic");
+  assert.match(await enabled.text(), /sigil-booking-cloud-release/);
+});
+
+test("non-true feature flag values cannot release new Booking", async () => {
+  for (const value of ["", "1", "yes", "tru", "enabled", "false"]) {
+    const response = await request("https://sigil.mmdbkk.com/sigil/booking", undefined, {
+      SIGIL_BOOKING_CLOUD_RELEASE_ENABLED: value,
+    });
+    assert.equal(response.headers.get("x-mmd-booking-source"), "webflow-live");
+  }
 });

@@ -12,12 +12,26 @@
  */
 
 export const WORKER_NAME = "sigil-booking-proxy-worker";
-export const RUNTIME_VERSION = "20260627-sigil-booking-canonical-proxy";
+export const RUNTIME_VERSION = "20261018-sigil-booking-cloud-release-opt-in";
 export const CANONICAL_HOST = "sigil.mmdbkk.com";
 export const CANONICAL_PROTOCOL = "https:";
 export const SIGIL_BOOKING_PATH = "/sigil/booking";
 export const WEBFLOW_ORIGIN = "https://mmdprive.webflow.io";
 export const WEBFLOW_BOOKING_PATH = "/sigil-booking-release";
+export const WEBFLOW_LEGACY_BOOKING_PATH = "/sigil/booking";
+
+export function isCloudReleaseEnabled(env = {}) {
+  return String(env.SIGIL_BOOKING_CLOUD_RELEASE_ENABLED || "").trim().toLowerCase() === "true";
+}
+
+function selectedWebflowSource(env = {}) {
+  const enabled = isCloudReleaseEnabled(env);
+  return {
+    path: enabled ? WEBFLOW_BOOKING_PATH : WEBFLOW_LEGACY_BOOKING_PATH,
+    label: enabled ? "webflow-cloud-release" : "webflow-live",
+    marker: enabled ? "sigil-booking-cloud-release" : "sigil-booking-legacy",
+  };
+}
 
 export const FRONT_GATE_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 export const CANONICAL_HOSTS = new Set([CANONICAL_HOST]);
@@ -90,7 +104,7 @@ function redirectToCanonical(url) {
   });
 }
 
-function withProxyHeaders(response, extra = {}) {
+function withProxyHeaders(response, source, extra = {}) {
   const headers = new Headers(response.headers);
 
   for (const [key, value] of pageHeaders(extra).entries()) {
@@ -98,25 +112,26 @@ function withProxyHeaders(response, extra = {}) {
   }
 
   headers.set("x-mmd-origin", WEBFLOW_ORIGIN);
-  headers.set("x-mmd-booking-source", "webflow-cloud-release");
-  headers.set("x-mmd-page-source", `${WEBFLOW_ORIGIN}${WEBFLOW_BOOKING_PATH}`);
+  headers.set("x-mmd-booking-source", source.label);
+  headers.set("x-mmd-page-source", `${WEBFLOW_ORIGIN}${source.path}`);
   headers.delete("content-length");
 
   return headers;
 }
 
-function injectPageMarkers(html) {
+function injectPageMarkers(html, source) {
   const marker = `<meta name="mmd-page-owner" content="${WORKER_NAME}">
-<meta name="mmd-page-source" content="mmdprive.webflow.io/sigil-booking-release">
-<meta name="mmd-page-version" content="sigil-booking-cloud-release">`;
+<meta name="mmd-page-source" content="mmdprive.webflow.io${source.path}">
+<meta name="mmd-page-version" content="${source.marker}">`;
 
   if (html.includes("mmd-page-owner")) return html;
   if (html.includes("</head>")) return html.replace("</head>", `${marker}\n</head>`);
   return `${marker}\n${html}`;
 }
 
-async function fetchBookingFromWebflow(request, url) {
-  const upstream = new URL(`${WEBFLOW_ORIGIN}${WEBFLOW_BOOKING_PATH}`);
+async function fetchBookingFromWebflow(request, url, env) {
+  const source = selectedWebflowSource(env);
+  const upstream = new URL(`${WEBFLOW_ORIGIN}${source.path}`);
   upstream.search = url.search;
 
   const upstreamRequest = new Request(upstream.toString(), {
@@ -142,7 +157,7 @@ async function fetchBookingFromWebflow(request, url) {
   }
 
   const contentType = upstreamResponse.headers.get("content-type") || "";
-  const headers = withProxyHeaders(upstreamResponse);
+  const headers = withProxyHeaders(upstreamResponse, source);
 
   if (!contentType.toLowerCase().includes("text/html")) {
     return new Response(request.method.toUpperCase() === "HEAD" ? null : upstreamResponse.body, {
@@ -152,7 +167,7 @@ async function fetchBookingFromWebflow(request, url) {
     });
   }
 
-  const html = injectPageMarkers(await upstreamResponse.text());
+  const html = injectPageMarkers(await upstreamResponse.text(), source);
 
   return new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
@@ -203,7 +218,7 @@ function notFound(url) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env = {}) {
     const url = new URL(request.url);
 
     if (request.method.toUpperCase() === "OPTIONS") {
@@ -211,6 +226,7 @@ export default {
     }
 
     if (isCloudReleaseAssetPath(url)) {
+      if (!isCloudReleaseEnabled(env)) return notFound(url);
       if (!isSafePageMethod(request)) return methodNotAllowed();
       return fetchCloudReleaseAsset(request, url);
     }
@@ -218,7 +234,7 @@ export default {
     if (!isSafePageMethod(request)) return methodNotAllowed();
 
     if (isFrontGateHost(url)) return redirectToCanonical(url);
-    if (isCanonicalHost(url)) return fetchBookingFromWebflow(request, url);
+    if (isCanonicalHost(url)) return fetchBookingFromWebflow(request, url, env);
 
     return notFound(url);
   },
