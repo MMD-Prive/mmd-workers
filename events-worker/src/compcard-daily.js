@@ -58,6 +58,11 @@ export async function compcardSha256(bytes) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 async function jsonDigest(value) { return compcardSha256(new TextEncoder().encode(JSON.stringify(value))); }
+function writeCompcardSnapshot(bucket, key, result) {
+  // R2 returns the object body directly. Keep operational errors inside an API
+  // envelope so API clients do not mistake them for provider request failures.
+  return writeCompcardJson(bucket, key, { schema: "hype_compcard_snapshot_v1", success: true, result });
+}
 
 export async function readApprovedCompcardAsset(card, http = runtimeFetch) {
   if (!/^[A-Za-z0-9_-]{10,180}$/.test(card.file_id || "") || !/^[a-f0-9]{64}$/.test(card.sha256 || "")
@@ -261,9 +266,7 @@ export async function preflightCompcardDaily(env, options = {}) {
   }
   report.ready = report.model_ready || report.promotion_ready;
   report.all_destinations_ready = ["premium", "standard", "preview"].every(readyRoom) && !identityConflict;
-  // R2 returns the object body directly. Keep operational errors inside an API
-  // envelope so API clients do not mistake them for provider request failures.
-  await writeCompcardJson(bucket, "readiness/latest.json", { schema: "hype_compcard_snapshot_v1", success: true, result: report });
+  await writeCompcardSnapshot(bucket, "readiness/latest.json", report);
   return report;
 }
 
@@ -362,7 +365,7 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
   const uncertain = outcomes.filter((row) => row.status === "delivery_uncertain" || row.status === "sending").length;
   const result = { date, slot, status: sent === plan.destinations.length ? "sent" : uncertain ? "delivery_uncertain" : "incomplete",
     model_id: plan.model_id, card_id: plan.card_id, category: plan.category, sent, uncertain, outcomes };
-  await writeCompcardJson(bucket, `summaries/${date}/${slot}.json`, result);
+  await writeCompcardSnapshot(bucket, `summaries/${date}/${slot}.json`, result);
   return result;
 }
 
@@ -396,7 +399,7 @@ export async function runCompcardDaily(env = {}, options = {}) {
         : await executeSlot(env, manifest, bucket, "promotion", now, deps, wallClock));
     }
     for (const result of results) {
-      if (["no_approved_promotion", "no_eligible_card", "not_ready"].includes(result.status)) await writeCompcardJson(bucket, `summaries/${clock.date}/${result.slot}.json`, result);
+      if (["no_approved_promotion", "no_eligible_card", "not_ready"].includes(result.status)) await writeCompcardSnapshot(bucket, `summaries/${clock.date}/${result.slot}.json`, result);
       log(result);
     }
     return { date: clock.date, status: results.length ? "processed" : "not_due", readiness: "ready", results };

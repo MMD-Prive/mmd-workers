@@ -122,6 +122,14 @@ Business readiness remains `result.ready`; envelope success only means the repor
 can be read. The runner also accepts earlier unwrapped snapshots during upgrade.
 The runner logs only bounded machine status codes, never tokens or captions.
 
+Daily summaries use the same `success: true, result: {...}` envelope. Read
+`result.status`, `result.sent`, `result.uncertain`, and `result.outcomes` for the
+per-room status and verified receipt. A later cron tick can regenerate this
+summary from durable completed claims without sending the completed rooms again.
+The underlying plans, delivery claims and history retain their existing native
+format and conditional-write behavior; this reporting change does not migrate
+or reset them. Use the wrapped summaries for routine API-based delivery audits.
+
 ## Release checks
 
 `hype-compcard-ci.yml` gates routing, active source approval, concurrent delivery,
