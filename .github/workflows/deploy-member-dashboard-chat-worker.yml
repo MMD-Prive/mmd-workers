@@ -156,6 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_AUTO_REPLY_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
           grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
           grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
           node --test scripts/kenji-model-off-workflow.test.mjs
