@@ -30,13 +30,16 @@
     const lang = currentModelLang();
     const target = new URL(`${MODEL_LIFF_URL}/`);
     target.searchParams.set("lang", lang);
-    link.href = target.toString();
-    link.textContent = lang === "en"
+    if (link.href !== target.toString()) link.href = target.toString();
+    const label = lang === "en"
       ? "Open MY MODEL in LINE"
       : lang === "zh"
         ? "在 LINE 中打开 MY MODEL"
         : "ไปที่ MY MODEL ใน LINE";
-    link.setAttribute("data-mmd-canonical-target", "model-line-miniapp");
+    if (link.textContent !== label) link.textContent = label;
+    if (link.getAttribute("data-mmd-canonical-target") !== "model-line-miniapp") {
+      link.setAttribute("data-mmd-canonical-target", "model-line-miniapp");
+    }
   }
 
   function wireCustomer() {
@@ -68,6 +71,7 @@
     const link = document.createElement("a");
     const seed = root.querySelector("[data-c-confirm]");
     link.href = target.toString();
+    link.referrerPolicy = "no-referrer";
     link.textContent = "ชำระเงิน / Payment";
     link.setAttribute("data-mmd-payment-liff", "1");
     link.setAttribute("data-mmd-canonical-target", "sigil-payment-line-miniapp");
@@ -81,9 +85,17 @@
     wireCustomerPayment();
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", wire, { once: true });
-  } else {
+  function boot() {
+    if (![MODEL_CONFIRM_PATH, CUSTOMER_CONFIRM_PATH].includes(path)) return;
     wire();
+    // The confirmation skin may mount or replace its root after this script.
+    // Idempotent writes keep observer callbacks from causing a render loop.
+    const observer = new MutationObserver(wire);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
   }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot, { once: true });
+  } else boot();
 })();

@@ -1,0 +1,39 @@
+name: MY MMD + MY MODEL + Payment contract
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/**'
+      - 'admin-worker/**'
+      - 'payments-worker/**'
+      - 'shared/**'
+      - 'webflow/sigil/**'
+      - 'package.json'
+      - '.github/workflows/my-mmd-model-payment-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'member-pages-worker/**'
+      - 'admin-worker/**'
+      - 'payments-worker/**'
+      - 'shared/**'
+      - 'webflow/sigil/**'
+      - 'package.json'
+      - '.github/workflows/my-mmd-model-payment-contract.yml'
+permissions:
+  contents: read
+jobs:
+  cross-app-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify identity, session lifecycle, payment and navigation together
+        run: npm run test:my-mmd-model-payment
+      - name: Verify payment evidence and delivery recovery
+        run: npm run test:payment-delivery
