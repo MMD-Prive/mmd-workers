@@ -118,3 +118,18 @@ test('workflow conditions deny automatic events and unapproved/mismatched dispat
   assert.match(deploy, /environment: mmd-production-mutation/);
   assert.match(deploy, /ref: \$\{\{ github.sha \}\}/);
 });
+
+test('owner request dispatch is manual and cannot itself deploy', () => {
+  const source = read('request-owner-reviewed-admin-deploy.yml');
+  const header = source.split('\n' + 'jobs:')[0];
+  assert.match(header, /^  workflow_dispatch:/m);
+  assert.doesNotMatch(header, /^  (push|pull_request|workflow_run|schedule):/m);
+  assert.match(header, /actions: write/);
+  assert.match(source, /github.actor == 'mmdprive' && github.triggering_actor == 'mmdprive'/);
+  assert.match(source, /github.run_attempt == 1/);
+  assert.match(source, /inputs.approved_sha == github.sha/);
+  assert.match(source, /inputs.production_approved == true/);
+  assert.match(source, /test "\$APPROVED_SHA" = "\$GITHUB_SHA"/);
+  assert.match(source, /actions\/workflows\/deploy-admin-worker.yml\/dispatches/);
+  assert.doesNotMatch(source, /environment:|secrets\.|wrangler|CLOUDFLARE_API_TOKEN|can_admins_bypass|prevent_self_review: false/);
+});
