@@ -305,6 +305,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
     </div>
   </section>
+  <div id="customer-entry-progress" class="customer-entry-progress"></div>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">

@@ -1121,7 +1121,7 @@ it('shell embeds design as style only and retains no-store and same-origin API c
 // Customer Graphics V4: runtime tests live in this CI entrypoint.
 
 import { CUSTOMER_GRAPHICS } from "../src/liff-customer-graphics.js";
-import { createCustomerProgress } from "../src/liff-customer-progress.js";
+import { createCustomerProgress, renderCustomerProgress } from "../src/liff-customer-progress.js";
 import { createHash } from "node:crypto";
 
 test("customer SVG pack is decorative, hash-pinned, bounded and all installed assets are used", async () => {
@@ -1220,4 +1220,16 @@ test("member profile reset preserves concurrent welcome context and LIFF preflig
  assert.equal(states.at(-1).pending,0);
  const html=await handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff'),{}).text();
  assert.match(html,/customerLoading.reset\(\{ memberOnly:true \}\)/);
+});
+
+test("entry progress is outside the hidden profile and moves with the visible profile state",async()=>{
+ const html=await handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff'),{}).text();
+ assert.ok(html.indexOf('id="customer-entry-progress"')<html.indexOf('id="profile"'));
+ const span={},progress={},button={addEventListener(){}};let hidden=true;
+ const node={querySelector:s=>s==='span'?span:s==='progress'?progress:button};
+ const makeHost=()=>({setAttribute(){},prepend(n){n.parentElement=this;}});
+ const entry=makeHost(),home=makeHost();
+ const doc={getElementById:id=>id==='profile'?{classList:{contains:()=>hidden}}:id==='customer-entry-progress'?entry:id==='home'?home:node,createElement:()=>node};
+ runInNewContext('('+renderCustomerProgress.toString()+') ("home", {pending:1,confirmedPercent:0})',{document:doc});assert.equal(node.parentElement,entry);
+ hidden=false;runInNewContext('('+renderCustomerProgress.toString()+') ("home", {pending:1,confirmedPercent:50})',{document:doc});assert.equal(node.parentElement,home);assert.match(span.textContent,/50%/);
 });

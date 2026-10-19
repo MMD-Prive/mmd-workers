@@ -83,7 +83,8 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
 }
 
 export function renderCustomerProgress(panel, state) {
-  const host = document.getElementById(panel);
+  const profile = document.getElementById('profile');
+  const host = document.getElementById(panel === 'home' && profile?.classList.contains('hidden') ? 'customer-entry-progress' : panel);
   if (!host || !document.createElement || !host.prepend) return;
   const id = 'customer-progress-' + panel;
   let node = document.getElementById(id);
@@ -91,6 +92,9 @@ export function renderCustomerProgress(panel, state) {
     node = document.createElement('div'); node.id = id; node.className = 'customer-progress';
     node.innerHTML = '<progress aria-label="กำลังรับข้อมูล"></progress><span role="status" aria-live="polite"></span><button type="button" hidden>เปิดหน้าใหม่</button>';
     node.querySelector('button').addEventListener('click', () => window.location.reload());
+    host.prepend(node);
+  } else if (node.parentElement !== host) {
+    node.parentElement?.setAttribute('aria-busy', 'false');
     host.prepend(node);
   }
   host.setAttribute('aria-busy', String(state.pending > 0));

@@ -50,6 +50,7 @@ export const CUSTOMER_GRAPHICS_CSS = `
 .digital-snapshot,.digital-mission,.digital-view>.card,.digital-requests{position:relative;isolation:isolate}
 .customer-graphic~*{position:relative}
 .customer-progress{margin:8px 0;padding:8px 10px;border:1px solid #C9B38B55;border-radius:8px;color:#F3F0E8;background:#171B1D;font-size:12px;overflow-wrap:anywhere}
+.customer-entry-progress:empty{display:none}
 .customer-progress[hidden]{display:none}.customer-progress progress{display:block;width:100%;height:6px;accent-color:#C9B38B;margin-bottom:6px}
 .customer-progress button{display:block;min-height:44px;margin-top:8px}.customer-progress button[hidden]{display:none}
 .customer-booking-empty{position:relative;min-height:64px;margin:0;color:#aaa79e;font-size:12px}
