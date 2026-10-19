@@ -524,7 +524,7 @@ test("legacy frozen model captions stay frozen and unsent copies fail closed aft
   const object = f.bucket.records.get(key);
   const { digest, ...legacy } = JSON.parse(object.value);
   for (const destination of legacy.destinations) {
-    legacy.captions[destination] = legacy.captions[destination].replace('สอบถามคิวและรายละเอียดได้ที่ MMD', 'สอบถามคิวและรายละเอียดกับทีม MMD');
+    legacy.captions[destination] = legacy.captions[destination].replace('สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3', 'สอบถามคิวและรายละเอียดกับทีม MMD');
   }
   legacy.digest = await compcardSha256(new TextEncoder().encode(JSON.stringify(legacy)));
   const frozen = JSON.stringify(legacy);

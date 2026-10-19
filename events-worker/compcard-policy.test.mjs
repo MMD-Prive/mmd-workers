@@ -86,7 +86,7 @@ test('caption facts omit conflicting card statistics and never create prices, av
   const c = { ...card('standard'), caption_stats_allowed: false, minimum_rate: 9999, available_now: true, private_notes: 'actor VIP Black Card' };
   const caption = buildCompcardCaption(c, 'standard');
   assert.doesNotMatch(caption, /180|72|9999|actor|VIP Black Card|ว่างวันนี้|พร้อมรับงาน/);
-  assert.match(caption, /สอบถามคิวและรายละเอียดได้ที่ MMD/);
+  assert.ok(caption.endsWith('สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3'));
   assert.throws(() => buildCompcardCaption(c, 'preview'), TypeError);
 });
 
@@ -223,7 +223,7 @@ test('all daily model variants and approved promotion captions exclude the prohi
     for (const destination of destinationsForCategory(category)) {
       const caption = buildCompcardCaption(card(category), destination);
       assert.doesNotMatch(caption, /ทีม/);
-      assert.equal(caption.split('\n').at(-1), 'สอบถามคิวและรายละเอียดได้ที่ MMD');
+      assert.equal(caption.split('\n').at(-1), 'สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3');
     }
   }
   for (const c of APPROVED_COMPCARD_MANIFEST.cards) {
