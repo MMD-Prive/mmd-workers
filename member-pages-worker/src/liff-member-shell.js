@@ -285,7 +285,7 @@ function renderShell(config, nonce) {
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span class="customer-boot-progress">0% · กำลังรอข้อมูล</span></div></div>`}
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0% · กำลังรอข้อมูล</span></div><button id="customer-boot-retry" type="button" hidden>เปิดหน้าใหม่</button></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">

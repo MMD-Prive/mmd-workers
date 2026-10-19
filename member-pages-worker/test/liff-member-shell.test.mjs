@@ -1233,3 +1233,21 @@ test("entry progress is outside the hidden profile and moves with the visible pr
  runInNewContext('('+renderCustomerProgress.toString()+') ("home", {pending:1,confirmedPercent:0})',{document:doc});assert.equal(node.parentElement,entry);
  hidden=false;runInNewContext('('+renderCustomerProgress.toString()+') ("home", {pending:1,confirmedPercent:50})',{document:doc});assert.equal(node.parentElement,home);assert.match(span.textContent,/50%/);
 });
+
+test("overlapping success cannot erase another task failure; only its subsequent retry clears it",async()=>{
+ const slow=deferredProgress(), states=[];let calls=0;
+ const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:async()=>++calls===1?new Response('{}',{status:503}):calls===2?slow.promise:new Response('{}')});
+ const failed=p.fetch('/api/member/app/dashboard'), other=p.fetch('/api/member/app/membership');await failed;
+ assert.equal(states.at(-1).error,true);slow.resolve(new Response('{}'));await other;
+ assert.equal(states.at(-1).error,true);assert.equal(states.at(-1).pending,0);
+ await p.fetch('/api/member/app/dashboard');assert.equal(states.at(-1).error,false);
+});
+test("boot overlay follows confirmed loading state and retains failure recovery",()=>{
+ const boot={dataset:{confirmedPercent:'0'}},bar={},retry={dataset:{},addEventListener(){}};
+ const document={getElementById:id=>id==='customer-boot-progress'?boot:id==='hype-progress'?bar:id==='customer-boot-retry'?retry:null};
+ const run=state=>runInNewContext('('+renderCustomerProgress.toString()+') ("home", '+JSON.stringify(state)+')',{document});
+ run({overallPending:1,overallPercent:50,overallError:false});assert.match(boot.textContent,/50%/);assert.equal(retry.hidden,true);
+ run({overallPending:0,overallPercent:0,overallError:false});assert.match(boot.textContent,/50%/);assert.doesNotMatch(boot.textContent,/100%/);
+ run({overallPending:0,overallPercent:0,overallError:true});assert.equal(retry.hidden,false);assert.equal(bar.hidden,true);
+ run({overallPending:0,overallPercent:0,overallError:false,reset:true});assert.match(boot.textContent,/0%/);
+});

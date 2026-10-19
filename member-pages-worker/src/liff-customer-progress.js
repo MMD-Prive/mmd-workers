@@ -1,18 +1,34 @@
 // Presentation only. No identity, balance or business decision is made here.
 export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
   let generation = 0, memberGeneration = 0, nextId = 0;
-  const tasks = new Map(), panels = new Set();
-  function publish(panel, error = false) {
+  const tasks = new Map(), panels = new Set(), failures = new Map();
+  function publish(panel, reset = false) {
     panels.add(panel);
     const active = [...tasks.values()].filter(t => t.panel === panel);
-    render(panel, { pending:active.length, confirmedPercent:active.length ? Math.min(...active.map(t => t.stage)) * 50 : 0, error });
+    const all = [...tasks.values()];
+    render(panel, { pending:active.length, confirmedPercent:active.length ? Math.min(...active.map(t => t.stage)) * 50 : 0,
+      error:Boolean(failures.get(panel)?.size), overallPending:all.length,
+      overallPercent:all.length ? Math.min(...all.map(t => t.stage)) * 50 : 0,
+      overallError:[...failures.values()].some(entries => entries.size > 0), reset });
+  }
+  function finish(id, panel, failed) {
+    const task = tasks.get(id);
+    tasks.delete(id);
+    if (!failures.has(panel)) failures.set(panel, new Map());
+    const errors = failures.get(panel);
+    if (failed) errors.set(task.key, {floor:nextId, scope:task.scope});
+    else if (id > (errors.get(task.key)?.floor ?? Infinity)) errors.delete(task.key);
+    publish(panel);
   }
   function reset({ memberOnly = false } = {}) {
     memberGeneration++;
     if (!memberOnly) generation++;
     // Ignore late completion; do not abort/replay a business mutation on account reset.
     for (const [id, task] of tasks) if (!memberOnly || task.scope === "member") tasks.delete(id);
-    for (const panel of panels) publish(panel);
+    for (const errors of failures.values()) for (const [key, failure] of errors) {
+      if (!memberOnly || failure.scope === 'member') errors.delete(key);
+    }
+    for (const panel of panels) publish(panel, true);
   }
   async function fetchWithProgress(url, init = {}) {
     const path = String(url).split('?')[0];
@@ -24,7 +40,7 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
     const id = ++nextId, epoch = generation, memberEpoch = memberGeneration;
     const bootstrap = /\/liff\/(?:welcome-context|start)$/.test(path);
     const current = () => epoch === generation && (bootstrap || memberEpoch === memberGeneration);
-    tasks.set(id, { panel, stage:0, scope:bootstrap ? 'bootstrap' : 'member' }); publish(panel);
+    tasks.set(id, { panel, stage:0, scope:bootstrap ? 'bootstrap' : 'member', key:(init.method || 'GET').toUpperCase() + ':' + String(url) }); publish(panel);
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (init.signal?.aborted) abort();
@@ -63,12 +79,12 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
     finally {
       clearTimeout(timer);
       init.signal?.removeEventListener('abort', abort);
-      if (current()) { tasks.delete(id); publish(panel, failed); }
+      if (current()) finish(id, panel, failed);
     }
   }
   async function waitFor(operation, panel = 'home') {
     const id = ++nextId, epoch = generation;
-    tasks.set(id, {panel, stage:0, scope:'bootstrap'}); publish(panel);
+    tasks.set(id, {panel, stage:0, scope:'bootstrap', key:'sdk-init'}); publish(panel);
     let timer, failed = false;
     try {
       const result = await Promise.race([Promise.resolve().then(operation), new Promise((_, reject) => {
@@ -77,12 +93,27 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
       if (epoch !== generation) throw new Error('customer_step_stale');
       return result;
     } catch (error) { failed = true; throw error; }
-    finally { clearTimeout(timer); if (epoch === generation) { tasks.delete(id); publish(panel, failed); } }
+    finally { clearTimeout(timer); if (epoch === generation) finish(id, panel, failed); }
   }
   return { fetch:fetchWithProgress, reset, waitFor };
 }
 
 export function renderCustomerProgress(panel, state) {
+  const boot = document.getElementById('customer-boot-progress');
+  const bootBar = document.getElementById('hype-progress');
+  const bootRetry = document.getElementById('customer-boot-retry');
+  if (boot?.dataset && state.overallPending !== undefined) {
+    if (state.reset) boot.dataset.confirmedPercent = '0';
+    if (state.overallPending) boot.dataset.confirmedPercent = String(state.overallPercent);
+    const percent = boot.dataset.confirmedPercent === '50' ? '50%' : '0%';
+    boot.textContent = state.overallError && !state.overallPending ? 'เปิดข้อมูลไม่สำเร็จครับ กรุณาเปิดหน้าใหม่'
+      : percent + ' · ความคืบหน้าขั้นตอน · ' + (state.overallPending ? 'กำลังรอหรืออ่านข้อมูล' : 'กำลังเตรียมหน้า');
+    if (bootBar) bootBar.hidden = state.overallError && !state.overallPending;
+    if (bootRetry?.dataset) {
+      bootRetry.hidden = !state.overallError || state.overallPending > 0;
+      if (!bootRetry.dataset.bound) { bootRetry.dataset.bound = 'true'; bootRetry.addEventListener('click', () => window.location.reload()); }
+    }
+  }
   const profile = document.getElementById('profile');
   const host = document.getElementById(panel === 'home' && profile?.classList.contains('hidden') ? 'customer-entry-progress' : panel);
   if (!host || !document.createElement || !host.prepend) return;
