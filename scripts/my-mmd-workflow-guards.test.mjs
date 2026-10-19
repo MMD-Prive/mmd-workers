@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 // Ubuntu hosted runners and macOS include Ruby/Psych; parse YAML without installing packages.
 const root = new URL('../', import.meta.url);
@@ -130,7 +131,7 @@ test('effective merge push and downstream chain cannot reach unreviewed producti
   // These were inspected: fixture/local CI, local dry-runs, or unauthenticated GET-only health/renewal checks.
   const readOnly = new Set(['admin-workflow-safety-ci.yml', 'deploy-member-dashboard-stack.yml', 'kenji-line-transport-health-ci.yml',
     'liff-dashboard-foundation-ci.yml', 'my-mmd-fast-trust-ci.yml', 'node.js.yml', 'posthog-phase0-health-smoke.yml',
-    'smoke-member-renewal-production.yml', 'my-mmd-mutation-safety-ci.yml']);
+    'smoke-member-renewal-production.yml', 'my-mmd-mutation-safety-ci.yml', 'my-mmd-model-payment-contract.yml']);
   assert.ok(reached.has('deploy-member-pages-worker.yml'));
   assert.ok(reached.has('deploy-my-mmd-standby-worker.yml'));
   assert.ok(reached.has('hype-shop-production-smoke.yml'));
@@ -142,6 +143,25 @@ test('effective merge push and downstream chain cannot reach unreviewed producti
       if (file === 'deploy-my-mmd-standby-worker.yml' && id === 'validate') continue;
       for (const event of ['push', 'workflow_run', 'pull_request']) assert.equal(allows(job.if, event), false, `${file}:${id}:${event}`);
     }
+  }
+});
+
+test('cross-app contract workflow has only local tests and no production authority', () => {
+  const workflow = workflows['my-mmd-model-payment-contract.yml'];
+  assert.deepEqual(workflow.permissions, { contents: 'read' });
+  const job = workflow.jobs['cross-app-contract'];
+  assert.equal(job.environment, null);
+  assert.equal(job.uses, null);
+  assert.deepEqual(job.runs, [
+    'npm ci --ignore-scripts --no-audit --no-fund',
+    'npm run test:my-mmd-model-payment',
+    'npm run test:payment-delivery',
+  ]);
+  for (const checkout of job.checkouts) assert.equal(checkout['persist-credentials'], false);
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  for (const name of ['test:my-mmd-model-payment', 'test:payment-delivery']) {
+    assert.match(pkg.scripts[name], /^node (?:--experimental-global-webcrypto )?--test [A-Za-z0-9_./ -]+$/);
+    for (const hook of ['pre', 'post']) assert.equal(pkg.scripts[hook + name], undefined);
   }
 });
 
