@@ -12,11 +12,18 @@ recorded under `superseded_inputs`; they are absent from the active asset tree
 and have never been hosted or published. The local package containing them was
 quarantined as `/tmp/studio-clean-frame-release-full-palette-rejected-702cfcfe`.
 
-Corrected strip-only PNGs are pending. `release_ready: false` blocks production
-packaging; the local QA fixture continues with the old original gold/black
-artwork and an explicit superseded-artwork notice. General colors are
-independent visual choices with no model-category mapping. EMs/GWs remain
-unchanged. Nothing is installed in live Studio.
+All five corrected strip-only PNGs are imported and visually reviewed. Their
+intended strip colors and original gold/black geometry/background are visually
+preserved; image editing introduced subtle texture variation, so they are
+**not pixel-identical** to the original sources. No material geometry/background
+change was observed. `pixel-review.json` records decoded-pixel diagnostics:
+mean channel difference outside the rightmost 6% is 1.298–1.867 on a 0–255
+scale. This diagnostic does not replace visual review.
+
+The manifest's `release_ready: true` means the local asset package is complete,
+not that merge, hosting or publication is authorized. The general colors are
+independent visual choices with no model-category mapping. EMs/GWs are
+byte-for-byte unchanged. Nothing is installed in live Studio.
 
 | Visual choice | Target right-edge strip | Model category assignment |
 | --- | --- | --- |
@@ -62,18 +69,20 @@ reserved area. Frame geometry and source photo proportions are preserved.
 ## Provenance and validation
 
 `manifest.json` keeps Library IDs, original filenames, dimensions, SHA-256
-hashes and content-addressed filenames. General assets 1–5 await the corrected strip-only Library PNGs; EMs/GWs are
-byte-for-byte unchanged. No artwork is recolored programmatically by this
-implementation. Only the image worker produces owner-requested raster edits.
+hashes and content-addressed filenames. General assets 1–5 are the exact corrected strip-only Library PNGs; original
+clean-source Library identities/hashes remain in `original_clean_source`.
+EMs/GWs are byte-for-byte unchanged. The implementation does not recolor any
+artwork programmatically. Rejected full-frame inputs remain only as superseded
+provenance, not active release PNGs.
 
-Before importing corrected general assets, compare each against its original
-clean source using the read-only, dependency-free pixel checker:
-`python3 scripts/check-studio-frame-strip-only.py ORIGINAL.png CANDIDATE.png`.
-It decodes actual PNG pixels, rejects dimension changes and edits that spread
-beyond a small right-edge area, and reports the exact changed bounds/count.
-The rejected full-frame matte-gray input fails this check with changes across
-the whole 1316 × 1195 frame; unchanged input passes. Final visual review must
-also confirm that the changed region is the intended original accent strip.
+The read-only, dependency-free pixel checker is available as
+`python3 scripts/check-studio-frame-strip-only.py --report ORIGINAL.png CANDIDATE.png`.
+It reports real PNG pixel differences. Its optional strict mode rejects any
+spread beyond a small right-edge area, including subtle generated texture
+changes in these accepted strip-only files; strict failure alone is therefore
+not evidence of a material visual change. The rejected full-frame matte-gray
+input failed with differences across the whole frame. Final acceptance here
+uses the exact owner-supplied corrected files and the documented visual review.
 
 ```sh
 npm ci --ignore-scripts
@@ -101,13 +110,12 @@ these new Studio assets. No credentials or external resource permissions
 have been changed.
 
 Reserved object prefix: `webflow/internal/admin/studio/frames/clean-v1/`.
-The final release package must be regenerated after corrected strip-only
-assets arrive. No valid package is currently ready and no files were uploaded.
-Publication steps:
+The verified local package is `/tmp/studio-clean-frame-release`, containing
+seven exact content-addressed PNGs, a 12,401-byte runtime
+`studio-frames-fc91bfcf5476.js`, `release.json` with full SHA-256 digests, and
+`webflow-loader.html`. No files have been uploaded. Publication steps:
 
-1. Import the exact corrected strip-only assets, verify preserved gold/black
-   geometry/background, review all seven renderings and mark only the local
-   asset registry ready. Then build the local release using
+1. Reproduce the verified local release using
    `node scripts/build-studio-clean-frame-release.mjs /tmp/studio-clean-frame-release`.
    This produces seven content-addressed PNGs, a content-addressed minified
    registry/renderer/selector bundle, `release.json` and the small
@@ -117,9 +125,12 @@ Publication steps:
    dedicated R2 publisher credential, `image/png` or `application/javascript`,
    with immutable caching. Read back and compare every digest. Verify public
    GET responses and PNG dimensions before touching a Webflow loader.
-3. Read current Webflow site/page code. Verify documented site
-   `68f879d546d2f4e2ab186e90`, Upload page `6a1be738a8018a51046e5335`, and the
-   current Final Preview page before any mutation. Replace only the old
+3. Published DOM identifiers were verified read-only in authenticated Chrome
+   on 2026-10-19: site `68f879d546d2f4e2ab186e90`, Upload page
+   `6a1be738a8018a51046e5335`, Final Preview page `6a137a1836f0137aa0e08da9`.
+   Final Preview still shows REVIEW REQUIRED for the unreviewed draft; no
+   review or publication action was taken. Read the current Webflow draft
+   code/scope immediately before any mutation. Replace only the old
    selector script block with the generated hosted loader on both surfaces;
    preserve all other controllers, legacy source intake and Review gates.
    Do not load both old and new selectors. The documented footer was already

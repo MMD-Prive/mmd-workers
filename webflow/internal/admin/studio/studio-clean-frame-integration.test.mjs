@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { buildStudioFrames, validateStudioFrameManifest } from "../../../../scripts/build-studio-clean-frame-release.mjs";
 
-const release = await buildStudioFrames({ allowPendingAssets: true });
+const release = await buildStudioFrames();
 const sourceKeys = ["mmdStudioTemplateState", "mmdStudioUploadSeed"];
 const categories = [
   ["A", "ST", "sigil-straight-bronze"], ["B", "GY", "sigil-gay-plum"],
@@ -106,4 +106,16 @@ test("release packaging refuses pending or superseded artwork and wrong palette 
   assert.throws(() => validateStudioFrameManifest({ ...release.manifest, release_ready: false }), /studio_frame_registry_not_ready/);
   const invalid = structuredClone(release.manifest); invalid.release_ready = true; invalid.assets[0].accent = "purple";
   assert.throws(() => validateStudioFrameManifest(invalid), /studio_frame_palette_not_ready/);
+  const rejected = structuredClone(release.manifest);
+  rejected.assets[0].library_file_id = rejected.superseded_inputs[0].library_file_id;
+  assert.throws(() => validateStudioFrameManifest(rejected), /studio_frame_source_superseded/);
+});
+
+test("a Review-required page without an approved card host is left untouched", async () => {
+  const gate = '<main id="mmdModelPreview"><h1>Review required</h1><a href="/internal/admin/studio/review">Back to Review</a></main>';
+  const h = await start(gate, { decision: "", approval: "owner_pending", visual_variant_number: 3 }, "model-preview");
+  assert.equal(h.document.querySelector("#mmdModelPreview").innerHTML, '<h1>Review required</h1><a href="/internal/admin/studio/review">Back to Review</a>');
+  assert.equal(h.document.querySelector("#mmdSigilCompcardFinal"), null);
+  for (const key of sourceKeys) assert.equal(h.dom.window.localStorage.getItem(key), h.before[key]);
+  assert.equal(h.writes(), 0); h.dom.window.close();
 });

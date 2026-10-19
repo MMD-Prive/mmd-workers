@@ -5,67 +5,97 @@
     "prefix": "webflow/internal/admin/studio/frames/clean-v1",
     "public_base": "https://models.mmdbkk.com/webflow/internal/admin/studio/frames/clean-v1"
   },
-  "mapping_status": "awaiting_strip_only_palette_assets",
+  "mapping_status": "independent_strip_only_visual_palette",
   "assets": [
     {
       "number": 1,
-      "library_file_id": "libfile_fbe27ec2ecb481919a33d834381f2a68",
-      "file_name": "template-clean-1.png",
-      "sha256": "2855ee13b78017cf128e922f971c90c15f1868baf8f1ea4fba0ec3998c3fe2ec",
+      "library_file_id": "libfile_7ccddc062278819192968f02db72f90f",
+      "file_name": "template-gold-1-right-strip-gray.png",
+      "sha256": "dc1ae630c2c694bde00171bcb4d9c73498ff986831931698cf568f2b1d8f3e3d",
       "width": 1316,
       "height": 1195,
-      "asset_file": "frame-1-2855ee13b780.png",
+      "asset_file": "frame-1-dc1ae630c2c6.png",
       "field": null,
-      "accent": "cyan",
-      "superseded_pending_replacement": true
+      "accent": "matte gray",
+      "label": "เทาด้าน",
+      "original_clean_source": {
+        "library_file_id": "libfile_fbe27ec2ecb481919a33d834381f2a68",
+        "file_name": "template-clean-1.png",
+        "sha256": "2855ee13b78017cf128e922f971c90c15f1868baf8f1ea4fba0ec3998c3fe2ec"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
     },
     {
       "number": 2,
-      "library_file_id": "libfile_5173168dfa908191baeb7e90920d0df3",
-      "file_name": "template-clean-2.png",
-      "sha256": "d4127ccd32d60961d5ad4ebd1d5ccd095d1ee7f84beb4ae7dcb2d5a8d80fda0f",
+      "library_file_id": "libfile_71f4a760e23881918d4facd06cf1e965",
+      "file_name": "template-gold-2-right-strip-green.png",
+      "sha256": "e56e268deb2a41f7a951e042949491d64c5885cd50e72cf62243ca5b6085e5da",
       "width": 1316,
       "height": 1195,
-      "asset_file": "frame-2-d4127ccd32d6.png",
+      "asset_file": "frame-2-e56e268deb2a.png",
       "field": null,
-      "accent": "red",
-      "superseded_pending_replacement": true
+      "accent": "green",
+      "label": "เขียว",
+      "original_clean_source": {
+        "library_file_id": "libfile_5173168dfa908191baeb7e90920d0df3",
+        "file_name": "template-clean-2.png",
+        "sha256": "d4127ccd32d60961d5ad4ebd1d5ccd095d1ee7f84beb4ae7dcb2d5a8d80fda0f"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
     },
     {
       "number": 3,
-      "library_file_id": "libfile_d4c1dd36afa48191a5828d31e273df31",
-      "file_name": "template-clean-3.png",
-      "sha256": "21d343044a2060e4c25254b5403a155dfb9425dc19c9ba7134c889f116070a9b",
+      "library_file_id": "libfile_1d9ebc8667cc8191bf2e83f70d893ed9",
+      "file_name": "template-gold-3-right-strip-cyan.png",
+      "sha256": "a53eec77c6e0fd4aac375d1d62cd230ca77b30ebb9b2d9167bce1e0a7fab12f8",
       "width": 1316,
       "height": 1195,
-      "asset_file": "frame-3-21d343044a20.png",
+      "asset_file": "frame-3-a53eec77c6e0.png",
       "field": null,
-      "accent": "purple",
-      "superseded_pending_replacement": true
+      "accent": "cyan",
+      "label": "ฟ้าคราม",
+      "original_clean_source": {
+        "library_file_id": "libfile_d4c1dd36afa48191a5828d31e273df31",
+        "file_name": "template-clean-3.png",
+        "sha256": "21d343044a2060e4c25254b5403a155dfb9425dc19c9ba7134c889f116070a9b"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
     },
     {
       "number": 4,
-      "library_file_id": "libfile_18cde0f7b5b881919d9fe3dd2ef4b302",
-      "file_name": "template-clean-4.png",
-      "sha256": "cc4c8ba7b176c55484e552da8640c3b36ebac41b7f8e41c37ec57f6aaff56875",
+      "library_file_id": "libfile_265513578380819180a546a4d1f7bafa",
+      "file_name": "template-gold-4-right-strip-red.png",
+      "sha256": "1a66f180af607d2f57f6444aeadab38872b04abf794d57f2daa5f178ec8a9eac",
       "width": 1316,
       "height": 1195,
-      "asset_file": "frame-4-cc4c8ba7b176.png",
+      "asset_file": "frame-4-1a66f180af60.png",
       "field": null,
-      "accent": "purple",
-      "superseded_pending_replacement": true
+      "accent": "red",
+      "label": "แดง",
+      "original_clean_source": {
+        "library_file_id": "libfile_18cde0f7b5b881919d9fe3dd2ef4b302",
+        "file_name": "template-clean-4.png",
+        "sha256": "cc4c8ba7b176c55484e552da8640c3b36ebac41b7f8e41c37ec57f6aaff56875"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
     },
     {
       "number": 5,
-      "library_file_id": "libfile_ef625f6f00808191813d119d260f213b",
-      "file_name": "template-clean-5.png",
-      "sha256": "8d8a80b36744a7dbf414eb9216029f278540929a756f66293bebc6f4af800d37",
+      "library_file_id": "libfile_153f99b458dc8191bd3709c48da14be1",
+      "file_name": "template-gold-5-right-strip-orange-final.png",
+      "sha256": "29de6b65d6d5d330f19b2f1ecc052e638c3df473ffe13e6acb18325143c97595",
       "width": 1316,
       "height": 1195,
-      "asset_file": "frame-5-8d8a80b36744.png",
+      "asset_file": "frame-5-29de6b65d6d5.png",
       "field": null,
-      "accent": "purple",
-      "superseded_pending_replacement": true
+      "accent": "orange",
+      "label": "ส้ม",
+      "original_clean_source": {
+        "library_file_id": "libfile_ef625f6f00808191813d119d260f213b",
+        "file_name": "template-clean-5.png",
+        "sha256": "8d8a80b36744a7dbf414eb9216029f278540929a756f66293bebc6f4af800d37"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
     },
     {
       "number": 6,
@@ -107,7 +137,7 @@
     "red",
     "orange"
   ],
-  "release_ready": false,
+  "release_ready": true,
   "superseded_inputs": [
     {
       "library_file_id": "libfile_2feb3311354081918584ab11ba54fbcf",
@@ -140,5 +170,6 @@
       "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
     }
   ],
-  "color_scope": "small_right_edge_strip_only"
+  "color_scope": "small_right_edge_strip_only",
+  "installation_status": "not_released"
 }

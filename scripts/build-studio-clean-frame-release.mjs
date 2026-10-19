@@ -13,9 +13,9 @@ export function validateStudioFrameManifest(manifest) {
   const rejected = new Set((manifest.superseded_inputs || []).map(a => a.library_file_id));
   if (manifest.assets.some(a => rejected.has(a.library_file_id))) throw new Error("studio_frame_source_superseded");
 }
-export async function buildStudioFrames({ assetBase, allowPendingAssets = false } = {}) {
+export async function buildStudioFrames({ assetBase } = {}) {
   const manifest = JSON.parse(await readFile(new URL("frames/clean-v1/manifest.json", studio), "utf8"));
-  if (!allowPendingAssets) validateStudioFrameManifest(manifest);
+  validateStudioFrameManifest(manifest);
   const expected = [null, null, null, null, null, "EMs", "GWs"];
   const base = assetBase || manifest.hosting.public_base;
   for (const [index, asset] of manifest.assets.entries()) {

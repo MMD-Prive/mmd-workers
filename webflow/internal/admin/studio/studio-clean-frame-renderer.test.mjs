@@ -65,8 +65,9 @@ test("source does not create publication, classification or paid generation side
 });
 
 test("independent general variants remain unassigned; corrected exclusive mapping is explicit", () => {
-  assert.equal(manifest.release_ready, false);
+  assert.equal(manifest.release_ready, true);
   assert.deepEqual(manifest.assets.map(a => a.field), [null, null, null, null, null, "EMs", "GWs"]);
-  assert.deepEqual(manifest.assets.map(a => a.accent), ["cyan", "red", "purple", "purple", "purple", "purple", "gold"]);
+  assert.deepEqual(manifest.assets.map(a => a.accent), ["matte gray", "green", "cyan", "red", "orange", "purple", "gold"]);
+  assert.deepEqual(manifest.assets.slice(0, 5).map(a => a.library_file_id), ["libfile_7ccddc062278819192968f02db72f90f", "libfile_71f4a760e23881918d4facd06cf1e965", "libfile_1d9ebc8667cc8191bf2e83f70d893ed9", "libfile_265513578380819180a546a4d1f7bafa", "libfile_153f99b458dc8191bd3709c48da14be1"]);
   assert.equal(manifest.color_scope, "small_right_edge_strip_only");
 });

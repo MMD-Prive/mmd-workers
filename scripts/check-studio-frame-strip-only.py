@@ -64,30 +64,41 @@ def rgba(path):
     return width, height, pixels
 
 
-def compare(original, candidate):
+def compare(original, candidate, strict=True):
     width, height, before = rgba(original)
     new_width, new_height, after = rgba(candidate)
     if (width, height) != (new_width, new_height):
         raise ValueError("frame_dimensions_changed")
     changed = []
+    outside_changed = outside_error = outside_large = 0
     for offset in range(0, len(before), 4):
         if before[offset:offset + 4] != after[offset:offset + 4]:
             pixel = offset // 4
             changed.append((pixel % width, pixel // width))
+            if pixel % width < width * .94:
+                outside_changed += 1
+                errors = [abs(before[offset + c] - after[offset + c]) for c in range(3)]
+                outside_error += sum(errors)
+                outside_large += max(errors) > 32
     bounds = None
     if changed:
         xs, ys = zip(*changed)
         bounds = [min(xs), min(ys), max(xs) + 1, max(ys) + 1]
-        if bounds[0] < width * .94 or bounds[3] - bounds[1] > height * .25 or len(changed) > width * height * .02:
+        if strict and (bounds[0] < width * .94 or bounds[3] - bounds[1] > height * .25 or len(changed) > width * height * .02):
             raise ValueError("changes_extend_beyond_small_right_edge_strip: " + json.dumps({"bounds": bounds, "changed_pixels": len(changed)}))
-    return {"width": width, "height": height, "changed_pixels": len(changed), "changed_bounds_xyxy": bounds, "outside_changed_bounds_identical": True, "sha256": hashlib.sha256(Path(candidate).read_bytes()).hexdigest()}
+    outside_pixels = len(range(int(width * .94 + .999))) * height
+    return {"width": width, "height": height, "changed_pixels": len(changed), "changed_bounds_xyxy": bounds, "pixel_identical_outside_right_edge": outside_changed == 0, "outside_right_edge_mean_channel_difference": round(outside_error / (outside_pixels * 3), 3), "outside_right_edge_pixels_max_difference_over_32_fraction": round(outside_large / outside_pixels, 5), "sha256": hashlib.sha256(Path(candidate).read_bytes()).hexdigest()}
 
 
 if __name__ == "__main__":
     try:
-        if len(sys.argv) != 3:
-            raise ValueError("usage: check-studio-frame-strip-only.py ORIGINAL CANDIDATE")
-        print(json.dumps(compare(sys.argv[1], sys.argv[2])))
+        args = sys.argv[1:]
+        report = bool(args and args[0] == "--report")
+        if report:
+            args = args[1:]
+        if len(args) != 2:
+            raise ValueError("usage: check-studio-frame-strip-only.py [--report] ORIGINAL CANDIDATE")
+        print(json.dumps(compare(args[0], args[1], strict=not report)))
     except (ValueError, OSError, struct.error, zlib.error) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)
