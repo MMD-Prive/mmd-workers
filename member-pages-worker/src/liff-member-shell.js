@@ -572,7 +572,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       // This flag can ONLY skip the redundant intro for a confirmed returning
       // audience; it never grants member status, payout, Points or access.
       preflightVerifiedSession = true;
-      existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+      existingProfilePromise = readProfile({ hydrate: false, silent: true }).catch(() => null);
       return true;
     } catch {
       return false;
@@ -658,7 +658,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
   applyWorldTheme();
   welcomeContextPromise = resolveInitialWelcomeContext();
-  existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
+  existingProfilePromise = readProfile({ hydrate: false, silent: true }).catch(() => null);
   // Keep the HYPE loader up until we know whether to open the member home directly (an existing same-site session never calls liff.login) or show the ENTER welcome.
   if (CONFIG.intent !== "signup") {
     void welcomeContextPromise.catch(() => false).then(async () => {
@@ -1078,13 +1078,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     }
   }
 
-  function clearMemberProfile() {
+  function clearMemberProfile({ silent = false } = {}) {
     hideMemberProfile();
     if (appStatus) appStatus.dataset.mmdStatusKind = "checking";
-    show("กรุณาเปิด MY MMD อีกครั้งเพื่อตรวจสอบบัญชีของคุณครับ");
+    if (!silent) show("กรุณาเปิด MY MMD อีกครั้งเพื่อตรวจสอบบัญชีของคุณครับ");
   }
 
-  async function readProfile({ hydrate = true } = {}) {
+  async function readProfile({ hydrate = true, silent = false } = {}) {
     const generation = ++profileGeneration;
     // Do not leave the prior Client's details visible while a new session is checked.
     hideMemberProfile();
@@ -1093,7 +1093,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const payload = await response.json().catch(() => null);
       if (generation !== profileGeneration) return null;
       if (!response.ok || !payload || payload.ok !== true) {
-        clearMemberProfile();
+        clearMemberProfile({ silent });
         return null;
       }
       renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
@@ -1103,7 +1103,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       if (hydrate) await hydrateMemberHome();
       return payload.data || {};
     } catch {
-      if (generation === profileGeneration) clearMemberProfile();
+      if (generation === profileGeneration) clearMemberProfile({ silent });
       return null;
     }
   }

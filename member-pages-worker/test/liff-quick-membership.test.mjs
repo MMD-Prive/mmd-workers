@@ -3,35 +3,52 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 const source = readFileSync(new URL("../src/liff-member-shell.js", import.meta.url), "utf8");
-const functions = source.slice(source.indexOf("  let memberApiChain"), source.indexOf("  function requestId()"));
+const start = source.indexOf("  function memberApiFetch(");
+const end = source.indexOf("  function hideMemberProfile()", start);
+const profileStart = source.indexOf("  async function readProfile(", end);
+assert.ok(start >= 0 && end > start && profileStart > end);
+const functions = "let memberApiChain = Promise.resolve(); let profileGeneration = 0;\n"
+  + source.slice(start, end)
+  + source.slice(profileStart, source.indexOf("  function requestId()", profileStart));
 function setup(membership, profileResponse) {
   const nodes = { "minimal-member-display":{hidden:true}, "minimal-member-expiry":{textContent:"—"}, "minimal-member-points":{textContent:"12.5 คะแนนประมาณการ"}, "profile-tier": { textContent: "SVIP" }, "profile-status": { textContent: "checking" }, "profile-points": { textContent: "—" } };
+  for (const id of ["history-preview-points", "history-preview-amount", "history-preview-notice"]) nodes[id] = {textContent:""};
   const calls = [];
   const context = vm.createContext({setTimeout,clearTimeout,AbortController,Response,Uint8Array,
-    fetch: async path => { calls.push(path); return path === "/api/member/app/membership" ? Response.json(membership) : profileResponse; },
+    fetch: async path => { calls.push(path); return path === "/api/member/app/membership" ? Response.json(membership) : path === "/api/member/app/history/preview" ? Response.json({ok:false}, {status:404}) : profileResponse; },
     CONFIG: { profileEndpoint: "/member/api/liff/profile" },
     document: { getElementById: id => nodes[id] },
     safeDate: value => value || "", shortDate: value => value,
-    membershipStatus: value => value, renderProfile() {}, renderCustomerContact() {}, hydrateMemberHome: async () => {},
+    hideMemberProfile() {}, clearMemberProfile() {}, membershipStatus: value => value, renderProfile() {}, renderCustomerContact() {}, hydrateMemberHome: async () => {},
   });
   vm.runInContext(functions, context);
   return { nodes, calls, context };
 }
 
-test("canonical membership renders before the full profile completes without opening history review", async () => {
+test("canonical profile completes before supplemental membership and history reads", async () => {
   let release;
   const pending = new Promise(resolve => { release = resolve; });
   const h = setup({ level:"premium", levelVerified:true, status:"expired", expiresAt:"2026-09-01" }, pending);
   const full = h.context.readProfile({ hydrate:false });
   await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.calls, ["/member/api/liff/profile"]);
+  assert.equal(h.nodes["profile-status"].textContent, "checking");
+  release(Response.json({ ok:true, data:{} }));
+  await full;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.calls, ["/member/api/liff/profile", "/api/member/app/membership", "/api/member/app/history/preview"]);
   assert.equal(h.nodes["profile-tier"].textContent, "Premium");
   assert.equal(h.nodes["profile-status"].textContent, "expired · ถึง 2026-09-01");
   assert.equal(h.nodes["profile-points"].textContent, "—");
   assert.equal(h.nodes["minimal-member-display"].hidden,true);
   assert.equal(h.nodes["minimal-member-expiry"].textContent,"2026-09-01");
-  assert.equal(h.nodes["minimal-member-points"].textContent,"12.5 คะแนนประมาณการ");
-  assert.deepEqual(h.calls, ["/api/member/app/membership", "/member/api/liff/profile"]);
-  release(Response.json({ ok:true, data:{} })); await full;
+  assert.equal(h.nodes["minimal-member-points"].textContent,"—");
+});
+
+test("rejected canonical profile never reads supplemental membership or history", async () => {
+  const h = setup({level:"vip",levelVerified:true}, Response.json({ok:false},{status:401}));
+  await h.context.readProfile({hydrate:false});
+  assert.deepEqual(h.calls, ["/member/api/liff/profile"]);
 });
 
 test("unverified/missing membership does not downgrade a protected display or invent points", async () => {

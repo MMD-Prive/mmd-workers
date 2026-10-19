@@ -165,7 +165,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /const sessionReady = await preflightWelcomeIdentity\(\)/);
     assert.match(html, /if \(!window\.liff\.isLoggedIn\(\)\) return false/);
     assert.match(html, /const idToken = window\.liff\.getIDToken\(\)/);
-    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
+    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false, silent: true \}\)\.catch\(\(\) => null\)/);
     const preflightStart = html.indexOf("async function preflightWelcomeIdentity()");
     const preflightEnd = html.indexOf("async function resolveInitialWelcomeContext()", preflightStart);
     const preflightCode = html.slice(preflightStart, preflightEnd);
@@ -179,11 +179,11 @@ describe("same-site /member/liff shell", () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    const firstProfileBootstrap = html.indexOf("existingProfilePromise = readProfile({ hydrate: false })");
+    const firstProfileBootstrap = html.indexOf("existingProfilePromise = readProfile({ hydrate: false, silent: true })");
     assert.ok(firstProfileBootstrap > html.indexOf("let memberApiChain = Promise.resolve()"));
     assert.ok(firstProfileBootstrap > html.indexOf("let profileGeneration = 0"));
     assert.match(html, /setTimeout\(\(\) => controller\.abort\(\), 4500\)/);
-    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
+    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false, silent: true \}\)\.catch\(\(\) => null\)/);
     const entered = html.indexOf('document.body.classList.add("app-entered")');
     const hydrate = html.indexOf("void hydrateMemberHome()", entered);
     assert.ok(entered >= 0 && hydrate > entered, "secondary member hydration must start only after the app surface is entered");
@@ -271,6 +271,8 @@ describe("same-site /member/liff shell", () => {
     const code = html.slice(start, end);
     const pendingOld = runInNewContext(code + "readProfile({hydrate:false})", context);
     assert.equal(hidden.has("hidden"), true, "the old profile is hidden while identity is rechecked");
+    await runInNewContext(code + "readProfile({hydrate:false, silent:true})", context);
+    assert.deepEqual(messages, [], "an expected bootstrap 401 must preserve welcome copy");
     const failedNew = await runInNewContext(code + "readProfile({hydrate:false})", context);
     assert.equal(failedNew, null);
     assert.equal(hidden.has("hidden"), true, "a failed identity check leaves private content hidden");
@@ -305,7 +307,7 @@ describe("same-site /member/liff shell", () => {
     const code = fragment("async function hydrateDigitalMission()", "function digitalFeedCategory")
       + fragment("async function hydrateDigitalHome(", "async function loadDigitalUpdates()")
       + fragment("async function loadRenewalCard()", "function renewalDate")
-      + fragment("function hideMemberProfile()", "function clearMemberProfile()");
+      + fragment("function hideMemberProfile()", "function clearMemberProfile(");
     const running = runInNewContext(code + "Promise.all([hydrateDigitalHome({}), loadRenewalCard()])", context);
     assert.equal(pending.length, 3);
     runInNewContext("hideMemberProfile()", context);
@@ -548,7 +550,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /credits: readCreditWallet/);
     assert.match(html, /history: readCanonicalHistory/);
     assert.match(html, /"my-requests": readCustomerRequests/);
-    assert.match(html, /async function readProfile\(\{ hydrate = true \} = \{\}\)/);
+    assert.match(html, /async function readProfile\(\{ hydrate = true, silent = false \} = \{\}\)/);
     assert.match(html, /if \(hydrate\) await hydrateMemberHome\(\)/);
     assert.doesNotMatch(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
     assert.match(html, /recoveryPayload\?\.history_recovery\?\.state/);

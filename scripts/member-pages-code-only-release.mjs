@@ -20,6 +20,8 @@ export const CODE_ONLY_PATHS = [
   'member-pages-worker/src/liff-member-shell.js',
   'member-pages-worker/test/liff-member-compact-v4.test.mjs',
   'member-pages-worker/test/liff-member-shell.test.mjs',
+  'member-pages-worker/test/liff-quick-membership.test.mjs',
+  'member-pages-worker/test/member-history-preview.test.mjs',
   'scripts/member-pages-code-only-release.mjs',
   'scripts/member-pages-code-only-release.test.mjs',
 ].sort();

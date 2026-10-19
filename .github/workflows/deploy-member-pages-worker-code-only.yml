@@ -58,7 +58,7 @@ jobs:
           node-version: '22'
       - name: Verify code-only release contract and targeted LIFF behavior
         run: |
-          node --test scripts/member-pages-code-only-release.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-member-compact-v4.test.mjs
+          node --test scripts/member-pages-code-only-release.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-member-compact-v4.test.mjs member-pages-worker/test/liff-quick-membership.test.mjs member-pages-worker/test/member-history-preview.test.mjs
           node --check member-pages-worker/src/liff-member-shell.js
       - name: Install pinned Wrangler bundler
         run: npm install --global wrangler@4.151.1 --no-audit --no-fund
