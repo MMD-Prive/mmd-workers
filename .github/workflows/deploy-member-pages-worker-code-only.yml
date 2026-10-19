@@ -54,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPROVAL_REF: ${{ inputs.approval_ref }}
           APPROVED_SHA: ${{ inputs.approved_sha }}
-        run: node scripts/member-pages-owner-approval.mjs
+        run: node scripts/member-pages-owner-approval.mjs --preflight
 
   release:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
