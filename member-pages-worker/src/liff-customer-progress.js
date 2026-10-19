@@ -1,5 +1,5 @@
 // Presentation only. No identity, balance or business decision is made here.
-export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
+export function createCustomerProgress({ render, request, timeoutMs = 15000, mutationTimeoutMs = 120000 }) {
   let generation = 0, memberGeneration = 0, nextId = 0;
   const tasks = new Map(), panels = new Set(), failures = new Map();
   function publish(panel, reset = false) {
@@ -46,7 +46,8 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
     const abort = () => controller.abort();
     if (init.signal?.aborted) abort();
     init.signal?.addEventListener('abort', abort, { once:true });
-    const timer = setTimeout(abort, timeoutMs);
+    const readOnly = ["GET", "HEAD"].includes((init.method || "GET").toUpperCase());
+    const timer = setTimeout(abort, readOnly ? timeoutMs : mutationTimeoutMs);
     let failed = false;
     try {
       const response = await request(url, { ...init, signal:controller.signal });

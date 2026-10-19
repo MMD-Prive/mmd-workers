@@ -1265,3 +1265,14 @@ test("logout request survives member-panel cleanup from an older profile read",a
  p.reset();const request=p.fetch('/member/api/liff/logout',{method:'POST'});p.reset({memberOnly:true});
  logout.resolve(new Response('{}'));assert.equal((await request).status,200);
 });
+
+test("native evidence FormData and mutations receive a longer bounded deadline without retries",async()=>{
+ const delays=[], bodies=[];
+ const create=runInNewContext('('+createCustomerProgress.toString()+')',{AbortController,Response,Uint8Array,setTimeout:(_fn,ms)=>{delays.push(ms);return delays.length;},clearTimeout(){}});
+ const p=create({render(){},request:async(_url,init)=>{bodies.push(init.body);return new Response('{}');}});
+ const form=new FormData();form.append('file',new Blob(['fixture'],{type:'image/png'}),'fixture.png');
+ await p.fetch('/member/api/liff/customer-request-evidence',{method:'POST',body:form});
+ await p.fetch('/member/api/liff/renewal/purchase',{method:'POST',body:'fixture-only'});
+ await p.fetch('/api/member/app/dashboard');
+ assert.deepEqual(delays,[120000,120000,15000]);assert.equal(bodies[0],form);assert.equal(bodies.length,3);
+});
