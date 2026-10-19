@@ -15,13 +15,23 @@ export const ZONE = '2d62396174fa2ddadbbcd0e8cf0f3367';
 export const ROOT = `/accounts/${ACCOUNT}/workers/scripts/member-pages-worker`;
 export const VERSION_ROOT = `/accounts/${ACCOUNT}/workers/workers/member-pages-worker/versions`;
 export const CODE_ONLY_BASE_SHA = '05db9f10d32650a7b922475ea7e070f72ece4070';
+// This release explicitly includes both merged changes; keep the original
+// comparison base so the additional Points source is visible in its scope.
+export const CODE_ONLY_INCLUDED_PULL_REQUESTS = [
+  { number: 2522, merge_sha: '5e89a7386aa1e41d80ce3e945201b96b352ae799' },
+  { number: 2523, merge_sha: '151d21eabd988396eef36b944c931b23e51cea69' },
+];
 export const CODE_ONLY_PATHS = [
   '.github/workflows/deploy-member-pages-worker-code-only.yml',
   'member-pages-worker/src/liff-member-shell.js',
+  'member-pages-worker/src/my-mmd-lifetime-points.js',
+  'member-pages-worker/src/points-display-source-guard.js',
+  'member-pages-worker/test/kenji-line-member-truth.test.mjs',
   'member-pages-worker/test/liff-member-compact-v4.test.mjs',
   'member-pages-worker/test/liff-member-shell.test.mjs',
   'member-pages-worker/test/liff-quick-membership.test.mjs',
   'member-pages-worker/test/member-history-preview.test.mjs',
+  'member-pages-worker/test/points-display-source-guard.test.mjs',
   'scripts/member-pages-code-only-release.mjs',
   'scripts/member-pages-code-only-release.test.mjs',
 ].sort();
@@ -35,6 +45,13 @@ const digest = value => createHash('sha256').update(canonical(value)).digest('he
 
 export function validateCodeOnlySourcePaths(paths = []) {
   assert.deepEqual([...paths].sort(), CODE_ONLY_PATHS, 'source diff is outside the reviewed code-only file set');
+}
+
+export function validateCodeOnlySourceHistory(sha, isAncestor) {
+  assert.match(sha || '', /^[a-f0-9]{40}$/);
+  for (const ancestor of [CODE_ONLY_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
+    assert.equal(isAncestor(ancestor, sha), true, 'reviewed release commit missing from source history');
+  }
 }
 
 export function activeVersion(deployment) {
@@ -229,7 +246,10 @@ async function main() {
     assert.equal(protection.ready, true, 'exact main-only production reviewer protection required');
     assert.equal(git('rev-parse','HEAD'), sha, 'checkout SHA mismatch');
     assert.equal(git('status','--porcelain'), '', 'dirty checkout');
-    git('merge-base','--is-ancestor',CODE_ONLY_BASE_SHA,sha);
+    validateCodeOnlySourceHistory(sha, (ancestor, target) => {
+      git('merge-base','--is-ancestor',ancestor,target);
+      return true;
+    });
     validateCodeOnlySourcePaths(git('diff','--name-only',CODE_ONLY_BASE_SHA,sha).split('\n').filter(Boolean));
     assert.equal(git('diff',CODE_ONLY_BASE_SHA,sha,'--','member-pages-worker/wrangler.toml'), '',
       'Worker config/migrations changed; separate release review required');
@@ -242,7 +262,8 @@ async function main() {
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async () => ({ method:'clean-main-checkout', source_sha:sha, config_unchanged:true }),
+    sourceCheck: async () => ({ method:'clean-main-checkout', source_sha:sha, config_unchanged:true,
+      comparison_base_sha:CODE_ONLY_BASE_SHA, included_pull_requests:CODE_ONLY_INCLUDED_PULL_REQUESTS }),
     bundle: async () => buildMemberPagesBundle(dir),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
   });
