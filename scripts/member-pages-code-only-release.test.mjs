@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyOwnerApproval, environmentName } from './member-pages-owner-approval.mjs';
 import {
-  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
-  buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateGraphicsSourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
+  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA, CODE_ONLY_STARTUP_PATHS, CODE_ONLY_STARTUP_BRIDGE_BLOBS, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
+  buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateStartupBridge, validateGraphicsSourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
 } from './member-pages-code-only-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -368,8 +368,9 @@ test('release history requires the original base and both exact merged PRs', () 
     {number:2522, merge_sha:'5e89a7386aa1e41d80ce3e945201b96b352ae799'},
     {number:2523, merge_sha:'151d21eabd988396eef36b944c931b23e51cea69'},
     {number:2537, merge_sha:'a53571bc9d572755dff65599767d09a240d74b93'},
+    {number:2544, merge_sha:'fe5f9d98876b600421c5614efc049ffc890b8adb'},
   ]);
-  const ancestors = [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr=>pr.merge_sha)];
+  const ancestors = [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_STARTUP_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr=>pr.merge_sha)];
   const calls = [];
   validateCodeOnlySourceHistory(sha, (ancestor,target)=>{ calls.push([ancestor,target]); return true; });
   assert.deepEqual(calls, ancestors.map(ancestor=>[ancestor,sha]));
@@ -388,14 +389,18 @@ function checkoutFixture(options = {}) {
     if (args.join(' ') === 'rev-parse --show-toplevel') return options.wrongRoot ? '/other-root' : directory;
     if (args.join(' ') === 'rev-parse HEAD') return directory === sourceDirectory
       ? options.sourceSha || CODE_ONLY_SOURCE_SHA : options.releaseSha || releaseSha;
+    if (args[0] === 'rev-parse' && args[1].includes(':')) {
+      const [reference,path] = args[1].split(':');
+      return options.startupBlobDrift ? 'f'.repeat(40) : CODE_ONLY_STARTUP_BRIDGE_BLOBS[path][reference === CODE_ONLY_GRAPHICS_SOURCE_SHA ? 0 : 1];
+    }
     if (args[0] === 'status') return directory === options.dirtyDirectory ? '!! injected.js' : '';
     if (args[0] === 'merge-base') {
       if (options.missingHistory) throw new Error('not_ancestor');
       return '';
     }
     if (args[0] === 'diff' && args[1] === '--name-only') {
-      const paths = args[2] === CODE_ONLY_GRAPHICS_BASE_SHA ? CODE_ONLY_GRAPHICS_PATHS : CODE_ONLY_PATHS;
-      return [...paths, ...(options.extraPaths || [])].join('\n');
+      const paths = args[2] === CODE_ONLY_GRAPHICS_BASE_SHA ? CODE_ONLY_GRAPHICS_PATHS : args[2] === CODE_ONLY_GRAPHICS_SOURCE_SHA ? Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS) : args[2] === CODE_ONLY_STARTUP_BASE_SHA ? CODE_ONLY_STARTUP_PATHS : CODE_ONLY_PATHS;
+      return [...paths, ...(options.extraPaths || []), ...(args[2] === CODE_ONLY_STARTUP_BASE_SHA ? options.startupExtraPaths || [] : [])].join('\n');
     }
     if (args[0] === 'diff' && args[1] === CODE_ONLY_PREVIOUS_SOURCE_SHA) return options.changedBridge ? 'runtime drift' : '';
     if (args[0] === 'diff') return options.changedConfig ? 'config changed' : '';
@@ -477,7 +482,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
-  assert.match(source, /ref: a53571bc9d572755dff65599767d09a240d74b93\s+fetch-depth: 0\s+path: release-source/);
+  assert.match(source, /ref: fe5f9d98876b600421c5614efc049ffc890b8adb\s+fetch-depth: 0\s+path: release-source/);
   assert.match(source, /ref: \$\{\{ github.sha \}\}\s+fetch-depth: 0\s+path: release-tools/);
   assert.match(source, /SOURCE_DIRECTORY: \$\{\{ github.workspace \}\}\/release-source/);
   assert.match(source, /working-directory: release-tools/);
@@ -489,7 +494,8 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
 test('Graphics V4 pin extends the original source with exactly the four merged UI files', () => {
   assert.equal(CODE_ONLY_PREVIOUS_SOURCE_SHA,'151d21eabd988396eef36b944c931b23e51cea69');
   assert.equal(CODE_ONLY_GRAPHICS_BASE_SHA,'a815e173fff1471901dae55646c984ed0b5f23f3');
-  assert.equal(CODE_ONLY_SOURCE_SHA,'a53571bc9d572755dff65599767d09a240d74b93');
+  assert.equal(CODE_ONLY_GRAPHICS_SOURCE_SHA,'a53571bc9d572755dff65599767d09a240d74b93');
+  assert.equal(CODE_ONLY_SOURCE_SHA,'fe5f9d98876b600421c5614efc049ffc890b8adb');
   assert.deepEqual(validateGraphicsSourcePaths(CODE_ONLY_GRAPHICS_PATHS),CODE_ONLY_GRAPHICS_PATHS);
   for (const missing of CODE_ONLY_GRAPHICS_PATHS) {
     assert.throws(()=>validateGraphicsSourcePaths(CODE_ONLY_GRAPHICS_PATHS.filter(path=>path!==missing)));
@@ -505,11 +511,11 @@ test('Graphics V4 pin extends the original source with exactly the four merged U
 test('the non-bundle main interval must leave all runtime trees and dependency controls identical', () => {
   const f=checkoutFixture();
   const evidence=inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,f);
-  assert.deepEqual(evidence.source_scope.graphics_delta,{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA,paths:CODE_ONLY_GRAPHICS_PATHS});
+  assert.deepEqual(evidence.source_scope.graphics_delta,{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA,source_sha:CODE_ONLY_GRAPHICS_SOURCE_SHA,paths:CODE_ONLY_GRAPHICS_PATHS});
   assert.deepEqual(evidence.source_scope.unchanged_runtime_bridge,{from:CODE_ONLY_PREVIOUS_SOURCE_SHA,to:CODE_ONLY_GRAPHICS_BASE_SHA});
   assert.ok(f.calls.some(({args})=>args.join(' ')===['diff',CODE_ONLY_PREVIOUS_SOURCE_SHA,CODE_ONLY_GRAPHICS_BASE_SHA,'--',...CODE_ONLY_RUNTIME_BOUNDARIES].join(' ')));
   assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_BASE_SHA,CODE_ONLY_PREVIOUS_SOURCE_SHA].join(' ')));
-  assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_GRAPHICS_BASE_SHA,CODE_ONLY_SOURCE_SHA].join(' ')));
+  assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_GRAPHICS_BASE_SHA,CODE_ONLY_GRAPHICS_SOURCE_SHA].join(' ')));
   for(const required of ['member-pages-worker','shared','auth-worker','package.json','package-lock.json','.npmrc']) {
     assert.ok(CODE_ONLY_RUNTIME_BOUNDARIES.includes(required));
   }
@@ -528,4 +534,37 @@ test('an old bundle without either V4 module cannot pass source-map evidence',()
   for(const missing of sources.slice(1)) {
     assert.throws(()=>validateBundleSourceMap({version:3,sourceRoot:'/repo',mappings:'AAAA',sources:sources.filter(path=>path!==missing)},'/repo/out','/repo'));
   }
+});
+
+
+test('startup release accepts only exact #2529 test-script blobs, never dependency/config edits', () => {
+  const paths=Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS);
+  const read=(ref,path)=>CODE_ONLY_STARTUP_BRIDGE_BLOBS[path][ref===CODE_ONLY_GRAPHICS_SOURCE_SHA?0:1];
+  validateStartupBridge(paths,read);
+  for(const extra of ['package-lock.json','.npmrc','member-pages-worker/wrangler.toml','shared/private-media.mjs','auth-worker/src/index.js']) {
+    assert.throws(()=>validateStartupBridge([...paths,extra],read));
+  }
+  for(const path of paths) {
+    assert.throws(()=>validateStartupBridge(paths.filter(p=>p!==path),read));
+    for(const reference of [CODE_ONLY_GRAPHICS_SOURCE_SHA,CODE_ONLY_STARTUP_BASE_SHA]) {
+      assert.throws(()=>validateStartupBridge(paths,(ref,p)=>p===path&&ref===reference?'f'.repeat(40):read(ref,p)),/blob drift/);
+    }
+  }
+  assert.throws(()=>validateCodeOnlySourceHistory(CODE_ONLY_GRAPHICS_SOURCE_SHA,()=>true));
+});
+
+test('startup bridge and extra delta failures stop before any Cloudflare reads or writes',async()=>{
+  for(const options of [{startupBlobDrift:true},{startupExtraPaths:['package.json']},{startupExtraPaths:['member-pages-worker/src/index.js']}]) {
+    const f=fixture(),checkout=checkoutFixture(options);
+    f.io.approve=async()=>inspectCodeOnlyCheckouts(releaseSha,checkout.sourceDirectory,checkout);
+    await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+    assert.deepEqual(f.calls,[]);assert.equal(f.writes(),0);
+  }
+});
+
+test('startup source evidence preserves V4 and names the exact two-file startup delta',()=>{
+  const f=checkoutFixture();const evidence=inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,f);
+  assert.deepEqual(evidence.source_scope.startup_delta,{base_sha:CODE_ONLY_STARTUP_BASE_SHA,paths:CODE_ONLY_STARTUP_PATHS});
+  assert.deepEqual(evidence.source_scope.exact_test_only_bridge,{from:CODE_ONLY_GRAPHICS_SOURCE_SHA,to:CODE_ONLY_STARTUP_BASE_SHA,paths:Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS)});
+  assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_STARTUP_BASE_SHA,CODE_ONLY_SOURCE_SHA].join(' ')));
 });

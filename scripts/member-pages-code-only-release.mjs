@@ -16,7 +16,19 @@ export const VERSION_ROOT = `/accounts/${ACCOUNT}/workers/workers/member-pages-w
 export const CODE_ONLY_BASE_SHA = '05db9f10d32650a7b922475ea7e070f72ece4070';
 export const CODE_ONLY_PREVIOUS_SOURCE_SHA = '151d21eabd988396eef36b944c931b23e51cea69';
 export const CODE_ONLY_GRAPHICS_BASE_SHA = 'a815e173fff1471901dae55646c984ed0b5f23f3';
-export const CODE_ONLY_SOURCE_SHA = 'a53571bc9d572755dff65599767d09a240d74b93';
+export const CODE_ONLY_GRAPHICS_SOURCE_SHA = 'a53571bc9d572755dff65599767d09a240d74b93';
+export const CODE_ONLY_STARTUP_BASE_SHA = 'ebf5236b6d9a3e9bea28c89db1f6c2e18b8ddebc';
+export const CODE_ONLY_SOURCE_SHA = 'fe5f9d98876b600421c5614efc049ffc890b8adb';
+export const CODE_ONLY_STARTUP_PATHS = [
+  'member-pages-worker/src/liff-member-shell.js',
+  'member-pages-worker/test/liff-member-shell.test.mjs',
+];
+// Exact #2529 test-only bridge. No wildcard dependency/config exclusion.
+export const CODE_ONLY_STARTUP_BRIDGE_BLOBS = {
+  'package.json': ['1754df992f1ed4c554c2af6142773fe3900d01cf', '8cfde2e341c8ac76233b6016a369d257f4da8981'],
+  'shared/model-travel-client.test.mjs': ['33451c30e74975ad98ad2ab64dbf8094a0a5d82f', '7604afd2fa32a4fd53fcc5937a0ce236bd204988'],
+  'shared/public-session-extension-integration-contract.test.mjs': ['5faf2549728070ef893ac5f7a90276a8f7638cd1', '5e8ff576addf8d5d603777be857dbdd6029aade2'],
+};
 export const CODE_ONLY_GRAPHICS_PATHS = [
   'member-pages-worker/src/liff-customer-graphics.js',
   'member-pages-worker/src/liff-customer-progress.js',
@@ -35,7 +47,8 @@ export const CODE_ONLY_RUNTIME_BOUNDARIES = [
 export const CODE_ONLY_INCLUDED_PULL_REQUESTS = [
   { number: 2522, merge_sha: '5e89a7386aa1e41d80ce3e945201b96b352ae799' },
   { number: 2523, merge_sha: '151d21eabd988396eef36b944c931b23e51cea69' },
-  { number: 2537, merge_sha: CODE_ONLY_SOURCE_SHA },
+  { number: 2537, merge_sha: CODE_ONLY_GRAPHICS_SOURCE_SHA },
+  { number: 2544, merge_sha: CODE_ONLY_SOURCE_SHA },
 ];
 // These exact blobs belong to another Worker and are never release inputs.
 export const CODE_ONLY_EXCLUDED_CHANGE = {
@@ -93,8 +106,8 @@ export function validateCodeOnlySourcePaths(paths = [], { sha, readBlob } = {}) 
 }
 
 export function validateCodeOnlySourceHistory(sha, isAncestor) {
-  assert.equal(sha, CODE_ONLY_SOURCE_SHA, 'only the exact reviewed Graphics V4 source may be bundled');
-  for (const ancestor of [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
+  assert.equal(sha, CODE_ONLY_SOURCE_SHA, 'only the exact reviewed Graphics V4 startup source may be bundled');
+  for (const ancestor of [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_STARTUP_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
     assert.equal(isAncestor(ancestor, sha), true, 'reviewed release commit missing from source history');
   }
 }
@@ -103,6 +116,14 @@ export function validateGraphicsSourcePaths(paths) {
   assert.deepEqual([...paths].sort(), CODE_ONLY_GRAPHICS_PATHS,
     'Graphics V4 delta must contain exactly the four reviewed files');
   return [...CODE_ONLY_GRAPHICS_PATHS];
+}
+
+export function validateStartupBridge(paths, readBlob) {
+  assert.deepEqual([...paths].sort(), Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS).sort(), 'unexpected startup bridge paths');
+  for (const [path, [before, after]] of Object.entries(CODE_ONLY_STARTUP_BRIDGE_BLOBS)) {
+    assert.equal(readBlob(CODE_ONLY_GRAPHICS_SOURCE_SHA, path), before, 'startup bridge base blob drift');
+    assert.equal(readBlob(CODE_ONLY_STARTUP_BASE_SHA, path), after, 'startup bridge reviewed blob drift');
+  }
 }
 
 // Release tooling may advance on main; the deployed application source cannot.
@@ -137,10 +158,18 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
   assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA,
     '--', ...CODE_ONLY_RUNTIME_BOUNDARIES), '', 'runtime dependency/config drift before Graphics V4');
   const graphicsPaths = validateGraphicsSourcePaths(
-    git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_GRAPHICS_BASE_SHA, sourceSha).split('\n').filter(Boolean));
+    git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA).split('\n').filter(Boolean));
+  git(sourceDirectory, 'merge-base', '--is-ancestor', CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA);
+  const bridgePaths = git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_GRAPHICS_SOURCE_SHA,
+    CODE_ONLY_STARTUP_BASE_SHA, '--', ...CODE_ONLY_RUNTIME_BOUNDARIES).split('\n').filter(Boolean);
+  validateStartupBridge(bridgePaths, (reference, path) => git(sourceDirectory, 'rev-parse', reference+':'+path));
+  const startupPaths = git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_STARTUP_BASE_SHA, sourceSha).split('\n').filter(Boolean);
+  assert.deepEqual([...startupPaths].sort(), CODE_ONLY_STARTUP_PATHS, 'startup delta must contain exactly the two reviewed files');
   const sourceScope = {...previousScope,
     included_paths:[...new Set([...previousScope.included_paths, ...graphicsPaths])].sort(),
-    graphics_delta:{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA, paths:graphicsPaths},
+    graphics_delta:{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA, source_sha:CODE_ONLY_GRAPHICS_SOURCE_SHA, paths:graphicsPaths},
+    startup_delta:{base_sha:CODE_ONLY_STARTUP_BASE_SHA, paths:startupPaths},
+    exact_test_only_bridge:{from:CODE_ONLY_GRAPHICS_SOURCE_SHA, to:CODE_ONLY_STARTUP_BASE_SHA, paths:bridgePaths},
     unchanged_runtime_bridge:{from:CODE_ONLY_PREVIOUS_SOURCE_SHA, to:CODE_ONLY_GRAPHICS_BASE_SHA}};
   assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_BASE_SHA, sourceSha, '--', 'member-pages-worker/wrangler.toml'), '',
     'Worker config/migrations changed; separate release review required');
@@ -235,7 +264,7 @@ export async function releaseMemberPagesCodeOnly(io) {
   const save = phase => { state.phase = phase; io.save({ ...state }); };
   try {
     await io.approve();
-    assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact Graphics V4 merge');
+    assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact Graphics V4 startup merge');
     assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
     const deployment = (await call('/deployments'))?.deployments?.[0];
