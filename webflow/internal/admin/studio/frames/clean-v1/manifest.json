@@ -1,0 +1,88 @@
+{
+  "version": "studio-clean-frames-v1",
+  "hosting": {
+    "bucket": "mmd-models",
+    "prefix": "webflow/internal/admin/studio/frames/clean-v1",
+    "public_base": "https://models.mmdbkk.com/webflow/internal/admin/studio/frames/clean-v1"
+  },
+  "mapping_status": "awaiting_owner_3_4_5",
+  "assets": [
+    {
+      "number": 1,
+      "library_file_id": "libfile_fbe27ec2ecb481919a33d834381f2a68",
+      "file_name": "template-clean-1.png",
+      "sha256": "2855ee13b78017cf128e922f971c90c15f1868baf8f1ea4fba0ec3998c3fe2ec",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-1-2855ee13b780.png",
+      "field": "EN",
+      "accent": "cyan"
+    },
+    {
+      "number": 2,
+      "library_file_id": "libfile_5173168dfa908191baeb7e90920d0df3",
+      "file_name": "template-clean-2.png",
+      "sha256": "d4127ccd32d60961d5ad4ebd1d5ccd095d1ee7f84beb4ae7dcb2d5a8d80fda0f",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-2-d4127ccd32d6.png",
+      "field": "EX",
+      "accent": "red"
+    },
+    {
+      "number": 3,
+      "library_file_id": "libfile_d4c1dd36afa48191a5828d31e273df31",
+      "file_name": "template-clean-3.png",
+      "sha256": "21d343044a2060e4c25254b5403a155dfb9425dc19c9ba7134c889f116070a9b",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-3-21d343044a20.png",
+      "field": null,
+      "accent": "purple"
+    },
+    {
+      "number": 4,
+      "library_file_id": "libfile_18cde0f7b5b881919d9fe3dd2ef4b302",
+      "file_name": "template-clean-4.png",
+      "sha256": "cc4c8ba7b176c55484e552da8640c3b36ebac41b7f8e41c37ec57f6aaff56875",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-4-cc4c8ba7b176.png",
+      "field": null,
+      "accent": "purple"
+    },
+    {
+      "number": 5,
+      "library_file_id": "libfile_ef625f6f00808191813d119d260f213b",
+      "file_name": "template-clean-5.png",
+      "sha256": "8d8a80b36744a7dbf414eb9216029f278540929a756f66293bebc6f4af800d37",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-5-8d8a80b36744.png",
+      "field": null,
+      "accent": "purple"
+    },
+    {
+      "number": 6,
+      "library_file_id": "libfile_4321a079889c81919e44f7cd40908e0b",
+      "file_name": "template-clean-6-run-number-restored.png",
+      "sha256": "c4422924b44fdf570c0b99c47daa99e6e66c6585d21fc6ccb274c6351611d0a8",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-6-c4422924b44f.png",
+      "field": "EMs",
+      "accent": "purple"
+    },
+    {
+      "number": 7,
+      "library_file_id": "libfile_c402d5e6153c8191bc3dd21ee65c47e2",
+      "file_name": "template-clean-7-run-number-restored.png",
+      "sha256": "1f673fd77a7809f5ea000a76f613b4719c631f550de4ea01aa937483a6a3b1bd",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-7-1f673fd77a78.png",
+      "field": "GWs",
+      "accent": "gold"
+    }
+  ]
+}
