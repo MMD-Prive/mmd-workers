@@ -5,6 +5,9 @@ export function travelEtaFromEvents(value, now = Date.now()) {
   if (typeof value === 'string') {
     if(value.length>64000)return unavailable();
     try { events = value.trim()?JSON.parse(value):[]; } catch { return unavailable(); }
+    // A serialized payload must be an event array. Actual null/undefined fields
+    // below still mean no events; JSON "null" is invalid data, not absence.
+    if (!Array.isArray(events)) return unavailable();
   }
   if(events!=null&&!Array.isArray(events))return unavailable();
   let latest, invalidEta = false;
