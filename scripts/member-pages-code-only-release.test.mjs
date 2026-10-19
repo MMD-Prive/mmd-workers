@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, activeVersion, createTransport, releaseMemberPagesCodeOnly,
-  uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, versionAnnotations, versionConfiguration,
+  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, releaseMemberPagesCodeOnly,
+  uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
 } from './member-pages-code-only-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -238,6 +238,54 @@ test('code-only source boundary rejects configuration or unrelated worker paths'
   }
   assert.throws(()=>validateCodeOnlySourcePaths([...paths,paths[0]]));
   assert.throws(()=>validateCodeOnlySourcePaths([...paths,'member-pages-worker/src/member-app-api.js']));
+});
+
+test('only the six exact reviewed PR2524 blobs can be excluded from source scope', () => {
+  assert.equal(CODE_ONLY_EXCLUDED_CHANGE.number, 2524);
+  assert.equal(CODE_ONLY_EXCLUDED_CHANGE.merge_sha, '7e8e08fc95a3258251523d29299c82fe838dc22d');
+  assert.equal(CODE_ONLY_EXCLUDED_CHANGE.paths.length, 6);
+  const paths = [...CODE_ONLY_PATHS, ...CODE_ONLY_EXCLUDED_CHANGE.paths];
+  const reads = [];
+  const evidence = {sha,readBlob:(ref,path)=>{reads.push([ref,path]);return 'b'.repeat(40);}};
+  const result = validateCodeOnlySourcePaths(paths,evidence);
+  assert.deepEqual(result.included_paths, CODE_ONLY_PATHS);
+  assert.equal(result.excluded_changes[0].number,2524);
+  assert.equal(reads.length,12);
+  assert.deepEqual(reads[0],[CODE_ONLY_EXCLUDED_CHANGE.merge_sha,CODE_ONLY_EXCLUDED_CHANGE.paths[0]]);
+  assert.deepEqual(reads[1],[sha,CODE_ONLY_EXCLUDED_CHANGE.paths[0]]);
+  assert.throws(()=>validateCodeOnlySourcePaths(paths));
+  assert.throws(()=>validateCodeOnlySourcePaths(paths,{sha,readBlob:()=>undefined}));
+  assert.throws(()=>validateCodeOnlySourcePaths(paths,{sha,readBlob:ref=>(ref===sha?'a':'b').repeat(40)}));
+  assert.throws(()=>validateCodeOnlySourcePaths(paths.slice(0,-1),evidence));
+  for(const changed of ['shared/private-media.mjs','auth-worker/src/index.js',
+    'member-pages-worker/wrangler.toml','package-lock.json',
+    'member-dashboard-chat-worker/src/another-file.js']) {
+    assert.throws(()=>validateCodeOnlySourcePaths([...paths,changed],evidence));
+  }
+});
+
+test('bundle evidence rejects excluded Worker inputs, aliases, missing maps and unknown dependencies', async () => {
+  const directory = '/fixture/repo/bundle';
+  const repository = '/fixture/repo';
+  const map = {version:3,sourceRoot:'..',sources:['member-pages-worker/src/runtime-index.js','shared/private-media.mjs'],mappings:'AAAA'};
+  assert.deepEqual(validateBundleSourceMap(map,directory,repository),
+    ['member-pages-worker/src/runtime-index.js','shared/private-media.mjs']);
+  for(const source of [...CODE_ONLY_EXCLUDED_CHANGE.paths,
+    'shared/../member-dashboard-chat-worker/src/index.js','../outside.js']) {
+    const contaminated = {...map,sources:[...map.sources,source]};
+    assert.throws(()=>validateBundleSourceMap(contaminated,directory,repository));
+  }
+  for(const incomplete of [{},{...map,sources:[]},{...map,mappings:''},
+    {...map,sources:['shared/private-media.mjs']}]) {
+    assert.throws(()=>validateBundleSourceMap(incomplete,directory,repository));
+  }
+  const f = fixture();
+  f.io.bundle = async () => {
+    validateBundleSourceMap({...map,sources:[...map.sources,CODE_ONLY_EXCLUDED_CHANGE.paths[0]]},directory,repository);
+    return new Uint8Array([1]);
+  };
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.equal(f.writes(),0,'contaminated bundle must stop before upload');
 });
 
 test('release history requires the original base and both exact merged PRs', () => {
