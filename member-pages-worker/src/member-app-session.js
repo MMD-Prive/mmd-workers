@@ -1,17 +1,10 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
-import { projectTravel, travelJson, travelPhotoResponse } from '../../shared/model-travel-store.mjs';
+import { projectTravel, resolveTravelEta, travelJson, travelPhotoResponse } from '../../shared/model-travel-store.mjs';
+import { travelClock, travelEtaFromEvents } from '../../shared/model-travel-eta.mjs';
+import { customerSessionLifecycle as lifecycleOf } from '../../shared/model-travel-lifecycle.mjs';
 const DEFAULT_SESSIONS_TABLE = "Sessions";
-const DEFAULT_JOBS_TABLE = "Jobs";
 const SESSION_PATH = "/api/member/app/session/";
 const TERMINAL = new Set(["completed", "cancelled", "canceled"]);
-const ETA_EVENT = "eta_update";
-const ETA_MAX_MINUTES = 240;
-const MAX_EVENTS_JSON_LENGTH = 64_000;
-const DISPLAYABLE = new Set([
-  "pending_confirmation", "confirmed", "preparing", "en_route", "nearby",
-  "arrived", "met_customer", "final_payment_pending", "final_payment_confirmed",
-  "work_started", "in_progress", "work_finished", "separated", "completed", "cancelled",
-]);
 
 export function isMemberAppSessionPath(input) {
   const url = input instanceof URL ? input : new URL(String(input));
@@ -157,7 +150,7 @@ async function projectSession(record, env) {
   const modelName = clean(fields.model_name || fields["Assigned Model"], 120) || null;
   const start = clock(fields.start_time || fields["Start Time"]);
   const end = clock(fields.end_time || fields["End Time"]);
-  const eventEta = await resolveCustomerEtaEvent(env, sessionId);
+  const eta = await resolveTravelEta(env, record);
   return {
     sessionId,
     lifecycle,
@@ -173,108 +166,31 @@ async function projectSession(record, env) {
     },
     // Jobs events are the only live ETA authority. An old Session label has
     // no verified update time and must not appear as current tracking.
-    etaLabel: eventEta.label,
-    etaUpdatedAt: eventEta.updatedAt,
-    etaStale: eventEta.hasEvent && !eventEta.label,
+    eta,
+    etaLabel: eta.status === 'active' || lifecycle === 'arrived' ? travelClock(eta, lifecycle) || null : null,
+    etaUpdatedAt: eta.updated_at,
+    etaStale: eta.status === 'expired',
     missionReady: sessionPaymentConfirmed(fields),
     nextMessage: clean(fields.customer_next_message, 500) || null,
   };
 }
 
 function sessionPaymentConfirmed(fields = {}) {
-  const depositPaid = fields.deposit_paid === true ? "paid" : String(fields.deposit_paid ?? "");
-  const state = [
-    fields.payment_status,
-    fields["Payment Status"],
-    fields.deposit_status,
-    fields.verification_status,
-    fields["Verification Status"],
-    depositPaid,
-  ].map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean).join(" ");
-  return /official_verified|verified|deposit_paid|paid|confirmed|complete/.test(state)
-    && !/pending|unverified|rejected|failed|void/.test(state);
+  // Read-only compatibility with canonical paid/deposit_paid and verified
+  // Session evidence. Unknown/negative fields veto, rather than concatenating
+  // strings ("unpaid" contains "paid"). Never inspect booking status here.
+  const normalize = value => String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g,'_');
+  const positive = new Set(['paid','deposit_paid','verified','official_verified']);
+  const states = [fields.payment_status,fields['Payment Status'],fields.deposit_status,fields.verification_status,fields['Verification Status']].map(normalize).filter(Boolean);
+  if(states.some(value=>!positive.has(value)))return false;
+  if(fields.deposit_paid!=null&&fields.deposit_paid!==''&&fields.deposit_paid!==true&&normalize(fields.deposit_paid)!=='true'&&!positive.has(normalize(fields.deposit_paid)))return false;
+  return states.length>0 || fields.deposit_paid===true || normalize(fields.deposit_paid)==='true' || positive.has(normalize(fields.deposit_paid));
 }
 
-async function resolveCustomerEtaEvent(env, sessionId) {
-  if (!sessionId) return { hasEvent: false, label: null, updatedAt: null };
-  try {
-    // This read happens only after canonical customer ownership of the Session
-    // has been established. Raw Job/event data is never returned to MY MMD.
-    const records = await airtableList(env, {
-      table: String(env.AIRTABLE_TABLE_JOBS || DEFAULT_JOBS_TABLE),
-      filterByFormula: `{session_id}=${formulaString(sessionId)}`,
-      maxRecords: 2,
-    });
-    if (records.length !== 1) return { hasEvent: false, label: null, updatedAt: null };
-    return customerEtaFromEvents(records[0]?.fields?.events_json);
-  } catch {
-    // Keep the owned Session visible while the Jobs read is unavailable.
-    // Unknown ETA remains absent rather than falling back to an old label.
-    return { hasEvent: false, label: null, updatedAt: null };
-  }
-}
-
+// Kept for legacy callers; all timestamp math is owned by the shared helper.
 export function customerEtaFromEvents(value, now = Date.now()) {
-  const events = parseEvents(value);
-  const nowMs = Number(now);
-  const currentMs = Number.isFinite(nowMs) ? nowMs : Date.now();
-  let latest = null;
-
-  for (const entry of events) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const event = clean(entry.event, 80).toLowerCase().replace(/[\s-]+/g, "_");
-    const etaMinutes = validEtaMinutes(entry.eta_minutes);
-    const updatedAt = Date.parse(clean(entry.ts, 80));
-    if (event !== ETA_EVENT || !etaMinutes || !Number.isFinite(updatedAt)) continue;
-    if (!latest || updatedAt >= latest.updatedAt) latest = { etaMinutes, updatedAt };
-  }
-
-  if (!latest) return { hasEvent: false, label: null, updatedAt: null };
-  const remainingMs = (latest.updatedAt + latest.etaMinutes * 60_000) - currentMs;
-  const updatedAt = new Date(latest.updatedAt).toISOString();
-  if (remainingMs <= 0) return { hasEvent: true, label: null, updatedAt };
-  const remainingMinutes = Math.max(1, Math.ceil(remainingMs / 60_000));
-  return { hasEvent: true, label: `ถึงโดยประมาณในอีก ${remainingMinutes} นาที`, updatedAt };
-}
-
-function parseEvents(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== "string") return [];
-  const serialized = value.trim();
-  if (!serialized || serialized.length > MAX_EVENTS_JSON_LENGTH) return [];
-  try {
-    const parsed = JSON.parse(serialized);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function validEtaMinutes(value) {
-  const number = (typeof value === "number" || typeof value === "string") ? Number(value) : 0;
-  return Number.isInteger(number) && number >= 1 && number <= ETA_MAX_MINUTES ? number : 0;
-}
-
-function lifecycleOf(fields = {}) {
-  // The exact Session path and the canonical Model path can use different
-  // state fields. Without a verified ordering timestamp, disagreement must
-  // not become a customer-visible claim about which state is current.
-  const aliases = {
-    pending: "pending_confirmation", pending_confirm: "pending_confirmation",
-    ready: "confirmed", confirm: "confirmed", confirmed: "confirmed",
-    prep: "preparing", on_the_way: "en_route", enroute: "en_route",
-    meeting: "met_customer", started: "in_progress", complete: "completed",
-    done: "completed", canceled: "cancelled",
-  };
-  const normalized = (input) => {
-    const raw = clean(input, 80).toLowerCase().replace(/[\s-]+/g, "_");
-    return aliases[raw] || raw;
-  };
-  const modelState = normalized(fields.model_session_state);
-  const sessionState = normalized(fields.session_state);
-  if (modelState && sessionState && modelState !== sessionState) return "checking";
-  const value = modelState || sessionState || normalized(fields["Session Status"]);
-  return DISPLAYABLE.has(value) ? value : "checking";
+  const eta=travelEtaFromEvents(value,now);
+  return {hasEvent:Boolean(eta.updated_at),label:eta.status==='active'?travelClock(eta,'en_route','th',now):null,updatedAt:eta.updated_at};
 }
 
 async function verifyCustomerToken(request, env, token) {

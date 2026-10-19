@@ -1,4 +1,5 @@
 import { travelEtaFromEvents } from './model-travel-eta.mjs';
+import { customerSessionLifecycle } from './model-travel-lifecycle.mjs';
 import { notificationDigest } from './payment-notification-outbox.mjs';
 
 export const TRAVEL_LIMIT = 3;
@@ -37,10 +38,20 @@ export async function readTravelSession(env, sessionId) {
 }
 
 export function travelState(record) {
-  const fields = record?.fields || {};
-  const a = ref(fields.model_session_state).toLowerCase(), b = ref(fields.session_state).toLowerCase();
-  if (a && b && a !== b) return 'checking';
-  return a || b || 'checking';
+  return customerSessionLifecycle(record?.fields);
+}
+
+// Shared by the legacy current/context projection and the private travel API.
+// Requires an already-authorized Session; performs no writes or ledger access.
+export async function resolveTravelEta(env, record, now = Date.now()) {
+  const inactive = {status:'inactive',server_now:new Date(now).toISOString(),arrival_at:null,updated_at:null};
+  if (!ACTIVE.has(travelState(record))) return inactive;
+  try {
+    const sessionId=record.fields.session_id;
+    const jobs=await travelRecords(env,env.AIRTABLE_TABLE_JOBS||'Jobs',sessionId);
+    if(jobs.length!==1||jobs[0].fields?.session_id!==sessionId)throw travelError('travel_job_unavailable');
+    return travelEtaFromEvents(jobs[0].fields.events_json,now);
+  } catch { return {...inactive,status:'unavailable'}; }
 }
 
 export async function travelBinding(record) {
@@ -253,12 +264,7 @@ export async function projectTravel(env, record, role = 'customer', now = Date.n
   const sessionId = record.fields.session_id, binding = await travelBinding(record), state = travelState(record);
   await cleanupTravelReservations(env, sessionId, now);
   const data = await ledger(env, sessionId);
-  let eta;
-  try {
-    const jobs = await travelRecords(env, env.AIRTABLE_TABLE_JOBS || 'Jobs', sessionId);
-    eta = jobs.length === 1 && jobs[0].fields?.session_id === sessionId ? travelEtaFromEvents(jobs[0].fields.events_json, now) : { status: 'unavailable' };
-  } catch { eta = { status: 'unavailable' }; }
-  if (!ACTIVE.has(state)) eta = { status: 'inactive', arrival_at: null, updated_at: null };
+  const eta = await resolveTravelEta(env, record, now);
   const entries = Object.values(data.value.entries).filter(e => e.binding === binding && (e.state === 'saved' || role === 'model'));
   return {
     ok: true, session_id: sessionId, state, revision: data.value.revision, binding, server_now: new Date(now).toISOString(),

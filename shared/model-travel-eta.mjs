@@ -1,18 +1,22 @@
 // The Events Worker remains the only ETA writer. Both apps consume this contract.
 export function travelEtaFromEvents(value, now = Date.now()) {
+  const unavailable=()=>({status:'unavailable',server_now:new Date(now).toISOString(),arrival_at:null,updated_at:null});
   let events = value;
-  if (typeof value === 'string' && value.length <= 64000) {
-    try { events = JSON.parse(value); } catch { events = []; }
+  if (typeof value === 'string') {
+    if(value.length>64000)return unavailable();
+    try { events = value.trim()?JSON.parse(value):[]; } catch { return unavailable(); }
   }
-  let latest;
+  if(events!=null&&!Array.isArray(events))return unavailable();
+  let latest, invalidEta = false;
   for (const event of Array.isArray(events) ? events : []) {
-    if(typeof event?.ts!=='string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(event.ts))continue;
+    if (event?.event !== 'eta_update') continue;
+    if(typeof event.ts!=='string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(event.ts)) { invalidEta = true; continue; }
     const minutes = Number(event?.eta_minutes), at = Date.parse(event?.ts);
-    if (event?.event !== 'eta_update' || !Number.isInteger(minutes) || minutes < 1 || minutes > 240 || !Number.isFinite(at)) continue;
+    if (!['number','string'].includes(typeof event.eta_minutes) || !Number.isInteger(minutes) || minutes < 1 || minutes > 240 || !Number.isFinite(at)) { invalidEta = true; continue; }
     if (!latest || at >= latest.at) latest = { at, minutes };
   }
   const server_now = new Date(now).toISOString();
-  if (!latest) return { status: 'missing', server_now, arrival_at: null, updated_at: null };
+  if (!latest) return { status: invalidEta ? 'unavailable' : 'missing', server_now, arrival_at: null, updated_at: null };
   // A future event is not a trustworthy clock reference.
   if (latest.at > now + 60000) return { status: 'unavailable', server_now, arrival_at: null, updated_at: null };
   const arrival = latest.at + latest.minutes * 60000;
