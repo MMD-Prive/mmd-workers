@@ -464,6 +464,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:comp\s*card|คอมพ์?การ์ด|คอมการ์ด).{0,24}(?:ดู|ขอดู|ตัวอย่าง|standard|สแตนดาร์ด)|(?:อยาก|ขอ).{0,12}(?:ดู|เห็น).{0,12}(?:model|นายแบบ|โปรไฟล์)/i.test(normalized)) return "standard_comp_card_preview";
   if (/(?:เคยใช้บริการที่ไหน|เคยใช้ที่ไหน|ใช้บริการที่ไหนมาก่อน|ไม่เคยใช้บริการ|เคยใช้บริการ)/i.test(normalized)) return "membership_experience";
   if (/(?:งบ|บัดเจต|บัทเจท|budget).{0,24}(?:ต่อครั้ง|ครั้งละ|บริการ)|(?:ครั้งละ|ต่อครั้ง).{0,18}(?:กี่บาท|เท่าไหร่|เท่าไร|งบ|budget)/i.test(normalized)) return "membership_budget";
+  if (/(?:standard|premium|สแตนดาร์ด|พรีเมียม|พรีเมี่ยม).{0,28}(?:ต่างกัน|ต่างจาก|เทียบ|เปรียบเทียบ|ข้อแตกต่าง|difference|compare)|(?:ต่างกัน|ต่างจาก|เทียบ|เปรียบเทียบ|ข้อแตกต่าง|difference|compare).{0,28}(?:standard|premium|สแตนดาร์ด|พรีเมียม|พรีเมี่ยม)/i.test(normalized)) return "membership_pricing";
   if (/(?:สนใจ|อยากรู้|สอบถาม|อยากดู).{0,18}(?:สมาชิก|membership|standard|premium|private)/i.test(normalized)) return "membership_interest";
   var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
   if (!membershipAcquisitionHasBenefitQuestion && /(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(normalized)) return "private_membership_signup";
@@ -1095,7 +1096,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_pricing") {
-    return `${prefix}สนใจ Standard หรือ Premium อยู่ครับ หรือให้เปอร์ช่วยเทียบสองแบบให้ดูก่อนได้ ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
+    return `${prefix}เรื่องเปรียบเทียบ Standard กับ Premium ให้ Per ช่วยตรวจรายละเอียดให้ตรงกับการใช้งานครับ ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
   }
 
   if (intent === "payment_center") {
@@ -1370,6 +1371,7 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     : "";
   const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
   if (generated) {
+    const perHandoffRequired = intent === "membership_pricing";
     return {
       text: generated,
       fallback: false,
@@ -1380,6 +1382,8 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       knowledge_hits: (!deterministicFirst && cachedKnowledge) ? 1 : 0,
       guard_blocked: false,
       guard_reason: "",
+      handoff_required: perHandoffRequired,
+      handoff_reason: perHandoffRequired ? "membership_pricing:per_review" : "",
     };
   }
 
@@ -1792,6 +1796,64 @@ function getStableLineMessageId(event = {}) {
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function claimPricingHandoff(env, event) {
+  const eventId = getStableLineMessageId(event);
+  const lineUserId = getLineUserId({ event });
+  const timestamp = Number(event?.timestamp);
+  const age = Date.now() - timestamp;
+  // Claims live for 24h. The event window ends first, including clock-skew
+  // tolerance, so claim expiry cannot reopen an old signed event for replay.
+  if (!eventId || !lineUserId || !Number.isFinite(timestamp) || timestamp <= 0 || age < -60_000 || age >= 24 * 60 * 60 * 1000 - 60_000) {
+    return { ok: false, reason: "pricing_handoff_event_invalid" };
+  }
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
+    return { ok: false, reason: "pricing_handoff_claim_unavailable" };
+  }
+  const controller = new AbortController();
+  let timer;
+  try {
+    const key = await sha256Hex(`pricing:${lineUserId}:${eventId}`);
+    const subject = await sha256Hex(lineUserId);
+    const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-pricing-handoff-v1:${subject}`));
+    const request = async (body) => {
+      // Reuse the existing transactional claim API in an isolated object scope.
+      // This endpoint has no model calls or model quota side effects.
+      const response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, ...body }),
+        signal: controller.signal,
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.ok !== true) throw new Error("pricing_claim_failed");
+      return payload;
+    };
+    return await Promise.race([
+      (async () => {
+        const claim = await request({ action: "claim" });
+        if (claim.claimed !== true) return { ok: false, reason: "pricing_handoff_duplicate_claim" };
+        // Commit BEFORE any Matrix/LINE side effect. Unknown write or delivery
+        // outcomes must never release the claim and repeat the customer action.
+        const committed = await request({ action: "commit", claim_token: claim.claim_token });
+        return committed.committed === true
+          ? { ok: true }
+          : { ok: false, reason: "pricing_handoff_claim_unconfirmed" };
+      })(),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve({ ok: false, reason: "pricing_handoff_claim_timeout" });
+        }, 1000);
+      }),
+    ]);
+  } catch {
+    return { ok: false, reason: "pricing_handoff_claim_unavailable" };
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
 }
 
 async function claimKenjiModelEvent(env = {}, event = {}) {
@@ -3194,7 +3256,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
               modelIntent,
             })
           : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
-    const replyText = replyDecision.text;
+    let replyText = replyDecision.text;
     const postDecisionTakeover = lineUserId && replyText
       ? (lineBrainEnabled
           ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
@@ -3205,7 +3267,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     const takeoverClear = !lineUserId ||
       (postDecisionTakeover?.ok === true && postDecisionTakeover.active !== true) ||
       (postDecisionTakeover?.ok !== true && postDecisionTakeover?.reason === "takeover_lookup_unconfigured");
-    const shouldReply = Boolean(
+    let shouldReply = Boolean(
       modelOnlyAllowed &&
       (autoReplyEnabled || (campaignEvent && campaignCanReply)) &&
       eventMode !== "standby" &&
@@ -3214,6 +3276,75 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       takeoverClear &&
       (!campaignEvent || options.suppressCampaignReply !== true)
     );
+    const requiresDurablePricingHandoff = intent === "membership_pricing" && replyDecision.handoff_required === true;
+    let pricingHandoffWrite = null;
+    let pricingMatrixSkipReason = "";
+    const pricingIdentityStatus = continuity?.available === true ? asString(continuity.identity_status) : "unavailable";
+    if (requiresDurablePricingHandoff && ["ambiguous", "unavailable"].includes(pricingIdentityStatus)) {
+      pricingMatrixSkipReason = "pricing_handoff_identity_unresolved";
+      shouldReply = false;
+      replyText = "";
+      replyDecision.text = "";
+      replyDecision.guard_blocked = true;
+      replyDecision.guard_reason = `pricing_handoff_identity_${pricingIdentityStatus}`;
+    }
+    if (requiresDurablePricingHandoff && shouldReply) {
+      const eventId = getLineEventId(rawEvent);
+      const alreadyPersistedEvent = Boolean(eventId && asString(continuity?.matrix?.last_event_id) === eventId);
+      if (event?.deliveryContext?.isRedelivery === true || alreadyPersistedEvent) {
+        pricingMatrixSkipReason = "pricing_handoff_duplicate_suppressed";
+        shouldReply = false;
+        replyText = "";
+        replyDecision.text = "";
+        replyDecision.guard_blocked = true;
+        replyDecision.guard_reason = event?.deliveryContext?.isRedelivery === true
+          ? "pricing_handoff_redelivery_suppressed"
+          : "pricing_handoff_duplicate_event_suppressed";
+      }
+    }
+    if (requiresDurablePricingHandoff && shouldReply) {
+      const claim = await claimPricingHandoff(env, rawEvent);
+      if (!claim.ok) {
+        pricingMatrixSkipReason = claim.reason;
+        shouldReply = false;
+        replyText = "";
+        replyDecision.text = "";
+        replyDecision.guard_blocked = true;
+        replyDecision.guard_reason = claim.reason;
+      } else if (!asString(continuity?.client_record_id)) {
+        // The existing Per consumer requires a canonical Client link. Offer a
+        // real identity step instead of creating an invisible/orphan handoff.
+        pricingMatrixSkipReason = "pricing_handoff_client_unlinked";
+        replyText = `ยังเชื่อมบัญชี MY MMD สำหรับส่งคำถามนี้ถึง Per ไม่ได้ครับ เปิด MY MMD เพื่อยืนยันตัวตนก่อน แล้วส่งคำถามเปรียบเทียบ Standard/Premium อีกครั้งในแชทนี้ได้ครับ\n${MEMBER_STATUS_URL}`;
+        replyDecision.text = replyText;
+        replyDecision.handoff_required = false;
+        replyDecision.handoff_reason = "";
+      }
+    }
+    if (requiresDurablePricingHandoff && shouldReply && !pricingMatrixSkipReason) {
+      pricingHandoffWrite = await writeKenjiLineMatrixTurn({
+        env,
+        continuity,
+        decision: { ...replyDecision, intent },
+        delivered: false,
+        attempted: false,
+        lastEventId: getLineEventId(rawEvent),
+        now: new Date().toISOString(),
+      }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }));
+      if (!pricingHandoffWrite?.id) {
+        shouldReply = false;
+        replyText = "";
+        replyDecision.text = "";
+        replyDecision.guard_blocked = true;
+        replyDecision.guard_reason = "pricing_handoff_persist_failed";
+      } else {
+        continuity.matrix_record_id = pricingHandoffWrite.id;
+        continuity.matrix = pricingHandoffWrite.matrix;
+      }
+    }
+    if (requiresDurablePricingHandoff && !shouldReply && !pricingHandoffWrite && !pricingMatrixSkipReason) {
+      pricingMatrixSkipReason = "pricing_handoff_reply_suppressed";
+    }
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
     const outboundHistoryPromise = lineBrainEnabled && replyResult?.ok === true
       ? recordDeliveredKenjiLineReply({ env, event: rawEvent, replyText }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
@@ -3230,10 +3361,15 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
         effective_intent: intent,
       },
     };
-    const afterReply = campaignEvent
+    const duplicatePricingEvent = ["pricing_handoff_duplicate_suppressed", "pricing_handoff_duplicate_claim"].includes(pricingMatrixSkipReason);
+    const afterReply = duplicatePricingEvent
+      ? Promise.resolve({ skipped: true, reason: pricingMatrixSkipReason, deduped: true })
+      : campaignEvent
       ? Promise.resolve(campaignLeadRecord || { skipped: true, reason: "campaign_lead_not_processed", deduped: false })
       : syncLineEventAfterReply(env, rawEvent, intent, autoReplyEnabled, kenjiEnabled, historyMetadata);
-    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event: rawEvent }).catch(() => ({
+    const historyAssessmentPromise = duplicatePricingEvent
+      ? Promise.resolve({ skipped: true, reason: pricingMatrixSkipReason })
+      : runKenjiFolderHistoryAssessment({ env, event: rawEvent }).catch(() => ({
       enabled: false,
       eligible: false,
       persisted: false,
@@ -3245,8 +3381,22 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       handoff_required: replyDecision.handoff_required === true || ownerReplyBlocked,
       handoff_reason: asString(replyDecision.handoff_reason || (ownerReplyBlocked ? ownerTakeover.reason : "")),
     };
-    const matrixWritePromise = lineBrainEnabled
-      ? writeKenjiLineMatrixTurn({
+    const matrixWritePromise = pricingMatrixSkipReason
+      ? Promise.resolve({ skipped: true, reason: pricingMatrixSkipReason })
+      : pricingHandoffWrite
+        ? pricingHandoffWrite.id && replyResult?.ok !== true
+        ? writeKenjiLineMatrixTurn({
+            env,
+            continuity,
+            decision: matrixDecision,
+            delivered: false,
+            attempted: true,
+            lastEventId: getLineEventId(rawEvent),
+            now: new Date().toISOString(),
+          }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
+          : Promise.resolve(pricingHandoffWrite)
+        : lineBrainEnabled
+          ? writeKenjiLineMatrixTurn({
           env,
           continuity,
           decision: matrixDecision,
@@ -3254,8 +3404,8 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
           attempted: shouldReply,
           lastEventId: getLineEventId(rawEvent),
           now: new Date().toISOString(),
-        }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
-      : Promise.resolve({ skipped: true, reason: "line_brain_v1_disabled" });
+          }).catch(() => ({ skipped: true, reason: "matrix_write_failed" }))
+          : Promise.resolve({ skipped: true, reason: "line_brain_v1_disabled" });
 
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = campaignEvent ? await afterReply : { pending: canDefer, deduped: false };
@@ -3265,7 +3415,13 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
       persisted: false,
       reason: canDefer ? "assessment_pending" : "assessment_not_run",
     };
-    let matrixWriteResult = { pending: canDefer, skipped: false, reason: canDefer ? "matrix_write_pending" : "" };
+    let matrixWriteResult = pricingMatrixSkipReason
+      ? { skipped: true, reason: pricingMatrixSkipReason }
+      : pricingHandoffWrite
+      ? pricingHandoffWrite.id && replyResult?.ok !== true && canDefer
+        ? { pending: true, skipped: false, reason: "matrix_write_pending" }
+        : pricingHandoffWrite
+      : { pending: canDefer, skipped: false, reason: canDefer ? "matrix_write_pending" : "" };
     if (canDefer) {
       const backgroundWork = Promise.all([
         ...(campaignEvent ? [] : [afterReply.catch(() => {
