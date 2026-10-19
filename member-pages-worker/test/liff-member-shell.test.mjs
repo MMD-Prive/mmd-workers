@@ -1251,3 +1251,11 @@ test("boot overlay follows confirmed loading state and retains failure recovery"
  run({overallPending:0,overallPercent:0,overallError:true});assert.equal(retry.hidden,false);assert.equal(bar.hidden,true);
  run({overallPending:0,overallPercent:0,overallError:false,reset:true});assert.match(boot.textContent,/0%/);
 });
+
+test("signed-out profile miss cannot invalidate concurrent public signup catalog",async()=>{
+ const catalog=deferredProgress(),profileRead=deferredProgress();
+ const p=createCustomerProgress({render(){},request:url=>url.endsWith('/catalog')?catalog.promise:profileRead.promise});
+ const a=p.fetch('/member/api/liff/public-membership/catalog');const b=p.fetch('/member/api/liff/profile');
+ profileRead.resolve(new Response('{}',{status:401}));await b;p.reset({memberOnly:true});
+ catalog.resolve(new Response('{"ok":true,"items":[]}'));assert.equal((await a).status,200);
+});
