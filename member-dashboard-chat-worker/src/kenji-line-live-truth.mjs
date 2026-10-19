@@ -225,7 +225,20 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     };
   }
 
-  return null;
+  // A missing Client link is not permission to bypass the canonical result and
+  // fall through to legacy status copy (or infer identity from a typed name).
+  return {
+    text: "ตอนนี้ยังอ่านสิทธิ์สมาชิกจากบัญชี LINE นี้ไม่สำเร็จครับ จึงยังไม่ยืนยันระดับหรือวันหมดอายุ เปิด MY MMD เพื่อเชื่อมบัญชีเดิมได้ครับ หากเชื่อมไว้แล้วให้เปอร์ตรวจการผูกบัญชีต่อ ไม่ต้องสมัครหรือชำระใหม่ครับ",
+    reply_source: "live_truth_unavailable",
+    guard_blocked: false,
+    guard_reason: "live_truth_unavailable",
+    handoff_required: true,
+    handoff_reason: `${value}:live_truth_unavailable`,
+    truth_authority: AUTHORITY,
+    truth_status: "unavailable",
+    live_truth_used: false,
+    live_truth_verified: false,
+  };
 }
 
 export const KENJI_LIVE_TRUTH_AUTHORITY = AUTHORITY;

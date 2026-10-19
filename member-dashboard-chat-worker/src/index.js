@@ -508,6 +508,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:เข้าเพจ|เปิดเพจ|เปิดหน้า|เข้า\s*page|open\s*page).{0,20}(?:คูปอง|coupon)|(?:wish|คำอวยพร).{0,20}(?:10(?:\s*%)?|คูปอง|coupon).{0,12}(?:ได้เลย|ได้ไหม|หรือยัง|เปิด)/i.test(normalized)) return "care_back_coupon_wish";
   if (/(?:\d[\d,\s]*\s*(?:บาท|thb).{0,16}(?:กี่แต้ม|กี่คะแนน|กี่\s*points?)|(?:กี่แต้ม|กี่คะแนน).{0,16}\d[\d,\s]*\s*(?:บาท|thb))/i.test(normalized)) return "care_back_historical_points";
   if (/^(?:ผม|ฉัน|หนู|เรา)?\s*(?:จ่าย|ชำระ|โอน)(?:เงิน)?\s*(?:แล้ว|เรียบร้อยแล้ว)(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "payment_status";
+  if (/^(?:อยากทราบ|ขอทราบ|ตรวจสอบ)\s*สถานะสมาชิก(?:ของ(?:ผม|ฉัน|หนู))?(?:ตอนนี้)?\s*(?:พิมพ์\s*(?:เช็ก|เช็ค)สิทธิ์)?\s*(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:(?:ขอ)?\s*)?(?:เช็ก|เช็ค|ตรวจ(?:สอบ)?|ดู)\s*(?:(?:สถานะ)?\s*)?สิทธิ์(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู|เรา))?(?:ตอนนี้)?\s*(?:ครับ|ค่ะ|หน่อย)?$/i.test(normalized)) return "membership_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";

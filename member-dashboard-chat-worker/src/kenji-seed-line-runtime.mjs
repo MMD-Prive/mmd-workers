@@ -249,8 +249,27 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
       ? text(event?.postback?.displayText || event?.postback?.data)
       : "";
   const inferredIntent = refineKenjiSalesIntent(raw, text(options.currentIntent || inferLineIntent(raw, event)));
-  const intent = salesCardKey(inferredIntent) ? inferredIntent : text(options?.continuity?.effective_intent || inferredIntent);
+  // Carry context only for an unclassified turn, never overwrite a new command.
+  const intent = ["note_only", "line_event"].includes(inferredIntent)
+    ? text(options?.continuity?.effective_intent || inferredIntent) : inferredIntent;
   const continuityMeta = continuityMetadata(options, inferredIntent);
+  const followup = /^(?:ผม\s*)?(?:ขอ)?ถามเพิ่ม(?:ก่อน)?(?:ได้ไหม|ได้มั้ย)/i.test(raw.replace(/\s+/g, ""));
+  const privateDetail = /(?:เป็น\s*(?:gay|เกย์)|รสนิยมทางเพศ)/i.test(raw);
+  const profileCue = /^(?:profile\s+|โปรไฟล์\s*)/i.test(raw);
+  if (["note_only", "line_event"].includes(inferredIntent) && (followup || privateDetail || profileCue)) {
+    return withDecisionMetadata({}, {
+      ...continuityMeta,
+      intent: privateDetail || profileCue ? "human_handoff" : "note_only",
+      text: privateDetail
+        ? "เรื่องรสนิยมทางเพศเป็นข้อมูลส่วนตัวครับ ผมไม่เดาหรือยืนยันแทนเจ้าตัว ถ้าต้องการทราบลักษณะการรับงาน ให้เปอร์ตรวจเฉพาะข้อมูลที่เจ้าตัวยินยอมเปิดเผยครับ ยังไม่ยืนยันบริการหรือคิวครับ"
+        : profileCue
+          ? "ได้รับชื่อโปรไฟล์ที่ส่งมาแล้วครับ ต้องการสอบถามโปรไฟล์นี้ด้านไหนครับ ชื่อที่พิมพ์มาไม่ใช้ยืนยันบัญชีหรือสิทธิ์สมาชิก หากต้องการตรวจสิทธิ์ ให้พิมพ์ เช็กสิทธิ์ เพื่ออ่านจากบัญชี LINE ที่ผูกไว้ครับ"
+          : "ถามเพิ่มได้เลยครับ อยากทราบเรื่องไหนเกี่ยวกับคนที่คุยกันอยู่ หากเป็นข้อมูลส่วนตัวหรือเงื่อนไขรับงาน ต้องให้เปอร์ตรวจข้อมูลที่เปิดเผยได้ก่อนครับ",
+      reply_source: "bounded_followup",
+      handoff_required: privateDetail || profileCue,
+      handoff_reason: privateDetail || profileCue ? "model_detail:per_review" : "",
+    });
+  }
   // Campaign copy must never reach the retired deterministic CARE BACK answers.
   // Noncampaign topics retain the existing seed, live-truth and handoff paths.
   const salesReply = await resolveKenjiSalesReply(event, env, { ...options, intent });
