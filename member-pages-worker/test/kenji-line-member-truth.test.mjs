@@ -145,7 +145,7 @@ function healthEnv(responseFactory = null) {
   };
 }
 
-for (const mode of ["verified", "unavailable", "foreign_ledger", "foreign_payment", "unverified_payment", "pending_recovery"]) {
+for (const mode of ["verified", "historical", "historical_foreign", "unavailable", "foreign_ledger", "foreign_payment", "unverified_payment", "pending_recovery"]) {
   test(`explicit Points uses LIFF ledger reader: ${mode}, never stale profile balance`, async () => {
     const reads = [];
     const env = {
@@ -161,6 +161,9 @@ for (const mode of ["verified", "unavailable", "foreign_ledger", "foreign_paymen
         reads.push(url);
         if (mode === "unavailable") return Response.json({ error: "fixture" }, { status: 503 });
         const table = url.pathname.split("/").at(-1);
+        if (table === "tblVv58TCbwh5j1fS") return Response.json({records:[{
+          id:"recFixtureClient",fields:{line_user_id:LINE_USER_ID},
+        }]});
         if (table === "tblgWc5VRon5o8Mhk") {
           assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
           return Response.json({ records: [{ fields: { member_id: "member-test", email: "private@example.test" } }] });
@@ -168,11 +171,17 @@ for (const mode of ["verified", "unavailable", "foreign_ledger", "foreign_paymen
         if (table === "tbl5dfnwjUFMLbnWL") {
           assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
           return Response.json({ records: [{ id: "fixture-ledger", fields: {
-            member_id: mode === "foreign_ledger" ? "other-member" : "member-test",
+            member_id: ["foreign_ledger","historical_foreign"].includes(mode) ? "other-member" : "member-test",
             transaction_status: "posted", points: 42, eligible_amount_thb: 4200,
             payment_ref: "fixture-payment", session_id: "fixture-session", posted_at: new Date().toISOString(),
+            ...(mode.startsWith("historical") ? {
+              source:"line_ofc_history",created_by:"member_history_recovery_v2_note_first",
+              rate_policy:"historical_lifetime_total_100_thb_1_point_v2",
+              idempotency_key:"historical_note_total_v2:recFixtureClient",
+            } : {}),
           } }] });
         }
+        assert.equal(mode.startsWith("historical"),false,"historical awards must not request payment evidence");
         assert.equal(table, "tblWGGJJOx5eBvBZJ");
         return Response.json({ records: [{ fields: {
           member_id: mode === "foreign_payment" ? "other-member" : "member-test",
@@ -185,8 +194,9 @@ for (const mode of ["verified", "unavailable", "foreign_ledger", "foreign_paymen
     const response = await handleKenjiLineMemberTruth(request({}, { line_user_id: LINE_USER_ID, intent: "points_status" }), env);
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.points.status, mode === "verified" ? "verified" : "unavailable");
-    assert.equal(payload.points.active_points, mode === "verified" ? 42 : null);
+    const accepted=["verified","historical"].includes(mode);
+    assert.equal(payload.points.status, accepted ? "verified" : "unavailable");
+    assert.equal(payload.points.active_points, accepted ? 42 : null);
     assert.notEqual(payload.points.active_points, 88);
     if (mode === "pending_recovery") assert.equal(reads.length, 0);
     for (const secret of [LINE_USER_ID, "private@example.test", "fixture-ledger", "fixture-payment", "fixture-session"]) {
