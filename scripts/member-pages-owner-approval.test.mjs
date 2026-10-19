@@ -95,3 +95,75 @@ test('workflow preflight is explicitly non-executing; release retains strict def
  assert.doesNotMatch(release,/preflight:\s*true/);
  assert.equal((release.match(/await io.approve\(\)/g)||[]).length,3);
 });
+
+const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
+const workflowJobs=new Map([...workflow.split('\njobs:\n')[1].matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:\n|$(?![\s\S]))/gm)].map(([,id,body])=>[id,body]));
+const jobCondition=id=>new Function('github','inputs',`return ${workflowJobs.get(id).match(/^    if: (.+)$/m)[1]};`);
+const dispatch={event_name:'workflow_dispatch',ref:'refs/heads/main',sha};
+const authorized={production_approved:true,approval_ref:'fixture',approved_sha:sha,execution_mode:'approval_boundary_only',expected_version:'fixture-version',expected_deployment:'fixture-deployment'};
+
+test('approval-only is the explicit safe default; missing or invalid modes never release',()=>{
+ assert.match(workflow,/execution_mode:[\s\S]*?type: choice\s+required: true\s+default: approval_boundary_only/);
+ assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release']);
+ for(const execution_mode of [undefined,'','invalid',true,false]) {
+   for(const id of workflowJobs.keys()) assert.equal(jobCondition(id)(dispatch,{...authorized,execution_mode}),false);
+ }
+});
+
+test('approval-only and release are mutually exclusive even with all release inputs present',()=>{
+ for(const execution_mode of ['approval_boundary_only','release']) {
+   const inputs={...authorized,execution_mode};
+   assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
+   assert.equal(jobCondition('approval-boundary-only')(dispatch,inputs),execution_mode==='approval_boundary_only');
+   assert.equal(jobCondition('release')(dispatch,inputs),execution_mode==='release');
+ }
+});
+
+test('every job rejects automatic events, wrong branch, SHA drift and missing owner authorization',()=>{
+ for(const id of workflowJobs.keys()) {
+   const evaluate=jobCondition(id);
+   for(const event_name of ['push','pull_request','workflow_run','schedule']) assert.equal(evaluate({...dispatch,event_name},authorized),false);
+   for(const ref of ['refs/heads/dev','refs/tags/main']) assert.equal(evaluate({...dispatch,ref},authorized),false);
+   for(const overrides of [{production_approved:false},{approved_sha:'b'.repeat(40)},{approval_ref:''}]) assert.equal(evaluate(dispatch,{...authorized,...overrides}),false);
+ }
+});
+
+test('approval-only needs no baseline; release still requires both baseline identifiers',()=>{
+ const inputs={...authorized,expected_version:'',expected_deployment:''};
+ assert.equal(jobCondition('approval-boundary-only')(dispatch,inputs),true);
+ for(const key of ['expected_version','expected_deployment']) assert.equal(jobCondition('release')(dispatch,{...authorized,execution_mode:'release',[key]:''}),false);
+});
+
+test('approval-only waits for preflight and actual environment approval, never uses preflight authorization',()=>{
+ const job=workflowJobs.get('approval-boundary-only');
+ assert.match(job,/needs: \[production-approval\]/);
+ assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.match(job,/permissions:\s+contents: read\s+actions: read/);
+ assert.match(job,/ref: \$\{\{ github.sha \}\}\s+persist-credentials: false/);
+ assert.match(job,/run: node scripts\/member-pages-owner-approval.mjs\s*$/);
+ assert.doesNotMatch(job,/--preflight/);
+});
+
+test('approval-only execution surface has no write credential, release command, or extra action',()=>{
+ const job=workflowJobs.get('approval-boundary-only');
+ assert.doesNotMatch(job,/secrets\.|secrets:|: write|id-token|CLOUDFLARE|AIRTABLE|wrangler|npm |curl |--execute-approved|SOURCE_DIRECTORY|release-source|environment: mmd-production-mutation/i);
+ assert.deepEqual([...job.matchAll(/uses: (.+)/g)].map(match=>match[1]),['actions/checkout@v5','actions/setup-node@v5']);
+ assert.deepEqual([...job.matchAll(/^\s+run: (.+)$/gm)].map(match=>match[1]),['node scripts/member-pages-owner-approval.mjs']);
+ assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
+ const header=workflow.split('\njobs:')[0];
+ assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,1);
+ assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
+});
+
+test('test concurrency cannot block or bypass the production release queue',()=>{
+ assert.match(workflow,/group: \$\{\{ inputs.execution_mode == 'approval_boundary_only' && 'member-pages-approval-boundary-test' \|\| 'deploy-member-pages-worker-production' \}\}/);
+ assert.match(workflow,/cancel-in-progress: false/);
+});
+
+test('Node 18/20/22 CI runs owner and release mocks without production credentials',()=>{
+ const ci=readFileSync(new URL('../.github/workflows/node.js.yml',import.meta.url),'utf8');
+ assert.match(ci,/node-version: \[18.x, 20.x, 22.x\]/);
+ assert.match(ci,/run: node --experimental-global-webcrypto --test scripts\/member-pages-owner-approval.test.mjs scripts\/member-pages-code-only-release.test.mjs/);
+ assert.doesNotMatch(ci,/secrets\.|environment: member-pages-code-only-owner|--execute-approved/);
+});

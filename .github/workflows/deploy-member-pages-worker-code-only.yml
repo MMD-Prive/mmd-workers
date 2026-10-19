@@ -3,8 +3,16 @@ name: Release member-pages-worker code only
 on:
   workflow_dispatch:
     inputs:
+      execution_mode:
+        description: 'Approval-only proof performs no Worker release; release requires separate production approval'
+        type: choice
+        required: true
+        default: approval_boundary_only
+        options:
+          - approval_boundary_only
+          - release
       production_approved:
-        description: 'Owner approval for this exact code-only release'
+        description: 'Owner authorization for the selected mode and exact SHA; not an environment approval receipt'
         type: boolean
         required: true
         default: false
@@ -19,23 +27,23 @@ on:
       expected_version:
         description: 'Active member-pages-worker version UUID from fresh approved preflight'
         type: string
-        required: true
+        required: false
       expected_deployment:
         description: 'Active deployment UUID from fresh approved preflight'
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: deploy-member-pages-worker-production
+  group: ${{ inputs.execution_mode == 'approval_boundary_only' && 'member-pages-approval-boundary-test' || 'deploy-member-pages-worker-production' }}
   cancel-in-progress: false
 
 jobs:
   production-approval:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && (inputs.execution_mode == 'approval_boundary_only' || inputs.execution_mode == 'release')
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -56,8 +64,33 @@ jobs:
           APPROVED_SHA: ${{ inputs.approved_sha }}
         run: node scripts/member-pages-owner-approval.mjs --preflight
 
+  approval-boundary-only:
+    # This job can create GitHub environment approval history, never a Worker release.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.execution_mode == 'approval_boundary_only'
+    needs: [production-approval]
+    environment: member-pages-code-only-owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify actual current-run owner approval without release credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: node scripts/member-pages-owner-approval.mjs
+
   release:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.execution_mode == 'release' && inputs.expected_version != '' && inputs.expected_deployment != ''
     needs: [production-approval]
     environment: member-pages-code-only-owner
     runs-on: ubuntu-latest
