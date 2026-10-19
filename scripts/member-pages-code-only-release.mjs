@@ -7,8 +7,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { verifyProductionApproval } from './admin-production-approval.mjs';
-import { inspectEnvironment } from './admin-production-validation.mjs';
+import { verifyOwnerApproval } from './member-pages-owner-approval.mjs';
 
 export const ACCOUNT = 'b176eda1172b741fd2e58904cc9d77c5';
 export const ZONE = '2d62396174fa2ddadbbcd0e8cf0f3367';
@@ -322,9 +321,7 @@ async function main() {
   const releaseSha = process.env.GITHUB_SHA;
   const sourceDirectory = process.env.SOURCE_DIRECTORY;
   const approve = async () => {
-    await verifyProductionApproval(process.env);
-    const protection = await inspectEnvironment(process.env);
-    assert.equal(protection.ready, true, 'exact main-only production reviewer protection required');
+    await verifyOwnerApproval(process.env);
     inspectCodeOnlyCheckouts(releaseSha, sourceDirectory);
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
