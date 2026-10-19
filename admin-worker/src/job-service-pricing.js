@@ -32,7 +32,7 @@ export function validateJobServicePricing(body) {
   if (!p || p.version !== 1 || p.currency !== "THB" || !["direct", "platform"].includes(p.settlement_mode)
     || (!partnerManaged && p.settlement_mode !== body?.private_access?.settlement_mode) || !Array.isArray(p.addons)
     || p.addons.length > OPTIONS.length || !money(p.client_base_amount_thb) || p.client_base_amount_thb <= 0) fail();
-  if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
+  if (!money(travelFee) || !money(modelTravelFee) || !sameMoney(travelFee, body.travel_fee_thb ?? travelFee) || !sameMoney(modelTravelFee, body.model_travel_fee_thb ?? modelTravelFee)) fail();\n  if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
   if ((partnerManaged || p.settlement_mode === "platform") && [body.pay_model_thb, body.model_payout_thb,
     body?.model_payout?.amount_thb, body?.payment?.model_payout_thb].some(value => value !== undefined)) fail();
   const requested = body?.work?.service_options ?? [];
@@ -68,7 +68,7 @@ export function validateJobServicePricing(body) {
   if (discount && !needsModel && discount.model_share_thb > 0) fail();
   const modelGross = needsModel ? total(p.model_base_payout_thb, p.addons, "model_payout_thb") : null;
   if (discount && needsModel && p.model_gross_payout_thb !== modelGross) fail();
-  const modelTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;
+  const modelServiceTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;\n  const modelTotal = needsModel ? round2(modelServiceTotal + modelTravelFee) : null;
   if ((needsModel && !money(modelTotal)) || p.model_total_payout_thb !== modelTotal
     || (!needsModel && p.model_base_payout_thb !== null)) fail();
   if (!partnerManaged && p.settlement_mode === "direct") {
@@ -82,7 +82,7 @@ export function validateJobServicePricing(body) {
     client_base_amount_thb: p.client_base_amount_thb, model_base_payout_thb: p.model_base_payout_thb,
     addons: OPTIONS.flatMap(option => p.addons.filter(a => a.option === option).map(a => ({ option,
       client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb }))),
-    client_total_amount_thb: clientTotal, model_total_payout_thb: modelTotal,
+    client_total_amount_thb: clientTotal, travel_fee_thb: travelFee, model_travel_fee_thb: modelTravelFee, model_total_payout_thb: modelTotal,
     ...(discount ? { client_gross_amount_thb: clientGross, model_gross_payout_thb: modelGross, discount } : {}) };
   // Reject an oversized machine envelope before grants or creation writes.
   withJobServicePricingNote(preservePartnerSnapshot(note, body), snapshot);
