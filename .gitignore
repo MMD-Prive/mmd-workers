@@ -13,3 +13,6 @@ apps/**/.next/
 
 # Local Netlify folder
 .netlify
+
+# Local release receipts (not source)
+.deploy-receipts/

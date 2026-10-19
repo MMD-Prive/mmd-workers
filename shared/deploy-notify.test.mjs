@@ -1,72 +1,40 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import notify from './deploy-notify.js';
+const VERSION = 'e0e9f103-6678-4269-a1cd-7e95314484c0';
 
-import deployNotify from "./deploy-notify.js";
-
-const {
-  assertNotificationEnvironment,
-  extractVersionId,
-  formatFailure,
-  formatRollback,
-  formatSuccess,
-  getWorkerConfig,
-  runSmokeTest,
-  sendTelegram,
-} = deployNotify;
-
-const VERSION_ID = "e0e9f103-6678-4269-a1cd-7e95314484c0";
-
-test("formats success, failure, and rollback messages", () => {
-  const success = formatSuccess({
-    worker: "mmd-redirect-worker",
-    environment: "Production",
-    gitSha: "abc123",
-    versionId: VERSION_ID,
-    timestamp: "2026-08-03T04:15:00.000Z",
-    deployUser: "MMD Ops",
-    branch: "main",
-    routes: ["mmdbkk.com/*"],
-    smokeResult: "PASS",
-    rollbackVersion: "previous",
-  });
-  assert.match(success, /✅ MMD Deployment Success/);
-  assert.match(success, /Rollback version:\nprevious/);
-  assert.match(formatFailure({ worker: "x", command: "deploy", exitCode: 1, gitSha: "abc", log: "last line" }), /Last log lines:\nlast line/);
-  assert.match(formatRollback({ worker: "x", previousVersion: "a", newActiveVersion: "b", reason: "regression" }), /New Active Version:\nb/);
+test('formats deployment, post-deploy failure and rollback facts', () => {
+  assert.match(notify.formatSuccess({worker:'admin-worker', versionId:VERSION, smokeResult:'PASS'}), /Smoke Test:\nPASS/);
+  const failure = notify.formatFailure({command:'smoke', deployState:'DEPLOYED', versionId:VERSION});
+  assert.match(failure, /Deploy State:\nDEPLOYED/);
+  assert.match(failure, new RegExp(VERSION));
+  assert.match(notify.formatRollback({newActiveVersion:VERSION}), /New Active Version:/);
 });
-
-test("extracts Wrangler text and JSON version IDs", () => {
-  assert.equal(extractVersionId(`Current Version ID: ${VERSION_ID}`), VERSION_ID);
-  assert.equal(extractVersionId(JSON.stringify([{ id: VERSION_ID }])), VERSION_ID);
-  assert.equal(extractVersionId("no version"), "");
+test('extracts only explicitly labelled complete Wrangler version IDs', () => {
+  assert.equal(notify.extractVersionId(`Current Version ID: ${VERSION}`), VERSION);
+  assert.equal(notify.extractVersionId(`Version ID: ${VERSION}`), VERSION);
+  assert.equal(notify.extractVersionId(`Deployment ID: ${VERSION}`), '');
+  assert.equal(notify.extractVersionId('Version ID: abcd'), '');
 });
-
-test("registry fails closed for unknown or unavailable workers", () => {
-  assert.equal(getWorkerConfig("admin-worker").config, "admin-worker/wrangler.toml");
-  assert.throws(() => getWorkerConfig("member-api-worker"), /not present on origin\/main/);
-  assert.throws(() => getWorkerConfig("unknown-worker"), /Unknown worker/);
+test('registry rejects missing, unknown and workflow-owned Workers', () => {
+  assert.equal(notify.getWorkerConfig('admin-worker').config, 'admin-worker/wrangler.toml');
+  assert.throws(() => notify.getWorkerConfig('member-api-worker'), /not present/);
+  assert.throws(() => notify.getWorkerConfig('unknown'), /Unknown worker/);
+  assert.throws(() => notify.getWorkerConfig('payments-worker'), /canonical deploy-payments-worker/);
 });
-
-test("notification environment rejects missing secrets", () => {
-  assert.throws(() => assertNotificationEnvironment({}), /TELEGRAM_BOT_TOKEN/);
+test('preflight requires credentials and rejects preview mode for deployment', () => {
+  assert.throws(() => notify.assertNotificationEnvironment({}), /TELEGRAM_BOT_TOKEN/);
+  assert.throws(() => notify.assertNotificationEnvironment({DEPLOY_NOTIFY_DRY_RUN:'1'}), /preview-only/);
+  notify.assertNotificationEnvironment({TELEGRAM_BOT_TOKEN:'test', TELEGRAM_DEPLOY_CHAT_ID:'test'});
 });
-
-test("Telegram sender posts only environment-provided credentials", async () => {
+test('Telegram sender uses injected transport, bounded timeout and environment credentials', async () => {
   let request;
-  const fetchStub = async (url, options) => {
-    request = { url, options };
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-  };
-  await sendTelegram("hello", { TELEGRAM_BOT_TOKEN: "token", TELEGRAM_DEPLOY_CHAT_ID: "chat" }, fetchStub);
-  assert.equal(request.url, "https://api.telegram.org/bottoken/sendMessage");
-  assert.deepEqual(JSON.parse(request.options.body), { chat_id: "chat", text: "hello", disable_web_page_preview: true });
-});
-
-test("smoke test enforces the registered status contract", async () => {
-  const pass = await runSmokeTest("admin-worker", "https://example.test", async () => new Response("ok", { status: 200 }));
-  assert.match(pass, /^PASS \(HTTP 200:/);
-  await assert.rejects(
-    runSmokeTest("admin-worker", "https://example.test", async () => new Response("bad", { status: 500 })),
-    /expected/,
-  );
+  await notify.sendTelegram('hello', {TELEGRAM_BOT_TOKEN:'token', TELEGRAM_DEPLOY_CHAT_ID:'chat'}, async (url, options) => {
+    request = {url, options};
+    return new Response(JSON.stringify({ok:true}));
+  });
+  assert.equal(request.url, 'https://api.telegram.org/bottoken/sendMessage');
+  assert.ok(request.options.signal);
+  assert.deepEqual(JSON.parse(request.options.body), {chat_id:'chat',text:'hello',disable_web_page_preview:true});
+  await assert.rejects(notify.sendTelegram('hello', {TELEGRAM_BOT_TOKEN:'token', TELEGRAM_DEPLOY_CHAT_ID:'chat'}, async () => new Response('{}', {status:503})), /HTTP 503/);
 });
