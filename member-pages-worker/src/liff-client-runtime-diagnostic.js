@@ -39,6 +39,25 @@ export async function handleLiffClientDiagnostic(request, env = {}) {
   }
 
   if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+  // Opt-in redirect probes never read cookies or persist client identifiers.
+  if (request.headers.get("content-type")?.startsWith("application/json")) {
+    const empty = () => new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+    if (request.headers.get("origin") !== url.origin || url.search) return empty();
+    try {
+      const input = await request.json();
+      if (!input || Object.keys(input).sort().join(",") !== "hostname,pathname") return empty();
+      if (!["mmdbkk.com", "www.mmdbkk.com"].includes(input.hostname)
+        || !["/member/liff", "/member/liff/"].includes(input.pathname)) return empty();
+      await env?.LIFF_IDENTITY_KV?.put?.(
+        `liff_redirect_probe:${Date.now()}:${crypto.randomUUID()}`,
+        JSON.stringify({ hostname: input.hostname, pathname: input.pathname }),
+        { expirationTtl: 3600 },
+      );
+    } catch {
+      // Diagnostics must not affect login or log rejected input.
+    }
+    return empty();
+  }
   const boundaryId = boundaryFromCookie(request.headers.get("cookie"));
   if (!boundaryId) return new Response(null, { status: 204 });
 
@@ -101,8 +120,25 @@ function boundaryFromCookie(header) {
 const CLIENT_SCRIPT = String.raw`(() => {
   "use strict";
   const endpoint = "/member/api/liff/client-diag";
+  const redirectProbe = new URL(window.location.href).searchParams.get("mmd_redirect_diag") === "1";
+  const emitRedirect = (redirectUri) => {
+    if (!redirectProbe || typeof redirectUri !== "string") return;
+    try {
+      const url = new URL(redirectUri);
+      if (url.protocol !== "https:" || url.username || url.password || url.port
+        || !["mmdbkk.com", "www.mmdbkk.com"].includes(url.hostname)
+        || !["/member/liff", "/member/liff/"].includes(url.pathname)) return;
+      fetch(endpoint, {
+        method: "POST", credentials: "omit", referrerPolicy: "no-referrer",
+        cache: "no-store", keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hostname: url.hostname, pathname: url.pathname }),
+      }).catch(() => {});
+    } catch {}
+  };
   const sent = new Set();
   const emit = (stage) => {
+    if (redirectProbe) return;
     if (sent.has(stage)) return;
     sent.add(stage);
     try {
@@ -155,6 +191,7 @@ const CLIENT_SCRIPT = String.raw`(() => {
     if (typeof liff.login === "function") {
       const original = liff.login.bind(liff);
       liff.login = (...args) => {
+        emitRedirect(args[0]?.redirectUri);
         emit("liff_login_called");
         return original(...args);
       };
