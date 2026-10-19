@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { handleOwnerLinePage, installOwnerLineUnlock, lineUnlockReady, ownerLinePanel } from './src/kenji-owner-line-unlock.js';
+import { runInThisContext } from 'node:vm';
+import { handleOwnerLinePage, OWNER_LINE_CLIENT, lineUnlockReady, ownerLinePanel } from './src/kenji-owner-line-unlock.js';
+const installOwnerLineUnlock = runInThisContext(`(${OWNER_LINE_CLIENT})`);
 
 const initial = () => ({ line_oa_auto_reply: { enabled: true, version: 6 },
   model_keyword_auto_reply: { enabled: true, version: 3 }, all_kenji_mutations: { enabled: false, version: 0 } });
