@@ -13,6 +13,32 @@ const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const TEST_KEY = "x".repeat(40);
 const SYNTHETIC_LINE_USER_ID = `U${"0".repeat(32)}`;
 
+for (const [label, value] of [
+  ["null", null], ["missing", undefined], ["blank", ""],
+  ["whitespace", " "], ["false", false], ["true", true],
+  ["numeric string", "88"], ["array", []], ["numeric array", [88]],
+  ["object", {}], ["negative", -1], ["fraction", 1.5],
+  ["NaN", NaN], ["infinity", Infinity], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+]) {
+  test(`Points projection rejects ${label} without inventing a balance`, () => {
+    const result = projectKenjiLineMemberTruth({
+      profile: { customer_360: { points: { status: "verified", active_points: value } } },
+      snapshot: verifiedSnapshot(),
+    });
+    assert.deepEqual(result.points, { status: "unavailable", active_points: null });
+  });
+}
+
+for (const value of [0, 88, Number.MAX_SAFE_INTEGER]) {
+  test(`Points projection preserves proven numeric balance ${value}`, () => {
+    const result = projectKenjiLineMemberTruth({
+      profile: { customer_360: { points: { status: "verified", active_points: value } } },
+      snapshot: verifiedSnapshot(),
+    });
+    assert.deepEqual(result.points, { status: "verified", active_points: value });
+  });
+}
+
 function request(headers = {}, body = { line_user_id: LINE_USER_ID }) {
   return new Request("https://member-pages-worker.internal/__internal/kenji/member-truth", {
     method: "POST",
@@ -117,6 +143,56 @@ function healthEnv(responseFactory = null) {
       },
     },
   };
+}
+
+for (const mode of ["verified", "unavailable", "foreign_ledger", "foreign_payment", "unverified_payment", "pending_recovery"]) {
+  test(`explicit Points uses LIFF ledger reader: ${mode}, never stale profile balance`, async () => {
+    const reads = [];
+    const env = {
+      ...envWith(),
+      AIRTABLE_API_KEY: "fixture-only", AIRTABLE_BASE_ID: "fixture-base",
+      LIFF_IDENTITY_KV: {
+        async get() { return { state: mode === "pending_recovery" ? "review_required" : "reconciled" }; },
+        async put() { assert.fail("no KV writes allowed"); },
+      },
+      AIRTABLE_HTTP: { async fetch(req) {
+        assert.equal(req.method, "GET");
+        const url = new URL(req.url);
+        reads.push(url);
+        if (mode === "unavailable") return Response.json({ error: "fixture" }, { status: 503 });
+        const table = url.pathname.split("/").at(-1);
+        if (table === "tblgWc5VRon5o8Mhk") {
+          assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
+          return Response.json({ records: [{ fields: { member_id: "member-test", email: "private@example.test" } }] });
+        }
+        if (table === "tbl5dfnwjUFMLbnWL") {
+          assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
+          return Response.json({ records: [{ id: "fixture-ledger", fields: {
+            member_id: mode === "foreign_ledger" ? "other-member" : "member-test",
+            transaction_status: "posted", points: 42, eligible_amount_thb: 4200,
+            payment_ref: "fixture-payment", session_id: "fixture-session", posted_at: new Date().toISOString(),
+          } }] });
+        }
+        assert.equal(table, "tblWGGJJOx5eBvBZJ");
+        return Response.json({ records: [{ fields: {
+          member_id: mode === "foreign_payment" ? "other-member" : "member-test",
+          "Payment Reference": "fixture-payment", "Payment Status": "paid",
+          "Verification Status": mode === "unverified_payment" ? "pending" : "verified",
+          Amount: 4200, session_id: "fixture-session",
+        } }] });
+      } },
+    };
+    const response = await handleKenjiLineMemberTruth(request({}, { line_user_id: LINE_USER_ID, intent: "points_status" }), env);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.points.status, mode === "verified" ? "verified" : "unavailable");
+    assert.equal(payload.points.active_points, mode === "verified" ? 42 : null);
+    assert.notEqual(payload.points.active_points, 88);
+    if (mode === "pending_recovery") assert.equal(reads.length, 0);
+    for (const secret of [LINE_USER_ID, "private@example.test", "fixture-ledger", "fixture-payment", "fixture-session"]) {
+      assert.equal(JSON.stringify(payload).includes(secret), false);
+    }
+  });
 }
 
 test("returns a bounded verified SVIP truth projection without raw LINE identity", async () => {

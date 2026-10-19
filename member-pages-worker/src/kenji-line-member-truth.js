@@ -277,9 +277,11 @@ function projectFormerPrivateMembership(snapshot = {}) {
 function projectPoints(profile = {}) {
   const points = isPlainObject(profile?.customer_360?.points) ? profile.customer_360.points : null;
   if (points?.status !== "verified") return { status: "unavailable", active_points: null };
-  const value = Number(points.active_points);
-  return Number.isFinite(value) && value >= 0
-    ? { status: "verified", active_points: Math.floor(value) }
+  // Only a proven numeric balance is truth; null/blank/boolean must not
+  // become a verified zero through JavaScript coercion.
+  const value = points.active_points;
+  return Number.isSafeInteger(value) && value >= 0
+    ? { status: "verified", active_points: value }
     : { status: "unavailable", active_points: null };
 }
 
@@ -356,6 +358,14 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
   if (!projection) {
     if (ownerProjection) return json(ownerProjection);
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
+  }
+  if (intent === "points_status") {
+    // Use the same read-only, payment-source-guarded ledger as My MMD.
+    // A profile snapshot is never a fallback for an unavailable current read.
+    const context = await readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true });
+    projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance) && context.confirmedBalance >= 0
+      ? { status: "verified", active_points: context.confirmedBalance, authority: "canonical_paid_points_source_guard_v1" }
+      : { status: "unavailable", active_points: null };
   }
   if (intent === "rights_check") {
     const promotionMembership = projection.former_private_membership
