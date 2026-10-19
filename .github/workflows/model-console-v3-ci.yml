@@ -5,6 +5,7 @@ on:
     paths:
       - "webflow/sigil/model/model-console-*"
       - "webflow/sigil/model/console-atelier/**"
+      - "webflow/sigil/model/graphics-refresh.test.mjs"
       - "scripts/build-model-console-atelier-embed.mjs"
       - "scripts/preview-model-console-atelier.mjs"
       - ".github/workflows/model-console-v3-ci.yml"
@@ -16,6 +17,7 @@ on:
     paths:
       - "webflow/sigil/model/model-console-*"
       - "webflow/sigil/model/console-atelier/**"
+      - "webflow/sigil/model/graphics-refresh.test.mjs"
       - "scripts/build-model-console-atelier-embed.mjs"
       - "scripts/preview-model-console-atelier.mjs"
       - ".github/workflows/model-console-v3-ci.yml"
@@ -51,6 +53,7 @@ jobs:
       - name: Console presentation and existing safety regressions
         run: |
           node --test \
+            webflow/sigil/model/graphics-refresh.test.mjs \
             webflow/sigil/model/model-console-atelier-v3.test.mjs \
             webflow/sigil/model/model-console-state-presentation.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \

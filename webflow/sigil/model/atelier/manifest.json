@@ -6,22 +6,22 @@
     {
       "file": "current-job-etching.svg",
       "type": "image/svg+xml",
-      "bytes": 334,
-      "sha256": "1196d8d4f74787437e31d550d92e779a655a72a43e2d034f723c5c2fe53ed8b9",
+      "bytes": 372,
+      "sha256": "6ab819f17ef53aa2f71286b64b9fb27180c7f478001d97b6eb98d43d3f78226e",
       "usage": "Decorative Current Job corner accent, aria-hidden, opacity 0.12"
     },
     {
       "file": "no-current-job.svg",
       "type": "image/svg+xml",
-      "bytes": 231,
-      "sha256": "90e83cc5b137253f86aed15eeec1b8475c987666878e1607ea1a2834d36e9aab",
+      "bytes": 359,
+      "sha256": "7d440116e305f23e78b5a242412d4f814329cca13af0b8d778695497b7b3cdc9",
       "usage": "Only the exact confirmed empty-job projection, never loading/review/error"
     },
     {
       "file": "media-review-motif.svg",
       "type": "image/svg+xml",
-      "bytes": 261,
-      "sha256": "4562c6296428e834a651ec3162047fa1e15b4c7aa9e3f5a12dbaea4752e28779",
+      "bytes": 380,
+      "sha256": "de5df1a4a17b759edf14009aa566ab9cfed29648e2bd7dcb1f04880dd71001e3",
       "usage": "Only within expanded Media disclosure; does not imply approval"
     },
     {
