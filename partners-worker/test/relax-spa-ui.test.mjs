@@ -143,7 +143,8 @@ test('MY Partner retains token, hides Owner forms and only submits referrals', a
 test('Owner v3 agreement form makes room total explicit and has no inferred price or percentage fields', async t => {
   const f=await ui(t); f.q('[data-view="agreements"]').click();
   const form=f.q('form[data-command="agreements"]');
-  assert.match(f.q('#content').textContent,/ค่าห้องเท่านั้น/);
+  assert.match(f.q('#content').textContent,/อัตรานี้เป็นค่าห้อง\/คอร์สของร้าน/);
+  assert.match(form.querySelector('[name="room_amount"]').closest('label').textContent,/ค่าห้อง\/คอร์สรวมตามข้อตกลง/);
   assert.match(f.q('#content').textContent,/ไม่มีการตั้งอัตราหรือคูณตามชั่วโมง/);
   for(const name of ['room_type','room_amount','room_fixed_units','room_covered_minutes','room_unit_description','room_includes','room_rate_evidence_ref','partner_amount','mms_mode','mms_amount','payee_therapist','payee_spa','payee_partner','payee_mms']) assert.ok(form.querySelector('[name="'+name+'"]'),name);
   assert.equal(form.querySelector('[name="basis"]'),null);
