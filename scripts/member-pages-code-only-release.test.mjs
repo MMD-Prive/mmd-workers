@@ -456,7 +456,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   const source=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
   assert.match(source,/^  workflow_dispatch:/m);
   assert.doesNotMatch(source,/^  (push|pull_request|schedule|workflow_run):/m);
-  assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,2);
+  assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,3);
   assert.match(source,/needs: \[production-approval\][\s\S]*environment: member-pages-code-only-owner/);
   const preflight = source.slice(source.indexOf('  production-approval:'), source.indexOf('  release:'));
   assert.match(preflight, /permissions:\s+contents: read\s+actions: read/);
