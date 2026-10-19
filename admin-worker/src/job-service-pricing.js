@@ -86,7 +86,8 @@ export function validateJobServicePricing(body) {
     client_base_amount_thb: p.client_base_amount_thb, model_base_payout_thb: p.model_base_payout_thb,
     addons: OPTIONS.flatMap(option => p.addons.filter(a => a.option === option).map(a => ({ option,
       client_amount_thb: a.client_amount_thb, model_payout_thb: a.model_payout_thb }))),
-    client_total_amount_thb: clientTotal, travel_fee_thb: travelFee, model_travel_fee_thb: modelTravelFee, model_total_payout_thb: modelTotal,
+    client_total_amount_thb: clientTotal, ...(travelFee > 0 ? { travel_fee_thb: travelFee } : {}),
+    ...(modelTravelFee > 0 ? { model_travel_fee_thb: modelTravelFee } : {}), model_total_payout_thb: modelTotal,
     ...(discount ? { client_gross_amount_thb: clientGross, model_gross_payout_thb: modelGross, discount } : {}) };
   // Reject an oversized machine envelope before grants or creation writes.
   withJobServicePricingNote(preservePartnerSnapshot(note, body), snapshot);
