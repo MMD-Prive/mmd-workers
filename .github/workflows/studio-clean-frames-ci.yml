@@ -1,0 +1,26 @@
+name: Studio clean frame assets
+on:
+  pull_request:
+    paths:
+      - "webflow/internal/admin/studio/frames/**"
+      - "webflow/internal/admin/studio/studio-clean-frame*"
+      - "scripts/studio-clean-frame-preview.mjs"
+      - "scripts/build-studio-clean-frame-release.mjs"
+      - "webflow/internal/admin/studio/studio-compcard-template-selector.js"
+      - "admin-worker/studio-webflow-source.test.mjs"
+      - ".github/workflows/studio-clean-frames-ci.yml"
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --check webflow/internal/admin/studio/studio-clean-frame-renderer.js
+      - run: node --test webflow/internal/admin/studio/studio-clean-frame-renderer.test.mjs webflow/internal/admin/studio/studio-clean-frame-integration.test.mjs admin-worker/studio-webflow-source.test.mjs

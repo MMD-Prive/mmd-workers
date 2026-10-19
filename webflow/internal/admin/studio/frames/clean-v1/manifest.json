@@ -1,0 +1,175 @@
+{
+  "version": "studio-clean-frames-v1",
+  "hosting": {
+    "bucket": "mmd-models",
+    "prefix": "webflow/internal/admin/studio/frames/clean-v1",
+    "public_base": "https://models.mmdbkk.com/webflow/internal/admin/studio/frames/clean-v1"
+  },
+  "mapping_status": "independent_strip_only_visual_palette",
+  "assets": [
+    {
+      "number": 1,
+      "library_file_id": "libfile_7ccddc062278819192968f02db72f90f",
+      "file_name": "template-gold-1-right-strip-gray.png",
+      "sha256": "dc1ae630c2c694bde00171bcb4d9c73498ff986831931698cf568f2b1d8f3e3d",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-1-dc1ae630c2c6.png",
+      "field": null,
+      "accent": "matte gray",
+      "label": "เทาด้าน",
+      "original_clean_source": {
+        "library_file_id": "libfile_fbe27ec2ecb481919a33d834381f2a68",
+        "file_name": "template-clean-1.png",
+        "sha256": "2855ee13b78017cf128e922f971c90c15f1868baf8f1ea4fba0ec3998c3fe2ec"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
+    },
+    {
+      "number": 2,
+      "library_file_id": "libfile_71f4a760e23881918d4facd06cf1e965",
+      "file_name": "template-gold-2-right-strip-green.png",
+      "sha256": "e56e268deb2a41f7a951e042949491d64c5885cd50e72cf62243ca5b6085e5da",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-2-e56e268deb2a.png",
+      "field": null,
+      "accent": "green",
+      "label": "เขียว",
+      "original_clean_source": {
+        "library_file_id": "libfile_5173168dfa908191baeb7e90920d0df3",
+        "file_name": "template-clean-2.png",
+        "sha256": "d4127ccd32d60961d5ad4ebd1d5ccd095d1ee7f84beb4ae7dcb2d5a8d80fda0f"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
+    },
+    {
+      "number": 3,
+      "library_file_id": "libfile_1d9ebc8667cc8191bf2e83f70d893ed9",
+      "file_name": "template-gold-3-right-strip-cyan.png",
+      "sha256": "a53eec77c6e0fd4aac375d1d62cd230ca77b30ebb9b2d9167bce1e0a7fab12f8",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-3-a53eec77c6e0.png",
+      "field": null,
+      "accent": "cyan",
+      "label": "ฟ้าคราม",
+      "original_clean_source": {
+        "library_file_id": "libfile_d4c1dd36afa48191a5828d31e273df31",
+        "file_name": "template-clean-3.png",
+        "sha256": "21d343044a2060e4c25254b5403a155dfb9425dc19c9ba7134c889f116070a9b"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
+    },
+    {
+      "number": 4,
+      "library_file_id": "libfile_265513578380819180a546a4d1f7bafa",
+      "file_name": "template-gold-4-right-strip-red.png",
+      "sha256": "1a66f180af607d2f57f6444aeadab38872b04abf794d57f2daa5f178ec8a9eac",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-4-1a66f180af60.png",
+      "field": null,
+      "accent": "red",
+      "label": "แดง",
+      "original_clean_source": {
+        "library_file_id": "libfile_18cde0f7b5b881919d9fe3dd2ef4b302",
+        "file_name": "template-clean-4.png",
+        "sha256": "cc4c8ba7b176c55484e552da8640c3b36ebac41b7f8e41c37ec57f6aaff56875"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
+    },
+    {
+      "number": 5,
+      "library_file_id": "libfile_153f99b458dc8191bd3709c48da14be1",
+      "file_name": "template-gold-5-right-strip-orange-final.png",
+      "sha256": "29de6b65d6d5d330f19b2f1ecc052e638c3df473ffe13e6acb18325143c97595",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-5-29de6b65d6d5.png",
+      "field": null,
+      "accent": "orange",
+      "label": "ส้ม",
+      "original_clean_source": {
+        "library_file_id": "libfile_ef625f6f00808191813d119d260f213b",
+        "file_name": "template-clean-5.png",
+        "sha256": "8d8a80b36744a7dbf414eb9216029f278540929a756f66293bebc6f4af800d37"
+      },
+      "visual_review": "gold/black frame and background visually preserved; right-edge strip recolored; not pixel-identical"
+    },
+    {
+      "number": 6,
+      "library_file_id": "libfile_4321a079889c81919e44f7cd40908e0b",
+      "file_name": "template-clean-6-run-number-restored.png",
+      "sha256": "c4422924b44fdf570c0b99c47daa99e6e66c6585d21fc6ccb274c6351611d0a8",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-6-c4422924b44f.png",
+      "field": "EMs",
+      "accent": "purple",
+      "label": "EMs"
+    },
+    {
+      "number": 7,
+      "library_file_id": "libfile_c402d5e6153c8191bc3dd21ee65c47e2",
+      "file_name": "template-clean-7-run-number-restored.png",
+      "sha256": "1f673fd77a7809f5ea000a76f613b4719c631f550de4ea01aa937483a6a3b1bd",
+      "width": 1316,
+      "height": 1195,
+      "asset_file": "frame-7-1f673fd77a78.png",
+      "field": "GWs",
+      "accent": "gold",
+      "label": "GWs"
+    }
+  ],
+  "visual_variants": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "category_assignment": "none_for_visual_variants",
+  "requested_palette": [
+    "matte gray",
+    "green",
+    "cyan",
+    "red",
+    "orange"
+  ],
+  "release_ready": true,
+  "superseded_inputs": [
+    {
+      "library_file_id": "libfile_2feb3311354081918584ab11ba54fbcf",
+      "file_name": "template-1-matte-gray.png",
+      "sha256": "c28189a94d38eb96163598e91178271380610fbfaf6fdf8669c1cb6ed5894674",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_c4066b486de8819184e45dc1b05bc07d",
+      "file_name": "template-2-green.png",
+      "sha256": "f03091b9d09b83f9682c71236917f0d12bd1fe450e8f8360d5cfa1d9545dee9e",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_2d4740b19fa08191bc0150137f505672",
+      "file_name": "template-3-cyan.png",
+      "sha256": "dd426bb6a9abd99455d1292c7b5bf4b852667aa4ba6c8ec22158c913327d36c2",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_1fbd4548c9c4819185c146de099a4465",
+      "file_name": "template-4-red.png",
+      "sha256": "05016d747d7e92814b1277656077c413cecc043b1aa6336d207933ed661fbd07",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_b3c7bfa25ac481918c214471a233998f",
+      "file_name": "template-5-orange.png",
+      "sha256": "bf545911b7240b1e63e53c3352296c607513a537891e48fe4cd0be7d15885ec6",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    }
+  ],
+  "color_scope": "small_right_edge_strip_only",
+  "installation_status": "not_released"
+}
