@@ -220,7 +220,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       [SESSION_FIELDS.sessionStatus]: "Pending",
       [field(env.AT_SESSIONS__PAYMENT_STATUS, SESSION_FIELDS.paymentStatus)]: "pending",
       [field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)]: paymentRef || undefined,
-      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: amountThb,
+      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: components ? serviceAmountThb : amountThb,
       [SESSION_FIELDS.payModelThb]: payModelThb,
       [SESSION_FIELDS.travelFeeThb]: travelFeeThb,
       [SESSION_FIELDS.modelTravelFeeThb]: modelTravelFeeThb,
