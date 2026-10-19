@@ -359,6 +359,14 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
     if (ownerProjection) return json(ownerProjection);
     return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
   }
+  if (intent === "points_status") {
+    // Use the same read-only, payment-source-guarded ledger as My MMD.
+    // A profile snapshot is never a fallback for an unavailable current read.
+    const context = await readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true });
+    projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance) && context.confirmedBalance >= 0
+      ? { status: "verified", active_points: context.confirmedBalance, authority: "canonical_paid_points_source_guard_v1" }
+      : { status: "unavailable", active_points: null };
+  }
   if (intent === "rights_check") {
     const promotionMembership = projection.former_private_membership
       ? { ...projection.former_private_membership, member_blocked: projection.membership.member_blocked }

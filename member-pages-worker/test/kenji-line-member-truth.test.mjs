@@ -145,6 +145,56 @@ function healthEnv(responseFactory = null) {
   };
 }
 
+for (const mode of ["verified", "unavailable", "foreign_ledger", "foreign_payment", "unverified_payment", "pending_recovery"]) {
+  test(`explicit Points uses LIFF ledger reader: ${mode}, never stale profile balance`, async () => {
+    const reads = [];
+    const env = {
+      ...envWith(),
+      AIRTABLE_API_KEY: "fixture-only", AIRTABLE_BASE_ID: "fixture-base",
+      LIFF_IDENTITY_KV: {
+        async get() { return { state: mode === "pending_recovery" ? "review_required" : "reconciled" }; },
+        async put() { assert.fail("no KV writes allowed"); },
+      },
+      AIRTABLE_HTTP: { async fetch(req) {
+        assert.equal(req.method, "GET");
+        const url = new URL(req.url);
+        reads.push(url);
+        if (mode === "unavailable") return Response.json({ error: "fixture" }, { status: 503 });
+        const table = url.pathname.split("/").at(-1);
+        if (table === "tblgWc5VRon5o8Mhk") {
+          assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
+          return Response.json({ records: [{ fields: { member_id: "member-test", email: "private@example.test" } }] });
+        }
+        if (table === "tbl5dfnwjUFMLbnWL") {
+          assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
+          return Response.json({ records: [{ id: "fixture-ledger", fields: {
+            member_id: mode === "foreign_ledger" ? "other-member" : "member-test",
+            transaction_status: "posted", points: 42, eligible_amount_thb: 4200,
+            payment_ref: "fixture-payment", session_id: "fixture-session", posted_at: new Date().toISOString(),
+          } }] });
+        }
+        assert.equal(table, "tblWGGJJOx5eBvBZJ");
+        return Response.json({ records: [{ fields: {
+          member_id: mode === "foreign_payment" ? "other-member" : "member-test",
+          "Payment Reference": "fixture-payment", "Payment Status": "paid",
+          "Verification Status": mode === "unverified_payment" ? "pending" : "verified",
+          Amount: 4200, session_id: "fixture-session",
+        } }] });
+      } },
+    };
+    const response = await handleKenjiLineMemberTruth(request({}, { line_user_id: LINE_USER_ID, intent: "points_status" }), env);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.points.status, mode === "verified" ? "verified" : "unavailable");
+    assert.equal(payload.points.active_points, mode === "verified" ? 42 : null);
+    assert.notEqual(payload.points.active_points, 88);
+    if (mode === "pending_recovery") assert.equal(reads.length, 0);
+    for (const secret of [LINE_USER_ID, "private@example.test", "fixture-ledger", "fixture-payment", "fixture-session"]) {
+      assert.equal(JSON.stringify(payload).includes(secret), false);
+    }
+  });
+}
+
 test("returns a bounded verified SVIP truth projection without raw LINE identity", async () => {
   const response = await handleKenjiLineMemberTruth(request(), envWith());
   assert.equal(response.status, 200);
