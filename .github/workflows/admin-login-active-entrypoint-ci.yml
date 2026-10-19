@@ -10,6 +10,9 @@ on:
       - "admin-worker/kenji-owner-line-unlock.test.mjs"
       - "admin-worker/src/kenji-control-actions.js"
       - "admin-worker/kenji-control-actions.test.mjs"
+      - "immigrate-worker/src/canonical-admin-login-wrapper.ts"
+      - "immigrate-worker/src/kenji-owner-line-bridge.ts"
+      - "immigrate-worker/test/kenji-owner-line-bridge.test.mjs"
       - ".github/workflows/admin-login-active-entrypoint-ci.yml"
   push:
     branches:
@@ -22,6 +25,9 @@ on:
       - "admin-worker/kenji-owner-line-unlock.test.mjs"
       - "admin-worker/src/kenji-control-actions.js"
       - "admin-worker/kenji-control-actions.test.mjs"
+      - "immigrate-worker/src/canonical-admin-login-wrapper.ts"
+      - "immigrate-worker/src/kenji-owner-line-bridge.ts"
+      - "immigrate-worker/test/kenji-owner-line-bridge.test.mjs"
       - ".github/workflows/admin-login-active-entrypoint-ci.yml"
   workflow_dispatch:
 
@@ -45,3 +51,9 @@ jobs:
         run: node --test admin-login-active-entrypoint.test.mjs
       - name: Test scoped Owner LINE control and existing audit contract
         run: node --test kenji-owner-line-unlock.test.mjs kenji-control-actions.test.mjs
+      - name: Install ingress test bundler from lockfile
+        working-directory: .
+        run: npm ci --prefix immigrate-worker --ignore-scripts --no-audit --no-fund
+      - name: Test actual ingress to Owner control boundary
+        working-directory: .
+        run: node --test immigrate-worker/test/kenji-owner-line-bridge.test.mjs
