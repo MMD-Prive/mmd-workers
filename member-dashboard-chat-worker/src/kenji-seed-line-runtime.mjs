@@ -253,6 +253,20 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
   const intent = ["note_only", "line_event"].includes(inferredIntent)
     ? text(options?.continuity?.effective_intent || inferredIntent) : inferredIntent;
   const continuityMeta = continuityMetadata(options, inferredIntent);
+  const photoAccuracy = /(?:ตรง\s*ปก|ตัวจริง.{0,16}(?:เหมือน|ตรง).{0,8}(?:รูป|ภาพ)|(?:รูป|ภาพ).{0,16}(?:ตัวจริง|ถ่าย(?:ใหม่|ล่าสุด)))/i.test(raw);
+  const adTerms = /(?:โฆษณา|เห็น\s*แอด|ใน\s*แอด)/i.test(raw) && /(?:\d|เงื่อนไข|สิทธิ์|ส่วนลด|ได้อะไร|กี่ครั้ง|ใช้ยังไง)/i.test(raw);
+  if (["note_only", "line_event", "pricing_review"].includes(inferredIntent) && (photoAccuracy || adTerms)) {
+    return withDecisionMetadata({}, {
+      ...continuityMeta,
+      intent: "human_handoff",
+      text: adTerms
+        ? "เข้าใจว่าถามเรื่องยอดใช้จ่าย สิทธิ์หรือส่วนลด และจำนวนครั้งตามโฆษณาครับ ขอภาพหรือลิงก์โฆษณาที่เห็น เพื่อให้เปอร์ตรวจว่าข้อเสนอไหน เงื่อนไขและช่วงเวลาใด รวมถึงใช้กับบัญชีนี้ได้หรือไม่ ก่อนยืนยันครับ ยังไม่ถือว่ายอดหรือจำนวนครั้งที่พิมพ์มาเป็นสิทธิ์ที่ใช้ได้ และยังไม่ต้องชำระจากข้อความนี้ครับ"
+        : "เข้าใจว่าถามว่าตัวจริงตรงกับรูปที่เห็นไหมครับ ขอชื่อหรือรหัสกับรูปที่หมายถึง เพื่อให้เปอร์ตรวจแหล่งที่มาและความเป็นปัจจุบันของรูปก่อนครับ ตอนนี้ยังไม่ยืนยันว่าตรงปกหรือรับประกันรูปลักษณ์แทนเจ้าตัวครับ",
+      reply_source: "bounded_inquiry_review",
+      handoff_required: true,
+      handoff_reason: adTerms ? "advertisement_terms:per_review" : "photo_accuracy:per_review",
+    });
+  }
   const followup = /^(?:ผม\s*)?(?:ขอ)?ถามเพิ่ม(?:ก่อน)?(?:ได้ไหม|ได้มั้ย)/i.test(raw.replace(/\s+/g, ""));
   const privateDetail = /(?:เป็น\s*(?:gay|เกย์)|รสนิยมทางเพศ)/i.test(raw);
   const profileCue = /^(?:profile\s+|โปรไฟล์\s*)/i.test(raw);

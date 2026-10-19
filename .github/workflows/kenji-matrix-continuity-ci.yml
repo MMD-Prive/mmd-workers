@@ -16,6 +16,7 @@ on:
       - "member-dashboard-chat-worker/src/kenji-line-live-truth.mjs"
       - "member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs"
+      - "member-dashboard-chat-worker/test/kenji-photo-ad-context.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-live-truth-matrix.test.mjs"
       - "member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs"
@@ -58,6 +59,9 @@ jobs:
 
       - name: Validate canonical rights and bounded follow-up regressions
         run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs member-dashboard-chat-worker/test/kenji-membership-sales-conversation.test.mjs member-dashboard-chat-worker/test/kenji-sales-reply-v2.test.mjs
+
+      - name: Validate photo accuracy and advertisement review context
+        run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-photo-ad-context.test.mjs
 
       - name: Validate member-dashboard Worker bundle
         if: matrix.node-version == '22.x'
