@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
@@ -21,6 +21,19 @@ export const CODE_ONLY_INCLUDED_PULL_REQUESTS = [
   { number: 2522, merge_sha: '5e89a7386aa1e41d80ce3e945201b96b352ae799' },
   { number: 2523, merge_sha: '151d21eabd988396eef36b944c931b23e51cea69' },
 ];
+// These exact blobs belong to another Worker and are never release inputs.
+export const CODE_ONLY_EXCLUDED_CHANGE = {
+  number: 2524,
+  merge_sha: '7e8e08fc95a3258251523d29299c82fe838dc22d',
+  paths: [
+    'member-dashboard-chat-worker/src/index.js',
+    'member-dashboard-chat-worker/src/kenji-line-continuity-runtime.mjs',
+    'member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs',
+    'member-dashboard-chat-worker/test/kenji-model-layer.test.mjs',
+    'member-dashboard-chat-worker/test/line-mmd-membership-keyword-reply.test.mjs',
+    'member-dashboard-chat-worker/test/line-webhook.test.mjs',
+  ],
+};
 export const CODE_ONLY_PATHS = [
   '.github/workflows/deploy-member-pages-worker-code-only.yml',
   'member-pages-worker/src/liff-member-shell.js',
@@ -43,8 +56,24 @@ const ordered = value => [...value].sort((a, b) => canonical(a).localeCompare(ca
 const same = (a, b, reason) => assert.equal(canonical(a), canonical(b), reason);
 const digest = value => createHash('sha256').update(canonical(value)).digest('hex');
 
-export function validateCodeOnlySourcePaths(paths = []) {
-  assert.deepEqual([...paths].sort(), CODE_ONLY_PATHS, 'source diff is outside the reviewed code-only file set');
+export function validateCodeOnlySourcePaths(paths = [], { sha, readBlob } = {}) {
+  const excluded = paths.filter(path => CODE_ONLY_EXCLUDED_CHANGE.paths.includes(path));
+  assert.deepEqual(paths.filter(path => !CODE_ONLY_EXCLUDED_CHANGE.paths.includes(path)).sort(),
+    CODE_ONLY_PATHS, 'source diff is outside the reviewed code-only file set');
+  if (excluded.length) {
+    assert.deepEqual([...excluded].sort(), [...CODE_ONLY_EXCLUDED_CHANGE.paths].sort(), 'incomplete excluded PR scope');
+    assert.match(sha || '', /^[a-f0-9]{40}$/);
+    assert.equal(typeof readBlob, 'function', 'excluded changes require exact Git blob evidence');
+    for (const path of excluded) {
+      const original = readBlob(CODE_ONLY_EXCLUDED_CHANGE.merge_sha, path);
+      const current = readBlob(sha, path);
+      assert.match(original || '', /^[a-f0-9]{40}$/);
+      assert.match(current || '', /^[a-f0-9]{40}$/);
+      assert.equal(current, original, 'excluded PR file changed after review');
+    }
+  }
+  return { included_paths:[...CODE_ONLY_PATHS], excluded_changes:excluded.length
+    ? [{number:CODE_ONLY_EXCLUDED_CHANGE.number, merge_sha:CODE_ONLY_EXCLUDED_CHANGE.merge_sha, paths:[...excluded].sort()}] : [] };
 }
 
 export function validateCodeOnlySourceHistory(sha, isAncestor) {
@@ -225,12 +254,30 @@ export function validateBundleFiles(files) {
     ['runtime-index.js'], 'unexpected/multiple Worker modules; review bundle format');
 }
 
+export function validateBundleSourceMap(map, mapDirectory, repositoryRoot = process.cwd()) {
+  assert.equal(map?.version, 3, 'bundle source map required');
+  assert.ok(Array.isArray(map.sources) && map.sources.length > 0, 'bundle input inventory missing');
+  assert.ok(typeof map.mappings === 'string' && map.mappings.length > 0, 'bundle mappings missing');
+  assert.ok(typeof (map.sourceRoot ?? '') === 'string', 'unknown bundle source root');
+  const root = resolve(mapDirectory, map.sourceRoot || '');
+  const inputs = map.sources.map(source => {
+    assert.equal(typeof source, 'string', 'unknown bundle input');
+    const path = relative(repositoryRoot, resolve(root, source)).split(sep).join('/');
+    assert.ok(['member-pages-worker/', 'shared/', 'auth-worker/'].some(prefix => path.startsWith(prefix)),
+      'bundle includes an unreviewed dependency or another Worker');
+    return path;
+  });
+  assert.ok(inputs.includes('member-pages-worker/src/runtime-index.js'), 'unexpected bundle entry point');
+  return [...new Set(inputs)].sort();
+}
+
 export function buildMemberPagesBundle(dir) {
   execFileSync('wrangler', ['versions','upload','--dry-run','--env=','--config','member-pages-worker/wrangler.toml','--outdir',dir], {
     stdio: 'ignore', env: { ...process.env, CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_KEY: '',
       WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(tmpdir(),`mmd-member-pages-wrangler-${process.pid}.log`) },
   });
   validateBundleFiles(readdirSync(dir));
+  validateBundleSourceMap(JSON.parse(readFileSync(join(dir,'runtime-index.js.map'),'utf8')),dir);
   return readFileSync(join(dir,'runtime-index.js'));
 }
 
@@ -240,6 +287,9 @@ async function main() {
   assert.equal(process.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong Cloudflare account');
   const sha = process.env.GITHUB_SHA;
   const git = (...args) => execFileSync('git', args, { encoding:'utf8', stdio:['ignore','pipe','ignore'] }).trim();
+  const sourceScope = () => validateCodeOnlySourcePaths(
+    git('diff','--name-only',CODE_ONLY_BASE_SHA,sha).split('\n').filter(Boolean),
+    {sha, readBlob:(reference,path)=>git('rev-parse',reference+':'+path)});
   const approve = async () => {
     await verifyProductionApproval(process.env);
     const protection = await inspectEnvironment(process.env);
@@ -250,7 +300,7 @@ async function main() {
       git('merge-base','--is-ancestor',ancestor,target);
       return true;
     });
-    validateCodeOnlySourcePaths(git('diff','--name-only',CODE_ONLY_BASE_SHA,sha).split('\n').filter(Boolean));
+    sourceScope();
     assert.equal(git('diff',CODE_ONLY_BASE_SHA,sha,'--','member-pages-worker/wrangler.toml'), '',
       'Worker config/migrations changed; separate release review required');
   };
@@ -263,7 +313,8 @@ async function main() {
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
     sourceCheck: async () => ({ method:'clean-main-checkout', source_sha:sha, config_unchanged:true,
-      comparison_base_sha:CODE_ONLY_BASE_SHA, included_pull_requests:CODE_ONLY_INCLUDED_PULL_REQUESTS }),
+      comparison_base_sha:CODE_ONLY_BASE_SHA, included_pull_requests:CODE_ONLY_INCLUDED_PULL_REQUESTS,
+      source_scope:sourceScope() }),
     bundle: async () => buildMemberPagesBundle(dir),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
   });
