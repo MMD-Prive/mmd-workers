@@ -103,7 +103,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     return '<article class="pcr-job" data-job="' + esc(job.session_record_id) + '">' +
       '<div class="pcr-job-main"><div><span class="pcr-status">' + esc(job.status || "pending") + '</span><h3>' + esc(job.model_name) + '</h3></div><strong>' + dateTime(job.start_at || job.date) + '</strong></div>' +
       changeAlert +
-      '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div>' + profitRows + '</dl>' +
+      '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + travelRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div>' + profitRows + '</dl>' +
       actions +
       '<label class="pcr-private-field"><span>Private travel note · Partner-only encrypted</span><textarea data-private-travel placeholder="เช่น เดินทางถึงกรุงเทพฯ วันที่…" ' + (state.vault ? "" : "disabled") + '>' + esc(note) + '</textarea></label>' +
       '</article>';
