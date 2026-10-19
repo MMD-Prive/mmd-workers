@@ -1,546 +1,182 @@
-/*
- * MMD Studio — Master Frame V2 card template selector
- * Presentation/local-draft only. It does not publish, upload, or grant access.
- */
+/* MMD Studio — Master Frame V2. Local presentation only; no publication authority. */
 (function () {
   "use strict";
-
   var ROOT_ID = "mmdStudioUploadR5";
-  var FORM_ID = "muUploadForm";
-  var TEMPLATE_STATE_KEY = "mmdStudioTemplateState";
-  var UPLOAD_SEED_KEY = "mmdStudioUploadSeed";
-  var STYLE_ID = "mmd-sigil-compcard-template-css";
   var PICKER_ID = "mmdSigilCompcardPicker";
   var CARD_ID = "mmdSigilCompcardPreview";
-
+  var TEMPLATE_STATE_KEY = "mmdStudioTemplateState";
+  var UPLOAD_SEED_KEY = "mmdStudioUploadSeed";
+  // These are category identities, not visual variant identities. Keep stable.
   var TEMPLATES = [
-    {
-      id: "sigil-ems-aureate",
-      uiFamily: "EMs",
-      field: "EMs",
-      label: "EMs",
-      title: "Master Frame V2 · EMs",
-      kind: "exclusive",
-      accent: "#d3b45c",
-      accentSoft: "rgba(211,180,92,.22)",
-      needsRun: true,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: false,
-      identity: "run",
-      note: "RUN NUMBER · HEIGHT / WEIGHT"
-    },
-    {
-      id: "sigil-gws-nightwave",
-      uiFamily: "GWs",
-      field: "GWs",
-      label: "GWs",
-      title: "Master Frame V2 · GWs",
-      kind: "exclusive",
-      accent: "#36c4c7",
-      accentSoft: "rgba(54,196,199,.20)",
-      needsRun: true,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: false,
-      identity: "run",
-      note: "RUN NUMBER · HEIGHT / WEIGHT"
-    },
-    {
-      id: "sigil-straight-bronze",
-      uiFamily: "A",
-      field: "ST",
-      label: "Straight",
-      title: "Master Frame V2 · Silver",
-      kind: "standard",
-      accent: "#a7adb4",
-      accentSoft: "rgba(167,173,180,.20)",
-      needsRun: false,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: false,
-      identity: "name",
-      note: "REAL MODEL ID / NAME · HEIGHT / WEIGHT"
-    },
-    {
-      id: "sigil-gay-plum",
-      uiFamily: "B",
-      field: "GY",
-      label: "Gay",
-      title: "Master Frame V2 · Rose",
-      kind: "standard",
-      accent: "#d96aa8",
-      accentSoft: "rgba(217,106,168,.20)",
-      needsRun: false,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: false,
-      identity: "name",
-      note: "REAL MODEL ID / NAME · HEIGHT / WEIGHT"
-    },
-    {
-      id: "sigil-foreigner-emerald",
-      uiFamily: "E",
-      field: "FR",
-      label: "Foreigner",
-      title: "Master Frame V2 · Emerald",
-      kind: "standard",
-      accent: "#45bd7a",
-      accentSoft: "rgba(69,189,122,.20)",
-      needsRun: false,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: false,
-      identity: "name",
-      note: "REAL MODEL ID / NAME · HEIGHT / WEIGHT"
-    },
-    {
-      id: "mmd-prive-travel",
-      uiFamily: "C",
-      field: "EN",
-      label: "Travel",
-      title: "MMD PRIVÉ · Blue Edge",
-      kind: "public",
-      accent: "#4aa9d8",
-      accentSoft: "rgba(74,169,216,.18)",
-      needsRun: false,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: true,
-      identity: "name",
-      note: "REAL MODEL ID / NAME · BLUE EDGE"
-    },
-    {
-      id: "mmd-prive-extreme",
-      uiFamily: "D",
-      field: "EX",
-      label: "Extreme",
-      title: "MMD PRIVÉ · Red Edge",
-      kind: "public",
-      accent: "#d83a48",
-      accentSoft: "rgba(216,58,72,.18)",
-      needsRun: false,
-      needsMetrics: true,
-      needsTitle: false,
-      publicCollection: true,
-      identity: "name",
-      note: "REAL MODEL ID / NAME · RED EDGE"
-    }
+    { id: "sigil-ems-aureate", uiFamily: "EMs", field: "EMs", needsRun: true },
+    { id: "sigil-gws-nightwave", uiFamily: "GWs", field: "GWs", needsRun: true },
+    { id: "sigil-straight-bronze", uiFamily: "A", field: "ST" },
+    { id: "sigil-gay-plum", uiFamily: "B", field: "GY" },
+    { id: "sigil-foreigner-emerald", uiFamily: "E", field: "FR" },
+    { id: "mmd-prive-travel", uiFamily: "C", field: "EN", publicCollection: true },
+    { id: "mmd-prive-extreme", uiFamily: "D", field: "EX", publicCollection: true }
   ];
-
-  function boot() {
-    if (document.getElementById(PICKER_ID)) return;
-    var root = document.getElementById(ROOT_ID);
-    var form = document.getElementById(FORM_ID);
-    if (!root || !form) return;
-
-    installStyles();
-    addFields(form);
-    var picker = buildPicker();
-    var grid = root.querySelector(".mu-grid");
-    if (grid && grid.parentNode) grid.parentNode.insertBefore(picker, grid);
-
-    var state = readState(TEMPLATE_STATE_KEY) || readState(UPLOAD_SEED_KEY) || {};
-    var initial = findTemplate(state.template_id) || findByFamily(state.field_code || state.field || state.compcard_family) || TEMPLATES[2];
-    wire(initial);
+  var assets = window.MMDStudioFrameAssets || [];
+  function variant(value) { return [1, 2, 3, 4, 5].indexOf(Number(value)) >= 0 ? Number(value) : null; }
+  function fixedFrame(template) { return template ? ({ EMs: 6, GWs: 7 })[template.field] || null : null; }
+  function frameFor(template, choice) {
+    var number = fixedFrame(template) || variant(choice);
+    return assets.find(function (asset) { return asset.number === number; }) || null;
   }
-
-  function wire(initial) {
-    var root = document.getElementById(ROOT_ID);
-    var model = byId("muModel");
-    var run = byId("muRun");
-    var height = byId("mmdSigilHeight");
-    var weight = byId("mmdSigilWeight");
-    var title = byId("mmdSigilTitle");
-    var direction = byId("muDirection");
-    var category = byId("muCategory");
-    var selected = initial;
-    var scheduled = 0;
-
-    function currentValues() {
-      return {
-        model: valueOf(model),
-        run: valueOf(run),
-        height: valueOf(height),
-        weight: valueOf(weight),
-        title: valueOf(title),
-        direction: valueOf(direction)
-      };
-    }
-
-    function refresh() {
-      renderPreview(selected, currentValues());
-      persist(selected, currentValues());
-    }
-
-    function schedule() {
-      window.clearTimeout(scheduled);
-      scheduled = window.setTimeout(refresh, 40);
-    }
-
-    function select(template) {
-      selected = template;
-      applyTemplate(template, category, model, run, height, weight, title);
-      markSelected(template.id);
-      window.setTimeout(refresh, 0);
-    }
-
-    root.querySelectorAll("[data-mmd-sigil-template]").forEach(function (button) {
-      button.addEventListener("click", function () {
-        var template = findTemplate(button.getAttribute("data-mmd-sigil-template"));
-        if (template) select(template);
-      });
-    });
-
-    [model, run, height, weight, title, direction, category].filter(Boolean).forEach(function (input) {
-      input.addEventListener("input", schedule);
-      input.addEventListener("change", function () {
-        var matched = findByFamily(valueOf(category));
-        if (matched && matched.id !== selected.id) selected = matched;
-        markSelected(selected.id);
-        schedule();
-      });
-    });
-
-    [byId("muBuild"), byId("muSendReview")].filter(Boolean).forEach(function (button) {
-      button.addEventListener("click", function () { window.setTimeout(refresh, 160); }, true);
-    });
-
-    select(initial);
-  }
-
-  function addFields(form) {
-    if (byId("mmdSigilHeight")) return;
-    var anchor = byId("muRun");
-    var host = anchor && anchor.closest ? anchor.closest(".mu-field") : null;
-    if (!host || !host.parentNode) return;
-    var group = host.parentNode;
-    group.appendChild(makeField("mmdSigilHeight", "Height (CM)", "number", "e.g. 180"));
-    group.appendChild(makeField("mmdSigilWeight", "Weight (KG)", "number", "e.g. 72"));
-    var titleField = makeField("mmdSigilTitle", "Title Bar (1–2 lines)", "text", "ข้อความสั้นสำหรับ EMs / GWs");
-    titleField.classList.add("mmd-sigil-title-field");
-    group.appendChild(titleField);
-    var input = document.createElement("input");
-    input.type = "hidden";
-    input.id = "mmdSigilTemplate";
-    input.name = "template_id";
-    form.appendChild(input);
-  }
-
-  function makeField(id, label, type, placeholder) {
-    var container = document.createElement("label");
-    container.className = "mu-field mmd-sigil-extra";
-    var caption = document.createElement("span");
-    caption.textContent = label;
-    var input = document.createElement("input");
-    input.id = id;
-    input.name = id === "mmdSigilTitle" ? "presentation_title" : id === "mmdSigilHeight" ? "height_cm" : "weight_kg";
-    input.type = type;
-    input.placeholder = placeholder;
-    input.autocomplete = "off";
-    if (type === "number") {
-      input.min = "1";
-      input.max = "999";
-      input.inputMode = "numeric";
-    }
-    container.appendChild(caption);
-    container.appendChild(input);
-    return container;
-  }
-
-  function buildPicker() {
-    var section = document.createElement("section");
-    section.id = PICKER_ID;
-    section.className = "mmd-sigil-picker";
-    var heading = document.createElement("div");
-    heading.className = "mmd-sigil-picker-head";
-    var eyebrow = document.createElement("span");
-    eyebrow.textContent = "MMD STUDIO / MASTER FRAME V2";
-    var title = document.createElement("h2");
-    title.textContent = "เลือกกรอบใหม่ก่อน Build Draft";
-    var copy = document.createElement("p");
-    copy.textContent = "กรอบหลักเป็น metallic silver / graphite เหมือนกันทุกกลุ่ม ใช้ชื่อ Model ID จริงจาก working_name บนการ์ด ห้ามใช้ชื่อกลุ่มแทน; Travel = accent ฟ้า, Extreme = accent แดง.";
-    heading.appendChild(eyebrow);
-    heading.appendChild(title);
-    heading.appendChild(copy);
-    var grid = document.createElement("div");
-    grid.className = "mmd-sigil-template-grid";
-    TEMPLATES.forEach(function (template) { grid.appendChild(buildTile(template)); });
-    section.appendChild(heading);
-    section.appendChild(grid);
-    return section;
-  }
-
-  function buildTile(template) {
-    var button = document.createElement("button");
-    button.type = "button";
-    button.className = "mmd-sigil-template-tile mmd-sigil-kind-" + template.kind + " mmd-sigil-tile-" + template.field.toLowerCase();
-    button.setAttribute("data-mmd-sigil-template", template.id);
-    button.style.setProperty("--sigil-accent", template.accent);
-    button.style.setProperty("--sigil-accent-soft", template.accentSoft);
-    var art = document.createElement("span");
-    art.className = "mmd-sigil-tile-art";
-    var cut = document.createElement("span");
-    cut.className = "mmd-sigil-tile-cut";
-    var mark = document.createElement("span");
-    mark.className = "mmd-sigil-tile-mark";
-    mark.textContent = template.field;
-    art.appendChild(cut);
-    art.appendChild(mark);
-    var text = document.createElement("span");
-    text.className = "mmd-sigil-tile-copy";
-    var label = document.createElement("b");
-    label.textContent = template.label;
-    var small = document.createElement("small");
-    small.textContent = template.title;
-    var note = document.createElement("em");
-    note.textContent = template.note;
-    text.appendChild(label);
-    text.appendChild(small);
-    text.appendChild(note);
-    button.appendChild(art);
-    button.appendChild(text);
-    return button;
-  }
-
-  function applyTemplate(template, category, model, run, height, weight, title) {
-    var hidden = byId("mmdSigilTemplate");
-    if (hidden) hidden.value = template.id;
-    selectValue(category, [template.uiFamily, template.field], template.uiFamily);
-    setVisible(byId("muRun") && byId("muRun").closest(".mu-field"), template.needsRun);
-    setVisible(height && height.closest(".mu-field"), template.needsMetrics);
-    setVisible(weight && weight.closest(".mu-field"), template.needsMetrics);
-    setVisible(title && title.closest(".mu-field"), template.needsTitle);
-    if (run) {
-      run.required = template.needsRun;
-      run.placeholder = template.needsRun ? "001" : "";
-      if (!template.needsRun) run.value = "";
-    }
-    if (height) height.required = template.needsMetrics;
-    if (weight) weight.required = template.needsMetrics;
-    if (title) {
-      title.required = template.needsTitle;
-      if (!template.needsTitle) title.value = "";
-    }
-    if (model) {
-      model.readOnly = false;
-      model.removeAttribute("aria-label");
-      if (model.value === "MMD PRIVÉ") model.value = "";
-      model.placeholder = "Model name";
-    }
-    if (category) dispatch(category, "change");
-  }
-
-  function renderPreview(template, values) {
-    renderCard(byId("muCard"), byId("muCardPhoto"), template, values, CARD_ID);
-  }
-
-  function renderCard(host, source, template, values, cardId) {
-    if (!host) return;
-    var old = byId(cardId);
-    if (!old) {
-      old = document.createElement("div");
-      old.id = cardId;
-      host.appendChild(old);
-    }
-    old.className = "mmd-sigil-card mmd-sigil-card-" + template.field.toLowerCase() + " mmd-sigil-card-" + template.kind;
-    old.style.setProperty("--sigil-accent", template.accent);
-    old.style.setProperty("--sigil-accent-soft", template.accentSoft);
-    old.setAttribute("data-master-frame", "mmd-v2");
-    old.replaceChildren();
-
-    var photoStyle = source ? window.getComputedStyle(source).backgroundImage : "";
-    var photo = document.createElement("div");
-    photo.className = "mmd-sigil-card-photo";
-    if (photoStyle && photoStyle !== "none") photo.style.backgroundImage = photoStyle;
-
-    var shade = document.createElement("div");
-    shade.className = "mmd-sigil-card-shade";
-    var frameOuter = document.createElement("div");
-    frameOuter.className = "mmd-sigil-card-frame-outer";
-    var frameInner = document.createElement("div");
-    frameInner.className = "mmd-sigil-card-frame-inner";
-    var accent = document.createElement("div");
-    accent.className = "mmd-sigil-card-accent";
-
-    var panel = document.createElement("div");
-    panel.className = "mmd-sigil-card-panel";
-    var identity = document.createElement("strong");
-    identity.className = "mmd-sigil-card-identity";
-    identity.textContent = identityText(template, values);
-    panel.appendChild(identity);
-
-    if (template.needsMetrics) {
-      var metrics = document.createElement("div");
-      metrics.className = "mmd-sigil-card-metrics";
-      metrics.appendChild(metric("", values.height || "—", ""));
-      metrics.appendChild(metric("", values.weight || "—", ""));
-      panel.appendChild(metrics);
-    }
-
-    var brand = document.createElement("span");
-    brand.className = "mmd-sigil-card-brand";
-    brand.textContent = template.publicCollection ? "MMD PRIVÉ" : "SĪGIL";
-
-    old.appendChild(photo);
-    old.appendChild(shade);
-    old.appendChild(frameOuter);
-    old.appendChild(frameInner);
-    old.appendChild(accent);
-    old.appendChild(panel);
-    old.appendChild(brand);
-  }
-
-  function bootFinalPreview() {
-    var root = byId("mmdModelPreview");
-    var host = byId("mpCard");
-    if (!root || !host || byId("mmdSigilCompcardFinal")) return;
-    installStyles();
-    var state = readState(TEMPLATE_STATE_KEY) || readState(UPLOAD_SEED_KEY) || {};
-    var template = findTemplate(state.template_id) || findByFamily(state.field_code || state.field || state.compcard_family);
-    if (!template) return;
-    renderCard(host, byId("mpCardPhoto"), template, {
-      model: state.model_name || "",
-      run: state.run_number || "",
-      height: state.height_cm || "",
-      weight: state.weight_kg || "",
-      title: state.presentation_title || state.compcard_title || "",
-      direction: state.direction || ""
-    }, "mmdSigilCompcardFinal");
-  }
-
-  function metric(label, value, unit) {
-    var item = document.createElement("span");
-    var small = document.createElement("small");
-    small.textContent = label;
-    var number = document.createElement("b");
-    number.textContent = value;
-    var suffix = document.createElement("em");
-    suffix.textContent = unit;
-    item.appendChild(small);
-    item.appendChild(number);
-    item.appendChild(suffix);
-    return item;
-  }
-
-  function identityText(template, values) {
-    if (template.needsRun) {
-      var digits = String(values.run || "").replace(/\D/g, "").slice(-3);
-      return template.field + (digits ? digits.padStart(3, "0") : "000");
-    }
-    return values.model || "MODEL NAME";
-  }
-
-  function persist(template, values) {
-    var state = Object.assign({}, readState(UPLOAD_SEED_KEY) || {}, {
-      template_id: template.id,
-      template_title: template.title,
-      template_version: "mmd-master-frame-v2",
-      compcard_family: template.uiFamily,
-      field: template.field,
-      field_code: template.field,
-      layer: template.publicCollection ? "Public / MMD Privé" : "Private / SIGIL",
-      model_name: values.model,
-      run_number: canonicalRun(template, values.run),
-      height_cm: template.needsMetrics ? values.height : "",
-      weight_kg: template.needsMetrics ? values.weight : "",
-      presentation_title: template.needsTitle ? values.title : "",
-      compcard_title: template.needsTitle ? values.title : "",
-      direction: values.direction || "",
-      output_kind: template.publicCollection ? "mmd_prive_collection" : "model_compcard"
-    });
-    writeState(TEMPLATE_STATE_KEY, state);
-    writeState(UPLOAD_SEED_KEY, state);
-    exposeFamily(template.uiFamily);
-  }
-
-  function canonicalRun(template, value) {
-    if (!template.needsRun) return "";
-    var digits = String(value || "").replace(/\D/g, "").slice(-3);
-    return digits ? template.field + digits.padStart(3, "0") : "";
-  }
-
-  function exposeFamily(value) {
-    try {
-      if (window.MMDCompcardFamily && typeof window.MMDCompcardFamily.set === "function") {
-        window.MMDCompcardFamily.set(value);
-        return;
-      }
-      window.MMDCompcardFamily = window.MMDCompcardFamily || {};
-      window.MMDCompcardFamily.get = function () { return value; };
-    } catch (_) {}
-  }
-
-  function markSelected(id) {
-    document.querySelectorAll("[data-mmd-sigil-template]").forEach(function (button) {
-      var selected = button.getAttribute("data-mmd-sigil-template") === id;
-      button.classList.toggle("is-selected", selected);
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-    });
-  }
-
-  function setVisible(element, visible) {
-    if (!element) return;
-    element.classList.toggle("mmd-sigil-hidden", !visible);
-  }
-
-  function selectValue(select, candidates, fallback) {
-    if (!select) return;
-    var options = Array.prototype.slice.call(select.options || []);
-    var candidate = candidates.find(function (raw) {
-      return options.some(function (option) { return option.value === raw || option.textContent.trim() === raw; });
-    });
-    if (!candidate) {
-      var option = document.createElement("option");
-      option.value = fallback;
-      option.textContent = fallback;
-      select.appendChild(option);
-      candidate = fallback;
-    }
-    select.value = candidate;
-  }
-
-  function dispatch(element, type) {
-    try { element.dispatchEvent(new Event(type, { bubbles: true })); } catch (_) {}
-  }
-
-  function findTemplate(id) {
-    var legacyId = id === "sigil-travel-prive" ? "mmd-prive-travel" : id === "sigil-extreme-prive" ? "mmd-prive-extreme" : id;
-    return TEMPLATES.find(function (template) { return template.id === legacyId; }) || null;
-  }
-
-  function findByFamily(value) {
-    var clean = String(value || "").trim();
-    return TEMPLATES.find(function (template) { return template.uiFamily === clean || template.field === clean; }) || null;
-  }
-
-  function valueOf(input) { return input ? String(input.value || "").trim() : ""; }
   function byId(id) { return document.getElementById(id); }
-
-  function readState(key) {
-    try {
-      var raw = window.localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch (_) { return null; }
+  function valueOf(input) { return input ? String(input.value || "").trim() : ""; }
+  function findTemplate(id) {
+    var legacy = id === "sigil-travel-prive" ? "mmd-prive-travel" : id === "sigil-extreme-prive" ? "mmd-prive-extreme" : id;
+    return TEMPLATES.find(function (template) { return template.id === legacy; }) || null;
   }
-
+  function findByFamily(value) {
+    return TEMPLATES.find(function (template) { return template.uiFamily === value || template.field === value; }) || null;
+  }
+  function readState(key) {
+    try { return JSON.parse(window.localStorage.getItem(key) || "null"); } catch (_) { return null; }
+  }
   function writeState(key, value) {
     try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
   }
-
+  function updateState(patch) {
+    [TEMPLATE_STATE_KEY, UPLOAD_SEED_KEY].forEach(function (key) {
+      writeState(key, Object.assign({}, readState(UPLOAD_SEED_KEY) || {}, readState(key) || {}, patch));
+    });
+  }
+  function makeField(id, label, type) {
+    var field = document.createElement("label"); field.className = "mu-field";
+    var caption = document.createElement("span"); caption.textContent = label;
+    var input = document.createElement("input"); input.id = id; input.type = type;
+    input.name = id === "mmdSigilHeight" ? "height_cm" : "weight_kg";
+    input.min = "1"; input.max = "999"; input.inputMode = "numeric";
+    field.append(caption, input); return field;
+  }
+  function addFields(form) {
+    var run = byId("muRun"); var host = run && run.closest(".mu-field");
+    if (host && host.parentNode) {
+      if (!byId("mmdSigilHeight")) host.parentNode.appendChild(makeField("mmdSigilHeight", "Height (CM)", "number"));
+      if (!byId("mmdSigilWeight")) host.parentNode.appendChild(makeField("mmdSigilWeight", "Weight (KG)", "number"));
+    }
+    if (!byId("mmdSigilTemplate")) {
+      var hidden = document.createElement("input"); hidden.type = "hidden";
+      hidden.id = "mmdSigilTemplate"; hidden.name = "template_id"; form.appendChild(hidden);
+    }
+  }
+  function buildPicker() {
+    var section = document.createElement("section"); section.id = PICKER_ID;
+    var heading = document.createElement("h2"); heading.textContent = "MASTER FRAME V2 · เลือกกรอบภาพ";
+    var copy = document.createElement("p");
+    copy.textContent = "ใช้ชื่อ Model ID จริงจาก working_name บนการ์ด · กรอบ 1–5 เป็นตัวเลือกสีอิสระ ไม่เปลี่ยน Family หรือประเภทนายแบบ · EMs ใช้กรอบ 6 และ GWs ใช้กรอบ 7 ตาม Family ที่มีอยู่";
+    var grid = document.createElement("div"); grid.className = "mmd-studio-frame-grid";
+    assets.forEach(function (asset) {
+      var button = document.createElement("button"); button.type = "button";
+      button.setAttribute("data-mmd-visual-frame", String(asset.number));
+      var image = document.createElement("img"); image.src = asset.url; image.alt = "";
+      var label = document.createElement("span");
+      label.textContent = "กรอบ " + asset.number + " · " + asset.accent + (asset.field ? " · " + asset.field : "");
+      button.append(image, label); grid.appendChild(button);
+    });
+    var status = document.createElement("p"); status.id = "mmdStudioFrameStatus"; status.setAttribute("role", "status");
+    section.append(heading, copy, grid, status); return section;
+  }
+  function configureFields(template) {
+    var hidden = byId("mmdSigilTemplate"); if (hidden) hidden.value = template ? template.id : "";
+    var run = byId("muRun");
+    if (run) {
+      run.required = !!(template && template.needsRun);
+      if (run.closest(".mu-field")) run.closest(".mu-field").classList.toggle("mmd-sigil-hidden", !run.required);
+    }
+    var title = byId("mmdSigilTitle");
+    if (title && title.closest(".mu-field")) title.closest(".mu-field").classList.add("mmd-sigil-hidden");
+  }
+  function renderCard(host, source, frame, values, cardId) {
+    if (!host) return;
+    host.style.position = "relative"; host.style.aspectRatio = "1316 / 1195"; host.style.height = "auto";
+    var card = byId(cardId);
+    if (!card) { card = document.createElement("div"); card.id = cardId; host.appendChild(card); }
+    card.style.position = "absolute"; card.style.inset = "0"; card.style.zIndex = "9";
+    card.setAttribute("data-master-frame", "mmd-v2");
+    if (!frame || !window.MMDStudioCleanFrame) {
+      card.className = "mmd-studio-frame-empty"; card.replaceChildren();
+      card.textContent = frame ? "ไม่สามารถโหลดตัวแสดงกรอบภาพได้" : "เลือกสีกรอบภาพ 1–5 ก่อนตรวจร่าง";
+      return;
+    }
+    var photoStyle = source ? window.getComputedStyle(source).backgroundImage : "";
+    window.MMDStudioCleanFrame.render(card, frame, photoStyle, values);
+  }
+  function boot() {
+    var root = byId(ROOT_ID), form = byId("muUploadForm");
+    if (!root || !form || byId(PICKER_ID)) return;
+    installStyles(); addFields(form);
+    var picker = buildPicker(); var grid = root.querySelector(".mu-grid");
+    if (grid && grid.parentNode) grid.parentNode.insertBefore(picker, grid); else form.prepend(picker);
+    var category = byId("muCategory");
+    var saved = readState(TEMPLATE_STATE_KEY) || readState(UPLOAD_SEED_KEY) || {};
+    var choice = variant(saved.visual_variant_number) || variant(saved.visual_frame_number);
+    function template() { return category ? findByFamily(valueOf(category)) : findTemplate(saved.template_id); }
+    function values() { return { model: valueOf(byId("muModel")), run: valueOf(byId("muRun")), height: valueOf(byId("mmdSigilHeight")), weight: valueOf(byId("mmdSigilWeight")) }; }
+    function refresh() {
+      var current = template(), frame = frameFor(current, choice), fixed = fixedFrame(current);
+      configureFields(current);
+      picker.querySelectorAll("[data-mmd-visual-frame]").forEach(function (button) {
+        var number = Number(button.getAttribute("data-mmd-visual-frame"));
+        button.disabled = fixed ? number !== fixed : !variant(number);
+        button.setAttribute("aria-pressed", frame && frame.number === number ? "true" : "false");
+      });
+      byId("mmdStudioFrameStatus").textContent = fixed ? "กรอบตรงกับ Family ที่เลือกไว้ · ไม่เปลี่ยนประเภทนายแบบ" : "กรอบ 1–5 เปลี่ยนเฉพาะสีภาพ · Family คงเดิม";
+      renderCard(byId("muCard"), byId("muCardPhoto"), frame, values(), CARD_ID);
+    }
+    function persistVisual() {
+      var frame = frameFor(template(), choice);
+      updateState({ visual_variant_number: choice, visual_frame_number: frame ? frame.number : null, visual_frame_version: "studio-clean-frames-v1" });
+    }
+    function persistValues() {
+      var current = template(), v = values();
+      var digits = v.run.replace(/\D/g, "").slice(-3);
+      updateState({ model_name: v.model, height_cm: v.height, weight_kg: v.weight, direction: valueOf(byId("muDirection")), run_number: current && current.needsRun && digits ? current.field + digits.padStart(3, "0") : "" });
+    }
+    picker.querySelectorAll("[data-mmd-visual-frame]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (button.disabled) return;
+        var number = Number(button.getAttribute("data-mmd-visual-frame"));
+        if (variant(number)) choice = number;
+        // A visual click writes only visual keys: never category, template ID or family.
+        persistVisual(); refresh();
+      });
+    });
+    ["muModel", "muRun", "mmdSigilHeight", "mmdSigilWeight", "muDirection"].forEach(function (id) {
+      var input = byId(id); if (!input) return;
+      input.addEventListener("input", function () {
+        persistValues(); refresh();
+      });
+    });
+    if (category) category.addEventListener("change", function () {
+      var current = template();
+      updateState({ template_id: current ? current.id : "", template_version: "mmd-master-frame-v2", compcard_family: valueOf(category), field: current ? current.field : "", field_code: current ? current.field : "", layer: current ? (current.publicCollection ? "Public / MMD Privé" : "Private / SIGIL") : "", output_kind: current && current.publicCollection ? "mmd_prive_collection" : "model_compcard" });
+      persistVisual(); refresh();
+    });
+    ["muBuild", "muSendReview"].forEach(function (id) {
+      var button = byId(id); if (button) button.addEventListener("click", function () { persistValues(); persistVisual(); window.setTimeout(refresh, 160); }, true);
+    });
+    var source = byId("muCardPhoto");
+    if (source) new MutationObserver(refresh).observe(source, { attributes: true, attributeFilter: ["style"] });
+    refresh();
+  }
+  function bootFinalPreview() {
+    if (!byId("mmdModelPreview") || !byId("mpCard") || byId("mmdSigilCompcardFinal")) return;
+    installStyles();
+    var state = readState(TEMPLATE_STATE_KEY) || readState(UPLOAD_SEED_KEY) || {};
+    var template = findTemplate(state.template_id) || findByFamily(state.field_code || state.field || state.compcard_family);
+    var frame = frameFor(template, variant(state.visual_variant_number) || variant(state.visual_frame_number));
+    renderCard(byId("mpCard"), byId("mpCardPhoto"), frame, { model: state.model_name || "", run: state.run_number || "", height: state.height_cm || "", weight: state.weight_kg || "" }, "mmdSigilCompcardFinal");
+  }
   function installStyles() {
-    if (byId(STYLE_ID)) return;
-    var style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = "#" + PICKER_ID + "{margin:16px 0;border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:18px;background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(7,7,8,.9));box-shadow:0 20px 56px rgba(0,0,0,.26)}#" + PICKER_ID + " *{box-sizing:border-box;font-family:inherit}.mmd-sigil-picker-head{display:grid;gap:7px;margin-bottom:14px}.mmd-sigil-picker-head>span{color:#d8b96c;font-size:9px;letter-spacing:.16em}.mmd-sigil-picker-head h2{margin:0;color:#f7f0e4;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(27px,3vw,38px);font-weight:500;letter-spacing:-.045em}.mmd-sigil-picker-head p{max-width:820px;margin:0;color:rgba(247,240,228,.66);font-size:12px;line-height:1.6}.mmd-sigil-template-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.mmd-sigil-template-tile{--sigil-accent:#a7adb4;appearance:none;min-height:176px;padding:0;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:15px;background:#0b0c0d;color:#f7f0e4;text-align:left;cursor:pointer;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.mmd-sigil-template-tile:hover{transform:translateY(-2px);border-color:rgba(230,233,236,.46)}.mmd-sigil-template-tile.is-selected{border-color:rgba(235,238,240,.76);box-shadow:inset 0 0 0 1px rgba(50,53,57,.9),0 15px 34px rgba(0,0,0,.32)}.mmd-sigil-tile-art{position:relative;display:block;height:84px;margin:9px;border:2px solid rgba(230,233,236,.72);box-shadow:0 0 0 1px rgba(55,58,62,.9),inset 0 0 0 8px rgba(20,21,22,.65);background:linear-gradient(145deg,#34373a,#0a0b0c 72%)}.mmd-sigil-tile-art:before{content:\"\";position:absolute;left:9px;top:12px;width:5px;height:38px;border:0;background:var(--sigil-accent);box-shadow:0 0 12px var(--sigil-accent);transform:none}.mmd-sigil-tile-art:after{display:none}.mmd-sigil-tile-cut{display:none}.mmd-sigil-tile-mark{position:absolute;left:20px;bottom:12px;color:rgba(247,240,228,.72);font-size:9px;font-weight:800;letter-spacing:.12em;line-height:1}.mmd-sigil-kind-public .mmd-sigil-tile-art{background:linear-gradient(145deg,#f3f2ee,#b6b8ba 72%)}.mmd-sigil-kind-public .mmd-sigil-tile-mark{color:#26282b}.mmd-sigil-tile-copy{display:grid;gap:4px;padding:6px 12px 12px}.mmd-sigil-tile-copy b{font-size:13px;line-height:1.15}.mmd-sigil-tile-copy small{color:rgba(247,240,228,.61);font-size:9px;line-height:1.25}.mmd-sigil-tile-copy em{color:var(--sigil-accent);font-size:7px;font-style:normal;letter-spacing:.07em;line-height:1.35}.mmd-sigil-extra{display:block}.mmd-sigil-title-field{grid-column:span 2}.mmd-sigil-hidden{display:none!important}#muCard{isolation:isolate}.mmd-sigil-card{position:absolute;z-index:9;inset:0;overflow:hidden;border-radius:inherit;background:#0c0d0e;color:#f4f0e8;--sigil-accent:#a7adb4;--sigil-accent-soft:rgba(167,173,180,.2)}.mmd-sigil-card-photo{position:absolute;inset:0;background:radial-gradient(circle at 54% 28%,rgba(255,255,255,.13),transparent 42%),linear-gradient(155deg,#3a342d,#101010 66%);background-size:cover;background-position:center 22%;filter:brightness(.9) contrast(1.03) saturate(.94)}.mmd-sigil-card-shade{position:absolute;inset:0;background:linear-gradient(90deg,transparent 48%,rgba(13,14,16,.12) 60%,rgba(13,14,16,.88) 100%)}.mmd-sigil-card-frame-outer,.mmd-sigil-card-frame-inner{position:absolute;pointer-events:none}.mmd-sigil-card-frame-outer{inset:15px;border:2px solid rgba(238,241,243,.76);box-shadow:0 0 0 1px rgba(58,61,65,.9),inset 0 0 0 1px rgba(255,255,255,.12)}.mmd-sigil-card-frame-inner{inset:23px;border:1px solid rgba(70,73,77,.85)}.mmd-sigil-card-accent{position:absolute;left:23px;top:38px;width:7px;height:66px;background:var(--sigil-accent);box-shadow:0 0 15px var(--sigil-accent)}.mmd-sigil-kind-exclusive .mmd-sigil-card-accent{width:9px;height:96px}.mmd-sigil-card-panel{position:absolute;right:36px;top:44px;width:43%;display:flex;flex-direction:column;align-items:flex-end;gap:18px;text-align:right}.mmd-sigil-card-identity{max-width:100%;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(38px,5.2vw,74px);font-weight:500;line-height:.92;letter-spacing:-.055em;overflow-wrap:anywhere}.mmd-sigil-card-metrics{display:flex;justify-content:flex-end;gap:18px;font-family:Georgia,\"Times New Roman\",serif;font-size:clamp(31px,4vw,58px);font-variant-numeric:tabular-nums}.mmd-sigil-card-metrics>span{display:flex;align-items:baseline}.mmd-sigil-card-metrics small,.mmd-sigil-card-metrics em{display:none}.mmd-sigil-card-brand{position:absolute;right:36px;bottom:32px;color:rgba(247,240,228,.76);font-size:9px;font-weight:800;letter-spacing:.17em}.mmd-sigil-card-public{color:#222428;background:#f2f1ed}.mmd-sigil-card-public .mmd-sigil-card-photo{filter:brightness(.96) contrast(1.01) saturate(.94)}.mmd-sigil-card-public .mmd-sigil-card-shade{background:linear-gradient(90deg,transparent 48%,rgba(246,245,239,.10) 60%,rgba(246,245,239,.9) 100%)}.mmd-sigil-card-public .mmd-sigil-card-frame-outer{border-color:rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(52,55,59,.78)}.mmd-sigil-card-public .mmd-sigil-card-frame-inner{border-color:rgba(72,75,79,.68)}.mmd-sigil-card-public .mmd-sigil-card-brand{color:rgba(31,33,36,.76)}@media(max-width:1100px){.mmd-sigil-template-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:720px){#" + PICKER_ID + "{padding:15px}.mmd-sigil-template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mmd-sigil-template-tile{min-height:154px}.mmd-sigil-tile-art{height:66px}.mmd-sigil-card-panel{right:26px;top:34px;width:52%}.mmd-sigil-card-identity{font-size:38px}.mmd-sigil-card-metrics{font-size:31px}.mmd-sigil-title-field{grid-column:span 1}}";
+    if (byId("mmd-studio-visual-picker-css")) return;
+    var style = document.createElement("style"); style.id = "mmd-studio-visual-picker-css";
+    style.textContent = "#mmdSigilCompcardPicker{padding:18px;margin:16px 0;background:#111;border:1px solid #655139;border-radius:18px;color:#f7edda}#mmdSigilCompcardPicker h2{font:600 22px/1.3 system-ui;margin:0 0 10px}#mmdSigilCompcardPicker p{font:13px/1.6 system-ui;margin:10px 0}.mmd-studio-frame-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}.mmd-studio-frame-grid button{padding:5px;background:#171717;border:1px solid #777;border-radius:8px;color:#fff;font:12px/1.4 system-ui;cursor:pointer}.mmd-studio-frame-grid button[aria-pressed=true]{outline:2px solid #f3d192;outline-offset:2px}.mmd-studio-frame-grid button:disabled{opacity:.4;cursor:default}.mmd-studio-frame-grid img{display:block;width:100%;aspect-ratio:1316/1195;object-fit:contain}.mmd-studio-frame-grid span{display:block;padding:6px}.mmd-sigil-hidden{display:none!important}.mmd-studio-frame-empty{display:flex;align-items:center;justify-content:center;background:#111;color:#f7edda;padding:20px;font:16px/1.5 system-ui}@media(max-width:900px){.mmd-studio-frame-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:520px){.mmd-studio-frame-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}";
     document.head.appendChild(style);
   }
-
-  function bootAll() {
-    boot();
-    bootFinalPreview();
-  }
-
+  function bootAll() { boot(); bootFinalPreview(); }
   if (document.readyState === "complete") window.setTimeout(bootAll, 0);
   else window.addEventListener("load", bootAll, { once: true });
 })();

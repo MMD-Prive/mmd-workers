@@ -1,103 +1,120 @@
-# Owner-edited Studio frames — preparation, not installed
+# Studio clean frame replacement — not released
 
-These are the seven exact Library PNG originals supplied by the owner on
-2026-10-19. They are 1316 × 1195 and opaque. `manifest.json` retains their
-Library identities, original filenames, SHA-256 digests and content-addressed
-deployment filenames. No raster edits, re-encoding or generated replacements
-have been made. Files 6–7 are the corrected versions with Run Number boxes.
+The owner requested five general visual color frames, in this order:
+**matte gray, green, cyan, red, orange**. These are presentation choices, not
+ST/GY/FR/EN/EX category assignments. The corrected EMs/GWs frames remain
+separate, with their original labels and empty Run Number boxes.
 
-## Mapping gate
+The five revised general PNGs are pending. `release_ready: false` prevents
+release packaging of the superseded general artwork. The QA fixtures may use
+those old files only while explicitly displaying a superseded-artwork notice.
+Nothing is installed in live Studio.
 
-| Owner asset | Accent | Studio field | Existing stable template ID |
-| --- | --- | --- | --- |
-| 1 | cyan | EN / Travel | `mmd-prive-travel` |
-| 2 | red | EX / Extreme | `mmd-prive-extreme` |
-| 3 | purple | awaiting owner | unassigned |
-| 4 | purple | awaiting owner | unassigned |
-| 5 | purple | awaiting owner | unassigned |
-| 6 | purple | EMs | `sigil-ems-aureate` |
-| 7 | gold | GWs | `sigil-gws-nightwave` |
+## State and authority
 
-The pending fields are ST (`sigil-straight-bronze`), GY (`sigil-gay-plum`) and
-FR (`sigil-foreigner-emerald`). Do not assign them from color, appearance or
-filename order. The manifest intentionally contains null fields for 3–5.
-No model classification is changed by this work.
+`studio-compcard-template-selector.js` now draws the supplied assets through
+`studio-clean-frame-renderer.js`. The picker displays actual asset thumbnails
+and color labels. A general visual selection updates only
+`visual_variant_number`, `visual_frame_number`, `visual_frame_version` in the
+existing local draft stores. It does not set or default category, Field,
+Family, `template_id`, canonical model data, media selection or approval state.
+Blank Family remains blank. Choosing a color does not unlock backend Review.
 
-## Prepared renderer and local verification
+All existing category template IDs remain stable:
+`sigil-straight-bronze`, `sigil-gay-plum`, `sigil-foreigner-emerald`,
+`mmd-prive-travel`, `mmd-prive-extreme`, `sigil-ems-aureate`,
+`sigil-gws-nightwave`. The existing Family dropdown remains a separate control.
+EMs/GWs use labeled artwork 6/7 according to the already-selected Family;
+incompatible general frames are disabled for those exclusive identities.
+All other categories, including Travel/Extreme and unconfirmed Family, may
+choose any of the five general colors without being reclassified.
 
-`../../studio-clean-frame-renderer.js` draws the exact artwork behind a
-contained photo inset at left 7%, top 12%, width 64%, height 76%. The frame uses
-its native aspect ratio. The entire original source photo remains visible,
-with no filters or transformations beyond proportional sizing. Typography
-sits in the reserved right area. The baked EMs/GWs label is not duplicated;
-only the editable zero-padded digits are drawn inside its original empty box.
-Missing digits remain blank. No logos or extra divider lines are added.
+Final Preview consumes the stored visual selection without writing to state,
+adding navigation, bypassing Review or adding publication controls. No source
+photo bytes or URLs are persisted by this selector. A photo style observer
+keeps the preview in sync with the existing controller's source selection.
 
-This is a standalone preparatory renderer. The existing Studio selector,
-Review handoff and Final Preview have **not** been wired to it yet because
-three asset mappings remain unconfirmed. Stable IDs and existing persisted
-state must be retained when integrating it.
+The original PNGs are opaque. Artwork sits behind a contained photo inset at
+left 7%, top 12%, width 64%, height 76%, using the native 1316 × 1195 aspect
+ratio. No face edits, filters, additional logos or divider lines are added.
+Only zero-padded digits are drawn inside the original EMs/GWs number boxes;
+missing numbers stay blank. Model names and large measurements use the right
+reserved area. Frame geometry and source photo proportions are preserved.
+
+## Provenance and validation
+
+`manifest.json` keeps Library IDs, original filenames, dimensions, SHA-256
+hashes and content-addressed filenames. General assets 1–5 will be replaced
+with the exact revised Library PNGs before `release_ready` can become true.
+Old artwork is never recolored programmatically or treated as the new palette.
 
 ```sh
 npm ci --ignore-scripts
-node --test webflow/internal/admin/studio/studio-clean-frame-renderer.test.mjs admin-worker/studio-webflow-source.test.mjs
+node --test webflow/internal/admin/studio/studio-clean-frame-renderer.test.mjs webflow/internal/admin/studio/studio-clean-frame-integration.test.mjs admin-worker/studio-webflow-source.test.mjs
 node scripts/studio-clean-frame-preview.mjs
 ```
 
-Local visual QA: `http://127.0.0.1:4179`. All seven assets use a synthetic
-checkerboard source; the page does not represent model classification or
-create any backend records. Changing Run Number checks both original boxes.
+Local QA: `http://127.0.0.1:4179`, `/upload`, `/model-preview`.
+These fixtures use a synthetic model/source and do not execute the backend
+Review decision gate. Tests run the built/minified runtime and cover every
+general color with ST/GY/FR/EN/EX and blank Family, preservation of category
+IDs and unrelated state, reload, read-only Final Preview, exclusive Run Number
+updates, wrong-frame protection, photo refresh, original hashes and absence
+of extra logos. Existing Studio API source contracts are also checked.
 
-## Exact hosting and release path
+## Exact asset hosting and publication plan
 
-The established repository asset publisher uses Cloudflare R2 bucket
-`mmd-models`, account `b176eda1172b741fd2e58904cc9d77c5`, exposed through
-`https://models.mmdbkk.com/`. Existing reference:
-`.github/workflows/deploy-kenji-admin-assets.yml`. Its published
-`/webflow/internal/admin/kenji/kenji-admin-v1.js` returned HTTP 200,
-`application/javascript`, on 2026-10-19. This verifies the established host,
-not deployment of these new files.
+The established asset publisher uses R2 bucket `mmd-models`, account
+`b176eda1172b741fd2e58904cc9d77c5`, exposed at
+`https://models.mmdbkk.com/`. Repository precedent:
+`.github/workflows/deploy-kenji-admin-assets.yml`. Its existing
+`/webflow/internal/admin/kenji/kenji-admin-v1.js` returned HTTP 200 and
+`application/javascript` on 2026-10-19. This verifies the host, not upload of
+these new Studio assets. No credentials or external resource permissions
+have been changed.
 
-Reserved new object prefix:
-`webflow/internal/admin/studio/frames/clean-v1/`.
-Each intended public URL is `manifest.hosting.public_base + '/' + asset_file`.
-Upload the content-addressed PNGs using the existing dedicated R2 publisher
-credential, `Content-Type: image/png`, and immutable caching. Read each object
-back and compare its digest before changing a Webflow loader. Do not expose
-Library transfer URLs or embed PNG base64 in Webflow code.
+Reserved object prefix: `webflow/internal/admin/studio/frames/clean-v1/`.
+After the revised palette has been imported and reviewed:
 
-Release remains pending, in this order:
-
-1. Obtain the owner's 3–5 mapping; update the manifest and integration tests.
-2. Wire the selector tiles and manual Upload/Final Preview to this renderer,
-   retaining all seven stable template IDs, canonical run state and
-   decision-driven Review → Final Preview handoff. Replace the old added logo
-   and CSS frame paths completely for these manual clean templates.
-3. Bundle and host the small renderer/selector JavaScript beside the static
-   art with an immutable release URL. Read back exact bytes. No Worker deploy
-   or route change is required for this presentation-only path.
-4. Read current Webflow code and verify site
+1. Verify all seven source hashes and final colors; set manifest
+   `release_ready: true`. Build the exact release using
+   `node scripts/build-studio-clean-frame-release.mjs /tmp/studio-clean-frame-release`.
+   This produces seven content-addressed PNGs, a content-addressed minified
+   registry/renderer/selector bundle, `release.json` and the small
+   `webflow-loader.html`. The builder refuses a pending/superseded registry.
+2. Obtain required merge/release authorization for the reviewed exact commit.
+   Upload only these static files to the reserved prefix using the existing
+   dedicated R2 publisher credential, `image/png` or `application/javascript`,
+   with immutable caching. Read back and compare every digest. Verify public
+   GET responses and PNG dimensions before touching a Webflow loader.
+3. Read current Webflow site/page code. Verify documented site
    `68f879d546d2f4e2ab186e90`, Upload page `6a1be738a8018a51046e5335`, and the
-   corresponding Final Preview page. Replace only the current selector block
-   with its small hosted loader. Preserve unrelated code; the documented
-   footer was already 49,881 characters. Check current publish scope and any
-   unrelated pending Webflow drafts before requesting publication approval.
-5. Request the required merge/release/publication approval for the concrete
-   completed change. Publish only the reviewed presentation scope. Verify
-   authenticated live Upload, Review handoff and Final Preview for every
-   confirmed mapping, image loading, name/metric placement, blank and filled
-   EMs/GWs boxes and absence of duplicate logos/labels. Installation is not
-   complete until those live checks pass.
+   current Final Preview page before any mutation. Replace only the old
+   selector script block with the generated hosted loader on both surfaces;
+   preserve all other controllers, legacy source intake and Review gates.
+   Do not load both old and new selectors. The documented footer was already
+   49,881 characters; use the loader rather than embedded JS/base64 PNGs.
+4. Read the saved draft code back. Inspect actual publish scope and unrelated
+   pending Webflow drafts, obtain publication approval, then publish only the
+   reviewed presentation change. No Worker deployment or route change is
+   needed for this manual rendering path.
+5. Verify authenticated live Upload → Review → Final Preview using safe draft
+   fixtures: all five color choices, category unchanged, exact source photo,
+   persistence, name/metric placement, corrected EMs/GWs blank/filled number
+   boxes, no duplicate logos or labels, and no new publish/send controls.
+   Claim installation only after these live checks pass.
 
-This preparatory PR does not upload to R2, modify Webflow drafts, merge,
-publish, send Telegram, run paid generation or repair the file chooser.
+Rollback restores the previously saved exact selector blocks/loaders only.
+Content-addressed assets can remain unused; no deletion or canonical data
+rollback is required. Do not repair the unrelated file chooser as part of this
+release. No Telegram sends, paid generation or model publication are included.
 
 ## Separate automatic pipeline
 
-`admin-worker/src/model-card-design.js` is a different 1322 × 1200 renderer
-used by automatic profile-card generation. It currently draws the previous
-CSS frame and approved runtime logo. It will not inherit these manual PNGs.
-It requires a separate reviewed reconciliation to show the same clean art
-and omit the old logo, including an explicit 1316 × 1195 → 1322 × 1200 sizing
-decision. This PR does not change it or activate automatic generation.
-`MODEL_CARD_AUTO_ENABLED` and all release gates remain unchanged.
+`admin-worker/src/model-card-design.js` is a separate 1322 × 1200 automatic
+renderer. It currently draws the previous CSS frame and approved runtime
+logo and will not inherit these manual PNGs. It needs separate reviewed
+reconciliation to show the same clean artwork, including an explicit
+1316 × 1195 → 1322 × 1200 sizing decision. This change does not alter it or
+activate automatic generation. `MODEL_CARD_AUTO_ENABLED` and release gates
+remain unchanged.

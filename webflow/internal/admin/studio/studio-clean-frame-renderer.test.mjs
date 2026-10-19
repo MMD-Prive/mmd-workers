@@ -64,8 +64,8 @@ test("source does not create publication, classification or paid generation side
   assert.doesNotMatch(source, /brightness\(|contrast\(|saturate\(/);
 });
 
-test("unconfirmed purple variants remain unassigned; corrected exclusive mapping is explicit", () => {
-  assert.equal(manifest.mapping_status, "awaiting_owner_3_4_5");
-  assert.deepEqual(manifest.assets.map(a => a.field), ["EN", "EX", null, null, null, "EMs", "GWs"]);
+test("independent general variants remain unassigned; corrected exclusive mapping is explicit", () => {
+  assert.equal(manifest.release_ready, false);
+  assert.deepEqual(manifest.assets.map(a => a.field), [null, null, null, null, null, "EMs", "GWs"]);
   assert.deepEqual(manifest.assets.map(a => a.accent), ["cyan", "red", "purple", "purple", "purple", "purple", "gold"]);
 });

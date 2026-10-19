@@ -5,7 +5,7 @@
     "prefix": "webflow/internal/admin/studio/frames/clean-v1",
     "public_base": "https://models.mmdbkk.com/webflow/internal/admin/studio/frames/clean-v1"
   },
-  "mapping_status": "awaiting_owner_3_4_5",
+  "mapping_status": "awaiting_revised_palette_assets",
   "assets": [
     {
       "number": 1,
@@ -15,8 +15,9 @@
       "width": 1316,
       "height": 1195,
       "asset_file": "frame-1-2855ee13b780.png",
-      "field": "EN",
-      "accent": "cyan"
+      "field": null,
+      "accent": "cyan",
+      "superseded_pending_replacement": true
     },
     {
       "number": 2,
@@ -26,8 +27,9 @@
       "width": 1316,
       "height": 1195,
       "asset_file": "frame-2-d4127ccd32d6.png",
-      "field": "EX",
-      "accent": "red"
+      "field": null,
+      "accent": "red",
+      "superseded_pending_replacement": true
     },
     {
       "number": 3,
@@ -38,7 +40,8 @@
       "height": 1195,
       "asset_file": "frame-3-21d343044a20.png",
       "field": null,
-      "accent": "purple"
+      "accent": "purple",
+      "superseded_pending_replacement": true
     },
     {
       "number": 4,
@@ -49,7 +52,8 @@
       "height": 1195,
       "asset_file": "frame-4-cc4c8ba7b176.png",
       "field": null,
-      "accent": "purple"
+      "accent": "purple",
+      "superseded_pending_replacement": true
     },
     {
       "number": 5,
@@ -60,7 +64,8 @@
       "height": 1195,
       "asset_file": "frame-5-8d8a80b36744.png",
       "field": null,
-      "accent": "purple"
+      "accent": "purple",
+      "superseded_pending_replacement": true
     },
     {
       "number": 6,
@@ -84,5 +89,21 @@
       "field": "GWs",
       "accent": "gold"
     }
-  ]
+  ],
+  "visual_variants": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "category_assignment": "none_for_visual_variants",
+  "requested_palette": [
+    "matte gray",
+    "green",
+    "cyan",
+    "red",
+    "orange"
+  ],
+  "release_ready": false
 }
