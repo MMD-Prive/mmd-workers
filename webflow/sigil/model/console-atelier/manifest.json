@@ -5,23 +5,23 @@
   "files": [
     {
       "file": "console-session-etching.svg",
-      "bytes": 397,
-      "sha256": "efcec1323e42d3f83f7b4ef50bf106d26090469ceaf6aaad8073f45825f5e966"
+      "bytes": 372,
+      "sha256": "ebdff9b1368a143f8370b1f9570c0c94e1f0367901ab918e24d1b2319c57c417"
     },
     {
       "file": "console-travel-arc.svg",
-      "bytes": 387,
-      "sha256": "70b5e491b2155c25d7d1340c87dcb08969c37c2111d01a1538cc814b152d3cb3"
+      "bytes": 343,
+      "sha256": "4fa50bf79c86684c55e5e0ccbf69f5cdb05e2bb215b1729d13e9a56143b8cf2d"
     },
     {
       "file": "console-no-session.svg",
-      "bytes": 372,
-      "sha256": "226ff6b9af222da8fa548f483fd7fce63c50349e8032bad6f194d891465af399"
+      "bytes": 358,
+      "sha256": "84a23711ce3a44db8d6540d3c22c1cfd426f9d230091253113fe1f0e20ebd62d"
     },
     {
       "file": "console-after-job.svg",
-      "bytes": 343,
-      "sha256": "5a9d560c935e729eb596c1a54c99b4e620283bf60ca93f8f77ba17685286b313"
+      "bytes": 328,
+      "sha256": "5abdebcb7a5e6700db4dfc57c934506a122ae02c8e360fe410393d6d04d2ed0f"
     },
     {
       "file": "icons.svg",
