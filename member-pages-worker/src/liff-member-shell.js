@@ -1,3 +1,5 @@
+import { customerGraphic, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
+import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
@@ -279,10 +281,11 @@ function renderShell(config, nonce) {
     ${MY_MMD_LOVABLE_DESIGN_CSS}
   ${travelClientCss}
   ${MY_MMD_LIFF_COMPACT_V4_CSS}
+  ${CUSTOMER_GRAPHICS_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress></div></div>`}
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span class="customer-boot-progress">0% · กำลังรอข้อมูล</span></div></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -337,7 +340,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
     </svg>
     <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
-    <section class="digital-snapshot" aria-label="สถานะสมาชิก"><div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
+    <section class="digital-snapshot" aria-label="สถานะสมาชิก">${customerGraphic("membership-frame")}<div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
     <details id="minimal-member-display" class="digital-history-review" aria-label="ข้อมูลย้อนหลังอยู่ระหว่างตรวจสอบ" hidden>
       <summary>ข้อมูลประวัติยังอยู่ระหว่างตรวจสอบ</summary>
       <div class="digital-history-review-content">
@@ -348,12 +351,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     </details>
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
-    <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>
+    <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>${customerGraphic("current-booking")}
       <div class="digital-sectionline"><h2 id="digital-mission-title"><small>CURRENT JOB</small>MMD MISSION</h2><span class="digital-mission-state" id="digital-mission-state"></span></div>
       <div class="digital-mission-head"><strong id="digital-mission-model">MMD</strong><p id="digital-mission-meta"></p><p id="digital-mission-eta" hidden></p></div>
       <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">ดู MISSION ↗</button>
       <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
     </section>
+    <div id="customer-no-booking" class="customer-booking-empty" hidden>${customerGraphic("no-current-booking")}ยังไม่มีงานปัจจุบันที่ยืนยันแล้วครับ</div>
     <details class="digital-news-disclosure" id="digital-news-disclosure">
       <summary class="digital-news-summary">
         <span class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
@@ -371,12 +375,12 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     </section>
     <section id="points" class="panel digital-view" aria-label="Points">
       <div class="card" id="history-preview-card"><h2>ประวัติและคะแนนประมาณการ</h2><p>ข้อมูลยังแสดงไม่ครบ</p><p id="history-preview-notice" class="sub">ยอดประวัติเบื้องต้น อยู่ระหว่างตรวจสอบ</p><strong id="history-preview-points" class="value">—</strong><p id="history-preview-amount" class="sub"></p><p class="sub">ประมาณการจากประวัติงานที่บันทึก · ทุก 100 บาท = 1 คะแนน · ก่อนหักหรือหมดอายุ · ยังใช้แลกหรือยืนยันสิทธิ์ไม่ได้</p></div>
-      <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
+      <div class="card">${customerGraphic("points-ledger")}<h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
       <div class="card"><span id="service-spend-label" class="label">Service spend</span><div class="detail-grid"><div><span id="lifetime-spend-label" class="label">Lifetime</span><strong id="points-lifetime-spend" class="value">—</strong></div><div><span id="spend-365-label" class="label">Last 365 days</span><strong id="points-365-spend" class="value">—</strong></div></div></div>
       <div class="card"><span class="label" data-copy="pointsHistoryLabel">Points history</span><div id="points-history" class="history"></div></div>
     </section>
     <section id="credits" class="panel digital-view" aria-label="Service Credit Wallet">
-      <div class="card"><span class="label" data-copy="creditWalletLabel">MY MMD CREDIT</span><h2 data-copy="creditWalletTitle">💳 เครดิตบริการของฉัน</h2><p id="credit-wallet-message" class="sub" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p>
+      <div class="card"><span class="label" data-copy="creditWalletLabel">MY MMD CREDIT</span>${customerGraphic("credit-wallet")}<h2 data-copy="creditWalletTitle">💳 เครดิตบริการของฉัน</h2><p id="credit-wallet-message" class="sub" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p>
         <div class="detail-grid"><div><span class="label" data-copy="creditAvailableLabel">ใช้ได้</span><strong id="credit-available" class="value">—</strong></div><div><span class="label" data-copy="creditReservedLabel">จองไว้</span><strong id="credit-reserved" class="value">—</strong></div><div><span class="label" data-copy="creditUsedLabel">ใช้แล้ว</span><strong id="credit-used" class="value">—</strong></div></div>
       </div>
       <div class="card"><span class="label" data-copy="creditRecentLabel">รายการล่าสุด</span><div id="credit-wallet" class="history"><p class="empty" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p></div></div>
@@ -401,7 +405,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <details class="card details"><summary data-copy="mmsLabel">MMS prebookings</summary><div id="mms" class="stack"></div></details>
     </section>
     <section id="history-panel" class="panel digital-view" aria-label="History">
-      <div class="card"><h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
+      <div class="card">${customerGraphic("history-archive")}<h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
       <details class="card details"><summary data-copy="paymentHistoryLabel">Payment history</summary><div id="payment-history" class="stack"></div></details>
     </section>
     <section id="care" class="panel digital-care" aria-label="Care"><div class="card care">
@@ -417,11 +421,11 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         <div id="wish-result" class="wish-result hidden" role="status" aria-live="polite"></div>
       </div>
     </div></section>
-    <section id="coupons" class="panel digital-view" aria-label="Coupon Wallet"><div class="card">
+    <section id="coupons" class="panel digital-view" aria-label="Coupon Wallet"><div class="card">${customerGraphic("coupon")}
       <span class="label" data-copy="couponWalletLabel">MY MMD</span><h2 data-copy="couponWalletTitle">🎟 คูปองของฉัน</h2>
       <div id="coupon-wallet" class="stack"><p class="empty" data-copy="couponWalletEmpty">ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ</p></div>
     </div></section>
-    <section id="my-requests" class="panel digital-requests" aria-label="My requests">
+    <section id="my-requests" class="panel digital-requests" aria-label="My requests">${customerGraphic("payment-proof")}
       <details class="card details digital-request-block">
         <summary><span><small>MY DETAILS</small><strong>ข้อมูลที่อยากให้ MMD ใช้ดูแลคุณ</strong></span></summary>
         <div class="digital-request-body"><p class="form-note">ข้อมูลนี้ส่งให้ทีม MMD ตรวจสอบก่อนอัปเดต จึงไม่เปลี่ยนประวัติที่ยืนยันแล้วเอง</p>
@@ -448,6 +452,8 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 (() => {
   "use strict";
   const CONFIG = ${safeConfig};
+  const customerLoading = (${createCustomerProgress.toString()})({ render: ${renderCustomerProgress.toString()}, request: window.fetch.bind(window) });
+  const fetch = customerLoading.fetch;
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
@@ -553,7 +559,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   async function preflightWelcomeIdentity() {
     if (CONFIG.intent === "signup" || !CONFIG.liffId || !window.liff) return false;
     try {
-      await window.liff.init({ liffId: CONFIG.liffId });
+      await customerLoading.waitFor(() => window.liff.init({ liffId: CONFIG.liffId }), CONFIG.intent === "signup" ? "signup" : "home");
       if (!window.liff.isLoggedIn()) return false;
       const idToken = window.liff.getIDToken();
       if (!idToken) return false;
@@ -1054,6 +1060,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   function hideMemberProfile() {
+    if (typeof customerLoading !== "undefined") customerLoading.reset();
     profileReady = false;
     secondaryReads.clear();
     profile.classList.add("hidden");
@@ -1064,7 +1071,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     hydrateDigitalHome.generation = (hydrateDigitalHome.generation || 0) + 1;
     hydrateDigitalMission.generation = (hydrateDigitalMission.generation || 0) + 1;
     loadRenewalCard.generation = (loadRenewalCard.generation || 0) + 1;
-    for (const id of ["digital-mission", "digital-needs", "renewal-card"]) {
+    for (const id of ["digital-mission", "customer-no-booking", "digital-needs", "renewal-card"]) {
       const node = document.getElementById(id);
       if (node) node.hidden = true;
     }
@@ -1405,6 +1412,8 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     hydrateDigitalMission.generation = generation;
     const mission = document.getElementById("digital-mission");
     if (mission) mission.hidden = true;
+    const empty = document.getElementById("customer-no-booking");
+    if (empty) empty.hidden = true;
     try {
       const selected = new URLSearchParams(location.search);
       const references = selected.getAll("session_id");
@@ -1412,7 +1421,12 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       if (references.length && (sessionId === null || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(sessionId))) return;
       const endpoint = "/api/member/app/session/current" + (sessionId ? "?session_id=" + encodeURIComponent(sessionId) : "");
       const response = await memberApiFetch(endpoint, { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
-      if (response.status === 204) return;
+      if (generation !== hydrateDigitalMission.generation) return;
+      if (response.status === 204) {
+        const empty = document.getElementById("customer-no-booking");
+        if (empty) empty.hidden = false;
+        return;
+      }
       const session = await response.json().catch(() => null);
       if (generation !== hydrateDigitalMission.generation) return;
       if (!response.ok || !session || typeof session !== "object") return;
@@ -2036,7 +2050,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       return;
     }
     try {
-      await window.liff.init({ liffId: CONFIG.liffId });
+      await customerLoading.waitFor(() => window.liff.init({ liffId: CONFIG.liffId }), CONFIG.intent === "signup" ? "signup" : "home");
       if (window.liff.isInClient()) signupLineEntry?.classList.add("hidden");
       if (!window.liff.isLoggedIn()) {
         if (CONFIG.intent === "signup" && !window.liff.isInClient()) {
