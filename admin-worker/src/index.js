@@ -6252,6 +6252,8 @@ async function createAdminJob(env, body) {
     google_map_url,
     amount_thb,
     pay_model_thb: body.pay_model_thb,
+    travel_fee_thb: body.travel_fee_thb ?? 0,
+    model_travel_fee_thb: body.model_travel_fee_thb ?? 0,
     service_amount_thb,
     original_amount_thb,
     pricing_adjustment,

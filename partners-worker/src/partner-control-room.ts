@@ -87,6 +87,8 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       : '<div class="pcr-job-locked" role="status"><b>กำลังเตรียมงาน</b><span>MMD กำลังตรวจข้อมูลก่อนเปิดให้ตอบรับงาน</span></div>';
     var budget = Number(job.partner_source_rate_thb);
     var budgetRow = Number.isFinite(budget) && budget > 0 ? '<div><dt>งบถึงตัว</dt><dd><b>' + esc(money(budget)) + '</b></dd></div>' : '';
+    var modelTravel = Number(job.model_travel_fee_thb);
+    var travelRow = Number.isFinite(modelTravel) && modelTravel > 0 ? '<div><dt>ค่าเดินทางโมเดล</dt><dd>' + esc(money(modelTravel)) + '</dd></div>' : '';
     var ps = job.profit_share;
     var profitRows = '';
     if (job.working_system === "profit_share" && ps) {
@@ -101,7 +103,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     return '<article class="pcr-job" data-job="' + esc(job.session_record_id) + '">' +
       '<div class="pcr-job-main"><div><span class="pcr-status">' + esc(job.status || "pending") + '</span><h3>' + esc(job.model_name) + '</h3></div><strong>' + dateTime(job.start_at || job.date) + '</strong></div>' +
       changeAlert +
-      '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div>' + profitRows + '</dl>' +
+      '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div>' + budgetRow + travelRow + '<div><dt>สถานที่</dt><dd>' + esc(job.location) + locationNote + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div>' + profitRows + '</dl>' +
       actions +
       '<label class="pcr-private-field"><span>Private travel note · Partner-only encrypted</span><textarea data-private-travel placeholder="เช่น เดินทางถึงกรุงเทพฯ วันที่…" ' + (state.vault ? "" : "disabled") + '>' + esc(note) + '</textarea></label>' +
       '</article>';

@@ -32,6 +32,8 @@ const SESSION_FIELDS = Object.freeze({
   note: "fldEcDkF7CH9VixWM",
   notes: "fldwl9Gs5tYlXG5ls",
   payModelThb: "fldlTO5aNfqUmlNWm",
+  travelFeeThb: "fld703jI4zQ0CYMHh",
+  modelTravelFeeThb: "fldqYkGm9Vd3P366W",
   customerConfirmationUrl: "fldi9ZdoiUXzSv1rI",
   modelConfirmationUrl: "fld0mFma9J9yfEaKb",
 });
@@ -97,6 +99,8 @@ export async function handleCanonicalConfirmLink(request, env) {
     const locationName = requiredText(body.location_name, "location_name", 300);
     const googleMapUrl = text(body.google_map_url, 1000);
     const amountThb = positiveNumber(body.amount_thb ?? body.amount, "amount_thb");
+    const travelFeeThb = optionalNonNegativeNumber(body.travel_fee_thb, "travel_fee_thb") ?? 0;
+    const modelTravelFeeThb = optionalNonNegativeNumber(body.model_travel_fee_thb, "model_travel_fee_thb") ?? 0;
     const originalAmountCandidate = optionalNonNegativeNumber(
       body.original_amount_thb ?? body.payment_original_amount_thb,
       "original_amount_thb",
@@ -116,8 +120,10 @@ export async function handleCanonicalConfirmLink(request, env) {
     // Keep machine-readable membership markers on their own lines.
     const note = clean(body.note || body.notes).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").slice(0, 4000);
     const components = parseSigilMembershipPaymentComponents(note, amountThb);
-    const serviceAmountThb = components?.service_amount_thb ?? amountThb;
-    if (body.service_amount_thb != null && positiveNumber(body.service_amount_thb, "service_amount_thb") !== serviceAmountThb) {
+    const serviceAmountThb = body.service_amount_thb != null
+      ? positiveNumber(body.service_amount_thb, "service_amount_thb")
+      : (components?.service_amount_thb ?? amountThb);
+    if (components && components.service_amount_thb !== serviceAmountThb) {
       throw httpError(400, "service_amount_component_mismatch");
     }
     const minimumDepositThb = computeFixedCustomerDeposit(serviceAmountThb);
@@ -214,8 +220,10 @@ export async function handleCanonicalConfirmLink(request, env) {
       [SESSION_FIELDS.sessionStatus]: "Pending",
       [field(env.AT_SESSIONS__PAYMENT_STATUS, SESSION_FIELDS.paymentStatus)]: "pending",
       [field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)]: paymentRef || undefined,
-      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: serviceAmountThb,
+      [field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]: components ? serviceAmountThb : amountThb,
       [SESSION_FIELDS.payModelThb]: payModelThb,
+      [SESSION_FIELDS.travelFeeThb]: travelFeeThb,
+      [SESSION_FIELDS.modelTravelFeeThb]: modelTravelFeeThb,
       [SESSION_FIELDS.clientName]: clientName,
       [SESSION_FIELDS.modelName]: modelName,
       [SESSION_FIELDS.jobType]: jobType,
