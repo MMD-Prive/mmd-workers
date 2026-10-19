@@ -10,6 +10,33 @@ const SESSION = "/internal/admin/login/session";
 const NEXT = "/internal/admin/control-room";
 const DASHBOARD = "/internal/admin/dashboard";
 
+test('active entrypoint Owner LINE snapshot requires credential session and never writes', async () => {
+  const env = runtimeEnv({ ADMIN_LOGIN_CREDENTIAL: 'fixture-owner', ADMIN_SESSION_SECRET: 'fixture-session', AIRTABLE_API_KEY: 'fixture-airtable' });
+  const endpoint = 'https://mmdbkk.com/internal/ceo/kenji-control?kenji_line_unlock_state=1';
+  const denied = await worker.fetch(new Request(endpoint, { headers: { Origin: 'https://mmdbkk.com' } }), env, {});
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).error, 'owner_required');
+  const session = await login('fixture-owner', env);
+  const Cookie = cookiePair(session);
+  const originalFetch = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    assert.equal(init.method || 'GET', 'GET');
+    assert.equal(new URL(input).hostname, 'api.airtable.com');
+    reads++;
+    const formula = new URL(input).searchParams.get('filterByFormula');
+    const scope = formula.includes('model_keyword') ? 'model_keyword_auto_reply'
+      : formula.includes('line_oa') ? 'line_oa_auto_reply' : 'all_kenji_mutations';
+    return Response.json({ records: [{ fields: { version: 3, enabled_state: scope === 'all_kenji_mutations' ? 'disabled' : 'enabled' } }] });
+  };
+  try {
+    const result = await worker.fetch(new Request(endpoint, { headers: { Cookie, Origin: 'https://mmdbkk.com' } }), env, {});
+    assert.equal(result.status, 200);
+    assert.equal((await result.json()).controls.model_keyword_auto_reply.enabled, true);
+    assert.equal(reads, 3);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 function runtimeEnv(env = {}) {
   return {
     ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com",

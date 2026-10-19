@@ -273,6 +273,13 @@ export async function readKenjiRuntimeControls(env = {}) {
   return readRuntimeControls(env);
 }
 
+// Owner UI readback uses the same version ordering as the existing action.
+// No record IDs, reasons, actors, or credentials leave this projection.
+export async function readKenjiRuntimeControlVersions(env = {}) {
+  return Object.fromEntries(await Promise.all(KENJI_RUNTIME_SCOPES.map(async scope =>
+    [scope, await latestRuntimeScope(env, scope)])));
+}
+
 async function isRuntimeScopeEnabled(env, scope) {
   return Boolean((await latestRuntimeScope(env, scope)).enabled);
 }

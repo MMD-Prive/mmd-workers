@@ -5,6 +5,11 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/admin-login-active-entrypoint.test.mjs"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "admin-worker/src/kenji-owner-line-unlock.js"
+      - "admin-worker/kenji-owner-line-unlock.test.mjs"
+      - "admin-worker/src/kenji-control-actions.js"
+      - "admin-worker/kenji-control-actions.test.mjs"
       - ".github/workflows/admin-login-active-entrypoint-ci.yml"
   push:
     branches:
@@ -12,6 +17,11 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/admin-login-active-entrypoint.test.mjs"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "admin-worker/src/kenji-owner-line-unlock.js"
+      - "admin-worker/kenji-owner-line-unlock.test.mjs"
+      - "admin-worker/src/kenji-control-actions.js"
+      - "admin-worker/kenji-control-actions.test.mjs"
       - ".github/workflows/admin-login-active-entrypoint-ci.yml"
   workflow_dispatch:
 
@@ -33,3 +43,5 @@ jobs:
         run: node --check src/admin-login-hero-worker.js
       - name: Test active entrypoint credential contract
         run: node --test admin-login-active-entrypoint.test.mjs
+      - name: Test scoped Owner LINE control and existing audit contract
+        run: node --test kenji-owner-line-unlock.test.mjs kenji-control-actions.test.mjs

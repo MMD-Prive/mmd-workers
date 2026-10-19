@@ -36,6 +36,7 @@ import {
   isKenjiModelAdminRequest,
 } from "./kenji-model-admin-adapter.js";
 import { handleKenjiControlRequest, isKenjiControlRequest } from "./kenji-control-endpoints.js";
+import { handleOwnerLinePage, OWNER_LINE_PAGE } from './kenji-owner-line-unlock.js';
 import {
   handleKenjiControlAction,
   handleKenjiRuntimeStatusRpc,
@@ -388,6 +389,12 @@ export default {
       return handleKenjiPublicKnowledgeRequest(request, env);
     }
 
+    if (path === OWNER_LINE_PAGE && method === 'GET') {
+      // CEO pages are outside isBrowserAdminPath; validate the same signed
+      // credential here without widening the shared admin gate or trusting headers.
+      const actor = strictGate.actor || await readCredentialBoundAdminActor(request, env);
+      return handleOwnerLinePage(request, env, actor, () => worker.fetch(request, env, ctx));
+    }
     return worker.fetch(request, env, ctx);
   },
 };
