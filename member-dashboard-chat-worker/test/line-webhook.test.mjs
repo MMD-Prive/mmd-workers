@@ -231,6 +231,9 @@ test("canonical personal payment, membership, and points status fail closed dete
     ["เช็คคะแนนครับ", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
     ["แต้มของผมมีเท่าไหร่", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
     ["ดูยอด Points ล่าสุด", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["check points", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["CHECK POINTS", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
+    ["Check   Points?", "points_status", "points", /ยังไม่ยืนยันตัวเลข.*miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=points/],
   ];
   for (const [text, intent, domain, replyPattern] of cases) {
     const event = lineTextEvent(text);
