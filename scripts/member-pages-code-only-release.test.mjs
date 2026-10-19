@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
-  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, releaseMemberPagesCodeOnly,
-  uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
+  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
+  buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
 } from './member-pages-code-only-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
-const sha = 'a'.repeat(40);
+const sha = CODE_ONLY_SOURCE_SHA;
+const releaseSha = 'a'.repeat(40);
 const deployment = (version = id(1), deploymentId = id(10)) => ({
   id:deploymentId, strategy:'percentage', versions:[{version_id:version,percentage:100}],
 });
@@ -75,7 +78,7 @@ function fixture(options = {}) {
     throw new Error(`unexpected ${method} ${path}`);
   };
   const io = {
-    sha, expectedVersion:id(1), expectedDeployment:id(10),
+    sha, releaseSha, expectedVersion:id(1), expectedDeployment:id(10),
     approve:async()=>{ approvals++; if(options.rejectApproval===approvals) throw new Error('approval_denied'); },
     call,
     sourceCheck:async()=>({method:'fixture_clean_main',source_sha:sha,config_unchanged:true}),
@@ -89,6 +92,8 @@ test('strict code-only upload inherits and preserves the exact baseline configur
   const f=fixture();
   const result=await releaseMemberPagesCodeOnly(f.io);
   assert.equal(result.phase,'complete');
+  assert.equal(result.source_sha, CODE_ONLY_SOURCE_SHA);
+  assert.equal(result.release_sha, releaseSha);
   assert.equal(result.uploaded_version,id(2));
   assert.equal(activeVersion(f.active()),id(2));
   assert.deepEqual(f.calls.filter(x=>x.method==='POST').map(x=>x.path),[
@@ -288,6 +293,49 @@ test('bundle evidence rejects excluded Worker inputs, aliases, missing maps and 
   assert.equal(f.writes(),0,'contaminated bundle must stop before upload');
 });
 
+test('pinned-source bundling enforces the input graph before any upload', async () => {
+  const workspace = mkdtempSync(join(tmpdir(),'member-pages-pinned-bundle-test-'));
+  const sourceDirectory = join(workspace,'release-source');
+  mkdirSync(sourceDirectory);
+  const good = {version:3,sourceRoot:sourceDirectory,
+    sources:['member-pages-worker/src/runtime-index.js','shared/private-media.mjs'],mappings:'AAAA'};
+  try {
+    const cases = [
+      {map:good, allowed:true},
+      {map:{...good,sources:[...good.sources,...CODE_ONLY_EXCLUDED_CHANGE.paths]}},
+      {map:{...good,sourceRoot:join(workspace,'release-tools')}},
+      {map:{...good,sources:['shared/private-media.mjs']}},
+      {map:{...good,sources:[...good.sources,'../outside.js']}},
+      {map:{...good,mappings:''}},
+      {map:null},
+    ];
+    for (const [index,entry] of cases.entries()) {
+      const out = join(workspace,'bundle-'+index);
+      mkdirSync(out);
+      const run = (command,args,options) => {
+        assert.equal(command,'wrangler');
+        assert.deepEqual(args.slice(0,3),['versions','upload','--dry-run']);
+        assert.equal(options.cwd,sourceDirectory);
+        assert.equal(options.env.CLOUDFLARE_API_TOKEN,'');
+        assert.equal(options.env.CLOUDFLARE_API_KEY,'');
+        writeFileSync(join(out,'runtime-index.js'),'export default {};');
+        if (entry.map) writeFileSync(join(out,'runtime-index.js.map'),JSON.stringify(entry.map));
+      };
+      const f = fixture();
+      f.io.bundle = async () => buildMemberPagesBundle(out,sourceDirectory,run);
+      if (entry.allowed) {
+        assert.equal((await releaseMemberPagesCodeOnly(f.io)).phase,'complete');
+        assert.equal(f.writes(),2);
+      } else {
+        await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+        assert.equal(f.writes(),0,'invalid input graph must stop before version upload');
+      }
+    }
+  } finally {
+    rmSync(workspace,{recursive:true,force:true});
+  }
+});
+
 test('release history requires the original base and both exact merged PRs', () => {
   assert.equal(CODE_ONLY_BASE_SHA, '05db9f10d32650a7b922475ea7e070f72ece4070');
   assert.deepEqual(CODE_ONLY_INCLUDED_PULL_REQUESTS, [
@@ -302,6 +350,70 @@ test('release history requires the original base and both exact merged PRs', () 
     assert.throws(()=>validateCodeOnlySourceHistory(sha, ancestor=>ancestor!==missing));
   }
   assert.throws(()=>validateCodeOnlySourceHistory('invalid', ()=>true));
+  assert.throws(()=>validateCodeOnlySourceHistory(releaseSha, ()=>true));
+});
+
+function checkoutFixture(options = {}) {
+  const calls = [];
+  const releaseDirectory = '/release-tools', sourceDirectory = '/release-source';
+  const git = (directory, ...args) => {
+    calls.push({directory,args});
+    if (args.join(' ') === 'rev-parse --show-toplevel') return options.wrongRoot ? '/other-root' : directory;
+    if (args.join(' ') === 'rev-parse HEAD') return directory === sourceDirectory
+      ? options.sourceSha || CODE_ONLY_SOURCE_SHA : options.releaseSha || releaseSha;
+    if (args[0] === 'status') return directory === options.dirtyDirectory ? '!! injected.js' : '';
+    if (args[0] === 'merge-base') {
+      if (options.missingHistory) throw new Error('not_ancestor');
+      return '';
+    }
+    if (args[0] === 'diff' && args[1] === '--name-only') return [...CODE_ONLY_PATHS, ...(options.extraPaths || [])].join('\n');
+    if (args[0] === 'diff') return options.changedConfig ? 'config changed' : '';
+    throw new Error('unexpected_git_read');
+  };
+  return {calls,releaseDirectory,sourceDirectory,git};
+}
+
+test('new release tooling can bundle only the separate exact PR 2523 source', () => {
+  const f = checkoutFixture();
+  const evidence = inspectCodeOnlyCheckouts(releaseSha, f.sourceDirectory, f);
+  assert.equal(evidence.source_sha, CODE_ONLY_SOURCE_SHA);
+  assert.equal(evidence.release_sha, releaseSha);
+  assert.deepEqual(evidence.source_scope.included_paths,CODE_ONLY_PATHS);
+  assert.deepEqual(evidence.source_scope.excluded_changes,[]);
+  assert.ok(f.calls.filter(x=>x.args[0]==='diff').every(x=>x.directory===f.sourceDirectory));
+  assert.ok(f.calls.some(x=>x.directory===f.releaseDirectory && x.args.join(' ')
+    ===`merge-base --is-ancestor ${CODE_ONLY_SOURCE_SHA} ${releaseSha}`));
+  for (const directory of [f.releaseDirectory,f.sourceDirectory]) {
+    assert.ok(f.calls.some(x=>x.directory===directory && x.args.join(' ')
+      ==='status --porcelain --untracked-files=all --ignored'));
+  }
+});
+
+test('wrong source, changed config, extra Worker paths and dirty checkouts fail closed', () => {
+  for (const options of [
+    {sourceSha:releaseSha}, {releaseSha:'b'.repeat(40)}, {wrongRoot:true},
+    {dirtyDirectory:'/release-tools'}, {dirtyDirectory:'/release-source'},
+    {missingHistory:true}, {changedConfig:true},
+    {extraPaths:['member-dashboard-chat-worker/src/index.js']},
+    {extraPaths:['member-pages-worker/src/unreviewed.js']},
+  ]) {
+    const f = checkoutFixture(options);
+    assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha, f.sourceDirectory, f));
+  }
+  const f = checkoutFixture();
+  assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha, undefined, f));
+  assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha, f.releaseDirectory, f));
+});
+
+test('unapproved source and failed checkout guard make zero Cloudflare writes', async () => {
+  const wrong = fixture(); wrong.io.sha = releaseSha;
+  await assert.rejects(releaseMemberPagesCodeOnly(wrong.io));
+  assert.deepEqual(wrong.calls, []);
+  const dirty = fixture();
+  const f = checkoutFixture({dirtyDirectory:'/release-source'});
+  dirty.io.approve = async () => inspectCodeOnlyCheckouts(releaseSha, f.sourceDirectory, f);
+  await assert.rejects(releaseMemberPagesCodeOnly(dirty.io));
+  assert.deepEqual(dirty.calls, []);
 });
 
 test('a missing reviewed PR stops the release before any Cloudflare request', async () => {
@@ -334,4 +446,11 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
+  assert.match(source, /ref: 151d21eabd988396eef36b944c931b23e51cea69\s+fetch-depth: 0\s+path: release-source/);
+  assert.match(source, /ref: \$\{\{ github.sha \}\}\s+fetch-depth: 0\s+path: release-tools/);
+  assert.match(source, /SOURCE_DIRECTORY: \$\{\{ github.workspace \}\}\/release-source/);
+  assert.match(source, /working-directory: release-tools/);
+  assert.match(source, /node --test \.\.\/release-source\/member-pages-worker/);
+  const releaseSource = readFileSync(new URL('./member-pages-code-only-release.mjs',import.meta.url),'utf8');
+  assert.match(releaseSource, /cwd:sourceDirectory, stdio: 'ignore'/);
 });

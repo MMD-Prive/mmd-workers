@@ -15,6 +15,7 @@ export const ZONE = '2d62396174fa2ddadbbcd0e8cf0f3367';
 export const ROOT = `/accounts/${ACCOUNT}/workers/scripts/member-pages-worker`;
 export const VERSION_ROOT = `/accounts/${ACCOUNT}/workers/workers/member-pages-worker/versions`;
 export const CODE_ONLY_BASE_SHA = '05db9f10d32650a7b922475ea7e070f72ece4070';
+export const CODE_ONLY_SOURCE_SHA = '151d21eabd988396eef36b944c931b23e51cea69';
 // This release explicitly includes both merged changes; keep the original
 // comparison base so the additional Points source is visible in its scope.
 export const CODE_ONLY_INCLUDED_PULL_REQUESTS = [
@@ -77,10 +78,41 @@ export function validateCodeOnlySourcePaths(paths = [], { sha, readBlob } = {}) 
 }
 
 export function validateCodeOnlySourceHistory(sha, isAncestor) {
-  assert.match(sha || '', /^[a-f0-9]{40}$/);
+  assert.equal(sha, CODE_ONLY_SOURCE_SHA, 'only the exact reviewed PR 2523 source may be bundled');
   for (const ancestor of [CODE_ONLY_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
     assert.equal(isAncestor(ancestor, sha), true, 'reviewed release commit missing from source history');
   }
+}
+
+// Release tooling may advance on main; the deployed application source cannot.
+export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
+  releaseDirectory = process.cwd(),
+  git = (cwd, ...args) => execFileSync('git', args, {
+    cwd, encoding:'utf8', stdio:['ignore','pipe','ignore'],
+  }).trim(),
+} = {}) {
+  assert.match(releaseSha || '', /^[a-f0-9]{40}$/);
+  assert.ok(sourceDirectory, 'separate pinned source checkout required');
+  assert.notEqual(resolve(sourceDirectory), resolve(releaseDirectory), 'source must be separate from release tooling');
+  for (const [directory, expected] of [[releaseDirectory, releaseSha], [sourceDirectory, CODE_ONLY_SOURCE_SHA]]) {
+    assert.equal(resolve(git(directory, 'rev-parse', '--show-toplevel')), resolve(directory), 'checkout root mismatch');
+    assert.equal(git(directory, 'rev-parse', 'HEAD'), expected, 'checkout SHA mismatch');
+    assert.equal(git(directory, 'status', '--porcelain', '--untracked-files=all', '--ignored'), '', 'dirty checkout');
+  }
+  const sourceSha = git(sourceDirectory, 'rev-parse', 'HEAD');
+  validateCodeOnlySourceHistory(sourceSha, (ancestor, target) => {
+    git(sourceDirectory, 'merge-base', '--is-ancestor', ancestor, target);
+    return true;
+  });
+  git(releaseDirectory, 'merge-base', '--is-ancestor', sourceSha, releaseSha);
+  const sourceScope = validateCodeOnlySourcePaths(
+    git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_BASE_SHA, sourceSha).split('\n').filter(Boolean),
+    {sha:sourceSha, readBlob:(reference, path)=>git(sourceDirectory, 'rev-parse', reference+':'+path)});
+  assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_BASE_SHA, sourceSha, '--', 'member-pages-worker/wrangler.toml'), '',
+    'Worker config/migrations changed; separate release review required');
+  return { method:'separate-pinned-source-checkout', source_sha:sourceSha, release_sha:releaseSha,
+    config_unchanged:true, comparison_base_sha:CODE_ONLY_BASE_SHA,
+    included_pull_requests:CODE_ONLY_INCLUDED_PULL_REQUESTS, source_scope:sourceScope };
 }
 
 export function activeVersion(deployment) {
@@ -165,11 +197,12 @@ export function createTransport(token, request = fetch) {
 }
 
 export async function releaseMemberPagesCodeOnly(io) {
-  const state = { phase: 'preflight', worker: 'member-pages-worker', source_sha: io.sha };
+  const state = { phase: 'preflight', worker: 'member-pages-worker', source_sha: io.sha, release_sha:io.releaseSha };
   const save = phase => { state.phase = phase; io.save({ ...state }); };
   try {
     await io.approve();
-    assert.match(io.sha || '', /^[a-f0-9]{40}$/);
+    assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact PR 2523 merge');
+    assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
     const deployment = (await call('/deployments'))?.deployments?.[0];
     const current = activeVersion(deployment);
@@ -271,13 +304,14 @@ export function validateBundleSourceMap(map, mapDirectory, repositoryRoot = proc
   return [...new Set(inputs)].sort();
 }
 
-export function buildMemberPagesBundle(dir) {
-  execFileSync('wrangler', ['versions','upload','--dry-run','--env=','--config','member-pages-worker/wrangler.toml','--outdir',dir], {
-    stdio: 'ignore', env: { ...process.env, CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_KEY: '',
+export function buildMemberPagesBundle(dir, sourceDirectory, run = execFileSync) {
+  assert.ok(sourceDirectory, 'pinned bundle source directory required');
+  run('wrangler', ['versions','upload','--dry-run','--env=','--config','member-pages-worker/wrangler.toml','--outdir',dir], {
+    cwd:sourceDirectory, stdio: 'ignore', env: { ...process.env, CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_KEY: '',
       WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(tmpdir(),`mmd-member-pages-wrangler-${process.pid}.log`) },
   });
   validateBundleFiles(readdirSync(dir));
-  validateBundleSourceMap(JSON.parse(readFileSync(join(dir,'runtime-index.js.map'),'utf8')),dir);
+  validateBundleSourceMap(JSON.parse(readFileSync(join(dir,'runtime-index.js.map'),'utf8')),dir,sourceDirectory);
   return readFileSync(join(dir,'runtime-index.js'));
 }
 
@@ -285,37 +319,25 @@ async function main() {
   assert.equal(process.argv[2], '--execute-approved', 'explicit approved execution flag required');
   assert.equal(process.env.PRODUCTION_APPROVED, 'true', 'Owner approval input required');
   assert.equal(process.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong Cloudflare account');
-  const sha = process.env.GITHUB_SHA;
-  const git = (...args) => execFileSync('git', args, { encoding:'utf8', stdio:['ignore','pipe','ignore'] }).trim();
-  const sourceScope = () => validateCodeOnlySourcePaths(
-    git('diff','--name-only',CODE_ONLY_BASE_SHA,sha).split('\n').filter(Boolean),
-    {sha, readBlob:(reference,path)=>git('rev-parse',reference+':'+path)});
+  const releaseSha = process.env.GITHUB_SHA;
+  const sourceDirectory = process.env.SOURCE_DIRECTORY;
   const approve = async () => {
     await verifyProductionApproval(process.env);
     const protection = await inspectEnvironment(process.env);
     assert.equal(protection.ready, true, 'exact main-only production reviewer protection required');
-    assert.equal(git('rev-parse','HEAD'), sha, 'checkout SHA mismatch');
-    assert.equal(git('status','--porcelain'), '', 'dirty checkout');
-    validateCodeOnlySourceHistory(sha, (ancestor, target) => {
-      git('merge-base','--is-ancestor',ancestor,target);
-      return true;
-    });
-    sourceScope();
-    assert.equal(git('diff',CODE_ONLY_BASE_SHA,sha,'--','member-pages-worker/wrangler.toml'), '',
-      'Worker config/migrations changed; separate release review required');
+    inspectCodeOnlyCheckouts(releaseSha, sourceDirectory);
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir,'member-pages-code-only-receipt.json');
   await releaseMemberPagesCodeOnly({
-    sha,
+    sha:CODE_ONLY_SOURCE_SHA,
+    releaseSha,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async () => ({ method:'clean-main-checkout', source_sha:sha, config_unchanged:true,
-      comparison_base_sha:CODE_ONLY_BASE_SHA, included_pull_requests:CODE_ONLY_INCLUDED_PULL_REQUESTS,
-      source_scope:sourceScope() }),
-    bundle: async () => buildMemberPagesBundle(dir),
+    sourceCheck: async () => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory),
+    bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
   });
   console.log('Member Pages code-only release readback complete; no business-write smoke was run.');
