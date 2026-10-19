@@ -14,6 +14,80 @@ const input = (key = 'fixture-key-00000001', text = 'รถติดเล็ก
 const photoSpec = async () => ({ type: 'image/jpeg', size: jpeg.length, sha256: await digest(jpeg) });
 const putRequest = () => new Request('https://mmdbkk.com/upload', { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: jpeg });
 
+test('legacy lifecycle remains readable but cannot authorize travel writes', async () => {
+  for (const legacy of ['en_route', 'on_the_way', 'nearby']) {
+    const {env, record} = travelFixture();
+    delete record.fields.model_session_state;
+    delete record.fields.session_state;
+    record.fields['Session Status'] = legacy;
+    const read = await projectTravel(env, record, 'model');
+    assert.equal(read.state, legacy === 'on_the_way' ? 'en_route' : legacy);
+    assert.equal(read.can_send, false, legacy);
+    await assert.rejects(prepareTravelSubmission(env, record, MODEL, input()), /travel_not_allowed/);
+    assert.equal(env.PRIVATE_MODEL_MEDIA.objects.size, 0);
+  }
+});
+
+test('loss of canonical lifecycle blocks upload and commit of a reserved submission', async () => {
+  const {env, record} = travelFixture(), spec = await photoSpec();
+  const prepared = await prepareTravelSubmission(env, record, MODEL, input('fixture-review-reserved', 'draft', [spec]));
+  delete record.fields.model_session_state;
+  delete record.fields.session_state;
+  record.fields['Session Status'] = 'en_route';
+  const serial = env.PRIVATE_MODEL_MEDIA.serial;
+  await assert.rejects(uploadTravelPhoto(env, record, MODEL, prepared.id, 0, putRequest()), /travel_not_allowed/);
+  await assert.rejects(commitTravelSubmission(env, record, MODEL, prepared.id), /travel_not_allowed/);
+  assert.equal(env.PRIVATE_MODEL_MEDIA.serial, serial);
+});
+
+test('commit rechecks fresh canonical lifecycle instead of trusting an older snapshot', async () => {
+  const {env, record} = travelFixture();
+  const prepared = await prepareTravelSubmission(env, record, MODEL, input());
+  const snapshot = structuredClone(record);
+  delete record.fields.model_session_state;
+  record.fields['Session Status'] = 'en_route';
+  const serial = env.PRIVATE_MODEL_MEDIA.serial;
+  await assert.rejects(commitTravelSubmission(env, snapshot, MODEL, prepared.id), /travel_not_allowed/);
+  assert.equal(env.PRIVATE_MODEL_MEDIA.serial, serial);
+});
+
+test('canonical aliases still authorize writes but conflicting states never do', async () => {
+  for (const fields of [
+    {model_session_state:'en_route'}, {session_state:'on_the_way'},
+    {model_session_state:'en_route', session_state:'on_the_way'},
+    {model_session_state:'nearby', session_state:'nearby'},
+  ]) {
+    const {env, record} = travelFixture();
+    delete record.fields.model_session_state;
+    Object.assign(record.fields, fields, {'Session Status':'cancelled'});
+    assert.equal((await projectTravel(env, record, 'model')).can_send, true);
+    assert.equal((await prepareTravelSubmission(env, record, MODEL, input())).state, 'reserved');
+  }
+  const {env, record} = travelFixture();
+  record.fields.session_state = 'arrived';
+  record.fields['Session Status'] = 'en_route';
+  assert.equal((await projectTravel(env, record, 'model')).can_send, false);
+  await assert.rejects(prepareTravelSubmission(env, record, MODEL, input()), /travel_not_allowed/);
+});
+
+test('serialized null is unavailable while genuinely absent or empty events remain missing', async () => {
+  for (const value of [null, undefined, '', '  ', [], '[]']) {
+    assert.equal(travelEtaFromEvents(value).status, 'missing');
+  }
+  for (const value of ['null', ' null ', '{}', 'false', '""']) {
+    assert.equal(travelEtaFromEvents(value).status, 'unavailable', value);
+  }
+  const {env, record} = travelFixture(), original = env.AIRTABLE_HTTP.fetch;
+  env.AIRTABLE_HTTP.fetch = async request => new URL(request.url).pathname.endsWith('/Jobs')
+    ? Response.json({records:[{id:'recJob',fields:{session_id:record.fields.session_id,events_json:'null'}}]})
+    : original(request);
+  assert.equal((await projectTravel(env, record)).eta.status, 'unavailable');
+  const response = await handleMemberAppSessionApi(new Request('https://mmdbkk.com/api/member/app/session/current?session_id=sess_FIXTURE'), env, async () => ({lineUserId:record.fields.line_user_id,memberId:record.fields.member_id}));
+  const body = await response.json();
+  assert.equal(body.eta.status, 'unavailable');
+  assert.equal(body.etaLabel, null);
+});
+
 test('legacy and shared endpoints agree on aliases, conflicts and terminal ETA', async () => {
   for(const state of ['on_the_way','enroute','en_route','arrived','completed','cancelled','unrecognized']) {
     const {env,record}=travelFixture();record.fields.session_state=state;record.fields.model_session_state=state;
