@@ -62,14 +62,12 @@ test("authorized existing LINE members can bypass redundant ENTER without auto L
   assert.match(html,/window\.liff\.login\(\{ redirectUri: window\.location\.href \}\)/);
 });
 
-test("real progress milestones replace fabricated interval increments",async()=>{
+test("opening progress remains indeterminate until the real entry decision completes",async()=>{
   const html=await shell();
   assert.doesNotMatch(html,/const progressTimer = window\.setInterval/);
   assert.doesNotMatch(html,/loadingPercent \+ \(loadingPercent/);
-  assert.match(html,/setLoadingPercent\(55\)/);
-  assert.match(html,/setLoadingPercent\(85\)/);
-  assert.match(html,/setLoadingPercent\(100\)/);
-  assert.match(html,/id="hype-progress" max="100" value="10"/);
+  assert.doesNotMatch(html,/setLoadingPercent\(|hype-progress-number|hype-loader-img/);
+  assert.match(html,/<progress id="hype-progress" aria-label="กำลังเปิด MY MMD"><\/progress>/);
   assert.match(html,/role="status" aria-label="กำลังเปิด MY MMD"/);
 });
 
@@ -98,4 +96,11 @@ test("LIFF compact CSS has full safe area, contrast and reduced-motion without m
   assert.match(MY_MMD_LIFF_COMPACT_V4_CSS,/:focus-visible/);
   assert.match(MY_MMD_LIFF_COMPACT_V4_CSS,/digital-history-review\[hidden\]\{display:none!important\}/);
   assert.doesNotMatch(MY_MMD_LIFF_COMPACT_V4_CSS,/\.signup-mode\)\s*\{[^}]*display:none/);
+});
+
+test("LIFF shell renders Compact V4 CSS exactly once after legacy travel styles", async()=>{
+  const html = await shell();
+  const occurrences = html.split("--v4-bg:#0b0e10").length - 1;
+  assert.equal(occurrences, 1);
+  assert.ok(html.indexOf("--v4-bg:#0b0e10") > html.indexOf(".mt9{padding:14px 0"));
 });

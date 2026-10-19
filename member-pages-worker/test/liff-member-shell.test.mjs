@@ -39,7 +39,7 @@ describe("same-site /member/liff shell", () => {
       const calls = [], rendered = [];
       await runInNewContext(hydrate + "hydrateDigitalMission()", {
         document:{getElementById:() => ({hidden:false})}, location:{search}, URLSearchParams, encodeURIComponent,
-        async fetch(url) {calls.push(url);return Response.json({sessionId:returnedId});},
+        async memberApiFetch(url) {calls.push(url);return Response.json({sessionId:returnedId});},
         renderDigitalMission(session) {rendered.push(session);},
       });
       assert.equal(calls.length, expectedReads, search);
@@ -165,7 +165,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /const sessionReady = await preflightWelcomeIdentity\(\)/);
     assert.match(html, /if \(!window\.liff\.isLoggedIn\(\)\) return false/);
     assert.match(html, /const idToken = window\.liff\.getIDToken\(\)/);
-    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
+    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false, silent: true \}\)\.catch\(\(\) => null\)/);
     const preflightStart = html.indexOf("async function preflightWelcomeIdentity()");
     const preflightEnd = html.indexOf("async function resolveInitialWelcomeContext()", preflightStart);
     const preflightCode = html.slice(preflightStart, preflightEnd);
@@ -179,13 +179,271 @@ describe("same-site /member/liff shell", () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
+    const firstProfileBootstrap = html.indexOf("existingProfilePromise = readProfile({ hydrate: false, silent: true })");
+    assert.ok(firstProfileBootstrap > html.indexOf("let memberApiChain = Promise.resolve()"));
+    assert.ok(firstProfileBootstrap > html.indexOf("let profileGeneration = 0"));
     assert.match(html, /setTimeout\(\(\) => controller\.abort\(\), 4500\)/);
-    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false \}\)\.catch\(\(\) => null\)/);
+    assert.match(html, /existingProfilePromise = readProfile\(\{ hydrate: false, silent: true \}\)\.catch\(\(\) => null\)/);
     const entered = html.indexOf('document.body.classList.add("app-entered")');
     const hydrate = html.indexOf("void hydrateMemberHome()", entered);
     assert.ok(entered >= 0 && hydrate > entered, "secondary member hydration must start only after the app surface is entered");
+    assert.match(html, /const secondaryReads = new Map\(\)/);
+    assert.match(html, /if \(profileReady\) void hydrateMemberHome\(target\.id === "history-panel" \? "history" : target\.id\)/);
+    assert.match(html, /if \(!profileReady \|\| !read\) return/);
+    assert.doesNotMatch(html, /const hydrationReads = \[/);
+    assert.match(html, /<progress id="hype-progress" aria-label="กำลังเปิด MY MMD"><\/progress>/);
+    assert.doesNotMatch(html, /hype-loader-img|hype-progress-number|setLoadingPercent/);
     assert.match(html, /void readSignupCatalog\(\)/);
     assert.match(html, /readProfile\(\{ hydrate: false \}\)/);
+  });
+
+  it("loads secondary member panels only after selection and reuses a successful read", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("async function hydrateMemberHome(");
+    const end = html.indexOf("// Member session cookies rotate", start);
+    assert.ok(start > 0 && end > start);
+    const calls = [];
+    const read = (name) => async () => { calls.push(name); return { ok:true }; };
+    const context = {
+      initialView:"home", profileReady:true, secondaryReads:new Map(),
+      CONFIG:{ intent:"status", campaign:"" },
+      readCouponWallet:read("coupons"), readCreditWallet:read("credits"),
+      readCanonicalHistory:read("history"), readCustomerRequests:read("requests"),
+      readCareBackState:read("care"), Promise,
+    };
+    await runInNewContext(html.slice(start, end) + `(async () => {
+      await hydrateMemberHome("home");
+      await hydrateMemberHome("credits");
+      await hydrateMemberHome("credits");
+      await hydrateMemberHome("history");
+    })()`, context);
+    assert.deepEqual(calls, ["credits", "history"]);
+  });
+
+  it("queues the canonical profile before supplemental status and history reads", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("async function readProfile(");
+    const end = html.indexOf("function requestId()", start);
+    assert.ok(start > 0 && end > start);
+    const calls = [];
+    const data = { customer_360: {} };
+    const result = await runInNewContext(html.slice(start, end) + "readProfile({ hydrate: false })", {
+      CONFIG: { profileEndpoint: "/member/api/liff/profile" },
+      profileGeneration: 0,
+      hideMemberProfile() {},
+      memberApiFetch(url) { calls.push(url); return Promise.resolve(Response.json({ ok: true, data })); },
+      readQuickMembershipStatus() { calls.push("membership"); },
+      readOwnHistoryPreview() { calls.push("history"); },
+      renderProfile() {}, renderCustomerContact() {}, hydrateMemberHome() {},
+      Promise,
+    });
+    assert.deepEqual(calls, ["/member/api/liff/profile", "membership", "history"]);
+    assert.equal(JSON.stringify(result), JSON.stringify(data));
+  });
+
+  it("hides the previous Client profile immediately and keeps stale profile responses from restoring it", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("function hideMemberProfile()");
+    const end = html.indexOf("function requestId()", start);
+    assert.ok(start > 0 && end > start);
+    const hidden = new Set();
+    const profile = { classList:{ add(value){hidden.add(value);}, remove(value){hidden.delete(value);} }, inert:false };
+    const appStatus = { dataset:{} };
+    const messages = [];
+    const context = {
+      CONFIG:{profileEndpoint:"/member/api/liff/profile"}, profile, appStatus,
+      profileGeneration:0, profileReady:true, secondaryReads:new Map(),
+      digitalPersonalizedFeed:[{title:"old client"}], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
+      show(message){messages.push(message);},
+      document:{getElementById:() => null},
+      hydrateDigitalHome(){}, hydrateDigitalMission(){}, loadRenewalCard(){},
+      renderProfile(){profile.classList.remove("hidden");profile.inert=false;},
+      renderCustomerContact(){}, readQuickMembershipStatus(){}, readOwnHistoryPreview(){}, hydrateMemberHome(){},
+      Promise, Response,
+    };
+    let releaseOld;
+    let calls = 0;
+    context.memberApiFetch = () => {
+      calls++;
+      if (calls === 1) return new Promise(resolve => { releaseOld = resolve; });
+      return Promise.resolve(Response.json({ok:false},{status:401}));
+    };
+    const code = html.slice(start, end);
+    const pendingOld = runInNewContext(code + "readProfile({hydrate:false})", context);
+    assert.equal(hidden.has("hidden"), true, "the old profile is hidden while identity is rechecked");
+    await runInNewContext(code + "readProfile({hydrate:false, silent:true})", context);
+    assert.deepEqual(messages, [], "an expected bootstrap 401 must preserve welcome copy");
+    const failedNew = await runInNewContext(code + "readProfile({hydrate:false})", context);
+    assert.equal(failedNew, null);
+    assert.equal(hidden.has("hidden"), true, "a failed identity check leaves private content hidden");
+    assert.equal(profile.inert, true);
+    assert.equal(context.profileReady, false);
+    assert.equal(context.digitalPersonalizedFeed.length, 0);
+    assert.deepEqual(messages, ["กรุณาเปิด MY MMD อีกครั้งเพื่อตรวจสอบบัญชีของคุณครับ"]);
+    releaseOld(Response.json({ok:true,data:{customer_360:{member:{display_name:"stale"}}}}));
+    assert.equal(await pendingOld, null);
+    assert.equal(hidden.has("hidden"), true, "an old successful response cannot restore a newer Client");
+  });
+
+  it("invalidates pending Dashboard, Mission and renewal results and clears lazy account views on profile recheck", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const fragment = (startText, endText) => html.slice(html.indexOf(startText), html.indexOf(endText, html.indexOf(startText)));
+    const nodes = new Map();
+    const node = id => {
+      if (!nodes.has(id)) nodes.set(id, {hidden:false, textContent:"previous Client", classList:{add(){}}, inert:false});
+      return nodes.get(id);
+    };
+    const pending = [], rendered = [];
+    const context = {
+      document:{getElementById:node}, profile:node("profile"), profileReady:true,
+      secondaryReads:new Map(), digitalPersonalizedFeed:[], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
+      locale:"th", location:{search:""}, URLSearchParams, encodeURIComponent,
+      memberApiFetch:() => new Promise(resolve => pending.push(resolve)),
+      renderDigitalMission:() => rendered.push("mission"),
+      renderRenewalCard:() => rendered.push("renewal"),
+      setDigitalPointsDisplay:() => rendered.push("dashboard"),
+      Promise,
+    };
+    const code = fragment("async function hydrateDigitalMission()", "function digitalFeedCategory")
+      + fragment("async function hydrateDigitalHome(", "async function loadDigitalUpdates()")
+      + fragment("async function loadRenewalCard()", "function renewalDate")
+      + fragment("function hideMemberProfile()", "function clearMemberProfile(");
+    const running = runInNewContext(code + "Promise.all([hydrateDigitalHome({}), loadRenewalCard()])", context);
+    assert.equal(pending.length, 3);
+    runInNewContext("hideMemberProfile()", context);
+    assert.equal(node("digital-mission").hidden, true);
+    assert.equal(node("renewal-card").hidden, true);
+    assert.equal(node("coupon-wallet").textContent.includes("previous Client"), false);
+    assert.equal(node("credit-available").textContent, "—");
+    pending[0](Response.json({data:{points:{confirmedBalance:9}}}));
+    pending[1](Response.json({sessionId:"old"}));
+    pending[2](Response.json({ok:true}));
+    await running;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(rendered, []);
+  });
+
+  it("renders Dashboard before a slow Mission while serializing session reads through the response body", async (t) => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const fragment = (startText, endText) => {
+      const start = html.indexOf(startText), end = html.indexOf(endText, start);
+      assert.ok(start > 0 && end > start);
+      return html.slice(start, end);
+    };
+    const queue = fragment("function memberApiFetch(url, init = {})", "async function readOwnHistoryPreview(");
+    const mission = fragment("async function hydrateDigitalMission()", "function digitalFeedCategory");
+    const home = fragment("async function hydrateDigitalHome(", "async function loadDigitalUpdates()");
+    const calls = [], points = [], nodes = new Map();
+    let dashboardBody, releaseMission, missionStarted, missionRendered;
+    const missionResponse = new Promise((resolve) => { releaseMission = resolve; });
+    const startedMission = new Promise((resolve) => { missionStarted = resolve; });
+    const renderedMission = new Promise((resolve) => { missionRendered = resolve; });
+    const dashboardResponse = new Response(new ReadableStream({ start(controller) { dashboardBody = controller; } }));
+    t.after(() => {
+      try { dashboardBody.close(); } catch {}
+      releaseMission(Response.json({}));
+    });
+    const homeReady = runInNewContext("let memberApiChain = Promise.resolve();\n" + queue + mission + home + "hydrateDigitalHome({})", {
+      document: { getElementById(id) {
+        if (!nodes.has(id)) nodes.set(id, { hidden:false, textContent:"" });
+        return nodes.get(id);
+      } },
+      location:{ search:"" }, locale:"th", digitalPersonalizedFeed:[],
+      Response, Promise, AbortController, Uint8Array, URLSearchParams, encodeURIComponent, setTimeout, clearTimeout,
+      setDigitalPointsDisplay(...args) { points.push(args); },
+      renderDigitalMission() { missionRendered(); },
+      fetch(url) {
+        calls.push(url);
+        if (url === "/api/member/app/dashboard") return Promise.resolve(dashboardResponse);
+        if (url === "/api/member/app/session/current") { missionStarted(); return missionResponse; }
+        throw new Error("Unexpected external fetch blocked");
+      },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual([...calls], ["/api/member/app/dashboard"], "Mission must not start while Dashboard's response body is pending");
+    dashboardBody.enqueue(new TextEncoder().encode(JSON.stringify({ data:{ points:{ confirmedBalance:7 } } })));
+    dashboardBody.close();
+    await homeReady;
+    await startedMission;
+    assert.deepEqual(calls, ["/api/member/app/dashboard", "/api/member/app/session/current"]);
+    assert.deepEqual(points, [[7, true]], "Home must render canonical Dashboard data before Mission responds");
+    releaseMission(Response.json({}));
+    await renderedMission;
+  });
+
+  it("ignores a secondary response after the canonical profile changes", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("async function readCouponWallet()");
+    const end = html.indexOf("async function readCreditWallet()", start);
+    assert.ok(start > 0 && end > start);
+    let release;
+    const response = new Promise((resolve) => { release = resolve; });
+    const rendered = [];
+    const context = {
+      profileGeneration:1, CONFIG:{ couponWalletEndpoint:"/coupon" },
+      memberApiFetch:() => response, renderCouponWallet:(wallet) => rendered.push(wallet),
+    };
+    const pending = runInNewContext(html.slice(start, end) + "readCouponWallet()", context);
+    context.profileGeneration = 2;
+    release(Response.json({ ok:true, wallet:{ customer:"old" } }));
+    assert.equal(await pending, null);
+    assert.deepEqual(rendered, []);
+  });
+
+  it("loads MMD NOW only when opened and does not duplicate an in-flight read", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("async function loadDigitalUpdates()");
+    const end = html.indexOf("function renderProfile(", start);
+    assert.ok(start > 0 && end > start);
+    const calls = [], rendered = [];
+    const details = { open:false, addEventListener(_event, listener) { this.listener = listener; } };
+    const feed = { textContent:"" };
+    await runInNewContext(html.slice(start, end) + `(async () => {
+      details.listener.call(details);
+      details.open = true;
+      details.listener.call(details);
+      await loadDigitalUpdates();
+      await loadDigitalUpdates();
+    })()`, {
+      details, feed, document:{ getElementById:(id) => id === "digital-news-disclosure" ? details : feed },
+      profileReady:true, digitalUpdatesLoaded:false, digitalUpdatesPending:null,
+      digitalUpdatesGeneration:0, digitalHomeReady:Promise.resolve(), digitalPersonalizedFeed:[],
+      async memberApiFetch(url) { calls.push(url); return Response.json({ items:[], unread_count:0 }); },
+      renderDigitalNews(...args) { rendered.push(args); },
+      Promise, Number,
+    });
+    assert.deepEqual(calls, ["/api/v1/member/updates/list?limit=10"]);
+    assert.equal(rendered.length, 1);
+  });
+
+  it("keeps MMD NOW failures visible and retries only after another open", async () => {
+    const html = await (await shell("/member/liff?intent=status")).text();
+    const start = html.indexOf("async function loadDigitalUpdates()");
+    const end = html.indexOf("function renderProfile(", start);
+    const details = { open:false, addEventListener(_event, listener) { this.listener = listener; } };
+    const feed = { textContent:"" };
+    let attempts = 0;
+    const rendered = [];
+    await runInNewContext(html.slice(start, end) + `(async () => {
+      details.open = true;
+      details.listener.call(details);
+      await loadDigitalUpdates();
+      if (!feed.textContent.includes("ยังโหลดอัปเดตไม่ได้")) throw new Error("missing_retry_message");
+      details.open = false;
+      details.listener.call(details);
+      details.open = true;
+      details.listener.call(details);
+      await loadDigitalUpdates();
+    })()`, {
+      details, feed, document:{ getElementById:(id) => id === "digital-news-disclosure" ? details : feed },
+      profileReady:true, digitalUpdatesLoaded:false, digitalUpdatesPending:null,
+      digitalUpdatesGeneration:0, digitalHomeReady:Promise.resolve(), digitalPersonalizedFeed:[],
+      async memberApiFetch() { attempts++; return attempts === 1 ? Response.json({}, { status:503 }) : Response.json({ items:[] }); },
+      renderDigitalNews(...args) { rendered.push(args); },
+      Promise, Number,
+    });
+    assert.equal(attempts, 2);
+    assert.equal(rendered.length, 1);
   });
 
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
@@ -284,14 +542,15 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"historyEndpoint":"\/api\/member\/app\/history"/);
     assert.match(html, /"historyRecoveryEndpoint":"\/api\/member\/app\/history\/recovery"/);
     assert.match(html, /async function readCanonicalHistory\(\)/);
-    assert.match(html, /fetch\(CONFIG\.historyEndpoint/);
-    assert.match(html, /fetch\(CONFIG\.historyRecoveryEndpoint/);
+    assert.match(html, /memberApiFetch\(CONFIG\.historyEndpoint/);
+    assert.match(html, /memberApiFetch\(CONFIG\.historyRecoveryEndpoint/);
     assert.match(html, /credentials:"same-origin"/);
-    assert.match(html, /async function hydrateMemberHome\(\)/);
-    assert.match(html, /async function hydrateMemberHome\(\)/);
-    assert.match(html, /const hydrationReads = \[\s*readCouponWallet\(\),\s*readCreditWallet\(\),\s*readCanonicalHistory\(\),\s*readCustomerRequests\(\),\s*\]/);
-    assert.match(html, /await Promise\.allSettled\(hydrationReads\)/);
-    assert.match(html, /async function readProfile\(\{ hydrate = true \} = \{\}\)/);
+    assert.match(html, /async function hydrateMemberHome\(view = initialView\)/);
+    assert.match(html, /coupons: readCouponWallet/);
+    assert.match(html, /credits: readCreditWallet/);
+    assert.match(html, /history: readCanonicalHistory/);
+    assert.match(html, /"my-requests": readCustomerRequests/);
+    assert.match(html, /async function readProfile\(\{ hydrate = true, silent = false \} = \{\}\)/);
     assert.match(html, /if \(hydrate\) await hydrateMemberHome\(\)/);
     assert.doesNotMatch(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
     assert.match(html, /recoveryPayload\?\.history_recovery\?\.state/);
@@ -326,7 +585,8 @@ describe("same-site /member/liff shell", () => {
 
     assert.equal(response.status, 200);
     assert.match(html, /<p class="digital-eyebrow">MMD TODAY<\/p>/);
-    assert.match(html, /<small>PRIVATE FEED<\/small>MMD NOW/);
+    assert.match(html, /<details class="digital-news-disclosure" id="digital-news-disclosure">/);
+    assert.match(html, /<summary class="digital-news-summary">/);
     assert.match(html, /href="\/member\/kenji"/);
     assert.doesNotMatch(html, /href="\/member\/kenji-ai-20"/);
     assert.match(html, /let digitalPersonalizedFeed = \[\]/);
@@ -339,8 +599,9 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /rank: digitalFeedCategory\(item, false\) === "EDITORIAL" \? 1 : 0/);
     assert.match(html, /\.sort\(\(a, b\) => a\.rank - b\.rank \|\| a\.index - b\.index\)/);
     assert.match(html, /const allowedViews = new Set\(\["history","package","care","jobs","points","credits","coupons"\]\)/);
-    assert.match(html, /renderDigitalNews\(digitalPersonalizedFeed, response\.ok \? items : \[\],/);
-    assert.match(html, /fetch\("\/api\/v1\/member\/updates\/list\?limit=10"/);
+    assert.match(html, /if \(this\.open\) void loadDigitalUpdates\(\)/);
+    assert.match(html, /renderDigitalNews\(digitalPersonalizedFeed, items,/);
+    assert.match(html, /memberApiFetch\("\/api\/v1\/member\/updates\/list\?limit=10"/);
     assert.match(html, /data-feed-view/);
     assert.doesNotMatch(html, /internal_note|provider_transaction_id|slip_url/);
 
@@ -380,7 +641,7 @@ describe("same-site /member/liff shell", () => {
   it("session-bound reads run one at a time so a rotated cookie is never reused in parallel", async () => {
     const response = await shell("/member/liff?intent=status");
     const html = await response.text();
-    const start = html.indexOf("let memberApiChain");
+    const start = html.indexOf("function memberApiFetch(url, init = {})");
     const end = html.indexOf("async function readOwnHistoryPreview(", start);
     assert.ok(start >= 0 && end > start, "memberApiFetch must exist in the shell");
     let active = 0;
@@ -393,7 +654,7 @@ describe("same-site /member/liff shell", () => {
       active -= 1;
       return url;
     };
-    const { memberApiFetch } = runInNewContext(html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout, clearTimeout, AbortController, Response, Uint8Array });
+    const { memberApiFetch } = runInNewContext("let memberApiChain = Promise.resolve();\n" + html.slice(start, end) + "\n({ memberApiFetch });", { fetch: fakeFetch, setTimeout, clearTimeout, AbortController, Response, Uint8Array });
     const results = await Promise.allSettled([memberApiFetch("a"), memberApiFetch("fail"), memberApiFetch("c")]);
     assert.equal(maxActive, 1);
     assert.deepEqual(order, ["a", "fail", "c"]);
@@ -556,8 +817,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /id="credit-available"/);
     assert.match(html, /id="credit-reserved"/);
     assert.match(html, /id="credit-used"/);
-    assert.match(html, /const hydrationReads = \[\s*readCouponWallet\(\),\s*readCreditWallet\(\),\s*readCanonicalHistory\(\),\s*readCustomerRequests\(\),\s*\]/);
-    assert.match(html, /await Promise\.allSettled\(hydrationReads\)/);
+    assert.match(html, /credits: readCreditWallet/);
+    assert.match(html, /if \(!profileReady \|\| !read\) return/);
     assert.doesNotMatch(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
     assert.match(html, /credentials:"same-origin"/);
     assert.match(html, /payload\.state !== "resolved" \|\| payload\.verificationState !== "verified_only"/);
