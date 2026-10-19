@@ -34,7 +34,9 @@ export function validateJobServicePricing(body) {
   if (!p || p.version !== 1 || p.currency !== "THB" || !["direct", "platform"].includes(p.settlement_mode)
     || (!partnerManaged && p.settlement_mode !== body?.private_access?.settlement_mode) || !Array.isArray(p.addons)
     || p.addons.length > OPTIONS.length || !money(p.client_base_amount_thb) || p.client_base_amount_thb <= 0) fail();
-  if (!money(travelFee) || !money(modelTravelFee) || !sameMoney(travelFee, body.travel_fee_thb ?? travelFee) || !sameMoney(modelTravelFee, body.model_travel_fee_thb ?? modelTravelFee)) fail();
+  if (!money(travelFee) || !money(modelTravelFee)
+    || (p.travel_fee_thb !== undefined && !sameMoney(p.travel_fee_thb, travelFee))
+    || (p.model_travel_fee_thb !== undefined && !sameMoney(p.model_travel_fee_thb, modelTravelFee))) fail();
   if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
   if ((partnerManaged || p.settlement_mode === "platform") && [body.pay_model_thb, body.model_payout_thb,
     body?.model_payout?.amount_thb, body?.payment?.model_payout_thb].some(value => value !== undefined)) fail();
