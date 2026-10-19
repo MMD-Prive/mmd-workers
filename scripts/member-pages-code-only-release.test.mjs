@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyOwnerApproval, environmentName } from './member-pages-owner-approval.mjs';
 import {
-  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
-  buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
+  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
+  buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateGraphicsSourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
 } from './member-pages-code-only-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -298,9 +298,9 @@ test('only the six exact reviewed PR2524 blobs can be excluded from source scope
 test('bundle evidence rejects excluded Worker inputs, aliases, missing maps and unknown dependencies', async () => {
   const directory = '/fixture/repo/bundle';
   const repository = '/fixture/repo';
-  const map = {version:3,sourceRoot:'..',sources:['member-pages-worker/src/runtime-index.js','shared/private-media.mjs'],mappings:'AAAA'};
+  const map = {version:3,sourceRoot:'..',sources:['member-pages-worker/src/runtime-index.js','member-pages-worker/src/liff-customer-graphics.js','member-pages-worker/src/liff-customer-progress.js','shared/private-media.mjs'],mappings:'AAAA'};
   assert.deepEqual(validateBundleSourceMap(map,directory,repository),
-    ['member-pages-worker/src/runtime-index.js','shared/private-media.mjs']);
+    ['member-pages-worker/src/liff-customer-graphics.js','member-pages-worker/src/liff-customer-progress.js','member-pages-worker/src/runtime-index.js','shared/private-media.mjs']);
   for(const source of [...CODE_ONLY_EXCLUDED_CHANGE.paths,
     'shared/../member-dashboard-chat-worker/src/index.js','../outside.js']) {
     const contaminated = {...map,sources:[...map.sources,source]};
@@ -324,7 +324,7 @@ test('pinned-source bundling enforces the input graph before any upload', async 
   const sourceDirectory = join(workspace,'release-source');
   mkdirSync(sourceDirectory);
   const good = {version:3,sourceRoot:sourceDirectory,
-    sources:['member-pages-worker/src/runtime-index.js','shared/private-media.mjs'],mappings:'AAAA'};
+    sources:['member-pages-worker/src/runtime-index.js','member-pages-worker/src/liff-customer-graphics.js','member-pages-worker/src/liff-customer-progress.js','shared/private-media.mjs'],mappings:'AAAA'};
   try {
     const cases = [
       {map:good, allowed:true},
@@ -367,8 +367,9 @@ test('release history requires the original base and both exact merged PRs', () 
   assert.deepEqual(CODE_ONLY_INCLUDED_PULL_REQUESTS, [
     {number:2522, merge_sha:'5e89a7386aa1e41d80ce3e945201b96b352ae799'},
     {number:2523, merge_sha:'151d21eabd988396eef36b944c931b23e51cea69'},
+    {number:2537, merge_sha:'a53571bc9d572755dff65599767d09a240d74b93'},
   ]);
-  const ancestors = [CODE_ONLY_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr=>pr.merge_sha)];
+  const ancestors = [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr=>pr.merge_sha)];
   const calls = [];
   validateCodeOnlySourceHistory(sha, (ancestor,target)=>{ calls.push([ancestor,target]); return true; });
   assert.deepEqual(calls, ancestors.map(ancestor=>[ancestor,sha]));
@@ -392,19 +393,23 @@ function checkoutFixture(options = {}) {
       if (options.missingHistory) throw new Error('not_ancestor');
       return '';
     }
-    if (args[0] === 'diff' && args[1] === '--name-only') return [...CODE_ONLY_PATHS, ...(options.extraPaths || [])].join('\n');
+    if (args[0] === 'diff' && args[1] === '--name-only') {
+      const paths = args[2] === CODE_ONLY_GRAPHICS_BASE_SHA ? CODE_ONLY_GRAPHICS_PATHS : CODE_ONLY_PATHS;
+      return [...paths, ...(options.extraPaths || [])].join('\n');
+    }
+    if (args[0] === 'diff' && args[1] === CODE_ONLY_PREVIOUS_SOURCE_SHA) return options.changedBridge ? 'runtime drift' : '';
     if (args[0] === 'diff') return options.changedConfig ? 'config changed' : '';
     throw new Error('unexpected_git_read');
   };
   return {calls,releaseDirectory,sourceDirectory,git};
 }
 
-test('new release tooling can bundle only the separate exact PR 2523 source', () => {
+test('new release tooling can bundle only the separate exact Graphics V4 source', () => {
   const f = checkoutFixture();
   const evidence = inspectCodeOnlyCheckouts(releaseSha, f.sourceDirectory, f);
   assert.equal(evidence.source_sha, CODE_ONLY_SOURCE_SHA);
   assert.equal(evidence.release_sha, releaseSha);
-  assert.deepEqual(evidence.source_scope.included_paths,CODE_ONLY_PATHS);
+  assert.deepEqual(evidence.source_scope.included_paths,[...new Set([...CODE_ONLY_PATHS,...CODE_ONLY_GRAPHICS_PATHS])].sort());
   assert.deepEqual(evidence.source_scope.excluded_changes,[]);
   assert.ok(f.calls.filter(x=>x.args[0]==='diff').every(x=>x.directory===f.sourceDirectory));
   assert.ok(f.calls.some(x=>x.directory===f.releaseDirectory && x.args.join(' ')
@@ -419,7 +424,7 @@ test('wrong source, changed config, extra Worker paths and dirty checkouts fail 
   for (const options of [
     {sourceSha:releaseSha}, {releaseSha:'b'.repeat(40)}, {wrongRoot:true},
     {dirtyDirectory:'/release-tools'}, {dirtyDirectory:'/release-source'},
-    {missingHistory:true}, {changedConfig:true},
+    {missingHistory:true}, {changedConfig:true}, {changedBridge:true},
     {extraPaths:['member-dashboard-chat-worker/src/index.js']},
     {extraPaths:['member-pages-worker/src/unreviewed.js']},
   ]) {
@@ -472,11 +477,55 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
-  assert.match(source, /ref: 151d21eabd988396eef36b944c931b23e51cea69\s+fetch-depth: 0\s+path: release-source/);
+  assert.match(source, /ref: a53571bc9d572755dff65599767d09a240d74b93\s+fetch-depth: 0\s+path: release-source/);
   assert.match(source, /ref: \$\{\{ github.sha \}\}\s+fetch-depth: 0\s+path: release-tools/);
   assert.match(source, /SOURCE_DIRECTORY: \$\{\{ github.workspace \}\}\/release-source/);
   assert.match(source, /working-directory: release-tools/);
   assert.match(source, /node --test \.\.\/release-source\/member-pages-worker/);
   const releaseSource = readFileSync(new URL('./member-pages-code-only-release.mjs',import.meta.url),'utf8');
   assert.match(releaseSource, /cwd:sourceDirectory, stdio: 'ignore'/);
+});
+
+test('Graphics V4 pin extends the original source with exactly the four merged UI files', () => {
+  assert.equal(CODE_ONLY_PREVIOUS_SOURCE_SHA,'151d21eabd988396eef36b944c931b23e51cea69');
+  assert.equal(CODE_ONLY_GRAPHICS_BASE_SHA,'a815e173fff1471901dae55646c984ed0b5f23f3');
+  assert.equal(CODE_ONLY_SOURCE_SHA,'a53571bc9d572755dff65599767d09a240d74b93');
+  assert.deepEqual(validateGraphicsSourcePaths(CODE_ONLY_GRAPHICS_PATHS),CODE_ONLY_GRAPHICS_PATHS);
+  for (const missing of CODE_ONLY_GRAPHICS_PATHS) {
+    assert.throws(()=>validateGraphicsSourcePaths(CODE_ONLY_GRAPHICS_PATHS.filter(path=>path!==missing)));
+  }
+  for (const extra of ['shared/private-media.mjs','auth-worker/src/index.js','package.json','package-lock.json',
+    'member-pages-worker/wrangler.toml','member-pages-worker/src/unreviewed.js','member-dashboard-chat-worker/src/index.js']) {
+    assert.throws(()=>validateGraphicsSourcePaths([...CODE_ONLY_GRAPHICS_PATHS,extra]));
+  }
+  assert.throws(()=>validateGraphicsSourcePaths([...CODE_ONLY_GRAPHICS_PATHS,CODE_ONLY_GRAPHICS_PATHS[0]]));
+  assert.throws(()=>validateCodeOnlySourceHistory(CODE_ONLY_PREVIOUS_SOURCE_SHA,()=>true));
+});
+
+test('the non-bundle main interval must leave all runtime trees and dependency controls identical', () => {
+  const f=checkoutFixture();
+  const evidence=inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,f);
+  assert.deepEqual(evidence.source_scope.graphics_delta,{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA,paths:CODE_ONLY_GRAPHICS_PATHS});
+  assert.deepEqual(evidence.source_scope.unchanged_runtime_bridge,{from:CODE_ONLY_PREVIOUS_SOURCE_SHA,to:CODE_ONLY_GRAPHICS_BASE_SHA});
+  assert.ok(f.calls.some(({args})=>args.join(' ')===['diff',CODE_ONLY_PREVIOUS_SOURCE_SHA,CODE_ONLY_GRAPHICS_BASE_SHA,'--',...CODE_ONLY_RUNTIME_BOUNDARIES].join(' ')));
+  assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_BASE_SHA,CODE_ONLY_PREVIOUS_SOURCE_SHA].join(' ')));
+  assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_GRAPHICS_BASE_SHA,CODE_ONLY_SOURCE_SHA].join(' ')));
+  for(const required of ['member-pages-worker','shared','auth-worker','package.json','package-lock.json','.npmrc']) {
+    assert.ok(CODE_ONLY_RUNTIME_BOUNDARIES.includes(required));
+  }
+});
+
+test('runtime bridge drift stops before any Cloudflare request or write',async()=>{
+  const f=fixture();const checkout=checkoutFixture({changedBridge:true});
+  f.io.approve=async()=>inspectCodeOnlyCheckouts(releaseSha,checkout.sourceDirectory,checkout);
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io),/runtime dependency\/config drift/);
+  assert.deepEqual(f.calls,[]);assert.equal(f.writes(),0);
+});
+
+test('an old bundle without either V4 module cannot pass source-map evidence',()=>{
+  const sources=['member-pages-worker/src/runtime-index.js',
+    'member-pages-worker/src/liff-customer-graphics.js','member-pages-worker/src/liff-customer-progress.js'];
+  for(const missing of sources.slice(1)) {
+    assert.throws(()=>validateBundleSourceMap({version:3,sourceRoot:'/repo',mappings:'AAAA',sources:sources.filter(path=>path!==missing)},'/repo/out','/repo'));
+  }
 });
