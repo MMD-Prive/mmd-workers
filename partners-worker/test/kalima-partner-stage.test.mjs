@@ -15,3 +15,12 @@ test('Kalima preview is isolated from all existing shop records and cannot call 
   assert.doesNotMatch(html, /relax-spa|Relax Spa|fetch\(|XMLHttpRequest|\/v1\/|<form\b|localStorage|sessionStorage/);
   for (const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new Function(match[1]);
 });
+
+test('Kalima LV5 is branded only as MMS Male Massage Partner', () => {
+  const html = renderKalimaPartnerStage();
+  assert.match(html, /data-mms-partner-design="lv5"/);
+  assert.match(html, /\/stage-assets\/mms-logo\.png/);
+  assert.match(html, /MALE MASSAGE<br>PARTNER/);
+  assert.doesNotMatch(html, /SĪGIL|SIGIL/);
+  for (const copy of ['ภาพรวม', 'เงื่อนไข', 'คอร์สและราคา', 'บริการเสริม']) assert.ok(html.includes(copy));
+});
