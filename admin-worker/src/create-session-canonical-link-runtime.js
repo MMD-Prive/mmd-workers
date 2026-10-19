@@ -214,8 +214,8 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
     sessionPatch[SESSION_FIELDS.client] = [ids.clientId];
     sessionPatch[SESSION_FIELDS.clientSource] = clientSource;
   }
-  sessionPatch[SESSION_FIELDS.travelFee] = Number(body.travel_fee_thb ?? 0);
-  sessionPatch[SESSION_FIELDS.modelTravelFee] = Number(body.model_travel_fee_thb ?? 0);
+  if (body.travel_fee_thb !== undefined) sessionPatch[SESSION_FIELDS.travelFee] = Number(body.travel_fee_thb);
+  if (body.model_travel_fee_thb !== undefined) sessionPatch[SESSION_FIELDS.modelTravelFee] = Number(body.model_travel_fee_thb);
   if (ids.modelId) {
     sessionPatch[SESSION_FIELDS.model] = [ids.modelId];
     sessionPatch[SESSION_FIELDS.modelProvenance] = modelProvenance;
@@ -241,8 +241,8 @@ async function reconcileCanonicalLinks(env, body, canonical, ids) {
     const existingNote = clean(job.fields?.[JOB_FIELDS.note]);
     const snapshotNote = withJobServicePricingNote(preservePartnerSnapshot(existingNote, body), validateJobServicePricing(body));
     if (snapshotNote !== existingNote) jobPatch[JOB_FIELDS.note] = snapshotNote;
-    jobPatch[JOB_FIELDS.travelFee] = Number(body.travel_fee_thb ?? 0);
-    jobPatch[JOB_FIELDS.modelTravelFee] = Number(body.model_travel_fee_thb ?? 0);
+    if (body.travel_fee_thb !== undefined) jobPatch[JOB_FIELDS.travelFee] = Number(body.travel_fee_thb);
+    if (body.model_travel_fee_thb !== undefined) jobPatch[JOB_FIELDS.modelTravelFee] = Number(body.model_travel_fee_thb);
     if (ids.clientId) {
       jobPatch[JOB_FIELDS.client] = [ids.clientId];
       jobPatch[JOB_FIELDS.clientSource] = clientSource;
@@ -311,8 +311,8 @@ function buildJobFields(body, canonical, ids) {
   if (ids.clientSource) fields[JOB_FIELDS.clientSource] = ids.clientSource;
   if (ids.modelProvenance) fields[JOB_FIELDS.modelProvenance] = ids.modelProvenance;
   if (Number.isFinite(amount) && amount > 0) fields[JOB_FIELDS.budget] = amount;
-  fields[JOB_FIELDS.travelFee] = Number(body.travel_fee_thb ?? 0);
-  fields[JOB_FIELDS.modelTravelFee] = Number(body.model_travel_fee_thb ?? 0);
+  if (body.travel_fee_thb !== undefined) fields[JOB_FIELDS.travelFee] = Number(body.travel_fee_thb);
+  if (body.model_travel_fee_thb !== undefined) fields[JOB_FIELDS.modelTravelFee] = Number(body.model_travel_fee_thb);
   return compact(fields);
 }
 
