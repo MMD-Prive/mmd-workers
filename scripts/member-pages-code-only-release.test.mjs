@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  ACCOUNT, ROOT, VERSION_ROOT, ZONE, activeVersion, createTransport, releaseMemberPagesCodeOnly,
-  uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, versionAnnotations, versionConfiguration,
+  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, activeVersion, createTransport, releaseMemberPagesCodeOnly,
+  uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, versionAnnotations, versionConfiguration,
 } from './member-pages-code-only-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -216,15 +216,54 @@ test('code-only source boundary rejects configuration or unrelated worker paths'
   const paths=[
     '.github/workflows/deploy-member-pages-worker-code-only.yml',
     'member-pages-worker/src/liff-member-shell.js',
+    'member-pages-worker/src/my-mmd-lifetime-points.js',
+    'member-pages-worker/src/points-display-source-guard.js',
+    'member-pages-worker/test/kenji-line-member-truth.test.mjs',
     'member-pages-worker/test/liff-member-compact-v4.test.mjs',
     'member-pages-worker/test/liff-member-shell.test.mjs',
-  'member-pages-worker/test/liff-quick-membership.test.mjs',
-  'member-pages-worker/test/member-history-preview.test.mjs',
+    'member-pages-worker/test/liff-quick-membership.test.mjs',
+    'member-pages-worker/test/member-history-preview.test.mjs',
+    'member-pages-worker/test/points-display-source-guard.test.mjs',
     'scripts/member-pages-code-only-release.mjs',
     'scripts/member-pages-code-only-release.test.mjs',
   ];
   assert.doesNotThrow(()=>validateCodeOnlySourcePaths(paths));
   assert.throws(()=>validateCodeOnlySourcePaths([...paths,'member-pages-worker/wrangler.toml']));
+  // Every #2523 path is required; neither missing source nor extra files pass.
+  for (const path of ['member-pages-worker/src/my-mmd-lifetime-points.js',
+    'member-pages-worker/src/points-display-source-guard.js',
+    'member-pages-worker/test/kenji-line-member-truth.test.mjs',
+    'member-pages-worker/test/points-display-source-guard.test.mjs']) {
+    assert.throws(()=>validateCodeOnlySourcePaths(paths.filter(item=>item!==path)));
+  }
+  assert.throws(()=>validateCodeOnlySourcePaths([...paths,paths[0]]));
+  assert.throws(()=>validateCodeOnlySourcePaths([...paths,'member-pages-worker/src/member-app-api.js']));
+});
+
+test('release history requires the original base and both exact merged PRs', () => {
+  assert.equal(CODE_ONLY_BASE_SHA, '05db9f10d32650a7b922475ea7e070f72ece4070');
+  assert.deepEqual(CODE_ONLY_INCLUDED_PULL_REQUESTS, [
+    {number:2522, merge_sha:'5e89a7386aa1e41d80ce3e945201b96b352ae799'},
+    {number:2523, merge_sha:'151d21eabd988396eef36b944c931b23e51cea69'},
+  ]);
+  const ancestors = [CODE_ONLY_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr=>pr.merge_sha)];
+  const calls = [];
+  validateCodeOnlySourceHistory(sha, (ancestor,target)=>{ calls.push([ancestor,target]); return true; });
+  assert.deepEqual(calls, ancestors.map(ancestor=>[ancestor,sha]));
+  for (const missing of ancestors) {
+    assert.throws(()=>validateCodeOnlySourceHistory(sha, ancestor=>ancestor!==missing));
+  }
+  assert.throws(()=>validateCodeOnlySourceHistory('invalid', ()=>true));
+});
+
+test('a missing reviewed PR stops the release before any Cloudflare request', async () => {
+  const f = fixture();
+  f.io.approve = async () => validateCodeOnlySourceHistory(sha,
+    ancestor=>ancestor!==CODE_ONLY_INCLUDED_PULL_REQUESTS[1].merge_sha);
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.writes(), 0);
+  assert.equal(f.receipts.at(-1).phase, 'stopped');
 });
 
 test('release workflow is manual, exact-SHA and protected with no data-service credential path', () => {
@@ -245,4 +284,6 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.match(source,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.doesNotMatch(source,/AIRTABLE|R2_API|ensure-private|ensure-payment|wrangler route|wrangler secret|synthetic_write|production public Wish/i);
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
+  assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
+  assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
 });
