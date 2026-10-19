@@ -86,7 +86,7 @@ test('caption facts omit conflicting card statistics and never create prices, av
   const c = { ...card('standard'), caption_stats_allowed: false, minimum_rate: 9999, available_now: true, private_notes: 'actor VIP Black Card' };
   const caption = buildCompcardCaption(c, 'standard');
   assert.doesNotMatch(caption, /180|72|9999|actor|VIP Black Card|ว่างวันนี้|พร้อมรับงาน/);
-  assert.match(caption, /สอบถามคิวและรายละเอียดกับทีม MMD/);
+  assert.ok(caption.endsWith('สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3'));
   assert.throws(() => buildCompcardCaption(c, 'preview'), TypeError);
 });
 
@@ -214,4 +214,24 @@ test('an absent Extreme inventory does not double-weight Exclusive in the first 
     history.push({ model_id: chosen.model_id, date, status: 'sent' });
   }
   assert.deepEqual(selected, categories);
+});
+
+
+
+test('all daily model variants and approved promotion captions exclude the prohibited wording', () => {
+  for (const category of ['exclusive', 'premium', 'standard', 'travel', 'extreme']) {
+    for (const destination of destinationsForCategory(category)) {
+      const caption = buildCompcardCaption(card(category), destination);
+      assert.doesNotMatch(caption, /ทีม/);
+      assert.equal(caption.split('\n').at(-1), 'สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3');
+    }
+  }
+  for (const c of APPROVED_COMPCARD_MANIFEST.cards) {
+    for (const destination of destinationsForCategory(c.category)) {
+      assert.doesNotMatch(buildCompcardCaption(c, destination), /ทีม/);
+    }
+  }
+  for (const promotion of APPROVED_COMPCARD_MANIFEST.promotions) {
+    for (const caption of Object.values(promotion.captions)) assert.doesNotMatch(caption, /ทีม/);
+  }
 });

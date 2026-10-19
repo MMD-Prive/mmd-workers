@@ -87,7 +87,7 @@ export function buildCompcardCaption(card, destination) {
   }
   const name = safeDisplayName(card);
   if (!name) throw new TypeError('Compcard display name is required');
-  const cta = 'สอบถามคิวและรายละเอียดกับทีม MMD';
+  const cta = 'สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3';
   if (card.category === 'exclusive' && destination === 'preview') {
     return [
       `EXCLUSIVE PREVIEW · ${name}`,
@@ -163,3 +163,4 @@ export function chooseDailyCard(cards, history, date) {
   });
   return eligible[0] || null;
 }
+

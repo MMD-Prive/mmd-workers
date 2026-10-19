@@ -515,3 +515,23 @@ test("text sender uses the dedicated endpoint with exact approved copy and pinne
   assert.equal(outcome.delivery_state, "sent");
 });
 
+
+
+test("legacy frozen model captions stay frozen and unsent copies fail closed after the wording update", async () => {
+  const f = fixture({ send: () => ({ delivery_state: "not_sent", error: "compcard_mock_rejected" }) });
+  await run(f);
+  const key = `${COMPCARD_JOURNAL_ROOT}plans/2026-10-18/model.json`;
+  const object = f.bucket.records.get(key);
+  const { digest, ...legacy } = JSON.parse(object.value);
+  for (const destination of legacy.destinations) {
+    legacy.captions[destination] = legacy.captions[destination].replace('สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3', 'สอบถามคิวและรายละเอียดกับทีม MMD');
+  }
+  legacy.digest = await compcardSha256(new TextEncoder().encode(JSON.stringify(legacy)));
+  const frozen = JSON.stringify(legacy);
+  f.bucket.records.set(key, { ...object, value: frozen });
+  const before = f.sends.length;
+  const result = await run(f, "2026-10-18", "16:45");
+  assert.equal(f.sends.length, before);
+  assert.ok(result.results[0].outcomes.every(row => row.status === 'blocked'));
+  assert.equal(f.bucket.records.get(key).value, frozen);
+});
