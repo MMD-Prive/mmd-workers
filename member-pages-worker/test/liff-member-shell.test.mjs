@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 import worker from "../src/index.js";
@@ -1115,4 +1115,164 @@ it('shell embeds design as style only and retains no-store and same-origin API c
   assert.match(html, /"world":"public"/);
   assert.match(html, /"startEndpoint":"\/member\/api\/liff\/start"/);
   assert.doesNotMatch(html, /https:\/\/[^"\s]*lovable/);
+});
+
+
+// Customer Graphics V4: runtime tests live in this CI entrypoint.
+
+import { CUSTOMER_GRAPHICS } from "../src/liff-customer-graphics.js";
+import { createCustomerProgress, renderCustomerProgress } from "../src/liff-customer-progress.js";
+import { createHash } from "node:crypto";
+
+test("customer SVG pack is decorative, hash-pinned, bounded and all installed assets are used", async () => {
+  const html = await handleLiffMemberShell(new Request("https://www.mmdbkk.com/member/liff?intent=status"), {}).text();
+  let total = 0;
+  for (const [name, asset] of Object.entries(CUSTOMER_GRAPHICS)) {
+    const bytes = Buffer.byteLength(asset.svg); total += bytes;
+    assert.equal(bytes, asset.bytes); assert.ok(bytes <= 2048);
+    assert.equal(createHash('sha256').update(asset.svg).digest('hex'), asset.sha256);
+    assert.doesNotMatch(asset.svg, /<(?:script|text|image|foreignObject|filter)\b|\bon\w+\s*=|(?:href|src)\s*=/i);
+    assert.match(asset.svg, /currentColor/);
+    assert.ok(html.includes('data-mmd-graphic="' + name + '" aria-hidden="true"'));
+  }
+  assert.ok(total <= 24576);
+  assert.match(html, /customerLoading.fetch/);
+  assert.match(html, /0% · กำลังรอข้อมูล/);
+  assert.doesNotMatch(html, /setInterval\([^)]*(?:progress|percent)/i);
+});
+
+const deferredProgress = () => { let resolve, reject; const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject}; };
+test("request progress counts overlapping tasks and waits for the streamed body", async () => {
+  const one=deferredProgress(), two=deferredProgress(), states=[];
+  let count=0, stream;
+  const p=createCustomerProgress({render:(panel,s)=>states.push({panel,...s}), request:()=>++count===1?one.promise:two.promise});
+  const a=p.fetch('/api/member/app/dashboard'), b=p.fetch('/api/member/app/dashboard');
+  assert.equal(states.at(-1).pending,2);
+  one.resolve(new Response(new ReadableStream({start(c){stream=c;}})));
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(states.at(-1).pending,2);
+  assert.equal(states.at(-1).confirmedPercent,0); // the second request has no response yet
+  stream.enqueue(new TextEncoder().encode('{}'));stream.close();await a;
+  assert.equal(states.at(-1).pending,1);
+  two.resolve(new Response('{}'));await b;assert.equal(states.at(-1).pending,0);
+});
+test("reset ignores old account progress completion without cancelling or replaying a mutation",async()=>{
+ const old=deferredProgress(), fresh=deferredProgress(), states=[];let calls=0;
+ const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:()=>++calls===1?old.promise:fresh.promise});
+ const a=p.fetch('/member/api/customer/requests',{method:'POST'});p.reset();
+ const b=p.fetch('/member/api/customer/requests');old.resolve(new Response('{}'));await assert.rejects(a,/customer_response_stale/);
+ assert.equal(states.at(-1).pending,1);assert.equal(calls,2);
+ fresh.resolve(new Response('{}'));await b;assert.equal(states.at(-1).pending,0);
+});
+test("HTTP and network failure stop loading without automatic mutation retries",async()=>{
+ for(const fail of ['http','network']) {let calls=0;const states=[];
+ const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:async()=>{calls++;if(fail==='network')throw Error('offline');return new Response('{}',{status:503});}});
+ await p.fetch('/member/api/customer/requests',{method:'POST'}).catch(()=>{});
+ assert.equal(calls,1);assert.equal(states.at(-1).pending,0);assert.equal(states.at(-1).error,true);
+ }
+});
+test("timeout aborts the actual request and removes its progress task",async()=>{
+ const states=[];let aborted=false;
+ const p=createCustomerProgress({timeoutMs:5,render:(panel,s)=>states.push(s),request:(_url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>{aborted=true;reject(Error('abort'));}))});
+ await assert.rejects(p.fetch('/api/member/app/dashboard'));assert.equal(aborted,true);assert.equal(states.at(-1).pending,0);
+});
+test("no-booking artwork is revealed only by a successful 204, never initial/loading/error",async()=>{
+ const html=await handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff'),{}).text();
+ assert.match(html, /id="customer-no-booking"[^>]* hidden>/);
+ const start=html.indexOf('async function hydrateDigitalMission()');const stop=html.indexOf('function digitalFeedCategory',start);
+ const source=html.slice(start,stop);
+ assert.match(source,/generation !== hydrateDigitalMission.generation/);
+ assert.match(source,/response.status === 204/);
+ assert.match(source,/if \(empty\) empty.hidden = false/);
+ assert.match(html,/\["digital-mission", "customer-no-booking", "digital-needs", "renewal-card"\]/);
+});
+
+test("confirmed loading milestone advances only after response headers, not elapsed time",async()=>{
+ const states=[];let stream;const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:async()=>new Response(new ReadableStream({start(c){stream=c;}}))});
+ const pending=p.fetch('/api/member/app/dashboard');
+ assert.equal(states.at(-1).confirmedPercent,0);await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(states.at(-1).confirmedPercent,50);assert.ok(states.every(s=>s.confirmedPercent<100));
+ stream.close();await pending;assert.equal(states.at(-1).pending,0);
+});
+
+test("LIFF SDK loading times out without accepting a late identity result or replaying the SDK call",async()=>{
+ const gate=deferredProgress(), states=[];let calls=0;
+ const p=createCustomerProgress({timeoutMs:5,render:(panel,s)=>states.push(s),request:()=>{throw Error('unexpected fetch');}});
+ await assert.rejects(p.waitFor(()=>{calls++;return gate.promise;}),/customer_step_timeout/);
+ assert.equal(states.at(-1).error,true);assert.equal(states.at(-1).pending,0);gate.resolve(true);
+ assert.equal(calls,1);
+});
+
+test("reset clears completed error panels and coupon wallet progress stays in the coupon panel",async()=>{
+ const states=[];const p=createCustomerProgress({render:(panel,s)=>states.push({panel,...s}),request:async()=>new Response('{}',{status:503})});
+ await p.fetch('/member/api/liff/care-back/wallet');assert.equal(states.at(-1).panel,'coupons');assert.equal(states.at(-1).error,true);
+ p.reset();assert.equal(states.at(-1).error,false);assert.equal(states.at(-1).pending,0);
+});
+
+test("member profile reset preserves concurrent welcome context and LIFF preflight",async()=>{
+ const welcome=deferredProgress(), sdk=deferredProgress(), profileRead=deferredProgress(), states=[];
+ const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:url=>url.endsWith('welcome-context')?welcome.promise:profileRead.promise});
+ const a=p.fetch('/member/api/liff/welcome-context');const sdkRead=p.waitFor(()=>sdk.promise);
+ const oldMember=p.fetch('/member/api/liff/profile');p.reset({memberOnly:true});
+ welcome.resolve(new Response('{}'));assert.equal((await a).status,200);
+ sdk.resolve('sdk-ready');assert.equal(await sdkRead,'sdk-ready');
+ profileRead.resolve(new Response('{}'));await assert.rejects(oldMember,/customer_response_stale/);
+ assert.equal(states.at(-1).pending,0);
+ const html=await handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff'),{}).text();
+ assert.match(html,/customerLoading.reset\(\{ memberOnly:true \}\)/);
+});
+
+test("entry progress is outside the hidden profile and moves with the visible profile state",async()=>{
+ const html=await handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff'),{}).text();
+ assert.ok(html.indexOf('id="customer-entry-progress"')<html.indexOf('id="profile"'));
+ const span={},progress={},button={addEventListener(){}};let hidden=true;
+ const node={querySelector:s=>s==='span'?span:s==='progress'?progress:button};
+ const makeHost=()=>({setAttribute(){},prepend(n){n.parentElement=this;}});
+ const entry=makeHost(),home=makeHost();
+ const doc={getElementById:id=>id==='profile'?{classList:{contains:()=>hidden}}:id==='customer-entry-progress'?entry:id==='home'?home:node,createElement:()=>node};
+ runInNewContext('('+renderCustomerProgress.toString()+') ("home", {pending:1,confirmedPercent:0})',{document:doc});assert.equal(node.parentElement,entry);
+ hidden=false;runInNewContext('('+renderCustomerProgress.toString()+') ("home", {pending:1,confirmedPercent:50})',{document:doc});assert.equal(node.parentElement,home);assert.match(span.textContent,/50%/);
+});
+
+test("overlapping success cannot erase another task failure; only its subsequent retry clears it",async()=>{
+ const slow=deferredProgress(), states=[];let calls=0;
+ const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:async()=>++calls===1?new Response('{}',{status:503}):calls===2?slow.promise:new Response('{}')});
+ const failed=p.fetch('/api/member/app/dashboard'), other=p.fetch('/api/member/app/membership');await failed;
+ assert.equal(states.at(-1).error,true);slow.resolve(new Response('{}'));await other;
+ assert.equal(states.at(-1).error,true);assert.equal(states.at(-1).pending,0);
+ await p.fetch('/api/member/app/dashboard');assert.equal(states.at(-1).error,false);
+});
+test("boot overlay follows confirmed loading state and retains failure recovery",()=>{
+ const boot={dataset:{confirmedPercent:'0'}},bar={},retry={dataset:{},addEventListener(){}};
+ const document={getElementById:id=>id==='customer-boot-progress'?boot:id==='hype-progress'?bar:id==='customer-boot-retry'?retry:null};
+ const run=state=>runInNewContext('('+renderCustomerProgress.toString()+') ("home", '+JSON.stringify(state)+')',{document});
+ run({overallPending:1,overallPercent:50,overallError:false});assert.match(boot.textContent,/50%/);assert.equal(retry.hidden,true);
+ run({overallPending:0,overallPercent:0,overallError:false});assert.match(boot.textContent,/50%/);assert.doesNotMatch(boot.textContent,/100%/);
+ run({overallPending:0,overallPercent:0,overallError:true});assert.equal(retry.hidden,false);assert.equal(bar.hidden,true);
+ run({overallPending:0,overallPercent:0,overallError:false,reset:true});assert.match(boot.textContent,/0%/);
+});
+
+test("signed-out profile miss cannot invalidate concurrent public signup catalog",async()=>{
+ const catalog=deferredProgress(),profileRead=deferredProgress();
+ const p=createCustomerProgress({render(){},request:url=>url.endsWith('/catalog')?catalog.promise:profileRead.promise});
+ const a=p.fetch('/member/api/liff/public-membership/catalog');const b=p.fetch('/member/api/liff/profile');
+ profileRead.resolve(new Response('{}',{status:401}));await b;p.reset({memberOnly:true});
+ catalog.resolve(new Response('{"ok":true,"items":[]}'));assert.equal((await a).status,200);
+});
+
+test("logout request survives member-panel cleanup from an older profile read",async()=>{
+ const logout=deferredProgress();const p=createCustomerProgress({render(){},request:()=>logout.promise});
+ p.reset();const request=p.fetch('/member/api/liff/logout',{method:'POST'});p.reset({memberOnly:true});
+ logout.resolve(new Response('{}'));assert.equal((await request).status,200);
+});
+
+test("native evidence FormData and mutations receive a longer bounded deadline without retries",async()=>{
+ const delays=[], bodies=[];
+ const create=runInNewContext('('+createCustomerProgress.toString()+')',{AbortController,Response,Uint8Array,setTimeout:(_fn,ms)=>{delays.push(ms);return delays.length;},clearTimeout(){}});
+ const p=create({render(){},request:async(_url,init)=>{bodies.push(init.body);return new Response('{}');}});
+ const form=new FormData();form.append('file',new Blob(['fixture'],{type:'image/png'}),'fixture.png');
+ await p.fetch('/member/api/liff/customer-request-evidence',{method:'POST',body:form});
+ await p.fetch('/member/api/liff/renewal/purchase',{method:'POST',body:'fixture-only'});
+ await p.fetch('/api/member/app/dashboard');
+ assert.deepEqual(delays,[120000,120000,15000]);assert.equal(bodies[0],form);assert.equal(bodies.length,3);
 });
