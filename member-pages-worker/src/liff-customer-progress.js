@@ -38,7 +38,7 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
       : /renewal/.test(path) ? 'package' : /catalog|purchase/.test(path) ? 'signup'
       : /session\/current/.test(path) ? 'home' : 'home';
     const id = ++nextId, epoch = generation, memberEpoch = memberGeneration;
-    const bootstrap = /\/liff\/(?:welcome-context|start)$/.test(path)
+    const bootstrap = /\/liff\/(?:welcome-context|start|logout)$/.test(path)
       || (path === '/member/api/liff/public-membership/catalog' && (init.method || 'GET').toUpperCase() === 'GET');
     const current = () => epoch === generation && (bootstrap || memberEpoch === memberGeneration);
     tasks.set(id, { panel, stage:0, scope:bootstrap ? 'bootstrap' : 'member', key:(init.method || 'GET').toUpperCase() + ':' + String(url) }); publish(panel);

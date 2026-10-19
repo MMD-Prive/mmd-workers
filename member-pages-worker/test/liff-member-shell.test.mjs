@@ -1259,3 +1259,9 @@ test("signed-out profile miss cannot invalidate concurrent public signup catalog
  profileRead.resolve(new Response('{}',{status:401}));await b;p.reset({memberOnly:true});
  catalog.resolve(new Response('{"ok":true,"items":[]}'));assert.equal((await a).status,200);
 });
+
+test("logout request survives member-panel cleanup from an older profile read",async()=>{
+ const logout=deferredProgress();const p=createCustomerProgress({render(){},request:()=>logout.promise});
+ p.reset();const request=p.fetch('/member/api/liff/logout',{method:'POST'});p.reset({memberOnly:true});
+ logout.resolve(new Response('{}'));assert.equal((await request).status,200);
+});
