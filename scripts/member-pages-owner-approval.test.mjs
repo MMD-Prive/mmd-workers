@@ -18,6 +18,8 @@ for(const [name,change] of Object.entries({
  'other rerunner':f=>f.run.triggering_actor={login:'ic111nm',id:286945879},
  'wrong repo':f=>f.run.repository.id=1,
  'wrong workflow':f=>f.run.path='.github/workflows/other.yml',
+ 'wrong workflow ref':f=>f.run.path='.github/workflows/deploy-member-pages-worker-code-only.yml@dev',
+ 'malformed workflow suffix':f=>f.run.path='.github/workflows/deploy-member-pages-worker-code-only.yml@main@dev',
  'automatic event':f=>f.env.GITHUB_EVENT_NAME='push',
  'wrong branch':f=>f.env.GITHUB_REF='refs/heads/dev',
  'wrong approval SHA':f=>f.env.APPROVED_SHA='b'.repeat(40),
@@ -46,3 +48,5 @@ test('only scoped release imports owner policy; approval repeats at write bounda
  assert.match(workflow,/node --test scripts\/member-pages-owner-approval.test.mjs/);
  assert.match(release,/only the exact reviewed PR 2523 source may be bundled/);
 });
+
+test('API ref-qualified main workflow is accepted',async()=>{const f=fixture();f.run.path += '@main';await verifyOwnerApproval(f.env,f.request);});
