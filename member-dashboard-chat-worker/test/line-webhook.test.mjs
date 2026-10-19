@@ -11,6 +11,7 @@ import worker, {
   resolveKenjiLineReply,
 } from "../src/index.js";
 import { decideKenjiCapability } from "../src/kenji-capability-policy.js";
+import { KenjiModelIdempotency } from "../src/kenji-model-idempotency.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const BASE_ENV = {
@@ -26,6 +27,48 @@ const BASE_ENV = {
     }), { status: 200, headers: { "content-type": "application/json" } }),
   },
 };
+
+function pricingDedupe(mode = "ready", onCommit = () => {}) {
+  const objects = new Map();
+  return {
+    idFromName(name) { return name; },
+    get(name) {
+      assert.match(name, /^kenji-line-pricing-handoff-v1:[a-f0-9]{64}$/);
+      if (!objects.has(name)) {
+        const values = new Map();
+        let lane = Promise.resolve();
+        let alarm = null;
+        const storage = {
+          async get(key) { return values.get(key); },
+          async put(key, value) { values.set(key, value); },
+          async delete(key) { values.delete(key); },
+          async getAlarm() { return alarm; },
+          async setAlarm(value) { alarm = value; },
+          transaction(callback) {
+            const result = lane.then(() => callback(storage));
+            lane = result.catch(() => {});
+            return result;
+          },
+        };
+        objects.set(name, new KenjiModelIdempotency({ storage }));
+      }
+      return {
+        async fetch(url, init) {
+          assert.equal(new URL(url).pathname, "/campaign-lead/claim");
+          const input = JSON.parse(init.body);
+          assert.match(input.key, /^[a-f0-9]{64}$/);
+          assert.equal(Object.hasOwn(input, "quota_key"), false);
+          if (mode === "unavailable") throw new Error("fixture_storage_unavailable");
+          if (mode === "timeout") return new Promise(() => {});
+          if (mode === "commit_failed" && input.action === "commit") return Response.json({ ok: true, committed: false });
+          const response = await objects.get(name).fetch(new Request(url, init));
+          if (input.action === "commit" && (await response.clone().json()).committed === true) onCommit();
+          return response;
+        },
+      };
+    },
+  };
+}
 
 async function signedLineRequest(body, env = BASE_ENV) {
   const raw = JSON.stringify(body);
@@ -481,9 +524,209 @@ test("context-free CARE BACK routing accepts narrow typo and mixed variants with
     ["สมาชิกมีอะไรบ้าง", "membership"],
     ["คะแนนสะสมใช้ยังไง", "points"],
     ["ผมจะไปเที่ยวญี่ปุ่นเดือนกันยายน", "note_only"],
-    ["Standard กับ Premium ต่างกันยังไง", "membership"],
+    ["Standard กับ Premium ต่างกันยังไง", "membership_pricing"],
   ];
   for (const [text, intent] of negativeCases) assert.equal(inferLineIntent(text, lineTextEvent(text)), intent, text);
+});
+
+test("Standard and Premium comparison is classified and queued for Per review", async () => {
+  const text = "Standard กับ Premium ต่างกันยังไง";
+  const event = lineTextEvent(text);
+  assert.equal(inferLineIntent(text, event), "membership_pricing");
+
+  const decision = await resolveKenjiLineReply(event, {}, {
+    ...BASE_ENV,
+    LINE_KENJI_MODEL_ENABLED: "false",
+    LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+  });
+  assert.match(decision.text, /ให้ Per ช่วยตรวจรายละเอียด/);
+  assert.equal(decision.handoff_required, true);
+  assert.equal(decision.handoff_reason, "membership_pricing:per_review");
+  assert.equal(decision.model_attempted, false);
+});
+
+test("pricing handoff is persisted before LINE delivery and fails closed on write failure", async () => {
+  const originalFetch = globalThis.fetch;
+  const run = async ({ matrixStatus = 200, replyStatus = 200, suffix = "ok", redelivery = false, clientStatus = 200, clientRecords = [{ id: "recClient" }], claimMode = "ready", copies = 1, eventTimestamp = Date.now(), eventId = `msg-pricing-${suffix}` } = {}) => {
+    const calls = [];
+    const deferred = [];
+    let claimCommitted = false;
+    globalThis.fetch = async (url, init = {}) => {
+      const href = String(url);
+      calls.push({ url: href, method: init.method || "GET", init });
+      if (href.includes("/message/reply")) return new Response("{}", { status: replyStatus });
+      if (href.includes("api.airtable.com")) {
+        const matrixTable = href.includes("tblS6iRgPjYLBqZJh");
+        if (matrixTable && init.method === "POST") {
+          assert.equal(claimCommitted, true, "durable event claim must be committed before Matrix write");
+          if (copies > 1) await new Promise((resolve) => setTimeout(resolve, 20));
+          if (matrixStatus !== 200) return new Response("{}", { status: matrixStatus });
+          const fields = JSON.parse(init.body).records[0].fields;
+          return Response.json({ records: [{ id: "rec-pricing-handoff", fields }] });
+        }
+        if (matrixTable && init.method === "PATCH") {
+          const fields = JSON.parse(init.body).records[0].fields;
+          return Response.json({ records: [{ id: "rec-pricing-handoff", fields }] });
+        }
+        if (href.includes("tblVv58TCbwh5j1fS")) {
+          return new Response(JSON.stringify({ records: clientRecords }), { status: clientStatus, headers: { "content-type": "application/json" } });
+        }
+        return Response.json({ records: [] });
+      }
+      if (href.startsWith("https://api.line.me/v2/bot/profile/")) return Response.json({});
+      throw new Error("Unexpected pricing-path egress");
+    };
+
+    const text = "Standard กับ Premium ต่างกันยังไง";
+    const event = lineTextEvent(text, {
+      mode: "active",
+      timestamp: eventTimestamp,
+      message: { id: eventId, type: "text", text },
+      ...(redelivery ? { deliveryContext: { isRedelivery: true } } : {}),
+    });
+    const env = {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      KENJI_LINE_BRAIN_V1_ENABLED: "true",
+      AIRTABLE_API_KEY: "test-key",
+      AIRTABLE_BASE_ID: "test-base",
+      AIRTABLE_TABLE_CLIENTS_ID: "tblVv58TCbwh5j1fS",
+      KENJI_MODEL_DEDUPE: claimMode === "missing" ? undefined : pricingDedupe(claimMode, () => { claimCommitted = true; }),
+    };
+    const responses = await Promise.all(Array.from({ length: copies }, async () => worker.fetch(await signedLineRequest({ events: [event] }), env, { waitUntil(promise) { deferred.push(promise); } })));
+    await Promise.all(deferred);
+    assert.equal(calls.some((call) => call.url.includes("api.openai.com")), false);
+    assert.equal(calls.every((call) => ["api.line.me", "api.airtable.com"].includes(new URL(call.url).hostname)), true);
+    const payloads = await Promise.all(responses.map((response) => response.json()));
+    return { calls, payload: payloads[0], payloads };
+  };
+
+  try {
+    const delivered = await run({ suffix: "delivered" });
+    assert.equal(delivered.calls.some((call) => call.url.includes("api.openai.com")), false);
+    const writeIndex = delivered.calls.findIndex((call) => call.url.includes("tblS6iRgPjYLBqZJh") && call.method === "POST");
+    const replyIndex = delivered.calls.findIndex((call) => call.url.includes("/message/reply"));
+    assert.ok(writeIndex >= 0 && replyIndex > writeIndex, "Matrix handoff must persist before the customer reply");
+    const handoffFields = JSON.parse(delivered.calls[writeIndex].init.body).records[0].fields;
+    assert.equal(handoffFields.handoff_required, true);
+    assert.equal(handoffFields.handoff_owner, "Per");
+    assert.equal(handoffFields.conversation_stage, "awaiting_per");
+    assert.deepEqual(handoffFields.Client, ["recClient"]);
+    assert.equal(delivered.payload.saved[0].replied, true);
+
+    const storageFailed = await run({ matrixStatus: 503, suffix: "write-failed" });
+    assert.equal(storageFailed.calls.some((call) => call.url.includes("api.openai.com")), false);
+    assert.equal(storageFailed.calls.some((call) => call.url.includes("/message/reply")), false);
+    assert.equal(storageFailed.payload.saved[0].replied, false);
+
+    const deliveryFailed = await run({ replyStatus: 500, suffix: "reply-failed" });
+    assert.equal(deliveryFailed.calls.some((call) => call.url.includes("api.openai.com")), false);
+    const matrixWrites = deliveryFailed.calls.filter((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method));
+    assert.equal(matrixWrites.length, 2);
+    assert.equal(JSON.parse(matrixWrites[0].init.body).records[0].fields.conversation_stage, "awaiting_per");
+    assert.equal(JSON.parse(matrixWrites[1].init.body).records[0].fields.conversation_stage, "awaiting_review");
+    assert.equal(deliveryFailed.payload.saved[0].replied, false);
+
+    const redelivered = await run({ suffix: "redelivered", redelivery: true });
+    assert.equal(redelivered.calls.some((call) => call.url.includes("/message/reply")), false);
+    assert.equal(redelivered.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false);
+
+    const ambiguousIdentity = await run({ suffix: "ambiguous", clientRecords: [{ id: "recClientA" }, { id: "recClientB" }] });
+    assert.equal(ambiguousIdentity.calls.some((call) => call.url.includes("/message/reply")), false);
+    assert.equal(ambiguousIdentity.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false);
+    assert.equal(ambiguousIdentity.calls.some((call) => call.url.includes("api.openai.com")), false);
+
+    const unavailableIdentity = await run({ suffix: "identity-unavailable", clientStatus: 503 });
+    assert.equal(unavailableIdentity.calls.some((call) => call.url.includes("/message/reply")), false);
+    assert.equal(unavailableIdentity.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false);
+    assert.equal(unavailableIdentity.calls.some((call) => call.url.includes("api.openai.com")), false);
+
+    const unlinked = await run({ suffix: "unlinked", clientRecords: [] });
+    const fallback = unlinked.calls.find((call) => call.url.includes("/message/reply"));
+    const fallbackText = JSON.parse(fallback.init.body).messages[0].text;
+    assert.match(fallbackText, /เปิด MY MMD เพื่อยืนยันตัวตนก่อน/);
+    assert.match(fallbackText, /https:\/\/miniapp\.line\.me\//);
+    assert.doesNotMatch(fallbackText, /ให้ Per ช่วยตรวจรายละเอียด|ส่งต่อสำเร็จ/);
+    assert.equal(unlinked.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false);
+    assert.equal(unlinked.calls.some((call) => call.url.includes("api.openai.com")), false);
+
+    const concurrent = await run({ suffix: "concurrent", copies: 2 });
+    assert.equal(concurrent.payloads.filter((payload) => payload.saved[0].replied).length, 1);
+    assert.equal(concurrent.calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+    assert.equal(concurrent.calls.filter((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)).length, 1);
+    assert.equal(concurrent.calls.filter((call) => call.method === "POST" && decodeURIComponent(new URL(call.url).pathname).endsWith("/MMD — Console Inbox")).length, 1);
+
+    const concurrentWriteFailure = await run({ suffix: "concurrent-write-failure", copies: 2, matrixStatus: 503 });
+    assert.equal(concurrentWriteFailure.calls.some((call) => call.url.includes("/message/reply")), false);
+    assert.equal(concurrentWriteFailure.calls.filter((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)).length, 1);
+
+    for (const claimMode of ["missing", "unavailable", "timeout", "commit_failed"]) {
+      const failed = await run({ suffix: claimMode, claimMode });
+      assert.equal(failed.calls.some((call) => call.url.includes("/message/reply")), false, claimMode);
+      assert.equal(failed.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false, claimMode);
+    }
+    for (const invalidEvent of [{ eventId: "" }, { eventTimestamp: null }, { eventTimestamp: Date.now() - 86400_000 - 1000 }]) {
+      const failed = await run({ suffix: "invalid-event", ...invalidEvent });
+      assert.equal(failed.calls.some((call) => call.url.includes("/message/reply")), false);
+      assert.equal(failed.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("pricing handoff replay with an already-persisted Matrix event ID is suppressed", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  let storedMatrixFields = null;
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ url: href, method: init.method || "GET", init });
+    if (href.includes("/message/reply")) return Response.json({});
+    if (href.includes("api.airtable.com")) {
+      const matrixTable = href.includes("tblS6iRgPjYLBqZJh");
+      if (matrixTable && !init.method) return Response.json({ records: storedMatrixFields ? [{ id: "rec-pricing-handoff", fields: storedMatrixFields }] : [] });
+      if (matrixTable && ["POST", "PATCH"].includes(init.method)) {
+        storedMatrixFields = JSON.parse(init.body).records[0].fields;
+        return Response.json({ records: [{ id: "rec-pricing-handoff", fields: storedMatrixFields }] });
+      }
+      if (href.includes("tblVv58TCbwh5j1fS")) return Response.json({ records: [{ id: "recClient" }] });
+      return Response.json({ records: [] });
+    }
+    return Response.json({});
+  };
+
+  try {
+    const text = "Standard กับ Premium ต่างกันยังไง";
+    const event = lineTextEvent(text, { mode: "active", timestamp: Date.now(), message: { id: "msg-pricing-replay", type: "text", text } });
+    const env = {
+      ...BASE_ENV,
+      LINE_KENJI_MODEL_ENABLED: "false",
+      LINE_KENJI_KNOWLEDGE_ENABLED: "false",
+      KENJI_LINE_BRAIN_V1_ENABLED: "true",
+      AIRTABLE_API_KEY: "test-key",
+      AIRTABLE_BASE_ID: "test-base",
+      AIRTABLE_TABLE_CLIENTS_ID: "tblVv58TCbwh5j1fS",
+      KENJI_MODEL_DEDUPE: pricingDedupe(),
+    };
+    const first = await worker.fetch(await signedLineRequest({ events: [event] }), env);
+    const second = await worker.fetch(await signedLineRequest({ events: [event] }), env);
+    assert.equal((await first.json()).saved[0].replied, true);
+    assert.equal((await second.json()).saved[0].replied, false);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 1);
+    assert.equal(calls.filter((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)).length, 1);
+
+    const laterEvent = { ...event, message: { ...event.message, id: "msg-pricing-later" } };
+    const later = await worker.fetch(await signedLineRequest({ events: [laterEvent] }), env);
+    assert.equal((await later.json()).saved[0].replied, true);
+    const replayAfterLaterTurn = await worker.fetch(await signedLineRequest({ events: [event] }), env);
+    assert.equal((await replayAfterLaterTurn.json()).saved[0].replied, false);
+    assert.equal(calls.filter((call) => call.url.includes("/message/reply")).length, 2);
+    assert.equal(calls.filter((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)).length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("representative context-free CARE BACK webhooks make one LINE reply and zero OpenAI calls", async () => {

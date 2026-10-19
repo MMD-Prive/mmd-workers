@@ -85,6 +85,99 @@ test("follow-up on renewal payment thread resolves to payment_status", async () 
   assert.ok(continuity.live_truth_domains.includes("payment"));
 });
 
+test("ambiguous LINE identity is not attached to an arbitrary Client record", async () => {
+  const continuity = await withFetch(async (url) => {
+    const href = String(url);
+    if (href.includes(MATRIX_TABLE)) return Response.json({ records: [] });
+    if (href.includes("tblVv58TCbwh5j1fS")) return Response.json({ records: [{ id: "recClientA" }, { id: "recClientB" }] });
+    return Response.json({ records: [] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event(), currentIntent: "membership_pricing", now: NOW }));
+
+  assert.equal(continuity.identity_status, "ambiguous");
+  assert.equal(continuity.client_record_id, "");
+  assert.equal(continuity.matrix.client_record_id, "");
+});
+
+test("unavailable Client lookup is distinguished from a verified new contact", async () => {
+  const continuity = await withFetch(async (url) => {
+    const href = String(url);
+    if (href.includes(MATRIX_TABLE)) return Response.json({ records: [] });
+    if (href.includes("tblVv58TCbwh5j1fS")) return Response.json({ error: "unavailable" }, { status: 503 });
+    return Response.json({ records: [] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event(), currentIntent: "membership_pricing", now: NOW }));
+
+  assert.equal(continuity.identity_status, "unavailable");
+  assert.equal(continuity.client_record_id, "");
+});
+
+test("pricing refreshes an unlinked Matrix after canonical Client linking", async () => {
+  const continuity = await withFetch(async (url) => {
+    if (String(url).includes(MATRIX_TABLE)) return Response.json({ records: [{ id: "recMatrix", fields: { ...storedFields(), Client: [] } }] });
+    return Response.json({ records: [{ id: "recClient" }] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event(), currentIntent: "membership_pricing", now: NOW }));
+  assert.equal(continuity.identity_status, "linked");
+  assert.equal(continuity.client_record_id, "recClient");
+  assert.equal(continuity.matrix.client_record_id, "recClient");
+  assert.equal(continuity.matrix_record_id, "recMatrix");
+});
+
+test("pricing fails closed when an existing Matrix link conflicts with canonical identity", async () => {
+  const continuity = await withFetch(async (url) => {
+    if (String(url).includes(MATRIX_TABLE)) return Response.json({ records: [{ id: "recMatrix", fields: storedFields() }] });
+    return Response.json({ records: [{ id: "recDifferentClient" }] });
+  }, () => resolveKenjiLineContinuity({ env: ENV, event: event(), currentIntent: "membership_pricing", now: NOW }));
+  assert.equal(continuity.identity_status, "ambiguous");
+  assert.equal(continuity.client_record_id, "");
+  assert.equal(continuity.matrix.client_record_id, "");
+});
+
+test("Standard and Premium comparison creates a Per-owned pricing handoff", () => {
+  const matrix = buildKenjiPostTurnMatrix({
+    continuity: {
+      conversation_hash: "synthetic-hash",
+      storage_status: "ready",
+      effective_intent: "membership_pricing",
+      matrix: { version: 0, relationship_context: "new_contact" },
+    },
+    decision: {
+      intent: "membership_pricing",
+      handoff_required: true,
+      handoff_reason: "membership_pricing:per_review",
+    },
+    delivered: true,
+    attempted: true,
+    lastEventId: "synthetic-event",
+    now: NOW,
+  });
+
+  assert.equal(matrix.conversation_stage, "awaiting_per");
+  assert.equal(matrix.awaiting_from, "mmd_review");
+  assert.equal(matrix.handoff_required, true);
+  assert.equal(matrix.handoff_owner, "Per");
+  assert.equal(matrix.handoff_reason, "membership_pricing:per_review");
+  assert.equal(matrix.pending_action, "continue Per review before customer-facing pricing answer");
+});
+
+test("a new pricing handoff remains Per-owned when previous payment context is stale", () => {
+  const matrix = buildKenjiPostTurnMatrix({
+    continuity: {
+      decision: "stale_refresh",
+      conversation_hash: "synthetic-hash",
+      client_record_id: "recClient",
+      live_truth_domains: ["payment"],
+      matrix: { version: 1, relationship_context: "known_customer" },
+    },
+    decision: { intent: "membership_pricing", handoff_required: true, handoff_reason: "membership_pricing:per_review" },
+    delivered: false,
+    attempted: false,
+    lastEventId: "synthetic-event",
+    now: NOW,
+  });
+  assert.equal(matrix.conversation_stage, "awaiting_per");
+  assert.equal(matrix.handoff_owner, "Per");
+  assert.ok(matrix.live_truth_domains.includes("payment"));
+});
+
 test("refund follow-up preserves refund context", async () => {
   const continuity = await withFetch(async (url) => {
     const parsed = new URL(String(url));
