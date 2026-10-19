@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { verifyOwnerApproval, environmentName } from './member-pages-owner-approval.mjs';
 import {
   ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
   buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
@@ -164,6 +165,31 @@ test('approval denial at each boundary prevents the next mutation', async () => 
     await assert.rejects(releaseMemberPagesCodeOnly(f.io));
     assert.equal(f.writes(),expectedWrites);
     assert.equal(f.receipts.at(-1).phase,'stopped');
+  }
+});
+
+test('real owner checker gates mock release writes, including revoked approval and reruns', async () => {
+  const owner={login:'mmdprive',id:216427112};
+  for (const [scenario,expectedWrites] of [['approved',2],['absent',0],['rerun',0],['revoked_before_upload',0],['revoked_before_promote',1]]) {
+    const f=fixture(); let checks=0;
+    const env={GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',GITHUB_REPOSITORY:'MMD-Prive/mmd-workers',GITHUB_REPOSITORY_ID:'1121397236',GITHUB_ACTOR:owner.login,GITHUB_ACTOR_ID:String(owner.id),GITHUB_TRIGGERING_ACTOR:owner.login,GITHUB_SHA:releaseSha,APPROVED_SHA:releaseSha,APPROVAL_REF:'fixture',GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:scenario==='rerun'?'2':'1',GH_TOKEN:'fixture'};
+    const request=async(url,options)=>{
+      assert.equal(options.method,'GET');
+      let body;
+      if(url.endsWith('/approvals')) {
+        const denied=scenario==='absent'||(scenario==='revoked_before_upload'&&checks>=2)||(scenario==='revoked_before_promote'&&checks>=3);
+        body=denied?[]:[{state:'approved',user:owner,environments:[{id:456,name:environmentName}]}];
+      } else if(url.includes('/actions/runs/')) body={id:123,repository:{id:1121397236},event:'workflow_dispatch',head_branch:'main',head_sha:releaseSha,path:'.github/workflows/deploy-member-pages-worker-code-only.yml@main',actor:owner,triggering_actor:owner,run_attempt:Number(env.GITHUB_RUN_ATTEMPT)};
+      else if(url.includes('/git/ref/')) body={object:{sha:releaseSha}};
+      else if(url.includes('/deployment-branch-policies')) body={total_count:1,branch_policies:[{name:'main',type:'branch'}]};
+      else body={id:456,name:environmentName,can_admins_bypass:false,protection_rules:[{type:'required_reviewers',prevent_self_review:false,reviewers:[{type:'User',reviewer:owner}]}],deployment_branch_policy:{protected_branches:false,custom_branch_policies:true}};
+      return {status:200,json:async()=>body};
+    };
+    f.io.approve=async()=>{checks++;await verifyOwnerApproval(env,request);};
+    if(scenario==='approved') await releaseMemberPagesCodeOnly(f.io);
+    else await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+    assert.equal(f.writes(),expectedWrites,scenario);
+    assert.ok(f.calls.every(call=>call.method==='GET'||[ROOT+'/versions?bindings_inherit=strict',ROOT+'/deployments'].includes(call.path)));
   }
 });
 
