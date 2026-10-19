@@ -1,0 +1,84 @@
+name: Release member-pages-worker code only
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for this exact code-only release'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this exact release'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main commit SHA approved for release'
+        type: string
+        required: true
+      expected_version:
+        description: 'Active member-pages-worker version UUID from fresh approved preflight'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Active deployment UUID from fresh approved preflight'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-member-pages-worker-production
+  cancel-in-progress: false
+
+jobs:
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify code-only release contract and targeted LIFF behavior
+        run: |
+          node --test scripts/member-pages-code-only-release.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-member-compact-v4.test.mjs
+          node --check member-pages-worker/src/liff-member-shell.js
+      - name: Install pinned Wrangler bundler
+        run: npm install --global wrangler@4.151.1 --no-audit --no-fund
+      - name: Upload and promote exact source with strict binding inheritance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/member-pages-code-only-release.mjs --execute-approved
+      - name: Upload sanitized code-only release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: member-pages-worker-code-only-${{ github.run_id }}
+          path: ${{ runner.temp }}/member-pages-code-only-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14

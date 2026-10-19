@@ -193,13 +193,11 @@ function renderShell(config, nonce) {
     .my-mmd-welcome .per-letter{max-width:680px;margin:24px 0 0;padding:0;border:0;color:#f4ede1}.my-mmd-welcome .per-letter-copy{max-height:none;overflow:visible;margin:0;padding:0;white-space:pre-line;font-size:16px;line-height:1.65}
     .welcome-divider{width:min(100%,680px);height:1px;margin:30px 0 0;background:rgba(201,168,102,.34)}.my-mmd-welcome .intro-continue{width:195px;min-height:48px;margin:26px 0 0;padding:12px 20px;border:0;border-radius:999px;background:#c9a866!important;color:#171715!important;box-shadow:none;font-size:14px;font-weight:800;text-align:center;letter-spacing:.05em}.my-mmd-welcome .intro-continue:disabled{opacity:.55}
     .hype-loader{display:none}body.context-resolving .hype-loader{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#000;color:#f6f1e8;text-align:center}
-    .hype-loader img{display:block;width:min(72vw,280px);height:auto;max-height:52svh;object-fit:contain;filter:drop-shadow(0 18px 42px rgba(203,163,84,.16))}
     .hype-loader-text{color:#caa45e;font-size:12px;font-weight:800;letter-spacing:.22em}.hype-loader-text::after{content:"";display:inline-block;width:1.6em;text-align:left;animation:hype-dots 1.2s steps(4,end) infinite}
     .hype-progress{display:flex;align-items:center;gap:12px;width:min(72vw,280px);margin-top:10px;color:#f6f1e8;font-size:14px;font-variant-numeric:tabular-nums}
-    .hype-progress progress{flex:1;height:8px;appearance:none;border:1px solid #61543c;border-radius:999px;background:#29251d;overflow:hidden}
-    .hype-progress progress::-webkit-progress-bar{background:#29251d}.hype-progress progress::-webkit-progress-value{background:#caa45e;border-radius:999px;transition:width .2s ease-out}.hype-progress progress::-moz-progress-bar{background:#caa45e;border-radius:999px}
+    .hype-progress progress{flex:1;height:8px;accent-color:#caa45e;border-radius:999px}
     @keyframes hype-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
-    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}.hype-progress progress::-webkit-progress-value{transition:none}}
+    @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}}
     body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
     @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .per-letter-copy{font-size:16px;line-height:1.65}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
     @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
@@ -284,7 +282,7 @@ function renderShell(config, nonce) {
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img id="hype-loader-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="HYPE" width="280" height="280"><div class="hype-loader-text">NOW LOADING</div><div class="hype-progress"><progress id="hype-progress" max="100" value="10" aria-label="ความคืบหน้าการเปิดหน้า"></progress><span id="hype-progress-number" aria-hidden="true">10%</span></div></div>`}
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress></div></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
@@ -482,6 +480,15 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
   let digitalPersonalizedFeed = [];
+  let digitalHomeReady = Promise.resolve();
+  let digitalUpdatesLoaded = false;
+  let digitalUpdatesPending = null;
+  let digitalUpdatesGeneration = 0;
+  // Initialize session-bound state before the first profile bootstrap below.
+  let memberApiChain = Promise.resolve();
+  let profileReady = false;
+  let profileGeneration = 0;
+  const secondaryReads = new Map();
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
@@ -654,24 +661,10 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   existingProfilePromise = readProfile({ hydrate: false }).catch(() => null);
   // Keep the HYPE loader up until we know whether to open the member home directly (an existing same-site session never calls liff.login) or show the ENTER welcome.
   if (CONFIG.intent !== "signup") {
-    const hypeImage = document.getElementById("hype-loader-img");
-    const progress = document.getElementById("hype-progress");
-    const progressNumber = document.getElementById("hype-progress-number");
-    let loadingPercent = 10;
-    function setLoadingPercent(value) {
-      loadingPercent = Math.max(loadingPercent, Math.min(100, value));
-      if (progress) progress.value = loadingPercent;
-      if (progressNumber) progressNumber.textContent = loadingPercent + "%";
-    }
-    // Milestone-only progress: the bar changes after actual context/profile
-    // checks. No fake timer advances it while requests are unresolved.
-    hypeImage?.addEventListener("error", () => hypeImage.remove(), { once: true });
     void welcomeContextPromise.catch(() => false).then(async () => {
-      setLoadingPercent(55);
       try {
         const profile = await Promise.race([existingProfilePromise, new Promise((resolve) => setTimeout(() => resolve(null), 6000))]);
         if (profile || (preflightVerifiedSession && document.body.dataset.welcomeAudience === "existing")) {
-          setLoadingPercent(85);
           await enterApp();
         }
       } catch {
@@ -679,7 +672,6 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       } finally {
         // The opening decision is complete: either signed-in Home is ready
         // or a manual ENTER remains available for an unverified visitor.
-        setLoadingPercent(100);
         window.setTimeout(() => document.body.classList.remove("context-resolving"), 240);
       }
     });
@@ -709,6 +701,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const active = item.getAttribute("data-view") === (target.id === "history-panel" ? "history" : target.id);
       item.setAttribute("aria-current", active ? "page" : "false");
     }
+    if (profileReady) void hydrateMemberHome(target.id === "history-panel" ? "history" : target.id);
     if (smooth) window.scrollTo({ top: 0, behavior: "smooth" });
   }
   showView(initialView, false);
@@ -896,21 +889,23 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function readCanonicalHistory() {
+    const generation = profileGeneration;
     try {
-      const response = await fetch(CONFIG.historyEndpoint, {
+      const response = await memberApiFetch(CONFIG.historyEndpoint, {
         method:"GET",
         credentials:"same-origin",
         cache:"no-store",
         headers:{accept:"application/json"},
       });
       const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return null;
       if (!response.ok || payload === null) return null;
 
       let recoveryState = "";
       const normalized = normalizeCanonicalHistory(payload);
       if (normalized.state !== "resolved") {
         try {
-          const recoveryResponse = await fetch(CONFIG.historyRecoveryEndpoint, {
+          const recoveryResponse = await memberApiFetch(CONFIG.historyRecoveryEndpoint, {
             method:"GET",
             credentials:"same-origin",
             cache:"no-store",
@@ -923,6 +918,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         } catch {}
       }
 
+      if (generation !== profileGeneration) return null;
       renderCanonicalHistory(payload, recoveryState);
       return payload;
     } catch {
@@ -930,21 +926,27 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     }
   }
 
-  async function hydrateMemberHome() {
-    const hydrationReads = [
-      readCouponWallet(),
-      readCreditWallet(),
-      readCanonicalHistory(),
-      readCustomerRequests(),
-    ];
-    if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") hydrationReads.push(readCareBackState());
-    await Promise.allSettled(hydrationReads);
+  async function hydrateMemberHome(view = initialView) {
+    const readers = {
+      coupons: readCouponWallet,
+      credits: readCreditWallet,
+      history: readCanonicalHistory,
+      "my-requests": readCustomerRequests,
+      care: CONFIG.intent === "promo" && CONFIG.campaign === "care_back" ? readCareBackState : null,
+    };
+    const read = readers[view];
+    if (!profileReady || !read) return;
+    if (secondaryReads.has(view)) return secondaryReads.get(view);
+    const pending = Promise.resolve().then(read).catch(() => null);
+    secondaryReads.set(view, pending);
+    const result = await pending;
+    if ((result === null || result === false) && secondaryReads.get(view) === pending) secondaryReads.delete(view);
+    return result;
   }
 
   // Member session cookies rotate on every authenticated read and the prior cookie is
   // retired immediately. Parallel reads would reuse one cookie and lose with 401, so
   // session-bound reads run one at a time and each picks up the latest Set-Cookie.
-  let memberApiChain = Promise.resolve();
   // Keep the credential lane locked through headers AND body. A timeout aborts
   // the actual request; it must never release a second read alongside a live one.
   function memberApiFetch(url, init = {}) {
@@ -973,7 +975,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     memberApiChain = run.then(() => undefined, () => undefined);
     return run;
   }
-  async function readOwnHistoryPreview() {
+  async function readOwnHistoryPreview(profileRequestGeneration = profileGeneration) {
     const generation = (readOwnHistoryPreview.generation || 0) + 1;
     readOwnHistoryPreview.generation = generation;
     const pointsNode = document.getElementById("history-preview-points");
@@ -989,7 +991,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     try {
       const response = await memberApiFetch("/api/member/app/history/preview", {credentials:"same-origin", cache:"no-store", headers:{accept:"application/json"}});
       const body = await response.json().catch(() => null);
-      if (generation !== readOwnHistoryPreview.generation) return;
+      if (generation !== readOwnHistoryPreview.generation || profileRequestGeneration !== profileGeneration) return;
       const data = response.ok && body?.ok === true ? body.data : null;
       if (!data || data.redemptionEnabled !== false || data.automaticPrivilegeEnabled !== false || data.pointsMeaning !== "gross_estimate_before_any_deduction_not_redeemable") return;
       const minimal = document.getElementById("minimal-member-display");
@@ -1003,7 +1005,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     } catch {}
   }
 
-  async function readQuickMembershipStatus() {
+  async function readQuickMembershipStatus(profileRequestGeneration = profileGeneration) {
     const generation = (readQuickMembershipStatus.generation || 0) + 1;
     readQuickMembershipStatus.generation = generation;
     const minimalExpiry = document.getElementById("minimal-member-expiry");
@@ -1015,7 +1017,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       // Let its canonical snapshot render while the full profile is loading.
       const response = await memberApiFetch("/api/member/app/membership", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const body = await response.json().catch(() => null);
-      if (generation !== readQuickMembershipStatus.generation) return;
+      if (generation !== readQuickMembershipStatus.generation || profileRequestGeneration !== profileGeneration) return;
       if (!response.ok || !body || body.ok === false) {
         // Status code and state only; no member data. Shows why the card stayed empty.
         const diag = document.getElementById("minimal-member-diag");
@@ -1045,22 +1047,65 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         statusNode.textContent = membershipStatus(status) + (expiry ? " · ถึง " + shortDate(expiry) : "");
       }
     } catch (error) {
+      if (profileRequestGeneration !== profileGeneration) return;
       const diagError = document.getElementById("minimal-member-diag");
       if (diagError) diagError.textContent = "อ่านข้อมูลสมาชิกผิดพลาด (" + String(error && error.name || "error").slice(0, 24) + ")";
     }
   }
 
+  function hideMemberProfile() {
+    profileReady = false;
+    secondaryReads.clear();
+    profile.classList.add("hidden");
+    profile.inert = true;
+    digitalPersonalizedFeed = [];
+    digitalUpdatesGeneration++;
+    digitalUpdatesPending = null;
+    hydrateDigitalHome.generation = (hydrateDigitalHome.generation || 0) + 1;
+    hydrateDigitalMission.generation = (hydrateDigitalMission.generation || 0) + 1;
+    loadRenewalCard.generation = (loadRenewalCard.generation || 0) + 1;
+    for (const id of ["digital-mission", "digital-needs", "renewal-card"]) {
+      const node = document.getElementById(id);
+      if (node) node.hidden = true;
+    }
+    for (const id of ["coupon-wallet", "credit-wallet", "credit-wallet-message", "customer-request-list", "saved-model-list"]) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = "กำลังตรวจสอบข้อมูลของคุณครับ";
+    }
+    for (const id of ["credit-available", "credit-reserved", "credit-used"]) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = "—";
+    }
+  }
+
+  function clearMemberProfile() {
+    hideMemberProfile();
+    if (appStatus) appStatus.dataset.mmdStatusKind = "checking";
+    show("กรุณาเปิด MY MMD อีกครั้งเพื่อตรวจสอบบัญชีของคุณครับ");
+  }
+
   async function readProfile({ hydrate = true } = {}) {
-    void readQuickMembershipStatus();
-    const profileRead = memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
-    void readOwnHistoryPreview();
-    const response = await profileRead;
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || payload.ok !== true) return null;
-    renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
-    renderCustomerContact(payload.data || {});
-    if (hydrate) await hydrateMemberHome();
-    return payload.data || {};
+    const generation = ++profileGeneration;
+    // Do not leave the prior Client's details visible while a new session is checked.
+    hideMemberProfile();
+    try {
+      const response = await memberApiFetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
+      const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return null;
+      if (!response.ok || !payload || payload.ok !== true) {
+        clearMemberProfile();
+        return null;
+      }
+      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+      renderCustomerContact(payload.data || {});
+      void readQuickMembershipStatus(generation);
+      void readOwnHistoryPreview(generation);
+      if (hydrate) await hydrateMemberHome();
+      return payload.data || {};
+    } catch {
+      if (generation === profileGeneration) clearMemberProfile();
+      return null;
+    }
   }
 
   function requestId() {
@@ -1103,17 +1148,22 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function readCustomerRequests() {
+    const generation = profileGeneration;
     const list = document.getElementById("customer-request-list");
     const saved = document.getElementById("saved-model-list");
     try {
-      const response = await fetch(CONFIG.customerRequestsEndpoint, { method:"GET", credentials:"same-origin", headers:{accept:"application/json"} });
+      const response = await memberApiFetch(CONFIG.customerRequestsEndpoint, { method:"GET", credentials:"same-origin", headers:{accept:"application/json"} });
       const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return false;
       if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) throw new Error("unavailable");
       renderCustomerRequests(payload.items);
+      return true;
     } catch {
+      if (generation !== profileGeneration) return false;
       list.replaceChildren(); saved.replaceChildren();
       appendEmpty(list, "ตอนนี้ยังตรวจสอบคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง");
       appendEmpty(saved, "ตอนนี้ยังตรวจสอบรายการที่บันทึกไว้ไม่ได้ครับ");
+      return false;
     }
   }
 
@@ -1184,17 +1234,21 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   });
 
   async function readCouponWallet() {
-    const response = await fetch(CONFIG.couponWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+    const generation = profileGeneration;
+    const response = await memberApiFetch(CONFIG.couponWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
     const payload = await response.json().catch(() => null);
+    if (generation !== profileGeneration) return null;
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderCouponWallet(payload.wallet || {});
     return payload.wallet || {};
   }
 
   async function readCreditWallet() {
+    const generation = profileGeneration;
     try {
-      const response = await fetch(CONFIG.creditWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+      const response = await memberApiFetch(CONFIG.creditWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
       const payload = await response.json().catch(() => null);
+      if (generation !== profileGeneration) return null;
       if (!response.ok || !payload || payload.state !== "resolved" || payload.verificationState !== "verified_only") {
         renderCreditWalletChecking();
         return null;
@@ -1202,14 +1256,17 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       renderCreditWallet(payload);
       return payload;
     } catch {
+      if (generation !== profileGeneration) return null;
       renderCreditWalletChecking();
       return null;
     }
   }
 
   async function readCareBackState() {
-    const response = await fetch(CONFIG.careBackStateEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+    const generation = profileGeneration;
+    const response = await memberApiFetch(CONFIG.careBackStateEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
     const payload = await response.json().catch(() => null);
+    if (generation !== profileGeneration) return null;
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderCareBackState(payload);
     return payload;
@@ -1344,6 +1401,8 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function hydrateDigitalMission() {
+    const generation = (hydrateDigitalMission.generation || 0) + 1;
+    hydrateDigitalMission.generation = generation;
     const mission = document.getElementById("digital-mission");
     if (mission) mission.hidden = true;
     try {
@@ -1352,9 +1411,10 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const sessionId = references.length === 1 ? references[0] : null;
       if (references.length && (sessionId === null || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(sessionId))) return;
       const endpoint = "/api/member/app/session/current" + (sessionId ? "?session_id=" + encodeURIComponent(sessionId) : "");
-      const response = await fetch(endpoint, { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const response = await memberApiFetch(endpoint, { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       if (response.status === 204) return;
       const session = await response.json().catch(() => null);
+      if (generation !== hydrateDigitalMission.generation) return;
       if (!response.ok || !session || typeof session !== "object") return;
       if (sessionId && session.sessionId !== sessionId) return;
       renderDigitalMission(session);
@@ -1433,17 +1493,21 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   async function hydrateDigitalHome(profileData = {}) {
+    const generation = (hydrateDigitalHome.generation || 0) + 1;
+    hydrateDigitalHome.generation = generation;
     const greeting = document.getElementById("digital-greeting");
     const needs = document.getElementById("digital-needs");
     const needsLabel = document.getElementById("digital-needs-label");
     const needsAction = document.getElementById("digital-needs-action");
     const name = String(profileData?.customer_360?.member?.display_name || profileData?.display_name || "").trim();
     if (greeting) greeting.textContent = name ? (locale === "en" ? "Hello " + name : locale === "zh" ? "你好 " + name : "สวัสดี " + name) : "MY MMD";
-    void hydrateDigitalMission();
-
     try {
-      const response = await memberApiFetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const dashboardRead = memberApiFetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      // Enqueue canonical Home data before Mission, keeping the shared session lane serialized.
+      void hydrateDigitalMission();
+      const response = await dashboardRead;
       const body = await response.json().catch(() => null);
+      if (generation !== hydrateDigitalHome.generation) return;
       if (response.ok && body && typeof body === "object") {
         // Digital Home display truth comes from the canonical member-app dashboard.
         // The LIFF profile is intentionally privacy-filtered and may collapse protected
@@ -1484,16 +1548,37 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
           needs.hidden = true;
         }
       }
-    } catch { needs.hidden = true; digitalPersonalizedFeed = []; }
+    } catch { if (generation === hydrateDigitalHome.generation) { needs.hidden = true; digitalPersonalizedFeed = []; } }
 
-    try {
-      const response = await fetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
-      const body = await response.json().catch(() => null);
-      const items = Array.isArray(body?.items) ? body.items : Array.isArray(body?.news) ? body.news : [];
-      const unread = Number(body?.unread_count ?? body?.unreadCount ?? 0);
-      renderDigitalNews(digitalPersonalizedFeed, response.ok ? items : [], Number.isInteger(unread) ? unread : 0);
-    } catch { renderDigitalNews(digitalPersonalizedFeed, [], 0); }
   }
+
+  async function loadDigitalUpdates() {
+    if (digitalUpdatesLoaded || !profileReady) return;
+    if (digitalUpdatesPending) return digitalUpdatesPending;
+    const feed = document.getElementById("digital-news-feed");
+    const generation = digitalUpdatesGeneration;
+    const pending = (async () => {
+      try {
+        await digitalHomeReady;
+        if (generation !== digitalUpdatesGeneration) return;
+        const response = await memberApiFetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+        const body = await response.json().catch(() => null);
+        if (generation !== digitalUpdatesGeneration) return;
+        if (!response.ok || !body || typeof body !== "object") throw new Error("updates_unavailable");
+        const items = Array.isArray(body.items) ? body.items : Array.isArray(body.news) ? body.news : [];
+        const unread = Number(body.unread_count ?? body.unreadCount ?? 0);
+        renderDigitalNews(digitalPersonalizedFeed, items, Number.isInteger(unread) ? unread : 0);
+        digitalUpdatesLoaded = true;
+      } catch {
+        if (generation === digitalUpdatesGeneration && feed) feed.textContent = "ตอนนี้ยังโหลดอัปเดตไม่ได้ กรุณาปิดแล้วเปิดส่วนนี้อีกครั้ง";
+      }
+    })();
+    digitalUpdatesPending = pending;
+    try { await pending; } finally { if (digitalUpdatesPending === pending) digitalUpdatesPending = null; }
+  }
+  document.getElementById("digital-news-disclosure")?.addEventListener("toggle", function() {
+    if (this.open) void loadDigitalUpdates();
+  });
 
   function renderProfile(data, authority = "") {
     applyWorldTheme(data, authority);
@@ -1505,9 +1590,18 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     const payments = view.payments || {};
     const historyView = view.history || {};
     profile.classList.remove("hidden");
+    profile.inert = false;
     document.getElementById("profile-name").textContent = String(member.display_name || data.display_name || "สมาชิก MMD");
     document.getElementById("profile-tier").textContent = String(member.tier || data.tier || "Member");
-    void hydrateDigitalHome(data);
+    digitalUpdatesLoaded = false;
+    digitalUpdatesGeneration++;
+    digitalUpdatesPending = null;
+    digitalPersonalizedFeed = [];
+    const newsDetails = document.getElementById("digital-news-disclosure");
+    if (newsDetails) newsDetails.open = false;
+    const newsFeed = document.getElementById("digital-news-feed");
+    if (newsFeed) newsFeed.textContent = "เปิดเพื่อดูอัปเดตล่าสุด";
+    digitalHomeReady = hydrateDigitalHome(data);
     const contact = data.contactProfile || data.contact_profile || {};
     document.getElementById("profile-email").textContent = String(contact.email || "—");
     document.getElementById("profile-phone").textContent = String(contact.phone || "—");
@@ -1527,6 +1621,8 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     renderHistory(historyView, payments);
     show(copy.ready || "ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ");
     if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
+    secondaryReads.clear();
+    profileReady = true;
     if (CONFIG.intent === "promo") showView("care", false);
     else showView(CONFIG.view || "home", false);
     loadRenewalCard();
@@ -1535,14 +1631,17 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // Renewal card: every number and date below comes from the server offer
   // (/member/api/liff/renewal/offer). The browser sends only package_code.
   async function loadRenewalCard() {
+    const generation = (loadRenewalCard.generation || 0) + 1;
+    loadRenewalCard.generation = generation;
     const card = document.getElementById("renewal-card");
     if (!card) return;
     try {
-      const response = await fetch("/member/api/liff/renewal/offer", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
+      const response = await memberApiFetch("/member/api/liff/renewal/offer", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const offer = response.ok ? await response.json().catch(() => null) : null;
+      if (generation !== loadRenewalCard.generation) return;
       if (!offer || offer.ok !== true) { card.hidden = true; return; }
       renderRenewalCard(card, offer);
-    } catch { card.hidden = true; }
+    } catch { if (generation === loadRenewalCard.generation) card.hidden = true; }
   }
 
   function renewalDate(value) {
