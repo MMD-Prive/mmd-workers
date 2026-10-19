@@ -58,14 +58,15 @@ export function validateJobServicePricing(body) {
   catch { fail(); }
   // Only the existing, official-verification-bound renewal marker can explain
   // a non-service payment component. It does not grant or renew membership.
-  const customerTotal = components?.customer_total_thb ?? round2(clientTotal + travelFee);
-  if (components && (components.service_amount_thb !== clientTotal || components.customer_total_thb !== customerTotal)) fail();
+  const serviceCharge = round2(clientTotal + travelFee);
+  const customerTotal = components?.customer_total_thb ?? serviceCharge;
+  if (components && (components.service_amount_thb !== serviceCharge || components.customer_total_thb !== customerTotal)) fail();
   if (!sameMoney(body.amount_thb, customerTotal)) fail();
   for (const amount of [body.service_amount_thb, body?.payment?.service_amount_thb]) {
-    if (amount !== undefined && !sameMoney(amount, clientTotal)) fail();
+    if (amount !== undefined && !sameMoney(amount, serviceCharge)) fail();
   }
   // original_amount_thb is the pre-discount amount when a discount is declared.
-  if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, discount ? clientGross : clientTotal)) fail();
+  if (body.original_amount_thb !== undefined && !sameMoney(body.original_amount_thb, round2((discount ? clientGross : clientTotal) + travelFee))) fail();
   if (body?.payment?.amount_thb !== undefined && !sameMoney(body.payment.amount_thb, customerTotal)) fail();
   // Partner quotes cover settlement with the partner; MMD does not issue a model payout.
   const needsModel = !partnerManaged && (p.settlement_mode === "direct" || p.addons.length > 0);
