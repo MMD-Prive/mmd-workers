@@ -178,6 +178,7 @@ for (const mode of ["verified", "historical", "historical_foreign", "unavailable
               source:"line_ofc_history",created_by:"member_history_recovery_v2_note_first",
               rate_policy:"historical_lifetime_total_100_thb_1_point_v2",
               idempotency_key:"historical_note_total_v2:recFixtureClient",
+              expires_at:"2030-01-01T00:00:00.000Z",
             } : {}),
           } }] });
         }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { guardPointsDisplaySources, paymentRefsForPoints } from "../src/points-display-source-guard.js";
+import { guardPointsDisplaySources, paymentRefsForPoints, sessionIdsForHistoricalPoints } from "../src/points-display-source-guard.js";
 import { prepareMyMmdLifetimePointsContext, applyMyMmdLifetimePointsResponse } from "../src/my-mmd-lifetime-points.js";
 const ledger = (fields = {}) => ({ id:"rec-ledger", fields: { transaction_status:"posted", points:10, amount_thb:1000, payment_ref:"pay-fixture", posted_at:new Date().toISOString(), ...fields } });
 const payment = (fields = {}) => ({ id:"rec-payment", fields: { "Payment Reference":"pay-fixture", "Payment Status":"Paid", "Verification Status":"verified", Amount:1000, ...fields } });
@@ -8,9 +8,23 @@ const historical = (fields = {}) => ledger({
   member_id:"member-fixture",
   source:"line_ofc_history", created_by:"member_history_recovery_v2_note_first",
   rate_policy:"historical_lifetime_total_100_thb_1_point_v2",
-  idempotency_key:"historical_note_total_v2:recFixtureClient", payment_ref:"", ...fields,
+  idempotency_key:"historical_note_total_v2:recFixtureClient", payment_ref:"",
+  expires_at:"2030-01-01T00:00:00.000Z", ...fields,
 });
-const historicalGuard = (rows, payments = []) => guardPointsDisplaySources(rows, payments, {clientId:"recFixtureClient"});
+const materialized = (fields = {}) => historical({
+  created_by:"history_materializer_v1", rate_policy:"historical_100_thb_1_pt_remainder",
+  idempotency_key:"historical_base:pay-history", payment_ref:"pay-history", session_id:"session-history",
+  amount_thb:150, eligible_amount_thb:150, points:2, prior_remainder_thb:50, pool_thb:200,
+  remainder_after_thb:0, ...fields,
+});
+const companionPayment = (fields = {}) => ({id:"payment-history",fields:{
+  "Payment Reference":"pay-history", session_id:"session-history", Client:["recFixtureClient"],
+  "Payment Status":"Paid", ...fields,
+}});
+const companionSession = (fields = {}) => ({id:"session-history-row",fields:{
+  session_id:"session-history", Client:["recFixtureClient"], ...fields,
+}});
+const historicalGuard = (rows, payments = [], sessions = []) => guardPointsDisplaySources(rows, payments, {clientId:"recFixtureClient",sessions});
 
 test("posted historical note Points require no slip or Payments lookup", () => {
   const record = historical({ payment_ref:"old-optional-reference" });
@@ -21,11 +35,45 @@ test("posted historical note Points require no slip or Payments lookup", () => {
 });
 
 test("historical remainder writer retains its existing carry-forward arithmetic", () => {
-  const record = historical({ created_by:"history_materializer_v1", rate_policy:"historical_100_thb_1_pt_remainder",
-    idempotency_key:"historical_base:fixture", amount_thb:150, points:2,
-    prior_remainder_thb:50, pool_thb:200, remainder_after_thb:0 });
-  assert.equal(guardPointsDisplaySources([record], []).state, "verified");
-  assert.equal(guardPointsDisplaySources([historical({...record.fields, pool_thb:300})], []).state, "review_required");
+  const record = materialized();
+  const payments = [companionPayment()];
+  const sessions = [companionSession()];
+  assert.equal(historicalGuard([record], payments, sessions).state, "verified");
+  assert.equal(sessionIdsForHistoricalPoints([record])[0], "session-history");
+  assert.equal(paymentRefsForPoints([record])[0], "pay-history");
+  assert.equal(historicalGuard([materialized({pool_thb:300})], payments, sessions).state, "review_required");
+});
+
+test("note-first aggregate validates against the reconciled group including carried remainder", () => {
+  const carried = materialized();
+  const aggregate = historical({amount_thb:900,eligible_amount_thb:900,points:8});
+  const value = historicalGuard([carried,aggregate],[companionPayment()],[companionSession()]);
+  assert.equal(value.state,"verified");
+  assert.deepEqual(value.verifiedRecords,[carried,aggregate]);
+  assert.equal(historicalGuard([carried,historical({amount_thb:900,eligible_amount_thb:900,points:9})],
+    [companionPayment()],[companionSession()]).state,"review_required");
+  assert.equal(historicalGuard([historical({amount_thb:900,eligible_amount_thb:900,points:8})]).state,"review_required");
+});
+
+test("materialized history requires exact Payment and Session Client ownership without payment verification", () => {
+  const record=materialized();
+  assert.equal(historicalGuard([record],[companionPayment({Client:["recOtherClient"]})],[companionSession()]).state,"review_required");
+  assert.equal(historicalGuard([record],[companionPayment()],[companionSession({Client:["recOtherClient"]})]).state,"review_required");
+  assert.equal(historicalGuard([record],[],[companionSession()]).state,"review_required");
+  assert.equal(historicalGuard([record],[companionPayment(),companionPayment({id:"duplicate-payment"})],[companionSession()]).state,"review_required");
+  assert.equal(historicalGuard([record],[companionPayment()],[companionSession(),companionSession()]).state,"review_required");
+  const legacyPayment=companionPayment({"Verification Status":"pending_review"});
+  assert.equal(historicalGuard([record],[legacyPayment],[companionSession()]).state,"verified");
+});
+
+test("shared payment references across historical/current rows fail closed in either order", () => {
+  const old=materialized();
+  const current=ledger({payment_ref:"pay-history",session_id:"session-history"});
+  for(const rows of [[old,current],[current,old]]) {
+    const value=historicalGuard(rows,[companionPayment()],[companionSession()]);
+    assert.equal(value.state,"review_required");
+    assert.ok(value.unresolvedRecords>0);
+  }
 });
 
 for (const [label, invalid] of Object.entries({
@@ -38,6 +86,12 @@ for (const [label, invalid] of Object.entries({
 })) test(`historical Points fail closed for ${label}`, () => {
   assert.equal(historicalGuard([historical(invalid)]).state, "review_required");
 });
+
+for (const expiry of [undefined,"not-a-date","2026-02-30T00:00:00.000Z","2026-10-01T00:00:00"]) {
+  test(`note aggregate fails closed for missing/malformed expiry ${String(expiry)}`,()=>{
+    assert.equal(historicalGuard([historical({expires_at:expiry})]).state,"review_required");
+  });
+}
 
 test("pending/reversed history never creates a spendable award", () => {
   for (const record of [historical({transaction_status:"pending"}),historical({reversed_at:"2026-10-01"})]) {
@@ -101,7 +155,7 @@ test("valid money-truth points survive and gross stays before expiry/redemption"
   assert.equal(guardPointsDisplaySources([ledger({ session_id:"other" })], [payment({ session_id:"fixture" })]).state, "review_required");
 });
 
-function fixture(records = [ledger()], payments = [payment()], fail = "") {
+function fixture(records = [ledger()], payments = [payment()], fail = "", sessions = []) {
   const methods = [];
   const env = {
     AIRTABLE_API_KEY:"fixture", AIRTABLE_BASE_ID:"app-fixture", LIFF_SESSION_SECRET:"s".repeat(32),
@@ -115,7 +169,9 @@ function fixture(records = [ledger()], payments = [payment()], fail = "") {
       if (table === "tblVv58TCbwh5j1fS") return Response.json({records:[{
         id:"recFixtureClient",fields:{line_user_id:`U${"a".repeat(32)}`},
       }]});
-      return Response.json({ records:table === "tblgWc5VRon5o8Mhk" ? [{id:"rec-member", fields:{ member_id:"member-fixture", email:"fixture@example.test" }}] : table === "tbl5dfnwjUFMLbnWL" ? records : payments });
+      return Response.json({ records:table === "tblgWc5VRon5o8Mhk" ? [{id:"rec-member", fields:{ member_id:"member-fixture", email:"fixture@example.test" }}]
+        : table === "tbl5dfnwjUFMLbnWL" ? records
+        : table === "tblC98mKWbzmPuNzX" ? sessions : payments });
     } },
   };
   return {env, methods};
@@ -193,6 +249,30 @@ test("LIFF email fallback cannot accept another member's historical award", asyn
   const {env}=fixture([historical({member_id:"another-member"})]);
   const context=await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
   assert.notEqual(context.sourceVerified,true);
+});
+
+test("LIFF can read materialized history by canonical Client links without re-verifying payment",async()=>{
+  const record=materialized();
+  const {env,methods}=fixture([record],[companionPayment({member_id:undefined,"Verification Status":"pending_review"})],"",[companionSession()]);
+  const context=await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.equal(context.sourceVerified,true);
+  assert.equal(context.confirmedBalance,2);
+  assert.equal(context.serviceSpendVerified,false);
+  const response=await applyMyMmdLifetimePointsResponse(request("/member/api/liff/profile"),Response.json(profile()),context);
+  const publicBody=await response.text();
+  for(const privateValue of [`U${"a".repeat(32)}`,"recFixtureClient","pay-history","session-history","fixture@example.test"]) {
+    assert.equal(publicBody.includes(privateValue),false);
+  }
+  assert.ok(methods.every(method=>method==="GET"));
+});
+
+test("LIFF materialized history fails closed for missing or foreign companion Client",async()=>{
+  for(const sessions of [[],[companionSession({Client:["recOtherClient"]})]]) {
+    const {env}=fixture([materialized()],[companionPayment()],"",sessions);
+    const context=await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+    assert.notEqual(context.sourceVerified,true);
+    assert.equal(context.pointsRecoveryPending,true);
+  }
 });
 
 test("historical expiry stays unchanged; no expired award is reactivated", async () => {

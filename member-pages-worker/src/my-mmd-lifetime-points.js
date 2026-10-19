@@ -1,6 +1,11 @@
 import { readMemberAppSession } from "./member-app-api.js";
 import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
-import { guardPointsDisplaySources, paymentRefsForPoints, isHistoricalPointsRecord } from "./points-display-source-guard.js";
+import {
+  guardPointsDisplaySources,
+  paymentRefsForPoints,
+  sessionIdsForHistoricalPoints,
+  isHistoricalPointsRecord,
+} from "./points-display-source-guard.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -90,8 +95,18 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
         filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: MAX_RECORDS,
       }));
     }
-    if (session.strictIdentity === true && payments.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
-    const guarded = guardPointsDisplaySources(records, payments, { clientId });
+    const currentRefs = new Set(records.filter(row => !isHistoricalPointsRecord(row)).map(row => clean(row?.fields?.payment_ref)).filter(Boolean));
+    if (session.strictIdentity === true && payments.some(row => currentRefs.has(clean(row?.fields?.["Payment Reference"]))
+      && clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
+    const sessionIds = sessionIdsForHistoricalPoints(records);
+    const sessions = [];
+    for (let offset = 0; offset < sessionIds.length; offset += 40) {
+      const clauses = sessionIds.slice(offset, offset + 40).map(id => `{session_id}=${formulaString(id)}`);
+      sessions.push(...await airtableList(env, env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", {
+        filterByFormula: clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`, maxRecords: MAX_RECORDS,
+      }));
+    }
+    const guarded = guardPointsDisplaySources(records, payments, { clientId, sessions });
     if (guarded.state !== "verified") return {
       ...unavailable, sourceReviewRequired: true, historicalPoints: guarded.historicalPoints,
     };
