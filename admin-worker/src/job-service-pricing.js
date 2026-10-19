@@ -29,10 +29,13 @@ export function validateJobServicePricing(body) {
   const partnerManaged = isPartnerManagedJob(body);
   const fail = () => { const error = new Error("Invalid service pricing breakdown or aggregate amounts.");
     error.code = "service_pricing_invalid"; error.status = 400; throw error; };
+  const travelFee = body.travel_fee_thb ?? p?.travel_fee_thb ?? 0;
+  const modelTravelFee = body.model_travel_fee_thb ?? p?.model_travel_fee_thb ?? 0;
   if (!p || p.version !== 1 || p.currency !== "THB" || !["direct", "platform"].includes(p.settlement_mode)
     || (!partnerManaged && p.settlement_mode !== body?.private_access?.settlement_mode) || !Array.isArray(p.addons)
     || p.addons.length > OPTIONS.length || !money(p.client_base_amount_thb) || p.client_base_amount_thb <= 0) fail();
-  if (!money(travelFee) || !money(modelTravelFee) || !sameMoney(travelFee, body.travel_fee_thb ?? travelFee) || !sameMoney(modelTravelFee, body.model_travel_fee_thb ?? modelTravelFee)) fail();\n  if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
+  if (!money(travelFee) || !money(modelTravelFee) || !sameMoney(travelFee, body.travel_fee_thb ?? travelFee) || !sameMoney(modelTravelFee, body.model_travel_fee_thb ?? modelTravelFee)) fail();
+  if (body?.work?.job_visibility !== "private" || !money(body.amount_thb) || body.amount_thb <= 0) fail();
   if ((partnerManaged || p.settlement_mode === "platform") && [body.pay_model_thb, body.model_payout_thb,
     body?.model_payout?.amount_thb, body?.payment?.model_payout_thb].some(value => value !== undefined)) fail();
   const requested = body?.work?.service_options ?? [];
@@ -53,8 +56,8 @@ export function validateJobServicePricing(body) {
   catch { fail(); }
   // Only the existing, official-verification-bound renewal marker can explain
   // a non-service payment component. It does not grant or renew membership.
-  const customerTotal = components?.customer_total_thb ?? clientTotal;
-  if (components && components.service_amount_thb !== clientTotal) fail();
+  const customerTotal = components?.customer_total_thb ?? round2(clientTotal + travelFee);
+  if (components && (components.service_amount_thb !== clientTotal || components.customer_total_thb !== customerTotal)) fail();
   if (!sameMoney(body.amount_thb, customerTotal)) fail();
   for (const amount of [body.service_amount_thb, body?.payment?.service_amount_thb]) {
     if (amount !== undefined && !sameMoney(amount, clientTotal)) fail();
@@ -68,7 +71,8 @@ export function validateJobServicePricing(body) {
   if (discount && !needsModel && discount.model_share_thb > 0) fail();
   const modelGross = needsModel ? total(p.model_base_payout_thb, p.addons, "model_payout_thb") : null;
   if (discount && needsModel && p.model_gross_payout_thb !== modelGross) fail();
-  const modelServiceTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;\n  const modelTotal = needsModel ? round2(modelServiceTotal + modelTravelFee) : null;
+  const modelServiceTotal = needsModel ? (discount ? round2(modelGross - discount.model_share_thb) : modelGross) : null;
+  const modelTotal = needsModel ? round2(modelServiceTotal + modelTravelFee) : null;
   if ((needsModel && !money(modelTotal)) || p.model_total_payout_thb !== modelTotal
     || (!needsModel && p.model_base_payout_thb !== null)) fail();
   if (!partnerManaged && p.settlement_mode === "direct") {
