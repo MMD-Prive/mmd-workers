@@ -87,6 +87,8 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       : '<div class="pcr-job-locked" role="status"><b>กำลังเตรียมงาน</b><span>MMD กำลังตรวจข้อมูลก่อนเปิดให้ตอบรับงาน</span></div>';
     var budget = Number(job.partner_source_rate_thb);
     var budgetRow = Number.isFinite(budget) && budget > 0 ? '<div><dt>งบถึงตัว</dt><dd><b>' + esc(money(budget)) + '</b></dd></div>' : '';
+    var modelTravel = Number(job.model_travel_fee_thb);
+    var travelRow = Number.isFinite(modelTravel) && modelTravel > 0 ? '<div><dt>ค่าเดินทางโมเดล</dt><dd>' + esc(money(modelTravel)) + '</dd></div>' : '';
     var ps = job.profit_share;
     var profitRows = '';
     if (job.working_system === "profit_share" && ps) {
