@@ -31,6 +31,50 @@ function truthPayload(overrides = {}) {
   };
 }
 
+for (const [label, value] of [
+  ["null", null], ["missing", undefined], ["blank", ""], ["whitespace", " "],
+  ["false", false], ["true", true], ["numeric string", "88"],
+  ["array", []], ["numeric array", [88]], ["object", {}],
+  ["negative", -1], ["fraction", 1.5], ["NaN", NaN],
+  ["infinity", Infinity], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+]) {
+  test(`malformed Points ${label} cannot become a verified LINE reply`, async () => {
+    const payload = truthPayload({ points: { status: "verified", active_points: value } });
+    let calls = 0;
+    const env = { MEMBER_PAGES_WORKER: { async fetch() { calls++; return Response.json(payload); } } };
+    const truth = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "points_status" });
+    assert.equal(calls, 1);
+    assert.deepEqual(truth.points, { status: "unavailable", active_points: null });
+    // The final reply boundary must also reject an unsanitized injected value.
+    for (const input of [truth, payload]) {
+      const decision = buildKenjiLiveTruthDecision("points_status", input);
+      assert.equal(decision.live_truth_verified, false);
+      assert.equal(decision.reply_source, "live_truth_unavailable");
+      assert.match(decision.text, /intent=status&view=points/);
+      assert.doesNotMatch(decision.text, /\b\d[\d,]*\s*Points\b/);
+    }
+  });
+}
+
+for (const identity_status of [undefined, "unresolved", "ambiguous", "owner_oa_linked"]) {
+  test(`Points cannot be sent for unproven identity ${identity_status}`, () => {
+    const decision = buildKenjiLiveTruthDecision("points_status", truthPayload({ identity_status }));
+    assert.equal(decision.live_truth_verified, false);
+    assert.equal(decision.reply_source, "live_truth_unavailable");
+    assert.doesNotMatch(decision.text, /\b88 Points\b/);
+  });
+}
+
+test("a verified numeric zero remains a real zero", async () => {
+  const env = { MEMBER_PAGES_WORKER: { async fetch() {
+    return Response.json(truthPayload({ points: { status: "verified", active_points: 0 } }));
+  } } };
+  const truth = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "points_status" });
+  const decision = buildKenjiLiveTruthDecision("points_status", truth);
+  assert.equal(decision.live_truth_verified, true);
+  assert.match(decision.text, /มี 0 Points/);
+});
+
 test("reads bounded canonical truth through member-pages service binding", async () => {
   let captured = null;
   const env = {

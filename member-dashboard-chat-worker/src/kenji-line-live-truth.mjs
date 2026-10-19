@@ -32,12 +32,16 @@ function safeEnvelope(value) {
   return ["none", "standard", "premium", "vip", "svip", "black_card"].includes(envelope) ? envelope : "none";
 }
 
+function hasVerifiedPoints(points) {
+  return points?.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
+}
+
 function boundedTruth(payload = {}) {
   if (payload?.ok !== true || payload?.authority !== AUTHORITY || payload?.identity_status !== "resolved") return null;
   const membership = payload?.membership && typeof payload.membership === "object" ? payload.membership : {};
   const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
   const points = payload?.points && typeof payload.points === "object" ? payload.points : {};
-  const activePoints = Number(points.active_points);
+  const verifiedPoints = hasVerifiedPoints(points);
   return {
     ok: true,
     authority: AUTHORITY,
@@ -61,8 +65,8 @@ function boundedTruth(payload = {}) {
         expire_at: /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text(former.expire_at)) ? text(former.expire_at) : "",
       } : null,
     points: {
-      status: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? "verified" : "unavailable",
-      active_points: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? Math.floor(activePoints) : null,
+      status: verifiedPoints ? "verified" : "unavailable",
+      active_points: verifiedPoints ? points.active_points : null,
     },
   };
 }
@@ -158,7 +162,7 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
   const value = text(intent).toLowerCase();
   if (!kenjiLiveTruthRequired(value)) return null;
 
-  if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY) {
+  if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY && liveTruth.identity_status === "resolved") {
     if (value === "membership_status") {
       return {
         text: `${membershipStatusText(liveTruth.membership || {})}${membershipRightsText(liveTruth.membership || {})}`,
@@ -173,8 +177,8 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
         live_truth_verified: true,
       };
     }
-    if (value === "points_status" && liveTruth?.points?.status === "verified") {
-      const points = Number(liveTruth.points.active_points) || 0;
+    if (value === "points_status" && hasVerifiedPoints(liveTruth.points)) {
+      const points = liveTruth.points.active_points;
       const name = text(liveTruth.display_name);
       return {
         text: `${name ? `คุณ${name} ` : ""}ตอนนี้มี ${points.toLocaleString("th-TH")} Points ครับ\nดูรายละเอียดใน My MMD > Points ได้ที่นี่ครับ → ${POINTS_LIFF_URL}`,
