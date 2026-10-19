@@ -1,16 +1,17 @@
 // Presentation only. No identity, balance or business decision is made here.
 export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
-  let generation = 0, nextId = 0;
+  let generation = 0, memberGeneration = 0, nextId = 0;
   const tasks = new Map(), panels = new Set();
   function publish(panel, error = false) {
     panels.add(panel);
     const active = [...tasks.values()].filter(t => t.panel === panel);
     render(panel, { pending:active.length, confirmedPercent:active.length ? Math.min(...active.map(t => t.stage)) * 50 : 0, error });
   }
-  function reset() {
-    generation++;
+  function reset({ memberOnly = false } = {}) {
+    memberGeneration++;
+    if (!memberOnly) generation++;
     // Ignore late completion; do not abort/replay a business mutation on account reset.
-    tasks.clear();
+    for (const [id, task] of tasks) if (!memberOnly || task.scope === "member") tasks.delete(id);
     for (const panel of panels) publish(panel);
   }
   async function fetchWithProgress(url, init = {}) {
@@ -20,8 +21,10 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
       : /customer.request|evidence/.test(path) ? 'my-requests'
       : /renewal/.test(path) ? 'package' : /catalog|purchase/.test(path) ? 'signup'
       : /session\/current/.test(path) ? 'home' : 'home';
-    const id = ++nextId, epoch = generation;
-    tasks.set(id, { panel, stage:0 }); publish(panel);
+    const id = ++nextId, epoch = generation, memberEpoch = memberGeneration;
+    const bootstrap = /\/liff\/(?:welcome-context|start)$/.test(path);
+    const current = () => epoch === generation && (bootstrap || memberEpoch === memberGeneration);
+    tasks.set(id, { panel, stage:0, scope:bootstrap ? 'bootstrap' : 'member' }); publish(panel);
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (init.signal?.aborted) abort();
@@ -30,7 +33,7 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
     let failed = false;
     try {
       const response = await request(url, { ...init, signal:controller.signal });
-      if (epoch === generation) { tasks.get(id).stage = 1; publish(panel); }
+      if (current()) { tasks.get(id).stage = 1; publish(panel); }
       // Keep the bar and existing serialized session lane until the body is read.
       // No claimed byte percentage: Content-Length may describe compressed data.
       if (response.body?.getReader) {
@@ -47,25 +50,25 @@ export function createCustomerProgress({ render, request, timeoutMs = 15000 }) {
         } catch (error) { await reader.cancel().catch(() => {}); throw error; }
         const bytes = new Uint8Array(size); let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-        if (epoch !== generation) throw new Error("customer_response_stale");
+        if (!current()) throw new Error("customer_response_stale");
         failed = !response.ok;
         return new Response(response.status === 204 ? null : bytes, {
           status:response.status, statusText:response.statusText, headers:response.headers,
         });
       }
-      if (epoch !== generation) throw new Error("customer_response_stale");
+      if (!current()) throw new Error("customer_response_stale");
       failed = !response.ok;
       return response;
     } catch (error) { failed = true; throw error; }
     finally {
       clearTimeout(timer);
       init.signal?.removeEventListener('abort', abort);
-      if (epoch === generation) { tasks.delete(id); publish(panel, failed); }
+      if (current()) { tasks.delete(id); publish(panel, failed); }
     }
   }
   async function waitFor(operation, panel = 'home') {
     const id = ++nextId, epoch = generation;
-    tasks.set(id, {panel, stage:0}); publish(panel);
+    tasks.set(id, {panel, stage:0, scope:'bootstrap'}); publish(panel);
     let timer, failed = false;
     try {
       const result = await Promise.race([Promise.resolve().then(operation), new Promise((_, reject) => {

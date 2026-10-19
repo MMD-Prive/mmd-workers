@@ -1208,3 +1208,16 @@ test("reset clears completed error panels and coupon wallet progress stays in th
  await p.fetch('/member/api/liff/care-back/wallet');assert.equal(states.at(-1).panel,'coupons');assert.equal(states.at(-1).error,true);
  p.reset();assert.equal(states.at(-1).error,false);assert.equal(states.at(-1).pending,0);
 });
+
+test("member profile reset preserves concurrent welcome context and LIFF preflight",async()=>{
+ const welcome=deferredProgress(), sdk=deferredProgress(), profileRead=deferredProgress(), states=[];
+ const p=createCustomerProgress({render:(panel,s)=>states.push(s),request:url=>url.endsWith('welcome-context')?welcome.promise:profileRead.promise});
+ const a=p.fetch('/member/api/liff/welcome-context');const sdkRead=p.waitFor(()=>sdk.promise);
+ const oldMember=p.fetch('/member/api/liff/profile');p.reset({memberOnly:true});
+ welcome.resolve(new Response('{}'));assert.equal((await a).status,200);
+ sdk.resolve('sdk-ready');assert.equal(await sdkRead,'sdk-ready');
+ profileRead.resolve(new Response('{}'));await assert.rejects(oldMember,/customer_response_stale/);
+ assert.equal(states.at(-1).pending,0);
+ const html=await handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff'),{}).text();
+ assert.match(html,/customerLoading.reset\(\{ memberOnly:true \}\)/);
+});

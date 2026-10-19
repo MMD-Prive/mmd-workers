@@ -649,6 +649,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {
     if (logoutButton.disabled) return;
     logoutButton.disabled = true;
+    customerLoading.reset();
     try {
       const response = await fetch("/member/api/liff/logout", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" } });
       if (!response.ok) throw new Error("logout_failed");
@@ -1060,7 +1061,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   function hideMemberProfile() {
-    if (typeof customerLoading !== "undefined") customerLoading.reset();
+    if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
     secondaryReads.clear();
     profile.classList.add("hidden");
