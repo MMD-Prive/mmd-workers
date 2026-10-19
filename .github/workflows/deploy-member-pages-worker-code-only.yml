@@ -21,7 +21,7 @@ on:
         type: string
         required: true
       approved_sha:
-        description: 'Full main SHA of approved release tooling; application source is fixed to PR 2523'
+        description: 'Full main SHA of approved release tooling; application source is fixed to Graphics V4 PR 2537'
         type: string
         required: true
       expected_version:
@@ -105,10 +105,10 @@ jobs:
           fetch-depth: 0
           path: release-tools
           persist-credentials: false
-      - name: Check out exact reviewed PR 2523 application source
+      - name: Check out exact reviewed Graphics V4 PR 2537 application source
         uses: actions/checkout@v5
         with:
-          ref: 151d21eabd988396eef36b944c931b23e51cea69
+          ref: a53571bc9d572755dff65599767d09a240d74b93
           fetch-depth: 0
           path: release-source
           persist-credentials: false

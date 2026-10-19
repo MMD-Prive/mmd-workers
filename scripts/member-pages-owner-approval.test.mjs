@@ -49,7 +49,7 @@ test('only scoped release imports owner policy; approval repeats at write bounda
  const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
  assert.match(workflow,/environment: member-pages-code-only-owner/);
  assert.match(workflow,/node --test scripts\/member-pages-owner-approval.test.mjs/);
- assert.match(release,/only the exact reviewed PR 2523 source may be bundled/);
+ assert.match(release,/only the exact reviewed Graphics V4 source may be bundled/);
 });
 
 test('API ref-qualified main workflow is accepted',async()=>{const f=fixture();f.run.path += '@main';await verifyOwnerApproval(f.env,f.request);});

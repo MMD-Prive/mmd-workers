@@ -14,12 +14,28 @@ export const ZONE = '2d62396174fa2ddadbbcd0e8cf0f3367';
 export const ROOT = `/accounts/${ACCOUNT}/workers/scripts/member-pages-worker`;
 export const VERSION_ROOT = `/accounts/${ACCOUNT}/workers/workers/member-pages-worker/versions`;
 export const CODE_ONLY_BASE_SHA = '05db9f10d32650a7b922475ea7e070f72ece4070';
-export const CODE_ONLY_SOURCE_SHA = '151d21eabd988396eef36b944c931b23e51cea69';
-// This release explicitly includes both merged changes; keep the original
-// comparison base so the additional Points source is visible in its scope.
+export const CODE_ONLY_PREVIOUS_SOURCE_SHA = '151d21eabd988396eef36b944c931b23e51cea69';
+export const CODE_ONLY_GRAPHICS_BASE_SHA = 'a815e173fff1471901dae55646c984ed0b5f23f3';
+export const CODE_ONLY_SOURCE_SHA = 'a53571bc9d572755dff65599767d09a240d74b93';
+export const CODE_ONLY_GRAPHICS_PATHS = [
+  'member-pages-worker/src/liff-customer-graphics.js',
+  'member-pages-worker/src/liff-customer-progress.js',
+  'member-pages-worker/src/liff-member-shell.js',
+  'member-pages-worker/test/liff-member-shell.test.mjs',
+].sort();
+// These are the only source roots permitted by the bundle input-map guard.
+// Root dependency/build controls are also immutable across the non-bundle bridge.
+export const CODE_ONLY_RUNTIME_BOUNDARIES = [
+  'member-pages-worker', 'shared', 'auth-worker',
+  'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml',
+  'yarn.lock', 'bun.lock', 'bun.lockb', '.npmrc',
+  'wrangler.toml', 'wrangler.json', 'wrangler.jsonc', 'tsconfig.json', 'jsconfig.json',
+];
+// Preserve the previously reviewed source boundary, then add only the V4 delta.
 export const CODE_ONLY_INCLUDED_PULL_REQUESTS = [
   { number: 2522, merge_sha: '5e89a7386aa1e41d80ce3e945201b96b352ae799' },
   { number: 2523, merge_sha: '151d21eabd988396eef36b944c931b23e51cea69' },
+  { number: 2537, merge_sha: CODE_ONLY_SOURCE_SHA },
 ];
 // These exact blobs belong to another Worker and are never release inputs.
 export const CODE_ONLY_EXCLUDED_CHANGE = {
@@ -77,10 +93,16 @@ export function validateCodeOnlySourcePaths(paths = [], { sha, readBlob } = {}) 
 }
 
 export function validateCodeOnlySourceHistory(sha, isAncestor) {
-  assert.equal(sha, CODE_ONLY_SOURCE_SHA, 'only the exact reviewed PR 2523 source may be bundled');
-  for (const ancestor of [CODE_ONLY_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
+  assert.equal(sha, CODE_ONLY_SOURCE_SHA, 'only the exact reviewed Graphics V4 source may be bundled');
+  for (const ancestor of [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, ...CODE_ONLY_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
     assert.equal(isAncestor(ancestor, sha), true, 'reviewed release commit missing from source history');
   }
+}
+
+export function validateGraphicsSourcePaths(paths) {
+  assert.deepEqual([...paths].sort(), CODE_ONLY_GRAPHICS_PATHS,
+    'Graphics V4 delta must contain exactly the four reviewed files');
+  return [...CODE_ONLY_GRAPHICS_PATHS];
 }
 
 // Release tooling may advance on main; the deployed application source cannot.
@@ -104,9 +126,22 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
     return true;
   });
   git(releaseDirectory, 'merge-base', '--is-ancestor', sourceSha, releaseSha);
-  const sourceScope = validateCodeOnlySourcePaths(
-    git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_BASE_SHA, sourceSha).split('\n').filter(Boolean),
-    {sha:sourceSha, readBlob:(reference, path)=>git(sourceDirectory, 'rev-parse', reference+':'+path)});
+  // First retain the complete original #2522/#2523 review boundary.
+  const previousScope = validateCodeOnlySourcePaths(
+    git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_BASE_SHA, CODE_ONLY_PREVIOUS_SOURCE_SHA).split('\n').filter(Boolean),
+    {sha:CODE_ONLY_PREVIOUS_SOURCE_SHA, readBlob:(reference, path)=>git(sourceDirectory, 'rev-parse', reference+':'+path)});
+  // Other Workers, presentation assets and release tooling advanced in main.
+  // They are not accepted as runtime changes: prove the entire permitted input
+  // trees and dependency/config controls stayed identical before V4 was added.
+  git(sourceDirectory, 'merge-base', '--is-ancestor', CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA);
+  assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA,
+    '--', ...CODE_ONLY_RUNTIME_BOUNDARIES), '', 'runtime dependency/config drift before Graphics V4');
+  const graphicsPaths = validateGraphicsSourcePaths(
+    git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_GRAPHICS_BASE_SHA, sourceSha).split('\n').filter(Boolean));
+  const sourceScope = {...previousScope,
+    included_paths:[...new Set([...previousScope.included_paths, ...graphicsPaths])].sort(),
+    graphics_delta:{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA, paths:graphicsPaths},
+    unchanged_runtime_bridge:{from:CODE_ONLY_PREVIOUS_SOURCE_SHA, to:CODE_ONLY_GRAPHICS_BASE_SHA}};
   assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_BASE_SHA, sourceSha, '--', 'member-pages-worker/wrangler.toml'), '',
     'Worker config/migrations changed; separate release review required');
   return { method:'separate-pinned-source-checkout', source_sha:sourceSha, release_sha:releaseSha,
@@ -200,7 +235,7 @@ export async function releaseMemberPagesCodeOnly(io) {
   const save = phase => { state.phase = phase; io.save({ ...state }); };
   try {
     await io.approve();
-    assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact PR 2523 merge');
+    assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact Graphics V4 merge');
     assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
     const deployment = (await call('/deployments'))?.deployments?.[0];
@@ -299,7 +334,10 @@ export function validateBundleSourceMap(map, mapDirectory, repositoryRoot = proc
       'bundle includes an unreviewed dependency or another Worker');
     return path;
   });
-  assert.ok(inputs.includes('member-pages-worker/src/runtime-index.js'), 'unexpected bundle entry point');
+  for (const required of ['member-pages-worker/src/runtime-index.js',
+    'member-pages-worker/src/liff-customer-graphics.js', 'member-pages-worker/src/liff-customer-progress.js']) {
+    assert.ok(inputs.includes(required), 'missing required Graphics V4 bundle input');
+  }
   return [...new Set(inputs)].sort();
 }
 
