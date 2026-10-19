@@ -476,6 +476,7 @@ export function inferLineIntent(text = "", event = {}) {
   // Keep earning rules, historical calculations, and payment-credit questions
   // on their separate informational intents above.
   if (
+    /^check\s+points(?:\s*[.!?])?$/i.test(normalized) ||
     /^(?:(?:ขอ)?\s*)?(?:เช็ก|เช็ค|ดู|ตรวจสอบ|ตรวจ|สอบถาม)?\s*(?:(?:ยอด|จำนวน)\s*)?(?:แต้ม|คะแนน|points?)(?:\s*(?:ของ)?(?:ผม|ฉัน|หนู|เรา))?(?:\s*(?:ตอนนี้|ปัจจุบัน|ล่าสุด))?(?:\s*(?:มี|เหลือ|คงเหลือ|อยู่)?\s*(?:เท่าไหร่|เท่าไร|กี่แต้ม|กี่คะแนน|กี่\s*points?))?\s*(?:ครับ|ค่ะ|หน่อย)?$/i.test(normalized) ||
     /^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)
   ) return "points_status";
