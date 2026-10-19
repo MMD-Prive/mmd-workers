@@ -8,10 +8,40 @@ import modelWorker from '../admin-worker/src/model-liff-worker.js';
 import { notifyTravelEvent } from '../admin-worker/src/model-travel-notification.js';
 
 import { TravelTestBucket, MODEL, travelFixture, jpeg } from './model-travel-fixtures.mjs';
+import { resolveTravelEta, travelState } from './model-travel-store.mjs';
 const digest = async bytes => Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex');
 const input = (key = 'fixture-key-00000001', text = 'รถติดเล็กน้อยครับ', photos = []) => ({ key, text, photos });
 const photoSpec = async () => ({ type: 'image/jpeg', size: jpeg.length, sha256: await digest(jpeg) });
 const putRequest = () => new Request('https://mmdbkk.com/upload', { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: jpeg });
+
+test('legacy and shared endpoints agree on aliases, conflicts and terminal ETA', async () => {
+  for(const state of ['on_the_way','enroute','en_route','arrived','completed','cancelled','unrecognized']) {
+    const {env,record}=travelFixture();record.fields.session_state=state;record.fields.model_session_state=state;
+    const shared=await projectTravel(env,record);
+    const response=await handleMemberAppSessionApi(new Request('https://mmdbkk.com/api/member/app/session/current?session_id=sess_FIXTURE'),env,async()=>({lineUserId:record.fields.line_user_id,memberId:record.fields.member_id}));
+    const legacy=await response.json();assert.equal(legacy.lifecycle,shared.state,state);assert.equal(legacy.eta.status,shared.eta.status,state);
+    assert.equal(legacy.eta.arrival_at?.slice(0,16),shared.eta.arrival_at?.slice(0,16));
+  }
+  const {record}=travelFixture();record.fields.session_state='on_the_way';assert.equal(travelState(record),'en_route');
+  record.fields.session_state='arrived';assert.equal(travelState(record),'checking');
+});
+
+test('owned ETA distinguishes no event from invalid/missing/ambiguous/unavailable Jobs', async () => {
+  const now=Date.now();
+  for(const kind of ['no-event','no-job','duplicate','wrong-job','malformed','timeout']) {
+    const {env,record}=travelFixture();
+    env.AIRTABLE_HTTP.fetch=async()=>{
+      if(kind==='timeout')throw new Error('timeout');
+      const job={fields:{session_id:kind==='wrong-job'?'sess_OTHER':record.fields.session_id,events_json:kind==='malformed'?'{broken':'[]'}};
+      return Response.json({records:kind==='no-job'?[]:kind==='duplicate'?[job,job]:[job]});
+    };
+    const eta=await resolveTravelEta(env,record,now);
+    assert.equal(eta.status,kind==='no-event'?'missing':'unavailable',kind);
+    assert.equal(eta.arrival_at,null);
+  }
+  for(const malformed of ['{}','{broken','x'.repeat(64001),42])assert.equal(travelEtaFromEvents(malformed,now).status,'unavailable');
+  for(const value of [true,[],{},null,0,241,1.5])assert.equal(travelEtaFromEvents([{event:'eta_update',eta_minutes:value,ts:new Date(now).toISOString()}],now).status,'unavailable');
+});
 
 test('both apps share hour/minute, exact boundary, expired and lifecycle semantics', () => {
   const now = Date.parse('2026-10-18T16:55:00Z');
