@@ -1,9 +1,68 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { guardPointsDisplaySources } from "../src/points-display-source-guard.js";
+import { guardPointsDisplaySources, paymentRefsForPoints } from "../src/points-display-source-guard.js";
 import { prepareMyMmdLifetimePointsContext, applyMyMmdLifetimePointsResponse } from "../src/my-mmd-lifetime-points.js";
 const ledger = (fields = {}) => ({ id:"rec-ledger", fields: { transaction_status:"posted", points:10, amount_thb:1000, payment_ref:"pay-fixture", posted_at:new Date().toISOString(), ...fields } });
 const payment = (fields = {}) => ({ id:"rec-payment", fields: { "Payment Reference":"pay-fixture", "Payment Status":"Paid", "Verification Status":"verified", Amount:1000, ...fields } });
+const historical = (fields = {}) => ledger({
+  member_id:"member-fixture",
+  source:"line_ofc_history", created_by:"member_history_recovery_v2_note_first",
+  rate_policy:"historical_lifetime_total_100_thb_1_point_v2",
+  idempotency_key:"historical_note_total_v2:recFixtureClient", payment_ref:"", ...fields,
+});
+const historicalGuard = (rows, payments = []) => guardPointsDisplaySources(rows, payments, {clientId:"recFixtureClient"});
+
+test("posted historical note Points require no slip or Payments lookup", () => {
+  const record = historical({ payment_ref:"old-optional-reference" });
+  const value = historicalGuard([record]);
+  assert.equal(value.state, "verified");
+  assert.deepEqual(value.verifiedRecords, [record]);
+  assert.deepEqual(paymentRefsForPoints([record]), []);
+});
+
+test("historical remainder writer retains its existing carry-forward arithmetic", () => {
+  const record = historical({ created_by:"history_materializer_v1", rate_policy:"historical_100_thb_1_pt_remainder",
+    idempotency_key:"historical_base:fixture", amount_thb:150, points:2,
+    prior_remainder_thb:50, pool_thb:200, remainder_after_thb:0 });
+  assert.equal(guardPointsDisplaySources([record], []).state, "verified");
+  assert.equal(guardPointsDisplaySources([historical({...record.fields, pool_thb:300})], []).state, "review_required");
+});
+
+for (const [label, invalid] of Object.entries({
+  unknown_writer:{created_by:"browser"}, wrong_policy:{rate_policy:"new_payment"},
+  missing_key:{idempotency_key:""}, wrong_key:{idempotency_key:"historical_note_total_v2:unknown"},
+  negative:{points:-10}, fractional:{points:1.5}, wrong_ratio:{points:999},
+  missing_amount:{amount_thb:undefined}, arbitrary_text:{amount_thb:"message 1000 บาท"},
+  invalid_date:{posted_at:"invalid"}, missing_posted_date:{posted_at:""},
+  unsafe_points:{points:Number.MAX_SAFE_INTEGER+1},
+})) test(`historical Points fail closed for ${label}`, () => {
+  assert.equal(historicalGuard([historical(invalid)]).state, "review_required");
+});
+
+test("pending/reversed history never creates a spendable award", () => {
+  for (const record of [historical({transaction_status:"pending"}),historical({reversed_at:"2026-10-01"})]) {
+    assert.deepEqual(guardPointsDisplaySources([record], []).verifiedRecords, []);
+  }
+});
+
+test("historical duplicates do not inflate and conflicting writer provenance fails closed", () => {
+  const row = historical();
+  assert.equal(historicalGuard([row,row]).verifiedRecords.length, 1);
+  assert.equal(historicalGuard([row,historical({created_by:"other"})]).state, "review_required");
+});
+
+test("mixed historical/current awards retain current payment verification", () => {
+  const old = historical();
+  const current = {...ledger(),id:"current-ledger"};
+  assert.deepEqual(paymentRefsForPoints([old,current]), ["pay-fixture"]);
+  assert.equal(historicalGuard([old,current]).state, "review_required");
+  assert.equal(historicalGuard([old,current], [payment()]).verifiedRecords.length, 2);
+});
+
+test("historical aggregate must belong to the unique current canonical Client", () => {
+  assert.equal(guardPointsDisplaySources([historical()], []).state,"review_required");
+  assert.equal(guardPointsDisplaySources([historical()], [], {clientId:"recOtherClient"}).state,"review_required");
+});
 
 test("posted ledger requires exact unique paid+verified money truth and matching amount", () => {
   for (const payments of [[], [payment({ "Payment Status":"Pending" })], [payment({ "Verification Status":"pending_review" })], [payment({ Amount:2000 })], [payment(), payment()]]) {
@@ -53,6 +112,9 @@ function fixture(records = [ledger()], payments = [payment()], fail = "") {
       methods.push(request.method);
       const table = new URL(request.url).pathname.split("/").pop();
       if (table === fail) throw new Error("fixture_read_failure");
+      if (table === "tblVv58TCbwh5j1fS") return Response.json({records:[{
+        id:"recFixtureClient",fields:{line_user_id:`U${"a".repeat(32)}`},
+      }]});
       return Response.json({ records:table === "tblgWc5VRon5o8Mhk" ? [{id:"rec-member", fields:{ member_id:"member-fixture", email:"fixture@example.test" }}] : table === "tbl5dfnwjUFMLbnWL" ? records : payments });
     } },
   };
@@ -91,6 +153,54 @@ test("valid fixture lookup displays the verified amount-derived points without a
   assert.equal(value.customer_360.points.active_points, 10);
   assert.equal(value.tier, "SVIP");
   assert.ok(methods.every(method => method === "GET"));
+});
+
+test("LIFF reads historical Points without payments/slips and never changes membership/payment", async () => {
+  const {env,methods} = fixture([historical()], [], "tblWGGJJOx5eBvBZJ");
+  const req = request("/member/api/liff/profile");
+  const context = await prepareMyMmdLifetimePointsContext(req,env);
+  assert.equal(context.sourceVerified,true);
+  assert.equal(context.serviceSpendVerified,false);
+  assert.equal(context.serviceSpend365Thb,null);
+  const response = await applyMyMmdLifetimePointsResponse(req,Response.json({
+    ...profile(),data:{...profile().data,payment_status:"unavailable"},
+  }),context);
+  const value=(await response.json()).data;
+  assert.equal(value.points,10);
+  assert.equal(value.membership_status,"active");
+  assert.equal(value.tier,"SVIP");
+  assert.equal(value.payment_status,"unavailable");
+  assert.ok(methods.every(method=>method==="GET"));
+});
+
+for (const [label,clients] of Object.entries({
+  missing:[],ambiguous:[
+    {id:"recFixtureClient",fields:{line_user_id:`U${"a".repeat(32)}`}},
+    {id:"recOtherClient",fields:{line_user_id:`U${"a".repeat(32)}`}},
+  ],foreign:[{id:"recFixtureClient",fields:{line_user_id:`U${"b".repeat(32)}`}}],
+})) test(`LIFF historical Points fail closed for ${label} canonical Client`, async () => {
+  const {env,methods}=fixture([historical()]);
+  const fetch=env.AIRTABLE_HTTP.fetch;
+  env.AIRTABLE_HTTP.fetch=async req=>new URL(req.url).pathname.endsWith("/tblVv58TCbwh5j1fS")
+    ? Response.json({records:clients}) : fetch(req);
+  const context=await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.notEqual(context.sourceVerified,true);
+  assert.equal(context.pointsRecoveryPending,true);
+  assert.ok(methods.every(method=>method==="GET"));
+});
+
+test("LIFF email fallback cannot accept another member's historical award", async () => {
+  const {env}=fixture([historical({member_id:"another-member"})]);
+  const context=await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.notEqual(context.sourceVerified,true);
+});
+
+test("historical expiry stays unchanged; no expired award is reactivated", async () => {
+  const {env}=fixture([historical({expires_at:"2020-01-01T00:00:00Z"})]);
+  const context=await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.equal(context.sourceVerified,true);
+  assert.equal(context.confirmedBalance,0);
+  assert.equal(context.expiredPoints,10);
 });
 
 test("unknown source or blocked recovery masks every customer points shape", async () => {

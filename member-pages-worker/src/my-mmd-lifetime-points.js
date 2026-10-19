@@ -1,6 +1,6 @@
 import { readMemberAppSession } from "./member-app-api.js";
 import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
-import { guardPointsDisplaySources, paymentRefsForPoints } from "./points-display-source-guard.js";
+import { guardPointsDisplaySources, paymentRefsForPoints, isHistoricalPointsRecord } from "./points-display-source-guard.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -44,7 +44,8 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
 }
 
 // Internal callers must supply identity from the canonical resolver, never a
-// browser/query identity. Reuses the same payment-backed presentation gate.
+// browser/query identity. Historical posted awards use their existing writer
+// contract; new payment-backed awards still require verified payment truth.
 export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
   const unavailable = { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !session?.memberId || !/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return unavailable;
@@ -67,6 +68,18 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
       maxRecords: MAX_RECORDS,
     });
     if (session.strictIdentity === true && records.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
+    let clientId = "";
+    if (records.some(isHistoricalPointsRecord)) {
+      if (records.some(row => isHistoricalPointsRecord(row) && clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
+      // Identity matching only: do not request another slip/review as evidence
+      // for an already posted historical award. The aggregate's owner must
+      // match the same canonical LINE identity, not just a copied source label.
+      const clients = await airtableList(env, env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS", {
+        filterByFormula: `{line_user_id}=${formulaString(session.lineUserId)}`, maxRecords: 3,
+      });
+      if (clients.length !== 1 || clean(clients[0]?.fields?.line_user_id) !== session.lineUserId) return unavailable;
+      clientId = clean(clients[0]?.id);
+    }
     const refs = paymentRefsForPoints(records);
     const payments = [];
     // Bound each formula and fail closed rather than falling back to profile
@@ -78,7 +91,7 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
       }));
     }
     if (session.strictIdentity === true && payments.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
-    const guarded = guardPointsDisplaySources(records, payments);
+    const guarded = guardPointsDisplaySources(records, payments, { clientId });
     if (guarded.state !== "verified") return {
       ...unavailable, sourceReviewRequired: true, historicalPoints: guarded.historicalPoints,
     };
@@ -86,6 +99,9 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
     // the payment/amount/session guard. Missing category is owner review.
     const spendRows = guarded.verifiedRecords.filter(row => Number(row?.fields?.points) > 0);
     const serviceSpendVerified = spendRows.every(row => {
+      // Historical Points acceptance must not certify current payment truth
+      // or newly unlock spend-based discounts/entitlements.
+      if (isHistoricalPointsRecord(row)) return false;
       const matches = payments.filter(p => p?.fields?.["Payment Reference"] === row?.fields?.payment_ref);
       return matches.length === 1 && row?.fields?.session_id && ["service", "service_payment"].includes(normalizeToken(matches[0].fields.payment_kind || matches[0].fields.payment_type));
     });
