@@ -59,7 +59,8 @@ test("model decision never changes lifecycle and payment intent is isolated",()=
   assert.match(admin,/sessionView\.model_work_lane !== "public_model"/);
   assert.match(admin,/session-extension\/intent/);
   assert.match(admin,/payment_intent_ready/);
-  assert.match(payment,/schema:"mmd_public_session_extension_v1"/);
+  assert.match(payment,/"schema=mmd_public_session_extension_v1"/);
+  assert.match(payment,/schema:"public_session_extension_payment_v1"/);
   assert.doesNotMatch(payment,/AIRTABLE_TABLE_SESSIONS/);
 });
 
