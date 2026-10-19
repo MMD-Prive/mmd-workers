@@ -452,6 +452,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 <script nonce="${nonce}">
 (() => {
   "use strict";
+  // Serialized functions may contain esbuild keepNames calls. Their helper must
+  // live in this browser scope, not only in the Worker bundle that renders it.
+  const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });
   const CONFIG = ${safeConfig};
   const customerLoading = (${createCustomerProgress.toString()})({ render: ${renderCustomerProgress.toString()}, request: window.fetch.bind(window) });
   const fetch = customerLoading.fetch;

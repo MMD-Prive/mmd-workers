@@ -1124,6 +1124,29 @@ import { CUSTOMER_GRAPHICS } from "../src/liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "../src/liff-customer-progress.js";
 import { createHash } from "node:crypto";
 
+test("serialized browser startup supplies keepNames helper before progress initialization", async () => {
+  const html = await (await shell('/member/liff?intent=status')).text();
+  const start = html.indexOf('(() => {', html.indexOf('<script nonce='));
+  const end = html.indexOf('  const CANONICAL_POINTS_PATH', start);
+  const prefix = html.slice(start, end);
+  assert.ok(prefix.indexOf('const __name =') < prefix.indexOf('const customerLoading ='));
+  // Reproduce keepNames instrumentation without providing the Worker's helper
+  // as a VM global. Production bundling also inserts calls in nested callbacks.
+  const instrumented = prefix.replace('let generation =', '__name(() => {}, "publish"); let generation =');
+  assert.notEqual(instrumented, prefix);
+  const calls = [];
+  const context = {window:{fetch:async (url, init) => {calls.push({url,method:init.method});return Response.json({ok:false},{status:401});}},
+    document:{getElementById:()=>null},AbortController,Response,Uint8Array,setTimeout,clearTimeout};
+  const probe = '\nreturn {fetch, waitFor:customerLoading.waitFor}; })()';
+  assert.throws(()=>runInNewContext(instrumented.replace(/  const __name =[^\n]+\n/, '') + probe,context), /__name is not defined/);
+  const browser = runInNewContext(instrumented + probe, context);
+  const response = await browser.fetch('/member/api/liff/profile', {method:'GET'});
+  assert.equal(response.status,401);
+  assert.deepEqual(calls,[{url:'/member/api/liff/profile',method:'GET'}]);
+  assert.equal(await browser.waitFor(async()=> 'sdk-ready'),'sdk-ready');
+  assert.equal(calls.length,1); // no session creation, login or business write
+});
+
 test("customer SVG pack is decorative, hash-pinned, bounded and all installed assets are used", async () => {
   const html = await handleLiffMemberShell(new Request("https://www.mmdbkk.com/member/liff?intent=status"), {}).text();
   let total = 0;
