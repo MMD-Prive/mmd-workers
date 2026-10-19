@@ -110,7 +110,7 @@ export function buildCompcardCaption(card, destination) {
   else if (card.category === 'premium') lines.push('คอมพ์การ์ดที่คัดมาให้สมาชิก Premium ได้รู้จัก');
   else if (card.category === 'standard') lines.push('อีกหนึ่งโปรไฟล์จากคอลเลกชัน Standard');
   else lines.push('อีกหนึ่งโปรไฟล์ที่ชวนให้รู้จักมากขึ้น');
-  lines.push(cta);
+  if (destination === 'preview') lines.push(cta);
   return lines.join('\n');
 }
 

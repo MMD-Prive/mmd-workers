@@ -524,7 +524,7 @@ test("legacy frozen model captions stay frozen and unsent copies fail closed aft
   const object = f.bucket.records.get(key);
   const { digest, ...legacy } = JSON.parse(object.value);
   for (const destination of legacy.destinations) {
-    legacy.captions[destination] = legacy.captions[destination].replace('สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3', 'สอบถามคิวและรายละเอียดกับทีม MMD');
+    legacy.captions[destination] = legacy.captions[destination].split('\n').filter(line => !line.startsWith('สอบถามคิว')).concat('สอบถามคิวและรายละเอียดกับทีม MMD').join('\n');
   }
   legacy.digest = await compcardSha256(new TextEncoder().encode(JSON.stringify(legacy)));
   const frozen = JSON.stringify(legacy);
@@ -534,4 +534,31 @@ test("legacy frozen model captions stay frozen and unsent copies fail closed aft
   assert.equal(f.sends.length, before);
   assert.ok(result.results[0].outcomes.every(row => row.status === 'blocked'));
   assert.equal(f.bucket.records.get(key).value, frozen);
+});
+
+test("private-room legacy LINE captions stay frozen; pending delivery blocks and sent receipts never resend", async () => {
+  const cta = 'สอบถามคิวและดูรูปเพิ่มเติมทาง LINE: https://lin.ee/piqwBz3';
+  for (const sent of [false, true]) {
+    const f = fixture({ cards: [{ ...CARD, category: 'premium' }], send: sent ? undefined : () => ({ delivery_state: 'not_sent', error: 'compcard_mock_rejected' }) });
+    await run(f);
+    const key = `${COMPCARD_JOURNAL_ROOT}plans/2026-10-18/model.json`;
+    const object = f.bucket.records.get(key);
+    const { digest, ...legacy } = JSON.parse(object.value);
+    legacy.captions.premium += `\n${cta}`;
+    legacy.digest = await compcardSha256(new TextEncoder().encode(JSON.stringify(legacy)));
+    const frozen = JSON.stringify(legacy);
+    f.bucket.records.set(key, { ...object, value: frozen });
+    const receiptKey = `${COMPCARD_JOURNAL_ROOT}deliveries/2026-10-18/model/premium.json`;
+    const receiptObject = f.bucket.records.get(receiptKey);
+    const receipt = JSON.parse(receiptObject.value);
+    receipt.plan_digest = legacy.digest;
+    f.bucket.records.set(receiptKey, { ...receiptObject, value: JSON.stringify(receipt) });
+    const beforeReceipt = f.bucket.records.get(receiptKey).value;
+    const beforeSends = f.sends.length;
+    const result = await run(f, '2026-10-18', '16:45');
+    assert.equal(f.sends.length, beforeSends);
+    assert.equal(f.bucket.records.get(key).value, frozen);
+    if (sent) assert.equal(f.bucket.records.get(receiptKey).value, beforeReceipt);
+    else assert.equal(result.results[0].outcomes[0].status, 'blocked');
+  }
 });
