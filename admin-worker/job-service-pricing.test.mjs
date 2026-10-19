@@ -19,6 +19,23 @@ test('validates separate explicit quotes and accepts old payloads unchanged', ()
   assert.deepEqual(validateJobServicePricing(body()), body().service_pricing);
   assert.equal(validateJobServicePricing({ amount_thb: 1000 }), null);
 });
+test('keeps customer and model travel fees separate in the persisted pricing totals', () => {
+  const b = body();
+  b.travel_fee_thb = 500;
+  b.model_travel_fee_thb = 300;
+  b.amount_thb = b.payment.amount_thb = 13500;
+  b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 6500;
+  b.service_pricing.travel_fee_thb = 500;
+  b.service_pricing.model_travel_fee_thb = 300;
+  b.service_pricing.model_total_payout_thb = 6500;
+  const pricing = validateJobServicePricing(b);
+  assert.equal(pricing.client_total_amount_thb, 13000);
+  assert.equal(pricing.travel_fee_thb, 500);
+  assert.equal(pricing.model_travel_fee_thb, 300);
+  assert.equal(pricing.model_total_payout_thb, 6500);
+  b.model_travel_fee_thb = -1;
+  assert.throws(() => validateJobServicePricing(b), { code: 'service_pricing_invalid', status: 400 });
+});
 test('rejects missing, negative, nonfinite, duplicate, unknown, mismatched and deselected option rates', () => {
   const mutations = [
     b => { b.service_pricing.addons[0].client_amount_thb = null; },
