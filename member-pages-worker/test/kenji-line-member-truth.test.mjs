@@ -13,6 +13,32 @@ const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
 const TEST_KEY = "x".repeat(40);
 const SYNTHETIC_LINE_USER_ID = `U${"0".repeat(32)}`;
 
+for (const [label, value] of [
+  ["null", null], ["missing", undefined], ["blank", ""],
+  ["whitespace", " "], ["false", false], ["true", true],
+  ["numeric string", "88"], ["array", []], ["numeric array", [88]],
+  ["object", {}], ["negative", -1], ["fraction", 1.5],
+  ["NaN", NaN], ["infinity", Infinity], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+]) {
+  test(`Points projection rejects ${label} without inventing a balance`, () => {
+    const result = projectKenjiLineMemberTruth({
+      profile: { customer_360: { points: { status: "verified", active_points: value } } },
+      snapshot: verifiedSnapshot(),
+    });
+    assert.deepEqual(result.points, { status: "unavailable", active_points: null });
+  });
+}
+
+for (const value of [0, 88, Number.MAX_SAFE_INTEGER]) {
+  test(`Points projection preserves proven numeric balance ${value}`, () => {
+    const result = projectKenjiLineMemberTruth({
+      profile: { customer_360: { points: { status: "verified", active_points: value } } },
+      snapshot: verifiedSnapshot(),
+    });
+    assert.deepEqual(result.points, { status: "verified", active_points: value });
+  });
+}
+
 function request(headers = {}, body = { line_user_id: LINE_USER_ID }) {
   return new Request("https://member-pages-worker.internal/__internal/kenji/member-truth", {
     method: "POST",

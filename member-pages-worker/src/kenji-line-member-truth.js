@@ -277,9 +277,11 @@ function projectFormerPrivateMembership(snapshot = {}) {
 function projectPoints(profile = {}) {
   const points = isPlainObject(profile?.customer_360?.points) ? profile.customer_360.points : null;
   if (points?.status !== "verified") return { status: "unavailable", active_points: null };
-  const value = Number(points.active_points);
-  return Number.isFinite(value) && value >= 0
-    ? { status: "verified", active_points: Math.floor(value) }
+  // Only a proven numeric balance is truth; null/blank/boolean must not
+  // become a verified zero through JavaScript coercion.
+  const value = points.active_points;
+  return Number.isSafeInteger(value) && value >= 0
+    ? { status: "verified", active_points: value }
     : { status: "unavailable", active_points: null };
 }
 
