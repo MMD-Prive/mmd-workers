@@ -233,6 +233,12 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.doesNotMatch(source,/^  (push|pull_request|schedule|workflow_run):/m);
   assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,2);
   assert.match(source,/needs: \[production-approval\][\s\S]*environment: mmd-production-mutation/);
+  const preflight = source.slice(source.indexOf('  production-approval:'), source.indexOf('  release:'));
+  assert.match(preflight, /permissions:\s+contents: read\s+actions: read/);
+  assert.match(preflight, /run: node scripts\/admin-production-approval.mjs/);
+  assert.doesNotMatch(preflight, /uses: \.\/\.github\/workflows\/admin-production-approval.yml/);
+  assert.doesNotMatch(preflight, /secrets\./);
+
   assert.match(source,/EXPECTED_VERSION: \$\{\{ inputs\.expected_version \}\}/);
   assert.match(source,/EXPECTED_DEPLOYMENT: \$\{\{ inputs\.expected_deployment \}\}/);
   assert.equal((source.match(/secrets\./g)||[]).length,1);
