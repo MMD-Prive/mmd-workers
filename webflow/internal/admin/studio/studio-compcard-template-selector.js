@@ -73,7 +73,7 @@
       button.setAttribute("data-mmd-visual-frame", String(asset.number));
       var image = document.createElement("img"); image.src = asset.url; image.alt = "";
       var label = document.createElement("span");
-      label.textContent = "กรอบ " + asset.number + " · " + asset.accent + (asset.field ? " · " + asset.field : "");
+      label.textContent = "กรอบ " + asset.number + " · " + (asset.label || asset.field || asset.accent);
       button.append(image, label); grid.appendChild(button);
     });
     var status = document.createElement("p"); status.id = "mmdStudioFrameStatus"; status.setAttribute("role", "status");

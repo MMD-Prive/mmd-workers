@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { buildStudioFrames } from "../../../../scripts/build-studio-clean-frame-release.mjs";
+import { buildStudioFrames, validateStudioFrameManifest } from "../../../../scripts/build-studio-clean-frame-release.mjs";
 
 const release = await buildStudioFrames({ allowPendingAssets: true });
 const sourceKeys = ["mmdStudioTemplateState", "mmdStudioUploadSeed"];
@@ -102,6 +102,8 @@ test("missing independent visual choice fails visibly instead of guessing a fram
   h.dom.window.close();
 });
 
-test("release packaging refuses superseded artwork while revised palette assets are pending", async () => {
-  await assert.rejects(buildStudioFrames(), /studio_frame_registry_not_ready/);
+test("release packaging refuses pending or superseded artwork and wrong palette order", () => {
+  assert.throws(() => validateStudioFrameManifest({ ...release.manifest, release_ready: false }), /studio_frame_registry_not_ready/);
+  const invalid = structuredClone(release.manifest); invalid.release_ready = true; invalid.assets[0].accent = "purple";
+  assert.throws(() => validateStudioFrameManifest(invalid), /studio_frame_palette_not_ready/);
 });

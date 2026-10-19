@@ -5,10 +5,28 @@ The owner requested five general visual color frames, in this order:
 ST/GY/FR/EN/EX category assignments. The corrected EMs/GWs frames remain
 separate, with their original labels and empty Run Number boxes.
 
-The five revised general PNGs are pending. `release_ready: false` prevents
-release packaging of the superseded general artwork. The QA fixtures may use
-those old files only while explicitly displaying a superseded-artwork notice.
-Nothing is installed in live Studio.
+The owner clarified that **only the small right-edge accent strip** takes
+these five colors. The original metallic gold/black outer frame and background
+must remain unchanged. The five full-frame recolors were rejected and are
+recorded under `superseded_inputs`; they are absent from the active asset tree
+and have never been hosted or published. The local package containing them was
+quarantined as `/tmp/studio-clean-frame-release-full-palette-rejected-702cfcfe`.
+
+Corrected strip-only PNGs are pending. `release_ready: false` blocks production
+packaging; the local QA fixture continues with the old original gold/black
+artwork and an explicit superseded-artwork notice. General colors are
+independent visual choices with no model-category mapping. EMs/GWs remain
+unchanged. Nothing is installed in live Studio.
+
+| Visual choice | Target right-edge strip | Model category assignment |
+| --- | --- | --- |
+| 1 | เทาด้าน / matte gray | none |
+| 2 | เขียว / green | none |
+| 3 | ฟ้าคราม / cyan | none |
+| 4 | แดง / red | none |
+| 5 | ส้ม / orange | none |
+| 6 | EMs | existing EMs Family only |
+| 7 | GWs | existing GWs Family only |
 
 ## State and authority
 
@@ -44,9 +62,18 @@ reserved area. Frame geometry and source photo proportions are preserved.
 ## Provenance and validation
 
 `manifest.json` keeps Library IDs, original filenames, dimensions, SHA-256
-hashes and content-addressed filenames. General assets 1–5 will be replaced
-with the exact revised Library PNGs before `release_ready` can become true.
-Old artwork is never recolored programmatically or treated as the new palette.
+hashes and content-addressed filenames. General assets 1–5 await the corrected strip-only Library PNGs; EMs/GWs are
+byte-for-byte unchanged. No artwork is recolored programmatically by this
+implementation. Only the image worker produces owner-requested raster edits.
+
+Before importing corrected general assets, compare each against its original
+clean source using the read-only, dependency-free pixel checker:
+`python3 scripts/check-studio-frame-strip-only.py ORIGINAL.png CANDIDATE.png`.
+It decodes actual PNG pixels, rejects dimension changes and edits that spread
+beyond a small right-edge area, and reports the exact changed bounds/count.
+The rejected full-frame matte-gray input fails this check with changes across
+the whole 1316 × 1195 frame; unchanged input passes. Final visual review must
+also confirm that the changed region is the intended original accent strip.
 
 ```sh
 npm ci --ignore-scripts
@@ -74,10 +101,13 @@ these new Studio assets. No credentials or external resource permissions
 have been changed.
 
 Reserved object prefix: `webflow/internal/admin/studio/frames/clean-v1/`.
-After the revised palette has been imported and reviewed:
+The final release package must be regenerated after corrected strip-only
+assets arrive. No valid package is currently ready and no files were uploaded.
+Publication steps:
 
-1. Verify all seven source hashes and final colors; set manifest
-   `release_ready: true`. Build the exact release using
+1. Import the exact corrected strip-only assets, verify preserved gold/black
+   geometry/background, review all seven renderings and mark only the local
+   asset registry ready. Then build the local release using
    `node scripts/build-studio-clean-frame-release.mjs /tmp/studio-clean-frame-release`.
    This produces seven content-addressed PNGs, a content-addressed minified
    registry/renderer/selector bundle, `release.json` and the small

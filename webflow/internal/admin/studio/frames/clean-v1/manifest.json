@@ -5,7 +5,7 @@
     "prefix": "webflow/internal/admin/studio/frames/clean-v1",
     "public_base": "https://models.mmdbkk.com/webflow/internal/admin/studio/frames/clean-v1"
   },
-  "mapping_status": "awaiting_revised_palette_assets",
+  "mapping_status": "awaiting_strip_only_palette_assets",
   "assets": [
     {
       "number": 1,
@@ -76,7 +76,8 @@
       "height": 1195,
       "asset_file": "frame-6-c4422924b44f.png",
       "field": "EMs",
-      "accent": "purple"
+      "accent": "purple",
+      "label": "EMs"
     },
     {
       "number": 7,
@@ -87,7 +88,8 @@
       "height": 1195,
       "asset_file": "frame-7-1f673fd77a78.png",
       "field": "GWs",
-      "accent": "gold"
+      "accent": "gold",
+      "label": "GWs"
     }
   ],
   "visual_variants": [
@@ -105,5 +107,38 @@
     "red",
     "orange"
   ],
-  "release_ready": false
+  "release_ready": false,
+  "superseded_inputs": [
+    {
+      "library_file_id": "libfile_2feb3311354081918584ab11ba54fbcf",
+      "file_name": "template-1-matte-gray.png",
+      "sha256": "c28189a94d38eb96163598e91178271380610fbfaf6fdf8669c1cb6ed5894674",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_c4066b486de8819184e45dc1b05bc07d",
+      "file_name": "template-2-green.png",
+      "sha256": "f03091b9d09b83f9682c71236917f0d12bd1fe450e8f8360d5cfa1d9545dee9e",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_2d4740b19fa08191bc0150137f505672",
+      "file_name": "template-3-cyan.png",
+      "sha256": "dd426bb6a9abd99455d1292c7b5bf4b852667aa4ba6c8ec22158c913327d36c2",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_1fbd4548c9c4819185c146de099a4465",
+      "file_name": "template-4-red.png",
+      "sha256": "05016d747d7e92814b1277656077c413cecc043b1aa6336d207933ed661fbd07",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    },
+    {
+      "library_file_id": "libfile_b3c7bfa25ac481918c214471a233998f",
+      "file_name": "template-5-orange.png",
+      "sha256": "bf545911b7240b1e63e53c3352296c607513a537891e48fe4cd0be7d15885ec6",
+      "reason": "Owner rejected full-frame recoloring; only small right-edge strip may change."
+    }
+  ],
+  "color_scope": "small_right_edge_strip_only"
 }

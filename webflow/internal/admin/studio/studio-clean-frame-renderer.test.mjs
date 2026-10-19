@@ -68,4 +68,5 @@ test("independent general variants remain unassigned; corrected exclusive mappin
   assert.equal(manifest.release_ready, false);
   assert.deepEqual(manifest.assets.map(a => a.field), [null, null, null, null, null, "EMs", "GWs"]);
   assert.deepEqual(manifest.assets.map(a => a.accent), ["cyan", "red", "purple", "purple", "purple", "purple", "gold"]);
+  assert.equal(manifest.color_scope, "small_right_edge_strip_only");
 });
