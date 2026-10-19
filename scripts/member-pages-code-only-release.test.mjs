@@ -48,9 +48,11 @@ function fixture(options = {}) {
         return structuredClone(inherited.get(binding.name) || { name:binding.name, type:'missing_inherit' });
       });
       const runtime = {};
-      for (const key of ['compatibility_date','compatibility_flags','usage_model','limits','migration_tag']) {
+      for (const key of ['compatibility_date','compatibility_flags','usage_model','limits']) {
         if (Object.hasOwn(uploadedMetadata || {}, key)) runtime[key] = structuredClone(uploadedMetadata[key]);
       }
+      // With no migration request, the upload retains the baseline DO migration state.
+      if (Object.hasOwn(baseline.resources.script_runtime, 'migration_tag')) runtime.migration_tag = baseline.resources.script_runtime.migration_tag;
       uploadedVersion.resources.script_runtime = runtime;
       const changed = options.uploadedVersionChange?.(uploadedVersion) || uploadedVersion;
       return structuredClone(changed);
@@ -62,6 +64,8 @@ function fixture(options = {}) {
     }
     if (path === ROOT + '/versions?bindings_inherit=strict' && method === 'POST') {
       uploadedMetadata = JSON.parse(init.body.get('metadata'));
+      assert.equal(Object.hasOwn(uploadedMetadata, 'migration_tag'), false, 'readback-only migration tag must never be uploaded');
+      assert.equal(Object.hasOwn(uploadedMetadata, 'migrations'), false, 'code-only release must not request migrations');
       uploaded=true; return {id:id(2)};
     }
     if (path === ROOT + '/script-settings') return {observability:{enabled:true},logpush:false};
@@ -96,10 +100,11 @@ test('strict code-only upload inherits and preserves the exact baseline configur
     {name:'AIRTABLE_BASE_ID',type:'inherit'},
     {name:'PRIVATE_MEDIA',type:'inherit'},
   ]);
-  assert.equal(metadata.migration_tag, 'v3');
+  assert.equal(Object.hasOwn(metadata, 'migration_tag'), false);
+  assert.equal(Object.hasOwn(metadata, 'migrations'), false);
   assert.equal(JSON.stringify(metadata).includes('private-config-value'),false);
   const uploadedReadback = await f.call(ROOT + '/versions/' + id(2));
-  assert.equal(uploadedReadback.resources.script_runtime.migration_tag, metadata.migration_tag);
+  assert.equal(uploadedReadback.resources.script_runtime.migration_tag, f.baseline.resources.script_runtime.migration_tag);
   assert.deepEqual(uploadedReadback.resources.script_runtime, f.baseline.resources.script_runtime);
   assert.deepEqual(versionAnnotations(uploadedReadback), metadata.annotations);
   assert.equal(f.receipts.at(-1).phase,'complete');

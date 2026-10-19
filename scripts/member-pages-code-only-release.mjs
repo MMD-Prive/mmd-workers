@@ -77,7 +77,6 @@ export function uploadMetadata(version, sha) {
     bindings: r.bindings.map(binding => ({ name: binding.name, type: 'inherit' })),
     compatibility_date: runtime.compatibility_date,
     compatibility_flags: runtime.compatibility_flags || [],
-    ...(runtime.migration_tag !== undefined ? { migration_tag: runtime.migration_tag } : {}),
     annotations: { 'workers/commit_sha': sha, 'workers/message': `member-pages code-only source-sha=${sha}` },
   };
   if (runtime.usage_model !== undefined) metadata.usage_model = runtime.usage_model;
