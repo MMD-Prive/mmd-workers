@@ -23,7 +23,7 @@ test('keeps customer and model travel fees separate in the persisted pricing tot
   const b = body();
   b.travel_fee_thb = 500;
   b.model_travel_fee_thb = 300;
-  b.amount_thb = b.payment.amount_thb = 13500;
+  b.amount_thb = b.payment.amount_thb = b.service_amount_thb = b.payment.service_amount_thb = b.original_amount_thb = 13500;
   b.pay_model_thb = b.model_payout_thb = b.payment.model_payout_thb = 6500;
   b.service_pricing.travel_fee_thb = 500;
   b.service_pricing.model_travel_fee_thb = 300;
