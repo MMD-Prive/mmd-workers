@@ -21,7 +21,7 @@ const ordered=x=>[...x].sort((a,b)=>canonical(a).localeCompare(canonical(b)));
 const bytesHash=bytes=>{assert.ok(bytes instanceof Uint8Array&&bytes.byteLength>0);return createHash('sha256').update(bytes).digest('hex');};
 const digest=x=>bytesHash(Buffer.from(canonical(x)));
 const same=(a,b)=>assert.equal(canonical(a),canonical(b));
-const reasons=Object.freeze({RECOVERY_VALIDATION_JOURNAL:'JOURNAL_WRITE_FAILED',RECOVERY_ATTEMPT_JOURNAL:'JOURNAL_WRITE_FAILED',RECOVERY_COMPLETE_JOURNAL:'JOURNAL_WRITE_FAILED',RECOVERY_OWNER_INPUT:'OWNER_INPUT_INVALID',RECOVERY_OWNER_RUN:'RUN_IDENTITY_INVALID',RECOVERY_MAIN_CHECK:'MAIN_DRIFT',RECOVERY_OWNER_POLICY:'OWNER_POLICY_INVALID',RECOVERY_OWNER_BRANCH:'BRANCH_POLICY_INVALID',RECOVERY_OWNER_APPROVAL:'APPROVAL_RECEIPT_INVALID',ORIGINAL_ARTIFACT_CHECK:'ORIGINAL_ARTIFACT_UNVERIFIED',PINNED_SOURCE_CHECK:'SOURCE_SCOPE_UNVERIFIED',RECOVERY_READBACK:'RECOVERY_EVIDENCE_UNVERIFIED',RECOVERY_FINAL_READBACK:'FINAL_BASELINE_OR_BYTES_DRIFT',RECOVERY_PROMOTION_REQUEST:'PROMOTION_OUTCOME_UNKNOWN',RECOVERY_PROMOTION_ID:'PROMOTION_ID_INVALID',RECOVERY_POST_PROMOTION_CHECK:'POST_PROMOTION_EVIDENCE_UNVERIFIED'});
+const reasons=Object.freeze({RECOVERY_FINAL_ACTIVE_CHECK:'FINAL_ACTIVE_DEPLOYMENT_DRIFT',RECOVERY_FINAL_VERSION_CHECK:'FINAL_VERSION_ORDER_DRIFT',RECOVERY_VALIDATION_JOURNAL:'JOURNAL_WRITE_FAILED',RECOVERY_ATTEMPT_JOURNAL:'JOURNAL_WRITE_FAILED',RECOVERY_COMPLETE_JOURNAL:'JOURNAL_WRITE_FAILED',RECOVERY_OWNER_INPUT:'OWNER_INPUT_INVALID',RECOVERY_OWNER_RUN:'RUN_IDENTITY_INVALID',RECOVERY_MAIN_CHECK:'MAIN_DRIFT',RECOVERY_OWNER_POLICY:'OWNER_POLICY_INVALID',RECOVERY_OWNER_BRANCH:'BRANCH_POLICY_INVALID',RECOVERY_OWNER_APPROVAL:'APPROVAL_RECEIPT_INVALID',ORIGINAL_ARTIFACT_CHECK:'ORIGINAL_ARTIFACT_UNVERIFIED',PINNED_SOURCE_CHECK:'SOURCE_SCOPE_UNVERIFIED',RECOVERY_READBACK:'RECOVERY_EVIDENCE_UNVERIFIED',RECOVERY_FINAL_READBACK:'FINAL_BASELINE_OR_BYTES_DRIFT',RECOVERY_PROMOTION_REQUEST:'PROMOTION_OUTCOME_UNKNOWN',RECOVERY_PROMOTION_ID:'PROMOTION_ID_INVALID',RECOVERY_POST_PROMOTION_CHECK:'POST_PROMOTION_EVIDENCE_UNVERIFIED'});
 const body=()=>({strategy:'percentage',versions:[{version_id:T.uploaded_version,percentage:100}]});
 
 export function checkRecoverySources(releaseSha,sourceDirectory,releaseDirectory) {
@@ -146,7 +146,14 @@ export async function promoteExistingStartupVersion(io) {
     assert.equal(final.state,'REVIEW_ONLY');assert.equal(final.artifact_bytes_match,true);
     // Recheck owner/main after potentially slow byte readback, closest to mutation.
     await verifyRecoveryOwner(io.env,io.ghRead,mark);
-    // No awaited journal operation may intervene between these checks and mutation.
+    // Recheck cheap mutable Cloudflare pointers after slow byte and owner evidence reads.
+    mark('RECOVERY_FINAL_VERSION_CHECK');
+    const finalVersions=(await io.cf(ROOT+'/versions',{method:'GET'}))?.items;
+    assert.equal(finalVersions?.[0]?.id,T.uploaded_version);assert.equal(finalVersions?.[1]?.id,T.baseline_version);
+    mark('RECOVERY_FINAL_ACTIVE_CHECK');
+    const finalDeployment=(await io.cf(ROOT+'/deployments',{method:'GET'}))?.deployments?.[0];
+    assert.equal(finalDeployment?.id,T.baseline_deployment);assert.equal(activeVersion(finalDeployment),T.baseline_version);
+    // No awaited journal or evidence operation intervenes between this comparison and POST.
     mark('RECOVERY_PROMOTION_REQUEST');
     const d=await io.cf(ROOT+'/deployments',{method:'POST',body:JSON.stringify(body())});
     mark('RECOVERY_PROMOTION_ID');assert.ok(uuid(d?.id)&&d.id!==T.baseline_deployment);state.deployment=d.id;
