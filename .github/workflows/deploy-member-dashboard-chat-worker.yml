@@ -33,7 +33,29 @@ permissions:
   issues: write
 
 jobs:
+  release-scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy_required: ${{ steps.scope.outputs.deploy_required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: node scripts/kenji-pause-release-scope.mjs
+
   validate-and-deploy:
+    needs: release-scope
+    if: needs.release-scope.outputs.deploy_required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -156,6 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_AUTO_REPLY_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
           grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
           grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
           node --test scripts/kenji-model-off-workflow.test.mjs
