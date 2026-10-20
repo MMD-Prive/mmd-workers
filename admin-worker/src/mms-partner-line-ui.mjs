@@ -26,16 +26,31 @@ export function partnerApp() {
     shopCard.querySelector('strong').textContent=brand.name;shopCard.setAttribute('aria-label','ร้าน '+brand.name);shopCard.dataset.shop=shop.value;shopCard.hidden=false;
   }
   updateShopBrand();
+  // Remember only the user's explicit submit intent across LINE login. Never
+  // persist a token, LINE identity, account ID or an authorization decision.
+  const intentKey='mms_partner_submit_intent_v1';
+  function clearIntent(){try{sessionStorage.removeItem(intentKey);}catch{}}
+  function rememberIntent(){try{sessionStorage.setItem(intentKey,JSON.stringify({shop_key:shop.value,at:Date.now()}));}catch{}}
+  function pendingIntent(){try{const value=JSON.parse(sessionStorage.getItem(intentKey)||'null');if(value&&value.shop_key===shop.value&&Number.isFinite(value.at)&&value.at<=Date.now()&&Date.now()-value.at<15*60*1000)return value;}catch{}clearIntent();return null;}
   let ready=false,busy=false;
   function enable(){button.disabled=!ready||busy;shop.disabled=busy;consent.disabled=busy;statusButton.disabled=busy;}
   const errors={CONSENT_REQUIRED:'กรุณาติ๊กยินยอมก่อนส่งคำขอ',LINE_TOKEN_INVALID:'LINE หมดอายุแล้ว กรุณาเปิดหน้านี้ผ่าน LINE ใหม่',LINE_TOKEN_REQUIRED:'กรุณาเปิดผ่าน LINE แล้วยืนยันอีกครั้ง',REGISTRY_WRITE_UNAVAILABLE:'บันทึกยังไม่สำเร็จ ลองใหม่ได้โดยไม่ต้องสมัครซ้ำ',ACCOUNT_DENIED:'บัญชีนี้ยังใช้งานไม่ได้ ติดต่อเปอร์เพื่อตรวจสอบ',SHOP_BLOCKED:'ร้านนี้หยุดรับคำขอชั่วคราว'};
   async function send(path){const idToken=window.liff.getIDToken();if(!idToken)throw new Error('LINE_TOKEN_REQUIRED');const r=await fetch(api+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id_token:idToken,shop_key:shop.value,consent:consent.checked}),cache:'no-store'});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||'VERIFICATION_UNAVAILABLE');return p;}
   function show(p){const c=p.claim;if(!c){status.textContent='ยังไม่ได้ส่งคำขอสำหรับร้านนี้';return;}if(c.shop_key!==shop.value)throw new Error('SHOP_SCOPE_DENIED');const label=c.status==='Approved'?'อนุมัติบัญชีสำหรับร้านนี้แล้ว':c.status==='Rejected'?'คำขอนี้ยังไม่ผ่าน ติดต่อเปอร์เพื่อตรวจสอบ':'ยืนยัน LINE แล้ว · รอเปอร์ตรวจคำขอ';status.textContent=c.shop_name+'\n'+label+'\nเลขคำขอ '+c.claim_id;statusButton.hidden=false;}
   async function run(fn){busy=true;enable();try{await fn();}catch(e){status.textContent=errors[e.message]||'ยังทำรายการไม่สำเร็จ กรุณาลองใหม่ หรือติดต่อเปอร์';}finally{busy=false;enable();}}
-  button.addEventListener('click',()=>run(async()=>{if(!consent.checked)throw new Error('CONSENT_REQUIRED');if(!window.liff.isLoggedIn()){window.liff.login({redirectUri:location.origin+location.pathname+'?shop='+shop.value});return;}show(await send('/request'));}));
+  button.addEventListener('click',()=>run(async()=>{if(!consent.checked)throw new Error('CONSENT_REQUIRED');if(!window.liff.isLoggedIn()){rememberIntent();status.textContent='กำลังเปิด LINE หลังยืนยันแล้วจะส่งคำขอเฉพาะร้านที่เลือกไว้';window.liff.login({redirectUri:location.origin+location.pathname+'?shop='+shop.value});return;}clearIntent();status.textContent='กำลังบันทึกคำขอของร้านนี้ ยังไม่ต้องปิดหน้านี้';show(await send('/request'));}));
   statusButton.addEventListener('click',()=>run(async()=>show(await send('/status'))));
-  shop.addEventListener('change',()=>{updateShopBrand();status.textContent='กำลังเลือก '+shop.options[shop.selectedIndex].text+' · สิทธิ์แต่ละร้านอนุมัติแยกกัน';statusButton.hidden=true;});
-  async function init(){if(!window.liff){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://static.line-scdn.net/liff/edge/2/sdk.js';s.onload=resolve;s.onerror=reject;document.head.append(s);});}await window.liff.init({liffId:LIFF_ID});ready=true;button.textContent=window.liff.isLoggedIn()?'ส่งคำขอเชื่อมร้านนี้':'ยืนยันด้วย LINE';status.textContent='เลือกร้านและยืนยันด้วย LINE ได้เลยครับ';enable();if(window.liff.isLoggedIn())await run(async()=>show(await send('/status')));}
+  shop.addEventListener('change',()=>{clearIntent();consent.checked=false;updateShopBrand();status.textContent='กำลังเลือก '+shop.options[shop.selectedIndex].text+' · สิทธิ์แต่ละร้านอนุมัติแยกกัน';statusButton.hidden=true;});
+  async function init(){if(!window.liff){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://static.line-scdn.net/liff/edge/2/sdk.js';s.onload=resolve;s.onerror=reject;document.head.append(s);});}await window.liff.init({liffId:LIFF_ID});ready=true;button.textContent=window.liff.isLoggedIn()?'ส่งคำขอเชื่อมร้านนี้':'ยืนยัน LINE และส่งคำขอร้านนี้';status.textContent='เลือกร้านและติ๊กยินยอมก่อนส่งคำขอครับ';enable();if(window.liff.isLoggedIn())await run(async()=>{
+    const resume=pendingIntent();
+    // Consume once before any network call. Reloads cannot replay a submission.
+    clearIntent();
+    if(resume)consent.checked=true;
+    const existing=await send('/status');
+    if(existing.claim){show(existing);return;}
+    if(resume){status.textContent='ยืนยัน LINE แล้ว กำลังบันทึกคำขอของร้านนี้';show(await send('/request'));}
+    else status.textContent='เข้า LINE แล้ว แต่ยังไม่ได้ส่งคำขอร้านนี้ · ติ๊กยินยอมแล้วกดส่งคำขอเชื่อมร้านนี้ครับ';
+  });}
   init().catch(()=>{status.textContent='เปิดผ่านลิงก์ MMS Partner ใน LINE เพื่อเริ่มยืนยัน';button.textContent='เปิด MMS Partner ใน LINE';button.disabled=false;button.onclick=()=>{location.href='https://miniapp.line.me/'+LIFF_ID+'?shop='+shop.value;};});
 }
 export const APP_JS=`(()=>{const STYLE=${JSON.stringify(CSS+SHOP_CSS)},LOGO_URL=${JSON.stringify(LOGO)},LIFF_ID=${JSON.stringify(LIFF)},SHOP_BRANDS_UI=${JSON.stringify(SHOP_BRANDS)};(${partnerApp.toString()})();})();`;
