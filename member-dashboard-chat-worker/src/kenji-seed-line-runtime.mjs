@@ -27,6 +27,7 @@ import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-pol
 import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { decideKenjiFirstContactMembership } from "./kenji-line-first-contact-membership.mjs";
+import { resolveKenjiContextFollowup } from "./kenji-context-followup.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -284,6 +285,9 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
       handoff_reason: privateDetail || profileCue ? "model_detail:per_review" : "",
     });
   }
+  const contextFollowup = enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED)
+    ? resolveKenjiContextFollowup(raw, inferredIntent, options.continuity) : null;
+  if (contextFollowup) return withDecisionMetadata({}, { ...continuityMeta, ...contextFollowup });
   // Campaign copy must never reach the retired deterministic CARE BACK answers.
   // Noncampaign topics retain the existing seed, live-truth and handoff paths.
   const salesReply = await resolveKenjiSalesReply(event, env, { ...options, intent });
