@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {createRecoveryGitHubReader,readOriginalArchive,validateRecoveryInvocation} from './member-pages-recovery-adapter.mjs';
+import {readFileSync,mkdtempSync,rmSync,statSync,readdirSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createRecoveryGitHubReader,readOriginalArchive,validateRecoveryInvocation,createDurableRecoveryJournal,sanitizeRecoveryJournal} from './member-pages-recovery-adapter.mjs';
 import {RECOVERY_TARGET as T} from './member-pages-uploaded-recovery.mjs';
 import {ORIGINAL_ARTIFACT,RECOVERY_WORKFLOW} from './member-pages-promotion-only-recovery.mjs';
 import {ACCOUNT} from './member-pages-code-only-release.mjs';
@@ -57,4 +59,40 @@ test('upload and recovery execution steps are mutually exclusive and source rema
  assert.match(release,/EXPECTED_UPLOADED_VERSION: eef80a0c-afb7-4abc-bd91-6b02f5440d02/);
  assert.match(release,/node scripts\/member-pages-recovery-adapter.mjs --execute-approved/);
  assert.match(release,/scripts\/member-pages-recovery-adapter.test.mjs/);
+});
+
+const journalState=()=>({phase:'preflight',worker:'member-pages-worker',source_sha:T.source_sha,release_sha:null,uploaded_version:T.uploaded_version,overall_phase:'OPEN'});
+test('journal drops private extras and rejects unverified identity or diagnostic values',()=>{
+ assert.deepEqual(sanitizeRecoveryJournal({...journalState(),token:'fixture-secret',headers:{Authorization:'fixture-secret'}}),journalState());
+ for(const patch of [{phase:'other'},{worker:'other'},{source_sha:'other'},{release_sha:'fixture-secret'},{release_sha:{toString:()=> 'a'.repeat(40),toJSON:()=> 'fixture-secret'}},{uploaded_version:'other'},{overall_phase:'CLOSED'},{deployment:'secret'},{stopped_after:'other'},{diagnostic:{stage:'RECOVERY_MAIN_CHECK',reason:'private-body'}}])assert.throws(()=>sanitizeRecoveryJournal({...journalState(),...patch}));
+ assert.deepEqual(sanitizeRecoveryJournal({...journalState(),diagnostic:{stage:'RECOVERY_FINAL_ACTIVE_CHECK',reason:'FINAL_ACTIVE_DEPLOYMENT_DRIFT',body:'private'}}).diagnostic,{stage:'RECOVERY_FINAL_ACTIVE_CHECK',reason:'FINAL_ACTIVE_DEPLOYMENT_DRIFT'});
+});
+test('durable journal atomically replaces prior receipt with private permissions and no temp residue',()=>{
+ const root=mkdtempSync(join(tmpdir(),'mmd-adapter-journal-'));
+ try{const journal=createDurableRecoveryJournal(root,'123');writeFileSync(journal.path,'old',{mode:0o644});
+ journal.save(journalState());journal.save({...journalState(),phase:'promotion-attempted-outcome-unknown'});
+ assert.equal(JSON.parse(readFileSync(journal.path,'utf8')).phase,'promotion-attempted-outcome-unknown');
+ assert.equal(statSync(journal.path).mode&0o777,0o600);assert.deepEqual(readdirSync(root),['member-pages-code-only-receipt.json']);
+ assert.throws(()=>journal.save({...journalState(),phase:'secret'}));assert.equal(JSON.parse(readFileSync(journal.path,'utf8')).phase,'promotion-attempted-outcome-unknown');
+ }finally{rmSync(root,{recursive:true});}
+});
+test('journal cannot silently succeed when durable storage is unavailable',()=>{
+ const root=mkdtempSync(join(tmpdir(),'mmd-adapter-journal-fail-'));const journal=createDurableRecoveryJournal(root,'123');rmSync(root,{recursive:true});
+ assert.throws(()=>journal.save(journalState()),/Recovery journal write failed/);
+ assert.throws(()=>createDurableRecoveryJournal('relative','123'));assert.throws(()=>createDurableRecoveryJournal(tmpdir(),'../bad'));
+});
+test('reader captures its credential and rejects extra request options without another request',async()=>{
+ const configuration={GH_TOKEN:'fixture-original',GITHUB_RUN_ID:'123'};let n=0;
+ const read=createRecoveryGitHubReader(configuration,async(url,options)=>{n++;assert.equal(options.headers.Authorization,'Bearer fixture-original');return {status:200,json:async()=>({ok:true})};});
+ configuration.GH_TOKEN='fixture-mutated';await read('/actions/runs/123');
+ for(const options of [{headers:{Authorization:'other'}},{redirect:'follow'},{body:undefined}])await assert.rejects(read('/actions/runs/123',options));assert.equal(n,1);
+ let commands=0;assert.throws(()=>readOriginalArchive(ORIGINAL_ARTIFACT.id,{method:'GET',body:'private'},()=>{commands++;}));assert.equal(commands,0);
+});
+test('adapter retains rebuild proof and existing workflow while binding source paths and filtering journal',()=>{
+ const source=readFileSync(new URL('./member-pages-recovery-adapter.mjs',import.meta.url),'utf8');
+ assert.match(source,/realpathSync\(env.SOURCE_DIRECTORY\)/);assert.match(source,/assert.notEqual\(sourceDirectory,releaseDirectory\)/);
+ assert.match(source,/Object.freeze\(Object.fromEntries\(environmentKeys/);assert.match(source,/env:publicEnv/);
+ assert.match(source,/checkRecoverySources\(releaseSha,sourceDirectory,releaseDirectory\)/);
+ assert.match(source,/buildMemberPagesBundle\(dir,sourceDirectory\)/);assert.match(source,/hash\(bytes\),T.bundle_sha256/);
+ assert.match(source,/save:record=>journal.save\(record\)/);assert.match(source,/fsyncSync\(fd\)/);assert.match(source,/fsyncSync\(dir\)/);
 });
