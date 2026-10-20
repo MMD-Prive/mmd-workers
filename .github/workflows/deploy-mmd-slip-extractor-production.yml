@@ -1,10 +1,18 @@
-name: Deploy MMD Slip Extractor Production
+name: Release Slip OCR 49dc5b7 to Existing Production
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [".github/workflows/deploy-mmd-slip-extractor-production.yml"]
+    inputs:
+      deploy:
+        description: Deploy the reviewed OCR release to the existing private extractor
+        required: true
+        type: boolean
+        default: false
+      confirm_release_sha:
+        description: Enter the full reviewed source SHA to authorize this release
+        required: true
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -15,6 +23,11 @@ concurrency:
 
 jobs:
   validate-and-deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.deploy == true &&
+      inputs.confirm_release_sha == '49dc5b72eb5598220fb9482f47de074af31d5d53'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -22,26 +35,26 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       WRANGLER_SEND_METRICS: "false"
       NO_COLOR: "1"
-      EXTRACTOR_RELEASE_SHA: 1f477f56fba7a7f438ec74e1965ea82056b36024
-      EXTRACTOR_REVIEW_BASE_SHA: 64bde2654fb4eb149eccc082e7231670875cb92c
-      EXTRACTOR_VERIFY_IMAGE: registry.cloudflare.com/b176eda1172b741fd2e58904cc9d77c5/mmd-slip-extractor-slipextractorcontainer@sha256:a03b1f298a4cb355f1f209266d5a823da4564512d0bcc67e1e5d0e4405f940d9
-      EXTRACTOR_VERIFY_VERSION: d5f29855-c0c3-45aa-aa77-bc7c208364e5
+      EXTRACTOR_RELEASE_SHA: 49dc5b72eb5598220fb9482f47de074af31d5d53
+      EXTRACTOR_REVIEW_BASE_SHA: 1f477f56fba7a7f438ec74e1965ea82056b36024
+      EXTRACTOR_EXPECTED_PREVIOUS_IMAGE: registry.cloudflare.com/b176eda1172b741fd2e58904cc9d77c5/mmd-slip-extractor-slipextractorcontainer@sha256:a03b1f298a4cb355f1f209266d5a823da4564512d0bcc67e1e5d0e4405f940d9
+      EXTRACTOR_EXPECTED_PREVIOUS_VERSION: d5f29855-c0c3-45aa-aa77-bc7c208364e5
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 1f477f56fba7a7f438ec74e1965ea82056b36024
+          ref: 49dc5b72eb5598220fb9482f47de074af31d5d53
           fetch-depth: 0
       - name: Validate exact reviewed source
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXTRACTOR_RELEASE_SHA"
-          git diff --name-only "$EXTRACTOR_REVIEW_BASE_SHA" "$EXTRACTOR_RELEASE_SHA" > "$RUNNER_TEMP/extractor-files.txt"
+          git diff --name-only "$EXTRACTOR_REVIEW_BASE_SHA" "$EXTRACTOR_RELEASE_SHA" -- services/mmd-slip-extractor > "$RUNNER_TEMP/extractor-files.txt"
           python - <<'PY'
           import os
           from pathlib import Path
-          expected=set(["services/mmd-slip-extractor/lib/extractor.mjs","services/mmd-slip-extractor/lib/slip-text-fields.mjs","services/mmd-slip-extractor/test/slip-text-fields.test.mjs","services/mmd-slip-extractor/test/image-date-ocr.test.mjs","admin-worker/src/historical-slip-backfill-runtime.js","admin-worker/src/payment-review-runtime.js","admin-worker/admin-slip-upload.test.mjs","admin-worker/payment-evidence-extraction.test.mjs"])
+          expected=set(["services/mmd-slip-extractor/lib/extractor.mjs","services/mmd-slip-extractor/lib/slip-text-fields.mjs","services/mmd-slip-extractor/test/extractor.test.mjs","services/mmd-slip-extractor/test/slip-text-fields.test.mjs"])
           actual=set(Path(os.environ['RUNNER_TEMP'],'extractor-files.txt').read_text().splitlines())
-          assert actual==expected, 'Unexpected release source changes'
+          assert actual==expected, 'Unexpected extractor source changes; only the four reviewed OCR files are allowed'
           PY
       - uses: actions/setup-node@v4
         with:
@@ -72,7 +85,7 @@ jobs:
           if(!token||!/^[a-f0-9]{32}$/.test(account||''))throw Error('Deploy credential unavailable');
           const worker='mmd-slip-extractor';
           export async function read(path){
-            const allowed=[`/workers/scripts/${worker}/settings`,`/workers/scripts/${worker}/subdomain`,`/workers/scripts/${worker}/deployments`,'/containers/applications'];
+            const allowed=[`/workers/scripts/${worker}/settings`,`/workers/scripts/${worker}/subdomain`,`/workers/scripts/${worker}/deployments`,'/containers/applications?name=mmd-slip-extractor-slipextractorcontainer'];
             if(!allowed.includes(path))throw Error('Read path denied');
             const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}${path}`,{headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});
             const d=await r.json();if(!r.ok||d.success!==true)throw Error(`Production preflight read failed: ${r.status}`);return d.result;
@@ -82,10 +95,10 @@ jobs:
           export async function snapshot(){
             const settings=await read(`/workers/scripts/${worker}/settings`);
             const subdomain=await read(`/workers/scripts/${worker}/subdomain`);
-            if(subdomain.enabled!==false||subdomain.previews_enabled===true)throw Error('Extractor must remain private');
+            if(subdomain.enabled!==false||subdomain.previews_enabled!==false)throw Error('Extractor must remain private');
             const binding=settings.bindings?.find(b=>b.name==='SLIP_EXTRACTOR'&&b.type==='durable_object_namespace');
             if(!binding?.namespace_id||binding.class_name!=='SlipExtractorContainer')throw Error('Existing production DO binding required');
-            const apps=await read('/containers/applications');
+            const apps=await read('/containers/applications?name=mmd-slip-extractor-slipextractorcontainer');
             const matches=apps.filter(a=>a.durable_objects?.namespace_id===binding.namespace_id);
             if(matches.length!==1)throw Error('Expected one existing production container application');
             const app=matches[0];
@@ -95,6 +108,8 @@ jobs:
             const c=app.configuration||{};
             const instanceType=c.instance_type||Object.keys(presets).find(k=>{const [cpu,memory,disk]=presets[k];return c.vcpu===cpu&&c.memory_mib===memory&&c.disk?.size_mb===disk});
             if(!Number.isInteger(app.max_instances)||app.max_instances<1||!Object.hasOwn(presets,instanceType||''))throw Error('Existing container capacity unavailable: '+JSON.stringify({max_instances:app.max_instances??null,instance_type:c.instance_type??null,vcpu:c.vcpu??null,memory_mib:c.memory_mib??null,disk_mb:c.disk?.size_mb??null}));
+            const [cpu,memory,disk]=presets[instanceType];
+            if((c.vcpu!=null&&c.vcpu!==cpu)||(c.memory_mib!=null&&c.memory_mib!==memory)||(c.disk?.size_mb!=null&&c.disk.size_mb!==disk))throw Error('Expanded container resources disagree with preset; release blocked');
             return {settings,subdomain,app,instanceType};
           }
           export const file=`${process.env.RUNNER_TEMP}/extractor-before.json`;
@@ -102,17 +117,22 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           const config=JSON.parse(fs.readFileSync('services/mmd-slip-extractor/cloudflare/wrangler.production.jsonc','utf8'));
-          if(config.name!=='mmd-slip-extractor'||config.workers_dev!==false||config.preview_urls!==false||config.routes?.length!==0||config.vars?.MMD_RUNTIME_SCOPE!=='production')throw Error('Private production boundary mismatch');
+          if(config.containers?.length!==1||config.containers[0].class_name!=='SlipExtractorContainer'||config.containers[0].image!=='./Dockerfile'||config.containers[0].image_build_context!=='..'||config.name!=='mmd-slip-extractor'||config.workers_dev!==false||config.preview_urls!==false||config.routes?.length!==0||config.vars?.MMD_RUNTIME_SCOPE!=='production')throw Error('Private production boundary mismatch');
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
-          const before=await api.snapshot();fs.writeFileSync(api.file,JSON.stringify(before),{mode:0o600});
-          // This source/image was deployed successfully in run 38680910746.
-          // Finish its receipt without uploading or redeploying the same runtime.
-          const verifyImage=process.env.EXTRACTOR_VERIFY_IMAGE||'';
-          if(verifyImage){
-            const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
-            if(before.app.configuration.image!==verifyImage||active?.versions?.length!==1||active.versions[0].percentage!==100||active.versions[0].version_id!==process.env.EXTRACTOR_VERIFY_VERSION)throw Error('Reviewed image/version moved; verify-only release must not redeploy');
+          const before=await api.snapshot();
+          if(config.compatibility_date!==before.settings.compatibility_date||api.canonical(config.compatibility_flags)!==api.canonical(before.settings.compatibility_flags))throw Error('Compatibility settings moved; release blocked');
+          const expectedNames=['MMD_RUNTIME_SCOPE','MMD_SLIP_EXTRACTOR_MAX_BYTES','SLIP_EXTRACTOR'].sort();
+          if(api.canonical(before.settings.bindings.map(b=>b.name).sort())!==api.canonical(expectedNames))throw Error('Production bindings changed; review before releasing');
+          for(const [name,value] of Object.entries(config.vars)){
+            const binding=before.settings.bindings.find(b=>b.name===name&&b.type==='plain_text');
+            if(binding?.text!==value)throw Error('Production variable moved; release blocked: '+name);
           }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,`verify_only=${!!verifyImage}\n`);
+          fs.writeFileSync(api.file,JSON.stringify(before),{mode:0o600});
+          const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
+          if(before.app.configuration.image!==process.env.EXTRACTOR_EXPECTED_PREVIOUS_IMAGE||active?.versions?.length!==1||active.versions[0].percentage!==100||active.versions[0].version_id!==process.env.EXTRACTOR_EXPECTED_PREVIOUS_VERSION)throw Error('Production image/version moved; review the new baseline before releasing');
+          if(before.app.id!=='a03cfd9f-78b5-4840-afa7-510d30367e66'||before.app.durable_objects?.namespace_id!=='8f70a7ac154e4e4d8817375c8f739097'||before.app.max_instances!==2||before.instanceType!=='basic')throw Error('Production resource identity/capacity moved; release blocked');
+          const rollback=`Previous Worker version: ${active.versions[0].version_id}\nPrevious container image: ${before.app.configuration.image}\nExisting application: ${before.app.id}\nRelease source: ${process.env.EXTRACTOR_RELEASE_SHA}\n`;
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,rollback);
           config.containers[0].max_instances=before.app.max_instances;
           config.containers[0].instance_type=before.instanceType;
           fs.writeFileSync('services/mmd-slip-extractor/cloudflare/.wrangler-existing-production.json',JSON.stringify(config),{mode:0o600});
@@ -121,11 +141,9 @@ jobs:
           console.log('Verified existing private extractor and container; no new resources required');
           JS
       - name: Validate production bundle
-        if: steps.preflight.outputs.verify_only != 'true'
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --dry-run --config .wrangler-existing-production.json
       - name: Deploy reviewed image to existing private production extractor
-        if: steps.preflight.outputs.verify_only != 'true'
         working-directory: services/mmd-slip-extractor/cloudflare
         run: npx --yes wrangler@4.124.0 deploy --config .wrangler-existing-production.json --keep-vars
       - name: Verify unchanged bindings and capacity; record image/version receipt
@@ -135,7 +153,7 @@ jobs:
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
           const before=JSON.parse(fs.readFileSync(api.file,'utf8')),after=await api.snapshot();
           const bindings=x=>[...x.settings.bindings].sort((a,b)=>a.name.localeCompare(b.name));
-          if(api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id||before.app.max_instances!==after.app.max_instances)throw Error('Private production boundary changed');
+          if(before.settings.compatibility_date!==after.settings.compatibility_date||api.canonical(before.settings.compatibility_flags)!==api.canonical(after.settings.compatibility_flags)||api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id||before.app.max_instances!==after.app.max_instances)throw Error('Private production boundary changed');
           const withoutImage=x=>{
             const c={...x.app.configuration,image:'IMAGE',instance_type:x.instanceType};
             // Same canonicalization as official Wrangler cleanForInstanceType:
@@ -146,7 +164,7 @@ jobs:
           if(api.canonical(withoutImage(before))!==api.canonical(withoutImage(after)))throw Error('Container configuration changed beyond image: '+Object.keys({...withoutImage(before),...withoutImage(after)}).filter(k=>api.canonical(withoutImage(before)[k])!==api.canonical(withoutImage(after)[k])).join(','));
           const deployments=await api.read('/workers/scripts/mmd-slip-extractor/deployments'),active=deployments.deployments?.[0];
           if(active?.versions?.length!==1||active.versions[0].percentage!==100)throw Error('Expected one active extractor version');
-          if(process.env.EXTRACTOR_VERIFY_IMAGE&&(after.app.configuration.image!==process.env.EXTRACTOR_VERIFY_IMAGE||active.versions[0].version_id!==process.env.EXTRACTOR_VERIFY_VERSION))throw Error('Reviewed deployment moved during verification');
+          if(after.app.configuration.image===process.env.EXTRACTOR_EXPECTED_PREVIOUS_IMAGE||active.versions[0].version_id===process.env.EXTRACTOR_EXPECTED_PREVIOUS_VERSION)throw Error('OCR release did not advance both image and Worker version');
           const receipt=`Extractor release source: ${process.env.EXTRACTOR_RELEASE_SHA}\nActive Worker version: ${active.versions[0].version_id}\nContainer image: ${after.app.configuration.image}\nExisting DO/container application, bindings, secrets and private access preserved.\nNo customer evidence or payment operations in deployment smoke.\n`;
           console.log(receipt);fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,receipt);
           JS
