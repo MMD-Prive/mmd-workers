@@ -151,7 +151,23 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           const api=await import(`file://${process.env.RUNNER_TEMP}/extractor-boundary.mjs`);
-          const before=JSON.parse(fs.readFileSync(api.file,'utf8')),after=await api.snapshot();
+          const before=JSON.parse(fs.readFileSync(api.file,'utf8'));
+          // Container deployment is asynchronous. Compare the final configuration
+          // only after the rollout disappears and the new image is visible.
+          const deadline=Date.now()+10*60*1000;
+          let after;
+          while(Date.now()<deadline){
+            const candidate=await api.snapshot();
+            if(candidate.app.id!==before.app.id||candidate.app.durable_objects?.namespace_id!==before.app.durable_objects?.namespace_id)throw Error('Production resource identity changed during rollout');
+            if(candidate.app.health?.errors?.length||candidate.app.health?.instances?.failed>0)throw Error('Container rollout reports unhealthy instances');
+            if(!candidate.app.active_rollout_id&&candidate.app.configuration.image!==process.env.EXTRACTOR_EXPECTED_PREVIOUS_IMAGE){
+              after=candidate;
+              break;
+            }
+            console.log('Waiting for existing extractor container rollout to finish');
+            await new Promise(resolve=>setTimeout(resolve,10000));
+          }
+          if(!after)throw Error('Timed out waiting for container rollout completion and new image; release unverified');
           const bindings=x=>[...x.settings.bindings].sort((a,b)=>a.name.localeCompare(b.name));
           if(before.settings.compatibility_date!==after.settings.compatibility_date||api.canonical(before.settings.compatibility_flags)!==api.canonical(after.settings.compatibility_flags)||api.canonical(bindings(before))!==api.canonical(bindings(after))||api.canonical(before.subdomain)!==api.canonical(after.subdomain)||before.app.id!==after.app.id||before.app.max_instances!==after.app.max_instances)throw Error('Private production boundary changed');
           const withoutImage=x=>{
