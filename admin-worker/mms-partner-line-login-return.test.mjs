@@ -6,11 +6,11 @@ import { VERIFY_RUNTIME, LIFF } from './src/mms-partner-line-verification.mjs';
 
 const intentKey='mms_partner_submit_intent_v1';
 const settle=async()=>{for(let n=0;n<12;n++)await new Promise(resolve=>setImmediate(resolve));};
-function browser({shop='relax',loggedIn=false,storage=new Map(),failure='',token='fixture-id-token-never-save',search='?shop='+shop,version=VERIFY_RUNTIME,configFailure=false,scope,permissionState}={}){
+function browser({shop='relax',loggedIn=false,storage=new Map(),failure='',token='fixture-id-token-never-save',search='?shop='+shop,version=VERIFY_RUNTIME,configFailure=false,scope,permissionState,origin='https://www.mmdbkk.com'}={}){
   const calls=[],logins=[],events=[],lifecycle={};
   function node(){return {style:{},dataset:{},hidden:false,checked:false,disabled:false,textContent:'',events:{},children:new Map(),setAttribute(){},append(){},before(){},addEventListener(event,fn){this.events[event]=fn;},querySelector(selector){if(!this.children.has(selector))this.children.set(selector,node());return this.children.get(selector);}};}
   const root=node(),select=root.querySelector('#mms-shop');select.value=shop;select.options=[{text:'Kalima Massage'},{text:'Relax Spa by 9'}];select.selectedIndex=shop==='relax'?1:0;
-  const location={origin:'https://www.mmdbkk.com',pathname:'/male-massage/partner/verify',search};
+  const location={origin,pathname:'/male-massage/partner/verify',search};
   const context={document:{head:node(),getElementById:()=>root,createElement:()=>node()},location,URL,URLSearchParams,Date,console,
     sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     window:{addEventListener:(event,fn)=>{lifecycle[event]=fn;},liff:{init:async()=>{},isLoggedIn:()=>loggedIn,login:options=>logins.push(options),getIDToken:()=>token,getContext:()=>scope?{scope,userId:'fixture-private-context-never-log'}:null,permission:permissionState?{query:async name=>{assert.equal(name,'openid');return {state:permissionState};}}:undefined}},
@@ -24,7 +24,7 @@ test('login redirect resumes only the previously consented shop submission and d
   for(const shop of ['kalima','relax']){
     const storage=new Map(),before=browser({shop,storage});await settle();await before.submit();
     assert.equal(before.logins.length,1);assert.equal(before.calls.length,0);
-    assert.equal(before.logins[0].redirectUri,'https://www.mmdbkk.com/male-massage/partner/verify?shop='+shop);
+    assert.equal(before.logins[0].redirectUri,'https://www.mmdbkk.com/male-massage/partner/verify?shop='+shop+'&verify_version='+VERIFY_RUNTIME);
     assert.ok(storage.has(intentKey));assert.ok(!JSON.stringify([...storage]).includes('fixture-id-token'));
     const after=browser({shop,loggedIn:true,storage,search:'?liff.state='+encodeURIComponent('?shop='+shop)+'&code=fixture-private-code'});await settle();
     const writes=after.calls.filter(c=>c.path.endsWith('/request'));
@@ -33,6 +33,24 @@ test('login redirect resumes only the previously consented shop submission and d
     assert.ok(after.events.some(e=>e.body.stage==='client_return_detected'));assert.doesNotMatch(JSON.stringify(after.events),/fixture-private-code/);
     const reload=browser({shop,loggedIn:true,storage});await settle();assert.equal(reload.calls.filter(c=>c.path.endsWith('/request')).length,0);
   }
+});
+
+test('unconsented signed-out user can reach LINE login only after an explicit consented click',async()=>{
+ for(const shop of ['kalima','relax']){
+   const b=browser({shop,permissionState:'prompt',scope:['profile','openid']});await settle();
+   assert.equal(b.root.querySelector('#mms-line-button').disabled,false);
+   assert.equal(b.logins.length,0);assert.equal(b.calls.length,0);
+   await b.submit(false);assert.equal(b.logins.length,0);
+   await b.submit(true);assert.equal(b.logins.length,1);assert.equal(b.calls.length,0);
+   assert.ok(b.storage.has(intentKey));
+ }
+});
+test('LINE callback always uses the configured Published endpoint and a fixed version, never the incoming host or callback data',async()=>{
+ for(const shop of ['kalima','relax'])for(const origin of ['https://mmdbkk.com','https://www.mmdbkk.com']){
+   const b=browser({shop,origin,search:'?shop='+shop+'&code=fixture-private-code&liffRedirectUri=https://untrusted.invalid'});await settle();await b.submit();
+   assert.equal(b.logins[0].redirectUri,'https://www.mmdbkk.com/male-massage/partner/verify?shop='+shop+'&verify_version='+VERIFY_RUNTIME);
+   assert.doesNotMatch(JSON.stringify(b.logins),/fixture-private|untrusted/);
+ }
 });
 
 test('callback phase is recorded using fixed events only; no intent never implies consent',async()=>{
