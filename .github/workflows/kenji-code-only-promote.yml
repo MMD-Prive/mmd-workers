@@ -1,0 +1,39 @@
+name: Kenji only - promote approved code-only candidate
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_version:
+        description: Exact active production version ID verified before approval
+        required: true
+        type: string
+      candidate_version:
+        description: Separately uploaded and reviewed code-only Kenji candidate version ID
+        required: true
+        type: string
+      source_sha:
+        description: Full reviewed source SHA annotated on the candidate
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: deploy-member-dashboard-chat-worker-production
+  cancel-in-progress: false
+jobs:
+  promote-kenji-only:
+    if: github.ref == 'refs/heads/main'
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
+      - name: Promote existing code-only candidate; preserve all configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          BASELINE_VERSION: ${{ inputs.baseline_version }}
+          CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: node scripts/kenji-code-only-promote.mjs
