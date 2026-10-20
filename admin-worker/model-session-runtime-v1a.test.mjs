@@ -184,6 +184,26 @@ async function postAction(t, action, options = {}) {
   return { response, body: await response.json() };
 }
 
+test("decline alternatives persist only in reason and replay cannot write again", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock();
+  try {
+    const body = { reason: "ติดธุระ", availability_options: ["2099-10-22T12:00"] };
+    const invalid = await postAction(t, "decline_job", { body: { availability_options: [] } });
+    assert.equal(invalid.response.status, 400);
+    assert.equal(mock.calls.filter(c => c.method === "PATCH").length, 0);
+    const first = await postAction(t, "decline_job", { body });
+    assert.equal(first.response.status, 200);
+    assert.match(mock.session.fields.decline_reason, /Proposed only/);
+    const writes = mock.calls.filter(c => c.method === "PATCH").length;
+    assert.ok(writes > 0);
+    const replay = await postAction(t, "decline_job", { body });
+    assert.ok(replay.response.status >= 400);
+    assert.equal(mock.calls.filter(c => c.method === "PATCH").length, writes);
+    assert.equal(mock.calls.filter(c => c.method === "POST").length, 0);
+  } finally { mock.restore(); }
+});
+
 test("GET /v1/model/session/current requires signed t before Airtable access", async () => {
   const mock = installRuntimeFetchMock();
   try {
