@@ -257,3 +257,48 @@ test("pending full-service evidence projects the minimum but never becomes verif
  const s=await read(sid,fixture([],[proof("full-pending",5000,null,"full")]).deps);
  assert.equal(s.verified_paid_thb,0);assert.equal(s.deposit.remaining_thb,1500);assert.equal(s.deposit.projected_remaining_thb,0);
 });
+
+for (const [firstField, secondField] of [
+  ["provider_txn_id", "provider_txn_id"],
+  ["bank_transaction_id", "bank_transaction_id"],
+  ["provider_txn_id", "bank_transaction_id"],
+]) {
+  test(`duplicate pending transactions suppress totals: ${firstField} / ${secondField}`, async () => {
+    const first = proof("pending-first", 2500), second = proof("pending-second", 2500);
+    first.fields.payment_ref = "different-reference-first";
+    second.fields.payment_ref = "different-reference-second";
+    first.fields[firstField] = "same-synthetic-transfer";
+    second.fields[secondField] = " same-synthetic-transfer ";
+    // Different images and proof/reference IDs must not hide the same transfer.
+    first.fields.image_sha256 = "different-image-first";
+    second.fields.image_sha256 = "different-image-second";
+    for (const order of [[first, second], [second, first]]) {
+      const s = await read(sid, fixture([], order).deps);
+      assert.equal(s.pending_complete, false);
+      assert(s.issues.includes("possible_duplicate_transfer"));
+      assert.equal(s.pending_amount_thb, null);
+      assert.equal(s.pending_proof_count, null);
+      assert.deepEqual(s.pending_proofs, []);
+      assert.equal(s.projected_remaining_thb, null);
+      assert.equal(s.projected_overpaid_thb, null);
+      assert.equal(s.deposit.pending_thb, null);
+      assert.equal(s.deposit.projected_remaining_thb, null);
+      assert.equal(s.verified_paid_thb, 0);
+      assert.equal(s.remaining_amount_thb, 5000);
+      assert.equal(s.money_truth_changed, false);
+    }
+  });
+}
+
+test("distinct pending transaction IDs still sum normally", async () => {
+  const first = proof("pending-first", 4000), second = proof("pending-second", 1000);
+  first.fields.provider_txn_id = "synthetic-transfer-one";
+  second.fields.bank_transaction_id = "synthetic-transfer-two";
+  const s = await read(sid, fixture([], [first, second]).deps);
+  assert.equal(s.pending_complete, true);
+  assert.equal(s.pending_amount_thb, 5000);
+  assert.equal(s.pending_proof_count, 2);
+  assert.equal(s.projected_remaining_thb, 0);
+  assert.equal(s.verified_paid_thb, 0);
+  assert.equal(s.remaining_amount_thb, 5000);
+});

@@ -122,6 +122,7 @@ export async function paymentJobSlipSummary(
   const unique = new Map(),
     proofIds = new Set(),
     seenRefs = new Set(),
+    seenTransactions = new Set(),
     hashes = new Set(),
     issues = new Set();
   const rows = [];
@@ -227,14 +228,16 @@ export async function paymentJobSlipSummary(
       (ref && seenRefs.has(ref)) ||
       (hash && (hashes.has(hash) || verifiedHashes.has(hash))) ||
       (transaction &&
-        balance.records.some(
-          (p) => p.verified && p.transaction === transaction,
-        ))
+        (seenTransactions.has(transaction) ||
+          balance.records.some(
+            (p) => p.verified && p.transaction === transaction,
+          )))
     ) {
       issues.add("possible_duplicate_transfer");
       continue;
     }
     if (ref) seenRefs.add(ref);
+    if (transaction) seenTransactions.add(transaction);
     if (hash) hashes.add(hash);
     if (cents === null) {
       issues.add("proof_amount_missing");
