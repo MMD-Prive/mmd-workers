@@ -6,17 +6,17 @@ import { APP_JS } from './src/mms-partner-line-ui.mjs';
 const intentKey='mms_partner_submit_intent_v1';
 const settle=async()=>{for(let n=0;n<12;n++)await new Promise(resolve=>setImmediate(resolve));};
 function browser({shop='relax',loggedIn=false,storage=new Map(),failure='',token='fixture-id-token-never-save'}={}){
-  const calls=[],logins=[];
+  const calls=[],logins=[],events=[];
   function node(){return {style:{},dataset:{},hidden:false,checked:false,disabled:false,textContent:'',events:{},children:new Map(),setAttribute(){},append(){},before(){},addEventListener(event,fn){this.events[event]=fn;},querySelector(selector){if(!this.children.has(selector))this.children.set(selector,node());return this.children.get(selector);}};}
   const root=node(),select=root.querySelector('#mms-shop');select.value=shop;select.options=[{text:'Kalima Massage'},{text:'Relax Spa by 9'}];select.selectedIndex=shop==='relax'?1:0;
   const location={origin:'https://www.mmdbkk.com',pathname:'/male-massage/partner/verify',search:'?shop='+shop};
   const context={document:{head:node(),getElementById:()=>root,createElement:()=>node()},location,URL,URLSearchParams,Date,console,
     sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     window:{liff:{init:async()=>{},isLoggedIn:()=>loggedIn,login:options=>logins.push(options),getIDToken:()=>token}},
-    fetch:async(path,options)=>{const body=JSON.parse(options.body);calls.push({path,body});if(failure&&path.endsWith('/request'))return {ok:false,json:async()=>({ok:false,error:failure})};return {ok:true,json:async()=>path.endsWith('/status')?{ok:true,claim:null}:{ok:true,claim:{shop_key:body.shop_key,shop_name:body.shop_key==='relax'?'Relax Spa by 9':'Kalima Massage',claim_id:'fixture-claim',status:'Pending Owner Review'}}};},
+fetch:async(path,options)=>{const body=JSON.parse(options.body);if(path.endsWith('/event')){events.push({path,body,options});return {ok:true,json:async()=>({ok:true})};}calls.push({path,body});if(failure&&path.endsWith('/request'))return {ok:false,json:async()=>({ok:false,error:failure})};return {ok:true,json:async()=>path.endsWith('/status')?{ok:true,claim:null}:{ok:true,claim:{shop_key:body.shop_key,shop_name:body.shop_key==='relax'?'Relax Spa by 9':'Kalima Massage',claim_id:'fixture-claim',status:'Pending Owner Review'}}};},
   };
   vm.runInNewContext(APP_JS,context);
-  return {root,storage,calls,logins,async submit(consent=true){root.querySelector('#mms-consent').checked=consent;await root.querySelector('#mms-line-button').events.click();await settle();},status:()=>root.querySelector('#mms-line-status').textContent};
+  return {root,storage,calls,logins,events,async submit(consent=true){root.querySelector('#mms-consent').checked=consent;await root.querySelector('#mms-line-button').events.click();await settle();},status:()=>root.querySelector('#mms-line-status').textContent};
 }
 
 test('login redirect resumes only the previously consented shop submission and does not replay on reload',async()=>{
@@ -43,4 +43,6 @@ test('failed save remains visible and can be retried explicitly without inventin
   const b=browser({shop:'relax',loggedIn:true,storage,failure:'REGISTRY_WRITE_UNAVAILABLE'});await settle();
   assert.equal(b.calls.filter(c=>c.path.endsWith('/request')).length,1);assert.match(b.status(),/บันทึกยังไม่สำเร็จ/);assert.doesNotMatch(b.status(),/รอเปอร์ตรวจคำขอ/);
   assert.equal(storage.has(intentKey),false);
+  assert.ok(b.events.some(e=>e.body.stage==='client_request_failed'&&e.body.code==='REGISTRY_WRITE_UNAVAILABLE'));
+  for(const e of b.events){assert.deepEqual(Object.keys(e.body),['shop_key','stage','code']);assert.equal(e.options.credentials,'omit');assert.equal(e.options.referrerPolicy,'no-referrer');assert.doesNotMatch(JSON.stringify(e.body),/fixture-id-token|id_token|claim_id/);}
 });

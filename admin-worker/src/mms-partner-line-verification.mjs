@@ -1,4 +1,5 @@
 // MMS Partner identity intake. Shop access is a separate Owner decision.
+import { diagnosticStore, recordDiagnostic, readDiagnostics, DIAGNOSTIC_STAGES, DIAGNOSTIC_CODES } from './mms-partner-verify-diagnostics.mjs';
 export const ROOT = '/v1/admin/mms/partner-line';
 export const OWNER_PAGE = '/internal/admin/mms/partner-line';
 export const CHANNEL = '2012099469';
@@ -54,20 +55,29 @@ async function callStore(env,hash,command,body) {
 }
 // Invoked only on the private Durable Object binding. Each LINE identity is
 // serialized across both shops; Airtable remains the visible review authority.
-export async function handleStore(request,env) {
+export async function handleStore(request,env,storage) {
+  if(new URL(request.url).pathname.startsWith('/mms-line/diagnostics/'))return diagnosticStore(request,storage);
+  let diagnosticShop=null,diagnosticStage='store_reached',enrolling=false,checkingStatus=false;
   try {
     const command=new URL(request.url).pathname.split('/').at(-1), b=await request.json();
     if(!/^[a-f0-9]{64}$/.test(b.line_hash||''))fail('IDENTITY_REQUIRED',401);
-    const shop=shopFor(b.shop_key), shopRow=await readShop(env,b.shop_key);
+    const shop=shopFor(b.shop_key);diagnosticShop=b.shop_key;enrolling=command==='enroll';checkingStatus=command==='status';
+    if(enrolling)await recordDiagnostic(env,diagnosticShop,'store_reached');
+    const shopRow=await readShop(env,b.shop_key);
     const accountKey='mms_line_'+b.line_hash.slice(0,32);
     const claimId='mmsclaim_'+(await sha(b.line_hash+':'+shop.id)).slice(0,32);
     if(command==='enroll') {
+      diagnosticStage='account_read';await recordDiagnostic(env,diagnosticShop,diagnosticStage);
       let account=await unique(env,'accounts','Partner Account Key',accountKey);
       if(account && (account.fields['LINE Subject SHA-256']!==b.line_hash || ['Blocked','Suspended'].includes(account.fields['Account Status'])))fail('ACCOUNT_DENIED',403);
+      diagnosticStage='account_write';
       if(!account)account=await write(env,'accounts',{'Partner Account Key':accountKey,'Login Account Reference':'LINE MMS Partner','Account Status':'Pending verification','Authority Source':'LINE ID token verified server-side; Owner review required','LINE Link Status':'Pending Owner Review','LINE Subject SHA-256':b.line_hash});
+      await recordDiagnostic(env,diagnosticShop,'account_saved');diagnosticStage='claim_read';
       let claim=await unique(env,'claims','Claim ID',claimId);
+      diagnosticStage='claim_write';
       if(!claim) claim=await write(env,'claims',{'Claim ID':claimId,'Shop Registry Key':shop.id,'Target Partner Account Key':accountKey,'Role':'mms_partner','LINE Subject SHA-256':b.line_hash,'LINE Channel ID':CHANNEL,'Claim Status':'Pending Owner Review','Submitted At (ISO-8601)':new Date().toISOString(),'Shop (linked)':[shop.id],'Partner Account (linked)':[account.id]});
       if(claim.fields['Shop Registry Key']!==shop.id||claim.fields['LINE Subject SHA-256']!==b.line_hash)fail('CLAIM_CONFLICT',409);
+      await recordDiagnostic(env,diagnosticShop,'claim_saved');
       return json({ok:true,claim:projectClaim(claim)});
     }
     if(command==='status') {
@@ -104,11 +114,12 @@ export async function handleStore(request,env) {
       return json({ok:true,status:'approved',shop_key:b.shop_key});
     }
     fail('NOT_FOUND',404);
-  } catch(e){ return json({ok:false,error:e.code||'VERIFICATION_UNAVAILABLE'},e.status||503); }
+  } catch(e){ if(enrolling||checkingStatus)await recordDiagnostic(env,diagnosticShop,enrolling?diagnosticStage:'status_failed',e.code||'UNEXPECTED');return json({ok:false,error:e.code||'VERIFICATION_UNAVAILABLE'},e.status||503); }
 }
 export async function handleVerification(request,env,{readOwner,appJs,ownerHtml}={}) {
   const u=new URL(request.url), path=u.pathname.replace(/\/$/,'');
   if(!path.startsWith(ROOT+'/')&&path!==OWNER_PAGE)return null;
+  let diagnosticShop=null,diagnosticAction=null;
   try {
     if(!ORIGINS.includes(u.origin))fail('HOST_DENIED',403);
     if(path===ROOT+'/app.js'&&request.method==='GET')return new Response(appJs,{headers:{'content-type':'application/javascript;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
@@ -116,15 +127,30 @@ export async function handleVerification(request,env,{readOwner,appJs,ownerHtml}
       await Promise.all(Object.keys(SHOPS).map(key=>readShop(env,key)));
       return json({ok:true,registry_ready:true,liff_id:LIFF,shops:Object.entries(SHOPS).map(([key,s])=>({key,name:s.name}))});
     }
+    if(path===ROOT+'/event'&&request.method==='POST'){
+      const b=await bodyOf(request,['shop_key','stage','code']);shopFor(b.shop_key);
+      if(!DIAGNOSTIC_STAGES.includes(b.stage)||!b.stage.startsWith('client_')||!DIAGNOSTIC_CODES.includes(b.code))fail('FIELDS_INVALID');
+      const saved=await recordDiagnostic(env,b.shop_key,b.stage,b.code);
+      return json({ok:saved},saved?200:503);
+    }
     if([ROOT+'/request',ROOT+'/status'].includes(path)&&request.method==='POST') {
       const b=await bodyOf(request,['id_token','shop_key','consent']);shopFor(b.shop_key);
+      diagnosticShop=b.shop_key;diagnosticAction=path.endsWith('/request')?'request':'status';
+      await recordDiagnostic(env,diagnosticShop,diagnosticAction+'_received');
       if(path.endsWith('/request')&&b.consent!==true)fail('CONSENT_REQUIRED');
       const hash=await verifyLine(b.id_token);
+      if(diagnosticAction==='request')await recordDiagnostic(env,diagnosticShop,'line_verified');
       return await callStore(env,hash,path.endsWith('/request')?'enroll':'status',{shop_key:b.shop_key});
     }
     const actor=await readOwner(request,env);
     if(!actor&&path===OWNER_PAGE&&request.method==='GET')return Response.redirect(u.origin+'/internal/admin/login?next='+encodeURIComponent(OWNER_PAGE),303);
     if(!actor||actor.role!=='owner')fail('OWNER_REQUIRED',actor?403:401);
+    if(path===ROOT+'/diagnostics'&&request.method==='GET'){const key=u.searchParams.get('shop');shopFor(key);return readDiagnostics(env,key);}
+    if(path===ROOT+'/diagnostics/check'&&request.method==='POST'){
+      const b=await bodyOf(request,['shop_key']);shopFor(b.shop_key);
+      const saved=await recordDiagnostic(env,b.shop_key,'diagnostic_self_test');
+      return json({ok:saved},saved?200:503);
+    }
     if([ROOT+'/owner',OWNER_PAGE].includes(path)&&request.method==='GET')return new Response(ownerHtml,{headers:{'content-type':'text/html;charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-frame-options':'DENY'}});
     if(path===ROOT+'/requests'&&request.method==='GET') {
       const key=u.searchParams.get('shop'), shop=shopFor(key), row=await readShop(env,key);
@@ -140,5 +166,5 @@ export async function handleVerification(request,env,{readOwner,appJs,ownerHtml}
       return await callStore(env,claim.fields['LINE Subject SHA-256'],'review',{...b,owner_id:actor.id});
     }
     fail('NOT_FOUND',404);
-  }catch(e){return json({ok:false,error:e.code||'VERIFICATION_UNAVAILABLE'},e.status||503);}
+  }catch(e){if(diagnosticAction)await recordDiagnostic(env,diagnosticShop,diagnosticAction+'_failed',e.code||'UNEXPECTED');return json({ok:false,error:e.code||'VERIFICATION_UNAVAILABLE'},e.status||503);}
 }
