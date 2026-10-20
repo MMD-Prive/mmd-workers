@@ -1,3 +1,5 @@
+import { handleStore } from "./mms-partner-line-verification.mjs";
+
 const ACCOUNT_KEY = "account";
 // Cloudflare Workers/workerd rejects PBKDF2 iteration counts above 100,000.
 // Keep the actual iteration count on each stored record so this can be migrated later.
@@ -24,9 +26,18 @@ export class MmsPartnerAuthStore {
     this.state = state;
     this.storage = state.storage;
     this.env = env;
+    this.lineQueue = Promise.resolve();
   }
 
   async fetch(request) {
+    if (new URL(request.url).pathname.startsWith("/mms-line/")) {
+      if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+      // Serialize just this LINE identity's requests, including external Airtable
+      // writes. Registry truth remains persisted in Airtable, never in this queue.
+      const result = this.lineQueue.then(() => handleStore(request, this.env));
+      this.lineQueue = result.then(() => undefined, () => undefined);
+      return result;
+    }
     if (String(request.method || "GET").toUpperCase() !== "POST") {
       return json({ ok: false, error: "method_not_allowed" }, 405);
     }
