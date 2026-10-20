@@ -34,7 +34,7 @@ export class MmsPartnerAuthStore {
       if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
       // Serialize just this LINE identity's requests, including external Airtable
       // writes. Registry truth remains persisted in Airtable, never in this queue.
-      const result = this.lineQueue.then(() => handleStore(request, this.env));
+      const result = this.lineQueue.then(() => handleStore(request, this.env, this.storage));
       this.lineQueue = result.then(() => undefined, () => undefined);
       return result;
     }

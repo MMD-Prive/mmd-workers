@@ -17,10 +17,10 @@ test('approved logos map to separate shop keys without modifying LINE channel or
 });
 const subject='U'+'a'.repeat(32), token='test-id-token-never-persist-this-value';
 function fixture(){
-  const data=Object.fromEntries(Object.values(tables).map(t=>[t,[]]));let seq=0,failClaimPatch=false,lineCalls=0;
+  const data=Object.fromEntries(Object.values(tables).map(t=>[t,[]]));let seq=0,failClaimPatch=false,lineCalls=0,failCreate='';
   for(const shop of Object.values(SHOPS))data[tables.shops].push({id:shop.id,fields:{'Shop Name':shop.name,'Identity Status':'Pending verification'}});
   const env={AIRTABLE_API_KEY:'fixture-key',AIRTABLE_BASE_ID:'appsV1ILPRfIjkaYg'};
-  const stores=new Map();env.MMS_PARTNER_AUTH={idFromName:n=>n,get:n=>{if(!stores.has(n))stores.set(n,new MmsPartnerAuthStore({storage:{}},env));return stores.get(n);}};
+  const stores=new Map();env.MMS_PARTNER_AUTH={idFromName:n=>n,get:n=>{if(!stores.has(n)){const saved=new Map();stores.set(n,new MmsPartnerAuthStore({storage:{get:async k=>saved.get(k),put:async(k,v)=>saved.set(k,v)}},env));};return stores.get(n);}};
   const fetcher=async(input,init={})=>{
     const u=new URL(String(input));
     if(u.hostname==='api.line.me'){lineCalls++;assert.equal(new URLSearchParams(init.body).get('client_id'),CHANNEL);return Response.json({aud:CHANNEL,iss:'https://access.line.me',sub:subject,exp:Math.floor(Date.now()/1000)+600});}
@@ -33,13 +33,25 @@ function fixture(){
     if(init.method==='PATCH'){
       if(failClaimPatch&&table===tables.claims)return Response.json({}, {status:503});const row=rows.find(r=>r.id===id);Object.assign(row.fields,fields);return Response.json(row);
     }
+    if(failCreate===table)return Response.json({}, {status:503});
     const row={id:'rec'+String(++seq).padStart(14,'0'),fields};rows.push(row);return Response.json(row);
   };
-  return {env,data,fetcher,lineCalls:()=>lineCalls,failClaimPatch:value=>{failClaimPatch=value;}};
+  return {env,data,fetcher,lineCalls:()=>lineCalls,failClaimPatch:value=>{failClaimPatch=value;},failCreate:table=>{failCreate=tables[table];}};
 }
 const post=(path,body,origin='https://www.mmdbkk.com')=>new Request('https://www.mmdbkk.com'+ROOT+path,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});
 const owner={id:'fixture-owner',role:'owner'};
 const options={readOwner:async()=>owner,appJs:APP_JS,ownerHtml:OWNER_HTML};
+test('diagnostics distinguish account and claim write failures without storing identity or approving anything',()=>withFixture(async f=>{
+ for(const table of ['accounts','claims']){
+   f.failCreate(table);const response=await request(f);assert.equal(response.status,503);
+   const p=await (await handleVerification(new Request('https://www.mmdbkk.com'+ROOT+'/diagnostics?shop=kalima'),f.env,options)).json();
+   assert.ok(p.events.some(e=>e.stage==='line_verified'&&e.code==='OK'));
+   assert.deepEqual(p.events.at(-1).stage,table==='accounts'?'account_write':'claim_write');assert.equal(p.events.at(-1).code,'REGISTRY_WRITE_UNAVAILABLE');
+   assert.ok(p.events.every(e=>Object.keys(e).join(',')==='at,shop,stage,code'));
+   assert.doesNotMatch(JSON.stringify(p),new RegExp(token+'|'+subject));
+   assert.equal(f.data[tables.grants].length,0);
+ }
+}));
 async function request(f,key='kalima'){return handleVerification(post('/request',{shop_key:key,id_token:token,consent:true}),f.env,options);}
 async function status(f,key){return (await handleVerification(post('/status',{shop_key:key,id_token:token}),f.env,options)).json();}
 async function review(f,key,claim,decision='approve'){return handleVerification(post('/review',{shop_key:key,claim_id:claim,decision}),f.env,options);}
