@@ -1,3 +1,4 @@
+import { paymentJobSlipSummary } from "./payment-job-slip-summary.js";
 import { internalEvidenceReference, slipTransferAt, transferTimestamp } from "./slip-transfer-evidence.js";
 import { correctPaymentEvidence } from "./payment-evidence-correction.js";
 import { extractSlip } from "./historical-slip-backfill-runtime.js";
@@ -135,6 +136,13 @@ async function listReviewQueue(request, env, actor) {
   }
   if (url.searchParams.get("view") === "confirmation") {
     return json(await followthrough(env, Object.fromEntries(url.searchParams)));
+  }
+  if (url.searchParams.get("view") === "job_slip_summary") {
+    const summary = await paymentJobSlipSummary(url.searchParams.get("session_id") || "", {
+      page: (table, params) => airtablePage(env, table, params),
+      sessionsTable: discoveryTables(env).sessions, paymentsTable: paymentsTable(env), proofsTable: paymentProofTable(env), env,
+    });
+    return json({ ok: true, summary });
   }
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
   const discovery = {
