@@ -182,6 +182,7 @@ export async function handleConfirmationDetails(request, env = {}) {
       already_confirmed: Boolean(modelAcknowledgedAt),
       model_payout_thb: modelPayout,
       model_remark: text(modelRemark?.text, 2000) || null,
+      model_meeting_point: text(modelRemark?.meeting_point, 500) || null,
       amount_scope: "model_payout",
       // Partner-issued links render without MMD branding (signed claim, not a query flag).
       neutral: claims.neutral === true,
