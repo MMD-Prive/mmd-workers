@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CHANNEL, ROOT, OWNER_PAGE, SHOPS, sha, verifyLine, handleVerification, handleStore } from './src/mms-partner-line-verification.mjs';
-import { APP_JS, OWNER_HTML } from './src/mms-partner-line-ui.mjs';
+import { APP_JS, OWNER_HTML, SHOP_BRANDS } from './src/mms-partner-line-ui.mjs';
 import liveEntry from './src/admin-login-hero-worker.js';
 import { MmsPartnerAuthStore } from './src/mms-partner-auth-store.js';
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 
 const tables={shops:'tbl09N5ug8rmEQCyi',accounts:'tbliSftcsqqTt78mG',claims:'tblnXtbI7jj9DbKex',grants:'tblVlfHwFyZrtmXmV'};
+test('approved logos map to separate shop keys without modifying LINE channel or Owner controls',()=>{
+ assert.deepEqual(Object.keys(SHOP_BRANDS),['kalima','relax']);
+ for(const key of ['kalima','relax']){assert.equal(SHOP_BRANDS[key].name,SHOPS[key].name);assert.match(SHOP_BRANDS[key].logo,/^https:\/\/cdn\.prod\.website-files\.com\/68f879d546d2f4e2ab186e90\//);}
+ assert.notEqual(SHOP_BRANDS.kalima.logo,SHOP_BRANDS.relax.logo);
+ assert.ok(APP_JS.includes('updateShopBrand();status.textContent'));
+ assert.ok(APP_JS.includes('image.alt=brand.name'));
+ assert.ok(!OWNER_HTML.includes(SHOP_BRANDS.kalima.logo));assert.ok(!OWNER_HTML.includes(SHOP_BRANDS.relax.logo));
+});
 const subject='U'+'a'.repeat(32), token='test-id-token-never-persist-this-value';
 function fixture(){
   const data=Object.fromEntries(Object.values(tables).map(t=>[t,[]]));let seq=0,failClaimPatch=false,lineCalls=0;
