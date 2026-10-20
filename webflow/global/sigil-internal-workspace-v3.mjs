@@ -195,8 +195,8 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES) {
   /* Shared silver and charcoal workspace palette. */
   html[data-sigil-readable]{color-scheme:light;--bg:#e7eaee;--paper:#f8fafc;--panel:#f8fafc;--ink:#27313b;--text:#27313b;--muted:#5b6672;--line:#c7cfd7}
   html[data-sigil-readable] body,html[data-sigil-readable] .aud27,html[data-sigil-readable] .aud27 :is(.aud27-app,.aud27-main){background:#e7eaee!important;color:#27313b!important}
-  html[data-sigil-readable] :is(.aud27-side,.adm27-side,.cr4__rail,.sigil-navigation-rail){background:#252c34!important;color:#f7f8fa!important;border-color:#46515d!important}
-  html[data-sigil-readable] :is(.aud27-side,.adm27-side,.cr4__rail,.sigil-navigation-rail) :is(a,button,span,small,strong,b){color:#e4e9ee!important;-webkit-text-fill-color:#e4e9ee!important;text-shadow:none!important}
+  html[data-sigil-readable] :is(.aud27-side,.adm27-side,.adm27-sidebar,.cr4__rail,.sigil-navigation-rail){background:#252c34!important;color:#f7f8fa!important;border-color:#46515d!important}
+  html[data-sigil-readable] :is(.aud27-side,.adm27-side,.adm27-sidebar,.cr4__rail,.sigil-navigation-rail) :is(a,button,span,small,strong,b){color:#e4e9ee!important;-webkit-text-fill-color:#e4e9ee!important;text-shadow:none!important}
   html[data-sigil-readable] .aud27 :is(.aud27-card,.aud27-brief,.aud27-now,.aud27-decision,.aud27-history,.aud27-historygrid article,.aud27-signals article,.aud27-footpanel,.aud27-top){background:#f8fafc!important;color:#27313b!important;border-color:#c7cfd7!important}
   html[data-sigil-readable] .aud27 :is(h1,h2,h3,h4,strong,summary,td,th){color:#27313b!important;-webkit-text-fill-color:#27313b!important;background-image:none!important}
   html[data-sigil-readable] .aud27 :is(p,small,.aud27-sub,.aud27-kicker){color:#5b6672!important;-webkit-text-fill-color:#5b6672!important}
@@ -225,7 +225,7 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES) {
   }
   search.addEventListener('input',()=>{for(const group of nav.children){let found=false;for(const a of group.querySelectorAll('a')){a.hidden=!a.dataset.search.includes(search.value.toLowerCase());if(!a.hidden)found=true;}group.hidden=!found;}});
   // Reuse page rails so in-page controls and their event handlers remain intact.
-  const rail=document.querySelector('.aud27-side,.adm27-side,.cr4__rail,.sigil-navigation-rail,.access-card[aria-label="เมนูระบบภายใน"]');
+  const rail=document.querySelector('.aud27-side,.adm27-side,.adm27-sidebar,.cr4__rail,.sigil-navigation-rail,.access-card[aria-label="เมนูระบบภายใน"]');
   if(rail && matchMedia('(min-width:992px)').matches){rail.prepend(directory);}else{directory.classList.add('sigil-floating');document.body.prepend(directory);document.body.classList.add('sigil-directory-offset');}
   const rgba=value=>{const m=value.match(/[\d.]+/g);return m&&m.length>=3?[+m[0],+m[1],+m[2],m.length>3?+m[3]:1]:null};
   const lum=c=>c.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
