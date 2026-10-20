@@ -80,6 +80,20 @@ test('protected status continuity is never converted into a booking follow-up', 
   const result = await resolveKenjiSeedDecision(event('บวกลบได้อยู่ครับ'), env, { continuity, modelAccessAllowed: false });
   assert.notEqual(result.reply_source, 'bounded_context_followup');
 });
+test('waiting for Per remains silent across later persisted turns, not every other turn', async () => {
+  const continuity = fresh();
+  continuity.matrix.handoff_reason = 'clarify_open_case:per_review';
+  continuity.matrix.payload_json = { line_delivery_succeeded: false, reply_source: 'bounded_context_waiting_per' };
+  for (let index = 0; index < 3; index++) {
+    const result = await resolveKenjiSeedDecision(event('อันนี้ยังไงครับ'), env, { continuity, modelAccessAllowed: false });
+    assert.equal(result.text, '');
+    assert.equal(result.reply_source, 'bounded_context_waiting_per');
+  }
+});
+test('mentioning time without supplying one cannot acknowledge a supplied appointment time', async () => {
+  const result = await resolveKenjiSeedDecision(event('วันนี้ไม่มีเวลาครับ'), env, { modelAccessAllowed: false });
+  assert.notEqual(result.handoff_reason, 'booking_details:per_review');
+});
 test('same screenshot sequence runs offline without any external model or data request', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => assert.fail('Unexpected outbound request');

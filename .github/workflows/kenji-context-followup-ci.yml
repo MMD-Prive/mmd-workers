@@ -8,6 +8,11 @@ on:
       - member-dashboard-chat-worker/src/kenji-line-booking-accumulator.mjs
       - member-dashboard-chat-worker/test/kenji-context-followup.test.mjs
       - .github/workflows/kenji-context-followup-ci.yml
+      - .github/workflows/kenji-code-only-promote.yml
+      - scripts/kenji-code-only-promote.mjs
+      - scripts/kenji-code-only-promote.test.mjs
+      - scripts/kenji-pause-release-scope.mjs
+      - scripts/kenji-pause-release-scope.test.mjs
 
 permissions:
   contents: read
@@ -27,3 +32,5 @@ jobs:
           member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs
           member-dashboard-chat-worker/test/kenji-line-booking-accumulator.test.mjs
           scripts/kenji-model-off-workflow.test.mjs
+          scripts/kenji-pause-release-scope.test.mjs
+          scripts/kenji-code-only-promote.test.mjs

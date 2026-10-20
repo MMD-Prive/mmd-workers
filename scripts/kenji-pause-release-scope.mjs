@@ -18,9 +18,25 @@ const pausePaths = new Set([
 const normalize = value => value.split(/\r?\n/).map(line => line.trim())
   .filter(line => line && !line.startsWith('#') && !/^LINE_AUTO_REPLY_ENABLED\s*=/.test(line)).join('\n');
 
+// These changes require a separately approved Kenji-only release. They must
+// never enter the legacy job that deploys MMS and reconciles routes.
+export const KENJI_MANUAL_RELEASE_PATHS = new Set([
+  'member-dashboard-chat-worker/src/kenji-context-followup.mjs',
+  'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+  'member-dashboard-chat-worker/src/kenji-line-booking-accumulator.mjs',
+  'member-dashboard-chat-worker/test/kenji-context-followup.test.mjs',
+  '.github/workflows/kenji-context-followup-ci.yml',
+  '.github/workflows/kenji-code-only-promote.yml',
+  'scripts/kenji-code-only-promote.mjs',
+  'scripts/kenji-code-only-promote.test.mjs',
+]);
+
 export function deployRequired(event, files, beforeConfig, afterConfig) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.some(file => KENJI_MANUAL_RELEASE_PATHS.has(file)) &&
+      files.every(file => KENJI_MANUAL_RELEASE_PATHS.has(file) || pausePaths.has(file)) &&
+      !files.includes(configPath)) return false;
   if (files.some(file => !pausePaths.has(file))) return true;
   if (files.includes(configPath)) {
     if (!/^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m.test(afterConfig)) return true;
@@ -42,5 +58,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     required = deployRequired(event, files, files.includes(configPath) ? read(before) : '', files.includes(configPath) ? read(after) : '');
   }
   appendFileSync(process.env.GITHUB_OUTPUT, `deploy_required=${required}\n`);
-  console.log(required ? 'Normal release scope: existing deployment policy applies' : 'Pause-only scope: skip entire deployment job, including route sync');
+  console.log(required ? 'Normal release scope: existing deployment policy applies' : 'Pause/Kenji-scoped change: skip entire deployment job including route sync; Kenji runtime release requires separate manual approval');
 }

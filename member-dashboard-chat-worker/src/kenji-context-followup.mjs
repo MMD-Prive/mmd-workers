@@ -19,7 +19,7 @@ export function resolveKenjiContextFollowup(raw, inferredIntent, continuity = {}
   let answer = '';
   let reason = '';
   const dateCue = /(?:เสาร์|อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|วันที่|วันนี้|พรุ่งนี้|คืนนี้)/.test(message);
-  const timeCue = /(?:เวลา|\d\s*(?:ทุ่ม|โมง|นาฬิกา)|\d{1,2}:\d{2})/.test(message);
+  const timeCue = /(?:\d\s*(?:ทุ่ม|โมง|นาฬิกา)|\d{1,2}:\d{2}|(?:หนึ่ง|สอง|สาม|สี่|ห้า|หก)ทุ่ม|เที่ยง(?:คืน)?)/.test(message);
   const locationCue = /(?:สถานที่|โรงแรม|ซอย|รัชดา|โซน|maps\.app\.goo\.gl|google\.[^\s/]+\/maps)/i.test(message);
   if (dateCue && timeCue) {
     answer = locationCue
@@ -41,7 +41,8 @@ export function resolveKenjiContextFollowup(raw, inferredIntent, continuity = {}
   } else if (current && matrix.handoff_required === true) {
     // A clarification already sent is not permission to repeat it forever.
     // Leave the open handoff intact and let Per continue instead of resetting.
-    if (pendingReason === 'clarify_open_case:per_review' && matrix.payload_json?.line_delivery_succeeded === true) {
+    if (pendingReason === 'clarify_open_case:per_review' &&
+        (matrix.payload_json?.line_delivery_succeeded === true || matrix.payload_json?.reply_source === 'bounded_context_waiting_per')) {
       return { intent: 'human_handoff', text: '', reply_source: 'bounded_context_waiting_per',
         handoff_required: true, handoff_reason: pendingReason };
     }
