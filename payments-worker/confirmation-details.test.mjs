@@ -75,7 +75,7 @@ function sessionRecord(overrides = {}) {
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":5,\"discount_thb\":2250,\"net_price_thb\":42750,\"deposit_basis_thb\":45000,\"deposit_percent\":20,\"deposit_due_thb\":9000,\"deposit_received_thb\":9000,\"balance_thb\":33750}",
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":10,\"discount_thb\":4500,\"net_price_thb\":40500,\"deposit_basis_thb\":45000,\"deposit_percent\":30,\"deposit_due_thb\":13500,\"deposit_received_thb\":13500,\"balance_thb\":27000}",
         "[SIGIL VIP Detail v1] {\"vip_detail\":\"vtop\"}",
-        "[MMD Model Remark v1] {\"text\":\"เข้าทางประตูด้านซ้าย\"}",
+        "[MMD Model Remark v1] {\"text\":\"เข้าทางประตูด้านซ้าย\",\"meeting_point\":\"รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401\"}",
       ].join(" "),
       ...overrides,
     },
@@ -175,6 +175,7 @@ test("customer confirmation details expose the latest inline customer pricing bu
   assert.equal(data.vip_detail, "vtop");
   assert.equal("model_payout_thb" in data, false);
   assert.equal("model_remark" in data, false);
+  assert.equal("model_meeting_point" in data, false);
   assert.equal("note" in data, false);
   assert.equal("notes" in data, false);
   assert.equal(JSON.stringify(data).includes("Partner Attribution"), false);
@@ -365,6 +366,7 @@ test("model confirmation details expose the client display name and the model's 
   assert.equal(data.amount_scope, "model_payout");
   assert.equal(data.model_payout_thb, 5500);
   assert.equal(data.model_remark, "เข้าทางประตูด้านซ้าย");
+  assert.equal(data.model_meeting_point, "รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401");
   assert.equal("note" in data, false);
   assert.equal("amount_thb" in data, false, "no generic/customer amount on the model view");
   assert.equal(data.client_name, "พี่ SVIP", "model sees the client display name");
