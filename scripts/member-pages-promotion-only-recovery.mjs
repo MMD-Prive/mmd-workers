@@ -137,14 +137,17 @@ export async function promoteExistingStartupVersion(io) {
     mark('RECOVERY_READBACK');const first=await inspectUploadedRecovery({originalReceipt:receipt,read:io.cf});
     assert.equal(first.state,'REVIEW_ONLY');assert.equal(first.artifact_bytes_match,true);
     mark('RECOVERY_VALIDATION_JOURNAL');await save('validated-not-promoted');
-    // A fresh approval/main check plus full baseline/bytes readback immediately precede write.
+    // Durably record conservative unknown-outcome intent before final live checks.
+    // A slow journal must not leave a stale approval or production baseline at write time.
+    mark('RECOVERY_ATTEMPT_JOURNAL');await save('promotion-attempted-outcome-unknown');
+    // Final approval/main and complete baseline/bytes checks run after that await.
     await verifyRecoveryOwner(io.env,io.ghRead,mark);
     mark('RECOVERY_FINAL_READBACK');const final=await inspectUploadedRecovery({originalReceipt:receipt,read:io.cf});
     assert.equal(final.state,'REVIEW_ONLY');assert.equal(final.artifact_bytes_match,true);
     // Recheck owner/main after potentially slow byte readback, closest to mutation.
     await verifyRecoveryOwner(io.env,io.ghRead,mark);
-    // Journal must succeed before the one mutation. Any ambiguous outcome stops without retry.
-    mark('RECOVERY_ATTEMPT_JOURNAL');await save('promotion-attempted-outcome-unknown');mark('RECOVERY_PROMOTION_REQUEST');
+    // No awaited journal operation may intervene between these checks and mutation.
+    mark('RECOVERY_PROMOTION_REQUEST');
     const d=await io.cf(ROOT+'/deployments',{method:'POST',body:JSON.stringify(body())});
     mark('RECOVERY_PROMOTION_ID');assert.ok(uuid(d?.id)&&d.id!==T.baseline_deployment);state.deployment=d.id;
     mark('RECOVERY_POST_PROMOTION_CHECK');await verifyAfterPromotion(io.cf,d.id,receipt);
