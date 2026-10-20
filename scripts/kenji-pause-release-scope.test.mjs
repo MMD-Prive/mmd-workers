@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { deployRequired } from './kenji-pause-release-scope.mjs';
 const config = 'member-dashboard-chat-worker/wrangler.toml';
+test('exact rights alias uses manual Kenji-only release and never masks mixed deployment', () => {
+  const files = ['member-dashboard-chat-worker/src/kenji-line-rights-check.mjs', 'member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs', 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs'];
+  assert.equal(deployRequired('push', files), false);
+  assert.equal(deployRequired('push', [...files, 'mms-worker/src/index.js']), true);
+  assert.equal(deployRequired('push', [...files, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
+});
 test('owner pause config and guard files skip automatic release', () => {
   assert.equal(deployRequired('push', [config, 'scripts/kenji-pause-release-scope.mjs'], '# old\nLINE_AUTO_REPLY_ENABLED = "true"\nX = "same"', '# paused\nLINE_AUTO_REPLY_ENABLED = "false"\nX = "same"'), false);
 });
