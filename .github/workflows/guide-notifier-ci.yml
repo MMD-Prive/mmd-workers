@@ -27,4 +27,4 @@ jobs:
           node-version: '22'
       - run: node --test member-dashboard-chat-worker/test/guide-owner-notifications.test.mjs
       - run: npx --yes wrangler@4 deploy --dry-run --env="" --config member-dashboard-chat-worker/wrangler.toml --outdir "$RUNNER_TEMP/guide-bundle"
-      - run: node scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/guide-bundle/my-mms-customer-front-gate-entry.js"
+      - run: node scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/guide-bundle/guide-notification-entry.js"
