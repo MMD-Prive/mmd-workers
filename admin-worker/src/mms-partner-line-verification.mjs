@@ -4,6 +4,7 @@ export const ROOT = '/v1/admin/mms/partner-line';
 export const OWNER_PAGE = '/internal/admin/mms/partner-line';
 export const CHANNEL = '2012099469';
 export const LIFF = '2012099469-JG2eCuvf';
+export const VERIFY_RUNTIME = 'verify-return-20261020-2';
 export const SHOPS = Object.freeze({
   kalima: { id: 'recZJM2QjUKAVT12h', name: 'Kalima Massage' },
   relax: { id: 'recohHKPImiHV9GGJ', name: 'Relax Spa by 9' },
@@ -125,7 +126,7 @@ export async function handleVerification(request,env,{readOwner,appJs,ownerHtml}
     if(path===ROOT+'/app.js'&&request.method==='GET')return new Response(appJs,{headers:{'content-type':'application/javascript;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
     if(path===ROOT+'/config'&&request.method==='GET') {
       await Promise.all(Object.keys(SHOPS).map(key=>readShop(env,key)));
-      return json({ok:true,registry_ready:true,liff_id:LIFF,shops:Object.entries(SHOPS).map(([key,s])=>({key,name:s.name}))});
+      return json({ok:true,registry_ready:true,liff_id:LIFF,verify_runtime:VERIFY_RUNTIME,shops:Object.entries(SHOPS).map(([key,s])=>({key,name:s.name}))});
     }
     if(path===ROOT+'/event'&&request.method==='POST'){
       const b=await bodyOf(request,['shop_key','stage','code']);shopFor(b.shop_key);
