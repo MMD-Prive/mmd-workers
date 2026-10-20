@@ -2,16 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
-import { classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind, servicePaymentCandidates } from "../src/payment-proof-intelligence.mjs";
+import { analyzeProductionPaymentProof, classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind, servicePaymentCandidates } from "../src/payment-proof-intelligence.mjs";
 
 const {
   alertsOpsThreadId,
+  acknowledgeDirectSlipResult,
   hasPaymentContext,
   hasPaymentFollowupContext,
   captureDirectUserImageEvidence,
   membershipOpsThreadId,
   notifyPaymentProofOps,
   notifyDirectCustomerPaymentEvidence,
+  observeSignedLineEvents,
   buildDirectPaymentAcknowledgement,
   buildHypeOwnerProblemAlert,
   notifyOwnerBankDetailReady,
@@ -33,6 +35,12 @@ function memoryR2() {
     async delete(key) { store.delete(key); },
     store,
   };
+}
+
+async function lineSignature(body, secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return Buffer.from(await crypto.subtle.sign("HMAC", key, encoder.encode(body))).toString("base64");
 }
 
 function telegramHarness(extra = {}) {
@@ -96,6 +104,17 @@ test("visual gate accepts bank slip only with strong transaction evidence", () =
   assert.equal(result.image_class, "bank_transfer_slip");
   assert.equal(result.gate, "accept");
   assert.equal(result.is_payment_evidence, true);
+});
+
+test("production LINE analyzer defaults QR and OCR extraction off", async () => {
+  let calls = 0;
+  const result = await analyzeProductionPaymentProof({
+    env: { SLIP_EXTRACTOR: { async fetch() { calls += 1; throw new Error("must_not_extract"); } } },
+    image: { body: new Uint8Array([1]), mimeType: "image/png", byteSize: 1 },
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.accepted, false);
+  assert.equal(result.classification.reason, "automated_extraction_disabled_without_payment_context");
 });
 
 test("service purpose infers final payment from exact balance due", () => {
@@ -334,18 +353,20 @@ test("Telegram clearly labels four LINE slip categories and does not verify from
   }
 });
 
-test("Telegram confirms membership only after settlement reports materialized", async () => {
+test("Telegram remains pending even if a caller reports materialized settlement", async () => {
   const h = telegramHarness();
   await notifyPaymentProofOps(h.env, {
-    proofId: "line_membership_materialized_1",
+    proofId: "line_membership_pending_guard_1",
     sourceType: "user",
     paymentContextText: "ต่ออายุสมาชิก",
     analysis: { payment_intelligence: { tracking_kind: "membership_renewal" } },
   }, { deduped: false, settlement: { status: "materialized" } });
-  assert.match(h.messages[0].text, /สถานะ: ยืนยันแล้วจากระบบรับเงิน/);
+  assert.match(h.messages[0].text, /สถานะ: รอตรวจสอบ/);
+  assert.match(h.messages[0].text, /Official Verify/);
+  assert.doesNotMatch(h.messages[0].text, /ยืนยันแล้วจากระบบรับเงิน|materialized/i);
 });
 
-test("Telegram review-required membership asks the operator to inspect the proof", async () => {
+test("Telegram review-required membership remains pending and asks for Official Verify", async () => {
   const h = telegramHarness();
   await notifyPaymentProofOps(h.env, {
     proofId: "line_membership_review_required_1",
@@ -356,18 +377,18 @@ test("Telegram review-required membership asks the operator to inspect the proof
       payment_intelligence: { tracking_kind: "membership_renewal" },
     },
   }, { deduped: false, settlement: { status: "review_required" } });
-  assert.match(h.messages[0].text, /สถานะ: ต้องตรวจสอบ/);
-  assert.match(h.messages[0].text, /เปิดกล่องตรวจรับเงินเพื่อตรวจตัวตน แพ็กเกจ และสลิปด้วยคน/);
-  assert.doesNotMatch(h.messages[0].text, /รอระบบรับเงินยืนยันตัวตน/);
+  assert.match(h.messages[0].text, /สถานะ: รอตรวจสอบ/);
+  assert.match(h.messages[0].text, /Official Verify/);
+  assert.doesNotMatch(h.messages[0].text, /สถานะ: ต้องตรวจสอบ|ยืนยันแล้วจากระบบรับเงิน/);
 });
 
 
-test("direct LINE customer receives pending acknowledgement without claiming payment truth", async () => {
+test("direct LINE customer receives SAFE acknowledgement through Reply API without Push fallback", async () => {
   const calls = [];
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const request = input instanceof Request ? input : new Request(input, init);
-    if (request.url === "https://api.line.me/v2/bot/message/push") {
+    if (request.url === "https://api.line.me/v2/bot/message/reply") {
       calls.push(await request.json());
       return new Response("", { status: 200 });
     }
@@ -395,42 +416,79 @@ test("direct LINE customer receives pending acknowledgement without claiming pay
     const result = await notifyDirectCustomerPaymentEvidence(
       { LINE_CHANNEL_ACCESS_TOKEN: "line-token" },
       evidence,
-      { deduped: false, settlement: { status: "deduped" } },
-      "U1234567890abcdef1234567890abcdef",
+      { deduped: true, acknowledgement: "safe" },
+      "reply-token-1",
     );
     assert.equal(result.sent, true);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].to, "U1234567890abcdef1234567890abcdef");
-    assert.match(calls[0].messages[0].text, /ได้รับหลักฐานค่ามัดจำแล้วครับ/);
-    assert.match(calls[0].messages[0].text, /Film J/);
-    assert.match(calls[0].messages[0].text, /อยู่ระหว่างตรวจสอบ/);
-    assert.match(calls[0].messages[0].text, /ยังไม่ใช่การยืนยันรับเงิน/);
-    assert.doesNotMatch(calls[0].messages[0].text, /ได้รับและยืนยัน.*เรียบร้อย/);
+    assert.equal(calls[0].replyToken, "reply-token-1");
+    assert.equal(calls[0].to, undefined);
+    assert.equal(calls[0].messages[0].text, "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ");
+    assert.doesNotMatch(calls[0].messages[0].text, /paid|verified|ยืนยันรับเงิน/i);
   } finally {
     globalThis.fetch = previousFetch;
   }
 });
 
-test("direct LINE customer confirmation is only rendered after authoritative materialization", () => {
-  const text = buildDirectPaymentAcknowledgement({
-    sourceType: "user",
-    paymentContextText: "ต่ออายุสมาชิก",
-    analysis: {
-      payment_intelligence: { tracking_kind: "membership_renewal" },
-      ops_route: { topic: "membership", reason: "membership", should_alert: false },
-      extraction: { amount_thb: 1000 },
-    },
-  }, { settlement: { status: "materialized" } });
-  assert.match(text, /ได้รับและยืนยันค่าต่อสมาชิกเรียบร้อยแล้วครับ/);
-  assert.match(text, /ระบบอัปเดตสถานะรายการให้แล้วครับ/);
+test("acknowledgement policy distinguishes manual, safe replay, and pre-durable retry", () => {
+  const evidence = { sourceType: "user" };
+  const manual = buildDirectPaymentAcknowledgement(evidence, { manualReviewRequired: true });
+  const safe = buildDirectPaymentAcknowledgement(evidence, { deduped: true });
+  const retry = buildDirectPaymentAcknowledgement(evidence, { acknowledgement: "retry" });
+  assert.equal(manual, "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+  assert.equal(safe, "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ");
+  assert.equal(retry, "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ");
+  for (const text of [manual, safe, retry]) assert.doesNotMatch(text, /paid|verified|ยืนยัน(?:รับเงิน|การชำระ)/i);
 });
 
-test("group payment evidence never pushes a direct customer acknowledgement", async () => {
+test("acknowledgement is withheld before durable evidence and Telegram state cannot reclassify it", async () => {
+  let calls = 0;
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => { calls += 1; return new Response("", { status: 200 }); };
+  try {
+    const beforeDurable = await acknowledgeDirectSlipResult(
+      { LINE_CHANNEL_ACCESS_TOKEN: "line-token" },
+      { source: { type: "user" }, replyToken: "reply-before-durable" },
+      { captured: false, opsDelivery: { delivered: false } },
+    );
+    assert.equal(beforeDurable.skipped, true);
+    assert.equal(beforeDurable.reason, "no_durable_payment_evidence");
+    assert.equal(calls, 0);
+    assert.equal(buildDirectPaymentAcknowledgement({}, { captured: true, manualReviewRequired: true, opsDelivery: { delivered: false } }), "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("LINE Reply API failure is bounded and never falls back to Push", async () => {
+  const calls = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    calls.push(request.url);
+    return new Response("", { status: 503 });
+  };
+  try {
+    const result = await notifyDirectCustomerPaymentEvidence(
+      { LINE_CHANNEL_ACCESS_TOKEN: "line-token" },
+      { sourceType: "user" },
+      { captured: true, manualReviewRequired: true },
+      "reply-secret-token",
+    );
+    assert.deepEqual(result, { sent: false, status: 503, reason: "line_reply_503" });
+    assert.deepEqual(calls, ["https://api.line.me/v2/bot/message/reply"]);
+    assert.equal(JSON.stringify(result).includes("reply-secret-token"), false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("group payment evidence never sends a direct customer acknowledgement", async () => {
   const result = await notifyDirectCustomerPaymentEvidence(
     { LINE_CHANNEL_ACCESS_TOKEN: "line-token" },
     { sourceType: "group", analysis: {} },
     { deduped: false },
-    "U1234567890abcdef1234567890abcdef",
+    "reply-token-group",
   );
   assert.equal(result.skipped, true);
   assert.equal(result.reason, "not_direct_user");
@@ -458,11 +516,13 @@ test("LINE conflicting membership/service wording stays in Confirm and also rais
   assert.equal(h.messages[1].message_thread_id, 9);
 });
 
-test("direct LINE image is visually checked and tracked immediately without waiting for follow-up text", async () => {
+test("explicit payment context stores pending evidence without QR, OCR, or payments-worker mutation", async () => {
   const r2 = memoryR2();
   const previousFetch = globalThis.fetch;
   let proofPost = null;
   let proofPatch = null;
+  let extractorCalls = 0;
+  let paymentsCalls = 0;
   const lineUserId = "U1234567890abcdef1234567890abcdef";
   globalThis.fetch = async (input, init = {}) => {
     const request = input instanceof Request ? input : new Request(input, init);
@@ -496,33 +556,150 @@ test("direct LINE image is visually checked and tracked immediately without wait
     AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID: "renewals",
     AIRTABLE_TABLE_SESSIONS_ID: "sessions",
     INTERNAL_TOKEN: "internal-token",
-    SLIP_EXTRACTOR: { async fetch(request) {
-      if (new URL(request.url).pathname.endsWith("/qr")) return Response.json({ result: { payment_ref: "REF-DIRECT-1", amount_thb: 1000, paid_at: "2026-09-17T10:00:00+07:00", provider: "promptpay", confidence_score: 0.99 } });
-      return Response.json({ result: {} });
-    } },
-    PAYMENTS_WORKER: { async fetch(request) {
-      const body = await request.json();
-      assert.equal(body.source, "line_ofc_payment_ingress");
-      assert.equal(body.payment_stage, "membership");
-      assert.equal(body.member_email, "book@example.com");
-      return Response.json({ ok: true, entitlement_materialized: true, entitlement_record_id: "recEntitle123456", membership_expire_at: "2028-06-28T00:00:00.000Z", membership_term: "1_year_plus_180_days", membership_expiry_rule: "1_year_from_current_expiry_plus_care_back_private_standard_2026", membership_write_through: { promotion: { code: "care_back_private_standard_2026", bonus_days: 180 } } });
-    } },
+    SLIP_EXTRACTOR: { async fetch() { extractorCalls += 1; throw new Error("must_not_extract"); } },
+    PAYMENTS_WORKER: { async fetch() { paymentsCalls += 1; throw new Error("must_not_settle"); } },
   };
   const event = { type: "message", timestamp: Date.now(), webhookEventId: "evt-1", source: { type: "user", userId: lineUserId }, message: { type: "image", id: "img-1" } };
   try {
-    const result = await captureDirectUserImageEvidence(env, event, { recentPaymentContext: false });
+    const result = await captureDirectUserImageEvidence(env, event, { recentPaymentContext: true, paymentContextText: "ต่ออายุสมาชิกครับ ส่งสลิปให้" });
     assert.equal(result.captured, true);
-    assert.equal(result.trackingKind, "membership_renewal");
-    assert.equal(result.settlementStatus, "materialized");
-    assert.equal(result.verified, true);
+    assert.equal(result.settlementStatus, "pending");
+    assert.equal(result.verified, false);
+    assert.equal(result.manualReviewRequired, true);
+    assert.equal(result.acknowledgement, "manual");
     assert.equal(proofPost.fields.status, "pending");
-    assert.equal(proofPatch.fields.status, "verified");
-    assert.equal(JSON.parse(proofPost.fields.note).payment_intelligence.tracking_kind, "membership_renewal");
-    assert.equal(JSON.parse(proofPatch.fields.note).settlement.status, "materialized");
+    assert.equal(proofPatch, null);
+    const note = JSON.parse(proofPost.fields.note);
+    assert.equal(note.payment_truth, "unverified");
+    assert.equal(note.official_verification_required, true);
+    assert.equal(note.may_mark_paid, false);
+    assert.equal(note.may_award_points, false);
+    assert.equal(note.may_extend_membership, false);
+    assert.equal(note.may_confirm_session, false);
+    assert.equal(note.extraction.method, "none");
+    assert.equal(extractorCalls, 0);
+    assert.equal(paymentsCalls, 0);
   } finally {
     globalThis.fetch = previousFetch;
   }
   assert.equal(r2.store.size, 1);
+});
+
+test("signed direct intake replies MANUAL only after private R2 and pending Airtable persistence", async () => {
+  const order = [];
+  const r2 = memoryR2();
+  const originalPut = r2.put.bind(r2);
+  r2.put = async (...args) => { order.push("r2_put"); return originalPut(...args); };
+  const previousFetch = globalThis.fetch;
+  let proofFields = null;
+  let replyBody = null;
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname === "api-data.line.me") { order.push("line_download"); return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }); }
+    if (url.hostname === "api.line.me" && url.pathname.startsWith("/v2/bot/profile/")) return Response.json({ displayName: "Fixture" });
+    if (request.url === "https://api.line.me/v2/bot/message/reply") { order.push("line_reply"); replyBody = await request.json(); return new Response("", { status: 200 }); }
+    if (url.hostname !== "api.airtable.com") throw new Error(`unexpected_fetch:${request.method}:${request.url}`);
+    const table = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] || "");
+    if (request.method === "GET" && table === "inbox") return Response.json({ records: [{ id: "recContext", fields: { admin_note: "ต่ออายุสมาชิกครับ ส่งสลิปให้" } }] });
+    if (request.method === "GET") return Response.json({ records: [] });
+    if (request.method === "POST" && table === "proofs") {
+      order.push("airtable_proof");
+      proofFields = (await request.json()).fields;
+      return Response.json({ id: "recProofDurable", fields: proofFields });
+    }
+    throw new Error(`unexpected_airtable:${request.method}:${table}`);
+  };
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+    LINE_SLIP_EVIDENCE: r2,
+    AIRTABLE_BASE_ID: "appTestBase000001",
+    AIRTABLE_API_KEY: "token",
+    AIRTABLE_TABLE_CONSOLE_INBOX_ID: "inbox",
+    AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "proofs",
+    AIRTABLE_TABLE_MEMBERS_ID: "members",
+    AIRTABLE_TABLE_CLIENTS_ID: "clients",
+    AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID: "renewals",
+    AIRTABLE_TABLE_SESSIONS_ID: "sessions",
+    SLIP_EXTRACTOR: { async fetch() { throw new Error("must_not_extract"); } },
+    PAYMENTS_WORKER: { async fetch() { throw new Error("must_not_settle"); } },
+  };
+  const payload = JSON.stringify({ events: [{ type: "message", mode: "active", timestamp: Date.now(), webhookEventId: "evt-durable", replyToken: "reply-durable", source: { type: "user", userId: "U-durable" }, message: { type: "image", id: "img-durable" } }] });
+  const signature = await lineSignature(payload, env.LINE_CHANNEL_SECRET);
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", { method: "POST", headers: { "x-line-signature": signature }, body: payload }), env);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+  assert.equal(proofFields.status, "pending");
+  assert.equal(replyBody.replyToken, "reply-durable");
+  assert.equal(replyBody.messages[0].text, "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+  assert.ok(order.indexOf("line_download") < order.indexOf("r2_put"));
+  assert.ok(order.indexOf("r2_put") < order.indexOf("airtable_proof"));
+  assert.ok(order.indexOf("airtable_proof") < order.indexOf("line_reply"));
+});
+
+test("durable replay uses SAFE acknowledgement without downloading or duplicating evidence", async () => {
+  const r2 = memoryR2();
+  const previousFetch = globalThis.fetch;
+  let downloads = 0;
+  let writes = 0;
+  let replyBody = null;
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname === "api-data.line.me") { downloads += 1; throw new Error("must_not_download"); }
+    if (request.url === "https://api.line.me/v2/bot/message/reply") { replyBody = await request.json(); return new Response("", { status: 200 }); }
+    if (url.hostname !== "api.airtable.com") throw new Error(`unexpected_fetch:${request.method}:${request.url}`);
+    const table = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] || "");
+    if (request.method === "GET" && table === "inbox") return Response.json({ records: [{ id: "recContext", fields: { admin_note: "โอนแล้ว ส่งสลิปให้" } }] });
+    if (request.method === "GET" && table === "proofs") return Response.json({ records: [{ id: "recExisting", fields: { proof_id: "line-existing", status: "pending" } }] });
+    if (request.method === "POST") { writes += 1; throw new Error("must_not_write"); }
+    return Response.json({ records: [] });
+  };
+  const env = { LINE_CHANNEL_SECRET: "line-secret", LINE_CHANNEL_ACCESS_TOKEN: "line-token", LINE_SLIP_EVIDENCE: r2, AIRTABLE_BASE_ID: "appTestBase000001", AIRTABLE_API_KEY: "token", AIRTABLE_TABLE_CONSOLE_INBOX_ID: "inbox", AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "proofs" };
+  const payload = JSON.stringify({ events: [{ type: "message", mode: "active", timestamp: Date.now(), webhookEventId: "evt-replay", replyToken: "reply-replay", source: { type: "user", userId: "U-replay" }, message: { type: "image", id: "img-replay" } }] });
+  const signature = await lineSignature(payload, env.LINE_CHANNEL_SECRET);
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", { method: "POST", headers: { "x-line-signature": signature }, body: payload }), env);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+  assert.equal(downloads, 0);
+  assert.equal(writes, 0);
+  assert.equal(r2.store.size, 0);
+  assert.equal(replyBody.messages[0].text, "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ");
+});
+
+test("pre-durable download failure replies RETRY and creates no evidence", async () => {
+  const r2 = memoryR2();
+  const previousFetch = globalThis.fetch;
+  let proofWrites = 0;
+  let replyBody = null;
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname === "api-data.line.me") return new Response("unavailable", { status: 503 });
+    if (request.url === "https://api.line.me/v2/bot/message/reply") { replyBody = await request.json(); return new Response("", { status: 200 }); }
+    if (url.hostname !== "api.airtable.com") throw new Error(`unexpected_fetch:${request.method}:${request.url}`);
+    const table = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] || "");
+    if (request.method === "GET" && table === "inbox") return Response.json({ records: [{ id: "recContext", fields: { admin_note: "โอนแล้ว ส่งสลิปให้" } }] });
+    if (request.method === "GET") return Response.json({ records: [] });
+    if (request.method === "POST") { proofWrites += 1; return Response.json({ id: "unexpected" }); }
+    throw new Error(`unexpected_airtable:${request.method}:${table}`);
+  };
+  const env = { LINE_CHANNEL_SECRET: "line-secret", LINE_CHANNEL_ACCESS_TOKEN: "line-token", LINE_SLIP_EVIDENCE: r2, AIRTABLE_BASE_ID: "appTestBase000001", AIRTABLE_API_KEY: "token", AIRTABLE_TABLE_CONSOLE_INBOX_ID: "inbox", AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "proofs" };
+  const payload = JSON.stringify({ events: [{ type: "message", mode: "active", timestamp: Date.now(), webhookEventId: "evt-retry", replyToken: "reply-retry", source: { type: "user", userId: "U-retry" }, message: { type: "image", id: "img-retry" } }] });
+  const signature = await lineSignature(payload, env.LINE_CHANNEL_SECRET);
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", { method: "POST", headers: { "x-line-signature": signature }, body: payload }), env);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+  assert.equal(proofWrites, 0);
+  assert.equal(r2.store.size, 0);
+  assert.equal(replyBody.messages[0].text, "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ");
 });
 
 test("non-payment follow-up does not promote a direct image candidate", async () => {

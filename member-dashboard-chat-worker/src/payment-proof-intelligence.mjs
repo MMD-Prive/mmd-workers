@@ -272,9 +272,50 @@ function choosePurpose({ membership, service, contextText, renewal }) {
   return service || null;
 }
 
-export async function analyzeProductionPaymentProof({ env = {}, image, lineUserId = "", contextText = "" } = {}) {
-  const extraction = await extractPaymentEvidence(env, image);
-  const classification = classifyPaymentImageEvidence(extraction);
+export async function analyzeProductionPaymentProof({
+  env = {},
+  image,
+  lineUserId = "",
+  contextText = "",
+  // Fail closed: LINE OFC intake must opt in explicitly before any future
+  // QR/OCR rollout. The current production safety contract keeps this false.
+  automatedExtraction = false,
+  paymentContextConfirmed = false,
+} = {}) {
+  const extraction = automatedExtraction
+    ? await extractPaymentEvidence(env, image)
+    : {
+        payment_ref: "",
+        amount_thb: null,
+        paid_at: "",
+        payer_name: "",
+        sender_bank: "",
+        receiver_bank: "",
+        provider: "",
+        account_number: "",
+        account_name: "",
+        account_bank: "",
+        confidence_score: 0,
+        extraction_method: "none",
+        extraction_error: "automated_extraction_disabled",
+      };
+  const classification = automatedExtraction
+    ? classifyPaymentImageEvidence(extraction)
+    : paymentContextConfirmed
+      ? {
+          image_class: "payment_evidence_candidate",
+          gate: "accept",
+          is_payment_evidence: true,
+          confidence: 0,
+          reason: "explicit_payment_context_manual_review",
+        }
+      : {
+          image_class: "uncertain",
+          gate: "hold",
+          is_payment_evidence: false,
+          confidence: 0,
+          reason: "automated_extraction_disabled_without_payment_context",
+        };
   if (!classification.is_payment_evidence) return { accepted: false, extraction, classification, links: {}, customer: null, payment_intelligence: null, review_summary: null, ops_route: null };
 
   const membersTable = clean(env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || "Members");
