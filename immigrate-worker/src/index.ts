@@ -2951,6 +2951,17 @@ function renderAdminLoginPage(request: Request): Response {
         color: var(--muted);
         font-size: .92rem;
       }
+    
+      /* Match the internal Control Room palette without changing the login gate. */
+      :root { color-scheme: light; --bg:#e8eaee; --panel:#fafbfc; --line:rgba(40,44,49,.18); --text:#2b3036; --muted:#4c5661; --gold:#aa4b26; --rose:#a03630; }
+      body { background:var(--bg); font-family:"LINE Seed Sans TH","Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+      .shell { background:var(--panel); box-shadow:0 12px 36px -20px rgba(40,44,49,.3); }
+      .kicker,label { color:var(--gold); }
+      input { background:#fff; color:var(--text); border-color:rgba(40,44,49,.28); }
+      input:focus-visible,button:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+      code { background:#f0f2f4; }
+      button { border-color:var(--gold); background:var(--gold); color:#fff; }
+      .error { color:#953b32; }
     </style>
   </head>
   <body>
