@@ -6,6 +6,11 @@ const SELECT = '/v1/admin/models/drive-select';
 const PARTNERS = '/v1/admin/partners/lookup';
 const clean = (value,max=240) => String(value ?? '').trim().slice(0,max);
 const rec = value => /^rec[A-Za-z0-9]{14,24}$/.test(value || '');
+function modelPhotos(fields={}) {
+  const items = [...(Array.isArray(fields.profile_photo) ? fields.profile_photo : []), fields["Public Image URL"]];
+  return [...new Set(items.map(item => clean(item?.url || item?.thumbnails?.large?.url || item,3000))
+    .filter(url => /^https:\/\//i.test(url)))].slice(0,6);
+}
 const json = (body,status=200) => Response.json(body,{status,headers:{'cache-control':'private, no-store','referrer-policy':'no-referrer'}});
 export function isCreateJobDriveDiscoveryRequest(request) {
   const url = new URL(request.url), path = url.pathname.replace(/\/+$/,'');
@@ -23,7 +28,8 @@ export async function handleCreateJobDriveDiscovery(request,env) {
     const result = await materializeApprovedDriveModel(env,body?.drive_folder_id,actor);
     if (!result.ok) return json({ok:false,error:result.error},result.status || 503);
     const f = result.record.fields || {};
-    return json({ok:true,item:{model_id:result.record.id,model_name:clean(f.working_name || f.nickname || result.folder.folder_name),model_lookup_key:clean(f.unique_key),drive_folder_id:result.folder.drive_folder_id,drive_folder_url:result.folder.drive_folder_url,source:'drive',source_kind:null,partner_name:null,partner_record_id:null,status:clean(f.status),materialized:true},materialized:result.materialized});
+    const photos = modelPhotos(f);
+    return json({ok:true,item:{profile_photos:photos,profile_image_url:photos[0] || '',model_id:result.record.id,model_name:clean(f.working_name || f.nickname || result.folder.folder_name),model_lookup_key:clean(f.unique_key),drive_folder_id:result.folder.drive_folder_id,drive_folder_url:result.folder.drive_folder_url,source:'drive',source_kind:null,partner_name:null,partner_record_id:null,status:clean(f.status),materialized:true},materialized:result.materialized});
   }
   if (request.method !== 'GET') return json({ok:false,error:'method_not_allowed'},405);
   if (path === SEARCH) {
