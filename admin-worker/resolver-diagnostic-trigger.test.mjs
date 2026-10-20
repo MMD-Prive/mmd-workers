@@ -188,7 +188,7 @@ test("existing GET and HEAD /internal/admin behavior remains unchanged", async (
 test("diagnostic button page requires the existing credential-bound session and makes no RPC", async () => {
   const service = rpc();
   const environment = env(service);
-  const path = "/internal/admin/member-resolver-check";
+  const path = "/internal/admin/work/member-resolver-check";
   for (const Cookie of ["", "mmd_admin_gate_v1=forged.payload", await signedCookie({ auth_method: "legacy" })]) {
     const response = await request(path, { headers: { Cookie } }, environment);
     assert.equal(response.status, 404);
