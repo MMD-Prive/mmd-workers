@@ -1,4 +1,5 @@
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
+import { normalizeModelDecline } from "../../shared/model-decline-options.mjs";
 import { notifyTravelEvent } from "./model-travel-notification.js";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
@@ -3006,6 +3007,12 @@ async function handleModelSessionAction(req, env) {
     return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
   }
 
+  const decline = action === "decline_job" ? normalizeModelDecline(body) : null;
+  if (decline && !decline.ok) return modelSessionJson({ ok: false, error: decline.error }, 400);
+  if (action !== "decline_job" && Object.prototype.hasOwnProperty.call(body || {}, "availability_options")) {
+    return modelSessionJson({ ok: false, error: "decline_options_invalid" }, 400);
+  }
+
   const reread = await resolveModelSessionContext(req, env, body);
   if (!reread.ok) return modelSessionJson({ ok: false, error: reread.error }, reread.status);
 
@@ -3032,9 +3039,9 @@ async function handleModelSessionAction(req, env) {
   }
 
   const patch = { [stateInfo.field]: transition.to };
-  if (action === "decline_job" && str(body?.reason)) {
+  if (action === "decline_job" && decline.reason) {
     const reasonField = str(env.AT_SESSIONS__DECLINE_REASON || "decline_reason");
-    patch[reasonField] = str(body.reason).slice(0, 500);
+    patch[reasonField] = decline.reason;
   }
 
   const updated = await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);

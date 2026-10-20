@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { travelClientBundle, travelClientCss } from '../shared/model-travel-client-source.mjs';
 import { minify_sync } from 'terser';
 import CleanCSS from 'clean-css';
+import { normalizeModelDecline } from '../shared/model-decline-options.mjs';
+import { openModelDecline } from '../webflow/sigil/model/model-console-decline-options.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
@@ -35,10 +37,16 @@ export function assetManifest() {
     return { file, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   }) };
 }
+// A separate presentation embed avoids overflowing the existing Console Footer.
+export function buildConsoleDeclineEmbed() {
+  const code = '(()=>{const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';})();';
+  return '<script>' + minify_sync(code, { compress: true, mangle: true }).code + '</script>';
+}
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const out = process.argv[2];
   if (!out) throw new Error('Provide an explicit local output directory');
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, 'model-console-atelier-v3.embed.html'), buildConsoleEmbed());
   fs.writeFileSync(path.join(out, 'asset-manifest.json'), JSON.stringify(assetManifest(), null, 2) + '\n');
+  fs.writeFileSync(path.join(out, 'model-console-decline-options.embed.html'), buildConsoleDeclineEmbed());
 }

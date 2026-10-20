@@ -64,7 +64,7 @@ test('render hides an unknown progress indicator and does not activate a stage',
 });
 
 test('submission uses canonical state even when legacy fields claim work may start', async () => {
-  const actCode = source.slice(source.indexOf('async function act(a)'), source.indexOf('function support(k)'));
+  const actCode = source.slice(source.indexOf('async function act(a,proposal)'), source.indexOf('function support(k)'));
   const next = vm.runInNewContext('(' + source.match(/next=(\{.*?\}),v=/)[1] + ')');
   for (const normalized of ['met_customer', 'final_payment_pending', 'unknown', 'final_payment_confirmed']) {
     const requests = [];
