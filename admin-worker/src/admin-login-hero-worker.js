@@ -52,6 +52,8 @@ import {
   isOwnerPrivateJobGrantCreateRequest,
 } from "./owner-private-job-grant-create.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { handleVerification } from "./mms-partner-line-verification.mjs";
+import { APP_JS, OWNER_HTML } from "./mms-partner-line-ui.mjs";
 import { applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
 import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
 import {
@@ -440,6 +442,14 @@ const adminLoginHeroWorker = {
 export default {
   ...adminLoginHeroWorker,
   async fetch(request, env, ctx) {
+    // LINE intake authenticates the LINE token itself. Owner queue/review still
+    // require the existing signed Owner session inside this exact-path handler.
+    const verification = await handleVerification(request, env, {
+      readOwner: readCredentialBoundAdminActor,
+      appJs: APP_JS,
+      ownerHtml: OWNER_HTML,
+    });
+    if (verification) return verification;
     return decorateInternalSilverTheme(request, await adminLoginHeroWorker.fetch(request, env, ctx));
   },
 };
