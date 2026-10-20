@@ -185,10 +185,12 @@ test('real owner checker gates mock release writes, including revoked approval a
       else body={id:456,name:environmentName,can_admins_bypass:false,protection_rules:[{type:'required_reviewers',prevent_self_review:false,reviewers:[{type:'User',reviewer:owner}]}],deployment_branch_policy:{protected_branches:false,custom_branch_policies:true}};
       return {status:200,json:async()=>body};
     };
-    f.io.approve=async()=>{checks++;await verifyOwnerApproval(env,request);};
+    f.io.approve=async diagnostic=>{checks++;await verifyOwnerApproval(env,request,{diagnostic});};
     if(scenario==='approved') await releaseMemberPagesCodeOnly(f.io);
     else await assert.rejects(releaseMemberPagesCodeOnly(f.io));
     assert.equal(f.writes(),expectedWrites,scenario);
+    if (scenario === 'absent' || scenario === 'revoked_before_upload') assert.equal(f.receipts.at(-1).diagnostic.reason, 'APPROVAL_RECEIPT_INVALID');
+    if (scenario === 'rerun') assert.equal(f.receipts.at(-1).diagnostic.reason, 'OWNER_INPUT_INVALID');
     assert.ok(f.calls.every(call=>call.method==='GET'||[ROOT+'/versions?bindings_inherit=strict',ROOT+'/deployments'].includes(call.path)));
   }
 });
@@ -567,4 +569,40 @@ test('startup source evidence preserves V4 and names the exact two-file startup 
   assert.deepEqual(evidence.source_scope.startup_delta,{base_sha:CODE_ONLY_STARTUP_BASE_SHA,paths:CODE_ONLY_STARTUP_PATHS});
   assert.deepEqual(evidence.source_scope.exact_test_only_bridge,{from:CODE_ONLY_GRAPHICS_SOURCE_SHA,to:CODE_ONLY_STARTUP_BASE_SHA,paths:Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS)});
   assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_STARTUP_BASE_SHA,CODE_ONLY_SOURCE_SHA].join(' ')));
+});
+
+
+test('safe preflight receipt identifies owner and source boundaries and never stores raw errors',async()=>{
+ const secret='SECRET_TOKEN=private-value; cookie=private-cookie; customer=private-client';
+ for(const [stage,reason] of [['OWNER_MAIN_CHECK','MAIN_DRIFT'],['OWNER_APPROVAL_HTTP','EVIDENCE_HTTP_STATUS'],
+  ['SOURCE_CHECKOUT','CHECKOUT_INVALID'],['SOURCE_HISTORY','SOURCE_HISTORY_INVALID'],['SOURCE_STARTUP_BRIDGE','STARTUP_BRIDGE_INVALID']]){
+  const f=fixture();f.io.approve=async mark=>{mark(stage);throw Error(secret);};
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));const receipt=f.receipts.at(-1);
+  assert.equal(receipt.phase,'stopped');assert.equal(receipt.stopped_after,'preflight');
+  assert.deepEqual(receipt.diagnostic,{stage,reason});assert.deepEqual(f.calls,[]);assert.equal(f.writes(),0);
+  assert.doesNotMatch(JSON.stringify(receipt),/SECRET_TOKEN|private-value|cookie|private-client|stack|message/);
+ }
+});
+
+test('preflight diagnostics identify baseline, source check and bundle failures before writes',async()=>{
+ for(const [stage,reason,change] of [
+  ['CF_DEPLOYMENT_READ','DEPLOYMENT_READ_FAILED',f=>{f.io.call=async()=>{throw Error('private response');};}],
+  ['CF_BASELINE_CHECK','BASELINE_MISMATCH',f=>{f.io.expectedVersion=id(99);}],
+  ['SOURCE_STARTUP_SCOPE','STARTUP_SCOPE_INVALID',f=>{f.io.sourceCheck=async mark=>{mark('SOURCE_STARTUP_SCOPE');throw Error('private path');};}],
+  ['BUNDLE_BUILD','BUNDLE_BUILD_FAILED',f=>{f.io.bundle=async()=>{throw Error('private bundler output');};}],
+  ['BUNDLE_CHECK','BUNDLE_INVALID',f=>{f.io.bundle=async()=>new Uint8Array();}],
+ ]){
+  const f=fixture();change(f);await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.deepEqual(f.receipts.at(-1).diagnostic,{stage,reason});assert.equal(f.writes(),0);
+  assert.doesNotMatch(JSON.stringify(f.receipts),/private response|private path|private bundler output/);
+ }
+});
+
+test('actual checkout guards publish safe source stages and retain their rejection',()=>{
+ for(const [options,stage] of [[{dirtyDirectory:'/release-source'},'SOURCE_CHECKOUT'],[{missingHistory:true},'SOURCE_HISTORY'],
+  [{changedBridge:true},'SOURCE_RUNTIME_BRIDGE'],[{startupBlobDrift:true},'SOURCE_STARTUP_BRIDGE'],[{startupExtraPaths:['package.json']},'SOURCE_STARTUP_SCOPE']]){
+  const f=checkoutFixture(options),stages=[];
+  assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,{...f,diagnostic:s=>stages.push(s)}));
+  assert.equal(stages.at(-1),stage);
+ }
 });
