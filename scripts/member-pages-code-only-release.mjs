@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { verifyOwnerApproval } from './member-pages-owner-approval.mjs';
+import { verifyOwnerApproval, createSafePreflightDiagnostics } from './member-pages-owner-approval.mjs';
 
 export const ACCOUNT = 'b176eda1172b741fd2e58904cc9d77c5';
 export const ZONE = '2d62396174fa2ddadbbcd0e8cf0f3367';
@@ -129,10 +129,12 @@ export function validateStartupBridge(paths, readBlob) {
 // Release tooling may advance on main; the deployed application source cannot.
 export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
   releaseDirectory = process.cwd(),
+  diagnostic = () => {},
   git = (cwd, ...args) => execFileSync('git', args, {
     cwd, encoding:'utf8', stdio:['ignore','pipe','ignore'],
   }).trim(),
 } = {}) {
+  diagnostic('SOURCE_CHECKOUT');
   assert.match(releaseSha || '', /^[a-f0-9]{40}$/);
   assert.ok(sourceDirectory, 'separate pinned source checkout required');
   assert.notEqual(resolve(sourceDirectory), resolve(releaseDirectory), 'source must be separate from release tooling');
@@ -142,27 +144,33 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
     assert.equal(git(directory, 'status', '--porcelain', '--untracked-files=all', '--ignored'), '', 'dirty checkout');
   }
   const sourceSha = git(sourceDirectory, 'rev-parse', 'HEAD');
+  diagnostic('SOURCE_HISTORY');
   validateCodeOnlySourceHistory(sourceSha, (ancestor, target) => {
     git(sourceDirectory, 'merge-base', '--is-ancestor', ancestor, target);
     return true;
   });
   git(releaseDirectory, 'merge-base', '--is-ancestor', sourceSha, releaseSha);
   // First retain the complete original #2522/#2523 review boundary.
+  diagnostic('SOURCE_BASE_SCOPE');
   const previousScope = validateCodeOnlySourcePaths(
     git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_BASE_SHA, CODE_ONLY_PREVIOUS_SOURCE_SHA).split('\n').filter(Boolean),
     {sha:CODE_ONLY_PREVIOUS_SOURCE_SHA, readBlob:(reference, path)=>git(sourceDirectory, 'rev-parse', reference+':'+path)});
   // Other Workers, presentation assets and release tooling advanced in main.
   // They are not accepted as runtime changes: prove the entire permitted input
   // trees and dependency/config controls stayed identical before V4 was added.
+  diagnostic('SOURCE_RUNTIME_BRIDGE');
   git(sourceDirectory, 'merge-base', '--is-ancestor', CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA);
   assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA,
     '--', ...CODE_ONLY_RUNTIME_BOUNDARIES), '', 'runtime dependency/config drift before Graphics V4');
+  diagnostic('SOURCE_GRAPHICS_SCOPE');
   const graphicsPaths = validateGraphicsSourcePaths(
     git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA).split('\n').filter(Boolean));
+  diagnostic('SOURCE_STARTUP_BRIDGE');
   git(sourceDirectory, 'merge-base', '--is-ancestor', CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA);
   const bridgePaths = git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_GRAPHICS_SOURCE_SHA,
     CODE_ONLY_STARTUP_BASE_SHA, '--', ...CODE_ONLY_RUNTIME_BOUNDARIES).split('\n').filter(Boolean);
   validateStartupBridge(bridgePaths, (reference, path) => git(sourceDirectory, 'rev-parse', reference+':'+path));
+  diagnostic('SOURCE_STARTUP_SCOPE');
   const startupPaths = git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_STARTUP_BASE_SHA, sourceSha).split('\n').filter(Boolean);
   assert.deepEqual([...startupPaths].sort(), CODE_ONLY_STARTUP_PATHS, 'startup delta must contain exactly the two reviewed files');
   const sourceScope = {...previousScope,
@@ -171,6 +179,7 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
     startup_delta:{base_sha:CODE_ONLY_STARTUP_BASE_SHA, paths:startupPaths},
     exact_test_only_bridge:{from:CODE_ONLY_GRAPHICS_SOURCE_SHA, to:CODE_ONLY_STARTUP_BASE_SHA, paths:bridgePaths},
     unchanged_runtime_bridge:{from:CODE_ONLY_PREVIOUS_SOURCE_SHA, to:CODE_ONLY_GRAPHICS_BASE_SHA}};
+  diagnostic('SOURCE_CONFIG');
   assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_BASE_SHA, sourceSha, '--', 'member-pages-worker/wrangler.toml'), '',
     'Worker config/migrations changed; separate release review required');
   return { method:'separate-pinned-source-checkout', source_sha:sourceSha, release_sha:releaseSha,
@@ -260,28 +269,36 @@ export function createTransport(token, request = fetch) {
 }
 
 export async function releaseMemberPagesCodeOnly(io) {
+  const diagnostics = createSafePreflightDiagnostics();
   const state = { phase: 'preflight', worker: 'member-pages-worker', source_sha: io.sha, release_sha:io.releaseSha };
   const save = phase => { state.phase = phase; io.save({ ...state }); };
   try {
-    await io.approve();
+    await io.approve(diagnostics.mark);
+    diagnostics.mark('RELEASE_SOURCE_PIN');
     assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact Graphics V4 startup merge');
     assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
+    diagnostics.mark('CF_DEPLOYMENT_READ');
     const deployment = (await call('/deployments'))?.deployments?.[0];
+    diagnostics.mark('CF_BASELINE_CHECK');
     const current = activeVersion(deployment);
     assert.equal(current, io.expectedVersion, 'active version differs from approved preflight');
     assert.equal(deployment.id, io.expectedDeployment, 'active deployment differs from approved preflight');
+    diagnostics.mark('CF_VERSION_READ');
     const baseline = await call('/versions/' + current);
     assert.equal(baseline.id, current, 'active version readback mismatch');
+    diagnostics.mark('CF_CONFIG_CHECK');
     const config = versionConfiguration(baseline);
     const metadata = uploadMetadata(baseline, io.sha);
     state.configuration_digest = digest(config);
+    diagnostics.mark('CF_SETTINGS_READ');
     state.settings_digest = digest(await call('/script-settings'));
     const boundary = async () => ({
       routes: ordered(await io.call(`/zones/${ZONE}/workers/routes`)),
       schedules: ordered((await call('/schedules'))?.schedules || []),
       subdomain: await call('/subdomain'),
     });
+    diagnostics.mark('CF_BOUNDARY_READ');
     const environment = await boundary();
     state.boundary_digest = digest(environment);
     const unchanged = async (expectedDeployment, latestVersion) => {
@@ -292,15 +309,20 @@ export async function releaseMemberPagesCodeOnly(io) {
       assert.equal(digest(await call('/script-settings')), state.settings_digest, 'Worker settings drift');
       assert.equal(digest(await boundary()), state.boundary_digest, 'routes, schedules, or subdomain drift');
     };
+    diagnostics.mark('CF_LATEST_CHECK');
     assert.equal((await call('/versions'))?.items?.[0]?.id, current, 'latest version is not the active version');
+    diagnostics.mark('CF_BASELINE_RECHECK');
     await unchanged(deployment, current);
     state.baseline_version = current;
     state.baseline_deployment = deployment.id;
-    state.source_evidence = await io.sourceCheck();
+    state.source_evidence = await io.sourceCheck(diagnostics.mark);
+    diagnostics.mark('BUNDLE_BUILD');
     const module = await io.bundle(baseline);
+    diagnostics.mark('BUNDLE_CHECK');
     assert.ok(module instanceof Uint8Array && module.byteLength > 0, 'compiled Worker module required');
     state.bundle_sha256 = createHash('sha256').update(module).digest('hex');
-    await io.approve();
+    await io.approve(diagnostics.mark);
+    diagnostics.mark('CF_BASELINE_RECHECK');
     await unchanged(deployment, current);
 
     const form = new FormData();
@@ -340,6 +362,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     return { ...state, phase: 'complete' };
   } catch (error) {
     state.stopped_after = state.phase;
+    if (state.phase === 'preflight') state.diagnostic = diagnostics.snapshot();
     save('stopped');
     throw error;
   }
@@ -387,9 +410,9 @@ async function main() {
   assert.equal(process.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong Cloudflare account');
   const releaseSha = process.env.GITHUB_SHA;
   const sourceDirectory = process.env.SOURCE_DIRECTORY;
-  const approve = async () => {
-    await verifyOwnerApproval(process.env);
-    inspectCodeOnlyCheckouts(releaseSha, sourceDirectory);
+  const approve = async diagnostic => {
+    await verifyOwnerApproval(process.env, fetch, {diagnostic});
+    inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {diagnostic});
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir,'member-pages-code-only-receipt.json');
@@ -400,7 +423,7 @@ async function main() {
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async () => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory),
+    sourceCheck: async diagnostic => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {diagnostic}),
     bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
   });
