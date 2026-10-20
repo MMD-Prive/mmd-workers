@@ -81,6 +81,7 @@
       time: "เวลา",
       location: "สถานที่",
       map: "เปิด Google Maps ↗",
+      remark: "ข้อความจาก MMD ถึงคุณ",
       readyKicker: "พร้อมสำหรับคืนนี้?",
       loadingStatus: "กำลังโหลดรายละเอียดงาน…",
       retry: "ลองใหม่",
@@ -128,6 +129,7 @@
       time: "Time",
       location: "Location",
       map: "Open Google Maps ↗",
+      remark: "Message from MMD for you",
       readyKicker: "READY FOR TONIGHT?",
       loadingStatus: "Loading job details…",
       retry: "Try again",
@@ -175,6 +177,7 @@
       time: "时间",
       location: "地点",
       map: "打开 Google Maps ↗",
+      remark: "MMD 给你的留言",
       readyKicker: "今晚准备好了吗？",
       loadingStatus: "正在加载工作详情…",
       retry: "重试",
@@ -684,6 +687,27 @@
       if (el.vipRow) el.vipRow.hidden = false;
     } else if (el.vipRow) {
       el.vipRow.hidden = true;
+    }
+    const remark = str(data.model_remark).slice(0, 2000);
+    const rowsContainer = root.querySelector(".mm15__rows");
+    if (rowsContainer) {
+      let remarkRow = rowsContainer.querySelector("[data-m-model-remark]");
+      if (!remarkRow && remark) {
+        remarkRow = document.createElement("div");
+        remarkRow.setAttribute("data-m-model-remark", "1");
+        const label = document.createElement("span");
+        label.setAttribute("data-m-model-remark-label", "1");
+        const value = document.createElement("strong");
+        value.setAttribute("data-m-model-remark-text", "1");
+        value.style.whiteSpace = "pre-wrap";
+        remarkRow.append(label, value);
+        rowsContainer.appendChild(remarkRow);
+      }
+      if (remarkRow) {
+        remarkRow.hidden = !remark;
+        remarkRow.querySelector("[data-m-model-remark-label]").textContent = dict().remark;
+        remarkRow.querySelector("[data-m-model-remark-text]").textContent = remark;
+      }
     }
     const mapUrl = str(data.google_map_url);
     if (el.map && /^https:\/\//i.test(mapUrl)) {
