@@ -6214,10 +6214,11 @@ async function createAdminJob(env, body) {
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const modelRemark = str(jobDetails.brief || "").slice(0, 2000);
+  const modelDirections = { text: str(jobDetails.brief || "").slice(0, 2000), meeting_point: str(jobDetails.meeting_point || "").slice(0, 500) };
   const baseNote = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
   // Stored in the internal session note; only the model confirmation endpoint extracts this marker.
-  const note = modelRemark ? `${baseNote}\n[MMD Model Remark v1] ${JSON.stringify({ text: modelRemark })}` : baseNote;
+  const note = modelDirections.text || modelDirections.meeting_point
+    ? `${baseNote}\n[MMD Model Remark v1] ${JSON.stringify(modelDirections)}` : baseNote;
   const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
   if (!["deposit", "full"].includes(requested_payment_type)) {
     throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
