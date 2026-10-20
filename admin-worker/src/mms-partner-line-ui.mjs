@@ -1,4 +1,5 @@
 import { ROOT, LIFF, VERIFY_RUNTIME } from './mms-partner-line-verification.mjs';
+import { DIAGNOSTIC_TRANSPORT } from './mms-partner-diagnostic-transport.mjs';
 // Function.toString() crosses the Worker/browser boundary. keepNames builds
 // insert __name calls into nested functions; the browser needs its own helper.
 // Keep this as source text so the build cannot hoist it back into Worker scope.
@@ -59,18 +60,14 @@ export function partnerApp() {
     if(shopConflict){diagnosticStatus.textContent='ข้อมูลร้านจากลิงก์ไม่ตรงกัน · ยังไม่บันทึกจุดตรวจ';return false;}
     const allowed=['LINE_OPENID_SCOPE_MISSING','LINE_OPENID_CONSENT_REQUIRED','LINE_SESSION_INCOMPLETE','OK','NETWORK_ERROR','SDK_ERROR','LINE_TOKEN_REQUIRED','LINE_TOKEN_INVALID','REGISTRY_WRITE_UNAVAILABLE','REGISTRY_UNAVAILABLE','REGISTRY_CONFLICT','REGISTRY_INCOMPLETE','SHOP_IDENTITY_CONFLICT','SHOP_BLOCKED','PARTNER_STORE_UNAVAILABLE','ACCOUNT_DENIED','CLAIM_CONFLICT'];
     diagnosticStatus.textContent='กำลังบันทึกจุดตรวจ · '+stage;
-    try{
-      const r=await fetch(api+'/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({shop_key:key,stage,code:code==='VERIFY_RUNTIME_V5'||allowed.includes(code)?code:'UNEXPECTED'}),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',keepalive:true,signal:AbortSignal.timeout(4000)});
-      const p=await r.json();
-      if(!r.ok||p.ok!==true||p.shop_key!==key||p.stage!==stage)throw Error('DIAGNOSTICS_UNAVAILABLE');
-      if(sequence===diagnosticSequence&&key===shop.value)diagnosticStatus.textContent='บันทึกจุดตรวจแล้ว · '+(key==='kalima'?'Kalima':'Relax Spa')+' · '+stage+' · ไม่ใช่การส่งคำขอ';
-      return true;
-    }catch{
-      if(sequence===diagnosticSequence&&key===shop.value)diagnosticStatus.textContent='ยังยืนยันการบันทึกจุดตรวจไม่ได้ · '+stage+' · ไม่ได้หมายความว่าส่งคำขอแล้ว';
-      return false;
+    const outcome=await diagnosticEvent(api+'/event',{shop_key:key,stage,code:code==='VERIFY_RUNTIME_V6'||allowed.includes(code)?code:'UNEXPECTED'});
+    if(sequence===diagnosticSequence&&key===shop.value){
+      diagnosticStatus.dataset.result=outcome.reason;
+      diagnosticStatus.textContent=outcome.ok?'บันทึกจุดตรวจแล้ว · '+(key==='kalima'?'Kalima':'Relax Spa')+' · '+stage+' · ไม่ใช่การส่งคำขอ':'ยังยืนยันการบันทึกจุดตรวจไม่ได้ · '+diagnosticFailureText(outcome.reason)+' · '+stage+' · ไม่ได้หมายความว่าส่งคำขอแล้ว';
     }
+    return outcome.ok;
   }
-  void note('client_ready','VERIFY_RUNTIME_V5');
+  void note('client_ready','VERIFY_RUNTIME_V6');
   if(returned)note('client_return_detected');
   if(shopConflict){clearIntent();note('client_return_shop_conflict');}
   async function currentVersion(){
@@ -114,7 +111,7 @@ export function partnerApp() {
   });}
   init().catch(()=>{note('client_sdk_failed','SDK_ERROR');status.textContent='เปิดผ่านลิงก์ MMS Partner ใน LINE เพื่อเริ่มยืนยัน';button.textContent='เปิด MMS Partner ใน LINE';button.disabled=false;button.onclick=()=>{location.href='https://miniapp.line.me/'+LIFF_ID+'?shop='+shop.value;};});
 }
-export const APP_JS=`(()=>{${BROWSER_HELPERS}const STYLE=${JSON.stringify(CSS+SHOP_CSS)},LOGO_URL=${JSON.stringify(LOGO)},LIFF_ID=${JSON.stringify(LIFF)},RUNTIME_VERSION=${JSON.stringify(VERIFY_RUNTIME)},SHOP_BRANDS_UI=${JSON.stringify(SHOP_BRANDS)};(${partnerApp.toString()})();})();`;
+export const APP_JS=`(()=>{${BROWSER_HELPERS}${DIAGNOSTIC_TRANSPORT}const STYLE=${JSON.stringify(CSS+SHOP_CSS)},LOGO_URL=${JSON.stringify(LOGO)},LIFF_ID=${JSON.stringify(LIFF)},RUNTIME_VERSION=${JSON.stringify(VERIFY_RUNTIME)},SHOP_BRANDS_UI=${JSON.stringify(SHOP_BRANDS)};(${partnerApp.toString()})();})();`;
 export function ownerApp(){
   const api='/v1/admin/mms/partner-line',root=document.getElementById('mms-partner-verify'),list=document.getElementById('requests'),select=document.getElementById('shop'),status=document.getElementById('owner-status');let busy=false;
   async function load(){if(busy)return;busy=true;select.disabled=true;list.replaceChildren();try{const r=await fetch(api+'/requests?shop='+select.value,{cache:'no-store'}),p=await r.json();if(!r.ok||!p.ok||p.shop_key!==select.value)throw Error(p.error||'UNAVAILABLE');status.textContent=p.shop_name+(p.identity_verified?' · ข้อมูลร้านผ่านการตรวจแล้ว':' · รหัสร้านและตัวตนร้านยังรอ Owner ยืนยันในทะเบียน ก่อนอนุมัติบัญชี');for(const c of p.claims){const card=document.createElement('div');card.className='request';const text=document.createElement('p');text.textContent=c.account_key+'\n'+c.claim_id+'\n'+c.status;card.append(text);if(c.status==='Pending Owner Review')for(const decision of ['approve','reject']){const btn=document.createElement('button');btn.textContent=decision==='approve'?'อนุมัติเฉพาะร้านนี้':'ไม่อนุมัติ';btn.disabled=decision==='approve'&&!p.identity_verified;btn.onclick=async()=>{if(busy)return;busy=true;select.disabled=true;root.querySelectorAll('button').forEach(b=>b.disabled=true);try{const res=await fetch(api+'/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({shop_key:select.value,claim_id:c.claim_id,decision})}),body=await res.json();if(!res.ok||!body.ok)throw Error(body.error||'UNAVAILABLE');}catch(e){status.textContent='ยังบันทึกไม่ได้: '+e.message;return;}finally{busy=false;select.disabled=false;}await load();};card.append(btn);}list.append(card);}if(!p.claims.length){const empty=document.createElement('p');empty.textContent='ยังไม่มีคำขอสำหรับร้านนี้';list.append(empty);}}catch(e){status.textContent='เปิดด้วยบัญชี Owner เพื่อดูคำขอ: '+e.message;}finally{busy=false;select.disabled=false;}}

@@ -4,7 +4,7 @@ export const ROOT = '/v1/admin/mms/partner-line';
 export const OWNER_PAGE = '/internal/admin/mms/partner-line';
 export const CHANNEL = '2012099469';
 export const LIFF = '2012099469-JG2eCuvf';
-export const VERIFY_RUNTIME = 'verify-return-20261021-5';
+export const VERIFY_RUNTIME = 'verify-return-20261021-6';
 export const SHOPS = Object.freeze({
   kalima: { id: 'recZJM2QjUKAVT12h', name: 'Kalima Massage' },
   relax: { id: 'recohHKPImiHV9GGJ', name: 'Relax Spa by 9' },
