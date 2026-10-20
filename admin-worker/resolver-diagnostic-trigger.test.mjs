@@ -207,7 +207,18 @@ test("diagnostic button page requires the existing credential-bound session and 
   assert.doesNotMatch(html, /focused-resolver|rec_private/);
   assert.equal(response.headers.get("cache-control"), "no-store, private");
   assert.match(response.headers.get("content-security-policy"), /form-action 'self'; frame-ancestors 'none'/);
+  assert.equal(response.headers.get("referrer-policy"), "same-origin");
   assert.equal((await request(path + "?debug=1", { headers: { Cookie } }, environment)).status, 404);
+  assert.deepEqual(service.calls, []);
+});
+
+test("opaque null Origin from a no-referrer native form remains rejected before RPC", async () => {
+  const service = rpc();
+  const environment = env(service);
+  const Cookie = await login(environment);
+  const response = await invoke({ Cookie, origin: "null", body: "" }, environment);
+  assert.equal(response.status, 404);
+  assert.equal(await response.text(), "");
   assert.deepEqual(service.calls, []);
 });
 
