@@ -46,7 +46,42 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Guide-only fixes are deployed separately with inherited live settings.
+      # Do not run the unrelated MMS deploy and route sync for this scope.
+      - id: guide_scope
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {execFileSync} from 'node:child_process';
+          import {appendFileSync} from 'node:fs';
+          const git=(...args)=>execFileSync('git',args,{encoding:'utf8'});
+          const before=process.env.BEFORE_SHA,after=process.env.AFTER_SHA;
+          const allowed=new Set([
+            'member-dashboard-chat-worker/src/guide-owner-notifications.mjs',
+            'member-dashboard-chat-worker/src/guide-telegram-notify.mjs',
+            'member-dashboard-chat-worker/test/guide-owner-notifications.test.mjs',
+            'member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js',
+            'scripts/check-guide-notifier-bundle.mjs',
+            '.github/workflows/guide-notifier-ci.yml',
+            '.github/workflows/deploy-member-dashboard-chat-worker.yml',
+          ]);
+          let only=false;
+          if(/^[a-f0-9]{40}$/.test(before||'')&&!/^0+$/.test(before)){
+            const files=git('diff','--name-only',before,after).trim().split('\n').filter(Boolean);
+            only=files.length>0&&files.every(file=>allowed.has(file))&&files.some(file=>file.includes('guide-'));
+            const entry='member-dashboard-chat-worker/src/my-mms-customer-front-gate-entry.js';
+            if(only&&files.includes(entry)){
+              const strip=text=>text.replace(/^export \{ GuideOwnerNotifications \} from "\.\/guide-owner-notifications\.mjs";\r?\n/m,'');
+              only=strip(git('show',before+':'+entry))===strip(git('show',after+':'+entry));
+            }
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT,'guide_only='+only+'\n');
+          NODE
       - id: scope
+        if: steps.guide_scope.outputs.guide_only != 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
@@ -186,10 +221,15 @@ jobs:
           node --test member-dashboard-chat-worker/test/kenji-line-contextual-understanding-shadow.test.mjs
           node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
 
+      - name: Validate guide notification contract
+        run: node --test member-dashboard-chat-worker/test/guide-owner-notifications.test.mjs
+
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         working-directory: member-dashboard-chat-worker
-        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+        run: |
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --outdir "$RUNNER_TEMP/guide-notifier-bundle"
+          node ../scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/guide-notifier-bundle/my-mms-customer-front-gate-entry.js"
 
       # The gateway's new binding must have an owner before its version upload.
       # This is a new, route-free Worker and namespace; existing MMS objects are untouched.

@@ -11,6 +11,7 @@ import {
 } from "./my-mms-customer-app-front-gate.js";
 
 export * from "./mms-line-front-gate.js";
+export { GuideOwnerNotifications } from "./guide-owner-notifications.mjs";
 export { KenjiShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
 export { SvipPhotoRevealModeAudit } from "./svip-photo-reveal-mode-audit.mjs";
 

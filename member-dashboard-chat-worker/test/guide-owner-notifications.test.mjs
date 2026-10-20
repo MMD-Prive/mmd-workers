@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {guideTelegramPayload,sendGuideOwnerTelegram} from '../src/guide-telegram-notify.mjs';
+const id='a'.repeat(32),event={channel:'telegram',kind:'opened',request_id:id,name:'Mick <test>',created_at:Date.parse('2026-10-20T14:15:59Z')};
+const env={TELEGRAM_OPS_CHAT_ID:'-1001234567890',TELEGRAM_ALERTS_THREAD_ID:'9',AUTH_SERVICE_LINE_TO_TELEGRAM:'fixture'};
+test('active deploy entrypoint permanently exports guide RPC',async()=>{const config=await readFile(new URL('../wrangler.toml',import.meta.url),'utf8');const main=/^main\s*=\s*"([^"]+)"/m.exec(config)[1];const source=await readFile(new URL('../'+main,import.meta.url),'utf8');assert(source.includes('export { GuideOwnerNotifications } from "./guide-owner-notifications.mjs"'));});
+test('read alert uses recipient timestamp and fixed Alert destination',()=>{const p=guideTelegramPayload(env,{...event,chat_id:'untrusted'});assert.equal(p.chat_id,env.TELEGRAM_OPS_CHAT_ID);assert.equal(p.message_thread_id,9);assert(p.text.includes('Mick <test>'));assert(p.text.includes('21:15:59'));assert(p.text.includes('ประเทศไทย'));assert(!JSON.stringify(p).includes('grant='));});
+test('bridge acceptance requires real message at expected destination',async()=>{const r=await sendGuideOwnerTelegram(env,event,async request=>{const body=await request.json();assert(body.text.includes('Mick &lt;test&gt;'));return Response.json({ok:true,telegram:{ok:true,result:{message_id:23,chat:{id:Number(env.TELEGRAM_OPS_CHAT_ID)},message_thread_id:9,reply_markup:body.reply_markup}}});});assert(r.ok);assert.equal(r.provider_request_id,'23');});
+test('unknown transport result never invites a duplicate send',async()=>{assert.equal((await sendGuideOwnerTelegram(env,event,async()=>{throw Error('timeout');})).can_retry,false);});
