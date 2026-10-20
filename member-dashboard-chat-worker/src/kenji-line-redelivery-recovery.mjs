@@ -1,4 +1,5 @@
 import { createLineSignature, extractKenjiModelLookupQuery, inferLineIntent, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
+import { ownerContextTestRequested } from "./kenji-owner-context-test.mjs";
 import {
   handleKenjiSeedLineRequest,
   isKenjiSeedLineRequest,
@@ -239,6 +240,11 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   }
 
   const events = Array.isArray(body?.events) ? body.events : [];
+  // Isolated contextual rehearsal uses intake/Seed continuity only. Never enter
+  // booking/photo-reveal/notification or redelivery-retry orchestration in it.
+  if (ownerContextTestRequested(env)) {
+    return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+  }
   const redeliveryIndexes = events
     .map((event, index) => event?.deliveryContext?.isRedelivery === true ? index : -1)
     .filter((index) => index >= 0);

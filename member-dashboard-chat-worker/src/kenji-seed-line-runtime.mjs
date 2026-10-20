@@ -28,6 +28,7 @@ import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sa
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { decideKenjiFirstContactMembership } from "./kenji-line-first-contact-membership.mjs";
 import { resolveKenjiContextFollowup } from "./kenji-context-followup.mjs";
+import { ownerContextTestAllowed } from "./kenji-owner-context-test.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -635,6 +636,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
 
   for (const [index, event] of events.entries()) {
     const directUser = isDirectUserEvent(event);
+    // Per-event scope: never turn on the shared env or the entire webhook batch.
+    const ownerContextTest = await ownerContextTestAllowed(env, event, runtime);
+    const eventAutoReplyEnabled = autoReplyEnabled || ownerContextTest;
     if (legacyOutcome.saved[index]?.campaign_event === true) {
       saved.push({ ok: true, type: text(event?.type), campaign_handled: true, replied: legacyOutcome.saved[index].replied === true });
       continue;
@@ -679,10 +683,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       menuCommandEnabled = menuCommandEnabled && menuOwnerClear;
     }
     const menuConversationEnabled = Boolean(menuConversation && menuOwnerClear);
-    const liveTruth = !support && !navigation && !menuConversation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+    const liveTruth = !support && !navigation && !menuConversation && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
-    const liveAvailability = !support && !navigation && !menuConversation && directUser && autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
+    const liveAvailability = !support && !navigation && !menuConversation && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
       effectiveIntent === "availability_request"
       ? await resolveKenjiLineAvailability({ env, continuity })
       : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
@@ -694,9 +698,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           ? { rich_menu_state: richMenuConversationStart(navigation) } : {}) })
       : menuConversation
         ? withDecisionMetadata({}, menuConversationEnabled ? menuConversation : { text: "", reply_source: "silent", guard_blocked: true, guard_reason: "owner_takeover" })
-      : !navigation && autoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
+      : !navigation && eventAutoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
-          modelAccessAllowed: controls.model_keyword_auto_reply !== true,
+          modelAccessAllowed: !ownerContextTest && controls.model_keyword_auto_reply !== true,
           currentIntent,
           continuity,
           liveTruth,
@@ -728,7 +732,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     });
     // OA Manager sends the add-friend greeting. A follow event must not get a
     // second Worker greeting, even if the broader reply flag is enabled later.
-    const shouldReply = Boolean(directUser && (autoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
+    const shouldReply = Boolean(directUser && (eventAutoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
 
@@ -785,6 +789,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       live_truth_used: decision.live_truth_used === true,
       reply_attempted: shouldReply,
       reply_sent: delivered,
+      owner_context_test: ownerContextTest,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
       first_contact_enabled: firstContactEnabled,
