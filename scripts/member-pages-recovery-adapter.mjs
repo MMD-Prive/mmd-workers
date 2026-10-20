@@ -79,12 +79,14 @@ const environmentKeys=['GITHUB_EVENT_NAME','GITHUB_REF','GITHUB_REPOSITORY','GIT
 
 export async function runRecovery(env,args) {
   validateRecoveryInvocation(env,args);
-  const dir=mkdtempSync(join(tmpdir(),'member-pages-existing-'));
   const journal=createDurableRecoveryJournal(env.RUNNER_TEMP,env.GITHUB_RUN_ID);
+  let entered=false;
+  try{
+  const dir=mkdtempSync(join(tmpdir(),'member-pages-existing-'));
   const sourceDirectory=realpathSync(env.SOURCE_DIRECTORY),releaseDirectory=realpathSync(process.cwd());
   assert.notEqual(sourceDirectory,releaseDirectory);
   const publicEnv=Object.freeze(Object.fromEntries(environmentKeys.map(k=>[k,env[k]])));
-  return promoteExistingStartupVersion({env:publicEnv,
+  const io={env:publicEnv,
     ghRead:createRecoveryGitHubReader(env),artifactRead:readOriginalArchive,
     cf:createPromotionOnlyTransport(env.CLOUDFLARE_API_TOKEN),
     sourceCheck:async releaseSha=>{
@@ -94,7 +96,12 @@ export async function runRecovery(env,args) {
       return evidence;
     },
     save:record=>journal.save(record),
-  });
+  };
+  entered=true;return await promoteExistingStartupVersion(io);
+  }catch{
+    if(!entered)try{journal.save({phase:'stopped',worker:'member-pages-worker',source_sha:T.source_sha,release_sha:null,uploaded_version:T.uploaded_version,overall_phase:'OPEN',stopped_after:'preflight',diagnostic:{stage:'RECOVERY_ADAPTER_SETUP',reason:'ADAPTER_SETUP_FAILED'}});}catch{}
+    throw Error('Existing version recovery stopped; inspect sanitized receipt; never retry automatically.');
+  }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   runRecovery(process.env,process.argv.slice(2)).then(()=>console.log('Existing version promotion readback complete; browser acceptance remains separate.'))

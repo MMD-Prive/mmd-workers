@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,rmSync,statSync,readdirSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createRecoveryGitHubReader,readOriginalArchive,validateRecoveryInvocation,createDurableRecoveryJournal,sanitizeRecoveryJournal} from './member-pages-recovery-adapter.mjs';
+import {createRecoveryGitHubReader,readOriginalArchive,validateRecoveryInvocation,createDurableRecoveryJournal,sanitizeRecoveryJournal,runRecovery} from './member-pages-recovery-adapter.mjs';
 import {RECOVERY_TARGET as T} from './member-pages-uploaded-recovery.mjs';
 import {ORIGINAL_ARTIFACT,RECOVERY_WORKFLOW} from './member-pages-promotion-only-recovery.mjs';
 import {ACCOUNT} from './member-pages-code-only-release.mjs';
@@ -95,4 +95,13 @@ test('adapter retains rebuild proof and existing workflow while binding source p
  assert.match(source,/checkRecoverySources\(releaseSha,sourceDirectory,releaseDirectory\)/);
  assert.match(source,/buildMemberPagesBundle\(dir,sourceDirectory\)/);assert.match(source,/hash\(bytes\),T.bundle_sha256/);
  assert.match(source,/save:record=>journal.save\(record\)/);assert.match(source,/fsyncSync\(fd\)/);assert.match(source,/fsyncSync\(dir\)/);
+});
+
+test('missing source path produces sanitized setup failure receipt before any executor request',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'mmd-adapter-setup-'));
+ try{await assert.rejects(runRecovery({...env(),GITHUB_RUN_ID:'123',RUNNER_TEMP:root,SOURCE_DIRECTORY:join(root,'missing-source')},['--execute-approved']),/inspect sanitized receipt/);
+ const receipt=JSON.parse(readFileSync(join(root,'member-pages-code-only-receipt.json'),'utf8'));
+ assert.equal(receipt.phase,'stopped');assert.equal(receipt.release_sha,null);assert.deepEqual(receipt.diagnostic,{stage:'RECOVERY_ADAPTER_SETUP',reason:'ADAPTER_SETUP_FAILED'});
+ assert.doesNotMatch(JSON.stringify(receipt),/fixture|missing-source/);
+ }finally{rmSync(root,{recursive:true});}
 });
