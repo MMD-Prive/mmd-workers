@@ -8,7 +8,7 @@ export function openModelDecline(root, submit, lang = 'th') {
     ? ['Unavailable', 'Propose 1–3 future times (Asia/Bangkok). Per reviews these; no booking is confirmed.', 'Add time', 'Reason (optional)', 'Send proposal', 'Cancel', 'Choose 1–3 different future times.', 'Not saved. Check the current job before trying again.']
     : lang === 'zh'
     ? ['不方便', '提供 1–3 个未来时间（曼谷时间）。由 Per 审核，不会自动确认预约。', '添加时间', '原因（选填）', '提交建议', '取消', '请选择 1–3 个不同的未来时间。', '尚未保存，请先检查当前工作。']
-    : ['ไม่สะดวก', 'เสนอวันเวลาใหม่ 1–3 ตัวเลือก (เวลาไทย) ให้เปอร์พิจารณา ไม่ยืนยันนัดหรือส่งให้ลูกค้าอัตโนมัติ', 'เพิ่มวันเวลา', 'เหตุผล (ไม่บังคับ)', 'ส่งข้อเสนอ', 'ยกเลิก', 'เลือกวันเวลาอนาคตที่ไม่ซ้ำกัน 1–3 ตัวเลือกครับ', 'ยังไม่บันทึก ตรวจสถานะงานก่อนลองอีกครั้งครับ'];
+    : ['เสนอเวลาใหม่', 'เลือกเวลาไทย 1–3 ตัวเลือก ให้เปอร์พิจารณา ยังไม่ยืนยันนัดใหม่', 'เพิ่มวันเวลา', 'เหตุผล (ไม่บังคับ)', 'ส่งข้อเสนอให้เปอร์', 'ยกเลิก', 'เลือกวันเวลาอนาคตที่ไม่ซ้ำกัน 1–3 ตัวเลือกครับ', 'ยังไม่บันทึก ตรวจสถานะงานก่อนลองอีกครั้งครับ'];
   const form = document.createElement('form'); form.dataset.declineOptions = ''; form.className = 'smcv3-card'; form.style.cssText = 'flex-basis:100%;width:100%';
   const title = document.createElement('h2'); title.textContent = copy[0];
   const help = document.createElement('p'); help.textContent = copy[1];
