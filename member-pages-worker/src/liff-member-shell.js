@@ -1675,7 +1675,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     document.getElementById("renewal-action").hidden = true;
     document.getElementById("renewal-price").hidden = true;
     document.getElementById("renewal-promo").hidden = true;
-    document.getElementById("renewal-rows").replaceChildren();
+    document.getElementById("renewal-rows").textContent = "";
     document.getElementById("renewal-note").textContent = "กำลังตรวจสอบรายการต่ออายุของบัญชี LINE นี้";
     card.hidden = false;
     try {
