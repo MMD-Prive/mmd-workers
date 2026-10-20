@@ -329,40 +329,61 @@ export async function releaseMemberPagesCodeOnly(io) {
     form.set('metadata', JSON.stringify(metadata));
     form.set('worker.js', new Blob([module], { type: 'application/javascript+module' }), 'worker.js');
     save('upload-attempted-outcome-unknown');
+    diagnostics.mark('UPLOAD_REQUEST');
     const uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
+    diagnostics.mark('UPLOAD_ID_CHECK');
     assert.ok(UUID.test(uploaded?.id || '') && uploaded.id !== current, 'ambiguous uploaded version; stop');
     state.uploaded_version = uploaded.id;
     save('uploaded-not-promoted');
+    diagnostics.mark('UPLOADED_VERSION_READ');
     const exact = await call('/versions/' + uploaded.id);
+    diagnostics.mark('UPLOADED_ID_CHECK');
     assert.equal(exact.id, uploaded.id, 'uploaded version identity mismatch');
+    diagnostics.mark('UPLOADED_CONFIG_CHECK');
     same(versionConfiguration(exact), config, 'Worker configuration changed during code-only upload');
+    diagnostics.mark('UPLOADED_ANNOTATION_READ');
     const annotationReadback = await io.call(VERSION_ROOT + '/' + uploaded.id);
+    diagnostics.mark('UPLOADED_ANNOTATION_ID_CHECK');
     assert.equal(annotationReadback?.id, uploaded.id, 'uploaded version annotation identity mismatch');
+    diagnostics.mark('UPLOADED_ANNOTATION_CHECK');
     const exactAnnotations = versionAnnotations(annotationReadback);
     assert.equal(exactAnnotations?.['workers/commit_sha'], metadata.annotations['workers/commit_sha'], 'source SHA annotation mismatch');
     assert.equal(exactAnnotations?.['workers/message'], metadata.annotations['workers/message'], 'source message annotation mismatch');
+    diagnostics.mark('UPLOADED_LATEST_READ');
     const versions = (await call('/versions'))?.items;
+    diagnostics.mark('UPLOADED_LATEST_CHECK');
     assert.equal(versions?.[0]?.id, uploaded.id, 'uploaded version is not latest');
+    diagnostics.mark('UPLOADED_PREDECESSOR_CHECK');
     assert.equal(versions?.[1]?.id, current, 'active predecessor changed');
-    await io.approve();
+    diagnostics.mark('OWNER_PROMOTION_APPROVAL');
+    await io.approve(diagnostics.mark);
+    diagnostics.mark('PROMOTION_BASELINE_CHECK');
     await unchanged(deployment, uploaded.id);
 
     save('promotion-attempted-outcome-unknown');
+    diagnostics.mark('PROMOTION_REQUEST');
     const promoted = await call('/deployments', { method: 'POST', body: JSON.stringify({
       strategy: 'percentage', versions: [{ version_id: uploaded.id, percentage: 100 }],
     }) });
+    diagnostics.mark('PROMOTION_ID_CHECK');
     assert.ok(UUID.test(promoted?.id || '') && promoted.id !== deployment.id, 'ambiguous promotion; stop');
     state.deployment = promoted.id;
+    diagnostics.mark('PROMOTION_RECEIPT_READ');
     const receipt = await call('/deployments/' + promoted.id);
+    diagnostics.mark('PROMOTION_RECEIPT_CHECK');
     assert.equal(receipt.id, promoted.id);
     assert.equal(activeVersion(receipt), uploaded.id);
+    diagnostics.mark('POST_PROMOTION_BASELINE_CHECK');
     await unchanged(receipt, uploaded.id);
-    same(versionConfiguration(await call('/versions/' + uploaded.id)), config, 'post-promotion configuration changed');
+    diagnostics.mark('POST_PROMOTION_CONFIG_READ');
+    const promotedVersion = await call('/versions/' + uploaded.id);
+    diagnostics.mark('POST_PROMOTION_CONFIG_CHECK');
+    same(versionConfiguration(promotedVersion), config, 'post-promotion configuration changed');
     save('complete');
     return { ...state, phase: 'complete' };
   } catch (error) {
     state.stopped_after = state.phase;
-    if (state.phase === 'preflight') state.diagnostic = diagnostics.snapshot();
+    state.diagnostic = diagnostics.snapshot();
     save('stopped');
     throw error;
   }

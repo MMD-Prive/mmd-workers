@@ -606,3 +606,83 @@ test('actual checkout guards publish safe source stages and retain their rejecti
   assert.equal(stages.at(-1),stage);
  }
 });
+
+for (const [name,options,stage,reason] of [
+  ['uploaded version read',{callError:(p,m)=>p===ROOT+'/versions/'+id(2)&&m==='GET'},'UPLOADED_VERSION_READ','UPLOADED_VERSION_READ_FAILED'],
+  ['uploaded configuration',{uploadedVersionChange:v=>({...v,cache_options:{changed:true}})},'UPLOADED_CONFIG_CHECK','UPLOADED_CONFIG_DRIFT'],
+  ['annotation read',{callError:p=>p===VERSION_ROOT+'/'+id(2)},'UPLOADED_ANNOTATION_READ','ANNOTATION_READ_FAILED'],
+  ['annotation identity',{annotationReadbackChange:v=>({...v,id:id(99)})},'UPLOADED_ANNOTATION_ID_CHECK','ANNOTATION_ID_MISMATCH'],
+  ['annotation source',{annotationReadbackChange:v=>({...v,annotations:{'workers/commit_sha':'b'.repeat(40)}})},'UPLOADED_ANNOTATION_CHECK','ANNOTATION_MISMATCH'],
+  ['promotion owner approval',{rejectApproval:3},'OWNER_PROMOTION_APPROVAL','PROMOTION_APPROVAL_FAILED'],
+]) test(`post-upload diagnostics: ${name} stops without promotion or private exception`,async()=>{
+  const f=fixture(options);
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  const receipt=f.receipts.at(-1);
+  assert.equal(receipt.stopped_after,'uploaded-not-promoted');
+  assert.deepEqual(receipt.diagnostic,{stage,reason});
+  assert.equal(f.writes(),1);
+  assert.equal(activeVersion(f.active()),id(1));
+  assert.doesNotMatch(JSON.stringify(receipt),/fixture_failure|private-config-value|private-etag/);
+});
+
+test('post-upload real owner diagnostics retain MAIN_DRIFT and never promote',async()=>{
+  const f=fixture();let approvals=0;
+  f.io.approve=async mark=>{if(++approvals===3){mark('OWNER_MAIN_CHECK');throw Error('private-token-cookie');}};
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.deepEqual(f.receipts.at(-1).diagnostic,{stage:'OWNER_MAIN_CHECK',reason:'MAIN_DRIFT'});
+  assert.equal(f.writes(),1);
+  assert.doesNotMatch(JSON.stringify(f.receipts),/private-token-cookie/);
+});
+
+test('promotion request failure records unknown outcome without automatic retry',async()=>{
+  const f=fixture({callError:(p,m)=>p===ROOT+'/deployments'&&m==='POST'});
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.equal(f.receipts.at(-1).stopped_after,'promotion-attempted-outcome-unknown');
+  assert.deepEqual(f.receipts.at(-1).diagnostic,{stage:'PROMOTION_REQUEST',reason:'PROMOTION_OUTCOME_UNKNOWN'});
+  assert.equal(f.calls.filter(x=>x.path===ROOT+'/deployments'&&x.method==='POST').length,1);
+});
+
+for(const [kind,stage,reason] of [
+  ['latest','UPLOADED_LATEST_CHECK','UPLOADED_NOT_LATEST'],
+  ['predecessor','UPLOADED_PREDECESSOR_CHECK','PREDECESSOR_DRIFT'],
+  ['baseline','PROMOTION_BASELINE_CHECK','PROMOTION_BASELINE_DRIFT'],
+]) test(`post-upload ${kind} drift retains the existing stop boundary`,async()=>{
+ const f=fixture();let uploaded=false;
+ f.io.call=async(path,init={})=>{
+  const result=await f.call(path,init);
+  if(path===ROOT+'/versions?bindings_inherit=strict')uploaded=true;
+  if(uploaded&&path===ROOT+'/versions'&&kind==='latest')return {items:[{id:id(99)},{id:id(1)}]};
+  if(uploaded&&path===ROOT+'/versions'&&kind==='predecessor')return {items:[{id:id(2)},{id:id(99)}]};
+  if(uploaded&&path===ROOT+'/deployments'&&(!init.method||init.method==='GET')&&kind==='baseline')return {deployments:[deployment(id(1),id(99))]};
+  return result;
+ };
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+ assert.deepEqual(f.receipts.at(-1).diagnostic,{stage,reason});
+ assert.equal(f.writes(),1);
+});
+
+for(const [kind,stage,reason] of [
+ ['receipt-read','PROMOTION_RECEIPT_READ','PROMOTION_RECEIPT_READ_FAILED'],
+ ['receipt-id','PROMOTION_RECEIPT_CHECK','PROMOTION_RECEIPT_INVALID'],
+ ['post-baseline','POST_PROMOTION_BASELINE_CHECK','POST_PROMOTION_DRIFT'],
+ ['post-config-read','POST_PROMOTION_CONFIG_READ','POST_PROMOTION_CONFIG_READ_FAILED'],
+ ['post-config','POST_PROMOTION_CONFIG_CHECK','POST_PROMOTION_CONFIG_DRIFT'],
+]) test(`post-promotion diagnostics: ${kind} records stop without a second mutation`,async()=>{
+ const f=fixture();let promoted=false;
+ f.io.call=async(path,init={})=>{
+  if(promoted&&path===ROOT+'/deployments/'+id(11)&&kind==='receipt-read')throw Error('private-exception-token');
+  if(promoted&&path===ROOT+'/versions/'+id(2)&&kind==='post-config-read')throw Error('private-exception-token');
+  const result=await f.call(path,init);
+  if(path===ROOT+'/deployments'&&init.method==='POST')promoted=true;
+  if(promoted&&path===ROOT+'/deployments/'+id(11)&&kind==='receipt-id')return {...result,id:id(99)};
+  if(promoted&&path===ROOT+'/deployments'&&(!init.method||init.method==='GET')&&kind==='post-baseline')return {deployments:[deployment(id(2),id(99))]};
+  if(promoted&&path===ROOT+'/versions/'+id(2)&&kind==='post-config')return {...result,cache_options:{changed:true}};
+  return result;
+ };
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+ assert.deepEqual(f.receipts.at(-1).diagnostic,{stage,reason});
+ assert.equal(f.receipts.at(-1).phase,'stopped');
+ assert.equal(f.receipts.at(-1).stopped_after,'promotion-attempted-outcome-unknown');
+ assert.equal(f.writes(),2);
+ assert.doesNotMatch(JSON.stringify(f.receipts),/private-exception-token|private-config-value/);
+});
