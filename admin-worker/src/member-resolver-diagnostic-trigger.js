@@ -5,7 +5,7 @@ import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.
 // no query and no body. Every rejection is an indistinguishable empty 404 so
 // the trigger is not discoverable; GET/HEAD keep the existing admin behavior.
 export const MEMBER_RESOLVER_DIAGNOSTIC_TRIGGER_PATH = "/internal/admin";
-const DIAGNOSTIC_PAGE_PATH = "/internal/admin/member-resolver-check";
+const DIAGNOSTIC_PAGE_PATH = "/internal/admin/work/member-resolver-check";
 
 const HEALTHY_ZERO_MATCH = "healthy_zero_match";
 const GENERIC_FAILURE = "generic_failure";
