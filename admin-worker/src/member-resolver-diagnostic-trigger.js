@@ -58,7 +58,9 @@ function diagnosticPage() {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, private",
       "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-      "referrer-policy": "no-referrer",
+      // Native form POSTs under no-referrer serialize Origin as "null".
+      // Keep the existing exact-origin guard; preserve Origin on this page.
+      "referrer-policy": "same-origin",
       "x-content-type-options": "nosniff",
     },
   });
