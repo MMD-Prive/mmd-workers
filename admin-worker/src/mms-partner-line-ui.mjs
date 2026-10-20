@@ -14,6 +14,9 @@ const SHOP_CSS = '#mms-partner-verify .shop-brand{display:flex;align-items:cente
 export function partnerApp() {
   const root=document.getElementById('mms-partner-verify');if(!root)return;
   const api='/v1/admin/mms/partner-line';
+  // Match the Published endpoint exactly; do not derive a LINE callback from
+  // the incoming host, callback parameters, or another app's return URL.
+  const verifyEndpoint='https://www.mmdbkk.com/male-massage/partner/verify';
   root.dataset.verifyRuntime=RUNTIME_VERSION;
   const style=document.createElement('style');style.textContent=STYLE;document.head.append(style);
   root.innerHTML='<div class="mms-v-card"><img alt="MMS · Male Massage"><p>MMS PARTNER</p><h1>ยืนยันบัญชีร้าน</h1><p>เลือกร้านที่คุณดูแล แล้วยืนยันด้วย LINE เปอร์จะตรวจคำขอให้ก่อนเปิดสิทธิ์ของร้านนั้น</p><div class="steps">1 เลือกร้าน → 2 ยืนยัน LINE → 3 รออนุมัติ</div><label for="mms-shop">ร้านที่ขอเชื่อมบัญชี</label><select id="mms-shop"><option value="kalima">Kalima Massage</option><option value="relax">Relax Spa by 9</option></select><label><input id="mms-consent" type="checkbox">ยินยอมให้ใช้ตัวตน LINE เพื่อขอเชื่อมบัญชีกับร้านที่เลือก</label><button id="mms-line-button" disabled>กำลังเตรียม LINE…</button><button id="mms-status-button" hidden>เช็กผลอนุมัติ</button><p role="status" id="mms-line-status">กำลังเชื่อมต่อ…</p><details><summary>ข้อมูลและสิทธิ์ของคุณ</summary><p>เก็บรหัสอ้างอิงตัวตนแบบแฮช ไม่เก็บรหัสผ่านหรือ LINE ID ที่พิมพ์เอง การยืนยัน LINE ยังไม่ให้สิทธิ์ร้าน การอนุมัติ Kalima และ Relax Spa แยกจากกัน หากดูแลสองร้าน ให้ส่งคำขอทีละร้าน</p></details></div>';
@@ -44,7 +47,7 @@ export function partnerApp() {
   let ready=false,busy=false,outdated=false,identityBlocked=false;
   function enable(){button.disabled=!ready||busy||outdated||identityBlocked;shop.disabled=busy;consent.disabled=busy||outdated||identityBlocked;statusButton.disabled=busy||outdated||identityBlocked;}
   const reloadButton=document.createElement('button');reloadButton.textContent='โหลดหน้า Verify ใหม่';reloadButton.hidden=true;
-  reloadButton.onclick=()=>{clearIntent();location.href=location.origin+'/male-massage/partner/verify?shop='+shop.value+'&verify_version='+RUNTIME_VERSION;};
+  reloadButton.onclick=()=>{clearIntent();location.href=verifyEndpoint+'?shop='+shop.value+'&verify_version='+RUNTIME_VERSION;};
   root.querySelector('.mms-v-card').append(reloadButton);
   const versionLabel=document.createElement('small');versionLabel.textContent='Verify · '+RUNTIME_VERSION;root.querySelector('.mms-v-card').append(versionLabel);
   const errors={LINE_OPENID_SCOPE_MISSING:'LINE ของหน้านี้ยังไม่ได้เปิดสิทธิ์ยืนยันตัวตน ยังไม่ได้ส่งคำขอ กรุณารอเปอร์ตั้งค่าให้เรียบร้อยครับ',LINE_OPENID_CONSENT_REQUIRED:'LINE ยังไม่ได้รับความยินยอมให้ยืนยันตัวตน ยังไม่ได้ส่งคำขอ กรุณาติดต่อเปอร์ครับ',LINE_SESSION_INCOMPLETE:'เข้า LINE แล้ว แต่ยังไม่ได้หลักฐานยืนยันตัวตน ยังไม่ได้ส่งคำขอ กรุณาติดต่อเปอร์ครับ',VERIFY_UPDATE_REQUIRED:'หน้านี้เป็นรุ่นเก่า กดโหลดหน้า Verify ใหม่ แล้วติ๊กยินยอมอีกครั้งครับ',VERIFY_VERSION_UNAVAILABLE:'ยังตรวจรุ่นหน้าไม่ได้ ยังไม่ได้ส่งคำขอ ลองใหม่ภายหลังครับ',SHOP_SCOPE_DENIED:'ข้อมูลร้านจากลิงก์ไม่ตรงกัน เลือกร้านที่ต้องการอีกครั้งก่อนส่งคำขอครับ',CONSENT_REQUIRED:'กรุณาติ๊กยินยอมก่อนส่งคำขอ',LINE_TOKEN_INVALID:'LINE หมดอายุแล้ว กรุณาเปิดหน้านี้ผ่าน LINE ใหม่',LINE_TOKEN_REQUIRED:'กรุณาเปิดผ่าน LINE แล้วยืนยันอีกครั้ง',REGISTRY_WRITE_UNAVAILABLE:'บันทึกยังไม่สำเร็จ ลองใหม่ได้โดยไม่ต้องสมัครซ้ำ',ACCOUNT_DENIED:'บัญชีนี้ยังใช้งานไม่ได้ ติดต่อเปอร์เพื่อตรวจสอบ',SHOP_BLOCKED:'ร้านนี้หยุดรับคำขอชั่วคราว'};
@@ -60,11 +63,15 @@ export function partnerApp() {
     let p;try{const r=await fetch(api+'/config',{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'});p=await r.json();if(!r.ok||!p.ok)throw Error();}catch{note('client_version_unavailable','NETWORK_ERROR');throw Error('VERIFY_VERSION_UNAVAILABLE');}
     if(p.verify_runtime!==RUNTIME_VERSION||p.liff_id!==LIFF_ID){outdated=true;clearIntent();reloadButton.hidden=false;enable();note('client_update_required');throw Error('VERIFY_UPDATE_REQUIRED');}
   }
-  async function requireOpenId(){
+  async function requireOpenId({beforeLogin=false}={}){
     let permission;
     // Read scope only. Never retain or log the context object or user profile.
     try{const scopes=window.liff.getContext?.()?.scope;if(Array.isArray(scopes)&&!scopes.includes('openid'))permission='unavailable';}catch{}
     if(!permission&&typeof window.liff.permission?.query==='function'){try{permission=(await window.liff.permission.query('openid'))?.state;}catch{}}
+    // "prompt" is not a missing channel scope. A signed-out person must be
+    // able to reach LINE's own consent screen after their explicit click.
+    // This never permits status/request calls without a verified ID token.
+    if(permission==='prompt'&&beforeLogin&&!window.liff.isLoggedIn())return permission;
     if(permission==='unavailable'||permission==='prompt'){
       identityBlocked=true;clearIntent();
       const missing=permission==='unavailable',code=missing?'LINE_OPENID_SCOPE_MISSING':'LINE_OPENID_CONSENT_REQUIRED';
@@ -75,12 +82,12 @@ export function partnerApp() {
   async function send(path){try{const permission=await requireOpenId(),idToken=window.liff.getIDToken();if(!idToken){const code=permission==='granted'?'LINE_SESSION_INCOMPLETE':'LINE_TOKEN_REQUIRED';note('client_token_missing',code);throw new Error(code);}const r=await fetch(api+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id_token:idToken,shop_key:shop.value,consent:consent.checked}),cache:'no-store'});const p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||'VERIFICATION_UNAVAILABLE');if(path==='/request')note('client_claim_saved');return p;}catch(e){note(path==='/request'?'client_request_failed':'client_status_failed',e instanceof TypeError?'NETWORK_ERROR':e.message);throw e;}}
   function show(p){const c=p.claim;if(!c){status.textContent='ยังไม่ได้ส่งคำขอสำหรับร้านนี้';return;}if(c.shop_key!==shop.value)throw new Error('SHOP_SCOPE_DENIED');const label=c.status==='Approved'?'อนุมัติบัญชีสำหรับร้านนี้แล้ว':c.status==='Rejected'?'คำขอนี้ยังไม่ผ่าน ติดต่อเปอร์เพื่อตรวจสอบ':'ยืนยัน LINE แล้ว · รอเปอร์ตรวจคำขอ';status.textContent=c.shop_name+'\n'+label+'\nเลขคำขอ '+c.claim_id;statusButton.hidden=false;}
   async function run(fn){busy=true;enable();try{await fn();}catch(e){status.textContent=errors[e.message]||'ยังทำรายการไม่สำเร็จ กรุณาลองใหม่ หรือติดต่อเปอร์';}finally{busy=false;enable();}}
-  button.addEventListener('click',()=>run(async()=>{if(shopConflict)throw Error('SHOP_SCOPE_DENIED');if(!consent.checked)throw new Error('CONSENT_REQUIRED');await currentVersion();await requireOpenId();if(!window.liff.isLoggedIn()){rememberIntent();status.textContent='กำลังเปิด LINE หลังยืนยันแล้วจะส่งคำขอเฉพาะร้านที่เลือกไว้';note('client_login_redirect');window.liff.login({redirectUri:location.origin+'/male-massage/partner/verify?shop='+shop.value});return;}clearIntent();status.textContent='กำลังบันทึกคำขอของร้านนี้ ยังไม่ต้องปิดหน้านี้';show(await send('/request'));}));
+  button.addEventListener('click',()=>run(async()=>{if(shopConflict)throw Error('SHOP_SCOPE_DENIED');if(!consent.checked)throw new Error('CONSENT_REQUIRED');await currentVersion();await requireOpenId({beforeLogin:true});if(!window.liff.isLoggedIn()){rememberIntent();status.textContent='กำลังเปิด LINE หลังยืนยันแล้วจะส่งคำขอเฉพาะร้านที่เลือกไว้';note('client_login_redirect');window.liff.login({redirectUri:verifyEndpoint+'?shop='+shop.value+'&verify_version='+RUNTIME_VERSION});return;}clearIntent();status.textContent='กำลังบันทึกคำขอของร้านนี้ ยังไม่ต้องปิดหน้านี้';show(await send('/request'));}));
   statusButton.addEventListener('click',()=>run(async()=>{await currentVersion();show(await send('/status'));}));
   shop.addEventListener('change',()=>{clearIntent();shopConflict=false;consent.checked=false;updateShopBrand();status.textContent='กำลังเลือก '+shop.options[shop.selectedIndex].text+' · สิทธิ์แต่ละร้านอนุมัติแยกกัน';statusButton.hidden=true;});
   window.addEventListener('pageshow',event=>{if(event.persisted){clearIntent();consent.checked=false;note('client_restored_page');if(!busy)run(async()=>{await currentVersion();status.textContent='กลับมาที่หน้านี้แล้ว ยังไม่ได้ส่งคำขอใหม่ · เลือกร้านและติ๊กยินยอมก่อนครับ';});}});
   async function init(){if(!window.liff){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://static.line-scdn.net/liff/edge/2/sdk.js';s.onload=resolve;s.onerror=reject;document.head.append(s);});}await window.liff.init({liffId:LIFF_ID});ready=true;button.textContent=window.liff.isLoggedIn()?'ส่งคำขอเชื่อมร้านนี้':'ยืนยัน LINE และส่งคำขอร้านนี้';status.textContent='เลือกร้านและติ๊กยินยอมก่อนส่งคำขอครับ';enable();await run(async()=>{
-    await requireOpenId();if(!window.liff.isLoggedIn())return;
+    await requireOpenId({beforeLogin:true});if(!window.liff.isLoggedIn())return;
     await currentVersion();if(shopConflict)throw Error('SHOP_SCOPE_DENIED');
     note('client_logged_in');const resume=pendingIntent();
     // Consume once before any network call. Reloads cannot replay a submission.

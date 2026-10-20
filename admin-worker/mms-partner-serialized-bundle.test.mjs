@@ -5,7 +5,8 @@ import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { realpathSync, readFileSync } from 'node:fs';
+import { VERIFY_RUNTIME } from './src/mms-partner-line-verification.mjs';
 
 const require=createRequire(import.meta.url);
 function compiler(){
@@ -19,6 +20,13 @@ function compiler(){
 const { build }=compiler();
 const built=await build({entryPoints:[fileURLToPath(new URL('./src/mms-partner-line-ui.mjs',import.meta.url))],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',keepNames:true,minifySyntax:true,logLevel:'silent'});
 const output=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
+test('Stage Webflow embed loads only the matching versioned Verify script',()=>{
+  const html=readFileSync(new URL('../webflow/mms/partner-verify.html',import.meta.url),'utf8');
+  assert.match(html,new RegExp('data-version="'+VERIFY_RUNTIME+'"'));
+  const scripts=[...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(x=>x[1]);
+  assert.deepEqual(scripts,['/v1/admin/mms/partner-line/app.js?v='+VERIFY_RUNTIME]);
+  assert.match(html,/ยังไม่ได้ส่งคำขอ/);
+});
 const settle=async()=>{for(let n=0;n<15;n++)await new Promise(resolve=>setImmediate(resolve));};
 function node(){return {style:{},dataset:{},value:'kalima',disabled:false,checked:false,hidden:false,textContent:'',children:[],bySelector:new Map(),append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},before(){},setAttribute(){},addEventListener(){},querySelector(key){if(!this.bySelector.has(key))this.bySelector.set(key,node());return this.bySelector.get(key);},querySelectorAll(){return [];}};}
 function dom(){const ids=new Map();return {ids,document:{head:node(),createElement:()=>node(),getElementById:key=>{if(!ids.has(key))ids.set(key,node());return ids.get(key);}}};}
