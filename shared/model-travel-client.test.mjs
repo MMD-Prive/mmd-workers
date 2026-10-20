@@ -14,6 +14,18 @@ import { handleLiffMemberShell } from '../member-pages-worker/src/liff-member-sh
 import vm from 'node:vm';
 
 const settle = async () => { for (let n=0;n<12;n++) await new Promise(resolve=>setImmediate(resolve)); };
+test('model travel panel explains inactive stages without inventing ETA or actions', async () => {
+  for (const state of ['offered', 'work_finished']) {
+    const ui = windowFor();
+    ui.w.fetch = async () => Response.json({ok:true,session_id:'sess_FIXTURE',state,revision:1,server_now:new Date().toISOString(),submissions:[],can_send:false,eta:{status:'inactive'}});
+    try {
+      ui.w.mountFixture(ui.host,{role:'model',sessionId:'sess_FIXTURE',state,locale:'th'});
+      await settle();
+      assert.equal(ui.host.querySelector('section>strong').textContent,'ขั้นตอนนี้ไม่แสดงเวลาถึง');
+      assert.equal(ui.host.querySelector('details').hidden,true);
+    } finally { ui.close(); }
+  }
+});
 const until = async predicate => { const deadline=Date.now()+4000;while(!predicate()){if(Date.now()>deadline)throw new Error('UI condition timed out');await new Promise(resolve=>setTimeout(resolve,5));} };
 function windowFor() {
   const dom = new JSDOM('<main id="host"></main>', {url:'https://mmdbkk.com/',runScripts:'outside-only',pretendToBeVisual:true});

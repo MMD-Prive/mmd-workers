@@ -5,6 +5,12 @@ import test from 'node:test';
 
 const source = fs.readFileSync(new URL('./model-console-v3-i18n.js', import.meta.url), 'utf8');
 const copy = vm.runInNewContext('(' + source.match(/const C=(.*?),\$=s=>/)[1] + ')');
+test('header follows canonical stage pill and support copy names Per', () => {
+  assert.ok(source.includes('chip((d().st[state(ses)]||d().st.fallback)[2])'));
+  assert.notEqual(copy.th.st.work_finished[2], copy.th.chipActive);
+  assert.equal(copy.th.support, 'ติดต่อเปอร์');
+  assert.doesNotMatch(source, /Tart:|แจ้งทีม|ต้องการให้ทีม/);
+});
 const selectors = source.slice(source.indexOf('v=(o,k,'), source.indexOf(',txt=(s,x)'));
 const state = vm.runInNewContext('(()=>{const ' + selectors + ';return state})()');
 const indexCode = source.slice(source.indexOf('function stageIndex(s)'), source.indexOf('function actions(s)'));
