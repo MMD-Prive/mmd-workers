@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/my-mms-customer-front-gate-entry.js"
+main = "src/guide-notification-entry.mjs"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
