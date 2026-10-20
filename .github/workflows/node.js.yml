@@ -31,7 +31,7 @@ jobs:
     - run: node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
     - run: node --test scripts/member-pages-deploy-workflow.test.mjs
     - name: Check member-pages owner approval and credential-free boundary contracts (mock only)
-      run: node --experimental-global-webcrypto --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-code-only-release.test.mjs
+      run: node --experimental-global-webcrypto --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-code-only-release.test.mjs scripts/member-pages-uploaded-recovery.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs scripts/member-pages-recovery-adapter.test.mjs
     - name: Check Kenji P4 canonical identity and Memory independence
       run: node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-p4-canonical-identity.test.mjs member-dashboard-chat-worker/test/kenji-canonical-client-memory-v2.test.mjs member-dashboard-chat-worker/test/kenji-lv5-line-action-execution.test.mjs
     - name: Check bounded Rich Menu conversation and model-off contract

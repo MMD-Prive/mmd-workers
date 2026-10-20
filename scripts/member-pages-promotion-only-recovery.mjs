@@ -1,12 +1,11 @@
-// Local-review library only: no CLI, environment reads or automatic execution.
-// A future workflow/credential adapter needs separate review and owner approval.
+// Guarded recovery library. Execution adapter is wired only to the owner-protected workflow.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {ROOT, VERSION_ROOT, ZONE, CODE_ONLY_SOURCE_SHA, activeVersion,
   versionConfiguration, versionAnnotations, inspectCodeOnlyCheckouts} from './member-pages-code-only-release.mjs';
 import {RECOVERY_TARGET as T, inspectUploadedRecovery, verifyRecoveryArtifact} from './member-pages-uploaded-recovery.mjs';
 
-export const RECOVERY_WORKFLOW = '.github/workflows/recover-member-pages-uploaded-version.yml';
+export const RECOVERY_WORKFLOW = '.github/workflows/deploy-member-pages-worker-code-only.yml';
 export const ORIGINAL_ARTIFACT = Object.freeze({id:12296886000,
   name:'member-pages-worker-code-only-39488159580',
   archive_sha256:'907ba8593db27d9770a10aa0219ff1eac7864f6d7e996222569343f637de6be6',
