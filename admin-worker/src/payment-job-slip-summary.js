@@ -14,8 +14,25 @@ const pending = new Set([
 ]);
 const service = new Set(["deposit", "full", "final"]);
 const text = (v) => String(v ?? "").trim();
-const evidenceHash = (f) =>
-  text(f.image_sha256 || f.evidence_sha256 || f.content_sha256);
+function proofNote(f) {
+  try {
+    const note = JSON.parse(typeof f.note === "string" ? f.note : "{}");
+    return note && typeof note === "object" && !Array.isArray(note) ? note : {};
+  } catch { return {}; }
+}
+const evidenceHash = (f) => text(
+  f.image_sha256 || f.evidence_sha256 || f.content_sha256 || proofNote(f).evidence_sha256,
+);
+function transferIds(f, payment) {
+  const note = proofNote(f);
+  // Production proofs store evidence metadata in note; Payments hold canonical
+  // provider IDs. These aliases only detect uncertainty, never verify money.
+  return [...new Set([
+    f.provider_txn_id, f.bank_transaction_id, payment?.transaction,
+    note.extraction?.provider_txn_id, note.extraction?.bank_transaction_id,
+    note.extraction?.payment_ref, note.manual_evidence_review?.bank_reference,
+  ].map(text).filter(id => id && !id.startsWith("mmd_evidence_")))];
+}
 const ids = (v) => (Array.isArray(v) ? v.map(text).filter(Boolean) : []);
 const fail = (code, status = 409) => {
   throw Object.assign(new Error(code), { status });
@@ -91,7 +108,9 @@ export async function paymentJobSlipSummary(
   );
   const refs = balance.records.map((p) => p.ref);
   const proofs = [
-    ...(await exactRows(list, proofsTable, "session_id", [sessionId])),
+    // Payment Proofs has a Session link, not a session_id column. Follow the
+    // Session's actual proof record IDs; linked-record formula text is a label.
+    ...(await exactRows(list, proofsTable, "RECORD_ID()", ids(fields["MMD — Payment Proofs"]))),
     // Linked-record formula values can be display names, not record IDs. Read
     // the bounded complete pending set, then match actual links below.
     ...(await list(proofsTable, {
@@ -223,21 +242,21 @@ export async function paymentJobSlipSummary(
     }
     proofIds.add(proofId);
     const hash = evidenceHash(f);
-    const transaction = text(f.provider_txn_id || f.bank_transaction_id);
+    const transactions = transferIds(f, matches[0]);
     if (
       (ref && seenRefs.has(ref)) ||
       (hash && (hashes.has(hash) || verifiedHashes.has(hash))) ||
-      (transaction &&
-        (seenTransactions.has(transaction) ||
+      transactions.some(transaction =>
+        seenTransactions.has(transaction) ||
           balance.records.some(
             (p) => p.verified && p.transaction === transaction,
-          )))
+          ))
     ) {
       issues.add("possible_duplicate_transfer");
       continue;
     }
     if (ref) seenRefs.add(ref);
-    if (transaction) seenTransactions.add(transaction);
+    for (const transaction of transactions) seenTransactions.add(transaction);
     if (hash) hashes.add(hash);
     if (cents === null) {
       issues.add("proof_amount_missing");
