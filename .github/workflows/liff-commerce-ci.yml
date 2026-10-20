@@ -7,6 +7,7 @@ on:
       - 'member-dashboard-chat-worker/src/front-gate-index.js'
       - 'shared/membership-promotion-policy*'
       - 'scripts/preview-liff-commerce.mjs'
+      - 'liff-commerce-staging-worker/**'
       - '.github/workflows/liff-commerce-ci.yml'
 permissions:
   contents: read
@@ -20,6 +21,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm run test:liff-commerce
+      - run: node --test liff-commerce-staging-worker/test/*.test.mjs
       - run: node scripts/preview-liff-commerce.mjs
       - name: Upload inert preview
         uses: actions/upload-artifact@v4

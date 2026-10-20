@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/config-schema.json",
+  "name": "mmd-liff-commerce-mock-staging",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [],
+  "rules": [{ "type": "Text", "globs": ["**/*.html", "**/*.svg"], "fallthrough": true }],
+  "observability": { "enabled": false }
+}
