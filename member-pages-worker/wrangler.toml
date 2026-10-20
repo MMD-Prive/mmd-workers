@@ -9,7 +9,7 @@ routes = []
 [vars]
 # LIFF renewal card (PACKAGE view). Off until the owner has tried it on a real phone.
 LIFF_RENEWAL_CARD_ENABLED = "false"
-# Requires campaign availability confirmation and LINE mobile acceptance.
+# Requires LINE mobile acceptance before customer purchases.
 LIFF_PROMOTION_PURCHASE_ENABLED = "false"
 # Secret AUTH_SERVICE_MEMBER_TO_PAYMENTS is provisioned separately; never public.
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"

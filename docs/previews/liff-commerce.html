@@ -98,7 +98,7 @@ const loadDoubleMomentCard = async function loadDoubleMomentCard(request = globa
       const amount = document.createElement("b"); amount.textContent = value;
       row.append(name, amount); rows.append(row);
     }
-    note.textContent = "เครดิตบริการ ไม่ใช่เงินสด · โบนัส 2 ครั้ง ครั้งละ " + money(offer.bonus_1_thb) + " · ยอดบริการขั้นต่ำ " + money(offer.minimum_service_thb) + " · คืนเงินไม่ได้ · เครดิตและโบนัสออกหลังยืนยันการชำระเท่านั้น · ไม่มีคูปองเพิ่มอัตโนมัติ";
+    note.textContent = "เครดิตบริการ ไม่ใช่เงินสด · โบนัสแต่ละครั้งใช้กับคนละงานที่ยืนยันแล้ว ยอดบริการขั้นต่ำ " + money(offer.minimum_service_thb) + " ต่อครั้ง · 1 แพ็กเกจต่อสมาชิกต่อแคมเปญ · คืนเงินไม่ได้ · เครดิตและโบนัสออกหลังยืนยันการชำระเท่านั้น · ไม่มีคูปองเพิ่มอัตโนมัติ";
     button.textContent = "ชำระ " + money(offer.amount_thb) + " →";
     button.hidden = false; button.disabled = false;
     let purchasing = false;
