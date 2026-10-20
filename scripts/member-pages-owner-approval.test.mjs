@@ -111,11 +111,11 @@ test('approval-only is the explicit safe default; missing or invalid modes never
 });
 
 test('approval-only and release are mutually exclusive even with all release inputs present',()=>{
- for(const execution_mode of ['approval_boundary_only','release']) {
+ for(const execution_mode of ['approval_boundary_only','release','promote-existing']) {
    const inputs={...authorized,execution_mode};
    assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
    assert.equal(jobCondition('approval-boundary-only')(dispatch,inputs),execution_mode==='approval_boundary_only');
-   assert.equal(jobCondition('release')(dispatch,inputs),execution_mode==='release');
+   assert.equal(jobCondition('release')(dispatch,inputs),execution_mode!=='approval_boundary_only');
  }
 });
 
@@ -152,7 +152,7 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,1);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,2);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
