@@ -73,7 +73,8 @@
     "test:member-intelligence-observation": "node --test scripts/member-intelligence-authenticated-observation.test.mjs",
     "test:model-media-upload": "node --experimental-global-webcrypto --test admin-worker/model-media-upload.test.mjs model-dashboard-presentation-worker/model-upload-mobile-mime.test.mjs",
     "test:create-job-webflow": "node --test webflow/internal/admin/jobs/create-job/lv10-public-care-controls.test.mjs webflow/internal/admin/jobs/create-job/lv10-draft-kenji-patch.test.mjs webflow/internal/admin/jobs/create-job/lv10-profile-gallery.test.mjs",
-    "test:app-sigil-release-gate": "node scripts/check-app-sigil-always-on-gate.mjs"
+    "test:app-sigil-release-gate": "node scripts/check-app-sigil-always-on-gate.mjs",
+    "test:liff-commerce": "node --test member-pages-worker/test/liff-commerce-ui.test.mjs member-pages-worker/test/liff-promotion-purchase.test.mjs member-pages-worker/test/liff-renewal-card.test.mjs payments-worker/double-moment-purchase-v1.test.mjs shared/membership-promotion-policy.test.mjs"
   },
   "devDependencies": {
     "clean-css": "5.3.3",

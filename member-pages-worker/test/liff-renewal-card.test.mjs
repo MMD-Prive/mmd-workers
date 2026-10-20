@@ -27,6 +27,7 @@ async function fixture({ tier = "Standard", expires, paymentUrl = "https://mmdbk
   }));
   const calls = [];
   const env = {
+    LIFF_GATEWAY_STORE: { async upsertSession() {}, async recordDecision() {}, async loadScreen() {}, async resolvePackage() {}, async hasHallAudienceInventory() {}, async ensureRenewalPaymentSession() { return { record_id: "recRenewalMock0001" }; } },
     LIFF_RENEWAL_CARD_ENABLED: flag, LIFF_SESSION_SECRET: secret, LIFF_IDENTITY_KV: kv,
     PAYMENTS_WORKER: { async fetch(request) {
       const body = await request.json(); calls.push(body);
@@ -176,4 +177,32 @@ test("Premium advance renewal card shows two years from the current expiry (1 pu
   const payload = await (await get(fx)).json();
   assert.equal(payload.amount_thb, 2500);
   assert.equal(payload.new_expires_at.slice(0, 10), "2029-02-28");
+});
+
+ test("gateway persistence must succeed before any payment intent is requested", async () => {
+  const fx = await fixture({ expires: future() });
+  fx.env.LIFF_GATEWAY_STORE.ensureRenewalPaymentSession = async () => { throw new Error("storage_unavailable"); };
+  assert.equal((await post(fx, { package_code: "standard" })).status, 503);
+  assert.equal(fx.calls.length, 0);
+});
+
+test("renewal settlement link is atomically upserted before checkout, without paid fields", async () => {
+  const { getLiffGatewayStore } = await import("../src/liff-gateway-airtable.js");
+  const original = globalThis.fetch; const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url, init });
+    if (init.method === "GET") return Response.json({ records: [] });
+    return Response.json({ records: [{ id: "recRenewalMock0001" }] });
+  };
+  try {
+    const store = getLiffGatewayStore({ AIRTABLE_API_KEY: "mock", AIRTABLE_BASE_ID: "mock" });
+    await store.ensureRenewalPaymentSession({ sessionId: "liffrenew_mock", lineUserId: UID, packageCode: "standard", amountThb: 1000 });
+    const body = JSON.parse(requests[1].init.body);
+    assert.deepEqual(body.performUpsert.fieldsToMergeOn, ["renewal_session_id"]);
+    assert.equal(body.records[0].fields.line_user_id, UID);
+    assert.equal(body.records[0].fields.renewal_amount_thb, 1000);
+    assert.equal(body.records[0].fields.liff_intent, "renew");
+    assert.equal(body.records[0].fields.verified_at, undefined);
+    assert.equal(body.records[0].fields.entitlement_granted, undefined);
+  } finally { globalThis.fetch = original; }
 });

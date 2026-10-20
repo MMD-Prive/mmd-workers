@@ -1,0 +1,140 @@
+<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'"><title>LINE purchase review · mock only</title><style>
+*{box-sizing:border-box}body{margin:0;background:#101112;color:#f6ebd8;font:15px/1.65 system-ui,sans-serif}main{max-width:460px;margin:28px auto;padding:20px}h1{font-size:25px;margin:8px 0}small,.label{color:#c8aa77}.notice{padding:12px;background:#2b251a;border:1px solid #8e784e;border-radius:12px;font-size:13px}nav{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0}nav button{flex:1;min-height:44px;border:1px solid #746346;border-radius:9px;color:#f6ebd8;background:#24221e}.card{padding:20px;border:1px solid #8d784e;border-radius:16px;background:#1c1c19}h2{font-size:23px}.renewal-row b{max-width:58%;overflow-wrap:anywhere}.renewal-row span{max-width:44%}.renewal-note{font-size:13px!important;line-height:1.8!important;color:#c2b8a6!important}[hidden]{display:none!important}.renewal-card[hidden]{display:none!important}body.app-entered:not(.signup-mode) .digital-view>.renewal-card{width:100%;margin:0 0 14px;padding:16px;border:1px solid var(--digital-gold);border-radius:14px;background:linear-gradient(180deg,#1f1d17,#161612)}.renewal-card h2{margin:4px 0 10px;font-size:19px;color:var(--digital-cream)}.renewal-rows{display:grid}.renewal-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(216,189,137,.22);font-size:13px}.renewal-row span{color:var(--digital-muted)}.renewal-row b{text-align:right;color:var(--digital-cream)}.renewal-price{display:flex;align-items:baseline;gap:6px;margin:12px 0 4px}.renewal-amount{font-size:34px;font-weight:800;color:var(--digital-gold)}.renewal-price small{color:var(--digital-muted)}.renewal-promo{margin:8px 0 12px;padding:8px 10px;border-radius:8px;background:rgba(216,178,106,.11);color:#e8d3a2;font-size:12px}.renewal-note{margin:10px 0 0;color:var(--digital-muted);font-size:11px;line-height:1.5}.renewal-action{display:block;box-sizing:border-box;width:100%;min-height:46px;margin-top:6px;padding:13px;border:0;border-radius:11px;background:linear-gradient(100deg,#f1d8aa,#dfb879);color:#1e160f;font-weight:800;font-size:15px;text-align:center;text-decoration:none}.renewal-action[hidden],.renewal-price[hidden],.renewal-promo[hidden]{display:none!important}
+</style><main><small>MMD PRIVÉ · LINE</small><h1>ตรวจรายการก่อนชำระ</h1><p class="notice">ตัวอย่างเท่านั้น · ข้อมูลจำลอง ณ 20 ต.ค. 2026<br>กดปุ่มได้โดยไม่เรียก API หรือสร้างรายการชำระจริง</p><nav><button id="standard">Standard</button><button id="premium">Premium</button><button id="double">Double Moment</button></nav><div id="renewal-card" class="card renewal-card" hidden aria-live="polite">
+        <span class="label">RENEW</span><h2 id="renewal-title">ต่ออายุสมาชิก</h2>
+        <div id="renewal-rows" class="renewal-rows"></div>
+        <div id="renewal-price" class="renewal-price" hidden><span id="renewal-amount" class="renewal-amount"></span><small>THB</small></div>
+        <p id="renewal-promo" class="renewal-promo" hidden></p>
+        <p id="renewal-note" class="renewal-note"></p>
+        <button id="renewal-action" class="renewal-action" type="button" hidden>ต่ออายุเลย  →</button>
+        <a id="renewal-signup" class="renewal-action renewal-link" hidden>สมัครสมาชิกใหม่  →</a>
+        <p id="renewal-message" class="renewal-note" role="status"></p>
+      </div>
+      <div id="double-moment-card" class="card renewal-card" hidden aria-live="polite">
+        <span class="label">PROMOTION</span><h2>Double Moment</h2>
+        <div id="double-moment-rows" class="renewal-rows"></div>
+        <p id="double-moment-note" class="renewal-note" role="status"></p>
+        <button id="double-moment-action" class="renewal-action" type="button" hidden></button>
+      </div><p id="preview-receipt" role="status"></p></main><script>
+const CONFIG = { liffId: "" }; const offers = {"standard":{"status":"ready","package_code":"standard","package_label":"Standard","amount_thb":1000,"service_spend_365_thb":0,"price_rule":"active_advance_standard","membership_years":1,"membership_start_at":"2027-02-28T16:59:59.999Z","history_status":"verified","discount_verified":true,"promotion":{"code":"october_prepaid_standard_2026","bonus_days":180,"bonus_years":0,"label":"CARE BACK +180 days","starts_at":"2026-08-01T00:00:00+07:00","ends_before":"2026-11-01T00:00:00+07:00","honored_before":"2027-01-01T00:00:00+07:00"},"promotion_requires_verified_payment":true,"payment_available":true,"current_expires_at":"2027-02-28T16:59:59.999Z","renewal_starts_at":"2027-02-28T16:59:59.999Z","new_expires_at":"2028-08-26T16:59:59.999Z","bonus_days":180,"bonus_years":0,"promotion_label":"โปรต่ออายุ: เพิ่ม 180 วัน","promotion_ends_before":"2026-11-01T00:00:00+07:00"},"premium":{"status":"ready","package_code":"premium","package_label":"Premium","amount_thb":2500,"service_spend_365_thb":0,"price_rule":"active_advance_premium","membership_years":1,"membership_start_at":"2027-02-28T16:59:59.999Z","history_status":"verified","discount_verified":true,"promotion":{"code":"october_prepaid_premium_2026","bonus_days":0,"bonus_years":1,"label":"CARE BACK +1 year","starts_at":"2026-08-01T00:00:00+07:00","ends_before":"2026-11-01T00:00:00+07:00","honored_before":"2027-01-01T00:00:00+07:00"},"promotion_requires_verified_payment":true,"payment_available":true,"current_expires_at":"2027-02-28T16:59:59.999Z","renewal_starts_at":"2027-02-28T16:59:59.999Z","new_expires_at":"2029-02-28T16:59:59.999Z","bonus_days":0,"bonus_years":1,"promotion_label":"โปรต่ออายุ: เพิ่ม 1 ปี","promotion_ends_before":"2026-11-01T00:00:00+07:00"}};
+const purchaseRenewal = () => { document.getElementById("renewal-message").textContent = "ตัวอย่าง: ไปหน้าชำระที่มีลิงก์ลงนามเฉพาะรายการ · ไม่สร้างรายการจริง"; };
+const showView = () => {};   function renewalDate(value) {
+    const time = Date.parse(String(value || ""));
+    if (!Number.isFinite(time)) return "";
+    return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { day:"numeric", month:"short", year:"numeric", timeZone:"Asia/Bangkok" }).format(new Date(time));
+  }
+
+  function renderRenewalCard(card, offer) {
+    const rows = document.getElementById("renewal-rows");
+    const priceBox = document.getElementById("renewal-price");
+    const promo = document.getElementById("renewal-promo");
+    const note = document.getElementById("renewal-note");
+    const action = document.getElementById("renewal-action");
+    const signupLink = document.getElementById("renewal-signup");
+    const messageBox = document.getElementById("renewal-message");
+    rows.replaceChildren(); priceBox.hidden = true; promo.hidden = true; action.hidden = true; signupLink.hidden = true; note.textContent = ""; messageBox.textContent = "";
+    const addRow = (label, value) => {
+      if (!value) return;
+      const row = document.createElement("div"); row.className = "renewal-row";
+      const name = document.createElement("span"); name.textContent = label;
+      const val = document.createElement("b"); val.textContent = value;
+      row.append(name, val); rows.append(row);
+    };
+    if (offer.status === "ready" && offer.payment_available === true && Number.isInteger(offer.amount_thb) && offer.amount_thb > 0) {
+      document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก " + String(offer.package_label || "");
+      addRow("ระยะเวลาที่ซื้อ", String(offer.membership_years || 1) + " ปี");
+      if (offer.bonus_days) addRow("CARE BACK เพิ่ม", String(offer.bonus_days) + " วัน");
+      if (offer.bonus_years) addRow("CARE BACK เพิ่ม", String(offer.bonus_years) + " ปี");
+      addRow("เริ่มต่ออายุ", renewalDate(offer.renewal_starts_at));
+      addRow("ใช้ได้ถึง (ปัจจุบัน)", renewalDate(offer.current_expires_at));
+      addRow("ใช้ได้ถึง (หลังต่อ)", renewalDate(offer.new_expires_at));
+      document.getElementById("renewal-amount").textContent = new Intl.NumberFormat("th-TH").format(offer.amount_thb);
+      priceBox.hidden = false;
+      if (offer.promotion_label) { promo.textContent = String(offer.promotion_label); promo.hidden = false; }
+      note.textContent = "กดแล้วไปหน้าชำระเงินใน LINE ต่อทันที · สิทธิ์จะอัปเดตหลัง MMD ตรวจสอบการชำระเรียบร้อยแล้ว";
+      if (offer.promotion_ends_before) note.textContent += " · โปรประกาศถึง " + renewalDate(new Date(Date.parse(offer.promotion_ends_before) - 1).toISOString()) + " โดยยึดวันชำระที่ยืนยันแล้ว";
+      action.textContent = "ชำระ " + new Intl.NumberFormat("th-TH").format(offer.amount_thb) + " บาท →";
+      action.hidden = false;
+      action.onclick = () => purchaseRenewal(String(offer.package_code || ""));
+      const needs = document.getElementById("digital-needs");
+      if (needs && needs.hidden) {
+        document.getElementById("digital-needs-label").textContent = "ต่ออายุสมาชิก";
+        document.getElementById("digital-needs-action").onclick = () => showView("package");
+        needs.hidden = false;
+      }
+    } else if (offer.status === "signup_instead") {
+      document.getElementById("renewal-title").textContent = "สมัครสมาชิกใหม่";
+      note.textContent = "สมาชิกหมดอายุเกิน 1 ปีนับเป็นการสมัครใหม่ครับ";
+      if (CONFIG.liffId) { signupLink.href = "https://miniapp.line.me/" + CONFIG.liffId + "/?intent=signup&view=signup"; signupLink.hidden = false; }
+    } else {
+      document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก";
+      note.textContent = "ขอให้เปอร์ช่วยตรวจและยืนยันการต่ออายุให้ในแชต LINE ครับ";
+    }
+    card.hidden = false;
+  }
+
+
+const loadDoubleMomentCard = async function loadDoubleMomentCard(request = globalThis.fetch) {
+  const card = document.getElementById("double-moment-card");
+  if (!card) return;
+  const rows = document.getElementById("double-moment-rows");
+  const note = document.getElementById("double-moment-note");
+  const button = document.getElementById("double-moment-action");
+  card.hidden = false;
+  rows.replaceChildren(); button.hidden = true; button.disabled = true;
+  note.textContent = "กำลังตรวจสอบรายการและสิทธิ์ของบัญชี LINE นี้";
+  const root = "/member/api/liff/promotions/double-moment";
+  const money = value => new Intl.NumberFormat("th-TH").format(value) + " บาท";
+  try {
+    const response = await request(root + "/offer", { credentials: "same-origin", cache: "no-store" });
+    const offer = await response.json();
+    if (!response.ok || offer.ok !== true) throw new Error("unavailable");
+    if (offer.status === "already_activated") { note.textContent = "บัญชีนี้รับ Double Moment แล้ว ตรวจสอบเครดิตที่ Wallet ได้ครับ"; return; }
+    const keys = ["amount_thb", "paid_credit_thb", "bonus_1_thb", "bonus_2_thb", "total_credit_thb", "minimum_service_thb", "validity_days"];
+    if (offer.status !== "ready" || offer.payment_available !== true || offer.package_code !== "double_moment_20000" || keys.some(key => !Number.isInteger(offer[key]) || offer[key] <= 0)) throw new Error("invalid_offer");
+    for (const [label, value] of [["ชำระครั้งนี้", money(offer.amount_thb)], ["เครดิตที่ซื้อ", money(offer.paid_credit_thb)], ["โบนัสครั้งที่ 1", money(offer.bonus_1_thb)], ["โบนัสครั้งที่ 2", money(offer.bonus_2_thb)], ["รวมเครดิตบริการ", money(offer.total_credit_thb)], ["อายุเครดิต", offer.validity_days + " วัน หลังออกเครดิต"]]) {
+      const row = document.createElement("div"); row.className = "renewal-row";
+      const name = document.createElement("span"); name.textContent = label;
+      const amount = document.createElement("b"); amount.textContent = value;
+      row.append(name, amount); rows.append(row);
+    }
+    note.textContent = "เครดิตบริการ ไม่ใช่เงินสด · โบนัส 2 ครั้ง ครั้งละ " + money(offer.bonus_1_thb) + " · ยอดบริการขั้นต่ำ " + money(offer.minimum_service_thb) + " · คืนเงินไม่ได้ · เครดิตและโบนัสออกหลังยืนยันการชำระเท่านั้น · ไม่มีคูปองเพิ่มอัตโนมัติ";
+    button.textContent = "ชำระ " + money(offer.amount_thb) + " →";
+    button.hidden = false; button.disabled = false;
+    let purchasing = false;
+    button.onclick = async () => {
+      if (purchasing) return;
+      purchasing = true; button.disabled = true;
+      try {
+        const result = await request(root + "/purchase", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ package_code: offer.package_code }) });
+        const payload = await result.json();
+        if (payload.status === "already_activated") { button.hidden = true; note.textContent = "บัญชีนี้รับ Double Moment แล้ว ตรวจสอบ Wallet ได้ครับ"; return; }
+        if (!result.ok || payload.ok !== true || payload.entitlement_granted !== false || payload.official_verification_required !== true) throw new Error("unavailable");
+        const url = new URL(payload.customer_payment_url);
+        if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.port || url.username || url.password || url.pathname !== "/pay/checkout" || url.hash || [...url.searchParams.keys()].join() !== "t" || !url.searchParams.get("t")) throw new Error("invalid_url");
+        window.location.assign(url.href);
+      } catch { note.textContent = "ยังเปิดหน้าชำระเงินไม่ได้ กรุณาลองอีกครั้ง · ยังไม่ได้รับเครดิตหรือโบนัส"; }
+      finally { purchasing = false; button.disabled = false; }
+    };
+  } catch {
+    note.textContent = "ยังยืนยันรายการนี้ไม่ได้ กรุณาลองอีกครั้ง หรือติดต่อ MMD ใน LINE";
+    button.textContent = "ตรวจสอบอีกครั้ง"; button.hidden = false; button.disabled = false;
+    button.onclick = () => loadDoubleMomentCard(request);
+  }
+};
+const promotionOffer = {"ok":true,"status":"ready","payment_available":true,"package_code":"double_moment_20000","amount_thb":20000,"paid_credit_thb":20000,"bonus_1_thb":3500,"bonus_2_thb":3500,"total_credit_thb":27000,"minimum_service_thb":20000,"validity_days":180,"refundable":false,"official_verification_required":true,"entitlement_granted":false};
+const fetch = async (url, options = {}) => {
+ if (options.method === "POST") throw new Error("preview_mutation_blocked");
+ return {ok:true,json:async()=>promotionOffer};
+};
+async function select(code) {
+ document.getElementById("preview-receipt").textContent = "";
+ document.getElementById("renewal-card").hidden = code === "double";
+ document.getElementById("double-moment-card").hidden = code !== "double";
+ if (code === "double") {
+   await loadDoubleMomentCard(fetch);
+   document.getElementById("double-moment-action").onclick = () => { document.getElementById("preview-receipt").textContent = "ตัวอย่าง: ไปหน้าชำระเฉพาะรายการ · ไม่สร้างรายการจริง ไม่ออกเครดิตหรือโบนัส"; };
+ } else renderRenewalCard(document.getElementById("renewal-card"), offers[code]);
+}
+for (const code of ["standard", "premium", "double"]) document.getElementById(code).onclick = () => select(code);
+select("standard");</script></html>

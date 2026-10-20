@@ -8,6 +8,7 @@
 // - Off by default: both routes answer 404 unless LIFF_RENEWAL_CARD_ENABLED="true".
 import { addBangkokCalendarYears, applyMembershipPromotion } from "../../shared/membership-promotion-policy.mjs";
 import { readMemberAppSession, rememberMemberPaymentSnapshot } from "./member-app-api.js";
+import { getLiffGatewayStore } from "./liff-gateway-airtable.js";
 import { resolveCanonicalRenewalOffer } from "./renewal-offer.js";
 
 const ROOT = "/member/api/liff/renewal";
@@ -30,7 +31,7 @@ function json(data, status = 200) {
 
 function sameOrigin(request) {
   const origin = clean(request.headers.get("origin"), 240);
-  return !origin || ALLOWED_ORIGINS.has(origin);
+  return request.headers.get("sec-fetch-site") !== "cross-site" && (!origin || ALLOWED_ORIGINS.has(origin));
 }
 
 export function isLiffRenewalCardPath(input) {
@@ -116,6 +117,10 @@ async function handleOffer(request, env) {
     renewal_starts_at: offer.membership_start_at,
     new_expires_at: expiryAfter(offer),
     promotion_label: promoLabel(offer.promotion),
+    membership_years: offer.membership_years,
+    bonus_days: Number(offer.promotion?.bonus_days || 0),
+    bonus_years: Number(offer.promotion?.bonus_years || 0),
+    promotion_ends_before: offer.promotion?.ends_before || null,
     price_rule: offer.price_rule,
     entitlement_granted: false,
     official_verification_required: true,
@@ -126,7 +131,7 @@ function canonicalCheckoutUrl(value) {
   try {
     const url = new URL(String(value || ""));
     const keys = [...url.searchParams.keys()];
-    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.pathname !== "/pay/checkout" || url.hash) return "";
+    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.port || url.username || url.password || url.pathname !== "/pay/checkout" || url.hash) return "";
     if (keys.length !== 1 || keys[0] !== "t" || !url.searchParams.get("t")) return "";
     return url.toString();
   } catch { return ""; }
@@ -176,6 +181,9 @@ async function handlePurchase(request, env) {
   }
   try {
     const sessionId = await renewalSessionId(env, session.lineUserId, offer.package_code, clean(session.memberProfile?.membership_expires_at, 40));
+    const gateway = getLiffGatewayStore(env);
+    if (!gateway?.ensureRenewalPaymentSession) throw new Error("LIFF_RENEWAL_GATEWAY_UNAVAILABLE");
+    await gateway.ensureRenewalPaymentSession({ sessionId, lineUserId: session.lineUserId, packageCode: offer.package_code, amountThb: offer.amount_thb });
     const payment = await createPaymentIntent(env, { sessionId, offer });
     const remembered = await rememberMemberPaymentSnapshot(request, env, {
       payment_ref: payment.payment_ref,

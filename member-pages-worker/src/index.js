@@ -19,6 +19,7 @@ import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import { handleTmibStoryAccess, isTmibStoryAccessPath } from "./tmib-story-access.js";
 import { handlePublicMembershipPayment, isPublicMembershipPaymentPath } from "./public-membership-payment.js";
+import { handleLiffPromotionPurchase, isLiffPromotionPurchasePath } from "./liff-promotion-purchase.js";
 import { handleLiffRenewalCard, isLiffRenewalCardPath } from "./liff-renewal-card.js";
 import { handleMemberPaymentsBff, isMemberPaymentsBffPath } from "./member-payments-bff.js";
 import { handleTmibAct001Content, isTmibAct001ContentPath } from "./tmib-act001-content.js";
@@ -97,6 +98,7 @@ export default {
     if (isTmibAct001MediaPath(url)) return handleTmibAct001Media(request, env);
     if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
     if (isPublicMembershipPaymentPath(url)) return handlePublicMembershipPayment(request, env);
+    if (isLiffPromotionPurchasePath(url)) return handleLiffPromotionPurchase(request, env);
     if (isLiffRenewalCardPath(url)) return handleLiffRenewalCard(request, env);
     if (isMemberPaymentsBffPath(url)) return handleMemberPaymentsBff(request, env);
     if (isMemberTelegramBindPath(url)) return handleMemberTelegramBind(request, env);

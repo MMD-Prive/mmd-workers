@@ -1,0 +1,28 @@
+name: LIFF membership and promotion purchase CI
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/**'
+      - 'payments-worker/double-moment-purchase-v1*'
+      - 'member-dashboard-chat-worker/src/front-gate-index.js'
+      - 'shared/membership-promotion-policy*'
+      - 'scripts/preview-liff-commerce.mjs'
+      - '.github/workflows/liff-commerce-ci.yml'
+permissions:
+  contents: read
+jobs:
+  mocked-purchase-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run test:liff-commerce
+      - run: node scripts/preview-liff-commerce.mjs
+      - name: Upload inert preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: liff-commerce-mock-preview
+          path: docs/previews/liff-commerce.html
