@@ -95,7 +95,7 @@ test('canonical model lanes map correctly and conflicting money lanes stay neutr
 
 test('error and malformed responses cannot produce an empty-session illustration', async () => {
   const runtime = fs.readFileSync(new URL('./model-console-v3-i18n.js', import.meta.url), 'utf8');
-  const code = runtime.slice(runtime.indexOf('async function load()'), runtime.indexOf('async function act(a)'));
+  const code = runtime.slice(runtime.indexOf('async function load()'), runtime.indexOf('async function act(a,proposal)'));
   for (const body of [{ ok: false, session: null }, {}, { ok: true }, { ok: true, session: {} }, { ok: true, session: [] }, { ok: true, session: null }]) {
     let renders = 0;
     const context = {
@@ -111,7 +111,7 @@ test('error and malformed responses cannot produce an empty-session illustration
 
 test('two simultaneous taps produce only one synthetic action request', async () => {
   const runtime = fs.readFileSync(new URL('./model-console-v3-i18n.js', import.meta.url), 'utf8');
-  const code = runtime.slice(runtime.indexOf('async function act(a)'), runtime.indexOf('function support(k)'));
+  const code = runtime.slice(runtime.indexOf('async function act(a,proposal)'), runtime.indexOf('function support(k)'));
   let count = 0, release;
   const pending = new Promise(resolve => { release = resolve; });
   const context = {

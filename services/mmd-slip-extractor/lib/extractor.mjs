@@ -151,7 +151,29 @@ export async function extractOcr(bytes, workerFactory = createWorker) {
   const worker = await workerFactory(["tha", "eng"], 1, { langPath, cacheMethod: "none", logger: () => {} });
   try {
     const { data = {} } = await worker.recognize(bytes);
-    return normalizeOcrText(data.text, data.confidence);
+    const primary = normalizeOcrText(data.text, data.confidence);
+    if (primary.amount_thb == null || primary.paid_at || typeof worker.setParameters !== "function") return primary;
+    // A small, patterned slip may lose its footer date in full-page OCR. Retry
+    // the lower evidence area once, retaining the original reading on failure.
+    try {
+      const image = sharp(bytes, { failOn: "error", limitInputPixels: 25_000_000 });
+      const metadata = await image.metadata();
+      if (!metadata.width || !metadata.height) return primary;
+      const top = Math.floor(metadata.height * 2 / 3);
+      const footer = await image.extract({ left: 0, top, width: metadata.width, height: metadata.height - top })
+        .resize({ width: Math.min(1600, metadata.width * 3) }).grayscale().normalize().png().toBuffer();
+      await worker.setParameters({ tessedit_pageseg_mode: "6" });
+      const { data: retry = {} } = await worker.recognize(footer);
+      const alternate = normalizeOcrText(retry.text, retry.confidence);
+      // A crop can fill a missing timestamp only when its amount corroborates
+      // the full image. Conflicting fields remain unresolved for review.
+      if (alternate.amount_thb !== primary.amount_thb || !alternate.paid_at ||
+          (primary.payment_ref && alternate.payment_ref && primary.payment_ref !== alternate.payment_ref)) return primary;
+      return { ...primary, paid_at: alternate.paid_at,
+        confidence_score: Math.min(primary.confidence_score, alternate.confidence_score) };
+    } catch {
+      return primary;
+    }
   } finally {
     await worker.terminate();
   }

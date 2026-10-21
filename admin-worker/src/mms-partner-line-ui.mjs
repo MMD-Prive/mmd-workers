@@ -57,7 +57,7 @@ export function partnerApp() {
   let diagnosticSequence=0;
   async function note(stage,code='OK'){
     const sequence=++diagnosticSequence,key=shop.value;
-    if(shopConflict){diagnosticStatus.textContent='ข้อมูลร้านจากลิงก์ไม่ตรงกัน · ยังไม่บันทึกจุดตรวจ';return false;}
+    if(shopConflict&&stage!=='client_return_shop_conflict'){diagnosticStatus.textContent='ข้อมูลร้านจากลิงก์ไม่ตรงกัน · ยังไม่บันทึกจุดตรวจ';return false;}
     const allowed=['LINE_OPENID_SCOPE_MISSING','LINE_OPENID_CONSENT_REQUIRED','LINE_SESSION_INCOMPLETE','OK','NETWORK_ERROR','SDK_ERROR','LINE_TOKEN_REQUIRED','LINE_TOKEN_INVALID','REGISTRY_WRITE_UNAVAILABLE','REGISTRY_UNAVAILABLE','REGISTRY_CONFLICT','REGISTRY_INCOMPLETE','SHOP_IDENTITY_CONFLICT','SHOP_BLOCKED','PARTNER_STORE_UNAVAILABLE','ACCOUNT_DENIED','CLAIM_CONFLICT'];
     diagnosticStatus.textContent='กำลังบันทึกจุดตรวจ · '+stage;
     const outcome=await diagnosticEvent(api+'/event',{shop_key:key,stage,code:code==='VERIFY_RUNTIME_V6'||allowed.includes(code)?code:'UNEXPECTED'});

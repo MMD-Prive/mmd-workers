@@ -461,6 +461,10 @@ function recordBridgeTelemetry(result = {}) {
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
+    const entry = new URL(request.url);
+    if (path.replace(/\/+$/, "") === "/sigil/member/membership" && entry.searchParams.get("source") === "line" && entry.searchParams.get("intent") === "renew" && ["GET", "HEAD"].includes(request.method)) {
+      return new Response(null, { status: 307, headers: { location: `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`, "cache-control": "no-store" } });
+    }
     if (isKenjiMemberSurfacePath(request)) return handleKenjiMemberSurface(request, env);
     if (path.startsWith(THERAPIST_AUTH_PREFIX)) return forwardMmsTherapistAuth(request, env);
     if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });

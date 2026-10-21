@@ -1,8 +1,10 @@
+import { renderMmsDirectChatPage } from './mms-direct-chat-page.mjs';
+
 const WORKER_NAME = "member-dashboard-chat-worker";
 const CUSTOMER_UI_PREFIX = "/male-massage";
 const CUSTOMER_ASSET_PREFIX = "/male-massage-assets/";
 const CUSTOMER_API_BASE = "/api/mms/app";
-const PRESENTATION_ORIGIN = "https://my-mms-therapist.lovable.app";
+const PRESENTATION_ORIGIN = "https://my-therapist.lovable.app";
 const MEMBER_PROFILE_PATH = "/api/mms/app/membership/me";
 const MMS_MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
 const MMS_INTERNAL_ORIGIN = "https://mms.internal";
@@ -117,7 +119,8 @@ function presentationUrlForAsset(request) {
   const source = new URL(request.url);
   const suffix = source.pathname.slice(CUSTOMER_ASSET_PREFIX.length);
   const upstream = new URL(PRESENTATION_ORIGIN);
-  if (/^(favicon\.(?:ico|svg)|robots\.txt|hype-loader\.png)$/i.test(suffix)) upstream.pathname = `/${suffix}`;
+  if (suffix.startsWith("lovable/")) upstream.pathname = `/__l5e/assets-v1/${suffix.slice("lovable/".length)}`;
+  else if (/^(favicon\.(?:ico|svg)|robots\.txt|hype-loader\.png)$/i.test(suffix)) upstream.pathname = `/${suffix}`;
   else upstream.pathname = `/assets/${suffix}`;
   upstream.search = source.search;
   return upstream;
@@ -127,6 +130,9 @@ export function rewriteMyMmsCustomerHtml(html) {
   let output = String(html || "");
   output = output.replace(/<aside\b[^>]*id=["']lovable-badge["'][\s\S]*?<\/aside>/gi, "");
   output = output.replace(/<script\b[^>]*src=["']\/~flock\.js["'][\s\S]*?<\/script>/gi, "");
+  output = output.replace(/<script\b[^>]*src=["']\/__l5e\/events[^"']*["'][\s\S]*?<\/script>/gi, "");
+  output = output.replace(/<p\b[^>]*>โหมดตัวอย่างสำหรับออกแบบ[\s\S]*?<\/p>/g, "");
+  output = output.replaceAll("/__l5e/assets-v1/", `${CUSTOMER_ASSET_PREFIX}lovable/`);
   output = output.replaceAll("/assets/", CUSTOMER_ASSET_PREFIX);
   output = output.replaceAll("/favicon.ico", `${CUSTOMER_ASSET_PREFIX}favicon.ico`);
   output = output.replaceAll("/favicon.svg", `${CUSTOMER_ASSET_PREFIX}favicon.svg`);
@@ -142,6 +148,10 @@ export function rewriteMyMmsCustomerHtml(html) {
 
 function rewriteMyMmsCustomerJavascript(source) {
   return String(source || "")
+    // Start's generated client bootstrap overwrites the router's runtime
+    // basepath with its build-time root. This bundle is served only at MY MMS.
+    .replace(/(\.update\(\{basepath:)(?:``|""|'')(,serializationAdapters:)/g, '$1"/male-massage"$2')
+    .replaceAll("/__l5e/assets-v1/", `${CUSTOMER_ASSET_PREFIX}lovable/`)
     .replace(/(["'`])\/assets\//g, `$1${CUSTOMER_ASSET_PREFIX}`)
     .replace(/(["'`])assets\//g, `$1male-massage-assets/`);
 }
@@ -156,6 +166,11 @@ function recoveryHtml() {
 
 export async function handleMyMmsCustomerUi(request) {
   if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) return methodNotAllowed("GET, HEAD");
+  if (requestPath(request) === '/male-massage/support/chat') return new Response(request.method === 'HEAD' ? null : renderMmsDirectChatPage('customer'), {
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'x-mmd-route-owner': WORKER_NAME,
+      'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow', 'referrer-policy': 'no-referrer',
+      'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" },
+  });
 
   let upstream;
   try {
@@ -355,6 +370,26 @@ function unavailableContract(name) {
 export async function handleMyMmsCustomerApi(request, env = {}) {
   const method = String(request.method || "GET").toUpperCase();
   const path = requestPath(request);
+
+  if (path === `${CUSTOMER_API_BASE}/chat` || path.startsWith(`${CUSTOMER_API_BASE}/chat/`)) {
+    if (!['GET', 'POST'].includes(method)) return methodNotAllowed('GET, POST');
+    if (method === 'POST' && !new Set(['https://mmdbkk.com', 'https://www.mmdbkk.com']).has(request.headers.get('origin'))) return json({ ok: false, error: { code: 'ORIGIN_NOT_ALLOWED' } }, 403);
+    const profile = await readMemberProfile(request, env);
+    if (profile.status === 401) return json({ ok: false, error: { code: 'MMS_SESSION_REQUIRED' } }, 401);
+    if (profile.status !== 200 || !profile.data) return json({ ok: false, error: { code: 'MMS_MEMBER_CONTEXT_UNAVAILABLE' } }, 503);
+    if (!env.MMS_WORKER?.fetch) return json({ ok: false, error: { code: 'MMS_CHAT_UNAVAILABLE' } }, 503);
+    const target = new URL(request.url);
+    target.protocol = 'https:'; target.host = 'mms.internal';
+    target.pathname = '/internal/mms/chat/customer' + path.slice(`${CUSTOMER_API_BASE}/chat`.length);
+    const headers = new Headers({ accept: 'application/json', 'x-mms-chat-member-ref': profile.data.memberRef });
+    for (const name of ['origin', 'content-type']) if (request.headers.has(name)) headers.set(name, request.headers.get(name));
+    try {
+      const upstream = await env.MMS_WORKER.fetch(new Request(target, { method, headers, ...(method === 'POST' ? { body: request.body, duplex: 'half' } : {}), redirect: 'manual' }));
+      const responseHeaders = new Headers(upstream.headers);
+      responseHeaders.set('cache-control', 'private, no-store'); responseHeaders.set('x-mmd-route-owner', WORKER_NAME);
+      return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+    } catch { return json({ ok: false, error: { code: 'MMS_CHAT_UNAVAILABLE' } }, 503); }
+  }
 
   if (path === CUSTOMER_API_PATHS.customer) {
     if (method !== "GET") return methodNotAllowed("GET");

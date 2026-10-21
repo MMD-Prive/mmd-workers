@@ -1,0 +1,36 @@
+{
+  "tested_at_utc": "2026-10-20T09:19:50.316Z",
+  "url": "https://mmd-liff-commerce-mock-staging.malemodel-bkk.workers.dev/",
+  "qr_url": "https://mmd-liff-commerce-mock-staging.malemodel-bkk.workers.dev/qr.svg",
+  "script": "mmd-liff-commerce-mock-staging",
+  "deployment_id": "d7c0957a-424d-432f-983b-df7e36680617",
+  "health": {
+    "ok": true,
+    "mode": "mock_only",
+    "writes_enabled": false,
+    "payment_intents_enabled": false,
+    "live_liff_auth": false,
+    "bindings": [],
+    "fixture_sha256": "611c04827d9c8caade823126de631679eef4d1a8b364123f1c235dd6f4f7637d"
+  },
+  "html_status": 200,
+  "qr_status": 200,
+  "mutations": [
+    {
+      "path": "/",
+      "status": 405
+    },
+    {
+      "path": "/member/api/liff/renewal/purchase",
+      "status": 405
+    },
+    {
+      "path": "/member/api/liff/promotions/double-moment/purchase",
+      "status": 405
+    }
+  ],
+  "production_routes_changed": false,
+  "production_liff_endpoint_changed": false,
+  "mobile_line_acceptance_observed": false,
+  "version_id": "2761acb6-2fed-47c1-a52d-c9d09f58a13d"
+}

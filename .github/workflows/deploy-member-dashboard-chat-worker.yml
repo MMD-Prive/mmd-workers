@@ -33,7 +33,38 @@ permissions:
   issues: write
 
 jobs:
+  release-scope:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deploy_required: ${{ steps.scope.outputs.deploy_required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Guide-only fixes are deployed separately with inherited live settings.
+      # Do not run the unrelated MMS deploy and route sync for this scope.
+      - id: guide_scope
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: node scripts/guide-notifier-release-scope.mjs
+      - id: scope
+        if: steps.guide_scope.outputs.guide_only != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: node scripts/kenji-pause-release-scope.mjs
+
   validate-and-deploy:
+    needs: release-scope
+    if: needs.release-scope.outputs.deploy_required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -156,6 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Eq '^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          grep -Eq '^LINE_AUTO_REPLY_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
           grep -Eq '^LINE_KENJI_MODEL_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
           grep -Eq '^LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
           node --test scripts/kenji-model-off-workflow.test.mjs
@@ -163,10 +195,16 @@ jobs:
           node --test member-dashboard-chat-worker/test/kenji-line-contextual-understanding-shadow.test.mjs
           node --test member-dashboard-chat-worker/test/line-webhook.test.mjs
 
+      - name: Validate guide notification contract
+        run: node --test member-dashboard-chat-worker/test/guide-owner-notifications.test.mjs
+
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         working-directory: member-dashboard-chat-worker
-        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+        run: |
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars --outdir "$RUNNER_TEMP/guide-notifier-bundle"
+          node ../scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/guide-notifier-bundle/guide-notification-entry.js"
+          node ../scripts/check-mms-therapist-bundle.mjs "$RUNNER_TEMP/guide-notifier-bundle/guide-notification-entry.js"
 
       # The gateway's new binding must have an owner before its version upload.
       # This is a new, route-free Worker and namespace; existing MMS objects are untouched.
@@ -514,7 +552,7 @@ jobs:
         run: |
           set -euo pipefail
           for host in mmdbkk.com www.mmdbkk.com; do
-            for suffix in '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
+            for suffix in '' '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
               url="https://${host}/male-massage/therapists${suffix}"
               code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-ui.headers" -o "$RUNNER_TEMP/therapist-ui.html" -w '%{http_code}' "$url")"
               echo "MY THERAPIST entrance: $url HTTP $code"
@@ -525,6 +563,11 @@ jobs:
               grep -qi '^x-mmd-ui-source: mms-native-workspace-v1' "$RUNNER_TEMP/therapist-ui.headers"
               grep -qi '^cache-control: .*no-store' "$RUNNER_TEMP/therapist-ui.headers"
             done
+            logo_url="https://${host}/male-massage/therapists/assets/male-massage-ai.4ed6770759e9.png"
+            logo_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-logo.headers" -o "$RUNNER_TEMP/therapist-logo.png" -w '%{http_code}' "$logo_url")"
+            test "$logo_code" = '200'
+            grep -qi '^content-type: image/png' "$RUNNER_TEMP/therapist-logo.headers"
+            test "$(sha256sum "$RUNNER_TEMP/therapist-logo.png" | cut -d ' ' -f 1)" = '4ed6770759e92887e9c6c8eec7941ccb28fa58dd332fe44fea1e06511a9fb5b6'
             code="$(curl --silent --show-error -D "$RUNNER_TEMP/therapist-access.headers" -o "$RUNNER_TEMP/therapist-access.json" -w '%{http_code}' "https://${host}/male-massage/therapists/api/app/access")"
             test "$code" = '401'
             node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/therapist-access.json","utf8"));if(b.ok!==false||b.error?.code!=="THERAPIST_SESSION_REQUIRED")process.exit(1)'

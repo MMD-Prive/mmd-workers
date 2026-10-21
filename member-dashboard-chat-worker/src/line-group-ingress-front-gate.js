@@ -8,7 +8,10 @@ import { runPaymentObserverHealth } from "./payment-observer-health.mjs";
 import { resolveLineCanonicalPayment, withPaymentEvidenceLock } from "../../shared/canonical-payment-evidence.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
-const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
+const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
+const MANUAL_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ";
+const SAFE_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ";
+const RETRY_SLIP_ACK = "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_PAYMENT_PROOFS_TABLE = "tblfJfM4Sqag9zrLi";
@@ -17,6 +20,9 @@ const DEFAULT_DIRECT_CANDIDATE_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_PAYMENT_CONTEXT_LOOKBACK_HOURS = 48;
 const PAYMENT_CONTEXT_RE = /(?:สลิป|หลักฐาน(?:การ)?(?:โอน|ชำระ)|โอน|จ่าย|ชำระ|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|payment(?:\s+proof)?|transfer(?:\s+(?:slip|proof|done))?|bank\s*transfer|renew(?:al)?|membership|promptpay|พร้อมเพย์)/i;
 const PAYMENT_FOLLOWUP_RE = /(?:ขอ\s*เข้า\s*กลุ่ม|เข้า\s*กลุ่ม|access|drive|เข้าแล้ว|โอน|จ่าย|ชำระ|สลิป|หลักฐาน|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|renew(?:al)?|payment|transfer|สมาชิก|member)/i;
+const PAYMENT_EVIDENCE_FOLLOWUP_RE = /(?:โอน|จ่าย|ชำระ|สลิป|หลักฐาน|payment|transfer|promptpay|พร้อมเพย์)/i;
+const DIRECT_CANDIDATE_WAIT_MS = 5000;
+const DIRECT_CANDIDATE_POLL_MS = 500;
 const MEMBERSHIP_PAYMENT_CONTEXT_RE = /(?:สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|membership|member\s*(?:fee|renewal)?|renew(?:al)?)/i;
 const BANK_DETAIL_CONTEXT_RE = /(?:คืนเงิน|โอนคืน|refund|ยกเลิก(?:งาน|รายการ)?|เลขบัญชี|บัญชี(?:สำหรับ)?(?:รับ|คืน)|ส่งบัญชี)/i;
 
@@ -32,11 +38,6 @@ function hasPaymentContext(value = "") { return PAYMENT_CONTEXT_RE.test(asString
 function hasPaymentFollowupContext(value = "") { const text = asString(value); return PAYMENT_FOLLOWUP_RE.test(text) || /\d/.test(text); }
 function hasMembershipPaymentContext(value = "") { return MEMBERSHIP_PAYMENT_CONTEXT_RE.test(asString(value)); }
 function positiveNumericAmount(value) { const amount = Number(value); return Number.isFinite(amount) && amount > 0 ? amount : null; }
-function membershipPaymentAcceptedByOwnerPolicy({ route = {}, extraction = {}, contextText = "" } = {}) {
-  const amount = positiveNumericAmount(extraction?.amount_thb);
-  if (amount == null || route?.should_alert === true) return false;
-  return route?.topic === "membership" || hasMembershipPaymentContext(contextText);
-}
 
 async function sha256Hex(value) {
   const input = value instanceof ArrayBuffer ? value : new TextEncoder().encode(String(value || ""));
@@ -369,15 +370,6 @@ async function airtableRequest(env = {}, path = "", init = {}) {
   return payload;
 }
 
-async function updatePaymentProof(env = {}, recordId = "", fields = {}) {
-  const id = asString(recordId);
-  if (!id) throw new Error("payment_proof_record_id_missing");
-  return airtableRequest(env, `${encodeURIComponent(paymentProofsTable(env))}/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ fields }),
-  });
-}
-
 async function findExistingProof(env = {}, proofId = "") {
   const params = new URLSearchParams({ maxRecords: "1", filterByFormula: `{proof_id}='${formulaValue(proofId)}'` });
   const payload = await airtableRequest(env, `${encodeURIComponent(paymentProofsTable(env))}?${params.toString()}`);
@@ -416,24 +408,15 @@ function safePaidDate(value) {
 
 async function createPendingProof(env = {}, evidence = {}) {
   const existing = await findExistingProof(env, evidence.proofId);
-  if (existing?.id) return { id: existing.id, deduped: true, verified: existing?.fields?.status === "verified" };
+  if (existing?.id) return { id: existing.id, deduped: true, verified: false };
   const analysis = evidence.analysis || {};
   const extraction = analysis.extraction || {};
   const links = analysis.links || {};
   const opsRoute = analysis.ops_route || evidence.paymentOpsRoute || classifyPaymentOpsRoute({ source_context: evidence.sourceContext, context_text: evidence.paymentContextText });
-  const identityReady = Boolean(asString(links.member) || asString(links.client) || asString(links.renewal));
   const membershipBound = Boolean(asString(links.member) || asString(links.renewal));
-  const canonicalPaymentBound = analysis.canonical_payment?.status === "exact" && Boolean(asString(analysis.canonical_payment?.payment_ref));
-  // Evidence can be retained before identity/binding. A Client link by itself
-  // cannot certify a membership payment or authorize an entitlement.
-  const ownerPolicyVerified = identityReady && (membershipBound || canonicalPaymentBound)
-    && membershipPaymentAcceptedByOwnerPolicy({ route: opsRoute, extraction, contextText: evidence.paymentContextText });
-  const packageReady = Boolean(asString(analysis.payment_intelligence?.inferred_package_code));
-  const explicitMembershipIntent = hasMembershipPaymentContext(evidence.paymentContextText);
-  const mayExtendMembership = ownerPolicyVerified && membershipBound && packageReady && (Boolean(asString(links.renewal)) || explicitMembershipIntent);
   const noteValue = {
     schema: "line_payment_evidence_v4",
-    evidence_only: !ownerPolicyVerified,
+    evidence_only: true,
     source_type: evidence.sourceType,
     source_context: evidence.sourceContext || null,
     identity_match: evidence.identityMatch || analysis.customer?.source || "unresolved",
@@ -463,26 +446,21 @@ async function createPendingProof(env = {}, evidence = {}) {
     canonical_payment: analysis.canonical_payment || null,
     review_summary: analysis.review_summary || null,
     payment_ops_route: { topic: opsRoute.topic, classification: opsRoute.classification, confidence: opsRoute.confidence, reason: opsRoute.reason, should_alert: opsRoute.should_alert === true },
-    payment_truth: ownerPolicyVerified ? "verified_by_owner_membership_policy" : "unverified",
-    official_verification_required: !ownerPolicyVerified,
-    may_mark_paid: ownerPolicyVerified,
+    payment_truth: "unverified",
+    official_verification_required: true,
+    may_mark_paid: false,
     may_award_points: false,
-    may_extend_membership: mayExtendMembership,
+    may_extend_membership: false,
     may_confirm_session: false,
-    owner_policy: ownerPolicyVerified ? {
-      code: "membership_slip_simple_accept_v1",
-      receiving_account_required: false,
-      positive_numeric_amount_required: true,
-      membership_intent_required: true,
-      identity_and_package_remain_separate: true,
-    } : null,
-    settlement: asString(analysis.payment_intelligence?.inferred_stage) !== "membership"
-      ? { status: "official_verify_required", authority: "payments-worker" }
-      : mayExtendMembership
-        ? { status: "pending", authority: "payments-worker" }
-        : { status: "review_required", reason: !membershipBound ? "canonical_identity_binding_manual_review_required" : "membership_package_unresolved" },
+    owner_policy: null,
+    settlement: {
+      status: "pending",
+      authority: "payments-worker",
+      reason: membershipBound ? "manual_official_verification_required" : "canonical_identity_binding_manual_review_required",
+    },
   };
-  // Never persist a verified proof before the authoritative Payments write-through succeeds.
+  // LINE intake is evidence-only. Only the separate official verification flow
+  // may change payment truth or materialize membership.
   const fields = { proof_id: evidence.proofId, channel: "line_ofc", note: JSON.stringify(noteValue), status: "pending" };
   const payerName = asString(extraction.payer_name || analysis.customer?.display_name || evidence.payerName);
   if (payerName) fields.payer_name = payerName;
@@ -500,95 +478,23 @@ async function createPendingProof(env = {}, evidence = {}) {
       const params = new URLSearchParams({ maxRecords: "1", filterByFormula: `{payment_ref}='${formulaValue(paymentRef)}'` });
       const found = await airtableRequest(env, `${encodeURIComponent(paymentProofsTable(env))}?${params}`);
       const prior = found.records?.[0];
-      if (prior?.id) return { id: prior.id, proofId: asString(prior.fields?.proof_id), deduped: true, verified: prior.fields?.status === "verified" };
+      if (prior?.id) return { id: prior.id, proofId: asString(prior.fields?.proof_id), deduped: true, verified: false };
     }
     const payload = await airtableRequest(env, encodeURIComponent(paymentProofsTable(env)), { method: "POST", body: JSON.stringify({ fields }) });
-    return { id: asString(payload?.id), deduped: false, verified: false, mayExtendMembership, note: noteValue };
+    return { id: asString(payload?.id), deduped: false, verified: false, mayExtendMembership: false, note: noteValue };
   };
   return analysis.canonical_payment?.status === "exact"
     ? withPaymentEvidenceLock(env.LINE_SLIP_EVIDENCE, paymentRef, create)
     : create();
 }
 
-async function settleTrackedMembership(env = {}, evidence = {}, proof = {}, lineUserId = "") {
+async function settleTrackedMembership(_env = {}, _evidence = {}, proof = {}, _lineUserId = "") {
   if (proof?.deduped === true) return { status: "deduped" };
-  if (proof?.mayExtendMembership !== true) return { status: "review_required", reason: "membership_context_incomplete" };
-  if (!env.PAYMENTS_WORKER || typeof env.PAYMENTS_WORKER.fetch !== "function") return markSettlementReview(env, proof, "payments_binding_missing");
-
-  const analysis = evidence.analysis || {};
-  const extraction = analysis.extraction || {};
-  const intelligence = analysis.payment_intelligence || {};
-  const context = analysis.settlement_context || {};
-  const packageCode = asString(intelligence.inferred_package_code).toLowerCase();
-  if (!new Set(["standard", "premium"]).has(packageCode)) return markSettlementReview(env, proof, "private_membership_package_required");
-  const token = asString(env.AUTH_SERVICE_LINE_TO_PAYMENTS || env.INTERNAL_TOKEN);
-  if (!token) return markSettlementReview(env, proof, "payments_service_token_missing");
-
-  const body = {
-    source: "line_ofc_payment_ingress",
-    decision: "approved",
-    proof_id: evidence.proofId,
-    evidence_record_id: proof.id,
-    payment_ref: asString(extraction.payment_ref),
-    amount_thb: positiveNumericAmount(extraction.amount_thb),
-    payment_stage: "membership",
-    member_email: asString(context.member_email) || undefined,
-    package_code: packageCode,
-    payment_method: asString(extraction.provider) || "promptpay",
-    context_source: asString(context.member_email) ? "line_ofc_exact_member" : "liff_renewal_recovery",
-    member_id: asString(context.member_id) || undefined,
-    member_record_id: asString(context.member_record_id) || undefined,
-    client_record_id: asString(context.client_record_id) || undefined,
-    renewal_record_id: asString(context.renewal_record_id) || undefined,
-    renewal_session_id: asString(context.renewal_session_id) || undefined,
-    line_user_id: asString(lineUserId) || undefined,
-    review_reason: "LINE OFC membership slip matched canonical identity, package, amount, and payment reference",
-    review_actor: "line_ofc_membership_auto",
+  return {
+    status: "pending",
+    authority: "payments-worker",
+    reason: "manual_official_verification_required",
   };
-  try {
-    const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker/v1/internal/payments/reviewed-proof", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-        "x-mmd-service-caller": "member-dashboard-chat-worker",
-      },
-      body: JSON.stringify(body),
-    }));
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok !== true || payload?.entitlement_materialized !== true) {
-      return markSettlementReview(env, proof, asString(payload?.membership_write_through?.reason || payload?.error || `payments_${response.status}`));
-    }
-    const settlement = {
-      status: "materialized",
-      authority: "payments-worker",
-      entitlement_record_id: asString(payload.entitlement_record_id) || null,
-      membership_expire_at: asString(payload.membership_expire_at) || null,
-      membership_term: asString(payload.membership_term) || null,
-      membership_expiry_rule: asString(payload.membership_expiry_rule) || null,
-      promotion: payload?.membership_write_through?.promotion || null,
-    };
-    await updatePaymentProof(env, proof.id, {
-      status: "verified",
-      verified_at: new Date().toISOString().slice(0, 10),
-      verified_by: "payments-worker-line-ofc",
-      note: JSON.stringify({ ...(proof.note || {}), settlement }),
-    });
-    return settlement;
-  } catch (error) {
-    return markSettlementReview(env, proof, asString(error?.message || error || "payments_settlement_failed"));
-  }
-}
-
-async function markSettlementReview(env = {}, proof = {}, reason = "membership_settlement_failed") {
-  const settlement = { status: "review_required", authority: "payments-worker", reason: asString(reason).slice(0, 180) || "membership_settlement_failed" };
-  if (asString(proof?.id)) {
-    await updatePaymentProof(env, proof.id, {
-      status: "review_required",
-      note: JSON.stringify({ ...(proof.note || {}), settlement }),
-    }).catch(() => {});
-  }
-  return settlement;
 }
 
 function paymentOpsChatId(env = {}) { return asString(env.TELEGRAM_OPS_CHAT_ID || env.TELEGRAM_CHAT_ID); }
@@ -598,7 +504,7 @@ function alertsOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_ALERTS_
 
 // Durable Ops delivery. The message is persisted before the first send attempt
 // and retried from the outbox, so a Telegram outage can never lose an operator
-// notification and can never re-run payment settlement.
+// notification and can never mutate payment or entitlement truth.
 async function sendOpsMessage(env, { chatId, threadId, flow, text, eventKey, purpose }) {
   if (!asString(chatId)) return { delivered: false, durable: false, skipped: true, reason: "telegram_config_missing" };
   return dispatchOpsNotification(env, {
@@ -610,12 +516,8 @@ async function sendOpsMessage(env, { chatId, threadId, flow, text, eventKey, pur
 }
 
 function paymentNotificationPurpose({ isMembership = false, settlementStatus = "" } = {}) {
-  // Service/Job evidence always stays one review-lane event. Only the
-  // Membership lane distinguishes a settlement outcome.
   if (!isMembership) return "service_payment_review";
-  const status = asString(settlementStatus);
-  if (status === "materialized") return "membership_settlement_materialized";
-  if (status === "review_required") return "membership_settlement_review_required";
+  if (asString(settlementStatus) === "deduped") return "membership_payment_replay";
   return "membership_payment_review";
 }
 
@@ -677,77 +579,41 @@ function paymentProofCategory(trackingKind, isMembership) {
 }
 
 
-function directPaymentJobLabel(analysis = {}) {
-  const selected = analysis?.job_correlation?.status === "exact" ? analysis?.job_correlation?.selected : null;
-  if (!selected) return "";
-  const parts = [
-    asString(selected.model_name),
-    compactOpsWhen(selected),
-  ].filter(Boolean);
-  return parts.join(" · ");
-}
-
 function buildDirectPaymentAcknowledgement(evidence = {}, result = {}) {
-  const analysis = evidence.analysis || {};
-  const trackingKind = asString(analysis.payment_intelligence?.tracking_kind) || "unresolved_payment";
-  const route = analysis.ops_route || evidence.paymentOpsRoute || {};
-  const policyVerified = membershipPaymentAcceptedByOwnerPolicy({
-    route,
-    extraction: analysis.extraction || {},
-    contextText: evidence.paymentContextText,
-  });
-  const isMembership = route.topic === "membership" || (policyVerified && hasMembershipPaymentContext(evidence.paymentContextText));
-  const category = paymentProofCategory(trackingKind, isMembership);
-  const settlement = result?.settlement || null;
-  const jobLabel = !isMembership ? directPaymentJobLabel(analysis) : "";
-
-  if (settlement?.status === "materialized") {
-    return [
-      `ได้รับและยืนยัน${category}เรียบร้อยแล้วครับ`,
-      jobLabel ? `งาน: ${jobLabel}` : "",
-      "ระบบอัปเดตสถานะรายการให้แล้วครับ",
-    ].filter(Boolean).join("\n");
-  }
-
-  return [
-    `ได้รับหลักฐาน${category}แล้วครับ`,
-    jobLabel ? `งาน: ${jobLabel}` : "",
-    settlement?.status === "review_required"
-      ? "รายการนี้ต้องตรวจสอบเพิ่มเติม เดี๋ยวเปอร์เช็กให้ครับ"
-      : "ตอนนี้รายการอยู่ระหว่างตรวจสอบครับ",
-    "ข้อความนี้เป็นการรับหลักฐาน ยังไม่ใช่การยืนยันรับเงินจนกว่าระบบจะตรวจเรียบร้อยครับ",
-  ].filter(Boolean).join("\n");
+  if (result?.acknowledgement === "retry") return RETRY_SLIP_ACK;
+  if (result?.deduped === true || result?.acknowledgement === "safe") return SAFE_SLIP_ACK;
+  if (result?.manualReviewRequired === true || result?.heldStored === true || result?.acknowledgement === "manual") return MANUAL_SLIP_ACK;
+  return SAFE_SLIP_ACK;
 }
 
-async function notifyDirectCustomerPaymentEvidence(env = {}, evidence = {}, result = {}, lineUserId = "") {
-  if (result?.deduped === true) return { skipped: true, reason: "deduped" };
+async function notifyDirectCustomerPaymentEvidence(env = {}, evidence = {}, result = {}, replyToken = "") {
   if (asString(evidence.sourceType) !== "user") return { skipped: true, reason: "not_direct_user" };
-  const to = asString(lineUserId);
+  const reply = asString(replyToken);
   const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
-  if (!to) return { skipped: true, reason: "line_user_id_missing" };
+  if (!reply) return { skipped: true, reason: "reply_token_missing" };
   if (!token) return { skipped: true, reason: "line_token_missing" };
 
   const text = buildDirectPaymentAcknowledgement(evidence, result);
   if (!text) return { skipped: true, reason: "message_empty" };
 
   try {
-    const response = await fetch(LINE_PUSH_URL, {
+    const response = await fetch(LINE_REPLY_URL, {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        to,
+        replyToken: reply,
         messages: [{ type: "text", text }],
       }),
     });
-    if (!response.ok) return { sent: false, status: response.status, reason: `line_push_${response.status}` };
+    if (!response.ok) return { sent: false, status: response.status, reason: `line_reply_${response.status}` };
     return { sent: true, status: response.status };
   } catch (error) {
     return {
       sent: false,
-      reason: asString(error?.message || error || "line_push_failed").replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
+      reason: asString(error?.message || error || "line_reply_failed").replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
     };
   }
 }
@@ -761,19 +627,15 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   const analysis = evidence.analysis || {};
   const route = analysis.ops_route || evidence.paymentOpsRoute || classifyPaymentOpsRoute({ source_context: evidence.sourceContext, context_text: evidence.paymentContextText });
   const extraction = analysis.extraction || {};
-  const policyVerified = membershipPaymentAcceptedByOwnerPolicy({ route, extraction, contextText: evidence.paymentContextText });
-  const isMembership = route.topic === "membership" || (policyVerified && hasMembershipPaymentContext(evidence.paymentContextText));
+  const isMembership = route.should_alert !== true
+    && (route.topic === "membership" || hasMembershipPaymentContext(evidence.paymentContextText));
   const threadId = isMembership ? membershipOpsThreadId(env) : paymentOpsThreadId(env);
   const purpose = asString(analysis.payment_intelligence?.inferred_label) || membershipInferenceLabel(route.inference) || (isMembership ? "Membership / Renewal" : "Payment / Service");
   const customer = asString(analysis.customer?.display_name || evidence.payerName);
   const trackingKind = asString(analysis.payment_intelligence?.tracking_kind) || "unresolved_payment";
   const settlement = result?.settlement || null;
   const category = paymentProofCategory(trackingKind, isMembership);
-  const statusLine = settlement?.status === "materialized"
-    ? "สถานะ: ยืนยันแล้วจากระบบรับเงิน"
-    : settlement?.status === "review_required"
-      ? "สถานะ: ต้องตรวจสอบ"
-      : "สถานะ: รอตรวจสอบ";
+  const statusLine = "สถานะ: รอตรวจสอบ";
   const text = [
     `${isMembership ? "🧾" : "💳"} สลิป${category}`,
     statusLine,
@@ -785,15 +647,9 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     extraction.amount_thb != null ? `Amount: ${Number(extraction.amount_thb).toLocaleString("en-US")} THB` : "Amount: pending extraction",
     ...(!isMembership ? paymentJobCorrelationLines(analysis) : []),
     `Routing: ${route.reason}`,
-    settlement?.status === "materialized"
-      ? `Action: membership materialized${settlement.membership_expire_at ? ` through ${settlement.membership_expire_at}` : ""}.`
-      : settlement?.status === "review_required"
-        ? "Action: เปิดกล่องตรวจรับเงินเพื่อตรวจตัวตน แพ็กเกจ และสลิปด้วยคน ก่อนยืนยันรายการ."
-        : policyVerified
-          ? "Action: หลักฐานผ่านเกณฑ์เบื้องต้น รอระบบรับเงินยืนยันตัวตนและแพ็กเกจ."
-          : analysis.job_correlation?.status === "exact" || isMembership
-          ? "Action: Official Verify in Payment Inbox before any money/access change."
-          : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
+    analysis.job_correlation?.status === "exact" || isMembership
+      ? "Action: Official Verify in Payment Inbox before any money/access change."
+      : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
   ].filter(Boolean).join("\n");
   const notificationPurpose = paymentNotificationPurpose({ isMembership, settlementStatus: settlement?.status });
   const main = await sendOpsMessage(env, { chatId, threadId, flow: isMembership ? "membership" : "payment_proof", text, eventKey: evidence.proofId, purpose: notificationPurpose });
@@ -803,8 +659,8 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     alertDelivery = await sendOpsMessage(env, { chatId, threadId: alertsOpsThreadId(env), flow: "alert", text: `🚨 MMD Payment Classification Conflict\nProof: ${evidence.proofId}\nReason: ${route.reason}\nAction: keep pending; do not activate automatically.`, eventKey: evidence.proofId, purpose: "payment_classification_conflict" });
     alertSent = alertDelivery.delivered === true;
   }
-  // A failed Telegram send never rolls back settlement and never blocks the
-  // canonical Payment Proof. It stays recoverable in the durable outbox.
+  // A failed Telegram send never changes or blocks the pending Payment Proof.
+  // It stays recoverable in the durable outbox.
   return {
     sent: main.delivered === true,
     queued: main.durable === true && main.delivered !== true,
@@ -818,7 +674,7 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     topic: isMembership ? "membership" : route.topic,
     thread_id: threadId,
     alert_sent: alertSent,
-    verified: policyVerified,
+    verified: false,
   };
 }
 
@@ -854,12 +710,19 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
   const messageIdHash = await sha256Hex(messageId);
   const proofId = asString(options.proofId) || `line_${messageIdHash.slice(0, 24)}`;
   const existing = await findExistingProof(env, proofId);
-  if (existing?.id) return { captured: true, deduped: true, proofId, recordId: existing.id, verified: existing?.fields?.status === "verified" };
+  if (existing?.id) return { captured: true, deduped: true, proofId, recordId: existing.id, verified: false, acknowledgement: "safe" };
 
   const image = await downloadLineImage(env, messageId);
   const userId = asString(event?.source?.userId);
   const contextText = asString(options.paymentContextText);
-  const analysis = await analyzeProductionPaymentProof({ env, image, lineUserId: userId, contextText });
+  const analysis = await analyzeProductionPaymentProof({
+    env,
+    image,
+    lineUserId: userId,
+    contextText,
+    automatedExtraction: false,
+    paymentContextConfirmed: source === "group" || hasPaymentContext(contextText),
+  });
   const groupId = asString(event?.source?.groupId);
   const webhookEventId = asString(options.webhookEventId || event?.webhookEventId);
   const identity = {
@@ -929,7 +792,7 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
 
 // The single canonical accepted-evidence gate. Live LINE intake and held
 // evidence reprocess both land here, so a promoted held item passes exactly the
-// same correlation, pending-first Payment Proof and settlement contract.
+// same correlation and pending-only Payment Proof contract.
 async function persistAcceptedEvidence(env = {}, input = {}) {
   if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") throw new Error("line_slip_r2_binding_missing");
   const { proofId, image } = input;
@@ -973,28 +836,16 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
   const result = { ...proof, settlement };
   let delivery = null;
   try { delivery = await notifyPaymentProofOps(env, evidence, result); } catch (error) { console.log(JSON.stringify({ line_payment_alert: "failed", proof_id: proofId, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
-
-  let lineCustomerNotification = null;
-  try {
-    lineCustomerNotification = await notifyDirectCustomerPaymentEvidence(env, evidence, result, userId);
-  } catch (error) {
-    lineCustomerNotification = { sent: false, reason: "line_customer_notify_failed" };
-    console.log(JSON.stringify({
-      line_payment_customer_notification: "failed",
-      proof_id: proofId,
-      error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100),
-    }));
-  }
-
-  const verified = settlement.status === "materialized"
-    ? true
-    : settlement.status === "review_required"
-      ? false
-      : proof.verified === true;
+  const missing = Array.isArray(analysis.review_summary?.missing) ? analysis.review_summary.missing : [];
+  const manualReviewRequired = missing.length > 0
+    || analysis.customer?.status !== "matched"
+    || analysis.job_correlation?.status === "ambiguous"
+    || analysis.extraction?.extraction_method === "none"
+    || analysis.classification?.confidence < 0.8;
   return {
     captured: true,
     deduped: proof.deduped,
-    verified,
+    verified: false,
     proofId,
     recordId: proof.id,
     imageClass: analysis.classification?.image_class,
@@ -1002,13 +853,9 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
     trackingKind: analysis.payment_intelligence?.tracking_kind,
     settlementStatus: settlement.status,
     customerMatch: analysis.customer?.status,
+    manualReviewRequired,
+    acknowledgement: proof.deduped ? "safe" : manualReviewRequired ? "manual" : "safe",
     opsDelivery: delivery ? { delivered: delivery.sent === true, queued: delivery.queued === true, status: asString(delivery.delivery_status) || null } : null,
-    lineCustomerNotification: lineCustomerNotification ? {
-      sent: lineCustomerNotification.sent === true,
-      skipped: lineCustomerNotification.skipped === true,
-      status: Number(lineCustomerNotification.status) || null,
-      reason: asString(lineCustomerNotification.reason) || null,
-    } : null,
   };
 }
 
@@ -1023,7 +870,14 @@ export async function runLineSlipEvidenceMaintenance(env = {}, options = {}) {
   const held = await reprocessHeldEvidence(env, {
     now,
     limit: options.heldLimit,
-    analyze: ({ env: scopedEnv, image, lineUserId, contextText }) => analyzeProductionPaymentProof({ env: scopedEnv, image, lineUserId, contextText }),
+    analyze: ({ env: scopedEnv, image, lineUserId, contextText }) => analyzeProductionPaymentProof({
+      env: scopedEnv,
+      image,
+      lineUserId,
+      contextText,
+      automatedExtraction: false,
+      paymentContextConfirmed: hasPaymentContext(contextText),
+    }),
     promote: ({ env: scopedEnv, state, image, analysis, lineUserId, contextText }) => persistAcceptedEvidence(scopedEnv, {
       proofId: state.proof_id,
       image,
@@ -1076,6 +930,29 @@ async function loadDirectUserImageCandidate(env = {}, userId = "") {
   return { ...candidate, key, userHash };
 }
 
+export async function hasPendingDirectUserPaymentCandidate(env = {}, event = {}, options = {}) {
+  if (sourceType(event) !== "user" || messageType(event) !== "text" || !hasPaymentFollowupContext(messageText(event))) return false;
+  const userId = asString(event?.source?.userId);
+  if (!userId) return false;
+  if (await loadDirectUserImageCandidate(env, userId)) return true;
+  // The signed text webhook can run before the image observer finishes its R2
+  // candidate write. Only strong payment-evidence language gets a bounded wait;
+  // generic membership/Drive messages keep their existing immediate path.
+  const requestedWaitMs = Number(options.waitForImageMs);
+  const waitMs = Number.isFinite(requestedWaitMs) ? Math.min(Math.max(requestedWaitMs, 0), DIRECT_CANDIDATE_WAIT_MS) : 0;
+  if (!waitMs || !PAYMENT_EVIDENCE_FOLLOWUP_RE.test(messageText(event)) || typeof env.LINE_SLIP_EVIDENCE?.get !== "function") return false;
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(DIRECT_CANDIDATE_POLL_MS, deadline - Date.now())));
+    if (await loadDirectUserImageCandidate(env, userId)) {
+      console.log(JSON.stringify({ line_payment_route: "candidate_wait_resolved" }));
+      return true;
+    }
+  }
+  console.log(JSON.stringify({ line_payment_route: "candidate_wait_expired" }));
+  return false;
+}
+
 function recordContextText(record = {}) { const f = record?.fields || {}; return [f.admin_note, f.intent, f.member_name, f.payload_json].map(asString).filter(Boolean).join("\n"); }
 async function recentDirectPaymentContext(env = {}, event = {}) {
   const userId = asString(event?.source?.userId); if (!userId || sourceType(event) !== "user") return { found: false, text: "" };
@@ -1092,36 +969,84 @@ async function captureDirectUserImageEvidence(env = {}, event = {}, options = {}
   if (typeof recentContext !== "boolean") {
     try { const recent = await recentDirectPaymentContext(env, event); recentContext = recent.found; recentContextText = recent.text; } catch (_) { recentContext = false; recentContextText = ""; }
   }
-  return persistCapturedImage(env, event, {
-    sourceContext: recentContext ? "recent_direct_payment_context" : "direct_user_visual_payment_gate",
-    paymentContextText: recentContext ? recentContextText : "",
-  });
+  if (!recentContext) return storeDirectUserImageCandidate(env, event);
+  try {
+    return await persistCapturedImage(env, event, {
+      sourceContext: "recent_direct_payment_context",
+      paymentContextText: recentContextText,
+    });
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error("line_slip_intake_failed");
+    failure.lineSlipRetryAcknowledgement = true;
+    throw failure;
+  }
 }
 
 async function promoteDirectUserCandidate(env = {}, event = {}) {
   if (sourceType(event) !== "user" || messageType(event) !== "text") return { skipped: true, reason: "not_direct_user_text" };
   const text = messageText(event); if (!hasPaymentFollowupContext(text)) return { skipped: true, reason: "followup_not_payment_related" };
-  const userId = asString(event?.source?.userId); const candidate = await loadDirectUserImageCandidate(env, userId);
-  if (!candidate) return { skipped: true, reason: "candidate_missing_or_stale" };
-  const syntheticEvent = { type: "message", source: { type: "user", userId }, message: { type: "image", id: candidate.message_id }, webhookEventId: candidate.webhook_event_id || "" };
-  const result = await persistCapturedImage(env, syntheticEvent, { messageId: candidate.message_id, proofId: candidate.proof_id, webhookEventId: candidate.webhook_event_id, userHash: candidate.user_hash, sourceContext: "direct_user_payment_followup", paymentContextText: text });
-  if ((result?.captured || result?.ignored) && typeof env.LINE_SLIP_EVIDENCE?.delete === "function") await env.LINE_SLIP_EVIDENCE.delete(candidate.key);
-  return result;
+  try {
+    const userId = asString(event?.source?.userId); const candidate = await loadDirectUserImageCandidate(env, userId);
+    console.log(JSON.stringify({ line_payment_match: "candidate_lookup", candidate_found: Boolean(candidate) }));
+    if (!candidate) return { skipped: true, reason: "candidate_missing_or_stale" };
+    const syntheticEvent = { type: "message", source: { type: "user", userId }, message: { type: "image", id: candidate.message_id }, webhookEventId: candidate.webhook_event_id || "" };
+    const result = await persistCapturedImage(env, syntheticEvent, { messageId: candidate.message_id, proofId: candidate.proof_id, webhookEventId: candidate.webhook_event_id, userHash: candidate.user_hash, sourceContext: "direct_user_payment_followup", paymentContextText: text });
+    if ((result?.captured || result?.ignored) && typeof env.LINE_SLIP_EVIDENCE?.delete === "function") await env.LINE_SLIP_EVIDENCE.delete(candidate.key);
+    return result;
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error("line_slip_intake_failed");
+    failure.lineSlipRetryAcknowledgement = true;
+    throw failure;
+  }
+}
+
+async function acknowledgeDirectSlipResult(env = {}, event = {}, result = {}) {
+  if (sourceType(event) !== "user" || !asString(event?.replyToken)) return { skipped: true, reason: "reply_not_available" };
+  if (result?.imageClass === "bank_account_detail") return { skipped: true, reason: "not_payment_proof" };
+  if (!(result?.captured || result?.deduped || result?.heldStored || result?.acknowledgement === "retry")) return { skipped: true, reason: "no_durable_payment_evidence" };
+  return notifyDirectCustomerPaymentEvidence(env, { sourceType: "user" }, result, event.replyToken);
 }
 
 async function observeSignedLineEvents(request, env = {}) {
   const rawBody = await request.text(); const signature = asString(request.headers.get("x-line-signature"));
   if (!(await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET))) { console.log(JSON.stringify({ line_payment_ingress: "signature_rejected" })); return; }
   let body; try { body = JSON.parse(rawBody || "{}"); } catch (_) { console.log(JSON.stringify({ line_payment_ingress: "invalid_json" })); return; }
-  for (const event of Array.isArray(body.events) ? body.events : []) {
-    const source = sourceType(event); if (!["user", "group"].includes(source)) continue; const type = messageType(event);
+  const events = Array.isArray(body.events) ? body.events : [];
+  // Diagnostics are aggregate-only: never log raw event types, payloads, LINE IDs, or headers.
+  const knownEventTypes = new Set(["message", "unsend", "follow", "unfollow", "join", "leave", "memberJoined", "memberLeft", "postback", "beacon", "accountLink", "videoPlayComplete"]);
+  const eventTypeCounts = Object.create(null);
+  for (const event of events) {
+    const eventType = knownEventTypes.has(event?.type) ? event.type : "other";
+    eventTypeCounts[eventType] = (eventTypeCounts[eventType] || 0) + 1;
+  }
+  console.log(JSON.stringify({ line_payment_observer: "batch_parsed", events_array: Array.isArray(body.events), event_count: events.length, event_type_counts: eventTypeCounts }));
+  for (const event of events) {
+    const source = sourceType(event); const type = messageType(event);
+    if (event?.type === "message") console.log(JSON.stringify({
+      line_payment_match: "event_seen",
+      source_type: source,
+      message_type: type === "text" || type === "image" ? type : "other",
+      payment_followup: source === "user" && type === "text" ? hasPaymentFollowupContext(messageText(event)) : null,
+    }));
+    if (!["user", "group"].includes(source)) continue;
     try {
       let result = null;
       if (source === "group" && type === "image") result = await captureGroupImageEvidence(env, event);
       else if (source === "user" && type === "image") result = await captureDirectUserImageEvidence(env, event);
       else if (source === "user" && type === "text") result = await promoteDirectUserCandidate(env, event);
-      if (result && (type === "image" || result.captured || result.ignored || result.held)) console.log(JSON.stringify({ line_payment_ingress: result.imageClass === "bank_account_detail" ? "bank_detail_ops" : result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, verified: result.verified === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
-    } catch (error) { console.log(JSON.stringify({ line_payment_ingress: "capture_failed", source_type: source, message_type: type, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
+      if (result) {
+        const acknowledgement = await acknowledgeDirectSlipResult(env, event, result);
+        if (acknowledgement?.sent === false) console.log(JSON.stringify({ line_payment_acknowledgement: "failed", reason: asString(acknowledgement.reason).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) }));
+      }
+      const candidateLookupMiss = source === "user" && type === "text" && result?.skipped === true && result.reason === "candidate_missing_or_stale";
+      if (result && (type === "image" || result.captured || result.ignored || result.held || candidateLookupMiss)) console.log(JSON.stringify({ line_payment_ingress: result.imageClass === "bank_account_detail" ? "bank_detail_ops" : result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : candidateLookupMiss ? "candidate_missing" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, verified: result.verified === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
+    } catch (error) {
+      if (error?.lineSlipRetryAcknowledgement === true) {
+        const acknowledgement = await acknowledgeDirectSlipResult(env, event, { acknowledgement: "retry" });
+        if (acknowledgement?.sent === false) console.log(JSON.stringify({ line_payment_acknowledgement: "failed", reason: asString(acknowledgement.reason).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) }));
+      }
+      console.log(JSON.stringify({ line_payment_ingress: "capture_failed", source_type: source, message_type: type, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) }));
+    }
   }
   // Opportunistic recovery on live traffic. The hourly cron remains the floor
   // so recovery still happens when LINE is quiet. Bounded per invocation.
@@ -1137,12 +1062,18 @@ export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url); const isLineWebhook = request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname); const observerRequest = isLineWebhook ? request.clone() : null;
     const response = await currentWorker.fetch(request, env, ctx);
-    if (observerRequest && response.ok) { const work = observeSignedLineEvents(observerRequest, env).catch(() => console.log(JSON.stringify({ line_payment_ingress: "observer_failed" }))); if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work); else await work; }
+    if (observerRequest && !response.ok) console.log(JSON.stringify({ line_payment_observer: "skipped", reason: "handler_non_2xx", response_status: response.status }));
+    if (observerRequest && response.ok) {
+      console.log(JSON.stringify({ line_payment_observer: "scheduled", response_status: response.status, execution: typeof ctx?.waitUntil === "function" ? "wait_until" : "inline" }));
+      const work = observeSignedLineEvents(observerRequest, env).catch(() => console.log(JSON.stringify({ line_payment_ingress: "observer_failed" })));
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work); else await work;
+    }
     return response;
   },
 };
 
 export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
+  acknowledgeDirectSlipResult,
   createPendingProof,
   alertsOpsThreadId,
   captureDirectUserImageEvidence,
@@ -1156,7 +1087,6 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   hasRecentDirectPaymentContext,
   isPaymentProofGroup,
   loadDirectUserImageCandidate,
-  membershipPaymentAcceptedByOwnerPolicy,
   membershipOpsThreadId,
   messageText,
   messageType,
@@ -1166,6 +1096,7 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   buildDirectPaymentAcknowledgement,
   buildHypeOwnerProblemAlert,
   notifyOwnerBankDetailReady,
+  observeSignedLineEvents,
   persistBankDetailOps,
   recentDirectBankOpsContext,
   paymentNotificationPurpose,

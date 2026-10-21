@@ -1,5 +1,6 @@
 import { customerGraphic, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
+import { loadDoubleMomentCard } from "./liff-promotion-client.js";
 import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
@@ -31,6 +32,12 @@ export function handleLiffMemberShell(request, env = {}) {
   }
 
   const url = new URL(request.url);
+  // LINE can deliver the entry query inside liff.state on the first redirect.
+  const stateValue = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
+  const state = new URLSearchParams(stateValue.includes("?") ? stateValue.slice(stateValue.indexOf("?") + 1) : stateValue);
+  for (const key of ["intent", "liff_intent", "campaign", "view", "lang"]) {
+    if (!url.searchParams.has(key) && state.has(key)) url.searchParams.set(key, state.get(key));
+  }
   const config = {
     liffId: publicLiffId(env),
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
@@ -409,7 +416,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <div class="card">${customerGraphic("history-archive")}<h2 data-copy="historyTitle">🧾 History</h2><p id="history-window" class="sub"></p><div id="v2-history" class="history"></div></div>
       <details class="card details"><summary data-copy="paymentHistoryLabel">Payment history</summary><div id="payment-history" class="stack"></div></details>
     </section>
-    <section id="care" class="panel digital-care" aria-label="Care"><div class="card care">
+    <section id="care" class="panel digital-care" aria-label="Care">
+      <div id="double-moment-card" class="card renewal-card" hidden aria-live="polite">
+        <span class="label">PROMOTION</span><h2>Double Moment</h2>
+        <div id="double-moment-rows" class="renewal-rows"></div>
+        <p id="double-moment-note" class="renewal-note" role="status"></p>
+        <button id="double-moment-action" class="renewal-action" type="button" hidden></button>
+      </div><div id="care-back-content" class="card care">
       <span class="label" data-copy="careLabel">6 Years · Care Back</span><h2 data-copy="careTitle">Personal Care-Back Privilege</h2>
       <p id="care-message">ตรวจสอบผ่าน LINE เพื่อเปิดสิทธิ์ CARE BACK ก่อน คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จครับ</p>
       <div id="care-benefits" class="benefit-grid hidden" aria-label="Personalized benefits"></div>
@@ -458,6 +471,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const CONFIG = ${safeConfig};
   const customerLoading = (${createCustomerProgress.toString()})({ render: ${renderCustomerProgress.toString()}, request: window.fetch.bind(window) });
   const fetch = customerLoading.fetch;
+  const loadDoubleMomentCard = ${loadDoubleMomentCard.toString()};
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
@@ -699,7 +713,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   careButton.textContent = copy.careButton || careButton.textContent;
   wishText.placeholder = copy.wishPlaceholder || wishText.placeholder;
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
-  const initialView = CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
+  const initialView = CONFIG.intent === "renew" ? "package" : CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
   function showView(view, smooth = true) {
     if (view === "points") {
       window.location.assign(CANONICAL_POINTS_PATH);
@@ -736,7 +750,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     try {
       const url = new URL(String(value || ""));
       const keys = [...url.searchParams.keys()];
-      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout"
+      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout" && !url.port && !url.username && !url.password
         && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
     } catch { return ""; }
   }
@@ -1643,8 +1657,12 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     secondaryReads.clear();
     profileReady = true;
     if (CONFIG.intent === "promo") showView("care", false);
-    else showView(CONFIG.view || "home", false);
-    loadRenewalCard();
+    else showView(CONFIG.intent === "renew" ? "package" : (CONFIG.view || "home"), false);
+    if (CONFIG.intent === "renew") loadRenewalCard();
+    if (CONFIG.intent === "promo" && CONFIG.campaign === "double_moment") {
+      document.getElementById("care-back-content").hidden = true;
+      loadDoubleMomentCard(memberApiFetch);
+    }
   }
 
   // Renewal card: every number and date below comes from the server offer
@@ -1654,13 +1672,25 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     loadRenewalCard.generation = generation;
     const card = document.getElementById("renewal-card");
     if (!card) return;
+    document.getElementById("renewal-action").hidden = true;
+    document.getElementById("renewal-price").hidden = true;
+    document.getElementById("renewal-promo").hidden = true;
+    document.getElementById("renewal-rows").textContent = "";
+    document.getElementById("renewal-note").textContent = "กำลังตรวจสอบรายการต่ออายุของบัญชี LINE นี้";
+    card.hidden = false;
     try {
       const response = await memberApiFetch("/member/api/liff/renewal/offer", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       const offer = response.ok ? await response.json().catch(() => null) : null;
       if (generation !== loadRenewalCard.generation) return;
-      if (!offer || offer.ok !== true) { card.hidden = true; return; }
+      if (!offer || offer.ok !== true) throw new Error("renewal_unavailable");
       renderRenewalCard(card, offer);
-    } catch { if (generation === loadRenewalCard.generation) card.hidden = true; }
+    } catch {
+      if (generation !== loadRenewalCard.generation) return;
+      card.hidden = false;
+      document.getElementById("renewal-note").textContent = "ยังยืนยันรายการต่ออายุไม่ได้ กรุณาลองอีกครั้ง หรือติดต่อ MMD ใน LINE";
+      const action = document.getElementById("renewal-action");
+      action.hidden = false; action.textContent = "ตรวจสอบอีกครั้ง"; action.onclick = loadRenewalCard;
+    }
   }
 
   function renewalDate(value) {
@@ -1687,12 +1717,18 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     };
     if (offer.status === "ready" && offer.payment_available === true && Number.isInteger(offer.amount_thb) && offer.amount_thb > 0) {
       document.getElementById("renewal-title").textContent = "ต่ออายุสมาชิก " + String(offer.package_label || "");
+      addRow("ระยะเวลาที่ซื้อ", String(offer.membership_years || 1) + " ปี");
+      if (offer.bonus_days) addRow("CARE BACK เพิ่ม", String(offer.bonus_days) + " วัน");
+      if (offer.bonus_years) addRow("CARE BACK เพิ่ม", String(offer.bonus_years) + " ปี");
+      addRow("เริ่มต่ออายุ", renewalDate(offer.renewal_starts_at));
       addRow("ใช้ได้ถึง (ปัจจุบัน)", renewalDate(offer.current_expires_at));
       addRow("ใช้ได้ถึง (หลังต่อ)", renewalDate(offer.new_expires_at));
       document.getElementById("renewal-amount").textContent = new Intl.NumberFormat("th-TH").format(offer.amount_thb);
       priceBox.hidden = false;
       if (offer.promotion_label) { promo.textContent = String(offer.promotion_label); promo.hidden = false; }
       note.textContent = "กดแล้วไปหน้าชำระเงินใน LINE ต่อทันที · สิทธิ์จะอัปเดตหลัง MMD ตรวจสอบการชำระเรียบร้อยแล้ว";
+      if (offer.promotion_ends_before) note.textContent += " · โปรประกาศถึง " + renewalDate(new Date(Date.parse(offer.promotion_ends_before) - 1).toISOString()) + " โดยยึดวันชำระที่ยืนยันแล้ว";
+      action.textContent = "ชำระ " + new Intl.NumberFormat("th-TH").format(offer.amount_thb) + " บาท →";
       action.hidden = false;
       action.onclick = () => purchaseRenewal(String(offer.package_code || ""));
       const needs = document.getElementById("digital-needs");
@@ -1720,7 +1756,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     if (action) action.disabled = true;
     messageBox.textContent = "กำลังเตรียมหน้าชำระเงินใน LINE ครับ";
     try {
-      const response = await fetch("/member/api/liff/renewal/purchase", {
+      const response = await memberApiFetch("/member/api/liff/renewal/purchase", {
         method:"POST", credentials:"same-origin",
         headers:{ "content-type":"application/json", "accept":"application/json" },
         body: JSON.stringify({ package_code: packageCode }),
@@ -2119,7 +2155,8 @@ function normalizePromoCode(value) {
 }
 
 function normalizeCampaign(value) {
-  return String(value || "").trim().toLowerCase() === "care_back" ? "care_back" : "";
+  const campaign = String(value || "").trim().toLowerCase();
+  return ["care_back", "double_moment"].includes(campaign) ? campaign : "";
 }
 
 function normalizeView(value) {

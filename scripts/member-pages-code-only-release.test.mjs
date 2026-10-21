@@ -185,10 +185,12 @@ test('real owner checker gates mock release writes, including revoked approval a
       else body={id:456,name:environmentName,can_admins_bypass:false,protection_rules:[{type:'required_reviewers',prevent_self_review:false,reviewers:[{type:'User',reviewer:owner}]}],deployment_branch_policy:{protected_branches:false,custom_branch_policies:true}};
       return {status:200,json:async()=>body};
     };
-    f.io.approve=async()=>{checks++;await verifyOwnerApproval(env,request);};
+    f.io.approve=async diagnostic=>{checks++;await verifyOwnerApproval(env,request,{diagnostic});};
     if(scenario==='approved') await releaseMemberPagesCodeOnly(f.io);
     else await assert.rejects(releaseMemberPagesCodeOnly(f.io));
     assert.equal(f.writes(),expectedWrites,scenario);
+    if (scenario === 'absent' || scenario === 'revoked_before_upload') assert.equal(f.receipts.at(-1).diagnostic.reason, 'APPROVAL_RECEIPT_INVALID');
+    if (scenario === 'rerun') assert.equal(f.receipts.at(-1).diagnostic.reason, 'OWNER_INPUT_INVALID');
     assert.ok(f.calls.every(call=>call.method==='GET'||[ROOT+'/versions?bindings_inherit=strict',ROOT+'/deployments'].includes(call.path)));
   }
 });
@@ -476,7 +478,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
 
   assert.match(source,/EXPECTED_VERSION: \$\{\{ inputs\.expected_version \}\}/);
   assert.match(source,/EXPECTED_DEPLOYMENT: \$\{\{ inputs\.expected_deployment \}\}/);
-  assert.equal((source.match(/secrets\./g)||[]).length,1);
+  assert.equal((source.match(/secrets\./g)||[]).length,2);
   assert.match(source,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.doesNotMatch(source,/AIRTABLE|R2_API|ensure-private|ensure-payment|wrangler route|wrangler secret|synthetic_write|production public Wish/i);
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
@@ -567,4 +569,120 @@ test('startup source evidence preserves V4 and names the exact two-file startup 
   assert.deepEqual(evidence.source_scope.startup_delta,{base_sha:CODE_ONLY_STARTUP_BASE_SHA,paths:CODE_ONLY_STARTUP_PATHS});
   assert.deepEqual(evidence.source_scope.exact_test_only_bridge,{from:CODE_ONLY_GRAPHICS_SOURCE_SHA,to:CODE_ONLY_STARTUP_BASE_SHA,paths:Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS)});
   assert.ok(f.calls.some(({args})=>args.join(' ')===['diff','--name-only',CODE_ONLY_STARTUP_BASE_SHA,CODE_ONLY_SOURCE_SHA].join(' ')));
+});
+
+
+test('safe preflight receipt identifies owner and source boundaries and never stores raw errors',async()=>{
+ const secret='SECRET_TOKEN=private-value; cookie=private-cookie; customer=private-client';
+ for(const [stage,reason] of [['OWNER_MAIN_CHECK','MAIN_DRIFT'],['OWNER_APPROVAL_HTTP','EVIDENCE_HTTP_STATUS'],
+  ['SOURCE_CHECKOUT','CHECKOUT_INVALID'],['SOURCE_HISTORY','SOURCE_HISTORY_INVALID'],['SOURCE_STARTUP_BRIDGE','STARTUP_BRIDGE_INVALID']]){
+  const f=fixture();f.io.approve=async mark=>{mark(stage);throw Error(secret);};
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));const receipt=f.receipts.at(-1);
+  assert.equal(receipt.phase,'stopped');assert.equal(receipt.stopped_after,'preflight');
+  assert.deepEqual(receipt.diagnostic,{stage,reason});assert.deepEqual(f.calls,[]);assert.equal(f.writes(),0);
+  assert.doesNotMatch(JSON.stringify(receipt),/SECRET_TOKEN|private-value|cookie|private-client|stack|message/);
+ }
+});
+
+test('preflight diagnostics identify baseline, source check and bundle failures before writes',async()=>{
+ for(const [stage,reason,change] of [
+  ['CF_DEPLOYMENT_READ','DEPLOYMENT_READ_FAILED',f=>{f.io.call=async()=>{throw Error('private response');};}],
+  ['CF_BASELINE_CHECK','BASELINE_MISMATCH',f=>{f.io.expectedVersion=id(99);}],
+  ['SOURCE_STARTUP_SCOPE','STARTUP_SCOPE_INVALID',f=>{f.io.sourceCheck=async mark=>{mark('SOURCE_STARTUP_SCOPE');throw Error('private path');};}],
+  ['BUNDLE_BUILD','BUNDLE_BUILD_FAILED',f=>{f.io.bundle=async()=>{throw Error('private bundler output');};}],
+  ['BUNDLE_CHECK','BUNDLE_INVALID',f=>{f.io.bundle=async()=>new Uint8Array();}],
+ ]){
+  const f=fixture();change(f);await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.deepEqual(f.receipts.at(-1).diagnostic,{stage,reason});assert.equal(f.writes(),0);
+  assert.doesNotMatch(JSON.stringify(f.receipts),/private response|private path|private bundler output/);
+ }
+});
+
+test('actual checkout guards publish safe source stages and retain their rejection',()=>{
+ for(const [options,stage] of [[{dirtyDirectory:'/release-source'},'SOURCE_CHECKOUT'],[{missingHistory:true},'SOURCE_HISTORY'],
+  [{changedBridge:true},'SOURCE_RUNTIME_BRIDGE'],[{startupBlobDrift:true},'SOURCE_STARTUP_BRIDGE'],[{startupExtraPaths:['package.json']},'SOURCE_STARTUP_SCOPE']]){
+  const f=checkoutFixture(options),stages=[];
+  assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,{...f,diagnostic:s=>stages.push(s)}));
+  assert.equal(stages.at(-1),stage);
+ }
+});
+
+for (const [name,options,stage,reason] of [
+  ['uploaded version read',{callError:(p,m)=>p===ROOT+'/versions/'+id(2)&&m==='GET'},'UPLOADED_VERSION_READ','UPLOADED_VERSION_READ_FAILED'],
+  ['uploaded configuration',{uploadedVersionChange:v=>({...v,cache_options:{changed:true}})},'UPLOADED_CONFIG_CHECK','UPLOADED_CONFIG_DRIFT'],
+  ['annotation read',{callError:p=>p===VERSION_ROOT+'/'+id(2)},'UPLOADED_ANNOTATION_READ','ANNOTATION_READ_FAILED'],
+  ['annotation identity',{annotationReadbackChange:v=>({...v,id:id(99)})},'UPLOADED_ANNOTATION_ID_CHECK','ANNOTATION_ID_MISMATCH'],
+  ['annotation source',{annotationReadbackChange:v=>({...v,annotations:{'workers/commit_sha':'b'.repeat(40)}})},'UPLOADED_ANNOTATION_CHECK','ANNOTATION_MISMATCH'],
+  ['promotion owner approval',{rejectApproval:3},'OWNER_PROMOTION_APPROVAL','PROMOTION_APPROVAL_FAILED'],
+]) test(`post-upload diagnostics: ${name} stops without promotion or private exception`,async()=>{
+  const f=fixture(options);
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  const receipt=f.receipts.at(-1);
+  assert.equal(receipt.stopped_after,'uploaded-not-promoted');
+  assert.deepEqual(receipt.diagnostic,{stage,reason});
+  assert.equal(f.writes(),1);
+  assert.equal(activeVersion(f.active()),id(1));
+  assert.doesNotMatch(JSON.stringify(receipt),/fixture_failure|private-config-value|private-etag/);
+});
+
+test('post-upload real owner diagnostics retain MAIN_DRIFT and never promote',async()=>{
+  const f=fixture();let approvals=0;
+  f.io.approve=async mark=>{if(++approvals===3){mark('OWNER_MAIN_CHECK');throw Error('private-token-cookie');}};
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.deepEqual(f.receipts.at(-1).diagnostic,{stage:'OWNER_MAIN_CHECK',reason:'MAIN_DRIFT'});
+  assert.equal(f.writes(),1);
+  assert.doesNotMatch(JSON.stringify(f.receipts),/private-token-cookie/);
+});
+
+test('promotion request failure records unknown outcome without automatic retry',async()=>{
+  const f=fixture({callError:(p,m)=>p===ROOT+'/deployments'&&m==='POST'});
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.equal(f.receipts.at(-1).stopped_after,'promotion-attempted-outcome-unknown');
+  assert.deepEqual(f.receipts.at(-1).diagnostic,{stage:'PROMOTION_REQUEST',reason:'PROMOTION_OUTCOME_UNKNOWN'});
+  assert.equal(f.calls.filter(x=>x.path===ROOT+'/deployments'&&x.method==='POST').length,1);
+});
+
+for(const [kind,stage,reason] of [
+  ['latest','UPLOADED_LATEST_CHECK','UPLOADED_NOT_LATEST'],
+  ['predecessor','UPLOADED_PREDECESSOR_CHECK','PREDECESSOR_DRIFT'],
+  ['baseline','PROMOTION_BASELINE_CHECK','PROMOTION_BASELINE_DRIFT'],
+]) test(`post-upload ${kind} drift retains the existing stop boundary`,async()=>{
+ const f=fixture();let uploaded=false;
+ f.io.call=async(path,init={})=>{
+  const result=await f.call(path,init);
+  if(path===ROOT+'/versions?bindings_inherit=strict')uploaded=true;
+  if(uploaded&&path===ROOT+'/versions'&&kind==='latest')return {items:[{id:id(99)},{id:id(1)}]};
+  if(uploaded&&path===ROOT+'/versions'&&kind==='predecessor')return {items:[{id:id(2)},{id:id(99)}]};
+  if(uploaded&&path===ROOT+'/deployments'&&(!init.method||init.method==='GET')&&kind==='baseline')return {deployments:[deployment(id(1),id(99))]};
+  return result;
+ };
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+ assert.deepEqual(f.receipts.at(-1).diagnostic,{stage,reason});
+ assert.equal(f.writes(),1);
+});
+
+for(const [kind,stage,reason] of [
+ ['receipt-read','PROMOTION_RECEIPT_READ','PROMOTION_RECEIPT_READ_FAILED'],
+ ['receipt-id','PROMOTION_RECEIPT_CHECK','PROMOTION_RECEIPT_INVALID'],
+ ['post-baseline','POST_PROMOTION_BASELINE_CHECK','POST_PROMOTION_DRIFT'],
+ ['post-config-read','POST_PROMOTION_CONFIG_READ','POST_PROMOTION_CONFIG_READ_FAILED'],
+ ['post-config','POST_PROMOTION_CONFIG_CHECK','POST_PROMOTION_CONFIG_DRIFT'],
+]) test(`post-promotion diagnostics: ${kind} records stop without a second mutation`,async()=>{
+ const f=fixture();let promoted=false;
+ f.io.call=async(path,init={})=>{
+  if(promoted&&path===ROOT+'/deployments/'+id(11)&&kind==='receipt-read')throw Error('private-exception-token');
+  if(promoted&&path===ROOT+'/versions/'+id(2)&&kind==='post-config-read')throw Error('private-exception-token');
+  const result=await f.call(path,init);
+  if(path===ROOT+'/deployments'&&init.method==='POST')promoted=true;
+  if(promoted&&path===ROOT+'/deployments/'+id(11)&&kind==='receipt-id')return {...result,id:id(99)};
+  if(promoted&&path===ROOT+'/deployments'&&(!init.method||init.method==='GET')&&kind==='post-baseline')return {deployments:[deployment(id(2),id(99))]};
+  if(promoted&&path===ROOT+'/versions/'+id(2)&&kind==='post-config')return {...result,cache_options:{changed:true}};
+  return result;
+ };
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+ assert.deepEqual(f.receipts.at(-1).diagnostic,{stage,reason});
+ assert.equal(f.receipts.at(-1).phase,'stopped');
+ assert.equal(f.receipts.at(-1).stopped_after,'promotion-attempted-outcome-unknown');
+ assert.equal(f.writes(),2);
+ assert.doesNotMatch(JSON.stringify(f.receipts),/private-exception-token|private-config-value/);
 });

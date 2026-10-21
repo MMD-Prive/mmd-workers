@@ -1,0 +1,42 @@
+name: Kenji context follow-up CI
+
+on:
+  pull_request:
+    paths:
+      - member-dashboard-chat-worker/src/kenji-context-followup.mjs
+      - member-dashboard-chat-worker/src/kenji-owner-context-test.mjs
+      - member-dashboard-chat-worker/src/kenji-line-redelivery-recovery.mjs
+      - member-dashboard-chat-worker/test/kenji-owner-context-test.test.mjs
+      - member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
+      - member-dashboard-chat-worker/src/kenji-line-booking-accumulator.mjs
+      - member-dashboard-chat-worker/test/kenji-context-followup.test.mjs
+      - .github/workflows/kenji-context-followup-ci.yml
+      - .github/workflows/kenji-code-only-promote.yml
+      - scripts/kenji-code-only-promote.mjs
+      - scripts/kenji-code-only-promote.test.mjs
+      - scripts/kenji-pause-release-scope.mjs
+      - scripts/kenji-pause-release-scope.test.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  context-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: >-
+          node --experimental-global-webcrypto --test
+          member-dashboard-chat-worker/test/kenji-context-followup.test.mjs
+          member-dashboard-chat-worker/test/kenji-owner-context-test.test.mjs
+          member-dashboard-chat-worker/test/kenji-line-redelivery-recovery.test.mjs
+          member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
+          member-dashboard-chat-worker/test/kenji-photo-ad-context.test.mjs
+          member-dashboard-chat-worker/test/kenji-line-continuity-runtime.test.mjs
+          member-dashboard-chat-worker/test/kenji-line-booking-accumulator.test.mjs
+          scripts/kenji-model-off-workflow.test.mjs
+          scripts/kenji-pause-release-scope.test.mjs
+          scripts/kenji-code-only-promote.test.mjs

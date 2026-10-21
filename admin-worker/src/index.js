@@ -1,4 +1,5 @@
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
+import { normalizeModelDecline } from "../../shared/model-decline-options.mjs";
 import { notifyTravelEvent } from "./model-travel-notification.js";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
@@ -3006,6 +3007,12 @@ async function handleModelSessionAction(req, env) {
     return modelSessionJson({ ok: false, error: "invalid_transition" }, 409);
   }
 
+  const decline = action === "decline_job" ? normalizeModelDecline(body) : null;
+  if (decline && !decline.ok) return modelSessionJson({ ok: false, error: decline.error }, 400);
+  if (action !== "decline_job" && Object.prototype.hasOwnProperty.call(body || {}, "availability_options")) {
+    return modelSessionJson({ ok: false, error: "decline_options_invalid" }, 400);
+  }
+
   const reread = await resolveModelSessionContext(req, env, body);
   if (!reread.ok) return modelSessionJson({ ok: false, error: reread.error }, reread.status);
 
@@ -3032,9 +3039,9 @@ async function handleModelSessionAction(req, env) {
   }
 
   const patch = { [stateInfo.field]: transition.to };
-  if (action === "decline_job" && str(body?.reason)) {
+  if (action === "decline_job" && decline.reason) {
     const reasonField = str(env.AT_SESSIONS__DECLINE_REASON || "decline_reason");
-    patch[reasonField] = str(body.reason).slice(0, 500);
+    patch[reasonField] = decline.reason;
   }
 
   const updated = await airtablePatchById(env, reread.tables.sessions.table, reread.session.id, patch);
@@ -6207,7 +6214,11 @@ async function createAdminJob(env, body) {
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const note = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
+  const modelDirections = { text: str(jobDetails.brief || "").slice(0, 2000), meeting_point: str(jobDetails.meeting_point || "").slice(0, 500) };
+  const baseNote = withJobServicePricingNote(withCanonicalPublicJobNote(rawNote, publicJob), servicePricing);
+  // Stored in the internal session note; only the model confirmation endpoint extracts this marker.
+  const note = modelDirections.text || modelDirections.meeting_point
+    ? `${baseNote}\n[MMD Model Remark v1] ${JSON.stringify(modelDirections)}` : baseNote;
   const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
   if (!["deposit", "full"].includes(requested_payment_type)) {
     throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);

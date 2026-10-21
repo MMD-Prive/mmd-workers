@@ -90,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: current-session-code-only-receipt
+          name: current-session-code-only-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/current-session-code-only-receipt.json
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 90

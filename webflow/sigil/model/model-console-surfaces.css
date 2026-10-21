@@ -1,0 +1,87 @@
+/* Scoped presentation layer; canonical lane is set by the existing renderer. */
+#sigil-model-console-v3[data-console-atelier] {
+  --ca-page:#0B0E10; --ca-panel:#171B1D; --ca-raised:#232729;
+  --ca-ink:#F3F0E8; --ca-muted:#BEBBB1; --ca-line:#767871;
+  --ca-brass:#C9B38B;
+  background:var(--ca-page)!important;
+  color:var(--ca-ink)!important;
+}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] {
+  --ca-page:#F3F0E8; --ca-panel:#FFFFFF; --ca-raised:#F7F5EF;
+  --ca-ink:#171B1D; --ca-muted:#535750; --ca-line:#85877F;
+  --ca-brass:#725A32;
+}
+#sigil-model-console-v3#sigil-model-console-v3[data-console-atelier] {
+  background:var(--ca-page)!important;
+}
+#sigil-model-console-v3#sigil-model-console-v3[data-console-atelier] .mmd-lang button {
+  background:var(--ca-raised)!important;color:var(--ca-ink)!important;
+  -webkit-text-fill-color:var(--ca-ink)!important;opacity:1!important;
+}
+#sigil-model-console-v3[data-console-atelier] .smcv3-head {
+  position:relative!important; top:auto!important;
+  background:var(--ca-panel)!important; color:var(--ca-ink)!important;
+  border:1px solid var(--ca-line);border-radius:14px;padding:10px;
+}
+#sigil-model-console-v3[data-console-atelier] :is(label,[data-decline-options] h2,[data-decline-options] p,.smcv3-chip) {
+  color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important;
+}
+#sigil-model-console-v3[data-console-atelier] .mt9 {
+  background:var(--ca-panel)!important;color:var(--ca-ink)!important;
+  border:1px solid var(--ca-line);border-radius:18px;padding:16px;
+}
+#sigil-model-console-v3[data-console-atelier] .mt9 :is(h3,p,button) {
+  color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important;
+}
+#sigil-model-console-v3[data-console-atelier] :is(input,textarea) {
+  box-sizing:border-box;width:100%;min-width:0;max-width:100%;
+  background:var(--ca-raised)!important;color:var(--ca-ink)!important;
+  -webkit-text-fill-color:var(--ca-ink)!important;
+  border:1px solid var(--ca-line)!important;border-radius:10px;
+  padding:12px;font:inherit;font-size:16px;min-height:48px;
+  color-scheme:dark;
+}
+#sigil-model-console-v3[data-console-atelier][data-console-lane="public"] :is(input,textarea){color-scheme:light}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] {
+  display:grid;gap:12px;margin:0;padding:16px;
+}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] h2 {
+  font-size:1.25rem;line-height:1.4;margin:0;
+}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] p {
+  font-size:.95rem;line-height:1.6;margin:0;
+}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] label {
+  display:block;font-size:.95rem;line-height:1.5;margin:0 0 12px;
+}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] button[type="button"] {
+  background:var(--ca-raised)!important;border-color:var(--ca-line)!important;
+  color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important;
+}
+#sigil-model-console-v3[data-console-atelier] button:disabled{opacity:.65;cursor:not-allowed}
+#sigil-model-console-v3[data-console-atelier] :is(input,textarea,button,a,summary):focus-visible {
+  outline:3px solid var(--ca-brass)!important;outline-offset:3px;
+}
+/* Digital workspace: reduce decoration and retain existing disclosure controls. */
+#sigil-model-console-v3[data-console-atelier] .ca-accent{display:none!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-shell{padding-top:12px}
+#sigil-model-console-v3[data-console-atelier] :is(.smcv3-card,.smcv3-state){
+  padding:16px;border-radius:12px;margin-bottom:10px;
+}
+#sigil-model-console-v3[data-console-atelier] .smcv3-head{gap:8px;margin-bottom:10px}
+#sigil-model-console-v3[data-console-atelier] .smcv3-h1{font-size:1.35rem;line-height:1.35}
+#sigil-model-console-v3[data-console-atelier] .smcv3-h2{font-size:1.15rem}
+#sigil-model-console-v3[data-console-atelier] .smcv3-fact{padding:4px 0!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-helper{display:none}
+#sigil-model-console-v3[data-console-atelier] [data-primary-actions]{gap:8px;margin-top:10px}
+#sigil-model-console-v3[data-console-atelier] [data-primary-actions]>button[data-action="decline_job"]{
+  background:var(--ca-raised)!important;border-color:var(--ca-line)!important;
+  color:var(--ca-ink)!important;-webkit-text-fill-color:var(--ca-ink)!important;
+}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options]{gap:8px;padding:12px}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options]>div{display:grid;gap:8px}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] label{margin:0}
+#sigil-model-console-v3[data-console-atelier] [data-decline-options] textarea{min-height:72px}
+@media(min-width:640px){
+  #sigil-model-console-v3[data-console-atelier] [data-decline-options]>div{grid-template-columns:repeat(3,minmax(0,1fr))}
+}

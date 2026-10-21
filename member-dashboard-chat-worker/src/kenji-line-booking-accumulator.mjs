@@ -72,7 +72,11 @@ function parseLooseAmount(raw = "") {
 
 function placeLike(raw = "") {
   const value = text(raw, 160);
-  if (!value || value.length < 2 || value.length > 80 || NON_LOCATION_RE.test(value)) return "";
+  if (!value || value.length < 2 || value.length > 80 || NON_LOCATION_RE.test(value)
+      || NON_LOCATION_RE.test(value.replace(/(?:นะครับ|ครับ|ค่ะ|คะ)\s*$/i, '').trim())) return "";
+  // Questions and acknowledgements are not a new venue just because a draft
+  // is open. Keep them for the conversation lane rather than corrupting it.
+  if (/(?:ตรง\s*ปก|ใช่ไหม|ได้ไหม|บวกลบได้|ยืดหยุ่นได้|คนนี้ก่อนละกัน)/.test(value)) return "";
   if (/^[0-9,.:/\-\s]+$/.test(value)) return "";
   if (RATE_PREFIX_RE.test(value) || DEPOSIT_RE.test(value)) return "";
   return value;
@@ -190,6 +194,7 @@ function guidedModelCandidate(raw = "") {
     .replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "")
     .trim();
   if (!value || value.length > 48) return "";
+  if (NON_LOCATION_RE.test(value) || /(?:ตรง\s*ปก|ใช่ไหม|ได้ไหม|บวกลบได้|ยืดหยุ่นได้|คนนี้ก่อนละกัน)/.test(value)) return "";
   if (/^(?:วันนี้|คืนนี้|พรุ่งนี้|มะรืน|ราคา|เรท|เท่าไร|เท่าไหร่|กี่บาท|จอง|จองเลย|ว่าง|ว่างไหม|โอเค|ได้|ครับ|ค่ะ|คะ)$/i.test(value)) return "";
   if (/^[A-Za-z][A-Za-z0-9._-]{1,31}(?:\s+[A-Za-z][A-Za-z0-9._-]{1,31})?$/.test(value)) return value;
   if (/^(?:EMs?|GWs?)[-_]?\d{1,4}$/i.test(value)) return value;

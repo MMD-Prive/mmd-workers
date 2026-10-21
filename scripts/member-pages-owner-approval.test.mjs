@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {verifyOwnerApproval, environmentName} from './member-pages-owner-approval.mjs';
+import {verifyOwnerApproval, environmentName, createSafePreflightDiagnostics} from './member-pages-owner-approval.mjs';
 const sha='a'.repeat(40), user={login:'mmdprive',id:216427112};
 function fixture() {
  const env={GITHUB_EVENT_NAME:'workflow_dispatch', GITHUB_REF:'refs/heads/main',GITHUB_REPOSITORY:'MMD-Prive/mmd-workers',GITHUB_REPOSITORY_ID:'1121397236',GITHUB_ACTOR:'mmdprive',GITHUB_ACTOR_ID:'216427112',GITHUB_TRIGGERING_ACTOR:'mmdprive',GITHUB_SHA:sha,APPROVED_SHA:sha,APPROVAL_REF:'owner approval',GITHUB_RUN_ID:'123',GITHUB_RUN_ATTEMPT:'1',GH_TOKEN:'fixture'};
@@ -43,8 +43,8 @@ test('network failure closes gate',async()=>{const f=fixture();await assert.reje
 test('shared gate still prohibits self review',()=>{const s=readFileSync(new URL('./admin-production-approval.mjs',import.meta.url),'utf8');assert.match(s,/prevent_self_review, true/);assert.match(s,/mmd-production-mutation/);});
 test('only scoped release imports owner policy; approval repeats at write boundaries',()=>{
  const release=readFileSync(new URL('./member-pages-code-only-release.mjs',import.meta.url),'utf8');
- assert.match(release,/import \{ verifyOwnerApproval \} from '.\/member-pages-owner-approval.mjs'/);
- assert.match(release,/await verifyOwnerApproval\(process.env\);\s+inspectCodeOnlyCheckouts/);
+ assert.match(release,/import \{ verifyOwnerApproval, createSafePreflightDiagnostics \} from '.\/member-pages-owner-approval.mjs'/);
+ assert.match(release,/await verifyOwnerApproval\(process.env, fetch, \{diagnostic\}\);\s+inspectCodeOnlyCheckouts/);
  assert.doesNotMatch(release,/inspectEnvironment|verifyProductionApproval/);
  const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
  assert.match(workflow,/environment: member-pages-code-only-owner/);
@@ -91,9 +91,9 @@ test('workflow preflight is explicitly non-executing; release retains strict def
  const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
  const release=readFileSync(new URL('./member-pages-code-only-release.mjs',import.meta.url),'utf8');
  assert.match(workflow,/node scripts\/member-pages-owner-approval.mjs --preflight/);
- assert.match(release,/await verifyOwnerApproval\(process.env\);/);
+ assert.match(release,/await verifyOwnerApproval\(process.env, fetch, \{diagnostic\}\);/);
  assert.doesNotMatch(release,/preflight:\s*true/);
- assert.equal((release.match(/await io.approve\(\)/g)||[]).length,3);
+ assert.equal((release.match(/await io.approve\((?:diagnostics.mark)?\)/g)||[]).length,3);
 });
 
 const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
@@ -111,11 +111,11 @@ test('approval-only is the explicit safe default; missing or invalid modes never
 });
 
 test('approval-only and release are mutually exclusive even with all release inputs present',()=>{
- for(const execution_mode of ['approval_boundary_only','release']) {
+ for(const execution_mode of ['approval_boundary_only','release','promote-existing']) {
    const inputs={...authorized,execution_mode};
    assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
    assert.equal(jobCondition('approval-boundary-only')(dispatch,inputs),execution_mode==='approval_boundary_only');
-   assert.equal(jobCondition('release')(dispatch,inputs),execution_mode==='release');
+   assert.equal(jobCondition('release')(dispatch,inputs),execution_mode!=='approval_boundary_only');
  }
 });
 
@@ -152,7 +152,7 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,1);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,2);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
@@ -166,4 +166,58 @@ test('Node 18/20/22 CI runs owner and release mocks without production credentia
  assert.match(ci,/node-version: \[18.x, 20.x, 22.x\]/);
  assert.match(ci,/run: node --experimental-global-webcrypto --test scripts\/member-pages-owner-approval.test.mjs scripts\/member-pages-code-only-release.test.mjs/);
  assert.doesNotMatch(ci,/secrets\.|environment: member-pages-code-only-owner|--execute-approved/);
+});
+
+
+test('safe owner diagnostics separate each assertion group without leaking evidence',async()=>{
+ const cases=[
+  ['OWNER_INPUT','OWNER_INPUT_INVALID',f=>f.env.GITHUB_ACTOR='other'],
+  ['OWNER_RUN_CHECK','RUN_IDENTITY_INVALID',f=>f.run.head_sha='b'.repeat(40)],
+  ['OWNER_MAIN_CHECK','MAIN_DRIFT',f=>f.ref.object.sha='b'.repeat(40)],
+  ['OWNER_POLICY_CHECK','OWNER_POLICY_INVALID',f=>f.p.can_admins_bypass=true],
+  ['OWNER_BRANCH_CHECK','BRANCH_POLICY_INVALID',f=>f.branches.total_count=2],
+  ['OWNER_APPROVAL_CHECK','APPROVAL_RECEIPT_INVALID',f=>f.history.length=0],
+ ];
+ for(const [stage,reason,change] of cases){
+  const f=fixture(),d=createSafePreflightDiagnostics();f.env.GH_TOKEN='secret-token-must-not-appear';change(f);
+  await assert.rejects(verifyOwnerApproval(f.env,f.request,{diagnostic:d.mark}));
+  assert.deepEqual(d.snapshot(),{stage,reason});assert.doesNotMatch(JSON.stringify(d.snapshot()),/secret-token|Bearer|https:|fixture/);
+ }
+});
+
+test('owner evidence diagnostics distinguish request, HTTP and JSON failures at each endpoint',async()=>{
+ for(const [path,stage] of [['/actions/runs/123','OWNER_RUN'],['/git/ref/heads/main','OWNER_MAIN'],
+  ['/environments/'+environmentName,'OWNER_POLICY'],['/deployment-branch-policies?per_page=100','OWNER_BRANCH'],['/approvals','OWNER_APPROVAL']]){
+  for(const [mode,suffix,reason] of [['request','REQUEST','EVIDENCE_REQUEST_FAILED'],['http','HTTP','EVIDENCE_HTTP_403'],['json','JSON','EVIDENCE_JSON_INVALID']]){
+   const f=fixture(),d=createSafePreflightDiagnostics();
+   const request=(url,options)=>{
+    if(!url.endsWith(path))return f.request(url,options);
+    if(mode==='request')throw Error('private-token cookie customer-id');
+    if(mode==='http')return {status:403,json:()=>{throw Error('must not read body');}};
+    return {status:200,json:()=>{throw Error('private provider response');}};
+   };
+   await assert.rejects(verifyOwnerApproval(f.env,request,{diagnostic:d.mark}));
+   assert.deepEqual(d.snapshot(),{stage:stage+'_'+suffix,reason});
+   assert.doesNotMatch(JSON.stringify(d.snapshot()),/private|cookie|customer-id|https:/);
+  }
+ }
+});
+
+test('diagnostic allowlist rejects arbitrary values and snapshots cannot mutate its state',()=>{
+ const d=createSafePreflightDiagnostics();d.mark('OWNER_MAIN_CHECK');const s=d.snapshot();s.stage='secret';
+ assert.equal(d.snapshot().stage,'OWNER_MAIN_CHECK');
+ for(const value of ['secret-token','__proto__','OWNER_SECRET_REQUEST',{},null,undefined]){
+  d.mark(value);assert.deepEqual(d.snapshot(),{stage:'UNKNOWN',reason:'DIAGNOSTIC_UNAVAILABLE'});
+ }
+});
+
+
+test('HTTP diagnostics expose only allowlisted numeric statuses, never caller strings',()=>{
+ const d=createSafePreflightDiagnostics();
+ for(const status of [401,403,404,409,422,429,500,502,503,504]){
+  d.mark('OWNER_APPROVAL_HTTP',status);assert.equal(d.snapshot().reason,'EVIDENCE_HTTP_'+status);
+ }
+ for(const status of ['403 secret-token',{toString(){throw Error('must not coerce');}},999,200,null]){
+  d.mark('OWNER_APPROVAL_HTTP',status);assert.deepEqual(d.snapshot(),{stage:'OWNER_APPROVAL_HTTP',reason:'EVIDENCE_HTTP_STATUS'});
+ }
 });

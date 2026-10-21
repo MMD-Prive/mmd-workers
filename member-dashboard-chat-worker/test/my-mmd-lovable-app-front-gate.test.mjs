@@ -451,7 +451,7 @@ test("non-status LIFF intents keep their existing specialized surfaces", async (
 
 test("wrangler keeps canonical My MMD, BFF and legacy redirect routes Worker-owned", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(wrangler, /^main = "src\/my-mms-customer-front-gate-entry\.js"$/m);
+  assert.match(wrangler, /^main = "src\/guide-notification-entry\.mjs"$/m);
   for (const route of [
     "mmdbkk.com/my-mmd*",
     "www.mmdbkk.com/my-mmd*",

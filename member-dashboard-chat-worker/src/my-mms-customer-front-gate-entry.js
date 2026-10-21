@@ -1,5 +1,5 @@
 import currentWorker from "./mms-line-front-gate.js";
-import { maybeHandleTherapistWorkspace } from "./mms-therapist-workspace.js";
+import { maybeHandleTherapistWorkspace, THERAPIST_AI_LOGO_PATH } from "./mms-therapist-workspace.js";
 import { isMmsMembershipRequest, isMmsMembershipOriginPassthrough, proxyMmsMembership } from './mms-membership-front-gate.js';
 import {
   handleMyMmsCustomerApi,
@@ -22,8 +22,9 @@ export function isTherapistOriginPassthroughRequest(request) {
   const path = new URL(request.url).pathname.replace(/\/$/, "");
   const prefix = "/male-massage/therapists";
   if (!path.startsWith(prefix)) return false;
-  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`].includes(path)) return false;
+  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`, THERAPIST_AI_LOGO_PATH].includes(path)) return false;
   if (path.startsWith(`${prefix}/api/auth/`) || path.startsWith(`${prefix}/api/app/`)) return false;
+  if (path === `${prefix}/app/chat`) return false;
   return true;
 }
 
@@ -51,6 +52,10 @@ export default {
     if (isMyMmsCustomerApiRequest(request)) return handleMyMmsCustomerApi(request, env);
     if (isMyMmsCustomerAssetRequest(request)) return handleMyMmsCustomerAsset(request);
     if (isMyMmsCustomerUiRequest(request)) return handleMyMmsCustomerUi(request);
+    // The root wildcard is required for LINE query strings. All paths outside
+    // the bounded app, membership and Therapist handlers keep their web origin.
+    const path = new URL(request.url).pathname;
+    if (path.startsWith("/male-massage") && !path.startsWith("/male-massage/therapists")) return globalThis.fetch(request);
     return currentWorker.fetch(request, env, ctx);
   },
 };

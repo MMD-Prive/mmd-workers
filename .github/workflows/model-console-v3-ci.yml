@@ -55,6 +55,8 @@ jobs:
           node --test \
             webflow/sigil/model/graphics-refresh.test.mjs \
             webflow/sigil/model/model-console-atelier-v3.test.mjs \
+            webflow/sigil/model/model-console-install-blocks.test.mjs \
+            webflow/sigil/model/model-console-decline-options.test.mjs \
             webflow/sigil/model/model-console-state-presentation.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \
             webflow/sigil/model/model-console-v3-identity-first.test.mjs \

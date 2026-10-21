@@ -80,3 +80,38 @@ test("account detail OCR extracts bank, name, and account number", () => {
   assert.equal(result.amount_thb, null);
   assert.equal(result.payment_ref, "");
 });
+
+// Synthetic images exercise the bounded footer retry without storing private slips.
+for (const [name, retryText, expectedTime] of [
+  ["matching amount fills missing time", "จำนวนเงิน 5000 บาท\n03 ต . ค . 2569 - 21:19", "2026-10-03T14:19:00.000Z"],
+  ["different amount never supplies time", "จำนวนเงิน 6000 บาท\n03 ต.ค. 2569 - 21:19", ""],
+  ["unknown month is never guessed", "จำนวนเงิน 5000 บาท\n03 ๓. ค . 2569 - 21:19", ""],
+  ["conflicting reference never supplies time", "จำนวนเงิน 5000 บาท\n03 ต.ค. 2569 - 21:19\nReference no: OTHER-123456", ""],
+]) test(`footer OCR retry: ${name}`, async () => {
+  const { default: sharp } = await import("sharp");
+  const image = await sharp({ create: { width: 450, height: 600, channels: 3, background: "white" } }).png().toBuffer();
+  let calls = 0, terminated = false, parameters;
+  const result = await extractOcr(image, async () => ({
+    recognize: async () => ({ data: { text: ++calls === 1 ? "จํา น ว น เง ิ น 5,000.00 บ า ท\nReference no: FIRST-123456" : retryText, confidence: 90 } }),
+    setParameters: async value => { parameters = value; },
+    terminate: async () => { terminated = true; },
+  }));
+  assert.equal(calls, 2);
+  assert.deepEqual(parameters, { tessedit_pageseg_mode: "6" });
+  assert.equal(terminated, true);
+  assert.equal(result.amount_thb, 5000);
+  assert.equal(result.paid_at, expectedTime);
+  assert.equal(result.payment_ref, "FIRST-123456");
+});
+test("failed footer OCR retains the primary evidence and terminates", async () => {
+  const { default: sharp } = await import("sharp");
+  const image = await sharp({ create: { width: 100, height: 150, channels: 3, background: "white" } }).png().toBuffer();
+  let calls = 0, terminated = false;
+  const result = await extractOcr(image, async () => ({
+    recognize: async () => { if (++calls > 1) throw Error("retry unavailable"); return { data: { text: "Amount: 5000", confidence: 90 } }; },
+    setParameters: async () => {}, terminate: async () => { terminated = true; },
+  }));
+  assert.equal(result.amount_thb, 5000);
+  assert.equal(result.paid_at, "");
+  assert.equal(terminated, true);
+});

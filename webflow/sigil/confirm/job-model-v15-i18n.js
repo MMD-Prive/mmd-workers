@@ -81,6 +81,8 @@
       time: "เวลา",
       location: "สถานที่",
       map: "เปิด Google Maps ↗",
+      remark: "ข้อความจาก MMD ถึงคุณ",
+      meeting: "จุดนัดพบ",
       readyKicker: "พร้อมสำหรับคืนนี้?",
       loadingStatus: "กำลังโหลดรายละเอียดงาน…",
       retry: "ลองใหม่",
@@ -128,6 +130,8 @@
       time: "Time",
       location: "Location",
       map: "Open Google Maps ↗",
+      remark: "Message from MMD for you",
+      meeting: "Meeting point",
       readyKicker: "READY FOR TONIGHT?",
       loadingStatus: "Loading job details…",
       retry: "Try again",
@@ -175,6 +179,8 @@
       time: "时间",
       location: "地点",
       map: "打开 Google Maps ↗",
+      remark: "MMD 给你的留言",
+      meeting: "见面地点",
       readyKicker: "今晚准备好了吗？",
       loadingStatus: "正在加载工作详情…",
       retry: "重试",
@@ -684,6 +690,47 @@
       if (el.vipRow) el.vipRow.hidden = false;
     } else if (el.vipRow) {
       el.vipRow.hidden = true;
+    }
+    const meeting = str(data.model_meeting_point).slice(0, 500);
+    const meetingRows = root.querySelector(".mm15__rows");
+    if (meetingRows) {
+      let meetingRow = meetingRows.querySelector("[data-m-model-meeting]");
+      if (!meetingRow && meeting) {
+        meetingRow = document.createElement("div");
+        meetingRow.setAttribute("data-m-model-meeting", "1");
+        const label = document.createElement("span");
+        label.setAttribute("data-m-model-meeting-label", "1");
+        const value = document.createElement("strong");
+        value.setAttribute("data-m-model-meeting-text", "1");
+        meetingRow.append(label, value);
+        meetingRows.appendChild(meetingRow);
+      }
+      if (meetingRow) {
+        meetingRow.hidden = !meeting;
+        meetingRow.querySelector("[data-m-model-meeting-label]").textContent = dict().meeting;
+        meetingRow.querySelector("[data-m-model-meeting-text]").textContent = meeting;
+      }
+    }
+    const remark = str(data.model_remark).slice(0, 2000);
+    const rowsContainer = root.querySelector(".mm15__rows");
+    if (rowsContainer) {
+      let remarkRow = rowsContainer.querySelector("[data-m-model-remark]");
+      if (!remarkRow && remark) {
+        remarkRow = document.createElement("div");
+        remarkRow.setAttribute("data-m-model-remark", "1");
+        const label = document.createElement("span");
+        label.setAttribute("data-m-model-remark-label", "1");
+        const value = document.createElement("strong");
+        value.setAttribute("data-m-model-remark-text", "1");
+        value.style.whiteSpace = "pre-wrap";
+        remarkRow.append(label, value);
+        rowsContainer.appendChild(remarkRow);
+      }
+      if (remarkRow) {
+        remarkRow.hidden = !remark;
+        remarkRow.querySelector("[data-m-model-remark-label]").textContent = dict().remark;
+        remarkRow.querySelector("[data-m-model-remark-text]").textContent = remark;
+      }
     }
     const mapUrl = str(data.google_map_url);
     if (el.map && /^https:\/\//i.test(mapUrl)) {

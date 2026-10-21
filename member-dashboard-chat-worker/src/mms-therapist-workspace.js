@@ -1,25 +1,38 @@
+import { MMS_GRAPHICS_CSS, MMS_GRAPHICS_LOGO, mmsGraphicIcon } from "./mms-graphics-v2.mjs";
+import { mmsGraphicRuntime } from "./mms-graphic-progress.mjs";
+import { MMS_LOGO_SHA256, mmsLogoResponse } from "../../admin-worker/src/mms-internal-logo-asset.mjs";
+
 const PREFIX = "/male-massage/therapists";
 const PAGES = new Set([`${PREFIX}/login`, `${PREFIX}/me`, `${PREFIX}/app`]);
+export const THERAPIST_AI_LOGO_PATH = `${PREFIX}/assets/male-massage-ai.${MMS_LOGO_SHA256.slice(0, 12)}.png`;
 
 export async function maybeHandleTherapistWorkspace(request, env = {}) {
   // A single behavior contract remains in mms-worker when presentation changes.
   if (env.MMS_THERAPIST_UI_SOURCE !== "native") return null;
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, "");
-  // LINE may return to the registered LIFF endpoint rather than /login.
-  const callback = path === PREFIX && ["code", "liff.state", "liff_state", "invite"].some(key => url.searchParams.has(key));
-  if (!PAGES.has(path) && !callback) return null;
+  if (path === THERAPIST_AI_LOGO_PATH) {
+    if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
+    const asset = mmsLogoResponse(request.method);
+    const headers = new Headers(asset.headers);
+    headers.set("cache-control", "public, max-age=31536000, immutable");
+    headers.set("x-mmd-route-owner", "member-dashboard-chat-worker");
+    return new Response(asset.body, { status: 200, headers });
+  }
+  // LINE first opens the registered LIFF endpoint, sometimes without query parameters.
+  const liffEndpoint = path === PREFIX;
+  if (!PAGES.has(path) && !liffEndpoint && path !== `${PREFIX}/app/chat`) return null;
   if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
-  const login = callback || path === `${PREFIX}/login`;
+  const login = liffEndpoint || path === `${PREFIX}/login`;
   const headers = new Headers({
     "content-type": "text/html; charset=utf-8", "cache-control": "private, no-store",
     "x-mmd-route-owner": "member-dashboard-chat-worker", "x-mmd-ui-source": "mms-native-workspace-v1",
     "x-mmd-behavior-owner": "mms-worker", "x-robots-tag": "noindex, nofollow, noarchive",
     "referrer-policy": "no-referrer", "x-content-type-options": "nosniff",
-    "content-security-policy": "default-src 'none'; script-src 'unsafe-inline' https://static.line-scdn.net; style-src 'unsafe-inline'; connect-src 'self' https://*.line.me https://*.line-scdn.net; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "content-security-policy": `default-src 'none'; script-src 'unsafe-inline' https://static.line-scdn.net; style-src 'unsafe-inline'; ${login ? "font-src data: https://cdn.prod.website-files.com; img-src 'self' data: https://cdn.prod.website-files.com;" : "font-src data:; img-src 'self' data:;"} connect-src 'self' https://*.line.me https://*.line-scdn.net; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
   });
   let status = 200;
-  if (path === `${PREFIX}/app`) {
+  if (path === `${PREFIX}/app` || path === `${PREFIX}/app/chat`) {
     if (!env.MMS_WORKER?.fetch) status = 503;
     else {
       try {
@@ -31,20 +44,45 @@ export async function maybeHandleTherapistWorkspace(request, env = {}) {
       } catch (_) { status = 503; }
     }
   }
-  return new Response(request.method === "HEAD" ? null : renderTherapistWorkspace(login), { status, headers });
+  return new Response(request.method === "HEAD" ? null : path === `${PREFIX}/app/chat` ? (await import('./mms-direct-chat-page.mjs')).renderMmsDirectChatPage('therapist') : renderTherapistWorkspace(login), { status, headers });
 }
 
 export function renderTherapistWorkspace(login = false) {
+  // Wrangler may retain __name calls inside therapistClient.toString(); the inline script needs its own helper.
+  const loginStyles = login ? `
+  @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-weight:400;font-display:swap}
+  @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-weight:700;font-display:swap}
+  @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-weight:800;font-display:swap}
+  body.auth-page{background:#071a13;color:#f4f8ee;font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .auth-shell{position:relative;isolation:isolate;display:flex;flex-direction:column;max-width:none;min-height:100vh;min-height:100svh;overflow:hidden;padding:max(22px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:radial-gradient(ellipse 55% 45% at 97% 8%,rgba(169,240,116,.22),transparent 72%),radial-gradient(ellipse 42% 51% at 71% 86%,rgba(44,180,150,.18),transparent 75%),radial-gradient(ellipse 68% 60% at -13% 67%,rgba(27,91,74,.35),transparent 73%),linear-gradient(145deg,#071b19,#061c17 55%,#071510)}
+  .auth-shell:before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.48;background-image:linear-gradient(rgba(162,241,208,.065) 1px,transparent 1px),linear-gradient(90deg,rgba(162,241,208,.065) 1px,transparent 1px),radial-gradient(circle,rgba(197,248,165,.45) 1px,transparent 2px);background-size:54px 54px,54px 54px,216px 216px;background-position:center center,center center,26px 26px;mask-image:linear-gradient(125deg,transparent 2%,#000 42%,transparent 94%)}
+  .auth-shell:after{content:"";position:absolute;z-index:0;pointer-events:none;width:720px;height:720px;border:1px solid rgba(193,249,180,.22);border-radius:50%;right:-370px;top:-195px;transform:rotate(-18deg) scaleY(.72);box-shadow:0 0 0 79px rgba(77,183,157,.065),0 0 0 160px rgba(187,244,159,.025),inset 0 0 56px rgba(80,224,168,.08);background:conic-gradient(from 250deg,transparent 0 58%,rgba(198,247,137,.08) 69%,transparent 80%)}
+  .auth-shell>*{position:relative;z-index:1}.auth-header,.auth-content,.auth-footer{width:min(1120px,100%);margin-inline:auto}
+  .auth-header{min-height:56px}.auth-brand{display:inline-flex;align-items:center;min-height:48px}.auth-brand img{display:block;width:132px;height:auto;max-height:42px;object-fit:contain}.auth-ai-logo{display:inline-flex;align-items:center;justify-content:flex-end;flex:none;width:128px;min-height:48px}.auth-ai-logo img{display:block;width:128px;height:auto;max-height:52px;object-fit:contain;filter:drop-shadow(0 0 16px rgba(197,231,101,.16))}
+  .auth-content{display:grid;gap:28px;align-content:center;flex:1;padding:42px 0 28px}.auth-eyebrow{display:flex;align-items:center;gap:10px;margin:0 0 20px;color:#c7e765;font-size:11px;font-weight:800;letter-spacing:.14em}.auth-eyebrow:before{content:"";width:22px;height:1px;background:#c7e765}
+  .auth-hero h1{margin:0;color:#f8f9ef;font-size:clamp(39px,11vw,64px);font-weight:800;line-height:1.13;letter-spacing:-.045em;text-wrap:balance}.auth-hero h1 em{font-style:normal;color:#c7e765}.auth-lead{max-width:500px;margin:19px 0 0;color:#d4e1d5;font-size:16px;line-height:1.7}.auth-features{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0 0}.auth-features span{padding:8px 12px;border:1px solid rgba(221,244,207,.17);border-radius:999px;background:rgba(239,255,228,.055);color:#eaf2e6;font-size:12px;font-weight:700}
+  .auth-card{padding:25px;border:1px solid rgba(255,255,255,.52);border-radius:24px;background:#f9faf5;color:#10291b;box-shadow:0 28px 80px rgba(0,0,0,.19)}.auth-card-top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}.auth-step{color:#4f6e57;font-size:11px;font-weight:800;letter-spacing:.12em}.auth-lock{display:inline-flex;align-items:center;gap:6px;color:#356547;font-size:11px;font-weight:700}.auth-lock:before{content:"";width:7px;height:7px;border-radius:50%;background:#88aa61;box-shadow:0 0 0 4px #e3efda}
+  .auth-card h2{margin:0;font-size:26px;font-weight:800;line-height:1.25;letter-spacing:-.035em}.auth-card-copy{margin:10px 0 20px;color:#4b6252;font-size:14px;line-height:1.7}.auth-primary{display:flex;width:100%;min-height:56px;justify-content:space-between;gap:14px;padding:12px 18px;border-radius:14px;background:#c7e765;color:#142611;font-weight:800;box-shadow:0 8px 20px rgba(56,102,32,.15);transition:transform .35s cubic-bezier(.22,1,.36,1),background .25s ease,box-shadow .35s ease}.auth-primary:hover{background:#d5ef8a;transform:translateY(-2px);box-shadow:0 12px 26px rgba(56,102,32,.2)}.auth-primary:disabled{opacity:1;background:#dce7c9;color:#38503d;cursor:wait;box-shadow:none;transform:none}.auth-primary span:last-child{font-size:21px;line-height:1}
+  .auth-card #notice{min-height:0;margin:15px 0 0;padding:11px 12px;border-radius:10px;background:#edf3e9;color:#355b40;font-size:12px;line-height:1.55}.auth-card #notice.error{background:#fff0eb;color:#8b3526}.auth-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:13px}.auth-actions a{color:#245c39;font-size:12px;font-weight:800;text-underline-offset:3px}.auth-actions #retry{min-height:38px;padding:7px 11px;font-size:12px}.auth-help{margin:22px 0 0;padding-top:17px;border-top:1px solid #dfe7da;color:#526757;font-size:12px;line-height:1.6}
+  .auth-footer{padding-top:18px;border-top:1px solid rgba(231,245,222,.13);color:#a8bca9;font-size:11px;letter-spacing:.03em}.auth-footer span{color:#d8e5d6}
+  .auth-shell button:focus-visible,.auth-shell a:focus-visible{outline:3px solid #c7e765;outline-offset:4px}
+  @media(max-width:819px){.auth-content{gap:19px;padding:25px 0 19px}.auth-eyebrow{margin-bottom:12px}.auth-lead{margin-top:12px;font-size:14px;line-height:1.6}.auth-features{margin-top:16px}.auth-card{padding:20px}.auth-card-top{margin-bottom:11px}.auth-card-copy{margin:8px 0 16px}.auth-primary{min-height:52px}.auth-card #notice{margin-top:12px;padding:9px 11px}.auth-actions{margin-top:10px}.auth-help{margin-top:16px;padding-top:12px}}
+  @media(min-width:820px){.auth-shell{padding:30px 42px 24px}.auth-content{grid-template-columns:minmax(0,1fr) minmax(360px,430px);align-items:center;gap:clamp(40px,8vw,110px);padding:45px 0}.auth-hero h1{font-size:clamp(50px,5.7vw,76px)}.auth-card{padding:32px}.auth-features{margin-top:29px}}
+  @media(max-width:380px){.auth-shell{padding-inline:16px}.auth-brand img{width:116px}.auth-ai-logo,.auth-ai-logo img{width:105px}.auth-content{padding-top:30px}.auth-card{padding:20px}.auth-hero h1{font-size:38px}}
+  @media(prefers-reduced-motion:reduce){.auth-primary{transition:none}.auth-primary:hover{transform:none}}
+  ` : "";
+  const loginHeader = login ? `<header class="auth-header"><a class="auth-brand" href="/male-massage/home" aria-label="MMS Male Massage"><img src="${MMS_GRAPHICS_LOGO}" width="132" height="42" alt="MMS Male Massage"></a><span class="auth-ai-logo"><img src="${THERAPIST_AI_LOGO_PATH}" width="128" height="52" alt="Male Massage AI"></span></header><div class="auth-content"><section class="auth-hero" aria-labelledby="auth-title"><p class="auth-eyebrow">MY THERAPIST · MMS</p><h1 id="auth-title">งานใกล้คุณ<br><em>เริ่มเมื่อคุณพร้อม</em></h1><p class="auth-lead">Online เมื่อพร้อม Offline เมื่ออยากพัก ดูงานที่ตรงกับเขตของคุณได้ในที่เดียวครับ</p><div class="auth-features" aria-label="สิ่งที่ทำได้"><span>Online / Offline</span><span>เลือกเขตบริการ</span><span>ดูงานใกล้คุณ</span></div></section>` : `<header class="mms-work-header"><div><img class="mms-brand" src="${MMS_GRAPHICS_LOGO}" alt="MMS Male Massage" width="108" height="32"><h1>MY THERAPIST</h1><p class="muted">พร้อมเมื่อคุณเปิดรับงาน · เขตบริการที่คุณเลือก</p></div>${mmsGraphicIcon('area-outline')}</header><p id="notice" role="status" aria-live="polite">กำลังตรวจสอบบัญชีครับ</p><button id="retry" class="alt" type="button">ลองตรวจอีกครั้ง</button>`;
+  const loginEntry = login ? `<section id="entry" class="auth-card" aria-labelledby="auth-card-title"><div class="auth-card-top"><span class="auth-step">01 / เข้า MY THERAPIST</span><span class="auth-lock">เฉพาะบัญชีที่เชื่อมแล้ว</span></div><h2 id="auth-card-title">ยืนยันผ่าน LINE</h2><p class="auth-card-copy">ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณ เพื่อเข้าพื้นที่ทำงานครับ</p><button id="line-login" class="auth-primary" type="button"><span>ยืนยันผ่าน LINE</span><span aria-hidden="true">↗</span></button><p id="notice" role="status" aria-live="polite">กำลังเชื่อมต่อ LINE ครับ</p><div class="auth-actions"><button id="retry" class="alt" type="button" hidden>ลองอีกครั้ง</button><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></div><p class="auth-help">ยังไม่ได้เชื่อมบัญชี? ใช้ลิงก์เปิดสิทธิ์ที่ได้รับก่อนครับ</p></section></div><footer class="auth-footer"><span>MMS · MALE MASSAGE</span> / พื้นที่สำหรับ Therapist ที่ได้รับสิทธิ์</footer>` : `<section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></p><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>`;
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>MY THERAPIST · MMS</title><style>
-  *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#20392b;font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:20px 18px calc(28px + env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:25px;margin:6px 0}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0}p{margin:8px 0}.muted{color:#5c6d60;font-size:14px}.card{background:#fff;border:1px solid #dce2d6;border-radius:18px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button,.button{border:0;border-radius:12px;min-height:48px;padding:10px 16px;font:inherit;cursor:pointer;background:#24563c;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}button.alt,.button.alt{background:#e9eee4;color:#24563c}button:disabled{opacity:.5;cursor:wait}input,textarea,select{width:100%;font:inherit;border:1px solid #c8d3c4;border-radius:10px;padding:10px;margin:4px 0 12px;background:white;color:#20392b}label{display:block;font-size:14px}nav{display:flex;gap:8px;margin:20px 0;overflow:auto}nav button{white-space:nowrap;background:#e9eee4;color:#24563c}nav button[aria-selected=true]{background:#24563c;color:white}#notice{min-height:26px}#notice.error{color:#8f2f20}.badge{font-size:13px;padding:4px 10px;border-radius:30px;background:#e9eee4}a{color:#24563c}img{width:100px;height:120px;object-fit:cover;border-radius:10px}section[hidden],[hidden]{display:none!important}.course{border-top:1px solid #ddd;padding-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}#detail{white-space:normal}.address{white-space:pre-line}button:focus-visible,a:focus-visible{outline:3px solid #ad8544;outline-offset:3px}@media(max-width:480px){main{padding:16px 14px 28px}.grid{grid-template-columns:1fr}}
-  </style></head><body><main data-mms-shell="native-workspace-v1" data-login="${login}"><header><div><div class="muted">MMS · MALE MASSAGE</div><h1>MY THERAPIST</h1></div><a href="https://lin.ee/NkfXMu7">ติดต่อพี่เปอร์</a></header><p id="notice" role="status" aria-live="polite">กำลังตรวจสอบบัญชีครับ</p>
-  <button id="retry" class="alt" type="button">ลองตรวจอีกครั้ง</button><section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>
-  <div id="workspace" hidden><section class="card"><h2 id="greeting"></h2><p id="readiness"></p><label>สถานะรับงาน<select id="availability"><option value="Available">พร้อมรับงาน</option><option value="Unavailable">ยังไม่ว่าง</option><option value="Paused">พักรับงาน</option></select></label><button id="save-availability">บันทึกสถานะ</button><button class="alt" id="refresh">รีเฟรช</button></section>
-  <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">งานของฉัน</button><button data-tab="profile" aria-selected="false">โปรไฟล์และคอร์ส</button></nav>
+  *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#20392b;font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:20px 18px calc(28px + env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:25px;margin:6px 0}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0}p{margin:8px 0}.muted{color:#5c6d60;font-size:14px}.card{background:#fff;border:1px solid #dce2d6;border-radius:18px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button,.button{border:0;border-radius:12px;min-height:48px;padding:10px 16px;font:inherit;cursor:pointer;background:#24563c;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}button.alt,.button.alt{background:#e9eee4;color:#24563c}button:disabled{opacity:.5;cursor:wait}input,textarea,select{width:100%;font:inherit;border:1px solid #c8d3c4;border-radius:10px;padding:10px;margin:4px 0 12px;background:white;color:#20392b}label{display:block;font-size:14px}nav{display:flex;gap:8px;margin:20px 0;overflow:auto}nav button{white-space:nowrap;background:#e9eee4;color:#24563c}nav button[aria-selected=true]{background:#24563c;color:white}#notice{min-height:26px}#notice.error{color:#8f2f20}.badge{font-size:13px;padding:4px 10px;border-radius:30px;background:#e9eee4}a{color:#24563c}img{width:100px;height:120px;object-fit:cover;border-radius:10px}section[hidden],[hidden]{display:none!important}.course{border-top:1px solid #ddd;padding-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}#detail{white-space:normal}.address{white-space:pre-line}#coverage-zones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 14px}.zone-choice{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #dce2d6;border-radius:10px;background:#fbfcf9}.zone-choice input{width:20px;height:20px;margin:0;flex:none}.area-note{padding:12px;border-radius:12px;background:#f1f5eb}@media(max-width:480px){#coverage-zones{grid-template-columns:1fr}}button:focus-visible,a:focus-visible{outline:3px solid #ad8544;outline-offset:3px}@media(max-width:480px){main{padding:16px 14px 28px}.grid{grid-template-columns:1fr}}
+  ${loginStyles}
+${MMS_GRAPHICS_CSS}</style></head><body data-mms-graphics="therapist-v2" class="${login ? "auth-page" : ""}"><main class="${login ? "auth-shell" : ""}" data-mms-shell="native-workspace-v1" data-login="${login}">${loginHeader}${loginEntry}<div id="graphic-progress" hidden></div>
+  <div id="workspace" hidden><section class="card">${mmsGraphicIcon("online")}<h2 id="greeting"></h2><p id="readiness"></p><label>สถานะรับงาน<select id="availability"><option value="Available">Online · รับงานที่ตรงพื้นที่</option><option value="Unavailable">Offline · งดรับงาน</option><option value="Paused">พักรับงานชั่วคราว</option></select></label><p class="muted">เมื่อ Online คุณจะเห็นงานที่ตรงกับเขตบริการและคอร์สที่ยืนยันแล้ว เลือกดูรายละเอียดก่อนตอบรับได้ครับ</p><button id="save-availability">บันทึกสถานะ</button><button class="alt" id="refresh">รีเฟรช</button></section>
+  <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">${mmsGraphicIcon("offers")}งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">${mmsGraphicIcon("booking")}งานของฉัน</button><button data-tab="profile" aria-selected="false">${mmsGraphicIcon("profile")}โปรไฟล์และคอร์ส</button><a class="button alt" href="/male-massage/therapists/app/chat">แชตกับลูกค้า</a></nav>
   <section id="offers"><div id="offer-list"></div></section><section id="jobs" hidden><div id="job-list"></div></section>
-  <section id="profile" hidden><form id="profile-form" class="card"><h2>โปรไฟล์ของคุณ</h2><label>ชื่อที่แสดง<input id="display-name" required maxlength="120"></label><label>แนะนำตัว<textarea id="intro" maxlength="600"></textarea></label><label>การแสดงโปรไฟล์<select id="visibility"><option value="hidden">เก็บไว้ส่วนตัว</option><option value="public">แสดงโปรไฟล์</option></select></label><h3>คอร์สบริการ</h3><p class="muted">ราคาคอร์สยังไม่รวมค่าเดินทาง ยอดงานจริงต้องได้รับการสรุปก่อนครับ</p><div id="courses"></div><button type="button" class="alt" id="add-course">เพิ่มคอร์ส</button><button type="submit">บันทึกโปรไฟล์</button></form><section class="card"><h2>รูปโปรไฟล์</h2><p class="muted">เลือกได้ไม่เกิน 6 รูปสำหรับแสดงในโปรไฟล์ เก็บรูปทั้งหมดได้ไม่เกิน 12 รูป</p><div id="photos" class="row"></div><label>เพิ่มรูป JPEG / PNG / WebP ไม่เกิน 10 MB<input id="upload" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="save-photos">บันทึกรูปที่แสดง</button></section></section>
+  <section id="profile" hidden><form id="profile-form" class="card"><h2>โปรไฟล์ของคุณ</h2><label>ชื่อที่แสดง<input id="display-name" required maxlength="120"></label><label>แนะนำตัว<textarea id="intro" maxlength="600"></textarea></label><div class="area-note"><h3>เขตที่สะดวกรับงาน</h3><p class="muted">เลือกพื้นที่หลักและพื้นที่ที่รับงานได้ ไม่ต้องระบุที่อยู่บ้านหรือเปิด GPS ครับ</p><label>เขตหลัก<select id="base-zone"><option value="">ยังไม่เลือกเขตหลัก</option></select></label><div id="coverage-zones" aria-label="เขตที่รับงานได้"></div><p id="zone-status" class="muted" role="status">กำลังโหลดเขตบริการครับ</p></div><label>การแสดงโปรไฟล์<select id="visibility"><option value="hidden">เก็บไว้ส่วนตัว</option><option value="public">แสดงโปรไฟล์</option></select></label><h3>คอร์สบริการ</h3><p class="muted">ราคาคอร์สยังไม่รวมค่าเดินทาง ยอดงานจริงต้องได้รับการสรุปก่อนครับ</p><div id="courses"></div><button type="button" class="alt" id="add-course">เพิ่มคอร์ส</button><button type="submit">บันทึกโปรไฟล์</button></form><section class="card"><h2>รูปโปรไฟล์</h2><p class="muted">เลือกได้ไม่เกิน 6 รูปสำหรับแสดงในโปรไฟล์ เก็บรูปทั้งหมดได้ไม่เกิน 12 รูป</p><div id="photos" class="row"></div><label>เพิ่มรูป JPEG / PNG / WebP ไม่เกิน 10 MB<input id="upload" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="save-photos">บันทึกรูปที่แสดง</button></section></section>
   <section id="detail" class="card" hidden></section><div class="row"><button id="logout" class="alt">ออกจากบัญชี</button></div></div></main>
-  ${login ? '<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>' : ''}<script>(${therapistClient.toString()})();</script></body></html>`;
+  ${login ? '<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>' : ''}<script>const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });(${mmsGraphicRuntime.toString()})();(${therapistClient.toString()})();</script></body></html>`;
 }
 
 export function therapistClient() {
@@ -53,7 +91,16 @@ export function therapistClient() {
   const $ = (id) => document.getElementById(id);
   let access = null, profile = null, tab = "offers", refreshing = false;
   const actionKeys = new Map();
+  const controllers = new Set(); let accountEpoch = 0;
+  function clearPrivate() {
+    accountEpoch += 1; window.MmsGraphics?.cancel(); for (const controller of controllers) controller.abort();
+    for (const id of ["offer-list", "job-list", "detail", "courses", "photos", "coverage-zones"]) $(id).replaceChildren();
+    for (const id of ["display-name", "intro", "upload"]) $(id).value = "";
+    $("detail").hidden = true; $("workspace").hidden = true; profile = null; access = null; actionKeys.clear();
+  }
   const messages = {
+    LIFF_UNAVAILABLE: "ยังเปิด LINE Login ไม่ได้ครับ ลองเปิดผ่าน LINE Mini App ด้านล่าง",
+    LIFF_INIT_TIMEOUT: "LINE ยังไม่ตอบกลับครับ ลองเปิดผ่าน LINE Mini App ด้านล่าง",
     THERAPIST_SESSION_REQUIRED: "กรุณายืนยันผ่าน LINE อีกครั้งครับ",
     THERAPIST_SESSION_INVALID: "บัญชีหมดเวลาแล้ว กรุณายืนยันผ่าน LINE อีกครั้งครับ",
     THERAPIST_LINK_REQUIRED: "LINE นี้ยังไม่เชื่อมกับ Therapist ครับ ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์ก่อน",
@@ -62,34 +109,43 @@ export function therapistClient() {
     EXPIRED: "งานหมดเวลารับแล้วครับ", TAKEN: "งานนี้มีคนรับแล้วครับ",
     INVALID_JOB_TRANSITION: "สถานะงานเปลี่ยนไปแล้วครับ กดรีเฟรชเพื่อตรวจอีกครั้ง",
   };
-  function notice(text, error = false) { $("notice").textContent = text; $("notice").className = error ? "error" : ""; }
+  function notice(text, error = false) { $("notice").textContent = text; $("notice").className = error ? "error" : ""; if (document.querySelector("main").dataset.login === "true") $("retry").hidden = !error; }
   function node(tag, text, className) { const el = document.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el; }
   function button(text, callback, alt = false) { const el = node("button", text, alt ? "alt" : ""); el.type = "button"; el.addEventListener("click", () => busy(el, callback)); return el; }
-  async function busy(el, fn) { if (el.disabled) return; el.disabled = true; try { await fn(); } catch (e) { notice(messages[e.code] || "ยังทำรายการไม่สำเร็จครับ ลองอีกครั้งได้ ข้อมูลเดิมยังอยู่", true); } finally { el.disabled = false; } }
+  async function busy(el, fn) { if (el.disabled) return; el.disabled = true; try { await fn(); } catch (e) { if (e.code === "STALE_RESPONSE") return; window.MmsGraphics?.failCurrent(messages[e.code] || "ยังทำรายการไม่สำเร็จครับ"); notice(messages[e.code] || "ยังทำรายการไม่สำเร็จครับ ลองอีกครั้งได้ ข้อมูลเดิมยังอยู่", true); } finally { el.disabled = false; } }
   async function api(path, options = {}) {
-    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
+    const epoch = accountEpoch; const progress = window.MmsGraphics; const step = progress?.begin();
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000); controllers.add(controller);
     try {
       const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options, signal: controller.signal });
-      if (response.status === 204) return null;
+      if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
+      progress?.received(step);
+      if (response.status === 204) { progress?.ready(step); return null; }
       const body = await response.json();
+      if (epoch !== accountEpoch) throw Object.assign(new Error("STALE_RESPONSE"), { code: "STALE_RESPONSE" });
       if (!response.ok || body.ok !== true) {
         const e = new Error(body?.error?.code || "UNAVAILABLE"); e.code = body?.error?.code; e.status = response.status;
-        if (response.status === 401) { $("workspace").hidden = true; $("entry").hidden = false; $("line-login").onclick = () => location.assign(P + "/login"); }
+        if (response.status === 401) { clearPrivate(); $("workspace").hidden = true; $("entry").hidden = false; $("line-login").onclick = () => location.assign(P + "/login"); }
         throw e;
       }
-      return body.data;
-    } finally { clearTimeout(timer); }
+      progress?.ready(step); return body.data;
+    } catch (error) {
+      if (epoch === accountEpoch) progress?.fail(step, controller.signal.aborted ? "คำขอใช้เวลานานเกินไปครับ ลองตรวจข้อมูลอีกครั้ง" : "ระบบยังไม่ได้ยืนยันผลครับ ลองตรวจข้อมูลอีกครั้ง");
+      throw error;
+    } finally { clearTimeout(timer); controllers.delete(controller); }
   }
   const json = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   function setAccess(data) {
+    if (access?.therapist_id && data.therapist_id !== access.therapist_id) clearPrivate();
     access = data;
     $("greeting").textContent = data.display_name || "Therapist";
     $("availability").value = data.availability_status || "Unavailable";
     $("save-availability").disabled = data.can_open !== true;
-    $("readiness").textContent = !data.can_open ? "กำลังรออนุมัติสิทธิ์แอปจากพี่เปอร์ครับ" : !data.matching_enabled ? "เข้าแอปได้แล้ว · พี่เปอร์ยังไม่ได้เปิดการจับคู่งานให้บัญชีนี้" : !data.verified_skills?.length ? "เข้าแอปได้แล้ว · รอยืนยันคอร์สที่รับงานได้" : data.availability_status !== "Available" ? "เปลี่ยนเป็นพร้อมรับงานเมื่อคุณสะดวกครับ" : "พร้อมรับงาน · ตรวจพื้นที่และเวลาก่อนตอบรับทุกครั้งครับ";
+    $("readiness").dataset.state = data.can_open === true && data.matching_enabled === true && Array.isArray(data.verified_skills) && data.verified_skills.length > 0 && data.availability_status === "Available" ? "ready" : "checking";
+    $("readiness").textContent = !data.can_open ? "กำลังรออนุมัติสิทธิ์แอปจากพี่เปอร์ครับ" : !data.matching_enabled ? "เข้าแอปได้แล้ว · พี่เปอร์ยังไม่ได้เปิดการจับคู่งานให้บัญชีนี้" : !data.verified_skills?.length ? "เข้าแอปได้แล้ว · รอยืนยันคอร์สที่รับงานได้" : data.availability_status === "Paused" ? "คุณพักรับงานอยู่ครับ" : data.availability_status !== "Available" ? "คุณอยู่สถานะ Offline · เปลี่ยนเป็น Online เมื่อพร้อมรับงานครับ" : "คุณ Online · งานที่ตรงเขตและคอร์สจะแสดงให้ตรวจดูก่อนตอบรับครับ";
   }
   async function refresh() {
-    if (refreshing) return; refreshing = true;
+    if (refreshing) return; refreshing = true; $("workspace").hidden = true;
     try {
       setAccess(await api(A + "/access"));
       $("entry").hidden = true; $("workspace").hidden = false;
@@ -101,6 +157,7 @@ export function therapistClient() {
     if (tab === "profile") { await loadProfile(); return; }
     const list = $(tab === "offers" ? "offer-list" : "job-list"); list.replaceChildren();
     if (!access?.can_open) { list.append(node("p", "เปิดดูงานได้หลังพี่เปอร์อนุมัติสิทธิ์แอปครับ")); return; }
+    if (tab === "offers" && (access.matching_enabled !== true || !Array.isArray(access.verified_skills) || !access.verified_skills.length)) { list.append(node("p", "ยังเสนอรับงานไม่ได้ครับ ต้องเปิดการจับคู่และยืนยันคอร์สก่อน", "card")); return; }
     const data = await api(A + "/" + tab);
     if (!Array.isArray(data)) throw new Error("INVALID_DATA");
     if (!data.length) { list.append(node("p", tab === "offers" ? "ยังไม่มีงานเสนอให้คุณครับ" : "ยังไม่มีงานที่คุณรับครับ", "card")); return; }
@@ -129,7 +186,7 @@ export function therapistClient() {
     if (lane === "offers" && item.state === "OFFERED") {
       const expiry = Date.parse(item.expiresAt);
       const inTime = Number.isFinite(expiry) && expiry > Date.now();
-      const canAccept = inTime && Boolean(item.payoutLabel);
+      const canAccept = inTime && Boolean(item.payoutLabel) && access?.can_open === true && access?.matching_enabled === true && Array.isArray(access?.verified_skills) && access.verified_skills.length > 0;
       panel.append(node("p", !inTime ? "งานหมดเวลารับ หรือยังตรวจเวลาไม่ได้ครับ" : !item.payoutLabel ? "รอพี่เปอร์สรุปส่วนแบ่งก่อนตอบรับครับ" : "ตอบรับก่อน " + new Date(expiry).toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" })));
       const accept = button("รับงานนี้", () => act(id, "accept", "offers", "ACCEPTED")); accept.disabled = !canAccept; panel.append(accept);
       const decline = button("ไม่สะดวก", () => act(id, "decline", "offers", "DECLINED"), true); decline.disabled = !inTime; panel.append(decline);
@@ -137,7 +194,7 @@ export function therapistClient() {
     if (lane === "jobs" && item.state === "ACCEPTED") panel.append(button("เริ่มให้บริการ", () => act(id, "start", "jobs", "IN_PROGRESS")));
     if (lane === "jobs" && item.state === "IN_PROGRESS") panel.append(button("ยืนยันจบงาน", async () => { if (window.confirm("ให้บริการเสร็จแล้ว ยืนยันจบงานนี้ครับ?")) await act(id, "complete", "jobs", "COMPLETED"); }));
     if (item.state === "COMPLETED") panel.append(node("p", "จบงานแล้ว · สถานะการจ่ายส่วนแบ่งยังต้องตรวจจาก MMS ครับ", "muted"));
-    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    panel.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
   }
   async function act(id, action, lane, expected) {
     const key = id + ":" + action;
@@ -155,9 +212,36 @@ export function therapistClient() {
     }
     row.append(button("ลบคอร์ส", () => row.remove(), true)); $("courses").append(row);
   }
+  async function loadServiceZones() {
+    const base = $("base-zone"); const coverage = $("coverage-zones"); const status = $("zone-status");
+    base.replaceChildren(node("option", "ยังไม่เลือกเขตหลัก")); base.children[0].value = "";
+    coverage.replaceChildren(); base.dataset.ready = "false";
+    try {
+      const catalog = await api(A + "/service-zones");
+      const zones = Array.isArray(catalog.zones) ? catalog.zones : [];
+      if (!zones.length) throw new Error("SERVICE_ZONE_CATALOG_EMPTY");
+      for (const zone of zones) {
+        const option = node("option", zone.label_th + (zone.province_label_th ? " · " + zone.province_label_th : ""));
+        option.value = zone.code; base.append(option);
+        const label = node("label", null, "zone-choice"); const check = node("input"); check.type = "checkbox"; check.dataset.serviceZone = zone.code;
+        label.append(check, node("span", zone.label_th + (zone.province_label_th ? " · " + zone.province_label_th : ""))); coverage.append(label);
+      }
+      const saved = profile?.service_zones || {};
+      base.value = saved.base_service_zone_code || "";
+      const selected = new Set(saved.coverage_service_zone_codes || []);
+      for (const label of coverage.children) {
+        const check = label.children[0]; check.checked = selected.has(check.dataset.serviceZone);
+      }
+      base.dataset.ready = "true";
+      status.textContent = "เลือกได้สูงสุด 30 เขต · ระบบเสนอเฉพาะงานในเขตที่เลือกครับ";
+    } catch (_) {
+      status.textContent = "ตอนนี้โหลดรายชื่อเขตไม่ได้ โปรไฟล์ส่วนอื่นยังบันทึกได้ครับ";
+    }
+  }
   async function loadProfile() {
     profile = await api(P + "/api/auth/profile");
     $("display-name").value = profile.display_name || ""; $("intro").value = profile.intro || ""; $("visibility").value = profile.profile_visibility || "hidden";
+    await loadServiceZones();
     $("courses").replaceChildren(); for (const course of profile.courses || []) courseRow(course);
     $("photos").replaceChildren(); for (const photo of profile.photos || []) {
       const wrap = node("label"); const image = node("img"); image.alt = photo.file_name || "รูปโปรไฟล์"; image.src = photo.preview_url;
@@ -175,7 +259,16 @@ export function therapistClient() {
   $("add-course").onclick = () => { if ($("courses").children.length < 8) courseRow(); else notice("เพิ่มคอร์สได้ไม่เกิน 8 คอร์สครับ", true); };
   $("profile-form").onsubmit = (event) => { event.preventDefault(); const submit = $("profile-form").querySelector('[type="submit"]'); busy(submit, async () => {
     const courses = Array.from($("courses").children).map((row) => Object.fromEntries(Array.from(row.querySelectorAll("[data-field]")).map((input) => [input.dataset.field, input.type === "number" ? Number(input.value) : input.value])));
-    await api(P + "/api/auth/profile", json("PUT", { display_name: $("display-name").value, intro: $("intro").value, profile_visibility: $("visibility").value, courses })); await loadProfile(); notice("บันทึกโปรไฟล์แล้วครับ");
+    const payload = { display_name: $("display-name").value, intro: $("intro").value, profile_visibility: $("visibility").value, courses };
+    if ($("base-zone").dataset.ready === "true") {
+      const base = $("base-zone").value;
+      const selected = Array.from($("coverage-zones").querySelectorAll("[data-service-zone]")).filter((check) => check.checked).map((check) => check.dataset.serviceZone);
+      if (base && !selected.includes(base)) selected.push(base);
+      if ((base && !selected.length) || (!base && selected.length)) { notice("เลือกเขตหลักและเขตที่รับงานให้สอดคล้องกันครับ", true); return; }
+      payload.base_service_zone_code = base;
+      payload.coverage_service_zone_codes = selected;
+    }
+    await api(P + "/api/auth/profile", json("PUT", payload)); await loadProfile(); notice("บันทึกโปรไฟล์และเขตบริการแล้วครับ");
   }); };
   $("upload").onchange = () => busy($("upload"), async () => {
     const file = $("upload").files?.[0]; if (!file) return;
@@ -187,7 +280,7 @@ export function therapistClient() {
     if (ids.length > 6) { notice("เลือกรูปแสดงได้ไม่เกิน 6 รูปครับ", true); return; }
     await api(P + "/api/auth/profile/photos/public", json("PUT", { photo_ids: ids })); await loadProfile(); notice("บันทึกรูปที่แสดงแล้วครับ");
   });
-  $("logout").onclick = () => busy($("logout"), async () => { await api(P + "/api/auth/logout", { method: "POST" }); location.assign(P + "/login"); });
+  $("logout").onclick = () => busy($("logout"), async () => { clearPrivate(); await api(P + "/api/auth/logout", { method: "POST" }); location.assign(P + "/login"); });
   $("line-login").onclick = () => location.assign(P + "/login");
   async function login() {
     $("entry").hidden = false;
@@ -196,6 +289,7 @@ export function therapistClient() {
     const url = new URL(location.href);
     const hash = new URLSearchParams(url.hash.slice(1));
     const nested = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
+    const primary = url.pathname.replace(/\/$/, "") === P || ["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key));
     const state = new URL(nested || P + "/login", url.origin);
     let invite = url.searchParams.get("invite") || hash.get("invite") || state.searchParams.get("invite") || new URLSearchParams(state.hash.slice(1)).get("invite") || "";
     const storage = {
@@ -207,7 +301,7 @@ export function therapistClient() {
     else {
       try { const saved = JSON.parse(storage.get(storageKey)); if (saved?.until > Date.now()) invite = saved.token || ""; else storage.remove(storageKey); } catch (_) { storage.remove(storageKey); }
     }
-    if (!invite) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
+    if (!invite && !primary) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
     // Keep the invitation in the redirect too if browser storage is unavailable.
     const redirect = new URL(P + "/login", url.origin);
     if (invite) redirect.hash = new URLSearchParams({ invite }).toString();
@@ -220,9 +314,17 @@ export function therapistClient() {
     }
     notice("ยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
     async function authenticate() {
-      if (!window.liff) throw new Error("LIFF_UNAVAILABLE");
-      await window.liff.init({ liffId: "2011425652-YqK1F6y8" });
-      if (!window.liff.isLoggedIn()) { window.liff.login({ redirectUri: redirect.href }); return; }
+      const progress = window.MmsGraphics; const step = progress?.begin("กำลังยืนยันผ่าน LINE ครับ");
+      if (!window.liff) { const e = new Error("LIFF_UNAVAILABLE"); e.code = "LIFF_UNAVAILABLE"; throw e; }
+      let timeout;
+      try {
+        await Promise.race([
+          window.liff.init({ liffId: "2011425652-YqK1F6y8" }),
+          new Promise((_, reject) => { timeout = setTimeout(() => { const e = new Error("LIFF_INIT_TIMEOUT"); e.code = "LIFF_INIT_TIMEOUT"; reject(e); }, 12000); }),
+        ]);
+      } finally { clearTimeout(timeout); }
+      progress?.received(step);
+      if (!window.liff.isLoggedIn()) { notice("กำลังเปิด LINE เพื่อยืนยันบัญชีครับ"); window.liff.login({ redirectUri: redirect.href }); return; }
       const token = window.liff.getIDToken();
       if (!token) { recoverLine(); return; }
       try {
@@ -237,8 +339,17 @@ export function therapistClient() {
       history.replaceState(null, "", P + "/login"); location.replace(P + "/app");
     }
     $("line-login").onclick = () => busy($("line-login"), authenticate);
-    if (["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key))) await busy($("line-login"), authenticate);
+    await busy($("line-login"), authenticate);
   }
+  let leftPage = false;
+  document.addEventListener?.("visibilitychange", () => {
+    if (document.hidden) leftPage = true;
+    else if (leftPage && document.querySelector("main").dataset.login !== "true") {
+      leftPage = false;
+      if (document.activeElement?.id === "upload" || controllers.size) return;
+      refresh().catch(() => notice("ยังตรวจสอบบัญชีไม่ได้ครับ กดลองอีกครั้ง", true));
+    }
+  });
   if (document.querySelector("main").dataset.login === "true") login().catch(() => notice("กรุณาลองยืนยันผ่าน LINE อีกครั้งครับ", true));
   else refresh().catch((e) => { notice(messages[e.code] || "ยังตรวจสอบบัญชีไม่ได้ครับ กดรีเฟรชหรือติดต่อพี่เปอร์", true); if (e.status === 403) { $("entry").hidden = false; } });
 }
