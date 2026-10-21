@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { activeVersion, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, ZONE } from './admin-current-session-code-only.mjs';
+import { activeVersion, createBuildEvidence, createTransport, releaseCurrentSession, ROOT, uploadMetadata, validateBundleFiles, validateReceiptLinks, validateSourceState, ZONE } from './admin-current-session-code-only.mjs';
 
 const id = n => `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const sha = 'a'.repeat(40);
@@ -12,6 +12,38 @@ test('bundle allows only the primary module and its local-only source map/readme
     ['admin-login-hero-worker.js', 'asset.wasm'], ['admin-login-hero-worker.js', 'nested']]) {
     assert.throws(() => validateBundleFiles(files));
   }
+});
+test('source state records the full matching SHA and rejects any dirty path', () => {
+  assert.deepEqual(validateSourceState({ expectedSha: sha, headSha: sha, dirtyStatus: '' }),
+    { commit_sha: sha, dirty_tree: false, dirty_path_count: 0 });
+  assert.throws(() => validateSourceState({ expectedSha: sha, headSha: sha, dirtyStatus: ' M admin-worker/index.js' }), /dirty checkout/);
+  assert.throws(() => validateSourceState({ expectedSha: sha, headSha: id(1), dirtyStatus: '' }), /checkout SHA mismatch/);
+});
+test('build evidence hashes lockfile, generated config and exact uploaded module without source contents', () => {
+  const code = new Uint8Array([1, 2, 3]);
+  const evidence = createBuildEvidence({ code, releaseId: '1200.1', nodeVersion: 'v22.23.3',
+    wranglerVersion: '4.105.0', lockfile: new Uint8Array([4, 5]), wranglerConfig: new Uint8Array([6, 7]) });
+  assert.equal(evidence.artifact.digest.value, evidence.artifact.modules[0].digest.value);
+  assert.equal(evidence.artifact.modules[0].bytes, 3);
+  assert.equal(evidence.artifact.digest.algorithm, 'sha256');
+  assert.equal(evidence.lockfile.digest.algorithm, 'sha256');
+  assert.equal(evidence.additional_inputs[0].digest.algorithm, 'sha256');
+  assert.equal(Object.hasOwn(evidence.artifact.modules[0], 'content'), false);
+  assert.throws(() => createBuildEvidence({ code, releaseId: '1200.1', nodeVersion: 'v20.1.0',
+    wranglerVersion: '4.105.0', lockfile: new Uint8Array([4]), wranglerConfig: new Uint8Array([5]) }), /unexpected Node.js toolchain/);
+});
+test('receipt chain rejects missing and mismatched upload/deployment evidence', () => {
+  const build = createBuildEvidence({ code: new Uint8Array([1]), releaseId: '1001.1', nodeVersion: 'v22.1.0',
+    wranglerVersion: '4.105.0', lockfile: new Uint8Array([2]), wranglerConfig: new Uint8Array([3]) });
+  const source = { commit_sha: sha, dirty_tree: false };
+  const upload = { release_id: '1001.1', version_id: id(3), recorded_at: '2026-10-21T00:00:00.000Z' };
+  const deployment = { deployment_id: id(4), readback_at: '2026-10-21T00:00:01.000Z',
+    version_id: id(3), strategy: 'percentage', allocations: [{ version_id: id(3), percentage: 100 }] };
+  assert.equal(validateReceiptLinks({ source, build, upload, deployment }), true);
+  assert.throws(() => validateReceiptLinks({ source, build, upload: null, deployment }), /upload response version missing/);
+  assert.throws(() => validateReceiptLinks({ source, build, upload: { ...upload, release_id: '9999.1' }, deployment }), /does not link to this build/);
+  assert.throws(() => validateReceiptLinks({ source, build, upload, deployment: { ...deployment, version_id: id(5) } }), /differs from upload response/);
+  assert.throws(() => validateReceiptLinks({ source: { ...source, dirty_tree: true }, build, upload, deployment }), /dirty source/);
 });
 function fixture(options = {}) {
   const initial = { id: id(1), strategy: 'percentage', versions: [{ version_id: id(2), percentage: 100 }] };
@@ -26,7 +58,10 @@ function fixture(options = {}) {
   const requests = [], receipts = [];
   const io = {
     sha, expectedVersion: id(2), expectedDeployment: id(1),
-    sourceCheck: async () => { if (options.sourceError) throw new Error('source provenance missing'); return { method: 'fixture' }; },
+    sourceCheck: async () => { if (options.sourceError) throw new Error('source provenance missing'); return { commit_sha: sha, dirty_tree: false, method: 'fixture' }; },
+    buildEvidence: async code => createBuildEvidence({ code, releaseId: '1001.1', nodeVersion: 'v22.1.0',
+      wranglerVersion: '4.105.0', lockfile: new Uint8Array([4]), wranglerConfig: new Uint8Array([5]) }),
+    now: () => '2026-10-21T00:00:00.000Z',
     approve: async () => { approvals++; if (approvals === options.rejectApproval) throw new Error('approval blocked'); },
     bundle: async () => { if (options.bundleError) throw new Error('bundle error'); return new Uint8Array([1, 2, 3]); },
     save: value => receipts.push(clone(value)),
@@ -74,6 +109,23 @@ test('happy path: one strict-inherit upload, one exact promotion, GET-only bound
   assert.deepEqual(JSON.parse(f.writes()[1].body), { strategy: 'percentage', versions: [{ version_id: id(3), percentage: 100 }] });
   assert.equal(f.receipts.some(x => JSON.stringify(x).includes('unchanged-fixture')), false);
   assert.equal(result.deployment, id(4));
+  const completedReceipt = f.receipts.find(x => x.phase === 'complete');
+  assert.equal(completedReceipt.source_evidence.commit_sha, sha);
+  assert.equal(completedReceipt.source_evidence.dirty_tree, false);
+  assert.equal(completedReceipt.upload_response.version_id, id(3));
+  assert.equal(completedReceipt.deployment_evidence.deployment_id, id(4));
+  assert.deepEqual(completedReceipt.deployment_evidence.allocations, [{ version_id: id(3), percentage: 100 }]);
+  assert.equal(completedReceipt.build_evidence.artifact.digest.value, completedReceipt.bundle_sha256);
+});
+
+test('missing/mismatched build receipt stops before any upload', async () => {
+  for (const mode of ['missing', 'mismatch']) {
+    const f = fixture();
+    if (mode === 'missing') f.io.buildEvidence = undefined;
+    else f.io.buildEvidence = async () => ({ release_id: '1001.1', artifact: { digest: { algorithm: 'sha256', value: '0'.repeat(64) } } });
+    await assert.rejects(releaseCurrentSession(f.io));
+    assert.equal(f.writes().length, 0);
+  }
 });
 
 for (const [stage, writes] of [[1, 0], [2, 0], [3, 1]]) test(`approval denial at stage ${stage} stops before next mutation`, async () => {
@@ -187,4 +239,6 @@ test('workflow is manual, exact-SHA, independently protected, and not the broad 
   assert.doesNotMatch(source, /ensure-private|ensure-payment|ensure.*routes|wrangler deploy|wrangler secret|secrets: inherit|--var|--keep-vars/);
   assert.equal((source.match(/secrets\./g) || []).length, 1);
   assert.match(source, /node scripts\/admin-current-session-code-only.mjs --execute-approved/);
+  assert.match(source, /current-session-code-only-receipt-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(source, /retention-days: 90/);
 });

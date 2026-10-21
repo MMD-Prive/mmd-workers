@@ -18,6 +18,51 @@ const sort = value => Array.isArray(value) ? value.map(sort) : value && typeof v
 const canonical = value => JSON.stringify(sort(value));
 const ordered = value => [...value].sort((a, b) => canonical(a).localeCompare(canonical(b)));
 const same = (a, b, reason) => assert.equal(canonical(a), canonical(b), reason);
+const sha256 = value => createHash('sha256').update(value).digest('hex');
+
+export function validateSourceState({ expectedSha, headSha, dirtyStatus }) {
+  assert.match(expectedSha || '', /^[a-f0-9]{40}$/, 'full source SHA required');
+  assert.equal(headSha, expectedSha, 'checkout SHA mismatch');
+  assert.equal(dirtyStatus, '', 'dirty checkout; release stopped before bundle/upload');
+  return { commit_sha: expectedSha, dirty_tree: false, dirty_path_count: 0 };
+}
+
+export function createBuildEvidence({ code, releaseId, nodeVersion, wranglerVersion, lockfile, wranglerConfig }) {
+  assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
+  assert.match(releaseId || '', /^\d+\.\d+$/, 'workflow run identity required');
+  assert.match(nodeVersion || '', /^v22\./, 'unexpected Node.js toolchain');
+  assert.equal(wranglerVersion, '4.105.0', 'unexpected Wrangler toolchain');
+  assert.ok(lockfile instanceof Uint8Array && lockfile.byteLength > 0, 'dependency lockfile required');
+  assert.ok(wranglerConfig instanceof Uint8Array && wranglerConfig.byteLength > 0, 'build configuration required');
+  const module = { name: 'admin-login-hero-worker.js', bytes: code.byteLength,
+    digest: { algorithm: 'sha256', value: sha256(code) } };
+  const moduleManifest = [module];
+  return {
+    release_id: releaseId,
+    toolchain: { node: nodeVersion, wrangler: wranglerVersion },
+    lockfile: { path: 'package-lock.json', digest: { algorithm: 'sha256', value: sha256(lockfile) } },
+    additional_inputs: [{ path: 'generated-wrangler-config.json', digest: { algorithm: 'sha256', value: sha256(wranglerConfig) } }],
+    artifact: { digest: { algorithm: 'sha256', value: module.digest.value },
+      module_manifest_digest: { algorithm: 'sha256', value: sha256(canonical(moduleManifest)) }, modules: moduleManifest },
+  };
+}
+
+export function validateReceiptLinks({ source, build, upload, deployment }) {
+  assert.match(source?.commit_sha || '', /^[a-f0-9]{40}$/, 'source commit missing from receipt');
+  assert.equal(source.dirty_tree, false, 'dirty source cannot be released');
+  assert.ok(build?.release_id && build.artifact?.digest?.algorithm === 'sha256'
+    && /^[a-f0-9]{64}$/.test(build.artifact.digest.value), 'artifact build receipt missing');
+  assert.ok(UUID.test(upload?.version_id || ''), 'upload response version missing');
+  assert.equal(build.release_id, upload.release_id, 'upload does not link to this build operation');
+  assert.ok(Number.isFinite(Date.parse(upload?.recorded_at || '')), 'upload response timestamp missing');
+  assert.ok(UUID.test(deployment?.deployment_id || ''), 'deployment readback ID missing');
+  assert.ok(Number.isFinite(Date.parse(deployment?.readback_at || '')), 'deployment readback timestamp missing');
+  assert.equal(deployment?.version_id, upload.version_id, 'deployment version differs from upload response');
+  assert.equal(deployment?.strategy, 'percentage', 'deployment allocation strategy missing');
+  assert.deepEqual(deployment?.allocations, [{ version_id: upload.version_id, percentage: 100 }],
+    'deployment allocation is not the exact uploaded version at 100%');
+  return true;
+}
 
 export function activeVersion(deployment) {
   assert.ok(UUID.test(deployment?.id || ''), 'exact deployment required');
@@ -109,6 +154,7 @@ export async function releaseCurrentSession(io) {
     const metadata = uploadMetadata(version, io.sha);
     // A stale build variable or temporal proximity is not source provenance.
     state.source_evidence = await io.sourceCheck(version);
+    state.source_evidence.checked_at = io.now();
     const settings = await call('/script-settings');
     assert.ok(settings && typeof settings === 'object', 'settings unavailable');
     const boundary = async () => {
@@ -133,7 +179,11 @@ export async function releaseCurrentSession(io) {
     state.baseline_deployment = deployment.id;
     const code = await io.bundle(version);
     assert.ok(code instanceof Uint8Array && code.byteLength > 0, 'compiled module required');
-    state.bundle_sha256 = createHash('sha256').update(code).digest('hex');
+    state.build_evidence = { ...await io.buildEvidence(code), recorded_at: io.now() };
+    assert.ok(state.build_evidence?.artifact?.digest?.algorithm === 'sha256'
+      && state.build_evidence.artifact.digest.value === sha256(code), 'artifact digest does not match uploaded module');
+    state.release_id = state.build_evidence.release_id;
+    state.bundle_sha256 = state.build_evidence.artifact.digest.value;
     await io.approve();
     await unchanged(deployment, active);
     const form = new FormData();
@@ -143,6 +193,9 @@ export async function releaseCurrentSession(io) {
     const uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
     assert.ok(UUID.test(uploaded?.id || '') && uploaded.id !== active, 'ambiguous upload result; do not rerun');
     state.uploaded_version = uploaded.id;
+    state.upload_response = { release_id: state.release_id, version_id: uploaded.id,
+      created_on: typeof uploaded.created_on === 'string' ? uploaded.created_on : null,
+      recorded_at: io.now() };
     save('uploaded-not-promoted');
     const exact = await call('/versions/' + uploaded.id);
     assert.equal(exact.id, uploaded.id, 'uploaded version mismatch');
@@ -164,6 +217,14 @@ export async function releaseCurrentSession(io) {
     assert.equal(activeVersion(receipt), uploaded.id);
     await unchanged(receipt, uploaded.id);
     same(versionConfiguration(await call('/versions/' + uploaded.id)), config, 'post-promotion configuration mismatch');
+    state.deployment_evidence = { deployment_id: receipt.id,
+      created_on: typeof receipt.created_on === 'string' ? receipt.created_on : null,
+      strategy: receipt.strategy,
+      allocations: receipt.versions.map(({ version_id, percentage }) => ({ version_id, percentage })) };
+    state.deployment_evidence.readback_at = io.now();
+    state.deployment_evidence.version_id = activeVersion(receipt);
+    validateReceiptLinks({ source: state.source_evidence, build: state.build_evidence,
+      upload: state.upload_response, deployment: { ...state.deployment_evidence, version_id: state.deployment_evidence.version_id } });
     save('complete');
     return state;
   } catch (error) {
@@ -196,18 +257,34 @@ export function buildCurrentSessionBundle(baseline, dir) {
   return readFileSync(join(dir, 'bundle', 'admin-login-hero-worker.js'));
 }
 
+function collectBuildEvidence(code, dir, releaseId) {
+  const versionOutput = execFileSync('wrangler', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const match = versionOutput.match(/wrangler\s+([0-9]+\.[0-9]+\.[0-9]+)/i);
+  assert.ok(match, 'Wrangler version could not be identified');
+  const lockfile = readFileSync(resolve('package-lock.json'));
+  const wranglerConfig = readFileSync(join(dir, 'bundle.json'));
+  return createBuildEvidence({ code, releaseId, nodeVersion: process.version,
+    wranglerVersion: match[1], lockfile, wranglerConfig });
+}
+
 async function main() {
   assert.equal(process.argv[2], '--execute-approved', 'explicit execution argument required');
   assert.equal(process.env.PRODUCTION_APPROVED, 'true', 'owner dispatch approval required');
   assert.equal(process.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong Cloudflare account');
   const sha = process.env.GITHUB_SHA;
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  const runId = process.env.GITHUB_RUN_ID;
+  const runAttempt = process.env.GITHUB_RUN_ATTEMPT;
+  assert.match(runId || '', /^\d+$/, 'GitHub workflow run ID required');
+  assert.match(runAttempt || '', /^\d+$/, 'GitHub workflow attempt required');
+  const releaseId = `${runId}.${runAttempt}`;
+  let sourceState;
   const approve = async () => {
     await verifyProductionApproval(process.env);
     const protection = await inspectEnvironment(process.env);
     assert.equal(protection.ready, true, 'exact main-only branch restriction required');
-    assert.equal(git('rev-parse', 'HEAD'), sha, 'checkout SHA mismatch');
-    assert.equal(git('status', '--porcelain'), '', 'dirty checkout');
+    sourceState = validateSourceState({ expectedSha: sha,
+      headSha: git('rev-parse', 'HEAD'), dirtyStatus: git('status', '--porcelain=v1', '--untracked-files=all') });
     git('merge-base', '--is-ancestor', '5dd40718129f3902e16be6c93dbaea509eb15fd1', sha);
   };
   const dir = mkdtempSync(join(tmpdir(), 'mmd-current-session-code-only-'));
@@ -215,6 +292,7 @@ async function main() {
   await releaseCurrentSession({ sha, approve,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
+    releaseId,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
     sourceCheck: async baseline => {
       const source = baseline.annotations?.['workers/commit_sha'];
@@ -222,9 +300,11 @@ async function main() {
       git('merge-base', '--is-ancestor', source, sha);
       assert.equal(git('diff', source, sha, '--', 'admin-worker/wrangler.toml'), '',
         'source configuration or migration changed; separate release approval required');
-      return { method: 'version-commit-annotation', baseline_source_sha: source,
+      return { ...sourceState, method: 'version-commit-annotation', baseline_source_sha: source,
         candidate_source_sha: sha, configuration_diff: false };
     },
+    buildEvidence: code => collectBuildEvidence(code, dir, releaseId),
+    now: () => new Date().toISOString(),
     save: state => writeFileSync(journal, JSON.stringify(state, null, 2), { mode: 0o600 }),
     bundle: async baseline => buildCurrentSessionBundle(baseline, dir),
   });
