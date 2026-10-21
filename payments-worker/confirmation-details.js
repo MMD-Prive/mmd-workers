@@ -90,6 +90,8 @@ export async function handleConfirmationDetails(request, env = {}) {
     const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
     const vip = parseMarkedJson(note, "SIGIL VIP Detail v1");
     const servicePricing = parseMarkedJson(note, "MMD SERVICE PRICING v1");
+    const modelRateBreakdown = parseMarkedJson(note, "MMD MODEL PAYOUT BREAKDOWN v1");
+    const modelPricing = modelRateBreakdown || servicePricing;
     const common = {
       ...await confirmationRevision(env, session, claims.session_id),
       ok: true,
@@ -176,14 +178,14 @@ export async function handleConfirmationDetails(request, env = {}) {
     const modelRemark = parseMarkedJson(note, "MMD Model Remark v1");
     const modelCommon = { ...common };
     for (const key of MODEL_HIDDEN_KEYS) delete modelCommon[key];
-    modelCommon.job_type = modelJobType(common.job_type, note, servicePricing);
+    modelCommon.job_type = modelJobType(common.job_type, note, modelPricing);
     const modelAcknowledgedAt = text(fields[field(env.AT_SESSIONS__MODEL_ACK_AT, SESSION_FIELDS.modelAckAt)], 200) || null;
     return withCors(request, env, json({
       ...modelCommon,
       model_acknowledged_at: modelAcknowledgedAt,
       already_confirmed: Boolean(modelAcknowledgedAt),
       model_payout_thb: modelPayout,
-      model_payout_breakdown: modelPayoutBreakdown(servicePricing, modelPayout, common.job_type),
+      model_payout_breakdown: modelPayoutBreakdown(modelPricing, modelPayout, common.job_type),
       model_remark: text(modelRemark?.text, 2000) || null,
       model_meeting_point: text(modelRemark?.meeting_point, 500) || null,
       amount_scope: "model_payout",
