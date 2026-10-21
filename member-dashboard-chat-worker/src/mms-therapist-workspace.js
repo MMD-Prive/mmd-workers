@@ -1,5 +1,7 @@
+import { renderMmsDirectChatPage } from './mms-direct-chat-page.mjs';
+
 const PREFIX = "/male-massage/therapists";
-const PAGES = new Set([`${PREFIX}/login`, `${PREFIX}/me`, `${PREFIX}/app`]);
+const PAGES = new Set([`${PREFIX}/login`, `${PREFIX}/me`, `${PREFIX}/app`, `${PREFIX}/app/chat`]);
 
 export async function maybeHandleTherapistWorkspace(request, env = {}) {
   // A single behavior contract remains in mms-worker when presentation changes.
@@ -19,7 +21,7 @@ export async function maybeHandleTherapistWorkspace(request, env = {}) {
     "content-security-policy": "default-src 'none'; script-src 'unsafe-inline' https://static.line-scdn.net; style-src 'unsafe-inline'; connect-src 'self' https://*.line.me https://*.line-scdn.net; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   });
   let status = 200;
-  if (path === `${PREFIX}/app`) {
+  if (path === `${PREFIX}/app` || path === `${PREFIX}/app/chat`) {
     if (!env.MMS_WORKER?.fetch) status = 503;
     else {
       try {
@@ -31,7 +33,7 @@ export async function maybeHandleTherapistWorkspace(request, env = {}) {
       } catch (_) { status = 503; }
     }
   }
-  return new Response(request.method === "HEAD" ? null : renderTherapistWorkspace(login), { status, headers });
+  return new Response(request.method === "HEAD" ? null : path === `${PREFIX}/app/chat` ? renderMmsDirectChatPage('therapist') : renderTherapistWorkspace(login), { status, headers });
 }
 
 export function renderTherapistWorkspace(login = false) {
@@ -41,7 +43,7 @@ export function renderTherapistWorkspace(login = false) {
   </style></head><body><main data-mms-shell="native-workspace-v1" data-login="${login}"><header><div><div class="muted">MMS · MALE MASSAGE</div><h1>MY THERAPIST</h1></div><a href="https://lin.ee/NkfXMu7">ติดต่อพี่เปอร์</a></header><p id="notice" role="status" aria-live="polite">กำลังตรวจสอบบัญชีครับ</p>
   <button id="retry" class="alt" type="button">ลองตรวจอีกครั้ง</button><section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></p><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>
   <div id="workspace" hidden><section class="card"><h2 id="greeting"></h2><p id="readiness"></p><label>สถานะรับงาน<select id="availability"><option value="Available">Online · รับงานที่ตรงพื้นที่</option><option value="Unavailable">Offline · งดรับงาน</option><option value="Paused">พักรับงานชั่วคราว</option></select></label><p class="muted">เมื่อ Online คุณจะเห็นงานที่ตรงกับเขตบริการและคอร์สที่ยืนยันแล้ว เลือกดูรายละเอียดก่อนตอบรับได้ครับ</p><button id="save-availability">บันทึกสถานะ</button><button class="alt" id="refresh">รีเฟรช</button></section>
-  <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">งานของฉัน</button><button data-tab="profile" aria-selected="false">โปรไฟล์และคอร์ส</button></nav>
+  <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">งานของฉัน</button><button data-tab="profile" aria-selected="false">โปรไฟล์และคอร์ส</button><a class="button alt" href="/male-massage/therapists/app/chat">แชตกับลูกค้า</a></nav>
   <section id="offers"><div id="offer-list"></div></section><section id="jobs" hidden><div id="job-list"></div></section>
   <section id="profile" hidden><form id="profile-form" class="card"><h2>โปรไฟล์ของคุณ</h2><label>ชื่อที่แสดง<input id="display-name" required maxlength="120"></label><label>แนะนำตัว<textarea id="intro" maxlength="600"></textarea></label><div class="area-note"><h3>เขตที่สะดวกรับงาน</h3><p class="muted">เลือกพื้นที่หลักและพื้นที่ที่รับงานได้ ไม่ต้องระบุที่อยู่บ้านหรือเปิด GPS ครับ</p><label>เขตหลัก<select id="base-zone"><option value="">ยังไม่เลือกเขตหลัก</option></select></label><div id="coverage-zones" aria-label="เขตที่รับงานได้"></div><p id="zone-status" class="muted" role="status">กำลังโหลดเขตบริการครับ</p></div><label>การแสดงโปรไฟล์<select id="visibility"><option value="hidden">เก็บไว้ส่วนตัว</option><option value="public">แสดงโปรไฟล์</option></select></label><h3>คอร์สบริการ</h3><p class="muted">ราคาคอร์สยังไม่รวมค่าเดินทาง ยอดงานจริงต้องได้รับการสรุปก่อนครับ</p><div id="courses"></div><button type="button" class="alt" id="add-course">เพิ่มคอร์ส</button><button type="submit">บันทึกโปรไฟล์</button></form><section class="card"><h2>รูปโปรไฟล์</h2><p class="muted">เลือกได้ไม่เกิน 6 รูปสำหรับแสดงในโปรไฟล์ เก็บรูปทั้งหมดได้ไม่เกิน 12 รูป</p><div id="photos" class="row"></div><label>เพิ่มรูป JPEG / PNG / WebP ไม่เกิน 10 MB<input id="upload" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="save-photos">บันทึกรูปที่แสดง</button></section></section>
   <section id="detail" class="card" hidden></section><div class="row"><button id="logout" class="alt">ออกจากบัญชี</button></div></div></main>

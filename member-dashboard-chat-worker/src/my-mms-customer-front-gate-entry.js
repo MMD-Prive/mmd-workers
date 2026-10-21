@@ -22,7 +22,7 @@ export function isTherapistOriginPassthroughRequest(request) {
   const path = new URL(request.url).pathname.replace(/\/$/, "");
   const prefix = "/male-massage/therapists";
   if (!path.startsWith(prefix)) return false;
-  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`].includes(path)) return false;
+  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`, `${prefix}/app/chat`].includes(path)) return false;
   if (path.startsWith(`${prefix}/api/auth/`) || path.startsWith(`${prefix}/api/app/`)) return false;
   return true;
 }
