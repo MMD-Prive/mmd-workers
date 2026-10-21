@@ -738,9 +738,14 @@ test("signed payment follow-up with no image candidate emits a privacy-safe diag
     console.log = originalLog;
   }
 
-  const diagnostic = logs.map((line) => {
+  const entries = logs.map((line) => {
     try { return JSON.parse(line); } catch (_) { return {}; }
-  }).find((entry) => entry.line_payment_ingress === "candidate_missing");
+  });
+  const eventSeen = entries.find((entry) => entry.line_payment_match === "event_seen");
+  const lookup = entries.find((entry) => entry.line_payment_match === "candidate_lookup");
+  const diagnostic = entries.find((entry) => entry.line_payment_ingress === "candidate_missing");
+  assert.deepEqual(eventSeen, { line_payment_match: "event_seen", source_type: "user", message_type: "text", payment_followup: true });
+  assert.deepEqual(lookup, { line_payment_match: "candidate_lookup", candidate_found: false });
   assert.equal(diagnostic?.reason, "candidate_missing_or_stale");
   assert.equal(diagnostic?.source_type, "user");
   assert.equal(diagnostic?.message_type, "text");
@@ -748,6 +753,133 @@ test("signed payment follow-up with no image candidate emits a privacy-safe diag
   assert.equal(logs.join("\n").includes("โอนแล้ว"), false);
   assert.equal(logs.join("\n").includes("reply-private-diagnostic"), false);
   assert.equal(logs.join("\n").includes("evt-private-diagnostic"), false);
+});
+
+test("signed image then payment text finds the same user's candidate and persists one pending proof", async () => {
+  const logs = [];
+  const order = [];
+  const r2 = memoryR2();
+  const originalPut = r2.put.bind(r2);
+  r2.put = async (key, ...args) => {
+    order.push(key.includes("/direct-user-candidates/") ? "candidate_put" : key.includes("/original.") ? "evidence_put" : "other_r2_put");
+    return originalPut(key, ...args);
+  };
+  const originalLog = console.log;
+  const originalFetch = globalThis.fetch;
+  let proofFields = null;
+  let replyBody = null;
+  let paymentCalls = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname === "api-data.line.me") { order.push("line_download"); return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }); }
+    if (url.hostname === "api.line.me" && url.pathname.startsWith("/v2/bot/profile/")) return Response.json({ displayName: "Fixture" });
+    if (request.url === "https://api.line.me/v2/bot/message/reply") { order.push("line_reply"); replyBody = await request.json(); return new Response("", { status: 200 }); }
+    if (url.hostname !== "api.airtable.com") throw new Error(`unexpected_fetch:${request.method}:${url.hostname}`);
+    const table = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] || "");
+    if (request.method === "GET") return Response.json({ records: [] });
+    if (request.method === "POST" && table === "proofs") {
+      order.push("airtable_proof");
+      proofFields = (await request.json()).fields;
+      return Response.json({ id: "recProofCandidate", fields: proofFields });
+    }
+    throw new Error(`unexpected_airtable:${request.method}:${table}`);
+  };
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+    LINE_SLIP_EVIDENCE: r2,
+    AIRTABLE_BASE_ID: "appTestBase000001",
+    AIRTABLE_API_KEY: "token",
+    AIRTABLE_TABLE_CONSOLE_INBOX_ID: "inbox",
+    AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "proofs",
+    AIRTABLE_TABLE_MEMBERS_ID: "members",
+    AIRTABLE_TABLE_CLIENTS_ID: "clients",
+    AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID: "renewals",
+    AIRTABLE_TABLE_SESSIONS_ID: "sessions",
+    SLIP_EXTRACTOR: { async fetch() { throw new Error("must_not_extract"); } },
+    PAYMENTS_WORKER: { async fetch() { paymentCalls += 1; throw new Error("must_not_settle"); } },
+  };
+  const image = { type: "message", timestamp: Date.now(), webhookEventId: "evt-candidate-image", replyToken: "reply-image", source: { type: "user", userId: "U-candidate-test" }, message: { type: "image", id: "img-candidate-test" } };
+  const textEvent = { type: "message", timestamp: Date.now() + 1000, webhookEventId: "evt-candidate-text", replyToken: "reply-text", source: { type: "user", userId: "U-candidate-test" }, message: { type: "text", id: "msg-candidate-test", text: "โอนแล้ว ทดสอบระบบ LINE OFC" } };
+  console.log = (line) => logs.push(String(line));
+  try {
+    for (const event of [image, textEvent]) {
+      const payload = JSON.stringify({ events: [event] });
+      const signature = await lineSignature(payload, env.LINE_CHANNEL_SECRET);
+      await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", { method: "POST", headers: { "x-line-signature": signature }, body: payload }), env);
+    }
+  } finally {
+    console.log = originalLog;
+    globalThis.fetch = originalFetch;
+  }
+  const entries = logs.map((line) => JSON.parse(line));
+  assert.deepEqual(entries.filter((entry) => entry.line_payment_match === "event_seen").map((entry) => [entry.message_type, entry.payment_followup]), [["image", null], ["text", true]]);
+  assert.deepEqual(entries.find((entry) => entry.line_payment_match === "candidate_lookup"), { line_payment_match: "candidate_lookup", candidate_found: true });
+  assert.equal(proofFields?.status, "pending");
+  assert.equal(proofFields?.channel, "line_ofc");
+  assert.equal(paymentCalls, 0);
+  assert.equal(replyBody?.replyToken, "reply-text");
+  assert.equal(replyBody?.messages?.[0]?.text, "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+  assert.ok(order.indexOf("candidate_put") < order.indexOf("line_download"));
+  assert.ok(order.indexOf("line_download") < order.indexOf("evidence_put"));
+  assert.ok(order.indexOf("evidence_put") < order.indexOf("airtable_proof"));
+  assert.ok(order.indexOf("airtable_proof") < order.indexOf("line_reply"));
+  for (const privateValue of ["U-candidate-test", "img-candidate-test", "msg-candidate-test", "reply-text", "โอนแล้ว", "line-token"]) assert.equal(logs.join("\n").includes(privateValue), false);
+});
+
+test("signed non-payment text reports a safe match miss without looking up evidence", async () => {
+  const logs = [];
+  const originalLog = console.log;
+  let r2Reads = 0;
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_SLIP_EVIDENCE: { async get() { r2Reads += 1; return null; } },
+  };
+  const payload = JSON.stringify({ events: [{
+    type: "message",
+    source: { type: "user", userId: "U-private-nonpayment" },
+    message: { type: "text", id: "msg-private-nonpayment", text: "วันนี้ว่างไหม" },
+  }] });
+  const signature = await lineSignature(payload, env.LINE_CHANNEL_SECRET);
+  console.log = (line) => logs.push(String(line));
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST",
+      headers: { "x-line-signature": signature },
+      body: payload,
+    }), env);
+  } finally {
+    console.log = originalLog;
+  }
+  const entries = logs.map((line) => JSON.parse(line));
+  assert.deepEqual(entries.find((entry) => entry.line_payment_match === "event_seen"), {
+    line_payment_match: "event_seen", source_type: "user", message_type: "text", payment_followup: false,
+  });
+  assert.equal(entries.some((entry) => entry.line_payment_match === "candidate_lookup"), false);
+  assert.equal(r2Reads, 0);
+  assert.equal(logs.join("\n").includes("U-private-nonpayment"), false);
+  assert.equal(logs.join("\n").includes("วันนี้ว่างไหม"), false);
+});
+
+test("invalid LINE signature never emits payment matching diagnostics", async () => {
+  const logs = [];
+  const originalLog = console.log;
+  const payload = JSON.stringify({ events: [{ type: "message", source: { type: "user", userId: "U-invalid" }, message: { type: "text", text: "โอนแล้ว" } }] });
+  console.log = (line) => logs.push(String(line));
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST",
+      headers: { "x-line-signature": "invalid" },
+      body: payload,
+    }), { LINE_CHANNEL_SECRET: "line-secret" });
+  } finally {
+    console.log = originalLog;
+  }
+  const entries = logs.map((line) => JSON.parse(line));
+  assert.equal(entries.some((entry) => entry.line_payment_match), false);
+  assert.equal(entries[0]?.line_payment_ingress, "signature_rejected");
+  assert.equal(logs.join("\n").includes("U-invalid"), false);
 });
 
 test("direct payment evidence resolves the canonical client name without storing a raw LINE id in the proof", async () => {

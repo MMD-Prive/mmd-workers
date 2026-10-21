@@ -961,6 +961,7 @@ async function promoteDirectUserCandidate(env = {}, event = {}) {
   const text = messageText(event); if (!hasPaymentFollowupContext(text)) return { skipped: true, reason: "followup_not_payment_related" };
   try {
     const userId = asString(event?.source?.userId); const candidate = await loadDirectUserImageCandidate(env, userId);
+    console.log(JSON.stringify({ line_payment_match: "candidate_lookup", candidate_found: Boolean(candidate) }));
     if (!candidate) return { skipped: true, reason: "candidate_missing_or_stale" };
     const syntheticEvent = { type: "message", source: { type: "user", userId }, message: { type: "image", id: candidate.message_id }, webhookEventId: candidate.webhook_event_id || "" };
     const result = await persistCapturedImage(env, syntheticEvent, { messageId: candidate.message_id, proofId: candidate.proof_id, webhookEventId: candidate.webhook_event_id, userHash: candidate.user_hash, sourceContext: "direct_user_payment_followup", paymentContextText: text });
@@ -985,7 +986,14 @@ async function observeSignedLineEvents(request, env = {}) {
   if (!(await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET))) { console.log(JSON.stringify({ line_payment_ingress: "signature_rejected" })); return; }
   let body; try { body = JSON.parse(rawBody || "{}"); } catch (_) { console.log(JSON.stringify({ line_payment_ingress: "invalid_json" })); return; }
   for (const event of Array.isArray(body.events) ? body.events : []) {
-    const source = sourceType(event); if (!["user", "group"].includes(source)) continue; const type = messageType(event);
+    const source = sourceType(event); const type = messageType(event);
+    if (event?.type === "message") console.log(JSON.stringify({
+      line_payment_match: "event_seen",
+      source_type: source,
+      message_type: type === "text" || type === "image" ? type : "other",
+      payment_followup: source === "user" && type === "text" ? hasPaymentFollowupContext(messageText(event)) : null,
+    }));
+    if (!["user", "group"].includes(source)) continue;
     try {
       let result = null;
       if (source === "group" && type === "image") result = await captureGroupImageEvidence(env, event);
