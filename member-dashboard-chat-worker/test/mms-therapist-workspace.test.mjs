@@ -67,6 +67,22 @@ test('customer root wildcard passes marketing pages and lookalikes directly to o
     assert.equal(requests.at(-1),request);
   }
 });
+test('customer wildcard preserves the existing Therapist auth and app API authority', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('Therapist APIs must not reach the public origin'); });
+  const calls = [];
+  const env = { MMS_WORKER: { async fetch(request) {
+    calls.push(request);
+    return Response.json({ ok: false, error: { code: 'THERAPIST_SESSION_REQUIRED' } }, { status: 401 });
+  } } };
+  for (const suffix of ['/api/auth/me', '/api/app/access']) {
+    const request = new Request(origin + path + suffix, { headers: { origin, cookie: 'test-cookie' } });
+    const response = await productionWorker.fetch(request, env);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get('x-mmd-upstream-service'), 'mms-worker');
+    assert.equal(new URL(calls.at(-1).url).pathname, path + suffix);
+    assert.equal(calls.at(-1).headers.get('cookie'), 'test-cookie');
+  }
+});
 test('rendered client parses without interpolating backend data',()=>{
   for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];new vm.Script(script);assert.equal(html.includes('innerHTML'),false);}
 });
