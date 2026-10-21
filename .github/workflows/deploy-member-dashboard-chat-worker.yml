@@ -204,6 +204,7 @@ jobs:
         run: |
           npx --yes wrangler@4 versions upload --dry-run --keep-vars --outdir "$RUNNER_TEMP/guide-notifier-bundle"
           node ../scripts/check-guide-notifier-bundle.mjs "$RUNNER_TEMP/guide-notifier-bundle/guide-notification-entry.js"
+          node ../scripts/check-mms-therapist-bundle.mjs "$RUNNER_TEMP/guide-notifier-bundle/guide-notification-entry.js"
 
       # The gateway's new binding must have an owner before its version upload.
       # This is a new, route-free Worker and namespace; existing MMS objects are untouched.
