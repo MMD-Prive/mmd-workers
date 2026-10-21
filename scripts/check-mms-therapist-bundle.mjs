@@ -30,7 +30,9 @@ const elements = new Map();
 const element = (id) => {
   if (!elements.has(id)) elements.set(id, {
     children: [], dataset: {}, hidden: id === 'workspace', disabled: false,
-    textContent: '', className: '', value: '',
+    textContent: '', className: '', value: '', style: {},
+    setAttribute() {}, append(...children) { this.children.push(...children); },
+    replaceChildren(...children) { this.children = children; },
   });
   return elements.get(id);
 };
@@ -38,6 +40,7 @@ const calls = [];
 const context = {
   document: {
     getElementById: element,
+    createElement: name => element(Symbol(name)),
     querySelectorAll: () => [],
     querySelector: () => ({ dataset: { login: 'false' } }),
   },
@@ -45,7 +48,7 @@ const context = {
     calls.push(url);
     return Response.json({ ok: false, error: { code: 'THERAPIST_SESSION_REQUIRED' } }, { status: 401 });
   },
-  Response, AbortController, setTimeout, clearTimeout,
+  Response, AbortController, setTimeout, clearTimeout, window: {},
   location: { assign() {} },
 };
 
