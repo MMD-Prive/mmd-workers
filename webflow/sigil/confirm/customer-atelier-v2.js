@@ -2,7 +2,7 @@
  * MMD PRIVÉ · Customer Job Confirmation — Webflow runtime bridge
  * Based on MMD Confirmation 38916f467ab0d3bae3b10f73a190853efaaabfd0.
  * Release source: mmd-workers/webflow/sigil/confirm/customer-atelier-v2.js.
- * Loaded by Webflow as: <script src="…/webflow/job-confirmation.js" defer></script>
+ * Loaded by Webflow as an inline runtime bridge.
  *
  * Executes in the mmdbkk.com document origin. No iframe, no redirect
  * (except the pre-existing role route guard), no contract changes.
