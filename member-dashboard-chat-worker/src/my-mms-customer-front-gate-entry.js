@@ -50,8 +50,8 @@ export default {
     if (therapistPage) return therapistPage;
     if (MEDICAL_REQUEST_PATHS.has(new URL(request.url).pathname)) return proxyMedicalRequest(request, env);
     if (isMyMmsCustomerApiRequest(request)) return handleMyMmsCustomerApi(request, env);
-    if (isMyMmsCustomerAssetRequest(request)) return handleMyMmsCustomerAsset(request);
-    if (isMyMmsCustomerUiRequest(request)) return handleMyMmsCustomerUi(request);
+    if (isMyMmsCustomerAssetRequest(request)) return handleMyMmsCustomerAsset(request, env);
+    if (isMyMmsCustomerUiRequest(request)) return handleMyMmsCustomerUi(request, env);
     // The root wildcard is required for LINE query strings. All paths outside
     // the bounded app, membership and Therapist handlers keep their web origin.
     const path = new URL(request.url).pathname;

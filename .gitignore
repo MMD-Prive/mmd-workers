@@ -13,3 +13,6 @@ apps/**/.next/
 
 # Local Netlify folder
 .netlify
+
+# Isolated, checksum-verified MY MMS presentation build.
+/.release/my-mms-customer/

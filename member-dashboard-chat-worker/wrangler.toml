@@ -34,6 +34,11 @@ service = "mms-worker"
 binding = "MMS_MEMBER_WORKER"
 service = "mms-member-worker"
 
+# Presentation only: private Worker, no customer identity or backend authority.
+[[services]]
+binding = "MMS_CUSTOMER_UI"
+service = "my-mms-customer-ui"
+
 # Downstream-only notification path for pending LINE payment evidence. Telegram
 # never becomes payment or entitlement truth; it only alerts the operator after
 # a pending Payment Proof row has been persisted successfully.
