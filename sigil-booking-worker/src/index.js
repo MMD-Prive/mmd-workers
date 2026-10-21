@@ -11,6 +11,7 @@ import {
   defaultDurationOptions,
   inferCustomerModelFolder,
   isProtectedCampaignModel,
+  modelProfileMatches,
   priceFitsBudget,
   publicBudgetFloorError,
   safeSearchIntent,
@@ -162,6 +163,7 @@ async function handleModelSearch(req, env, url) {
       allowedFolders: effectiveAllowedFolders,
       customerLane: intent.customer_lane,
       workLane: intent.work_lane,
+      profileFilters: intent.profile_filters,
       env,
     }))
     .filter(Boolean);
@@ -242,7 +244,7 @@ async function handleBookingIntake(req, env, ctx) {
   const modelQuery = str(body.model_search_query || body.model_id_or_name || intent.preferred_model_name || body.preference_text);
   const resolverPayload = {
     ...incomingResolver,
-    filters: { ...(incomingResolver.filters || {}), service_options: serviceOptions },
+    filters: { ...(incomingResolver.filters || {}), service_options: serviceOptions, profile_filters: intent.profile_filters },
     service_options: serviceOptions,
     kind: intent.mode === "search" ? "sigil_search_customer_intake_v1" : "sigil_booking_customer_intake_v1",
     customer_search: {
@@ -251,6 +253,7 @@ async function handleBookingIntake(req, env, ctx) {
       customer_lane: intent.customer_lane,
       work_lane: intakeScope === "private" ? intent.work_lane : "",
       service_options: serviceOptions,
+      profile_filters: intent.profile_filters,
       budget: intent.budget,
       spec: intent.spec,
       preferred_model_name: intent.preferred_model_name,
@@ -642,12 +645,13 @@ async function listModels(env, limit) {
   return records.slice(0, cap);
 }
 
-export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", env }) {
+export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", profileFilters = {}, env }) {
   const f = record.fields || {};
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
   if (isProtectedCampaignModel(f)) return null;
   if (!customerLaneMatches(f, customerLane)) return null;
+  if (!modelProfileMatches(f, profileFilters)) return null;
 
   const canPublic = bool(f.can_work_public) || bool(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public";
   const canPrivate = bool(f.can_work_private) || token(f.sales_layer).includes("private") || token(f.private_tier) || token(f.private_work_format);
@@ -671,6 +675,10 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
     display_name: str(f.working_name || f.nickname || f.display_name_compact || "Model"),
     working_name: str(f.working_name),
     nickname: str(f.nickname),
+    height_cm: customerProfileNumber(f.height_cm, 100, 230),
+    weight_kg: customerProfileNumber(f.weight_kg, 30, 200),
+    body_type: customerProfileChoice(f.body_type, ["lean", "athletic", "muscular", "slim", "soft"]),
+    skin_tone: customerProfileChoice(f.skin_tone, ["fair", "light", "medium", "tan", "deep"]),
     source: "approved_catalog",
     asset_source: "approved_catalog",
     preview_approved: bool(f["Preview Image Approved"]),
@@ -682,6 +690,17 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
     work_lane: workLane || undefined,
     booking_discovery: scope === "booking" ? true : undefined
   });
+}
+
+function customerProfileNumber(value, min, max) {
+  if (value === "" || value === null || value === undefined) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max ? Math.round(number) : undefined;
+}
+
+function customerProfileChoice(value, allowed) {
+  const normalized = token(value);
+  return allowed.includes(normalized) ? normalized : undefined;
 }
 
 async function upsertBookingRequest(env, bookingRef, fields) {

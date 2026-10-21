@@ -11,6 +11,7 @@ import {
   normalizeBudget,
   publicBudgetFloorError,
   safeSearchIntent,
+  modelProfileMatches,
   sanitizeTelegramReference,
 } from "./src/customer-search-policy.js";
 
@@ -85,6 +86,17 @@ test("SIGIL Search requires a real budget and accepts spec/name/Telegram referen
   assert.equal(intent.fallback_allowed, true);
 });
 
+test("customer profile filters accept bounded ranges and known profile categories only", () => {
+  const intent = safeSearchIntent({ min_height_cm: "170", max_height_cm: "185", min_weight_kg: "60", body_type: "athletic", skin_tone: "medium" });
+  assert.deepEqual(intent.errors, []);
+  assert.deepEqual(intent.profile_filters, { min_height_cm: 170, max_height_cm: 185, min_weight_kg: 60, body_type: "athletic", skin_tone: "medium" });
+  assert.deepEqual(safeSearchIntent({ min_height_cm: "240" }).errors, ["min_height_cm_invalid"]);
+  assert.deepEqual(safeSearchIntent({ min_height_cm: "180", max_height_cm: "170" }).errors, ["height_range_invalid"]);
+  assert.deepEqual(safeSearchIntent({ skin_tone: "guess" }).errors, ["skin_tone_invalid"]);
+  assert.equal(modelProfileMatches({ height_cm: 178, weight_kg: 72, body_type: "athletic", skin_tone: "medium" }, intent.profile_filters), true);
+  assert.equal(modelProfileMatches({ height_cm: 178, body_type: "athletic", skin_tone: "medium" }, intent.profile_filters), false);
+});
+
 test("Telegram customer reference accepts only Telegram HTTPS links", () => {
   assert.equal(sanitizeTelegramReference("https://t.me/c/1668261779/1234"), "https://t.me/c/1668261779/1234");
   assert.equal(sanitizeTelegramReference("http://t.me/c/1/2"), "");
@@ -105,3 +117,4 @@ test("Public Model budget floor is 5,000 THB without changing Private budget par
   assert.equal(publicBudgetFloorError({ budget_band: "under_10000" }), "public_budget_below_minimum");
   assert.deepEqual(normalizeBudget({ budget_band: "under_10000" }), { provided: true, min_thb: 0, max_thb: 10000, label: "under_10000" });
 });
+

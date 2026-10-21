@@ -643,6 +643,22 @@ test("Booking filters work without a name and include eligible records after the
   }, { secondPage: publicPage });
 });
 
+test("customer body and skin filters use only canonical model profile values", async () => {
+  const inventory = [
+    filterModel("recProfileMatch", { can_work_public: true, height_cm: 178, weight_kg: 72, body_type: "athletic", skin_tone: "medium", private_admin_note: "never project" }),
+    filterModel("recProfileOther", { can_work_public: true, height_cm: 178, weight_kg: 72, body_type: "slim", skin_tone: "medium" }),
+    filterModel("recProfileMissing", { can_work_public: true, body_type: "athletic" }),
+  ];
+  await withFilterInventory(inventory, async () => {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=booking&min_height_cm=170&max_height_cm=185&min_weight_kg=60&body_type=athletic&skin_tone=medium"), filterEnv);
+    const body = await response.json();
+    assert.deepEqual(body.items.map(model => model.model_id), ["recProfileMatch"]);
+    assert.deepEqual({ height_cm: body.items[0].height_cm, weight_kg: body.items[0].weight_kg, body_type: body.items[0].body_type, skin_tone: body.items[0].skin_tone },
+      { height_cm: 178, weight_kg: 72, body_type: "athletic", skin_tone: "medium" });
+    assert.equal(Object.hasOwn(body.items[0], "private_admin_note"), false);
+  });
+});
+
 test("Create Job scope filters combine allowed group, Straight/Gay and canonical PN/VIP capabilities", async () => {
   const fields = { can_work_private: true, private_tier: "premium", orientation_label: "Straight" };
   const inventory = [
