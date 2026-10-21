@@ -564,7 +564,7 @@ export function catalog() {
   return { skills: MMS_SKILLS, zones: MMS_ZONES, max_selected_skills: 8 };
 }
 
-function acceptsGender(scope, recipient) {
+export function acceptsGender(scope, recipient) {
   if (scope === "ได้ทั้งคู่") return true;
   const maleScope = scope === "ผู้ชาย" || scope === "ผู้ชายหรือเพศหลากหลาย";
   return (maleScope && recipient === "ผู้ชาย") || (scope === "ผู้หญิง" && recipient === "ผู้หญิง");

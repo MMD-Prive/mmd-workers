@@ -420,6 +420,27 @@ export async function handleMyMmsCustomerApi(request, env = {}) {
     return json({ ok: true, data: { ...booking, timeline: [], payment: null, operatorNote: null } });
   }
 
+  if (path === `${CUSTOMER_API_PATHS.therapists}/search` || path === `${CUSTOMER_API_PATHS.therapists}/search/catalog`) {
+    if (method !== 'GET') return methodNotAllowed('GET');
+    const profile = await readMemberProfile(request, env);
+    if (profile.status === 401 || profile.status === 403) return json({ ok: false, error: { code: profile.status === 401 ? 'MMS_SESSION_REQUIRED' : 'MMS_ACCESS_DENIED' } }, profile.status);
+    if (profile.status !== 200 || !/^mmsmem_[a-f0-9]{32}$/.test(profile.data?.memberRef || '')) return json({ ok: false, error: { code: 'MMS_MEMBER_CONTEXT_UNAVAILABLE' } }, 503);
+    if (!env.MMS_WORKER?.fetch) return unavailableContract('therapist-search');
+    const target = new URL(request.url);
+    target.protocol = 'https:'; target.host = 'mms.internal';
+    target.pathname = '/internal/mms/customer-search' + (path.endsWith('/catalog') ? '/catalog' : '');
+    try {
+      const upstream = await env.MMS_WORKER.fetch(new Request(target, {
+        method: 'GET', headers: { accept: 'application/json', 'x-mms-customer-member-ref': profile.data.memberRef },
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]), redirect: 'manual',
+      }));
+      if (![200, 400, 401, 403, 409, 503].includes(upstream.status)) return unavailableContract('therapist-search');
+      const body = await upstream.json();
+      if (typeof body?.ok !== 'boolean' || (upstream.status === 200 && body.ok !== true)) return unavailableContract('therapist-search');
+      return json(body, upstream.status);
+    } catch { return unavailableContract('therapist-search'); }
+  }
+
   if (path === CUSTOMER_API_PATHS.therapists || path.startsWith(`${CUSTOMER_API_PATHS.therapists}/`)) return unavailableContract("therapists");
   if (path === CUSTOMER_API_PATHS.payments) return unavailableContract("payments");
   if (path === CUSTOMER_API_PATHS.afterService) return unavailableContract("after-service");
