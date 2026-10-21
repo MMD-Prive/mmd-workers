@@ -22,10 +22,9 @@ jobs:
       - run: node --test scripts/my-mms-cloudflare-gateway-candidate.test.mjs
       - uses: oven-sh/setup-bun@v2
       - name: Read pinned private source artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download my-mms-ui-source-7784fd9-20261022 --repo MMD-Prive/mmd-workers --pattern my-mms-customer-source-7784fd9.tar.gz --dir "$RUNNER_TEMP/mms-source"
+          mkdir -p "$RUNNER_TEMP/mms-source"
+          cp release-artifacts/my-mms-customer-source-7784fd9.tar.gz "$RUNNER_TEMP/mms-source/"
           printf '%s  %s\n' 44b7c77ed209cffefc9b3f647456cbcc43ee16ebca06c97696522cd4ea8c454b "$RUNNER_TEMP/mms-source/my-mms-customer-source-7784fd9.tar.gz" | sha256sum --check --strict
           mkdir -p .release/my-mms-customer
           tar -xzf "$RUNNER_TEMP/mms-source/my-mms-customer-source-7784fd9.tar.gz" -C .release/my-mms-customer
