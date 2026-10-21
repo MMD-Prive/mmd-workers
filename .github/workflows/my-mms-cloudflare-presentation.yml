@@ -1,0 +1,75 @@
+name: MY MMS Cloudflare presentation
+on:
+  pull_request:
+    paths:
+      - 'workers/my-mms-customer-ui/**'
+      - '.github/workflows/my-mms-cloudflare-presentation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: my-mms-customer-ui-release
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/my-mms-cloudflare-gateway-candidate.test.mjs
+      - uses: oven-sh/setup-bun@v2
+      - name: Read pinned private source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download my-mms-ui-source-2f0bb09-20261021 --repo MMD-Prive/mmd-workers --pattern my-mms-customer-source-2f0bb09.tar.gz --dir "$RUNNER_TEMP/mms-source"
+          printf '%s  %s\n' fede9ff4ea62ad7631889a1af2606a74d842bc405a8c3db65ef5f7c5352a277e "$RUNNER_TEMP/mms-source/my-mms-customer-source-2f0bb09.tar.gz" | sha256sum --check --strict
+          mkdir -p .release/my-mms-customer
+          tar -xzf "$RUNNER_TEMP/mms-source/my-mms-customer-source-2f0bb09.tar.gz" -C .release/my-mms-customer
+      - name: Install pinned frontend dependencies
+        working-directory: .release/my-mms-customer
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Validate and build exact PR 4 source
+        working-directory: .release/my-mms-customer
+        env:
+          VITE_MMS_LIVE: 'true'
+        run: |
+          npx tsc --noEmit
+          npm test
+          npm run build
+      - name: Validate private Worker package without deploying
+        run: npx --yes wrangler@4.151.3 deploy --config workers/my-mms-customer-ui/wrangler.jsonc --dry-run --outdir "$RUNNER_TEMP/mms-dry-run"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-mms-customer-ui-${{ github.sha }}
+          path: .release/my-mms-customer/.output/
+          include-hidden-files: true
+          retention-days: 14
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: my-mms-customer-ui-${{ github.sha }}
+          path: .release/my-mms-customer/.output/
+      - name: Deploy presentation only; no routes, sessions or backend bindings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process';
+          const token = String(process.env.CLOUDFLARE_API_TOKEN || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          if (!token) throw Error('Cloudflare deploy credential unavailable');
+          const result = spawnSync('npx', ['--yes', 'wrangler@4.151.3', 'deploy', '--config', 'workers/my-mms-customer-ui/wrangler.jsonc', '--strict', '--tag', 'mms-ui-2f0bb09', '--message', 'MY MMS PR 4 source 2f0bb09f24d66afd898c1aaa2acbcd71915a0485'], { stdio: 'inherit', env: { ...process.env, CLOUDFLARE_API_TOKEN: token } });
+          process.exit(result.status ?? 1);
+          NODE

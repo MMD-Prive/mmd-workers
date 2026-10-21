@@ -39,18 +39,19 @@ test("customer UI matcher owns only the bounded MY MMS routes", () => {
   ]) assert.equal(isMyMmsCustomerUiRequest(req(path)), false, path);
 });
 
-test('customer presentation uses the published origin without forwarding identity', async (t) => {
+test('customer presentation uses the private Cloudflare service without forwarding identity', async (t) => {
   const calls = [];
-  t.mock.method(globalThis, 'fetch', async (request) => {
+  const env = { MMS_CUSTOMER_UI: { fetch: async (request) => {
     calls.push(request);
     return new Response('<html><body><script src="/assets/app.js"></script></body></html>', {
       headers: { 'content-type': 'text/html' },
     });
-  });
+  } } };
+  t.mock.method(globalThis, 'fetch', () => { throw Error('public presentation fetch forbidden'); });
   const response = await handleMyMmsCustomerUi(req('/male-massage?from=line', {
     headers: { cookie: 'test-session', authorization: 'test-authorization' },
-  }));
-  assert.equal(calls[0].url, 'https://my-therapist.lovable.app/?from=line');
+  }), env);
+  assert.equal(calls[0].url, 'https://mms-customer-ui.internal/?from=line');
   assert.equal(calls[0].headers.has('cookie'), false);
   assert.equal(calls[0].headers.has('authorization'), false);
   assert.match(await response.text(), /\/male-massage-assets\/app.js/);
@@ -58,18 +59,19 @@ test('customer presentation uses the published origin without forwarding identit
 
 test('customer logo and bundle assets stay on the bounded app asset path', async (t) => {
   const calls = [];
-  t.mock.method(globalThis, 'fetch', async (request) => {
+  const env = { MMS_CUSTOMER_UI: { fetch: async (request) => {
     calls.push(request.url);
     return new Response('router.update({basepath:``,serializationAdapters:[]}); (0,client.hydrateRoot)(document,app); const logo="/__l5e/assets-v1/example/logo.svg";', {
       headers: { 'content-type': 'application/javascript' },
     });
-  });
-  const bundle = await handleMyMmsCustomerAsset(req('/male-massage-assets/app.js'));
+  } } };
+  t.mock.method(globalThis, 'fetch', () => { throw Error('public asset fetch forbidden'); });
+  const bundle = await handleMyMmsCustomerAsset(req('/male-massage-assets/app.js'), env);
   const javascript = await bundle.text();
   assert.match(javascript, /\/male-massage-assets\/lovable\/example\/logo.svg/);
   assert.match(javascript, /basepath:"\/male-massage",serializationAdapters:/);
-  await handleMyMmsCustomerAsset(req('/male-massage-assets/lovable/example/logo.svg'));
-  assert.equal(calls[1], 'https://my-therapist.lovable.app/__l5e/assets-v1/example/logo.svg');
+  await handleMyMmsCustomerAsset(req('/male-massage-assets/lovable/example/logo.svg'), env);
+  assert.equal(calls[1], 'https://mms-customer-ui.internal/__l5e/assets-v1/example/logo.svg');
 });
 
 test("customer assets and BFF are separately bounded", () => {
@@ -175,4 +177,13 @@ test("unconnected customer contracts fail closed", async () => {
     assert.equal(response.status, 503, path);
     assert.equal(body.error.code, "MMS_CUSTOMER_CONTRACT_CHECKING", path);
   }
+});
+
+
+test('missing presentation binding fails closed without contacting an external origin', async (t) => {
+  t.mock.method(globalThis, 'fetch', () => { throw Error('external fetch forbidden'); });
+  const page = await handleMyMmsCustomerUi(req('/male-massage'), {});
+  assert.equal(page.status, 502);
+  assert.match(await page.text(), /ยังเปิด MY MMS ไม่สำเร็จ/);
+  assert.equal((await handleMyMmsCustomerAsset(req('/male-massage-assets/app.css'), {})).status, 502);
 });

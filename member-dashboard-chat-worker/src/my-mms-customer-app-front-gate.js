@@ -4,7 +4,7 @@ const WORKER_NAME = "member-dashboard-chat-worker";
 const CUSTOMER_UI_PREFIX = "/male-massage";
 const CUSTOMER_ASSET_PREFIX = "/male-massage-assets/";
 const CUSTOMER_API_BASE = "/api/mms/app";
-const PRESENTATION_ORIGIN = "https://my-therapist.lovable.app";
+const PRESENTATION_ORIGIN = "https://mms-customer-ui.internal";
 const MEMBER_PROFILE_PATH = "/api/mms/app/membership/me";
 const MMS_MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
 const MMS_INTERNAL_ORIGIN = "https://mms.internal";
@@ -96,7 +96,7 @@ function presentationResponseHeaders(upstreamHeaders = new Headers(), { html = f
   }
   headers.set("x-mmd-worker", WORKER_NAME);
   headers.set("x-mmd-route-owner", WORKER_NAME);
-  headers.set("x-mmd-ui-source", "my-mms-therapist-github-via-lovable");
+  headers.set("x-mmd-ui-source", "my-mms-therapist-github-via-cloudflare");
   headers.set("x-mmd-presentation-owner", "MMD-Prive/my-mms-therapist");
   headers.set("x-mmd-behavior-owner", "mmd-workers");
   headers.set("x-robots-tag", "noindex, nofollow, noarchive");
@@ -164,7 +164,7 @@ function recoveryHtml() {
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MY MMS · Male Massage</title><style>html,body{margin:0;min-height:100%;background:#f7f6f1;color:#1f2a22;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}main{min-height:100svh;display:grid;place-items:center;padding:24px;box-sizing:border-box}.card{width:min(100%,420px);padding:24px;border:1px solid #e4e6dd;border-radius:24px;background:#fff;box-sizing:border-box}.k{font-size:11px;font-weight:700;letter-spacing:.16em;color:#2f5d43}.t{font-size:21px;font-weight:650;margin:10px 0 8px}.copy{font-size:14px;line-height:1.7;color:#6d7a70}.btn{min-height:48px;margin-top:16px;border-radius:999px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:14px;background:#24503a;color:#f7f6f1}.btn.alt{background:#fff;color:#24503a;border:1px solid #dfe4db}</style></head><body><main><section class="card"><div class="k">MY MMS · MALE MASSAGE</div><div class="t">ยังเปิด MY MMS ไม่สำเร็จครับ</div><div class="copy">ระบบจะไม่แสดงข้อมูลการจองที่ยังตรวจสอบไม่ได้ ลองเปิดอีกครั้งได้เลย หรือกลับไปหน้า Male Massage ก่อนครับ</div><a class="btn" href="/male-massage">ลองอีกครั้ง</a><a class="btn alt" href="/male-massage/home">กลับหน้า Male Massage</a></section></main></body></html>`;
 }
 
-export async function handleMyMmsCustomerUi(request) {
+export async function handleMyMmsCustomerUi(request, env = {}) {
   if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) return methodNotAllowed("GET, HEAD");
   if (requestPath(request) === '/male-massage/support/chat') return new Response(request.method === 'HEAD' ? null : renderMmsDirectChatPage('customer'), {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'x-mmd-route-owner': WORKER_NAME,
@@ -174,7 +174,8 @@ export async function handleMyMmsCustomerUi(request) {
 
   let upstream;
   try {
-    upstream = await globalThis.fetch(new Request(presentationUrlForPage(request), {
+    if (!env.MMS_CUSTOMER_UI?.fetch) throw new Error("MMS_PRESENTATION_UNAVAILABLE");
+    upstream = await env.MMS_CUSTOMER_UI.fetch(new Request(presentationUrlForPage(request), {
       method: request.method,
       headers: presentationRequestHeaders(request),
       redirect: "follow",
@@ -200,12 +201,13 @@ export async function handleMyMmsCustomerUi(request) {
   return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
 }
 
-export async function handleMyMmsCustomerAsset(request) {
+export async function handleMyMmsCustomerAsset(request, env = {}) {
   if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) return methodNotAllowed("GET, HEAD");
   const upstreamUrl = presentationUrlForAsset(request);
   let upstream;
   try {
-    upstream = await globalThis.fetch(new Request(upstreamUrl, {
+    if (!env.MMS_CUSTOMER_UI?.fetch) throw new Error("MMS_PRESENTATION_UNAVAILABLE");
+    upstream = await env.MMS_CUSTOMER_UI.fetch(new Request(upstreamUrl, {
       method: request.method,
       headers: presentationRequestHeaders(request),
       redirect: "follow",
