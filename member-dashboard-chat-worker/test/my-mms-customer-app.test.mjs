@@ -68,7 +68,6 @@ test('customer logo and bundle assets stay on the bounded app asset path', async
   const javascript = await bundle.text();
   assert.match(javascript, /\/male-massage-assets\/lovable\/example\/logo.svg/);
   assert.match(javascript, /basepath:"\/male-massage",serializationAdapters:/);
-  assert.match(javascript, /client.createRoot\)\(document\).render\(node\)/);
   await handleMyMmsCustomerAsset(req('/male-massage-assets/lovable/example/logo.svg'));
   assert.equal(calls[1], 'https://my-therapist.lovable.app/__l5e/assets-v1/example/logo.svg');
 });

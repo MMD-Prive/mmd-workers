@@ -151,9 +151,6 @@ function rewriteMyMmsCustomerJavascript(source) {
     // Start's generated client bootstrap overwrites the router's runtime
     // basepath with its build-time root. This bundle is served only at MY MMS.
     .replace(/(\.update\(\{basepath:)(?:``|""|'')(,serializationAdapters:)/g, '$1"/male-massage"$2')
-    // The presentation host's SSR markup belongs to its preview origin. Mount
-    // a fresh customer tree so it cannot hydrate preview/demo markup as live UI.
-    .replace(/\(0,([A-Za-z_$][\w$]*)\.hydrateRoot\)\(document,/g, '(node => (0,$1.createRoot)(document).render(node))(')
     .replaceAll("/__l5e/assets-v1/", `${CUSTOMER_ASSET_PREFIX}lovable/`)
     .replace(/(["'`])\/assets\//g, `$1${CUSTOMER_ASSET_PREFIX}`)
     .replace(/(["'`])assets\//g, `$1male-massage-assets/`);
