@@ -62,7 +62,7 @@ function updateModelPayoutBreakdown(){
  const wrap=by('directPayoutWrap'),total=by('modelPayout');if(!wrap||!total)return;
  let box=wrap.querySelector('[data-cj-rate-breakdown]');
  const enabled=state.world==='private'&&(val('talentSource')||'direct')==='direct';
- if(!enabled){if(box)box.hidden=true;total.readOnly=false;return}
+ if(!enabled){if(box)box.hidden=true;if(total.readOnly)total.value='';total.readOnly=false;return}
  if(!state.privateWork){if(box)box.hidden=true;total.readOnly=true;total.value='';return}
  const keys=[...new Set([state.privateWork,...state.opts].filter(Boolean))];
  const saveValues=()=>{box?.querySelectorAll('[data-cj-rate-part]').forEach(input=>{state.modelPayoutParts[input.dataset.cjRatePart]=input.value})};
@@ -89,7 +89,7 @@ function modelPayoutBreakdown(){
  const keys=[...new Set([state.privateWork,...state.opts].filter(Boolean))];if(!keys.length)return null;
  const value=key=>moneyNum(state.modelPayoutParts[key]);
  const base=value(state.privateWork),addons=state.opts.map(option=>({option,model_payout_thb:value(option)}));
- if(!(base>0)||addons.some(item=>!(item.model_payout_thb>0)))return null;
+ if(!(base>0)||addons.some(item=>!String(state.modelPayoutParts[item.option]??'').trim()||item.model_payout_thb<0))return null;
  const total=base+addons.reduce((sum,item)=>sum+item.model_payout_thb,0);
  if(total!==Math.round(num('modelPayout')*100)/100)return null;
  return{version:1,currency:'THB',model_base_payout_thb:base,addons,model_total_payout_thb:total};
