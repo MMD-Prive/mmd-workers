@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
+import lineIngressWorker, { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
 import { analyzeProductionPaymentProof, classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind, servicePaymentCandidates } from "../src/payment-proof-intelligence.mjs";
 
 const {
@@ -744,6 +744,9 @@ test("signed payment follow-up with no image candidate emits a privacy-safe diag
   const eventSeen = entries.find((entry) => entry.line_payment_match === "event_seen");
   const lookup = entries.find((entry) => entry.line_payment_match === "candidate_lookup");
   const diagnostic = entries.find((entry) => entry.line_payment_ingress === "candidate_missing");
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "batch_parsed"), {
+    line_payment_observer: "batch_parsed", events_array: true, event_count: 1, event_type_counts: { message: 1 },
+  });
   assert.deepEqual(eventSeen, { line_payment_match: "event_seen", source_type: "user", message_type: "text", payment_followup: true });
   assert.deepEqual(lookup, { line_payment_match: "candidate_lookup", candidate_found: false });
   assert.equal(diagnostic?.reason, "candidate_missing_or_stale");
@@ -878,8 +881,96 @@ test("invalid LINE signature never emits payment matching diagnostics", async ()
   }
   const entries = logs.map((line) => JSON.parse(line));
   assert.equal(entries.some((entry) => entry.line_payment_match), false);
+  assert.equal(entries.some((entry) => entry.line_payment_observer === "batch_parsed"), false);
   assert.equal(entries[0]?.line_payment_ingress, "signature_rejected");
   assert.equal(logs.join("\n").includes("U-invalid"), false);
+});
+
+test("signed non-message and unknown events expose only allowlisted type counts", async () => {
+  const logs = [];
+  const originalLog = console.log;
+  const payload = JSON.stringify({ events: [
+    { type: "postback", source: { type: "user", userId: "U-private-shape" }, postback: { data: "private-postback" } },
+    { type: "unsend", source: { type: "user", userId: "U-private-shape" } },
+    { type: "private-event-type", source: { type: "user", userId: "U-private-shape" } },
+  ] });
+  const signature = await lineSignature(payload, "line-secret");
+  console.log = (line) => logs.push(String(line));
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body: payload,
+    }), { LINE_CHANNEL_SECRET: "line-secret" });
+  } finally {
+    console.log = originalLog;
+  }
+  const entries = logs.map((line) => JSON.parse(line));
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "batch_parsed"), {
+    line_payment_observer: "batch_parsed", events_array: true, event_count: 3,
+    event_type_counts: { postback: 1, unsend: 1, other: 1 },
+  });
+  assert.equal(entries.some((entry) => entry.line_payment_match === "event_seen"), false);
+  for (const privateValue of ["U-private-shape", "private-postback", "private-event-type", signature]) assert.equal(logs.join("\n").includes(privateValue), false);
+});
+
+test("signed payload without an events array reports an empty batch without leaking payload", async () => {
+  const logs = [];
+  const originalLog = console.log;
+  const payload = JSON.stringify({ events: "private-payload" });
+  const signature = await lineSignature(payload, "line-secret");
+  console.log = (line) => logs.push(String(line));
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body: payload,
+    }), { LINE_CHANNEL_SECRET: "line-secret" });
+  } finally {
+    console.log = originalLog;
+  }
+  const entries = logs.map((line) => JSON.parse(line));
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "batch_parsed"), {
+    line_payment_observer: "batch_parsed", events_array: false, event_count: 0, event_type_counts: {},
+  });
+  assert.equal(logs.join("\n").includes("private-payload"), false);
+  assert.equal(logs.join("\n").includes(signature), false);
+});
+
+test("webhook wrapper reports observer scheduling or non-2xx skip without changing responses", async () => {
+  const logs = [];
+  const background = [];
+  const originalLog = console.log;
+  const body = JSON.stringify({ events: [] });
+  const signature = await lineSignature(body, "line-secret");
+  console.log = (line) => logs.push(String(line));
+  try {
+    const rejected = await lineIngressWorker.fetch(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": "invalid" }, body,
+    }), { LINE_CHANNEL_SECRET: "line-secret" });
+    assert.equal(rejected.status, 401);
+    const accepted = await lineIngressWorker.fetch(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body,
+    }), { LINE_CHANNEL_SECRET: "line-secret" });
+    assert.equal(accepted.status, 200);
+    const deferred = await lineIngressWorker.fetch(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body,
+    }), { LINE_CHANNEL_SECRET: "line-secret" }, { waitUntil(work) { background.push(work); } });
+    assert.equal(deferred.status, 200);
+    await Promise.all(background);
+  } finally {
+    console.log = originalLog;
+  }
+  const entries = logs.map((line) => { try { return JSON.parse(line); } catch (_) { return {}; } });
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "skipped"), {
+    line_payment_observer: "skipped", reason: "handler_non_2xx", response_status: 401,
+  });
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "scheduled"), {
+    line_payment_observer: "scheduled", response_status: 200, execution: "inline",
+  });
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "scheduled" && entry.execution === "wait_until"), {
+    line_payment_observer: "scheduled", response_status: 200, execution: "wait_until",
+  });
+  assert.deepEqual(entries.find((entry) => entry.line_payment_observer === "batch_parsed"), {
+    line_payment_observer: "batch_parsed", events_array: true, event_count: 0, event_type_counts: {},
+  });
+  assert.equal(logs.join("\n").includes(signature), false);
 });
 
 test("direct payment evidence resolves the canonical client name without storing a raw LINE id in the proof", async () => {
