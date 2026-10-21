@@ -107,6 +107,14 @@ export async function paymentJobSlipSummary(
     env,
   );
   const refs = balance.records.map((p) => p.ref);
+  const backlinks = fields["MMD — Payment Proofs"];
+  if (backlinks !== undefined && !Array.isArray(backlinks))
+    fail("summary_proof_backlinks_invalid");
+  const linkedIds = ids(backlinks);
+  const linkedProofs = await exactRows(list, proofsTable, "RECORD_ID()", linkedIds);
+  const foundIds = new Set(linkedProofs.map((proof) => proof.id));
+  if (linkedIds.some((id) => !foundIds.has(id)))
+    fail("summary_proof_backlinks_incomplete");
   const proofs = [
     // Payment Proofs has a Session link, not a session_id column. Follow the
     // Session's actual proof record IDs; linked-record formula text is a label.
