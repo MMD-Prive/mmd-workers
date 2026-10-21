@@ -19,6 +19,7 @@ for (const text of [
   'สวัสดีครับ', 'คอร์ส Aroma 60 นาทีราคาเท่าไร', '90 นาที 1800 บาทได้ไหม', 'ถึงประมาณ 19:30 ได้ไหม',
   'อยู่สีลม รับงานไหมครับ', 'LINE โหลดค้างครับ', 'ไม่มี LINE ครับ', 'แชตตรงนี้สะดวกครับ',
   'ปรับคอร์สเป็น 120 นาทีได้ไหม', 'ตอนนี้ถึงแล้วครับ', 'ขอปรับเวลาเป็น 20:00', 'ขอดูรายละเอียดคอร์สหน่อย',
+  'Can I add more time?', 'Can you add 30 minutes for me?', 'Please text me when you arrive', 'Can you book outside Bangkok?',
 ]) test(`allows service conversation: ${text}`, () => assert.equal(inspectChatMessage(text).code, null));
 
 test('checks same-sender context across messages', () => {

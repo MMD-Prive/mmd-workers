@@ -65,7 +65,8 @@ export function inspectChatMessage(text, previous = []) {
   if (/(?:ติดต่อ|คุย|จอง|นัด)กันเอง/.test(compact)) return offsite();
   if (/(?:คุย|ติดต่อ|ทัก).{0,12}(?:ทาง|ใน|ผ่าน|ที่)(?:ไลน์|line|ไอจี|เฟซ|เฟส|instagram|facebook|whatsapp|telegram)/i.test(compact)) return context();
   if (/(?:ขอช่องทางอื่น|มีช่องทางอื่นไหม|คุยที่อื่น|แชตที่อื่น|คุยอีกแอป|ส่งบัญชีมา|ขอเลขบัญชี|เลขบัญชีผม)/.test(compact)) return context();
-  if (/(?:contact|message|add|text|call|dm).{0,20}(?:me|my|line|whatsapp|telegram|instagram|phone|number)|(?:book|pay|chat).{0,20}(?:outside|off.?app|privately|directly)/i.test(current)) return offsite();
+  if (/\b(?:contact|message|add|text|call|dm)\b.{0,20}\b(?:line|whatsapp|telegram|instagram|phone|number)\b|\b(?:add|call|dm)\s+me\b/i.test(current)) return offsite();
+  if (/\b(?:book|pay|chat)\b.{0,20}\b(?:outside(?:\s+the)?\s+(?:app|mms|platform|system)|off[\s-]?app|privately|directly)\b/i.test(current)) return offsite();
   if (/(?:ไม่ต้องผ่าน|เลี่ยง|หลบ).{0,12}(?:mms|ระบบ|แอป)|(?:ตัด|ไม่เสีย|ไม่ต้องเสีย).{0,8}(?:ค่าคอม|คอมมิชชั่น)/i.test(compact)) return offsite();
   // Short numeric fragments are held before delivery; durations/prices with
   // explicit units remain usable. Check prior same-sender fragments as well.
