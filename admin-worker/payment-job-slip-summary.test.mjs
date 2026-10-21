@@ -37,6 +37,14 @@ const proof = (id, amount, p, stage = "deposit") => ({
 });
 function fixture(payments = [], proofs = [], sessions = [session]) {
   const calls = [];
+  const linkedSessions = sessions.map((row) => ({
+    ...row,
+    fields: {
+      ...row.fields,
+      "MMD — Payment Proofs": row.fields["MMD — Payment Proofs"] ??
+        proofs.filter((p) => p.fields.session?.includes(row.id)).map((p) => p.id),
+    },
+  }));
   return {
     calls,
     deps: {
@@ -45,11 +53,45 @@ function fixture(payments = [], proofs = [], sessions = [session]) {
       proofsTable: "proofs",
       page: async (table, params) => {
         calls.push({ table, params });
-        return { records: { sessions, payments, proofs }[table] };
+        return { records: { sessions: linkedSessions, payments, proofs }[table] };
       },
     },
   };
 }
+test("a job with two linked slips is readable even when unrelated pending proofs exceed the global cap", async () => {
+  const first = proof("first", 3000), second = proof("second", 2000);
+  const f = fixture([], [first, second]);
+  const page = f.deps.page;
+  f.deps.page = async (table, params) => {
+    if (table === "proofs" && params.filterByFormula.includes("{status}")) {
+      return { records: Array(1000).fill({ id: "unrelated" }), offset: "more" };
+    }
+    return page(table, params);
+  };
+  const s = await read(sid, f.deps);
+  assert.equal(s.pending_complete, true);
+  assert.equal(s.pending_amount_thb, 5000);
+  assert.equal(s.pending_proof_count, 2);
+  assert(f.calls.filter(({ table }) => table === "proofs").every(({ params }) =>
+    !params.filterByFormula.includes("{status}")));
+});
+test("a missing Session proof backlink fails closed instead of understating pending money", async () => {
+  const f = fixture([], [proof("missing", 2000)]);
+  const page = f.deps.page;
+  f.deps.page = (table, params) =>
+    table === "proofs" && params.filterByFormula.includes("RECORD_ID()")
+      ? { records: [] }
+      : page(table, params);
+  await assert.rejects(read(sid, f.deps), /summary_proof_backlinks_incomplete/);
+});
+test("a display label cannot stand in for Session proof record IDs", async () => {
+  const job = structuredClone(session);
+  job.fields["MMD — Payment Proofs"] = "display label";
+  await assert.rejects(
+    read(sid, fixture([], [], [job]).deps),
+    /summary_proof_backlinks_invalid/,
+  );
+});
 test("two pending slips are advisory only; partial and fully verified states use the ledger", async () => {
   for (const [v1, v2, paid, pending, due] of [
     [false, false, 0, 5000, 5000],
@@ -302,3 +344,60 @@ test("distinct pending transaction IDs still sum normally", async () => {
   assert.equal(s.verified_paid_thb, 0);
   assert.equal(s.remaining_amount_thb, 5000);
 });
+
+test("production proof schema uses Session backlinks, never a nonexistent session_id formula", async () => {
+  const job = structuredClone(session);
+  const first = proof("first", 2000, "first"), second = proof("second", 2000, "second");
+  for (const p of [first, second]) {
+    delete p.fields.session_id;
+    delete p.fields.payment_stage;
+  }
+  job.fields["MMD — Payment Proofs"] = [first.id, second.id];
+  const f = fixture([payment("paid", 1000, true), payment("first", 2000), payment("second", 2000)], [first, second], [job]);
+  const page = f.deps.page;
+  f.deps.page = async (table, params) => {
+    if (table === "proofs") {
+      const allowed = new Set(["status", "payment_ref"]);
+      for (const [, field] of params.filterByFormula.matchAll(/\{([^}]+)\}/g)) {
+        if (!allowed.has(field)) throw Object.assign(new Error("airtable_422"), { status: 422 });
+      }
+    }
+    return page(table, params);
+  };
+  const s = await read(sid, f.deps);
+  assert.equal(s.verified_paid_thb, 1000);
+  assert.equal(s.pending_amount_thb, 4000);
+  assert.equal(s.remaining_amount_thb, 4000);
+  assert.equal(s.projected_remaining_thb, 0);
+  assert.equal(s.pending_proof_count, 2);
+  assert(f.calls.some(({table, params}) => table === "proofs" && params.filterByFormula.includes("RECORD_ID()")));
+});
+
+test("pending canonical Payment transaction IDs cannot count twice when proofs have only production columns", async () => {
+  const payments = [payment("first", 2500), payment("second", 2500)];
+  for (const p of payments) p.fields.provider_txn_id = "same-canonical-transfer";
+  const proofs = [proof("first", 2500, "first"), proof("second", 2500, "second")];
+  for (const p of proofs) { delete p.fields.session_id; delete p.fields.payment_stage; }
+  const s = await read(sid, fixture(payments, proofs).deps);
+  assert.equal(s.pending_complete, false);
+  assert(s.issues.includes("possible_duplicate_transfer"));
+  assert.equal(s.pending_amount_thb, null);
+  assert.equal(s.verified_paid_thb, 0);
+  assert.equal(s.remaining_amount_thb, 5000);
+});
+
+for (const kind of ["bank-reference", "image-hash"]) {
+  test(`production JSON note duplicate ${kind} suppresses pending totals`, async () => {
+    const a = proof("first", 2500), b = proof("second", 2500);
+    a.fields.note = JSON.stringify(kind === "bank-reference"
+      ? { extraction: { payment_ref: "same-bank-transfer" } }
+      : { evidence_sha256: "same-image" });
+    b.fields.note = JSON.stringify(kind === "bank-reference"
+      ? { manual_evidence_review: { bank_reference: " same-bank-transfer " } }
+      : { evidence_sha256: "same-image" });
+    const s = await read(sid, fixture([], [a, b]).deps);
+    assert.equal(s.pending_complete, false);
+    assert.equal(s.pending_amount_thb, null);
+    assert(s.issues.includes("possible_duplicate_transfer"));
+  });
+}

@@ -14,8 +14,25 @@ const pending = new Set([
 ]);
 const service = new Set(["deposit", "full", "final"]);
 const text = (v) => String(v ?? "").trim();
-const evidenceHash = (f) =>
-  text(f.image_sha256 || f.evidence_sha256 || f.content_sha256);
+function proofNote(f) {
+  try {
+    const note = JSON.parse(typeof f.note === "string" ? f.note : "{}");
+    return note && typeof note === "object" && !Array.isArray(note) ? note : {};
+  } catch { return {}; }
+}
+const evidenceHash = (f) => text(
+  f.image_sha256 || f.evidence_sha256 || f.content_sha256 || proofNote(f).evidence_sha256,
+);
+function transferIds(f, payment) {
+  const note = proofNote(f);
+  // Production proofs store evidence metadata in note; Payments hold canonical
+  // provider IDs. These aliases only detect uncertainty, never verify money.
+  return [...new Set([
+    f.provider_txn_id, f.bank_transaction_id, payment?.transaction,
+    note.extraction?.provider_txn_id, note.extraction?.bank_transaction_id,
+    note.extraction?.payment_ref, note.manual_evidence_review?.bank_reference,
+  ].map(text).filter(id => id && !id.startsWith("mmd_evidence_")))];
+}
 const ids = (v) => (Array.isArray(v) ? v.map(text).filter(Boolean) : []);
 const fail = (code, status = 409) => {
   throw Object.assign(new Error(code), { status });
@@ -90,15 +107,18 @@ export async function paymentJobSlipSummary(
     env,
   );
   const refs = balance.records.map((p) => p.ref);
+  const backlinks = fields["MMD — Payment Proofs"];
+  if (backlinks !== undefined && !Array.isArray(backlinks))
+    fail("summary_proof_backlinks_invalid");
+  const linkedIds = ids(backlinks);
+  const linkedProofs = await exactRows(list, proofsTable, "RECORD_ID()", linkedIds);
+  const foundIds = new Set(linkedProofs.map((proof) => proof.id));
+  if (linkedIds.some((id) => !foundIds.has(id)))
+    fail("summary_proof_backlinks_incomplete");
   const proofs = [
-    ...(await exactRows(list, proofsTable, "session_id", [sessionId])),
-    // Linked-record formula values can be display names, not record IDs. Read
-    // the bounded complete pending set, then match actual links below.
-    ...(await list(proofsTable, {
-      filterByFormula: `OR({status}='',${[...pending].map((state) => `{status}='${state}'`).join(",")})`,
-      maxRecords: 1000,
-      requireComplete: true,
-    })),
+    // Airtable keeps the Session's reciprocal proof links. Read every linked
+    // record by ID, and fail closed if any link disappears during the read.
+    ...linkedProofs,
     ...(await exactRows(list, proofsTable, "payment_ref", refs)),
   ];
   const verifiedHashes = new Set(
@@ -223,21 +243,21 @@ export async function paymentJobSlipSummary(
     }
     proofIds.add(proofId);
     const hash = evidenceHash(f);
-    const transaction = text(f.provider_txn_id || f.bank_transaction_id);
+    const transactions = transferIds(f, matches[0]);
     if (
       (ref && seenRefs.has(ref)) ||
       (hash && (hashes.has(hash) || verifiedHashes.has(hash))) ||
-      (transaction &&
-        (seenTransactions.has(transaction) ||
+      transactions.some(transaction =>
+        seenTransactions.has(transaction) ||
           balance.records.some(
             (p) => p.verified && p.transaction === transaction,
-          )))
+          ))
     ) {
       issues.add("possible_duplicate_transfer");
       continue;
     }
     if (ref) seenRefs.add(ref);
-    if (transaction) seenTransactions.add(transaction);
+    for (const transaction of transactions) seenTransactions.add(transaction);
     if (hash) hashes.add(hash);
     if (cents === null) {
       issues.add("proof_amount_missing");

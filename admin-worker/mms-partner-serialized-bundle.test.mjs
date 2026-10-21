@@ -35,7 +35,7 @@ test('actual keepNames build runs serialized Verify without a Worker-global __na
   assert.match(output.APP_JS,/__name\(updateShopBrand/);
   const {document}=dom(),root=document.getElementById('mms-partner-verify'),requests=[];
   const scope=['profile'];
-  vm.runInNewContext(output.APP_JS,{document,URL,URLSearchParams,Date,location:{origin:'https://www.mmdbkk.com',pathname:'/male-massage/partner/verify',search:'?shop=kalima'},sessionStorage:{getItem:()=>null,removeItem(){}},window:{addEventListener(){},liff:{init:async()=>{},isLoggedIn:()=>true,getContext:()=>({scope}),getIDToken:()=>{throw Error('must not read token in profile-only configuration');}}},fetch:async(path,options)=>{requests.push({path,body:JSON.parse(options.body)});return {ok:true};}});
+  vm.runInNewContext(output.APP_JS,{document,URL,URLSearchParams,Date,setTimeout,clearTimeout,location:{origin:'https://www.mmdbkk.com',pathname:'/male-massage/partner/verify',search:'?shop=kalima'},sessionStorage:{getItem:()=>null,removeItem(){}},window:{addEventListener(){},liff:{init:async()=>{},isLoggedIn:()=>true,getContext:()=>({scope}),getIDToken:()=>{throw Error('must not read token in profile-only configuration');}}},fetch:async(path,options)=>{requests.push({path,body:JSON.parse(options.body)});return {ok:true};}});
   await settle();assert.match(root.querySelector('#mms-line-status').textContent,/ยังไม่ได้เปิดสิทธิ์ยืนยันตัวตน/);
   assert.ok(requests.some(r=>r.body.code==='LINE_OPENID_SCOPE_MISSING'));assert.ok(requests.every(r=>r.path.endsWith('/event')));
 });

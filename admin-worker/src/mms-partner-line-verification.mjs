@@ -4,7 +4,7 @@ export const ROOT = '/v1/admin/mms/partner-line';
 export const OWNER_PAGE = '/internal/admin/mms/partner-line';
 export const CHANNEL = '2012099469';
 export const LIFF = '2012099469-JG2eCuvf';
-export const VERIFY_RUNTIME = 'verify-return-20261021-4';
+export const VERIFY_RUNTIME = 'verify-return-20261021-6';
 export const SHOPS = Object.freeze({
   kalima: { id: 'recZJM2QjUKAVT12h', name: 'Kalima Massage' },
   relax: { id: 'recohHKPImiHV9GGJ', name: 'Relax Spa by 9' },
@@ -132,7 +132,7 @@ export async function handleVerification(request,env,{readOwner,appJs,ownerHtml}
       const b=await bodyOf(request,['shop_key','stage','code']);shopFor(b.shop_key);
       if(!DIAGNOSTIC_STAGES.includes(b.stage)||!b.stage.startsWith('client_')||!DIAGNOSTIC_CODES.includes(b.code))fail('FIELDS_INVALID');
       const saved=await recordDiagnostic(env,b.shop_key,b.stage,b.code);
-      return json({ok:saved},saved?200:503);
+      return json({ok:saved,shop_key:b.shop_key,stage:b.stage},saved?200:503);
     }
     if([ROOT+'/request',ROOT+'/status'].includes(path)&&request.method==='POST') {
       const b=await bodyOf(request,['id_token','shop_key','consent']);shopFor(b.shop_key);
