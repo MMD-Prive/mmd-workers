@@ -710,6 +710,46 @@ test("non-payment follow-up does not promote a direct image candidate", async ()
   assert.equal(result.reason, "followup_not_payment_related");
 });
 
+test("signed payment follow-up with no image candidate emits a privacy-safe diagnostic", async () => {
+  const logs = [];
+  const originalLog = console.log;
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_SLIP_EVIDENCE: { async get() { return null; } },
+  };
+  const payload = JSON.stringify({ events: [{
+    type: "message",
+    mode: "active",
+    timestamp: Date.now(),
+    webhookEventId: "evt-private-diagnostic",
+    replyToken: "reply-private-diagnostic",
+    source: { type: "user", userId: "U-private-diagnostic" },
+    message: { type: "text", id: "msg-private-diagnostic", text: "โอนแล้ว ทดสอบระบบ LINE OFC" },
+  }] });
+  const signature = await lineSignature(payload, env.LINE_CHANNEL_SECRET);
+  console.log = (line) => logs.push(String(line));
+  try {
+    await observeSignedLineEvents(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST",
+      headers: { "x-line-signature": signature },
+      body: payload,
+    }), env);
+  } finally {
+    console.log = originalLog;
+  }
+
+  const diagnostic = logs.map((line) => {
+    try { return JSON.parse(line); } catch (_) { return {}; }
+  }).find((entry) => entry.line_payment_ingress === "candidate_missing");
+  assert.equal(diagnostic?.reason, "candidate_missing_or_stale");
+  assert.equal(diagnostic?.source_type, "user");
+  assert.equal(diagnostic?.message_type, "text");
+  assert.equal(logs.join("\n").includes("U-private-diagnostic"), false);
+  assert.equal(logs.join("\n").includes("โอนแล้ว"), false);
+  assert.equal(logs.join("\n").includes("reply-private-diagnostic"), false);
+  assert.equal(logs.join("\n").includes("evt-private-diagnostic"), false);
+});
+
 test("direct payment evidence resolves the canonical client name without storing a raw LINE id in the proof", async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
