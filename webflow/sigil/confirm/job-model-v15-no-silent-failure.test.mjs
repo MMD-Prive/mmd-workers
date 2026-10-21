@@ -72,12 +72,15 @@ class FakeEl {
 
 function buildRoot() {
   const root = new FakeEl("section", { id: "mmd-model-confirm-v15" });
-  const names = ["data-m-pill", "data-m-status", "data-m-retry", "data-m-client", "data-m-type", "data-m-date", "data-m-time", "data-m-location", "data-m-vip-row", "data-m-vip", "data-m-map", "data-m-payout-card", "data-m-payout", "data-m-check", "data-m-confirm", "data-m-success"];
+  const names = ["data-m-pill", "data-m-status", "data-m-retry", "data-m-client", "data-m-type", "data-m-date", "data-m-time", "data-m-location", "data-m-vip-row", "data-m-vip", "data-m-map", "data-m-check", "data-m-confirm", "data-m-success"];
   const el = {};
   for (const name of names) {
     const tag = name === "data-m-check" ? "input" : name === "data-m-confirm" || name === "data-m-retry" ? "button" : "div";
     el[name] = root.appendChild(new FakeEl(tag, { [name]: "" }));
   }
+  el["data-m-payout-card"] = root.appendChild(new FakeEl("section", { "data-m-payout-card": "" }));
+  el.payoutRow = el["data-m-payout-card"].appendChild(new FakeEl("div", { "data-m-payout-row": "" }));
+  el["data-m-payout"] = el.payoutRow.appendChild(new FakeEl("strong", { "data-m-payout": "" }));
   el["data-m-success"].hidden = true;
   el["data-m-retry"].hidden = true;
   return { root, el };
@@ -355,6 +358,18 @@ test("missing client name falls back to a dash instead of a blank or a fake name
   const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body, client_name: "" } } } });
   await settle();
   assert.equal(h.el["data-m-client"].textContent, "—");
+});
+
+
+test("model confirmation lists reconciled PN and MK payout parts under the total", async () => {
+  const h = harness({ routes: { "/v1/confirm/details": { status: 200, body: { ...DETAILS_OK.body,
+    job_type: "PN:mk", model_payout_thb: 11500,
+    model_payout_breakdown: [{ label: "PN", amount_thb: 10000 }, { label: "MK", amount_thb: 1500 }] } } } });
+  await settle();
+  const breakdown = h.el["data-m-payout-card"].querySelector("[data-m-payout-breakdown]");
+  assert.ok(breakdown);
+  for (const text of ["PN", "10,000 THB", "MK", "1,500 THB"]) assert.ok(breakdown.allText.includes(text), text);
+  assert.equal(h.el["data-m-type"].textContent, "PN · MK");
 });
 
 test("missing model payout shows the clear warning and keeps the rate row visible", async () => {

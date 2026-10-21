@@ -73,6 +73,7 @@
       intro: "เช็กเวลา สถานที่ รายละเอียดงาน และยอดเงินถึงตัวให้เรียบร้อยก่อนออกเดินทาง",
       payout: "ยอดเงินถึงตัว",
       payoutKicker: "ยอดถึงตัว",
+      payoutBreakdown: "แยกตามรูปแบบงาน",
       payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน",
       details: "รายละเอียดงาน",
       client: "ลูกค้า",
@@ -122,6 +123,7 @@
       intro: "Check the time, location, job details, and payout before heading out.",
       payout: "Rate to you",
       payoutKicker: "YOUR PAYOUT",
+      payoutBreakdown: "Rate breakdown",
       payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming.",
       details: "Job details",
       client: "Client",
@@ -171,6 +173,7 @@
       intro: "出发前请确认时间、地点、工作详情和到手金额。",
       payout: "到手金额",
       payoutKicker: "到手金额",
+      payoutBreakdown: "报酬明细",
       payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。",
       details: "工作详情",
       client: "客户",
@@ -573,7 +576,45 @@
   });
 
   function workType(value) {
-    return str(value).split(":").filter(Boolean).map((part) => taxonomy[part.toLowerCase()] || part).join(" · ") || "—";
+    return str(value).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean).map((part) => taxonomy[part.toLowerCase()] || part).join(" · ") || "—";
+  }
+
+  function renderPayoutBreakdown(card, payout, source, amount) {
+    if (!card) return;
+    let list = card.querySelector("[data-m-payout-breakdown]");
+    const items = Array.isArray(source) ? source.slice(0, 6).map((item) => ({
+      label: str(item?.label).slice(0, 40), amount_thb: Number(item?.amount_thb),
+    })).filter((item) => item.label && Number.isFinite(item.amount_thb) && item.amount_thb > 0) : [];
+    const matchesTotal = items.length > 0 && Math.abs(items.reduce((sum, item) => sum + item.amount_thb, 0) - amount) < 0.01;
+    if (!matchesTotal) { if (list) list.hidden = true; return; }
+    if (!list) {
+      list = document.createElement("div");
+      list.setAttribute("data-m-payout-breakdown", "1");
+      list.style.cssText = "display:grid;gap:8px;padding:14px 0 4px;border-top:1px solid rgba(255,255,255,.12);margin-top:14px";
+      const heading = document.createElement("span");
+      heading.setAttribute("data-m-payout-breakdown-title", "1");
+      heading.style.cssText = "font-size:12px;color:#c9bea9";
+      list.appendChild(heading);
+      const rows = document.createElement("div");
+      rows.setAttribute("data-m-payout-breakdown-rows", "1");
+      rows.style.cssText = "display:grid;gap:6px";
+      list.appendChild(rows);
+      const payoutRow = payout?.parentNode;
+      card.insertBefore(list, payoutRow && payoutRow.parentNode === card ? payoutRow : null);
+    }
+    list.hidden = false;
+    const heading = list.querySelector("[data-m-payout-breakdown-title]");
+    if (heading) heading.textContent = dict().payoutBreakdown;
+    const rows = list.querySelector("[data-m-payout-breakdown-rows]");
+    if (!rows) return;
+    rows.replaceChildren();
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;justify-content:space-between;gap:12px;font-size:14px;line-height:1.5";
+      const label = document.createElement("span"); label.textContent = item.label;
+      const value = document.createElement("strong"); value.textContent = money(item.amount_thb);
+      row.append(label, value); rows.appendChild(row);
+    }
   }
 
   function codedError(code, status = 0) {
@@ -743,6 +784,7 @@
     // customer amounts/rates never reach it (payments-worker strips them).
     const payout = Number(data.model_payout_thb);
     const hasPayout = Number.isFinite(payout) && payout > 0;
+    renderPayoutBreakdown(el.payoutCard, el.payout, data.model_payout_breakdown, payout);
     if (hasPayout) {
       if (el.payout) el.payout.textContent = money(payout);
       if (el.payoutCard) el.payoutCard.hidden = false;
