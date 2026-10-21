@@ -8,6 +8,7 @@ import {
   MODEL_DRIVE_PHOTO_PATH,
   MODEL_DRIVE_CANONICAL_FILE_PATH,
   collapseDescendantsOfUniqueExactModelMatch,
+  prioritizeModelDriveCandidates,
   driveSearchToken,
   findExactModelImage,
   handleModelDriveDirectoryRequest,
@@ -378,4 +379,23 @@ test("EMs15 resolves through Exclusive VIP/Both into an Exclusive folder_scope_k
   assert.equal(resolved?.approved_root_id, MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID);
   assert.equal(resolved?.folder_scope_key, `exclusive:drive:${ems15Id}`);
   assert.equal(resolved?.folder_path, "MMD Exclusive Models / Exclusive VIP / Both / EMs15");
+});
+
+
+test("main catalogue hides mirror duplicates and Review folders; literal exact precedes near matches", () => {
+  const root = "1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr";
+  const row = (id, name, approved_root_id = root) => ({ drive_folder_id:id, folder_name:name, approved_root_id, score:1 });
+  const items = prioritizeModelDriveCandidates("Film IT", [
+    row("near", "Film IT New"), row("case", "film it"), row("review", "Review Film IT"),
+    row("mirror", "Film IT", "1C7f3rLffbuRgD3VlqKZ_B9MbWratqFKI"), row("exact", "Film IT"),
+  ]);
+  assert.deepEqual(items.map(x => x.drive_folder_id), ["exact", "case", "near"]);
+  assert.deepEqual(items.map(x => x.match_kind), ["exact", "exact", "similar"]);
+  assert.ok(items.every(x => x.drive_priority === "primary"));
+});
+
+test("mirror is used only when the main catalogue has no model candidate", () => {
+  const rows = [{drive_folder_id:"mirror", folder_name:"Film IT", approved_root_id:"1C7f3rLffbuRgD3VlqKZ_B9MbWratqFKI", score:1}];
+  assert.equal(prioritizeModelDriveCandidates("Film IT", rows)[0].drive_priority, "fallback");
+  assert.deepEqual(prioritizeModelDriveCandidates("Film IT", [{...rows[0],folder_name:"Review Film IT"}]), []);
 });
