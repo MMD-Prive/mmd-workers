@@ -16,7 +16,21 @@ export async function proxyMmsMembership(request, env) {
   });
   try {
     // Preserve URL, Origin and stage-scoped cookies; never forward to a presentation host.
-    return await env.MMS_MEMBER_WORKER.fetch(request);
+    const response = await env.MMS_MEMBER_WORKER.fetch(request);
+    const url = new URL(request.url);
+    if (request.method !== 'GET' || url.pathname.replace(/\/$/, '') !== '/male-massage/member'
+      || !['', 'published'].includes(url.searchParams.get('stage') || '')
+      || !response.ok || !response.headers.get('content-type')?.includes('text/html')) return response;
+    // The existing LINE account page remains the identity authority. Its
+    // registered-account section provides a same-host entry to the workspace.
+    const html = (await response.text()).replace(
+      'href="https://lin.ee/NkfXMu7">จองบริการกับทีม Male Massage</a>',
+      'href="/male-massage">เปิด MY MMS →</a>',
+    );
+    const headers = new Headers(response.headers);
+    for (const name of ['content-length', 'content-encoding', 'etag']) headers.delete(name);
+    headers.set('cache-control', 'private, no-store');
+    return new Response(html, { status: response.status, headers });
   } catch {
     return Response.json({ ok: false, error: { code: 'MMS_MEMBERSHIP_UNAVAILABLE' } }, {
       status: 503, headers: { 'cache-control': 'private, no-store' },

@@ -52,6 +52,9 @@ export default {
     if (isMyMmsCustomerApiRequest(request)) return handleMyMmsCustomerApi(request, env);
     if (isMyMmsCustomerAssetRequest(request)) return handleMyMmsCustomerAsset(request);
     if (isMyMmsCustomerUiRequest(request)) return handleMyMmsCustomerUi(request);
+    // The root wildcard is required for LINE query strings. All paths outside
+    // the bounded app, membership and Therapist handlers keep their web origin.
+    if (new URL(request.url).pathname.startsWith("/male-massage")) return globalThis.fetch(request);
     return currentWorker.fetch(request, env, ctx);
   },
 };

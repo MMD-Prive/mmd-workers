@@ -57,6 +57,16 @@ test('callback wildcard passes unrelated public pages and prefix lookalikes dire
     assert.equal(isTherapistOriginPassthroughRequest(new Request(origin + '/member/kenji')), false);
   } finally { globalThis.fetch = originalFetch; }
 });
+test('customer root wildcard passes marketing pages and lookalikes directly to origin', async (t) => {
+  const requests=[];
+  t.mock.method(globalThis,'fetch',async request=>{requests.push(request);return new Response('original public page');});
+  for(const suffix of ['/home?from=line','/how-to-use','/my-mms','-other']){
+    const request=new Request(origin+'/male-massage'+suffix);
+    const response=await productionWorker.fetch(request,{});
+    assert.equal(await response.text(),'original public page');
+    assert.equal(requests.at(-1),request);
+  }
+});
 test('rendered client parses without interpolating backend data',()=>{
   for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];new vm.Script(script);assert.equal(html.includes('innerHTML'),false);}
 });
