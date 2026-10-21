@@ -653,8 +653,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const replyToken = replyTokenOf(event);
     const support = isRichMenuSupport(event);
     const navigation = richMenuNavigation(event);
-    // A deliberate menu tap is a bounded command, like เช็กสิทธิ์, not broad chat auto-reply.
-    let menuCommandEnabled = Boolean(navigation && !runtimeAllKill && directUser &&
+    // Pausing general replies also pauses menu transport. A remembered topic or
+    // deliberate tap must not bypass the pause or the runtime LINE kill switch.
+    let menuCommandEnabled = Boolean(navigation && autoReplyEnabled && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
     const currentIntent = navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
@@ -670,7 +671,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           available: false,
         };
     const effectiveIntent = text(continuity.effective_intent || currentIntent);
-    const menuConversation = !navigation && !support && !runtimeLineKill &&
+    const menuConversation = !navigation && !support && eventAutoReplyEnabled &&
       enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
       directUser && eventMode !== "standby" && !redelivered && replyToken
       ? resolveRichMenuConversation(event, continuity) : null;

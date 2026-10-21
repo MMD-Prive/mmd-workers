@@ -7,6 +7,9 @@ on:
       - member-dashboard-chat-worker/src/kenji-owner-context-test.mjs
       - member-dashboard-chat-worker/src/kenji-line-redelivery-recovery.mjs
       - member-dashboard-chat-worker/test/kenji-owner-context-test.test.mjs
+      - member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs
+      - member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs
+      - member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs
       - member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
       - member-dashboard-chat-worker/src/kenji-line-booking-accumulator.mjs
       - member-dashboard-chat-worker/test/kenji-context-followup.test.mjs
@@ -32,6 +35,9 @@ jobs:
           node --experimental-global-webcrypto --test
           member-dashboard-chat-worker/test/kenji-context-followup.test.mjs
           member-dashboard-chat-worker/test/kenji-owner-context-test.test.mjs
+          member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs
+          member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs
+          member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs
           member-dashboard-chat-worker/test/kenji-line-redelivery-recovery.test.mjs
           member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
           member-dashboard-chat-worker/test/kenji-photo-ad-context.test.mjs
