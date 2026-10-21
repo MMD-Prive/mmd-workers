@@ -25,14 +25,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download my-mms-ui-source-2f0bb09-20261021 --repo MMD-Prive/mmd-workers --pattern my-mms-customer-source-2f0bb09.tar.gz --dir "$RUNNER_TEMP/mms-source"
-          printf '%s  %s\n' fede9ff4ea62ad7631889a1af2606a74d842bc405a8c3db65ef5f7c5352a277e "$RUNNER_TEMP/mms-source/my-mms-customer-source-2f0bb09.tar.gz" | sha256sum --check --strict
+          gh release download my-mms-ui-source-7784fd9-20261022 --repo MMD-Prive/mmd-workers --pattern my-mms-customer-source-7784fd9.tar.gz --dir "$RUNNER_TEMP/mms-source"
+          printf '%s  %s\n' 44b7c77ed209cffefc9b3f647456cbcc43ee16ebca06c97696522cd4ea8c454b "$RUNNER_TEMP/mms-source/my-mms-customer-source-7784fd9.tar.gz" | sha256sum --check --strict
           mkdir -p .release/my-mms-customer
-          tar -xzf "$RUNNER_TEMP/mms-source/my-mms-customer-source-2f0bb09.tar.gz" -C .release/my-mms-customer
+          tar -xzf "$RUNNER_TEMP/mms-source/my-mms-customer-source-7784fd9.tar.gz" -C .release/my-mms-customer
       - name: Install pinned frontend dependencies
         working-directory: .release/my-mms-customer
         run: bun install --frozen-lockfile --ignore-scripts
-      - name: Validate and build exact PR 4 source
+      - name: Validate and build exact PR 5 source
         working-directory: .release/my-mms-customer
         env:
           VITE_MMS_LIVE: 'true'
@@ -49,7 +49,7 @@ jobs:
           include-hidden-files: true
           retention-days: 14
   deploy:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/mms-ai-release-20261022'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -70,6 +70,6 @@ jobs:
           import { spawnSync } from 'node:child_process';
           const token = String(process.env.CLOUDFLARE_API_TOKEN || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
           if (!token) throw Error('Cloudflare deploy credential unavailable');
-          const result = spawnSync('npx', ['--yes', 'wrangler@4.151.3', 'deploy', '--config', 'workers/my-mms-customer-ui/wrangler.jsonc', '--strict', '--tag', 'mms-ui-2f0bb09', '--message', 'MY MMS PR 4 source 2f0bb09f24d66afd898c1aaa2acbcd71915a0485'], { stdio: 'inherit', env: { ...process.env, CLOUDFLARE_API_TOKEN: token } });
+          const result = spawnSync('npx', ['--yes', 'wrangler@4.151.3', 'deploy', '--config', 'workers/my-mms-customer-ui/wrangler.jsonc', '--strict', '--tag', 'mms-ui-7784fd9', '--message', 'MY MMS MMS AI PR 5 source 7784fd9cbeb8935bd8dae30d02c0e0f3a74696b5'], { stdio: 'inherit', env: { ...process.env, CLOUDFLARE_API_TOKEN: token } });
           process.exit(result.status ?? 1);
           NODE
