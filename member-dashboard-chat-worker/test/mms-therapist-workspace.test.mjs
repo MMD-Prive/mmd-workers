@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { maybeHandleTherapistWorkspace, renderTherapistWorkspace, therapistClient } from '../src/mms-therapist-workspace.js';
+import { maybeHandleTherapistWorkspace, renderTherapistWorkspace, therapistClient, THERAPIST_AI_LOGO_PATH } from '../src/mms-therapist-workspace.js';
 import productionWorker, { isTherapistOriginPassthroughRequest } from '../src/my-mms-customer-front-gate-entry.js';
 const origin='https://www.mmdbkk.com';
 const path='/male-massage/therapists';
@@ -62,12 +63,26 @@ test('rendered client parses without interpolating backend data',()=>{
 test('mobile login keeps MMS branding, access guidance, and functional LINE controls',async()=>{
   const response=await maybeHandleTherapistWorkspace(new Request(origin+path+'/login'),{MMS_THERAPIST_UI_SOURCE:'native'});
   const html=await response.text();
-  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','mms-logo-horizontal-light.svg','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','mms-logo-horizontal-light.svg',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  assert.equal(html.includes('คุยกับพี่เปอร์'),false);
   assert.match(response.headers.get('content-security-policy'),/font-src https:\/\/cdn\.prod\.website-files\.com/);
   const profile=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me'),{MMS_THERAPIST_UI_SOURCE:'native'});
   assert.doesNotMatch(profile.headers.get('content-security-policy'),/font-src|cdn\.prod\.website-files\.com/);
   assert.equal((html.match(/id="line-login"/g)||[]).length,1);
   assert.equal((html.match(/id="notice"/g)||[]).length,1);
+});
+test('public login logo reuses the approved image bytes without exposing the admin asset route',async()=>{
+  const url=origin+THERAPIST_AI_LOGO_PATH;
+  assert.equal(isTherapistOriginPassthroughRequest(new Request(url)),false);
+  const response=await productionWorker.fetch(new Request(url),{MMS_THERAPIST_UI_SOURCE:'native'});
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('content-type'),'image/png');
+  assert.match(response.headers.get('cache-control'),/public.*immutable/);
+  assert.equal(createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex'),'4ed6770759e92887e9c6c8eec7941ccb28fa58dd332fe44fea1e06511a9fb5b6');
+  const head=await productionWorker.fetch(new Request(url,{method:'HEAD'}),{MMS_THERAPIST_UI_SOURCE:'native'});
+  assert.equal(head.status,200);assert.equal(await head.text(),'');
+  const post=await productionWorker.fetch(new Request(url,{method:'POST'}),{MMS_THERAPIST_UI_SOURCE:'native'});
+  assert.equal(post.status,405);
 });
 
 class Element {

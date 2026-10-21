@@ -31,4 +31,6 @@ test('native UI smoke is required before reporting successful production deploy'
  const smoke=workflow.split('- name: Verify native MY THERAPIST entrance and callbacks')[1].split('- name: Smoke MY MMD Private Teaser Viewer route')[0];
  for(const marker of ['native-workspace-v1','mms-therapist-invite-v1','liff.state','THERAPIST_SESSION_REQUIRED'])assert.ok(smoke.includes(marker));
  assert.ok(smoke.includes("for suffix in '' '/login'"));
+ assert.ok(smoke.includes('male-massage-ai.4ed6770759e9.png'));
+ assert.ok(smoke.includes('4ed6770759e92887e9c6c8eec7941ccb28fa58dd332fe44fea1e06511a9fb5b6'));
 });
