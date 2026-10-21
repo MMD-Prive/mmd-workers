@@ -52,6 +52,38 @@ executorSource=replaceOnce(executorSource,ORIGINAL_ARTIFACT.receipt_sha256,hash(
 const {promoteExistingStartupVersion:execute}=await import(moduleUrl(executorSource));
 const writes=f=>f.cfCalls.filter(x=>x.options.method==='POST');
 
+// Environment response shape observed in run 39506699433's approval receipt.
+// These provider metadata fields are not the identity or approval authority.
+const realEnvironmentShape={
+ id:24708510559,name:'member-pages-code-only-owner',can_admins_bypass:false,
+ created_at:'2026-10-19T12:45:14Z',updated_at:'2026-10-19T12:45:15Z',
+ node_id:'EN_kwDOQtcp9M8AAAAFwL3zXw',
+ url:'https://api.github.com/repos/MMD-Prive/mmd-workers/environments/member-pages-code-only-owner',
+ html_url:'https://github.com/MMD-Prive/mmd-workers/deployments/activity_log?environments_filter=member-pages-code-only-owner',
+};
+test('real GitHub approval environment metadata does not invalidate matching identity',async()=>{
+ const f=fixture();f.history[0].environments=[{...realEnvironmentShape}];
+ await verifyRecoveryOwner(f.io.env,f.io.ghRead);
+ assert.equal((await execute(f.io)).phase,'complete');assert.equal(writes(f).length,1);
+});
+for(const [name,mutate] of [
+ ['wrong id',f=>f.history[0].environments[0].id=1],
+ ['string id',f=>f.history[0].environments[0].id=String(realEnvironmentShape.id)],
+ ['missing id',f=>delete f.history[0].environments[0].id],
+ ['wrong name',f=>f.history[0].environments[0].name='other'],
+ ['missing name',f=>delete f.history[0].environments[0].name],
+ ['extra environment',f=>f.history[0].environments.push({...realEnvironmentShape})],
+ ['no environment',f=>f.history[0].environments=[]],
+ ['null environment',f=>f.history[0].environments=[null]],
+ ['extra approval',f=>f.history.push(structuredClone(f.history[0]))],
+ ['wrong owner',f=>f.history[0].user={login:'other',id:1}],
+ ['rejected receipt',f=>f.history[0].state='rejected'],
+])test(`real-shape approval rejects ${name} without mutation`,async()=>{
+ const f=fixture();f.history[0].environments=[{...realEnvironmentShape}];mutate(f);
+ await assert.rejects(execute(f.io));assert.equal(writes(f).length,0);
+ assert.equal(f.journals.at(-1).diagnostic.reason,'APPROVAL_RECEIPT_INVALID');
+});
+
 test('production evidence pins remain exact and recovery library stays inert',()=>{assert.equal(T.uploaded_version,'eef80a0c-afb7-4abc-bd91-6b02f5440d02');assert.equal(T.bundle_sha256,'ef46ed111dc97acb4391635cafc9cf2f8918c903aee85b7e9bb65172dacd45f4');assert.equal(ORIGINAL_ARTIFACT.receipt_sha256,'cd2265a91ccfa4f04197a3cfd1eb6611cf43f2721d1213df21b8ad6cf442ffd7');assert.doesNotMatch(readFileSync(new URL('./member-pages-promotion-only-recovery.mjs',import.meta.url),'utf8'),/process\.argv|process\.env/);});
 test('owner policy validates exact recovery workflow and fresh first-attempt owner receipt',async()=>{const f=fixture();await verifyRecoveryOwner(f.io.env,f.io.ghRead);});
 for(const [name,mutate] of [

@@ -57,7 +57,10 @@ export async function verifyRecoveryOwner(env,read,mark=()=>{}) {
   assert.equal(branches.total_count,1);assert.equal(branches.branch_policies?.length,1);same(branches.branch_policies[0].name,'main');assert.equal(branches.branch_policies[0].type,'branch');
   mark('RECOVERY_OWNER_APPROVAL');const history=await get('/actions/runs/'+env.GITHUB_RUN_ID+'/approvals');
   assert.ok(Array.isArray(history)&&history.length===1);assert.equal(history[0].state,'approved');assert.ok(owner(history[0].user));
-  assert.equal(history[0].environments?.length,1);same(history[0].environments[0],{id:p.id,name:ENVIRONMENT});
+  assert.equal(history[0].environments?.length,1);
+  // GitHub includes metadata alongside identity; policy is checked independently above.
+  assert.equal(history[0].environments[0]?.id,p.id);
+  assert.equal(history[0].environments[0]?.name,ENVIRONMENT);
 }
 
 export async function authenticateOriginalArtifact(ghRead,artifactRead) {
