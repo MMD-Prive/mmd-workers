@@ -20,6 +20,14 @@ import {
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LOCK = "sigil-booking-worker-v24-airtable-resolver-telegram-notify";
+// Canonical test records verified read-only on 2026-10-22. Exclude by identity,
+// not name matching: real Models with similar names must remain discoverable.
+const EXCLUDED_DISCOVERY_MODEL_IDS = new Set([
+  "rec687cy5e8sx6yLI",
+  "rec88tNFcOJwgrQVE",
+  "recLTnhXwSlEpMuNv",
+  "recXd0oo5QyXefB0W",
+]);
 const PUBLIC_JOB_V2_FORMATS = new Set([
   "dining",
   "event",
@@ -646,6 +654,7 @@ async function listModels(env, limit) {
 }
 
 export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", profileFilters = {}, env }) {
+  if (EXCLUDED_DISCOVERY_MODEL_IDS.has(record.id)) return null;
   const f = record.fields || {};
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
