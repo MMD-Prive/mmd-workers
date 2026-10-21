@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia } from "./src/model-image-policy-worker.js";
-import { buildCustomerDurationOffer, sanitizeModelForBooking } from "./src/index.js";
+import bookingWorker, { buildCustomerDurationOffer, sanitizeModelForBooking } from "./src/index.js";
 import runtimeWorker, { requestedScope } from "./src/runtime-index.js";
 
 const modelId = "recModel000000001";
@@ -596,4 +596,118 @@ test("SIGIL private denial is readable to approved browser origins without leaki
   ), env);
   assert.equal((await blocked.json()).blocked, true);
   assert.equal(blocked.headers.get("access-control-allow-origin"), null);
+});
+
+
+const filterModel = (id, fields) => ({ id, fields: { working_name: id, status: "active", ...fields } });
+const filterSnapshot = {
+  schema_version: "my_mmd_entitlement_resolver_v1", fail_closed: true, member_blocked: false,
+  access: { private_visibility_envelope: "premium", new_model_reveals_allowed: true },
+};
+async function withFilterInventory(models, run, { stored = false, secondPage = [] } = {}) {
+  const original = globalThis.fetch;
+  const reads = [];
+  globalThis.fetch = async (input, init = {}) => {
+    assert.ok(!init.method || init.method === "GET", "search must never mutate a record");
+    const url = new URL(input);
+    reads.push(url);
+    const table = decodeURIComponent(url.pathname.split("/").pop());
+    if (table === "Models") return Response.json(url.searchParams.get("offset") === "page-two"
+      ? { records: secondPage } : { records: models, ...(secondPage.length ? { offset: "page-two" } : {}) });
+    if (table === "SIGIL Booking Requests" && stored) return Response.json({ records: [{
+      id: "recStoredFilterRequest", fields: { member_status: "active", access_scope: "public_private",
+        resolver_payload_json: JSON.stringify({ entitlement_snapshot: filterSnapshot }) },
+    }] });
+    return Response.json({ records: [] });
+  };
+  try { await run(reads); } finally { globalThis.fetch = original; }
+}
+const filterEnv = { AIRTABLE_API_KEY: "synthetic-key", AIRTABLE_BASE_ID: "synthetic-base" };
+
+test("Booking filters work without a name and include eligible records after the first Airtable page", async () => {
+  const hiddenPage = Array.from({ length: 100 }, (_, i) => filterModel(`recHidden${i}`, { status: "hidden", can_work_public: true }));
+  const publicPage = [
+    filterModel("recPublicStraight", { can_work_public: true, orientation_label: "Straight" }),
+    filterModel("recPublicBoth", { can_work_public: true, orientation_label: "Both" }),
+    filterModel("recPublicGay", { can_work_public: true, orientation_label: "Gay" }),
+    filterModel("recPublicUnknown", { can_work_public: true }),
+    filterModel("recPrivateOnly", { can_work_private: true, private_tier: "premium", orientation_label: "Straight" }),
+  ];
+  await withFilterInventory(hiddenPage, async (reads) => {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public&search_mode=booking&customer_lane=straight"), filterEnv);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.deepEqual(body.items.map(m => m.model_id), ["recPublicStraight", "recPublicBoth"]);
+    assert.ok(reads.some(url => url.searchParams.get("offset") === "page-two"));
+    assert.equal(body.items.some(m => m.scope === "private"), false);
+  }, { secondPage: publicPage });
+});
+
+test("Create Job scope filters combine allowed group, Straight/Gay and canonical PN/VIP capabilities", async () => {
+  const fields = { can_work_private: true, private_tier: "premium", orientation_label: "Straight" };
+  const inventory = [
+    filterModel("recVipPremium", { ...fields, private_service_level: "vip" }),
+    filterModel("recPnPremium", { ...fields, private_service_level: "pn" }),
+    filterModel("recUnknownPremium", fields),
+    filterModel("recVipGay", { ...fields, private_service_level: "vip", orientation_label: "Gay" }),
+    filterModel("recVipStandard", { ...fields, private_service_level: "vip", private_tier: "standard" }),
+    filterModel("recVipExclusive", { ...fields, private_service_level: "vip", private_tier: "exclusive" }),
+  ];
+  await withFilterInventory(inventory, async () => {
+    for (const [work, expected] of [["vip", ["recVipPremium"]], ["pn", ["recVipPremium", "recPnPremium"]]]) {
+      const response = await bookingWorker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&booking_ref=synthetic&selected_access_folder=premium&customer_lane=straight&work_lane=${work}`), filterEnv);
+      const body = await response.json();
+      assert.deepEqual(body.items.map(m => m.model_id), expected);
+      assert.deepEqual(body.items[0].private_work_capabilities, ["vip", "pn"]);
+      assert.equal(body.visibility_enforced, true);
+    }
+    const forbidden = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&booking_ref=synthetic&selected_access_folder=exclusive"), filterEnv);
+    assert.equal((await forbidden.json()).blocked, true);
+  }, { stored: true });
+});
+
+test("filter-only Private Booking remains closed without canonical membership", async () => {
+  await withFilterInventory([], async (reads) => {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&selected_access_folder=premium&customer_lane=straight&work_lane=pn"), filterEnv);
+    const body = await response.json();
+    assert.equal(body.blocked, true);
+    assert.deepEqual(body.items, []);
+    assert.equal(reads.some(url => url.pathname.endsWith("/Models")), false);
+  });
+});
+
+test("customer Booking rejects Live/Group and stores MK/Burn only as draft preferences", async () => {
+  const original = globalThis.fetch;
+  const persisted = [];
+  globalThis.fetch = async (input, init = {}) => {
+    if (init.method === "POST") {
+      const fields = JSON.parse(init.body).fields;
+      persisted.push(fields);
+      return Response.json({ id: "recSyntheticOptions", fields });
+    }
+    return Response.json({ records: [] });
+  };
+  const request = (options, scope = "private") => new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ booking_ref: "synthetic-option-draft", lane: scope, search_mode: "booking",
+      service_options: options, suppress_telegram_notify: true }),
+  });
+  try {
+    for (const options of [["live"], ["group"], ["mk", "live"], "mk"]) {
+      const response = await bookingWorker.fetch(request(options), filterEnv);
+      assert.equal(response.status, 422);
+      assert.equal((await response.json()).error, "customer_booking_service_option_invalid");
+    }
+    assert.equal(persisted.length, 0);
+    const publicResponse = await bookingWorker.fetch(request(["mk"], "public"), filterEnv);
+    assert.equal(publicResponse.status, 422);
+    const accepted = await bookingWorker.fetch(request(["mk", "burn", "mk"]), filterEnv);
+    assert.equal(accepted.status, 200);
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0]["Request Status"], "draft");
+    const resolver = JSON.parse(persisted[0].resolver_payload_json);
+    assert.deepEqual(resolver.customer_search.service_options, ["mk", "burn"]);
+    assert.deepEqual(resolver.filters.service_options, ["mk", "burn"]);
+    assert.equal(resolver.job_creation_state, "waiting_for_per");
+  } finally { globalThis.fetch = original; }
 });
