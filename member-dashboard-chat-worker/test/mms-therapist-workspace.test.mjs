@@ -128,7 +128,7 @@ test('profile saves service area codes through the authenticated profile API',as
   h.els['base-zone'].value='BKK-SILOM';
   const checkboxes=h.els['coverage-zones'].querySelectorAll('[data-service-zone]');
   checkboxes.find(check=>check.dataset.serviceZone==='BKK-SILOM').checked=true;
-  await h.els['profile-form'].onsubmit({preventDefault(){}});
+  await h.els['profile-form'].onsubmit({preventDefault(){}}); await settle();
   const call=h.calls.filter(item=>item.url.endsWith('/profile')&&item.options.method==='PUT').at(-1);
   assert.deepEqual(JSON.parse(call.options.body).base_service_zone_code,'BKK-SILOM');
   assert.deepEqual(JSON.parse(call.options.body).coverage_service_zone_codes,['BKK-PATHUMWAN','BKK-SILOM']);
