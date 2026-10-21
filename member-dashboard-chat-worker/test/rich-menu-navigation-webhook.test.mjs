@@ -40,7 +40,7 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
   for (const [menu, actions] of Object.entries(getMmdRichMenuActionMap())) {
     for (const [index, action] of actions.entries()) {
 
-      const result = await run(action.data, { auto: false });
+      const result = await run(action.data, { auto: true });
       assert.equal(result.status, 200);
       assert.equal(result.replies.length, 1);
       if (destinations[menu][index].type === "uri") assert.ok(result.replies[0].messages[0].text.endsWith(destinations[menu][index].uri));
@@ -53,10 +53,24 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
   }
 });
 
-test("menu commands work with broad replies OFF and respect global stop, owner takeover, signature, intake, standby and redelivery", async () => {
+test("menu commands respect auto reply pause, LINE/global stop, owner takeover, signature, intake, standby and redelivery", async () => {
   const data = getMmdRichMenuActionMap().guest[1].data;
   for (const options of [{ globalKill: true }, { takeover: true }, { takeover: true, auto: false }, { mode: "standby" }, { redelivery: true }, { intake: false }, { signatureValid: false }])
     assert.equal((await run(data, options)).replies.length, 0);
-  assert.equal((await run(data, { auto: false, firstContact: false, kill: true })).replies.length, 1);
-  assert.equal((await run(data, { auto: false, firstContact: true })).replies.length, 1);
+  for (const options of [{ auto: false }, { auto: false, firstContact: true }, { kill: true }]) {
+    const result = await run(data, options);
+    assert.equal(result.replies.length, 0);
+    assert.equal(result.body.saved[0].reply_source, "silent");
+  }
+});
+
+test("pause silences every installed navigation postback including support without changing mappings", async () => {
+  for (const actions of Object.values(getMmdRichMenuActionMap())) {
+    for (const action of actions) {
+      const result = await run(action.data, { auto: false });
+      assert.equal(result.status, 200);
+      assert.equal(result.replies.length, 0);
+      assert.equal(result.body.saved[0].replied, false);
+    }
+  }
 });
