@@ -1,5 +1,6 @@
 import { APPROVED_COMPCARD_MANIFEST } from "./compcard-approved-manifest.js";
-import { buildCompcardCaption, chooseDailyCard, destinationsForCategory, evaluateCard } from "./compcard-policy.js";
+import { buildCompcardCaption, chooseDailyCard, destinationsForCategory, evaluateCard, publicationCadence } from "./compcard-policy.js";
+import { assertIntakeCardCurrent, mergeApprovedIntake, readApprovedIntakeAsset } from "./compcard-intake.js";
 import {
   compcardStorage, deliverCompcardOnce, freezeCompcardPlan, readCompcardHistory,
   readCompcardJson, reserveCompcardExposure, settleCompcardExposure, writeCompcardJson,
@@ -43,7 +44,14 @@ export function compcardClock(now) {
   return { date: clock.slice(0, 10), minutes: Number(clock.slice(11, 13)) * 60 + Number(clock.slice(14, 16)), time: clock.slice(11, 16) };
 }
 export function compcardSchedule(env = {}) {
-  return { timezone: "Asia/Bangkok", model: hhmm(env.HYPE_COMPCARD_SEND_AT_ICT, "16:30"), promotion: hhmm(env.HYPE_PROMOTION_SEND_AT_ICT, "20:00"), catchup_minutes: MAX_CATCHUP_MINUTES };
+  const model = hhmm(env.HYPE_COMPCARD_SEND_AT_ICT, "16:30");
+  const promotion = hhmm(env.HYPE_PROMOTION_SEND_AT_ICT, "20:00");
+  const standard = hhmm(env.HYPE_STANDARD_SEND_AT_ICT, promotion);
+  // Model exposure is shared across both slots. Non-overlapping windows keep
+  // the evening selection behind the afternoon slot's durable reservation.
+  if (env.HYPE_CADENCE_START_DATE && enabled(env.HYPE_STANDARD_ENABLED)
+      && Math.abs(minutesAt(model) - minutesAt(standard)) < MAX_CATCHUP_MINUTES) throw problem("compcard_schedule_overlap", false);
+  return { timezone: "Asia/Bangkok", model, promotion, standard, catchup_minutes: MAX_CATCHUP_MINUTES };
 }
 function due(clock, time) {
   const start = minutesAt(time);
@@ -211,23 +219,34 @@ function captionForLiveCard(card, destination, model) {
   const conflicts = ["height_cm", "weight_kg"].some((field) => Number.isFinite(Number(fields[field])) && Number(fields[field]) > 0 && Number(card[field]) !== Number(fields[field]));
   return buildCompcardCaption({ ...card, caption_stats_allowed: card.caption_stats_allowed !== false && !conflicts }, destination);
 }
+function cardAssetReader(env, bucket, deps, now) {
+  return card => card.source === "owner_drive_intake"
+    ? readApprovedIntakeAsset(env, bucket, card, { now: typeof now === "function" ? now() : now })
+    : (deps.asset || readApprovedCompcardAsset)(card);
+}
 
 export async function preflightCompcardDaily(env, options = {}) {
   const now = options.now ?? Date.now();
   const deps = options.deps || {};
-  const manifest = deps.manifest || APPROVED_COMPCARD_MANIFEST;
   const bucket = deps.bucket || compcardStorage(env);
   if (!bucket) return { ready: false, error: "compcard_state_not_configured", sends: 0, business_writes: 0 };
+  const manifest = deps.resolvedManifest || await mergeApprovedIntake(env, bucket, deps.manifest || APPROVED_COMPCARD_MANIFEST, { now });
+  const readAsset = cardAssetReader(env, bucket, deps, now);
   const date = compcardClock(now).date;
   const build = String(env.EVENTS_WORKER_BUILD_SHA || "local");
+  const schedule = compcardSchedule(env);
+  const cadence = publicationCadence(env, date);
+  const standardEnabled = enabled(env.HYPE_STANDARD_ENABLED);
   const stored = (await readCompcardJson(bucket, "readiness/latest.json"))?.record;
   const previous = stored?.schema === "hype_compcard_snapshot_v1" ? stored.result : stored;
   if (!options.force && previous?.date === date && previous.build_sha === build && previous.manifest_revision === manifest.revision
-      && previous.updated_at <= now && now - previous.updated_at < READINESS_TTL_MS) return previous;
+       && JSON.stringify(previous.schedule) === JSON.stringify(schedule) && JSON.stringify(previous.cadence) === JSON.stringify(cadence)
+       && previous.standard_enabled === standardEnabled
+       && previous.updated_at <= now && now - previous.updated_at < READINESS_TTL_MS) return previous;
   const report = { schema: "hype_compcard_readiness_v1", date, build_sha: build, manifest_revision: manifest.revision, updated_at: now,
-    schedule: compcardSchedule(env), source_folder_id: manifest.source_folder_id, ready: false, sends: 0, business_writes: 0,
-    model_ready: false, promotion_ready: false, destinations: [], eligible_counts: {}, excluded: [], asset_probe: null,
-    promotion_assets: manifest.promotions.length, promotion: null, errors: [] };
+    schedule, cadence, standard_enabled: standardEnabled, source_folder_id: manifest.source_folder_id, intake: manifest.intake, ready: false, sends: 0, business_writes: 0,
+    model_ready: false, standard_ready: false, promotion_ready: false, destinations: [], eligible_counts: {}, excluded: [], asset_probe: null, standard_asset_probe: null,
+    promotion_assets: manifest.promotions.length, promotion: null, errors: manifest.intake?.error ? [manifest.intake.error] : [] };
   try { report.destinations = await (deps.destinations || (() => readCompcardDestinations(env)))(); }
   catch (error) { report.errors.push(safeError(error)); }
   try {
@@ -242,9 +261,24 @@ export async function preflightCompcardDaily(env, options = {}) {
     const frozenCard = frozen ? eligible.find((card) => card.id === frozen.card_id && card.sha256 === frozen.sha256) : null;
     const candidate = frozenCard || chooseDailyCard(eligible, history, date) || eligible[0];
     if (candidate) {
-      const asset = await (deps.asset || readApprovedCompcardAsset)(candidate);
-      report.asset_probe = { model_id: candidate.model_id, file_id: candidate.file_id, sha256: asset.sha256, bytes: asset.bytes.byteLength, verified: asset.sha256 === candidate.sha256 };
+      try {
+        const asset = await readAsset(candidate);
+        report.asset_probe = { model_id: candidate.model_id, file_id: candidate.file_id, sha256: asset.sha256, bytes: asset.bytes.byteLength, verified: asset.sha256 === candidate.sha256 };
+      } catch (error) { report.errors.push(safeError(error)); }
     } else report.errors.push("compcard_no_eligible_card");
+    if (standardEnabled && cadence.active) {
+      const standardCards = eligible.filter(card => card.category === "standard");
+      const frozenStandard = (await readCompcardJson(bucket, `plans/${date}/standard.json`))?.record;
+      const standardCard = (frozenStandard && standardCards.find(card => card.id === frozenStandard.card_id && card.sha256 === frozenStandard.sha256))
+        || chooseDailyCard(standardCards, history, date) || standardCards[0];
+      if (standardCard) {
+        if (standardCard.id === candidate?.id) report.standard_asset_probe = report.asset_probe;
+        else {
+          const asset = await readAsset(standardCard);
+          report.standard_asset_probe = { model_id: standardCard.model_id, file_id: standardCard.file_id, sha256: asset.sha256, bytes: asset.bytes.byteLength, verified: asset.sha256 === standardCard.sha256 };
+        }
+      }
+    }
   } catch (error) { report.errors.push(safeError(error)); }
   let identityConflict = false;
   for (const destination of ["premium", "standard", "preview"]) {
@@ -256,8 +290,9 @@ export async function preflightCompcardDaily(env, options = {}) {
   const readyRoom = (destination) => report.destinations.some((row) => row.destination === destination && row.ok && row.identity_verified && row.can_send_photo && String(row.chat_id) === manifest.destinations?.[destination]);
   const anyRoomReady = ["premium", "standard", "preview"].some(readyRoom);
   report.model_ready = !identityConflict && anyRoomReady && report.asset_probe?.verified === true;
+  report.standard_ready = !identityConflict && (readyRoom("premium") || readyRoom("standard")) && report.standard_asset_probe?.verified === true;
   const frozenPromotionPlan = (await readCompcardJson(bucket, `plans/${date}/promotion.json`))?.record;
-  const promotion = choosePromotion(manifest, date, now, frozenPromotionPlan);
+  const promotion = choosePromotion(manifest, date, now, frozenPromotionPlan, env);
   if (promotion) {
     try {
       await preparePromotion(promotion.card, promotion.destination, deps.asset || readApprovedCompcardAsset);
@@ -265,15 +300,33 @@ export async function preflightCompcardDaily(env, options = {}) {
       report.promotion_ready = !identityConflict && readyRoom(promotion.destination);
     } catch (error) { report.errors.push(safeError(error)); }
   }
-  report.ready = report.model_ready || report.promotion_ready;
+  report.ready = report.model_ready || report.standard_ready || report.promotion_ready;
   report.all_destinations_ready = ["premium", "standard", "preview"].every(readyRoom) && !identityConflict;
   await writeCompcardSnapshot(bucket, "readiness/latest.json", report);
   return report;
 }
 
-function promotionDestination(date) {
+function legacyPromotionDestination(date) {
   const day = Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.parse("2026-10-18T00:00:00Z")) / 86400000);
   return ["premium", "standard", "preview"][((day % 3) + 3) % 3];
+}
+function promotionDestination(date, env = {}) {
+  const cadence = publicationCadence(env, date);
+  if (!cadence.active) return legacyPromotionDestination(date);
+  const rooms = ["premium", "standard", "preview"];
+  const anchor = rooms.indexOf(legacyPromotionDestination(cadence.anchor_date));
+  return rooms[(anchor + cadence.promotion_index) % rooms.length];
+}
+function frozenPromotionDestination(plan, date) {
+  // Preserve the original policy and destination of every frozen plan, including
+  // legacy plans that predate this cadence. No digest or journal key migration.
+  if (!plan.cadence_policy) return legacyPromotionDestination(date);
+  const policy = plan.cadence_policy;
+  if (!Array.isArray(policy.promotion_weekdays)) throw problem("compcard_plan_cadence_invalid", false);
+  const env = { HYPE_CADENCE_START_DATE: policy.start_date, HYPE_PROMOTION_WEEKDAYS: policy.promotion_weekdays.join(",") };
+  const cadence = publicationCadence(env, date);
+  if (!cadence.active || !cadence.promotion_day) throw problem("compcard_plan_cadence_invalid", false);
+  return promotionDestination(date, env);
 }
 function promotionAvailable(card, now) {
   if (card.approved !== true || card.status !== "active" || card.paused === true || card.revoked === true) return false;
@@ -285,8 +338,9 @@ function promotionAvailable(card, now) {
   return Number.isFinite(end) && start < end && now < end;
 }
 
-function choosePromotion(manifest, date, now, frozenPlan = null) {
-  const destination = promotionDestination(date);
+function choosePromotion(manifest, date, now, frozenPlan = null, env = {}) {
+  if (!frozenPlan && !publicationCadence(env, date).promotion_day) return null;
+  const destination = frozenPlan ? frozenPromotionDestination(frozenPlan, date) : promotionDestination(date, env);
   const cards = manifest.promotions.filter((card) => promotionAvailable(card, now) && card.captions?.[destination]);
   cards.sort((a, b) => a.id.localeCompare(b.id));
   if (frozenPlan) {
@@ -309,37 +363,43 @@ async function preparePromotion(card, destination, readAsset) {
 
 async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
   const { date } = compcardClock(now);
+  const modelSlot = slot === "model" || slot === "standard";
+  const readAsset = cardAssetReader(env, bucket, deps, wallClock);
   let plan = (await readCompcardJson(bucket, `plans/${date}/${slot}.json`))?.record;
   if (!plan) {
-    if (slot === "model") {
+    if (modelSlot) {
       const models = await (deps.models || (() => readCompcardModels(env)))();
       const { eligible, byId } = eligibleCards(manifest, models);
       const history = await readCompcardHistory(bucket, manifest.cards);
-      const card = chooseDailyCard(eligible, history, date);
+      const card = chooseDailyCard(slot === "standard" ? eligible.filter(card => card.category === "standard") : eligible, history, date);
       if (!card) return { date, slot, status: "no_eligible_card", sent: 0 };
       const destinations = destinationsForCategory(card.category);
       plan = { schema: "hype_compcard_plan_v1", date, slot, manifest_revision: manifest.revision, created_at: now,
         card_id: card.id, model_id: card.model_id, category: card.category, file_id: card.file_id, sha256: card.sha256,
         destinations, chat_ids: Object.fromEntries(destinations.map((destination) => [destination, manifest.destinations[destination]])),
-        captions: Object.fromEntries(destinations.map((destination) => [destination, captionForLiveCard(card, destination, byId.get(card.model_id))])) };
+        captions: Object.fromEntries(destinations.map((destination) => [destination, captionForLiveCard(card, destination, byId.get(card.model_id))])),
+        ...(card.source === "owner_drive_intake" ? { asset_key: card.asset_key } : {}) };
     } else {
-      const chosen = choosePromotion(manifest, date, now);
-      if (!chosen) return { date, slot, status: "no_approved_promotion", sent: 0, destination: promotionDestination(date) };
+      const chosen = choosePromotion(manifest, date, now, null, env);
+      if (!chosen) return { date, slot, status: "no_approved_promotion", sent: 0, destination: promotionDestination(date, env) };
       const { card, destination } = chosen;
+      const cadence = publicationCadence(env, date);
       plan = { schema: "hype_compcard_plan_v1", date, slot, manifest_revision: manifest.revision, created_at: now,
         card_id: card.id, model_id: null, category: "promotion", file_id: card.file_id, sha256: card.sha256,
-        destinations: [destination], chat_ids: { [destination]: manifest.destinations[destination] }, captions: { [destination]: card.captions[destination] } };
+        destinations: [destination], chat_ids: { [destination]: manifest.destinations[destination] }, captions: { [destination]: card.captions[destination] },
+        ...(cadence.active ? { cadence_policy: { start_date: cadence.start_date, promotion_weekdays: cadence.promotion_weekdays } } : {}) };
     }
     plan.digest = await jsonDigest(plan);
     plan = await freezeCompcardPlan(bucket, date, slot, plan);
   }
   const { digest, ...payload } = plan;
   if (!/^[a-f0-9]{64}$/.test(digest || "") || await jsonDigest(payload) !== digest) return { date, slot, status: "blocked", error: "compcard_plan_integrity_failed", sent: 0 };
-  const card = (slot === "model" ? manifest.cards : manifest.promotions).find((item) => item.id === plan.card_id && item.sha256 === plan.sha256 && item.file_id === plan.file_id);
-  const approvedCardStillMatches = card && plan.model_id === (slot === "model" ? card.model_id : null)
-    && plan.category === (slot === "model" ? card.category : "promotion");
+  const card = (modelSlot ? manifest.cards : manifest.promotions).find((item) => item.id === plan.card_id && item.sha256 === plan.sha256 && item.file_id === plan.file_id);
+  const approvedCardStillMatches = card && plan.model_id === (modelSlot ? card.model_id : null)
+    && plan.category === (modelSlot ? card.category : "promotion") && (slot !== "standard" || card.category === "standard")
+    && (card.source !== "owner_drive_intake" || plan.asset_key === card.asset_key);
   if (!approvedCardStillMatches || plan.date !== date || plan.slot !== slot) return { date, slot, status: "blocked", error: "compcard_plan_approval_changed", sent: 0 };
-  const expected = slot === "model" ? destinationsForCategory(card.category) : [promotionDestination(date)];
+  const expected = modelSlot ? destinationsForCategory(card.category) : [frozenPromotionDestination(plan, date)];
   if (JSON.stringify(expected) !== JSON.stringify(plan.destinations)) return { date, slot, status: "blocked", error: "compcard_plan_destinations_changed", sent: 0 };
   const outcomes = [];
   let sharedAsset;
@@ -353,20 +413,21 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
         const current = compcardClock(wallClock());
         if (current.date !== date || !due(current, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
         if (plan.chat_ids[destination] !== manifest.destinations[destination]) throw problem("compcard_destination_approval_changed", false);
-        if (!sharedAsset) sharedAsset = slot === "model" ? await (deps.asset || readApprovedCompcardAsset)(card)
+        if (!sharedAsset) sharedAsset = modelSlot ? await readAsset(card)
           : await preparePromotion(card, destination, deps.asset || readApprovedCompcardAsset);
         const afterRead = compcardClock(wallClock());
         if (afterRead.date !== date || !due(afterRead, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
         // Revalidate model identity and facts after the possibly slow image read.
-        if (slot === "model") {
+        if (modelSlot) {
           const model = await (deps.model || ((id) => readCompcardModel(env, id)))(card.model_id);
           const check = evaluateCard(card, model);
           if (!check.ok) throw problem(`compcard_fresh_${check.reason}`, false);
           if (captionForLiveCard(card, destination, model) !== plan.captions[destination]) throw problem("compcard_caption_facts_changed", false);
+          if (card.source === "owner_drive_intake") await assertIntakeCardCurrent(env, bucket, card, { now: wallClock() });
         } else if (!promotionAvailable(card, wallClock()) || card.captions?.[destination] !== plan.captions[destination]) throw problem("compcard_promotion_expired", false);
         const beforeSend = compcardClock(wallClock());
         if (beforeSend.date !== date || !due(beforeSend, compcardSchedule(env)[slot])) throw problem("compcard_window_closed", false);
-        if (slot === "model") await reserveCompcardExposure(bucket, card, date, now);
+        if (modelSlot) await reserveCompcardExposure(bucket, card, date, now);
         return sharedAsset;
       },
       deliver: (asset) => (deps.send || ((chosen, room, caption, bytes, expectedChat) => sendApprovedCompcard(env, chosen, room, caption, bytes, undefined, expectedChat)))
@@ -374,7 +435,7 @@ async function executeSlot(env, manifest, bucket, slot, now, deps, wallClock) {
     }); } catch (error) { outcome = { status: "delivery_uncertain", error: safeError(error), state_write_conflict: true }; }
     outcomes.push({ destination, ...outcome });
   }
-  if (slot === "model") {
+  if (modelSlot) {
     try { await settleCompcardExposure(bucket, card, date, now, outcomes); } catch { /* keep the conservative durable reservation */ }
   }
   const sent = outcomes.filter((row) => row.status === "sent").length;
@@ -391,13 +452,17 @@ export async function runCompcardDaily(env = {}, options = {}) {
   if (!enabled(env.HYPE_COMPCARD_ENABLED)) return { status: "disabled" };
   const bucket = deps.bucket || compcardStorage(env);
   if (!bucket) return { status: "not_configured", error: "compcard_state_not_configured" };
-  const manifest = deps.manifest || APPROVED_COMPCARD_MANIFEST;
+  const manifest = await mergeApprovedIntake(env, bucket, deps.manifest || APPROVED_COMPCARD_MANIFEST, { now });
   let clock;
   try {
     clock = compcardClock(now);
     const schedule = compcardSchedule(env);
-    const readiness = await preflightCompcardDaily(env, { now, deps: { ...deps, bucket, manifest } });
-    if (!readiness.ready) {
+    const cadence = publicationCadence(env, clock.date);
+    const frozenPromotion = (await readCompcardJson(bucket, `plans/${clock.date}/promotion.json`))?.record;
+    const frozenStandard = (await readCompcardJson(bucket, `plans/${clock.date}/standard.json`))?.record;
+    const standardDue = enabled(env.HYPE_STANDARD_ENABLED) && (cadence.standard_day || frozenStandard) && !frozenPromotion && due(clock, schedule.standard);
+    const readiness = await preflightCompcardDaily(env, { now, deps: { ...deps, bucket, resolvedManifest: manifest } });
+    if (!readiness.ready && !(standardDue && !readiness.eligible_counts?.standard)) {
       const result = { date: clock.date, status: "not_ready", errors: readiness.errors, sent: 0 };
       log(result);
       return result;
@@ -408,11 +473,17 @@ export async function runCompcardDaily(env = {}, options = {}) {
       ? await executeSlot(env, manifest, bucket, "model", now, deps, wallClock)
       : { date: clock.date, slot: "model", status: "not_ready", sent: 0 });
     // Campaign delivery does not depend on an unrelated model's eligibility.
-    if (enabled(env.HYPE_PROMOTION_ENABLED) && due(clock, schedule.promotion)) {
-      const selectedPromotion = choosePromotion(manifest, clock.date, now);
+    if (frozenPromotion && frozenStandard && (due(clock, schedule.standard) || due(clock, schedule.promotion))) {
+      results.push({ date: clock.date, slot: "standard", status: "blocked", error: "compcard_evening_plan_conflict", sent: 0 });
+    } else if (enabled(env.HYPE_PROMOTION_ENABLED) && !frozenStandard && (cadence.promotion_day || frozenPromotion) && due(clock, schedule.promotion)) {
+      const selectedPromotion = choosePromotion(manifest, clock.date, now, frozenPromotion, env);
       results.push(selectedPromotion && !readiness.promotion_ready
         ? { date: clock.date, slot: "promotion", status: "not_ready", sent: 0, destination: selectedPromotion.destination }
         : await executeSlot(env, manifest, bucket, "promotion", now, deps, wallClock));
+    } else if (standardDue) {
+      results.push(readiness.standard_ready || !readiness.eligible_counts?.standard
+        ? await executeSlot(env, manifest, bucket, "standard", now, deps, wallClock)
+        : { date: clock.date, slot: "standard", status: "not_ready", sent: 0 });
     }
     for (const result of results) {
       if (["no_approved_promotion", "no_eligible_card", "not_ready"].includes(result.status)) await writeCompcardSnapshot(bucket, `summaries/${clock.date}/${result.slot}.json`, result);
@@ -431,4 +502,5 @@ export async function runCompcardDailyScheduled(env, controller) {
   // end-of-window guard by relying on an old scheduledTime.
   return runCompcardDaily(env, { now: Date.now(), wallClock: Date.now });
 }
+
 

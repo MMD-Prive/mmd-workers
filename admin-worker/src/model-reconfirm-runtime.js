@@ -814,11 +814,31 @@ async function pushModelReconfirm(env, sessionRecord, reminder) {
   const text = reminder
     ? `MY MODEL · Reminder\n${modelName} ยังไม่มีหลักฐานการกดรับทราบรายละเอียดล่าสุดของงานวันที่ ${date}\nกรุณาเปิด MY MODEL และกด “รับทราบงานแล้ว”`
     : `MY MODEL · งานของคุณพรุ่งนี้\nงานวันที่ ${date}\nกรุณาเปิด MY MODEL เพื่อตรวจรายละเอียดและกด “รับทราบงานแล้ว”`;
+  // Open the authenticated Model dashboard. A URI action is navigation only:
+  // acknowledgement remains an explicit action after the Model reads the job.
+  // Keep the existing notice separate so variable text cannot exceed the
+  // buttons template's shorter text limit.
+  // Canonical TH: myModel.reconfirm.open/cardAlt/cardBody in
+  // MMD-Prive/mmd-i18n/assets/i18n/i18n.dict.js. Inline server-side copies
+  // keep reminder delivery independent of a runtime CDN request.
+  const messages = [{ type: "text", text }, {
+    type: "template",
+    altText: "เปิด MY MODEL เพื่อตรวจรายละเอียดและรับทราบงาน",
+    template: {
+      type: "buttons",
+      text: "ตรวจรายละเอียดงาน แล้วกด “รับทราบงานแล้ว” ใน MY MODEL",
+      actions: [{
+        type: "uri",
+        label: "เปิด MY MODEL",
+        uri: "https://www.mmdbkk.com/sigil/model/dashboard",
+      }],
+    },
+  }];
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "X-Line-Retry-Key": await reconfirmRetryKey(sessionRecord, reminder ? "reminder" : "notice") },
-    body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text }] }),
+    body: JSON.stringify({ to: lineUserId, messages }),
   });
   return response.ok || response.status === 409 && response.headers.has("x-line-accepted-request-id") ? { ok: true } : { ok: false, error: `line_push_http_${response.status}` };
 }
@@ -952,3 +972,4 @@ function unique(values) { return [...new Set((values || []).map((value) => clean
 function truthy(value) { return value === true || ["true", "1", "yes", "y"].includes(normalizeWord(value)); }
 function escapeFormula(value) { return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"'); }
 function escapeHtml(value) { return clean(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
