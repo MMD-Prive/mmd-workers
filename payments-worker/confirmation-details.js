@@ -89,6 +89,7 @@ export async function handleConfirmationDetails(request, env = {}) {
     const note = clean(fields[SESSION_FIELDS.note] || fields[SESSION_FIELDS.notes], 8000);
     const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
     const vip = parseMarkedJson(note, "SIGIL VIP Detail v1");
+    const servicePricing = parseMarkedJson(note, "MMD SERVICE PRICING v1");
     const common = {
       ...await confirmationRevision(env, session, claims.session_id),
       ok: true,
@@ -175,12 +176,14 @@ export async function handleConfirmationDetails(request, env = {}) {
     const modelRemark = parseMarkedJson(note, "MMD Model Remark v1");
     const modelCommon = { ...common };
     for (const key of MODEL_HIDDEN_KEYS) delete modelCommon[key];
+    modelCommon.job_type = modelJobType(common.job_type, note, servicePricing);
     const modelAcknowledgedAt = text(fields[field(env.AT_SESSIONS__MODEL_ACK_AT, SESSION_FIELDS.modelAckAt)], 200) || null;
     return withCors(request, env, json({
       ...modelCommon,
       model_acknowledged_at: modelAcknowledgedAt,
       already_confirmed: Boolean(modelAcknowledgedAt),
       model_payout_thb: modelPayout,
+      model_payout_breakdown: modelPayoutBreakdown(servicePricing, modelPayout, common.job_type),
       model_remark: text(modelRemark?.text, 2000) || null,
       model_meeting_point: text(modelRemark?.meeting_point, 500) || null,
       amount_scope: "model_payout",
@@ -194,6 +197,35 @@ export async function handleConfirmationDetails(request, env = {}) {
       error: clean(error?.message || "confirmation_details_failed", 200),
     }, errorStatus(error)));
   }
+}
+
+function modelJobType(jobType, note, servicePricing) {
+  const options = serviceOptions(note, servicePricing);
+  if (!options.length) return text(jobType, 240);
+  const parts = text(jobType, 240).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean);
+  const existing = new Set(parts.map((part) => part.toLowerCase()));
+  for (const option of options) if (!existing.has(option)) parts.push(option);
+  return parts.join(":");
+}
+function serviceOptions(note, servicePricing) {
+  const allowed = new Set(["mk", "burn", "kiss", "live", "group"]);
+  const fromSnapshot = Array.isArray(servicePricing?.addons) ? servicePricing.addons.map((item) => String(item?.option || "").toLowerCase()) : [];
+  const optionLine = String(note || "").match(/(?:^|[|\n])\s*options\s+([a-z, _-]+)/i)?.[1] || "";
+  return [...new Set([...fromSnapshot, ...optionLine.split(/[,_\s]+/).map((item) => item.toLowerCase())])].filter((item) => allowed.has(item));
+}
+function modelPayoutBreakdown(servicePricing, modelPayout, jobType) {
+  if (!servicePricing || !Array.isArray(servicePricing.addons) || modelPayout === null) return null;
+  const base = numberOrNull(servicePricing.model_base_payout_thb);
+  const additions = servicePricing.addons.map((item) => ({ option: String(item?.option || "").toLowerCase(), amount_thb: numberOrNull(item?.model_payout_thb) }));
+  const total = numberOrNull(servicePricing.model_total_payout_thb);
+  const allowed = new Set(["mk", "burn", "kiss", "live", "group"]);
+  if (base === null || base <= 0 || additions.some((item) => !allowed.has(item.option) || item.amount_thb === null || item.amount_thb < 0)
+    || !Number.isFinite(total) || Math.abs(base + additions.reduce((sum, item) => sum + item.amount_thb, 0) - total) > 0.01
+    || Math.abs(total - modelPayout) > 0.01) return null;
+  const parts = text(jobType, 240).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean);
+  const baseLabel = parts.find((part) => ["pn", "vip"].includes(part.toLowerCase())) || parts.at(-1) || "งานหลัก";
+  return [{ label: text(baseLabel, 40).toUpperCase(), amount_thb: base },
+    ...additions.filter((item) => item.amount_thb > 0).map((item) => ({ label: item.option.toUpperCase(), amount_thb: item.amount_thb }))];
 }
 
 function customerPricing(raw, netFallback) {
