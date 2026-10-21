@@ -5,13 +5,20 @@ const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const MAX_WEBHOOK_BYTES = 64 * 1024;
 
 const SAFE_REPLIES = Object.freeze({
-  booking: "สวัสดีครับ พี่เฮนน่ารับเรื่องให้ได้ครับ 💚\nหากต้องการจองบริการ กดส่งคำขอจองพร้อมแจ้งวันที่ เวลา พื้นที่ และบริการที่สนใจได้เลยครับ ทีม MMS จะตรวจคิวและยืนยันกลับอีกครั้ง",
-  services: "MMS มีบริการนวดถึงที่แบบเป็นส่วนตัวครับ ทั้ง Aroma Oil, Thai, Sport, Office Syndrome, Health/Fitness Advisor, Herbal Compress, Partner-Present และ Women Massage\n\nบอกพี่เฮนน่าได้เลยครับว่าสนใจแบบไหน และต้องการรับบริการบริเวณไหน 💚",
-  apply: "สนใจสมัครเป็น Therapist กับ MMS ได้เลยครับ 💚\nกรอกข้อมูลผ่านหน้าใบสมัครอย่างเป็นส่วนตัว แล้วทีมงานจะตรวจประสบการณ์ ทักษะ และติดต่อกลับเป็นรายบุคคลครับ\nhttps://www.mmdbkk.com/apply/mms-therapist",
-  how_to: "MMS เป็นบริการส่ง Therapist ที่ผ่านการคัดเลือกไปดูแลคุณตามสถานที่นัดหมายครับ ขั้นแรกส่งคำขอจอง จากนั้นทีมงานจะตรวจบริการ พื้นที่ และคิว Therapist ก่อนยืนยันทุกครั้ง\n\nดูวิธีใช้บริการ: https://www.mmdbkk.com/male-massage/how-to-use",
+  home: "อยากรู้จัก Male Massage ก่อน เริ่มที่นี่ได้เลยครับ 💚\nhttps://www.mmdbkk.com/male-massage/home",
+  booking: "พร้อมให้ MMS ดูแลแล้ว ส่งคำขอจองพร้อมวัน เวลา พื้นที่ และบริการที่สนใจได้ที่นี่ครับ 💚\nhttps://www.mmdbkk.com/male-massage/member/mms-booking\nการส่งคำขอยังไม่ใช่การยืนยันคิว MMS จะตรวจรายละเอียดก่อนครับ",
+  services: "ดูบริการ MMS และเลือกแนวทางที่เหมาะกับคุณได้ที่นี่ครับ 💚\nhttps://www.mmdbkk.com/male-massage/therapists/mms\nถ้าต้องการคิวหรือรายละเอียดเฉพาะงาน ให้ MMS ตรวจสอบอีกครั้งครับ",
+  my_mms: "MY MMS เป็นพื้นที่ของคุณใน LINE ครับ เปิด Mini App แล้วยืนยันตัวตนก่อนดูข้อมูลที่เชื่อมกับบัญชีของคุณ 💚\nhttps://www.mmdbkk.com/male-massage/my-mms",
+  recruit: "สนใจทำงานกับ MMS ลองดูภาพรวมของ Therapist ก่อนครับ ว่างานเป็นแบบไหน แล้วค่อยตัดสินใจสมัคร 💚\nhttps://www.mmdbkk.com/therapists",
+  benefits: "อยากรู้ว่าการเป็น MMS Therapist มีอะไรดี ดูหน้านี้ได้เลยครับ 💚\nhttps://www.mmdbkk.com/apply/mms-therapist-benefits\nจำนวนงานและรายได้ขึ้นกับงานจริง MMS ไม่รับประกันล่วงหน้าครับ",
+  rules: "ก่อนรับงาน ลองอ่าน Therapist Rules ให้ครบครับ โดยเฉพาะ Brief อุปกรณ์ และการดูแลลูกค้าจนจบงาน 💚\nhttps://www.mmdbkk.com/apply/mms-therapist-rules",
+  fast_track: "ยังอยากเตรียมทักษะนวดก่อนเริ่มงาน ดู MMS Fast Track ได้ครับ 💚\nhttps://www.mmdbkk.com/male-massage/apply/mms-fast-track\nรอบเรียนและที่นั่งให้ MMS ยืนยันตามข้อมูลปัจจุบันครับ",
+  apply: "พร้อมสมัคร MMS Therapist แล้ว เปิดใบสมัครที่นี่ได้เลยครับ 💚\nhttps://www.mmdbkk.com/apply/mms-therapist\nส่งใบสมัครแล้ว MMS จะตรวจเป็นรายคน การส่งฟอร์มยังไม่ใช่การอนุมัติหรือเปิดรับงานทันทีครับ",
+  therapist_login: "ถ้าเป็น MMS Therapist ที่อนุมัติแล้ว เข้า MY Therapist ผ่านหน้านี้ครับ 💚\nhttps://www.mmdbkk.com/male-massage/therapists/login\nใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS; ถ้ายังเข้าไม่ได้ ให้ MMS ตรวจสิทธิ์ก่อนครับ",
+  how_to: "อยากรู้ขั้นตอนใช้บริการ MMS ดูหน้านี้ได้เลยครับ 💚\nhttps://www.mmdbkk.com/male-massage/how-to-use\nส่งคำขอจองแล้ว MMS จะตรวจพื้นที่และคิวก่อนยืนยันครับ",
   shop_orders: "เรื่อง MMD Shop ให้เช็กจาก MY MMD โดยตรงนะครับ เพราะสถานะ Order/Payment เป็นข้อมูลสมาชิก\nhttps://www.mmdbkk.com/my-mmd/orders\nถ้าต้องการคุยข้ามระบบต่อ ใช้ HYPE @mmdprivebot ได้ครับ",
   care_back_coupon: "CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ พี่เฮนน่ารู้ทางส่งต่อ แต่จะไม่เปิดหรือสร้างสิทธิ์แทนระบบ\nCARE BACK: https://www.mmdbkk.com/promotion/6-years-care-back\nCoupon Wallet: https://www.mmdbkk.com/my-mmd/coupons",
-  mms_therapist_options: "เรื่องตัวเลือก Therapist ฝั่ง MMS พี่เฮนน่ารับต่อได้ครับ 💚\nส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้ ตัวเลือกจริงต้องยึดจาก MMS ปัจจุบันและยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว",
+  mms_therapist_options: "อยากให้ MMS ช่วยดูตัวเลือก Therapist ส่งวัน เวลา พื้นที่ และบริการที่สนใจผ่านหน้านี้ได้ครับ 💚\nhttps://www.mmdbkk.com/male-massage/member/mms-booking\nตัวเลือกและคิวต้องให้ MMS ตรวจจากข้อมูลปัจจุบัน ยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันครับ",
   hall_model_discovery: "ถ้าหมายถึง Model ฝั่ง MMD Privé ไม่ใช่ MMS ให้เลือกมุมมองผ่าน Hall ก่อนนะครับ HENNA จะไม่เดาเพศ/มุมมองหรือดึง Model ทั้งหมดมาให้\nhttps://www.mmdbkk.com/hall\nเรื่องข้ามระบบใช้ HYPE @mmdprivebot ได้ครับ",
   points_coupon_balance: "Points / Coupon ของ MMD เป็นข้อมูลสมาชิกครับ พี่เฮนน่าจะไม่เดายอดจากแชต MMS และจะไม่อ่าน wallet ของ MMD เอง\nถ้าต้องการดูยอดที่ยืนยันแล้ว เปิด HYPE @mmdprivebot แบบ private ได้ครับ — HYPE อ่านเฉพาะ bounded canonical wallet หลังยืนยันตัวตน\nPoints: https://www.mmdbkk.com/my-mmd/points\nCoupons: https://www.mmdbkk.com/my-mmd/coupons",
 });
@@ -33,6 +40,13 @@ export function classifyHennaIntent(input) {
   const text = normalize(input);
   if (!text) return "ignore";
 
+  if (matches(text, ["my therapist", "mytherapist", "เข้าแอป therapist", "เข้าแอปเทอราปิส", "login therapist", "เข้าสู่ระบบ therapist", "งานใกล้คุณ", "เปิดรับงาน", "offline therapist", "online therapist"])) return "therapist_login";
+  if (matches(text, ["my mms", "mymms", "mini app", "มินิแอป", "แอปสมาชิก mms"])) return "my_mms";
+  if (matches(text, ["fast track", "fast-track", "ฟาสต์แทร็ก", "เรียนการนวด", "เรียนก่อนทำงาน", "ฝึกนวด"])) return "fast_track";
+  if (matches(text, ["therapist rules", "กติกา therapist", "กฎ therapist", "ข้อกำหนด therapist", "กฎการทำงาน", "กติกาการทำงาน"])) return "rules";
+  if (matches(text, ["benefits therapist", "ข้อดีของ therapist", "สิทธิประโยชน์ therapist", "ประโยชน์ therapist", "ข้อดีของงาน", "สิทธิประโยชน์งาน"])) return "benefits";
+  if (matches(text, ["อยากเป็น therapist", "งาน therapist", "งานเทอราปิส", "ทำงานกับ mms", "ร่วมงานกับ mms", "งานเสริม mms"])) return "recruit";
+
   const sharedCapability = detectSharedConciergeCapability(text);
   if (sharedCapability === "shop_orders") return "shop_orders";
   if (sharedCapability === "care_back_coupon") return "care_back_coupon";
@@ -41,6 +55,7 @@ export function classifyHennaIntent(input) {
   if (sharedCapability === "closed_loop_handoff") return "manual_handoff_status";
   if (sharedCapability === "hall_model_discovery") return "hall_model_discovery";
   if (sharedCapability === "points_coupon_balance") return "points_coupon_balance";
+  if (matches(text, ["male massage คือ", "mms คือ", "รู้จัก mms", "หน้าแรก mms", "เว็บ mms"])) return "home";
   if (matches(text, ["สมัคร", "สมัครงาน", "therapist", "job", "ร่วมงาน"])) return "apply";
   if (matches(text, ["วิธีใช้", "ใช้งานยังไง", "ขั้นตอน", "how to", "howto"])) return "how_to";
   if (matches(text, ["บริการอะไร", "มีบริการ", "ประเภทนวด", "นวดอะไร", "service"])) return "services";
