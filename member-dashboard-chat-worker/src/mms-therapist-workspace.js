@@ -6,11 +6,11 @@ export async function maybeHandleTherapistWorkspace(request, env = {}) {
   if (env.MMS_THERAPIST_UI_SOURCE !== "native") return null;
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, "");
-  // LINE may return to the registered LIFF endpoint rather than /login.
-  const callback = path === PREFIX && ["code", "liff.state", "liff_state", "invite"].some(key => url.searchParams.has(key));
-  if (!PAGES.has(path) && !callback) return null;
+  // LINE first opens the registered LIFF endpoint, sometimes without query parameters.
+  const liffEndpoint = path === PREFIX;
+  if (!PAGES.has(path) && !liffEndpoint) return null;
   if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
-  const login = callback || path === `${PREFIX}/login`;
+  const login = liffEndpoint || path === `${PREFIX}/login`;
   const headers = new Headers({
     "content-type": "text/html; charset=utf-8", "cache-control": "private, no-store",
     "x-mmd-route-owner": "member-dashboard-chat-worker", "x-mmd-ui-source": "mms-native-workspace-v1",
@@ -39,7 +39,7 @@ export function renderTherapistWorkspace(login = false) {
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>MY THERAPIST · MMS</title><style>
   *{box-sizing:border-box}body{margin:0;background:#f4f5ef;color:#20392b;font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:20px 18px calc(28px + env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:25px;margin:6px 0}h2{font-size:20px;margin:0 0 12px}h3{font-size:17px;margin:0}p{margin:8px 0}.muted{color:#5c6d60;font-size:14px}.card{background:#fff;border:1px solid #dce2d6;border-radius:18px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button,.button{border:0;border-radius:12px;min-height:48px;padding:10px 16px;font:inherit;cursor:pointer;background:#24563c;color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}button.alt,.button.alt{background:#e9eee4;color:#24563c}button:disabled{opacity:.5;cursor:wait}input,textarea,select{width:100%;font:inherit;border:1px solid #c8d3c4;border-radius:10px;padding:10px;margin:4px 0 12px;background:white;color:#20392b}label{display:block;font-size:14px}nav{display:flex;gap:8px;margin:20px 0;overflow:auto}nav button{white-space:nowrap;background:#e9eee4;color:#24563c}nav button[aria-selected=true]{background:#24563c;color:white}#notice{min-height:26px}#notice.error{color:#8f2f20}.badge{font-size:13px;padding:4px 10px;border-radius:30px;background:#e9eee4}a{color:#24563c}img{width:100px;height:120px;object-fit:cover;border-radius:10px}section[hidden],[hidden]{display:none!important}.course{border-top:1px solid #ddd;padding-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}#detail{white-space:normal}.address{white-space:pre-line}#coverage-zones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 14px}.zone-choice{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #dce2d6;border-radius:10px;background:#fbfcf9}.zone-choice input{width:20px;height:20px;margin:0;flex:none}.area-note{padding:12px;border-radius:12px;background:#f1f5eb}@media(max-width:480px){#coverage-zones{grid-template-columns:1fr}}button:focus-visible,a:focus-visible{outline:3px solid #ad8544;outline-offset:3px}@media(max-width:480px){main{padding:16px 14px 28px}.grid{grid-template-columns:1fr}}
   </style></head><body><main data-mms-shell="native-workspace-v1" data-login="${login}"><header><div><div class="muted">MMS · MALE MASSAGE</div><h1>MY THERAPIST</h1></div><a href="https://lin.ee/NkfXMu7">ติดต่อพี่เปอร์</a></header><p id="notice" role="status" aria-live="polite">กำลังตรวจสอบบัญชีครับ</p>
-  <button id="retry" class="alt" type="button">ลองตรวจอีกครั้ง</button><section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>
+  <button id="retry" class="alt" type="button">ลองตรวจอีกครั้ง</button><section id="entry" class="card" hidden><h2>เข้าพื้นที่ Therapist</h2><p>ใช้ LINE ที่เชื่อมกับโปรไฟล์ MMS ของคุณครับ</p><button id="line-login" type="button">ยืนยันผ่าน LINE</button><p><a href="https://liff.line.me/2011425652-YqK1F6y8">เปิดใน LINE Mini App ↗</a></p><p class="muted">หากยังไม่ได้เชื่อมบัญชี ให้ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์</p></section>
   <div id="workspace" hidden><section class="card"><h2 id="greeting"></h2><p id="readiness"></p><label>สถานะรับงาน<select id="availability"><option value="Available">Online · รับงานที่ตรงพื้นที่</option><option value="Unavailable">Offline · งดรับงาน</option><option value="Paused">พักรับงานชั่วคราว</option></select></label><p class="muted">เมื่อ Online คุณจะเห็นงานที่ตรงกับเขตบริการและคอร์สที่ยืนยันแล้ว เลือกดูรายละเอียดก่อนตอบรับได้ครับ</p><button id="save-availability">บันทึกสถานะ</button><button class="alt" id="refresh">รีเฟรช</button></section>
   <nav aria-label="พื้นที่ทำงาน"><button data-tab="offers" aria-selected="true">งานเสนอให้คุณ</button><button data-tab="jobs" aria-selected="false">งานของฉัน</button><button data-tab="profile" aria-selected="false">โปรไฟล์และคอร์ส</button></nav>
   <section id="offers"><div id="offer-list"></div></section><section id="jobs" hidden><div id="job-list"></div></section>
@@ -55,6 +55,8 @@ export function therapistClient() {
   let access = null, profile = null, tab = "offers", refreshing = false;
   const actionKeys = new Map();
   const messages = {
+    LIFF_UNAVAILABLE: "ยังเปิด LINE Login ไม่ได้ครับ ลองเปิดผ่าน LINE Mini App ด้านล่าง",
+    LIFF_INIT_TIMEOUT: "LINE ยังไม่ตอบกลับครับ ลองเปิดผ่าน LINE Mini App ด้านล่าง",
     THERAPIST_SESSION_REQUIRED: "กรุณายืนยันผ่าน LINE อีกครั้งครับ",
     THERAPIST_SESSION_INVALID: "บัญชีหมดเวลาแล้ว กรุณายืนยันผ่าน LINE อีกครั้งครับ",
     THERAPIST_LINK_REQUIRED: "LINE นี้ยังไม่เชื่อมกับ Therapist ครับ ใช้ลิงก์เปิดสิทธิ์จากพี่เปอร์ก่อน",
@@ -233,6 +235,7 @@ export function therapistClient() {
     const url = new URL(location.href);
     const hash = new URLSearchParams(url.hash.slice(1));
     const nested = url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "";
+    const primary = url.pathname.replace(/\/$/, "") === P || ["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key));
     const state = new URL(nested || P + "/login", url.origin);
     let invite = url.searchParams.get("invite") || hash.get("invite") || state.searchParams.get("invite") || new URLSearchParams(state.hash.slice(1)).get("invite") || "";
     const storage = {
@@ -244,7 +247,7 @@ export function therapistClient() {
     else {
       try { const saved = JSON.parse(storage.get(storageKey)); if (saved?.until > Date.now()) invite = saved.token || ""; else storage.remove(storageKey); } catch (_) { storage.remove(storageKey); }
     }
-    if (!invite) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
+    if (!invite && !primary) { try { await api(P + "/api/auth/me"); location.replace(P + "/app"); return; } catch (_) {} }
     // Keep the invitation in the redirect too if browser storage is unavailable.
     const redirect = new URL(P + "/login", url.origin);
     if (invite) redirect.hash = new URLSearchParams({ invite }).toString();
@@ -257,9 +260,15 @@ export function therapistClient() {
     }
     notice("ยืนยันผ่าน LINE เพื่อเข้าพื้นที่ Therapist ครับ");
     async function authenticate() {
-      if (!window.liff) throw new Error("LIFF_UNAVAILABLE");
-      await window.liff.init({ liffId: "2011425652-YqK1F6y8" });
-      if (!window.liff.isLoggedIn()) { window.liff.login({ redirectUri: redirect.href }); return; }
+      if (!window.liff) { const e = new Error("LIFF_UNAVAILABLE"); e.code = "LIFF_UNAVAILABLE"; throw e; }
+      let timeout;
+      try {
+        await Promise.race([
+          window.liff.init({ liffId: "2011425652-YqK1F6y8" }),
+          new Promise((_, reject) => { timeout = setTimeout(() => { const e = new Error("LIFF_INIT_TIMEOUT"); e.code = "LIFF_INIT_TIMEOUT"; reject(e); }, 12000); }),
+        ]);
+      } finally { clearTimeout(timeout); }
+      if (!window.liff.isLoggedIn()) { notice("กำลังเปิด LINE เพื่อยืนยันบัญชีครับ"); window.liff.login({ redirectUri: redirect.href }); return; }
       const token = window.liff.getIDToken();
       if (!token) { recoverLine(); return; }
       try {
@@ -274,7 +283,7 @@ export function therapistClient() {
       history.replaceState(null, "", P + "/login"); location.replace(P + "/app");
     }
     $("line-login").onclick = () => busy($("line-login"), authenticate);
-    if (["code", "liff.state", "liff_state"].some(key => url.searchParams.has(key))) await busy($("line-login"), authenticate);
+    await busy($("line-login"), authenticate);
   }
   if (document.querySelector("main").dataset.login === "true") login().catch(() => notice("กรุณาลองยืนยันผ่าน LINE อีกครั้งครับ", true));
   else refresh().catch((e) => { notice(messages[e.code] || "ยังตรวจสอบบัญชีไม่ได้ครับ กดรีเฟรชหรือติดต่อพี่เปอร์", true); if (e.status === 403) { $("entry").hidden = false; } });

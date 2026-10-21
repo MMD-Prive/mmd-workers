@@ -30,4 +30,5 @@ test('native UI smoke is required before reporting successful production deploy'
  assert.match(enforce,/THERAPIST_UI_SMOKE_OUTCOME/);assert.match(enforce,/steps\.therapist_ui_smoke\.outcome == 'success'/);
  const smoke=workflow.split('- name: Verify native MY THERAPIST entrance and callbacks')[1].split('- name: Smoke MY MMD Private Teaser Viewer route')[0];
  for(const marker of ['native-workspace-v1','mms-therapist-invite-v1','liff.state','THERAPIST_SESSION_REQUIRED'])assert.ok(smoke.includes(marker));
+ assert.ok(smoke.includes("for suffix in '' '/login'"));
 });

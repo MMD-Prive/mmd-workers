@@ -552,7 +552,7 @@ jobs:
         run: |
           set -euo pipefail
           for host in mmdbkk.com www.mmdbkk.com; do
-            for suffix in '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
+            for suffix in '' '/login' '/login?invite=smoke-not-a-real-invite' '?liff.state=%3Finvite%3Dsmoke-not-a-real-invite'; do
               url="https://${host}/male-massage/therapists${suffix}"
               code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-ui.headers" -o "$RUNNER_TEMP/therapist-ui.html" -w '%{http_code}' "$url")"
               echo "MY THERAPIST entrance: $url HTTP $code"

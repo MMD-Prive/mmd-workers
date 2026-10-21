@@ -13,17 +13,17 @@ test('native work route gates session, entitlement and backend failure before re
     assert.equal(res.status,expected);assert.equal(new URL(calls[0].url).pathname,path+'/api/app/access');assert.equal(new URL(calls[0].url).search,'');assert.equal(calls[0].headers.get('cookie'),'test-cookie');assert.match(res.headers.get('cache-control'),/no-store/);
   }
 });
-test('native pages own only login/profile/app and can defer to Lovable',async()=>{
+test('native pages own the LIFF endpoint, login, profile and app',async()=>{
   assert.equal(await maybeHandleTherapistWorkspace(new Request(origin+path+'/app'),{}),null);
   assert.equal(await maybeHandleTherapistWorkspace(new Request(origin+'/male-massage'),{MMS_THERAPIST_UI_SOURCE:'native'}),null);
-  for(const suffix of ['login','me']){const res=await maybeHandleTherapistWorkspace(new Request(origin+path+'/'+suffix),{MMS_THERAPIST_UI_SOURCE:'native'});assert.equal(res.status,200);assert.match(await res.text(),/native-workspace-v1/);}
+  for(const suffix of ['', 'login','me']){const res=await maybeHandleTherapistWorkspace(new Request(origin+path+(suffix?'/'+suffix:'')),{MMS_THERAPIST_UI_SOURCE:'native'});assert.equal(res.status,200);assert.match(await res.text(),/native-workspace-v1/);}
   const head=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me',{method:'HEAD'}),{MMS_THERAPIST_UI_SOURCE:'native'});assert.equal(await head.text(),'');
 });
 test('query-bearing registered LIFF endpoint reaches native login through the configured Cloudflare route', async () => {
   const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
   const patterns = [...config.matchAll(/pattern = "([^"]+)"/g)].map(m => m[1]);
   for (const host of ['mmdbkk.com', 'www.mmdbkk.com']) {
-    for (const suffix of ['?liff.state=%3Finvite%3Dtest-invite', '?liff_state=%3Finvite%3Dtest-invite', '?code=test-code&state=test-state', '/?liff.state=%3Finvite%3Dtest-invite']) {
+    for (const suffix of ['', '?liff.state=%3Finvite%3Dtest-invite', '?liff_state=%3Finvite%3Dtest-invite', '?code=test-code&state=test-state', '/?liff.state=%3Finvite%3Dtest-invite']) {
       const url = `https://${host}${path}${suffix}`;
       // Cloudflare matches the complete URL, including query strings.
       assert.ok(patterns.some(pattern => new RegExp('^https?://' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(url)), url);
@@ -136,33 +136,32 @@ test('profile saves service area codes through the authenticated profile API',as
 });
 
 
-test('LIFF callbacks at the registered endpoint use native login while public visits keep marketing', async () => {
+test('bare LIFF endpoint and callbacks use native login', async () => {
   const env={MMS_THERAPIST_UI_SOURCE:'native'};
-  assert.equal(await maybeHandleTherapistWorkspace(new Request(origin+path),env),null);
-  for(const query of ['?code=oauth&state=state','?liff.state=%3Finvite%3Dtest','?invite=test']) {
+  for(const query of ['', '?code=oauth&state=state','?liff.state=%3Finvite%3Dtest','?invite=test']) {
     const res=await maybeHandleTherapistWorkspace(new Request(origin+path+query),env);
     assert.equal(res.status,200);assert.match(await res.text(),/data-login="true"/);
   }
 });
-function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false}={}) {
+function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false, initNever=false, fastTimeout=false}={}) {
   const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));
   const data=new Map(saved||[]), requests=[], redirects=[];let logouts=0;
   const parsed=new URL(url);
   const context={document:{getElementById:id=>els[id],querySelector:()=>({dataset:{login:'true'}}),querySelectorAll:()=>[]},
     fetch:async(url,options={})=>{requests.push({url,options});if(url.endsWith('/me'))return Response.json({ok:false,error:{code:'THERAPIST_SESSION_REQUIRED'}},{status:401});return error?Response.json({ok:false,error:{code:error}},{status:401}):Response.json({ok:true,data:{}});},
-    window:{sessionStorage:{getItem(k){if(unavailableStorage)throw Error();return data.get(k)||null;},setItem(k,v){if(unavailableStorage)throw Error();data.set(k,v);},removeItem(k){data.delete(k);}},liff:{async init(){},isLoggedIn:()=>loggedIn,getIDToken:()=>token,logout(){logouts++;},login(o){redirects.push(o.redirectUri);}}},
-    location:{href:url,hash:parsed.hash,pathname:parsed.pathname,assign(u){redirects.push(u);},replace(u){redirects.push(u);}},history:{replaceState(){}},URL,URLSearchParams,Response,Date,Map,Set,Array,Object,Number,String,JSON,AbortController,setTimeout,clearTimeout,crypto:globalThis.crypto};
+    window:{sessionStorage:{getItem(k){if(unavailableStorage)throw Error();return data.get(k)||null;},setItem(k,v){if(unavailableStorage)throw Error();data.set(k,v);},removeItem(k){data.delete(k);}},liff:{async init(){if(initNever)await new Promise(()=>{});},isLoggedIn:()=>loggedIn,getIDToken:()=>token,logout(){logouts++;},login(o){redirects.push(o.redirectUri);}}},
+    location:{href:url,hash:parsed.hash,pathname:parsed.pathname,assign(u){redirects.push(u);},replace(u){redirects.push(u);}},history:{replaceState(){}},URL,URLSearchParams,Response,Date,Map,Set,Array,Object,Number,String,JSON,AbortController,setTimeout:fastTimeout?(fn,ms)=>ms===12000?setImmediate(fn):setTimeout(fn,ms):setTimeout,clearTimeout,crypto:globalThis.crypto};
   vm.runInNewContext('('+therapistClient.toString()+')()',context);
   return {els,data,requests,redirects,get logouts(){return logouts;}};
 }
 test('query invite reaches backend and is removed only after success',async()=>{
-  const h=loginHarness();await settle();await h.els['line-login'].click();
+  const h=loginHarness();await settle();
   assert.deepEqual(JSON.parse(h.requests[0].options.body),{id_token:'valid-token',invite_token:'test-invite'});
   assert.equal(h.data.has('mms-therapist-invite-v1'),false);assert.equal(h.redirects.at(-1),path+'/app');
 });
 test('failed LINE verification retains invite and triggers bounded fresh login',async()=>{
-  const h=loginHarness({error:'LINE_ID_TOKEN_INVALID'});await settle();await h.els['line-login'].click();
+  const h=loginHarness({error:'LINE_ID_TOKEN_INVALID'});await settle();
   assert.equal(h.logouts,1);assert.ok(h.data.has('mms-therapist-invite-v1'));
   const redirect=new URL(h.redirects[0]);assert.equal(redirect.pathname,path+'/login');assert.equal(redirect.searchParams.get('line_recovery'),'1');assert.equal(new URLSearchParams(redirect.hash.slice(1)).get('invite'),'test-invite');
   await h.els['line-login'].click();assert.equal(h.logouts,1);assert.match(h.els.notice.textContent,/ติดต่อพี่เปอร์/);
@@ -172,12 +171,21 @@ test('OAuth callback resumes saved invitation without a second tap',async()=>{
   await settle();assert.equal(JSON.parse(h.requests[0].options.body).invite_token,'saved-invite');assert.equal(h.redirects.at(-1),path+'/app');
 });
 test('missing ID token recovers once even when browser storage is blocked',async()=>{
-  const h=loginHarness({token:null,unavailableStorage:true});await settle();await h.els['line-login'].click();assert.equal(h.requests.length,0);assert.equal(h.logouts,1);
-  const h2=loginHarness({url:h.redirects[0],token:null,unavailableStorage:true});await settle();await h2.els['line-login'].click();assert.equal(h2.logouts,0);assert.match(h2.els.notice.textContent,/ติดต่อพี่เปอร์/);
+  const h=loginHarness({token:null,unavailableStorage:true});await settle();assert.equal(h.requests.length,0);assert.equal(h.logouts,1);
+  const h2=loginHarness({url:h.redirects[0],token:null,unavailableStorage:true});await settle();assert.equal(h2.logouts,0);assert.match(h2.els.notice.textContent,/ติดต่อพี่เปอร์/);
 });
 test('expired saved invitation is never used and failed access keeps current invitation',async()=>{
-  const h=loginHarness({error:'THERAPIST_ACCESS_DENIED'});await settle();await h.els['line-login'].click();assert.ok(h.data.has('mms-therapist-invite-v1'));assert.equal(h.redirects.length,0);
-  const expired=loginHarness({url:origin+path+'/login',saved:[['mms-therapist-invite-v1',JSON.stringify({token:'expired',until:Date.now()-1})]]});await settle();await expired.els['line-login'].click();assert.equal(JSON.parse(expired.requests.at(-1).options.body).invite_token,undefined);
+  const h=loginHarness({error:'THERAPIST_ACCESS_DENIED'});await settle();assert.ok(h.data.has('mms-therapist-invite-v1'));assert.equal(h.redirects.length,0);
+  const expired=loginHarness({url:origin+path+'/login',saved:[['mms-therapist-invite-v1',JSON.stringify({token:'expired',until:Date.now()-1})]]});await settle();assert.equal(JSON.parse(expired.requests.at(-1).options.body).invite_token,undefined);
+});
+test('LIFF primary and secondary redirects each initialize without another tap',async()=>{
+  for(const url of [origin+path,origin+path+'/login']){
+    const h=loginHarness({url});await settle();assert.equal(h.redirects.at(-1),path+'/app');assert.equal(h.els['line-login'].disabled,false);
+  }
+});
+test('stalled LIFF initialization releases the button with a useful fallback',async()=>{
+  const h=loginHarness({url:origin+path,initNever:true,fastTimeout:true});await settle();await settle();
+  assert.equal(h.els['line-login'].disabled,false);assert.match(h.els.notice.textContent,/LINE Mini App/);assert.equal(h.redirects.length,0);
 });
 
 const webflowLogin = readFileSync(new URL('../../webflow/mms/therapist-login/therapist-login.js', import.meta.url), 'utf8');
