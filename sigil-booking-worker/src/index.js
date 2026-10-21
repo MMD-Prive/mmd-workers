@@ -3,6 +3,7 @@
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+import { derivePrivateServiceLevel, privateWorkCapabilities, privateWorkAllowed } from "../../shared/private-model-work-capabilities.mjs";
 import {
   SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
   allowedCustomerModelFolders,
@@ -126,7 +127,8 @@ async function handleModelSearch(req, env, url) {
   if (publicBudgetError) {
     return { ok: false, matched: false, validation_error: true, errors: [publicBudgetError], items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
   }
-  if (!q && intent.mode !== "search") return { ok: true, matched: false, reason: "missing_query", items: [], policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION };
+  // Booking may browse using Create Job's scope filters without a remembered name.
+  // The same server access and model projection gates below still apply.
 
   const storedAccess = await lookupStoredBookingAccess(env, { bookingRef, sessionId });
   const salesContext = await resolveBookingSalesContext(env, storedAccess);
@@ -152,7 +154,7 @@ async function handleModelSearch(req, env, url) {
     };
   }
 
-  const records = q ? await searchModels(env, q, 40) : await listModels(env, 100);
+  const records = q ? await searchModels(env, q, 40) : await listModels(env, 500);
   const baseModels = records
     .map((record) => sanitizeModelForBooking(record, {
       scope,
@@ -207,6 +209,14 @@ async function handleBookingIntake(req, env, ctx) {
   const sessionId = str(body.session_id || makeRef("mmd_session"));
   const incomingResolver = body.resolver_payload_json && typeof body.resolver_payload_json === "object" ? body.resolver_payload_json : {};
   const intakeScope = token(body.lane || body.model_scope) === "private" ? "private" : "public";
+  const requestedOptions = body.service_options ?? incomingResolver.filters?.service_options ?? [];
+  const options = Array.isArray(requestedOptions) ? [...new Set(requestedOptions.map(token))] : ["invalid"];
+  if (options.some((option) => !["mk", "burn"].includes(option)) || (intakeScope === "public" && options.length)) {
+    const error = new Error("customer_booking_service_option_invalid");
+    error.status = 422;
+    throw error;
+  }
+  const serviceOptions = intakeScope === "private" ? options : [];
   const intentSource = intakeScope === "public"
     ? { ...(incomingResolver.filters || {}), ...body, work_lane: "", private_work: "", job_class: "" }
     : { ...(incomingResolver.filters || {}), ...body };
@@ -232,12 +242,15 @@ async function handleBookingIntake(req, env, ctx) {
   const modelQuery = str(body.model_search_query || body.model_id_or_name || intent.preferred_model_name || body.preference_text);
   const resolverPayload = {
     ...incomingResolver,
+    filters: { ...(incomingResolver.filters || {}), service_options: serviceOptions },
+    service_options: serviceOptions,
     kind: intent.mode === "search" ? "sigil_search_customer_intake_v1" : "sigil_booking_customer_intake_v1",
     customer_search: {
       policy_version: SIGIL_CUSTOMER_SEARCH_POLICY_VERSION,
       mode: intent.mode,
       customer_lane: intent.customer_lane,
       work_lane: intakeScope === "private" ? intent.work_lane : "",
+      service_options: serviceOptions,
       budget: intent.budget,
       spec: intent.spec,
       preferred_model_name: intent.preferred_model_name,
@@ -612,7 +625,21 @@ async function searchModels(env, q, limit) {
 
 async function listModels(env, limit) {
   const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
-  return airtableListByFormula(env, table, "", Math.max(1, Math.min(100, limit)));
+  const cap = Math.max(1, Math.min(500, limit));
+  const records = [];
+  const seenOffsets = new Set();
+  let offset = "";
+  do {
+    const params = new URLSearchParams({ pageSize: String(Math.min(100, cap - records.length)) });
+    if (offset) params.set("offset", offset);
+    const response = await airtableFetch(env, `/${encodeURIComponent(table)}?${params}`);
+    if (!response.ok || !Array.isArray(response.data.records)) throw new Error("model_search_unavailable");
+    records.push(...response.data.records.map((record) => ({ id: record.id, fields: record.fields || {} })));
+    offset = str(response.data.offset);
+    if (offset && seenOffsets.has(offset)) throw new Error("model_search_incomplete");
+    if (offset) seenOffsets.add(offset);
+  } while (offset && records.length < cap);
+  return records.slice(0, cap);
 }
 
 export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", env }) {
@@ -633,6 +660,8 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
   } else if (!canPublic) return null;
 
   const effectiveScope = canPublic && scope !== "private" ? "public" : "private";
+  const privateLevel = effectiveScope === "private" ? derivePrivateServiceLevel(f).level : "";
+  if (effectiveScope === "private" && !privateWorkAllowed(privateLevel, workLane)) return null;
   const durationOptions = effectiveScope === "private" ? defaultDurationOptions(folder, f) : [];
   return compact({
     model_id: record.id,
@@ -648,6 +677,8 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
     scope: effectiveScope,
     access_folder: effectiveScope === "private" ? folder : undefined,
     duration_options: durationOptions,
+    private_service_level: effectiveScope === "private" ? privateLevel : undefined,
+    private_work_capabilities: effectiveScope === "private" ? privateWorkCapabilities(privateLevel) : undefined,
     work_lane: workLane || undefined,
     booking_discovery: scope === "booking" ? true : undefined
   });
@@ -794,6 +825,9 @@ function buildBookingTelegramText({ body, fields, bookingRef, sessionId, recordI
     publicJob?.model_assignment_note ? `Assignment: ${escHtml(publicJob.model_assignment_note)}` : "",
     publicJob?.presentation_note ? `Presentation: ${escHtml(publicJob.presentation_note)}` : "",
     !publicJob && serviceContext ? `Context: ${escHtml(serviceContext)}` : "",
+    !publicJob && Array.isArray(search.service_options) && search.service_options.length
+      ? `Options requested: ${escHtml(search.service_options.map((option) => str(option).toUpperCase()).join(" · "))} · Per review required`
+      : "",
     mode === "search" ? `Budget: <b>${escHtml(budget)}</b>` : (budget !== "-" ? `Budget: ${escHtml(budget)}` : ""),
     `Spec: ${escHtml(spec)}`,
     `Preferred: ${escHtml(model)}`,
@@ -914,3 +948,4 @@ function isRequestStatusSelectFailure(res, fields) { return Object.hasOwn(fields
 function withoutRequestStatus(fields) { const next = { ...fields }; delete next["Request Status"]; return next; }
 function publicUrlFromKey(env, key) { const base = str(env.MODEL_PUBLIC_ASSET_BASE_URL).replace(/\/+$/, ""); const k = str(key).replace(/^\/+/, ""); return base && k ? `${base}/${encodeURI(k)}` : ""; }
 function escHtml(v) { return str(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
