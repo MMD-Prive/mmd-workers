@@ -75,7 +75,7 @@ function sessionRecord(overrides = {}) {
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":5,\"discount_thb\":2250,\"net_price_thb\":42750,\"deposit_basis_thb\":45000,\"deposit_percent\":20,\"deposit_due_thb\":9000,\"deposit_received_thb\":9000,\"balance_thb\":33750}",
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":10,\"discount_thb\":4500,\"net_price_thb\":40500,\"deposit_basis_thb\":45000,\"deposit_percent\":30,\"deposit_due_thb\":13500,\"deposit_received_thb\":13500,\"balance_thb\":27000}",
         "[SIGIL VIP Detail v1] {\"vip_detail\":\"vtop\"}",
-        "[MMD SERVICE PRICING v1] {"version":1,"currency":"THB","model_base_payout_thb":5000,"addons":[{"option":"mk","client_amount_thb":1000,"model_payout_thb":500}],"model_total_payout_thb":5500}",
+        `[MMD SERVICE PRICING v1] {"version":1,"currency":"THB","model_base_payout_thb":5000,"addons":[{"option":"mk","client_amount_thb":1000,"model_payout_thb":500}],"model_total_payout_thb":5500}`,
         "[MMD Model Remark v1] {\"text\":\"เข้าทางประตูด้านซ้าย\",\"meeting_point\":\"รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401\"}",
       ].join(" "),
       ...overrides,
