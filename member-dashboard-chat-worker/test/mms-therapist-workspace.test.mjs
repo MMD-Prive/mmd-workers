@@ -89,11 +89,11 @@ test('rendered client parses without interpolating backend data',()=>{
 test('mobile login keeps MMS branding, access guidance, and functional LINE controls',async()=>{
   const response=await maybeHandleTherapistWorkspace(new Request(origin+path+'/login'),{MMS_THERAPIST_UI_SOURCE:'native'});
   const html=await response.text();
-  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','mms-logo-horizontal-light.svg',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','data:image/svg+xml;base64,',THERAPIST_AI_LOGO_PATH,'alt="Male Massage AI"','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
   assert.equal(html.includes('คุยกับพี่เปอร์'),false);
-  assert.match(response.headers.get('content-security-policy'),/font-src https:\/\/cdn\.prod\.website-files\.com/);
+  assert.match(response.headers.get('content-security-policy'),/font-src data: https:\/\/cdn\.prod\.website-files\.com/);
   const profile=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me'),{MMS_THERAPIST_UI_SOURCE:'native'});
-  assert.doesNotMatch(profile.headers.get('content-security-policy'),/font-src|cdn\.prod\.website-files\.com/);
+  assert.doesNotMatch(profile.headers.get('content-security-policy'),/cdn\.prod\.website-files\.com/);
   assert.equal((html.match(/id="line-login"/g)||[]).length,1);
   assert.equal((html.match(/id="notice"/g)||[]).length,1);
 });

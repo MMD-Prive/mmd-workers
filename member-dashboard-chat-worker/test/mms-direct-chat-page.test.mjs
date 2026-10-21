@@ -1,3 +1,4 @@
+import { mmsGraphicRuntime } from "../src/mms-graphic-progress.mjs";
 import assert from 'node:assert/strict';
 import { sqliteTest as test } from '../../mms-worker/test/helpers/mms-chat-fixture.mjs';
 import { createRequire } from 'node:module';
@@ -11,7 +12,8 @@ import { MMS_CHAT_POLICY } from '../../shared/mms-chat-policy.mjs';
 // jsdom is already a root development dependency; no browser network is used.
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 async function settle(check = () => true) {
-  for (let i = 0; i < 60; i++) { await new Promise(resolve => setImmediate(resolve)); if (check()) return; }
+  const deadline = Date.now() + 2000;
+  do { await new Promise(resolve => setTimeout(resolve, 5)); if (check()) return; } while (Date.now() < deadline);
   assert.ok(check(), 'UI did not settle');
 }
 function page(role, fixture) {
@@ -139,4 +141,23 @@ test('polling discovers newly created rooms outside the original first page', as
     await therapist.poll();
     assert.ok(therapist.w.document.querySelector(`[data-thread="${id}"]`));
   } finally { therapist.close(); f.restore(); }
+});
+
+
+test('graphic progress holds completed milestones, freezes errors and hides only when ready', () => {
+  const dom = new JSDOM('<div id="graphic-progress" hidden></div><button id="retry"></button>', { runScripts: 'outside-only' });
+  dom.window.eval('(' + mmsGraphicRuntime.toString() + ')()');
+  const ui = dom.window.MmsGraphics, root = dom.window.document.getElementById('graphic-progress');
+  const first = ui.begin('fixture request');
+  assert.equal(root.querySelector('[role=progressbar]').getAttribute('aria-valuenow'), '0');
+  ui.received(first);
+  assert.equal(root.querySelector('[role=progressbar]').getAttribute('aria-valuenow'), '50');
+  ui.fail(first, 'fixture failure');
+  assert.equal(root.dataset.state, 'error');
+  assert.equal(root.querySelector('[role=progressbar]').getAttribute('aria-valuenow'), '50');
+  const second = ui.begin(); ui.ready(first);
+  assert.equal(root.hidden, false, 'an older account request cannot finish the current loader');
+  ui.received(second); ui.ready(second); assert.equal(root.hidden, true);
+  ui.begin(); ui.cancel(); assert.equal(root.hidden, true);
+  dom.window.close();
 });

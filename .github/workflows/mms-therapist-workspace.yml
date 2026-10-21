@@ -4,6 +4,7 @@ on:
     paths:
       - 'mms-worker/**'
       - 'member-dashboard-chat-worker/src/mms-therapist-workspace.js'
+      - 'member-dashboard-chat-worker/src/mms-graphic*.mjs'
       - 'member-dashboard-chat-worker/src/mms-direct-chat-page.mjs'
       - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
       - 'member-dashboard-chat-worker/test/mms-direct-chat-page.test.mjs'
@@ -20,6 +21,7 @@ on:
     paths:
       - 'mms-worker/**'
       - 'member-dashboard-chat-worker/src/mms-therapist-workspace.js'
+      - 'member-dashboard-chat-worker/src/mms-graphic*.mjs'
       - 'member-dashboard-chat-worker/src/mms-direct-chat-page.mjs'
       - 'member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js'
       - 'member-dashboard-chat-worker/test/mms-direct-chat-page.test.mjs'
