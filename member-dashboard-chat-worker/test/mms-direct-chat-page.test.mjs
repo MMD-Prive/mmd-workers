@@ -12,7 +12,8 @@ import { MMS_CHAT_POLICY } from '../../shared/mms-chat-policy.mjs';
 // jsdom is already a root development dependency; no browser network is used.
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 async function settle(check = () => true) {
-  for (let i = 0; i < 60; i++) { await new Promise(resolve => setImmediate(resolve)); if (check()) return; }
+  const deadline = Date.now() + 2000;
+  do { await new Promise(resolve => setTimeout(resolve, 5)); if (check()) return; } while (Date.now() < deadline);
   assert.ok(check(), 'UI did not settle');
 }
 function page(role, fixture) {
