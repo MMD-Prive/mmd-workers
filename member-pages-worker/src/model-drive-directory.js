@@ -111,19 +111,26 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
   url.searchParams.set("includeItemsFromAllDrives", "true");
   url.searchParams.set("supportsAllDrives", "true");
 
-  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload || !Array.isArray(payload.files)) throw new Error("drive_model_search_failed");
+  // Exact names must not disappear behind the first page of broad matches.
+  const exactUrl = new URL(url);
+  exactUrl.searchParams.set("q", `mimeType='${FOLDER_MIME}' and trashed=false and name = '${escapeDriveQuery(q)}'`);
+  const pages = await Promise.all([exactUrl, url].map(async target => {
+    const response = await fetch(target, { headers: { authorization: `Bearer ${accessToken}` } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(payload?.files)) throw new Error("drive_model_search_failed");
+    return payload.files.slice(0, 100);
+  }));
+  const files = [...new Map(pages.flat().map(file => [file?.id, file])).values()];
 
   const wantedLane = normalizeLane(lane);
   // Score names before walking Drive parent chains. Broad tokens (for example
   // "Captain") can match many folders, while only the best 24 are worth resolving.
-  const rankedFiles = payload.files
-    .slice(0, 100)
+  const rankedFiles = files
     .filter((file) => file?.id && file.trashed !== true && file.mimeType === FOLDER_MIME)
+    .filter((file) => !isOperationalModelChildFolderName(file.name))
     .map((file) => ({ file, score: modelNameScore(q, file.name) }))
     .filter((item) => item.score >= 0.28)
-    .sort((a, b) => b.score - a.score || clean(a.file.name).localeCompare(clean(b.file.name)))
+    .sort((a, b) => exactNameRank(q, a.file.name) - exactNameRank(q, b.file.name) || b.score - a.score || clean(a.file.name).localeCompare(clean(b.file.name)))
     .slice(0, 24);
   const resolvedRows = new Array(rankedFiles.length);
   let cursor = 0;
@@ -142,9 +149,30 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
     .filter(Boolean)
     .sort((a, b) => b.score - a.score || a.folder_name.localeCompare(b.folder_name));
 
-  return collapseDescendantsOfUniqueExactModelMatch(q, qualified)
+  return collapseDescendantsOfUniqueExactModelMatch(q, prioritizeModelDriveCandidates(q, qualified, env))
     .slice(0, 24)
     .map(({ score, ...item }) => item);
+}
+
+// Search preference only: never change exact-folder resolution, identity, or
+// previously linked jobs. The main catalogue belongs to malemodel.bkk@gmail.com.
+export function prioritizeModelDriveCandidates(query, candidates = [], env = {}) {
+  const roots = approvedRoots(env);
+  const mainRoots = new Set([roots.public, roots.private, roots.exclusive]);
+  const rows = candidates.filter(item => item && !isOperationalModelChildFolderName(item.folder_name));
+  const main = rows.filter(item => mainRoots.has(item.approved_root_id));
+  return (main.length ? main : rows).map(item => ({
+    ...item,
+    drive_priority: mainRoots.has(item.approved_root_id) ? "primary" : "fallback",
+    match_kind: exactNameRank(query, item.folder_name) < 2 ? "exact" : "similar",
+  })).sort((a, b) => exactNameRank(query, a.folder_name) - exactNameRank(query, b.folder_name)
+    || (b.score || 0) - (a.score || 0) || a.folder_name.localeCompare(b.folder_name));
+}
+
+function exactNameRank(query, name) {
+  if (clean(query, 240) === clean(name, 240)) return 0;
+  if (clean(query, 240).toLocaleLowerCase() === clean(name, 240).toLocaleLowerCase()) return 1;
+  return 2;
 }
 
 export function collapseDescendantsOfUniqueExactModelMatch(query, candidates = []) {
