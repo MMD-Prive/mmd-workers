@@ -14,6 +14,7 @@ import {
 import { tryHandleKenjiLv5LineOperationalRequest } from "./kenji-lv5-line-operational-request.mjs";
 import { notifyKenjiLv5Hype } from "./kenji-lv5-hype-alert.mjs";
 import { tryHandleKenjiSvipPhotoRevealRequest } from "./kenji-svip-photo-reveal.mjs";
+import { hasPendingDirectUserPaymentCandidate } from "./line-group-ingress-front-gate.js";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
@@ -244,6 +245,19 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   // booking/photo-reveal/notification or redelivery-retry orchestration in it.
   if (ownerContextTestRequested(env)) {
     return handleKenjiSeedLineRequest(request, env, ctx, legacyWorker);
+  }
+  // A fresh direct-user image candidate must reach the existing evidence intake
+  // before the LV5 payment-word handler can consume the follow-up silently.
+  if (events.length === 1 && events[0]?.deliveryContext?.isRedelivery !== true && text(events[0]?.mode).toLowerCase() !== "standby") {
+    let candidate = false;
+    let lookupUnavailable = false;
+    try { candidate = await hasPendingDirectUserPaymentCandidate(env, events[0]); }
+    catch (_) { candidate = true; lookupUnavailable = true; }
+    if (candidate) {
+      console.log(JSON.stringify({ line_payment_route: "candidate_precedence", lookup: lookupUnavailable ? "unavailable" : "found" }));
+      if (!legacyWorker?.fetch) return json({ ok: false, error: "line_intake_unavailable" }, 503);
+      return legacyWorker.fetch(request, { ...env, LINE_AUTO_REPLY_ENABLED: "false" }, ctx);
+    }
   }
   const redeliveryIndexes = events
     .map((event, index) => event?.deliveryContext?.isRedelivery === true ? index : -1)

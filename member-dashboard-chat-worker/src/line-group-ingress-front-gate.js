@@ -927,6 +927,11 @@ async function loadDirectUserImageCandidate(env = {}, userId = "") {
   return { ...candidate, key, userHash };
 }
 
+export async function hasPendingDirectUserPaymentCandidate(env = {}, event = {}) {
+  if (sourceType(event) !== "user" || messageType(event) !== "text" || !hasPaymentFollowupContext(messageText(event))) return false;
+  return Boolean(await loadDirectUserImageCandidate(env, asString(event?.source?.userId)));
+}
+
 function recordContextText(record = {}) { const f = record?.fields || {}; return [f.admin_note, f.intent, f.member_name, f.payload_json].map(asString).filter(Boolean).join("\n"); }
 async function recentDirectPaymentContext(env = {}, event = {}) {
   const userId = asString(event?.source?.userId); if (!userId || sourceType(event) !== "user") return { found: false, text: "" };

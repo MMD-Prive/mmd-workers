@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import lineIngressWorker, { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
+import lineIngressWorker, { hasPendingDirectUserPaymentCandidate, LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
+import { handleKenjiSeedLineRequestWithRedeliveryRecovery } from "../src/kenji-line-redelivery-recovery.mjs";
+import { tryHandleKenjiLv5LineOperationalRequest } from "../src/kenji-lv5-line-operational-request.mjs";
 import { analyzeProductionPaymentProof, classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind, servicePaymentCandidates } from "../src/payment-proof-intelligence.mjs";
 
 const {
@@ -708,6 +710,107 @@ test("non-payment follow-up does not promote a direct image candidate", async ()
   const result = await promoteDirectUserCandidate(env, { type: "message", source: { type: "user", userId: "U123" }, message: { type: "text", text: "วันนี้ว่างไหม" } });
   assert.equal(result.skipped, true);
   assert.equal(result.reason, "followup_not_payment_related");
+});
+
+test("active payment follow-up with a fresh image candidate reaches evidence intake before LV5", async () => {
+  const r2 = memoryR2();
+  const userId = "U0123456789abcdef0123456789abcdef";
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_SLIP_EVIDENCE: r2,
+    LINE_KENJI_AI_ENABLED: "true",
+    LINE_AUTO_REPLY_ENABLED: "false",
+    INTERNAL_TOKEN: "test-internal-token",
+    ADMIN_WORKER: { async fetch(request) {
+      if (new URL(request.url).pathname === "/v1/internal/kenji/control/runtime/status") return Response.json({ ok: true, controls: { all_kenji_mutations: false, line_oa_auto_reply: false, model_keyword_auto_reply: false } });
+      return Response.json({ ok: false }, { status: 503 });
+    } },
+    PAYMENTS_WORKER: { async fetch() { throw new Error("must_not_settle"); } },
+  };
+  await captureDirectUserImageEvidence(env, {
+    type: "message", timestamp: Date.now(), webhookEventId: "evt-routing-image",
+    source: { type: "user", userId }, message: { type: "image", id: "img-routing" },
+  }, { recentPaymentContext: false });
+  const event = {
+    type: "message", mode: "active", timestamp: Date.now(), webhookEventId: "evt-routing-text",
+    replyToken: "reply-routing", source: { type: "user", userId },
+    message: { type: "text", id: "msg-routing", text: "โอนแล้ว ทดสอบระบบ LINE OFC" },
+  };
+  const body = JSON.stringify({ events: [event] });
+  const signature = await lineSignature(body, env.LINE_CHANNEL_SECRET);
+  const logs = [];
+  const originalLog = console.log;
+  let legacyCalls = 0;
+  const operational = await tryHandleKenjiLv5LineOperationalRequest(new Request("https://mmdbkk.com/webhooks/line", {
+    method: "POST", headers: { "x-line-signature": signature }, body,
+  }), env);
+  assert.equal(operational?.handled, true, "fixture must reproduce the old LV5 interception");
+  assert.equal(operational?.response?.status, 200);
+  assert.equal(operational?.response?.headers.get("x-mmd-kenji-reply"), "suppressed");
+  console.log = (line) => logs.push(String(line));
+  try {
+    const response = await handleKenjiSeedLineRequestWithRedeliveryRecovery(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body,
+    }), env, null, { async fetch(_request, scopedEnv) {
+      legacyCalls += 1;
+      assert.equal(scopedEnv.LINE_AUTO_REPLY_ENABLED, "false");
+      return Response.json({ ok: true });
+    } });
+    assert.equal(response.status, 200);
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(legacyCalls, 1);
+  assert.deepEqual(logs.map((line) => JSON.parse(line)), [{ line_payment_route: "candidate_precedence", lookup: "found" }]);
+  for (const privateValue of [userId, "reply-routing", "โอนแล้ว", signature]) assert.equal(logs.join("\n").includes(privateValue), false);
+  assert.equal(await hasPendingDirectUserPaymentCandidate(env, { ...event, message: { type: "text", text: "วันนี้ว่างไหม" } }), false);
+  assert.equal(await hasPendingDirectUserPaymentCandidate({ ...env, LINE_SLIP_EVIDENCE: memoryR2() }, event), false);
+});
+
+test("candidate lookup failure routes payment follow-up to fail-closed evidence intake", async () => {
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_SLIP_EVIDENCE: { async get() { throw new Error("r2_unavailable"); } },
+    LINE_KENJI_AI_ENABLED: "true",
+    LINE_AUTO_REPLY_ENABLED: "false",
+  };
+  const body = JSON.stringify({ events: [{
+    type: "message", mode: "active", replyToken: "reply-unavailable",
+    source: { type: "user", userId: "U-private-unavailable" },
+    message: { type: "text", id: "msg-unavailable", text: "โอนแล้ว" },
+  }] });
+  const signature = await lineSignature(body, env.LINE_CHANNEL_SECRET);
+  const logs = [];
+  const originalLog = console.log;
+  let legacyCalls = 0;
+  console.log = (line) => logs.push(String(line));
+  try {
+    const response = await handleKenjiSeedLineRequestWithRedeliveryRecovery(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body,
+    }), env, null, { async fetch() { legacyCalls += 1; return Response.json({ ok: true }); } });
+    assert.equal(response.status, 200);
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(legacyCalls, 1);
+  assert.deepEqual(logs.map((line) => JSON.parse(line)), [{ line_payment_route: "candidate_precedence", lookup: "unavailable" }]);
+  assert.equal(logs.join("\n").includes("U-private-unavailable"), false);
+});
+
+test("invalid signature cannot use the candidate-precedence route", async () => {
+  const r2 = memoryR2();
+  const env = { LINE_CHANNEL_SECRET: "line-secret", LINE_SLIP_EVIDENCE: r2 };
+  await captureDirectUserImageEvidence(env, {
+    type: "message", timestamp: Date.now(), source: { type: "user", userId: "U-invalid-route" },
+    message: { type: "image", id: "img-invalid-route" },
+  }, { recentPaymentContext: false });
+  let legacyCalls = 0;
+  const response = await handleKenjiSeedLineRequestWithRedeliveryRecovery(new Request("https://mmdbkk.com/webhooks/line", {
+    method: "POST", headers: { "x-line-signature": "invalid" },
+    body: JSON.stringify({ events: [{ type: "message", mode: "active", source: { type: "user", userId: "U-invalid-route" }, message: { type: "text", text: "โอนแล้ว" } }] }),
+  }), env, null, { async fetch() { legacyCalls += 1; return Response.json({ ok: true }); } });
+  assert.equal(response.status, 401);
+  assert.equal(legacyCalls, 0);
 });
 
 test("signed payment follow-up with no image candidate emits a privacy-safe diagnostic", async () => {
