@@ -4,7 +4,7 @@ const WORKER_NAME = "member-dashboard-chat-worker";
 const CUSTOMER_UI_PREFIX = "/male-massage";
 const CUSTOMER_ASSET_PREFIX = "/male-massage-assets/";
 const CUSTOMER_API_BASE = "/api/mms/app";
-const PRESENTATION_ORIGIN = "https://my-mms-therapist.lovable.app";
+const PRESENTATION_ORIGIN = "https://my-therapist.lovable.app";
 const MEMBER_PROFILE_PATH = "/api/mms/app/membership/me";
 const MMS_MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
 const MMS_INTERNAL_ORIGIN = "https://mms.internal";
@@ -119,7 +119,8 @@ function presentationUrlForAsset(request) {
   const source = new URL(request.url);
   const suffix = source.pathname.slice(CUSTOMER_ASSET_PREFIX.length);
   const upstream = new URL(PRESENTATION_ORIGIN);
-  if (/^(favicon\.(?:ico|svg)|robots\.txt|hype-loader\.png)$/i.test(suffix)) upstream.pathname = `/${suffix}`;
+  if (suffix.startsWith("lovable/")) upstream.pathname = `/__l5e/assets-v1/${suffix.slice("lovable/".length)}`;
+  else if (/^(favicon\.(?:ico|svg)|robots\.txt|hype-loader\.png)$/i.test(suffix)) upstream.pathname = `/${suffix}`;
   else upstream.pathname = `/assets/${suffix}`;
   upstream.search = source.search;
   return upstream;
@@ -129,6 +130,9 @@ export function rewriteMyMmsCustomerHtml(html) {
   let output = String(html || "");
   output = output.replace(/<aside\b[^>]*id=["']lovable-badge["'][\s\S]*?<\/aside>/gi, "");
   output = output.replace(/<script\b[^>]*src=["']\/~flock\.js["'][\s\S]*?<\/script>/gi, "");
+  output = output.replace(/<script\b[^>]*src=["']\/__l5e\/events[^"']*["'][\s\S]*?<\/script>/gi, "");
+  output = output.replace(/<p\b[^>]*>โหมดตัวอย่างสำหรับออกแบบ[\s\S]*?<\/p>/g, "");
+  output = output.replaceAll("/__l5e/assets-v1/", `${CUSTOMER_ASSET_PREFIX}lovable/`);
   output = output.replaceAll("/assets/", CUSTOMER_ASSET_PREFIX);
   output = output.replaceAll("/favicon.ico", `${CUSTOMER_ASSET_PREFIX}favicon.ico`);
   output = output.replaceAll("/favicon.svg", `${CUSTOMER_ASSET_PREFIX}favicon.svg`);
@@ -139,11 +143,15 @@ export function rewriteMyMmsCustomerHtml(html) {
     const pattern = new RegExp(`href=(["'])\\/${suffix}([^"']*)\\1`, "g");
     output = output.replace(pattern, (_match, quote, rest) => `href=${quote}${CUSTOMER_UI_PREFIX}/${suffix}${rest}${quote}`);
   }
-  return output.replace(/<body\b[^>]*>/i, '$&<nav aria-label="แชต MY MMS" style="padding:12px 18px;background:#f4f5ef;text-align:right"><a data-mms-direct-chat href="/male-massage/support/chat" style="display:inline-flex;align-items:center;min-height:48px;color:#24563c;font:16px system-ui">คุยกับ Therapist →</a></nav>');
+  return output;
 }
 
 function rewriteMyMmsCustomerJavascript(source) {
   return String(source || "")
+    // Start's generated client bootstrap overwrites the router's runtime
+    // basepath with its build-time root. This bundle is served only at MY MMS.
+    .replace(/(\.update\(\{basepath:)(?:``|""|'')(,serializationAdapters:)/g, '$1"/male-massage"$2')
+    .replaceAll("/__l5e/assets-v1/", `${CUSTOMER_ASSET_PREFIX}lovable/`)
     .replace(/(["'`])\/assets\//g, `$1${CUSTOMER_ASSET_PREFIX}`)
     .replace(/(["'`])assets\//g, `$1male-massage-assets/`);
 }

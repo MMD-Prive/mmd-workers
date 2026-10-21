@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   handleMyMmsCustomerApi,
+  handleMyMmsCustomerUi,
+  handleMyMmsCustomerAsset,
   isMyMmsCustomerApiRequest,
   isMyMmsCustomerAssetRequest,
   isMyMmsCustomerUiRequest,
@@ -35,6 +37,39 @@ test("customer UI matcher owns only the bounded MY MMS routes", () => {
     "/male-massage/therapists/app",
     "/male-massage/therapists/mms",
   ]) assert.equal(isMyMmsCustomerUiRequest(req(path)), false, path);
+});
+
+test('customer presentation uses the published origin without forwarding identity', async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (request) => {
+    calls.push(request);
+    return new Response('<html><body><script src="/assets/app.js"></script></body></html>', {
+      headers: { 'content-type': 'text/html' },
+    });
+  });
+  const response = await handleMyMmsCustomerUi(req('/male-massage?from=line', {
+    headers: { cookie: 'test-session', authorization: 'test-authorization' },
+  }));
+  assert.equal(calls[0].url, 'https://my-therapist.lovable.app/?from=line');
+  assert.equal(calls[0].headers.has('cookie'), false);
+  assert.equal(calls[0].headers.has('authorization'), false);
+  assert.match(await response.text(), /\/male-massage-assets\/app.js/);
+});
+
+test('customer logo and bundle assets stay on the bounded app asset path', async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (request) => {
+    calls.push(request.url);
+    return new Response('router.update({basepath:``,serializationAdapters:[]}); (0,client.hydrateRoot)(document,app); const logo="/__l5e/assets-v1/example/logo.svg";', {
+      headers: { 'content-type': 'application/javascript' },
+    });
+  });
+  const bundle = await handleMyMmsCustomerAsset(req('/male-massage-assets/app.js'));
+  const javascript = await bundle.text();
+  assert.match(javascript, /\/male-massage-assets\/lovable\/example\/logo.svg/);
+  assert.match(javascript, /basepath:"\/male-massage",serializationAdapters:/);
+  await handleMyMmsCustomerAsset(req('/male-massage-assets/lovable/example/logo.svg'));
+  assert.equal(calls[1], 'https://my-therapist.lovable.app/__l5e/assets-v1/example/logo.svg');
 });
 
 test("customer assets and BFF are separately bounded", () => {
