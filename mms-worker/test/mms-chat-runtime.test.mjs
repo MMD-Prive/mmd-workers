@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { sqliteTest as test } from './helpers/mms-chat-fixture.mjs';
 import { maybeHandleMmsChat } from '../src/mms-chat-runtime.mjs';
 import { handleMyMmsCustomerApi, handleMyMmsCustomerUi } from '../../member-dashboard-chat-worker/src/my-mms-customer-app-front-gate.js';
 import { maybeHandleTherapistWorkspace } from '../../member-dashboard-chat-worker/src/mms-therapist-workspace.js';
@@ -120,6 +120,25 @@ test('revocation closes messaging in both directions, while an approved offline 
     assert.equal((await call(f.env, `/threads/${id}`, undefined, { actor: THERAPIST })).status, 403);
     f.record.fields['MY MMS Access'] = 'Approved';
     assert.equal((await (await call(f.env, `/threads/${id}`)).json()).data.messages.length, 1);
+  } finally { f.restore(); }
+});
+
+test('failed recipient inbox creation cannot leave a sendable room; retry repairs and activates both inboxes', async () => {
+  const f = fixture();
+  try {
+    await accept(f.env);
+    const peer = f.env.MMS_DIRECT_CHAT.getByName(`v1:inbox:therapist:${THERAPIST.id}`);
+    const join = peer.join.bind(peer);
+    peer.join = () => ({ ok: false, status: 503, error: { code: 'INBOX_UNAVAILABLE' } });
+    assert.equal((await call(f.env, '/threads', { therapist_id: THERAPIST.id })).status, 503);
+    const own = f.env.MMS_DIRECT_CHAT.getByName(`v1:inbox:customer:${CUSTOMER.id}`);
+    const id = own.threads(CUSTOMER).data.threads[0].thread_id;
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'สวัสดีครับ', request_key: 'pending_room_request_01' })).status, 404);
+    peer.join = join;
+    const repaired = await call(f.env, '/threads', { therapist_id: THERAPIST.id });
+    assert.equal(repaired.status, 200);
+    assert.equal((await repaired.json()).data.thread_id, id);
+    assert.equal((await call(f.env, `/threads/${id}/messages`, { text: 'สวัสดีครับ', request_key: 'pending_room_request_01' })).status, 200);
   } finally { f.restore(); }
 });
 

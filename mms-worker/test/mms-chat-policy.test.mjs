@@ -12,6 +12,7 @@ for (const text of [
   'Add me on LINE', 'call my number', 'pay outside the app', 'book directly', '080', '1234567',
   'LINE ID tamp1234', 'ไอดีไลน์ tamp', 'แ อ ด ไ ล น์ หน่อย', 'ไปคุยในไลน์กัน', 'คุยทาง LINE ไหม',
   'ติดต่อกันเองได้ไหม', 'ขอช่องทางอื่น', 'ส่งบัญชีมา', 'tamp1234', 'tamp.name',
+  'LINE: tamp', 'line=tamp', 'My LINE is tamp', 'L I N E: tamp',
 ]) test(`holds contact or offsite attempt: ${text}`, () => assert.ok(inspectChatMessage(text).code));
 
 for (const text of [

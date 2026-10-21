@@ -19,7 +19,7 @@ function chatClient(config) {
   const node = (tag, text, className) => { const el = document.createElement(tag); if (text != null) el.textContent = text; if (className) el.className = className; return el; };
   let policy, active = null, first = 0, last = 0, timer, polling = false, directoryEpoch = 0, threadNext = null, directoryNext = null, epoch = 0;
   const drafts = new Map(), pending = new Map(), loadedThreads = new Map();
-  let threadsSignature = '', accountRef = null;
+  let threadsSignature = '', accountRef = null, highestThread = 0;
   const notice = (text, error = false) => { $('notice').textContent = text; $('notice').className = error ? 'error' : ''; };
   const opts = body => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   async function api(path, options = {}) {
@@ -45,7 +45,7 @@ function chatClient(config) {
   function action(label, callback, alt = false) { const button = node('button', label, alt ? 'alt' : ''); button.type = 'button'; button.onclick = () => busy(button, callback); return button; }
   async function start() {
     clearTimeout(timer);
-    const generation = ++epoch; ++directoryEpoch; active = null; first = 0; last = 0; drafts.clear(); pending.clear(); loadedThreads.clear(); threadsSignature = '';
+    const generation = ++epoch; ++directoryEpoch; active = null; first = 0; last = 0; drafts.clear(); pending.clear(); loadedThreads.clear(); threadsSignature = ''; highestThread = 0; threadNext = null;
     $('app').hidden = true; $('conversation').hidden = true; $('messages').replaceChildren(); $('text').value = ''; $('threads').replaceChildren();
     const result = await api('/policy'); if (generation !== epoch) return; policy = result.policy; accountRef = result.account_ref;
     $('policy-intro').textContent = policy.introduction;
@@ -61,11 +61,13 @@ function chatClient(config) {
   }
   async function threads(append = false) {
     const turn = epoch;
-    const result = await api('/threads' + (append && threadNext ? '?after=' + encodeURIComponent(threadNext) : ''));
+    const updates = !append && loadedThreads.size > 0;
+    const query = append && threadNext ? '?after=' + threadNext : updates ? '?since=' + highestThread : '';
+    const result = await api('/threads' + query);
     if (turn !== epoch) return;
     if (result.account_ref !== accountRef) { await start(); return; }
-    for (const thread of result.threads) loadedThreads.set(thread.thread_id, thread);
-    const values = [...loadedThreads.values()].sort((a, b) => a.thread_id.localeCompare(b.thread_id));
+    for (const thread of result.threads) { loadedThreads.set(thread.thread_id, thread); highestThread = Math.max(highestThread, thread.seq); }
+    const values = [...loadedThreads.values()].sort((a, b) => b.seq - a.seq);
     const signature = JSON.stringify(values);
     if (signature !== threadsSignature) {
     $('threads').replaceChildren();
@@ -75,7 +77,8 @@ function chatClient(config) {
     if (!values.length) $('threads').append(node('p', config.role === 'therapist' ? 'ยังไม่มีลูกค้าเริ่มบทสนทนาครับ' : 'เลือก Therapist เพื่อเริ่มคุยได้เลยครับ', 'muted'));
     threadsSignature = signature;
     }
-    threadNext = result.next; $('more-threads').hidden = !threadNext;
+    if (!updates) threadNext = result.next;
+    $('more-threads').hidden = !threadNext;
   }
   async function therapists(append = false) {
     const turn = ++directoryEpoch; const zone = $('zone').value;

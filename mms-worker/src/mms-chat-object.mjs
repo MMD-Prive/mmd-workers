@@ -8,6 +8,7 @@ export class MmsDirectChat extends DurableObject {
   }
   consent(...args) { return this.chat.consent(...args); }
   initialize(...args) { return this.chat.initialize(...args); }
+  activate(...args) { return this.chat.activate(...args); }
   join(...args) { return this.chat.join(...args); }
   threads(...args) { return this.chat.threads(...args); }
   read(...args) { return this.chat.read(...args); }

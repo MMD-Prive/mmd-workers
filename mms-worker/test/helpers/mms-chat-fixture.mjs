@@ -1,6 +1,14 @@
-import { DatabaseSync } from 'node:sqlite';
+import test from 'node:test';
 import { createHmac } from 'node:crypto';
 import { MmsChatStore } from '../../src/mms-chat-store.mjs';
+
+// Node 20 remains in the repository matrix, but its runtime has no node:sqlite.
+// The dedicated Node 24 chat job requires SQLite and runs every fixture test.
+const [major, minor] = process.versions.node.split('.').map(Number);
+const supportsSqlite = major > 22 || major === 22 && minor >= 16;
+if (process.env.MMS_CHAT_REQUIRE_SQLITE === '1' && !supportsSqlite) throw new Error('MMS chat SQLite tests require Node 22.16+; CI must use Node 24');
+const { DatabaseSync } = supportsSqlite ? await import('node:sqlite') : {};
+export const sqliteTest = (name, fn) => test(name, { skip: supportsSqlite ? false : 'SQLite fixture requires Node 22.16+; enforced by the Node 24 direct-chat CI job' }, fn);
 
 export const CUSTOMER = { role: 'customer', id: 'mmsmem_' + 'a'.repeat(32) };
 export const OTHER_CUSTOMER = { role: 'customer', id: 'mmsmem_' + 'b'.repeat(32) };
@@ -11,6 +19,7 @@ export const ORIGIN = 'https://www.mmdbkk.com';
 export const ROOM = { thread_id: THREAD, customer_id: CUSTOMER.id, therapist_id: THERAPIST.id, therapist_label: 'Test Therapist' };
 
 export function database() {
+  if (!DatabaseSync) throw new Error('MMS chat SQLite fixture requires Node 22.16+');
   const db = new DatabaseSync(':memory:');
   const storage = {
     sql: { exec(query, ...args) {

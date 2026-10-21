@@ -74,8 +74,9 @@ export async function maybeHandleMmsChat(request, env = {}) {
     }
     if (suffix === '/threads') {
       if (request.method === 'GET') {
-        query(url, ['after']);
-        return deliver(await account.threads(actor, cursor(url, 'after', THREAD)));
+        query(url, ['after', 'since']);
+        if (url.searchParams.has('after') && url.searchParams.has('since')) failure(400, 'MMS_CHAT_QUERY_INVALID');
+        return deliver(await account.threads(actor, numberCursor(url, 'after'), numberCursor(url, 'since')));
       }
       if (request.method !== 'POST' || !customer) return method('GET');
       query(url, []);
@@ -95,7 +96,7 @@ export async function maybeHandleMmsChat(request, env = {}) {
         const joined = await inbox(env, participant).join(participant, metadata, Date.now());
         if (!joined.ok) return deliver(joined);
       }
-      return json({ ok: true, data: { thread_id: threadId } });
+      return deliver(await room(env, threadId).activate(metadata));
     }
     const matched = suffix.match(/^\/threads\/(mmschat_[a-f0-9]{32})(?:\/(messages|reviews))?$/);
     if (!matched) failure(404, 'MMS_CHAT_NOT_FOUND');

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { sqliteTest as test } from '../../mms-worker/test/helpers/mms-chat-fixture.mjs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { renderMmsDirectChatPage } from '../src/mms-direct-chat-page.mjs';
 import { handleMyMmsCustomerApi } from '../src/my-mms-customer-app-front-gate.js';
 import { maybeHandleMmsChat } from '../../mms-worker/src/mms-chat-runtime.mjs';
-import { fixture, cookie, CUSTOMER, OTHER_CUSTOMER, ORIGIN } from '../../mms-worker/test/helpers/mms-chat-fixture.mjs';
+import { fixture, cookie, CUSTOMER, OTHER_CUSTOMER, THERAPIST, ROOM, ORIGIN } from '../../mms-worker/test/helpers/mms-chat-fixture.mjs';
+import { MMS_CHAT_POLICY } from '../../shared/mms-chat-policy.mjs';
 
 // jsdom is already a root development dependency; no browser network is used.
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
@@ -45,6 +46,7 @@ function page(role, fixture) {
     type(value) { $('text').value = value; $('text').dispatchEvent(new w.Event('input')); },
     send() { $('compose').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); },
     async refresh() { $('refresh').click(); await settle(() => !$('refresh').disabled); },
+    async poll() { const [id, timer] = [...timers].find(([, timer]) => timer.ms === 5000); timers.delete(id); await timer.fn(); await settle(); },
     close() { timers.clear(); w.close(); },
   };
 }
@@ -107,4 +109,34 @@ test('account changes clear the previous transcript and drafts before showing th
     assert.equal(customer.$('app').hidden, true); assert.equal(customer.$('conversation').hidden, true);
     assert.equal(customer.$('messages').children.length, 0); assert.equal(customer.$('text').value, '');
   } finally { customer.close(); f.restore(); }
+});
+
+function seedInbox(f, count) {
+  const inbox = f.env.MMS_DIRECT_CHAT.getByName(`v1:inbox:therapist:${THERAPIST.id}`);
+  inbox.consent(THERAPIST, MMS_CHAT_POLICY.version, Date.now());
+  for (let n = 1; n <= count; n++) inbox.join(THERAPIST, { ...ROOM, thread_id: `mmschat_${n.toString(16).padStart(32, '0')}` }, n);
+  return inbox;
+}
+
+test('background polling preserves the older-page cursor past 100 conversations', async () => {
+  const f = fixture(); seedInbox(f, 120); const therapist = page('therapist', f);
+  try {
+    await therapist.ready(); await settle(() => therapist.$('threads').children.length === 50);
+    therapist.$('more-threads').click(); await settle(() => therapist.$('threads').children.length === 100);
+    await therapist.poll();
+    therapist.$('more-threads').click(); await settle(() => !therapist.$('more-threads').disabled);
+    assert.equal(therapist.$('threads').children.length, 120);
+    assert.equal(therapist.$('more-threads').hidden, true);
+  } finally { therapist.close(); f.restore(); }
+});
+
+test('polling discovers newly created rooms outside the original first page', async () => {
+  const f = fixture(); const inbox = seedInbox(f, 120); const therapist = page('therapist', f);
+  try {
+    await therapist.ready(); await settle(() => therapist.$('threads').children.length === 50);
+    const id = 'mmschat_' + 'f'.repeat(32);
+    inbox.join(THERAPIST, { ...ROOM, thread_id: id }, Date.now());
+    await therapist.poll();
+    assert.ok(therapist.w.document.querySelector(`[data-thread="${id}"]`));
+  } finally { therapist.close(); f.restore(); }
 });

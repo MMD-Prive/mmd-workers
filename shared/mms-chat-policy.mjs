@@ -57,6 +57,7 @@ export function inspectChatMessage(text, previous = []) {
   if (/(?:^|\s)@[a-z0-9_.-]{2,}/i.test(current)) return contact();
   if (/(?:[a-z0-9._%+-]+\s*\[?at\]?\s*[a-z0-9.-]+\s*\[?dot\]?\s*[a-z]{2,})/i.test(current)) return contact();
   if (/(?:line\s*id|ไลน์ไอดี|ไอดีไลน์)\s*[:=]?\s*[@]?[a-z0-9_.-]{2,}/i.test(current)) return contact();
+  if (/\b(?:my\s+)?l\s*i\s*n\s*e\s*(?::|=|\bis\b)\s*[@]?[a-z0-9_.-]{2,}/i.test(current)) return contact();
   if (/(?:ไลน์|ไอดี|ไอจี)[a-z0-9_.-]{2,}/i.test(compact) || /(?:^|\s)(?:id|ig|fb)\s*[:=]?\s*[@]?[a-z0-9_.-]{2,}/i.test(current)) return contact();
   if (/(?:ขอ|ส่ง|บอก|แลก|แอด|เพิ่มเพื่อน|ทัก|ทิ้ง|ให้|ดู|เอา).{0,24}(?:เบอร์|เบอร|ไลน์|ไลน|ไอดี|เฟซ|เฟส|ไอจี|วอตส์แอป|วอทส์แอป|ช่องทางติดต่อ|คิวอาร์|qr|line\s*id|whatsapp|telegram)/i.test(compact)) return offsite();
   if (/(?:เบอร์|ไลน์|ไอดี|ไอจี|line\s*id|instagram|facebook)\s*(?:ผม|ฉัน|ของผม|ของฉัน|คือ|:|=|id|ไอดี)/i.test(current)) return contact();

@@ -13,7 +13,7 @@ export class MmsChatStore {
     this.sql = storage.sql;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS inbox (thread_id TEXT PRIMARY KEY, label TEXT NOT NULL, therapist_id TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS inbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL UNIQUE, label TEXT NOT NULL, therapist_id TEXT NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS attempts (actor TEXT NOT NULL, request_key TEXT NOT NULL, text TEXT NOT NULL, result TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(actor, request_key));
       CREATE TABLE IF NOT EXISTS holds (id TEXT PRIMARY KEY, actor TEXT NOT NULL, text TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, review_requested INTEGER NOT NULL DEFAULT 0);
@@ -41,14 +41,21 @@ export class MmsChatStore {
     return this.storage.transactionSync(() => {
       const existing = this.state('room');
       if (existing && (existing.customer_id !== room.customer_id || existing.therapist_id !== room.therapist_id || existing.thread_id !== room.thread_id)) return fail(409, 'MMS_CHAT_ROOM_CONFLICT');
-      if (!existing) this.put('room', room);
+      if (!existing) this.put('room', { ...room, active: false });
       return ok({ thread_id: room.thread_id });
     });
   }
 
+  activate(room) {
+    const existing = this.state('room');
+    if (!existing || existing.thread_id !== room.thread_id || existing.customer_id !== room.customer_id || existing.therapist_id !== room.therapist_id) return fail(409, 'MMS_CHAT_ROOM_CONFLICT');
+    this.put('room', { ...existing, active: true });
+    return ok({ thread_id: existing.thread_id });
+  }
+
   member(actor) {
     const room = this.state('room');
-    return validActor(actor) && room && (actor.role === 'customer' ? room.customer_id === actor.id : room.therapist_id === actor.id) ? room : null;
+    return validActor(actor) && room?.active === true && (actor.role === 'customer' ? room.customer_id === actor.id : room.therapist_id === actor.id) ? room : null;
   }
 
   join(actor, room, now) {
@@ -61,10 +68,12 @@ export class MmsChatStore {
     return ok({ thread_id: room.thread_id });
   }
 
-  threads(actor, after = '') {
+  threads(actor, before = null, since = null) {
     if (!validActor(actor) || this.state('account') !== keyOf(actor)) return fail(403, 'MMS_CHAT_NOT_FOUND');
-    const rows = this.sql.exec('SELECT * FROM inbox WHERE thread_id>? ORDER BY thread_id LIMIT 51', after).toArray();
-    return ok({ threads: rows.slice(0, 50), next: rows.length > 50 ? rows[49].thread_id : null, account_ref: keyOf(actor) });
+    const rows = since !== null
+      ? this.sql.exec('SELECT * FROM inbox WHERE seq>? ORDER BY seq LIMIT 51', since).toArray()
+      : this.sql.exec('SELECT * FROM inbox WHERE seq<? ORDER BY seq DESC LIMIT 51', before ?? Number.MAX_SAFE_INTEGER).toArray();
+    return ok({ threads: rows.slice(0, 50), next: rows.length > 50 ? rows[49].seq : null, account_ref: keyOf(actor) });
   }
 
   read(actor, after = null, before = null) {
