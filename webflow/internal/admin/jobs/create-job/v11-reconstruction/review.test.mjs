@@ -32,7 +32,7 @@ async function fixture(options={}){
  return {dom,w,d,root,by,click,set,calls,errors,chooseClient,scope,close:()=>w.close()};
 }
 test('pinned source blobs are exact V11 commit artifacts',async()=>{
- for(const [file,sha] of Object.entries({'lv10-runtime-v11.js':'10af5235ae079f06664e4d01f554bbe145b7e431','lv11-owner-composer-v1.css':'c447358e65c0f730b71fe9d7ee285a889bc9e7eb','lv11-owner-composer-v1.js':'14ac3793c837e7025bbb641b83d043aa5deb217f','model-search-case-alias-fix-v8.js':'0dc98a4074f39c675ef0ee193e706ecefee23f20'})){
+ for(const [file,sha] of Object.entries({'lv10-runtime-v11.js':'3fce5fba8196e21ff70cec21d18bfc81fd82da0f','lv11-owner-composer-v1.css':'c447358e65c0f730b71fe9d7ee285a889bc9e7eb','lv11-owner-composer-v1.js':'14ac3793c837e7025bbb641b83d043aa5deb217f','model-search-case-alias-fix-v8.js':'0dc98a4074f39c675ef0ee193e706ecefee23f20'})){
   const b=await readFile(new URL('source/'+file,import.meta.url));assert.equal(createHash('sha1').update(Buffer.from(`blob ${b.length}\0`)).update(b).digest('hex'),sha);
  }
 });
@@ -43,10 +43,26 @@ test('canonical customer -> private model -> review retains identity and search 
   f.scope();assert.equal(f.root.dataset.lv8Step,'3');f.set('modelQuery','Synthetic Model');f.click('modelSearch');await sleep(120);
   const request=f.calls.find(c=>c.url.pathname.endsWith('/models/search'));assert.equal(request.url.searchParams.get('client_id'),client.client_id);assert.equal(request.url.searchParams.get('inventory_only'),'1');assert.equal(request.url.searchParams.get('selected_access_folder'),'exclusive');assert.equal(request.url.searchParams.get('private_work'),'pn');assert.equal(request.init.credentials,'include');
   f.root.querySelector('[data-cj-model-index="0"]').click();assert.equal(f.root.dataset.lv8Step,'4');
-  for(const [k,v] of Object.entries({start:'18:00',location:'Synthetic venue',price:'6000',modelPayout:'3000'}))f.set(k,v);
+  for(const [k,v] of Object.entries({start:'18:00',location:'Synthetic venue',price:'6000'}))f.set(k,v);const baseRate=f.root.querySelector('[data-cj-rate-part="pn"]');baseRate.value='3000';baseRate.dispatchEvent(new f.w.Event('input',{bubbles:true}));
   f.click('lv8Next');assert.equal(f.root.dataset.lv8Step,'5');assert.match(f.by('review').textContent,/Synthetic Client/);assert.match(f.by('review').textContent,/Synthetic Model/);assert.match(f.by('review').textContent,/6,000/);
   assert.equal(f.d.querySelector('a[href="/internal/admin/jobs/job-board"]').textContent,'Job Board · Public / Private');assert.equal(f.root.dataset.createEndpoint,'/__v11_review__/create-blocked');
   assert.equal(f.calls.some(c=>/create|publish|sync/.test(c.url.pathname)),false);assert.deepEqual(f.errors,[]);
+ }finally{f.close();}
+});
+test('PN + MK payout is entered and serialized as separate model-only components',async()=>{
+ const f=await fixture();try{
+  await f.chooseClient();f.scope();f.root.querySelector('[data-cj-opt="mk"]').click();
+  f.set('modelQuery','Synthetic Model');f.click('modelSearch');await sleep(120);f.root.querySelector('[data-cj-model-index="0"]').click();
+  const pn=f.root.querySelector('[data-cj-rate-part="pn"]'),mk=f.root.querySelector('[data-cj-rate-part="mk"]');
+  assert.ok(pn);assert.ok(mk);pn.value='10000';mk.value='1500';
+  for(const input of [pn,mk])input.dispatchEvent(new f.w.Event('input',{bubbles:true}));
+  for(const [k,v] of Object.entries({start:'18:00',location:'Synthetic venue',price:'20000'}))f.set(k,v);
+  assert.equal(f.by('modelPayout').value,'11500');f.click('lv8Next');assert.equal(f.root.dataset.lv8Step,'5');
+  f.click('create');await sleep(20);
+  const request=f.calls.find(c=>c.url.pathname==='/__v11_review__/create-blocked');assert.ok(request);
+  const payload=JSON.parse(request.init.body);const marker=payload.note.match(/\\[MMD MODEL PAYOUT BREAKDOWN v1\\] (\\{[^\\n]+\\})/);
+  assert.ok(marker);assert.deepEqual(JSON.parse(marker[1]),{version:1,currency:'THB',model_base_payout_thb:10000,addons:[{option:'mk',model_payout_thb:1500}],model_total_payout_thb:11500});
+  assert.equal(payload.pay_model_thb,11500);assert.deepEqual(payload.work.service_options,['mk']);
  }finally{f.close();}
 });
 test('missing admin session disables search and never invents authentication',async()=>{
