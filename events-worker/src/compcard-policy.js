@@ -122,6 +122,38 @@ function dateOrdinal(date) {
   return milliseconds / DAY_MS;
 }
 
+// Missing start date keeps the historical daily-promotion schedule. Production
+// opts in with a future Bangkok date so existing plans are never re-keyed.
+export function publicationCadence(env = {}, date) {
+  const today = dateOrdinal(date);
+  if (today === null) throw new TypeError('compcard_cadence_date_invalid');
+  const startDate = String(env.HYPE_CADENCE_START_DATE || '').trim();
+  if (!startDate) return { active: false, promotion_day: true, standard_day: false, promotion_index: null, anchor_date: null };
+  const start = dateOrdinal(startDate);
+  if (start === null) throw new TypeError('compcard_cadence_start_invalid');
+  const parts = String(env.HYPE_PROMOTION_WEEKDAYS ?? '2,5').split(',').map(value => value.trim());
+  if (!parts.length || parts.some(value => !/^[0-6]$/.test(value)) || new Set(parts).size !== parts.length) {
+    throw new TypeError('compcard_cadence_weekdays_invalid');
+  }
+  const weekdays = parts.map(Number).sort((a, b) => a - b);
+  const weekday = ordinal => ((ordinal + 4) % 7 + 7) % 7; // Sunday = 0.
+  let firstOffset = 0;
+  while (!weekdays.includes(weekday(start + firstOffset))) firstOffset += 1;
+  const anchorDate = new Date((start + firstOffset) * DAY_MS).toISOString().slice(0, 10);
+  const active = today >= start;
+  const promotionDay = !active || weekdays.includes(weekday(today));
+  const elapsed = Math.max(0, today - start);
+  let beforeToday = Math.floor(elapsed / 7) * weekdays.length;
+  for (let offset = 0; offset < elapsed % 7; offset += 1) {
+    if (weekdays.includes(weekday(start + offset))) beforeToday += 1;
+  }
+  return {
+    active, start_date: startDate, promotion_weekdays: weekdays,
+    promotion_day: promotionDay, standard_day: active && !promotionDay,
+    promotion_index: active ? beforeToday : null, anchor_date: anchorDate,
+  };
+}
+
 function stableCompare(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -139,10 +171,16 @@ export function chooseDailyCard(cards, history, date) {
     lastExposure.set(row.model_id, Math.max(lastExposure.get(row.model_id) ?? -Infinity, previous));
   }
   const eligible = (Array.isArray(cards) ? cards : []).filter(card => {
-    if (!card || !card.model_id || !CATEGORIES.includes(card.category)) return false;
+    if (!card || !card.model_id || !CATEGORIES.includes(card.category) || card.selectable === false) return false;
     const previous = lastExposure.get(card.model_id);
     return previous === undefined || today - previous >= COOLDOWN_DAYS;
   });
+  // A new reviewed version can replace an older card for future choices without
+  // mutating the static manifest or removing a version used by a frozen plan.
+  const intakeModels = new Set(eligible.filter(card => card.source === 'owner_drive_intake').map(card => card.model_id));
+  for (let index = eligible.length - 1; index >= 0; index -= 1) {
+    if (intakeModels.has(eligible[index].model_id) && eligible[index].source !== 'owner_drive_intake') eligible.splice(index, 1);
+  }
   const availableCategories = CATEGORIES.filter(category => eligible.some(card => card.category === category));
   if (!availableCategories.length) return null;
   const categoryCount = availableCategories.length;
@@ -163,4 +201,5 @@ export function chooseDailyCard(cards, history, date) {
   });
   return eligible[0] || null;
 }
+
 
