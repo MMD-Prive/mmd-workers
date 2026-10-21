@@ -59,6 +59,16 @@ test('callback wildcard passes unrelated public pages and prefix lookalikes dire
 test('rendered client parses without interpolating backend data',()=>{
   for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];new vm.Script(script);assert.equal(html.includes('innerHTML'),false);}
 });
+test('mobile login keeps MMS branding, access guidance, and functional LINE controls',async()=>{
+  const response=await maybeHandleTherapistWorkspace(new Request(origin+path+'/login'),{MMS_THERAPIST_UI_SOURCE:'native'});
+  const html=await response.text();
+  for(const marker of ['class="auth-page"','class="auth-shell"','LINE Seed Sans TH','mms-logo-horizontal-light.svg','Online / Offline','เลือกเขตบริการ','ดูงานใกล้คุณ','id="line-login"','id="notice"','id="retry"','https://liff.line.me/2011425652-YqK1F6y8','data-login="true"'])assert.ok(html.includes(marker),marker);
+  assert.match(response.headers.get('content-security-policy'),/font-src https:\/\/cdn\.prod\.website-files\.com/);
+  const profile=await maybeHandleTherapistWorkspace(new Request(origin+path+'/me'),{MMS_THERAPIST_UI_SOURCE:'native'});
+  assert.doesNotMatch(profile.headers.get('content-security-policy'),/font-src|cdn\.prod\.website-files\.com/);
+  assert.equal((html.match(/id="line-login"/g)||[]).length,1);
+  assert.equal((html.match(/id="notice"/g)||[]).length,1);
+});
 
 class Element {
   constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.attrs={};this.hidden=false;this.disabled=false;this.value='';this.textContent='';this.listeners={};}
@@ -185,7 +195,7 @@ test('LIFF primary and secondary redirects each initialize without another tap',
 });
 test('stalled LIFF initialization releases the button with a useful fallback',async()=>{
   const h=loginHarness({url:origin+path,initNever:true,fastTimeout:true});await settle();await settle();
-  assert.equal(h.els['line-login'].disabled,false);assert.match(h.els.notice.textContent,/LINE Mini App/);assert.equal(h.redirects.length,0);
+  assert.equal(h.els['line-login'].disabled,false);assert.equal(h.els.retry.hidden,false);assert.match(h.els.notice.textContent,/LINE Mini App/);assert.equal(h.redirects.length,0);
 });
 
 const webflowLogin = readFileSync(new URL('../../webflow/mms/therapist-login/therapist-login.js', import.meta.url), 'utf8');
