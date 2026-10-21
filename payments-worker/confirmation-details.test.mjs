@@ -75,6 +75,7 @@ function sessionRecord(overrides = {}) {
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":5,\"discount_thb\":2250,\"net_price_thb\":42750,\"deposit_basis_thb\":45000,\"deposit_percent\":20,\"deposit_due_thb\":9000,\"deposit_received_thb\":9000,\"balance_thb\":33750}",
         "[SIGIL Pricing v1] {\"full_price_thb\":45000,\"discount_mode\":\"percent\",\"discount_percent\":10,\"discount_thb\":4500,\"net_price_thb\":40500,\"deposit_basis_thb\":45000,\"deposit_percent\":30,\"deposit_due_thb\":13500,\"deposit_received_thb\":13500,\"balance_thb\":27000}",
         "[SIGIL VIP Detail v1] {\"vip_detail\":\"vtop\"}",
+        "[MMD SERVICE PRICING v1] {"version":1,"currency":"THB","model_base_payout_thb":5000,"addons":[{"option":"mk","client_amount_thb":1000,"model_payout_thb":500}],"model_total_payout_thb":5500}",
         "[MMD Model Remark v1] {\"text\":\"เข้าทางประตูด้านซ้าย\",\"meeting_point\":\"รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401\"}",
       ].join(" "),
       ...overrides,
@@ -365,6 +366,8 @@ test("model confirmation details expose the client display name and the model's 
   assert.equal(data.role, "model");
   assert.equal(data.amount_scope, "model_payout");
   assert.equal(data.model_payout_thb, 5500);
+  assert.equal(data.job_type, "private:exclusive:straight:vip:mk");
+  assert.deepEqual(data.model_payout_breakdown, [{ label: "VIP", amount_thb: 5000 }, { label: "MK", amount_thb: 500 }]);
   assert.equal(data.model_remark, "เข้าทางประตูด้านซ้าย");
   assert.equal(data.model_meeting_point, "รอที่ล็อบบี้ · เลขห้อง/บ้านเลขที่: 401");
   assert.equal("note" in data, false);
@@ -375,6 +378,31 @@ test("model confirmation details expose the client display name and the model's 
   assert.equal(JSON.stringify(data).includes("payments.example.com"), false);
   assert.equal(JSON.stringify(data).includes("45000"), false);
   assert.equal(JSON.stringify(data).includes("Partner Attribution"), false);
+});
+
+
+test("model payout breakdown is omitted when its pieces do not reconcile with the payout", async () => {
+  const fixture = sessionRecord({ [F.payModelThb]: 11500 });
+  fixture.fields[F.jobType] = "PN";
+  fixture.fields[F.note] = "[MMD SERVICE PRICING v1] {\"version\":1,\"currency\":\"THB\",\"model_base_payout_thb\":10000,\"addons\":[{\"option\":\"mk\",\"model_payout_thb\":1200}],\"model_total_payout_thb\":11200}";
+  const { env, modelToken } = await envAndTokens({ session: fixture });
+  const response = await handleConfirmationDetails(post(modelToken, "model"), env);
+  const data = await response.json();
+  assert.equal(data.model_payout_thb, 11500);
+  assert.equal(data.model_payout_breakdown, null);
+  assert.equal(data.job_type, "PN:mk");
+});
+
+test("PN plus MK model payout is returned as a reconciled, model-only breakdown", async () => {
+  const fixture = sessionRecord({ [F.jobType]: "PN", [F.payModelThb]: 11500,
+    [F.note]: "[MMD SERVICE PRICING v1] {\"version\":1,\"currency\":\"THB\",\"model_base_payout_thb\":10000,\"addons\":[{\"option\":\"mk\",\"client_amount_thb\":1800,\"model_payout_thb\":1500}],\"model_total_payout_thb\":11500}" });
+  const { env, modelToken } = await envAndTokens({ session: fixture });
+  const response = await handleConfirmationDetails(post(modelToken, "model"), env);
+  const data = await response.json();
+  assert.equal(data.job_type, "PN:mk");
+  assert.equal(data.model_payout_thb, 11500);
+  assert.deepEqual(data.model_payout_breakdown, [{ label: "PN", amount_thb: 10000 }, { label: "MK", amount_thb: 1500 }]);
+  for (const hidden of ["client_amount_thb", "1800", "payment_ref", "payment_status"]) assert.equal(JSON.stringify(data).includes(hidden), false);
 });
 
 test("confirmation details reject cross-role tokens and untrusted origins", async () => {
