@@ -3,6 +3,26 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { deployRequired } from './kenji-pause-release-scope.mjs';
 const config = 'member-dashboard-chat-worker/wrangler.toml';
+const richMenuPauseFiles = [
+  '.github/workflows/kenji-context-followup-ci.yml',
+  'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+  'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
+  'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
+];
+test('PR 2608 exact Rich Menu pause scope skips the entire automatic deployment job', () => {
+  assert.equal(deployRequired('push', richMenuPauseFiles), false);
+  assert.equal(deployRequired('push', [...richMenuPauseFiles,
+    'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs']), false);
+  for (const file of richMenuPauseFiles) assert.equal(deployRequired('push', [file]), false);
+});
+test('Rich Menu scope never masks unrelated source, deployment workflow or configuration changes', () => {
+  for (const unrelated of ['mms-member-worker/src/index.js', 'member-dashboard-chat-worker/src/index.js',
+    'member-dashboard-chat-worker/src/rich-menu-unreviewed.mjs', '.github/workflows/unreviewed-deploy.yml']) {
+    assert.equal(deployRequired('push', [...richMenuPauseFiles, unrelated]), true);
+  }
+  assert.equal(deployRequired('push', [...richMenuPauseFiles, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
+  assert.equal(deployRequired('workflow_dispatch', richMenuPauseFiles), true);
+});
 test('exact rights alias uses manual Kenji-only release and never masks mixed deployment', () => {
   const files = ['member-dashboard-chat-worker/src/kenji-line-rights-check.mjs', 'member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs', 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs'];
   assert.equal(deployRequired('push', files), false);

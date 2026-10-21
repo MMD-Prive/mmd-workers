@@ -27,6 +27,8 @@ export const KENJI_MANUAL_RELEASE_PATHS = new Set([
   'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
   'member-dashboard-chat-worker/src/kenji-line-booking-accumulator.mjs',
   'member-dashboard-chat-worker/test/kenji-context-followup.test.mjs',
+  'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
+  'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
   '.github/workflows/kenji-context-followup-ci.yml',
   '.github/workflows/kenji-code-only-promote.yml',
   'scripts/kenji-code-only-promote.mjs',
