@@ -57,7 +57,7 @@ test('callback wildcard passes unrelated public pages and prefix lookalikes dire
   } finally { globalThis.fetch = originalFetch; }
 });
 test('rendered client parses without interpolating backend data',()=>{
-  for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>\(([\s\S]*)\)\(\);<\/script>/)[1];new vm.Script('('+script+')');assert.equal(html.includes('innerHTML'),false);}
+  for(const login of [false,true]){const html=renderTherapistWorkspace(login);const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];new vm.Script(script);assert.equal(html.includes('innerHTML'),false);}
 });
 
 class Element {
