@@ -1,5 +1,5 @@
 import currentWorker from "./mms-line-front-gate.js";
-import { maybeHandleTherapistWorkspace } from "./mms-therapist-workspace.js";
+import { maybeHandleTherapistWorkspace, THERAPIST_AI_LOGO_PATH } from "./mms-therapist-workspace.js";
 import { isMmsMembershipRequest, isMmsMembershipOriginPassthrough, proxyMmsMembership } from './mms-membership-front-gate.js';
 import {
   handleMyMmsCustomerApi,
@@ -22,8 +22,9 @@ export function isTherapistOriginPassthroughRequest(request) {
   const path = new URL(request.url).pathname.replace(/\/$/, "");
   const prefix = "/male-massage/therapists";
   if (!path.startsWith(prefix)) return false;
-  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`, `${prefix}/app/chat`].includes(path)) return false;
+  if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`, THERAPIST_AI_LOGO_PATH].includes(path)) return false;
   if (path.startsWith(`${prefix}/api/auth/`) || path.startsWith(`${prefix}/api/app/`)) return false;
+  if (path === `${prefix}/app/chat`) return false;
   return true;
 }
 
