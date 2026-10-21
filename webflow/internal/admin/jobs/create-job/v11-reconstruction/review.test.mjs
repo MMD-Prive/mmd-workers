@@ -60,7 +60,7 @@ test('PN + MK payout is entered and serialized as separate model-only components
   assert.equal(f.by('modelPayout').value,'11500');f.click('lv8Next');assert.equal(f.root.dataset.lv8Step,'5');
   f.click('create');await sleep(20);
   const request=f.calls.find(c=>c.url.pathname==='/__v11_review__/create-blocked');assert.ok(request);
-  const payload=JSON.parse(request.init.body);const marker=payload.note.match(/\\[MMD MODEL PAYOUT BREAKDOWN v1\\] (\\{[^\\n]+\\})/);
+  const payload=JSON.parse(request.init.body);const marker=payload.note.match(/\[MMD MODEL PAYOUT BREAKDOWN v1\] (\{[^\n]+\})/);
   assert.ok(marker);assert.deepEqual(JSON.parse(marker[1]),{version:1,currency:'THB',model_base_payout_thb:10000,addons:[{option:'mk',model_payout_thb:1500}],model_total_payout_thb:11500});
   assert.equal(payload.pay_model_thb,11500);assert.deepEqual(payload.work.service_options,['mk']);
  }finally{f.close();}
