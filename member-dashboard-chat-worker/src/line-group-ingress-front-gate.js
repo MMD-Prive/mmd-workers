@@ -985,7 +985,16 @@ async function observeSignedLineEvents(request, env = {}) {
   const rawBody = await request.text(); const signature = asString(request.headers.get("x-line-signature"));
   if (!(await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET))) { console.log(JSON.stringify({ line_payment_ingress: "signature_rejected" })); return; }
   let body; try { body = JSON.parse(rawBody || "{}"); } catch (_) { console.log(JSON.stringify({ line_payment_ingress: "invalid_json" })); return; }
-  for (const event of Array.isArray(body.events) ? body.events : []) {
+  const events = Array.isArray(body.events) ? body.events : [];
+  // Diagnostics are aggregate-only: never log raw event types, payloads, LINE IDs, or headers.
+  const knownEventTypes = new Set(["message", "unsend", "follow", "unfollow", "join", "leave", "memberJoined", "memberLeft", "postback", "beacon", "accountLink", "videoPlayComplete"]);
+  const eventTypeCounts = Object.create(null);
+  for (const event of events) {
+    const eventType = knownEventTypes.has(event?.type) ? event.type : "other";
+    eventTypeCounts[eventType] = (eventTypeCounts[eventType] || 0) + 1;
+  }
+  console.log(JSON.stringify({ line_payment_observer: "batch_parsed", events_array: Array.isArray(body.events), event_count: events.length, event_type_counts: eventTypeCounts }));
+  for (const event of events) {
     const source = sourceType(event); const type = messageType(event);
     if (event?.type === "message") console.log(JSON.stringify({
       line_payment_match: "event_seen",
@@ -1027,7 +1036,12 @@ export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url); const isLineWebhook = request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname); const observerRequest = isLineWebhook ? request.clone() : null;
     const response = await currentWorker.fetch(request, env, ctx);
-    if (observerRequest && response.ok) { const work = observeSignedLineEvents(observerRequest, env).catch(() => console.log(JSON.stringify({ line_payment_ingress: "observer_failed" }))); if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work); else await work; }
+    if (observerRequest && !response.ok) console.log(JSON.stringify({ line_payment_observer: "skipped", reason: "handler_non_2xx", response_status: response.status }));
+    if (observerRequest && response.ok) {
+      console.log(JSON.stringify({ line_payment_observer: "scheduled", response_status: response.status, execution: typeof ctx?.waitUntil === "function" ? "wait_until" : "inline" }));
+      const work = observeSignedLineEvents(observerRequest, env).catch(() => console.log(JSON.stringify({ line_payment_ingress: "observer_failed" })));
+      if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work); else await work;
+    }
     return response;
   },
 };
