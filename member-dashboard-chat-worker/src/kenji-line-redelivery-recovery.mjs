@@ -251,7 +251,7 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   if (events.length === 1 && events[0]?.deliveryContext?.isRedelivery !== true && text(events[0]?.mode).toLowerCase() !== "standby") {
     let candidate = false;
     let lookupUnavailable = false;
-    try { candidate = await hasPendingDirectUserPaymentCandidate(env, events[0]); }
+    try { candidate = await hasPendingDirectUserPaymentCandidate(env, events[0], { waitForImageMs: 5000 }); }
     catch (_) { candidate = true; lookupUnavailable = true; }
     if (candidate) {
       console.log(JSON.stringify({ line_payment_route: "candidate_precedence", lookup: lookupUnavailable ? "unavailable" : "found" }));

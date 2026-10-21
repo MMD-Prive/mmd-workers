@@ -20,6 +20,9 @@ const DEFAULT_DIRECT_CANDIDATE_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_PAYMENT_CONTEXT_LOOKBACK_HOURS = 48;
 const PAYMENT_CONTEXT_RE = /(?:สลิป|หลักฐาน(?:การ)?(?:โอน|ชำระ)|โอน|จ่าย|ชำระ|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|payment(?:\s+proof)?|transfer(?:\s+(?:slip|proof|done))?|bank\s*transfer|renew(?:al)?|membership|promptpay|พร้อมเพย์)/i;
 const PAYMENT_FOLLOWUP_RE = /(?:ขอ\s*เข้า\s*กลุ่ม|เข้า\s*กลุ่ม|access|drive|เข้าแล้ว|โอน|จ่าย|ชำระ|สลิป|หลักฐาน|สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|renew(?:al)?|payment|transfer|สมาชิก|member)/i;
+const PAYMENT_EVIDENCE_FOLLOWUP_RE = /(?:โอน|จ่าย|ชำระ|สลิป|หลักฐาน|payment|transfer|promptpay|พร้อมเพย์)/i;
+const DIRECT_CANDIDATE_WAIT_MS = 5000;
+const DIRECT_CANDIDATE_POLL_MS = 500;
 const MEMBERSHIP_PAYMENT_CONTEXT_RE = /(?:สมัคร(?:สมาชิก)?|ต่อ(?:อายุ(?:สมาชิก)?|ให้|สมาชิก|เมม(?:เบอร์)?)|ค่าสมาชิก|เมมเบอร์|สมาชิก|membership|member\s*(?:fee|renewal)?|renew(?:al)?)/i;
 const BANK_DETAIL_CONTEXT_RE = /(?:คืนเงิน|โอนคืน|refund|ยกเลิก(?:งาน|รายการ)?|เลขบัญชี|บัญชี(?:สำหรับ)?(?:รับ|คืน)|ส่งบัญชี)/i;
 
@@ -927,9 +930,27 @@ async function loadDirectUserImageCandidate(env = {}, userId = "") {
   return { ...candidate, key, userHash };
 }
 
-export async function hasPendingDirectUserPaymentCandidate(env = {}, event = {}) {
+export async function hasPendingDirectUserPaymentCandidate(env = {}, event = {}, options = {}) {
   if (sourceType(event) !== "user" || messageType(event) !== "text" || !hasPaymentFollowupContext(messageText(event))) return false;
-  return Boolean(await loadDirectUserImageCandidate(env, asString(event?.source?.userId)));
+  const userId = asString(event?.source?.userId);
+  if (!userId) return false;
+  if (await loadDirectUserImageCandidate(env, userId)) return true;
+  // The signed text webhook can run before the image observer finishes its R2
+  // candidate write. Only strong payment-evidence language gets a bounded wait;
+  // generic membership/Drive messages keep their existing immediate path.
+  const requestedWaitMs = Number(options.waitForImageMs);
+  const waitMs = Number.isFinite(requestedWaitMs) ? Math.min(Math.max(requestedWaitMs, 0), DIRECT_CANDIDATE_WAIT_MS) : 0;
+  if (!waitMs || !PAYMENT_EVIDENCE_FOLLOWUP_RE.test(messageText(event)) || typeof env.LINE_SLIP_EVIDENCE?.get !== "function") return false;
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(DIRECT_CANDIDATE_POLL_MS, deadline - Date.now())));
+    if (await loadDirectUserImageCandidate(env, userId)) {
+      console.log(JSON.stringify({ line_payment_route: "candidate_wait_resolved" }));
+      return true;
+    }
+  }
+  console.log(JSON.stringify({ line_payment_route: "candidate_wait_expired" }));
+  return false;
 }
 
 function recordContextText(record = {}) { const f = record?.fields || {}; return [f.admin_note, f.intent, f.member_name, f.payload_json].map(asString).filter(Boolean).join("\n"); }
