@@ -68,12 +68,12 @@ class Element {
   setAttribute(name,value){this.attrs[name]=value;}
   scrollIntoView(){}
   remove(){this.parent.children=this.parent.children.filter(x=>x!==this);}
-  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector==='[data-field]'&&c.dataset.field?[c]:[]),...c.querySelectorAll(selector)]);}
+  querySelectorAll(selector){return this.children.flatMap(c=>[...(selector==='[data-field]'&&c.dataset.field?[c]:[]),...(selector==='[data-service-zone]'&&c.dataset.serviceZone?[c]:[]),...c.querySelectorAll(selector)]);}
   querySelector(){return this.submit || null;}
   async click(){if(!this.disabled){if(this.onclick)await this.onclick();if(this.listeners.click)await this.listeners.click();}}
 }
 function clientHarness({access={can_open:true,matching_enabled:true,verified_skills:['Sport'],availability_status:'Available',display_name:'Boss'},failure=null}={}) {
-  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
+  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));els.workspace.hidden=true;
   els['profile-form'].submit=new Element('button');
   const tabs=['offers','jobs','profile'].map(tab=>{const el=new Element('button');el.dataset.tab=tab;return el;});
@@ -83,7 +83,8 @@ function clientHarness({access={can_open:true,matching_enabled:true,verified_ski
     calls.push({url,options});let data;
     if(url.endsWith('/access'))data=access;
     else if(url.endsWith('/availability'))data={...access,availability_status:JSON.parse(options.body).availability_status};
-    else if(url.endsWith('/profile'))data={display_name:'Boss',intro:'',profile_visibility:'hidden',courses:[],photos:[]};
+    else if(url.endsWith('/profile'))data={display_name:'Boss',intro:'',profile_visibility:'hidden',service_zones:{base_service_zone_code:'BKK-PATHUMWAN',coverage_service_zone_codes:['BKK-PATHUMWAN']},courses:[],photos:[]};
+    else if(url.endsWith('/service-zones'))data={zones:[{code:'BKK-PATHUMWAN',label_th:'ปทุมวัน',province_label_th:'กรุงเทพฯ'},{code:'BKK-SILOM',label_th:'สีลม',province_label_th:'กรุงเทพฯ'}]};
     else if(url.endsWith('/offers'))data=[{jobId,state,serviceLabel:'Sport',expiresAt:new Date(Date.now()+60000).toISOString()}];
     else if(url.endsWith('/jobs'))data=state==='OFFERED'?[]:[{jobId,state,serviceLabel:'Sport'}];
     else if(/\/(accept|start|complete)$/.test(url)){
@@ -120,6 +121,19 @@ test('locked app shows approval reason without reading jobs',async()=>{
 test('availability self-service sends only the availability field',async()=>{
   const h=clientHarness();await settle();h.els.availability.value='Paused';await h.els['save-availability'].click();const call=h.calls.find(c=>c.url.endsWith('/availability'));assert.deepEqual(JSON.parse(call.options.body),{availability_status:'Paused'});assert.match(h.els.notice.textContent,/บันทึก/);
 });
+test('profile saves service area codes through the authenticated profile API',async()=>{
+  const h=clientHarness();await settle();await h.tabs[2].click();
+  assert.equal(h.els['base-zone'].value,'BKK-PATHUMWAN');
+  assert.match(h.els['zone-status'].textContent,/สูงสุด 30 เขต/);
+  h.els['base-zone'].value='BKK-SILOM';
+  const checkboxes=h.els['coverage-zones'].querySelectorAll('[data-service-zone]');
+  checkboxes.find(check=>check.dataset.serviceZone==='BKK-SILOM').checked=true;
+  await h.els['profile-form'].onsubmit({preventDefault(){}});
+  const call=h.calls.filter(item=>item.url.endsWith('/profile')&&item.options.method==='PUT').at(-1);
+  assert.deepEqual(JSON.parse(call.options.body).base_service_zone_code,'BKK-SILOM');
+  assert.deepEqual(JSON.parse(call.options.body).coverage_service_zone_codes,['BKK-PATHUMWAN','BKK-SILOM']);
+  assert.match(h.els.notice.textContent,/บันทึกโปรไฟล์และเขตบริการ/);
+});
 
 
 test('LIFF callbacks at the registered endpoint use native login while public visits keep marketing', async () => {
@@ -131,7 +145,7 @@ test('LIFF callbacks at the registered endpoint use native login while public vi
   }
 });
 function loginHarness({url=origin+path+'/login?invite=test-invite', saved=null, loggedIn=true, token='valid-token', error=null, unavailableStorage=false}={}) {
-  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
+  const ids=['notice','entry','workspace','line-login','greeting','readiness','availability','save-availability','refresh','retry','offers','jobs','profile','offer-list','job-list','profile-form','display-name','intro','base-zone','coverage-zones','zone-status','visibility','courses','photos','upload','save-photos','add-course','logout','detail'];
   const els=Object.fromEntries(ids.map(id=>[id,new Element()]));
   const data=new Map(saved||[]), requests=[], redirects=[];let logouts=0;
   const parsed=new URL(url);
