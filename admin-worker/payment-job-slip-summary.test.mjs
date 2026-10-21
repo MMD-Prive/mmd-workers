@@ -37,6 +37,14 @@ const proof = (id, amount, p, stage = "deposit") => ({
 });
 function fixture(payments = [], proofs = [], sessions = [session]) {
   const calls = [];
+  const linkedSessions = sessions.map((row) => ({
+    ...row,
+    fields: {
+      ...row.fields,
+      "MMD — Payment Proofs": row.fields["MMD — Payment Proofs"] ??
+        proofs.filter((p) => p.fields.session?.includes(row.id)).map((p) => p.id),
+    },
+  }));
   return {
     calls,
     deps: {
@@ -45,11 +53,45 @@ function fixture(payments = [], proofs = [], sessions = [session]) {
       proofsTable: "proofs",
       page: async (table, params) => {
         calls.push({ table, params });
-        return { records: { sessions, payments, proofs }[table] };
+        return { records: { sessions: linkedSessions, payments, proofs }[table] };
       },
     },
   };
 }
+test("a job with two linked slips is readable even when unrelated pending proofs exceed the global cap", async () => {
+  const first = proof("first", 3000), second = proof("second", 2000);
+  const f = fixture([], [first, second]);
+  const page = f.deps.page;
+  f.deps.page = async (table, params) => {
+    if (table === "proofs" && params.filterByFormula.includes("{status}")) {
+      return { records: Array(1000).fill({ id: "unrelated" }), offset: "more" };
+    }
+    return page(table, params);
+  };
+  const s = await read(sid, f.deps);
+  assert.equal(s.pending_complete, true);
+  assert.equal(s.pending_amount_thb, 5000);
+  assert.equal(s.pending_proof_count, 2);
+  assert(f.calls.filter(({ table }) => table === "proofs").every(({ params }) =>
+    !params.filterByFormula.includes("{status}")));
+});
+test("a missing Session proof backlink fails closed instead of understating pending money", async () => {
+  const f = fixture([], [proof("missing", 2000)]);
+  const page = f.deps.page;
+  f.deps.page = (table, params) =>
+    table === "proofs" && params.filterByFormula.includes("RECORD_ID()")
+      ? { records: [] }
+      : page(table, params);
+  await assert.rejects(read(sid, f.deps), /summary_proof_backlinks_incomplete/);
+});
+test("a display label cannot stand in for Session proof record IDs", async () => {
+  const job = structuredClone(session);
+  job.fields["MMD — Payment Proofs"] = "display label";
+  await assert.rejects(
+    read(sid, fixture([], [], [job]).deps),
+    /summary_proof_backlinks_invalid/,
+  );
+});
 test("two pending slips are advisory only; partial and fully verified states use the ledger", async () => {
   for (const [v1, v2, paid, pending, due] of [
     [false, false, 0, 5000, 5000],

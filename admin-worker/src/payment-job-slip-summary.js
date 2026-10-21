@@ -107,17 +107,18 @@ export async function paymentJobSlipSummary(
     env,
   );
   const refs = balance.records.map((p) => p.ref);
+  const backlinks = fields["MMD — Payment Proofs"];
+  if (backlinks !== undefined && !Array.isArray(backlinks))
+    fail("summary_proof_backlinks_invalid");
+  const linkedIds = ids(backlinks);
+  const linkedProofs = await exactRows(list, proofsTable, "RECORD_ID()", linkedIds);
+  const foundIds = new Set(linkedProofs.map((proof) => proof.id));
+  if (linkedIds.some((id) => !foundIds.has(id)))
+    fail("summary_proof_backlinks_incomplete");
   const proofs = [
-    // Payment Proofs has a Session link, not a session_id column. Follow the
-    // Session's actual proof record IDs; linked-record formula text is a label.
-    ...(await exactRows(list, proofsTable, "RECORD_ID()", ids(fields["MMD — Payment Proofs"]))),
-    // Linked-record formula values can be display names, not record IDs. Read
-    // the bounded complete pending set, then match actual links below.
-    ...(await list(proofsTable, {
-      filterByFormula: `OR({status}='',${[...pending].map((state) => `{status}='${state}'`).join(",")})`,
-      maxRecords: 1000,
-      requireComplete: true,
-    })),
+    // Airtable keeps the Session's reciprocal proof links. Read every linked
+    // record by ID, and fail closed if any link disappears during the read.
+    ...linkedProofs,
     ...(await exactRows(list, proofsTable, "payment_ref", refs)),
   ];
   const verifiedHashes = new Set(
