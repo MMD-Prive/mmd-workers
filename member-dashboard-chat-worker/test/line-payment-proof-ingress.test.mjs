@@ -797,6 +797,80 @@ test("candidate lookup failure routes payment follow-up to fail-closed evidence 
   assert.equal(logs.join("\n").includes("U-private-unavailable"), false);
 });
 
+test("payment follow-up waits for an image candidate still being persisted", async () => {
+  const r2 = memoryR2();
+  const get = r2.get.bind(r2);
+  let releaseFirstRead;
+  const firstRead = new Promise((resolve) => { releaseFirstRead = resolve; });
+  let reads = 0;
+  r2.get = async (key) => {
+    const candidate = await get(key);
+    if (++reads === 1) releaseFirstRead();
+    return candidate;
+  };
+  const env = {
+    LINE_CHANNEL_SECRET: "line-secret",
+    LINE_SLIP_EVIDENCE: r2,
+    LINE_AUTO_REPLY_ENABLED: "false",
+    PAYMENTS_WORKER: { async fetch() { throw new Error("must_not_settle"); } },
+  };
+  const userId = "U-private-race";
+  const textEvent = {
+    type: "message", mode: "active", replyToken: "reply-race",
+    source: { type: "user", userId },
+    message: { type: "text", id: "msg-race", text: "โอนแล้ว ทดสอบระบบ LINE OFC" },
+  };
+  const body = JSON.stringify({ events: [textEvent] });
+  const signature = await lineSignature(body, env.LINE_CHANNEL_SECRET);
+  const logs = [];
+  const originalLog = console.log;
+  let legacyCalls = 0;
+  console.log = (line) => logs.push(String(line));
+  try {
+    const pending = handleKenjiSeedLineRequestWithRedeliveryRecovery(new Request("https://mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body,
+    }), env, null, { async fetch(_request, scopedEnv) {
+      legacyCalls += 1;
+      assert.equal(scopedEnv.LINE_AUTO_REPLY_ENABLED, "false");
+      return Response.json({ ok: true });
+    } });
+    await firstRead;
+    assert.equal(legacyCalls, 0, "no intake or acknowledgement before the image candidate exists");
+    await captureDirectUserImageEvidence(env, {
+      type: "message", timestamp: Date.now(), webhookEventId: "evt-race-image",
+      source: { type: "user", userId }, message: { type: "image", id: "img-race" },
+    }, { recentPaymentContext: false });
+    assert.equal((await pending).status, 200);
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(legacyCalls, 1);
+  assert.ok(reads >= 2);
+  assert.deepEqual(logs.map((line) => JSON.parse(line)), [
+    { line_payment_route: "candidate_wait_resolved" },
+    { line_payment_route: "candidate_precedence", lookup: "found" },
+  ]);
+  for (const privateValue of [userId, "msg-race", "reply-race", "โอนแล้ว", signature]) assert.equal(logs.join("\n").includes(privateValue), false);
+});
+
+test("candidate wait expires without fabricating payment evidence", async () => {
+  const logs = [];
+  const originalLog = console.log;
+  let reads = 0;
+  const env = { LINE_SLIP_EVIDENCE: { async get() { reads += 1; return null; } } };
+  const event = { type: "message", source: { type: "user", userId: "U-private-expiry" }, message: { type: "text", text: "โอนแล้ว" } };
+  console.log = (line) => logs.push(String(line));
+  try {
+    assert.equal(await hasPendingDirectUserPaymentCandidate(env, event, { waitForImageMs: 15 }), false);
+    assert.equal(await hasPendingDirectUserPaymentCandidate(env, { ...event, message: { type: "text", text: "ขอเข้า Drive" } }, { waitForImageMs: 5000 }), false);
+  } finally {
+    console.log = originalLog;
+  }
+  assert.ok(reads >= 2);
+  assert.deepEqual(logs.map((line) => JSON.parse(line)), [{ line_payment_route: "candidate_wait_expired" }]);
+  assert.equal(logs.join("\n").includes("U-private-expiry"), false);
+});
+
 test("invalid signature cannot use the candidate-precedence route", async () => {
   const r2 = memoryR2();
   const env = { LINE_CHANNEL_SECRET: "line-secret", LINE_SLIP_EVIDENCE: r2 };
