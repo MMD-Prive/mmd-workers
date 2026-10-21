@@ -563,6 +563,11 @@ jobs:
               grep -qi '^x-mmd-ui-source: mms-native-workspace-v1' "$RUNNER_TEMP/therapist-ui.headers"
               grep -qi '^cache-control: .*no-store' "$RUNNER_TEMP/therapist-ui.headers"
             done
+            logo_url="https://${host}/male-massage/therapists/assets/male-massage-ai.4ed6770759e9.png"
+            logo_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error -D "$RUNNER_TEMP/therapist-logo.headers" -o "$RUNNER_TEMP/therapist-logo.png" -w '%{http_code}' "$logo_url")"
+            test "$logo_code" = '200'
+            grep -qi '^content-type: image/png' "$RUNNER_TEMP/therapist-logo.headers"
+            test "$(sha256sum "$RUNNER_TEMP/therapist-logo.png" | cut -d ' ' -f 1)" = '4ed6770759e92887e9c6c8eec7941ccb28fa58dd332fe44fea1e06511a9fb5b6'
             code="$(curl --silent --show-error -D "$RUNNER_TEMP/therapist-access.headers" -o "$RUNNER_TEMP/therapist-access.json" -w '%{http_code}' "https://${host}/male-massage/therapists/api/app/access")"
             test "$code" = '401'
             node -e 'const fs=require("node:fs");const b=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/therapist-access.json","utf8"));if(b.ok!==false||b.error?.code!=="THERAPIST_SESSION_REQUIRED")process.exit(1)'
