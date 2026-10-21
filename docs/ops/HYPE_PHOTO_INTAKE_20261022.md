@@ -14,7 +14,7 @@ private; the sender uploads approved image bytes to Telegram, not a public Drive
 | Inbox: MMD HYPE — วางรูปให้ทำ | `1H_P5W1OzXUYdOkwmfaS_syDgAog0gNQ3` |
 | READY: finished cards eligible for verification and queuing | `1CPnNgAY2sKRyh5u0nfr9WpexFV6A_HT6` |
 | SENT: cards with verified Premium and Standard delivery receipts | `1tEqGSDCNX-WcoEBg7P5ed8wlrAmVY8Go` |
-| NEEDS INFO: ambiguous identity, facts, source or quality | `1j_E8XsHv-yKbNEuj8GNWimG2f2KnUEqB` |
+| NEEDS INFO: prepared drafts awaiting a canonical link/facts, or items needing clarification | `1j_E8XsHv-yKbNEuj8GNWimG2f2KnUEqB` |
 
 The recurring processing task checks new Inbox and READY files at **13:00
 Asia/Bangkok** and prepares **up to two new Standard cards per day**. This is a
@@ -28,30 +28,65 @@ this workflow. Ask only about a concrete unresolved identity, factual conflict,
 new creative instruction or capability/access blocker. Existing Studio draft
 review and production gates remain authoritative.
 
+## What the owner supplies
+
+**Original photo filenames can stay exactly as they are.** They do not have to
+match a folder, a model name or an Airtable record. Use one immediate subfolder
+of Inbox per model, with a recognizable name and a `PROFILE.txt`, `PROFILE.md` or
+equivalent owner brief beside the photos. The folder associates those files with
+the brief; it is not proof of canonical registration. Photos already placed directly in
+Inbox remain usable when an owner brief clearly identifies which files belong
+to which model.
+
+The minimum brief for a complete draft is:
+
+```text
+ชื่อที่จะใช้บนการ์ด: <ชื่อที่เจ้าของหรือนายแบบระบุ>
+ส่วนสูง (ซม.): <ตัวเลขที่แจ้ง>
+น้ำหนัก (กก.): <ตัวเลขที่แจ้ง>
+ประเภทขาย: Standard
+```
+
+An owner message containing these facts is also acceptable; a new text file is
+not compulsory if the association is already clear. Gender is optional, accepted
+only when supplied by the owner/model, and is never inferred from a photo or
+automatically printed/published. Missing gender does not block the workflow.
+Commercial tier is separate from gender and must not be inferred from appearance.
+
+Owner-supplied facts are sufficient to **prepare artwork before Airtable is
+populated**. Registration and sending still require one linked live canonical
+record and verification of the required factual fields. This workflow does not
+create or edit Airtable records automatically. It does not add a separate
+application or identity-verification process; it checks the specific canonical
+link, facts, status, tier and visibility already required for publication.
+
 ## Process one source
 
-1. List Inbox and READY using Drive metadata. Inspect only new eligible image
-   files. Do not treat nested folders or documents as source images.
+1. List Inbox and its immediate model subfolders, **one folder level only**.
+   Skip the exact READY, SENT and NEEDS INFO folder IDs during raw-source
+   traversal; inspect them separately for queue/recovery state. Read a model
+   subfolder's `PROFILE.txt`/`PROFILE.md`/owner brief and its images together. Do
+   not recurse farther, treat a brief as an image, or mix different models' photos. Keep all
+   original image names, IDs and folder associations intact. Respect connector
+   pagination; report a partial scan rather than claiming all files were checked.
 2. Read the private intake registry first. If any existing entry has this
    `review.source_file_id`, including a historical nonselectable entry, do not
-   generate the same source again. Also check READY and SENT for an already
-   prepared output from that source before spending on image generation. For a
-   newly generated output, put the exact canonical Model record ID, original
-   Drive file ID and original-byte SHA-256 in its upload filename:
-   `HYPE--{model_id}--src-{source_file_id}--sha-{source_sha256}.png` (or `.jpg`).
-   This filename is recovery provenance, not evidence of identity or approval;
-   independently verify those facts below. Preserve existing Studio export
-   filenames and use their actual Drive IDs as source references. Changed bytes
-   under a previously processed source ID need review; do not silently turn a
-   retry into a new creative revision. Do not rely on Drive description edits:
-   the connected update action does not support that field.
-3. Resolve the model from an exact canonical name/record ID in the filename or
-   owner brief, then read live Airtable **appsV1ILPRfIjkaYg / Models
-   (tblI4B0bI446vp9GX)**. Match exactly one active Standard record and confirm
-   `working_name`, height, weight, private tier and client visibility. Do not
-   identify a person by their face, guess a model ID, invent measurements or infer
-   Standard status from appearance. Put unresolved items in NEEDS INFO with a
-   short explanation of what is missing.
+   generate the same source again. Also check READY, SENT and NEEDS INFO for an
+   existing prepared result before spending on image generation. For each model,
+   select one primary photo from the associated images and record any additional
+   references; do not make one competing card per photo. Compare the original
+   source digest and the saved brief digest on retries. A changed source or brief
+   requires reconciliation of the existing draft, not an automatic duplicate.
+   Do not rely on Drive description edits: the connected update action does not
+   support that field.
+3. Use the owner/model-supplied name, height, weight and commercial tier for draft
+   preparation. Check live Airtable **appsV1ILPRfIjkaYg / Models
+   (tblI4B0bI446vp9GX)** for an exact canonical match when available. No match does
+   **not** prevent preparing the draft from a complete brief. An ambiguous match
+   must not be guessed. Do not identify a person by their face, invent a record
+   ID or measurements, or automatically copy brief facts into Airtable. If a
+   required brief fact is missing, ask for that specific fact rather than asking
+   the owner to rename photos or complete the whole database first.
 4. Inspect the original image. For an already finished Studio export, retain its
    exact bytes after quality review; do not regenerate it. An export placed in
    READY is usable only after its required Studio review. A Studio
@@ -59,29 +94,54 @@ review and production gates remain authoritative.
    Studio pilot or alter `MODEL_CARD_AUTO_ENABLED` as an intake shortcut.
 5. For a raw photo, use the supported image-editing tool and the approved card
    template. Preserve the real Standard model's identity. Produce a **1322 × 1200**
-   PNG/JPEG with the model on the left, canonical name and large measurement
+   PNG/JPEG with the model on the left, the supplied name and large measurement
    numbers on the right, and the approved frame/logo. Use public **MMD PRIVÉ** or
-   private **SIGIL** branding according to canonical classification; the current
-   Standard intake follows the private classification. Show measurements as
+   private **SIGIL** branding according to the supplied commercial classification,
+   checked against canonical data when linked; the current Standard intake follows
+   the private classification. Show measurements as
    `178 / 65`, with no `cm`, `kg`, `HEIGHT`, `WEIGHT` or tier/category label printed
    on the card. Do not substitute a fictional model or invent a replacement logo.
-6. Open the final file and review likeness, canonical text, exact measurements,
+6. Open the final file and review likeness, supplied text, exact measurements,
    logo, layout, legibility and image quality. Confirm suitability for the two
    customer rooms. The metadata booleans below are attestations of work actually
-   performed; preparing JSON is not visual review.
-7. Save the finished image to READY and read its metadata back. Use the resulting
-   actual Drive file ID as `file_id`. Preserve the original Inbox/Studio source ID
-   as `review.source_file_id`. Keep the provenance filename when moving a newly
-   generated card between these private folders. Reuse a completed READY output
-   on retries; the registry's source ID remains the authoritative processed-source
-   record after queuing. Source-image SHA-256 in the filename and finished-card
-   `sha256` in the registry are separate digests and must not be substituted.
-8. Prepare the local asset/entry JSON, upload and read back the private asset,
-   then merge the entry into the latest registry as described below. Stop if the
-   registry changed concurrently; reread and merge rather than overwriting.
+   performed; preparing JSON is not visual review. Reviewing owner-supplied facts
+   does not establish that the same facts have been verified in Airtable.
+7. When no unique canonical record is linked, save the actual finished draft in
+   NEEDS INFO with status **prepared-awaiting-link**. When linked but required
+   canonical name/height/weight/tier facts are missing or conflict, use
+   **prepared-awaiting-facts**. Keep a private JSON preparation note beside the
+   draft containing the actual draft file ID, source folder/file ID, original
+   image SHA-256, supplied brief file ID plus SHA-256 of its retrieved UTF-8 text,
+   and the exact unresolved fields. For a brief supplied in chat, retain its
+   supplied text and digest with `brief_file_id:null`; do not invent a Drive ID.
+   Record additional reference image IDs/digests if used. This note is recovery
+   state, not a registry entry or publication approval. A draft name such as
+   `DRAFT--src-{source_file_id}--sha-{source_sha256}.png` needs no model record ID.
+   Leave originals and the profile brief in the model folder; only the generated
+   draft and its preparation note belong in NEEDS INFO. Reuse them on subsequent runs.
+8. Before queuing, match exactly one live canonical Standard record and verify
+   `working_name`, height, weight, active status, private tier and client visibility.
+   Reconcile the artwork against those verified facts. If any required canonical
+   fact remains missing, keep the prepared draft unqueued. Never set
+   `canonical_facts_verified:true` merely because an owner brief supplied a value.
+   Do not fabricate an ID, create a record or relax runtime checks to clear a hold.
+   Missing gender is not a hold. This runbook does not enable sending without
+   Airtable; the owner brief enables preparation while the canonical link/facts
+   are resolved separately.
+9. Save or move only the fully verified finished output to READY and read its
+   metadata back. Use that actual Drive file ID as `file_id` and preserve the
+   original source ID as `review.source_file_id`. The registry's source ID is the
+   authoritative processed-source record after queuing. Source-image SHA-256 in
+   the preparation note and finished-card `sha256` in the registry are separate
+   digests. A finished export already in READY still needs these checks; folder
+   membership alone is not a queued or sent status.
+10. Prepare the local asset/entry JSON, upload and read back the private asset,
+    then merge the entry into the latest registry as described below. Stop if the
+    registry changed concurrently; reread and merge rather than overwriting.
 
 If a tool, image editor, brand asset or source download is unavailable, report
-the specific blocked item. Do not mark it prepared, queued or sent.
+the specific blocked item. Report a completed unqueued draft as prepared and
+state its actual remaining link/facts; do not call it queued or sent.
 
 ## Local preparation helper
 
@@ -90,6 +150,10 @@ verified metadata. It computes MIME, dimensions, size and SHA-256 from the bytes
 and writes `asset.json` and `entry.json` with owner-only file permissions. It
 does not render, regenerate, upload, access Airtable or send Telegram messages.
 It checks image container/header structure; visual review remains required.
+This helper prepares **verified publication metadata**, not the earlier
+owner-brief draft. It cannot represent `prepared-awaiting-link` or
+`prepared-awaiting-facts`; keep those drafts out of this helper and the registry
+until the real canonical ID and required facts have been verified.
 
 ```sh
 node scripts/hype-prepare-intake.mjs \
@@ -212,9 +276,12 @@ not completion. Keep uncertain items in READY, record the concrete status and
 do not retry them through another path. A `duplicate:true` receipt refers to the
 existing delivery; it is not a new send.
 
-Report distinct counts for examined, prepared, queued, blocked and verified
-delivered items. An empty day is normal; do not make filler cards or substitute
-Promotion to consume an unused Standard slot.
+Report distinct counts for examined, **prepared-awaiting-link**,
+**prepared-awaiting-facts**, **queued**, blocked-without-a-draft and verified
+delivered items. State the exact missing link or fields. An owner-brief draft is
+real completed artwork, but it is not evidence that no-Airtable sending works.
+An empty day is normal; do not make filler cards or substitute Promotion to
+consume an unused Standard slot.
 
 ## Local verification
 
