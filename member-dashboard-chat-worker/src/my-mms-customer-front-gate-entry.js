@@ -24,6 +24,7 @@ export function isTherapistOriginPassthroughRequest(request) {
   if (!path.startsWith(prefix)) return false;
   if ([prefix, `${prefix}/login`, `${prefix}/me`, `${prefix}/app`, THERAPIST_AI_LOGO_PATH].includes(path)) return false;
   if (path.startsWith(`${prefix}/api/auth/`) || path.startsWith(`${prefix}/api/app/`)) return false;
+  if (path === `${prefix}/app/chat`) return false;
   return true;
 }
 
