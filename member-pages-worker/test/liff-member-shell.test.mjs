@@ -1396,3 +1396,21 @@ test('welcome reads accept the current backend authority for returning copy with
   payload = {ok:false};
   assert.equal(await context.readWelcomeContext(),false);
 });
+
+
+test('V6 already-failed logo stays neutral even when error preceded initialization', () => {
+  const panels = ['neutral','public','private'].map(name => ({hidden:name!=='neutral',getAttribute:()=>name,querySelector:()=>name==='neutral'?null:{complete:true,naturalWidth:name==='public'?0:350,addEventListener(){}}}));
+  const root = {dataset:{},ownerDocument:{body:{dataset:{}}},querySelectorAll:()=>panels};
+  const brand = createCustomerBrand(root);
+  assert.equal(brand.render('public'),'unresolved');
+  assert.deepEqual(panels.map(p=>p.hidden),[false,true,true]);
+  assert.equal(brand.render('private'),'private');
+  assert.equal(root.ownerDocument.body.dataset.brandAudience,'private');
+});
+
+test('V6 Public overrides the existing cream foreground used by request and CARE controls', () => {
+  const publicRule = CUSTOMER_V6_CSS.split('\n').find(rule=>rule.includes('[data-brand-audience="public"]:not(.signup-mode){'));
+  assert.ok(publicRule);
+  assert.match(publicRule,/--digital-cream:#171b1d;/);
+  assert.match(publicRule,/--digital-surface:#fffefa;/);
+});
