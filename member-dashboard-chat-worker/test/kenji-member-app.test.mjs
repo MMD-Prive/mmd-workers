@@ -70,3 +70,13 @@ test("member chat BFF resolves verified session truth before calling AI_WORKER",
   assert.equal(calls[1].body.context_bundle.identity.source, "verified_member_session");
   assert.equal(calls[1].body.member_truth.points.active_points, 12);
 });
+
+test('Personal Main comes only from server truth, never a browser persona hint', async()=>{
+ for(const id of ['hito','hiei','hiro','hima']){
+  const response=await handleKenjiMemberChat(new Request('https://mmdbkk.com/api/member/kenji/chat',{method:'POST',headers:{origin:'https://mmdbkk.com','content-type':'application/json'},body:JSON.stringify({message:'สวัสดี',personal_main:'forged'})}),{
+   MEMBER_PAGES_WORKER:{fetch:async()=>Response.json({ok:true,personal_main:{id,source:'member-pages-worker'}})},
+   AI_WORKER:{fetch:async()=>Response.json({ok:true,data:{schema_version:'mmd.kenji_member_chat.v1',reply:'ข้อมูลที่ยืนยันแล้ว',intent:'general'}})}
+  });
+  const data=await response.json();assert.equal(data.personal_main.id,id);assert.match(data.reply,/ข้อมูลที่ยืนยันแล้ว/);assert.doesNotMatch(data.reply,/forged/);
+ }
+});

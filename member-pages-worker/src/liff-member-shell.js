@@ -1,3 +1,4 @@
+import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
@@ -291,6 +292,7 @@ function renderShell(config, nonce) {
   ${MY_MMD_LIFF_COMPACT_V4_CSS}
   ${CUSTOMER_GRAPHICS_CSS}
   ${CUSTOMER_V6_CSS}
+${PERSONAL_MAIN_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
@@ -359,6 +361,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         <small id="minimal-member-diag" class="label" hidden></small>
       </div>
     </details>
+    ${renderPersonalMain()}
     <section id="digital-companion" class="digital-design-slot" aria-label="Your Companion" hidden><span class="digital-eyebrow">FOR YOU · YOUR COMPANION</span><strong id="digital-companion-name"></strong><p id="digital-companion-note"></p></section>
     <div class="digital-needs" id="digital-needs" hidden><div><b>NEEDS YOU</b><span id="digital-needs-label"></span></div><button id="digital-needs-action" type="button">ดูขั้นตอน ↗</button></div>
     <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>${customerGraphic("current-booking")}
@@ -376,7 +379,6 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     </details>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
     <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>${customerIcon("icon-profile")}</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
-    <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji">เปิด Kenji ↗</a></div></section>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
       <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
@@ -460,7 +462,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     </section>
     </div>
   </section>
-  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>${customerIcon("icon-home")}</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>${customerIcon("icon-history")}</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>${customerIcon("icon-lock")}</i>WALLET</button><a href="/member/kenji"><i>✦</i>KENJI</a></nav>
+  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>${customerIcon("icon-home")}</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>${customerIcon("icon-history")}</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>${customerIcon("icon-lock")}</i>WALLET</button><button type="button" data-view="home" data-pm-dock><i>✦</i>ผู้ช่วย</button></nav>
   <div id="status" class="status">MY MMD</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
@@ -481,6 +483,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
   const resetCustomerBrand = () => customerBrand.reset();
+  const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
@@ -737,7 +740,11 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
   showView(initialView, false);
   for (const button of document.querySelectorAll("[data-view]")) {
-    button.addEventListener("click", () => showView(button.getAttribute("data-view")));
+    button.addEventListener("click", () => {
+      const assistant = button.hasAttribute("data-pm-dock");
+      showView(button.getAttribute("data-view"), !assistant);
+      if (assistant) personalMainUI.open();
+    });
   }
 
   function show(text) {
@@ -1085,6 +1092,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   function hideMemberProfile() {
+    personalMainUI.reset();
     resetCustomerBrand();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
@@ -1131,6 +1139,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       }
       renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-brand-authority") || "");
       renderCustomerContact(payload.data || {});
+      void personalMainUI.load();
       void readQuickMembershipStatus(generation);
       void readOwnHistoryPreview(generation);
       if (hydrate) await hydrateMemberHome();

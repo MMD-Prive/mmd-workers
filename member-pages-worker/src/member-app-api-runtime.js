@@ -211,6 +211,7 @@ export async function readMemberAppSession(request, env = {}) {
   return {
     lineUserId: state.lineUserId,
     memberExists: state.session.member_exists === true,
+    readGraceOnly: state.session.read_grace_only === true,
     memberId: asString(state.session.member_id, 160) || null,
     memberProfile: asObject(state.session.member_profile),
     paymentSnapshot: paymentSnapshotFromSession(state.session),

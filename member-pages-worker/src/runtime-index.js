@@ -1,3 +1,4 @@
+import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
 import { isMemberAttentionRequest, handleMemberAttention } from "./member-attention.js";
 import { isMemberUpdatesRequest, handleMemberUpdates } from "./member-updates.js";
 import { handleMemberProfiles, isMemberProfilesRequest } from "./member-profiles.js";
@@ -104,6 +105,7 @@ export function normalizeCareBackWebViewOrigin(request) {
 
 const worker = {
   async fetch(request, env, ctx) {
+    if (isPersonalMainRequest(request)) return handlePersonalMain(request, env, readMemberAppSession);
     if (isMemberAttentionRequest(request)) return handleMemberAttention(request, env);
     if (isMemberUpdatesRequest(request)) return handleMemberUpdates(request, env, readMemberAppSession);
     if (isMemberProfilesRequest(request)) return handleMemberProfiles(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });

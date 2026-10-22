@@ -16,6 +16,7 @@ function setup(membership, profileResponse) {
   const calls = [];
   const context = vm.createContext({setTimeout,clearTimeout,AbortController,Response,Uint8Array,
     fetch: async path => { calls.push(path); return path === "/api/member/app/membership" ? Response.json(membership) : path === "/api/member/app/history/preview" ? Response.json({ok:false}, {status:404}) : profileResponse; },
+    personalMainUI: { load() {}, reset() {} },
     CONFIG: { profileEndpoint: "/member/api/liff/profile" },
     document: { getElementById: id => nodes[id] },
     safeDate: value => value || "", shortDate: value => value,

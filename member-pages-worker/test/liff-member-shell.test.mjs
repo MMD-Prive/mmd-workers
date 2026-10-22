@@ -230,7 +230,7 @@ describe("same-site /member/liff shell", () => {
     const result = await runInNewContext(html.slice(start, end) + "readProfile({ hydrate: false })", {
       CONFIG: { profileEndpoint: "/member/api/liff/profile" },
       profileGeneration: 0,
-      hideMemberProfile() {},
+      hideMemberProfile() {}, personalMainUI:{load(){},reset(){}},
       memberApiFetch(url) { calls.push(url); return Promise.resolve(Response.json({ ok: true, data })); },
       readQuickMembershipStatus() { calls.push("membership"); },
       readOwnHistoryPreview() { calls.push("history"); },
@@ -251,7 +251,7 @@ describe("same-site /member/liff shell", () => {
     const appStatus = { dataset:{} };
     const messages = [];
     const context = {
-      resetCustomerBrand(){},
+      resetCustomerBrand(){}, personalMainUI:{load(){},reset(){}},
       CONFIG:{profileEndpoint:"/member/api/liff/profile"}, profile, appStatus,
       profileGeneration:0, profileReady:true, secondaryReads:new Map(),
       digitalPersonalizedFeed:[{title:"old client"}], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
@@ -296,7 +296,7 @@ describe("same-site /member/liff shell", () => {
     };
     const pending = [], rendered = [];
     const context = {
-      resetCustomerBrand(){},
+      resetCustomerBrand(){}, personalMainUI:{load(){},reset(){}},
       document:{getElementById:node}, profile:node("profile"), profileReady:true,
       secondaryReads:new Map(), digitalPersonalizedFeed:[], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
       locale:"th", location:{search:""}, URLSearchParams, encodeURIComponent,
@@ -589,7 +589,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /<p class="digital-eyebrow">MMD TODAY<\/p>/);
     assert.match(html, /<details class="digital-news-disclosure" id="digital-news-disclosure">/);
     assert.match(html, /<summary class="digital-news-summary">/);
-    assert.match(html, /href="\/member\/kenji"/);
+    assert.match(html, /data-view="home" data-pm-dock/);
     assert.doesNotMatch(html, /href="\/member\/kenji-ai-20"/);
     assert.match(html, /let digitalPersonalizedFeed = \[\]/);
     assert.match(html, /homeFeed\.authority === "member_app_dashboard_v1"/);
@@ -611,8 +611,8 @@ describe("same-site /member/liff shell", () => {
     const missionIndex = html.indexOf("MMD MISSION", todayIndex);
     const rotationIndex = html.indexOf("MMD NOW", missionIndex);
     const quickIndex = html.indexOf("QUICK ACCESS", rotationIndex);
-    const kenjiIndex = html.indexOf('class="digital-kenji"', quickIndex);
-    assert.ok(todayIndex >= 0 && missionIndex > todayIndex && rotationIndex > missionIndex && quickIndex > rotationIndex && kenjiIndex > quickIndex);
+    const personalMainIndex = html.indexOf('id="personal-main"');
+    assert.ok(todayIndex >= 0 && missionIndex > todayIndex && rotationIndex > missionIndex && quickIndex > rotationIndex && personalMainIndex > todayIndex && personalMainIndex < missionIndex);
   });
 
   it("orders MMD NOW updates as MMD UPDATE before EDITORIAL, keeping API order within each group", async () => {
@@ -1333,7 +1333,7 @@ test('V6 unresolved -> public -> reset -> private -> error never leaves another 
 
 test('V6 production does not infer brand identity from tier/world/query and requires Worker brand authority',async()=>{
  const html=await(await shell('/member/liff?intent=status&world=private&audience=private')).text();
- assert.match(html,/data-brand-audience="unresolved"/);assert.match(html,/function applyWorldTheme\([^]*?resetCustomerBrand\(\)/);assert.match(html,/function hideMemberProfile\(\) \{\s+resetCustomerBrand\(\)/);
+ assert.match(html,/data-brand-audience="unresolved"/);assert.match(html,/function applyWorldTheme\([^]*?resetCustomerBrand\(\)/);assert.match(html,/function hideMemberProfile\(\) \{\s+personalMainUI\.reset\(\);\s+resetCustomerBrand\(\)/);
  assert.match(html,/customerBrand\.render\(resolveVerifiedCustomerBrand\(data, brandAuthority\)\)/);assert.doesNotMatch(createCustomerBrand.toString(),/tier|membership|location|fetch|cookie|localStorage|sessionStorage/);
  const markup=renderCustomerBrand();assert.match(markup,/data-brand-panel="public" hidden/);assert.match(markup,/data-brand-panel="private" hidden/);assert.match(markup,/Discreet by desire,<br>Elegance by choice\./);
 });
@@ -1449,10 +1449,19 @@ test('profile reads pass the dedicated Worker brand authority to rendering', asy
   let received;
   const data={member_id:'recMemberA',brand_audience:'sigil'};
   await runInNewContext(html.slice(start,end)+'readProfile({hydrate:false})',{
-    CONFIG:{profileEndpoint:'/member/api/liff/profile'},profileGeneration:0,hideMemberProfile(){},
+    CONFIG:{profileEndpoint:'/member/api/liff/profile'},profileGeneration:0,hideMemberProfile(){},personalMainUI:{load(){},reset(){}},
     memberApiFetch:async()=>Response.json({ok:true,data},{headers:{'x-mmd-brand-authority':'canonical_member_account_v1'}}),
     renderProfile(...args){received=args;},renderCustomerContact(){},readQuickMembershipStatus(){},readOwnHistoryPreview(){},hydrateMemberHome(){},Promise
   });
   assert.equal(received[2],'canonical_member_account_v1');
   assert.equal(resolveVerifiedCustomerBrand(received[0],received[2]),'private');
+});
+
+test('assistant dock activates Home before opening and scrolling to Personal Main',async()=>{
+ const html=await(await shell('/member/liff')).text();
+ const start=html.indexOf('for (const button of document.querySelectorAll("[data-view]"))');
+ const end=html.indexOf('\n\n  function show(text)',start);
+ let click;const calls=[];
+ runInNewContext(html.slice(start,end),{document:{querySelectorAll:()=>[{addEventListener:(_,handler)=>{click=handler;},hasAttribute:()=>true,getAttribute:()=> 'home'}]},showView:(...args)=>calls.push(args),personalMainUI:{open:()=>calls.push('open')}});
+ click();assert.deepEqual(calls,[['home',false],'open']);
 });

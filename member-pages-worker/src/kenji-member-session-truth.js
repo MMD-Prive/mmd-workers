@@ -1,3 +1,4 @@
+import {readPersonalMain} from "./member-personal-main.js";
 import { readMemberAppSession } from "./member-app-api-runtime.js";
 import { handleKenjiLineMemberTruth } from "./kenji-line-member-truth.js";
 
@@ -51,7 +52,13 @@ export async function handleKenjiMemberSessionTruth(request, env = {}) {
     },
     body: JSON.stringify({ line_user_id: session.lineUserId }),
   });
-  return handleKenjiLineMemberTruth(truthRequest, env);
+  const response = await handleKenjiLineMemberTruth(truthRequest, env);
+  if (!response.ok) return response;
+  try {
+    const payload = await response.json();
+    const selected = await readPersonalMain(env, session);
+    return json({...payload, personal_main: selected ? {id:selected.id, source:"member-pages-worker"} : null});
+  } catch { return json({ok:false,error:"preference_unavailable"},503); }
 }
 
 export const KENJI_MEMBER_SESSION_TRUTH_PATH = PATH;
