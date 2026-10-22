@@ -23,10 +23,24 @@ test("MY MMS dispatch owns the confirmed Therapist offer/job API surface", async
     "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})",
     "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})\\/start",
     "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})\\/complete",
+    "api\\/app\\/jobs\\/(mmsjob_[a-f0-9]{24})\\/depart",
   ]) {
     assert.ok(src.includes(route), `missing dispatch route contract: ${route}`);
   }
   assert.match(src, /requireMyMmsApprovedTherapist\(request, env\)/);
+});
+
+test("departure ETA uses Google only after accepted-owner auth and never returns raw coordinates", async () => {
+  const src = await source(runtimeUrl);
+  assert.match(src, /const owned = await findOwnedJob\(env, departMatch\[1\], therapistId\)/);
+  assert.match(src, /clean\(selectName\(owned\.fields\?\.\["Job Status"\]\), 40\)\.toLowerCase\(\) !== "accepted"/);
+  assert.match(src, /claimDeparture\(departMatch\[1\], therapistId, requestKey, Date\.now\(\)\)/);
+  assert.match(src, /finishDeparture\(therapistId, requestKey, result, Date\.now\(\)\)/);
+  assert.match(src, /DEPARTURE_RETRYABLE/);
+  assert.match(src, /computeGoogleEtaMinutes\(/);
+  assert.match(src, /"Travel Label": "กำลังเดินทาง"/);
+  assert.match(src, /eta_minutes: etaMinutes, eta_label: etaLabel/);
+  assert.doesNotMatch(src, /"Therapist GPS"\s*:/);
 });
 
 test("Therapist dispatch access is the existing fail-closed MY MMS approved gate", async () => {

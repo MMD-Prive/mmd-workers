@@ -2,6 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { matchTherapists } from "./core.mjs";
 import { requireMyMmsApprovedTherapist } from "./my-mms-access-runtime.mjs";
 import { mmsJobPricing } from "./mms-job-pricing.mjs";
+import { computeGoogleEtaMinutes, numericEtaLabel } from "./my-mms-travel-runtime.mjs";
+import { evaluateDepartureClaim } from "./my-mms-departure-claim.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
@@ -22,6 +24,7 @@ const DECLINE_RE = /^\/male-massage\/therapists\/api\/app\/offers\/(mmsjob_[a-f0
 const JOB_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})$/;
 const START_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})\/start$/;
 const COMPLETE_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})\/complete$/;
+const DEPART_RE = /^\/male-massage\/therapists\/api\/app\/jobs\/(mmsjob_[a-f0-9]{24})\/depart$/;
 
 export class MmsDispatchCoordinator extends DurableObject {
   constructor(ctx, env) {
@@ -187,6 +190,33 @@ export class MmsDispatchCoordinator extends DurableObject {
     return this._remember(requestKey, therapistId, action, { state: to, at: new Date(now).toISOString() }, now);
   }
 
+  claimDeparture(jobId, therapistId, requestKey, now) {
+    const job = this._job(jobId);
+    const row = this.ctx.storage.sql.exec("SELECT * FROM dispatch_requests WHERE request_key=?", requestKey).toArray()[0];
+    const decision = evaluateDepartureClaim({ job, row, therapistId, now });
+    if (!decision.claimed) return decision;
+    if (decision.action === "create") {
+      this._remember(requestKey, therapistId, "depart", { state: "CHECKING", code: "DEPARTURE_IN_PROGRESS" }, now);
+      return { claimed: true, result: null };
+    }
+    if (decision.action === "refresh") {
+      this.ctx.storage.sql.exec(
+        "UPDATE dispatch_requests SET result_json=?, created_at=? WHERE request_key=? AND therapist_id=? AND action='depart'",
+        JSON.stringify({ state: "CHECKING", code: "DEPARTURE_IN_PROGRESS" }), now, requestKey, therapistId,
+      );
+      return { claimed: true, result: null };
+    }
+    return decision;
+  }
+
+  finishDeparture(therapistId, requestKey, result, now) {
+    this.ctx.storage.sql.exec(
+      "UPDATE dispatch_requests SET result_json=?, created_at=? WHERE request_key=? AND therapist_id=? AND action='depart'",
+      JSON.stringify(result), now, requestKey, therapistId,
+    );
+    return result;
+  }
+
   cancel(jobId, requestKey, now) {
     const replay = this._replay(requestKey, "internal", "cancel");
     if (replay) return replay;
@@ -244,7 +274,7 @@ export class MmsDispatchCoordinator extends DurableObject {
 
 export function isMyMmsDispatchRequest(pathname = "") {
   const path = normalizePath(pathname);
-  return path === APP_PATHS.offers || path === APP_PATHS.jobs || OFFER_RE.test(path) || ACCEPT_RE.test(path) || DECLINE_RE.test(path) || JOB_RE.test(path) || START_RE.test(path) || COMPLETE_RE.test(path) || INTERNAL_MATCH_RE.test(path) || INTERNAL_JOB_RE.test(path) || INTERNAL_CANCEL_RE.test(path);
+  return path === APP_PATHS.offers || path === APP_PATHS.jobs || OFFER_RE.test(path) || ACCEPT_RE.test(path) || DECLINE_RE.test(path) || JOB_RE.test(path) || START_RE.test(path) || COMPLETE_RE.test(path) || DEPART_RE.test(path) || INTERNAL_MATCH_RE.test(path) || INTERNAL_JOB_RE.test(path) || INTERNAL_CANCEL_RE.test(path);
 }
 
 export async function maybeHandleMyMmsDispatch(request, env = {}) {
@@ -361,6 +391,54 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const result = await dispatchStub(env, completeMatch[1]).transition(completeMatch[1], therapistId, requestKey, "complete", Date.now());
       await projectJobState(env, completeMatch[1], result);
       return actionJson(completeMatch[1], result, request, env);
+    }
+
+    const departMatch = path.match(DEPART_RE);
+    if (departMatch) {
+      if (request.method !== "POST") return methodNotAllowed(request, env);
+      requireTrustedOrigin(request, env);
+      const body = await readJson(request);
+      const owned = await findOwnedJob(env, departMatch[1], therapistId);
+      if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
+      if (clean(selectName(owned.fields?.["Job Status"]), 40).toLowerCase() !== "accepted") throw dispatchError(409, "JOB_NOT_ACCEPTED");
+      const requestKey = `depart:${departMatch[1]}:${therapistId}`;
+      const departure = await dispatchStub(env, departMatch[1]).claimDeparture(departMatch[1], therapistId, requestKey, Date.now());
+      if (!departure.claimed) {
+        if (departure.result?.state === "EN_ROUTE") return json({ ok: true, data: departure.result }, 200, request, env);
+        if (departure.result?.code === "DEPARTURE_IN_PROGRESS") throw dispatchError(409, "DEPARTURE_IN_PROGRESS");
+        throw dispatchError(409, departure.result?.code || "DEPARTURE_UNAVAILABLE");
+      }
+      const internal = parseObject(owned.fields?.["Internal Payload JSON"]);
+      const destination = clean(owned.fields?.["Exact Address Private"] || internal.exact_address, 2000);
+      const previousMinutes = etaMinutesFromLabel(clean(owned.fields?.["ETA Label"], 80));
+      const previousUpdate = Date.parse(clean(owned.fields?.["Updated At"], 80));
+      if (clean(owned.fields?.["Travel Label"], 80) === "กำลังเดินทาง" && previousMinutes && Number.isFinite(previousUpdate) && Date.now() - previousUpdate < 5 * 60_000) {
+        const cached = { state: "EN_ROUTE", eta_minutes: previousMinutes, eta_label: numericEtaLabel(previousMinutes), updated_at: new Date(previousUpdate).toISOString() };
+        await dispatchStub(env, departMatch[1]).finishDeparture(therapistId, requestKey, cached, Date.now());
+        return json({ ok: true, data: cached }, 200, request, env);
+      }
+      const now = new Date().toISOString();
+      try {
+        await updateTravelFields(env, owned.id, { "Travel Label": "กำลังเดินทาง", "ETA Label": "", "Updated At": now });
+        const etaMinutes = await computeGoogleEtaMinutes({
+          latitude: body.latitude,
+          longitude: body.longitude,
+          destination,
+          apiKey: env.GOOGLE_ROUTES_API_KEY,
+        });
+        const etaLabel = numericEtaLabel(etaMinutes);
+        await updateTravelFields(env, owned.id, {
+          "Travel Label": "กำลังเดินทาง",
+          "ETA Label": etaLabel,
+          "Updated At": now,
+        });
+        const result = { state: "EN_ROUTE", eta_minutes: etaMinutes, eta_label: etaLabel, updated_at: now };
+        await dispatchStub(env, departMatch[1]).finishDeparture(therapistId, requestKey, result, Date.now());
+        return json({ ok: true, data: result }, 200, request, env);
+      } catch (error) {
+        await dispatchStub(env, departMatch[1]).finishDeparture(therapistId, requestKey, { state: "CHECKING", code: "DEPARTURE_RETRYABLE" }, Date.now());
+        throw error;
+      }
     }
 
     return null;
@@ -623,10 +701,29 @@ async function projectJobState(env, jobId, result) {
   if (!status) return;
   const now = new Date().toISOString();
   const fields = { "Job Status": status, "Updated At": now };
-  if (result.state === "IN_PROGRESS") fields["Started At"] = clean(result.at, 80) || now;
-  if (result.state === "COMPLETED") fields["Completed At"] = clean(result.at, 80) || now;
-  if (result.state === "CANCELLED") fields["Cancelled At"] = now;
+  if (result.state === "IN_PROGRESS") { fields["Started At"] = clean(result.at, 80) || now; fields["Travel Label"] = ""; fields["ETA Label"] = ""; }
+  if (result.state === "COMPLETED") { fields["Completed At"] = clean(result.at, 80) || now; fields["Travel Label"] = ""; fields["ETA Label"] = ""; }
+  if (result.state === "CANCELLED") { fields["Cancelled At"] = now; fields["Travel Label"] = ""; fields["ETA Label"] = ""; }
+  if (result.state === "IN_PROGRESS" || result.state === "COMPLETED" || result.state === "CANCELLED") {
+    const job = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", jobId);
+    if (!job) throw dispatchError(404, "RECORD_NOT_FOUND");
+    await updateTravelFields(env, job.id, fields);
+    return;
+  }
   await patchByField(env, tableId(env, "JOBS"), "Job ID", jobId, fields);
+}
+
+async function updateTravelFields(env, recordId, fields) {
+  const url = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableId(env, "JOBS"))}/${encodeURIComponent(recordId)}`;
+  return airtableFetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields, typecast: false }) }, env);
+}
+
+function etaMinutesFromLabel(value) {
+  const text = clean(value, 80);
+  const hours = /^(\d{1,2}) ชม\.(?: (\d{1,2}) นาที)?$/.exec(text);
+  if (hours) return Number(hours[1]) * 60 + Number(hours[2] || 0);
+  const minutes = /^(\d{1,3}) นาที$/.exec(text);
+  return minutes ? Number(minutes[1]) : null;
 }
 
 async function projectOfferStatesFromSnapshot(env, jobId) {
@@ -852,6 +949,17 @@ function dispatchStub(env, jobId) {
 function requireInternalRequest(request, env) {
   const host = new URL(request.url).hostname.toLowerCase();
   if (host !== clean(env.MMS_INTERNAL_HOST || INTERNAL_HOST, 160).toLowerCase()) throw dispatchError(404, "NOT_FOUND");
+}
+
+function requireTrustedOrigin(request, env) {
+  const origin = clean(request.headers.get("Origin"), 300);
+  const allowed = new Set(String(env.ALLOWED_ORIGINS || "").split(",").map((item) => item.trim()).filter(Boolean));
+  if (!origin || !allowed.has(origin)) throw dispatchError(403, "ORIGIN_NOT_ALLOWED");
+}
+
+function safeJson(value) {
+  try { const parsed = JSON.parse(String(value || "{}")); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; }
+  catch { return {}; }
 }
 
 function responseHeaders(request, env) {
