@@ -251,8 +251,8 @@ test("provider proofs can drive the adapter only in mock; failed inventory never
   assert.equal(accepted.status, 200); assert.equal(gets, 1);
 });
 
-test("runtime entrypoint remains disconnected from provider and credential plumbing", () => {
+test("runtime entrypoint uses only the default-closed lazy glue, not credential plumbing", () => {
   const source = readFileSync(new URL("./src/admin-login-hero-worker.js", import.meta.url), "utf8");
-  assert.ok(source.includes("handleLineJobBriefRequest(request, runtimeEnv);"));
+  assert.ok(source.includes("handleLineJobBriefRequest(request, runtimeEnv, lineBriefDiagnosticRuntimeDependencies);"));
   assert.doesNotMatch(source, /model-line-brief-inventory|createLineBriefInventoryProvider|createLineBriefInventoryTransport/);
 });

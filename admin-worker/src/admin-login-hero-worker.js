@@ -56,6 +56,7 @@ import { handleVerification } from "./mms-partner-line-verification.mjs";
 import { APP_JS, OWNER_HTML } from "./mms-partner-line-ui.mjs";
 import { applyCredentialBoundAdminGate } from "./admin-login-hero-worker-core.js";
 import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
+import { lineBriefDiagnosticRuntimeDependencies } from "./model-line-brief-diagnostic-runtime.js";
 import {
   handleKenjiConversationShadowReceiptAdmin,
   isKenjiConversationShadowReceiptAdminRequest,
@@ -252,7 +253,7 @@ const adminLoginHeroWorker = {
     if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
     if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);
-    if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
+    if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv, lineBriefDiagnosticRuntimeDependencies);
     if (isCreateJobDriveDiscoveryRequest(request)) return handleCreateJobDriveDiscovery(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
