@@ -16,6 +16,7 @@ const ROUTES = Object.freeze({
   booking: "https://mmdbkk.com/male-massage/member/mms-booking",
   therapists: "https://mmdbkk.com/male-massage/therapists/mms",
   howTo: "https://mmdbkk.com/male-massage/how-to-use",
+  myMms: "https://miniapp.line.me/2011388357-ft2o17gf",
   shopOrders: "https://mmdbkk.com/my-mmd/orders",
   careBack: "https://mmdbkk.com/promotion/6-years-care-back",
   coupons: "https://mmdbkk.com/my-mmd/coupons",
@@ -40,11 +41,15 @@ const MMS_SYSTEM_PROMPT = `You are the customer-facing AI concierge for MMS · M
 Voice:
 - Thai first. Naturally adapt to Thai, English, or Chinese according to the customer's language.
 - Warm, concise, discreet, human, practical. Speak as "ผม" in Thai.
+- Use Per Voice: friendly, thoughtful and conversational. Lead with a useful answer or one easy question, not a system disclaimer. Use short LINE paragraphs and "ครับ".
+- Refer to the service as MMS. Never invent a staff/admin/team or use "เจ้าหน้าที่" or "ทีม" in customer replies. Do not claim a person was notified or a handoff completed without a verified receipt.
 - Do not call yourself Per, Karat, HENNA, admin, staff, a team, a bot, or a system.
 - Answer the question first. Ask at most one useful clarification.
 
 Brand and boundary:
-- MMS is a modern on-demand/mobile massage service delivered to the customer.
+- MMS will return this December. Until then, invite customers to open MY MMS in LINE and look forward to meeting our handsome Therapists soon.
+- Bookings and pre-booking are not open now. Never invite customers to book, submit a request, choose dates/locations, check current availability, or pay. Do not invent a reopening date or available Therapists.
+- Historical booking/payment questions may be discussed without confirming their status or inviting a new booking.
 - MMS is non-erotic. Do not offer or imply sexual services.
 - Current service categories: Aroma Oil; Thai; Sport; Office Syndrome; Health / Fitness Advisor; Herbal Compress; Partner-Present; Women Massage.
 
@@ -57,9 +62,9 @@ Authority:
 
 Customer-safe routes:
 - MMS overview: ${ROUTES.home}
-- Send pre-booking request: ${ROUTES.booking}
 - Customer MMS Therapist/service page: ${ROUTES.therapists}
 - How to use: ${ROUTES.howTo}
+- Open MY MMS in LINE: ${ROUTES.myMms}
 - MMD Shop orders: ${ROUTES.shopOrders}
 - CARE BACK: ${ROUTES.careBack}
 - Coupon Wallet: ${ROUTES.coupons}
@@ -76,6 +81,8 @@ HENNA/MMS rules:
 - Service recovery can be received here for MMS. Once handed to HYPE/MMD, MMS recovery uses the same case lifecycle as Shop/Booking and a bounded recovery outcome taxonomy.
 - HENNA may preserve the customer's MMS context but must never invent or write acknowledgement, resolution, outcome, refund, Therapist replacement, rebooking, or service-credit state.
 - Closed-loop handoff awareness does not create acknowledgement or outcome state by itself.
+
+Current launch instruction takes precedence over capability descriptions: MMS returns this December. Invite MY MMS app use while waiting; do not invite bookings, pre-bookings, date/location submissions, payments or current availability checks.
 
 Return plain reply text only. No markdown tables and no JSON.`;
 
@@ -136,6 +143,12 @@ function languageOf(value) {
   return "en";
 }
 
+function comebackReply(lang = "th") {
+  if (lang === "en") return `MMS returns this December 💚\nIn the meantime, open MY MMS in LINE here:\n${ROUTES.myMms}\nGet ready to meet our handsome Therapists soon.`;
+  if (lang === "zh") return `MMS 将于今年十二月回归 💚\n等待期间，可以先在 LINE 中打开 MY MMS：\n${ROUTES.myMms}\n很快就能与我们的帅气 Therapist 见面了。`;
+  return `MMS จะกลับมาธันวาคมนี้ครับ 💚\nระหว่างนี้เปิด MY MMS ใน LINE ไว้ก่อนได้เลย\n${ROUTES.myMms}\nแล้วเตรียมพบกับหนุ่มหล่อของเราได้ในไม่ช้าครับ`;
+}
+
 function protectedTruthReply(text) {
   const value = clean(text, 1600);
   const lang = languageOf(value);
@@ -145,17 +158,12 @@ function protectedTruthReply(text) {
   const price = /(ราคาเท่า|ค่าบริการเท่า|final price|how much|price|多少钱|多少錢|价格|價格)/i.test(value);
   const matching = /(match(?:ing)?|จับคู่|ได้ therapist คนไหน|分配按摩师|分配按摩師|匹配)/i.test(value);
   if (!(availability || bookingStatus || payment || price || matching)) return "";
-
-  if (lang === "zh") {
-    if (price) return `最终价格需要根据当前服务、时长、地点和实际订单资料确认。我不会从旧资料猜价格。您可以先提交需求：${ROUTES.booking}`;
-    return `这个状态需要以 MMS 当前记录为准，我不会从聊天内容猜测或直接确认。您可以先提交/补充预约需求：${ROUTES.booking}`;
+  if (payment || bookingStatus) {
+    if (lang === "zh") return "如果是之前的预约或付款，请在这里留下订单编号和想查询的事项。需要先核对当前记录，才能确认状态。";
+    if (lang === "en") return "If this is about an earlier booking or payment, leave the reference and what you would like to check here. Its status needs to be checked against the current record before confirmation.";
+    return "ถ้าเป็นเรื่องการจองหรือยอดชำระเดิม ฝากเลขอ้างอิงกับเรื่องที่อยากให้ดูไว้ตรงนี้ได้เลยครับ 💚 ขอเช็กข้อมูลของรายการนั้นก่อนยืนยันสถานะนะครับ";
   }
-  if (lang === "en") {
-    if (price) return `The final price needs the current service, duration, location and request details. I won't guess from old information. You can start with a pre-booking here: ${ROUTES.booking}`;
-    return `That needs to be checked against the current MMS record. I won't guess or confirm live status from chat alone. You can submit or update the request here: ${ROUTES.booking}`;
-  }
-  if (price) return `ราคาสุดท้ายต้องดูบริการ ระยะเวลา พื้นที่ และรายละเอียดของเคสจริงก่อนครับ ผมจะไม่เดาจากข้อมูลเก่า เริ่มส่ง Pre-booking ได้ที่ ${ROUTES.booking}`;
-  return `สถานะนี้ต้องเช็กจากข้อมูลปัจจุบันของ MMS ก่อนครับ ผมจะไม่เดาหรือคอนเฟิร์มจากข้อความอย่างเดียว ส่งหรืออัปเดต Pre-booking ได้ที่ ${ROUTES.booking}`;
+  return comebackReply(lang);
 }
 
 async function lineReply(env, replyToken, text) {
@@ -175,14 +183,9 @@ async function lineReply(env, replyToken, text) {
 
 function postbackReply(data) {
   const key = clean(data, 200).toLowerCase();
-  if (key === "mms:menu:services") {
-    return `บริการหลักของ MMS ตอนนี้มี ${SERVICES.join(", ")} ครับ\n\nบอกอาการหรือแบบที่อยากได้มาได้ ผมช่วยไล่ให้เหลือ 1–2 แบบที่เหมาะก่อนส่ง Pre-booking ได้ครับ`;
-  }
-  if (key === "mms:menu:my_booking") {
-    return `ถ้าต้องการเช็กหรือคุยต่อเรื่องการจอง พิมพ์รายละเอียดที่มีอยู่ได้ครับ\n\nถ้ายังไม่ได้ส่งคำขอ เริ่ม Pre-booking ได้ที่ ${ROUTES.booking}\nการส่งคำขอยังไม่ถือว่า Confirm จนกว่าสถานะจริงจะยืนยันครับ`;
-  }
+  if (key === "mms:menu:services" || key === "mms:menu:my_booking") return comebackReply();
   if (key === "mms:menu:support") {
-    return "พิมพ์เรื่องที่ต้องการให้ช่วยได้ตรงนี้เลยครับ จะเป็นเรื่องบริการ การจอง Therapist หรือปัญหาหลังใช้บริการก็ได้ ผมจะช่วยแยกทางให้ก่อน";
+    return "ได้เลยครับ อยากคุยเรื่องไหน พิมพ์ไว้ตรงนี้ได้เลย 💚";
   }
   return "พิมพ์สิ่งที่อยากให้ช่วยได้เลยครับ";
 }
@@ -190,6 +193,13 @@ function postbackReply(data) {
 function deterministicReply(text) {
   const value = clean(text, 1200);
   if (!value) return "";
+  const lang = languageOf(value);
+
+  if (/เจ้าหน้าที่|แอดมิน|คุยกับคน|คุยกับเปอร์|พี่เปอร์|คุยกับ\s*mms|ติดต่อ\s*mms|\b(?:human|admin|support)\b/i.test(value)) {
+    if (lang === 'zh') return '可以的。请在这里告诉 MMS 您想聊的事情，保留预约编号（如果有），这样就能接着看同一个问题。';
+    if (lang === 'en') return 'Of course. Tell MMS what you would like help with here, and include your booking reference if you have one so we can look at the same request.';
+    return 'ได้เลยครับ อยากคุยเรื่องไหน พิมพ์ไว้ตรงนี้ได้เลย 💚 ถ้ามีคำขอจองอยู่แล้ว แนบเลขคำขอมาด้วย จะได้ดูเรื่องเดียวกันต่อครับ';
+  }
 
   const sharedCapability = detectSharedConciergeCapability(value);
   const sharedReply = sharedCapabilityReply(sharedCapability);
@@ -198,57 +208,46 @@ function deterministicReply(text) {
   const protectedReply = protectedTruthReply(value);
   if (protectedReply) return protectedReply;
   const lower = value.toLowerCase();
-  const lang = languageOf(value);
 
-  if (/(จอง|book|booking|预约|預約)/i.test(value)) {
-    if (lang === "zh") return `可以先在这里提交 Pre-booking：${ROUTES.booking}\n提交需求还不等于已确认预约，需要等 MMS 检查当前状态。`;
-    if (lang === "en") return `You can send a pre-booking request here: ${ROUTES.booking}\nIt is a request first, not a confirmed booking until MMS verifies the current status.`;
-    return `ถ้าพร้อมส่งคำขอจอง ใช้หน้านี้ได้เลยครับ ${ROUTES.booking}\n\nเป็น Pre-booking ก่อน ยังไม่ถือว่า Confirm จนกว่าจะตรวจสถานะเรียบร้อยครับ`;
+  if (/\bmy\s*mms\b|\bmymms\b|\bmini\s*app\b|แอปสมาชิก\s*mms|มาย\s*เอ็มเอ็มเอส/i.test(value)) {
+    // Brand/menu labels alone are not evidence that a Thai customer speaks
+    // English. An explicit English or Chinese question keeps that language.
+    const neutral = /^(?:my\s*mms|mymms|mini\s*app|mms\s*app)[\s.!?]*$/i.test(value.normalize('NFKC'));
+    return comebackReply(neutral ? 'th' : lang);
   }
+
+  if (/(จอง|book|booking|预约|預約)/i.test(value)) return comebackReply(lang);
+
   if (/(วิธี|ขั้นตอน|how to|怎么用|如何使用)/i.test(value)) {
     if (lang === "zh") return `使用流程可以看这里：${ROUTES.howTo}。如果卡在哪一步，直接在这里问我就可以。`;
     if (lang === "en") return `You can see the short how-to here: ${ROUTES.howTo}. If you get stuck at any step, ask me here.`;
-    return `ดูขั้นตอนใช้งานแบบสั้น ๆ ได้ที่ ${ROUTES.howTo} ครับ ถ้าติดตรงไหนพิมพ์ถามต่อได้เลย`;
+    return `เริ่มง่าย ๆ ตรงนี้เลยครับ 💚 ${ROUTES.howTo}\nถ้าติดตรงไหน พิมพ์มาคุยกันได้ครับ`;
   }
-  if (/(therapist|นักนวด|นักบำบัด|按摩师|按摩師)/i.test(value) && !/(สมัคร|apply|งาน|job)/i.test(value)) {
-    if (lang === "zh") return `可以先看 MMS 的 Therapist / 服务页面：${ROUTES.therapists}。告诉我偏好的风格或想重点放松的部位，我也可以先帮您缩小选择。`;
-    if (lang === "en") return `You can view the MMS Therapist/service page here: ${ROUTES.therapists}. Tell me your preferred style or what you want to focus on and I can narrow the service options first.`;
-    return `ดูฝั่ง Therapist / ตัวเลือกบริการของ MMS ได้ที่ ${ROUTES.therapists} ครับ ถ้าบอกสไตล์ที่ชอบหรืออาการที่อยากเน้น ผมช่วยแนะนำประเภทบริการให้ได้`;
-  }
-  if (/(บริการ|service|massage type|服务|服務)/i.test(value)) {
-    if (lang === "zh") return `MMS 目前的主要服务有：${SERVICES.join(", ")}。告诉我想放松、运动恢复、Office Syndrome，或其他重点，我可以先帮您选 1–2 项。`;
-    if (lang === "en") return `MMS currently offers ${SERVICES.join(", ")}. Tell me whether you want relaxation, sports recovery, office-syndrome focus, or something specific and I can narrow it to 1–2 options.`;
-    return `MMS มี ${SERVICES.join(", ")} ครับ\n\nบอกได้เลยว่าอยากผ่อนคลาย แก้ออฟฟิศซินโดรม หลังออกกำลัง หรือมีโจทย์เฉพาะ ผมช่วยเลือกให้สั้น ๆ ได้`;
-  }
-  if (/^(hi|hello|hey|สวัสดี|หวัดดี|你好|您好)[!！. ]*$/i.test(lower)) {
-    if (lang === "zh") return "您好。今天想预约按摩、看 Therapist，还是先让我帮您选服务？";
-    if (lang === "en") return "Hello. Would you like to book a massage, view Therapists, or choose a service first?";
-    return "สวัสดีครับ วันนี้อยากจองนวด ดู Therapist หรืออยากให้ช่วยเลือกบริการให้ก่อนครับ";
-  }
+  if (/(therapist|นักนวด|นักบำบัด|按摩师|按摩師)/i.test(value) && !/(สมัคร|apply|งาน|job)/i.test(value)) return comebackReply(lang);
+  if (/(บริการ|service|massage type|服务|服務)/i.test(value)) return comebackReply(lang);
+  if (/^(hi|hello|hey|สวัสดี|หวัดดี|你好|您好)[!！. ]*$/i.test(lower)) return comebackReply(lang);
   return "";
 }
 
 function sharedCapabilityReply(capability) {
   if (capability === "shop_orders") {
-    return `เรื่อง MMD Shop ให้เช็กจาก MY MMD ครับ เพราะ Order/Payment เป็นข้อมูลสมาชิก: ${ROUTES.shopOrders}\nถ้าต้องการคุยข้ามระบบต่อ ใช้ HYPE: ${ROUTES.hype}`;
+    return `ดูคำสั่งซื้อ MMD Shop ของคุณใน MY MMD ได้ตรงนี้เลยครับ 💚\n${ROUTES.shopOrders}\nถ้าอยากคุยเรื่องคำสั่งซื้อต่อ เปิด HYPE ได้ที่ ${ROUTES.hype}`;
   }
   if (capability === "care_back_coupon") {
-    return `CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ ผมจะไม่เปิดหรือสร้างสิทธิ์จากฝั่ง MMS\nCARE BACK: ${ROUTES.careBack}\nCoupon Wallet: ${ROUTES.coupons}\nเรื่องข้ามระบบใช้ HYPE: ${ROUTES.hype}`;
+    return `อยากดู CARE BACK หรือคูปองของคุณ เปิดสองหน้านี้ได้เลยครับ 💚\nCARE BACK: ${ROUTES.careBack}\nCoupon Wallet: ${ROUTES.coupons}\nสิทธิ์ที่ใช้ได้ดูจากบัญชีของคุณนะครับ ถ้าอยากคุยต่อเปิด HYPE ได้ที่ ${ROUTES.hype}`;
   }
-  if (capability === "mms_therapist_options") {
-    return `เรื่องตัวเลือก Therapist ฝั่ง MMS ช่วยต่อได้ครับ ส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้\nตัวเลือกจริงต้องยึดข้อมูล MMS ปัจจุบัน และยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว\nPre-booking: ${ROUTES.booking}`;
-  }
+  if (capability === "mms_therapist_options") return comebackReply();
   if (capability === "service_recovery") {
-    return `รับเรื่องปัญหาฝั่ง MMS ได้ครับ บอกเหตุการณ์ที่เกิดขึ้นกับ booking/pre-booking reference ถ้ามี ผมจะช่วยรักษา context ไว้ให้ เมื่อส่งต่อ HYPE/MMD จะติดตามด้วย Case Reference เดียวกัน แต่ผมจะยังไม่สรุปว่าใครผิด คืนเงิน เปลี่ยน Therapist หรือเคสจบจนกว่าจะมีการตรวจและเขียน outcome จริง\nติดตามข้ามระบบ: ${ROUTES.hype}`;
+    return `เกิดอะไรขึ้น เล่าให้ MMS ฟังตรงนี้ได้เลยครับ 💚\nถ้ามีเลขคำขอจอง แนบมาด้วยนะครับ จะได้ดูรายละเอียดของเรื่องเดียวกัน\nขอเช็กข้อมูลให้ครบก่อนคุยทางออกกับคุณครับ ถ้าเป็นเรื่องฝั่ง MMD ติดตามต่อที่ HYPE ได้เลย ${ROUTES.hype}`;
   }
   if (capability === "closed_loop_handoff") {
-    return `ผมรับรู้เรื่องสถานะการส่งต่อครับ แต่จะไม่บอกว่าเจ้าหน้าที่รับเรื่องหรือเคสจบแล้วจากแชตอย่างเดียว ถ้าต้องการติดตามข้ามระบบ ใช้ HYPE ได้ที่ ${ROUTES.hype}`;
+    return `อยากตามเรื่องไหนครับ ส่งเลขอ้างอิงกับรายละเอียดล่าสุดไว้ตรงนี้ได้เลย 💚\nถ้าเป็นเรื่องฝั่ง MMD ติดตามต่อกับ HYPE ได้ที่ ${ROUTES.hype}\nสถานะของเรื่องจะยืนยันเมื่อมีข้อมูลอัปเดตในรายการจริงครับ`;
   }
   if (capability === "hall_model_discovery") {
-    return `ถ้าหมายถึง Model ฝั่ง MMD Privé ให้เลือกมุมมองผ่าน Hall ก่อนครับ ผมจะไม่เดาเพศ/มุมมองหรือดึง Model ทั้งหมดมาให้: ${ROUTES.hall}\nเรื่องข้ามระบบใช้ HYPE: ${ROUTES.hype}`;
+    return `ถ้าสนใจ Model ฝั่ง MMD Privé ลองเปิด Hall แล้วเลือกมุมมองที่คุณสนใจได้เลยครับ 💚\n${ROUTES.hall}\nอยากคุยเรื่อง Model ต่อ เปิด HYPE ได้ที่ ${ROUTES.hype}`;
   }
   if (capability === "points_coupon_balance") {
-    return `Points / Coupon เป็นข้อมูลสมาชิก MMD ครับ ผมจะไม่เดายอดจากแชต\nPoints: ${ROUTES.points}\nCoupons: ${ROUTES.coupons}\nถ้าต้องการคุยต่อข้ามระบบ ใช้ HYPE: ${ROUTES.hype}`;
+    return `แต้มกับคูปองของคุณดูตรงนี้ได้เลยครับ 💚\nPoints: ${ROUTES.points}\nCoupons: ${ROUTES.coupons}\nยอดและสิทธิ์ที่ใช้ได้จะอยู่ในบัญชีของคุณครับ ถ้าอยากคุยต่อเปิด HYPE ได้ที่ ${ROUTES.hype}`;
   }
   return "";
 }
@@ -298,11 +297,10 @@ async function responseForEvent(env, event) {
   const fixed = deterministicReply(text);
   if (fixed) return fixed;
   const model = await aiReply(env, text);
-  if (model) return model;
-  const lang = languageOf(text);
-  if (lang === "zh") return "请直接告诉我：想预约按摩、看 Therapist、选择服务，或需要哪方面帮助。涉及当前档期或状态时，我不会猜测，会引导您走正确的确认步骤。";
-  if (lang === "en") return "Tell me whether you want to book a massage, view Therapists, choose a service, or get help with something else. For live availability or status, I won't guess and will guide you to the right confirmation step.";
-  return "พิมพ์ได้เลยครับว่าอยากจองนวด ดู Therapist เลือกบริการ หรือมีเรื่องไหนให้ช่วย ถ้าเป็นข้อมูลคิวหรือสถานะปัจจุบัน ผมจะไม่เดาให้ครับ";
+  // The customer-facing brand has no staff/team persona. If a model invents
+  // one, keep the same safe conversational fallback rather than sending it.
+  if (model && !/mms-booking|จองได้|จองเลย|จองตอนนี้|ส่ง.{0,30}(?:คำขอ|วันเวลา|พื้นที่)|เลือกวัน|เช็กคิว|book now|pre[- ]?booking|submit.{0,30}request|预约|預約/i.test(model) && !/เจ้าหน้าที่|ทีมงาน|ทีม|แอดมิน|\b(?:staff|team|administrator|agent)\b|工作人员|客服人员|团队/i.test(model)) return model;
+  return comebackReply(languageOf(text));
 }
 
 function richMenuDraft() {
@@ -312,7 +310,7 @@ function richMenuDraft() {
     name: "MMS Customer 24/7",
     chatBarText: "MMS Menu",
     areas: [
-      { bounds: { x: 0, y: 0, width: 833, height: 843 }, action: { type: "uri", label: "BOOK MASSAGE", uri: ROUTES.booking } },
+      { bounds: { x: 0, y: 0, width: 833, height: 843 }, action: { type: "uri", label: "MY MMS", uri: ROUTES.myMms } },
       { bounds: { x: 833, y: 0, width: 833, height: 843 }, action: { type: "uri", label: "THERAPISTS", uri: ROUTES.therapists } },
       { bounds: { x: 1666, y: 0, width: 834, height: 843 }, action: { type: "postback", label: "SERVICES", data: "mms:menu:services", displayText: "บริการของ MMS" } },
       { bounds: { x: 0, y: 843, width: 833, height: 843 }, action: { type: "uri", label: "HOW TO USE", uri: ROUTES.howTo } },
