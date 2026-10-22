@@ -4,6 +4,7 @@ import {
   buildCommandCenter,
   previewCommand,
 } from "./command-center.js";
+import { buildMmsAdvisory } from './mms-advisory.js';
 
 const SCHEMA = "mmd_ai_ops_layer_v1";
 const CONTEXT_PATH = "/v1/admin/ai-ops/context";
@@ -49,6 +50,7 @@ const INTEL_BY_SURFACE = Object.freeze({
   studio_model_preview: ["/v1/admin/models/list?limit=12"],
   studio_care_back: ["/v1/admin/models/list?limit=12"],
   kenji: ["/v1/admin/kenji/control/memory"],
+  mms: ["/v1/admin/mms/ai-ops"],
 });
 
 export default {
@@ -206,7 +208,11 @@ function buildAdvisory(page, ctx, intel) {
   } else if (page.surface === "owner_setup") {
     brief.push("ใช้เป็น runtime/setup health guide; AI ชี้สิ่งที่ขาดได้ แต่ไม่เปิด authority หรือ bypass safety gate เอง");
   } else if (page.surface === "mms") {
-    brief.push("สรุป MMS operating context และพาไป action ที่เกี่ยวข้อง โดยคง Partner/Owner scope ตาม backend");
+    const mms = buildMmsAdvisory(intel.find(item => item.route === '/v1/admin/mms/ai-ops'));
+    verified.push(...mms.verified);
+    brief.push(...mms.brief);
+    anomalies.push(...mms.anomalies);
+    next.push(...mms.next_actions);
   } else {
     brief.push("AI Ops พร้อมช่วยสรุป context, missing evidence และทางไปทำงานต่อ โดยไม่ย้าย authority มาไว้หน้าเว็บ");
   }
