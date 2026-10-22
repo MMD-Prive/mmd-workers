@@ -136,6 +136,7 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   } catch { return { unavailable: true }; }
   return {
     profileRefreshed: true, memberId: resolved.memberId, displayName, lineConnected: true,
+    brandAudience: projectVerifiedMemberBrand(resolved),
     membershipStart: presentation.membershipStart, membershipExpiresAt: presentation.membershipExpiresAt,
     packageLabel: presentation.packageLabel,
     historyRecoveryState: presentation.historyRecoveryState,
@@ -163,13 +164,34 @@ export async function applyMyMmdCanonicalEntitlementResponse(request, response, 
   else if (/^\/member\/api\/liff\/profile\/?$/.test(path)) patched = patchLiffProfilePayload(payload, context);
   else if (historyPath) patched = patchHistoryPayload(payload, context);
   else if (path === "/api/member/app/dashboard" || path === "/api/member/app/dashboard/" || path === "/api/member/app/membership" || path === "/api/member/app/membership/") patched = patchMemberAppPayload(payload, context, /\/membership\/?$/.test(path));
-  if (JSON.stringify(patched) === JSON.stringify(payload)) return response;
+  if (JSON.stringify(patched) === JSON.stringify(payload) && !/^\/member\/api\/liff\/profile\/?$/.test(path)) return response;
   const headers = new Headers(response.headers);
   headers.delete("content-length");
+  if (/^\/member\/api\/liff\/profile\/?$/.test(path)) {
+    headers.delete("x-mmd-brand-authority");
+    if (patched.data?.brand_audience === "sigil" && payload.ok === true && context.profileRefreshed === true && context.brandAudience === "sigil") {
+      headers.set("x-mmd-brand-authority", "canonical_member_account_v1");
+    }
+  }
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store");
   headers.set("x-mmd-member-display-authority", context.capability ? RESOLVER_SOURCE : PROFILE_SOURCE);
   return new Response(JSON.stringify(patched), { status: response.status, statusText: response.statusText, headers });
+}
+
+// Presentation policy only; this never grants service access or changes membership.
+export function projectVerifiedMemberBrand(resolved = {}) {
+  const id = safeIdentifier(resolved.memberId);
+  const profile = resolved.profile;
+  if (!id || !isPlainObject(profile) || resolved.entitlementSnapshot?.member_blocked === true) return "unresolved";
+  const member = isPlainObject(profile.customer_360?.member) ? profile.customer_360.member : profile;
+  for (const candidate of [profile, member]) {
+    if (candidate.member_id != null && candidate.member_id !== id) return "unresolved";
+    if (candidate.membership_status != null && !["active", "grace", "expired"].includes(candidate.membership_status)) return "unresolved";
+  }
+  if (!["active", "grace", "expired"].includes(member.membership_status || profile.membership_status)) return "unresolved";
+  const tier = String(member.tier || profile.tier || "").trim().toLowerCase().replace(/[ _-]/g, "");
+  return ["standard", "premium", "vip", "svip", "blackcard"].includes(tier) ? "sigil" : "unresolved";
 }
 
 function patchLiffProfilePayload(payload, context) {
@@ -178,6 +200,11 @@ function patchLiffProfilePayload(payload, context) {
   const history = resolvedClientHistory(context);
   const patched = {
     ...data,
+    brand_audience: payload.ok === true && context.profileRefreshed === true
+      && context.brandAudience === "sigil" && safeIdentifier(context.memberId)
+      && data.member_id === context.memberId
+      && (!data.customer_360?.member?.member_id || data.customer_360.member.member_id === context.memberId)
+      ? "sigil" : "unresolved",
     ...(context.lineConnected === true ? { line_connected: true } : {}),
     ...(context.membershipStart && !safeCalendarDate(data.membership_start) ? { membership_start: context.membershipStart } : {}),
     ...(context.membershipExpiresAt && !safeCalendarDate(data.membership_expires_at) ? { membership_expires_at: context.membershipExpiresAt } : {}),

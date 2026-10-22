@@ -123,7 +123,7 @@ export function renderCustomerProgress(panel, state) {
   let node = document.getElementById(id);
   if (!node) {
     node = document.createElement('div'); node.id = id; node.className = 'customer-progress';
-    node.innerHTML = '<progress aria-label="กำลังรับข้อมูล"></progress><span role="status" aria-live="polite"></span><button type="button" hidden>เปิดหน้าใหม่</button>';
+    node.innerHTML = '<progress aria-label="กำลังรับข้อมูล"></progress><span role="status" aria-live="polite"></span><span class="customer-icon customer-progress-error" data-mmd-icon="icon-error" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.1"/></svg></span><button type="button" hidden><span class="customer-icon" data-mmd-icon="icon-retry" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 8a9 9 0 1 0 1 8M21 3v6h-6"/></svg></span>เปิดหน้าใหม่</button>';
     node.querySelector('button').addEventListener('click', () => window.location.reload());
     host.prepend(node);
   } else if (node.parentElement !== host) {
@@ -131,6 +131,7 @@ export function renderCustomerProgress(panel, state) {
     host.prepend(node);
   }
   host.setAttribute('aria-busy', String(state.pending > 0));
+  if (node.dataset) node.dataset.state = state.pending ? 'loading' : state.error ? 'error' : 'ready';
   node.hidden = !state.pending && !state.error;
   node.querySelector('progress').hidden = !state.pending;
   node.querySelector('span').textContent = state.pending

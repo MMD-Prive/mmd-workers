@@ -1,4 +1,5 @@
-import { customerGraphic, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
+import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
+import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
 import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
@@ -67,7 +68,7 @@ export function handleLiffMemberShell(request, env = {}) {
   const html = renderShell(config, nonce);
   const headers = shellHeaders({
     "content-type": "text/html; charset=utf-8",
-    "content-security-policy": `default-src 'self'; script-src 'self' https://static.line-scdn.net 'nonce-${nonce}'; connect-src 'self' https://api.line.me https://access.line.me; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'`,
+    "content-security-policy": `default-src 'self'; script-src 'self' https://static.line-scdn.net 'nonce-${nonce}'; connect-src 'self' https://api.line.me https://access.line.me; img-src 'self' data: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'`,
   });
   return new Response(method === "HEAD" ? null : html, { status: 200, headers });
 }
@@ -289,9 +290,10 @@ function renderShell(config, nonce) {
   ${travelClientCss}
   ${MY_MMD_LIFF_COMPACT_V4_CSS}
   ${CUSTOMER_GRAPHICS_CSS}
+  ${CUSTOMER_V6_CSS}
 </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4">
+<body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
 ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0% · กำลังรอข้อมูล</span></div><button id="customer-boot-retry" type="button" hidden>เปิดหน้าใหม่</button></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
@@ -342,7 +344,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
     <section id="home" class="panel digital-home" aria-label="Home" data-active="true">
-    <header class="digital-top"><div class="digital-brand">MMD PRIVÉ<small>MY MMD · MEMBER APP</small></div><div><span class="digital-session" id="digital-session">● LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
+    <header class="digital-top">${renderCustomerBrand()}<div><span class="digital-session" id="digital-session">${customerIcon("icon-check")} LINE VERIFIED</span> <button id="member-logout" class="digital-signout" type="button">ออกจากระบบ</button></div></header>
     <svg class="digital-bangkok-trace" viewBox="0 0 520 34" preserveAspectRatio="none" fill="none" aria-hidden="true" focusable="false" role="presentation">
       <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
@@ -362,7 +364,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <section id="digital-mission" class="digital-mission" aria-labelledby="digital-mission-title" hidden>${customerGraphic("current-booking")}
       <div class="digital-sectionline"><h2 id="digital-mission-title"><small>CURRENT JOB</small>MMD MISSION</h2><span class="digital-mission-state" id="digital-mission-state"></span></div>
       <div class="digital-mission-head"><strong id="digital-mission-model">MMD</strong><p id="digital-mission-meta"></p><p id="digital-mission-eta" hidden></p></div>
-      <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">ดู MISSION ↗</button>
+      <button id="digital-mission-toggle" class="digital-mission-toggle" type="button" aria-expanded="false">${customerIcon("icon-booking")}ดู MISSION ↗</button>
       <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
     </section>
     <div id="customer-no-booking" class="customer-booking-empty" hidden>${customerGraphic("no-current-booking")}ยังไม่มีงานปัจจุบันที่ยืนยันแล้วครับ</div>
@@ -373,7 +375,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
     </details>
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
-    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>◇</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
+    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>${customerIcon("icon-profile")}</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
     <section class="digital-kenji" aria-label="Kenji AI"><div class="digital-orb" aria-hidden="true"><span class="digital-core"></span></div><div><strong>Kenji AI</strong><p>ช่วยหาข้อมูลและพาไปขั้นตอนที่เกี่ยวข้อง โดยยึดข้อมูลที่ระบบยืนยันแล้ว</p><a href="/member/kenji">เปิด Kenji ↗</a></div></section>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
@@ -458,7 +460,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     </section>
     </div>
   </section>
-  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>⌂</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>▤</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>WALLET</button><a href="/member/kenji"><i>✦</i>KENJI</a></nav>
+  <nav class="digital-dock" aria-label="เมนู MY MMD"><button type="button" data-view="home" aria-current="page"><i>${customerIcon("icon-home")}</i>HOME</button><button type="button" data-view="history" aria-current="false"><i>${customerIcon("icon-history")}</i>HISTORY</button><button type="button" data-view="credits" aria-current="false"><i>${customerIcon("icon-lock")}</i>WALLET</button><a href="/member/kenji"><i>✦</i>KENJI</a></nav>
   <div id="status" class="status">MY MMD</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
@@ -476,6 +478,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
+  const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
+  const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
+  const resetCustomerBrand = () => customerBrand.reset();
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
@@ -525,11 +530,12 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     return resolveTrustedWelcomeWorldInBrowser(data, authority);
   }
   function resolveWelcomeAudience(data, authority) {
-    if (data?.audience === "existing" && (authority === "canonical_member_profile" || authority === "canonical_client")) return "existing";
+    if (data?.audience === "existing" && (authority === "member_profile_resolver" || authority === "canonical_member_profile" || authority === "canonical_client")) return "existing";
     if (data?.audience === "new" && authority === "canonical_member_client_absence") return "new";
     return "checking";
   }
   function applyWorldTheme(data, authority = "", audienceAuthority = "") {
+    if (!profileReady) resetCustomerBrand();
     const world = detectWorld(data, authority);
     const audience = resolveWelcomeAudience(data, audienceAuthority);
     const welcomeCopy = WELCOME_COPY[audience];
@@ -566,7 +572,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const displayAuthority = response.headers.get("x-mmd-member-display-authority") || "";
       const audienceAuthority = response.headers.get("x-mmd-welcome-audience-authority") || "";
       applyWorldTheme(payload.data || {}, displayAuthority, audienceAuthority);
-      return new Set(["canonical_member_profile", "canonical_client", "canonical_member_client_absence"]).has(audienceAuthority);
+      return new Set(["member_profile_resolver", "canonical_member_profile", "canonical_client", "canonical_member_client_absence"]).has(audienceAuthority);
     } catch {
       return false;
     } finally {
@@ -1079,6 +1085,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   }
 
   function hideMemberProfile() {
+    resetCustomerBrand();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
     secondaryReads.clear();
@@ -1122,7 +1129,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         clearMemberProfile({ silent });
         return null;
       }
-      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-brand-authority") || "");
       renderCustomerContact(payload.data || {});
       void readQuickMembershipStatus(generation);
       void readOwnHistoryPreview(generation);
@@ -1613,8 +1620,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     if (this.open) void loadDigitalUpdates();
   });
 
-  function renderProfile(data, authority = "") {
+  function renderProfile(data, authority = "", brandAuthority = "") {
     applyWorldTheme(data, authority);
+    customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};
     const points = view.points || {};

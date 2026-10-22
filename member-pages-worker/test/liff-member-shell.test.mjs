@@ -251,6 +251,7 @@ describe("same-site /member/liff shell", () => {
     const appStatus = { dataset:{} };
     const messages = [];
     const context = {
+      resetCustomerBrand(){},
       CONFIG:{profileEndpoint:"/member/api/liff/profile"}, profile, appStatus,
       profileGeneration:0, profileReady:true, secondaryReads:new Map(),
       digitalPersonalizedFeed:[{title:"old client"}], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
@@ -295,6 +296,7 @@ describe("same-site /member/liff shell", () => {
     };
     const pending = [], rendered = [];
     const context = {
+      resetCustomerBrand(){},
       document:{getElementById:node}, profile:node("profile"), profileReady:true,
       secondaryReads:new Map(), digitalPersonalizedFeed:[], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
       locale:"th", location:{search:""}, URLSearchParams, encodeURIComponent,
@@ -519,7 +521,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /--digital-surface:#1c1d1b/);
     assert.match(html, /--digital-gold:#d8b26a/);
     assert.match(html, /--digital-radius:8px/);
-    assert.match(html, /data-view="history" aria-current="false"><i>▤<\/i>HISTORY/);
+    assert.match(html, /data-view="history" aria-current="false"><i><span class="customer-icon" data-mmd-icon="icon-history"/);
     assert.match(html, /id="digital-companion"[\s\S]*hidden/);
     assert.match(html, /id="digital-tmib-story"[\s\S]*hidden/);
     assert.doesNotMatch(html, /data-view="jobs" aria-current="false"><i>▤<\/i>งาน/);
@@ -761,7 +763,7 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\),body\.app-entered:not\(\.signup-mode\) main\{width:100vw/);
     assert.doesNotMatch(html, /data-design-source|lovable|DESIGN PREVIEW|\bDEMO\b|DEMO DATA|SAMPLE DATA|SOURCE LABEL/i);
     assert.doesNotMatch(html, /LIFF HOME|Member LIFF|>LIFF</i);
-    assert.match(html, /MY MMD · MEMBER APP/);
+    assert.match(html, /id="customer-brand-v6"[^>]*data-audience="unresolved"/);
     assert.doesNotMatch(html, /body\.app-entered:not\(\.signup-mode\) main\{[^}]*520px/);
     assert.doesNotMatch(html, /\.digital-dock\{[^}]*520px/);
   });
@@ -1298,4 +1300,159 @@ test("native evidence FormData and mutations receive a longer bounded deadline w
  await p.fetch('/member/api/liff/renewal/purchase',{method:'POST',body:'fixture-only'});
  await p.fetch('/api/member/app/dashboard');
  assert.deepEqual(delays,[120000,120000,15000]);assert.equal(bodies[0],form);assert.equal(bodies.length,3);
+});
+
+// V6 display-only additions. The Worker does not yet project a separate brand audience.
+import { CUSTOMER_ICONS_V6 } from '../src/liff-customer-graphics.js';
+import { resolveVerifiedCustomerBrand, createCustomerBrand, renderCustomerBrand, V6_BRAND_ASSETS, CUSTOMER_V6_CSS } from '../src/liff-customer-brand-v6.js';
+
+test('V6 preserves original logo/font bytes and does not distort either aspect ratio',()=>{
+ const expected={public:'4084a3ab23756f6090a3a4012f594b8f61ebb64a95ea9759225c01a0fd61985c',private:'ff87e2467cd1c9125bbe9b1e674582f39a5d66c3a1059298ee983dd856f96da7'};
+ for(const [key,value] of Object.entries(V6_BRAND_ASSETS))assert.equal(createHash('sha256').update(Buffer.from(value.split(',')[1],'base64')).digest('hex'),expected[key]);
+ const font=CUSTOMER_V6_CSS.match(/data:font\/woff2;base64,([^\)]+)/)[1];assert.equal(createHash('sha256').update(Buffer.from(font,'base64')).digest('hex'),'caf74c95ba957707253e40747d8364c937970df80551ab0766afc073d1fd90d6');
+ assert.match(renderCustomerBrand(),/width="256" height="172"/);assert.match(CUSTOMER_V6_CSS,/object-fit:contain;height:auto/);assert.match(CUSTOMER_V6_CSS,/filter:none;transform:none/);
+});
+
+test('V6 installs only eight new bounded decorative icons while keeping existing art',async()=>{
+ const html=await(await shell('/member/liff?intent=status')).text();let bytes=0;
+ assert.equal(Object.keys(CUSTOMER_ICONS_V6).length,8);
+ for(const [name,asset] of Object.entries(CUSTOMER_ICONS_V6)){assert.equal(Buffer.byteLength(asset.svg),asset.bytes);assert.equal(createHash('sha256').update(asset.svg).digest('hex'),asset.sha256);assert.ok(asset.bytes<=2048);bytes+=asset.bytes;assert.doesNotMatch(asset.svg,/<(?:script|text|image|foreignObject|filter)\b|\bon\w+\s*=|(?:href|src)\s*=/i);assert.match(asset.svg,/currentColor/);assert.ok(html.includes('data-mmd-icon="'+name+'"'));}
+ assert.ok(bytes+Object.values(CUSTOMER_GRAPHICS).reduce((n,a)=>n+a.bytes,0)<=24576);
+ assert.match(html,/data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved"/);
+});
+
+function brandFixture(){
+ const errors=[];const panels=['neutral','public','private'].map(name=>({hidden:name!=='neutral',getAttribute:()=>name,querySelector:()=>name==='neutral'?null:{addEventListener:(_event,fn)=>errors.push(fn)}}));
+ const root={dataset:{},ownerDocument:{body:{dataset:{}}},querySelectorAll:()=>panels};return {panels,root,errors,brand:createCustomerBrand(root)};
+}
+test('V6 unresolved -> public -> reset -> private -> error never leaves another audience logo visible',()=>{
+ const {brand,panels,errors}=brandFixture();const visible=()=>panels.map((p,i)=>p.hidden?null:['neutral','public','private'][i]).filter(Boolean);
+ brand.reset();assert.deepEqual(visible(),['neutral']);brand.render('public');assert.deepEqual(visible(),['public']);brand.reset();assert.deepEqual(visible(),['neutral']);brand.render('private');assert.deepEqual(visible(),['private']);errors[1]();assert.deepEqual(visible(),['neutral']);
+ for(const hint of ['svip','premium','standard','existing','?world=private',{},null]){brand.render(hint);assert.deepEqual(visible(),['neutral']);}
+});
+
+test('V6 production does not infer brand identity from tier/world/query and requires Worker brand authority',async()=>{
+ const html=await(await shell('/member/liff?intent=status&world=private&audience=private')).text();
+ assert.match(html,/data-brand-audience="unresolved"/);assert.match(html,/function applyWorldTheme\([^]*?resetCustomerBrand\(\)/);assert.match(html,/function hideMemberProfile\(\) \{\s+resetCustomerBrand\(\)/);
+ assert.match(html,/customerBrand\.render\(resolveVerifiedCustomerBrand\(data, brandAuthority\)\)/);assert.doesNotMatch(createCustomerBrand.toString(),/tier|membership|location|fetch|cookie|localStorage|sessionStorage/);
+ const markup=renderCustomerBrand();assert.match(markup,/data-brand-panel="public" hidden/);assert.match(markup,/data-brand-panel="private" hidden/);assert.match(markup,/Discreet by desire,<br>Elegance by choice\./);
+});
+
+test('V6 font CSP and progressive UI remain scoped, accessible and reduced-motion safe',async()=>{
+ const response=handleLiffMemberShell(new Request('https://mmdbkk.com/member/liff?intent=status'),{});
+ assert.match(response.headers.get('content-security-policy'),/font-src 'self' data:/);assert.match(response.headers.get('cache-control'),/no-store/);
+ assert.match(CUSTOMER_V6_CSS,/\[data-brand-audience="public"\]/);assert.match(CUSTOMER_V6_CSS,/font-family:MmdV6Thai[^}]+!important/);assert.match(CUSTOMER_V6_CSS,/\.signup-mode/);assert.match(CUSTOMER_V6_CSS,/prefers-reduced-motion/);assert.doesNotMatch(CUSTOMER_V6_CSS,/\.customer-graphic[^}]*opacity:(?:\.5|1)/);
+});
+
+
+test('V6 hidden logo error cannot erase the active audience and failed assets stay neutral on re-selection', () => {
+  const { brand, root, panels, errors } = brandFixture();
+  brand.render('public');
+  brand.render('private');
+  errors[0](); // Late Public image error after the account/audience switched.
+  assert.equal(root.dataset.audience, 'private');
+  assert.equal(root.ownerDocument.body.dataset.brandAudience, 'private');
+  assert.equal(panels[2].hidden, false);
+  assert.equal(brand.render('public'), 'unresolved');
+  assert.equal(root.ownerDocument.body.dataset.brandAudience, 'unresolved');
+  brand.render('private');
+  errors[1]();
+  assert.equal(root.dataset.audience, 'unresolved');
+  assert.equal(root.ownerDocument.body.dataset.brandAudience, 'unresolved');
+  brand.reset();
+  assert.equal(brand.render('private'), 'unresolved');
+  assert.deepEqual(panels.map(p => p.hidden), [false, true, true]);
+});
+
+
+test('welcome reads accept the current backend authority for returning copy without granting brand identity', async () => {
+  const html = await (await shell('/member/liff?intent=status')).text();
+  const resolver = html.slice(html.indexOf('function resolveWelcomeAudience('), html.indexOf('function applyWorldTheme('));
+  const reader = html.slice(html.indexOf('async function readWelcomeContext('), html.indexOf('async function preflightWelcomeIdentity('));
+  const { brand, root } = brandFixture();
+  let audience = 'checking';
+  let payload = { ok:true, data:{ audience:'existing', tier:'SVIP' } };
+  let authority = 'member_profile_resolver';
+  const context = {
+    AbortController, CONFIG:{welcomeContextEndpoint:'/member/api/liff/welcome-context'},
+    setTimeout:()=>1, clearTimeout:()=>{},
+    fetch:async()=>new Response(JSON.stringify(payload), {headers:{'x-mmd-welcome-audience-authority':authority}}),
+    applyWorldTheme:(data, _display, source)=>{ brand.reset(); audience = context.resolveWelcomeAudience(data, source); }
+  };
+  runInNewContext(resolver + reader, context);
+  assert.equal(await context.readWelcomeContext(), true);
+  assert.equal(audience, 'existing');
+  assert.equal(root.dataset.audience, 'unresolved');
+  assert.equal(root.ownerDocument.body.dataset.brandAudience, 'unresolved');
+  for (const source of ['member_profile_resolver', 'canonical_member_profile', 'canonical_client']) {
+    assert.equal(context.resolveWelcomeAudience({audience:'existing'},source),'existing');
+    for (const value of ['public','private','new']) assert.equal(context.resolveWelcomeAudience({audience:value},source),'checking');
+  }
+  authority = 'untrusted';
+  assert.equal(await context.readWelcomeContext(), false);
+  assert.equal(audience, 'checking');
+  assert.equal(root.dataset.audience, 'unresolved');
+  assert.equal(context.resolveWelcomeAudience({audience:'new'},'canonical_member_client_absence'),'new');
+  payload = {ok:false};
+  assert.equal(await context.readWelcomeContext(),false);
+});
+
+
+test('V6 already-failed logo stays neutral even when error preceded initialization', () => {
+  const panels = ['neutral','public','private'].map(name => ({hidden:name!=='neutral',getAttribute:()=>name,querySelector:()=>name==='neutral'?null:{complete:true,naturalWidth:name==='public'?0:350,addEventListener(){}}}));
+  const root = {dataset:{},ownerDocument:{body:{dataset:{}}},querySelectorAll:()=>panels};
+  const brand = createCustomerBrand(root);
+  assert.equal(brand.render('public'),'unresolved');
+  assert.deepEqual(panels.map(p=>p.hidden),[false,true,true]);
+  assert.equal(brand.render('private'),'private');
+  assert.equal(root.ownerDocument.body.dataset.brandAudience,'private');
+});
+
+test('V6 Public overrides the existing cream foreground used by request and CARE controls', () => {
+  const publicRule = CUSTOMER_V6_CSS.split('\n').find(rule=>rule.includes('[data-brand-audience="public"]:not(.signup-mode){'));
+  assert.ok(publicRule);
+  assert.match(publicRule,/--digital-cream:#171b1d;/);
+  assert.match(publicRule,/--digital-surface:#fffefa;/);
+});
+
+
+test('V6 uses SIGIL only with the Worker projection, irrespective of tier hints', () => {
+  for (const tier of ['Standard', 'Premium', 'VIP', 'SVIP', 'Black Card']) {
+    assert.equal(resolveVerifiedCustomerBrand({tier, brand_audience:'sigil'}, 'canonical_member_account_v1'), 'private');
+    assert.equal(resolveVerifiedCustomerBrand({tier}, 'canonical_member_account_v1'), 'unresolved');
+    assert.equal(resolveVerifiedCustomerBrand({tier, brand_audience:'sigil'}, 'member_profile_resolver'), 'unresolved');
+  }
+  for (const data of [null, {}, {brand_audience:'private'}, {brand_audience:'unresolved'}]) {
+    assert.equal(resolveVerifiedCustomerBrand(data, 'canonical_member_account_v1'), 'unresolved');
+  }
+});
+
+test('late welcome preserves a verified brand while startup remains neutral', async () => {
+  const html=await(await shell('/member/liff?intent=status')).text();
+  const start=html.indexOf('function applyWorldTheme(');
+  const end=html.indexOf('  applyWorldTheme();',start);
+  let resets=0;
+  const element={textContent:'',classList:{toggle(){}}};
+  const context={profileReady:true,resetCustomerBrand(){resets++;},detectWorld:()=> 'public',resolveWelcomeAudience:()=> 'existing',
+    WELCOME_COPY:{existing:{title:'',subtitle:'',note:'',letter:''}},message:element,introContinue:element,
+    document:{body:{dataset:{},classList:{toggle(){}}},querySelector:()=>element,getElementById:()=>element}};
+  runInNewContext(html.slice(start,end)+'applyWorldTheme({});',context);
+  assert.equal(resets,0);
+  context.profileReady=false;
+  runInNewContext('applyWorldTheme({});',context);
+  assert.equal(resets,1);
+});
+
+test('profile reads pass the dedicated Worker brand authority to rendering', async () => {
+  const html=await(await shell('/member/liff?intent=status')).text();
+  const start=html.indexOf('async function readProfile('),end=html.indexOf('function requestId()',start);
+  let received;
+  const data={member_id:'recMemberA',brand_audience:'sigil'};
+  await runInNewContext(html.slice(start,end)+'readProfile({hydrate:false})',{
+    CONFIG:{profileEndpoint:'/member/api/liff/profile'},profileGeneration:0,hideMemberProfile(){},
+    memberApiFetch:async()=>Response.json({ok:true,data},{headers:{'x-mmd-brand-authority':'canonical_member_account_v1'}}),
+    renderProfile(...args){received=args;},renderCustomerContact(){},readQuickMembershipStatus(){},readOwnHistoryPreview(){},hydrateMemberHome(){},Promise
+  });
+  assert.equal(received[2],'canonical_member_account_v1');
+  assert.equal(resolveVerifiedCustomerBrand(received[0],received[2]),'private');
 });
