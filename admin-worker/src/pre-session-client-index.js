@@ -173,7 +173,8 @@ export async function resolveHistoricalSessionAlias(env, query) {
   params.set("pageSize", "40");
   params.set("maxRecords", "40");
   params.set("returnFieldsByFieldId", "true");
-  params.set("filterByFormula", `IFERROR(SEARCH(\"${formulaString(needle)}\",LOWER({client_name}&\"\")),0)>0`);
+  const toneFreeSessionName = thaiToneFreeFormula(`{client_name}&""`);
+  params.set("filterByFormula", `IFERROR(SEARCH("${formulaString(needle)}",LOWER(${toneFreeSessionName})),0)>0`);
   params.append("fields[]", SESSION_CLIENT_NAME_FIELD);
   params.append("fields[]", SESSION_CANONICAL_CLIENT_FIELD);
 
@@ -283,7 +284,10 @@ export async function searchPreSessionCandidates(env, query) {
   const needle = formulaString(normalize(query));
   if (!needle) return [];
 
-  const checks = SEARCHABLE_FIELDS.map((field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`);
+  const checks = SEARCHABLE_FIELDS.map((field) => {
+    const toneFreeField = thaiToneFreeFormula(`{${field}}&""`);
+    return `IFERROR(SEARCH("${needle}",LOWER(${toneFreeField})),0)>0`;
+  });
   const params = new URLSearchParams();
   params.set("pageSize", "40");
   params.set("maxRecords", "40");
@@ -414,6 +418,13 @@ function isLookupPost(request) {
   }
 }
 
+function thaiToneFreeFormula(expression) {
+  return ["่", "้", "๊", "๋"].reduce(
+    (formula, mark) => `SUBSTITUTE(${formula},${JSON.stringify(mark)},"")`,
+    expression,
+  );
+}
+
 function formulaString(value) {
   return clean(value).replace(/\\/g, "\\\\").replace(/\"/g, '\\"');
 }
@@ -459,7 +470,7 @@ function normalizePath(value) {
 }
 
 function normalize(value) {
-  return clean(value).toLowerCase().replace(/\s+/g, " ");
+  return clean(value).toLowerCase().replace(/[\u0E48-\u0E4B]/gu, "").replace(/\s+/g, " ");
 }
 
 function clean(value) {
