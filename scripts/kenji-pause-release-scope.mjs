@@ -35,6 +35,15 @@ export const KENJI_MANUAL_RELEASE_PATHS = new Set([
   'scripts/kenji-code-only-promote.test.mjs',
 ]);
 
+// HENNA copy changes use an owner-approved code-only release, never the
+// legacy job that deploys unrelated MMS code and reconciles routes.
+const hennaCopyPaths = new Set([
+  'member-dashboard-chat-worker/src/mms-line-runtime.mjs',
+  'member-dashboard-chat-worker/test/mms-line-runtime.test.mjs',
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+]);
+
 // Personal Main must use a separately approved code-only release for both owners.
 // A mixed delta is an error, never permission to fall through to legacy deploy.
 export const PERSONAL_MAIN_RELEASE_PATHS = new Set([
@@ -82,6 +91,10 @@ const personalMainGuardPaths = new Set([
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.includes('member-dashboard-chat-worker/src/mms-line-runtime.mjs')) {
+    assert.ok(files.every(file => hennaCopyPaths.has(file)), 'HENNA_COPY_MIXED_DELTA: stop; separately review unrelated deployment changes');
+    return false;
+  }
   if (files.some(file => personalMainAnchors.has(file))) {
     assert.ok(files.every(file => PERSONAL_MAIN_RELEASE_PATHS.has(file) || personalMainGuardPaths.has(file)),
       'PERSONAL_MAIN_MIXED_DELTA: stop; separate review required before any legacy deployment');

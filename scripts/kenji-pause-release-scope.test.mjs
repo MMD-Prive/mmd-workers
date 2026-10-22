@@ -112,3 +112,14 @@ test('only exact root manifest test-list addition is accepted',()=>{
  assert.throws(()=>validatePersonalMainManifest(manifestAfter,manifestAfter),/PERSONAL_MAIN_MANIFEST_DELTA/);
  for(const file of ['package.json','member-pages-worker/test/member-personal-main.test.mjs'])assert.equal(deployRequired('push',[file]),true);
 });
+
+const hennaFiles = ['member-dashboard-chat-worker/src/mms-line-runtime.mjs',
+ 'member-dashboard-chat-worker/test/mms-line-runtime.test.mjs',
+ 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs'];
+test('HENNA copy release skips legacy deployment and route reconciliation', () => {
+ assert.equal(deployRequired('push', hennaFiles), false);
+ assert.equal(deployRequired('workflow_dispatch', hennaFiles), true);
+ for (const extra of [config, 'mms-worker/src/index.js', 'shared/payment-intelligence.mjs', '.github/workflows/deploy-member-dashboard-chat-worker.yml']) {
+  assert.throws(() => deployRequired('push', [...hennaFiles, extra]), /HENNA_COPY_MIXED_DELTA/);
+ }
+});
