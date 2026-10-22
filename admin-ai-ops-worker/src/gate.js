@@ -22,7 +22,10 @@ export default {
     const method = request.method.toUpperCase();
 
     if (method !== "OPTIONS" && path.startsWith(AI_OPS_PREFIX) && path !== CLIENT_PATH) {
-      const auth = await verifyAdminStrict(request);
+      const mmsContext = path === CONTEXT_PATH && normalizePath(url.searchParams.get("path") || "") === "/internal/admin/mms";
+      const service = mmsContext ? env.MMS_ADMIN : null;
+      if (mmsContext && typeof service?.fetch !== "function") return json({ ok: false, error: "mms_admin_service_unavailable" }, 503);
+      const auth = await verifyAdminStrict(request, service);
       if (!auth.ok) return unauthorized();
     }
 
@@ -197,9 +200,10 @@ async function decorateCommandCenter(response, followUp) {
   return new Response(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers });
 }
 
-async function verifyAdminStrict(request) {
+async function verifyAdminStrict(request, service = null) {
   try {
     const url = new URL(request.url);
+    if (service && !["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(url.origin)) return { ok: false };
     url.pathname = "/v1/admin/auth/me";
     url.search = "";
     const headers = new Headers({ accept: "application/json" });
@@ -207,11 +211,14 @@ async function verifyAdminStrict(request) {
       const value = request.headers.get(key);
       if (value) headers.set(key, value);
     }
-    const response = await fetch(url.toString(), {
+    const init = {
       method: "GET",
       headers,
       redirect: "manual",
-    });
+    };
+    const response = service
+      ? await service.fetch(new Request(url, { ...init, signal: AbortSignal.timeout(7000) }))
+      : await fetch(url.toString(), init);
     if (!response.ok) return { ok: false };
     const body = await response.json().catch(() => null);
     return {
