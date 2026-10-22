@@ -57,3 +57,51 @@ export const CUSTOMER_GRAPHICS_CSS = `
 .customer-booking-empty{position:relative;min-height:64px;margin:0;color:#aaa79e;font-size:12px}
 @media(prefers-reduced-motion:reduce){.customer-progress progress{animation:none}}
 `;
+
+// V6 navigation/status icons; the installed V4 artwork above is unchanged.
+export const CUSTOMER_ICONS_V6={
+  "icon-booking": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">booking</title><rect x=\"4\" y=\"5\" width=\"16\" height=\"16\" rx=\"3\"/><path d=\"M8 3v4m8-4v4M4 10h16m-11 5 2 2 4-4\"/></svg>",
+    "bytes": 329,
+    "sha256": "c008de3188ae728311645d8907f8d4bd32dcb6a95abdd1a5dc0ef09e52d8b4af"
+  },
+  "icon-check": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">check</title><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m7 12 3 3 7-7\"/></svg>",
+    "bytes": 288,
+    "sha256": "1c9136806b52b310c88bfbee59d36c60338724433dc2fdc5427fe591b7a09b28"
+  },
+  "icon-error": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">error</title><path d=\"m12 3 10 18H2L12 3Z\"/><path d=\"M12 9v5m0 3v.1\"/></svg>",
+    "bytes": 289,
+    "sha256": "5c500c28d7ca43960ffa6da4af154b5f1612e4db070cb42cd47a2be121417a8b"
+  },
+  "icon-history": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">history</title><path d=\"M4 8a9 9 0 1 1-1 8M3 3v6h6m3-3v6l4 2\"/></svg>",
+    "bytes": 282,
+    "sha256": "a878920f5f2a62e4759e8ba04436142dade60e4a22b3771f8cbda5b795f39416"
+  },
+  "icon-home": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">home</title><path d=\"m3 11 9-8 9 8M5 10v11h5v-7h4v7h5V10\"/></svg>",
+    "bytes": 278,
+    "sha256": "47772a49cbdc0dda517815558a224d6f11774e4f0d6fc5a8ebb1597a0e8c1ea6"
+  },
+  "icon-lock": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">lock</title><rect x=\"5\" y=\"10\" width=\"14\" height=\"11\" rx=\"3\"/><path d=\"M8 10V7a4 4 0 0 1 8 0v3m-4 4v3\"/></svg>",
+    "bytes": 323,
+    "sha256": "23e58123b6a308f4014f6c2c4ece6ad09c2e924a89538dd6988c9f1d57d18583"
+  },
+  "icon-profile": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">profile</title><circle cx=\"12\" cy=\"7\" r=\"4\"/><path d=\"M4 21v-2a8 8 0 0 1 16 0v2Z\"/></svg>",
+    "bytes": 302,
+    "sha256": "a5390f245f8845747f60d04e6bf8621e73f1ebb17d330ef58c01f98029800d58"
+  },
+  "icon-retry": {
+    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" role=\"img\" aria-labelledby=\"title\"><title id=\"title\">retry</title><path d=\"M20 8a9 9 0 1 0 1 8M21 3v6h-6\"/></svg>",
+    "bytes": 273,
+    "sha256": "5d3b26bb7e2195be21a49c21358b8005a65981999a36edc9d961e299cfa741d3"
+  }
+};
+export function customerIcon(name){
+  const svg=CUSTOMER_ICONS_V6[name].svg.replace(/<title[^>]*>[^<]*<\/title>/g, "").replace(/role="img" aria-labelledby="title"/g, 'aria-hidden="true" focusable="false"');
+  return `<span class="customer-icon" data-mmd-icon="${name}" aria-hidden="true">${svg}</span>`;
+}
