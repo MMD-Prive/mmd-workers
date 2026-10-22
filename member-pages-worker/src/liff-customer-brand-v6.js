@@ -1,3 +1,8 @@
+// Consume only the Worker projection; membership levels are not interpreted here.
+export function resolveVerifiedCustomerBrand(data, authority) {
+  return authority === 'canonical_member_account_v1' && data?.brand_audience === 'sigil'
+    ? 'private' : 'unresolved';
+}
 // Graphic-pack V6 display adapter. This module never reads tier, session, tokens or URL hints.
 export function createCustomerBrand(root) {
   const panels = root?.querySelectorAll?.('[data-brand-panel]') || [];

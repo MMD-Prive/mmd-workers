@@ -1304,7 +1304,7 @@ test("native evidence FormData and mutations receive a longer bounded deadline w
 
 // V6 display-only additions. The Worker does not yet project a separate brand audience.
 import { CUSTOMER_ICONS_V6 } from '../src/liff-customer-graphics.js';
-import { createCustomerBrand, renderCustomerBrand, V6_BRAND_ASSETS, CUSTOMER_V6_CSS } from '../src/liff-customer-brand-v6.js';
+import { resolveVerifiedCustomerBrand, createCustomerBrand, renderCustomerBrand, V6_BRAND_ASSETS, CUSTOMER_V6_CSS } from '../src/liff-customer-brand-v6.js';
 
 test('V6 preserves original logo/font bytes and does not distort either aspect ratio',()=>{
  const expected={public:'4084a3ab23756f6090a3a4012f594b8f61ebb64a95ea9759225c01a0fd61985c',private:'ff87e2467cd1c9125bbe9b1e674582f39a5d66c3a1059298ee983dd856f96da7'};
@@ -1331,10 +1331,10 @@ test('V6 unresolved -> public -> reset -> private -> error never leaves another 
  for(const hint of ['svip','premium','standard','existing','?world=private',{},null]){brand.render(hint);assert.deepEqual(visible(),['neutral']);}
 });
 
-test('V6 production does not infer brand identity from tier/world/query or invent an API field',async()=>{
+test('V6 production does not infer brand identity from tier/world/query and requires Worker brand authority',async()=>{
  const html=await(await shell('/member/liff?intent=status&world=private&audience=private')).text();
  assert.match(html,/data-brand-audience="unresolved"/);assert.match(html,/function applyWorldTheme\([^]*?resetCustomerBrand\(\)/);assert.match(html,/function hideMemberProfile\(\) \{\s+resetCustomerBrand\(\)/);
- assert.doesNotMatch(html,/customerBrand\.render\(/);assert.doesNotMatch(createCustomerBrand.toString(),/tier|membership|location|fetch|cookie|localStorage|sessionStorage/);
+ assert.match(html,/customerBrand\.render\(resolveVerifiedCustomerBrand\(data, brandAuthority\)\)/);assert.doesNotMatch(createCustomerBrand.toString(),/tier|membership|location|fetch|cookie|localStorage|sessionStorage/);
  const markup=renderCustomerBrand();assert.match(markup,/data-brand-panel="public" hidden/);assert.match(markup,/data-brand-panel="private" hidden/);assert.match(markup,/Discreet by desire,<br>Elegance by choice\./);
 });
 
@@ -1413,4 +1413,46 @@ test('V6 Public overrides the existing cream foreground used by request and CARE
   assert.ok(publicRule);
   assert.match(publicRule,/--digital-cream:#171b1d;/);
   assert.match(publicRule,/--digital-surface:#fffefa;/);
+});
+
+
+test('V6 uses SIGIL only with the Worker projection, irrespective of tier hints', () => {
+  for (const tier of ['Standard', 'Premium', 'VIP', 'SVIP', 'Black Card']) {
+    assert.equal(resolveVerifiedCustomerBrand({tier, brand_audience:'sigil'}, 'canonical_member_account_v1'), 'private');
+    assert.equal(resolveVerifiedCustomerBrand({tier}, 'canonical_member_account_v1'), 'unresolved');
+    assert.equal(resolveVerifiedCustomerBrand({tier, brand_audience:'sigil'}, 'member_profile_resolver'), 'unresolved');
+  }
+  for (const data of [null, {}, {brand_audience:'private'}, {brand_audience:'unresolved'}]) {
+    assert.equal(resolveVerifiedCustomerBrand(data, 'canonical_member_account_v1'), 'unresolved');
+  }
+});
+
+test('late welcome preserves a verified brand while startup remains neutral', async () => {
+  const html=await(await shell('/member/liff?intent=status')).text();
+  const start=html.indexOf('function applyWorldTheme(');
+  const end=html.indexOf('  applyWorldTheme();',start);
+  let resets=0;
+  const element={textContent:'',classList:{toggle(){}}};
+  const context={profileReady:true,resetCustomerBrand(){resets++;},detectWorld:()=> 'public',resolveWelcomeAudience:()=> 'existing',
+    WELCOME_COPY:{existing:{title:'',subtitle:'',note:'',letter:''}},message:element,introContinue:element,
+    document:{body:{dataset:{},classList:{toggle(){}}},querySelector:()=>element,getElementById:()=>element}};
+  runInNewContext(html.slice(start,end)+'applyWorldTheme({});',context);
+  assert.equal(resets,0);
+  context.profileReady=false;
+  runInNewContext('applyWorldTheme({});',context);
+  assert.equal(resets,1);
+});
+
+test('profile reads pass the dedicated Worker brand authority to rendering', async () => {
+  const html=await(await shell('/member/liff?intent=status')).text();
+  const start=html.indexOf('async function readProfile('),end=html.indexOf('function requestId()',start);
+  let received;
+  const data={member_id:'recMemberA',brand_audience:'sigil'};
+  await runInNewContext(html.slice(start,end)+'readProfile({hydrate:false})',{
+    CONFIG:{profileEndpoint:'/member/api/liff/profile'},profileGeneration:0,hideMemberProfile(){},
+    memberApiFetch:async()=>Response.json({ok:true,data},{headers:{'x-mmd-brand-authority':'canonical_member_account_v1'}}),
+    renderProfile(...args){received=args;},renderCustomerContact(){},readQuickMembershipStatus(){},readOwnHistoryPreview(){},hydrateMemberHome(){},Promise
+  });
+  assert.equal(received[2],'canonical_member_account_v1');
+  assert.equal(resolveVerifiedCustomerBrand(received[0],received[2]),'private');
 });

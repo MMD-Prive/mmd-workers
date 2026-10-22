@@ -1,4 +1,4 @@
-import {createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
+import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
@@ -478,6 +478,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
+  const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
   const resetCustomerBrand = () => customerBrand.reset();
   const logoutButton = document.getElementById("member-logout");
@@ -534,7 +535,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     return "checking";
   }
   function applyWorldTheme(data, authority = "", audienceAuthority = "") {
-    resetCustomerBrand();
+    if (!profileReady) resetCustomerBrand();
     const world = detectWorld(data, authority);
     const audience = resolveWelcomeAudience(data, audienceAuthority);
     const welcomeCopy = WELCOME_COPY[audience];
@@ -1128,7 +1129,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         clearMemberProfile({ silent });
         return null;
       }
-      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+      renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-brand-authority") || "");
       renderCustomerContact(payload.data || {});
       void readQuickMembershipStatus(generation);
       void readOwnHistoryPreview(generation);
@@ -1619,8 +1620,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     if (this.open) void loadDigitalUpdates();
   });
 
-  function renderProfile(data, authority = "") {
+  function renderProfile(data, authority = "", brandAuthority = "") {
     applyWorldTheme(data, authority);
+    customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};
     const points = view.points || {};

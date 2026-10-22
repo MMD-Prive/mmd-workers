@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applyMyMmdCanonicalEntitlementResponse,
+  projectVerifiedMemberBrand,
   canonicalPresentationContext,
   projectProtectedEntitlement,
   protectedConnectNowActiveThrough,
@@ -343,4 +344,47 @@ test("non Fast Trust profile dates keep their existing precedence", () => {
   const profile = { membership_start: "2026-01-01", membership_expires_at: "2027-01-01" };
   const ctx = canonicalPresentationContext(profile, profile, approvedSvipProjection);
   assert.equal(ctx.membershipExpiresAt, "2027-01-01");
+});
+
+
+test("verified canonical member levels share SIGIL without granting access", async () => {
+  for (const tier of ["Standard", "Premium", "VIP", "SVIP", "Black Card"]) {
+    for (const membership_status of ["active", "grace", "expired"]) {
+      const profile = {member_id:"recMemberA", tier, membership_status};
+      const brandAudience = projectVerifiedMemberBrand({memberId:"recMemberA", profile});
+      assert.equal(brandAudience, "sigil");
+      const response = await applyMyMmdCanonicalEntitlementResponse(new Request("https://mmdbkk.com/member/api/liff/profile"), jsonResponse({ok:true,data:profile}), {profileRefreshed:true,memberId:"recMemberA",brandAudience});
+      const body = await response.json();
+      assert.equal(body.data.brand_audience, "sigil");
+      assert.equal(body.data.tier, tier);
+      assert.equal(body.data.membership_status, membership_status);
+      assert.equal(body.data.actual_access, undefined);
+      assert.equal(response.headers.get("x-mmd-brand-authority"), "canonical_member_account_v1");
+      assert.equal(response.headers.get("cache-control"), "no-store");
+    }
+  }
+});
+
+test("brand projection fails closed for unverified, blocked, unknown or conflicting accounts", () => {
+  const valid = {memberId:"recMemberA",profile:{member_id:"recMemberA",tier:"VIP",membership_status:"active"}};
+  for (const resolved of [{}, {...valid,memberId:null}, {...valid,profile:null}, {...valid,entitlementSnapshot:{member_blocked:true}},
+    ...["blocked","suspended","revoked","under_review","pending_review","checking", ""].map(membership_status=>({...valid,profile:{...valid.profile,membership_status}})),
+    {...valid,profile:{...valid.profile,tier:"unknown"}}, {...valid,profile:{...valid.profile,member_id:"recMemberB"}},
+    {...valid,profile:{...valid.profile,customer_360:{member:{member_id:"recMemberB",tier:"VIP",membership_status:"active"}}}}]) {
+    assert.equal(projectVerifiedMemberBrand(resolved), "unresolved");
+  }
+});
+
+test("profile response cannot retain forged brand authority or cross-client SIGIL", async () => {
+  const context={profileRefreshed:true,memberId:"recMemberA",brandAudience:"sigil"};
+  for (const [data,ctx,ok] of [
+    [{member_id:"recMemberB"},context,true], [{member_id:"recMemberA",customer_360:{member:{member_id:"recMemberB"}}},context,true],
+    [{member_id:"recMemberA"},{...context,profileRefreshed:false},true],
+    [{member_id:"recMemberA"},{...context,brandAudience:"unresolved"},true], [{member_id:"recMemberA"},context,false], [{},context,true]]) {
+    const upstream=jsonResponse({ok,data:{...data,brand_audience:"sigil"}});
+    upstream.headers.set("x-mmd-brand-authority","canonical_member_account_v1");
+    const result=await applyMyMmdCanonicalEntitlementResponse(new Request("https://mmdbkk.com/member/api/liff/profile"),upstream,ctx);
+    assert.equal((await result.json()).data.brand_audience,"unresolved");
+    assert.equal(result.headers.get("x-mmd-brand-authority"),null);
+  }
 });
