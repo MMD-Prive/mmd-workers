@@ -82,6 +82,11 @@ test('automatic CI is credential-free and runs gate and current-session regressi
   assert.match(source, /branches: \[main\]/);
   assert.match(source, /admin-production-approval.test.mjs scripts\/admin-workflow-safety.test.mjs/);
   assert.match(source, /model-current-session.test.mjs admin-worker\/model-session-runtime-v1a.test.mjs/);
+  for (const file of [
+    'src/model-line-job-briefs.js', 'src/model-line-job-briefs-diagnostic.js',
+    'model-line-job-briefs.test.mjs', 'model-line-job-briefs-diagnostic.test.mjs',
+  ]) assert.ok(source.includes(`node --check admin-worker/${file}\n`), `${file}: CI syntax check required`);
+  assert.ok(source.includes('node --experimental-global-webcrypto --test admin-worker/model-line-job-briefs-diagnostic.test.mjs admin-worker/model-line-job-briefs.test.mjs\n'), 'CI must run diagnostic and existing LINE briefs regressions');
   assert.doesNotMatch(source, /secrets\.|wrangler|curl |workflow_run:|environment:/);
 });
 

@@ -1,5 +1,6 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { resolvePhaseALineIdentity } from "./model-onboarding-phase-a.js";
+import { handleLineBriefDiagnostic, isLineBriefDiagnosticAction, readLineBriefPendingDiagnostic } from "./model-line-job-briefs-diagnostic.js";
 
 export const OWNER_BRIEFS_PATH = "/v1/admin/model/line-briefs";
 export const MODEL_BRIEFS_PATH = "/v1/model/line-briefs";
@@ -26,7 +27,7 @@ export function isLineJobBriefRequest(request) {
   } catch { return false; }
 }
 
-export async function handleLineJobBriefRequest(request, env = {}) {
+export async function handleLineJobBriefRequest(request, env = {}, diagnosticDependencies = {}) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "");
   const owner = path === OWNER_BRIEFS_PATH;
@@ -43,13 +44,14 @@ export async function handleLineJobBriefRequest(request, env = {}) {
   try { body = JSON.parse(raw); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
   const action = clean(body.action, 30);
-  if (!(owner ? OWNER_ACTIONS : MODEL_ACTIONS).has(action)) return json({ ok: false, error: "action_invalid" }, 400);
+  if (!(owner ? OWNER_ACTIONS : MODEL_ACTIONS).has(action) && !(owner && isLineBriefDiagnosticAction(action))) return json({ ok: false, error: "action_invalid" }, 400);
 
   let command;
   if (owner) {
     const actor = await readCredentialBoundAdminActor(request, env);
     if (!actor) return json({ ok: false, error: "unauthorized" }, 401);
     if (!["owner", "admin"].includes(clean(actor.role).toLowerCase())) return json({ ok: false, error: "owner_required" }, 403);
+    if (isLineBriefDiagnosticAction(action)) return handleLineBriefDiagnostic(body, env, diagnosticDependencies);
     command = { audience: "owner", action, actor: clean(actor.id, 80), brief_id: body.brief_id, version: body.version,
       fields: body.fields, reason: body.reason, response_id: body.response_id, response_version: body.response_version, decision: body.decision,
       application_reviewed: body.application_reviewed === true };
@@ -228,6 +230,7 @@ export async function handleLineJobBriefDurableRequest(state, _env, request) {
   if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
   const command = await request.json().catch(() => null);
   if (!command || !["owner", "model"].includes(command.audience)) return json({ ok: false, error: "invalid_command" }, 400);
+  if (command.action === "diagnostic_pending") return readLineBriefPendingDiagnostic(state, _env, command);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
   const storage = state.storage;
