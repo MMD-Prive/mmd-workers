@@ -3,6 +3,12 @@ main = "src/customer-360-live-entry.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# MMS read context only. The target validates the forwarded admin session;
+# no bearer credential, public route or automatic action is introduced.
+[[services]]
+binding = "MMS_ADMIN"
+service = "admin-worker"
+
 # Production custom-host routes are synchronized explicitly by
 # deploy-admin-ai-ops-worker.yml with the dedicated routes token.
 # Keeping routes out of Wrangler lets first deploy create the Worker safely
