@@ -82,7 +82,7 @@ test("MMD NOW folds natively while Worker-gated mission, quick links and Kenji r
   assert.match(html,/id="digital-needs-action"/);
   assert.match(html,/data-view="history"/);
   assert.match(html,/data-view="credits"/);
-  assert.match(html,/href="\/member\/kenji"/);
+  assert.match(html,/data-view="home" data-pm-dock/);
   assert.match(html,/class="digital-bangkok-trace"[^>]*aria-hidden="true"/);
 });
 
