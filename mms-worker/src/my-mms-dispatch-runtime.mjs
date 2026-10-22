@@ -4,6 +4,7 @@ import { requireMyMmsApprovedTherapist } from "./my-mms-access-runtime.mjs";
 import { mmsJobPricing } from "./mms-job-pricing.mjs";
 import { computeGoogleEtaMinutes, numericEtaLabel } from "./my-mms-travel-runtime.mjs";
 import { evaluateDepartureClaim } from "./my-mms-departure-claim.mjs";
+import { claimDispatchJobWinner } from "./my-mms-dispatch-claim.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
@@ -118,15 +119,7 @@ export class MmsDispatchCoordinator extends DurableObject {
     }
     if (offer.status !== "OFFERED") return this._remember(requestKey, therapistId, "accept", { state: canonicalClientState(offer.status) }, now);
 
-    this.ctx.storage.sql.exec(
-      `UPDATE dispatch_jobs
-       SET state='ACCEPTED', winner_therapist_id=?, accepted_at=?, version=version+1, updated_at=?
-       WHERE job_id=? AND winner_therapist_id IS NULL`,
-      therapistId,
-      now,
-      now,
-      jobId,
-    );
+    claimDispatchJobWinner(this.ctx.storage.sql, jobId, therapistId, now);
     const after = this._job(jobId);
     if (after.winner_therapist_id !== therapistId) {
       return this._remember(requestKey, therapistId, "accept", { state: "TAKEN", winner_therapist_id: after.winner_therapist_id }, now);
@@ -236,7 +229,7 @@ export class MmsDispatchCoordinator extends DurableObject {
         now,
       );
     }
-    return this._remember(requestKey, "internal", "cancel", { state: "CANCELLED" }, now);
+    return this._remember(requestKey, "internal", "cancel", { state: "CANCELLED", winner_therapist_id: job.winner_therapist_id }, now);
   }
 
   _job(jobId) {
@@ -308,6 +301,9 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const body = await readJson(request);
       const requestKey = requiredRequestKey(body.request_key, `cancel:${internalCancel[1]}`);
       const result = await dispatchStub(env, internalCancel[1]).cancel(internalCancel[1], requestKey, Date.now());
+      if (result.state === "CANCELLED" && result.winner_therapist_id) {
+        await therapistScheduleStub(env, result.winner_therapist_id).release(internalCancel[1], Date.now());
+      }
       await projectJobState(env, internalCancel[1], result);
       await projectOfferStatesFromSnapshot(env, internalCancel[1]);
       return actionJson(internalCancel[1], result, request, env);
@@ -344,7 +340,26 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const requestKey = requiredRequestKey(body.requestKey ?? body.request_key, `accept:${acceptMatch[1]}:${therapistId}`);
       const offer = await findOfferForTherapist(env, acceptMatch[1], therapistId);
       if (!offer) throw dispatchError(404, "OFFER_NOT_FOUND");
-      const result = await dispatchStub(env, acceptMatch[1]).accept(acceptMatch[1], therapistId, requestKey, Date.now());
+      const job = await findUniqueByField(env, tableId(env, "JOBS"), "Job ID", acceptMatch[1]);
+      if (!job) throw dispatchError(404, "JOB_NOT_FOUND");
+      const window = serviceWindow(job.fields || {});
+      const now = Date.now();
+      const schedule = therapistScheduleStub(env, therapistId);
+      const reservation = await schedule.reserve(
+        acceptMatch[1], window.start_at, window.end_at,
+        await listActiveTherapistSchedules(env, therapistId, now), now,
+      );
+      if (reservation?.state !== "RESERVED") throw scheduleReservationError(reservation?.state);
+      let result;
+      try {
+        result = await dispatchStub(env, acceptMatch[1]).accept(acceptMatch[1], therapistId, requestKey, now);
+      } catch (error) {
+        // A failed RPC may have committed. Keep the reservation until the job owner is verified.
+        throw error;
+      }
+      if (!result || (result.state !== "ACCEPTED" && result.state !== "CHECKING")) {
+        await schedule.release(acceptMatch[1], Date.now());
+      }
       await projectAcceptResult(env, acceptMatch[1], result);
       return actionJson(acceptMatch[1], result, request, env);
     }
@@ -376,7 +391,27 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const requestKey = requiredRequestKey(body.requestKey ?? body.request_key, `start:${startMatch[1]}:${therapistId}`);
       const owned = await findOwnedJob(env, startMatch[1], therapistId);
       if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
-      const result = await dispatchStub(env, startMatch[1]).transition(startMatch[1], therapistId, requestKey, "start", Date.now());
+      const window = serviceWindow(owned.fields || {});
+      const now = Date.now();
+      const schedule = therapistScheduleStub(env, therapistId);
+      const reservation = await schedule.reserve(
+        startMatch[1], window.start_at, window.end_at,
+        await listActiveTherapistSchedules(env, therapistId, now, startMatch[1]), now,
+      );
+      if (reservation?.state !== "RESERVED") throw scheduleReservationError(reservation?.state);
+      const activeSchedule = await schedule.markInProgress(startMatch[1], now);
+      if (activeSchedule?.state !== "ACTIVE") throw dispatchError(409, "THERAPIST_SCHEDULE_UNAVAILABLE");
+      let result;
+      try {
+        result = await dispatchStub(env, startMatch[1]).transition(startMatch[1], therapistId, requestKey, "start", Date.now());
+      } catch (error) {
+        // An uncertain transition may have started service. Keep the blocking window.
+        throw error;
+      }
+      if (["COMPLETED", "CANCELLED"].includes(result.state)) await schedule.release(startMatch[1], Date.now());
+      else if (result.state !== "IN_PROGRESS") {
+        await schedule.restoreScheduledWindow(startMatch[1], window.start_at, window.end_at, Date.now());
+      }
       await projectJobState(env, startMatch[1], result);
       return actionJson(startMatch[1], result, request, env);
     }
@@ -389,6 +424,7 @@ export async function maybeHandleMyMmsDispatch(request, env = {}) {
       const owned = await findOwnedJob(env, completeMatch[1], therapistId);
       if (!owned) throw dispatchError(404, "JOB_NOT_FOUND");
       const result = await dispatchStub(env, completeMatch[1]).transition(completeMatch[1], therapistId, requestKey, "complete", Date.now());
+      if (result.state === "COMPLETED") await therapistScheduleStub(env, therapistId).release(completeMatch[1], Date.now());
       await projectJobState(env, completeMatch[1], result);
       return actionJson(completeMatch[1], result, request, env);
     }
@@ -479,7 +515,7 @@ async function dispatchPrebooking(request, env, prebookingId) {
 
   const therapists = await listAllRecords(env, tableId(env, "THERAPISTS"));
   const accessById = new Map(therapists.map((record) => [clean(record.fields?.["Therapist ID"], 80), clean(selectName(record.fields?.["MY MMS Access"]), 40)]));
-  const result = matchTherapists(therapists, { recipient_gender: recipientGender, zone, skills });
+  const result = matchTherapists(therapists, { recipient_gender: recipientGender, zone, skills, rotation_key: existingJobId });
   if (result.requires_manual_coordination) throw dispatchError(409, "MANUAL_COORDINATION_REQUIRED");
   const maxOffers = boundedInt(body.max_offers, 1, 10, DEFAULT_MAX_OFFERS);
   const candidates = result.matches
@@ -638,6 +674,29 @@ async function listTherapistJobs(env, therapistId) {
   return records
     .sort((a, b) => Date.parse(clean(b.fields?.["Service Start At"], 80)) - Date.parse(clean(a.fields?.["Service Start At"], 80)))
     .map((record) => jobProjection(record));
+}
+
+async function listActiveTherapistSchedules(env, therapistId, now, excludeJobId = "") {
+  const formula = `AND({Accepted Therapist ID}=${formulaString(therapistId)},OR({Job Status}='Accepted',{Job Status}='In Progress'))`;
+  const records = await listAllByFormula(env, tableId(env, "JOBS"), formula);
+  return records
+    .filter((record) => ["accepted", "in progress"].includes(clean(selectName(record.fields?.["Job Status"]), 40).toLowerCase()))
+    .map((record) => {
+      const fields = record.fields || {};
+      const jobId = clean(fields["Job ID"], 80);
+      if (!jobId) throw dispatchError(503, "THERAPIST_SCHEDULE_READ_INCOMPLETE");
+      if (jobId && jobId === excludeJobId) return null;
+      const status = clean(selectName(fields["Job Status"]), 40).toLowerCase();
+      const start = Date.parse(clean(fields["Service Start At"], 80));
+      const duration = Number(fields["Duration Minutes"]);
+      if (!Number.isFinite(start) || !Number.isInteger(duration) || duration < 1 || duration > 1440) {
+        return { job_id: jobId, start_at: null, end_at: null };
+      }
+      const end = start + duration * 60_000;
+      if (status === "in progress") return { job_id: jobId, start_at: 0, end_at: Number.MAX_SAFE_INTEGER };
+      return end <= now ? null : { job_id: jobId, start_at: start, end_at: end };
+    })
+    .filter(Boolean);
 }
 
 async function readTherapistJob(env, therapistId, jobId) {
@@ -887,6 +946,23 @@ async function listByFormula(env, table, formula, maxRecords = 100) {
   return Array.isArray(data.records) ? data.records : [];
 }
 
+async function listAllByFormula(env, table, formula) {
+  requireAirtable(env);
+  const records = [];
+  let offset = "";
+  for (let page = 0; page < 5; page += 1) {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("filterByFormula", formula);
+    if (offset) url.searchParams.set("offset", offset);
+    const data = await airtableFetch(url, { method: "GET" }, env);
+    records.push(...(Array.isArray(data.records) ? data.records : []));
+    offset = clean(data.offset, 200);
+    if (!offset) return records;
+  }
+  throw dispatchError(503, "THERAPIST_SCHEDULE_READ_INCOMPLETE");
+}
+
 async function listAllRecords(env, table) {
   requireAirtable(env);
   const records = [];
@@ -929,6 +1005,7 @@ function requireDispatchConfig(env) {
   requireAirtable(env);
   for (const suffix of ["PREBOOKINGS", "THERAPISTS", "JOBS", "OFFERS"]) tableId(env, suffix);
   if (!env.MMS_DISPATCH_COORDINATOR?.get || !env.MMS_DISPATCH_COORDINATOR?.idFromName) throw dispatchError(503, "DISPATCH_COORDINATOR_NOT_CONFIGURED");
+  if (!env.MMS_THERAPIST_SCHEDULE_COORDINATOR?.get || !env.MMS_THERAPIST_SCHEDULE_COORDINATOR?.idFromName) throw dispatchError(503, "THERAPIST_SCHEDULE_COORDINATOR_NOT_CONFIGURED");
 }
 
 function requireAirtable(env) {
@@ -944,6 +1021,31 @@ function tableId(env, suffix) {
 function dispatchStub(env, jobId) {
   if (!env.MMS_DISPATCH_COORDINATOR?.get || !env.MMS_DISPATCH_COORDINATOR?.idFromName) throw dispatchError(503, "DISPATCH_COORDINATOR_NOT_CONFIGURED");
   return env.MMS_DISPATCH_COORDINATOR.get(env.MMS_DISPATCH_COORDINATOR.idFromName(jobId));
+}
+
+function therapistScheduleStub(env, therapistId) {
+  const namespace = env.MMS_THERAPIST_SCHEDULE_COORDINATOR;
+  if (!namespace?.get || !namespace?.idFromName) throw dispatchError(503, "THERAPIST_SCHEDULE_COORDINATOR_NOT_CONFIGURED");
+  return namespace.get(namespace.idFromName(therapistId));
+}
+
+function serviceWindow(fields) {
+  const startAt = Date.parse(clean(fields?.["Service Start At"], 80));
+  const duration = Number(fields?.["Duration Minutes"]);
+  if (!Number.isFinite(startAt) || !Number.isInteger(duration) || duration < 15 || duration > 480) {
+    throw dispatchError(409, "MMS_SERVICE_WINDOW_UNAVAILABLE");
+  }
+  return { start_at: startAt, end_at: startAt + duration * 60_000 };
+}
+
+function scheduleReservationError(state) {
+  const codes = {
+    OVERLAP: "THERAPIST_SCHEDULE_CONFLICT",
+    SCHEDULE_UNKNOWN: "THERAPIST_SCHEDULE_UNCERTAIN",
+    INVALID_WINDOW: "MMS_SERVICE_WINDOW_UNAVAILABLE",
+    JOB_WINDOW_CONFLICT: "MMS_JOB_WINDOW_CONFLICT",
+  };
+  return dispatchError(409, codes[state] || "THERAPIST_SCHEDULE_UNAVAILABLE");
 }
 
 function requireInternalRequest(request, env) {

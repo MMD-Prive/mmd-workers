@@ -352,6 +352,7 @@ export function matchTherapists(records, criteria) {
   const recipientGender = text(criteria?.recipient_gender, 80);
   const zone = normalizeCatalogValue(criteria?.zone, ZONE_LOOKUP, "zone");
   const skills = normalizeCatalogValues(criteria?.skills, SKILL_LOOKUP, 1, 6, "skills");
+  const rotationKey = text(criteria?.rotation_key, 160);
   const manualAudience = !["ผู้ชาย", "ผู้หญิง"].includes(recipientGender);
 
   if (manualAudience) {
@@ -370,13 +371,35 @@ export function matchTherapists(records, criteria) {
     })
     .filter((therapist) => therapist.match_score === skills.length)
     .sort((a, b) => {
+      const zonePriority = zoneMatchPriority(a, zone) - zoneMatchPriority(b, zone);
+      if (zonePriority !== 0) return zonePriority;
       const availability = availabilityScore(b.availability_status) - availabilityScore(a.availability_status);
       if (availability !== 0) return availability;
+      if (rotationKey) {
+        const rotation = stableRotationScore(rotationKey, a.therapist_id) - stableRotationScore(rotationKey, b.therapist_id);
+        if (rotation !== 0) return rotation;
+        const idOrder = a.therapist_id.localeCompare(b.therapist_id);
+        if (idOrder !== 0) return idOrder;
+      }
       return a.display_name.localeCompare(b.display_name, "th");
     })
     .map(customerSafeTherapist);
 
   return { requires_manual_coordination: false, matches };
+}
+
+function zoneMatchPriority(therapist, zone) {
+  return therapist.base_zone === zone ? 0 : 1;
+}
+
+function stableRotationScore(rotationKey, therapistId) {
+  let hash = 2166136261;
+  const value = `${rotationKey}:${therapistId}`;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 export function applicationAirtableFields(application, meta) {
