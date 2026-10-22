@@ -51,7 +51,15 @@ export async function handleLineJobBriefRequest(request, env = {}, diagnosticDep
     const actor = await readCredentialBoundAdminActor(request, env);
     if (!actor) return json({ ok: false, error: "unauthorized" }, 401);
     if (!["owner", "admin"].includes(clean(actor.role).toLowerCase())) return json({ ok: false, error: "owner_required" }, 403);
-    if (isLineBriefDiagnosticAction(action)) return handleLineBriefDiagnostic(body, env, diagnosticDependencies);
+    if (isLineBriefDiagnosticAction(action)) {
+      try {
+        let dependencies = diagnosticDependencies;
+        if (typeof dependencies === "function") {
+          dependencies = action === "diagnostic_pending" ? await dependencies() : {};
+        }
+        return await handleLineBriefDiagnostic(body, env, dependencies);
+      } catch { return json({ ok: false, error: "diagnostic_read_unavailable", pending_status: "unknown" }, 503); }
+    }
     command = { audience: "owner", action, actor: clean(actor.id, 80), brief_id: body.brief_id, version: body.version,
       fields: body.fields, reason: body.reason, response_id: body.response_id, response_version: body.response_version, decision: body.decision,
       application_reviewed: body.application_reviewed === true };
