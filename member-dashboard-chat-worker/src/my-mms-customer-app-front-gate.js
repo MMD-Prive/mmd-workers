@@ -335,6 +335,8 @@ function bookingFromRequest(record) {
     areaLabel: safeString(record?.zone, 120) || null,
     therapist: null,
     status: bookingStatus(rawStatus),
+    travelStatus: record?.travel_status === "en_route" ? "en_route" : record?.travel_status === "checking" ? "checking" : null,
+    etaMinutes: Number.isInteger(record?.eta_minutes) && record.eta_minutes > 0 ? record.eta_minutes : null,
     paymentState: "checking",
     amountSummary: null,
     nextAction: needsAttention

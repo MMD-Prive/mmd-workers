@@ -143,6 +143,8 @@ test("booking reads resolve member identity server-side then call mms-worker", a
               service_time: "19:30",
               zone: "Sukhumvit",
               skills: ["Aroma Oil"],
+              travel_status: "en_route",
+              eta_minutes: 85,
             }],
           },
         });
@@ -159,6 +161,8 @@ test("booking reads resolve member identity server-side then call mms-worker", a
   assert.equal(body.data.status, "confirmed");
   assert.equal(body.data.serviceLabel, "Aroma Oil");
   assert.equal(body.data.paymentState, "checking");
+  assert.equal(body.data.travelStatus, "en_route");
+  assert.equal(body.data.etaMinutes, 85);
   assert.match(calls[0], /\/api\/mms\/app\/membership\/me$/);
   assert.match(calls[1], /^https:\/\/mms\.internal\/internal\/mms\/member\/prebookings\?member_ref=mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$/);
 });
