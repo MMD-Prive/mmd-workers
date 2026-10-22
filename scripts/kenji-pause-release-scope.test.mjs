@@ -51,3 +51,42 @@ test('scope gate protects the entire credential-bearing deployment job', () => {
   assert.doesNotMatch(scope, /secrets\.|wrangler|route_sync/);
   assert.match(scope, /fetch-depth: 0/);
 });
+
+// Exact changed paths of reviewed PR #2618 (3389d9b).
+const personalMainFiles = [
+  'member-dashboard-chat-worker/src/kenji-member-app.js',
+  'member-dashboard-chat-worker/test/kenji-member-app.test.mjs',
+  'member-pages-worker/src/kenji-member-session-truth.js',
+  'member-pages-worker/src/liff-member-shell.js',
+  'member-pages-worker/src/liff-personal-main.js',
+  'member-pages-worker/src/member-app-api-runtime.js',
+  'member-pages-worker/src/member-personal-main.js',
+  'member-pages-worker/src/runtime-index.js',
+  'member-pages-worker/test/liff-member-compact-v4.test.mjs',
+  'member-pages-worker/test/liff-member-shell.test.mjs',
+  'member-pages-worker/test/liff-personal-main.test.mjs',
+  'member-pages-worker/test/liff-quick-membership.test.mjs',
+  'member-pages-worker/test/member-personal-main.test.mjs',
+  'shared/personal-main-catalog.mjs',
+  'package.json',
+];
+test('PR 2618 exact delta and its guard patch never enter legacy deployment',()=>{
+  assert.equal(deployRequired('push',personalMainFiles),false);
+  assert.equal(deployRequired('push',[...personalMainFiles,'scripts/kenji-pause-release-scope.mjs','scripts/kenji-pause-release-scope.test.mjs']),false);
+  for(const anchor of ['member-dashboard-chat-worker/src/kenji-member-app.js','member-pages-worker/src/liff-personal-main.js','member-pages-worker/src/member-personal-main.js','shared/personal-main-catalog.mjs'])assert.equal(deployRequired('push',[anchor]),false);
+});
+test('Personal Main mixed config, dependencies, workflows and unrelated runtime fail closed',()=>{
+  for(const extra of [config,'member-pages-worker/wrangler.toml','package-lock.json','member-pages-worker/package.json',
+    '.github/workflows/deploy-member-dashboard-chat-worker.yml','.github/workflows/unreviewed-deploy.yml',
+    'mms-member-worker/src/index.js','member-dashboard-chat-worker/src/index.js','shared/payment-intelligence.mjs',
+    'scripts/kenji-code-only-promote.mjs','unknown-file.js']){
+    for(const files of [[...personalMainFiles,extra],[extra,...personalMainFiles]]){
+      assert.throws(()=>deployRequired('push',files,'','LINE_AUTO_REPLY_ENABLED = "false"'),/PERSONAL_MAIN_MIXED_DELTA/);
+    }
+  }
+});
+test('Personal Main hold does not silently classify package-only or unrelated changes',()=>{
+  assert.equal(deployRequired('push',['package.json']),true);
+  assert.equal(deployRequired('push',['mms-member-worker/src/index.js']),true);
+  assert.equal(deployRequired('workflow_dispatch',personalMainFiles),true);
+});

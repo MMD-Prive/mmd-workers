@@ -35,9 +35,44 @@ export const KENJI_MANUAL_RELEASE_PATHS = new Set([
   'scripts/kenji-code-only-promote.test.mjs',
 ]);
 
+// Personal Main must use a separately approved code-only release for both owners.
+// A mixed delta is an error, never permission to fall through to legacy deploy.
+export const PERSONAL_MAIN_RELEASE_PATHS = new Set([
+  'member-dashboard-chat-worker/src/kenji-member-app.js',
+  'member-dashboard-chat-worker/test/kenji-member-app.test.mjs',
+  'member-pages-worker/src/kenji-member-session-truth.js',
+  'member-pages-worker/src/liff-member-shell.js',
+  'member-pages-worker/src/liff-personal-main.js',
+  'member-pages-worker/src/member-app-api-runtime.js',
+  'member-pages-worker/src/member-personal-main.js',
+  'member-pages-worker/src/runtime-index.js',
+  'member-pages-worker/test/liff-member-compact-v4.test.mjs',
+  'member-pages-worker/test/liff-member-shell.test.mjs',
+  'member-pages-worker/test/liff-personal-main.test.mjs',
+  'member-pages-worker/test/liff-quick-membership.test.mjs',
+  'member-pages-worker/test/member-personal-main.test.mjs',
+  'shared/personal-main-catalog.mjs',
+  'package.json',
+]);
+const personalMainAnchors = new Set([
+  'member-dashboard-chat-worker/src/kenji-member-app.js',
+  'member-pages-worker/src/liff-personal-main.js',
+  'member-pages-worker/src/member-personal-main.js',
+  'shared/personal-main-catalog.mjs',
+]);
+const personalMainGuardPaths = new Set([
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+]);
+
 export function deployRequired(event, files, beforeConfig, afterConfig) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.some(file => personalMainAnchors.has(file))) {
+    assert.ok(files.every(file => PERSONAL_MAIN_RELEASE_PATHS.has(file) || personalMainGuardPaths.has(file)),
+      'PERSONAL_MAIN_MIXED_DELTA: stop; separate review required before any legacy deployment');
+    return false;
+  }
   if (files.some(file => KENJI_MANUAL_RELEASE_PATHS.has(file)) &&
       files.every(file => KENJI_MANUAL_RELEASE_PATHS.has(file) || pausePaths.has(file)) &&
       !files.includes(configPath)) return false;
@@ -62,5 +97,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     required = deployRequired(event, files, files.includes(configPath) ? read(before) : '', files.includes(configPath) ? read(after) : '');
   }
   appendFileSync(process.env.GITHUB_OUTPUT, `deploy_required=${required}\n`);
-  console.log(required ? 'Normal release scope: existing deployment policy applies' : 'Pause/Kenji-scoped change: skip entire deployment job including route sync; Kenji runtime release requires separate manual approval');
+  console.log(required ? 'Normal release scope: existing deployment policy applies' : 'Manual-only scope: skip entire deployment job including route sync; runtime release requires separate approval');
 }
