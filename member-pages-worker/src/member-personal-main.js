@@ -24,6 +24,7 @@ export async function handlePersonalMain(request,env,readSession){
   try {
     const session=await readSession(request,env);
     if(!verified(session))return respond({ok:false,error:'member_session_required'},401);
+    if(request.method==='PUT' && session.readGraceOnly===true)return respond({ok:false,error:'member_session_superseded'},401);
     if(request.method==='GET')return respond({ok:true,selected:await readPersonalMain(env,session),choices:PERSONAL_MAINS,authority:'member-pages-worker'});
     if(!request.headers.get('content-type')?.startsWith('application/json'))return respond({ok:false,error:'json_required'},415);
     const reader=request.body?.getReader();

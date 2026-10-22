@@ -38,3 +38,23 @@ test('invalid JSON and oversized streams return 400 without writes',async()=>{
  }
  assert.equal(e.store.size,0);
 });
+
+test('real session reader permits read grace but rejects stale preference PUT before any write',async()=>{
+ const {readMemberAppSession}=await import('../src/member-app-api-runtime.js');
+ const secret='personal-main-test-secret-not-production-12345',token='fixture-token';
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const hash=Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('session:'+token))),b=>b.toString(16).padStart(2,'0')).join('');
+ const store=new Map();const writes=[];
+ const e={LIFF_SESSION_SECRET:secret,LIFF_IDENTITY_KV:{get:async k=>store.get(k)||null,put:async(k,v)=>{writes.push(k);store.set(k,JSON.parse(v));}}};
+ const sessionKey='liff:session:'+hash;
+ const stored={member_exists:true,member_id:'recTestA',line_user_id:'U'+'a'.repeat(32),member_profile:{membership_status:'active',member_id:'recTestA'},expires_at:Date.now()+30000,read_grace_only:true,read_grace_expires_at:Date.now()+30000};
+ store.set(sessionKey,stored);
+ function req(method){return new Request('https://mmdbkk.com/api/member/app/personal-main',{method,headers:{cookie:'__Host-mmd_liff_session='+token,origin:'https://mmdbkk.com','content-type':'application/json'},...(method==='PUT'?{body:'{"id":"hito"}'}:{})});}
+ const snapshot=await readMemberAppSession(req('GET'),e);assert.equal(snapshot.readGraceOnly,true);
+ assert.equal((await handlePersonalMain(req('GET'),e,readMemberAppSession)).status,200);
+ const stale=await handlePersonalMain(req('PUT'),e,readMemberAppSession);assert.equal(stale.status,401);assert.equal((await stale.json()).error,'member_session_superseded');assert.equal(writes.length,0);
+ store.set(sessionKey,{...stored,read_grace_only:false});
+ assert.equal((await handlePersonalMain(req('PUT'),e,readMemberAppSession)).status,200);assert.equal(writes.length,1);
+ store.set(sessionKey,{...stored,expires_at:Date.now()-1});
+ assert.equal((await handlePersonalMain(req('GET'),e,readMemberAppSession)).status,401);assert.equal(writes.length,1);
+});
