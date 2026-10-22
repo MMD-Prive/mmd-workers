@@ -26,7 +26,7 @@ const env = {
   AIRTABLE_TABLE_LINE_OFC_CLIENT_IMPORT_STAGING_ID: 'synthetic_staging',
   INTERNAL_TOKEN: 'synthetic-token-only',
 };
-function mockStorage({indexes = [index], clients = [client]} = {}) {
+function mockStorage({indexes = [index], clients = [client], staging = []} = {}) {
   const previous = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input, init = {}) => {
@@ -40,6 +40,7 @@ function mockStorage({indexes = [index], clients = [client]} = {}) {
     if (table === 'synthetic_index') body = {records: indexes};
     else if (table === 'synthetic_clients' && path[4]) body = clients.find(c => c.id === path[4]);
     else if (table === 'synthetic_clients') body = {records: clients};
+    else if (table === 'synthetic_staging') body = {records: staging};
     else body = {records: []};
     return new Response(JSON.stringify(body || {error: 'synthetic_not_found'}), {status: body ? 200 : 404});
   };
@@ -93,6 +94,44 @@ for (const query of ['คุณ ' + name, 'ทดสอบป้ายจำล�
     } finally {mock.restore();}
   });
 }
+test('Thai tone-mark variants find the same authoritative Per Rename client', async () => {
+  const savedName = 'ตัว 18 กย 69';
+  const toneIndex = {...index, fields: {...index.fields, preferred_name: savedName}};
+  const toneClient = {...client, fields: {'Client Name': savedName, line_user_id: lineId}};
+  const mock = mockStorage({indexes: [toneIndex], clients: [toneClient]});
+  try {
+    const result = await resolvePerRenameAlias(env, 'ตั๋ว');
+    assert.equal(result.state, 'resolved');
+    assert.equal(result.record.client_id, clientId);
+    assert.equal(result.record.current_line_rename, savedName);
+  } finally {mock.restore();}
+});
+
+test('Thai tone-mark variant finds a canonical client through reviewed LINE staging', async () => {
+  const savedName = 'ตัว 18 กย 69';
+  const toneClient = {...client, fields: {'Client Name': savedName, line_user_id: lineId}};
+  const reviewedStaging = [{id: 'recSyntheticStaging01', fields: {
+    line_renamed_name: savedName,
+    line_display_name: 'Synthetic LINE display',
+    line_user_id: lineId,
+    matched_client_id: clientId,
+    review_status: 'reviewed',
+  }}];
+  const mock = mockStorage({indexes: [], clients: [toneClient], staging: reviewedStaging});
+  try {
+    const response = await handleCreateSessionClientLineageRequest(request('ตั๋ว'), env);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.records.length, 1);
+    assert.equal(body.records[0].client_id, clientId);
+    assert.equal(body.records[0].matched_on, 'per_manual_rename');
+    assert.equal(body.manual_fallback, false);
+    const formula = mock.calls.find(u => u.pathname.endsWith('/synthetic_staging'))?.searchParams.get('filterByFormula') || '';
+    assert.ok(formula.includes('SUBSTITUTE('));
+    assert.ok(formula.includes('ตัว'));
+  } finally {mock.restore();}
+});
+
 test('synthetic typo and unlinked rows cannot manufacture canonical identity', async () => {
   for (const [indexes, query] of [
     [[index], 'ต่างชื่อ ป้ายจำลอง'],
