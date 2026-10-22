@@ -54,23 +54,38 @@ export const PERSONAL_MAIN_RELEASE_PATHS = new Set([
   'shared/personal-main-catalog.mjs',
   'package.json',
 ]);
-const personalMainAnchors = new Set([
-  'member-dashboard-chat-worker/src/kenji-member-app.js',
-  'member-pages-worker/src/liff-personal-main.js',
-  'member-pages-worker/src/member-personal-main.js',
-  'shared/personal-main-catalog.mjs',
-]);
+const personalMainAnchors = new Set([...PERSONAL_MAIN_RELEASE_PATHS].filter(path =>
+  path.includes('/src/') || path === 'shared/personal-main-catalog.mjs'));
+
+export function validatePersonalMainManifest(before, after) {
+  const error = 'PERSONAL_MAIN_MANIFEST_DELTA: only the reviewed LIFF test-list addition is allowed';
+  assert.equal(typeof before, 'string', error);
+  assert.equal(typeof after, 'string', error);
+  let parsed;
+  try { parsed = JSON.parse(before); } catch { assert.fail(error); }
+  const command = parsed?.scripts?.['test:member-pages-liff'];
+  assert.equal(typeof command, 'string', error);
+  const added = ['member-pages-worker/test/member-personal-main.test.mjs',
+    'member-pages-worker/test/liff-personal-main.test.mjs'];
+  assert.ok(added.every(path => !command.includes(path)), error);
+  const encoded = JSON.stringify(command);
+  assert.equal(before.split(encoded).length, 2, error);
+  const expected = before.replace(encoded, JSON.stringify(command + ' ' + added.join(' ')));
+  // Exact text replacement also rejects unrelated keys, duplicate keys and formatting drift.
+  assert.equal(after, expected, error);
+}
 const personalMainGuardPaths = new Set([
   'scripts/kenji-pause-release-scope.mjs',
   'scripts/kenji-pause-release-scope.test.mjs',
 ]);
 
-export function deployRequired(event, files, beforeConfig, afterConfig) {
+export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
   if (files.some(file => personalMainAnchors.has(file))) {
     assert.ok(files.every(file => PERSONAL_MAIN_RELEASE_PATHS.has(file) || personalMainGuardPaths.has(file)),
       'PERSONAL_MAIN_MIXED_DELTA: stop; separate review required before any legacy deployment');
+    if (files.includes('package.json')) validatePersonalMainManifest(manifest.before, manifest.after);
     return false;
   }
   if (files.some(file => KENJI_MANUAL_RELEASE_PATHS.has(file)) &&
@@ -94,7 +109,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const git = args => execFileSync('git', args, { encoding: 'utf8' });
     const files = git(['diff', '--name-only', '--no-renames', '-z', before, after]).split('\0').filter(Boolean);
     const read = sha => git(['show', `${sha}:${configPath}`]);
-    required = deployRequired(event, files, files.includes(configPath) ? read(before) : '', files.includes(configPath) ? read(after) : '');
+    required = deployRequired(event, files, files.includes(configPath) ? read(before) : '', files.includes(configPath) ? read(after) : '',
+      files.includes('package.json') ? {before:git(['show', `${before}:package.json`]), after:git(['show', `${after}:package.json`])} : {});
   }
   appendFileSync(process.env.GITHUB_OUTPUT, `deploy_required=${required}\n`);
   console.log(required ? 'Normal release scope: existing deployment policy applies' : 'Manual-only scope: skip entire deployment job including route sync; runtime release requires separate approval');
