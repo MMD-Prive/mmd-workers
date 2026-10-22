@@ -85,8 +85,10 @@ test('automatic CI is credential-free and runs gate and current-session regressi
   for (const file of [
     'src/model-line-job-briefs.js', 'src/model-line-job-briefs-diagnostic.js',
     'model-line-job-briefs.test.mjs', 'model-line-job-briefs-diagnostic.test.mjs',
+    'src/model-line-brief-inventory.js', 'model-line-brief-inventory.test.mjs',
   ]) assert.ok(source.includes(`node --check admin-worker/${file}\n`), `${file}: CI syntax check required`);
   assert.ok(source.includes('node --experimental-global-webcrypto --test admin-worker/model-line-job-briefs-diagnostic.test.mjs admin-worker/model-line-job-briefs.test.mjs\n'), 'CI must run diagnostic and existing LINE briefs regressions');
+  assert.ok(source.includes('node --experimental-global-webcrypto --test admin-worker/model-line-brief-inventory.test.mjs\n'), 'CI must run GET-only inventory provider mocks');
   assert.doesNotMatch(source, /secrets\.|wrangler|curl |workflow_run:|environment:/);
 });
 

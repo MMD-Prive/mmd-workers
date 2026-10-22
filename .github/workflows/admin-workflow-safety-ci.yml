@@ -46,3 +46,6 @@ jobs:
           node --check admin-worker/model-line-job-briefs.test.mjs
           node --check admin-worker/model-line-job-briefs-diagnostic.test.mjs
           node --experimental-global-webcrypto --test admin-worker/model-line-job-briefs-diagnostic.test.mjs admin-worker/model-line-job-briefs.test.mjs
+          node --check admin-worker/src/model-line-brief-inventory.js
+          node --check admin-worker/model-line-brief-inventory.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/model-line-brief-inventory.test.mjs
