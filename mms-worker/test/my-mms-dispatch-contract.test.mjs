@@ -7,6 +7,7 @@ const accessUrl = new URL("../src/my-mms-access-runtime.mjs", import.meta.url);
 const wrapperUrl = new URL("../src/runtime-index-with-therapist-invite.js", import.meta.url);
 const entryUrl = new URL("../src/runtime-index-with-dispatch.js", import.meta.url);
 const wranglerUrl = new URL("../wrangler.jsonc", import.meta.url);
+const claimUrl = new URL("../src/my-mms-dispatch-claim.mjs", import.meta.url);
 
 async function source(url) {
   return readFile(url, "utf8");
@@ -52,7 +53,7 @@ test("Therapist dispatch access is the existing fail-closed MY MMS approved gate
 
 test("dispatch matching uses the existing canonical matcher, Available Therapists, and approved MY MMS access", async () => {
   const src = await source(runtimeUrl);
-  assert.match(src, /matchTherapists\(therapists, \{ recipient_gender: recipientGender, zone, skills \}\)/);
+  assert.match(src, /matchTherapists\(therapists, \{ recipient_gender: recipientGender, zone, skills, rotation_key: existingJobId \}\)/);
   assert.match(src, /availability_status === "Available"/);
   assert.match(src, /accessById\.get\(item\.therapist_id\) === "Approved"/);
   assert.match(src, /requires_manual_coordination/);
@@ -91,14 +92,37 @@ test("accepted job projection unlocks private disclosure only for the accepted o
 
 test("first accept wins in a per-job Durable Object and preserves expiry/idempotency", async () => {
   const src = await source(runtimeUrl);
+  const claim = await source(claimUrl);
   assert.match(src, /class MmsDispatchCoordinator extends DurableObject/);
-  assert.match(src, /winner_therapist_id IS NULL/);
+  assert.match(src, /claimDispatchJobWinner\(this\.ctx\.storage\.sql, jobId, therapistId, now\)/);
+  assert.match(claim, /winner_therapist_id IS NULL/);
   assert.match(src, /THEN 'ACCEPTED' ELSE 'TAKEN'/);
   assert.match(src, /Number\(offer\.expires_at\) <= now/);
   assert.match(src, /dispatch_requests/);
   assert.match(src, /request_key TEXT PRIMARY KEY/);
   assert.match(src, /state === "TAKEN" \? 409/);
   assert.match(src, /state === "EXPIRED" \? 410/);
+});
+
+test("accept reserves the Therapist schedule before the per-job first-accept claim and fails closed on uncertain RPC", async () => {
+  const src = await source(runtimeUrl);
+  const acceptStart = src.indexOf('const acceptMatch = path.match(ACCEPT_RE)');
+  const declineStart = src.indexOf('const declineMatch = path.match(DECLINE_RE)', acceptStart);
+  const acceptBlock = src.slice(acceptStart, declineStart);
+  assert.ok(acceptBlock.indexOf("schedule.reserve(") < acceptBlock.indexOf(".accept(acceptMatch[1]"));
+  assert.match(acceptBlock, /catch \(error\)[\s\S]*Keep the reservation until the job owner is verified/);
+  assert.match(acceptBlock, /result\.state !== "ACCEPTED" && result\.state !== "CHECKING"/);
+  assert.match(src, /listActiveTherapistSchedules\(env, therapistId, now\)/);
+  assert.match(src, /if \(!jobId\) throw dispatchError\(503, "THERAPIST_SCHEDULE_READ_INCOMPLETE"\)/);
+  assert.match(src, /status === "in progress"\) return \{ job_id: jobId, start_at: 0, end_at: Number\.MAX_SAFE_INTEGER \}/);
+  assert.match(src, /if \(result\.state === "COMPLETED"\) await therapistScheduleStub/);
+  assert.match(src, /result\.state === "CANCELLED" && result\.winner_therapist_id/);
+  const startStart = src.indexOf('const startMatch = path.match(START_RE)');
+  const completeStart = src.indexOf('const completeMatch = path.match(COMPLETE_RE)', startStart);
+  const startBlock = src.slice(startStart, completeStart);
+  assert.ok(startBlock.indexOf("schedule.markInProgress(") < startBlock.indexOf('.transition(startMatch[1]'));
+  assert.match(startBlock, /restoreScheduledWindow\(/);
+  assert.match(startBlock, /An uncertain transition may have started service\. Keep the blocking window/);
 });
 
 test("mms-worker uses dedicated MMS dispatch tables and coordinator, never the generic MMD Jobs table", async () => {
@@ -108,7 +132,9 @@ test("mms-worker uses dedicated MMS dispatch tables and coordinator, never the g
   assert.equal(config.vars.AIRTABLE_OFFERS_TABLE_ID, "tblrSS5OegYNnGiEU");
   assert.notEqual(config.vars.AIRTABLE_JOBS_TABLE_ID, "tbl0jxIjN8QYwGABX");
   assert.ok(config.durable_objects.bindings.some((item) => item.name === "MMS_DISPATCH_COORDINATOR" && item.class_name === "MmsDispatchCoordinator"));
+  assert.ok(config.durable_objects.bindings.some((item) => item.name === "MMS_THERAPIST_SCHEDULE_COORDINATOR" && item.class_name === "MmsTherapistScheduleCoordinator"));
   assert.ok(config.migrations.some((item) => item.tag === "v2-my-mms-dispatch" && item.new_sqlite_classes?.includes("MmsDispatchCoordinator")));
+  assert.ok(config.migrations.some((item) => item.tag === "v5-mms-therapist-schedule" && item.new_sqlite_classes?.includes("MmsTherapistScheduleCoordinator")));
 });
 
 test("runtime chain routes dispatch before legacy invite/runtime and entrypoint exports its Durable Object", async () => {
@@ -117,6 +143,7 @@ test("runtime chain routes dispatch before legacy invite/runtime and entrypoint 
   assert.match(wrapper, /maybeHandleMyMmsDispatch\(request, env\)/);
   assert.ok(wrapper.indexOf("maybeHandleMyMmsDispatch(request, env)") < wrapper.indexOf("maybeHandleTherapistAccessInvite(request, env)"));
   assert.match(entry, /export \{ MmsDispatchCoordinator \}/);
+  assert.match(entry, /export \{ MmsTherapistScheduleCoordinator \}/);
   assert.match(entry, /dispatch_coordinator: Boolean\(env\.MMS_DISPATCH_COORDINATOR\)/);
 });
 

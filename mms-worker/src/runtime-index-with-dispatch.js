@@ -12,6 +12,7 @@ import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./c
 import { canonicalZoneApplicationErrorResponse, maybeHandleCanonicalZoneApplication } from "./canonical-zone-application-runtime.mjs";
 export { MmsCoordinator } from "./runtime-index-with-application-v4.js";
 export { MmsDispatchCoordinator } from "./my-mms-dispatch-runtime.mjs";
+export { MmsTherapistScheduleCoordinator } from "./my-mms-therapist-schedule-object.mjs";
 
 const PREBOOKING_PATH = "/mms/api/prebookings";
 const PREBOOKING_ID_RE = /^mmspre_[a-f0-9]{24}$/;
