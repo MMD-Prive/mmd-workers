@@ -6,6 +6,8 @@ import { wireMmsAdminMobileBundle } from "./mms-admin-mobile-bundle.js";
 import { wireMmsJobsUi } from "./mms-admin-jobs-ui.js";
 import { renderMmsAdminPage } from "./mms-admin-page.js";
 import { wireMmsWorkspaceUi } from "./mms-admin-workspace-ui.js";
+import { readMmsAiOps } from "./mms-ai-ops-read.js";
+import { wireMmsAiOpsUi } from "./mms-ai-ops-ui.js";
 import { handleRelaxSpaAdmin, isRelaxSpaAdminRequest } from "./relax-spa-admin.js";
 import {
   appendMmsJobReceipt,
@@ -96,12 +98,17 @@ export async function handleMmsAdminRequest(request, env = {}) {
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
     const build = mmsAdminBuild(env);
-    const page = stampMmsAdminBuild(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage())))), build)
+    const page = stampMmsAdminBuild(wireMmsAiOpsUi(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))))), build)
       .replace('<div id="attentionList"', '<a class="btn primary" href="/internal/admin/mms/relax-spa">Relax Spa by 9 · แนะนำคนและส่วนแบ่ง</a><div id="attentionList"');
     const response = html(page);
     response.headers.set("x-mmd-admin-build", build);
     response.headers.set("x-mmd-admin-surface", "mms-admin");
     return method === "HEAD" ? new Response(null, { status: 200, headers: response.headers }) : response;
+  }
+
+  if (path === `${API_PREFIX}/ai-ops`) {
+    if (method !== "GET") return methodNotAllowed(["GET"]);
+    return json(await readMmsAiOps(env));
   }
 
   if (!env.MMS_WORKER || typeof env.MMS_WORKER.fetch !== "function") {
@@ -505,7 +512,7 @@ function html(value) {
   return new Response(value, { status: 200, headers: {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "private, no-store",
-    "content-security-policy": "default-src 'self'; img-src 'self' data: https://s3.amazonaws.com https://cdn.prod.website-files.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    "content-security-policy": "default-src 'self'; img-src 'self' data: https://s3.amazonaws.com https://cdn.prod.website-files.com; font-src 'self' https://cdn.prod.website-files.com; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
