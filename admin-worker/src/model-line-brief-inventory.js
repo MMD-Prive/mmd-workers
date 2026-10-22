@@ -140,11 +140,13 @@ export function createLineBriefInventoryProvider({ baseline, get } = {}) {
         const response = await read("namespaces", { page });
         const rows = response.result, info = response.result_info;
         check(Array.isArray(rows) && rows.length <= PAGE_SIZE && info?.page === page && info.per_page === PAGE_SIZE && info.count === rows.length &&
-          Number.isInteger(info.total_pages) && info.total_pages >= 1 && info.total_pages <= MAX_PAGES &&
-          Number.isInteger(info.total_count) && info.total_count >= 0, "inventory_pagination_incomplete");
-        pages ??= info.total_pages; total ??= info.total_count;
-        check(pages === info.total_pages && total === info.total_count &&
-          pages === Math.max(1, Math.ceil(total / PAGE_SIZE)) &&
+          Number.isSafeInteger(info.total_count) && info.total_count >= 0, "inventory_pagination_incomplete");
+        // Cloudflare may omit total_pages. Derive it only from the required,
+        // validated total_count/per_page, and reject a conflicting supplied value.
+        const derivedPages = Math.max(1, Math.ceil(info.total_count / PAGE_SIZE));
+        check(derivedPages <= MAX_PAGES && (info.total_pages === undefined || info.total_pages === derivedPages), "inventory_pagination_incomplete");
+        pages ??= derivedPages; total ??= info.total_count;
+        check(pages === derivedPages && total === info.total_count &&
           rows.length === Math.min(PAGE_SIZE, Math.max(0, total - (page - 1) * PAGE_SIZE)), "inventory_pagination_changed");
         for (const row of rows) {
           check(HEX32.test(row?.id || "") && !namespaceIds.has(row.id), "inventory_namespace_invalid");

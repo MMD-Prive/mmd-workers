@@ -205,6 +205,94 @@ test("namespace pagination metadata missing or inconsistent fails closed", async
   }
 });
 
+test("observed response shape with 34 namespaces and no total_pages is complete", async () => {
+  const f = fixture((d, { resource }) => {
+    if (resource === "namespaces") {
+      d.result = [...namespaces(), ...Array.from({ length: 33 }, (_, i) => ({ id: i.toString(16).padStart(32, "0") }))];
+      d.result_info = { page: 1, per_page: 100, count: 34, total_count: 34 };
+    }
+    return d;
+  });
+  assert.equal((await f.verify(expected())).ok, true);
+  assert.deepEqual(f.calls.map((x) => x.resource), ["settings", "namespaces", "objects", "settings"]);
+});
+
+function paginatedNamespaceFixture(change = () => {}) {
+  return fixture((d, context) => {
+    if (context.resource === "namespaces") {
+      const page = Number(context.url.searchParams.get("page"));
+      d.result = page === 1
+        ? [...namespaces(), ...Array.from({ length: 99 }, (_, i) => ({ id: i.toString(16).padStart(32, "0") }))]
+        : [{ id: "f".repeat(32) }];
+      d.result_info = { page, per_page: 100, total_count: 101, count: d.result.length };
+      change(d, page);
+    }
+    return d;
+  });
+}
+
+test("derived pagination scans all pages even when the target is on the first page", async () => {
+  for (const suppliedPage of [0, 1, 2]) {
+    const f = paginatedNamespaceFixture((d, page) => { if (page === suppliedPage) d.result_info.total_pages = 2; });
+    assert.equal((await f.verify(expected())).ok, true);
+    assert.deepEqual(f.calls.filter((x) => x.resource === "namespaces").map((x) => x.page), ["1", "2"]);
+  }
+});
+
+test("omitting total_pages does not permit missing required pagination fields", async () => {
+  for (const field of ["page", "per_page", "count", "total_count"]) {
+    const f = paginatedNamespaceFixture((d) => { delete d.result_info[field]; });
+    assert.equal((await f.verify(expected())).pending_status, "unknown");
+    assert.equal(f.calls.some((x) => x.resource === "objects"), false);
+  }
+});
+
+test("supplied total_pages must be an exact numeric match even when optional", async () => {
+  for (const total_pages of [null, "2", 0, -1, 1, 3, 2.5]) {
+    const f = paginatedNamespaceFixture((d) => { d.result_info.total_pages = total_pages; });
+    assert.equal((await f.verify(expected())).pending_status, "unknown");
+    assert.equal(f.calls.some((x) => x.resource === "objects"), false);
+  }
+});
+
+test("derived pagination rejects a truncated final page or a changing total", async () => {
+  for (const change of [
+    (d) => { d.result = []; d.result_info.count = 0; },
+    (d) => { d.result_info.total_count = 102; },
+  ]) {
+    const f = paginatedNamespaceFixture((d, page) => { if (page === 2) change(d); });
+    assert.equal((await f.verify(expected())).pending_status, "unknown");
+    assert.equal(f.calls.filter((x) => x.resource === "namespaces").length, 2);
+    assert.equal(f.calls.some((x) => x.resource === "objects"), false);
+  }
+});
+
+test("derived pagination rejects IDs duplicated across pages", async () => {
+  const f = paginatedNamespaceFixture((d, page) => { if (page === 2) d.result = namespaces(); });
+  assert.equal((await f.verify(expected())).pending_status, "unknown");
+  assert.equal(f.calls.some((x) => x.resource === "objects"), false);
+});
+
+test("derived pagination rejects unsafe totals and requests exceeding the page cap", async () => {
+  for (const total_count of ["101", null, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, 2001]) {
+    const f = paginatedNamespaceFixture((d) => { d.result_info.total_count = total_count; });
+    assert.equal((await f.verify(expected())).pending_status, "unknown");
+    assert.equal(f.calls.filter((x) => x.resource === "namespaces").length, 1);
+    assert.equal(f.calls.some((x) => x.resource === "objects"), false);
+  }
+});
+
+test("derived pagination still requires the namespace and every page to be available", async () => {
+  for (const change of [
+    (d, page) => { if (page === 1) d.result[0] = { id: "e".repeat(32) }; },
+    (_d, page) => { if (page === 2) throw new Error("MOCK_PAGE_UNAVAILABLE"); },
+  ]) {
+    const f = paginatedNamespaceFixture(change);
+    assert.equal((await f.verify(expected())).pending_status, "unknown");
+    assert.equal(f.calls.some((x) => x.resource === "objects"), false);
+  }
+});
+
 test("provider captures its target before I/O and cannot be redirected by later mutation", async () => {
   const input = expected();
   const f = fixture((data, { resource }) => {
