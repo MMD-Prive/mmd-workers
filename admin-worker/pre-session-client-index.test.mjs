@@ -5,6 +5,7 @@ import {
   enrichLineageWithPreSessionIndex,
   PRE_SESSION_CLIENT_INDEX_VERSION,
   resolveHistoricalSessionAlias,
+  searchPreSessionCandidates,
   toCandidateRecord,
 } from "./src/pre-session-client-index.js";
 
@@ -207,6 +208,35 @@ test("pre-session index replaces free-form fallback with a known identity candid
   } catch (error) {
     restore();
     throw error;
+  }
+});
+
+test("pre-session candidates match Thai names that differ only by tone mark", () => {
+  const candidate = {
+    ...seedCandidate,
+    fields: { ...seedCandidate.fields, preferred_name: "ตัว 18 กย 69" },
+  };
+  const record = toCandidateRecord(candidate, "ตั๋ว");
+  assert.ok(record);
+  assert.equal(record.matched_on, "pre_session_preferred_name");
+  assert.equal(record.member_email, "known@example.com");
+  assert.equal(record.client_id, "");
+});
+
+test("pre-session Airtable search strips Thai tone marks from stored names", async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (input) => {
+    requestUrl = new URL(typeof input === "string" ? input : input.url);
+    return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    await searchPreSessionCandidates(env, "ตั๋ว");
+    const formula = requestUrl?.searchParams.get("filterByFormula") || "";
+    assert.match(formula, /SUBSTITUTE\(/);
+    assert.match(formula, /ตัว/);
+  } finally {
+    globalThis.fetch = original;
   }
 });
 

@@ -854,11 +854,21 @@ function stagingSearchFormula(query) {
     "matched_client_id",
   ];
   const needles = rawNeedles.map(airtableFormulaString);
-  const checks = fields.flatMap((field) => needles.flatMap((needle) => [
-    `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`,
-    `IFERROR(SEARCH(\"${needle}\",LOWER(SUBSTITUTE({${field}}&\"\",\" \",\"\"))),0)>0`,
-  ]));
+  const checks = fields.flatMap((field) => {
+    const toneFreeField = thaiToneFreeFormula(`{${field}}&""`);
+    return needles.flatMap((needle) => [
+      `IFERROR(SEARCH("${needle}",LOWER(${toneFreeField})),0)>0`,
+      `IFERROR(SEARCH("${needle}",LOWER(SUBSTITUTE(${toneFreeField}," ",""))),0)>0`,
+    ]);
+  });
   return `OR(${checks.join(",")})`;
+}
+
+function thaiToneFreeFormula(expression) {
+  return ["่", "้", "๊", "๋"].reduce(
+    (formula, mark) => `SUBSTITUTE(${formula},${JSON.stringify(mark)},"")`,
+    expression,
+  );
 }
 
 function airtableFormulaString(value) {
@@ -1015,7 +1025,7 @@ function compact(object) {
 }
 
 function normalizeSearch(value) {
-  return clean(value).toLowerCase().replace(/\s+/g, " ");
+  return clean(value).toLowerCase().replace(/[\u0E48-\u0E4B]/gu, "").replace(/\s+/g, " ");
 }
 
 function searchVariants(value) {
