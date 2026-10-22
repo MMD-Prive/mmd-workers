@@ -41,3 +41,10 @@ test('MMS promotion uses the deployment-only API helper rather than syncing non-
  assert.match(step,/node \.\.\/scripts\/deploy-uploaded-worker-version\.mjs mms-worker "\$MMS_WORKER_VERSION_ID"/);
  assert.doesNotMatch(step,/wrangler versions deploy|wrangler deploy|secret|route/);
 });
+
+test('only the route-free mms-worker version upload opts into the confirmed migration fallback',()=>{
+ const step=workflow.split('      - name: Upload mms-worker version')[1].split('      - name:')[0];
+ assert.match(step,/MMS_ALLOW_DURABLE_OBJECT_MIGRATION_DEPLOY: "true"/);
+ assert.match(workflow,/config\.name !== "mms-worker"/);
+ assert.match(workflow,/custom routes are forbidden in mms-worker/);
+});
