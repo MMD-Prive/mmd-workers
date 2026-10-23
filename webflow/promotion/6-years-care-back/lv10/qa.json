@@ -1,0 +1,37 @@
+{
+  "static": true,
+  "languages": [
+    "th",
+    "en",
+    "zh"
+  ],
+  "letterParagraphs": 7,
+  "memoryPhotos": 33,
+  "duplicateIds": 0,
+  "scriptErrors": [],
+  "policy": "Standard +180 days; Premium +1 year; verified My MMD; coupon rates retained",
+  "backendWrites": false,
+  "browser": {
+    "environment": "Connected Chrome extension; Webflow preview and production",
+    "widths": [
+      320,
+      390,
+      768,
+      1440
+    ],
+    "horizontalOverflow": false,
+    "languages": [
+      "th",
+      "en",
+      "zh-CN"
+    ],
+    "letterExpand": true,
+    "galleryOpenClose": true,
+    "galleryFocusRestored": true,
+    "memoryPhotos": 33,
+    "heroDesktopHeight": 677,
+    "heroImagesBroken": 0,
+    "stickyActionsFit320English": true,
+    "paymentOrMembershipWrites": false
+  }
+}
