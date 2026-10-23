@@ -36,6 +36,10 @@ import {
   handleModelAssetReadinessRequest,
   isModelAssetReadinessRequest,
 } from "./model-asset-readiness.js";
+import {
+  handleOwnerCustomerIdentityRequest,
+  isOwnerCustomerIdentityRequest,
+} from "./owner-customer-identity.js";
 
 const STUDIO_API_PREFIX = "/studio/api";
 const HISTORICAL_BACKFILL_CANONICAL_API = "/v1/admin/payments/historical-backfill";
@@ -52,6 +56,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePathname(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isOwnerCustomerIdentityRequest(path, method)) {
+      return handleOwnerCustomerIdentityRequest(request, env);
+    }
 
     // CEO Model Asset Console lookup is read-only. The credential-bound admin
     // wrapper has already authenticated /v1/admin/* before this request reaches

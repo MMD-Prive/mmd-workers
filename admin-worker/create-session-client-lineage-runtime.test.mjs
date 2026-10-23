@@ -34,7 +34,7 @@ for (const mode of [{ canonical_only: true }, { allow_manual_fallback: false }, 
   });
 }
 
-test("default SIGIL lookup still offers a pending public-only name", async () => {
+test("unmatched query never becomes a fabricated customer result", async () => {
   const restore = installAirtableMock();
   try {
     const response = await handleCreateSessionClientLineageRequest(authedRequest(CREATE_SESSION_CLIENT_LINEAGE_LOOKUP_PATH, {
@@ -42,8 +42,10 @@ test("default SIGIL lookup still offers a pending public-only name", async () =>
     }), env);
     const body = await response.json();
     assert.equal(body.manual_fallback, true);
-    assert.equal(body.records[0].client_id, "");
-    assert.equal(body.records[0].manual_public_only, true);
+    assert.deepEqual(body.records, []);
+    assert.deepEqual(body.results, []);
+    assert.deepEqual(body.items, []);
+    assert.deepEqual(body.degraded_sources, []);
     assert.equal(body.line_candidates, undefined);
   } finally { restore(); }
 });

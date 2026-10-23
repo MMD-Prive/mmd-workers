@@ -175,7 +175,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       snapshot.records.length === 0,
     );
     const records = useManualFallback
-      ? [buildManualPublicClient(query)]
+      ? []
       : snapshot.records;
     const lineageWarnings = useManualFallback
       ? [...snapshot.warnings, "manual_public_only_pending_reconcile"]
@@ -196,7 +196,7 @@ export async function handleCreateSessionClientLineageRequest(request, env = {},
       items: records,
       count: records.length,
       lineage_warnings: lineageWarnings,
-      degraded_sources: lineageWarnings,
+      degraded_sources: snapshot.warnings,
       no_canonical_match: noCanonicalMatch,
       manual_fallback: useManualFallback,
       ...(canonicalOnly ? { canonical_only: true, line_candidates: snapshot.lineCandidates } : {}),
@@ -857,8 +857,8 @@ function stagingSearchFormula(query) {
   const checks = fields.flatMap((field) => {
     const toneFreeField = thaiToneFreeFormula(`{${field}}&""`);
     return needles.flatMap((needle) => [
-      `IFERROR(SEARCH("${needle}",LOWER(${toneFreeField})),0)>0`,
-      `IFERROR(SEARCH("${needle}",LOWER(SUBSTITUTE(${toneFreeField}," ",""))),0)>0`,
+      `FIND("${needle}",LOWER(${toneFreeField}))>0`,
+      `FIND("${needle}",LOWER(SUBSTITUTE(${toneFreeField}," ","")))>0`,
     ]);
   });
   return `OR(${checks.join(",")})`;
