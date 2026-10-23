@@ -105,7 +105,7 @@ test('text on the shipped white/orange interaction palette meets 4.5:1 contrast'
 test('serialized internal workspace loader keeps esbuild helpers inside browser scope',()=>{
   const makeNode=()=>({
     children:[],dataset:{},style:{setProperty(){}},
-    classList:{add(){}},append(...nodes){this.children.push(...nodes)},prepend(...nodes){this.children.unshift(...nodes)},
+    classList:{add(){}},append(...nodes){this.children.push(...nodes)},appendChild(node){this.children.push(node)},prepend(...nodes){this.children.unshift(...nodes)},
     setAttribute(){},addEventListener(){},matches(){return false},querySelectorAll(){return []},getClientRects(){return []},
     contains(){return false},isConnected:true
   });
