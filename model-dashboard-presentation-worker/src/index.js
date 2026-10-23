@@ -30,6 +30,24 @@ const MODEL_LIFF_IDS = Object.freeze({
 });
 const MODEL_LIFF_ID = MODEL_LIFF_IDS.published;
 const MODEL_LIFF_URL = `https://miniapp.line.me/${MODEL_LIFF_ID}`;
+const PARTNER_LINE_LOGIN_URL = "https://mmdbkk.com/sigil/model/dashboard/partner-login";
+
+// Shared LIFF endpoint: select Partner presentation only, never Partner authority.
+export function isPartnerLinePrimaryRequest(request) {
+  const url = new URL(request.url);
+  if (!["GET", "HEAD"].includes(request.method) || url.origin !== "https://mmdbkk.com" || url.pathname !== UI_PREFIX) return false;
+  const states = [...url.searchParams.getAll("liff.state"), ...url.searchParams.getAll("liff_state")];
+  return states.length === 1 && states[0].split(/[?#]/, 1)[0] === "/partner-login";
+}
+
+export function partnerLinePrimaryResponse(request) {
+  // Let the SDK consume the primary callback before changing the URL. No Model
+  // exchange, identity inference, token logging or auth-cookie mutation here.
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow"><title>SĪGIL Partner · LINE</title></head><body><p id="state" role="status">กำลังรับกลับจาก LINE</p><a href="${PARTNER_LINE_LOGIN_URL}">กลับหน้าเข้าสู่ระบบ</a><script src="${LIFF_SDK_URL}"></script><script>
+Promise.resolve().then(()=>liff.init({liffId:'${MODEL_LIFF_ID}'})).then(()=>location.replace('${PARTNER_LINE_LOGIN_URL}')).catch(()=>{document.getElementById('state').textContent='รับกลับจาก LINE ไม่สำเร็จ กรุณากลับหน้าเข้าสู่ระบบ';});
+</script></body></html>`;
+  return new Response(request.method === "HEAD" ? null : html, {headers:{"Content-Type":"text/html; charset=utf-8", "Cache-Control":"no-store", "Referrer-Policy":"no-referrer", "X-Content-Type-Options":"nosniff", "X-Frame-Options":"DENY", "x-mmd-worker":WORKER_NAME, "x-mmd-model-entry":"partner-liff-primary"}});
+}
 const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
 const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
 const TELEGRAM_CONNECT_JS_PATH = `${ASSET_PREFIX}telegram-connect-v1.js`;
@@ -1453,6 +1471,7 @@ function unavailable() {
 export default {
   async fetch(request) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isPartnerLinePrimaryRequest(request)) return partnerLinePrimaryResponse(request);
     // Exact public documents only. Preserve browser host/query; strip credentials
     // from the presentation fetch just as for the canonical dashboard.
     if (path === "/sigil/model/login" || path === "/sigil/confirm/job-model") {
