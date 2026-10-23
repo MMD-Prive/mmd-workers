@@ -4528,17 +4528,33 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
   if (!response.ok || identity.aud !== "2010864854" || identity.iss !== "https://access.line.me" || typeof identity.exp !== "number" || identity.exp * 1000 <= Date.now() || typeof identity.sub !== "string" || !/^U[a-f0-9]{32}$/i.test(identity.sub)) return errorResponse(request, env, "line_identity_invalid", "LINE verification failed.", 401, false);
   const claims = await listAirtableRecords(env, "tbluoZ5JiRcoUP6WT", { filterByFormula: `{line_user_id}='${escapeFormulaString(identity.sub)}'`, maxRecords: 2 });
   const claim = claims[0];
-  if (claims.length !== 1 || !claim || fieldText(claim, "fld6PAywOhvDeelDJ") !== "verified_unlinked" || fieldText(claim, "fldGB7Raqm6O1NIhh") !== "published") return errorResponse(request, env, "partner_line_review_required", "LINE claim requires review.", 403, false);
+  if (!claim) return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_not_found");
+  if (claims.length !== 1) return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_ambiguous");
+  if (fieldText(claim, "fld6PAywOhvDeelDJ") !== "verified_unlinked") return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_status");
+  if (fieldText(claim, "fldGB7Raqm6O1NIhh") !== "published") return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_environment");
   const ids = fieldLinkIds(claim, "fldaMlO1fRoazxfHg");
-  if (ids.length !== 1) return errorResponse(request, env, "partner_line_review_required", "Partner link requires review.", 403, false);
+  if (ids.length !== 1) return partnerLineReviewResponse(request, env, "partner_line_review_required", "claim_partner_link");
   const partner = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, ids[0]!);
   const links = fieldLinkIds(partner, "fldXs6VyfXIHxBMpQ");
-  if (links.length !== 1 || links[0] !== claim.id || normalizeStatus(fieldText(partner, MODEL_PARTNERS.status)) !== "active" || normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== "recognized") return errorResponse(request, env, "partner_not_recognized", "Partner is not active.", 403, false);
+  if (links.length !== 1 || links[0] !== claim.id) return partnerLineReviewResponse(request, env, "partner_not_recognized", "partner_claim_link");
+  if (normalizeStatus(fieldText(partner, MODEL_PARTNERS.status)) !== "active") return partnerLineReviewResponse(request, env, "partner_not_recognized", "partner_inactive");
+  if (normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== "recognized") return partnerLineReviewResponse(request, env, "partner_not_recognized", "partner_approval");
   const access = await generatePartnerToken(env, partner.id);
   await updateAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, { [MODEL_PARTNERS.accessTokenHash]: await sha256Hex(access) }, false);
   const result = json(request, env, { ok: true, dashboard_url: `https://sigil-partner.lovable.app/?t=${encodeURIComponent(access)}` });
   result.headers.set("Cache-Control", "no-store");
   return result;
+}
+function partnerLineReviewResponse(
+  request: Request,
+  env: RuntimeEnv,
+  code: "partner_line_review_required" | "partner_not_recognized",
+  reason: "claim_not_found" | "claim_ambiguous" | "claim_status" | "claim_environment" | "claim_partner_link" | "partner_claim_link" | "partner_inactive" | "partner_approval"
+): Response {
+  // Only bounded reasons for the freshly verified LINE identity. No identity or token data.
+  const response = json(request, env, { ok: false, error: { code, reason, message: "Partner access requires review.", status: 403, retryable: false }, meta: requestMeta() }, 403);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 const PARTNER_LINE_LOGIN_URL = "https://mmdbkk.com/sigil/model/dashboard/partner-login";
 const PARTNER_LINE_LOGIN = `<!doctype html>
@@ -4693,7 +4709,20 @@ async function enter(allowLogin){
   const idToken=liff.getIDToken();if(!idToken)throw Error();
   const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});
   const d=await r.json();
-  if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · Partner Review กำลังดำเนินการ':'พร้อมยืนยัน LINE อีกครั้ง';return;}
+  if(!r.ok||!d.ok){
+   const code=d.error&&d.error.code,reason=d.error&&d.error.reason;
+   const hints={
+    claim_not_found:'ไม่พบการเชื่อม LINE บัญชีนี้กับสิทธิ์ Partner [claim_not_found]',
+    claim_ambiguous:'พบการเชื่อม LINE มากกว่าหนึ่งรายการ กรุณาให้ทีมตรวจสอบ [claim_ambiguous]',
+    claim_status:'สถานะ LINE claim ยังไม่ตรงเงื่อนไขเข้า Partner [claim_status]',
+    claim_environment:'LINE claim ไม่ใช่ environment ที่เปิดใช้งาน [claim_environment]',
+    claim_partner_link:'LINE claim ยังไม่ได้เชื่อมกับ Partner เพียงหนึ่งบัญชี [claim_partner_link]',
+    partner_claim_link:'การเชื่อม Partner กับ LINE claim ไม่ตรงกัน [partner_claim_link]',
+    partner_inactive:'Partner บัญชีนี้ยังไม่อยู่ในสถานะ Active [partner_inactive]',
+    partner_approval:'Partner บัญชีนี้ยังไม่อยู่ในสถานะ recognized [partner_approval]'
+   };
+   state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?(Object.prototype.hasOwnProperty.call(hints,reason)?hints[reason]:'ยืนยัน LINE แล้ว แต่ยังไม่ผ่านการตรวจสิทธิ์ Partner กรุณาให้ทีมตรวจสอบ'):'พร้อมยืนยัน LINE อีกครั้ง';return;
+  }
   const target=new URL(d.dashboard_url);
   if(target.origin!=='https://sigil-partner.lovable.app'||target.pathname!=='/'||!target.searchParams.get('t')||target.username||target.password||target.hash||[...target.searchParams.keys()].some(key=>key!=='t')||target.searchParams.getAll('t').length!==1)throw Error();
   state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';leaving=true;location.replace(target.href);
