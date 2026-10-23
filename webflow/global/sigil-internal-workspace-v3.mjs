@@ -165,6 +165,8 @@ export const INTERNAL_PAGES = [
   }
 ];
 export function installInternalWorkspace(pages = INTERNAL_PAGES) {
+  // This function is serialized into a browser script; keep esbuild's name helper in scope.
+  const __name = (target, value) => { Object.defineProperty(target, 'name', { value, configurable: true }); return target; };
   const path = location.pathname.replace(/\/+$/, '') || '/';
   if (!/^\/internal(?:\/|$)/.test(path) || /\/(?:login|setup|invite)$/.test(path) || document.getElementById('sigil-workspace-directory')) return;
   const style = document.createElement('style');
