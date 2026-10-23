@@ -6,6 +6,7 @@ import { dispatchOpsNotification, drainOpsNotificationOutbox } from "./line-ops-
 import { heldEvidenceAuditRecord, holdUncertainEvidence, reprocessHeldEvidence } from "./line-held-evidence-lane.mjs";
 import { runPaymentObserverHealth } from "./payment-observer-health.mjs";
 import { resolveLineCanonicalPayment, withPaymentEvidenceLock } from "../../shared/canonical-payment-evidence.mjs";
+import { inspectPaymentProof, paymentProofReviewUrl, proofPrecheckLines } from "../../shared/payment-proof-precheck.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -437,6 +438,8 @@ async function createPendingProof(env = {}, evidence = {}) {
       provider: extraction.provider || null,
       sender_bank: extraction.sender_bank || null,
       receiver_bank: extraction.receiver_bank || null,
+      amount_thb: extraction.amount_thb ?? null,
+      paid_at: extraction.paid_at || null,
     },
     image_classification: analysis.classification || null,
     client_match: analysis.customer || null,
@@ -475,11 +478,18 @@ async function createPendingProof(env = {}, evidence = {}) {
   if (asString(links.renewal)) fields["MMD — LIFF Renewal Sessions"] = [asString(links.renewal)];
   const create = async () => {
     if (analysis.canonical_payment?.status === "exact") {
-      const params = new URLSearchParams({ maxRecords: "1", filterByFormula: `{payment_ref}='${formulaValue(paymentRef)}'` });
+      const exactProofId = analysis.proof_precheck?.status === "duplicate" ? asString(analysis.proof_precheck.primary_proof_id) : "";
+      const formula = exactProofId ? `AND({payment_ref}='${formulaValue(paymentRef)}',{proof_id}='${formulaValue(exactProofId)}')` : `{payment_ref}='${formulaValue(paymentRef)}'`;
+      const params = new URLSearchParams({ maxRecords: exactProofId ? "2" : "1", filterByFormula: formula });
       const found = await airtableRequest(env, `${encodeURIComponent(paymentProofsTable(env))}?${params}`);
+      if (exactProofId && (found.offset || found.records?.length > 1)) throw new Error("payment_proof_identity_ambiguous");
       const prior = found.records?.[0];
-      if (prior?.id) return { id: prior.id, proofId: asString(prior.fields?.proof_id), deduped: true, verified: false };
+      if (prior?.id && analysis.proof_precheck?.status === "duplicate" && analysis.proof_precheck.primary_proof_id === asString(prior.fields?.proof_id)) {
+        return { id: prior.id, proofId: asString(prior.fields?.proof_id), deduped: true, verified: false };
+      }
+      if (prior?.id) noteValue.related_payment_proof_id = asString(prior.fields?.proof_id);
     }
+    fields.note = JSON.stringify(noteValue);
     const payload = await airtableRequest(env, encodeURIComponent(paymentProofsTable(env)), { method: "POST", body: JSON.stringify({ fields }) });
     return { id: asString(payload?.id), deduped: false, verified: false, mayExtendMembership: false, note: noteValue };
   };
@@ -619,7 +629,7 @@ async function notifyDirectCustomerPaymentEvidence(env = {}, evidence = {}, resu
 }
 
 async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
-  if (result?.deduped === true) return { skipped: true, reason: "deduped" };
+  if (result?.deduped === true && !result?.proofId && evidence.analysis?.proof_precheck?.status !== "duplicate") return { skipped: true, reason: "deduped" };
   const chatId = paymentOpsChatId(env);
   // Without a configured Ops destination there is nothing to address. A missing
   // binding/secret is not skipped here: it is recorded durably and retried.
@@ -639,6 +649,8 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   const text = [
     `${isMembership ? "🧾" : "💳"} สลิป${category}`,
     statusLine,
+    `เปิดตรวจและยืนยันเงินเข้า: ${analysis.proof_precheck?.review_url || paymentProofReviewUrl(result.proofId || evidence.proofId)}`,
+    ...proofPrecheckLines(analysis.proof_precheck),
     `Source: ${evidence.sourceType === "user" ? "LINE OA direct" : "LINE payment group"}`,
     `Proof: ${evidence.proofId}`,
     `Classified: ${purpose}`,
@@ -648,7 +660,7 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     ...(!isMembership ? paymentJobCorrelationLines(analysis) : []),
     `Routing: ${route.reason}`,
     analysis.job_correlation?.status === "exact" || isMembership
-      ? "Action: Official Verify in Payment Inbox before any money/access change."
+      ? "ขั้นต่อไป: ตรวจเงินเข้าจริง แล้วกด ยืนยันเงินเข้า (Official Verify) ในลิงก์ด้านบน"
       : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
   ].filter(Boolean).join("\n");
   const notificationPurpose = paymentNotificationPurpose({ isMembership, settlementStatus: settlement?.status });
@@ -720,7 +732,7 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
     image,
     lineUserId: userId,
     contextText,
-    automatedExtraction: false,
+    automatedExtraction: true,
     paymentContextConfirmed: source === "group" || hasPaymentContext(contextText),
   });
   const groupId = asString(event?.source?.groupId);
@@ -797,9 +809,30 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
   if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") throw new Error("line_slip_r2_binding_missing");
   const { proofId, image } = input;
   let analysis = input.analysis;
-  const canonicalPayment = await resolveLineCanonicalPayment(env, analysis)
+  const precheck = await inspectPaymentProof(env, { fields: {
+    proof_id: proofId, channel: "line_ofc", Client: analysis.links?.client ? [analysis.links.client] : [], member: analysis.links?.member ? [analysis.links.member] : [],
+    session: analysis.links?.session ? [analysis.links.session] : [], payment: analysis.links?.payment ? [analysis.links.payment] : [],
+    note: JSON.stringify({ schema: "line_payment_evidence_v4", evidence_sha256: image.sha256, extraction: { ...analysis.extraction, bank_transaction_ref: analysis.extraction?.payment_ref } }),
+  } });
+  if (analysis.customer?.status !== "matched" && precheck.canonical) {
+    precheck.status = "needs_review"; precheck.canonical = null; precheck.primary_proof_id = proofId;
+    precheck.review_url = paymentProofReviewUrl(proofId); precheck.issues = ["canonical_customer_ambiguous"];
+  }
+  if (precheck.status === "needs_review") {
+    analysis = { ...analysis, links: { ...analysis.links, session: "", payment: "" },
+      job_correlation: { ...analysis.job_correlation, status: "ambiguous", selected: null, reason: "evidence_context_conflict" } };
+  }
+  // Exact evidence + canonical customer + freshly re-read Payment/Session only.
+  // Do not fill an unread slip amount from the expected payment amount.
+  if (precheck.canonical && analysis.customer?.status === "matched") {
+    const c = precheck.canonical;
+    analysis = { ...analysis, links: { ...analysis.links, session: c.session_record_id, payment: c.payment_record_id },
+      payment_intelligence: { ...analysis.payment_intelligence, inferred_stage: c.payment_stage, inferred_label: c.payment_stage, tracking_kind: `job_${c.payment_stage}`, official_verification_required: true, may_mark_paid: false },
+      job_correlation: { status: "exact", reason: "same_evidence_canonical_customer_payment", candidate_count: 1, selected: c, candidates: [c] } };
+  }
+  const canonicalPayment = (analysis.customer?.status === "matched" ? precheck.canonical : null) || await resolveLineCanonicalPayment(env, analysis)
     .catch(() => ({ status: "unresolved", reason: "canonical_payment_lookup_failed" }));
-  analysis = { ...analysis, canonical_payment: canonicalPayment };
+  analysis = { ...analysis, canonical_payment: canonicalPayment, proof_precheck: precheck };
   if (canonicalPayment.status === "exact") {
     analysis.links = { ...analysis.links, payment: canonicalPayment.payment_record_id };
   }
@@ -832,6 +865,14 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
     evidence.identityMatch = evidence.identityMatch || payer.identityMatch;
   }
   const proof = await createPendingProof(env, evidence);
+  if (proof.note?.related_payment_proof_id) {
+    analysis.proof_precheck = { ...precheck, status: "needs_review", primary_proof_id: proofId,
+      review_url: paymentProofReviewUrl(proofId, canonicalPayment.session_id), issues: ["existing_payment_proof_not_transfer_dedup"] };
+  }
+  if (proof.deduped && proof.proofId && precheck.status !== "duplicate") {
+    analysis.proof_precheck = { ...precheck, status: "needs_review", primary_proof_id: proof.proofId,
+      review_url: paymentProofReviewUrl(proof.proofId, canonicalPayment.session_id), issues: ["existing_payment_proof_not_transfer_dedup"] };
+  }
   const settlement = proof.deduped ? { status: "deduped" } : await settleTrackedMembership(env, evidence, proof, userId);
   const result = { ...proof, settlement };
   let delivery = null;
@@ -847,6 +888,8 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
     deduped: proof.deduped,
     verified: false,
     proofId,
+    reviewProofId: proof.proofId || proofId,
+    reviewUrl: analysis.proof_precheck?.review_url || paymentProofReviewUrl(proof.proofId || proofId, canonicalPayment.session_id),
     recordId: proof.id,
     imageClass: analysis.classification?.image_class,
     paymentStage: analysis.payment_intelligence?.inferred_stage,

@@ -51,6 +51,7 @@ async function callExtractor(env, image, route, method) {
         "x-request-id": `line-${crypto.randomUUID()}`,
       },
       body: image.body,
+      signal: AbortSignal.timeout(8000),
     }));
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return { ok: false, error: `extractor_${response.status}`, result: null };
@@ -277,8 +278,7 @@ export async function analyzeProductionPaymentProof({
   image,
   lineUserId = "",
   contextText = "",
-  // Fail closed: LINE OFC intake must opt in explicitly before any future
-  // QR/OCR rollout. The current production safety contract keeps this false.
+  // Callers opt in to read-only QR/OCR; extraction never verifies payment.
   automatedExtraction = false,
   paymentContextConfirmed = false,
 } = {}) {
@@ -299,7 +299,7 @@ export async function analyzeProductionPaymentProof({
         extraction_method: "none",
         extraction_error: "automated_extraction_disabled",
       };
-  const classification = automatedExtraction
+  let classification = automatedExtraction
     ? classifyPaymentImageEvidence(extraction)
     : paymentContextConfirmed
       ? {
@@ -316,6 +316,9 @@ export async function analyzeProductionPaymentProof({
           confidence: 0,
           reason: "automated_extraction_disabled_without_payment_context",
         };
+  if (!classification.is_payment_evidence && paymentContextConfirmed && extraction.extraction_error) {
+    classification = { image_class: "payment_evidence_candidate", gate: "accept", is_payment_evidence: true, confidence: 0, reason: "explicit_payment_context_extraction_unavailable" };
+  }
   if (!classification.is_payment_evidence) return { accepted: false, extraction, classification, links: {}, customer: null, payment_intelligence: null, review_summary: null, ops_route: null };
 
   const membersTable = clean(env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || "Members");

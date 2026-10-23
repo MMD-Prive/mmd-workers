@@ -23,3 +23,17 @@ test('invalid evidence integrity and reviewed proofs fail before OCR',async()=>{
   const r=await handlePaymentReviewRequest(req(),f.env,owner);assert.ok(r.status>=400,kind);assert.deepEqual(f.calls,['GET']);
  }
 });
+test('bot precheck reads original evidence on opening and never approves, writes or sends',async()=>{
+ const f=await fixture(); f.proof.fields.amount_thb=6000;
+ const request=new Request('https://www.mmdbkk.com/v1/admin/payments/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'precheck_evidence',proof_id:'upload_test'})});
+ const before=JSON.stringify(f.proof), r=await handlePaymentReviewRequest(request,f.env,owner),d=await r.json();
+ assert.equal(r.status,200,JSON.stringify(d)); assert.equal(d.action,'precheck_evidence'); assert.equal(d.extraction.amount_thb,6000); assert.equal(d.amount_matches_record,true);
+ assert.equal(d.precheck.schema,'payment_proof_precheck_v1'); assert.equal(d.precheck.status,'clear'); assert.equal(d.evidence_changed,false); assert.equal(d.money_truth_changed,false);
+ assert.equal(JSON.stringify(f.proof),before); assert.deepEqual(f.calls,['GET','/v1/extract/qr','/v1/extract/ocr','GET']);
+});
+test('precheck OCR failure is visible and does not fabricate a matching amount',async()=>{
+ const f=await fixture(); f.env.SLIP_EXTRACTOR.fetch=async()=>Response.json({error:'fixture_unavailable'},{status:503});
+ const request=new Request('https://www.mmdbkk.com/v1/admin/payments/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'precheck_evidence',proof_id:'upload_test'})});
+ const d=await (await handlePaymentReviewRequest(request,f.env,owner)).json();
+ assert.equal(d.ok,true); assert.equal(d.amount_matches_record,null); assert.ok(d.extraction_error); assert.equal(d.money_truth_changed,false);
+});

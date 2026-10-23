@@ -518,7 +518,7 @@ test("LINE conflicting membership/service wording stays in Confirm and also rais
   assert.equal(h.messages[1].message_thread_id, 9);
 });
 
-test("explicit payment context stores pending evidence without QR, OCR, or payments-worker mutation", async () => {
+test("explicit payment context attempts read-only QR/OCR and preserves pending evidence when extraction fails", async () => {
   const r2 = memoryR2();
   const previousFetch = globalThis.fetch;
   let proofPost = null;
@@ -579,7 +579,7 @@ test("explicit payment context stores pending evidence without QR, OCR, or payme
     assert.equal(note.may_extend_membership, false);
     assert.equal(note.may_confirm_session, false);
     assert.equal(note.extraction.method, "none");
-    assert.equal(extractorCalls, 0);
+    assert.equal(extractorCalls, 2);
     assert.equal(paymentsCalls, 0);
   } finally {
     globalThis.fetch = previousFetch;
