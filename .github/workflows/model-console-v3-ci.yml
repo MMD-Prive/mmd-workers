@@ -46,6 +46,7 @@ jobs:
         run: |
           node --check webflow/sigil/model/model-console-v3-i18n.js
           node --check webflow/sigil/model/model-console-atelier-v3.js
+          node --check webflow/sigil/model/model-console-hero.mjs
           node --check scripts/build-model-console-atelier-embed.mjs
           node --check scripts/preview-model-console-atelier.mjs
           node scripts/build-model-console-atelier-embed.mjs "$RUNNER_TEMP/console-v3"
@@ -55,6 +56,7 @@ jobs:
           node --test \
             webflow/sigil/model/graphics-refresh.test.mjs \
             webflow/sigil/model/model-console-atelier-v3.test.mjs \
+            webflow/sigil/model/model-console-hero.test.mjs \
             webflow/sigil/model/model-console-install-blocks.test.mjs \
             webflow/sigil/model/model-console-decline-options.test.mjs \
             webflow/sigil/model/model-console-state-presentation.test.mjs \

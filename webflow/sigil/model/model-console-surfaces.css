@@ -85,3 +85,23 @@
 @media(min-width:640px){
   #sigil-model-console-v3[data-console-atelier] [data-decline-options]>div{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+/* Hero belongs to the separate theme embed, keeping runtime within its budget. */
+#sigil-model-console-v3[data-console-hero="lv10"]{padding-top:0!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero{position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:flex-end;width:100%;min-height:clamp(490px,130vw,560px);margin:0;border:0;border-radius:0;background:#0B0E10;color:#F3F0E8}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero__image{position:absolute;inset:76px 0 0;width:100%;height:calc(100% - 76px);max-width:none;object-fit:cover;object-position:center top;pointer-events:none}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero__veil{position:absolute;inset:0;background:linear-gradient(180deg,transparent 32%,rgba(11,14,16,.65) 65%,#0B0E10 100%);pointer-events:none}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero__content{position:relative;z-index:1;max-width:34rem;padding:clamp(20px,5vw,32px);text-wrap:balance}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero__eyebrow{display:block;margin-bottom:9px;color:#C9B38B;font-size:11px;font-weight:700;letter-spacing:.12em}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero h2{margin:0;color:#F3F0E8;font-size:clamp(26px,6.3vw,40px);line-height:1.3;letter-spacing:0;overflow-wrap:break-word}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero p{margin:10px 0 0;color:#E4E0D7;font-size:14px;line-height:1.65}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero .smcv3-head{--ca-ink:#F3F0E8;--ca-muted:#E4E0D7;--ca-raised:rgba(11,14,16,.78);--ca-line:rgba(201,179,139,.35);position:absolute!important;inset:0 0 auto!important;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:76px!important;margin:0;padding:12px 16px!important;background:linear-gradient(180deg,#0B0E10,rgba(11,14,16,.8))!important;border:0!important;border-radius:0!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero .smcv3-brand{display:none!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero .mmd-lang{order:0!important;margin-left:auto!important}
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero .smcv3-chip{color:#F3F0E8!important;-webkit-text-fill-color:#F3F0E8!important;background:rgba(11,14,16,.78);border-color:rgba(201,179,139,.35);margin-left:auto}
+@media(min-width:640px){
+#sigil-model-console-v3[data-console-atelier] .smcv3-hero{min-height:460px}
+  #sigil-model-console-v3[data-console-atelier] .smcv3-hero__image{left:auto;width:58%}
+  #sigil-model-console-v3[data-console-atelier] .smcv3-hero__veil{background:linear-gradient(90deg,#0B0E10 20%,rgba(11,14,16,.91) 38%,rgba(11,14,16,.08) 78%),linear-gradient(0deg,rgba(11,14,16,.7),transparent 40%)}
+  #sigil-model-console-v3[data-console-atelier] .smcv3-hero__content{width:52%;max-width:600px;margin-left:max(0px,calc((100vw - 1280px)/2));padding:40px 32px}
+  #sigil-model-console-v3[data-console-atelier] .smcv3-hero .smcv3-head{padding-left:max(32px,calc((100vw - 1080px)/2))!important;padding-right:max(32px,calc((100vw - 1080px)/2))!important}
+}
