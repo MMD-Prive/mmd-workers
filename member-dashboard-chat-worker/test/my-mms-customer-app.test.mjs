@@ -5,6 +5,7 @@ import {
   handleMyMmsCustomerApi,
   handleMyMmsCustomerUi,
   handleMyMmsCustomerAsset,
+  MY_MMS_CUSTOMER_INTERNALS,
   isMyMmsCustomerApiRequest,
   isMyMmsCustomerAssetRequest,
   isMyMmsCustomerUiRequest,
@@ -101,6 +102,7 @@ test("customer profile is projected from MMS customer authority without MMD tier
         membership_tier: "premium",
         points_confirmed: 1200,
         email: "ton@example.test",
+        created_at: "2026-10-23T13:58:44.389Z",
         } },
       }),
     },
@@ -114,11 +116,92 @@ test("customer profile is projected from MMS customer authority without MMD tier
   assert.equal(body.ok, true);
   assert.equal(body.data.displayName, "คุณต้น");
   assert.equal(body.data.identityState, "verified");
+  assert.equal(body.data.lineDisplayName, "Ton");
+  assert.equal(body.data.lineAccountSummary, "เชื่อมต่อบัญชี LINE แล้ว");
+  assert.match(body.data.memberSinceLabel, /23.*ต\.ค\..*2569/);
   assert.equal(body.data.customerRefDisplay, "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   assert.equal(body.data.email.value, "ton@example.test");
   assert.equal(body.data.email.verified, false);
   assert.equal("membership_tier" in body.data, false);
   assert.equal("points_confirmed" in body.data, false);
+});
+
+test("LINE status is never inferred from a display name and malformed dates stay hidden", () => {
+  const { customerFromProfile } = MY_MMS_CUSTOMER_INTERNALS;
+  const checking = customerFromProfile({ match_state: "checking", lineDisplayName: "Fixture LINE", memberSince: "not-a-date" });
+  assert.equal(checking.identityState, "checking");
+  assert.equal(checking.lineAccountSummary, null);
+  assert.equal(checking.memberSinceLabel, null);
+  const verified = customerFromProfile({ match_state: "matched", lineDisplayName: "", memberSince: "2026-10-23T20:00:00Z" });
+  assert.equal(verified.lineAccountSummary, "เชื่อมต่อบัญชี LINE แล้ว");
+  assert.match(verified.memberSinceLabel, /24.*ต\.ค\..*2569/);
+});
+
+test("catalog binds the verified member only and preserves upstream checking and failure", async () => {
+  let upstreamStatus = 503;
+  let upstreamCode = "MMS_SEARCH_SOURCE_UNAVAILABLE";
+  const calls = [];
+  const env = {
+    MMS_MEMBER_WORKER: { fetch: async () => Response.json({ ok: true, data: { registered: true, profile: { member_id: "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } } }) },
+    MMS_WORKER: { fetch: async (request) => {
+      calls.push(request);
+      return Response.json({ ok: false, error: { code: upstreamCode } }, { status: upstreamStatus });
+    } },
+  };
+  const request = req("/api/mms/app/therapists/search/catalog", { headers: { cookie: "fixture-session" } });
+  let response = await handleMyMmsCustomerApi(request, env);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, upstreamCode);
+  assert.equal(calls[0].headers.get("x-mms-customer-member-ref"), "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(calls[0].headers.has("cookie"), false);
+  assert.equal(calls[0].url, "https://mms.internal/internal/mms/customer-search/catalog");
+  upstreamStatus = 409;
+  upstreamCode = "MMS_MEMBER_LINK_CHECKING";
+  response = await handleMyMmsCustomerApi(request, env);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, upstreamCode);
+  env.MMS_MEMBER_WORKER.fetch = async () => Response.json({ ok: false, error: { code: "MMS_SESSION_REQUIRED" } }, { status: 401 });
+  response = await handleMyMmsCustomerApi(request, env);
+  assert.equal(response.status, 401);
+  assert.equal(calls.length, 2);
+});
+
+test("catalog uses the current account on each request and fails closed on malformed upstream", async () => {
+  let memberRef = "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  let malformed = false;
+  const seen = [];
+  const env = {
+    MMS_MEMBER_WORKER: { fetch: async () => Response.json({ ok: true, data: { registered: true, profile: { member_id: memberRef } } }) },
+    MMS_WORKER: { fetch: async (request) => {
+      seen.push(request.headers.get("x-mms-customer-member-ref"));
+      return malformed
+        ? Response.json({ ok: true }, { status: 200 })
+        : Response.json({ ok: true, data: { services: [{ code: "fixture", label: "Fixture" }], zones: [{ code: "BKK-FIXTURE", label: "Fixture", province: "กรุงเทพมหานคร" }], availability: [{ code: "Available", label: "Online" }] } });
+    } },
+  };
+  const request = req("/api/mms/app/therapists/search/catalog");
+  assert.equal((await handleMyMmsCustomerApi(request, env)).status, 200);
+  memberRef = "mmsmem_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  malformed = true;
+  const response = await handleMyMmsCustomerApi(request, env);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "MMS_SEARCH_RESPONSE_INVALID");
+  assert.deepEqual(seen, ["mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "mmsmem_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]);
+});
+
+test("catalog reports checking or provider failure without claiming no results", async () => {
+  const env = {
+    MMS_MEMBER_WORKER: { fetch: async () => Response.json({ ok: true, data: { registered: false } }) },
+    MMS_WORKER: { fetch: async () => { throw new DOMException("timeout", "TimeoutError"); } },
+  };
+  const request = req("/api/mms/app/therapists/search/catalog");
+  let response = await handleMyMmsCustomerApi(request, env);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, "MMS_MEMBER_LINK_CHECKING");
+  env.MMS_MEMBER_WORKER.fetch = async () => Response.json({ ok: true, data: { registered: true, profile: { member_id: "mmsmem_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } } });
+  response = await handleMyMmsCustomerApi(request, env);
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "MMS_SEARCH_UPSTREAM_UNAVAILABLE");
 });
 
 test("booking reads resolve member identity server-side then call mms-worker", async () => {
