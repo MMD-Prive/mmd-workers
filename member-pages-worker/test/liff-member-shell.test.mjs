@@ -251,7 +251,7 @@ describe("same-site /member/liff shell", () => {
     const appStatus = { dataset:{} };
     const messages = [];
     const context = {
-      resetCustomerBrand(){}, personalMainUI:{load(){},reset(){}},
+      resetCustomerBrand(){}, accountUI:{reset(){}}, personalMainUI:{load(){},reset(){}},
       CONFIG:{profileEndpoint:"/member/api/liff/profile"}, profile, appStatus,
       profileGeneration:0, profileReady:true, secondaryReads:new Map(),
       digitalPersonalizedFeed:[{title:"old client"}], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
@@ -296,7 +296,7 @@ describe("same-site /member/liff shell", () => {
     };
     const pending = [], rendered = [];
     const context = {
-      resetCustomerBrand(){}, personalMainUI:{load(){},reset(){}},
+      resetCustomerBrand(){}, accountUI:{reset(){}}, personalMainUI:{load(){},reset(){}},
       document:{getElementById:node}, profile:node("profile"), profileReady:true,
       secondaryReads:new Map(), digitalPersonalizedFeed:[], digitalUpdatesGeneration:0, digitalUpdatesPending:null,
       locale:"th", location:{search:""}, URLSearchParams, encodeURIComponent,
@@ -609,10 +609,10 @@ describe("same-site /member/liff shell", () => {
 
     const todayIndex = html.indexOf("MMD TODAY");
     const missionIndex = html.indexOf("MMD MISSION", todayIndex);
-    const rotationIndex = html.indexOf("MMD NOW", missionIndex);
+    const rotationIndex = html.indexOf("MMD NOW", todayIndex);
     const quickIndex = html.indexOf("QUICK ACCESS", rotationIndex);
     const personalMainIndex = html.indexOf('id="personal-main"');
-    assert.ok(todayIndex >= 0 && missionIndex > todayIndex && rotationIndex > missionIndex && quickIndex > rotationIndex && personalMainIndex > todayIndex && personalMainIndex < missionIndex);
+    assert.ok(todayIndex >= 0 && rotationIndex > todayIndex && missionIndex > rotationIndex && quickIndex > missionIndex && personalMainIndex > todayIndex && personalMainIndex < missionIndex);
   });
 
   it("orders MMD NOW updates as MMD UPDATE before EDITORIAL, keeping API order within each group", async () => {
