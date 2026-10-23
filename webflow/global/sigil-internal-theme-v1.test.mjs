@@ -3,6 +3,7 @@ import { internalBrandLoader } from './sigil-brand-v1.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { usesSilverWorkspace, decorateInternalSilverTheme, installInternalSilverTheme, silverWorkspaceLoader, SILVER_WORKSPACE_CSS } from './sigil-internal-theme-v1.mjs';
+import { internalWorkspaceLoader } from './sigil-internal-workspace-v3.mjs';
 const html='<html lang="th"><head><title>Internal</title></head><body><main>Workspace</main></body></html>';
 const response=()=>new Response(html,{headers:{'content-type':'text/html','cache-control':'no-store','content-security-policy':"default-src 'self'",'set-cookie':'existing=unchanged; Secure'}});
 test('all internal spaces share white/orange; MMS is the only internal exception',()=>{
@@ -98,4 +99,24 @@ test('all declared internal navigation pages receive the theme except MMS',async
 test('text on the shipped white/orange interaction palette meets 4.5:1 contrast',()=>{
   const lum=hex=>hex.match(/\w\w/g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4).reduce((sum,x,i)=>sum+x*[.2126,.7152,.0722][i],0);
   for(const [fg,bg] of [['272b30','ffffff'],['545c66','ffffff'],['272b30','fed7aa'],['272b30','fdba74'],['272b30','fb923c'],['545c66','edf0f3']]) assert.ok((lum(bg)+.05)/(lum(fg)+.05)>=4.5,fg+' on '+bg);
+});
+
+
+test('serialized internal workspace loader keeps esbuild helpers inside browser scope',()=>{
+  const makeNode=()=>({
+    children:[],dataset:{},style:{setProperty(){}},
+    classList:{add(){}},append(...nodes){this.children.push(...nodes)},appendChild(node){this.children.push(node)},prepend(...nodes){this.children.unshift(...nodes)},
+    setAttribute(){},addEventListener(){},matches(){return false},querySelectorAll(){return []},getClientRects(){return []},
+    contains(){return false},isConnected:true
+  });
+  const body=makeNode(), head=makeNode(), root=makeNode();
+  const doc={body,head,documentElement:root,createElement:makeNode,getElementById(){return null},querySelector(){return null},addEventListener(){}};
+  const context={
+    document:doc,location:{pathname:'/internal/admin/jobs/create-job'},
+    matchMedia(){return {matches:false}},window:{addEventListener(){}},
+    MutationObserver:class{observe(){}},getComputedStyle(){return {color:'rgb(0, 0, 0)',webkitTextFillColor:'rgb(0, 0, 0)',opacity:'1',backgroundImage:'none',backgroundColor:'rgba(0, 0, 0, 0)'}},
+    setTimeout(){},requestAnimationFrame(){return 1}
+  };
+  assert.doesNotThrow(()=>new Script(internalWorkspaceLoader()).runInNewContext(context));
+  assert.ok(body.children.some(node=>node.id==='sigil-workspace-directory'));
 });
