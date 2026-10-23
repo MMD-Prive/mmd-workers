@@ -29,6 +29,27 @@ test("Worker-owned page calls canonical APIs and never loads Lovable assets", as
   assert.doesNotMatch(html, /lovable\.app|\/assets\//i);
 });
 
+test("Create Job reveals fields in dependency order and avoids unrelated defaults", async () => {
+  const response = handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job"));
+  const html = await response.text();
+  const steps = [...html.matchAll(/data-step="(\d)"/g)].map(match => Number(match[1]));
+  assert.deepEqual(steps, [1, 2, 3, 4, 5, 6, 7]);
+  assert.ok(html.indexOf("1. เลือกลูกค้า") < html.indexOf("2. กำหนดขอบเขตงาน"));
+  assert.ok(html.indexOf("2. กำหนดขอบเขตงาน") < html.indexOf("3. เลือกนายแบบ"));
+  assert.match(html, /name="visibility" value="private"/);
+  assert.match(html, /name="visibility" value="public"/);
+  assert.match(html, /id="privateScope" class="grid hide"/);
+  assert.match(html, /id="publicScope" class="grid hide"/);
+  assert.match(html, /id="addons" class="hide"/);
+  assert.match(html, /placeholder="พิมพ์ชื่อลูกค้าหรือข้อมูลติดต่อ"/);
+  assert.doesNotMatch(html, /id="cq" placeholder="เช่น Ice T"/);
+  assert.match(html, /ต้นทาง: /);
+  assert.match(html, /API ไม่ระบุต้นทาง/);
+  assert.match(html, /ไม่มีรูป/);
+  assert.match(html, /customer_payment_url/);
+  assert.match(html, /ลิงก์ยืนยันลูกค้าและโมเดลยังไม่แสดงจนกว่าระบบ Payment จะยืนยันการชำระ/);
+});
+
 test("Worker-owned page supports HEAD without returning the HTML body", async () => {
   const response = handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job", { method: "HEAD" }));
   assert.equal(response.status, 200);
