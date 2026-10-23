@@ -6,6 +6,13 @@ const SELECT = '/v1/admin/models/drive-select';
 const PARTNERS = '/v1/admin/partners/lookup';
 const clean = (value,max=240) => String(value ?? '').trim().slice(0,max);
 const rec = value => /^rec[A-Za-z0-9]{14,24}$/.test(value || '');
+const DRIVE_REAUTHORIZE_REASONS = new Set(['invalid_grant', 'access_denied', 'invalid_scope']);
+const DRIVE_CONFIGURATION_REASONS = new Set(['invalid_client', 'unauthorized_client']);
+export function driveSearchErrorCode(result) {
+  if (DRIVE_REAUTHORIZE_REASONS.has(result?.reason_code)) return 'drive_model_authorization_required';
+  if (DRIVE_CONFIGURATION_REASONS.has(result?.reason_code)) return 'drive_model_configuration_required';
+  return 'drive_model_search_unavailable';
+}
 function modelPhotos(fields={}) {
   const items = [...(Array.isArray(fields.profile_photo) ? fields.profile_photo : []), fields["Public Image URL"]];
   return [...new Set(items.map(item => clean(item?.url || item?.thumbnails?.large?.url || item,3000))
@@ -39,7 +46,7 @@ export async function handleCreateJobDriveDiscovery(request,env) {
     let result;
     try { result = await searchApprovedDriveModelCandidates(env,q,'all'); }
     catch { return json({ok:false,error:'drive_model_search_unavailable'},503); }
-    if (!result.ok) return json({ok:false,error:'drive_model_search_unavailable'},503);
+    if (!result.ok) return json({ok:false,error:driveSearchErrorCode(result)},503);
     return json({ok:true,source:'drive',airtable_deferred:true,items:result.items.map(item=>({model_id:'',model_name:item.working_name,model_lookup_key:item.model_lookup_key,drive_folder_id:item.drive_folder_id,drive_folder_url:item.drive_folder_url,folder_path:item.folder_path,folder_name:item.folder_name,source:'drive',source_kind:null,partner_name:null,partner_record_id:null,materialized:false,status:'Drive',orientation:item.lane}))});
   }
   if (path === PARTNERS) {
