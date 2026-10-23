@@ -45,6 +45,9 @@ function fixture(options = {}) {
     if (path === ROOT + '/deployments/' + id(11)) return deployment(id(2),id(11));
     if (path === ROOT + '/versions' && method === 'GET') return {items:uploaded ? [{id:id(2)},{id:id(1)}] : [{id:id(1)}]};
     if (path === ROOT + '/versions/' + id(1)) return structuredClone(baseline);
+    if (path === VERSION_ROOT + '/' + id(1)) return {
+      id:id(1), annotations:options.baselineAnnotations ?? {'workers/commit_sha':CODE_ONLY_SOURCE_SHA},
+    };
     if (path === ROOT + '/versions/' + id(2)) {
       const uploadedVersion = version(id(2),uploadedMetadata?.annotations || {});
       const inherited = new Map(baseline.resources.bindings.map(binding => [binding.name, binding]));
@@ -83,7 +86,10 @@ function fixture(options = {}) {
     sha:myMmdSha, releaseSha, expectedVersion:id(1), expectedDeployment:id(10),
     approve:async()=>{ approvals++; if(options.rejectApproval===approvals) throw new Error('approval_denied'); },
     call,
-    sourceCheck:async()=>({method:'fixture_clean_main',source_sha:myMmdSha,config_unchanged:false}),
+    sourceCheck:async(_diagnostic,baselineSourceSha)=>{
+      assert.equal(baselineSourceSha,CODE_ONLY_SOURCE_SHA);
+      return {method:'fixture_clean_main',source_sha:myMmdSha,config_unchanged:false};
+    },
     bundle:async()=>{if(options.bundleError)throw new Error('bundle_failed');return new Uint8Array([1,2,3]);},
     save:record=>receipts.push(structuredClone(record)),
   };
@@ -158,6 +164,15 @@ test('wrong baseline and bundle failure stop before any Cloudflare write', async
   const build=fixture({bundleError:true});
   await assert.rejects(releaseMemberPagesCodeOnly(build.io));
   assert.equal(build.writes(),0);
+});
+
+test('missing or invalid active source provenance stops before upload', async () => {
+  for (const baselineAnnotations of [{}, {'workers/commit_sha':'invalid'}]) {
+    const f=fixture({baselineAnnotations});
+    await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+    assert.equal(f.writes(),0);
+    assert.equal(f.receipts.at(-1).diagnostic.stage,'CF_BASELINE_SOURCE_CHECK');
+  }
 });
 
 test('approval denial at each boundary prevents the next mutation', async () => {
@@ -400,7 +415,9 @@ function checkoutFixture(options = {}) {
     }
     if (args[0] === 'status') return directory === options.dirtyDirectory ? '!! injected.js' : '';
     if (args[0] === 'merge-base') {
-      if (options.missingHistory) throw new Error('not_ancestor');
+      if (options.missingHistory || (options.missingBaselineHistory && args[2] === 'b'.repeat(40))) {
+        throw new Error('not_ancestor');
+      }
       return '';
     }
     if (args[0] === 'diff' && args[1] === '--name-only') {
@@ -454,18 +471,22 @@ test('MY MMD release accepts only the exact merged source, reviewed paths and ma
     assert.throws(()=>validatePostStartupSourcePaths([...CODE_ONLY_POST_STARTUP_PATHS,changed]));
   }
   const f = checkoutFixture({targetSourceSha:myMmdSha});
-  const result = inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,{...f,targetSourceSha:myMmdSha});
+  const result = inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,
+    {...f,targetSourceSha:myMmdSha,baselineSourceSha:sha});
   assert.equal(result.source_sha,myMmdSha);
   assert.equal(result.config_unchanged,false);
   assert.deepEqual(result.source_scope.post_startup_delta.paths,CODE_ONLY_POST_STARTUP_PATHS);
   for (const options of [
     {sourceSha:sha}, {postStartupExtraPaths:['member-pages-worker/src/unreviewed.js']},
-    {configBlobDrift:true}, {changedMainRuntime:true},
+    {configBlobDrift:true}, {changedMainRuntime:true}, {missingHistory:true},
   ]) {
     const failure = checkoutFixture({...options,targetSourceSha:myMmdSha});
     assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha,failure.sourceDirectory,
       {...failure,targetSourceSha:myMmdSha}));
   }
+  const foreign = checkoutFixture({targetSourceSha:myMmdSha,missingBaselineHistory:true});
+  assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha,foreign.sourceDirectory,
+    {...foreign,targetSourceSha:myMmdSha,baselineSourceSha:'b'.repeat(40)}));
 });
 
 test('wrong source, changed config, extra Worker paths and dirty checkouts fail closed', () => {

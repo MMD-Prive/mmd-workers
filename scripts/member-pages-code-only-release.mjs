@@ -200,6 +200,7 @@ export function validateStartupBridge(paths, readBlob) {
 export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
   releaseDirectory = process.cwd(),
   targetSourceSha = CODE_ONLY_SOURCE_SHA,
+  baselineSourceSha,
   diagnostic = () => {},
   git = (cwd, ...args) => execFileSync('git', args, {
     cwd, encoding:'utf8', stdio:['ignore','pipe','ignore'],
@@ -224,6 +225,10 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
   if (targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA) validateMyMmdSourceHistory(sourceSha, isAncestor);
   else validateCodeOnlySourceHistory(sourceSha, isAncestor);
   git(releaseDirectory, 'merge-base', '--is-ancestor', sourceSha, releaseSha);
+  if (targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA && baselineSourceSha) {
+    assert.match(baselineSourceSha, /^[a-f0-9]{40}$/, 'active source annotation missing');
+    git(sourceDirectory, 'merge-base', '--is-ancestor', baselineSourceSha, sourceSha);
+  }
   // First retain the complete original #2522/#2523 review boundary.
   diagnostic('SOURCE_BASE_SCOPE');
   const previousScope = validateCodeOnlySourcePaths(
@@ -383,6 +388,13 @@ export async function releaseMemberPagesCodeOnly(io) {
     diagnostics.mark('CF_VERSION_READ');
     const baseline = await call('/versions/' + current);
     assert.equal(baseline.id, current, 'active version readback mismatch');
+    diagnostics.mark('CF_BASELINE_SOURCE_READ');
+    const baselineAnnotation = await io.call(VERSION_ROOT + '/' + current);
+    assert.equal(baselineAnnotation?.id, current, 'active version annotation identity mismatch');
+    const baselineSourceSha = versionAnnotations(baselineAnnotation)?.['workers/commit_sha'];
+    diagnostics.mark('CF_BASELINE_SOURCE_CHECK');
+    assert.match(baselineSourceSha || '', /^[a-f0-9]{40}$/, 'active source provenance missing');
+    state.baseline_source_sha = baselineSourceSha;
     diagnostics.mark('CF_CONFIG_CHECK');
     const config = versionConfiguration(baseline);
     const metadata = uploadMetadata(baseline, io.sha);
@@ -411,7 +423,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     await unchanged(deployment, current);
     state.baseline_version = current;
     state.baseline_deployment = deployment.id;
-    state.source_evidence = await io.sourceCheck(diagnostics.mark);
+    state.source_evidence = await io.sourceCheck(diagnostics.mark, baselineSourceSha);
     diagnostics.mark('BUNDLE_BUILD');
     const module = await io.bundle(baseline);
     diagnostics.mark('BUNDLE_CHECK');
@@ -541,8 +553,8 @@ async function main() {
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async diagnostic => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
-      {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA}),
+    sourceCheck: async (diagnostic, baselineSourceSha) => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+      {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA, baselineSourceSha}),
     bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
   });
