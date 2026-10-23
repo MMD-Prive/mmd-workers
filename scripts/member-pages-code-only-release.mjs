@@ -19,6 +19,54 @@ export const CODE_ONLY_GRAPHICS_BASE_SHA = 'a815e173fff1471901dae55646c984ed0b5f
 export const CODE_ONLY_GRAPHICS_SOURCE_SHA = 'a53571bc9d572755dff65599767d09a240d74b93';
 export const CODE_ONLY_STARTUP_BASE_SHA = 'ebf5236b6d9a3e9bea28c89db1f6c2e18b8ddebc';
 export const CODE_ONLY_SOURCE_SHA = 'fe5f9d98876b600421c5614efc049ffc890b8adb';
+export const CODE_ONLY_MY_MMD_SOURCE_SHA = '871d99cd9eb1c8d53e1d473160119030dca01d4c';
+export const CODE_ONLY_SOURCE_CONFIG_BLOB = 'e26a9d3436140f381f5d6f55311c43c81e7deb40';
+// Every runtime, test, and build-control path changed since the original startup release.
+// The source pin and exact path inventory prevent a later main change entering this release.
+export const CODE_ONLY_POST_STARTUP_PATHS = [
+  'member-pages-worker/src/index.js',
+  'member-pages-worker/src/kenji-member-session-truth.js',
+  'member-pages-worker/src/liff-account-view.js',
+  'member-pages-worker/src/liff-customer-brand-v6.js',
+  'member-pages-worker/src/liff-customer-graphics.js',
+  'member-pages-worker/src/liff-customer-progress.js',
+  'member-pages-worker/src/liff-gateway-airtable.js',
+  'member-pages-worker/src/liff-identity-foundation.js',
+  'member-pages-worker/src/liff-lovable-design.js',
+  'member-pages-worker/src/liff-member-shell.js',
+  'member-pages-worker/src/liff-personal-main.js',
+  'member-pages-worker/src/liff-promotion-client.js',
+  'member-pages-worker/src/liff-promotion-purchase.js',
+  'member-pages-worker/src/liff-renewal-card.js',
+  'member-pages-worker/src/member-app-api-runtime.js',
+  'member-pages-worker/src/member-personal-main.js',
+  'member-pages-worker/src/model-drive-directory.js',
+  'member-pages-worker/src/my-mmd-canonical-entitlement-bridge.js',
+  'member-pages-worker/src/runtime-index.js',
+  'member-pages-worker/test/liff-account-view.test.mjs',
+  'member-pages-worker/test/liff-commerce-ui.test.mjs',
+  'member-pages-worker/test/liff-identity-foundation.test.mjs',
+  'member-pages-worker/test/liff-member-compact-v4.test.mjs',
+  'member-pages-worker/test/liff-member-shell.test.mjs',
+  'member-pages-worker/test/liff-personal-main.test.mjs',
+  'member-pages-worker/test/liff-promotion-purchase.test.mjs',
+  'member-pages-worker/test/liff-quick-membership.test.mjs',
+  'member-pages-worker/test/liff-renewal-card.test.mjs',
+  'member-pages-worker/test/member-app-api.runtime.test.mjs',
+  'member-pages-worker/test/member-personal-main.test.mjs',
+  'member-pages-worker/test/model-drive-directory.test.mjs',
+  'member-pages-worker/test/my-mmd-canonical-profile-presentation.test.mjs',
+  'member-pages-worker/wrangler.toml',
+  'package.json',
+  'shared/mms-chat-policy.mjs',
+  'shared/model-decline-options.mjs',
+  'shared/model-decline-options.test.mjs',
+  'shared/model-travel-client-source.mjs',
+  'shared/model-travel-client.mjs',
+  'shared/model-travel-client.test.mjs',
+  'shared/personal-main-catalog.mjs',
+  'shared/private-model-work-capabilities.mjs',
+].sort();
 export const CODE_ONLY_STARTUP_PATHS = [
   'member-pages-worker/src/liff-member-shell.js',
   'member-pages-worker/test/liff-member-shell.test.mjs',
@@ -49,6 +97,14 @@ export const CODE_ONLY_INCLUDED_PULL_REQUESTS = [
   { number: 2523, merge_sha: '151d21eabd988396eef36b944c931b23e51cea69' },
   { number: 2537, merge_sha: CODE_ONLY_GRAPHICS_SOURCE_SHA },
   { number: 2544, merge_sha: CODE_ONLY_SOURCE_SHA },
+];
+export const CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS = [
+  ...CODE_ONLY_INCLUDED_PULL_REQUESTS,
+  { number: 2617, merge_sha: '8f6d736826f0ccccda53aee6ac600bdd332560c9' },
+  { number: 2618, merge_sha: '875f86e9c88dc99bf9fafd3d2661b13a9e31b6d9' },
+  { number: 2642, merge_sha: '0a3b400362467ae111e35bde0f1cd722b85304a2' },
+  { number: 2650, merge_sha: '865d5a4b0f0fe441a3a8913e5c813e862b93abac' },
+  { number: 2652, merge_sha: CODE_ONLY_MY_MMD_SOURCE_SHA },
 ];
 // These exact blobs belong to another Worker and are never release inputs.
 export const CODE_ONLY_EXCLUDED_CHANGE = {
@@ -112,6 +168,20 @@ export function validateCodeOnlySourceHistory(sha, isAncestor) {
   }
 }
 
+export function validateMyMmdSourceHistory(sha, isAncestor) {
+  assert.equal(sha, CODE_ONLY_MY_MMD_SOURCE_SHA, 'only the exact reviewed MY MMD source may be bundled');
+  for (const ancestor of [CODE_ONLY_BASE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_STARTUP_BASE_SHA,
+    ...CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS.map(pr => pr.merge_sha)]) {
+    assert.equal(isAncestor(ancestor, sha), true, 'reviewed MY MMD release commit missing from source history');
+  }
+}
+
+export function validatePostStartupSourcePaths(paths) {
+  assert.deepEqual([...paths].sort(), CODE_ONLY_POST_STARTUP_PATHS,
+    'post-startup source delta differs from reviewed runtime and test paths');
+  return [...CODE_ONLY_POST_STARTUP_PATHS];
+}
+
 export function validateGraphicsSourcePaths(paths) {
   assert.deepEqual([...paths].sort(), CODE_ONLY_GRAPHICS_PATHS,
     'Graphics V4 delta must contain exactly the four reviewed files');
@@ -129,6 +199,8 @@ export function validateStartupBridge(paths, readBlob) {
 // Release tooling may advance on main; the deployed application source cannot.
 export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
   releaseDirectory = process.cwd(),
+  targetSourceSha = CODE_ONLY_SOURCE_SHA,
+  baselineSourceSha,
   diagnostic = () => {},
   git = (cwd, ...args) => execFileSync('git', args, {
     cwd, encoding:'utf8', stdio:['ignore','pipe','ignore'],
@@ -138,18 +210,25 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
   assert.match(releaseSha || '', /^[a-f0-9]{40}$/);
   assert.ok(sourceDirectory, 'separate pinned source checkout required');
   assert.notEqual(resolve(sourceDirectory), resolve(releaseDirectory), 'source must be separate from release tooling');
-  for (const [directory, expected] of [[releaseDirectory, releaseSha], [sourceDirectory, CODE_ONLY_SOURCE_SHA]]) {
+  assert.ok([CODE_ONLY_SOURCE_SHA, CODE_ONLY_MY_MMD_SOURCE_SHA].includes(targetSourceSha), 'unreviewed source pin');
+  for (const [directory, expected] of [[releaseDirectory, releaseSha], [sourceDirectory, targetSourceSha]]) {
     assert.equal(resolve(git(directory, 'rev-parse', '--show-toplevel')), resolve(directory), 'checkout root mismatch');
     assert.equal(git(directory, 'rev-parse', 'HEAD'), expected, 'checkout SHA mismatch');
     assert.equal(git(directory, 'status', '--porcelain', '--untracked-files=all', '--ignored'), '', 'dirty checkout');
   }
   const sourceSha = git(sourceDirectory, 'rev-parse', 'HEAD');
   diagnostic('SOURCE_HISTORY');
-  validateCodeOnlySourceHistory(sourceSha, (ancestor, target) => {
+  const isAncestor = (ancestor, target) => {
     git(sourceDirectory, 'merge-base', '--is-ancestor', ancestor, target);
     return true;
-  });
+  };
+  if (targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA) validateMyMmdSourceHistory(sourceSha, isAncestor);
+  else validateCodeOnlySourceHistory(sourceSha, isAncestor);
   git(releaseDirectory, 'merge-base', '--is-ancestor', sourceSha, releaseSha);
+  if (targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA && baselineSourceSha) {
+    assert.match(baselineSourceSha, /^[a-f0-9]{40}$/, 'active source annotation missing');
+    git(sourceDirectory, 'merge-base', '--is-ancestor', baselineSourceSha, sourceSha);
+  }
   // First retain the complete original #2522/#2523 review boundary.
   diagnostic('SOURCE_BASE_SCOPE');
   const previousScope = validateCodeOnlySourcePaths(
@@ -171,20 +250,42 @@ export function inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {
     CODE_ONLY_STARTUP_BASE_SHA, '--', ...CODE_ONLY_RUNTIME_BOUNDARIES).split('\n').filter(Boolean);
   validateStartupBridge(bridgePaths, (reference, path) => git(sourceDirectory, 'rev-parse', reference+':'+path));
   diagnostic('SOURCE_STARTUP_SCOPE');
-  const startupPaths = git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_STARTUP_BASE_SHA, sourceSha).split('\n').filter(Boolean);
+  const startupPaths = git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_STARTUP_BASE_SHA,
+    CODE_ONLY_SOURCE_SHA).split('\n').filter(Boolean);
   assert.deepEqual([...startupPaths].sort(), CODE_ONLY_STARTUP_PATHS, 'startup delta must contain exactly the two reviewed files');
+  let postStartupPaths = [];
+  if (targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA) {
+    diagnostic('SOURCE_POST_STARTUP_SCOPE');
+    postStartupPaths = validatePostStartupSourcePaths(
+      git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_SOURCE_SHA, sourceSha,
+        '--', ...CODE_ONLY_RUNTIME_BOUNDARIES).split('\n').filter(Boolean));
+    assert.equal(git(sourceDirectory, 'rev-parse', sourceSha + ':member-pages-worker/wrangler.toml'),
+      CODE_ONLY_SOURCE_CONFIG_BLOB, 'pinned Worker config blob drift');
+    diagnostic('SOURCE_MAIN_PARITY');
+    assert.equal(git(releaseDirectory, 'diff', '--name-only', sourceSha, releaseSha,
+      '--', ...CODE_ONLY_RUNTIME_BOUNDARIES), '', 'release main changed Worker runtime or dependency controls');
+  }
   const sourceScope = {...previousScope,
-    included_paths:[...new Set([...previousScope.included_paths, ...graphicsPaths])].sort(),
+    included_paths:[...new Set([...previousScope.included_paths, ...graphicsPaths, ...postStartupPaths])].sort(),
     graphics_delta:{base_sha:CODE_ONLY_GRAPHICS_BASE_SHA, source_sha:CODE_ONLY_GRAPHICS_SOURCE_SHA, paths:graphicsPaths},
     startup_delta:{base_sha:CODE_ONLY_STARTUP_BASE_SHA, paths:startupPaths},
+    ...(targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA ? {post_startup_delta:{base_sha:CODE_ONLY_SOURCE_SHA,
+      source_sha:sourceSha, paths:postStartupPaths}} : {}),
     exact_test_only_bridge:{from:CODE_ONLY_GRAPHICS_SOURCE_SHA, to:CODE_ONLY_STARTUP_BASE_SHA, paths:bridgePaths},
     unchanged_runtime_bridge:{from:CODE_ONLY_PREVIOUS_SOURCE_SHA, to:CODE_ONLY_GRAPHICS_BASE_SHA}};
   diagnostic('SOURCE_CONFIG');
-  assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_BASE_SHA, sourceSha, '--', 'member-pages-worker/wrangler.toml'), '',
-    'Worker config/migrations changed; separate release review required');
+  if (targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA) {
+    assert.equal(git(sourceDirectory, 'diff', '--name-only', CODE_ONLY_SOURCE_SHA, sourceSha,
+      '--', 'member-pages-worker/wrangler.toml').trim(), 'member-pages-worker/wrangler.toml',
+      'unexpected Worker config scope');
+  } else {
+    assert.equal(git(sourceDirectory, 'diff', CODE_ONLY_BASE_SHA, sourceSha, '--', 'member-pages-worker/wrangler.toml'), '',
+      'Worker config/migrations changed; separate release review required');
+  }
   return { method:'separate-pinned-source-checkout', source_sha:sourceSha, release_sha:releaseSha,
-    config_unchanged:true, comparison_base_sha:CODE_ONLY_BASE_SHA,
-    included_pull_requests:CODE_ONLY_INCLUDED_PULL_REQUESTS, source_scope:sourceScope };
+    config_unchanged:targetSourceSha === CODE_ONLY_SOURCE_SHA, comparison_base_sha:CODE_ONLY_BASE_SHA,
+    included_pull_requests:targetSourceSha === CODE_ONLY_MY_MMD_SOURCE_SHA
+      ? CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS : CODE_ONLY_INCLUDED_PULL_REQUESTS, source_scope:sourceScope };
 }
 
 export function activeVersion(deployment) {
@@ -275,7 +376,7 @@ export async function releaseMemberPagesCodeOnly(io) {
   try {
     await io.approve(diagnostics.mark);
     diagnostics.mark('RELEASE_SOURCE_PIN');
-    assert.equal(io.sha, CODE_ONLY_SOURCE_SHA, 'release source must be the exact Graphics V4 startup merge');
+    assert.equal(io.sha, CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed MY MMD merge');
     assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
     diagnostics.mark('CF_DEPLOYMENT_READ');
@@ -287,6 +388,13 @@ export async function releaseMemberPagesCodeOnly(io) {
     diagnostics.mark('CF_VERSION_READ');
     const baseline = await call('/versions/' + current);
     assert.equal(baseline.id, current, 'active version readback mismatch');
+    diagnostics.mark('CF_BASELINE_SOURCE_READ');
+    const baselineAnnotation = await io.call(VERSION_ROOT + '/' + current);
+    assert.equal(baselineAnnotation?.id, current, 'active version annotation identity mismatch');
+    const baselineSourceSha = versionAnnotations(baselineAnnotation)?.['workers/commit_sha'];
+    diagnostics.mark('CF_BASELINE_SOURCE_CHECK');
+    assert.match(baselineSourceSha || '', /^[a-f0-9]{40}$/, 'active source provenance missing');
+    state.baseline_source_sha = baselineSourceSha;
     diagnostics.mark('CF_CONFIG_CHECK');
     const config = versionConfiguration(baseline);
     const metadata = uploadMetadata(baseline, io.sha);
@@ -315,7 +423,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     await unchanged(deployment, current);
     state.baseline_version = current;
     state.baseline_deployment = deployment.id;
-    state.source_evidence = await io.sourceCheck(diagnostics.mark);
+    state.source_evidence = await io.sourceCheck(diagnostics.mark, baselineSourceSha);
     diagnostics.mark('BUNDLE_BUILD');
     const module = await io.bundle(baseline);
     diagnostics.mark('BUNDLE_CHECK');
@@ -433,18 +541,20 @@ async function main() {
   const sourceDirectory = process.env.SOURCE_DIRECTORY;
   const approve = async diagnostic => {
     await verifyOwnerApproval(process.env, fetch, {diagnostic});
-    inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {diagnostic});
+    inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+      {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA});
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir,'member-pages-code-only-receipt.json');
   await releaseMemberPagesCodeOnly({
-    sha:CODE_ONLY_SOURCE_SHA,
+    sha:CODE_ONLY_MY_MMD_SOURCE_SHA,
     releaseSha,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async diagnostic => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory, {diagnostic}),
+    sourceCheck: async (diagnostic, baselineSourceSha) => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+      {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA, baselineSourceSha}),
     bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
   });
