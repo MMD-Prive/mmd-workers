@@ -1,3 +1,4 @@
+import { PARTNER_HERO_JS } from "./partner-dashboard-skin";
 import { PARTNER_OPERATIONS_JS, PARTNER_OPERATIONS_CSS } from "./partner-operations";
 
 export const PARTNER_CONTROL_ROOM_JS = String.raw`
@@ -57,7 +58,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     flash.hidden = !message;
   }
 
+  ${PARTNER_HERO_JS}
+
   function showView(name) {
+    updatePartnerHero(name);
     state.view = name;
     $$('[data-view-panel]', root).forEach(function (panel) { panel.hidden = panel.dataset.viewPanel !== name; });
     $$('[data-view]', root).forEach(function (button) { button.setAttribute("aria-current", button.dataset.view === name ? "page" : "false"); });

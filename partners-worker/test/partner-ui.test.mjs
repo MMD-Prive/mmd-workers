@@ -64,6 +64,24 @@ test('native control room executes and switches every operation tab with live fi
   assert.ok(q('[data-model-dialog]').open);
   assert.deepEqual(errors,[]);
 });
+test('every existing view keeps a public photographic hero without exposing the access token',async t=>{
+  const {q,w,f,errors}=await ui(t);
+  assert.equal(w.document.querySelectorAll('h1').length,1);
+  assert.equal(q('.mmdp-hero'),null);
+  for(const name of ['home','models','agreements','earnings','performance','console','activity','privacy']){
+    q('[data-view="'+name+'"]').click();
+    assert.equal(q('[data-partner-hero]').dataset.heroView,name);
+    const image=q('[data-hero-image]');
+    const url=new URL(image.src);
+    assert.equal(url.hostname,'s3.amazonaws.com');
+    assert.equal(url.search,'');
+    assert.ok(!image.src.includes(f.token));
+    assert.equal(image.getAttribute('referrerpolicy'),'no-referrer');
+    assert.ok(q('[data-hero-title]').textContent.length>0);
+    assert.equal(w.document.querySelectorAll('[data-view-panel]:not([hidden])').length,1);
+  }
+  assert.deepEqual(errors,[]);
+});
 test('Telegram stays optional and never hides Dashboard job state in Phase 1',async t=>{
   const {q,w,f,errors}=await ui(t);
   assert.equal(q('[data-telegram]').dataset.state,'optional');
