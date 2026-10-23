@@ -21,6 +21,12 @@ on:
       - "shared/payment-notification-outbox*"
       - "shared/test/payment-memory-r2.mjs"
       - "scripts/ensure-payment-notification-cron*"
+      # Customer confirmation uses its own exact-SHA, owner-approved release.
+      # Exclude this narrow surface from the integrated payments/Telegram
+      # pipeline, which also rotates a Telegram service secret.
+      - "!.github/workflows/deploy-payments-worker.yml"
+      - "!payments-worker/confirmation-details.js"
+      - "!payments-worker/confirmation-details.test.mjs"
 
 concurrency:
   group: telegram-router-secret-rotation-production
