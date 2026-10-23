@@ -43,11 +43,11 @@ test('www login canonicalizes to the LIFF apex before SDK initialization, preser
  assert.equal(r.status,302);assert.equal(r.headers.get('Location'),'https://mmdbkk.com/sigil/model/dashboard/partner-login?code=fixture&state=fixture');assert.equal(r.headers.get('Cache-Control'),'no-store');
 });
 
-async function browser({loggedIn=false,token='fixture-line-token',target='https://sigil-partner.lovable.app/?t=fixture-partner-token',exchangeOk=true,initError=false,waitForInit=false,loginThrows=false,navigationThrows=false}={}){
+async function browser({loggedIn=false,token='fixture-line-token',target='https://sigil-partner.lovable.app/?t=fixture-partner-token',exchangeOk=true,initError=false,waitForInit=false,loginThrows=false,navigationThrows=false,errorCode='partner_line_review_required',reviewReason}={}){
  const response=await worker.fetch(new Request('https://mmdbkk.com/sigil/model/dashboard/partner-login'),env,{});const html=await response.text();
  const script=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];const go={},state={};const calls=[],logins=[],destinations=[];const events={};let finish;
  const init=waitForInit?new Promise(resolve=>{finish=resolve}):Promise.resolve();
- runInNewContext(script,{URL,window:{addEventListener:(name,listener)=>events[name]=listener},document:{getElementById:id=>id==='go'?go:state},liff:{init:async()=>{if(initError)throw Error('fixture');await init},isLoggedIn:()=>loggedIn,getIDToken:()=>token,login:params=>{if(loginThrows)throw Error('fixture');logins.push(params.redirectUri)}},fetch:async(path,options)=>{calls.push({path,options});return {ok:exchangeOk,json:async()=>exchangeOk?{ok:true,dashboard_url:target}:{ok:false,error:{code:'partner_line_review_required'}}}},location:{replace:url=>{if(navigationThrows)throw Error('fixture');destinations.push(url)}}});
+ runInNewContext(script,{URL,window:{addEventListener:(name,listener)=>events[name]=listener},document:{getElementById:id=>id==='go'?go:state},liff:{init:async()=>{if(initError)throw Error('fixture');await init},isLoggedIn:()=>loggedIn,getIDToken:()=>token,login:params=>{if(loginThrows)throw Error('fixture');logins.push(params.redirectUri)}},fetch:async(path,options)=>{calls.push({path,options});return {ok:exchangeOk,json:async()=>exchangeOk?{ok:true,dashboard_url:target}:{ok:false,error:{code:errorCode,reason:reviewReason}}}},location:{replace:url=>{if(navigationThrows)throw Error('fixture');destinations.push(url)}}});
  await new Promise(setImmediate);return {go,state,calls,logins,destinations,finish,events};
 }
 
@@ -78,7 +78,7 @@ async function identityExchange(options={}){
  const original=globalThis.fetch;globalThis.fetch=async(input,init)=>{
   const url=String(input instanceof Request?input.url:input);
   if(url==='https://api.line.me/oauth2/v2.1/verify')return Response.json(identity,{status:options.lineStatus||200});
-  if(url.includes('/tbluoZ5JiRcoUP6WT'))return Response.json({records:options.duplicateClaims?[claim,claim]:[claim]});
+  if(url.includes('/tbluoZ5JiRcoUP6WT'))return Response.json({records:options.noClaims?[]:options.duplicateClaims?[claim,claim]:[claim]});
   if(url.includes('/partners/'+partnerId)){
    if(init?.method==='PATCH'){writes++;const fields=JSON.parse(init.body).fields;issuedHash=fields.fldoaCF4k4YqyuQ7Q;partner.fields={...partner.fields,...fields};}
    return Response.json(partner);
@@ -120,4 +120,46 @@ test('caller supplied Partner identifiers cannot replace the verified reciprocal
  const r=await identityExchange({bodyExtra:{partner_id:'attacker',partner_record_id:'recOther',pid:'recOther',dashboard_url:'https://evil.example/'}});
  assert.equal(r.status,200);const url=new URL(r.body.dashboard_url);assert.equal(url.origin,'https://sigil-partner.lovable.app');
  const payload=JSON.parse(Buffer.from(url.searchParams.get('t').split('.')[0].slice('sigil_'.length),'base64url').toString());assert.equal(payload.pid,'recKendoFixture001');
+});
+
+const reviewCases=[
+ [{noClaims:true},'claim_not_found','partner_line_review_required'],
+ [{duplicateClaims:true},'claim_ambiguous','partner_line_review_required'],
+ [{claim:{fld6PAywOhvDeelDJ:'pending'}},'claim_status','partner_line_review_required'],
+ [{claim:{fldGB7Raqm6O1NIhh:'developing'}},'claim_environment','partner_line_review_required'],
+ [{claim:{fldaMlO1fRoazxfHg:[]}},'claim_partner_link','partner_line_review_required'],
+ [{partner:{fldXs6VyfXIHxBMpQ:['recOtherClaim']}},'partner_claim_link','partner_not_recognized'],
+ [{partner:{fldajmg66pf2ifGPu:'Suspended'}},'partner_inactive','partner_not_recognized'],
+ [{partner:{fldwRzdtIoPbHKr7n:'pending_review'}},'partner_approval','partner_not_recognized']
+];
+for(const [options,reason,code] of reviewCases){
+ test(`verified LINE denial identifies ${reason} without changing access or leaking identity`,async()=>{
+  const r=await identityExchange(options);
+  assert.equal(r.status,403);assert.equal(r.body.error.code,code);assert.equal(r.body.error.reason,reason);
+  assert.equal(r.body.error.retryable,false);assert.equal(r.cacheControl,'no-store');assert.equal(r.writes,0);assert.equal(r.issuedHash,'');assert.equal(r.body.dashboard_url,undefined);
+  assert.match(r.body.meta.request_id,/^req_[a-f0-9-]{36}$/);
+  const serialized=JSON.stringify(r.body);
+  for(const value of ['fixture-token','fixture-signing-secret','recKendoFixture001','recClaimFixture001','U'+'a'.repeat(32)])assert.equal(serialized.includes(value),false);
+ });
+ test(`browser shows bounded ${reason} instead of claiming a review is underway`,async()=>{
+  const b=await browser({loggedIn:true,exchangeOk:false,errorCode:code,reviewReason:reason});
+  assert.ok(b.state.textContent.includes('['+reason+']'));assert.doesNotMatch(b.state.textContent,/กำลังดำเนินการ/);
+  assert.equal(b.go.disabled,false);assert.equal(b.calls.length,1);assert.deepEqual(b.logins,[]);assert.deepEqual(b.destinations,[]);
+ });
+}
+test('unverified LINE identity never receives claim diagnostics',async()=>{
+ for(const options of [{lineStatus:401},{identity:{aud:'wrong'}},{identity:{iss:'https://evil.example'}},{identity:{exp:0}},{identity:{sub:'not-a-line-subject'}}]){
+  const r=await identityExchange(options);assert.equal(r.status,401);assert.equal(r.body.error.reason,undefined);assert.equal(r.writes,0);
+ }
+});
+test('unknown, inherited or hostile reasons cannot render response text or trigger sign-in/navigation',async()=>{
+ for(const reviewReason of [undefined,'constructor','__proto__','<img src=x onerror=alert(1)>','fixture-secret']){
+  const b=await browser({loggedIn:true,exchangeOk:false,reviewReason});assert.match(b.state.textContent,/ยังไม่ผ่านการตรวจสิทธิ์/);assert.doesNotMatch(b.state.textContent,/กำลังดำเนินการ|fixture|<img|constructor|__proto__/);
+  assert.equal(b.go.disabled,false);assert.deepEqual(b.logins,[]);assert.deepEqual(b.destinations,[]);
+ }
+ const b=await browser({loggedIn:true,exchangeOk:false,errorCode:'line_identity_invalid',reviewReason:'partner_inactive'});assert.equal(b.state.textContent,'พร้อมยืนยัน LINE อีกครั้ง');
+});
+test('caller cannot supply a denial reason or substitute a Partner to bypass review',async()=>{
+ const r=await identityExchange({noClaims:true,bodyExtra:{reason:'partner_approval',partner_id:'partner_kendo',partner_record_id:'recKendoFixture001'}});
+ assert.equal(r.status,403);assert.equal(r.body.error.reason,'claim_not_found');assert.equal(r.writes,0);
 });
