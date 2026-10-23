@@ -12,7 +12,7 @@
  */
 
 export const WORKER_NAME = "sigil-booking-proxy-worker";
-export const RUNTIME_VERSION = "20261018-sigil-booking-cloud-release-opt-in";
+export const RUNTIME_VERSION = "20261023-sigil-booking-release-assets";
 export const CANONICAL_HOST = "sigil.mmdbkk.com";
 export const CANONICAL_PROTOCOL = "https:";
 export const SIGIL_BOOKING_PATH = "/sigil/booking";
@@ -51,7 +51,9 @@ export function isSigilBookingPath(url) {
 export function isCloudReleaseAssetPath(url) {
   // Only canonical-host assets are proxied; arbitrary Webflow paths are forbidden.
   return url.hostname.toLowerCase() === CANONICAL_HOST
-    && url.pathname.startsWith(WEBFLOW_BOOKING_PATH + "/");
+    && url.pathname.startsWith(WEBFLOW_BOOKING_PATH + "/")
+    && /^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.(?:js|css|png|jpg|jpeg|webp|gif|svg|ico|woff|woff2|ttf|mp4|webm)$/i.test(url.pathname)
+    && !url.pathname.includes("/../");
 }
 
 export function isFrontGateHost(url) {
@@ -188,11 +190,23 @@ async function fetchCloudReleaseAsset(request, url) {
   const response = await fetch(new Request(upstream.toString(), {
     method: request.method.toUpperCase(),
     headers,
+    redirect: "manual",
   }));
+  // A missing static file must not become the SPA HTML fallback or redirect
+  // the browser to a different origin. Preserve 304 revalidation responses.
+  if ((response.status >= 300 && response.status < 400 && response.status !== 304)
+      || /text\/html/i.test(response.headers.get("content-type") || "")) {
+    return new Response(null, {
+      status: 502,
+      headers: pageHeaders({ "x-mmd-booking-error": "invalid_release_asset" }),
+    });
+  }
   const out = new Headers(response.headers);
   out.delete("set-cookie");
   out.set("x-mmd-route-owner", WORKER_NAME);
   out.set("x-mmd-booking-source", "webflow-cloud-release");
+  out.set("x-mmd-runtime-version", RUNTIME_VERSION);
+  out.set("x-content-type-options", "nosniff");
   out.delete("content-length");
   return new Response(request.method.toUpperCase() === "HEAD" ? null : response.body, {
     status: response.status,
