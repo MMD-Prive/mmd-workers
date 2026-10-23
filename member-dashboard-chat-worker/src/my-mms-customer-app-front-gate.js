@@ -272,13 +272,26 @@ function safeContact(value, verified, safeToDisplay) {
   };
 }
 
+function memberSinceLabel(value) {
+  const raw = safeString(value, 80);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(raw)) return null;
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok",
+  }).format(date);
+}
+
 function customerFromProfile(profile) {
   const match = safeString(profile?.match_state, 40).toLowerCase();
   const identityState = match === "matched" ? "verified" : "checking";
+  const lineAccountSummary = identityState === "verified"
+    ? "เชื่อมต่อบัญชี LINE แล้ว"
+    : null;
   return {
     displayName: safeString(profile?.displayName || profile?.member_display_name, 120) || null,
     lineDisplayName: safeString(profile?.lineDisplayName || profile?.line_display_name, 120) || null,
-    lineAccountSummary: safeString(profile?.lineAccountSummary || profile?.line_account_summary, 160) || null,
+    lineAccountSummary,
     avatarUrl: null,
     identityState,
     customerRefDisplay: safeString(profile?.memberRef || profile?.member_ref, 120) || null,
@@ -287,7 +300,7 @@ function customerFromProfile(profile) {
     phone: safeContact(profile?.phoneMasked, profile?.phoneVerified, profile?.phoneSafeToDisplay),
     preferredAreas: [],
     preferredServices: [],
-    memberSinceLabel: safeString(profile?.memberSince || profile?.member_since, 80) || null,
+    memberSinceLabel: memberSinceLabel(profile?.memberSince || profile?.member_since),
   };
 }
 
@@ -371,6 +384,10 @@ function unavailableContract(name) {
   return json({ ok: false, error: { code: "MMS_CUSTOMER_CONTRACT_CHECKING", feature: name } }, 503);
 }
 
+function searchUnavailable(code = "MMS_SEARCH_UPSTREAM_UNAVAILABLE") {
+  return json({ ok: false, error: { code } }, 503);
+}
+
 export async function handleMyMmsCustomerApi(request, env = {}) {
   const method = String(request.method || "GET").toUpperCase();
   const path = requestPath(request);
@@ -426,8 +443,9 @@ export async function handleMyMmsCustomerApi(request, env = {}) {
     if (method !== 'GET') return methodNotAllowed('GET');
     const profile = await readMemberProfile(request, env);
     if (profile.status === 401 || profile.status === 403) return json({ ok: false, error: { code: profile.status === 401 ? 'MMS_SESSION_REQUIRED' : 'MMS_ACCESS_DENIED' } }, profile.status);
+    if (profile.status === 409) return json({ ok: false, error: { code: 'MMS_MEMBER_LINK_CHECKING' } }, 409);
     if (profile.status !== 200 || !/^mmsmem_[a-f0-9]{32}$/.test(profile.data?.memberRef || '')) return json({ ok: false, error: { code: 'MMS_MEMBER_CONTEXT_UNAVAILABLE' } }, 503);
-    if (!env.MMS_WORKER?.fetch) return unavailableContract('therapist-search');
+    if (!env.MMS_WORKER?.fetch) return searchUnavailable();
     const target = new URL(request.url);
     target.protocol = 'https:'; target.host = 'mms.internal';
     target.pathname = '/internal/mms/customer-search' + (path.endsWith('/catalog') ? '/catalog' : '');
@@ -436,11 +454,19 @@ export async function handleMyMmsCustomerApi(request, env = {}) {
         method: 'GET', headers: { accept: 'application/json', 'x-mms-customer-member-ref': profile.data.memberRef },
         signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]), redirect: 'manual',
       }));
-      if (![200, 400, 401, 403, 409, 503].includes(upstream.status)) return unavailableContract('therapist-search');
+      if (![200, 400, 401, 403, 409, 503].includes(upstream.status)) return searchUnavailable();
       const body = await upstream.json();
-      if (typeof body?.ok !== 'boolean' || (upstream.status === 200 && body.ok !== true)) return unavailableContract('therapist-search');
+      if (typeof body?.ok !== 'boolean' || (upstream.status === 200 && body.ok !== true)) return searchUnavailable('MMS_SEARCH_RESPONSE_INVALID');
+      if (upstream.status === 200) {
+        const data = body.data;
+        const catalog = path.endsWith('/catalog');
+        if (!data || typeof data !== 'object' || (catalog
+          ? !Array.isArray(data.services) || !data.services.length || !Array.isArray(data.zones) || !data.zones.length || !Array.isArray(data.availability) || !data.availability.length
+          : !Array.isArray(data.results) || !data.criteria || typeof data.checkedAt !== 'string'))
+          return searchUnavailable('MMS_SEARCH_RESPONSE_INVALID');
+      }
       return json(body, upstream.status);
-    } catch { return unavailableContract('therapist-search'); }
+    } catch { return searchUnavailable(); }
   }
 
   if (path === CUSTOMER_API_PATHS.therapists || path.startsWith(`${CUSTOMER_API_PATHS.therapists}/`)) return unavailableContract("therapists");
