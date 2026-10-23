@@ -596,7 +596,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       if (!window.liff.isLoggedIn()) return false;
       const idToken = window.liff.getIDToken();
       if (!idToken) return false;
-      const body = { id_token: idToken, liff_intent: CONFIG.intent };
+      const body = { id_token: idToken, liff_intent: CONFIG.intent, remember_me: true };
       if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const response = await fetch(CONFIG.startEndpoint, {
@@ -2177,7 +2177,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         show("ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD");
         return;
       }
-      const body = { id_token: idToken, liff_intent: CONFIG.intent };
+      const body = { id_token: idToken, liff_intent: CONFIG.intent, remember_me: true };
       if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
