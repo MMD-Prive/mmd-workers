@@ -31,10 +31,12 @@ export const PARTNER_HERO_JS = String.raw`
     if (!config || !hero) return;
     hero.dataset.heroView = name;
     var image = $('[data-hero-image]', hero);
+    if (!image) return;
     if (image.getAttribute('src') !== config.image) image.setAttribute('src', config.image);
     image.style.objectPosition = config.position;
-    $('[data-hero-title]', hero).textContent = config.title;
-    $('[data-hero-index]', hero).textContent = config.index;
+    var title = $('[data-hero-title]', hero), index = $('[data-hero-index]', hero);
+    if (title) title.textContent = config.title;
+    if (index) index.textContent = config.index;
   }
 `;
 
