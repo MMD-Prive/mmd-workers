@@ -21,6 +21,9 @@ test("Worker-owned page calls canonical APIs and never loads Lovable assets", as
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-api-create-job");
   assert.match(html, /\/v1\/admin\/clients\/lineage-lookup/);
   assert.match(html, /\/v1\/admin\/models\/search/);
+  assert.match(html, /private_work/);
+  assert.match(html, /customer_lane/);
+  assert.match(html, /selected_access_folder/);
   assert.match(html, /\/v1\/admin\/job\/create/);
   assert.match(html, /\/v1\/admin\/job\/owner-grant/);
   assert.doesNotMatch(html, /lovable\.app|\/assets\//i);
