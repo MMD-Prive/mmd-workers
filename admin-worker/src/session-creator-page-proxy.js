@@ -5,7 +5,6 @@ const SESSION_CREATOR_PAGES = new Set([
   "/internal/admin/work",
   "/internal/admin/payments",
   "/internal/admin/jobs/all",
-  "/internal/admin/jobs/create-job",
   "/internal/admin/jobs/job-board",
 ]);
 

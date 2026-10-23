@@ -10,7 +10,7 @@ import {
 test("routes only the Session Creator work and job pages", () => {
   assert.equal(isSessionCreatorPageRequest("/internal/admin/work", "GET"), true);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/all", "GET"), true);
-  assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/create-job", "GET"), true);
+  assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/create-job", "GET"), false);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/jobs/job-board", "GET"), true);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/dashboard", "GET"), false);
   assert.equal(isSessionCreatorPageRequest("/internal/admin/work", "POST"), false);
@@ -19,24 +19,17 @@ test("routes only the Session Creator work and job pages", () => {
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/clients/assets/index.js", "GET"), false);
 });
 
-test("Create Job is served by the single Session Creator runtime, never the Webflow page", async () => {
+test("Create Job is not forwarded to Session Creator", async () => {
   const originalFetch = globalThis.fetch;
-  let upstreamRequest;
-  globalThis.fetch = async (request) => {
-    upstreamRequest = request;
-    return new Response("<html><body>Canonical Create Job</body></html>", {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
-  };
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("Create Job must be Worker-owned"); };
   try {
     const response = await handleSessionCreatorPageRequest(new Request(
       "https://www.mmdbkk.com/internal/admin/jobs/create-job?mode=broadcast",
       { headers: { cookie: "mmd_admin_gate_v1=private" } },
     ));
-    assert.equal(upstreamRequest.url, "https://mmd-os.lovable.app/internal/admin/jobs/create-job?mode=broadcast");
-    assert.equal(upstreamRequest.headers.has("cookie"), false);
-    assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-session-creator-pro");
-    assert.match(await response.text(), /Canonical Create Job/);
+    assert.equal(response.status, 404);
+    assert.equal(calls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -128,6 +121,8 @@ test("Money Control accepts GET/HEAD and slash alias but never payment APIs or h
   let calls = 0;
   globalThis.fetch = async () => { calls++; throw new Error("must not proxy unrelated routes"); };
   try {
+    const createJob = await handleSessionCreatorPageRequest(new Request("https://mmdbkk.com/internal/admin/jobs/create-job"));
+    assert.equal(createJob.status, 404);
     for (const path of ["/internal/admin/payments/historical-backfill", "/v1/admin/payments/review", "/internal/admin/payments-other"]) {
       assert.equal(isSessionCreatorPageRequest(path, "GET"), false);
       const response = await handleSessionCreatorPageRequest(new Request("https://mmdbkk.com" + path));
