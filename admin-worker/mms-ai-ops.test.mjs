@@ -47,7 +47,29 @@ test('MMS AI summary reads canonical sources, deduplicates and keeps readiness c
   assert.equal(data.henna.delivery_verified, false);
   assert.equal(data.kenji.model_reply_kill_switch_active, true);
   assert.equal(data.kenji.mutations_kill_switch_active, true);
+  assert.equal(data.kenji.line_reply_kill_switch_active, false);
+  assert.equal(data.kenji.line_auto_reply_enabled, null);
   assert.doesNotMatch(JSON.stringify(data), /PRIVATE_|other_tenant|"t1"|"p1"/);
+});
+
+test('canonical version zero is an observed default, distinct from an unavailable control', async () => {
+  const data = await readMmsAiOps(envFor(), { ...options, readControls: async () => ({
+    line_oa_auto_reply: { version: 7, enabled: false }, model_keyword_auto_reply: { version: 3, enabled: true }, all_kenji_mutations: { version: 0, enabled: false },
+  }) });
+  assert.equal(data.sources.kenji_controls.available, true);
+  assert.equal(data.kenji.mutations_kill_switch_active, false);
+  assert.deepEqual(data.kenji.runtime_controls.all_kenji_mutations, { available: true, enabled: false, version: 0, origin: 'default' });
+  assert.equal(data.kenji.line_reply_kill_switch_active, false);
+  assert.equal(data.kenji.line_auto_reply_enabled, null);
+});
+
+test('invalid control shape cannot be presented as a clear kill switch', async () => {
+  for (const value of [{ enabled: true, version: 0 }, { enabled: false, version: -1 }, { enabled: 'false', version: 3 }, { enabled: false }, null]) {
+    const data = await readMmsAiOps(envFor(), { ...options, readControls: async () => ({ all_kenji_mutations: value }) });
+    assert.equal(data.sources.kenji_controls.available, false);
+    assert.equal(data.kenji.mutations_kill_switch_active, null);
+    assert.equal(data.kenji.runtime_controls.all_kenji_mutations.origin, 'unknown');
+  }
 });
 
 test('partial or malformed queues cannot become an empty complete queue', async () => {
@@ -111,4 +133,59 @@ test('production route emits one connected panel with syntax-valid scripts and c
   assert.match(page, /href="\/internal\/ceo\/kenji-control"/);
   assert.match(page, /href="\/internal\/admin\/telegram-brief"/);
   for (const script of page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) assert.doesNotThrow(() => new Script(script[1]));
+});
+
+const runtimeFlags = { schema:'mmd.kenji_runtime_flags.v1', line_auto_reply_enabled:false, model_reply_enabled:false, shadow_enabled:false };
+function flagEnv(payload=runtimeFlags, responseStatus=200) {
+  return {...envFor(), INTERNAL_TOKEN:'synthetic-internal', MEMBER_DASHBOARD_CHAT_WORKER:{fetch:async request=>{
+    assert.equal(request.url,'https://member-dashboard-chat-worker.local/health');
+    assert.equal(request.method,'GET');
+    assert.equal(request.headers.get('authorization'),'Bearer synthetic-internal');
+    assert.equal(request.headers.get('x-mmd-service-binding'),'admin-worker');
+    assert.equal(request.headers.get('cookie'),null);
+    return Response.json({ok:true,worker:'member-dashboard-chat-worker',kenji_runtime:payload},{status:responseStatus});
+  }}};
+}
+test('real activation flags are read separately from kill switches over the existing service binding',async()=>{
+ const result=await readMmsAiOps(flagEnv(),options);
+ assert.equal(result.sources.kenji_runtime.available,true);
+ assert.equal(result.kenji.line_auto_reply_enabled,false);
+ assert.equal(result.kenji.model_reply_enabled,false);
+ assert.equal(result.kenji.shadow_enabled,false);
+ assert.equal(result.kenji.model_reply_kill_switch_active,true);
+ assert.doesNotMatch(JSON.stringify(result),/synthetic-internal|authorization/);
+});
+test('a failed or malformed runtime read never becomes OFF or hides readable controls',async()=>{
+ for(const env of [flagEnv(null),flagEnv({...runtimeFlags,shadow_enabled:'false'}),flagEnv(runtimeFlags,403),envFor()]){
+  const result=await readMmsAiOps(env,options);
+  assert.equal(result.sources.kenji_runtime.available,false);
+  assert.equal(result.kenji.line_auto_reply_enabled,null);
+  assert.equal(result.kenji.model_reply_enabled,null);
+  assert.equal(result.kenji.shadow_enabled,null);
+  assert.equal(result.sources.kenji_controls.available,true);
+ }
+});
+
+test('MMS UI renders all six Kenji states and keeps a canonical v0 visible',async()=>{
+ const data=await readMmsAiOps(flagEnv(),{...options,readControls:async()=>({line_oa_auto_reply:{enabled:false,version:7},model_keyword_auto_reply:{enabled:true,version:3},all_kenji_mutations:{enabled:false,version:0}})});
+ class Element{
+  constructor(){this.children=[];this.value='';this.hidden=false;this.listeners={};}
+  set textContent(value){this.value=value;this.children=[];}
+  get textContent(){return this.value+this.children.map(x=>x.textContent).join(' ');}
+  replaceChildren(...children){this.children=children;this.value='';}
+  append(...children){this.children.push(...children);}
+  addEventListener(name,callback){this.listeners[name]=callback;}
+ }
+ const ids=new Map();const element=id=>{if(!ids.has(id))ids.set(id,new Element());return ids.get(id);};
+ const html=wireMmsAiOpsUi('<head></head><body><section class="panel active" id="overview" aria-labelledby="overviewTitle"></section></body>');
+ const code=[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)][0][1];
+ const context={document:{querySelector:()=>new Element(),getElementById:element,createElement:()=>new Element()},window:{addEventListener(){}},location:{hash:''},AbortController,setTimeout,clearTimeout,Date,fetch:async()=>Response.json(data)};
+ new Script(code).runInNewContext(context);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(element('mmsKenjiRuntime').textContent,/ตอบ LINE ปิด.*ใช้ Model ตอบ ปิด.*Shadow ปิด/);
+ assert.match(element('mmsKenjiControls').textContent,/หยุดตอบ LINE ไม่ทำงาน Kenji Control · v7/);
+ assert.match(element('mmsKenjiControls').textContent,/หยุดตอบ Model ทำงาน Kenji Control · v3/);
+ assert.match(element('mmsKenjiControls').textContent,/หยุดการแก้ข้อมูล ไม่ทำงาน Kenji Control · ค่าเริ่มต้น v0/);
+ assert.doesNotMatch(element('mmsKenjiControls').textContent,/ยังตรวจไม่ได้|อ่านค่าไม่สำเร็จ/);
+ assert.equal(element('mmsOpsContent').hidden,false);
 });

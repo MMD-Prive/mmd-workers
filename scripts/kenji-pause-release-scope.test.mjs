@@ -123,3 +123,17 @@ test('HENNA copy release skips legacy deployment and route reconciliation', () =
   assert.throws(() => deployRequired('push', [...hennaFiles, extra]), /HENNA_COPY_MIXED_DELTA/);
  }
 });
+
+test('MMS Kenji control projection uses code-only release and rejects unrelated runtime or config',()=>{
+ const files=['admin-worker/src/mms-ai-ops-read.js','admin-worker/src/mms-ai-ops-ui.js','admin-worker/mms-ai-ops.test.mjs',
+ 'admin-ai-ops-worker/src/mms-advisory.js','admin-ai-ops-worker/test/mms-advisory.test.mjs',
+ 'member-dashboard-chat-worker/src/index.js','member-dashboard-chat-worker/test/kenji-runtime-health.test.mjs',
+ 'scripts/kenji-pause-release-scope.mjs','scripts/kenji-pause-release-scope.test.mjs','.github/workflows/deploy-admin-ai-ops-worker.yml'];
+ assert.equal(deployRequired('push',files),false);
+ assert.equal(deployRequired('workflow_dispatch',files),true);
+ for(const extra of [config,'mms-worker/src/core.mjs','admin-worker/src/auth.js','shared/canonical-payment-evidence.mjs']){
+  assert.throws(()=>deployRequired('push',[...files,extra]),/MMS_KENJI_CONTROL_MIXED_DELTA/);
+ }
+ const workflow=readFileSync(new URL('../.github/workflows/deploy-admin-ai-ops-worker.yml',import.meta.url),'utf8');
+ assert.match(workflow,/deploy-and-smoke:\n    needs: release-scope\n    if: needs.release-scope.outputs.deploy_required == 'true'/);
+});

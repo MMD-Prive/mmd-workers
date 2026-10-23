@@ -1,4 +1,8 @@
 const STATUS = (value, on, off) => value === true ? on : value === false ? off : 'ยังตรวจไม่ได้';
+const CONTROL_NOTE = (data, scope) => {
+  const control = data.kenji?.runtime_controls?.[scope];
+  return control?.available === true ? control.origin === 'default' ? ' (ค่าเริ่มต้น v0)' : ' (v' + control.version + ')' : '';
+};
 
 // MMS summaries are built only from the authenticated, bounded projection.
 // Never infer payment, dispatch success, delivery, or agent activation.
@@ -23,7 +27,8 @@ export function buildMmsAdvisory(read) {
   if (next_actions.length) brief.push('คิว MMS มี ' + next_actions.length + ' กลุ่มที่ควรดูต่อ เปิดจากปุ่มด้านล่างได้เลยครับ');
   else brief.push(data.sources?.snapshot?.complete === true && data.sources?.workspace?.complete === true ? 'ยังไม่มีรายการในคิว MMS ที่ต้องดูต่อ' : 'ข้อมูล MMS ยังไม่ครบ จึงยังสรุปว่าคิวว่างไม่ได้');
   brief.push('HENNA · LINE ' + STATUS(data.henna?.configured, 'ตั้งค่าแล้ว', 'ยังตั้งค่าไม่ครบ') + ' · ตอบอัตโนมัติ ' + STATUS(data.henna?.auto_reply_enabled, 'เปิด', 'ปิด'));
-  brief.push('Kenji · LINE ' + STATUS(data.kenji?.line_auto_reply_enabled, 'เปิดตอบ', 'ปิดตอบ') + ' · ตัวหยุดการแก้ข้อมูล ' + STATUS(data.kenji?.mutations_kill_switch_active, 'ทำงาน', 'ไม่ทำงาน'));
+  brief.push('Kenji · ตอบ LINE ' + STATUS(data.kenji?.line_auto_reply_enabled, 'เปิด', 'ปิด') + ' · ใช้ Model ตอบ ' + STATUS(data.kenji?.model_reply_enabled, 'เปิด', 'ปิด') + ' · Shadow ' + STATUS(data.kenji?.shadow_enabled, 'เปิด', 'ปิด'));
+  brief.push('Kenji · ตัวหยุดตอบ LINE ' + STATUS(data.kenji?.line_reply_kill_switch_active, 'ทำงาน', 'ไม่ทำงาน') + CONTROL_NOTE(data, 'line_oa_auto_reply') + ' · ตัวหยุดตอบ Model ' + STATUS(data.kenji?.model_reply_kill_switch_active, 'ทำงาน', 'ไม่ทำงาน') + CONTROL_NOTE(data, 'model_keyword_auto_reply') + ' · ตัวหยุดการแก้ข้อมูล ' + STATUS(data.kenji?.mutations_kill_switch_active, 'ทำงาน', 'ไม่ทำงาน') + CONTROL_NOTE(data, 'all_kenji_mutations'));
   brief.push('สรุปจากจำนวนและสถานะใน MMS การส่งข้อความและการอนุมัติใช้หน้าทำงานจริง');
   return { verified, brief, anomalies, next_actions: next_actions.slice(0, 3) };
 }

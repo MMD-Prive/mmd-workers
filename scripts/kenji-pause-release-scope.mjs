@@ -44,6 +44,21 @@ const hennaCopyPaths = new Set([
   'scripts/kenji-pause-release-scope.test.mjs',
 ]);
 
+// MMS Kenji control truth spans read projections and authenticated runtime
+// health. The approved code-only release must not run legacy route sync.
+const mmsKenjiControlPaths = new Set([
+  'admin-worker/src/mms-ai-ops-read.js',
+  'admin-worker/src/mms-ai-ops-ui.js',
+  'admin-worker/mms-ai-ops.test.mjs',
+  'admin-ai-ops-worker/src/mms-advisory.js',
+  'admin-ai-ops-worker/test/mms-advisory.test.mjs',
+  'member-dashboard-chat-worker/src/index.js',
+  'member-dashboard-chat-worker/test/kenji-runtime-health.test.mjs',
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+  '.github/workflows/deploy-admin-ai-ops-worker.yml',
+]);
+
 // Personal Main must use a separately approved code-only release for both owners.
 // A mixed delta is an error, never permission to fall through to legacy deploy.
 export const PERSONAL_MAIN_RELEASE_PATHS = new Set([
@@ -91,6 +106,10 @@ const personalMainGuardPaths = new Set([
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.includes('admin-worker/src/mms-ai-ops-read.js') && files.includes('member-dashboard-chat-worker/src/index.js')) {
+    assert.ok(files.every(file => mmsKenjiControlPaths.has(file)), 'MMS_KENJI_CONTROL_MIXED_DELTA: stop; separate code-only release review required');
+    return false;
+  }
   if (files.includes('member-dashboard-chat-worker/src/mms-line-runtime.mjs')) {
     assert.ok(files.every(file => hennaCopyPaths.has(file)), 'HENNA_COPY_MIXED_DELTA: stop; separately review unrelated deployment changes');
     return false;
