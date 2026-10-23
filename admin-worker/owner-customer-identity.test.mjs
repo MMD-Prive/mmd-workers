@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import {
   normalizeOwnerIdentityInput,
+  ownerCustomerPhotos,
   upsertOwnerCustomerIdentity,
 } from "./src/owner-customer-identity.js";
 
@@ -19,6 +20,19 @@ test("accepts a LINE OA chat URL but rejects a public LINE ID", () => {
     line_identity: "gateaubkk",
     per_rename: "ตั้ว 18 กย 69",
   }), /valid_line_uid_or_chat_url_required/);
+});
+
+test("customer photo projection shows at most five unique HTTPS uploads", () => {
+  const photos = ownerCustomerPhotos([
+    ...Array.from({ length: 7 }, (_, index) => ({
+      url: `https://files.example/${index}.jpg`, filename: `${index}.jpg`,
+    })),
+    { url: "https://files.example/0.jpg", filename: "duplicate.jpg" },
+    { url: "http://unsafe.example/photo.jpg" },
+  ]);
+  assert.equal(photos.length, 5);
+  assert.equal(photos[0].url, "https://files.example/0.jpg");
+  assert.equal(new Set(photos.map(photo => photo.url)).size, 5);
 });
 
 test("registers a new MMD client once and retains Per Rename history", async () => {
