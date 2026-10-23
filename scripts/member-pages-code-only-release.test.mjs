@@ -5,12 +5,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyOwnerApproval, environmentName } from './member-pages-owner-approval.mjs';
 import {
-  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA, CODE_ONLY_STARTUP_PATHS, CODE_ONLY_STARTUP_BRIDGE_BLOBS, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
+  ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA, CODE_ONLY_STARTUP_PATHS, CODE_ONLY_STARTUP_BRIDGE_BLOBS, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, CODE_ONLY_MY_MMD_SOURCE_SHA, CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS, CODE_ONLY_POST_STARTUP_PATHS, CODE_ONLY_SOURCE_CONFIG_BLOB, validateMyMmdSourceHistory, validatePostStartupSourcePaths, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
   buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateStartupBridge, validateGraphicsSourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
 } from './member-pages-code-only-release.mjs';
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const sha = CODE_ONLY_SOURCE_SHA;
+const myMmdSha = CODE_ONLY_MY_MMD_SOURCE_SHA;
 const releaseSha = 'a'.repeat(40);
 const deployment = (version = id(1), deploymentId = id(10)) => ({
   id:deploymentId, strategy:'percentage', versions:[{version_id:version,percentage:100}],
@@ -79,10 +80,10 @@ function fixture(options = {}) {
     throw new Error(`unexpected ${method} ${path}`);
   };
   const io = {
-    sha, releaseSha, expectedVersion:id(1), expectedDeployment:id(10),
+    sha:myMmdSha, releaseSha, expectedVersion:id(1), expectedDeployment:id(10),
     approve:async()=>{ approvals++; if(options.rejectApproval===approvals) throw new Error('approval_denied'); },
     call,
-    sourceCheck:async()=>({method:'fixture_clean_main',source_sha:sha,config_unchanged:true}),
+    sourceCheck:async()=>({method:'fixture_clean_main',source_sha:myMmdSha,config_unchanged:false}),
     bundle:async()=>{if(options.bundleError)throw new Error('bundle_failed');return new Uint8Array([1,2,3]);},
     save:record=>receipts.push(structuredClone(record)),
   };
@@ -93,14 +94,14 @@ test('strict code-only upload inherits and preserves the exact baseline configur
   const f=fixture();
   const result=await releaseMemberPagesCodeOnly(f.io);
   assert.equal(result.phase,'complete');
-  assert.equal(result.source_sha, CODE_ONLY_SOURCE_SHA);
+  assert.equal(result.source_sha, CODE_ONLY_MY_MMD_SOURCE_SHA);
   assert.equal(result.release_sha, releaseSha);
   assert.equal(result.uploaded_version,id(2));
   assert.equal(activeVersion(f.active()),id(2));
   assert.deepEqual(f.calls.filter(x=>x.method==='POST').map(x=>x.path),[
     ROOT+'/versions?bindings_inherit=strict',ROOT+'/deployments',
   ]);
-  const metadata=uploadMetadata(f.baseline,sha);
+  const metadata=uploadMetadata(f.baseline,myMmdSha);
   assert.deepEqual(metadata.bindings,[
     {name:'AIRTABLE_API_KEY',type:'inherit'},
     {name:'AIRTABLE_BASE_ID',type:'inherit'},
@@ -119,7 +120,7 @@ test('strict code-only upload inherits and preserves the exact baseline configur
 test('readback annotations and inherited bindings are derived from submitted upload metadata', async () => {
   const f=fixture();
   await releaseMemberPagesCodeOnly(f.io);
-  const metadata = uploadMetadata(f.baseline, sha);
+  const metadata = uploadMetadata(f.baseline, myMmdSha);
   const uploaded = await f.call(VERSION_ROOT + '/' + id(2));
   assert.deepEqual(versionAnnotations(uploaded), metadata.annotations);
 
@@ -390,9 +391,11 @@ function checkoutFixture(options = {}) {
     calls.push({directory,args});
     if (args.join(' ') === 'rev-parse --show-toplevel') return options.wrongRoot ? '/other-root' : directory;
     if (args.join(' ') === 'rev-parse HEAD') return directory === sourceDirectory
-      ? options.sourceSha || CODE_ONLY_SOURCE_SHA : options.releaseSha || releaseSha;
+      ? options.sourceSha || options.targetSourceSha || CODE_ONLY_SOURCE_SHA : options.releaseSha || releaseSha;
     if (args[0] === 'rev-parse' && args[1].includes(':')) {
       const [reference,path] = args[1].split(':');
+      if (path === 'member-pages-worker/wrangler.toml') return options.configBlobDrift
+        ? 'f'.repeat(40) : CODE_ONLY_SOURCE_CONFIG_BLOB;
       return options.startupBlobDrift ? 'f'.repeat(40) : CODE_ONLY_STARTUP_BRIDGE_BLOBS[path][reference === CODE_ONLY_GRAPHICS_SOURCE_SHA ? 0 : 1];
     }
     if (args[0] === 'status') return directory === options.dirtyDirectory ? '!! injected.js' : '';
@@ -401,6 +404,12 @@ function checkoutFixture(options = {}) {
       return '';
     }
     if (args[0] === 'diff' && args[1] === '--name-only') {
+      if (args[2] === CODE_ONLY_MY_MMD_SOURCE_SHA) return options.changedMainRuntime
+        ? 'member-pages-worker/src/liff-member-shell.js' : '';
+      if (args[2] === CODE_ONLY_SOURCE_SHA && args[3] === CODE_ONLY_MY_MMD_SOURCE_SHA) {
+        if (args.at(-1) === 'member-pages-worker/wrangler.toml') return 'member-pages-worker/wrangler.toml';
+        return [...CODE_ONLY_POST_STARTUP_PATHS, ...(options.postStartupExtraPaths || [])].join('\n');
+      }
       const paths = args[2] === CODE_ONLY_GRAPHICS_BASE_SHA ? CODE_ONLY_GRAPHICS_PATHS : args[2] === CODE_ONLY_GRAPHICS_SOURCE_SHA ? Object.keys(CODE_ONLY_STARTUP_BRIDGE_BLOBS) : args[2] === CODE_ONLY_STARTUP_BASE_SHA ? CODE_ONLY_STARTUP_PATHS : CODE_ONLY_PATHS;
       return [...paths, ...(options.extraPaths || []), ...(args[2] === CODE_ONLY_STARTUP_BASE_SHA ? options.startupExtraPaths || [] : [])].join('\n');
     }
@@ -424,6 +433,38 @@ test('new release tooling can bundle only the separate exact Graphics V4 source'
   for (const directory of [f.releaseDirectory,f.sourceDirectory]) {
     assert.ok(f.calls.some(x=>x.directory===directory && x.args.join(' ')
       ==='status --porcelain --untracked-files=all --ignored'));
+  }
+});
+
+test('MY MMD release accepts only the exact merged source, reviewed paths and main parity', () => {
+  assert.equal(CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS.at(-1).number, 2652);
+  assert.equal(CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS.at(-1).merge_sha, myMmdSha);
+  assert.equal(CODE_ONLY_SOURCE_CONFIG_BLOB, 'e26a9d3436140f381f5d6f55311c43c81e7deb40');
+  const ancestors = [];
+  validateMyMmdSourceHistory(myMmdSha, (ancestor,target) => {
+    ancestors.push(ancestor);
+    assert.equal(target,myMmdSha);
+    return true;
+  });
+  assert.ok(ancestors.includes(sha));
+  assert.ok(ancestors.includes(myMmdSha));
+  assert.throws(()=>validateMyMmdSourceHistory(sha,()=>true));
+  assert.deepEqual(validatePostStartupSourcePaths(CODE_ONLY_POST_STARTUP_PATHS),CODE_ONLY_POST_STARTUP_PATHS);
+  for (const changed of ['member-pages-worker/src/unreviewed.js','member-pages-worker/wrangler.toml']) {
+    assert.throws(()=>validatePostStartupSourcePaths([...CODE_ONLY_POST_STARTUP_PATHS,changed]));
+  }
+  const f = checkoutFixture({targetSourceSha:myMmdSha});
+  const result = inspectCodeOnlyCheckouts(releaseSha,f.sourceDirectory,{...f,targetSourceSha:myMmdSha});
+  assert.equal(result.source_sha,myMmdSha);
+  assert.equal(result.config_unchanged,false);
+  assert.deepEqual(result.source_scope.post_startup_delta.paths,CODE_ONLY_POST_STARTUP_PATHS);
+  for (const options of [
+    {sourceSha:sha}, {postStartupExtraPaths:['member-pages-worker/src/unreviewed.js']},
+    {configBlobDrift:true}, {changedMainRuntime:true},
+  ]) {
+    const failure = checkoutFixture({...options,targetSourceSha:myMmdSha});
+    assert.throws(()=>inspectCodeOnlyCheckouts(releaseSha,failure.sourceDirectory,
+      {...failure,targetSourceSha:myMmdSha}));
   }
 });
 
@@ -485,6 +526,8 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/points-display-source-guard.test.mjs/);
   assert.match(source, /node --test [^\n]*member-pages-worker\/test\/kenji-line-member-truth.test.mjs/);
   assert.match(source, /ref: fe5f9d98876b600421c5614efc049ffc890b8adb\s+fetch-depth: 0\s+path: release-source/);
+  assert.match(source, /if: inputs.execution_mode == 'release'\s+uses: actions\/checkout@v5\s+with:\s+ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c/);
+  assert.match(source, /if: inputs.execution_mode == 'promote-existing'\s+uses: actions\/checkout@v5\s+with:\s+ref: fe5f9d98876b600421c5614efc049ffc890b8adb/);
   assert.match(source, /ref: \$\{\{ github.sha \}\}\s+fetch-depth: 0\s+path: release-tools/);
   assert.match(source, /SOURCE_DIRECTORY: \$\{\{ github.workspace \}\}\/release-source/);
   assert.match(source, /working-directory: release-tools/);

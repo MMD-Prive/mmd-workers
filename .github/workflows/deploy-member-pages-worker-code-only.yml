@@ -22,7 +22,7 @@ on:
         type: string
         required: true
       approved_sha:
-        description: 'Full main SHA of approved release tooling; application source is fixed to Graphics V4 startup fix PR 2544'
+        description: 'Full main SHA of approved release tooling; release source is fixed to MY MMD PR 2652'
         type: string
         required: true
       expected_version:
@@ -106,7 +106,16 @@ jobs:
           fetch-depth: 0
           path: release-tools
           persist-credentials: false
-      - name: Check out exact reviewed Graphics V4 startup fix PR 2544 application source
+      - name: Check out exact reviewed MY MMD PR 2652 application source
+        if: inputs.execution_mode == 'release'
+        uses: actions/checkout@v5
+        with:
+          ref: 871d99cd9eb1c8d53e1d473160119030dca01d4c
+          fetch-depth: 0
+          path: release-source
+          persist-credentials: false
+      - name: Check out original startup source for promotion-only recovery
+        if: inputs.execution_mode == 'promote-existing'
         uses: actions/checkout@v5
         with:
           ref: fe5f9d98876b600421c5614efc049ffc890b8adb
@@ -116,9 +125,17 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - name: Verify code-only release contract and targeted LIFF behavior
+      - name: Verify code-only release contract
         run: |
           node --test scripts/member-pages-owner-approval.test.mjs scripts/member-pages-code-only-release.test.mjs scripts/member-pages-uploaded-recovery.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs scripts/member-pages-recovery-adapter.test.mjs
+      - name: Verify MY MMD release source behavior
+        if: inputs.execution_mode == 'release'
+        run: |
+          node --test ../release-source/member-pages-worker/test/liff-member-shell.test.mjs ../release-source/member-pages-worker/test/liff-member-compact-v4.test.mjs ../release-source/member-pages-worker/test/liff-quick-membership.test.mjs ../release-source/member-pages-worker/test/member-history-preview.test.mjs ../release-source/member-pages-worker/test/points-display-source-guard.test.mjs ../release-source/member-pages-worker/test/kenji-line-member-truth.test.mjs ../release-source/member-pages-worker/test/liff-account-view.test.mjs ../release-source/member-pages-worker/test/liff-identity-foundation.test.mjs ../release-source/member-pages-worker/test/member-app-api.runtime.test.mjs
+          node --check ../release-source/member-pages-worker/src/liff-member-shell.js
+      - name: Verify original startup source behavior for recovery
+        if: inputs.execution_mode == 'promote-existing'
+        run: |
           node --test ../release-source/member-pages-worker/test/liff-member-shell.test.mjs ../release-source/member-pages-worker/test/liff-member-compact-v4.test.mjs ../release-source/member-pages-worker/test/liff-quick-membership.test.mjs ../release-source/member-pages-worker/test/member-history-preview.test.mjs ../release-source/member-pages-worker/test/points-display-source-guard.test.mjs ../release-source/member-pages-worker/test/kenji-line-member-truth.test.mjs
           node --check ../release-source/member-pages-worker/src/liff-member-shell.js
       - name: Install pinned Wrangler bundler
