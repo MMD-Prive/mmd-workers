@@ -5,7 +5,16 @@ import {
   handleCreateJobWorkerPage,
   isCreateJobWorkerPageRequest,
   paymentMiniAppUrl,
+  modelAvailabilityLabel,
 } from "../src/create-job-worker-page.js";
+
+test("Model search distinguishes unknown availability from an explicit unavailable decision", () => {
+  assert.equal(modelAvailabilityLabel({ status: "active", available: false, availability_state: "unknown" }), "ยังไม่ยืนยันความพร้อม ต้องตรวจวันเวลาที่ตกลง");
+  assert.equal(modelAvailabilityLabel({ available: false }), "ยังไม่ยืนยันความพร้อม ต้องตรวจวันเวลาที่ตกลง");
+  assert.equal(modelAvailabilityLabel({ available: false, availability_state: "unavailable" }), "ระบุว่าไม่พร้อมตามข้อมูล API");
+  assert.equal(modelAvailabilityLabel({ available: true, availability_state: "unavailable" }), "ระบุว่าไม่พร้อมตามข้อมูล API");
+  assert.equal(modelAvailabilityLabel({ available: true, availability_state: "available" }), "พร้อมตามข้อมูล API");
+});
 
 test("Create Job is served by the Worker only at its exact page route", () => {
   assert.equal(isCreateJobWorkerPageRequest(CREATE_JOB_WORKER_PATH, "GET"), true);
