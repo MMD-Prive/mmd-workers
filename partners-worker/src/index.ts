@@ -4542,7 +4542,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow">
-  <meta name="theme-color" content="#080807">
+  <meta name="theme-color" content="#160d08">
   <title>SĪGIL Partner · Private Access</title>
   <style>
     @font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af83c714e7ca09d4d5f_Anuphan-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
@@ -4556,36 +4556,36 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912ae97f0a7a0fd93d9_Satoshi-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
     @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912d1ba49f7fb7fcf56_Satoshi-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
     @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab149126876bbe61da30a9c_Satoshi-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
-    :root{color-scheme:dark;--bg:#0a0908;--bg-mid:#0f0d0b;--ivory:#fff9f0;--body:#d9d1c7;--muted:#91887f;--placeholder:#7f776f;--gold:#d7af67;--gold2:#f5e2b5;--line:rgba(215,175,103,.28);--line2:rgba(255,255,255,.06);--ink:#17120b;--green:#5f9272;--font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;--font-en:"General Sans","Satoshi",Arial,sans-serif;--font-secondary:"Satoshi","General Sans",Arial,sans-serif}
+    :root{color-scheme:dark;--bg:#160d08;--bg-mid:#1d110a;--ivory:#f0cd83;--body:#ead9b9;--muted:#c2a77f;--placeholder:#c2a77f;--gold:#e3b861;--gold2:#f3d58e;--line:rgba(198,139,73,.50);--line2:rgba(235,186,106,.25);--ink:#25150b;--green:#5f9272;--font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;--font-en:"General Sans","Satoshi",Arial,sans-serif;--font-secondary:"Satoshi","General Sans",Arial,sans-serif}
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;background:var(--bg)}
     body{min-height:100svh;overflow:hidden;color:var(--body);font-family:var(--font-th);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
     a{color:inherit}
-    .page{position:relative;min-height:100svh;display:grid;isolation:isolate;overflow:hidden;background:linear-gradient(180deg,var(--bg),var(--bg-mid) 52%,#050505)}
+    .page{position:relative;min-height:100svh;display:grid;isolation:isolate;overflow:hidden;background:linear-gradient(180deg,var(--bg),var(--bg-mid) 52%,#100905)}
     .hero{position:absolute;inset:0;z-index:-2}
     .hero picture,.hero img{display:block;width:100%;height:100%}
     .hero img{object-fit:cover;object-position:center top}
-    .hero:after{position:absolute;inset:0;content:"";background:linear-gradient(180deg,rgba(4,4,3,.04) 0%,rgba(4,4,3,.12) 34%,rgba(4,4,3,.74) 67%,rgba(4,4,3,.98) 100%)}
-    .grain{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
+    .hero:after{position:absolute;inset:0;content:"";background:linear-gradient(180deg,rgba(24,12,5,.04) 0%,rgba(24,12,5,.20) 34%,rgba(24,12,5,.78) 67%,rgba(24,12,5,.98) 100%)}
+    .grain{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(243,213,142,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(243,213,142,.035) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
     .topbar{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px}
     .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
     .brand-mark{width:30px;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
     .brand-copy{display:flex;flex-direction:column;gap:3px}
     .brand-copy b{color:var(--ivory);font-family:var(--font-en);font-size:11px;line-height:1;font-weight:700;letter-spacing:.14em}
     .brand-copy span{color:var(--gold2);font-family:var(--font-en);font-size:8px;line-height:1.1;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
-    .private{padding:8px 10px;border:1px solid rgba(213,174,102,.3);border-radius:999px;background:rgba(8,8,7,.3);backdrop-filter:blur(12px);color:var(--gold2);font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+    .private{padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(36,22,14,.7);backdrop-filter:blur(12px);color:var(--gold2);font-size:10px;font-weight:700;letter-spacing:.10em;text-transform:uppercase}
     .shell{align-self:end;width:min(100% - 24px,1180px);margin:0 auto;padding:0 0 max(14px,env(safe-area-inset-bottom))}
-    .card{position:relative;overflow:hidden;padding:20px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(20,18,15,.78),rgba(8,8,7,.95));box-shadow:0 24px 80px rgba(0,0,0,.44);backdrop-filter:blur(20px)}
+    .card{position:relative;overflow:hidden;padding:20px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(43,26,17,.86),rgba(27,16,10,.96));box-shadow:0 24px 80px rgba(15,7,3,.50);backdrop-filter:blur(20px)}
     .card:before{position:absolute;top:0;right:14%;left:14%;height:1px;content:"";background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-    .eyebrow{margin:0 0 10px;color:var(--gold2);font-family:var(--font-en);font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
-    h1{margin:0;max-width:570px;color:var(--ivory);font-family:var(--font-th);font-size:clamp(36px,10vw,52px);font-weight:600;letter-spacing:-.045em;line-height:1.02;text-wrap:balance}
-    .lead{margin:12px 0 0;max-width:620px;color:var(--body);font-size:13px;line-height:1.68}
+    .eyebrow{margin:0 0 10px;color:var(--gold2);font-family:var(--font-en);font-size:11px;font-weight:600;letter-spacing:.10em;text-transform:uppercase}
+    h1{margin:0;max-width:570px;color:var(--ivory);font-family:var(--font-th);font-size:clamp(38px,9vw,52px);font-weight:600;letter-spacing:-.045em;line-height:1.12;text-wrap:balance}
+    .lead{margin:12px 0 0;max-width:620px;color:var(--body);font-size:14px;line-height:1.68}
     .flow{margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2)}
     .flow li{padding:11px 7px 11px 0;min-width:0}
     .flow li+li{padding-left:9px;border-left:1px solid var(--line2)}
     .flow b,.flow span{display:block}
-    .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
-    .flow span{margin-top:4px;color:var(--body);font-size:9px;font-weight:700;line-height:1.35}
+    .flow b{color:var(--gold2);font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+    .flow span{margin-top:4px;color:var(--body);font-size:11px;font-weight:600;line-height:1.4}
     #go{width:100%;min-height:58px;margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px;border:1px solid rgba(255,241,199,.72);border-radius:24px;background:linear-gradient(135deg,#f6e2ae 0%,#e7ca86 56%,#d4ae64 100%);box-shadow:0 14px 38px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.5);color:#17120b;font:600 15px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
     #go:hover{transform:translateY(-1px);filter:brightness(1.025);box-shadow:0 16px 42px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.56)}
     #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
@@ -4594,9 +4594,9 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .line-dot{width:14px;height:14px;flex:0 0 14px;border-radius:50%;background:#5f9272;box-shadow:0 0 0 7px rgba(95,146,114,.10)}
     .line-arrow{flex:0 0 auto;color:#17120b;font-family:var(--font-en);font-size:22px;font-weight:600;line-height:1;transform:translateY(-1px)}
     #state{min-height:20px;margin:9px 0 0;color:var(--gold2);font-size:11px;line-height:1.45;text-align:center}
-    .micro{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.5;text-align:center}
+    .micro{margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.5;text-align:center}
     .links{margin-top:11px;display:flex;justify-content:center;gap:16px}
-    .links a{color:var(--muted);font-family:var(--font-en);font-size:10px;font-weight:600;text-decoration:none}
+    .links a{color:var(--gold2);font-family:var(--font-en);font-size:11px;font-weight:600;text-decoration:none}
     .links a:hover{color:var(--ivory)}
 
     .flow b,.private{font-family:var(--font-en)}
@@ -4608,15 +4608,15 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     @media(min-width:768px){
       body{overflow:hidden}
       .hero img{object-position:center center}
-      .hero:after{background:linear-gradient(90deg,rgba(4,4,3,.94) 0%,rgba(4,4,3,.72) 35%,rgba(4,4,3,.16) 63%,rgba(4,4,3,.04) 100%),linear-gradient(180deg,rgba(4,4,3,.04),rgba(4,4,3,.24))}
+      .hero:after{background:linear-gradient(90deg,rgba(24,12,5,.96) 0%,rgba(24,12,5,.76) 35%,rgba(24,12,5,.22) 63%,rgba(24,12,5,.04) 100%),linear-gradient(180deg,rgba(24,12,5,.04),rgba(24,12,5,.30))}
       .topbar{padding:20px clamp(28px,4vw,56px)}
       .brand-mark{width:34px;height:34px}
       .brand-copy b{font-size:12px}.brand-copy span{font-size:9px}.private{font-size:9px;padding:9px 12px}
       .shell{align-self:center;width:min(1180px,calc(100% - 84px));padding:66px 0}
-      .card{width:min(560px,48vw);padding:30px 32px;border-radius:28px;background:linear-gradient(145deg,rgba(17,16,14,.86),rgba(8,8,7,.93))}
-      h1{font-size:clamp(48px,4.5vw,68px)}
+      .card{width:min(590px,51vw);padding:30px 32px;border-radius:28px;background:linear-gradient(145deg,rgba(43,26,17,.88),rgba(24,14,9,.96))}
+      h1{font-size:clamp(48px,4vw,58px)}
       .lead{font-size:14px;line-height:1.75}
-      .flow{margin-top:20px}.flow li{padding:13px 9px 13px 0}.flow span{font-size:10px}
+      .flow{margin-top:20px}.flow li{padding:13px 9px 13px 0}.flow span{font-size:11px}
       #go{min-height:62px;padding:0 22px;font-size:15px;border-radius:26px}
     }
     @media(max-height:690px) and (max-width:767px){
@@ -4648,7 +4648,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     <section class="shell">
       <div class="card">
         <p class="eyebrow">Recognized Partner Access · Partner Control Layer</p>
-        <h1>กลับเข้าสู่<br>Control Room ของคุณ</h1>
+        <h1>กลับสู่<br>Control Room</h1>
         <p class="lead">ใช้ LINE บัญชีเดิมที่ MMD รับรองไว้ ระบบจะยืนยันตัวตนก่อนพาเข้าสู่ Dashboard ของบัญชีนี้ครับ</p>
 
         <ol class="flow" aria-label="ขั้นตอนเข้าสู่ระบบ">

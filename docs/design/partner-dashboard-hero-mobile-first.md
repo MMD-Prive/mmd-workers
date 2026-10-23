@@ -4,6 +4,8 @@ Accepted direction, 2026-10-23: combine the Partner graphic pack V2 with the exi
 
 LV10 refinement: keep the photographs as the anchor; add a restrained digital layer with fine grid lines, a view index, tabular KPI figures, precise navigation states and graphite glass surfaces. Show only real operational values. Avoid decorative trend arrows, fake live statuses, bright neon, dense gaming HUDs and long repeated headings. On mobile, the Hero and controls remain readable without horizontal page overflow. The interface remains calm and premium for the 34–39 audience.
 
+2026-10-23 palette update: Partner surfaces move from cool graphite to burnt-brown `#160d08` with raised brown `#28180f`, golden headings `#f0cd83`, pale warm body copy `#ead9b9` and restrained brass `#e3b861`. The photo Hero and digital detail stay. Anuphan handles Thai, General Sans English and Satoshi numbers; short mobile rails are 10px or larger, regular copy stays readable, and primary gold buttons keep dark brown text. The Login and Worker Dashboard use the same palette; public Webflow pages are managed separately. This update supersedes the color wording above without changing the eight-view map or private data authority.
+
 The authenticated Worker route remains `/partner/dashboard?t=…`. Webflow supplies public artwork and typography; Workers retain authentication, data, approvals, ledger and encryption authority. This is the MMD / SĪGIL Partner Division, separate from the MMS customer and spa Partner applications.
 
 ## Existing view mapping
