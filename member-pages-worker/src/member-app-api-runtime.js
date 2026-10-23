@@ -570,7 +570,7 @@ function identityFromProfile(profile) {
     memberSince: asString(profile.member_since || profile.memberSince, 40) || null,
     primaryChannel: "line",
     avatarUrl: null,
-    memberRef: asString(profile.member_ref || profile.memberRef, 80) || null,
+    memberRef: /^[a-f0-9]{64}$/.test(String(profile.member_binding || '')) ? profile.member_binding : null,
   };
 }
 

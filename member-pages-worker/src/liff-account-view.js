@@ -1,5 +1,5 @@
 // Read-only profile UI on the established, serialized LIFF session lane.
-export function createAccountView(root, request, onSessionExpired = () => {}) {
+export function createAccountView(root, request, expectedMemberRef = () => '', onSessionExpired = () => {}) {
   let generation = 0;
   function reset() { generation++; if (root) root.replaceChildren(); }
   async function load() {
@@ -16,6 +16,10 @@ export function createAccountView(root, request, onSessionExpired = () => {}) {
       const data = await response.json();
       if (turn !== generation) return;
       if (!response.ok || !data || Array.isArray(data) || typeof data !== 'object' || data.ok === false) throw Error('profile_unavailable');
+      const expected = expectedMemberRef();
+      if (typeof expected !== 'string' || !expected || data.memberRef !== expected) {
+        reset(); onSessionExpired(); return;
+      }
       const rows = [['ชื่อ', data.displayName], ['สมาชิกตั้งแต่', data.memberSince]];
       if (data.emailSafeToDisplay === true) rows.push(['อีเมล', data.emailMasked]);
       if (data.phoneSafeToDisplay === true) rows.push(['โทรศัพท์', data.phoneMasked]);

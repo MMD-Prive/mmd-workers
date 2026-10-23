@@ -835,7 +835,8 @@ export async function handleMemberProfile(request, env = {}) {
   } catch (error) {
     return gatewayStorageFailure(error);
   }
-  return json({ ok: true, data: safeMemberProfile(auth.session.member_profile) }, 200, {
+  const memberBinding = await keyedDigest(env, `member-binding:${auth.session.member_id}`);
+  return json({ ok: true, data: { ...safeMemberProfile(auth.session.member_profile), member_binding: memberBinding } }, 200, {
     cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
   });
 }
