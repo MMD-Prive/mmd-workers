@@ -1,3 +1,4 @@
+import { previewProofSessionBinding, bindProofSession, bindingNote } from "./payment-proof-session-binding.js";
 import { paymentJobSlipSummary } from "./payment-job-slip-summary.js";
 import { internalEvidenceReference, slipTransferAt, transferTimestamp } from "./slip-transfer-evidence.js";
 import { correctPaymentEvidence } from "./payment-evidence-correction.js";
@@ -11,7 +12,7 @@ import {
   resolveOperatorPaymentContext,
 } from "./payment-review-owner-context.js";
 import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
-import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
+import { exactRows, enrichPaymentReviewContext } from "./payment-review-display-context.js";
 import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
 import { paymentConfirmationFollowthrough } from "./payment-confirmation-followthrough.js";
 import { previewCustomerChange, resolveCustomerChange } from "./customer-change-resolution.js";
@@ -145,6 +146,7 @@ async function listReviewQueue(request, env, actor) {
     });
     return json({ ok: true, summary });
   }
+  if (url.searchParams.get("view") === "bind_session") return json(await previewProofSessionBinding(Object.fromEntries(url.searchParams), actor, proofBindingDependencies(env, actor)));
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
   const discovery = {
     list: (table, params) => airtableList(env, table, params),
@@ -220,6 +222,27 @@ async function saveEvidenceCorrection(request, env, actor, body, internalReferen
   });
 }
 
+function proofBindingDependencies(env, actor) {
+  return {
+    loadLinkedProofs: ids => exactRows((table,params) => airtableList(env,table,params), paymentProofTable(env), "RECORD_ID()", ids),
+    env, loadProof: id => loadProof(env, id), loadSession: id => findSessionBySessionId(env, id),
+    loadPayments: id => airtableList(env, paymentsTable(env), {filterByFormula: `{session_id}='${formulaValue(id)}'`, requireComplete: true}),
+    audit: entry => airtableCreate(env, accessLogTable(env), {
+      Action: "payment_proof_session_binding", Target: "payment_proof", Result: "success", Reason: "bind_session_only",
+      "Event ID": `proof_binding_${entry.key}`, "Created At (ISO)": entry.bound_at,
+      "Source Ref": `proof-binding:${entry.key}`, Actor: actor.id,
+      "After JSON": JSON.stringify(entry),
+    }),
+    patch: async (id, fields) => {
+      const response = await airtableFetch(env, new Request(`${airtableUrl(env, paymentProofTable(env))}/${encodeURIComponent(id)}`, {
+        method: "PATCH", headers: {Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json"},
+        body: JSON.stringify({fields, typecast: false}),
+      }));
+      if (!response.ok) throw httpError(503, "proof_binding_write_unconfirmed");
+    },
+  };
+}
+
 async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
@@ -246,6 +269,7 @@ async function commitReview(request, env, actor) {
       amount_matches_record: read?.amount_thb > 0 && expected > 0 ? !mismatch : null,
       money_truth_changed: false, evidence_changed: false });
   }
+  if (body.action === "bind_session") return json(await bindProofSession({...body, idempotency_key: request.headers.get("Idempotency-Key") || body.idempotency_key}, actor, proofBindingDependencies(env, actor)));
   if (body.action === "correct_evidence") return json(await saveEvidenceCorrection(request, env, actor, body));
   if (body.action === "extract_evidence") return json(await previewSlipExtraction(env, actor, body));
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
@@ -279,6 +303,7 @@ async function commitReview(request, env, actor) {
   const item = safeQueueItem(proof);
   if (!item || item.historical_backfill) throw httpError(409, "historical_proof_requires_historical_backfill_review");
   if (!item.reviewable) throw httpError(409, "payment_proof_not_reviewable");
+  if (decision === "approve" && bindingNote(proof.fields?.note).session_binding?.duplicate_of) throw httpError(409, "proof_already_received_duplicate_evidence");
 
   if (decision === "issue" || decision === "reject") {
     const audit = await writeAudit(env, {
@@ -750,9 +775,10 @@ function safeQueueItem(record) {
     bank_reference_optional: true,
     reference_kind: note.manual_evidence_review?.reference_kind || null,
     created_at: isoOrText(fields.created_at || fields["Created At"] || fields.createdTime || record.createdTime),
-    session_id: safeText(fields.session_id, 180),
+    session_id: safeText(fields.session_id || (linkedRecordIds(fields.session).includes(note.session_binding?.session_record_id) ? note.session_binding?.session_id : ""), 180),
+    session_binding: note.session_binding ? {bound: true, duplicate_of_proof_id: note.session_binding.duplicate_of?.proof_id || null} : null,
     member_email: normalizeEmail(fields.member_email || fields.email),
-    payment_stage: safeCode(fields.payment_stage || fields.payment_type || paymentIntelligence?.inferred_stage || ""),
+    payment_stage: safeCode(fields.payment_stage || fields.payment_type || note.session_binding?.payment_stage || paymentIntelligence?.inferred_stage || ""),
     tracking_kind: paymentTrackingKind(paymentIntelligence),
     payment_intelligence: paymentIntelligence,
     inferred_label: paymentInferenceLabel(paymentIntelligence),
@@ -769,7 +795,7 @@ function safeQueueItem(record) {
     extraction_error: extractionError,
     context_issues: contextIssues,
     review_lane: contextIssues.length ? "needs_enrichment" : "owner_review",
-    can_approve: contextIssues.length === 0,
+    can_approve: contextIssues.length === 0 && !note.session_binding?.duplicate_of,
     reviewable,
     historical_backfill: historical,
     operator_context_supported: true,

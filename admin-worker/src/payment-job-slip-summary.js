@@ -209,6 +209,14 @@ export async function paymentJobSlipSummary(
       f.status || f.verification_status || "pending",
     ).toLowerCase();
     const cents = satang(f.amount_thb ?? f.amount ?? f.total_thb);
+    const binding = proofNote(f).session_binding;
+    if (binding?.duplicate_of) {
+      const original = proofs.find(p => p.id === binding.duplicate_of.proof_record_id && text(p.fields?.proof_id) === binding.duplicate_of.proof_id);
+      const originalFields = original?.fields || {};
+      const verified = balance.records.find(p => p.verified && p.ref === binding.duplicate_of.payment_ref && p.ref === text(originalFields.payment_ref));
+      if (binding.schema !== "proof_session_binding_v1" || binding.session_id !== sessionId || binding.session_record_id !== session.id || !sessionsLinked.includes(session.id) || !verified || !["verified", "approved", "official_verified"].includes(text(originalFields.status).toLowerCase()) || satang(originalFields.amount_thb) !== satang(verified.amount)) issues.add("duplicate_evidence_verification_changed");
+      continue; // Still pending evidence, but never another pending or received payment.
+    }
     if (matches[0]?.verified) {
       if (cents === null || cents !== satang(matches[0].amount))
         issues.add("verified_evidence_amount_conflict");
@@ -225,7 +233,7 @@ export async function paymentJobSlipSummary(
     }
     const proofId = text(f.proof_id),
       stage = text(
-        f.payment_stage || f.payment_type || matches[0]?.stage,
+        f.payment_stage || f.payment_type || proofNote(f).session_binding?.payment_stage || matches[0]?.stage,
       ).toLowerCase();
     if (
       ["tips", "tip", "membership", "renewal", "extension", "shop"].includes(
