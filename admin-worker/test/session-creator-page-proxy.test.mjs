@@ -19,6 +19,29 @@ test("routes only the Session Creator work and job pages", () => {
   assert.equal(isSessionCreatorAssetRequest("/internal/admin/clients/assets/index.js", "GET"), false);
 });
 
+test("Create Job is served by the single Session Creator runtime, never the Webflow page", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamRequest;
+  globalThis.fetch = async (request) => {
+    upstreamRequest = request;
+    return new Response("<html><body>Canonical Create Job</body></html>", {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  };
+  try {
+    const response = await handleSessionCreatorPageRequest(new Request(
+      "https://www.mmdbkk.com/internal/admin/jobs/create-job?mode=broadcast",
+      { headers: { cookie: "mmd_admin_gate_v1=private" } },
+    ));
+    assert.equal(upstreamRequest.url, "https://mmd-os.lovable.app/internal/admin/jobs/create-job?mode=broadcast");
+    assert.equal(upstreamRequest.headers.has("cookie"), false);
+    assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-session-creator-pro");
+    assert.match(await response.text(), /Canonical Create Job/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("proxies All Jobs query strings to Session Creator without forwarding cookies", async () => {
   const originalFetch = globalThis.fetch;
   let upstreamRequest;
