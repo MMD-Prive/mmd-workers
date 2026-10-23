@@ -2,6 +2,8 @@
 
 Accepted direction, 2026-10-23: combine the Partner graphic pack V2 with the existing MMD Partner Dashboard. Use a photograph as the hero on every primary view. Keep the premium minimal black, ivory and champagne palette with comfortable spacing. Design for mobile first. This supersedes the earlier small artwork only direction.
 
+LV10 refinement: keep the photographs as the anchor; add a restrained digital layer with fine grid lines, a view index, tabular KPI figures, precise navigation states and graphite glass surfaces. Show only real operational values. Avoid decorative trend arrows, fake live statuses, bright neon, dense gaming HUDs and long repeated headings. On mobile, the Hero and controls remain readable without horizontal page overflow. The interface remains calm and premium for the 34–39 audience.
+
 The authenticated Worker route remains `/partner/dashboard?t=…`. Webflow supplies public artwork and typography; Workers retain authentication, data, approvals, ledger and encryption authority. This is the MMD / SĪGIL Partner Division, separate from the MMS customer and spa Partner applications.
 
 ## Existing view mapping

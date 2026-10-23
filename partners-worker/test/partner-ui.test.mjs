@@ -68,9 +68,10 @@ test('every existing view keeps a public photographic hero without exposing the 
   const {q,w,f,errors}=await ui(t);
   assert.equal(w.document.querySelectorAll('h1').length,1);
   assert.equal(q('.mmdp-hero'),null);
-  for(const name of ['home','models','agreements','earnings','performance','console','activity','privacy']){
+  for(const [index,name] of ['home','models','agreements','earnings','performance','console','activity','privacy'].entries()){
     q('[data-view="'+name+'"]').click();
     assert.equal(q('[data-partner-hero]').dataset.heroView,name);
+    assert.equal(q('[data-hero-index]').textContent,String(index+1).padStart(2,'0'));
     const image=q('[data-hero-image]');
     const url=new URL(image.src);
     assert.equal(url.hostname,'s3.amazonaws.com');
