@@ -306,6 +306,20 @@ test("10b: a throwing send and a throwing scheduled entry never propagate", asyn
   } finally { cap.restore(); }
 });
 
+test("scheduled HYPE_JOB_DAILY runs only at closeout and three send/retry ticks", async () => {
+  const envDaily = { HYPE_JOB_DAILY_ENABLED: "true", HYPE_JOB_DAILY_CHAT_ID: CHAT };
+  const at = (iso) => ({ scheduledTime: T(iso) });
+  for (const iso of [
+    "2026-09-30T00:00:00+07:00", "2026-09-30T00:05:00+07:00", "2026-09-30T00:10:00+07:00",
+    "2026-09-30T08:45:00+07:00", "2026-09-30T08:50:00+07:00", "2026-09-30T08:55:00+07:00",
+  ]) {
+    assert.equal((await runHypeJobDailyScheduled(envDaily, at(iso))).status, "not_configured", `${iso} is an allowed execution tick`);
+  }
+  for (const iso of ["2026-09-30T00:15:00+07:00", "2026-09-30T08:40:00+07:00", "2026-09-30T09:00:00+07:00", "2026-09-30T12:00:00+07:00"]) {
+    assert.equal((await runHypeJobDailyScheduled(envDaily, at(iso))).status, "not_due", `${iso} should be skipped before runner work`);
+  }
+});
+
 test("11: Telegram is mocked — destination comes from config, real network is blocked", async () => {
   const store = memoryStore(); const sent = [];
   await runHypeJobDaily(env(), { now: NOW, deps: { store, sources: sources(), send: async (p) => { sent.push(p); return { ok: true }; } } });
