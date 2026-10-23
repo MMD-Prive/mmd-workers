@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCredentialBoundAdminSession} from './src/credential-bound-admin-session.js';
-import {handleCreateJobDriveDiscovery,resolveChosenJobPartner,listWorkingPartners} from './src/create-job-drive-discovery.js';
+import {handleCreateJobDriveDiscovery,resolveChosenJobPartner,listWorkingPartners,driveSearchErrorCode} from './src/create-job-drive-discovery.js';
 const origin='https://www.mmdbkk.com';
 const env={ADMIN_LOGIN_CREDENTIAL:'test',ADMIN_SESSION_SECRET:'test-secret',AIRTABLE_API_KEY:'test',AIRTABLE_BASE_ID:'appTest'};
 const folder={drive_folder_id:'folderBrew1234567',folder_name:'Brew TN',folder_path:'MMD Private Models/Standard Package/Straight/Brew TN',folder_scope_key:'private:drive:folderBrew1234567',lane:'private',drive_folder_url:'https://drive.google.com/drive/folders/folderBrew1234567'};
@@ -20,6 +20,17 @@ test('Drive discovery never reads/writes Airtable and ignores all option filters
 });
 test('Drive outage does not fall back to Airtable',async()=>{
   const restore=mock(()=>{throw Error('no fallback');});try {const live={...env,MODEL_DRIVE_DIRECTORY:{fetch:async()=>Response.json({ok:false},{status:503})}};assert.equal((await handleCreateJobDriveDiscovery(await request('/v1/admin/models/search?discovery=drive&q=brew'),live)).status,503);}finally{restore();}
+});
+test('expired Drive authorization gives the owner a safe reauthorization signal without Airtable fallback',async()=>{
+  const restore=mock(()=>{throw Error('no fallback');});
+  try {
+    const live={...env,MODEL_DRIVE_DIRECTORY:{fetch:async()=>Response.json({ok:false,error:'model_drive_directory_unavailable',reason_code:'invalid_grant'},{status:503})}};
+    const res=await handleCreateJobDriveDiscovery(await request('/v1/admin/models/search?discovery=drive&q=Ice%20T'),live);
+    assert.equal(res.status,503);
+    assert.deepEqual(await res.json(),{ok:false,error:'drive_model_authorization_required'});
+    assert.equal(driveSearchErrorCode({reason_code:'invalid_client'}),'drive_model_configuration_required');
+    assert.equal(driveSearchErrorCode({reason_code:'unknown'}),'drive_model_search_unavailable');
+  } finally {restore();}
 });
 test('canonical Airtable matching begins only on explicit selection',async()=>{
   let reads=0;

@@ -92,8 +92,15 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
     console.error(JSON.stringify({
       event: "model_drive_directory_error",
       failure_class: failureClass(error),
+      reason_code: oauthReasonCode(error),
     }));
-    return json({ ok: false, error: "model_drive_directory_unavailable" }, 503);
+    return json({
+      ok: false,
+      error: "model_drive_directory_unavailable",
+      // This is an allowlisted operational signal for the signed internal caller.
+      // It must never include Google's error description or credential material.
+      reason_code: oauthReasonCode(error),
+    }, 503);
   }
 }
 
@@ -425,8 +432,22 @@ async function googleDriveAccessToken(env) {
   });
   const payload = await response.json().catch(() => null);
   const token = clean(payload?.access_token, 6000);
-  if (!response.ok || !token) throw new Error("google_oauth_failed");
+  if (!response.ok || !token) {
+    const error = new Error("google_oauth_failed");
+    error.reasonCode = response.ok ? "token_missing" : safeOauthErrorCode(payload?.error);
+    throw error;
+  }
   return token;
+}
+
+function safeOauthErrorCode(value) {
+  const code = clean(value, 80);
+  return ["invalid_grant", "invalid_client", "unauthorized_client", "invalid_scope", "access_denied", "token_missing"].includes(code)
+    ? code : "oauth_rejected";
+}
+
+function oauthReasonCode(error) {
+  return error?.message === "google_oauth_failed" ? safeOauthErrorCode(error.reasonCode) : "not_oauth";
 }
 
 async function verifySignedCaller(request, env) {

@@ -261,7 +261,13 @@ async function searchDriveDirectory(env, q, lane) {
   url.searchParams.set("lane", lane);
   const response = await driveDirectoryFetch(env, url, { method: "GET" });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) return { ok: false, status: response.status, error: clean(data.error, 120), items: [] };
+  if (!response.ok || data.ok === false) return {
+    ok: false,
+    status: response.status,
+    error: clean(data.error, 120),
+    reason_code: clean(data.reason_code, 80),
+    items: [],
+  };
   const items = Array.isArray(data.items) ? data.items.map(safeDriveCandidate).filter(Boolean) : [];
   return { ok: true, items };
 }
