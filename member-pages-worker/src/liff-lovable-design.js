@@ -131,7 +131,7 @@ body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-c
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-image{width:80px;height:96px}
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-quick-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-quick-grid button{min-width:0;min-height:56px;white-space:normal;overflow-wrap:anywhere;font-size:12px}
-body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-account-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:14px 0;border-bottom:1px solid var(--digital-line);overflow-wrap:anywhere}
-body.app-entered:not(.signup-mode)[data-brand-audience="public"] #digital-account progress{width:100%;accent-color:var(--digital-gold)}
+body.app-entered:not(.signup-mode) .digital-account-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:14px 0;border-bottom:1px solid var(--digital-line);overflow-wrap:anywhere}
+body.app-entered:not(.signup-mode) #digital-account progress{width:100%;accent-color:var(--digital-gold)}
 @media(max-width:430px){body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-home{padding-inline:16px}body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-snapshot{gap:12px;padding:14px}body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-image{width:64px;height:80px}body.app-entered:not(.signup-mode)[data-brand-audience="public"] .digital-news-card.has-image{grid-template-columns:64px minmax(0,1fr)}}
 `;
