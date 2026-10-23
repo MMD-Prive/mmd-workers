@@ -4,7 +4,7 @@
  * Apply one of these classes to the page root:
  *   .mmd-partner-theme | [data-mmd-partner-theme]
  *
- * Design source: live /partner (mmd-partner-v7), audited 2026-09-22.
+ * Design source: burnt-brown Partner palette approved 2026-10-23.
  * Mobile-first. Text colours are explicit to prevent inherited Webflow styles
  * or background-clip effects from making copy disappear.
  */
@@ -22,24 +22,24 @@
 @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab149126876bbe61da30a9c_Satoshi-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
 
 :where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7){
-  --partner-canvas:#0a0908;
-  --partner-canvas-mid:#0f0d0b;
-  --partner-panel:rgba(18,16,14,.94);
-  --partner-panel-warm:rgba(23,19,16,.92);
-  --partner-panel-charcoal:rgba(20,20,20,.92);
+  --partner-canvas:#160d08;
+  --partner-canvas-mid:#1d110a;
+  --partner-panel:rgba(36,22,14,.94);
+  --partner-panel-warm:rgba(43,26,17,.92);
+  --partner-panel-charcoal:rgba(34,21,14,.92);
   --partner-burgundy:#2a0e13;
-  --partner-burgundy-glow:rgba(79,17,28,.26);
+  --partner-burgundy-glow:rgba(105,53,19,.19);
 
-  --partner-ivory:#fff9f0;
-  --partner-copy:#d9d1c7;
-  --partner-muted:#91887f;
-  --partner-placeholder:#7f776f;
-  --partner-ink:#17120b;
+  --partner-ivory:#f0cd83;
+  --partner-copy:#ead9b9;
+  --partner-muted:#c2a77f;
+  --partner-placeholder:#c2a77f;
+  --partner-ink:#25150b;
 
-  --partner-gold:#d7af67;
-  --partner-gold-light:#f5e2b5;
-  --partner-gold-line:rgba(215,175,103,.28);
-  --partner-gold-line-strong:rgba(231,199,139,.50);
+  --partner-gold:#e3b861;
+  --partner-gold-light:#f3d58e;
+  --partner-gold-line:rgba(198,139,73,.35);
+  --partner-gold-line-strong:rgba(235,186,106,.62);
   --partner-danger:#ff8e8e;
 
   --partner-font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;
@@ -57,8 +57,8 @@
   color:var(--partner-copy);
   background:
     radial-gradient(circle at 9% 2%,var(--partner-burgundy-glow),transparent 32rem),
-    radial-gradient(circle at 92% 12%,rgba(215,175,103,.10),transparent 34rem),
-    linear-gradient(180deg,var(--partner-canvas) 0%,var(--partner-canvas-mid) 48%,#050505 100%);
+    radial-gradient(circle at 92% 12%,rgba(190,106,42,.14),transparent 34rem),
+    linear-gradient(180deg,var(--partner-canvas) 0%,var(--partner-canvas-mid) 48%,#100905 100%);
   font-family:var(--partner-font-th);
   font-size:16px;
   font-weight:400;
