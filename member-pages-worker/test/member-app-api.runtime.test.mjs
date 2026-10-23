@@ -270,6 +270,7 @@ test("profile adapter exposes only explicitly safe masked contact fields", async
     "/member/api/liff/profile": {
       ok: true,
       data: {
+        member_binding: "a".repeat(64),
         display_name: "คุณหนุ่ย",
         line_display_name: "Nui",
         email_masked: "n•••@example.com",
@@ -287,6 +288,7 @@ test("profile adapter exposes only explicitly safe masked contact fields", async
   const payload = await response.json();
 
   assert.equal(payload.displayName, "คุณหนุ่ย");
+  assert.equal(payload.memberRef, "a".repeat(64));
   assert.equal(payload.lineDisplayName, "Nui");
   assert.equal(payload.emailMasked, "n•••@example.com");
   assert.equal(payload.emailSafeToDisplay, true);

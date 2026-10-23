@@ -632,7 +632,9 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const profile = await request("/member/api/liff/profile", { method: "GET", cookie: startCookie }, runtime);
     const profileCookie = cookiePair(findCookie(profile.response, "__Host-mmd_liff_session"));
     assert.equal(profile.response.status, 200);
-    assert.deepEqual(profile.payload.data, {
+    assert.match(profile.payload.data.member_binding, /^[a-f0-9]{64}$/);
+    const { member_binding: _binding, ...visibleProfile } = profile.payload.data;
+    assert.deepEqual(visibleProfile, {
       display_name: "เปอร์",
       tier: "Premium",
       membership_status: "active",

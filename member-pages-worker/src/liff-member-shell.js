@@ -487,7 +487,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
   const resetCustomerBrand = () => customerBrand.reset();
-  const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => clearMemberProfile());
+  const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => currentMemberRef, () => clearMemberProfile());
   const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
@@ -524,6 +524,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // Initialize session-bound state before the first profile bootstrap below.
   let memberApiChain = Promise.resolve();
   let profileReady = false;
+  let currentMemberRef = "";
   let profileGeneration = 0;
   const secondaryReads = new Map();
 
@@ -1104,6 +1105,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     accountUI.reset();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
+    currentMemberRef = "";
     secondaryReads.clear();
     profile.classList.add("hidden");
     profile.inert = true;
@@ -1680,6 +1682,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   function renderProfile(data, authority = "", brandAuthority = "") {
     applyWorldTheme(data, authority);
     customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
+    currentMemberRef = /^[a-f0-9]{64}$/.test(String(data?.member_binding || "")) ? data.member_binding : "";
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};
     const points = view.points || {};
@@ -2228,9 +2231,9 @@ function normalizeCampaign(value) {
 
 function normalizeView(value) {
   const view = String(value || "home").trim().toLowerCase();
-  if (view === "profile") return "home";
+  if (view === "profile") return "account";
   if (view === "care_back") return "care";
-  return new Set(["home", "points", "credits", "package", "jobs", "history", "care", "coupons", "my-requests", "signup"]).has(view) ? view : "home";
+  return new Set(["home", "account", "points", "credits", "package", "jobs", "history", "care", "coupons", "my-requests", "signup"]).has(view) ? view : "home";
 }
 
 function normalizeWorld(value) {
