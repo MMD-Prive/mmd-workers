@@ -5586,6 +5586,7 @@ function sanitizeCreateSessionModel(record, profile) {
     orientation: profile.lane,
     status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
     available: profile.availableNow && !profile.explicitlyUnavailable,
+    availability_state: profile.explicitlyUnavailable ? "unavailable" : profile.availableNow ? "available" : "unknown",
     operational: { ...profile.ops },
   };
 }
