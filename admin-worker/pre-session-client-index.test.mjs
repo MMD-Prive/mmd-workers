@@ -292,7 +292,7 @@ test("canonical lineage result always wins and skips pre-session Airtable lookup
   }
 });
 
-test("pre-session source failure preserves existing public-only manual fallback", async () => {
+test("source failures report outages without fabricating a customer", async () => {
   const restore = installAirtableMock([], { status: 503 });
   try {
     const response = await enrichLineageWithPreSessionIndex(
@@ -302,9 +302,12 @@ test("pre-session source failure preserves existing public-only manual fallback"
     );
     const body = await response.json();
     assert.equal(body.manual_fallback, true);
-    assert.equal(body.records[0].manual_public_only, true);
+    assert.deepEqual(body.records, []);
+    assert.deepEqual(body.results, []);
+    assert.deepEqual(body.items, []);
     assert.equal(response.headers.get("x-mmd-pre-session-index"), "source-unavailable");
-    assert.match(body.lineage_warnings.join(" "), /pre_session_index:airtable_tblC98mKWbzmPuNzX_503/);
+    assert.match(body.degraded_sources.join(" "), /historical_session_alias:airtable_tblC98mKWbzmPuNzX_503/);
+    assert.match(body.degraded_sources.join(" "), /pre_session_index:airtable_pre_session_503/);
   } finally {
     restore();
   }

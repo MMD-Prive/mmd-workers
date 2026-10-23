@@ -61,104 +61,101 @@ const CLIENT_ALIAS_FIELDS = [
  */
 export async function enrichLineageWithPreSessionIndex(request, response, env = {}) {
   if (!isLookupPost(request) || response.status !== 200) return response;
-
   const body = await response.clone().json().catch(() => null);
-  if (!body?.ok || body.manual_fallback !== true) return response;
-
+  if (body?.per_rename_alias_ambiguous === true) return response;
+  if (!body?.ok || (body.manual_fallback !== true && body.no_canonical_match !== true)) return response;
   const payload = await request.json().catch(() => ({}));
   const query = clean(payload?.query).slice(0, 160);
   if (!query) return response;
-
-  try {
-    const historical = await resolveHistoricalSessionAlias(env, query);
-    if (historical?.state === "resolved" && historical.record) {
-      const headers = new Headers(response.headers);
-      headers.set("Content-Type", "application/json; charset=utf-8");
-      headers.set("Cache-Control", "no-store, private, max-age=0");
-      headers.set("X-MMD-Pre-Session-Index", PRE_SESSION_CLIENT_INDEX_VERSION);
-      headers.set("X-MMD-Client-History-Alias", "resolved");
-      return new Response(JSON.stringify({
-        ...body,
-        records: [historical.record],
-        items: [historical.record],
-        count: 1,
-        manual_fallback: false,
-        historical_session_alias: true,
-        lineage_warnings: unique([
-          ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings.filter((value) => value !== "manual_public_only_pending_reconcile") : []),
-          "historical_session_alias_resolved_to_canonical_client",
-        ]),
-      }), {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
+  const warnings = (body.lineage_warnings || []).filter((v) => v !== "manual_public_only_pending_reconcile");
+  const errors = (body.degraded_sources || []).filter((v) => String(v).includes(":"));
+  const attempt = async (label, action, fallback) => {
+    try { return await action(); }
+    catch (error) {
+      const warning = `${label}:${safeError(error)}`;
+      warnings.push(warning);
+      errors.push(warning);
+      return fallback;
     }
-
-    const records = await searchPreSessionCandidates(env, query);
-    const candidates = records
-      .map((record) => toCandidateRecord(record, query))
-      .filter(Boolean)
-      .sort((a, b) => b.__score - a.__score)
-      .slice(0, 12)
-      .map(stripScore);
-
-    if (!candidates.length) {
-      if (historical?.state !== "ambiguous") return response;
-      const headers = new Headers(response.headers);
-      headers.set("Content-Type", "application/json; charset=utf-8");
-      headers.set("Cache-Control", "no-store, private, max-age=0");
-      headers.set("X-MMD-Client-History-Alias", "ambiguous");
-      return new Response(JSON.stringify({
-        ...body,
-        lineage_warnings: unique([
-          ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings : []),
-          "historical_session_alias_ambiguous_manual_review_required",
-        ]),
-      }), { status: response.status, statusText: response.statusText, headers });
-    }
-
-    const headers = new Headers(response.headers);
-    headers.set("Content-Type", "application/json; charset=utf-8");
-    headers.set("Cache-Control", "no-store, private, max-age=0");
-    headers.set("X-MMD-Pre-Session-Index", PRE_SESSION_CLIENT_INDEX_VERSION);
-
+  };
+  const historical = await attempt("historical_session_alias", () => resolveHistoricalSessionAlias(env, query), { state: "unavailable" });
+  const headers = new Headers(response.headers);
+  headers.set("X-MMD-Pre-Session-Index", PRE_SESSION_CLIENT_INDEX_VERSION);
+  headers.set("X-MMD-Client-History-Alias", historical.state);
+  const finish = (records, extra = {}) => {
+    const noCanonicalMatch = records.every((r) => !clean(r.client_id));
     return new Response(JSON.stringify({
       ...body,
-      records: candidates,
-      items: candidates,
-      count: candidates.length,
-      manual_fallback: false,
-      pre_session_candidates: true,
-      pre_session_policy: "identity_candidate_only_current_rights_resolver_recheck",
-      lineage_warnings: unique([
-        ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings.filter((value) => value !== "manual_public_only_pending_reconcile") : []),
-        ...(historical?.state === "ambiguous" ? ["historical_session_alias_ambiguous_manual_review_required"] : []),
-        "pre_session_candidate_identity_pending_reconcile",
-      ]),
-    }), {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  } catch (error) {
-    const headers = new Headers(response.headers);
-    headers.set("Content-Type", "application/json; charset=utf-8");
-    headers.set("Cache-Control", "no-store, private, max-age=0");
-    headers.set("X-MMD-Pre-Session-Index", "source-unavailable");
-
-    return new Response(JSON.stringify({
-      ...body,
-      lineage_warnings: unique([
-        ...(Array.isArray(body.lineage_warnings) ? body.lineage_warnings : []),
-        `pre_session_index:${safeError(error)}`,
-      ]),
-    }), {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+      records, results: records, items: records,
+      count: records.length,
+      no_canonical_match: noCanonicalMatch,
+      manual_fallback: records.length === 0,
+      lineage_warnings: unique(warnings),
+      degraded_sources: unique(errors),
+      ...extra,
+    }), { status: response.status, statusText: response.statusText, headers });
+  };
+  if (historical.state === "resolved" && historical.record) {
+    return finish([historical.record], { historical_session_alias: true });
   }
+  if (historical.state === "ambiguous") warnings.push("historical_session_alias_ambiguous_manual_review_required");
+
+  const rows = await attempt("pre_session_index", () => searchPreSessionCandidates(env, query), []);
+  let candidates = rows.map((row) => toCandidateRecord(row, query)).filter(Boolean)
+    .sort((a, b) => b.__score - a.__score).slice(0, 12).map(stripScore);
+
+  // The reviewed index is a projection, not the full Per Rename inventory.
+  // Source names without a verified Client link remain visible as evidence only.
+  if (!candidates.length) {
+    candidates = await attempt("per_rename_source", () => searchPerRenameSourceCandidates(env, query), []);
+  }
+  if (errors.length) headers.set("X-MMD-Pre-Session-Index", "source-unavailable");
+  if (candidates.length) warnings.push("pre_session_candidate_identity_pending_reconcile");
+  const canonicalOnly = payload.canonical_only === true || payload.allow_manual_fallback === false;
+  if (canonicalOnly) return finish([], {
+    canonical_only: true,
+    line_candidates: [...(body.line_candidates || []), ...candidates],
+  });
+  return finish(candidates, {
+    pre_session_candidates: candidates.length > 0,
+    pre_session_policy: "identity_candidate_only_current_rights_resolver_recheck",
+  });
+}
+
+// MMD OA archive metadata only: no transcript, MMS identity or membership inference.
+export async function searchPerRenameSourceCandidates(env, query) {
+  const needle = normalize(query).replace(/^คุณ\\s*/u, "").trim();
+  if (!needle) return [];
+  const table = clean(env.AIRTABLE_TABLE_PER_RENAME_MATCH_RESULTS_ID) || "tblkJST2MefkSZ43i";
+  const params = new URLSearchParams({ pageSize: "40", maxRecords: "40" });
+  const nameField = thaiToneFreeFormula('{Current LINE Rename}&""');
+  const compactNeedle = formulaString(needle.replace(/\\s+/g, ""));
+  params.set("filterByFormula", `FIND("${compactNeedle}",LOWER(SUBSTITUTE(${nameField}," ","")))>0`);
+  for (const field of ["Match Key", "Current LINE Rename", "Match Status", "Snapshot"]) params.append("fields[]", field);
+  const result = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params}`, {
+    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
+  });
+  if (!result.ok) throw new Error(`airtable_${table}_${result.status}`);
+  const data = await result.json();
+  return (data.records || []).filter((row) => {
+    const f = row.fields || {};
+    return clean(f["Match Key"]).startsWith("per_source_v1:")
+      && !/rejected|blocked|revoked|ignored/i.test(clean(f["Match Status"]))
+      && normalize(f["Current LINE Rename"]).replace(/\\s+/g, "").includes(needle.replace(/\\s+/g, ""));
+  }).slice(0, 12).map((row) => {
+    const name = clean(row.fields["Current LINE Rename"]);
+    return {
+      client_id: "", canonical: false, selectable: false,
+      candidate_id: row.id, source_record_id: row.id,
+      remembered_name: name, client_name: name, aliases: [name],
+      matched_on: "per_rename", matched_value: name,
+      lineage_source: "mmd_per_rename_source", identity_status: "pending_reconcile",
+      manual_public_only: true, confidence: null,
+      source_snapshot_at: clean(row.fields.Snapshot),
+      entitlement_snapshot_source: "none",
+      lookup_chain: ["per_rename_source", "identity_pending_reconcile"],
+    };
+  });
 }
 
 export async function resolveHistoricalSessionAlias(env, query) {
@@ -174,7 +171,7 @@ export async function resolveHistoricalSessionAlias(env, query) {
   params.set("maxRecords", "40");
   params.set("returnFieldsByFieldId", "true");
   const toneFreeSessionName = thaiToneFreeFormula(`{client_name}&""`);
-  params.set("filterByFormula", `IFERROR(SEARCH("${formulaString(needle)}",LOWER(${toneFreeSessionName})),0)>0`);
+  params.set("filterByFormula", `FIND("${formulaString(needle)}",LOWER(${toneFreeSessionName}))>0`);
   params.append("fields[]", SESSION_CLIENT_NAME_FIELD);
   params.append("fields[]", SESSION_CANONICAL_CLIENT_FIELD);
 
@@ -286,7 +283,7 @@ export async function searchPreSessionCandidates(env, query) {
 
   const checks = SEARCHABLE_FIELDS.map((field) => {
     const toneFreeField = thaiToneFreeFormula(`{${field}}&""`);
-    return `IFERROR(SEARCH("${needle}",LOWER(${toneFreeField})),0)>0`;
+    return `FIND("${needle}",LOWER(${toneFreeField}))>0`;
   });
   const params = new URLSearchParams();
   params.set("pageSize", "40");
