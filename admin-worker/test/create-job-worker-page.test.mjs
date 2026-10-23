@@ -4,6 +4,7 @@ import {
   CREATE_JOB_WORKER_PATH,
   handleCreateJobWorkerPage,
   isCreateJobWorkerPageRequest,
+  paymentMiniAppUrl,
 } from "../src/create-job-worker-page.js";
 
 test("Create Job is served by the Worker only at its exact page route", () => {
@@ -54,4 +55,25 @@ test("Worker-owned page supports HEAD without returning the HTML body", async ()
   const response = handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job", { method: "HEAD" }));
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
+});
+
+test("Create Job restores the published Payment Mini App contract", async () => {
+  assert.equal(
+    paymentMiniAppUrl("https://mmdbkk.com/sigil/pay?t=abc_DEF.123-xyz"),
+    "https://miniapp.line.me/2010830159-0n1O3ANK?t=abc_DEF.123-xyz",
+  );
+  for (const value of [
+    "https://mmdbkk.com/pay/checkout?t=abc.def",
+    "https://evil.example/sigil/pay?t=abc.def",
+    "http://mmdbkk.com/sigil/pay?t=abc.def",
+    "https://mmdbkk.com/sigil/pay?t=abc.def&t=other",
+    "https://mmdbkk.com/sigil/pay?t=abc.def&client=other",
+    "https://mmdbkk.com/sigil/pay?t=not-signed",
+  ]) assert.equal(paymentMiniAppUrl(value), null);
+
+  const html = await handleCreateJobWorkerPage(
+    new Request("https://mmdbkk.com/internal/admin/jobs/create-job"),
+  ).text();
+  assert.match(html, /2010830159-0n1O3ANK/);
+  assert.match(html, /เปิดลิงก์ชำระมัดจำผ่าน LINE/);
 });
