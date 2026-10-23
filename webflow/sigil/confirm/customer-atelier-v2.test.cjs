@@ -30,3 +30,31 @@ test('API failure has retry and no payment action',async()=>{const t=await setup
 test('ACK sends current revision and is distinct from payment',async()=>{const t=await setup();try{const check=t.q('[data-c-check]');check.checked=true;check.dispatchEvent(new t.dom.window.Event('change'));t.q('[data-c-confirm]').click();await settle();const ack=t.calls.find(c=>c.url.endsWith('/ack'));assert.equal(ack.body.confirmation_revision,'revision-2');assert.equal(ack.body.expected_role,'customer');assert.equal(t.q('[data-c-confirm]').disabled,true);assert.equal(t.q('[data-c-success]').hidden,false);}finally{t.close()}});
 test('returning from LIFF refreshes proof state and removes stale pay CTA',async()=>{const t=await setup();try{const d=sample();d.payment.proof_received=true;t.setData(d);t.dom.window.dispatchEvent(new t.dom.window.Event('focus'));await settle();assert.equal(t.q('[data-c-paycta-link]').hidden,true);assert.equal(t.q('[data-c-paycta-proof]').hidden,false);}finally{t.close()}});
 test('pending revision blocks ACK',async()=>{const d=sample();d.confirmation_change_pending=true;const t=await setup(d);try{t.q('[data-c-check]').checked=true;t.q('[data-c-check]').dispatchEvent(new t.dom.window.Event('change'));assert.equal(t.q('[data-c-confirm]').disabled,true);}finally{t.close()}});
+
+test('Private confirmation uses SIGIL mark and PN + MK while Public remains MMD',async()=>{
+  for(const [lane,name] of [['private_model','SĪGIL'],['public_model','MMD PRIVÉ']]){
+    const d=sample();d.model_work_lane=lane;d.job_type='private:standard:pn:mk';
+    const t=await setup(d);try{
+      assert.equal(t.q('.mjc16__brand').textContent,name);
+      assert.equal(!!t.q('.mjc16__sigil-mark'),lane==='private_model');
+      assert.match(t.q('[data-c-type]').textContent,/PN.*MK/);
+      assert.equal(t.q('#mmd-job-confirm-v16').dataset.workLane,lane);
+    }finally{t.close()}
+  }
+});
+test('canonical final LIFF link carries the original signed token, never client amount query',async()=>{
+  const d=sample();d.pricing={net_price_thb:13000,deposit_received_thb:4000,balance_thb:9000};
+  d.payment={stage:'final',amount_due_thb:9000,liff_url:'https://miniapp.line.me/2010830159-0n1O3ANK?t='+token};
+  const t=await setup(d);try{const a=t.q('[data-c-paycta-link]');assert.equal(a.hidden,false);assert.match(a.textContent,/9,000/);assert.equal(new URL(a.href).searchParams.has('amount'),false);}finally{t.close()}
+});
+test('wrong final amount or unrelated LIFF target cannot produce a payable CTA',async()=>{
+  for(const bad of ['amount','target']){
+    const d=sample();d.pricing.balance_thb=9000;d.payment={stage:'final',amount_due_thb:bad==='amount'?4000:9000,
+      liff_url:bad==='target'?'https://example.com/?t='+token:'https://miniapp.line.me/2010830159-0n1O3ANK?t='+token};
+    const t=await setup(d);try{assert.equal(t.q('[data-c-paycta-link]').hidden,true);}finally{t.close()}
+  }
+});
+test('customer itemization shows original, discount and travel exactly once without model rates',async()=>{
+  const d=sample();d.billing={schema:'customer_billing_breakdown_v1',original_price_thb:15000,discount_thb:2000,travel_fee_thb:500,travel_treatment:'included',breakdown_status:'complete',service_items:[{label:'PN',amount_thb:13000},{label:'MK',amount_thb:2000}]};
+  const t=await setup(d);try{assert.equal(t.q('[data-c-full]').textContent,'฿15,000');assert.match(t.q('[data-c-discount]').textContent,/2,000/);assert.match(t.q('[data-c-travel-label]').textContent,/รวมในยอดสุทธิแล้ว/);assert.equal(t.q('[data-c-travel-row]').hidden,false);assert.equal(t.q('[data-c-service-items]').children.length,2);assert.doesNotMatch(t.dom.window.document.body.textContent,/model_payout/);}finally{t.close()}
+});

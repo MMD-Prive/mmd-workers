@@ -3,6 +3,7 @@ import { stablePaymentRef } from "./unified-payment-proof.js";
 import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 import { formulaValue, httpError } from "./lib/payment-primitives.js";
 import { readVerifiedSessionBalance, shouldResolveCustomerBalance, customerBalanceProjection } from "./verified-session-balance.js";
+import { confirmationWorkLane, customerBillingBreakdown } from "./confirmation-customer-presentation.js";
 export { formulaValue, httpError };
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -34,7 +35,14 @@ export const SESSION_FIELDS = Object.freeze({
 // job: the client's display name (models address the client by name), date, time,
 // location/brief, acknowledgement state and the model's OWN payout. Payment
 // identifiers/state and customer amounts/rates stay owner/admin-side.
-const MODEL_HIDDEN_KEYS = Object.freeze(["payment_ref", "payment_type", "payment_status"]);
+// Explicit audience allowlist: future customer billing fields must never reach
+// the model merely because another property was added to the common projection.
+const MODEL_COMMON_KEYS = Object.freeze([
+  "confirmation_revision", "confirmation_revision_required", "confirmation_change_pending",
+  "ok", "authority", "schema", "role", "session_id", "session_status",
+  "client_name", "model_name", "job_type", "model_work_lane", "neutral",
+  "job_date", "start_time", "end_time", "location_name", "google_map_url", "vip_detail", "created_at",
+]);
 
 const PAYMENT_FIELDS = Object.freeze({
   paymentRef: "fldOO6SY49iDw8VBZ",
@@ -105,7 +113,9 @@ export async function handleConfirmationDetails(request, env = {}) {
       payment_status: text(fields[field(env.AT_SESSIONS__PAYMENT_STATUS, SESSION_FIELDS.paymentStatus)], 120),
       client_name: text(fields[SESSION_FIELDS.clientName], 240),
       model_name: text(fields[SESSION_FIELDS.modelName], 240),
-      job_type: text(fields[SESSION_FIELDS.jobType], 240),
+      job_type: modelJobType(text(fields[SESSION_FIELDS.jobType], 240), note, modelPricing),
+      model_work_lane: confirmationWorkLane(fields, fields[SESSION_FIELDS.jobType], env),
+      neutral: claims.neutral === true,
       job_date: text(fields[SESSION_FIELDS.jobDate], 120),
       start_time: text(fields[SESSION_FIELDS.startTime], 120),
       end_time: text(fields[SESSION_FIELDS.endTime], 120),
@@ -163,11 +173,19 @@ export async function handleConfirmationDetails(request, env = {}) {
         // Payment Instructions generates the current amount QR, not an old stored QR.
         qr_url: null,
       });
+      // The original signed token is intentionally opaque and reusable: details
+      // and Payment Instructions resolve its current stage from verified money.
+      // Never pass an amount or a replacement payment reference in browser query.
+      display.liff_url = ['deposit', 'full', 'final', 'balance'].includes(display.stage)
+        && display.amount_due_thb > 0 && display.accepting_payment !== false && !display.verified && !display.proof_received
+        ? `https://miniapp.line.me/2010830159-0n1O3ANK?t=${encodeURIComponent(token)}` : null;
       return withCors(request, env, json({
         ...common,
         payment_ref: activePaymentRef,
         amount_thb: net,
         pricing: safePricing,
+        billing: customerBillingBreakdown(pricing, balanceProjection?.summary.total_amount_thb ?? net,
+          fields['fld703jI4zQ0CYMHh'] ?? fields.travel_fee_thb, servicePricing, common.job_type),
         payment_type: balanceProjection?.payment_type || common.payment_type,
         ...(balanceProjection ? { balance_summary: balanceProjection.summary } : {}),
         payment: display,
@@ -176,8 +194,7 @@ export async function handleConfirmationDetails(request, env = {}) {
 
     const modelPayout = numberOrNull(fields[SESSION_FIELDS.payModelThb]);
     const modelRemark = parseMarkedJson(note, "MMD Model Remark v1");
-    const modelCommon = { ...common };
-    for (const key of MODEL_HIDDEN_KEYS) delete modelCommon[key];
+    const modelCommon = Object.fromEntries(MODEL_COMMON_KEYS.map(key => [key, common[key]]));
     modelCommon.job_type = modelJobType(common.job_type, note, modelPricing);
     const modelAcknowledgedAt = text(fields[field(env.AT_SESSIONS__MODEL_ACK_AT, SESSION_FIELDS.modelAckAt)], 200) || null;
     return withCors(request, env, json({

@@ -13,7 +13,7 @@
 (() => {
   "use strict";
 
-  const BRIDGE_VERSION = "8";
+  const BRIDGE_VERSION = "9";
   const BRIDGE_FLAG = "__mmdJobConfirmationBridgeV1";
   if (window[BRIDGE_FLAG]) return;
   window[BRIDGE_FLAG] = true;
@@ -53,6 +53,15 @@
 .mmd-atelier::before{content:"";position:absolute;z-index:-1;inset:0 0 auto;height:460px;pointer-events:none;background:linear-gradient(180deg,rgba(16,18,20,.76),var(--bg)),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aae16d800a522b95e70e5be_Group%20Payment%20Ver.webp") center 34%/cover no-repeat}
 .mmd-atelier *, .mmd-atelier *::before, .mmd-atelier *::after{box-sizing:border-box;letter-spacing:0}
 .mmd-atelier [hidden]{display:none!important}
+.mmd-atelier[data-work-lane="private_model"]{--bg:#090909;--bg-deep:#050505;--panel:#111110;--champagne:#d7b777;--line:rgba(215,183,119,.22)}
+.mmd-atelier[data-work-lane="private_model"]::before{background:radial-gradient(ellipse at top,rgba(178,141,80,.08),transparent 65%)}
+.mmd-atelier[data-work-lane="private_model"] .mjc16__brand::before{display:none}
+.mmd-atelier .mjc16__sigil-mark{width:32px;height:38px;color:#B28D50}
+.mmd-atelier .mjc16__bill-note{padding:8px 0;font-size:12px}
+.mmd-atelier [data-c-service-items]{display:block!important;padding:0!important;border:0!important}
+.mmd-atelier [data-c-service-items]>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;color:var(--muted)}
+.mmd-atelier [data-c-service-items][hidden]{display:none!important}
+
 .mmd-atelier [data-final-payment]{display:none!important}
 .mmd-atelier h1,.mmd-atelier h2,.mmd-atelier h3,.mmd-atelier p,.mmd-atelier button,.mmd-atelier input,.mmd-atelier summary{font-family:inherit;letter-spacing:0}
 .mmd-atelier h1,.mmd-atelier h2,.mmd-atelier h3{color:var(--heading);background:none;-webkit-text-fill-color:var(--heading)}
@@ -178,9 +187,12 @@
         <div class="mjc16__section-kicker">SUMMARY</div>
         <h2>สรุปยอด</h2>
         <div class="mjc16__rows mjc16__pricing">
-          <div><span>ราคาเต็ม</span><b data-c-full>—</b></div>
+          <div><span>ราคาตั้งต้นก่อนส่วนลด</span><b data-c-full>—</b></div>
+          <div data-c-service-items hidden></div>
           <div><span>ส่วนลด</span><b data-c-discount>—</b></div>
-          <div class="is-total"><span>ยอดรวม</span><b data-c-net>—</b></div>
+          <div data-c-travel-row hidden><span data-c-travel-label>ค่าเดินทาง</span><b data-c-travel>—</b></div>
+          <p data-c-billing-note class="mjc16__bill-note" hidden></p>
+          <div class="is-total"><span>ยอดสุทธิ</span><b data-c-net>—</b></div>
           <div><span>มัดจำชำระแล้ว</span><b data-c-deposit>—</b></div>
           <div><span>ยอดคงเหลือ</span><b data-c-balance>—</b></div>
         </div>
@@ -240,7 +252,7 @@
     root.id = CUSTOMER_ROOT;
     root.setAttribute("data-mmd-confirm-role", "customer");
     root.classList.add("mmd-atelier");
-    if (root.getAttribute("data-mmd-layout") !== "atelier-v1") root.innerHTML = ROOT_MARKUP;
+    if (root.getAttribute("data-mmd-layout") !== "atelier-v1" || !root.querySelector("[data-c-travel-row]")) root.innerHTML = ROOT_MARKUP;
     root.setAttribute("data-mmd-layout", "atelier-v1");
     return root;
   }
@@ -422,8 +434,12 @@
       return "";
     }
 
-    function payUrl() {
-      const u = new URL("https://miniapp.line.me/2010830159-0n1O3ANK");
+    function payUrl(d = details) {
+      const canonical = "https://miniapp.line.me/2010830159-0n1O3ANK";
+      const u = new URL(d?.payment?.liff_url || canonical);
+      if (u.origin + u.pathname !== canonical || u.username || u.password || u.hash
+        || [...u.searchParams.keys()].some(k => k !== "t")
+        || (u.searchParams.has("t") && u.searchParams.get("t") !== token)) throw new Error("payment_handoff_invalid");
       u.searchParams.set("t", token);
       const lang = str(new URL(location.href).searchParams.get("lang")).toLowerCase();
       if (["th", "en", "zh"].includes(lang)) u.searchParams.set("lang", lang);
@@ -457,7 +473,10 @@
       const st = str(p.stage).toLowerCase();
       const label = st === "deposit" ? "ชำระมัดจำ " : st === "balance" || st === "final" ? "ชำระยอดคงเหลือ " : "ชำระเงิน ";
       E.payCtaLink.textContent = label + "฿" + amt.toLocaleString("th-TH");
-      E.payCtaLink.href = payUrl();
+      // Amount remains backend-owned; do not encode 9,000 (or any price) in a URL.
+      if (["balance", "final"].includes(st) && d.pricing?.balance_thb != null
+        && Math.abs(Number(d.pricing.balance_thb) - amt) > 0.01) return;
+      E.payCtaLink.href = payUrl(d);
       E.payCtaLink.referrerPolicy = "no-referrer";
       E.payCtaLink.hidden = false;
       E.payCta.hidden = false;
@@ -473,7 +492,47 @@
         : p && p.amount_due_thb != null && Number(p.amount_due_thb) === 0 ? "ไม่มียอดที่ต้องชำระในรายการนี้ครับ" : "";
     }
 
+    function renderBrand(d) {
+      const lane = ["private_model", "public_model"].includes(d.model_work_lane) ? d.model_work_lane : "";
+      R.dataset.workLane = lane;
+      const brand = R.querySelector(".mjc16__brand");
+      const name = d.neutral === true ? "JOB CONFIRMATION" : lane === "private_model" ? "SĪGIL" : "MMD PRIVÉ";
+      brand.replaceChildren();
+      if (lane === "private_model" && d.neutral !== true) {
+        // Exact SIGIL mark geometry from webflow/global/sigil-brand-v1.mjs.
+        brand.innerHTML = '<svg class="mjc16__sigil-mark" aria-label="SĪGIL" role="img" viewBox="0 0 283 360"><g fill="currentColor"><path d="M141.5,35 L201.5,85 L201.5,171 L180.5,157 L180.5,97 L141.5,63 L102.5,97 L102.5,143 L201.5,203 L201.5,274 L141.5,325 L80.5,275 L80.5,182 L101.5,196 L101.5,263 L141.5,298 L180.5,265 L180.5,217 L80.5,157 L80.5,85 Z"/><path d="M39.5,119 L61.5,100 L61.5,258 L39.5,241 Z M218.5,100 L240.5,119 L240.5,241 L218.5,258 Z"/></g></svg>';
+      }
+      brand.appendChild(document.createTextNode(name));
+      R.querySelector(".mjc16__eyebrow").textContent = name + " · BANGKOK";
+      R.querySelector(".mjc16__footer strong").textContent = name + " · BANGKOK";
+      document.title = name + " · ยืนยันรายละเอียดงาน";
+    }
+
+    function renderBilling(d) {
+      const b = d.billing;
+      const items = q("[data-c-service-items]"); items.replaceChildren(); items.hidden = true;
+      const travelRow = q("[data-c-travel-row]"); travelRow.hidden = true;
+      const note = q("[data-c-billing-note]"); note.hidden = true; note.textContent = "";
+      if (b?.schema !== "customer_billing_breakdown_v1") return;
+      E.full.textContent = money(b.original_price_thb);
+      E.full.closest("div").hidden = b.original_price_thb == null;
+      E.discount.textContent = b.discount_thb > 0 ? "−" + money(b.discount_thb) + (b.discount_percent > 0 ? " (" + b.discount_percent + "%)" : "") : "ไม่มีส่วนลด";
+      E.discount.closest("div").hidden = b.original_price_thb == null;
+      for (const item of b.service_items || []) {
+        const row = document.createElement("div"), label = document.createElement("span"), value = document.createElement("b");
+        label.textContent = item.label; value.textContent = money(item.amount_thb); row.append(label, value); items.append(row); items.hidden = false;
+      }
+      if (Number(b.travel_fee_thb) > 0) {
+        travelRow.hidden = false; q("[data-c-travel]").textContent = money(b.travel_fee_thb);
+        q("[data-c-travel-label]").textContent = b.travel_treatment === "included" ? "ค่าเดินทาง (รวมในยอดสุทธิแล้ว)" : b.travel_treatment === "added" ? "ค่าเดินทาง" : "ค่าเดินทางที่บันทึกไว้ · รอตรวจยอดรวม";
+      }
+      if (b.breakdown_status === "review_required") {
+        note.hidden = false; note.textContent = "รายละเอียดราคาตั้งต้นหรือค่าเดินทางยังไม่ครบ กรุณาติดต่อผู้ดูแลก่อนโอน โดยยึดยอดสุทธิที่ระบบแสดงครับ";
+      }
+    }
+
     function render(d) {
+      renderBrand(d);
       details = d;
       const p = d.pricing || {};
       E.model.textContent = str(d.model_name) || "—";
@@ -500,6 +559,7 @@
       if (discountRow) discountRow.hidden = !hasDiscount;
       E.deposit.textContent = money(p.deposit_received_thb);
       E.balance.textContent = money(p.balance_thb);
+      renderBilling(d);
       loaded = true;
       E.check.disabled = false;
       E.pill.textContent = d.payment?.verified === true ? "ตรวจยอดแล้ว" : d.payment?.proof_received === true ? "รอตรวจสอบ" : "รอยืนยันรายละเอียด";
@@ -724,7 +784,7 @@
     bootSessionTracker();
     humanizeSessionTracker();
 
-    root.setAttribute("data-mmd-source", "lovable-github");
+    root.setAttribute("data-mmd-source", "mmd-workers");
     root.setAttribute("data-mmd-bridge-version", BRIDGE_VERSION);
   }
 
