@@ -41,8 +41,10 @@ test("safe confirmation pair reissue rewrites only signed URLs and preserves pay
         id: "recPayment",
         fields: {
           fldOO6SY49iDw8VBZ: "pay_fixture",
+          fld2wdhBvc8xrV6y5: "sess_fixture",
           fldrr9g8ZZjqAbdKQ: "deposit",
           fldEJ1hmm7KwWuI6q: "paid",
+          fldJ7a0Ube9F0bmRy: "verified",
         },
       }] });
     }
@@ -90,6 +92,57 @@ test("safe confirmation pair reissue requires admin-to-payments service auth", a
   assert.equal((await response.json()).error, "service_auth_required");
 });
 
+for (const [name, sessionStatus, paymentStatus, verificationStatus, paymentSessionId] of [
+  ["pending session", "pending", "paid", "verified", "sess_fixture"],
+  ["unpaid payment", "partial", "pending", "verified", "sess_fixture"],
+  ["unverified payment", "partial", "paid", "pending", "sess_fixture"],
+  ["different session", "partial", "paid", "verified", "sess_other"],
+]) {
+  test(`${name} cannot issue customer or model confirmation tokens`, async () => {
+    const writes = [];
+    const env = {
+      AIRTABLE_BASE_ID: "app-test", AIRTABLE_API_KEY: "airtable-test",
+      AUTH_SERVICE_ADMIN_TO_PAYMENTS: "service-test",
+      PAYMENT_CONFIRMATION_SIGNING_SECRET: "signing-secret-for-confirmation-reissue-test",
+      PAY_SESSIONS_KV: { async put(...args) { writes.push(args); } },
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = async (input, init = {}) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (request.method !== "GET") writes.push(request.method);
+      if (request.url.includes("tblC98mKWbzmPuNzX")) {
+        return Response.json({ records: [{ id: "recSession", fields: {
+          fldLTq2kZbyRv22IA: "sess_fixture", fldojgjSQLaO0uQLX: "pay_fixture",
+          fldTY5lE6m0kQf72n: sessionStatus,
+        } }] });
+      }
+      if (request.url.includes("tblWGGJJOx5eBvBZJ")) {
+        return Response.json({ records: [{ id: "recPayment", fields: {
+          fldOO6SY49iDw8VBZ: "pay_fixture", fld2wdhBvc8xrV6y5: paymentSessionId,
+          fldEJ1hmm7KwWuI6q: paymentStatus, fldJ7a0Ube9F0bmRy: verificationStatus,
+        } }] });
+      }
+      throw new Error("unexpected_fetch");
+    };
+    try {
+      for (const [path, handler] of [
+        ["/v1/internal/confirm/reissue", handleConfirmationReissue],
+        ["/v1/internal/confirm/reissue-model", handleModelConfirmationReissue],
+      ]) {
+        const response = await handler(new Request(`https://payments.internal${path}`, {
+          method: "POST", headers: { "x-internal-token": "service-test", "content-type": "application/json" },
+          body: JSON.stringify({ session_id: "sess_fixture" }),
+        }), env);
+        assert.equal(response.status, 409);
+        assert.equal((await response.json()).error, "payment_approval_required");
+      }
+      assert.deepEqual(writes, []);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+}
+
 
 test("model-only confirmation reissue rotates only the Model URL", async () => {
   const kv = new Map();
@@ -120,11 +173,12 @@ test("model-only confirmation reissue rotates only the Model URL", async () => {
           fldojgjSQLaO0uQLX: "pay_fixture",
           fldi9ZdoiUXzSv1rI: "https://mmdbkk.com/sigil/confirm/job-confirmation?t=keep-customer",
           fld0mFma9J9yfEaKb: "https://mmdbkk.com/sigil/confirm/job-model?t=old-model",
+          fldTY5lE6m0kQf72n: "partial",
         },
       }] });
     }
     if (request.method === "GET" && url.pathname.includes("tblWGGJJOx5eBvBZJ")) {
-      return Response.json({ records: [{ id: "recPayment", fields: { fldOO6SY49iDw8VBZ:"pay_fixture", fldrr9g8ZZjqAbdKQ:"deposit" } }] });
+      return Response.json({ records: [{ id: "recPayment", fields: { fldOO6SY49iDw8VBZ:"pay_fixture", fld2wdhBvc8xrV6y5:"sess_fixture", fldrr9g8ZZjqAbdKQ:"deposit", fldEJ1hmm7KwWuI6q:"Paid", fldJ7a0Ube9F0bmRy:"verified" } }] });
     }
     if (request.method === "PATCH" && url.pathname.includes("tblC98mKWbzmPuNzX/recSession")) {
       const body = await request.json(); patches.push(body.fields);
