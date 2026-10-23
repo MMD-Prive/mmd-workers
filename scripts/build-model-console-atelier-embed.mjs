@@ -7,6 +7,7 @@ import { minify_sync } from 'terser';
 import CleanCSS from 'clean-css';
 import { normalizeModelDecline } from '../shared/model-decline-options.mjs';
 import { openModelDecline } from '../webflow/sigil/model/model-console-decline-options.mjs';
+import { mountConsoleHero } from '../webflow/sigil/model/model-console-hero.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
@@ -32,17 +33,19 @@ export function buildConsoleEmbed() {
   return embed;
 }
 export function assetManifest() {
-  return { version: 'console-atelier-v3', delivery: 'inline SVG; no additional image requests', attribution: 'Project-authored geometry; job/support shapes reuse MY MODEL icon family', files: [...Object.values(names), 'icons.svg'].map(file => {
+  return { version: 'console-atelier-v3', delivery: 'inline SVG plus one existing Webflow CDN Hero image', externalAssets: [{ role: 'decorative-console-hero', assetId: '6abe1dcae59e7e03c06d950b', url: 'https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6abe1dcae59e7e03c06d950b_Cinematic%20Night%20Balcony%20Portrait.webp' }], attribution: 'Project-authored geometry; job/support shapes reuse MY MODEL icon family', files: [...Object.values(names), 'icons.svg'].map(file => {
     const bytes = fs.readFileSync(path.join(assets, file));
     return { file, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   }) };
 }
 // A separate presentation embed avoids overflowing the existing Console Footer.
 export function buildConsoleDeclineEmbed() {
-  const code = '(()=>{const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';})();';
+  const code = '(()=>{const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();})();';
   const css = new CleanCSS({ level: 2 }).minify(fs.readFileSync(path.join(source, 'model-console-surfaces.css'), 'utf8'));
   if (css.errors.length) throw new Error(css.errors.join('; '));
-  return '<style>' + css.styles + '</style><script>' + minify_sync(code, { compress: true, mangle: true }).code + '</script>';
+  const embed = '<style>' + css.styles + '</style><script>' + minify_sync(code, { compress: true, mangle: true }).code + '</script>';
+  if (Buffer.byteLength(embed, 'utf8') >= 50000) throw new Error('Console theme embed exceeds 50,000 bytes');
+  return embed;
 }
 export function buildConsoleInstallBlocks(savedFooter) {
   const match = /<script\b[^>]*>[\s\S]*?<\/script>/i.exec(savedFooter);
