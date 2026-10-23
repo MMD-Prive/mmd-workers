@@ -3647,7 +3647,15 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, worker: WORKER_NAME });
+      // Read-only MMS admin projection. Public health and webhook processing
+      // retain their existing contract; use the existing internal auth checks.
+      const runtime = hasServiceBindingAuth(request, ['admin-worker']) && hasBearerInternalAuth(request, env)
+        ? { schema: 'mmd.kenji_runtime_flags.v1',
+            line_auto_reply_enabled: isEnabled(env.LINE_AUTO_REPLY_ENABLED),
+            model_reply_enabled: isEnabled(env.LINE_KENJI_MODEL_ENABLED),
+            shadow_enabled: isEnabled(env.KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED) }
+        : null;
+      return json({ ok: true, worker: WORKER_NAME, ...(runtime ? { kenji_runtime: runtime } : {}) });
     }
 
     if (request.method === "GET" && LINE_WEBHOOK_PATHS.has(url.pathname)) {

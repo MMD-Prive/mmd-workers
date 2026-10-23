@@ -23,6 +23,17 @@ test('unknown and empty partial source never claims an empty queue', () => {
   assert.match(partial.brief[0], /จึงยังสรุปว่าคิวว่างไม่ได้/);
 });
 
+test('MMS brief labels observed default controls without inferring LINE activation', () => {
+  const result = buildMmsAdvisory({ ok: true, data: { ...data, kenji: {
+    line_auto_reply_enabled: true, line_reply_kill_switch_active: false, mutations_kill_switch_active: false,
+    runtime_controls: { all_kenji_mutations: { available: true, origin: 'default', enabled: false, version: 0 } },
+  } } });
+  const text = result.brief.join(' ');
+  assert.match(text, /ตัวหยุดตอบ LINE ไม่ทำงาน/);
+  assert.match(text, /ตัวหยุดการแก้ข้อมูล ไม่ทำงาน \(ค่าเริ่มต้น v0\)/);
+  assert.doesNotMatch(text, /LINE เปิดตอบ|LINE ปิดตอบ/);
+});
+
 test('advisory rejects external and unrelated action destinations', () => {
   const result = buildMmsAdvisory({ ok: true, data: { ...data, actions: [
     ...data.actions, { key: 'unsafe', label: 'no', count: 1, href: 'https://example.com/private' }, { key: 'unrelated', label: 'no', count: 1, href: '/internal/admin/payments' },
@@ -83,4 +94,14 @@ test('other AI contexts retain their existing transport and do not use the MMS b
     const result = await worker.fetch(new Request('https://mmdbkk.com/v1/admin/ai-ops/context?path=/internal/admin/payments'), { MMS_ADMIN: { fetch: async () => { assert.fail('out-of-scope MMS service call'); } } }, {});
     assert.equal(result.status, 401);
   } finally { globalThis.fetch = original; }
+});
+
+test('MMS advisory distinguishes activation from all three versioned kill switches',()=>{
+ const result=buildMmsAdvisory({ok:true,data:{...data,kenji:{line_auto_reply_enabled:false,model_reply_enabled:false,shadow_enabled:false,line_reply_kill_switch_active:false,model_reply_kill_switch_active:true,mutations_kill_switch_active:false,runtime_controls:{line_oa_auto_reply:{available:true,enabled:false,version:7,origin:'recorded'},model_keyword_auto_reply:{available:true,enabled:true,version:3,origin:'recorded'},all_kenji_mutations:{available:true,enabled:false,version:0,origin:'default'}}}}});
+ const text=result.brief.join(' ');
+ assert.match(text,/ตอบ LINE ปิด · ใช้ Model ตอบ ปิด · Shadow ปิด/);
+ assert.match(text,/ตัวหยุดตอบ LINE ไม่ทำงาน \(v7\)/);
+ assert.match(text,/ตัวหยุดตอบ Model ทำงาน \(v3\)/);
+ assert.match(text,/ตัวหยุดการแก้ข้อมูล ไม่ทำงาน \(ค่าเริ่มต้น v0\)/);
+ assert.doesNotMatch(text,/ยังตรวจไม่ได้/);
 });

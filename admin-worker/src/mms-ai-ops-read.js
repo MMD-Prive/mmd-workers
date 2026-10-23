@@ -27,6 +27,21 @@ async function readMms(env, path, signal) {
   return body?.ok === true ? body : null;
 }
 
+async function readKenjiFlags(env, signal) {
+  if (!env.MEMBER_DASHBOARD_CHAT_WORKER?.fetch || !env.INTERNAL_TOKEN) return null;
+  const response = await env.MEMBER_DASHBOARD_CHAT_WORKER.fetch(new Request('https://member-dashboard-chat-worker.local/health', {
+    method: 'GET', signal, headers: {
+      authorization: `Bearer ${env.INTERNAL_TOKEN}`,
+      'x-mmd-internal-call': 'true', 'x-mmd-service-binding': 'admin-worker',
+    },
+  }));
+  if (!response.ok) return null;
+  const body = await response.json();
+  const flags = body?.kenji_runtime;
+  return body?.ok === true && body.worker === 'member-dashboard-chat-worker' && flags?.schema === 'mmd.kenji_runtime_flags.v1'
+    && ['line_auto_reply_enabled', 'model_reply_enabled', 'shadow_enabled'].every(key => typeof flags[key] === 'boolean') ? flags : null;
+}
+
 function countUnique(rows, key, predicate) {
   return new Set(rows.filter(predicate).map(row => row?.[key]).filter(id => typeof id === 'string' && id.trim())).size;
 }
@@ -37,7 +52,10 @@ function source(data, valid) {
 
 function control(controls, scope) {
   const value = controls?.[scope];
-  return value && Number.isInteger(value.version) && value.version > 0 ? knownBoolean(value.enabled) : null;
+  const valid = value && Number.isInteger(value.version) && value.version >= 0
+    && typeof value.enabled === 'boolean' && (value.version > 0 || value.enabled === false);
+  return valid ? { available: true, enabled: value.enabled, version: value.version, origin: value.version === 0 ? 'default' : 'recorded' }
+    : { available: false, enabled: null, version: null, origin: 'unknown' };
 }
 
 export async function readMmsAiOps(env = {}, {
@@ -45,18 +63,22 @@ export async function readMmsAiOps(env = {}, {
   readRouter = readHypeTelegramRouterHealth,
   timeoutMs = 6500,
 } = {}) {
-  const [snapshot, workspace, health, controls, router] = await Promise.all([
+  const [snapshot, workspace, health, controls, router, flags] = await Promise.all([
     bounded(signal => readMms(env, '/internal/mms/admin/snapshot', signal), timeoutMs),
     bounded(signal => readMms(env, '/internal/mms/admin/workspace', signal), timeoutMs),
     bounded(signal => readMms(env, '/health', signal), timeoutMs),
     bounded(() => readControls(env), timeoutMs),
     bounded(() => readRouter(env, { probe: false }), timeoutMs),
+    bounded(signal => readKenjiFlags(env, signal), timeoutMs),
   ]);
+  const runtimeControls = Object.fromEntries(['line_oa_auto_reply', 'model_keyword_auto_reply', 'all_kenji_mutations']
+    .map(scope => [scope, control(controls, scope)]));
   const sources = {
     snapshot: source(snapshot, Array.isArray(snapshot?.applications) && Array.isArray(snapshot?.prebookings)),
     workspace: source(workspace, Array.isArray(workspace?.therapists) && Array.isArray(workspace?.jobs)),
     henna: { available: health?.worker === 'mms-worker' && health?.bindings?.line?.persona === 'HENNA' },
-    kenji_controls: { available: ['line_oa_auto_reply', 'model_keyword_auto_reply', 'all_kenji_mutations'].every(key => control(controls, key) !== null) },
+    kenji_controls: { available: Object.values(runtimeControls).every(value => value.available) },
+    kenji_runtime: { available: flags !== null },
     telegram: { available: router?.available === true },
   };
   const queue = {
@@ -92,9 +114,15 @@ export async function readMmsAiOps(env = {}, {
     mode: 'read_only', summary_method: 'canonical_counts_and_rules',
     sources, queue, actions,
     kenji: {
-      line_auto_reply_enabled: control(controls, 'line_oa_auto_reply'),
-      model_reply_kill_switch_active: control(controls, 'model_keyword_auto_reply'),
-      mutations_kill_switch_active: control(controls, 'all_kenji_mutations'),
+      // The canonical LINE control is a kill switch, not the separate Worker
+      // activation flags read separately from the authenticated runtime health.
+      line_auto_reply_enabled: knownBoolean(flags?.line_auto_reply_enabled),
+      model_reply_enabled: knownBoolean(flags?.model_reply_enabled),
+      shadow_enabled: knownBoolean(flags?.shadow_enabled),
+      line_reply_kill_switch_active: runtimeControls.line_oa_auto_reply.enabled,
+      model_reply_kill_switch_active: runtimeControls.model_keyword_auto_reply.enabled,
+      mutations_kill_switch_active: runtimeControls.all_kenji_mutations.enabled,
+      runtime_controls: runtimeControls,
     },
     henna: {
       configured: knownBoolean(line.configured), auto_reply_enabled: knownBoolean(line.auto_reply_enabled),
