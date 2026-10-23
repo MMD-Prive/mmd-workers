@@ -157,7 +157,7 @@ function post(token, role, origin = "https://www.mmdbkk.com") {
   });
 }
 
-test("customer confirmation details expose the latest inline customer pricing but not internal payout or notes", async () => {
+test("customer confirmation details reconcile deposit snapshots against verified Payments", async () => {
   const { env, customerToken } = await envAndTokens();
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
   assert.equal(response.status, 200);
@@ -173,7 +173,11 @@ test("customer confirmation details expose the latest inline customer pricing bu
   assert.equal(data.pricing.discount_thb, 4500);
   assert.equal(data.pricing.deposit_basis_thb, 45000);
   assert.equal(data.pricing.deposit_due_thb, 13500);
-  assert.equal(data.pricing.balance_thb, 27000);
+  assert.equal(data.pricing.deposit_received_thb, 0);
+  assert.equal(data.pricing.balance_thb, 40500);
+  assert.equal(data.payment.stage, "deposit");
+  assert.equal(data.payment.amount_due_thb, 13500);
+  assert.equal(data.payment.verified, false);
   assert.equal(data.vip_detail, "vtop");
   assert.equal("model_payout_thb" in data, false);
   assert.equal("model_remark" in data, false);
@@ -183,7 +187,7 @@ test("customer confirmation details expose the latest inline customer pricing bu
   assert.equal(JSON.stringify(data).includes("Partner Attribution"), false);
 });
 
-test("customer payment display uses pricing authority instead of stale Payment.Amount", async () => {
+test("customer payment display suppresses a QR tied to stale Payment.Amount", async () => {
   const stalePayment = paymentRecord({
     [P.amountThb]: 42750,
     [P.paymentStage]: "deposit",
@@ -197,7 +201,7 @@ test("customer payment display uses pricing authority instead of stale Payment.A
   assert.equal(data.payment.stage, "deposit");
   assert.equal(data.payment.method, "promptpay");
   assert.equal(data.payment.amount_due_thb, 13500);
-  assert.equal(data.payment.qr_url, "https://payments.example.com/qr/deposit.png");
+  assert.equal(data.payment.qr_url, null);
   assert.equal(data.payment.proof_status_available, true);
   assert.equal(data.payment.verified, false);
   assert.equal(JSON.stringify(data.payment).includes("42750"), false);
@@ -350,12 +354,8 @@ test("payment enrichment never exposes a payment record bound to another session
   const wrongSessionPayment = paymentRecord({ [P.sessionId]: "sess_other" });
   const { env, customerToken } = await envAndTokens({ payment: wrongSessionPayment, paymentType: "full" });
   const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.equal(data.payment.qr_url, null);
-  assert.equal(data.payment.method, null);
-  assert.equal(data.payment.stage, null);
-  assert.equal(data.payment.amount_due_thb, 13500);
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "balance_payment_session_mismatch");
 });
 
 test("model confirmation details expose the client display name and the model's own payout, never payment data, customer amounts, pricing or payment QR", async () => {

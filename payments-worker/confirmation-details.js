@@ -173,6 +173,42 @@ export async function handleConfirmationDetails(request, env = {}) {
         // Payment Instructions generates the current amount QR, not an old stored QR.
         qr_url: null,
       });
+      else if (snapshotClaimsDepositReceived(pricing)) {
+        // Pricing notes are snapshots, not evidence that money was received.
+        // Reconcile a claimed deposit against the Payments ledger before
+        // showing customer-facing paid/balance amounts.
+        const summary = await readVerifiedSessionBalance(env, session);
+        if (summary.verified_deposit_thb > 0) {
+          balanceProjection = customerBalanceProjection(summary, paymentRecord, finalPaymentRef, env);
+          activePaymentRef = balanceProjection.payment_ref;
+          paymentRecord = balanceProjection.paymentRecord;
+          safePricing = {
+            ...safePricing,
+            net_price_thb: summary.total_amount_thb,
+            deposit_received_thb: summary.verified_deposit_thb,
+            balance_thb: summary.remaining_amount_thb,
+          };
+          Object.assign(display, {
+            stage: balanceProjection.payment_type,
+            amount_due_thb: balanceProjection.amount_due_thb,
+            verified: balanceProjection.verified,
+            qr_url: null,
+          });
+        } else {
+          safePricing = {
+            ...safePricing,
+            deposit_received_thb: 0,
+            balance_thb: summary.remaining_amount_thb,
+          };
+          if (paymentRecord) {
+            display.stage = "deposit";
+            display.amount_due_thb = numberOrNull(safePricing.deposit_due_thb) ?? customerAmountDue;
+            display.verified = false;
+            // Do not show a QR that may encode a stale pre-discount amount.
+            display.qr_url = null;
+          }
+        }
+      }
       // The original signed token is intentionally opaque and reusable: details
       // and Payment Instructions resolve its current stage from verified money.
       // Never pass an amount or a replacement payment reference in browser query.
@@ -265,6 +301,10 @@ function customerPricing(raw, netFallback) {
     deposit_received_thb: numberOrNull(source.deposit_received_thb),
     balance_thb: numberOrNull(source.balance_thb),
   };
+}
+
+function snapshotClaimsDepositReceived(pricing) {
+  return (numberOrNull(pricing?.deposit_received_thb) || 0) > 0;
 }
 
 function customerPaymentDisplay({ paymentRecord, proofRecord, pricing, customerAmountDue, claimedPaymentType, sessionPaymentStatus, paymentRef }) {
