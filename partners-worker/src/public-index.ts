@@ -1,3 +1,4 @@
+import { renderPartnerDashboardHero, PARTNER_DASHBOARD_SKIN_CSS } from "./partner-dashboard-skin";
 import app from "./index";
 import { PARTNER_CONTROL_ROOM_CSS, PARTNER_CONTROL_ROOM_JS } from "./partner-control-room";
 
@@ -190,18 +191,18 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
   const html = "<!doctype html>" +
     "<html lang=\"th\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\">" +
     "<meta name=\"robots\" content=\"noindex,nofollow\"><title>" + escapeHtml(copy.title) + "</title>" +
-    "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + "</style></head>" +
+    "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + (page === "dashboard" ? PARTNER_DASHBOARD_SKIN_CSS : "") + "</style></head>" +
     "<body data-mmd-partner-page=\"" + escapeHtml(route.page) + "\"><main class=\"mmd-partner-system\" data-system-page=\"" + escapeHtml(page) + "\">" +
     "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b lang='en'>SĪGIL</b><span lang='en'>Partner Division</span></a>" +
     "<div><a href=\"/partner/model\">Modeling Partner</a><a href=\"/partner/apply\">เริ่ม Partner Intake</a><a href=\"/partner/terms\">อ่าน Partner Terms</a></div></nav>" +
-    "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
+    (page === "dashboard" ? "" : "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
     "<p class=\"mmdp-lead\">" + escapeHtml(copy.lead) + "</p><p>" + escapeHtml(copy.body) + "</p>" +
     renderSystemActions(page, tokenQuery, reviewHref, termsHref, dashboardHref) + "</div>" +
-    "<aside class=\"mmdp-card\"><small lang='en'>MMD REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>" +
+    "<aside class=\"mmdp-card\"><small lang='en'>MMD REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>") +
     renderDashboardPanel(page, token) +
-    "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
+    (page === "dashboard" ? "<div class=\"pcr-dashboard-links\"><a href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a href=\"/partner/dashboard/relax-spa" + escapeHtml(tokenQuery) + "\">Relax Spa by 9</a></div>" : "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
     "<article><span>02</span><h2>Review</h2><p>MMD Partner Desk จัด lane จากบทบาท แหล่งที่มา ความพร้อม และรูปแบบความร่วมมือที่เหมาะสม</p></article>" +
-    "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>" +
+    "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>") +
     "</main><footer class=\"mmd-partner-canon-footer\"><span>MMD PRIVÉ · BANGKOK</span><span>Private by design.</span></footer>" + renderDashboardScript(page) + "</body></html>";
 
   const response = new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
@@ -264,7 +265,7 @@ function renderDashboardPanel(page: string, token: string): string {
     "<p class=\"pcr-flash\" data-flash hidden></p>" +
     "<div class=\"pcr-privacy\"><span aria-hidden=\"true\">🔒</span><div><b>Partner Private by default</b><p>Partner เป็นผู้ควบคุมข้อมูลส่วนตัวและโน้ตภายใน พร้อมเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน</p></div></div>" +
     "<div class=\"pcr-shell\"><aside class=\"pcr-side\"><small>Control Room</small><button type=\"button\" data-view=\"home\" aria-current=\"page\">Home & Jobs</button><button type=\"button\" data-view=\"models\">Models</button><button type=\"button\" data-view=\"earnings\">Earnings</button><button type=\"button\" data-view=\"privacy\">Private Vault</button></aside>" +
-    "<div class=\"pcr-main\"><p class=\"pcr-loading\" data-loading></p>" +
+    "<div class=\"pcr-main\">" + renderPartnerDashboardHero() + "<p class=\"pcr-loading\" data-loading role=\"status\" aria-live=\"polite\"></p>" +
     "<section data-view-panel=\"home\"><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">TODAY · ASIA/BANGKOK</p><h2 data-partner-name>Partner</h2><p>คิวงานและสถานะโมเดลในสังกัด</p></div></header><div class=\"pcr-metrics\" data-metrics></div><div class=\"pcr-telegram\" data-telegram></div><div class=\"pcr-section\"><div class=\"pcr-section-head\"><h3>ตารางงาน</h3></div><div class=\"pcr-jobs\" data-jobs></div></div></section>" +
     "<section data-view-panel=\"models\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">PARTNER ROSTER</p><h2>Models</h2><p>โปรไฟล์ เรท และกลุ่มลูกค้าที่มองเห็น</p></div><button type=\"button\" data-open-add>+ Add model</button></header><div class=\"pcr-models\" data-models></div></section>" +
     "<section data-view-panel=\"earnings\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">PAYOUT LEDGER</p><h2>Earnings</h2><p>รายการค่าตอบแทนจากข้อมูลจริง</p></div></header><div class=\"pcr-section\" data-earnings></div></section>" +
