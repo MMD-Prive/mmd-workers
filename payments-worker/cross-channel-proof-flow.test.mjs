@@ -31,7 +31,13 @@ async function fixture() {
     assert.ok(rows, `unexpected table ${table}`);
     if (request.method === "GET") {
       if (recordId) return Response.json(rows.find((r) => r.id === recordId) || {}, { status: rows.some((r) => r.id === recordId) ? 200 : 404 });
-      const clauses = [...(url.searchParams.get("filterByFormula") || "").matchAll(/\{([^}]+)\}='([^']*)'/g)];
+      const formula = url.searchParams.get("filterByFormula") || "";
+      if (formula.startsWith("OR(FIND(")) {
+        const values = [...formula.matchAll(/FIND\('([^']+)'/g)].map(match => match[1]);
+        const refs = [...formula.matchAll(/\{payment_ref\}='([^']+)'/g)].map(match => match[1]);
+        return Response.json({ records: rows.filter(row => values.some(value => String(row.fields.note || "").includes(value)) || refs.includes(row.fields.payment_ref)) });
+      }
+      const clauses = [...formula.matchAll(/\{([^}]+)\}='([^']*)'/g)];
       assert.ok(clauses.length, "expected exact filter");
       return Response.json({ records: rows.filter((r) => clauses.every(([, field, value]) => r.fields[field] === value)) });
     }
@@ -79,10 +85,10 @@ async function fixture() {
   return {
     env, records, calls, bucket, paymentRef, token, airtable,
     telegramHealthy(value) { telegramHealthy = value; },
-    async web() {
+    async web(content = "synthetic proof, no customer data") {
       const form = new FormData();
       for (const [name, value] of Object.entries({ payment_ref: paymentRef, session_id: "sess-shared", payment_stage: "deposit", source_page: "sigil_pay_v22", t: token })) form.append(name, value);
-      form.append("file", new File(["synthetic proof, no customer data"], "proof.png", { type: "image/png" }));
+      form.append("file", new File([content], "proof.png", { type: "image/png" }));
       const response = await handleUnifiedSlipEvidence(new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", { method: "POST", headers: { origin: "https://www.mmdbkk.com" }, body: form }), env, async () => {
         calls.downstream++;
         return Response.json({ ok: true, evidence_only: true });
@@ -92,8 +98,10 @@ async function fixture() {
       assert.equal(response.headers.get("access-control-allow-origin"), "https://www.mmdbkk.com");
       return body;
     },
-    async line() {
-      const image = { body: new TextEncoder().encode("synthetic LINE proof").buffer, mimeType: "image/png", extension: "png", byteSize: 20, sha256: "test-hash" };
+    async line(content = "synthetic proof, no customer data") {
+      const bytes = new TextEncoder().encode(content);
+      const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(byte => byte.toString(16).padStart(2,"0")).join("");
+      const image = { body: bytes.buffer, mimeType: "image/png", extension: "png", byteSize: bytes.length, sha256: hash };
       return LINE_GROUP_INGRESS_INTERNALS.persistAcceptedEvidence(env, {
         proofId: "line_test", image, sourceType: "user", lineUserId: "U11111111111111111111111111111111",
         analysis: {
@@ -137,7 +145,7 @@ test("LINE first: bank ref is preserved, payment page sees evidence, web upload 
   } finally { globalThis.fetch = original; }
 });
 
-test("web first: LINE reuses canonical evidence without creating or notifying twice", async () => {
+test("web first: LINE reuses canonical evidence and warns once without creating another proof", async () => {
   const h = await fixture();
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init) => h.airtable(input instanceof Request ? input : new Request(input, init));
@@ -146,9 +154,45 @@ test("web first: LINE reuses canonical evidence without creating or notifying tw
     assert.equal((await h.line()).deduped, true);
     assert.equal(h.calls.proofCreates, 1);
     assert.equal(h.calls.telegramDocuments, 1);
-    assert.equal(h.calls.telegramMessages, 0);
+    assert.equal(h.calls.telegramMessages, 1);
+    assert.match(h.calls.telegramPayloads[0].text, /หลักฐานซ้ำ/);
     assert.equal(h.records.Proofs[0].fields.status, "pending");
   } finally { globalThis.fetch = original; }
+});
+
+test("the same Payment Ref never discards a different web or LINE image as a duplicate transfer", async () => {
+  for (const channel of ["web", "line"]) {
+    const h=await fixture(), original=globalThis.fetch;
+    globalThis.fetch=async(input,init)=>h.airtable(input instanceof Request?input:new Request(input,init));
+    try {
+      await h.web();
+      const second=await h[channel]("another image that still needs review");
+      assert.equal(second.duplicate ?? second.deduped,false);
+      assert.equal(h.calls.proofCreates,2); assert.notEqual(h.records.Proofs[0].fields.proof_id,h.records.Proofs[1].fields.proof_id);
+      assert.ok(h.records.Proofs.every(row=>row.fields.status==="pending"));
+      assert.equal(h.records.Payments.length,1); assert.equal(h.records.Sessions.length,1);
+      if(channel==="web") { assert.equal((await h.web("another image that still needs review")).duplicate,true); assert.equal(h.calls.proofCreates,2); }
+    } finally { globalThis.fetch=original; }
+  }
+});
+
+test("web then LINE same image recovers unknown LINE purpose, warns Per and links directly to the canonical proof", async () => {
+  const h=await fixture(), original=globalThis.fetch;
+  globalThis.fetch=async(input,init)=>h.airtable(input instanceof Request?input:new Request(input,init));
+  try {
+    await h.web();
+    const proof=h.records.Proofs[0], hash=/evidence_sha256=([a-f0-9]{64})/.exec(proof.fields.note)[1];
+    const result=await LINE_GROUP_INGRESS_INTERNALS.persistAcceptedEvidence(h.env,{
+      proofId:"line_same_picture",sourceType:"user",lineUserId:"U11111111111111111111111111111111",
+      image:{body:new TextEncoder().encode("synthetic proof, no customer data").buffer,mimeType:"image/png",extension:"png",byteSize:33,sha256:hash},
+      analysis:{accepted:true,customer:{status:"matched",display_name:"Synthetic"},links:{client:"recClient"},extraction:{amount_thb:null,extraction_method:"none"},payment_intelligence:{inferred_stage:"unknown"},job_correlation:{status:"unresolved"},ops_route:{topic:"payment",reason:"synthetic",should_alert:false}},
+    });
+    assert.equal(result.deduped,true); assert.equal(h.calls.proofCreates,1); assert.equal(h.calls.downstream,1);
+    assert.equal(h.calls.telegramMessages,1); assert.match(h.calls.telegramPayloads[0].text,/หลักฐานซ้ำ/);
+    assert.ok(h.calls.telegramPayloads[0].text.includes(`proof_id=${proof.fields.proof_id}&focus=verify`));
+    assert.equal(h.records.Proofs[0].fields.status,"pending"); assert.equal(h.records.Payments[0].fields.fldEJ1hmm7KwWuI6q,"pending");
+    assert.equal(result.paymentStage,"deposit");
+  } finally { globalThis.fetch=original; }
 });
 
 test("Telegram failure retries the saved proof without recreating proof or payment", async () => {
@@ -162,7 +206,8 @@ test("Telegram failure retries the saved proof without recreating proof or payme
   assert.equal(h.calls.telegramDocuments, 1, "respect retry backoff");
   h.telegramHealthy(true);
   const sweep = await drainWebProofNotifications(h.env, { now: Date.now() + 120000 });
-  assert.equal(sweep.delivered, 1);
+  assert.equal(sweep.delivered, 1, "keep the original proof-delivery counters separate from duplicate warnings");
+  assert.equal(sweep.duplicate_notifications.delivered, 1);
   assert.equal(h.calls.telegramDocuments, 2);
   assert.equal(h.calls.proofCreates, 1);
   assert.equal(h.calls.downstream, 1);

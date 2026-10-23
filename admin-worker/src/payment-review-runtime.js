@@ -15,6 +15,7 @@ import { enrichPaymentReviewContext } from "./payment-review-display-context.js"
 import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
 import { paymentConfirmationFollowthrough } from "./payment-confirmation-followthrough.js";
 import { previewCustomerChange, resolveCustomerChange } from "./customer-change-resolution.js";
+import { inspectPaymentProof } from "../../shared/payment-proof-precheck.mjs";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -101,11 +102,11 @@ async function getPaymentEvidence(request, env) {
 
 // Read-only OCR retry of the original private image. This fills a review draft;
 // it does not patch evidence, certify the reading, settle money or notify anyone.
-async function previewSlipExtraction(env, actor, body) {
+async function previewSlipExtraction(env, actor, body, loadedProof = null) {
   if (!["owner", "admin"].includes(actor.role)) throw httpError(403, "evidence_extraction_forbidden");
   const proofId = safeText(body.proof_id, 120);
   if (!proofId) throw httpError(400, "proof_id_required");
-  const proof = await loadProof(env, proofId);
+  const proof = loadedProof || await loadProof(env, proofId);
   if (!proof) throw httpError(404, "payment_proof_not_found");
   const item = safeQueueItem(proof);
   if (!item?.reviewable || item.historical_backfill) throw httpError(409, "payment_proof_not_reviewable");
@@ -222,6 +223,29 @@ async function saveEvidenceCorrection(request, env, actor, body, internalReferen
 async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
+  if (body.action === "precheck_evidence") {
+    if (!["owner", "admin"].includes(actor.role)) throw httpError(403, "evidence_extraction_forbidden");
+    const proofId = safeText(body.proof_id, 120);
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(proofId)) throw httpError(400, "proof_id_required");
+    const proof = await loadProof(env, proofId);
+    if (!proof) throw httpError(404, "payment_proof_not_found");
+    let extraction = null, extractionError = "";
+    try { extraction = await previewSlipExtraction(env, actor, body, proof); }
+    catch (error) { extractionError = safeCode(error.message); }
+    const note = parseNote(proof.fields?.note);
+    const read = extraction?.result;
+    const inspect = read ? { ...proof, fields: { ...proof.fields, note: JSON.stringify({ ...note, extraction: {
+      ...note.extraction, bank_transaction_ref: read.payment_ref || note.extraction?.bank_transaction_ref,
+      amount_thb: read.amount_thb, paid_at: read.paid_at,
+    } }) } } : proof;
+    const { canonical, ...precheck } = await inspectPaymentProof(env, inspect);
+    const expected = Number(proof.fields?.amount_thb);
+    const mismatch = read?.amount_thb > 0 && expected > 0 && Math.abs(read.amount_thb - expected) > .009;
+    return json({ ok: true, action: "precheck_evidence", proof_id: proofId, precheck,
+      extraction: read || null, extraction_error: extractionError || extraction?.extraction_error || "",
+      amount_matches_record: read?.amount_thb > 0 && expected > 0 ? !mismatch : null,
+      money_truth_changed: false, evidence_changed: false });
+  }
   if (body.action === "correct_evidence") return json(await saveEvidenceCorrection(request, env, actor, body));
   if (body.action === "extract_evidence") return json(await previewSlipExtraction(env, actor, body));
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));

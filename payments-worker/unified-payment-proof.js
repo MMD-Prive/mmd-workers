@@ -2,6 +2,7 @@ import { resolvePersistedShopBrand, SHOP_BRANDS, shopPaymentThreads } from "../s
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 import { verifyConfirmToken } from "./index.js";
 import { withPaymentEvidenceLock } from "../shared/canonical-payment-evidence.mjs";
+import { inspectPaymentProof, paymentProofIdentity, paymentProofReviewUrl, proofPrecheckLines } from "../shared/payment-proof-precheck.mjs";
 import { dispatchPaymentNotification, drainPaymentNotifications } from "../shared/payment-notification-outbox.mjs";
 import { formulaValue } from "./lib/payment-primitives.js";
 
@@ -255,8 +256,14 @@ async function findPayment(env, paymentRef) {
   return findFirstByFields(env, airtableTable(env, "payments"), ["payment_ref", "Payment Reference"], paymentRef);
 }
 
-async function findProof(env, paymentRef) {
-  return findFirstByFields(env, airtableTable(env, "proofs"), ["payment_ref", "transaction_ref"], paymentRef);
+async function findProofsForUpload(env, paymentRef) {
+  if (!airtableReady(env)) return [];
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(airtableTable(env, "proofs"))}`);
+  url.searchParams.set("filterByFormula", `{payment_ref}='${formulaValue(paymentRef)}'`);
+  url.searchParams.set("pageSize", "20");
+  const data = await airtableFetch(env, url.toString(), { method: "GET" });
+  if (data.offset || !Array.isArray(data.records)) throw Object.assign(new Error("payment_proof_candidates_incomplete"), { status: 503 });
+  return data.records;
 }
 
 async function findSession(env, sessionId) {
@@ -444,7 +451,7 @@ export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = 
   };
 }
 
-async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, sourcePage, jobContext = {} }) {
+async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, sourcePage, jobContext = {}, precheck = {} }) {
   const service = env.TELEGRAM_WORKER;
   const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
   const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120);
@@ -457,26 +464,32 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   form.append("chat_id", chatId);
   form.append("message_thread_id", String(route.thread_id));
   form.append("parse_mode", "HTML");
-  form.append("caption", [
+  const captionLines = [
     route.topic === "membership"
       ? "<b>💳 สลิปสมาชิกเข้าแล้ว · รอตรวจ</b>"
       : route.topic === "mmd_shop"
         ? `<b>💳 ${tgHtml(route.shop_title)} · สลิปเข้าแล้ว รอตรวจ</b>`
         : "<b>💳 สลิปลูกค้าเข้าแล้ว · รอเปอร์ตรวจ</b>",
-    snapshot.amount_thb ? `ยอด: <b>${snapshot.amount_thb} THB</b>` : "",
+    `<a href="${tgHtml(precheck.review_url || paymentProofReviewUrl(proofId, snapshot.session_id))}">เปิดงานนี้ · ตรวจและยืนยันเงินเข้า</a>`,
+    "👉 <b>ตรวจเงินเข้าจริง แล้วกด ยืนยันเงินเข้า (Official Verify)</b>",
+    "ยังไม่ปล่อยลิงก์ลูกค้า / โมเดลจนกว่าจะอนุมัติ",
+    ...proofPrecheckLines(precheck).map(tgHtml),
+    snapshot.amount_thb ? `ยอดตามรายการ: <b>${snapshot.amount_thb} THB</b> · ตรวจยอดจริงจากสลิป` : "",
     snapshot.payment_stage ? `รอบชำระ: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
     ...(route.topic === "membership" || route.topic === "mmd_shop"
       ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
       : webJobContextCaptionLines(jobContext)),
     "",
-    "👉 <b>ขั้นต่อไป: ตรวจสลิปแล้วกด Official Verify</b>",
-    "ยังไม่ปล่อยลิงก์ลูกค้า / โมเดลจนกว่าจะอนุมัติ",
     "",
     `Payment Ref: <code>${paymentRef}</code>`,
     `Proof: <code>${proofId}</code>`,
     inferenceLabel ? `ประเภท: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "ประเภท: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `ประเภท: <b>${tgHtml(route.shop_name)} Order</b>` : "",
     `Routing: <code>${tgHtml(route.reason)}</code>`,
-  ].filter(Boolean).join("\n"));
+  ].filter(Boolean);
+  // The transport caps captions at 900 characters. Keep complete HTML lines
+  // within that bound so truncation cannot split a link or closing tag.
+  const caption = captionLines.reduce((value, line) => value.length + line.length + 1 <= 880 ? value + (value ? "\n" : "") + line : value, "");
+  form.append("caption", caption);
   form.append("document", file, clean(file.name, 180) || "payment-proof");
 
   const response = await service.fetch(new Request("https://telegram-worker/telegram/internal/payments/proof-document", {
@@ -553,7 +566,7 @@ async function deliverWebProofNotification(env, record, checkpoint) {
   return { ok: telegram.ok === true && audit.ok === true, result: { ...telegram, audit_persisted: audit.ok === true }, error: telegram.error_description || audit.error };
 }
 
-async function dispatchWebProofNotification(env, proof, { snapshot, sourcePage, jobContext } = {}) {
+async function dispatchWebProofNotification(env, proof, { snapshot, sourcePage, jobContext, precheck } = {}) {
   const note = clean(proof.fields?.note, 6000);
   const storageKey = /(?:^|;\s*)r2_key=([^;]+)/.exec(note)?.[1] || "";
   if (!storageKey) return { delivered: false, queued: false, status: "manual_review", result: null };
@@ -565,16 +578,47 @@ async function dispatchWebProofNotification(env, proof, { snapshot, sourcePage, 
     eventKey: proofId,
     payload: {
       proofId, proofRecordId: proof.id, paymentRef: proof.fields.payment_ref,
-      storageKey, filename: `${proofId}.${ext}`, note, snapshot, sourcePage, jobContext,
+      storageKey, filename: `${proofId}.${ext}`, note, snapshot, sourcePage, jobContext, precheck,
     },
     deliver: (record, checkpoint) => deliverWebProofNotification(env, record, checkpoint),
   });
 }
 
 export async function drainWebProofNotifications(env, options = {}) {
-  return drainPaymentNotifications({
+  const original = await drainPaymentNotifications({
     ...options, bucket: env.PAYMENT_SLIP_EVIDENCE, lane: "web-proof",
     deliver: (record, checkpoint) => deliverWebProofNotification(env, record, checkpoint),
+  });
+  const duplicates = await drainPaymentNotifications({
+    ...options, bucket: env.PAYMENT_SLIP_EVIDENCE, lane: "web-proof-duplicate",
+    deliver: record => deliverWebDuplicateNotice(env, record.payload),
+  });
+  return { ...original, duplicate_notifications: duplicates };
+}
+
+async function deliverWebDuplicateNotice(env, payload) {
+  const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
+  if (!token || !env.TELEGRAM_WORKER?.fetch) return { ok: false, error: "telegram_service_unavailable" };
+  const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", {
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  }));
+  const data = await response.json().catch(() => null);
+  return { ok: response.ok && data?.ok === true, error: response.ok && data?.ok === true ? "" : "duplicate_notification_failed" };
+}
+
+async function dispatchWebDuplicateNotice(env, proof, file) {
+  if (!file || file.size > MAX_FILE_BYTES) return null;
+  const hash = bytesToHex(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
+  const probe = { fields: { ...proof.fields, proof_id: `incoming_${hash.slice(0, 24)}`, note: `schema=mmd_web_payment_proof_v1; evidence_sha256=${hash}` } };
+  const precheck = await inspectPaymentProof(env, probe);
+  const route = paymentProofTelegramRoute(env, {}, "");
+  const reviewUrl = paymentProofReviewUrl(proof.fields.proof_id);
+  const text = [precheck.status === "duplicate" ? "⚠️ รับหลักฐานซ้ำจากหน้า Payment · อย่านับยอดรับซ้ำ" : "⚠️ Payment นี้มีหลักฐานเดิมอยู่แล้ว · ยังไม่ยืนยันว่าภาพใหม่เป็นธุรกรรมซ้ำ",
+    `เปิดตรวจและยืนยันเงินเข้า: ${reviewUrl}`, "ตรวจภาพ/เลขธุรกรรมและเงินเข้าจริงก่อนยืนยัน · ยังไม่มีการยืนยันเงินอัตโนมัติ"].join("\n");
+  return dispatchPaymentNotification({ bucket: env.PAYMENT_SLIP_EVIDENCE, lane: "web-proof-duplicate",
+    eventKey: `${proof.fields.proof_id}:${hash}`, payload: { flow: "payment_proof", chat_id: clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120), message_thread_id: route.thread_id, text },
+    deliver: record => deliverWebDuplicateNotice(env, record.payload),
   });
 }
 
@@ -653,7 +697,7 @@ export function canonicalProofRecordFields({ proofId, note, snapshot = {}, payme
   });
 }
 
-async function buildProofFields(env, form, payment, paymentRef, file, session = null) {
+async function buildProofFields(env, form, payment, paymentRef, file, session = null, imageIdentity = "") {
   const snapshot = paymentSnapshot(payment, form);
   const links = canonicalProofLinks(payment, session);
   if (!snapshot.amount_thb) {
@@ -661,7 +705,7 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
     error.status = 409;
     throw error;
   }
-  const proofId = `webproof_${(await sha256Hex(paymentRef)).slice(0, 24)}`;
+  const proofId = `webproof_${(await sha256Hex(imageIdentity ? `${paymentRef}:${imageIdentity}` : paymentRef)).slice(0, 24)}`;
   const lane = paymentProofLane(snapshot);
   const storage = await storeEvidence(env, file, proofId, paymentRef, snapshot);
   const note = [
@@ -760,9 +804,14 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
     }
 
     return await withPaymentEvidenceLock(env.PAYMENT_SLIP_EVIDENCE, paymentRef, async () => {
-      const existing = await findProof(env, paymentRef);
+      const file = fileFromForm(form);
+      if (file && file.size > MAX_FILE_BYTES) return failAfterAuth("slip_file_too_large", 413);
+      const imageHash = file ? bytesToHex(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())) : "";
+      const priorProofs = await findProofsForUpload(env, paymentRef);
+      const existing = imageHash ? priorProofs.find(proof => paymentProofIdentity(proof).hash === imageHash) : priorProofs[0];
       if (existing) {
         const proof = proofSnapshot(existing);
+        await dispatchWebDuplicateNotice(env, existing, fileFromForm(form)).catch(() => null);
         let notification = null;
         if (existing.fields?.channel === "web_pay" && !/telegram_delivered=true/.test(existing.fields?.note || "")) {
           const payment = await findPayment(env, paymentRef);
@@ -797,7 +846,6 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
         return await failAfterAuth("canonical_payment_not_found", 409);
       }
 
-      const file = fileFromForm(form);
       if (CANONICAL_WEB_SOURCES.has(source) && !file) {
         return await failAfterAuth("payment_proof_file_required", 400);
       }
@@ -806,7 +854,7 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
       if (payment) {
         const snapshot = paymentSnapshot(payment, form);
         const session = await findSession(env, snapshot.session_id);
-        proofBundle = await buildProofFields(env, form, payment, paymentRef, file, session);
+        proofBundle = await buildProofFields(env, form, payment, paymentRef, file, session, priorProofs.length ? imageHash : "");
       }
 
       const downstreamHeaders = new Headers(request.headers);
@@ -830,10 +878,12 @@ async function handleSlipEvidenceIntake(request, env, downstream) {
 
       if (!proofBundle) return downstreamResponse;
       const created = await createProof(env, proofBundle.fields);
+      const precheck = await inspectPaymentProof(env, { ...created, fields: proofBundle.fields });
       const delivery = await dispatchWebProofNotification(env, { ...created, fields: proofBundle.fields }, {
         snapshot: proofBundle.snapshot,
         sourcePage: source,
         jobContext: proofBundle.jobContext,
+        precheck,
       }).catch(() => ({ delivered: false, queued: false, status: "manual_review" }));
       const telegram = delivery.result || {};
       if (authenticatedWeb && delivery.delivered !== true) {
