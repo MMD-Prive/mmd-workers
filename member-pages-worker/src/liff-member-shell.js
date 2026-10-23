@@ -1,9 +1,10 @@
+import { createAccountView } from "./liff-account-view.js";
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
-import { MY_MMD_LOVABLE_DESIGN_CSS } from "./liff-lovable-design.js";
+import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 
@@ -292,6 +293,7 @@ function renderShell(config, nonce) {
   ${MY_MMD_LIFF_COMPACT_V4_CSS}
   ${CUSTOMER_GRAPHICS_CSS}
   ${CUSTOMER_V6_CSS}
+  ${MY_MMD_PUBLIC_BLEND_CSS}
 ${PERSONAL_MAIN_CSS}
 </style>
 </head>
@@ -351,7 +353,13 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
     </svg>
-    <section class="digital-hello"><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
+    <section class="digital-hello"><p class="digital-public-wordmark" aria-label="MY MMD"><span>MY</span> MMD</p><p class="digital-public-slogan">Discreet by desire, Elegance by choice.</p><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
+    <details class="digital-news-disclosure" id="digital-news-disclosure">
+      <summary class="digital-news-summary">
+        <span class="digital-sectionline"><h2 id="digital-news-title"><small>MMD UPDATE</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
+      </summary>
+      <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
+    </details>
     <section class="digital-snapshot" aria-label="สถานะสมาชิก">${customerGraphic("membership-frame")}<div class="digital-snapshot-member"><span class="digital-snapshot-icon" aria-hidden="true">◇</span><div><span class="digital-snapshot-label">สมาชิก MMD Privé</span><strong id="profile-tier">Member</strong><p id="profile-status">กำลังตรวจสอบสถานะ</p></div></div><div class="digital-snapshot-points"><span class="digital-snapshot-label">Points</span><strong id="profile-points" class="digital-points">—</strong><span id="profile-points-note" class="digital-points-note">กำลังตรวจสอบยอด</span></div></section>
     <details id="minimal-member-display" class="digital-history-review" aria-label="ข้อมูลย้อนหลังอยู่ระหว่างตรวจสอบ" hidden>
       <summary>ข้อมูลประวัติยังอยู่ระหว่างตรวจสอบ</summary>
@@ -371,20 +379,16 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       <div id="digital-mission-detail" class="digital-mission-detail" hidden><ol id="digital-mission-timeline" class="digital-mission-timeline"></ol></div>
     </section>
     <div id="customer-no-booking" class="customer-booking-empty" hidden>${customerGraphic("no-current-booking")}ยังไม่มีงานปัจจุบันที่ยืนยันแล้วครับ</div>
-    <details class="digital-news-disclosure" id="digital-news-disclosure">
-      <summary class="digital-news-summary">
-        <span class="digital-sectionline"><h2 id="digital-news-title"><small>PRIVATE FEED</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
-      </summary>
-      <div class="digital-news-feed" id="digital-news-feed"><div class="digital-quiet">กำลังตรวจสอบอัปเดตล่าสุด</div></div>
-    </details>
+
     <section id="digital-tmib-story" class="digital-design-slot" aria-label="TMIB Story" hidden><span class="digital-eyebrow">TMIB STORY</span><strong id="digital-tmib-story-title"></strong><p id="digital-tmib-story-note"></p></section>
-    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>${customerIcon("icon-profile")}</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button></div></section>
+    <section class="digital-quick" aria-label="Quick access"><div class="digital-sectionline"><h2 style="font-size:12px;letter-spacing:.1em">QUICK ACCESS</h2><span style="font-size:9px;color:var(--digital-muted)">MY MMD</span></div><div class="digital-quick-grid"><button type="button" data-view="package"><i>${customerIcon("icon-profile")}</i>Member</button><button type="button" data-view="points"><i>✦</i>Points</button><button type="button" data-view="credits"><i>▤</i>Wallet</button><button type="button" data-view="coupons"><i>▣</i>Coupons</button><button type="button" data-view="jobs"><i>↗</i>งานของฉัน</button><button type="button" data-view="history"><i>≡</i>ประวัติ</button><button type="button" data-view="history" data-payment-history><i>▤</i>การชำระเงิน</button><button type="button" data-view="account"><i>○</i>โปรไฟล์</button></div></section>
     <div class="digital-data-cache" aria-hidden="true">
       <strong id="profile-name">สมาชิก MMD</strong><span id="profile-email">—</span><span id="profile-phone">—</span>
       <div id="member-details" class="detail-grid hidden"><div id="expiry-card" class="card hidden"><strong id="profile-expiry">—</strong></div><div id="payment-card" class="card hidden"><strong id="profile-payment">—</strong></div></div>
       <div id="points-card"></div><strong id="home-package">—</strong><p id="home-package-note"></p><div id="next-job"></div><div id="history"></div>
     </div>
     </section>
+    <section id="account" class="panel digital-view" aria-label="Profile"><div class="card"><h2>โปรไฟล์ของคุณ</h2><div id="digital-account" aria-live="polite"></div></div><button type="button" data-view="home">กลับ MMD NOW</button></section>
     <section id="points" class="panel digital-view" aria-label="Points">
       <div class="card" id="history-preview-card"><h2>ประวัติและคะแนนประมาณการ</h2><p>ข้อมูลยังแสดงไม่ครบ</p><p id="history-preview-notice" class="sub">ยอดประวัติเบื้องต้น อยู่ระหว่างตรวจสอบ</p><strong id="history-preview-points" class="value">—</strong><p id="history-preview-amount" class="sub"></p><p class="sub">ประมาณการจากประวัติงานที่บันทึก · ทุก 100 บาท = 1 คะแนน · ก่อนหักหรือหมดอายุ · ยังใช้แลกหรือยืนยันสิทธิ์ไม่ได้</p></div>
       <div class="card">${customerGraphic("points-ledger")}<h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
@@ -483,6 +487,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
   const customerBrand = (${createCustomerBrand.toString()})(document.getElementById("customer-brand-v6"));
   const resetCustomerBrand = () => customerBrand.reset();
+  const accountUI = (${createAccountView.toString()})(document.getElementById("digital-account"), memberApiFetch, () => clearMemberProfile());
   const personalMainUI = (${createPersonalMainUI.toString()})(document.getElementById("personal-main"), memberApiFetch);
   const logoutButton = document.getElementById("member-logout");
   const actions = document.getElementById("actions");
@@ -735,6 +740,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       const active = item.getAttribute("data-view") === (target.id === "history-panel" ? "history" : target.id);
       item.setAttribute("aria-current", active ? "page" : "false");
     }
+    if (profileReady && target.id === "account") void accountUI.load();
     if (profileReady) void hydrateMemberHome(target.id === "history-panel" ? "history" : target.id);
     if (smooth) window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -743,6 +749,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     button.addEventListener("click", () => {
       const assistant = button.hasAttribute("data-pm-dock");
       showView(button.getAttribute("data-view"), !assistant);
+      if (button.getAttribute("data-view") === "history" && button.hasAttribute("data-payment-history")) document.getElementById("payment-history")?.closest("details")?.setAttribute("open", "");
       if (assistant) personalMainUI.open();
     });
   }
@@ -1094,6 +1101,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   function hideMemberProfile() {
     personalMainUI.reset();
     resetCustomerBrand();
+    accountUI.reset();
     if (typeof customerLoading !== "undefined") customerLoading.reset({ memberOnly:true });
     profileReady = false;
     secondaryReads.clear();
@@ -1484,6 +1492,19 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       .map((entry) => entry.item);
   }
 
+  function safeDigitalNewsUrl(value, image = false) {
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw || raw.startsWith("//") || raw.includes("\\\\")) return "";
+    try {
+      const target = new URL(raw, location.origin);
+      if (target.protocol !== "https:" || target.username || target.password) return "";
+      const hosts = image
+        ? ["mmdbkk.com", "www.mmdbkk.com", "cdn.prod.website-files.com", "uploads-ssl.webflow.com"]
+        : ["mmdbkk.com", "www.mmdbkk.com"];
+      return hosts.includes(target.hostname) ? target.href : "";
+    } catch { return ""; }
+  }
+
   function renderDigitalNews(personalizedItems, updateItems, unreadCount = 0) {
     const feed = document.getElementById("digital-news-feed");
     const unread = document.getElementById("digital-unread");
@@ -1522,9 +1543,28 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       meta.append(category, date);
       const heading = document.createElement("h3"); heading.textContent = title;
       const excerptText = String(item?.excerpt || item?.summary || "").trim();
-      card.append(meta, heading);
-      if (excerptText) { const excerpt = document.createElement("p"); excerpt.textContent = excerptText; card.append(excerpt); }
-      if (targetView) { const cta = document.createElement("span"); cta.className = "digital-feed-cta"; cta.textContent = locale === "en" ? "OPEN →" : locale === "zh" ? "查看 →" : "ดูต่อ →"; card.append(cta); }
+      const copy = document.createElement("div"); copy.className = "digital-news-copy";
+      copy.append(meta, heading);
+      if (excerptText) { const excerpt = document.createElement("p"); excerpt.textContent = excerptText; copy.append(excerpt); }
+      if (targetView) { const cta = document.createElement("span"); cta.className = "digital-feed-cta"; cta.textContent = locale === "en" ? "OPEN →" : locale === "zh" ? "查看 →" : "ดูต่อ →"; copy.append(cta); }
+      if (!entry.personalized) {
+        const imageUrl = safeDigitalNewsUrl(item?.image_url, true);
+        if (imageUrl) {
+          const image = document.createElement("img"); image.className = "digital-news-image";
+          image.src = imageUrl; image.alt = String(item?.image_alt || "").slice(0, 160);
+          image.loading = "lazy"; image.referrerPolicy = "no-referrer";
+          image.addEventListener("error", () => { image.remove(); card.classList.remove("has-image"); });
+          card.classList.add("has-image"); card.append(image);
+        }
+        const ctaUrl = safeDigitalNewsUrl(item?.cta?.url);
+        const ctaLabel = String(item?.cta?.label || "").trim();
+        if (ctaUrl && ctaLabel) {
+          const link = document.createElement("a"); link.className = "digital-feed-cta";
+          link.href = ctaUrl; link.rel = "noopener noreferrer"; link.textContent = ctaLabel.slice(0, 100);
+          copy.append(link);
+        }
+      }
+      card.append(copy);
       feed.append(card);
     }
     if (!feed.children.length) {
@@ -1613,13 +1653,21 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
         const response = await memberApiFetch("/api/v1/member/updates/list?limit=10", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
         const body = await response.json().catch(() => null);
         if (generation !== digitalUpdatesGeneration) return;
-        if (!response.ok || !body || typeof body !== "object") throw new Error("updates_unavailable");
-        const items = Array.isArray(body.items) ? body.items : Array.isArray(body.news) ? body.news : [];
+        if (!response.ok || body?.ok === false || !Array.isArray(body?.items)) throw new Error("updates_unavailable");
+        const items = body.items;
         const unread = Number(body.unread_count ?? body.unreadCount ?? 0);
         renderDigitalNews(digitalPersonalizedFeed, items, Number.isInteger(unread) ? unread : 0);
         digitalUpdatesLoaded = true;
       } catch {
-        if (generation === digitalUpdatesGeneration && feed) feed.textContent = "ตอนนี้ยังโหลดอัปเดตไม่ได้ กรุณาปิดแล้วเปิดส่วนนี้อีกครั้ง";
+        if (generation === digitalUpdatesGeneration && feed) {
+          feed.textContent = "ตอนนี้ยังโหลดอัปเดตไม่ได้ครับ";
+          if (typeof document.createElement === "function" && typeof feed.append === "function") {
+            const retry = document.createElement("button"); retry.className = "digital-news-retry";
+            retry.type = "button"; retry.textContent = "ลองอีกครั้ง";
+            retry.addEventListener("click", () => { feed.textContent = "กำลังตรวจสอบอัปเดตล่าสุด"; void loadDigitalUpdates(); });
+            feed.append(retry);
+          }
+        }
       }
     })();
     digitalUpdatesPending = pending;
@@ -1673,6 +1721,8 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
     secondaryReads.clear();
     profileReady = true;
+    if (newsDetails) newsDetails.open = true;
+    void loadDigitalUpdates();
     if (CONFIG.intent === "promo") showView("care", false);
     else showView(CONFIG.intent === "renew" ? "package" : (CONFIG.view || "home"), false);
     if (CONFIG.intent === "renew") loadRenewalCard();
