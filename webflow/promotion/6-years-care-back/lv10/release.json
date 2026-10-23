@@ -1,0 +1,25 @@
+{
+  "route": "/promotion/6-years-care-back",
+  "version": "lv10-20261023",
+  "siteId": "68f879d546d2f4e2ab186e90",
+  "pageId": "6a60e95303c39ea9ca29a789",
+  "productionPublishTaskId": "18078aef-e82f-434a-86e2-ae432f2fb956",
+  "domains": [
+    "www.mmdbkk.com",
+    "mmdbkk.com",
+    "mmdprive.webflow.io"
+  ],
+  "changes": [
+    "Replace layered legacy CSS and runtime with one page-scoped layout and text owner",
+    "Mobile-first hero, persistent Wish and My MMD actions",
+    "Complete founder letter; membership benefits; coupon matrix and validity; 33-photo gallery",
+    "Thai, English and Chinese; reduced-motion pause; actual image loading percentage",
+    "Native details and dialog keyboard behavior; existing backend routes retained"
+  ],
+  "rollback": "webflow.json includes exact previous head, footer and eight embeds",
+  "limitations": [
+    "No live membership, booking, payment or Wish submission performed",
+    "Soundtrack opens the original YouTube video on user click"
+  ],
+  "source": "Code draft PR and i18n draft PR preserve the release independently of Webflow"
+}
