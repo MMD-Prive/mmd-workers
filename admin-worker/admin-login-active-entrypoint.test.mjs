@@ -356,10 +356,10 @@ test("Worker-owned Create Job requires an admin session and never fetches Lovabl
       headers: { Cookie },
     }), PAGE_GATE_ENV, {});
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("cache-control"), "no-store, private");
+    assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-api-create-job");
     const html = await response.text();
-    assert.match(html, /\/v1\/admin\/job\/create/);
+    assert.match(html, /\/internal\/admin\/jobs\/create-job\/assets\//);
     assert.doesNotMatch(html, /lovable\.app/i);
   }
 });

@@ -1,44 +1,76 @@
+import { getSessionCreatorStaticAsset } from "./session-creator-runtime/static-assets.js";
+
 export const CREATE_JOB_WORKER_PATH = "/internal/admin/jobs/create-job";
+const ASSET_PREFIX = `${CREATE_JOB_WORKER_PATH}/assets/`;
 
 export function isCreateJobWorkerPageRequest(path, method = "GET") {
-  return (method === "GET" || method === "HEAD") &&
-    String(path || "").replace(/\/+$/g, "") === CREATE_JOB_WORKER_PATH;
+  if (method !== "GET" && method !== "HEAD") return false;
+  const value = String(path || "");
+  return value.replace(/\/+$/g, "") === CREATE_JOB_WORKER_PATH ||
+    (value.startsWith(ASSET_PREFIX) && value.length > ASSET_PREFIX.length);
 }
 
-const PAGE = `<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>สร้างงาน | MMD</title>
-<style>
-:root{font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#29251f;background:#fff;--orange:#e79555;--line:#e7e1db;--muted:#716b65}*{box-sizing:border-box}body{margin:0;background:#fff}.wrap{max-width:880px;margin:0 auto;padding:24px 18px 56px}h1{font-size:26px;margin:0 0 4px}.sub,.hint{color:var(--muted);font-size:14px}.card{border:1px solid var(--line);border-radius:14px;padding:18px;margin:16px 0;background:#fff}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.full{grid-column:1/-1}label{font-size:13px;font-weight:650;display:block;margin:0 0 5px}input,select,textarea{font:inherit;width:100%;padding:10px 11px;border:1px solid #d8d1ca;border-radius:8px;background:white;color:inherit}textarea{min-height:76px;resize:vertical}.results{display:grid;gap:7px;margin-top:8px}.result{border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:flex;gap:10px;align-items:center;text-align:left;background:white;cursor:pointer;width:100%}.result:hover,.result.sel{border-color:var(--orange);background:#fff9f4}.result img{width:42px;height:42px;border-radius:50%;object-fit:cover;background:#eee}.pill{font-size:12px;color:#7c5538}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.btn{border:0;border-radius:9px;padding:11px 16px;background:var(--orange);color:#fff;font-weight:700;cursor:pointer}.btn:disabled{opacity:.5;cursor:wait}.btn.secondary{background:#fff4ea;color:#79491f;border:1px solid #f1d7c1}.notice{padding:11px;border-radius:9px;background:#f7f4f0;white-space:pre-wrap}.error{background:#fff0ed;color:#9f2e1e}.ok{background:#eff8ef;color:#246b32}.hide{display:none!important}.photo{max-width:100%;width:90px;height:90px;object-fit:cover;border-radius:12px}.check{display:flex;gap:7px;align-items:center}.check input{width:auto}.section-title{margin:0 0 12px;font-size:18px}@media(max-width:620px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.wrap{padding:18px 12px 40px}.card{padding:14px}}
-</style><body><main class="wrap"><h1>สร้างงาน</h1><div class="sub">ค้นหาจากข้อมูลลูกค้าและนายแบบในระบบ แล้วสร้างผ่าน API กลาง</div>
-<section class="card"><h2 class="section-title">1. ลูกค้า</h2><label for="cq">ค้นหาชื่อ / Per Rename / เบอร์ / อีเมล</label><div class="actions"><input id="cq" placeholder="เช่น Ice T" autocomplete="off"><button class="btn secondary" id="cs">ค้นหา</button></div><div id="clients" class="results"></div><div id="clientPicked" class="hint"></div></section>
-<section class="card"><h2 class="section-title">2. นายแบบ</h2><div class="grid"><div class="full"><label for="mq">ค้นหาชื่อนายแบบ</label><div class="actions"><input id="mq" placeholder="พิมพ์ชื่อ เช่น Ice T"><button class="btn secondary" id="ms">ค้นหา</button></div><div id="models" class="results"></div><div id="modelPicked" class="hint"></div></div></div></section>
-<section class="card"><h2 class="section-title">3. รายละเอียดงาน</h2><div class="grid">
-<div><label>ประเภทงาน</label><select id="visibility"><option value="private">Private</option><option value="public">Public</option></select></div><div id="privateType"><label>งาน Private</label><select id="ptype"><option value="pn">PN</option><option value="vip">VIP</option></select></div>
-<div id="folderField"><label>โฟลเดอร์</label><select id="folder"><option value="standard">Standard</option><option value="premium">Premium</option><option value="exclusive">Exclusive</option></select></div><div id="orientationField"><label>Orientation</label><select id="orientation"><option value="straight">Straight</option><option value="gay">Gay</option></select></div>
-<div><label>วันที่</label><input id="date" type="date"></div><div><label>เวลาเริ่ม</label><input id="time" type="time"></div><div><label>ระยะเวลา</label><select id="duration"><option value="90">1 ชม. 30 นาที</option><option value="120" selected>2 ชั่วโมง</option><option value="150">2 ชม. 30 นาที</option><option value="180">3 ชั่วโมง</option><option value="240">4 ชั่วโมง</option><option value="270">4 ชม. 30 นาที</option><option value="300">5 ชั่วโมง</option><option value="360">6 ชั่วโมง</option></select></div><div><label>สถานที่</label><input id="location" placeholder="โรงแรม / สถานที่"></div>
-<div><label>ยอดลูกค้าตั้งต้น (บาท)</label><input id="amount" type="number" min="1" step="1"></div><div><label>ยอดจ่ายนายแบบตั้งต้น (บาท) ถ้ามี</label><input id="payout" type="number" min="0" step="1"></div>
-<div class="full" id="addons"><label>บริการเสริม (กรอกเรทแยกตามที่ตกลง)</label><div class="grid" id="addonRows"></div></div>
-<div><label>ค่าเดินทางลูกค้า</label><input id="travel" type="number" min="0" step="1" value="0"></div><div><label>ลิงก์ Google Maps (ถ้ามี)</label><input id="map" type="url" placeholder="https://maps.google.com/..."></div>
-<div class="full"><label>จุดนัดพบ / รายละเอียด</label><input id="meeting" placeholder="เช่น ล็อบบี้ หรือเลขห้อง"></div><div class="full"><label>หมายเหตุถึงนายแบบ</label><textarea id="brief"></textarea></div><div class="full"><label>บันทึกภายใน</label><textarea id="note"></textarea></div></div></section>
-<section class="card"><div class="actions"><button class="btn" id="create">ตรวจสอบและสร้างงาน</button><span class="hint">กดครั้งเดียว ระบบจะส่งคำขอสร้างงานหนึ่งครั้ง</span></div><div id="notice" class="notice hide" role="status" aria-live="polite" style="margin-top:12px"></div><div id="grantBox" class="hide" style="margin-top:12px"><p>ระบบแจ้งว่าไม่พบสิทธิ์ Member ที่เชื่อมกับลูกค้ารายนี้ งานยังไม่ถูกสร้าง คุณเจ้าของสามารถอนุมัติสิทธิ์เฉพาะงานนี้ได้ โดยไม่เปลี่ยนสิทธิ์สมาชิกถาวร</p><label class="check"><input id="grantConfirm" type="checkbox"> ยืนยันอนุมัติสิทธิ์เฉพาะงานนี้</label><button class="btn secondary" id="grant" disabled>อนุมัติเฉพาะงานนี้</button><div id="grantResult" class="hint"></div></div></section></main>
-<script>
-(()=>{const $=id=>document.getElementById(id);let client=null,model=null,request=null;const esc=s=>String(s||"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(path,opts={}){const r=await fetch(path,{...opts,credentials:'include',cache:'no-store',headers:{'content-type':'application/json',...(opts.headers||{})}});let d;try{d=await r.json()}catch{d={}}if(!r.ok){const e=new Error(d?.error?.message||d?.message||d?.error||JSON.stringify(d)||('HTTP '+r.status));e.code=d?.code||d?.error?.code||d?.error;e.body=d;throw e}return d}
-function rows(root,list,kind){root.innerHTML='';(list||[]).slice(0,12).forEach(x=>{const name=kind==='client'?(x.per_rename||x.canonical_name||x.client_name||x.remembered_name||'ลูกค้า'):(x.display_name||x.model_name||'นายแบบ');const id=kind==='client'?x.client_id:x.model_id;const b=document.createElement('button');b.className='result';b.innerHTML=(x.profile_image_url?'<img src="'+esc(x.profile_image_url)+'" alt="">':'')+'<span><strong>'+esc(name)+'</strong><br><span class="pill">'+esc(kind==='client'?(x.current_line_rename||x.matched_on||x.identity_status||''):(x.visibility||x.lane||''))+'</span></span>';b.onclick=()=>{if(kind==='client'){client=x;$('clientPicked').textContent='เลือก: '+name+' · '+id;$('clients').querySelectorAll('.result').forEach(n=>n.classList.remove('sel'));b.classList.add('sel')}else{model=x;$('modelPicked').textContent='เลือก: '+name+' · '+id;$('models').querySelectorAll('.result').forEach(n=>n.classList.remove('sel'));b.classList.add('sel')}};root.append(b)})}
-async function searchClients(){const q=$('cq').value.trim();if(!q)return;try{const d=await api('/v1/admin/clients/lineage-lookup',{method:'POST',body:JSON.stringify({query:q})});const s=d.data||d;rows($('clients'),s.records||s.results||s.items,'client');if(!($('clients').children.length))$('clients').innerHTML='<span class="hint">ไม่พบลูกค้า ลองค้นด้วยชื่อ Per Rename หรือข้อมูลติดต่อ</span>'}catch(e){show(e.message,true)}}
-async function searchModels(){const q=$('mq').value.trim();if(!q||!client){show(!client?'เลือกลูกค้าก่อนค้นหานายแบบ':'พิมพ์ชื่อนายแบบก่อนค้นหา',true);return}try{const p=new URLSearchParams({client_id:client.client_id,work_type:$('visibility').value==='private'?$('ptype').value:'public',booking_visibility:$('visibility').value,q});const d=await api('/v1/admin/models/search?'+p);const s=d.data||d;rows($('models'),s.items||s.models||s.records,'model');if(!($('models').children.length))$('models').innerHTML='<span class="hint">ไม่พบชื่อในรายการที่ API อนุญาต</span>'}catch(e){show(e.message,true)}}
-function show(msg,error=false){$('notice').textContent=msg;$('notice').className='notice '+(error?'error':'ok');$('notice').classList.remove('hide')}
-function readPayload(){if(!client||!model)throw Error('กรุณาเลือกลูกค้าและนายแบบจากผลค้นหา');const date=$('date').value,time=$('time').value,mins=Number($('duration').value),amount=Number($('amount').value),visibility=$('visibility').value;if(!date||!time||!$('location').value.trim()||!(amount>0))throw Error('กรอกวันที่ เวลา สถานที่ และยอดลูกค้าให้ครบ');const [h,m]=time.split(':').map(Number),end=String(Math.floor((h*60+m+mins)/60)%24).padStart(2,'0')+':'+String((h*60+m+mins)%60).padStart(2,'0');const isPrivate=visibility==='private',payout=Number($('payout').value)||0,travel=Number($('travel').value)||0;const selected=[...document.querySelectorAll('[data-addon]:checked')].map(n=>n.value);const addons=selected.map(option=>({option,client_amount_thb:Number($('client_'+option).value),model_payout_thb:Number($('model_'+option).value)}));for(const a of addons)if(!Number.isFinite(a.client_amount_thb)||a.client_amount_thb<0||(payout>0&&(!Number.isFinite(a.model_payout_thb)||a.model_payout_thb<0)))throw Error('กรอกเรทลูกค้าและเรทนายแบบของบริการเสริมให้ครบ');if(isPrivate&&selected.length&&!(payout>0))throw Error('เมื่อเลือกบริการเสริม ต้องระบุยอดจ่ายนายแบบตั้งต้นด้วย');const addonClient=addons.reduce((n,a)=>n+a.client_amount_thb,0),addonModel=addons.reduce((n,a)=>n+a.model_payout_thb,0),clientTotal=amount+addonClient,modelTotal=payout>0?payout+addonModel:null;const base={job_date:date,start_time:time,end_time:end,location_name:$('location').value.trim(),google_map_url:$('map').value.trim(),amount_thb:clientTotal+travel,service_amount_thb:clientTotal,original_amount_thb:clientTotal+travel,travel_fee_thb:travel,payment_type:'deposit',payment_method:'promptpay',deposit_percent:30,client_id:client.client_id,client_record_id:client.client_id,client_name:client.client_name||client.canonical_name||client.per_rename||client.remembered_name,model_name:model.model_name||model.display_name,model:{model_id:model.model_id,model_name:model.model_name||model.display_name,model_lookup_key:model.model_lookup_key,visibility:model.visibility,folder:model.folder,telegram_status:model.telegram_status},client_lineage:{...client,client_id:client.client_id},line_identity:{line_user_id:client.line_user_id},job_visibility:visibility,job_type:isPrivate?$('ptype').value:'public',work:{job_visibility:visibility,job_lane:isPrivate?'private':'public',work_type:isPrivate?$('ptype').value:'public',job_type:isPrivate?$('ptype').value:'public',model_folder:isPrivate?$('folder').value:model.folder,selected_model_folder:isPrivate?$('folder').value:model.folder,service_options:selected},job_details:{job_date:date,start_time:time,end_time:end,duration_minutes:mins,location_name:$('location').value.trim(),google_map_url:$('map').value.trim(),meeting_point:$('meeting').value.trim(),brief:$('brief').value.trim()},notes:{operation_note:$('note').value.trim()},payment:{amount_thb:clientTotal+travel,service_amount_thb:clientTotal,payment_type:'deposit',payment_method:'promptpay',travel_fee_thb:travel}};if($('map').value.trim()&&!$('map').value.trim().startsWith('https://'))throw Error('ลิงก์ Google Maps ต้องขึ้นต้นด้วย https://');if(isPrivate){base.private_access={selected_private_folder:$('folder').value,selected_orientation:$('orientation').value,service_options:selected,service_rates:Object.fromEntries(addons.map(a=>[a.option,{client_amount_thb:a.client_amount_thb,model_payout_thb:a.model_payout_thb}]))};if(payout>0){base.pay_model_thb=modelTotal;base.model_payout_thb=modelTotal;base.private_access.settlement_mode='direct';base.service_pricing={version:1,currency:'THB',settlement_mode:'direct',client_base_amount_thb:amount,model_base_payout_thb:payout,addons,client_total_amount_thb:clientTotal,model_total_payout_thb:modelTotal}}else{base.private_access.settlement_mode='platform';base.service_pricing={version:1,currency:'THB',settlement_mode:'platform',client_base_amount_thb:amount,model_base_payout_thb:null,addons: addons.map(a=>({...a,model_payout_thb:null})),client_total_amount_thb:clientTotal,model_total_payout_thb:null}}}else if(payout>0){base.pay_model_thb=payout;base.model_payout_thb=payout}request=base;return base}
-$('cs').onclick=searchClients;$('cq').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();searchClients()}};$('ms').onclick=searchModels;$('mq').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();searchModels()}};$('visibility').onchange=()=>{const p=$('visibility').value==='private';$('privateType').classList.toggle('hide',!p);$('folderField').classList.toggle('hide',!p);$('orientationField').classList.toggle('hide',!p);$('addons').classList.toggle('hide',!p)};$('visibility').onchange();$('addonRows').innerHTML=[['mk','MK'],['burn','Burn'],['live','Live'],['group','Group']].map(([key,label])=>'<div class="card"><label class="check"><input type="checkbox" data-addon value="'+key+'"> '+label+'</label><div class="grid"><div><label>ยอดลูกค้า</label><input id="client_'+key+'" type="number" min="0" step="1" value="0"></div><div><label>ยอดจ่ายนายแบบ</label><input id="model_'+key+'" type="number" min="0" step="1" value="0"></div></div></div>').join('');$('create').onclick=async()=>{const b=$('create');b.disabled=true;$('grantBox').classList.add('hide');let created=false;try{const payload=readPayload();const d=await api('/v1/admin/job/create',{method:'POST',body:JSON.stringify(payload)});show('สร้างงานสำเร็จ'+(d.session_id?' · Session '+d.session_id:'')+(d.message?'\\n'+d.message:''));$('grantBox').classList.add('hide');b.textContent='สร้างงานสำเร็จ';created=true}catch(e){show(e.message,true);if(String(e.message).includes('AUTHORITATIVE_MEMBER_NOT_FOUND')||e.code==='AUTHORITATIVE_MEMBER_NOT_FOUND')$('grantBox').classList.remove('hide')}finally{if(!created)b.disabled=false}};$('grantConfirm').onchange=()=>{$('grant').disabled=!$('grantConfirm').checked};$('grant').onclick=async()=>{if(!$('grantConfirm').checked)return;const b=$('grant');b.disabled=true;try{const payload=readPayload();payload.owner_grant_reason_code='AUTHORITATIVE_MEMBER_NOT_FOUND';const d=await api('/v1/admin/job/owner-grant',{method:'POST',body:JSON.stringify(payload)});$('grantResult').textContent=d.grant_status==='pending'?'สิทธิ์เฉพาะงานอนุมัติแล้ว กลับไปกด “ตรวจสอบและสร้างงาน” เพื่อส่งคำขอสร้างงาน':'ระบบยังไม่ยืนยันสิทธิ์เฉพาะงาน';}catch(e){$('grantResult').textContent=e.message}finally{b.disabled=!$('grantConfirm').checked}};
-})();</script></body></html>`;
+function withoutResponseCookies(headers) {
+  const safe = new Headers(headers);
+  for (const name of ["set-cookie", "content-length", "content-encoding", "cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy"]) safe.delete(name);
+  return safe;
+}
 
-export function handleCreateJobWorkerPage(request) {
-  const headers = new Headers({
-    "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store, private",
-    "x-mmd-route-owner": "admin-worker-api-create-job",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-    "x-content-type-options": "nosniff",
-    "referrer-policy": "same-origin",
-  });
-  return new Response(request.method === "HEAD" ? null : PAGE, { status: 200, headers });
+function rewriteAssets(source) {
+  return source.replace(/(^|[\s("'])\/assets\//g, `$1${ASSET_PREFIX}`);
+}
+
+function assetPath(path) {
+  const relative = path.slice(ASSET_PREFIX.length);
+  try {
+    const parts = relative.split("/").map((part) => decodeURIComponent(part));
+    if (!relative || parts.some((part) => !part || part === "." || part === ".." || part.includes("/") || part.includes("\\"))) return null;
+    return `/assets/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function handleCreateJobWorkerPage(request, ctx = { waitUntil() {} }) {
+  const incoming = new URL(request.url);
+  if (!isCreateJobWorkerPageRequest(incoming.pathname, request.method)) return new Response("not_found", { status: 404 });
+
+  if (incoming.pathname.startsWith(ASSET_PREFIX)) {
+    const path = assetPath(incoming.pathname);
+    const response = path ? getSessionCreatorStaticAsset(path) : null;
+    if (!response) return new Response("not_found", { status: 404 });
+    return request.method === "HEAD"
+      ? new Response(null, { status: response.status, headers: response.headers })
+      : response;
+  }
+
+  let app;
+  try {
+    app = await import("./session-creator-runtime/server/index.mjs");
+  } catch {
+    return new Response("session_creator_unavailable", { status: 503, headers: { "cache-control": "no-store" } });
+  }
+
+  let upstream;
+  try {
+    const pageUrl = new URL(incoming);
+    pageUrl.pathname = CREATE_JOB_WORKER_PATH;
+    const pageRequest = new Request(pageUrl, request);
+    upstream = await app.default.fetch(pageRequest, {}, {
+      waitUntil: typeof ctx?.waitUntil === "function" ? ctx.waitUntil.bind(ctx) : () => {},
+    });
+  } catch {
+    return new Response("session_creator_unavailable", { status: 503, headers: { "cache-control": "no-store", "x-mmd-route-owner": "admin-worker-api-create-job" } });
+  }
+
+  const headers = withoutResponseCookies(upstream.headers);
+  headers.set("cache-control", "no-store");
+  headers.set("x-mmd-route-owner", "admin-worker-api-create-job");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("referrer-policy", "same-origin");
+  if (request.method !== "HEAD" && String(headers.get("content-type") || "").toLowerCase().includes("text/html")) {
+    const html = await upstream.text();
+    return new Response(rewriteAssets(html), { status: upstream.status, statusText: upstream.statusText, headers });
+  }
+  return new Response(request.method === "HEAD" ? null : upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
 }

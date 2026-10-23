@@ -293,7 +293,7 @@ const adminLoginHeroWorker = {
     if (isCreateJobWorkerPageRequest(normalizedPath, method)) {
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
-      return handleCreateJobWorkerPage(gate.request);
+      return handleCreateJobWorkerPage(gate.request, ctx);
     }
 
     if (isSessionCreatorAssetRequest(normalizedPath, method)) {
