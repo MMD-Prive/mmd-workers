@@ -425,6 +425,12 @@ export default {
         return new Response(null, { status: 302, headers: { Location: PARTNER_LINE_LOGIN_URL, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
       }
       if (["GET", "HEAD"].includes(request.method) && url.pathname === "/sigil/model/dashboard/partner-login") {
+        // The shared LIFF endpoint is on apex: initialize and resume on the same origin.
+        if (url.hostname === "www.mmdbkk.com") {
+          const target = new URL(request.url);
+          target.hostname = "mmdbkk.com";
+          return new Response(null, {status:302, headers:{Location:target.toString(), "Cache-Control":"no-store", "Referrer-Policy":"no-referrer"}});
+        }
         return new Response(request.method === "HEAD" ? null : PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" } });
       }
       if (request.method === "POST" && url.pathname === "/v1/partner/upload") {
@@ -4530,7 +4536,7 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
   if (links.length !== 1 || links[0] !== claim.id || normalizeStatus(fieldText(partner, MODEL_PARTNERS.status)) !== "active" || normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== "recognized") return errorResponse(request, env, "partner_not_recognized", "Partner is not active.", 403, false);
   const access = await generatePartnerToken(env, partner.id);
   await updateAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, { [MODEL_PARTNERS.accessTokenHash]: await sha256Hex(access) }, false);
-  const result = json(request, env, { ok: true, dashboard_url: `https://www.mmdbkk.com/partner/dashboard?t=${encodeURIComponent(access)}` });
+  const result = json(request, env, { ok: true, dashboard_url: `https://sigil-partner.lovable.app/?t=${encodeURIComponent(access)}` });
   result.headers.set("Cache-Control", "no-store");
   return result;
 }
@@ -4677,10 +4683,26 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
 const go=document.getElementById('go'),state=document.getElementById('state');
-let initialized;
+let initialized,busy=false,leaving=false;
 function initialize(){return initialized||(initialized=liff.init({liffId:'2010864854-N34SgCqq'}).catch(error=>{initialized=null;throw error;}));}
-go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · Partner Review กำลังดำเนินการ':'พร้อมยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';location.replace(target.href);}catch{state.textContent='พร้อมเชื่อมต่ออีกครั้งผ่าน LINE';go.disabled=false;}};
-if(typeof liff!=='undefined')initialize().catch(()=>{state.textContent='พร้อมเชื่อมต่อผ่าน LINE';});
+async function enter(allowLogin){
+ if(busy||leaving)return;busy=true;go.disabled=true;state.textContent='กำลังยืนยัน LINE';
+ try{
+  await initialize();
+  if(!liff.isLoggedIn()){if(allowLogin){leaving=true;liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});}else state.textContent='พร้อมเชื่อมต่อผ่าน LINE';return;}
+  const idToken=liff.getIDToken();if(!idToken)throw Error();
+  const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});
+  const d=await r.json();
+  if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · Partner Review กำลังดำเนินการ':'พร้อมยืนยัน LINE อีกครั้ง';return;}
+  const target=new URL(d.dashboard_url);
+  if(target.origin!=='https://sigil-partner.lovable.app'||target.pathname!=='/'||!target.searchParams.get('t')||target.username||target.password||target.hash||[...target.searchParams.keys()].some(key=>key!=='t')||target.searchParams.getAll('t').length!==1)throw Error();
+  state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';leaving=true;location.replace(target.href);
+ }catch{leaving=false;state.textContent='พร้อมเชื่อมต่ออีกครั้งผ่าน LINE';}
+ finally{if(!leaving){busy=false;go.disabled=false;}}
+}
+go.onclick=()=>enter(true);
+window.addEventListener('pageshow',event=>{if(event.persisted){leaving=false;busy=false;go.disabled=false;state.textContent='พร้อมเข้าสู่ระบบด้วย LINE';}});
+if(typeof liff!=='undefined')void enter(false);
   </script>
 </body>
 </html>`;
