@@ -94,6 +94,10 @@ import {
   isSessionCreatorPageRequest,
 } from "./session-creator-page-proxy.js";
 import {
+  handleCreateJobWorkerPage,
+  isCreateJobWorkerPageRequest,
+} from "./create-job-worker-page.js";
+import {
   handleModelDirectFirstJobGate,
   isModelDirectFirstJobGateRequest,
 } from "./model-direct-first-job-gate.js";
@@ -284,6 +288,12 @@ const adminLoginHeroWorker = {
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
       return handleModelJobPreview(gate.request, runtimeEnv);
+    }
+
+    if (isCreateJobWorkerPageRequest(normalizedPath, method)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      return handleCreateJobWorkerPage(gate.request, ctx);
     }
 
     if (isSessionCreatorAssetRequest(normalizedPath, method)) {

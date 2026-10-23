@@ -271,7 +271,6 @@ const SESSION_CREATOR_PAGES = [
   "/internal/admin/payments",
   "/internal/admin/work",
   "/internal/admin/jobs/all",
-  "/internal/admin/jobs/create-job",
   "/internal/admin/jobs/job-board",
 ];
 const PAGE_GATE_ENV = runtimeEnv({
@@ -306,7 +305,7 @@ async function assertPagesDenied(headers, requests) {
       if (method === "GET") {
         const target = new URL(response.headers.get("location"));
         assert.equal(target.pathname, "/internal/admin/login");
-        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all" || path === "/internal/admin/jobs/create-job"
+        const next = path === "/internal/admin/payments" || path === "/internal/admin/jobs/all"
           ? `${path}?page=2` : "/internal/admin/control-room";
         assert.equal(target.searchParams.get("next"), next);
         assert.equal(response.headers.get("x-mmd-admin-gate"), "credential-required");
@@ -343,6 +342,32 @@ test("Session Creator pages reject an expired signed credential", async () => {
     Date.now = realNow;
   }
   await withSessionCreatorUpstream((requests) => assertPagesDenied({ Cookie: `mmd_admin_gate_v1=${token}` }, requests));
+});
+
+test("Create Job stays behind the owner gate and renders from the pinned build", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/jobs/create-job", { method }), PAGE_GATE_ENV, {});
+    assert.equal(response.status, method === "GET" ? 303 : 401);
+  }
+  const loginResponse = await login("page_test_credential", PAGE_GATE_ENV);
+  const Cookie = cookiePair(loginResponse);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("Create Job must not fetch Lovable"); };
+  try {
+    for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
+      const response = await worker.fetch(new Request(`https://${host}/internal/admin/jobs/create-job?mode=broadcast`, {
+        headers: { Cookie },
+      }), PAGE_GATE_ENV, {});
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-api-create-job");
+      const html = await response.text();
+      assert.match(html, /\/internal\/admin\/jobs\/create-job\/assets\//);
+      assert.doesNotMatch(html, /mmd-os\.lovable\.app/);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Session Creator pages allow signed owner GET/HEAD with stale duplicate cookie on either production host", async () => {

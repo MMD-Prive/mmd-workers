@@ -1,0 +1,5 @@
+Repository: MMD-Prive/session-creator-pro
+Source commit: c4b6efdfcfa574d079208415a98d046fd328a62b
+Build command: npm run build
+Server modules copied from .output/server; 100 public files embedded in static-assets.js.
+Generated vendor module ai-sdk__openai+zod.mjs had trailing line whitespace removed; code unchanged.
