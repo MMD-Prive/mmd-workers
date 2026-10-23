@@ -27,7 +27,7 @@ function jobs(source) {
     .map(([, id, body]) => ({ id, body }));
 }
 
-function assertSafety(source) {
+function assertSafety(source, file = '') {
   if (!source.includes('name: Retire mmd-redirect-worker')) assert.doesNotMatch(source.split('\njobs:')[0], /^  (workflow_run|schedule):/m);
   assert.match(source, /production_approved:[\s\S]*?type: boolean\n        required: true\n        default: false/);
   assert.match(source, /approval_ref:[\s\S]*?type: string\n        required: true/);
@@ -46,9 +46,13 @@ function assertSafety(source) {
       assert.match(body, /uses: \.\/\.github\/workflows\/admin-production-approval.yml/);
       assert.match(body, /approval_ref: \$\{\{ inputs.approval_ref \}\}/);
       assert.match(body, /approved_sha: \$\{\{ inputs.approved_sha \}\}/);
+      if (file === 'deploy-admin-worker.yml') assert.match(body, /environment_name: mmd-admin-worker-solo-mutation/);
     } else {
       assert.match(body, /^    needs: \[production-approval(?:, [\w-]+)*\]$/m);
-      assert.match(body, /^    environment: mmd-production-mutation$/m);
+      const expectedEnvironment = file === 'deploy-admin-worker.yml'
+        ? 'mmd-admin-worker-solo-mutation'
+        : 'mmd-production-mutation';
+      assert.match(body, new RegExp(`^    environment: ${expectedEnvironment}$`, 'm'));
       assert.doesNotMatch(body, /ref: main\b/);
     }
   }
@@ -56,7 +60,7 @@ function assertSafety(source) {
 
 for (const file of files) test(`${file}: production work is independently approval-gated`, () => {
   const source = read(file);
-  assertSafety(source);
+  assertSafety(source, file);
   // Only Calendar retains a legacy branch CI trigger. No push can reach production.
   if (!['calendar-production-connection.yml', 'deploy-member-pages-worker.yml', 'sync-control-room-dashboard-ingress.yml', 'retire-mmd-redirect-worker-production.yml'].includes(file)) assert.doesNotMatch(source.split('\njobs:')[0], /^  push:/m);
 });
@@ -72,7 +76,14 @@ test('approval helper workflow has no production credentials or mutation command
   const source = read('admin-production-approval.yml');
   assert.match(source, /^  workflow_call:/m);
   assert.match(source, /ref: \$\{\{ github.sha \}\}/);
+  assert.match(source, /environment_name:[\s\S]*?default: mmd-production-mutation/);
   assert.doesNotMatch(source, /secrets\.|secrets: inherit|wrangler|curl|environment:/);
+});
+
+test('admin-worker solo environment is scoped to the admin-worker deploy workflow', () => {
+  const matches = readdirSync(directory).filter(file => /\.ya?ml$/.test(file)
+    && read(file).includes('mmd-admin-worker-solo-mutation'));
+  assert.deepEqual(matches.sort(), ['deploy-admin-worker.yml']);
 });
 
 test('automatic CI is credential-free and runs gate and current-session regressions', () => {
@@ -103,7 +114,7 @@ test('guard mutations fail regression: fan-out, missing needs/environment, and p
     source.replace('    environment: mmd-production-mutation\n', ''),
     source.replaceAll(condition, "github.event_name == 'push'"),
     source.replace('        default: false', '        default: true'),
-  ]) assert.throws(() => assertSafety(altered));
+  ]) assert.throws(() => assertSafety(altered, 'owner-payment-reissue.yml'));
 });
 
 test('workflow conditions deny automatic events and unapproved/mismatched dispatches', () => {
