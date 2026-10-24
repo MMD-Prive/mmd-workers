@@ -480,3 +480,28 @@ test("active fetch routes completeness API and page to their owner-only handler"
     assert.deepEqual(await response.json(), { ok: false, error: "method_not_allowed" });
   }
 });
+
+
+test('LINE Notes page requires signed admin session and serves owner intake', async () => {
+  const env = runtimeEnv({ ADMIN_LOGIN_CREDENTIAL: 'fixture-owner', ADMIN_SESSION_SECRET: 'fixture-session' });
+  const path = '/internal/ceo/line-notes-import';
+  for (const suffix of ['', '/', '?from=menu']) {
+    const denied = await worker.fetch(new Request(`https://mmdbkk.com${path}${suffix}`), env, {});
+    assert.equal(denied.status, 303);
+    assert.equal(new URL(denied.headers.get('location')).pathname, '/internal/admin/login');
+    assert.ok(new URL(denied.headers.get('location')).searchParams.get('next').startsWith(path));
+  }
+  const session = await worker.fetch(new Request('https://mmdbkk.com/internal/admin/login/session', {
+    method: 'POST', headers: { Origin: 'https://mmdbkk.com', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ credential: 'fixture-owner', next: path }).toString(),
+  }), env, {});
+  assert.equal(session.status, 303);
+  const page = await worker.fetch(new Request(`https://mmdbkk.com${path}`, { headers: { Cookie: cookiePair(session) } }), env, {});
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('cache-control'), /no-store/);
+  assert.match(await page.text(), /name="raw_line_notes"/);
+  const api = await worker.fetch(new Request('https://mmdbkk.com/v1/admin/kenji/control/line-ofc/import', {
+    method: 'POST', headers: { Origin: 'https://mmdbkk.com', 'Content-Type': 'application/json' }, body: '{}',
+  }), env, {});
+  assert.equal(api.status, 401);
+});
