@@ -298,6 +298,7 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
   const entitlementIndexes = buildEntitlementIndexes(entitlements);
   const stagingIndexes = buildStagingIndexes(staging);
   const needles = searchVariants(query);
+  const exactClientId = /^rec[A-Za-z0-9]{6,32}$/.test(clean(query)) ? clean(query) : "";
 
   const rows = clients
     .map((record) => {
@@ -319,6 +320,13 @@ async function buildClientLineageRecords(env, { query = "", limit = 40, recent =
             matched_on: "recent",
             matched_value: "",
           }
+        : exactClientId && record.id === exactClientId
+          ? {
+              score: 1000,
+              priority: 1000,
+              matched_on: "client_id",
+              matched_value: record.id,
+            }
         : bestLineageMatch(needles, searchEntries);
 
       if (!recent && needles.length && match.score <= 0) return null;
