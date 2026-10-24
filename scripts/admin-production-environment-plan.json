@@ -18,7 +18,7 @@
   "constraints": [
     "This file is a desired-state plan, not an API payload or an apply script.",
     "Reviewers need at least read access; current access must be checked again before applying.",
-    "If mmdprive is the reviewer, another authorized user must initiate the validation/release run.",
+    "Self-review is owner-authorized; GitHub application is a separate, explicit settings change.",
     "Do not substitute the unprotected production environment.",
     "No secrets are needed for validation; do not provision or copy any."
   ]
