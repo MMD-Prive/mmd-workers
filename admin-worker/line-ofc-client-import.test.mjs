@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleLineOfcClientImport, LINE_OFC_CLIENT_IMPORT_PATH } from "./src/line-ofc-client-import.js";
+import { handleLineOfcClientImport, readLineOfcImportReplay, LINE_OFC_CLIENT_IMPORT_PATH } from "./src/line-ofc-client-import.js";
 import { isKenjiControlActionRequest } from "./src/kenji-control-actions.js";
 
 const ENV = {
@@ -160,4 +160,11 @@ test("unmatched verified LINE OA import becomes searchable candidate without rig
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test('duplicate import returns stored canonical client without any write',async()=>{
+ const originalFetch=globalThis.fetch;let calls=0;
+ globalThis.fetch=async(url,init)=>{calls++;assert.equal(init.method||'GET','GET');assert.ok(String(url).endsWith('/recImport'));return response({id:'recImport',fields:{'Import ID':'fixture','Canonical Client':['recClient'],'Import Status':'matched'}})};
+ try{const body=await (await readLineOfcImportReplay(ENV,'recImport')).json();assert.equal(body.canonical_client_id,'recClient');assert.equal(body.duplicate,true);assert.equal(calls,1)}finally{globalThis.fetch=originalFetch}
 });

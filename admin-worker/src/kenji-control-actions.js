@@ -1,5 +1,5 @@
 import { KENJI_CLIENT_INTAKE_PATH, handleKenjiClientIntake } from "./kenji-client-intake.js";
-import { LINE_OFC_CLIENT_IMPORT_PATH, handleLineOfcClientImport } from "./line-ofc-client-import.js";
+import { LINE_OFC_CLIENT_IMPORT_PATH, handleLineOfcClientImport, readLineOfcImportReplay } from "./line-ofc-client-import.js";
 
 const BASE_ID_DEFAULT = "appsV1ILPRfIjkaYg";
 const TABLES = Object.freeze({
@@ -84,6 +84,7 @@ export async function handleKenjiControlAction(request, env, actor = {}) {
     if (duplicate) {
       const duplicateHash = clean(duplicate.fields?.payload_hash);
       if (!duplicateHash || duplicateHash !== payloadHash) return json({ ok: false, error: "idempotency_conflict" }, 409);
+      if (operation === "line_ofc_client_import") return await readLineOfcImportReplay(env, clean(duplicate.fields?.target_id));
       if (operation === "client_intake") {
         const targetId = clean(duplicate.fields?.target_id);
         if (!/^rec[\w]+$/.test(targetId)) return json({ ok: false, error: "idempotency_incomplete" }, 409);
