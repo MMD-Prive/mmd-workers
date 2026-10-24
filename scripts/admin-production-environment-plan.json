@@ -1,11 +1,11 @@
 {
   "environment": "mmd-production-mutation",
   "applied": false,
-  "configuration_change_authorized": false,
-  "approval_state": "Reviewer selected for preparation only; application approval requires clarification",
+  "configuration_change_authorized": true,
+  "approval_state": "Owner authorized Per self-approval across the shared production gate on 2026-10-24; GitHub application remains separate",
   "desired_protection": {
     "reviewers": [{ "type": "User", "id": 216427112, "login": "mmdprive" }],
-    "prevent_self_review": true,
+    "prevent_self_review": false,
     "can_admins_bypass": false,
     "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true },
     "deployment_branch_policies": [{ "name": "main", "type": "branch" }]
