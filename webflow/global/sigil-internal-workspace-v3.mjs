@@ -165,8 +165,6 @@ export const INTERNAL_PAGES = [
   }
 ];
 export function installInternalWorkspace(pages = INTERNAL_PAGES) {
-  // This function is serialized into a browser script; keep esbuild's name helper in scope.
-  const __name = (target, value) => { Object.defineProperty(target, 'name', { value, configurable: true }); return target; };
   const path = location.pathname.replace(/\/+$/, '') || '/';
   if (!/^\/internal(?:\/|$)/.test(path) || /\/(?:login|setup|invite)$/.test(path) || document.getElementById('sigil-workspace-directory')) return;
   const style = document.createElement('style');
@@ -254,5 +252,10 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES) {
   let frame=0;const pending=new Set();
   new MutationObserver(records=>{for(const record of records)if(record.target.nodeType===1&&!directory.contains(record.target))pending.add(record.target);if(!frame)frame=requestAnimationFrame(()=>{frame=0;for(const root of pending)if(root.isConnected)improve(root);pending.clear();});}).observe(document.body,{childList:true,subtree:true});
 }
-export function internalWorkspaceLoader(){return '('+installInternalWorkspace.toString()+')('+JSON.stringify(INTERNAL_PAGES)+');';}
+export function internalWorkspaceLoader(){
+  // esbuild annotates nested callbacks in the serialized function with __name.
+  // Define the helper outside that function so bundling cannot turn its own
+  // declaration into a temporal-dead-zone reference in the browser payload.
+  return '(()=>{const __name=(target,value)=>{Object.defineProperty(target,"name",{value,configurable:true});return target;};return ('+installInternalWorkspace.toString()+')('+JSON.stringify(INTERNAL_PAGES)+');})()';
+}
 
