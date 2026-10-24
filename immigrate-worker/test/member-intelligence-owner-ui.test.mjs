@@ -43,3 +43,42 @@ test('latest search wins when older search finishes or fails later',async()=>{
   }
 });
 
+test('dynamic status removes stale translation binding and opts out of autobind',()=>{
+  const attrs=new Map([['data-i18n-text','member.requests.status.reviewing'],['data-mmd-i18n-autobound','text']]);
+  const el={setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k),textContent:''};
+  const paint=fn('setText','function setTone',{byId:()=>el,display:v=>String(v)});
+  paint('miAccess','active');
+  assert.equal(el.textContent,'active');
+  assert.ok(attrs.has('data-mmd-i18n-skip'));
+  assert.ok(!attrs.has('data-i18n-text'));
+});
+
+test('finished empty and unknown evidence never retain loading state',()=>{
+  const values={};
+  const paint=fn('paintMemory','async function selectRecord',{state:{},clean,lower,setText:(id,value)=>values[id]=value,setTone:()=>{},setLayerTone:()=>{},renderEvidence:()=>{},reviewRecommendation:()=>({label:'รอตรวจหลักฐานตัวตน',tone:'warn'}),accessTone:()=> 'warn'});
+  for(const memory of [null,{}, {access_status:'unknown'}, {access_status:'WAITING'}]){
+    paint({},memory);
+    assert.equal(values.miAccess,'ยังยืนยันสิทธิ์ไม่ได้');
+    assert.notEqual(values.miReview,'WAITING');
+  }
+  paint({},{access_status:'active'});
+  assert.equal(values.miAccess,'active');
+  paint({},{access_status:'denied'});
+  assert.equal(values.miAccess,'denied');
+});
+
+test('search replaces Webflow submit with lookup controls: click, Enter and Escape',()=>{
+  const calls=[];
+  const element=()=>({handlers:{},setAttribute(){},addEventListener(k,v){this.handlers[k]=v},append(...children){this.children=children}});
+  const input=Object.assign(element(),{value:' ตั้ว '});
+  const original={className:'mi-search-row',replaceWith(node){this.replacement=node}};
+  const install=fn('installSearchControls','function boot',{byId:id=>id==='miSearch'?input:original,document:{createElement:element},loadRecords:q=>calls.push(q),clean});
+  assert.equal(install(),input);
+  const controls=original.replacement;
+  assert.equal(controls.children[1].type,'button');
+  controls.children[1].handlers.click();
+  input.value='โป้';
+  for(const key of ['Enter','Escape'])input.handlers.keydown({key,preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(calls,['ตั้ว','โป้','']);
+});
+
