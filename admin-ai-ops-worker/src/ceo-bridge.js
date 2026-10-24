@@ -50,7 +50,7 @@ export default {
 
     if (request.method === "GET" && path === CONTEXT_PATH) {
       const requested = normalizePath(url.searchParams.get("path") || "");
-      if (requested === CEO_ROOT) return renderCeoContext(request);
+      if (requested === CEO_ROOT) return renderCeoContext(request, env.MMS_ADMIN);
       const response = await baseWorker.fetch(request, env, ctx);
       return decorateOwnerContext(response);
     }
@@ -97,8 +97,8 @@ function ownerActionLabel(value) {
     .replace(/^Open\s+/i, "เปิด · ");
 }
 
-async function renderCeoContext(request) {
-  const dashboard = await readAdminJson(request, "/v1/admin/dashboard");
+async function renderCeoContext(request, service) {
+  const dashboard = await readAdminJson(request, "/v1/admin/dashboard", service);
   const verified = [];
   const anomalies = [];
   const nextActions = [
@@ -138,7 +138,7 @@ async function renderCeoContext(request) {
   });
 }
 
-async function readAdminJson(request, route) {
+async function readAdminJson(request, route, service) {
   const base = new URL(request.url);
   const target = new URL(route, `${base.protocol}//${base.host}`);
   const headers = new Headers({ accept: "application/json" });
@@ -147,7 +147,7 @@ async function readAdminJson(request, route) {
     if (value) headers.set(key, value);
   }
   try {
-    const response = await fetch(target.toString(), { method: "GET", headers, redirect: "manual" });
+    const response = await service.fetch(new Request(target, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(9000) }));
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}

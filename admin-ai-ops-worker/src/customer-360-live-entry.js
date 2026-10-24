@@ -14,7 +14,7 @@ export default {
     const requestUrl = new URL(request.url);
     const clientId = clean(requestUrl.searchParams.get("client_id"));
     const clientIntel = isRecordId(clientId)
-      ? await readCustomerIntelligence(request, clientId)
+      ? await readCustomerIntelligence(request, clientId, env.MMS_ADMIN)
       : null;
 
     return decorateCustomer360Context(response, { clientId, clientIntel });
@@ -128,7 +128,7 @@ export async function decorateCustomer360Context(response, { clientId = "", clie
   });
 }
 
-async function readCustomerIntelligence(request, clientId) {
+async function readCustomerIntelligence(request, clientId, service) {
   const source = new URL(request.url);
   const target = new URL(CLIENT_INTELLIGENCE_PATH, `${source.protocol}//${source.host}`);
   target.searchParams.set("client_id", clientId);
@@ -138,7 +138,7 @@ async function readCustomerIntelligence(request, clientId) {
     if (value) headers.set(key, value);
   }
   try {
-    const response = await fetch(target.toString(), { method: "GET", headers, redirect: "manual" });
+    const response = await service.fetch(new Request(target, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(9000) }));
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}
