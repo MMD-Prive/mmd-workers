@@ -14,7 +14,7 @@ test('LV7 production assembly preserves controls and parses every feature script
   }), env);
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /<html data-mms-lv7/);
+  assert.match(html, /<html[^>]*data-mms-lv7/);
   assert.equal((html.match(/<details class="lv7-tool">/g) || []).length, 2);
   for (const id of ['intakeForm', 'appSearch', 'therSearch', 'preSearch', 'workspaceReload', 'mmsOpsRefresh', 'mmsLoadProgress']) {
     assert.equal((html.match(new RegExp('id="' + id + '"', 'g')) || []).length, 1, id);
