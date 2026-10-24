@@ -132,8 +132,20 @@ export function installInternalSilverTheme(doc = document, loc = location) {
 export async function decorateInternalSilverTheme(request, response) {
   const path = new URL(request.url).pathname;
   if (request.method !== 'GET' || !usesSilverWorkspace(path) || response.status !== 200 || !(response.headers.get('content-type') || '').includes('text/html')) return response;
-  const html = await response.text();
-  if (!/<html\b/i.test(html) || html.includes('id="sigil-internal-silver-v1"')) return new Response(html, response);
+  let html = await response.text();
+  if (!/<html\b/i.test(html)) return new Response(html, response);
+  // Legacy pinned loaders replace the shared style after page load. Keep the
+  // Audience contrast repair in a separate style node that they do not own.
+  if (path.replace(/\/$/, '') === '/internal/ceo/audience' && !html.includes('id="sigil-audience-contrast-v1"')) {
+    const nonce = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
+    const contrast = SILVER_WORKSPACE_CSS.split('.sigil-system-logo')[0];
+    html = html.replace(/<\/head>/i, `<style id="sigil-audience-contrast-v1"${nonce ? ` nonce="${nonce}"` : ''}>${contrast}</style></head>`);
+  }
+  if (html.includes('id="sigil-internal-silver-v1"')) {
+    const headers = new Headers(response.headers);
+    headers.delete('content-length'); headers.delete('content-encoding'); headers.delete('etag');
+    return new Response(html, {status: response.status, statusText: response.statusText, headers});
+  }
   // The MMS exception is checked before reading or decorating the response.
   const silver = usesSilverWorkspace(path);
   const css = silver ? SILVER_WORKSPACE_CSS : SILVER_WORKSPACE_CSS.split('html[data-sigil-internal-theme=')[0];
