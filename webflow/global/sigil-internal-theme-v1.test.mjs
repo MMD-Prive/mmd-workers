@@ -15,6 +15,14 @@ test('theme decoration preserves the backend cookie, CSP and no-store policy',as
   const text=await r.text();assert.match(text,/data-sigil-internal-theme="silver-orange-v1"/);assert.match(text,/sigil-internal-silver-v1/);
   assert.equal(r.headers.get('set-cookie'),'existing=unchanged; Secure');assert.equal(r.headers.get('content-security-policy'),"default-src 'self'");assert.equal(r.headers.get('cache-control'),'no-store');
 });
+test('CEO decoration scopes the blue palette to CEO while admin keeps the shared palette',async()=>{
+  const ceo=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/ceo/dashboard'),response());
+  const ceoHtml=await ceo.text();
+  assert.match(ceoHtml,/data-sigil-ceo-theme="blue-v1"/);
+  assert.match(ceoHtml,/a\[aria-current="page"\]\{background:#2563eb!important/);
+  const admin=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/dashboard'),response());
+  assert.doesNotMatch((await admin.text()).match(/<html[^>]*>/i)[0],/data-sigil-ceo-theme/);
+});
 test('job page receives the shared visual theme',async()=>{
   const r=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/jobs/create-job?mode=broadcast'),response());
   const text=await r.text();assert.match(text,/data-sigil-internal-theme="silver-orange-v1"/);assert.match(text,/#fed7aa/);assert.match(text,/data-sigil-brand/);
@@ -41,6 +49,15 @@ test('a pinned loader upgrades an existing Worker style instead of leaving stale
   assert.equal(style.textContent,SILVER_WORKSPACE_CSS);
   installInternalSilverTheme(doc,{pathname:'/internal/admin/jobs/create-job'});
   assert.equal(style.textContent, SILVER_WORKSPACE_CSS);
+});
+
+test('client loader marks CEO only and clears the blue marker when leaving CEO',()=>{
+  const style={textContent:''};
+  const doc={documentElement:{dataset:{}},getElementById:()=>style,createElement:()=>style,head:{appendChild(){}},querySelectorAll:()=>[],querySelector:()=>({})};
+  installInternalSilverTheme(doc,{pathname:'/internal/ceo/dashboard'});
+  assert.equal(doc.documentElement.dataset.sigilCeoTheme,'blue-v1');
+  installInternalSilverTheme(doc,{pathname:'/internal/admin/dashboard'});
+  assert.equal(doc.documentElement.dataset.sigilCeoTheme,undefined);
 });
 
 test('Model Link decoration keeps scoped typography, font policy and review behavior intact', async () => {
@@ -84,6 +101,16 @@ test('generated browser loader executes independently, updates stale CSS and is 
   nodes.get('sigil-internal-silver-v1').textContent='stale';script.runInNewContext(context);
   assert.equal(nodes.get('sigil-internal-silver-v1').textContent,SILVER_WORKSPACE_CSS);
 });
+test('browser loader applies CEO marker only to CEO paths',()=>{
+  const run=path=>{
+    const nodes=new Map(),doc={documentElement:{dataset:{}},head:{appendChild(node){nodes.set(node.id,node)}},createElement(){return {}},getElementById(id){return nodes.get(id)},querySelectorAll(){return []},querySelector(){return {}}};
+    new Script(silverWorkspaceLoader()).runInNewContext({document:doc,location:{pathname:path}});
+    return doc.documentElement.dataset.sigilCeoTheme;
+  };
+  assert.equal(run('/internal/ceo/dashboard'),'blue-v1');
+  assert.equal(run('/internal/admin/dashboard'),undefined);
+  assert.match(SILVER_WORKSPACE_CSS,/data-sigil-ceo-theme="blue-v1".*#2563eb/s);
+});
 test('browser loader makes no DOM changes for MMS and public pages',()=>{
   for(const path of ['/internal/admin/mms/relax-spa','/member/dashboard','/partner/dashboard/kalima-massage']) {
     new Script(silverWorkspaceLoader()).runInNewContext({location:{pathname:path},document:new Proxy({},{get(){throw Error('unexpected DOM mutation')}})});
@@ -96,9 +123,9 @@ test('all declared internal navigation pages receive the theme except MMS',async
   }
 });
 
-test('text on the shipped white/orange interaction palette meets 4.5:1 contrast',()=>{
+test('text on the shipped internal palettes meets 4.5:1 contrast',()=>{
   const lum=hex=>hex.match(/\w\w/g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4).reduce((sum,x,i)=>sum+x*[.2126,.7152,.0722][i],0);
-  for(const [fg,bg] of [['272b30','ffffff'],['545c66','ffffff'],['272b30','fed7aa'],['272b30','fdba74'],['272b30','fb923c'],['545c66','edf0f3']]) assert.ok((lum(bg)+.05)/(lum(fg)+.05)>=4.5,fg+' on '+bg);
+  for(const [fg,bg] of [['272b30','ffffff'],['545c66','ffffff'],['272b30','fed7aa'],['272b30','fdba74'],['272b30','fb923c'],['545c66','edf0f3'],['ffffff','2563eb'],['f8fafc','252c34'],['cbd5e1','252c34']]) {const [high,low]=[lum(fg),lum(bg)].sort((a,b)=>b-a);assert.ok((high+.05)/(low+.05)>=4.5,fg+' on '+bg);}
 });
 
 

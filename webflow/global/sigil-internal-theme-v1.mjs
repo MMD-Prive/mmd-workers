@@ -65,16 +65,27 @@ html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(but
 
 ${DASHBOARD_POLISH_CSS}
 ${WHITE_ORANGE_WORKSPACE_CSS}
+/* CEO workspace directory: the generic rail text rule above can override its light-on-dark links. */
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory{border-color:#64748b!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(summary,a){color:#f8fafc!important;-webkit-text-fill-color:#f8fafc!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory h3{color:#cbd5e1!important;-webkit-text-fill-color:#cbd5e1!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a:hover{background:#334155!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a:active{background:#1e3a5f!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a[aria-current="page"]{background:#2563eb!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(a,summary):focus-visible{outline:3px solid #93c5fd!important;outline-offset:2px}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory input{border-color:#64748b!important}
 `;
 
 export function silverWorkspaceLoader() {
-  return `(()=>{const usesMmsWorkspace=${usesMmsWorkspace.toString()};const eligible=${usesSilverWorkspace.toString()};if(!eligible(location.pathname))return;document.documentElement.dataset.sigilInternalTheme='silver-orange-v1';let style=document.getElementById('sigil-internal-silver-v1');if(!style){style=document.createElement('style');style.id='sigil-internal-silver-v1';document.head.appendChild(style)}style.textContent=${JSON.stringify(SILVER_WORKSPACE_CSS)};${internalBrandLoader(true)}})();`;
+  return `(()=>{const usesMmsWorkspace=${usesMmsWorkspace.toString()};const eligible=${usesSilverWorkspace.toString()};if(!eligible(location.pathname))return;document.documentElement.dataset.sigilInternalTheme='silver-orange-v1';if(/^\\/internal\\/ceo(?:\\/|$)/.test(location.pathname))document.documentElement.dataset.sigilCeoTheme='blue-v1';else delete document.documentElement.dataset.sigilCeoTheme;let style=document.getElementById('sigil-internal-silver-v1');if(!style){style=document.createElement('style');style.id='sigil-internal-silver-v1';document.head.appendChild(style)}style.textContent=${JSON.stringify(SILVER_WORKSPACE_CSS)};${internalBrandLoader(true)}})();`;
 }
 
 export function installInternalSilverTheme(doc = document, loc = location) {
   if (usesMmsWorkspace(loc.pathname)) { installMmsWorkspaceTheme(doc); return; }
   if (!usesSilverWorkspace(loc.pathname)) return;
   const silver = usesSilverWorkspace(loc.pathname);
+  if (/^\/internal\/ceo(?:\/|$)/.test(loc.pathname)) doc.documentElement.dataset.sigilCeoTheme = 'blue-v1';
+  else delete doc.documentElement.dataset.sigilCeoTheme;
   if (silver) doc.documentElement.dataset.sigilInternalTheme = 'silver-orange-v1';
   else delete doc.documentElement.dataset.sigilInternalTheme;
   let style = doc.getElementById('sigil-internal-silver-v1');
@@ -104,7 +115,8 @@ export async function decorateInternalSilverTheme(request, response) {
   // The MMS exception is checked before reading or decorating the response.
   const silver = usesSilverWorkspace(path);
   const css = silver ? SILVER_WORKSPACE_CSS : SILVER_WORKSPACE_CSS.split('html[data-sigil-internal-theme=')[0];
-  const branded = silver ? html.replace(/<html\b/i, '<html data-sigil-internal-theme="silver-orange-v1"') : html;
+  const ceoTheme = /^\/internal\/ceo(?:\/|$)/.test(path) ? ' data-sigil-ceo-theme="blue-v1"' : '';
+  const branded = silver ? html.replace(/<html\b/i, `<html data-sigil-internal-theme="silver-orange-v1"${ceoTheme}`) : html;
   const nonceValue = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
   const nonce = nonceValue ? ` nonce="${nonceValue}"` : '';
   const workspace = /^\/internal\/(?:admin|ceo)(?:\/|$)/.test(path) ? `<script data-sigil-workspace="v3"${nonce}>document.addEventListener('DOMContentLoaded',()=>{${internalWorkspaceLoader()}});</script>` : '';
