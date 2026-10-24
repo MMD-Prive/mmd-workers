@@ -1,0 +1,111 @@
+name: Release immigrate-worker code only
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_approved:
+        description: 'Owner approval for this exact immigrate-worker release; routes and bindings remain unchanged'
+        type: boolean
+        required: true
+        default: false
+      approval_ref:
+        description: 'Owner approval reference for this exact release'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Full main SHA approved for release'
+        type: string
+        required: true
+      expected_version:
+        description: 'Active immigrate-worker version UUID from fresh preflight'
+        type: string
+        required: true
+      expected_deployment:
+        description: 'Active immigrate-worker deployment UUID from fresh preflight'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-immigrate-worker-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.expected_version != '' && inputs.expected_deployment != ''
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: immigrate-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+      APPROVED_SHA: ${{ inputs.approved_sha }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Check out the exact approved main revision
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: immigrate-worker/package-lock.json
+
+      - name: Install dependencies and run immigrate-worker validation
+        run: |
+          npm ci
+          npm test
+          node test/internal-admin-gate-bridge.test.mjs
+          node ../scripts/immigrate-worker-code-only-release.test.mjs
+
+      - name: Install pinned Wrangler
+        run: npm install --global wrangler@4.128.0 --no-audit --no-fund
+
+      - name: Verify the active version, bindings, config and CEO routes before upload
+        run: node ../scripts/immigrate-worker-code-only-release.mjs --preflight
+
+      - name: Validate the exact Worker bundle without upload
+        run: wrangler versions upload --dry-run --keep-vars
+
+      - name: Upload the exact Worker source while keeping existing variables
+        id: upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler versions upload --keep-vars \
+            --tag "ceo-theme-${GITHUB_SHA:0:12}" \
+            --message "CEO theme PR 2690 source ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/immigrate-worker-code-only-upload.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/immigrate-worker-code-only-upload.log" | tail -n 1)"
+          if [[ ! "$version_id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            echo 'Could not resolve the uploaded Worker version ID' >&2
+            exit 2
+          fi
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+
+      - name: Promote the exact uploaded version after a fresh baseline check
+        run: node ../scripts/immigrate-worker-code-only-release.mjs --promote '${{ steps.upload.outputs.version_id }}'
+
+      - name: Record sanitized deployment receipt
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '## immigrate-worker code-only release'
+            echo '- Source SHA: `${{ github.sha }}`'
+            echo '- Worker: `immigrate-worker`'
+            echo '- Uploaded version: `${{ steps.upload.outputs.version_id }}`'
+            echo '- Route changes: none'
+            echo '- MMS: preserved'
+          } >> "$GITHUB_STEP_SUMMARY"
