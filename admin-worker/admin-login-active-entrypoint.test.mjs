@@ -364,6 +364,33 @@ test("Worker-owned Create Job requires an admin session and never fetches Lovabl
   }
 });
 
+test("Money Control opens the Worker task entrance first and preserves the gated legacy review flow", async () => {
+  const loginResponse = await login("page_test_credential", PAGE_GATE_ENV);
+  const Cookie = cookiePair(loginResponse);
+  await withSessionCreatorUpstream(async (requests) => {
+    const home = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/payments?proof_id=proof_fixture", {
+      headers: { Cookie },
+    }), PAGE_GATE_ENV, {});
+    assert.equal(home.status, 200);
+    assert.equal(home.headers.get("x-mmd-route-owner"), "admin-worker-money-control-home");
+    assert.equal(home.headers.get("cache-control"), "no-store, private");
+    const html = await home.text();
+    assert.match(html, /proof_id/);
+    assert.match(html, /mmd_worker_view=existing/);
+    assert.equal(requests.length, 0);
+
+    const legacy = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/payments?proof_id=proof_fixture&mmd_worker_view=existing", {
+      headers: { Cookie, Authorization: "Bearer private" },
+    }), PAGE_GATE_ENV, {});
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.headers.get("x-mmd-route-owner"), "admin-worker-session-creator-pro");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://mmd-os.lovable.app/internal/admin/payments?proof_id=proof_fixture");
+    assert.equal(requests[0].headers.has("cookie"), false);
+    assert.equal(requests[0].headers.has("authorization"), false);
+  });
+});
+
 test("Session Creator pages allow signed owner GET/HEAD with stale duplicate cookie on either production host", async () => {
   const response = await login("page_test_credential", PAGE_GATE_ENV);
   assert.equal(response.status, 303);
@@ -372,7 +399,8 @@ test("Session Creator pages allow signed owner GET/HEAD with stale duplicate coo
     for (const host of ["mmdbkk.com", "www.mmdbkk.com"]) {
       for (const path of SESSION_CREATOR_PAGES) {
         for (const method of ["GET", "HEAD"]) {
-          const response = await worker.fetch(new Request(`https://${host}${path}/?page=2`, {
+          const view = path === "/internal/admin/payments" ? "&mmd_worker_view=existing" : "";
+          const response = await worker.fetch(new Request(`https://${host}${path}/?page=2${view}`, {
             method, headers: { Cookie, Authorization: "Bearer private" },
           }), PAGE_GATE_ENV, {});
           assert.equal(response.status, 200);
