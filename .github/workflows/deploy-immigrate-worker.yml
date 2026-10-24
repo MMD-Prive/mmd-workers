@@ -341,16 +341,34 @@ jobs:
       - name: Verify separated Create Job and Job Board owner surfaces
         shell: bash
         working-directory: .
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
         run: |
           set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
             create_body="$(mktemp)"
             create_headers="$(mktemp)"
             board_body="$(mktemp)"
             board_headers="$(mktemp)"
             legacy_headers="$(mktemp)"
             board_alias_headers="$(mktemp)"
-            trap 'rm -f "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"' EXIT
+            trap 'rm -f "$cookie" "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"' EXIT
+
+            login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -D "$create_headers" -o "$create_body" -c "$cookie" -w '%{http_code}' \
+              -X POST \
+              -H "Origin: $origin" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode 'next=/internal/admin/jobs/create-job' \
+              "$origin/internal/admin/login/session")"
+            if [ "$login_code" != "303" ] || ! grep -qi '^set-cookie: mmd_admin_gate_v1=' "$create_headers"; then
+              echo "Create Job smoke login failed for $origin (HTTP $login_code)" >&2
+              exit 1
+            fi
 
             # Create Job is served by Session Creator Pro (admin-worker
             # session-creator-page-proxy, #2213), not the Webflow split page.
@@ -358,7 +376,7 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$create_body"
               : > "$create_headers"
-              create_code="$(curl --compressed -sSL -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              create_code="$(curl --compressed -sS -b "$cookie" -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$create_code" = "200" ] \
                 && grep -aiq '^x-mmd-route-owner: admin-worker-session-creator-pro' "$create_headers" \
                 && grep -aqF '/internal/admin/work/assets/' "$create_body" \
@@ -373,8 +391,7 @@ jobs:
             done
             if [ "$create_verified" != "1" ]; then
               echo "Create Job (Session Creator Pro) production verification failed for $origin" >&2
-              head -c 700 "$create_headers" >&2 || true
-              echo "::error::Create Job verify failed at $origin: HTTP $create_code; headers=$(tr '\r\n' '  ' < "$create_headers" | head -c 600); assets=$(grep -acF '/internal/admin/work/assets/' "$create_body" || true)"
+              echo "::error::Create Job verify failed at $origin: HTTP $create_code; assets=$(grep -acF '/internal/admin/work/assets/' "$create_body" || true)"
               exit 1
             fi
 
@@ -393,8 +410,7 @@ jobs:
             done
             if [ "$board_verified" != "1" ]; then
               echo "Separate Job Board production verification failed for $origin" >&2
-              head -c 700 "$board_body" >&2 || true
-              echo "::error::Job Board verify failed at $origin: HTTP $board_code; headers=$(tr '\r\n' '  ' < "$board_headers" | head -c 600)"
+              echo "::error::Job Board verify failed at $origin: HTTP $board_code"
               exit 1
             fi
 
@@ -409,6 +425,7 @@ jobs:
               echo "::error::Legacy job-board redirect at $origin: HTTP $board_alias_code; headers=$(tr '\r\n' '  ' < "$board_alias_headers" | head -c 600)"
               exit 1
             fi
+            rm -f "$cookie" "$create_body" "$create_headers" "$board_body" "$board_headers" "$legacy_headers" "$board_alias_headers"
           done
 
       - name: Verify MMD Create Session Owner v14 in production
