@@ -5,8 +5,8 @@ import studioEntry from './src/studio-telegram-worker.js';
 import { handleAdminSlipUploadRequest } from './src/historical-slip-backfill-runtime.js';
 import { handlePaymentReviewRequest } from './src/payment-review-runtime.js';
 const PATH='/studio/api/payments/slip-intake';
-function upload({source='line_ofc',type='image/png',bytes=[137,80,78,71,13,10,26,10]}={}){
- const form=new FormData();form.set('source_channel',source);form.set('note','synthetic upload test');form.set('file',new Blob([new Uint8Array(bytes)],{type}),'synthetic-slip.png');
+function upload({source='line_ofc',type='image/png',bytes=[137,80,78,71,13,10,26,10],sessionId=''}={}){
+ const form=new FormData();if(sessionId)form.set('session_id',sessionId);form.set('source_channel',source);form.set('note','synthetic upload test');form.set('file',new Blob([new Uint8Array(bytes)],{type}),'synthetic-slip.png');
  return new Request('https://www.mmdbkk.com'+PATH,{method:'POST',headers:{Origin:'https://www.mmdbkk.com'},body:form});
 }
 function fixture(){
@@ -101,4 +101,23 @@ test('failed OCR preserves useful QR evidence with a retryable extraction error'
  const f=fixture();f.env.SLIP_EXTRACTOR.fetch=async req=>req.url.endsWith('/qr')?Response.json({result:{payment_ref:'PARTIAL-REF'}}):Response.json({error:'unavailable'},{status:503});
  await handleAdminSlipUploadRequest(upload(),f.env);
  const note=JSON.parse(f.proofs[0].fields.note);assert.equal(note.extraction.payment_ref,'PARTIAL-REF');assert.match(note.extraction.extraction_error,/ocr_private_extractor_failed_503/);assert.equal(note.review_required,true);
+});
+
+
+test('job upload links the exact session and rejects missing or conflicting sessions before storage',async()=>{
+ for(const scenario of ['matched','missing','conflicting_extraction','conflicting_payment']){
+  const f=fixture(),original=f.env.AIRTABLE_HTTP.fetch;
+  f.env.AIRTABLE_HTTP.fetch=async req=>{
+   const path=new URL(req.url).pathname;
+   if(req.method==='GET'&&path.endsWith('/Sessions'))return Response.json({records:scenario==='missing'?[]:[{id:'rec_session',fields:{session_id:'sess_old'}}]});
+   if(req.method==='GET'&&path.endsWith('/Payments'))return Response.json({records:scenario==='conflicting_payment'?[{id:'rec_payment',fields:{session_id:'sess_other'}}]:[]});
+   if(req.method==='GET'&&path.endsWith('/rec_payment'))return Response.json({id:'rec_payment',fields:{session_id:'sess_other'}});
+   return original(req);
+  };
+  if(scenario==='conflicting_extraction')f.env.SLIP_EXTRACTOR.fetch=async()=>Response.json({result:{session_id:'sess_other',amount_thb:100,paid_at:'2026-10-15T09:25:00+07:00',confidence_score:.99}});
+  const response=await handleAdminSlipUploadRequest(upload({sessionId:'sess_old'}),f.env);
+  assert.equal(response.status,scenario==='matched'?201:409,scenario+': '+await response.clone().text());
+  if(scenario==='matched')assert.deepEqual(f.proofs[0].fields.session,['rec_session']);
+  else {assert.equal(f.writes.length,0);assert.equal(f.proofs.length,0);}
+ }
 });
