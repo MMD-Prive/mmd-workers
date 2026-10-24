@@ -1,0 +1,53 @@
+{
+  "staticPassed": true,
+  "languages": [
+    "th",
+    "en",
+    "zh"
+  ],
+  "copyKeys": 87,
+  "completeLetterParagraphs": 7,
+  "preservedImages": true,
+  "preservedBenefitAndValidityCopy": true,
+  "duplicateIds": 0,
+  "photoDetailNavigation": true,
+  "photoGridAndDialogFocusRestoration": true,
+  "couponSelector": true,
+  "mobileRatesInitiallyCollapsed": true,
+  "scriptErrors": [],
+  "backendWrites": false,
+  "browser": {
+    "stagingResponsiveFrameWidths": [
+      320,
+      390,
+      768,
+      1440
+    ],
+    "frameContentWidths": [
+      305,
+      375,
+      753,
+      1425
+    ],
+    "pageHorizontalOverflow": false,
+    "productionContentWidth": 1348,
+    "productionVersion": "lv12-20261024",
+    "languageSwitching": [
+      "th",
+      "en",
+      "zh-CN"
+    ],
+    "remainingThaiInEnglishChinese": 0,
+    "couponSVIPSelection": true,
+    "couponRatesExpand": true,
+    "letterExpandAndCollapseLabel": true,
+    "photoDetailAndNext": true,
+    "galleryClose": true,
+    "archiveExpand": true,
+    "mobileActionsSuppressedWhenHeroButtonsVisible": true,
+    "wishLinkOpenedExistingForm": true
+  },
+  "imageFailureRetryRecoveryTest": true,
+  "reducedMotionStartsPausedTest": true,
+  "buildReproducesPublishedPayload": true
+}
