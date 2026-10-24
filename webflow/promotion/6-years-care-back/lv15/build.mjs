@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {JSDOM} from 'jsdom';
+const dir=path.dirname(fileURLToPath(import.meta.url));
+const read=n=>fs.readFileSync(path.join(dir,n),'utf8');
+const write=(n,v)=>fs.writeFileSync(path.join(dir,n),v);
+const C=JSON.parse(read('care-back-lv15.copy.json')).locales;
+const document=new JSDOM(read('body.html')).window.document;
+document.querySelectorAll('[data-l15]').forEach(el=>{if(C.th[el.dataset.l15])el.innerHTML=C.th[el.dataset.l15]});
+const body=document.querySelector('main').outerHTML;
+const head=read('head.html').split('<style')[0]+'<style id="care-back-lv15-css">'+read('style.css')+'</style>';
+const footer='<script type="application/json" id="care-back-lv15-copy">'+JSON.stringify(C).replace(/</g,'\\u003c')+'</script><script id="care-back-lv15-runtime">'+read('runtime.js')+'</script>';
+const patch=JSON.parse(read('webflow.json'));Object.assign(patch,{body,head,footer});
+for(const [name,value] of Object.entries({'body.html':body,'head.html':head,'footer.html':footer,'webflow.json':JSON.stringify(patch,null,2),'care-back-lv15.html':'<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="https://www.mmdbkk.com"><title>6 Years CARE BACK | MMD Privé</title>'+head+'</head><body>'+body+footer+'</body></html>'}))write(name,value);
+console.log('Built complete HTML and Webflow payload.');
