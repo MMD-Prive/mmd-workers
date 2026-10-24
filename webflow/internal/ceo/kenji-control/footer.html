@@ -1,0 +1,146 @@
+<script id="mmd-kenji-control-v3-js">
+(function(){
+  var old=document.getElementById('mmd-kenji-control-route-smoke');if(old)old.remove();
+  if(document.getElementById('kcv3'))return;
+  var R={ceo:'/internal/ceo/dashboard',customer:'/internal/admin/customer-data',relink:'/internal/ceo/relink-review',payments:'/internal/admin/payments',access:'/internal/admin/membership-access',models:'/internal/ceo/models',audience:'/internal/ceo/audience',studio:'/internal/admin/studio',ops:'/internal/admin/control-room',kenjiAdmin:'/internal/admin/kenji',concierge:'/concierge/kenji'};
+  var app=document.createElement('main');app.id='kcv3';app.setAttribute('data-mmd-color-lock','internal');app.setAttribute('data-mmd-headline-gradient','off');app.setAttribute('data-mmd-type-skip','kcv3');
+  app.innerHTML=`<div class="kc3-shell">
+    <details class="kc3-side"><summary>ทางลัดที่เกี่ยวข้อง</summary>
+      <a class="kc3-brand" href="${R.ceo}"><span class="kc3-mark">MMD</span><span><strong>MMD PRIVÉ</strong><small>CEO · KENJI CONTROL</small></span></a>
+      <div class="kc3-side-label">ทางลัดของเปอร์</div>
+      <nav class="kc3-nav" aria-label="CEO navigation">
+        <a href="${R.ceo}"><i>01</i><span>CEO ภาพรวม</span></a>
+        <a class="is-active" href="/internal/ceo/kenji-control"><i>02</i><span>Kenji Control</span></a>
+        <a href="${R.customer}"><i>03</i><span>ข้อมูลและประวัติลูกค้า</span></a>
+        <a href="${R.models}"><i>04</i><span>Models</span></a>
+        <a href="${R.audience}"><i>05</i><span>Audience</span></a>
+        <a href="${R.ops}"><i>06</i><span>Control Room</span></a>
+        <a href="${R.kenjiAdmin}"><i>07</i><span>Kenji Admin</span></a>
+      </nav>
+      <div class="kc3-side-foot"><span>ผู้ยืนยัน</span><strong>เปอร์ · ยืนยันขั้นสุดท้าย</strong></div>
+    </details>
+    <div class="kc3-app">
+      <header class="kc3-top">
+        <div><div class="kc3-route">/INTERNAL/CEO/KENJI-CONTROL</div><h1>Kenji Control</h1></div>
+        <div class="kc3-top-right"><span class="kc3-pill" id="kc3Backend">ยังอ่านสรุปงานไม่ได้</span><span class="kc3-pill is-good">สำหรับเปอร์</span><a class="kc3-btn" href="${R.ceo}">← CEO</a></div>
+      </header>
+      <div class="kc3-main">
+        <div class="kc3-tabs" role="tablist" aria-label="ส่วนงาน Kenji">
+          <button class="kc3-tab is-active" data-tab="overview">ภาพรวม</button><button class="kc3-tab" data-tab="decisions">งานที่ต้องจัดการ</button><button class="kc3-tab" data-tab="context">ข้อมูลลูกค้า</button><button class="kc3-tab" data-tab="guardrails">ขอบเขตการทำงาน</button>
+        </div>
+
+        <section class="kc3-panel-tab is-active" data-panel="overview">
+          <section class="kc3-hero-main kc4-intro"><span class="kc3-kicker">เริ่มตรงนี้</span><h2>วันนี้ต้องให้ Kenji ช่วยเรื่องไหน?</h2><p>ดูสถานะ LINE แล้วเลือกงานด้านล่าง เปอร์ตรวจข้อมูลและยืนยันในหน้าของงานนั้นได้เลย</p><ol class="kc4-steps"><li>ดูสถานะการตอบ</li><li>เลือกเรื่องที่ต้องจัดการ</li><li>ตรวจข้อมูลก่อนยืนยัน</li></ol></section>
+          <div id="kc4LineSlot"></div>
+          <section class="kc3-section"><div class="kc3-section-head"><h2>สรุปล่าสุด</h2><button class="kc3-btn" id="kc4Refresh" type="button">อัปเดตข้อมูล</button></div><p id="kc3BriefHint">กำลังอ่านสรุปงาน…</p><div class="kc3-brief-list" id="kc3Brief"><div class="kc3-empty">กำลังโหลดข้อมูล กรุณารอสักครู่</div></div><small>อัปเดตล่าสุด: <span id="kc3Updated">ยังไม่มีข้อมูล</span></small><div class="kc4-loading" role="status" id="kc4Loading">กำลังโหลด 0%<progress max="100" value="0"></progress></div></section>
+          <section class="kc3-section"><div class="kc3-section-head"><div><span class="kc3-kicker">OWNER SIGNALS</span><h2>สิ่งที่ควรเช็กก่อนตัดสิน</h2></div><p>เลือกเรื่องที่ต้องการตรวจ ตัวเลขจะแสดงเมื่ออ่านข้อมูลสำเร็จ</p></div>
+            <div class="kc3-grid4">
+              <a class="kc3-card is-link" href="${R.customer}"><span class="kc3-mini">CUSTOMER MEMORY</span><h3>ตรวจข้อมูลลูกค้า</h3><p>ค้นชื่อลูกค้า แล้วดูประวัติและข้อมูลที่ใช้ตอบได้</p><div class="kc3-metric"><strong id="kc3CustomerMetric">—</strong><small>ยังไม่มีจำนวน</small></div><span class="kc3-go">เปิดข้อมูลลูกค้า ↗</span></a>
+              <a class="kc3-card is-link" href="${R.relink}"><span class="kc3-mini">IDENTITY</span><h3>ลูกค้าเปลี่ยน LINE</h3><p>ตรวจว่า LINE ใหม่เป็นลูกค้าคนเดิม ก่อนเชื่อมข้อมูล</p><div class="kc3-metric"><strong id="kc3RelinkMetric">—</strong><small>ตรวจในหน้ารายการ</small></div><span class="kc3-go">ตรวจการเชื่อม LINE ↗</span></a>
+              <a class="kc3-card is-link" href="${R.kenjiAdmin}"><span class="kc3-mini">KENJI KNOWLEDGE</span><h3>คำตอบที่รอตรวจ</h3><p>ดูคำตอบที่เตรียมไว้ ตรวจความถูกต้อง แล้วเผยแพร่จากหน้าจัดการ</p><div class="kc3-metric"><strong id="kc3KenjiQueue">—</strong><small id="kc3KenjiQueueLabel">WAITING</small></div><span class="kc3-go">ตรวจคำตอบ Kenji ↗</span></a>
+              <a class="kc3-card is-link" href="${R.access}"><span class="kc3-mini">ACCESS</span><h3>ตรวจสิทธิ์สมาชิก</h3><p>ตรวจระดับสมาชิก วันหมดอายุ และสิทธิ์ที่ใช้ได้</p><div class="kc3-metric"><strong>↗</strong><small>ตรวจสิทธิ์จริง</small></div><span class="kc3-go">ตรวจสิทธิ์สมาชิก ↗</span></a>
+            </div>
+          </section>
+
+          <details class="kc3-section kc4-more"><summary>งานอื่น ๆ และหน้าที่เกี่ยวข้อง</summary><div class="kc3-section-head"><div><span class="kc3-kicker">FAST ROUTING</span><h2>หน้าทำงานอื่น</h2></div><p>เลือกตามเรื่องที่ต้องการทำต่อ</p></div>
+            <div class="kc3-grid3">
+              <a class="kc3-card is-link" href="${R.customer}"><span class="kc3-mini">CUSTOMER / LINE</span><h3>ข้อมูลและประวัติลูกค้า</h3><p>ค้นชื่อ ประวัติ LINE และข้อมูลประกอบของลูกค้า</p><span class="kc3-go">เปิดข้อมูลลูกค้า ↗</span></a>
+              <a class="kc3-card is-link" href="${R.payments}"><span class="kc3-mini">MONEY TRUTH</span><h3>Payments</h3><p>ตรวจสลิป ยอดชำระ และรายการรอยืนยัน</p><span class="kc3-go">ตรวจเงิน ↗</span></a>
+              <a class="kc3-card is-link" href="${R.access}"><span class="kc3-mini">MEMBERSHIP / ACCESS</span><h3>Access Reconciliation</h3><p>ตรวจสิทธิ์ที่ควรได้เทียบกับสิทธิ์ที่ใช้งานอยู่</p><span class="kc3-go">ตรวจสิทธิ์สมาชิก ↗</span></a>
+              <a class="kc3-card is-link" href="${R.kenjiAdmin}"><span class="kc3-mini">KNOWLEDGE</span><h3>Kenji Admin</h3><p>ตรวจ แก้ และเผยแพร่ข้อมูลที่ Kenji ใช้ตอบ</p><span class="kc3-go">จัดการคำตอบ Kenji ↗</span></a>
+              <a class="kc3-card is-link" href="${R.models}"><span class="kc3-mini">MODEL ASSET</span><h3>Model Asset Console</h3><p>ค้นโมเดล ตรวจความพร้อม และดูข้อมูลภาพ</p><span class="kc3-go">ดูข้อมูลโมเดล ↗</span></a>
+              <a class="kc3-card is-link" href="${R.ops}"><span class="kc3-mini">OPERATIONS</span><h3>Control Room</h3><p>เริ่มที่นี่เมื่อยังไม่แน่ใจว่าต้องแก้ตรงไหน</p><span class="kc3-go">ดูภาพรวมงาน ↗</span></a>
+            </div>
+          </details>
+        </section>
+
+        <section class="kc3-panel-tab" data-panel="decisions">
+          <section class="kc3-section"><div class="kc3-section-head"><div><span class="kc3-kicker">DECISION QUEUE</span><h2>เลือกเรื่องที่ต้องตรวจ</h2></div><p>รายการด้านล่างเป็นทางเข้าแต่ละงาน ไม่ใช่จำนวนงานค้าง</p></div>
+            <div class="kc3-queue">
+              <div class="kc3-queue-item"><div><strong>ลูกค้าเปลี่ยน LINE หรือชื่อไม่ตรง</strong><span>ตรวจประวัติให้แน่ใจก่อนเชื่อมเข้าข้อมูลลูกค้าเดิม</span></div><span class="kc3-queue-state is-wait">ตรวจข้อมูล</span><a class="kc3-inline-link" href="${R.relink}">ตรวจการเชื่อม LINE ↗</a></div>
+              <div class="kc3-queue-item"><div><strong>สลิปและสถานะชำระเงิน</strong><span>เปิดรายการชำระเพื่อดูหลักฐานและยอดเงินก่อนยืนยัน</span></div><span class="kc3-queue-state">ตรวจเงิน</span><a class="kc3-inline-link" href="${R.payments}">ตรวจเงิน ↗</a></div>
+              <div class="kc3-queue-item"><div><strong>สมาชิกหรือสิทธิ์ใช้งานไม่ตรง</strong><span>เทียบสถานะสมาชิกกับสิทธิ์ที่ลูกค้าใช้งานได้</span></div><span class="kc3-queue-state">ตรวจสิทธิ์จริง</span><a class="kc3-inline-link" href="${R.access}">ตรวจสิทธิ์ ↗</a></div>
+              <div class="kc3-queue-item"><div><strong>ตรวจคำตอบและข้อมูลที่ Kenji ใช้</strong><span>ตรวจและเผยแพร่จากหน้าจัดการ Kenji</span></div><span class="kc3-queue-state is-ready" id="kc3QueueState">รายการคำตอบ</span><a class="kc3-inline-link" href="${R.kenjiAdmin}">จัดการคำตอบ Kenji ↗</a></div>
+              <div class="kc3-queue-item"><div><strong>ปัญหาที่เกี่ยวข้องหลายส่วน</strong><span>ใช้เมื่อข้อมูลลูกค้า เงิน สมาชิก หรืองานไม่ตรงกัน</span></div><span class="kc3-queue-state is-wait">ตรวจภาพรวม</span><a class="kc3-inline-link" href="${R.ops}">ดูภาพรวมงาน ↗</a></div>
+            </div>
+          </section>
+          <section class="kc3-grid2"><article class="kc3-card"><span class="kc3-kicker">ก่อนตัดสินใจ</span><h3>สิ่งที่ควรเตรียมก่อนตัดสินใจ</h3><div class="kc3-authority-map"><div class="kc3-authority-row"><span>1 · เรื่องที่เกิดขึ้น</span><strong>เกิดอะไรขึ้น และข้อมูลมาจากไหน</strong></div><div class="kc3-authority-row"><span>2 · หลักฐาน</span><strong>ข้อมูลไหนรองรับ และอะไรยังไม่รู้</strong></div><div class="kc3-authority-row"><span>3 · ทางเลือก</span><strong>ทางเลือกพร้อมข้อดีและข้อเสีย</strong></div><div class="kc3-authority-row"><span>4 · ทำต่อที่ไหน</span><strong>เปิดหน้าที่ใช้ทำงานต่อ</strong></div></div></article><article class="kc3-card"><span class="kc3-kicker">หน้าที่ของ Kenji</span><h3>Kenji ช่วยอะไรเปอร์ได้บ้าง</h3><div class="kc3-safe-list"><div class="kc3-safe-item"><i class="kc3-safe-dot"></i><div><strong>สรุปและเปรียบเทียบข้อมูล</strong><span>ใช้ข้อมูลที่ตรวจสอบที่มาได้</span></div></div><div class="kc3-safe-item"><i class="kc3-safe-dot"></i><div><strong>พาไปทำต่อและติดตามงาน</strong><span>พาไปหน้าที่ถูกต้องและรักษาบริบทของการตัดสินใจ.</span></div></div><div class="kc3-safe-item is-no"><i class="kc3-safe-dot"></i><div><strong>ยืนยันเงิน สมาชิก และสิทธิ์</strong><span>ยืนยันจากหน้าของแต่ละงาน หลังตรวจรายละเอียดแล้ว</span></div></div></div></article></section>
+        </section>
+
+        <section class="kc3-panel-tab" data-panel="context">
+          <section class="kc3-hero"><article class="kc3-hero-main"><span class="kc3-kicker">CUSTOMER CONTEXT</span><h2>ค้นลูกค้าและดูประวัติ</h2><p>เริ่มจากหน้าข้อมูลลูกค้าเพื่อค้นชื่อและดูประวัติ หากลูกค้าเปลี่ยน LINE ให้ตรวจการเชื่อมก่อนแก้ข้อมูล</p><div class="kc3-hero-actions"><a class="kc3-btn is-primary" href="${R.customer}">เปิดข้อมูลลูกค้า ↗</a><a class="kc3-btn" href="${R.relink}">ลูกค้าเปลี่ยน LINE ↗</a></div></article><aside class="kc3-hero-side"><span class="kc3-kicker">ดูข้อมูลให้ตรงเรื่อง</span><div class="kc3-status-stack"><div class="kc3-status-row"><span>ข้อมูลระบุตัวลูกค้า</span><strong>ข้อมูลลูกค้าที่ตรวจแล้ว</strong></div><div class="kc3-status-row"><span>ข้อมูลส่วนตัว</span><strong>Customer Data</strong></div><div class="kc3-status-row"><span>Payment</span><strong>หน้าชำระเงิน</strong></div><div class="kc3-status-row"><span>Access</span><strong>หน้าตรวจสิทธิ์สมาชิก</strong></div></div></aside></section>
+          <section class="kc3-grid3"><a class="kc3-card is-link" href="${R.customer}"><span class="kc3-mini">01 · FIND</span><h3>ค้นลูกค้า</h3><p>ค้นชื่อและดูข้อมูลล่าสุดในหน้าข้อมูลลูกค้า</p><span class="kc3-go">เปิดข้อมูลลูกค้า ↗</span></a><a class="kc3-card is-link" href="${R.relink}"><span class="kc3-mini">02 · VERIFY</span><h3>ตรวจว่าเป็นคนเดิม</h3><p>ดูหลักฐานเมื่อ LINE หรือข้อมูลระบุตัวตนเปลี่ยน</p><span class="kc3-go">ตรวจการเชื่อม LINE ↗</span></a><a class="kc3-card is-link" href="${R.ops}"><span class="kc3-mini">03 · ตรวจภาพรวม</span><h3>ตรวจปัญหาหลายส่วน</h3><p>ตรวจภาพรวมเมื่อปัญหาเกี่ยวข้องกับเงิน สมาชิก หรืองาน</p><span class="kc3-go">ดูภาพรวมงาน ↗</span></a></section>
+          <div class="kc3-note"><b>ข้อมูลส่วนตัว:</b> เปิดอ่านข้อมูลส่วนตัวจากหน้าลูกค้าที่ได้รับสิทธิ์</div>
+        </section>
+
+        <section class="kc3-panel-tab" data-panel="guardrails">
+          <section class="kc3-authority"><article class="kc3-card"><span class="kc3-kicker">ผู้ช่วยของเปอร์</span><h3>สิ่งที่ Kenji ช่วยได้</h3><div class="kc3-safe-list"><div class="kc3-safe-item"><i class="kc3-safe-dot"></i><div><strong>สรุปข้อมูลที่ตรวจสอบแล้ว</strong><span>สรุปจากข้อมูลที่อ่านได้ และบอกเมื่อยังไม่มีข้อมูล</span></div></div><div class="kc3-safe-item"><i class="kc3-safe-dot"></i><div><strong>เปรียบเทียบทางเลือก</strong><span>บอกผลดีผลเสียและสิ่งที่ยังไม่รู้.</span></div></div><div class="kc3-safe-item"><i class="kc3-safe-dot"></i><div><strong>เปิดดูข้อมูลประกอบ</strong><span>มีปุ่มไปยังหน้าที่ตรวจข้อมูลหรือทำต่อได้</span></div></div><div class="kc3-safe-item"><i class="kc3-safe-dot"></i><div><strong>ช่วยติดตามเรื่องเดิม</strong><span>ช่วยบอสจำว่าตัดสินอะไรและควรกลับมาดูเมื่อไร.</span></div></div></div></article><article class="kc3-card"><span class="kc3-kicker">ผู้ช่วยของเปอร์NOT</span><h3>เรื่องที่ต้องไปยืนยันในหน้าที่เกี่ยวข้อง</h3><div class="kc3-safe-list"><div class="kc3-safe-item is-no"><i class="kc3-safe-dot"></i><div><strong>ยืนยันเงินและสิทธิ์สมาชิก</strong><span>เปิดรายการจริงและตรวจหลักฐานก่อนยืนยัน</span></div></div><div class="kc3-safe-item is-no"><i class="kc3-safe-dot"></i><div><strong>เผยแพร่ข้อมูลให้ Kenji ใช้ตอบ</strong><span>ตรวจคำตอบและเผยแพร่จากหน้าจัดการ Kenji</span></div></div><div class="kc3-safe-item is-no"><i class="kc3-safe-dot"></i><div><strong>ดูข้อมูลส่วนตัว</strong><span>ดูข้อมูลส่วนตัวในหน้าลูกค้าที่ได้รับสิทธิ์</span></div></div><div class="kc3-safe-item is-no"><i class="kc3-safe-dot"></i><div><strong>คุยกับลูกค้า</strong><span>หน้านี้ใช้ดูแลงานภายในของเปอร์</span></div></div></div></article></section>
+          <section class="kc3-section"><div class="kc3-section-head"><div><span class="kc3-kicker">หน้าที่เกี่ยวข้อง</span><h2>ข้อมูลแต่ละเรื่องตรวจที่ไหน</h2></div><p>เลือกหน้าที่ตรงกับข้อมูลที่จะตรวจหรือแก้</p></div><article class="kc3-card"><div class="kc3-authority-map"><div class="kc3-authority-row"><span>ตัวตนและประวัติลูกค้า</span><strong>Customer Data + reviewed ข้อมูลลูกค้าที่ตรวจแล้ว</strong></div><div class="kc3-authority-row"><span>ยอดและสถานะชำระ</span><strong>หน้าชำระเงิน / Payments workflow</strong></div><div class="kc3-authority-row"><span>สมาชิกและสิทธิ์</span><strong>หน้าตรวจสิทธิ์สมาชิก</strong></div><div class="kc3-authority-row"><span>คำตอบที่ใช้จริง</span><strong>หน้าจัดการ Kenji</strong></div><div class="kc3-authority-row"><span>Telegram / Drive</span><strong>ตรวจข้อมูลปลายทางประกอบ</strong></div><div class="kc3-authority-row"><span>Webflow</span><strong>แสดงผลและพาไปหน้าที่เกี่ยวข้อง</strong></div><div class="kc3-authority-row"><span>การยืนยันสุดท้าย</span><strong>เปอร์</strong></div></div></article></section>
+        </section>
+        <div class="kc3-footnote">Kenji ช่วยสรุปและพาไปทำต่อ · เปอร์เป็นผู้ยืนยัน</div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(app);
+
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]})}
+  function safeInternalRoute(v){try{var s=String(v||'');if(!/^\/internal\/(?:ceo|admin)(?:\/|$)/.test(s)||s.includes('\\'))return '';var u=new URL(s,location.origin);return u.origin===location.origin&&/^\/internal\/(?:ceo|admin)(?:\/|$)/.test(u.pathname)?u.pathname+u.search+u.hash:'';}catch(e){return '';}}
+  function setBackend(text,mode){var el=document.getElementById('kc3Backend');if(!el)return;el.textContent=text;el.className='kc3-pill'+(mode?' is-'+mode:'')}
+  function itemsOf(x){if(Array.isArray(x))return x;if(x&&Array.isArray(x.items))return x.items;if(x&&Array.isArray(x.queue))return x.queue;if(x&&Array.isArray(x.reviews))return x.reviews;return[]}
+  function countMaybe(v){return Number.isFinite(Number(v))?String(Number(v)):'—'}
+  function setMetric(id,v){var el=document.getElementById(id);if(el&&v!=null)el.textContent=countMaybe(v)}
+  document.querySelectorAll('.kc3-tab').forEach(function(btn){btn.addEventListener('click',function(){var name=btn.getAttribute('data-tab');document.querySelectorAll('.kc3-tab').forEach(function(x){x.classList.toggle('is-active',x===btn)});document.querySelectorAll('.kc3-panel-tab').forEach(function(p){p.classList.toggle('is-active',p.getAttribute('data-panel')===name)})})});
+
+  async function getJson(url){var res=await fetch(url,{method:'GET',credentials:'include',cache:'no-store',signal:AbortSignal.timeout(12000),headers:{accept:'application/json'}});var data={};try{data=await res.json()}catch(e){return{status:res.status,ok:false,data:{}}}return{status:res.status,ok:res.ok,data:data}}
+  async function loadBrief(){
+    try{
+      var r=await getJson('/v1/admin/dashboard');
+      if(r.status===401||r.status===403){setBackend('กรุณาเข้าสู่ระบบใหม่','warn');return;}
+      if(!r.ok||r.data.ok===false){setBackend('ยังอ่านสรุปงานไม่ได้','warn');return;}
+      setBackend('อ่านสรุปงานแล้ว','good');
+      var d=r.data||{},date=new Date(d.generated_at);
+      document.getElementById('kc3Updated').textContent=Number.isFinite(date.getTime())?date.toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}):'ไม่ระบุเวลา';
+      var arr=[].concat(Array.isArray(d.todos)?d.todos:[],Array.isArray(d.boss)?d.boss:[]).slice(0,4),box=document.getElementById('kc3Brief');
+      document.getElementById('kc3BriefHint').textContent='ข้อมูลเดียวกับหน้าหลัก CEO';
+      box.innerHTML=arr.length?arr.map(function(x){
+        var route=safeInternalRoute(x.href||x.target_route||x.route),title=x.title||x.tag||'เรื่องที่ต้องตรวจ';
+        return '<'+(route?'a href="'+esc(route)+'"':'div')+' class="kc3-brief-item"><strong>'+esc(title)+'</strong><span>'+(route?'เปิดดูรายละเอียดและทำต่อ ↗':'ดูรายละเอียดจากหน้าหลัก CEO')+'</span></'+(route?'a':'div')+'>';
+      }).join(''):'<div class="kc3-empty">ไม่มีรายการด่วนส่งกลับมาในรอบนี้ เปิดงานอื่นจากเมนูด้านล่างได้</div>';
+    }catch(e){setBackend('ยังอ่านสรุปงานไม่ได้','warn');}
+  }
+  async function loadKenjiQueue(){document.getElementById('kc3KenjiQueue').textContent='—';document.getElementById('kc3KenjiQueueLabel').textContent='กำลังอ่านรายการ';document.getElementById('kc3QueueState').textContent='กำลังอ่านรายการ';try{var r=await getJson('/v1/admin/kenji/models/review-queue');var n=document.getElementById('kc3KenjiQueue'),l=document.getElementById('kc3KenjiQueueLabel'),s=document.getElementById('kc3QueueState');if(r.status===401||r.status===403){if(l)l.textContent='กรุณาเข้าสู่ระบบใหม่';if(s)s.textContent='กรุณาเข้าสู่ระบบใหม่';return}if(!r.ok||r.data.ok===false){if(l)l.textContent='ยังอ่านรายการไม่ได้';if(s)s.textContent='ยังอ่านรายการไม่ได้';return}if(!Array.isArray(r.data)&&!['items','queue','reviews'].some(function(k){return Array.isArray(r.data[k])})){if(l)l.textContent='ยังอ่านรายการไม่ได้';if(s)s.textContent='ยังอ่านรายการไม่ได้';return;}var list=itemsOf(r.data);if(n)n.textContent=String(list.length);if(l)l.textContent=list.length?'รายการรอตรวจ':'ไม่มีรายการรอตรวจ';if(s){s.textContent=list.length?String(list.length)+' รายการรอตรวจ':'ไม่มีรายการรอตรวจ';s.className='kc3-queue-state is-ready'}}catch(e){var l=document.getElementById('kc3KenjiQueueLabel');if(l)l.textContent='ยังอ่านรายการไม่ได้';document.getElementById('kc3QueueState').textContent='ยังอ่านรายการไม่ได้';}}
+  async function refreshAll(){
+    var button=document.getElementById('kc4Refresh'),loading=document.getElementById('kc4Loading');
+    if(button.disabled)return;button.disabled=true;
+    var done=0;function progress(){loading.innerHTML='อ่านข้อมูล '+(done*50)+'%<progress max="100" value="'+(done*50)+'"></progress>';}
+    progress();
+    await Promise.allSettled([loadBrief().finally(function(){done++;progress()}),loadKenjiQueue().finally(function(){done++;progress()})]);
+    var backend=document.getElementById('kc3Backend');
+    if(!backend.classList.contains('is-good')){document.getElementById('kc3BriefHint').textContent='ยังโหลดสรุปไม่สำเร็จ';document.getElementById('kc3Brief').textContent=backend.textContent+' · ลองอัปเดตอีกครั้ง หรือเปิดหน้าที่เกี่ยวข้องด้านล่าง';}
+    loading.textContent='ตรวจข้อมูลเสร็จ 100% · ดูผลของแต่ละส่วนด้านบน';button.disabled=false;
+  }
+  document.getElementById('kc4Refresh').addEventListener('click',refreshAll);
+  var line=document.getElementById('kenji-owner-line-unlock');
+  if(line){
+    document.getElementById('kc4LineSlot').appendChild(line);
+    line.querySelector('h2').textContent='สถานะการตอบ LINE';
+    line.querySelector('p').textContent='ตรวจคำสั่งหยุดการตอบก่อน การปลดคำสั่งหยุดยังไม่ยืนยันว่า Kenji ตอบลูกค้าได้ครบทุกขั้นตอน';
+    line.querySelector('button').textContent='ยกเลิกคำสั่งหยุดการตอบ LINE';
+    line.querySelector('[data-refresh]').textContent='อัปเดตสถานะ LINE';
+    var raw=line.querySelector('[role="status"]'),summary=document.createElement('p'),detail=document.createElement('details');
+    summary.setAttribute('role','status');line.insertBefore(summary,raw);detail.innerHTML='<summary>รายละเอียดสถานะ</summary>';line.appendChild(detail);detail.appendChild(raw);
+    function explain(){var t=raw.textContent;summary.textContent=t.includes('LINE kill switch: CLEAR')?'LINE: ไม่มีคำสั่งหยุดการตอบ · การตอบเรื่องโมเดล: '+(t.includes('Model kill switch: ACTIVE')?'ยังหยุดอยู่':'ยังยืนยันไม่ได้'):t.includes('LINE kill switch: ACTIVE')?'LINE: มีคำสั่งหยุดการตอบอยู่':'กำลังตรวจ หรือยังยืนยันสถานะไม่ได้ — ดูรายละเอียดด้านล่าง';}
+    new MutationObserver(explain).observe(raw,{childList:true,subtree:true,characterData:true});explain();
+  }
+  refreshAll();
+})();
+</script>
+<script id="kc4-matrix-ui">(()=>{if(location.pathname.replace(/\/+$/,'')!='/internal/ceo/kenji-control')return;if(document.getElementById('kmi')||!document.getElementById('kcv3'))return;let s=document.createElement('style');s.textContent='#kmi .kmi-form{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:8px;margin:14px 0}#kmi select,#kmi input{min-height:38px;border:1px solid #403522;border-radius:9px;background:#090705;color:#d8cebf;padding:0 10px;outline:none}.kmi-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.kmi-tags i{font-style:normal;padding:4px 7px;border:1px solid #3a3121;border-radius:999px;color:#b6a583;font-size:7px}.kmi-value{margin-top:5px;color:#d6cbb9;font-size:9px;word-break:break-word}@media(max-width:767px){#kmi .kmi-form{grid-template-columns:1fr}}';document.head.appendChild(s);let t=document.querySelector('.kc3-tabs'),f=document.querySelector('.kc3-footnote');if(!t||!f)return;let b=document.createElement('button');b.className='kc3-tab';b.dataset.tab='matrix';b.textContent='ตรวจบทสนทนา';t.insertBefore(b,t.querySelector('[data-tab="guardrails"]'));let p=document.createElement('section');p.className='kc3-panel-tab';p.dataset.panel='matrix';p.id='kmi';p.innerHTML='<section class="kc3-card"><span class="kc3-kicker">สถานะล่าสุดจาก LINE</span><h3>Conversation ตรวจบทสนทนา</h3><p>เลือกวิธีค้นหา แล้วตรวจว่าเรื่องล่าสุดคุยถึงไหนและกำลังรอใคร</p><div class="kmi-form"><select id="kmiT"><option value="client_id">Client ID</option><option value="member_id">Member ID</option><option value="line_user_id">LINE User ID</option><option value="email">Email</option></select><input id="kmiQ" autocomplete="off" placeholder="ใส่อีเมลหรือรหัสลูกค้าที่ต้องการตรวจ"><button class="kc3-btn is-primary" id="kmiGo">ตรวจข้อมูล</button></div><div id="kmiOut" class="kc3-empty">ยังไม่ได้เลือกลูกค้า</div></section>';f.parentNode.insertBefore(p,f);b.onclick=()=>{document.querySelectorAll('.kc3-tab').forEach(x=>x.classList.toggle('is-active',x===b));document.querySelectorAll('.kc3-panel-tab').forEach(x=>x.classList.toggle('is-active',x===p))}})();</script>
+<script id="kc4-matrix-runtime">(()=>{if(location.pathname.replace(/\/+$/,'')!='/internal/ceo/kenji-control')return;let n=0;function boot(){let g=document.getElementById('kmiGo');if(!g){if(++n<50)setTimeout(boot,80);return}let o=document.getElementById('kmiOut'),q=document.getElementById('kmiQ'),t=document.getElementById('kmiT'),E=v=>String(v==null?'—':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),A=v=>Array.isArray(v)?v:[],R=(a,b)=>'<div class="kc3-status-row"><span>'+E(a)+'</span><strong>'+E(b)+'</strong></div>';g.onclick=async()=>{let v=q.value.trim();if(!v){o.textContent='กรอกอีเมลหรือรหัสลูกค้าก่อนตรวจ';q.focus();return;}o.className='kc3-empty';o.textContent='กำลังอ่านสถานะบทสนทนา…';try{let u='/v1/admin/kenji/control/conversations?view=matrix&'+encodeURIComponent(t.value)+'='+encodeURIComponent(v),r=await fetch(u,{credentials:'include',cache:'no-store',signal:AbortSignal.timeout(12000),headers:{accept:'application/json'}}),d=await r.json();if(r.status===401||r.status===403){o.textContent='กรุณาเข้าสู่ระบบใหม่';return}if(!r.ok){o.textContent='ตรวจข้อมูลor unavailable · '+(d.error||r.status);return}if(d.data_status==='empty'||!d.matrix){o.textContent='ยังไม่มีข้อมูลบทสนทนาที่บันทึกไว้สำหรับลูกค้ารายนี้';return}let m=d.matrix,e=d.last_event||{},dom=A(m.live_truth_domains),loops=A(m.important_open_loops),dont=A(m.do_not_ask_again);o.className='';o.innerHTML='<div class="kc3-grid2"><article class="kc3-card"><span class="kc3-kicker">สถานะล่าสุด</span>'+R('ขั้นตอน',m.conversation_stage)+R('เรื่องที่คุย',m.topic)+R('ความสัมพันธ์',m.relationship_context)+R('คำขอล่าสุด',m.last_customer_intent)+R('กำลังรอ',m.awaiting_from)+R('รุ่นข้อมูล',m.version)+'</article><article class="kc3-card"><span class="kc3-kicker">เรื่องที่คุยต่อ</span>'+R('สิ่งที่ต้องทำต่อ',m.pending_action)+R('สิ่งที่ Kenji ทำล่าสุด',m.last_kenji_action)+R('ผลล่าสุด',m.last_confirmed_outcome)+R('อัปเดตเมื่อ',m.state_updated_at)+R('ข้อมูลหมดอายุ',m.state_expires_at)+'</article></div><article class="kc3-card" style="margin-top:10px"><span class="kc3-kicker">ข้อมูลที่ต้องตรวจเพิ่ม</span><div class="kmi-tags">'+(dom.length?dom.map(x=>'<i>'+E(x)+'</i>').join(''):'<i>none</i>')+'</div><div class="kmi-value">เรื่องที่ยังค้าง: '+E(loops.join(' · ')||'none')+'</div><div class="kmi-value">ข้อมูลที่ไม่ต้องถามซ้ำ: '+E(dont.join(' · ')||'none')+'</div><div class="kmi-value">เหตุการณ์ล่าสุด: '+E(e.intent||'—')+' · '+E(e.status||'—')+'</div></article>'}catch(e){o.className='kc3-empty';o.textContent='ตรวจข้อมูลor unavailable'}}}boot()})();</script>
+<script id="kc4-navigation">
+(()=>{const root=document.getElementById('kcv3');if(!root)return;
+const directory=document.getElementById('sigil-workspace-directory');if(directory)directory.open=false;
+function sync(){root.querySelectorAll('.kc3-tab').forEach(b=>{b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(b.classList.contains('is-active')));b.tabIndex=b.classList.contains('is-active')?0:-1;const key=b.dataset.tab;b.id='kc4-tab-'+key;b.setAttribute('aria-controls','kc4-panel-'+key);const p=root.querySelector('[data-panel="'+key+'"]');if(p){p.id=key==='matrix'?'kmi':'kc4-panel-'+key;b.setAttribute('aria-controls',p.id);p.setAttribute('role','tabpanel');p.setAttribute('aria-labelledby',b.id);}});}
+root.querySelector('.kc3-tabs').addEventListener('click',()=>queueMicrotask(sync));
+root.querySelector('.kc3-tabs').addEventListener('keydown',e=>{const tabs=[...root.querySelectorAll('.kc3-tab')],i=tabs.indexOf(document.activeElement);if(i<0)return;let n=i;if(e.key==='ArrowRight')n=(i+1)%tabs.length;else if(e.key==='ArrowLeft')n=(i+tabs.length-1)%tabs.length;else if(e.key==='Home')n=0;else if(e.key==='End')n=tabs.length-1;else return;e.preventDefault();tabs[n].click();tabs[n].focus();});sync();
+})();</script>
