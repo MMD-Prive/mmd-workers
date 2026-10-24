@@ -85,6 +85,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test ../scripts/check-customer-data-page.test.mjs
           npm test
           node test/internal-admin-gate-bridge.test.mjs
 
@@ -281,45 +282,20 @@ jobs:
               code="000"
             fi
 
-            # Lovable directory: verify the presentation contract and native
-            # customer list copy. This proves HTML delivery, not authenticated data.
-            if [ "$code" = "200" ] \
-              && grep -Eiq '^content-type:[[:space:]]*text/html' "$headers" \
-              && grep -Eiq '^x-mmd-presentation-source:[[:space:]]*lovable' "$headers" \
-              && grep -Eiq '^x-mmd-presentation-version:[[:space:]]*internal-lovable-v1' "$headers" \
-              && grep -q 'ลูกค้าล่าสุดจากระบบหลังบ้าน' "$body" \
-              && grep -q 'เลือกรายชื่อก่อนเปิดข้อมูล' "$body" \
-              && grep -q 'อ่านข้อมูลอีกครั้ง' "$body" \
-              && ! grep -q 'customer_scope_contract_unavailable' "$body"; then
-              echo "Production Customer Data Lovable presentation verified on attempt ${attempt}; authenticated data verification remains separate"
-              verified=1
-              break
-            fi
-
-            # Retain the Worker-rendered fallback contract.
-            if [ "$code" = "200" ] \
-              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers" \
-              && grep -Eiq '^x-mmd-customer-data-authority:[[:space:]]*identity-context-staging-only' "$headers" \
-              && grep -q 'นำเข้าจาก Console Inbox' "$body" \
-              && grep -q 'คิวที่ต้องดู' "$body" \
-              && grep -q 'จับคู่แล้ว' "$body" \
-              && ! grep -q 'Run Console Inbox Backfill' "$body" \
-              && ! grep -q 'Review Queue' "$body"; then
-              echo "Production Customer Data readable UI verified on attempt ${attempt}"
+            if node ../scripts/check-customer-data-page.mjs "$code" "$headers" "$body" deployment; then
+              echo "Production Customer Data HTML verified on attempt ${attempt}"
               verified=1
               break
             fi
 
             echo "Customer Data readable UI not propagated yet (attempt ${attempt}, HTTP ${code}); retrying..."
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-customer-directory|x-mmd-customer-ux|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
             sleep 2
           done
 
           if [ "$verified" != "1" ]; then
             echo "Customer Data readable UI production verification failed after bounded propagation retries" >&2
-            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
-            head -c 320 "$body" >&2 || true
-            echo >&2
+            grep -Ei '^(x-mmd-customer-data-ui|x-mmd-customer-data-authority|x-mmd-customer-directory|x-mmd-customer-ux|x-mmd-presentation-source|x-mmd-presentation-version|location|server|cf-ray):' "$headers" || true
             exit 1
           fi
 
@@ -521,3 +497,4 @@ jobs:
             fi
             rm -f "$headers" "$core"
           done
+
