@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   lifetimePointsFromPreload,
+  invalidateMemberHistoryPreload,
   readMemberHistoryPreload,
   recoveryStatusFromPreload,
   validateProjection,
@@ -143,4 +144,24 @@ test("history recovery uses a fresh batch projection without scanning source tab
   assert.equal(result.points_expire, true);
   assert.equal(result.preload_source, "my_mmd_batch_preload_v1");
   assert.deepEqual(calls.map((call) => call.table), ["tblVv58TCbwh5j1fS", "tblNV1b5sMC2fQPxt"]);
+});
+
+
+test('owner import invalidation prevents cached and persisted old projections from replacing fresh totals',async()=>{
+ const {env}=fakeEnv();
+ assert.equal((await readMemberHistoryPreload(env,LINE_ID,{now:NOW})).available,true);
+ await invalidateMemberHistoryPreload(env,LINE_ID,NOW);
+ const stale=await readMemberHistoryPreload(env,LINE_ID,{now:NOW});
+ assert.equal(stale.available,false);assert.equal(stale.reason,'source_changed');
+ for(const key of [...env.LIFF_IDENTITY_KV.values.keys()])if(!key.endsWith(':invalidated'))env.LIFF_IDENTITY_KV.values.delete(key);
+ assert.equal((await readMemberHistoryPreload(env,LINE_ID,{now:NOW})).reason,'source_changed');
+});
+
+test('reviewed refresh scans source evidence even when the batch projection is fresh',async()=>{
+ const {env,calls}=fakeEnv();
+ await readMemberHistoryPreload(env,LINE_ID,{now:NOW});calls.length=0;
+ const result=await runMemberHistoryRecovery({env,lineUserId:LINE_ID,forceSourceRefresh:true,now:NOW});
+ assert.notEqual(result.reason,'batch_preload_ready');
+ assert.ok(calls.some(x=>x.table==='tblOs8yyLK09SKrCt'));
+ assert.ok(!calls.some(x=>x.table==='tblNV1b5sMC2fQPxt'));
 });
