@@ -1,5 +1,6 @@
 import {
   readMemberHistoryPreload,
+  invalidateMemberHistoryPreload,
   recoveryStatusFromPreload,
 } from "./member-history-preload.js";
 
@@ -140,6 +141,7 @@ export async function runMemberHistoryRecovery({
   memberId = "",
   trigger = "login",
   store,
+  forceSourceRefresh = false,
   now = new Date(),
 } = {}) {
   if (!hasBindings(env) && !store) return statusPayload("blocked", { reason: "not_configured", trigger });
@@ -147,7 +149,7 @@ export async function runMemberHistoryRecovery({
 
   // The scheduled batch projection is the normal path. The broad historical
   // scan below runs only when that projection is missing, stale, or ambiguous.
-  if (!store) {
+  if (!store && !forceSourceRefresh) {
     const preloaded = await useBatchPreload(env, lineUserId, trigger, now);
     if (preloaded) return preloaded;
   }
@@ -156,14 +158,16 @@ export async function runMemberHistoryRecovery({
   const lockKey = await recoveryKey("lock", lineUserId);
   const statusKey = await recoveryKey("status", lineUserId);
   const startedAt = now.toISOString();
+  let ownsLock = false;
 
   try {
     const held = await env.LIFF_IDENTITY_KV?.get(lockKey, "json").catch(() => null);
     if (held?.started_at && Date.now() - Date.parse(held.started_at) < LOCK_TTL_SECONDS * 1000) {
-      return await readMemberHistoryRecoveryStatus(env, lineUserId);
+      return statusPayload("in_progress", { trigger, reason: "recovery_already_running", started_at: held.started_at });
     }
     if (env.LIFF_IDENTITY_KV?.put) {
       await env.LIFF_IDENTITY_KV.put(lockKey, JSON.stringify({ started_at: startedAt, trigger }), { expirationTtl: LOCK_TTL_SECONDS });
+      ownsLock = true;
     }
 
     await writeStatusKey(env, statusKey, statusPayload("in_progress", {
@@ -171,6 +175,8 @@ export async function runMemberHistoryRecovery({
       started_at: startedAt,
       updated_at: startedAt,
     }));
+
+    if (forceSourceRefresh) await invalidateMemberHistoryPreload(env, lineUserId, now);
 
     // LINE OFC is the source of truth. Read it before trying to resolve a
     // canonical Client so a first-time login is never blocked by a missing or
@@ -246,7 +252,7 @@ export async function runMemberHistoryRecovery({
     const pointsTarget = notePointSummary(acceptedCandidates);
     const pointsResult = wallet
       ? sourcePending
-        ? await readCurrentPointsTotal(db, wallet)
+        ? await readCurrentPointsTotal(db, wallet, now)
         : await reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarget, now })
       : {
           ok: true,
@@ -297,7 +303,7 @@ export async function runMemberHistoryRecovery({
     console.warn({ event: "member_history_recovery_failed", policy: POLICY, reason: failed.reason });
     return failed;
   } finally {
-    if (env.LIFF_IDENTITY_KV?.delete) await env.LIFF_IDENTITY_KV.delete(lockKey).catch(() => {});
+    if (ownsLock && env.LIFF_IDENTITY_KV?.delete) await env.LIFF_IDENTITY_KV.delete(lockKey).catch(() => {});
   }
 }
 
@@ -352,13 +358,17 @@ async function processNoteCandidate({ db, candidate, trigger, now }) {
     formula: `OR({session_id}=${formulaString(candidate.session_id)},{imported_source_ref}=${formulaString(candidate.history_review_id)})`,
     maxRecords: 3,
   });
-  if (existingSessions.length > 1) return { kind: "duplicate" };
+  if (existingSessions.length > 1) throw new Error("history_session_ambiguous");
   if (existingSessions.length === 1) {
+    const prior = existingSessions[0];
+    if (prior.fields?.session_id !== candidate.session_id || prior.fields?.imported_source_ref !== candidate.history_review_id) throw new Error("history_session_source_mismatch");
+    await db.update(TABLES.SESSIONS, prior.id, compact({ amount_thb: candidate.service_amount_thb || undefined, job_date: candidate.service_date,
+      model_name: candidate.model_text || undefined, location_name: candidate.location_text || undefined }));
     if (review?.id) await db.update(TABLES.REVIEWS, review.id, { review_status: "materialized", materialized_at: now.toISOString() });
     return { kind: "duplicate" };
   }
 
-  await db.create(TABLES.SESSIONS, compact({
+  await writeUnique(db, TABLES.SESSIONS, "session_id", compact({
     "Session Name": `Historical - ${candidate.service_date}`,
     Client: [candidate.client_id],
     "Session Status": "Completed",
@@ -379,14 +389,14 @@ async function processNoteCandidate({ db, candidate, trigger, now }) {
   return { kind: "materialized" };
 }
 
-async function readCurrentPointsTotal(db, wallet) {
+async function readCurrentPointsTotal(db, wallet, now = new Date()) {
   const rows = await db.list(TABLES.POINTS_LEDGER, { formula: walletFormula(wallet), maxRecords: 2000 });
   return {
     ok: true,
     desired_points: 0,
     desired_eligible_amount_thb: 0,
     historical_points_added: 0,
-    current_points_total: Math.max(0, rows.reduce((sum, row) => sum + postedPoints(row?.fields), 0)),
+    current_points_total: Math.max(0, rows.reduce((sum, row) => sum + activePostedPoints(row?.fields, now), 0)),
   };
 }
 
@@ -410,6 +420,7 @@ async function reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarg
   const aggregateSpend = Math.max(0, roundMoney(pointsTarget.eligible_amount_thb - Math.max(0, otherHistoricalSpend)));
   const existing = rows.find((row) => clean(row?.fields?.idempotency_key) === aggregateKey) || null;
   const previousPoints = existing ? Number(existing.fields?.points || 0) : 0;
+  const unchanged = existing && previousPoints === aggregatePoints && Number(existing.fields?.eligible_amount_thb || 0) === aggregateSpend;
   const fields = compact({
     "Points Entry": `hist_points_total_${await sha24(clientId)}`,
     member_id: wallet.member_id,
@@ -421,21 +432,22 @@ async function reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarg
     source: POINTS_SOURCE,
     note: `policy=${POLICY};window_years=${HISTORY_WINDOW_YEARS};expiry=365d_from_entry;notes_primary=true;slips_optional=true`,
     idempotency_key: aggregateKey,
-    posted_at: now.toISOString(),
-    expires_at: new Date(now.getTime() + POINTS_TTL_MS).toISOString(),
+    posted_at: unchanged ? existing.fields.posted_at : now.toISOString(),
+    expires_at: unchanged ? existing.fields.expires_at : new Date(now.getTime() + POINTS_TTL_MS).toISOString(),
     transaction_status: "posted",
     created_by: POLICY,
     points_bucket: POINTS_BUCKET,
   });
 
-  if (existing?.id) await db.update(TABLES.POINTS_LEDGER, existing.id, fields);
+  if (db.upsert) await db.upsert(TABLES.POINTS_LEDGER, "idempotency_key", fields);
+  else if (existing?.id) await db.update(TABLES.POINTS_LEDGER, existing.id, fields);
   else await db.create(TABLES.POINTS_LEDGER, fields);
 
   const afterRows = [
     ...rows.filter((row) => clean(row?.fields?.idempotency_key) !== aggregateKey),
     { id: existing?.id || "new-history-total", fields },
   ];
-  const currentPointsTotal = Math.max(0, afterRows.reduce((sum, row) => sum + postedPoints(row?.fields), 0));
+  const currentPointsTotal = Math.max(0, afterRows.reduce((sum, row) => sum + activePostedPoints(row?.fields, now), 0));
   return {
     ok: true,
     desired_points: pointsTarget.points,
@@ -490,6 +502,7 @@ async function resolveMemberWallet(db, { memberId = "", client } = {}) {
 
 export function legacyCandidate(record, clientId, lineUserId = "") {
   const fields = record?.fields || {};
+  if (parseObject(fields.raw_row_json).identity_only === true) return null;
   const importId = clean(fields.import_id);
   const rawNote = clean(fields.raw_note);
   if (!importId && !rawNote) return null;
@@ -546,7 +559,7 @@ export function privateCandidate(record, clientId, lineUserId = "") {
     source_kind: "private",
     source_record_id: clean(record.id),
     source_ref: sourceRef,
-    source_fingerprint_seed: sourceHash || rawNote || stableJson(data),
+    source_fingerprint_seed: rawNote || sourceHash || stableJson(data),
     client_id: clientId,
     line_user_id: lineUserId,
     client_display_name: bounded(fields["Current LINE Rename"] || fields["Display Name"], 120),
@@ -656,7 +669,7 @@ export function notePointSummary(candidates = []) {
     eligible_amount_thb: eligibleAmount,
     points: Math.floor(eligibleAmount / POINT_RATE_THB),
     rate_thb_per_point: POINT_RATE_THB,
-    expires: false,
+    expires: true,
   };
 }
 
@@ -713,7 +726,7 @@ async function upsertReview(db, existing, candidate, fields) {
     ...fields,
   });
   if (existing?.id) return db.update(TABLES.REVIEWS, existing.id, base);
-  return db.create(TABLES.REVIEWS, base);
+  return writeUnique(db, TABLES.REVIEWS, "history_review_id", base);
 }
 
 function historyCutoff(now, years) {
@@ -854,6 +867,15 @@ class AirtableHistoryStore {
   async findOne(table, formula) {
     const rows = await this.list(table, { formula, maxRecords: 2 });
     return rows.length === 1 ? rows[0] : null;
+  }
+
+  async upsert(table, key, fields) {
+    const payload = await this.request(this.url(table), {
+      method: "PATCH",
+      body: JSON.stringify({ performUpsert: { fieldsToMergeOn: [key] }, records: [{ fields }] }),
+    });
+    if (payload.records?.length !== 1) throw new Error("history_upsert_failed");
+    return payload.records[0];
   }
 
   async create(table, fields) {
@@ -1123,3 +1145,12 @@ export const __test = Object.freeze({
   consoleInboxCandidate,
   historyCutoff,
 });
+
+function writeUnique(db, table, key, fields) {
+  return db.upsert ? db.upsert(table, key, fields) : db.create(table, fields);
+}
+
+function activePostedPoints(fields = {}, now = new Date()) {
+  const expiry = Date.parse(fields.expires_at || "");
+  return Number.isFinite(expiry) && expiry <= now.getTime() ? 0 : postedPoints(fields);
+}
