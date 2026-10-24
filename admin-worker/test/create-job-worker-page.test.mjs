@@ -30,6 +30,10 @@ test("Worker-owned page calls canonical APIs and never loads Lovable assets", as
   assert.equal(response.headers.get("cache-control"), "no-store, private");
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-api-create-job");
   assert.match(html, /\/v1\/admin\/clients\/lineage-lookup/);
+  assert.match(html, /getAll\('client_id'\)/);
+  assert.match(html, /canonical_only:true/);
+  assert.match(html, /String\(x\.client_id\|\|''\)\.trim\(\)===id/);
+  assert.match(html, /loadRequestedClient\(\)/);
   assert.match(html, /\/v1\/admin\/models\/search/);
   assert.match(html, /private_work/);
   assert.match(html, /customer_lane/);
@@ -84,5 +88,5 @@ test("Create Job restores the published Payment Mini App contract", async () => 
     new Request("https://mmdbkk.com/internal/admin/jobs/create-job"),
   ).text();
   assert.match(html, /2010830159-0n1O3ANK/);
-  assert.match(html, /เปิดลิงก์ชำระมัดจำผ่าน LINE/);
+  assert.match(html, /คัดลอก URL ชำระมัดจำผ่าน LINE/);
 });

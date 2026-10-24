@@ -144,6 +144,8 @@ test('serialized internal workspace loader keeps esbuild helpers inside browser 
     MutationObserver:class{observe(){}},getComputedStyle(){return {color:'rgb(0, 0, 0)',webkitTextFillColor:'rgb(0, 0, 0)',opacity:'1',backgroundImage:'none',backgroundColor:'rgba(0, 0, 0, 0)'}},
     setTimeout(){},requestAnimationFrame(){return 1}
   };
-  assert.doesNotThrow(()=>new Script(internalWorkspaceLoader()).runInNewContext(context));
+  const loader=internalWorkspaceLoader();
+  assert.ok(loader.indexOf('const __name=') < loader.indexOf('(function installInternalWorkspace'));
+  assert.doesNotThrow(()=>new Script(loader).runInNewContext(context));
   assert.ok(body.children.some(node=>node.id==='sigil-workspace-directory'));
 });

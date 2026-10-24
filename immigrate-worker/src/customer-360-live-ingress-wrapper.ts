@@ -7,6 +7,7 @@ import { augmentClientIntelligenceWithIdentityAlignment } from "./customer-ident
 import type { Env } from "./types";
 
 const CUSTOMER_PAGE = "/internal/admin/customer-data";
+const MEMBERSHIP_ACCESS_PAGE = "/internal/admin/membership-access";
 const CUSTOMER_QUEUE = "/v1/admin/customer-data/queue";
 const CLIENT_INTELLIGENCE = "/v1/admin/clients/intelligence";
 const CREATE_JOB_PAGE = "/internal/admin/jobs/create-job";
@@ -96,7 +97,7 @@ export default {
       return response;
     }
     if (method === "GET" && path === CUSTOMER_PAGE) {
-      if (!url.searchParams.has("client_id")) return renderCustomerDirectory(response);
+      if (!url.searchParams.has("client_id")) return decorateCustomerDirectoryQuery(renderCustomerDirectory(response));
       const isLovable = response.headers.get("x-mmd-presentation-source") === "lovable";
       // The Lovable directory owns its list UI. Legacy exact-client decorators
       // require a different HTML contract; explicit client scopes still fail closed.
@@ -104,6 +105,9 @@ export default {
         ? null
         : resolveRequestedClientId(url.searchParams);
       return decorateCustomer360Page(response, scope);
+    }
+    if (method === "GET" && path === MEMBERSHIP_ACCESS_PAGE) {
+      return decorateMembershipAccessPage(response);
     }
     if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
@@ -273,6 +277,32 @@ export async function decorateCustomer360Page(response: Response, requestedClien
   headers.set("x-mmd-identity-evidence-recovery", "read-only-v1");
   headers.set("x-mmd-identity-evidence-owner-review", "read-only-v1");
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
+}
+
+export async function decorateMembershipAccessPage(response: Response): Promise<Response> {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
+  let html = await response.text();
+  if (!html.includes('data-mmd-membership-client-handoff="v1"')) {
+    const script = `<script data-mmd-membership-client-handoff="v1">(()=>{'use strict';const ids=new URL(location.href).searchParams.getAll('client_id'),id=ids.length===1?String(ids[0]||'').trim():'';if(!/^rec[A-Za-z0-9]{6,32}$/.test(id))return;const form=document.querySelector('[data-form]'),input=form&&form.querySelector('[data-query]'),list=document.querySelector('[data-list]');if(!form||!input||!list)return;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(setter)setter.call(input,id);else input.value=id;input.dispatchEvent(new Event('input',{bubbles:true}));let done=false;const select=()=>{if(done)return;const row=Array.from(list.querySelectorAll('[data-id]')).find(node=>String(node.getAttribute('data-id')||'').trim()===id);if(row){done=true;observer.disconnect();row.click()}};const observer=new MutationObserver(select);observer.observe(list,{childList:true,subtree:true});form.requestSubmit?form.requestSubmit():form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));select();setTimeout(()=>observer.disconnect(),8000)})();</script>`;
+    html = html.includes("</body>") ? html.replace("</body>", `${script}</body>`) : `${html}${script}`;
+  }
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("cache-control", "no-store, private");
+  headers.set("x-mmd-membership-client-handoff", "canonical-client-v1");
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
+}
+
+export async function decorateCustomerDirectoryQuery(response: Response): Promise<Response> {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
+  let html = await response.text();
+  if (!html.includes('data-mmd-customer-directory-query="v1"')) {
+    const script = `<script data-mmd-customer-directory-query="v1">(()=>{const values=new URL(location.href).searchParams.getAll('q'),value=values.length===1?String(values[0]||'').trim():'';if(!value)return;const form=document.getElementById('search'),input=document.getElementById('query');if(!form||!input)return;input.value=value;form.requestSubmit?form.requestSubmit():form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))})();</script>`;
+    html = html.includes("</body>") ? html.replace("</body>", `${script}</body>`) : html.replace("</html>", `${script}</html>`);
+  }
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
 
 export async function enforceExactCanonicalClientScope(response: Response, requestedClientId: string): Promise<Response> {
