@@ -42,6 +42,7 @@ test("matched LINE OA import projects rename into reviewed staging and canonical
   let staged = null;
   let verified = null;
   let indexed = null;
+  let audit = null;
   globalThis.fetch = async (url, init = {}) => {
     const value = String(url);
     const method = init.method || "GET";
@@ -64,7 +65,7 @@ test("matched LINE OA import projects rename into reviewed staging and canonical
       indexed = JSON.parse(init.body).fields;
       return response({ id: "recIndex", fields: indexed });
     }
-    if (method === "POST" && table === "tblUzZ8ImRZOkks4c") return response({ id: "recAudit" });
+    if (method === "POST" && table === "tblUzZ8ImRZOkks4c") { audit = JSON.parse(init.body).fields; return response({ id: "recAudit" }); }
     throw new Error(`unexpected fetch ${method} ${value}`);
   };
   try {
@@ -94,6 +95,8 @@ test("matched LINE OA import projects rename into reviewed staging and canonical
     assert.equal(body.membership_mutation, false);
     assert.equal(body.entitlement_mutation, false);
     assert.equal(body.telegram_mutation, false);
+    assert.equal(audit.operation, "client_intake");
+    assert.equal(audit.redacted_summary, "line_ofc_import_matched_indexed");
 
     assert.deepEqual(staged["Canonical Client"], ["recClient"]);
     assert.equal(staged["Telegram Username"], "membertg");

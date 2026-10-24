@@ -251,7 +251,10 @@ async function createAudit(env, input) {
   const record = await airtableCreate(env, ACTIONS_TABLE, {
     action_id: actionId,
     idempotency_key: input.idempotencyKey,
-    operation: "line_ofc_client_import",
+    // Airtable's audited operation select predates the LINE OFC import path.
+    // Keep the audit row in its supported client-intake category and retain
+    // the exact operation in redacted_summary until the schema is migrated.
+    operation: "client_intake",
     target_id: input.targetId,
     actor_id: clean(input.actor?.id || "unknown"),
     actor_role: clean(input.actor?.role || "unknown"),
