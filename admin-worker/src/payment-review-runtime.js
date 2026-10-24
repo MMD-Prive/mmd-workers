@@ -1,4 +1,5 @@
 import { previewProofSessionBinding, bindProofSession, bindingNote } from "./payment-proof-session-binding.js";
+import { paymentSessionProofs } from "./payment-session-proofs.js";
 import { paymentJobSlipSummary } from "./payment-job-slip-summary.js";
 import { internalEvidenceReference, slipTransferAt, transferTimestamp } from "./slip-transfer-evidence.js";
 import { correctPaymentEvidence } from "./payment-evidence-correction.js";
@@ -158,7 +159,8 @@ async function listReviewQueue(request, env, actor) {
     return json({ ok: true, authority: "payments-worker", source: "sessions", ordering: "created_at_desc", limit, items: [], jobs });
   }
   const proofId = safeText(url.searchParams.get("proof_id"), 120);
-  const records = await airtableList(env, paymentProofTable(env), {
+  const sessionId = url.searchParams.get("session_id") || "";
+  const records = sessionId ? await paymentSessionProofs(sessionId, { page: discovery.page, sessionsTable: discovery.tables.sessions, paymentsTable: paymentsTable(env), proofsTable: paymentProofTable(env) }) : await airtableList(env, paymentProofTable(env), {
     filterByFormula: proofId ? `AND(${reviewablePaymentProofFormula()},{proof_id}='${formulaValue(proofId)}')` : reviewablePaymentProofFormula(),
     maxRecords: Math.min(Math.max(limit * 4, limit), 100),
     sort: [{ field: "created_at", direction: "desc" }],
@@ -169,7 +171,7 @@ async function listReviewQueue(request, env, actor) {
     .filter((item) => item.reviewable)
     .filter((item) => !proofId || item.proof_id === proofId)
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
-    .slice(0, limit);
+    .slice(0, sessionId ? records.length : limit);
 
   if (url.searchParams.get("include_context") === "1") {
     items = await enrichPaymentReviewContext(items, records, {
@@ -180,8 +182,11 @@ async function listReviewQueue(request, env, actor) {
     items = await enrichDiscoveryNames(items, discovery);
   }
 
+  if (sessionId) items = items.map(item => ({ ...item, session_id: sessionId }));
   return json({
     ok: true,
+    session_id: sessionId || null,
+    scope: sessionId ? "session" : "recent",
     authority: "payments-worker",
     source: "payment_proofs",
     ordering: "created_at_desc",
