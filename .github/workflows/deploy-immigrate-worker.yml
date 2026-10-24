@@ -370,28 +370,31 @@ jobs:
               exit 1
             fi
 
-            # Create Job is served by Session Creator Pro (admin-worker
-            # session-creator-page-proxy, #2213), not the Webflow split page.
+            # Create Job is the guarded worker-rendered page owned by
+            # admin-worker-api-create-job; it does not use Session Creator Pro
+            # assets. Verify the owner and page contract without submitting it.
             create_verified=0
             for attempt in 1 2 3 4 5 6 7 8; do
               : > "$create_body"
               : > "$create_headers"
               create_code="$(curl --compressed -sS -b "$cookie" -D "$create_headers" -o "$create_body" -w '%{http_code}' "$origin/internal/admin/jobs/create-job?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
               if [ "$create_code" = "200" ] \
-                && grep -aiq '^x-mmd-route-owner: admin-worker-session-creator-pro' "$create_headers" \
-                && grep -aqF '/internal/admin/work/assets/' "$create_body" \
+                && grep -aiq '^x-mmd-route-owner: admin-worker-api-create-job' "$create_headers" \
+                && grep -aqF '<title>สร้างงาน | MMD</title>' "$create_body" \
+                && grep -aqF 'id="create"' "$create_body" \
+                && grep -aqF '/v1/admin/job/create' "$create_body" \
                 && ! grep -aq 'id="job-board-form"' "$create_body" \
                 && ! grep -aq '/v1/admin/job-board/publish' "$create_body"; then
-                echo "Session Creator Pro Create Job verified for $origin on attempt $attempt"
+                echo "Worker-rendered Create Job verified for $origin on attempt $attempt"
                 create_verified=1
                 break
               fi
-              echo "Session Creator Pro Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
+              echo "Worker-rendered Create Job not ready for $origin (attempt $attempt, HTTP $create_code); retrying..."
               sleep 2
             done
             if [ "$create_verified" != "1" ]; then
-              echo "Create Job (Session Creator Pro) production verification failed for $origin" >&2
-              echo "::error::Create Job verify failed at $origin: HTTP $create_code; assets=$(grep -acF '/internal/admin/work/assets/' "$create_body" || true)"
+              echo "Create Job (admin-worker-api-create-job) production verification failed for $origin" >&2
+              echo "::error::Create Job verify failed at $origin: HTTP $create_code; form=$(grep -acF 'id="create"' "$create_body" || true)"
               exit 1
             fi
 
