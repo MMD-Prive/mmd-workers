@@ -62,7 +62,8 @@ jobs:
             webflow/sigil/model/model-console-state-presentation.test.mjs \
             webflow/sigil/model/model-console-travel-flow.test.mjs \
             webflow/sigil/model/model-console-v3-identity-first.test.mjs \
-            webflow/sigil/model/model-console-payout-summary-v2.test.mjs
+            webflow/sigil/model/model-console-payout-summary-v2.test.mjs \
+            webflow/sigil/model/model-console-travel-receipt.test.mjs
       # The existing entry test imports a typeless .js Worker as ESM. Node 18
       # lacks the module syntax detection used by current Node 20/22 releases.
       - name: Existing Webflow entry integration (ESM-capable runtime)

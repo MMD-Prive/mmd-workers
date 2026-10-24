@@ -8,6 +8,7 @@ import CleanCSS from 'clean-css';
 import { normalizeModelDecline } from '../shared/model-decline-options.mjs';
 import { openModelDecline } from '../webflow/sigil/model/model-console-decline-options.mjs';
 import { mountConsoleHero } from '../webflow/sigil/model/model-console-hero.mjs';
+import { installModelTravelReceiptNotice } from '../webflow/sigil/model/model-console-travel-receipt.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'webflow/sigil/model');
 const assets = path.join(source, 'console-atelier');
@@ -40,7 +41,7 @@ export function assetManifest() {
 }
 // A separate presentation embed avoids overflowing the existing Console Footer.
 export function buildConsoleDeclineEmbed() {
-  const code = '(()=>{const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();})();';
+  const code = '(()=>{const normalizeModelDecline=' + normalizeModelDecline.toString() + ';window.MMDConsoleDecline=' + openModelDecline.toString() + ';const mountConsoleHero=' + mountConsoleHero.toString() + ';const installModelTravelReceiptNotice=' + installModelTravelReceiptNotice.toString() + ';if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>mountConsoleHero(),{once:true});else mountConsoleHero();installModelTravelReceiptNotice();})();';
   const css = new CleanCSS({ level: 2 }).minify(fs.readFileSync(path.join(source, 'model-console-surfaces.css'), 'utf8'));
   if (css.errors.length) throw new Error(css.errors.join('; '));
   const embed = '<style>' + css.styles + '</style><script>' + minify_sync(code, { compress: true, mangle: true }).code + '</script>';
