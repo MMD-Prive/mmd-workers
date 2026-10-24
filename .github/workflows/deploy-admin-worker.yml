@@ -378,6 +378,8 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "admin-worker";
           const paths = [
+            "/internal/ceo/line-notes-import*",
+            "/v1/admin/kenji/control/line-ofc/import",
             "/v1/admin/models/drive-select*",
             "/internal/admin/jobs/model-preview*",
             "/internal/admin/payments",
