@@ -54,7 +54,7 @@ test("queue view safely renders backend values and deep-links into the existing 
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(name, callback) { this.listeners[name] = callback; }
   }
-  const ids = ["q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
+  const ids = ["upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id === "q-list" ? "div" : "input")]));
   const calls = [];
   const malicious = "<img src=x onerror=alert(1)>";
@@ -117,4 +117,51 @@ test("HEAD returns headers without a page body", async () => {
   const response = handleMoneyControlWorkerHome(new Request("https://mmdbkk.com/internal/admin/payments", { method: "HEAD" }));
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
+});
+
+async function sessionUI(payload, code = 200) {
+  const elements = new Map(), calls = [];
+  class Element {
+    constructor(){this.children=[];this.dataset={};this.listeners={};this.value='';this.hidden=false;this.textContent='';}
+    append(...values){this.children.push(...values)}
+    replaceChildren(...values){this.children=values}
+    addEventListener(name,fn){this.listeners[name]=fn}
+  }
+  const document={getElementById(id){if(!elements.has(id))elements.set(id,new Element());return elements.get(id)},createElement(){return new Element()}};
+  const html=await handleMoneyControlWorkerHome(new Request('https://mmdbkk.com/internal/admin/payments')).text();
+  for(const match of html.matchAll(/id="([^"]+)"/g))document.getElementById(match[1]);
+  vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],{document,URL,Date,Set,FormData,Option:class extends Element{constructor(label,value){super();this.value=value}},location:{href:'https://mmdbkk.com/internal/admin/payments?session_id=sess_old',origin:'https://mmdbkk.com'},fetch:async(url,options)=>{calls.push({url,options});return {ok:code===200,status:code,json:async()=>payload}},addEventListener(){}});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  return {elements,calls};
+}
+test('session page sends exact job filter and offers an upload only after complete lookup',async()=>{
+  const f=await sessionUI({ok:true,scope:'session',session_id:'sess_old',items:[]});
+  assert.equal(new URL(f.calls[0].url,'https://mmdbkk.com').searchParams.get('session_id'),'sess_old');
+  assert.equal(f.elements.get('upload-panel').hidden,false);
+  assert.match(f.elements.get('upload-job').textContent,/sess_old/);
+  assert.match(f.elements.get('q-status').textContent,/ยังไม่มีสลิปที่รอตรวจ.*100%/);
+  assert.equal(f.calls.length,1);
+});
+test('errors, invalid response and old API without session support never show false empty state',async()=>{
+  for(const [payload,code] of [[null,200],[{ok:true},200],[{ok:true,items:[]},200],[{ok:false},503],[{ok:false},401]]){
+    const f=await sessionUI(payload,code);
+    assert.equal(f.elements.get('upload-panel').hidden,true);
+    assert.equal(f.elements.get('q-status').dataset.kind,'error');
+    const message=f.elements.get('q-status').textContent;
+    f.elements.get('search').listeners.input();
+    assert.equal(f.elements.get('q-status').textContent,message);
+    assert.doesNotMatch(message,/ยังไม่มีสลิป/);
+  }
+});
+test('upload preserves job context and uses existing authenticated intake without approving money',async()=>{
+  const f=await sessionUI({ok:true,scope:'session',session_id:'sess_old',items:[],proof_id:'proof_uploaded'});
+  f.elements.get('upload-file').files=[new Blob(['test'],{type:'image/png'})];
+  f.elements.get('upload-source').value='line_ofc';f.elements.get('upload-stage').value='deposit';
+  await f.elements.get('upload-form').listeners.submit({preventDefault(){}});
+  const post=f.calls.find(c=>c.options.method==='POST');
+  assert.equal(post.url,'/studio/api/payments/slip-intake');
+  assert.equal(post.options.credentials,'include');
+  assert.equal(post.options.body.get('session_id'),'sess_old');
+  assert.equal(post.options.body.get('payment_stage'),'deposit');
+  assert.equal(f.calls.filter(c=>c.options.method==='POST').length,1);
 });
