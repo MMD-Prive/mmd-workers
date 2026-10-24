@@ -16,7 +16,7 @@ html body #model-supply-v3 .msv3-section-head{flex-wrap:wrap}
 html body #model-supply-v3 .msv3-lightbox-close{background:#fff!important;color:#27313b!important}
 html body #sigil-workspace-directory,html body #sigil-workspace-directory :is(nav,summary){background:#fff!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important;border-color:#c7ccd2!important}
 html body #sigil-workspace-directory :is(a,span,h3,strong){color:#27313b!important;-webkit-text-fill-color:#27313b!important}
-html body #sigil-workspace-directory a:is(:hover,[aria-current=page]){background:#ffdab0!important}
+html body #sigil-workspace-directory#sigil-workspace-directory a:is(:hover,[aria-current=page]){background:#ffdab0!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important}
 html body #mmdK{position:relative!important;inset:auto!important;width:auto!important;max-width:100%!important;margin:16px!important;background:#fff!important;color:#27313b!important;border:1px solid #c7ccd2!important;box-shadow:none!important}
 html body #mmdK :is(a,span,strong){color:#27313b!important;-webkit-text-fill-color:#27313b!important}
 @media(max-width:640px){html body #model-supply-v3 .msv3-supply{grid-template-columns:repeat(3,minmax(0,1fr))}html body #model-supply-v3 .msv3-family{grid-template-columns:repeat(2,minmax(0,1fr))}}
