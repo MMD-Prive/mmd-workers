@@ -68,7 +68,14 @@
 
   function setText(id,value){
     const element=byId(id);
-    if(element)element.textContent=display(value);
+    if(element){
+      // Runtime evidence is not a static dictionary label (e.g. WAITING).
+      element.setAttribute("data-mmd-i18n-skip","");
+      for(const attribute of ["data-i18n","data-i18n-text","data-i18n-html","data-mmd-i18n-autobound"]){
+        element.removeAttribute(attribute);
+      }
+      element.textContent=display(value);
+    }
   }
 
   function setTone(elementOrId,value="warn"){
@@ -1513,8 +1520,8 @@
   function paintMemory(record,memory){
     state.memory=memory||null;
     if(!memory){
-      setText("miAccess","WAITING");
-      setText("miReview","REVIEW");
+      setText("miAccess","ยังยืนยันสิทธิ์ไม่ได้");
+      setText("miReview","ตรวจแหล่งข้อมูลสิทธิ์");
       setText("miAccessMeta","Backend entitlement evidence ยังไม่พร้อม · ไม่อนุมานจาก tier หรือ tag");
       setTone("miAccessCard","warn");
       setTone("miReviewCard","warn");
@@ -1526,7 +1533,8 @@
     setText("miLevel",level);
     setText("miLevelMeta",`${memory.membership_status?`Membership evidence · ${memory.membership_status} · `:""}Relationship evidence · ไม่ใช่ authorization`);
 
-    const access=clean(memory.access_status)||"WAITING";
+    const rawAccess=clean(memory.access_status);
+    const access=["","unknown","waiting","pending"].includes(lower(rawAccess))?"ยังยืนยันสิทธิ์ไม่ได้":rawAccess;
     setText("miAccess",access);
     setText("miAccessMeta",`Backend entitlement evidence · My MMD Resolver ยังเป็น authority${memory.renewal_due?` · renewal ${String(memory.renewal_due).slice(0,10)}`:""}`);
 
@@ -1548,6 +1556,7 @@
     paintLineage(record);
 
     if(record?.manual_public_only||!clean(record?.client_id)){
+      paintMemory(record,null);
       setStatus("IDENTITY REVIEW · ต้อง resolve เป็น Canonical Client ก่อนดู membership/access","warn");
       return;
     }
@@ -1692,6 +1701,36 @@
     links.prepend(anchor);
   }
 
+  function installSearchControls(){
+    const original=byId("miSearchForm");
+    const input=byId("miSearch");
+    if(!original||!input)return input;
+    // This is an authenticated API lookup, not a Webflow form submission.
+    // Leave Webflow's form/CAPTCHA handling elsewhere untouched.
+    const controls=document.createElement("div");
+    controls.id="miSearchForm";
+    controls.className=original.className;
+    controls.setAttribute("role","search");
+    controls.setAttribute("aria-label","ค้นหาลูกค้า");
+    const button=document.createElement("button");
+    button.type="button";
+    button.className="w-button";
+    button.textContent="ค้นหา";
+    const search=()=>loadRecords(clean(input.value));
+    button.addEventListener("click",search);
+    input.addEventListener("keydown",event=>{
+      if(event.key==="Enter"||event.key==="Escape"){
+        event.preventDefault();
+        event.stopPropagation();
+        if(event.key==="Escape")input.value="";
+        search();
+      }
+    });
+    controls.append(input,button);
+    original.replaceWith(controls);
+    return input;
+  }
+
   function boot(){
     const root=byId("mmdMemberIntelligence");
     if(!root)return;
@@ -1705,19 +1744,7 @@
     addNavigation("Customer 360","/internal/admin/customer-data","miNavCustomer360");
     addNavigation("Control Room","/internal/admin/control-room","miNavControlRoom");
 
-    const form=byId("miSearchForm");
-    const input=byId("miSearch");
-    if(form)form.addEventListener("submit",(event)=>{
-      event.preventDefault();
-      event.stopPropagation();
-      loadRecords(clean(input?.value));
-    },true);
-    if(input)input.addEventListener("keydown",(event)=>{
-      if(event.key==="Escape"){
-        input.value="";
-        loadRecords("");
-      }
-    });
+    const input=installSearchControls();
 
     const params=new URLSearchParams(location.search);
     const query=clean(params.get("q"));
