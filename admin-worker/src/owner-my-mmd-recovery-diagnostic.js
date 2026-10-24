@@ -9,7 +9,7 @@ export function isOwnerMyMmdRecoveryDiagnosticRequest(path, method) {
   const m = String(method || "").toUpperCase();
   return (
     (path === OWNER_MY_MMD_RECOVERY_PAGE_PATH && (m === "GET" || m === "HEAD"))
-    || (path === OWNER_MY_MMD_RECOVERY_API_PATH && m === "GET")
+    || (path === OWNER_MY_MMD_RECOVERY_API_PATH && (m === "GET" || m === "POST"))
   );
 }
 
@@ -29,8 +29,19 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
     return html(renderPage(url.searchParams.get("q") || ""), 200);
   }
 
+  const refresh = method === "POST";
+  let body = null;
+  if (refresh) {
+    if (request.headers.get("origin") !== url.origin || !["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(url.origin)) {
+      return json({ ok: false, error: "origin_not_allowed" }, 403);
+    }
+    body = await request.json().catch(() => null);
+    if (!body || body.confirm_reviewed !== true || !recordId(body.client_id) || Object.keys(body).some(key => !["client_id", "confirm_reviewed"].includes(key))) {
+      return json({ ok: false, error: "review_confirmation_required" }, 400);
+    }
+  }
   const query = clean(url.searchParams.get("q"), 120);
-  const clientId = recordId(url.searchParams.get("client_id"));
+  const clientId = recordId(refresh ? body.client_id : url.searchParams.get("client_id"));
   if (!query && !clientId) return json({ ok: false, error: "query_required" }, 400);
 
   const identity = await resolveLiveCanonicalClient(env, clientId
@@ -76,7 +87,7 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
         "x-mmd-internal-call": "true",
         "x-mmd-service-binding": "admin-worker",
       },
-      body: JSON.stringify({ line_user_id: lineUserId }),
+      body: JSON.stringify({ line_user_id: lineUserId, ...(refresh ? { refresh_reviewed: true } : {}) }),
     }));
     payload = await response.json().catch(() => null);
   } catch {
@@ -105,7 +116,7 @@ export async function handleOwnerMyMmdRecoveryDiagnostic(request, env = {}, acto
       owner_session_required: true,
       browser_raw_line_user_id_exposed: false,
       customer_session_required: false,
-      read_only: true,
+      read_only: !refresh,
     },
   });
 }
@@ -199,7 +210,7 @@ h1{font-size:clamp(28px,5vw,48px);line-height:1.04;margin:8px 0 10px}p{color:var
     }catch(e){render({ok:false,error:'network_unavailable'})}
   }
   form.addEventListener('submit',function(e){e.preventDefault();var q=(new FormData(form).get('q')||'').trim();if(q)load(q,'')});
-  var initial=(new URL(location.href)).searchParams.get('q');if(initial)load(initial,'');
+  var params=new URL(location.href).searchParams,initial=params.get('q'),client=params.get('client_id');if(client)load('',client);else if(initial)load(initial,'');
 })();
 </script>
 </body>
