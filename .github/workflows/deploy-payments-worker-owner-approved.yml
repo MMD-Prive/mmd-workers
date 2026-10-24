@@ -83,6 +83,14 @@ jobs:
           node --check payments-worker/confirmation-details.js
           node --experimental-global-webcrypto --test payments-worker/confirmation-details.test.mjs
 
+      - name: Validate model acknowledgement receipts before release
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check payments-worker/confirmation-ack.js
+          node --check webflow/sigil/confirm/job-model-v15-i18n.js
+          node --test payments-worker/confirmation-ack.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/model-confirm-no-silent-failure.test.mjs webflow/sigil/confirm/job-model-v15-no-silent-failure.test.mjs
+
       - name: Validate production Worker configuration without uploading
         shell: bash
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config payments-worker/wrangler.merged.toml

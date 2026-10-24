@@ -42,11 +42,20 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       projection_only: ${{ steps.check.outputs.projection_only }}
+      owner_approved_required: ${{ steps.confirmation_guard.outputs.owner_approved_required }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Require owner-approved confirmation release
+        id: confirmation_guard
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: node scripts/payments-confirmation-release-guard.mjs
 
       - name: Detect the narrowly approved paid projection release
         id: check
@@ -86,7 +95,7 @@ jobs:
 
   validate-and-deploy:
     needs: scope
-    if: needs.scope.outputs.projection_only != 'true'
+    if: needs.scope.outputs.projection_only != 'true' && needs.scope.outputs.owner_approved_required == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

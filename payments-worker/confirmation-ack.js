@@ -339,21 +339,27 @@ export async function handleConfirmationContext(request, env = {}) {
   }));
 }
 
-export async function handleConfirmationAck(request, env = {}) {
+async function runConfirmationAck(request, env, trace) {
   if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
   if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
 
+  trace.stage = "authorization";
   const authorized = await authorizeConfirmationRequest(request, env);
   if (authorized.response) return authorized.response;
 
+  trace.role = authorized.expectedRole;
+  trace.session_id = authorized.claims.session_id;
   try {
+    trace.stage = "revision";
     const revision = await confirmationRevision(env, authorized.session, authorized.claims.session_id);
     if (revision.confirmation_change_pending) return withCors(request, env, json({ok:false,error:"confirmation_change_pending"},409));
     const seenRevision = clean(authorized.body?.confirmation_revision, 80);
     if ((revision.confirmation_revision_required || seenRevision) && seenRevision !== revision.confirmation_revision) {
       return withCors(request, env, json({ok:false,error:"confirmation_details_changed_reload_required"},409));
     }
+    trace.stage = "write";
     const ack = await patchAcknowledgement(env, authorized.session, authorized.expectedRole);
+    trace.stage = "complete";
     return withCors(request, env, json({
       ok: true,
       role: authorized.expectedRole,
@@ -366,4 +372,44 @@ export async function handleConfirmationAck(request, env = {}) {
   } catch (error) {
     return withCors(request, env, json({ ok: false, error: clean(error?.message || "confirmation_ack_failed", 200) }, errorStatus(error)));
   }
+}
+
+// Only allowlisted metadata enters the receipt/log; never serialize requests or errors.
+const ACK_RECEIPT_CODES = new Set([
+  "origin_not_allowed", "confirmation_token_required", "expected_role_required",
+  "invalid_confirmation_token", "invalid_confirmation_token_signature",
+  "invalid_confirmation_token_purpose", "confirmation_role_mismatch",
+  "invalid_confirmation_token_subject", "invalid_confirmation_token_lifetime",
+  "confirmation_token_not_yet_valid", "confirmation_token_expired",
+  "confirmation_signing_not_ready", "confirmation_token_store_not_ready",
+  "confirmation_token_not_active", "confirmation_token_record_invalid",
+  "confirmation_token_record_mismatch", "session_not_found", "session_id_ambiguous",
+  "confirmation_session_mismatch", "confirmation_change_pending",
+  "confirmation_details_changed_reload_required", "airtable_not_ready",
+  "airtable_request_failed", "confirmation_ack_failed"
+]);
+
+export async function handleConfirmationAck(request, env = {}) {
+  if (request.method.toUpperCase() !== "POST") return runConfirmationAck(request, env, {});
+  const trace = { stage: "authorization" };
+  let response;
+  try { response = await runConfirmationAck(request, env, trace); }
+  catch { response = withCors(request, env, json({ ok: false, error: "confirmation_ack_failed" }, 503)); }
+  const payload = await response.clone().json();
+  const code = payload.ok === true ? "ok" : ACK_RECEIPT_CODES.has(payload.error) ? payload.error : "confirmation_ack_failed";
+  const receipt = {
+    schema: "mmd_confirmation_ack_receipt_v1",
+    request_id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    route: CONFIRM_ACK_PATH,
+    stage: trace.stage,
+    status: response.status,
+    outcome: payload.ok === true ? "success" : response.status >= 500 || trace.stage === "write" ? "unknown" : "rejected",
+    code,
+    ...(trace.role ? { role: trace.role } : {}),
+    ...(/^sess_[a-zA-Z0-9_]{1,160}$/.test(trace.session_id || "") ? { session_id: trace.session_id } : {}),
+    ...(payload.ok === true ? { idempotent: payload.idempotent === true, model_session_state_seeded: payload.model_session_state_seeded === true } : {})
+  };
+  try { console.info(JSON.stringify(receipt)); } catch { /* logging must not change acknowledgement */ }
+  return withCors(request, env, json({ ...payload, ...(payload.ok === true ? {} : { error: code }), receipt }, response.status));
 }

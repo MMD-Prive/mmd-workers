@@ -114,6 +114,7 @@
       detailsChangedStatus: "รายละเอียดงานเพิ่งถูกอัปเดต กรุณาตรวจรายละเอียดใหม่แล้วกดยืนยันอีกครั้ง",
       networkStatus: "เชื่อมต่อไม่ได้ กรุณาเช็กอินเทอร์เน็ตแล้วลองใหม่",
       timeoutStatus: "ระบบตอบช้ากว่าปกติ กรุณาลองใหม่",
+      confirmUnknownStatus: "ยังตรวจผลการรับงานไม่ได้ กรุณาตรวจสถานะงานกับ MMD ก่อนกดยืนยันซ้ำ",
       temporaryStatus: "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง",
       reentryStatus: "กำลังเปิดใน LINE เพื่อยืนยันตัวตน…",
       refLabel: "รหัสอ้างอิงสำหรับแจ้ง MMD"
@@ -166,6 +167,7 @@
       detailsChangedStatus: "The job details were just updated. Please review them and confirm again.",
       networkStatus: "Can’t connect. Check your internet and try again.",
       timeoutStatus: "The system is slower than usual. Please try again.",
+      confirmUnknownStatus: "The result is not confirmed. Check the job status with MMD before confirming again.",
       temporaryStatus: "Temporary system issue. Please try again.",
       reentryStatus: "Opening in LINE to verify it’s you…",
       refLabel: "Reference for MMD"
@@ -218,6 +220,7 @@
       detailsChangedStatus: "工作详情刚刚更新，请重新核对后再次确认。",
       networkStatus: "无法连接，请检查网络后重试。",
       timeoutStatus: "系统响应较慢，请重试。",
+      confirmUnknownStatus: "尚未确认处理结果，请先向 MMD 查询工作状态，再决定是否重新确认。",
       temporaryStatus: "系统暂时异常，请再试一次。",
       reentryStatus: "正在 LINE 中打开以验证身份…",
       refLabel: "MMD 参考编号"
@@ -432,13 +435,51 @@
     }
   }
 
+  const ACK_RECEIPT_KEY = "mmd_model_ack_receipts_v1";
+  const SAFE_ERROR_CODES = new Set([
+    "model_identity_reentry", "confirmation_token_expired", "confirmation_token_not_active",
+    "confirmation_token_record_mismatch", "confirmation_token_record_invalid", "confirmation_session_mismatch",
+    "confirmation_role_mismatch", "confirmation_token_required", "expected_role_required",
+    "confirmation_token_not_yet_valid", "invalid_confirmation_token", "invalid_confirmation_token_signature",
+    "invalid_confirmation_token_purpose", "invalid_confirmation_token_subject", "invalid_confirmation_token_lifetime",
+    "session_not_found", "session_id_ambiguous", "confirmation_change_pending",
+    "confirmation_details_changed_reload_required", "timeout", "network_error", "airtable_request_failed",
+    "airtable_not_ready", "confirmation_signing_not_ready", "confirmation_token_store_not_ready", "confirmation_ack_failed", "invalid_response"
+  ]);
+  function safeErrorCode(error) {
+    const code = str(error?.code || error?.message);
+    return SAFE_ERROR_CODES.has(code) ? code : "confirmation_ack_failed";
+  }
+  function ackReceipt(data, error) {
+    const backendId = str(data?.receipt?.request_id || error?.receipt?.request_id);
+    const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(backendId) ? backendId : "";
+    const status = Number(error?.status) || (data ? 200 : 0);
+    const receipt = { schema: "mmd_model_ack_browser_receipt_v1", timestamp: new Date().toISOString(),
+      request_id: requestId, status, code: error ? safeErrorCode(error) : "ok",
+      outcome: error ? (error.receipt?.outcome === "unknown" || !status || status >= 500 || safeErrorCode(error) === "invalid_response" ? "unknown" : "rejected") : "success" };
+    try {
+      const saved = JSON.parse(window.sessionStorage?.getItem(ACK_RECEIPT_KEY) || "[]");
+      // Re-sanitize prior entries instead of trusting browser storage contents.
+      const prior = Array.isArray(saved) ? saved.slice(-9).filter(x => x && x.schema === receipt.schema)
+        .map(x => ({ schema: receipt.schema, timestamp: /^\d{4}-\d\d-\d\dT[0-9:.]+Z$/.test(x.timestamp) ? x.timestamp : "",
+          request_id: /^[0-9a-f-]{36}$/i.test(x.request_id) ? x.request_id : "",
+          status: Number.isInteger(x.status) && x.status >= 0 && x.status <= 599 ? x.status : 0,
+          code: x.code === "ok" ? "ok" : safeErrorCode({code:x.code}),
+          outcome: ["success", "unknown", "rejected"].includes(x.outcome) ? x.outcome : "unknown" })) : [];
+      window.sessionStorage?.setItem(ACK_RECEIPT_KEY, JSON.stringify([...prior.slice(-9), receipt]));
+    } catch (_) { /* Restricted storage never prevents acknowledgement. */ }
+    return requestId;
+  }
+
   function diagFor(error, where) {
-    const code = str(error?.code || error?.message || "unknown").replace(/[^a-z0-9_]/gi, "").slice(0, 60) || "unknown";
+    const code = safeErrorCode(error);
     const status = Number(error?.status) || 0;
     const now = new Date();
     const hhmm = `${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
     const tail = sessionTail();
-    return ["MC", `${where === "confirm" ? "A" : "D"}${status || "000"}`, code, tail || "nosess", hhmm].join("-");
+    const ref = ["MC", `${where === "confirm" ? "A" : "D"}${status || "000"}`, code, tail || "nosess", hhmm].join("-");
+    const id = str(error?.receipt?.request_id);
+    return /^[0-9a-f-]{36}$/i.test(id) ? `${ref} · ${id}` : ref;
   }
 
   const REPLACED_CODES = new Set([
@@ -457,6 +498,7 @@
   function classify(error, where) {
     const code = str(error?.code || error?.message) || "unknown";
     const status = Number(error?.status) || 0;
+    if (where === "confirm" && (error?.receipt?.outcome === "unknown" || ["timeout", "network_error", "invalid_response"].includes(code) || status >= 500)) return { key: "confirmUnknownStatus", error: true, retry: false, diag: true };
     if (code === "model_identity_reentry") return { key: "reentryStatus", error: false, retry: false, diag: false };
     if (code === "confirmation_token_expired" || status === 410) return { key: "expiredStatus", error: true, retry: false, diag: true };
     if (REPLACED_CODES.has(code)) return { key: "replacedStatus", error: true, retry: false, diag: true };
@@ -476,7 +518,7 @@
 
   function logFailure(error, where) {
     try {
-      console.warn("[mmd-model-confirm]", { stage: where, code: str(error?.code || error?.message), status: Number(error?.status) || 0 });
+      console.warn("[mmd-model-confirm]", { stage: where, code: safeErrorCode(error), status: Number(error?.status) || 0 });
     } catch (_) {}
   }
 
@@ -673,8 +715,16 @@ function codedError(code, status = 0) {
       let data = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
       if (!response.ok || data.ok === false) {
-        throw codedError(str(data.error || data.message) || `http_${response.status}`, response.status);
+        const error = codedError(str(data.error || data.message) || `http_${response.status}`, response.status);
+        error.receipt = {
+          request_id: data.receipt?.request_id,
+          // Only failure outcomes are accepted here; an HTTP/API error cannot become success.
+          outcome: path === "/v1/confirm/ack" && ["unknown", "rejected"].includes(data.receipt?.outcome)
+            ? data.receipt.outcome : undefined
+        };
+        throw error;
       }
+      if (path === "/v1/confirm/ack" && data.ok !== true) throw codedError("invalid_response", response.status);
       return data;
     })();
     request.catch(() => {});
@@ -687,7 +737,12 @@ function codedError(code, status = 0) {
       }, REQUEST_TIMEOUT_MS);
     });
     try {
-      return await Promise.race([request, watchdog]);
+      const data = await Promise.race([request, watchdog]);
+      if (path === "/v1/confirm/ack") ackReceipt(data);
+      return data;
+    } catch (error) {
+      if (path === "/v1/confirm/ack") ackReceipt(null, error);
+      throw error;
     } finally {
       clearTimeout(timer);
     }
