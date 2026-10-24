@@ -3,7 +3,7 @@ import test from "node:test";
 import worker from "../src/index.js";
 
 test("shared client script is served from one endpoint", async () => {
-  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), {}, {});
+  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /javascript/);
   const source = await response.text();
@@ -16,7 +16,7 @@ test("context requires an authenticated admin session", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false }), { status: 401, headers: { "content-type": "application/json" } });
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room"), {}, {});
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 401);
   } finally {
     globalThis.fetch = original;
@@ -27,7 +27,7 @@ test("Command Center requires admin auth", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false }), { status: 401, headers: { "content-type": "application/json" } });
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/command-center"), {}, {});
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/command-center"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 401);
   } finally {
     globalThis.fetch = original;
@@ -39,7 +39,7 @@ test("Command Center normalizes Needs Per and prepared Action Cards from verifie
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.pathname === "/v1/admin/dashboard") {
       return new Response(JSON.stringify({
@@ -56,7 +56,7 @@ test("Command Center normalizes Needs Per and prepared Action Cards from verifie
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/command-center", { headers: { cookie: "mmd_admin_gate_v1=test" } }), {}, {});
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/command-center", { headers: { cookie: "mmd_admin_gate_v1=test" } }), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.owner_mode, "single_owner");
@@ -78,8 +78,8 @@ test("plain-language command preview is safe and never mutates protected authori
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
-    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
     const request = new Request("https://mmdbkk.com/v1/admin/ai-ops/command/preview", {
@@ -87,7 +87,7 @@ test("plain-language command preview is safe and never mutates protected authori
       headers: { cookie: "mmd_admin_gate_v1=test", "content-type": "application/json" },
       body: JSON.stringify({ command: "เช็กสลิปคุณหนุ่ยว่าจ่ายหรือยัง" }),
     });
-    const response = await worker.fetch(request, {}, {});
+    const response = await worker.fetch(request, { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.matched, true);
@@ -106,7 +106,7 @@ test("MY MMD recovery command routes Owner to the read-only diagnostic", async (
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, actor: "per" }), {
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -122,7 +122,7 @@ test("MY MMD recovery command routes Owner to the read-only diagnostic", async (
       headers: { cookie: "mmd_admin_gate_v1=test", "content-type": "application/json" },
       body: JSON.stringify({ command: "เช็ก MY MMD ของเชนว่า recovery reconciled และ mmdacc เป็นอะไร" }),
     });
-    const response = await worker.fetch(request, {}, {});
+    const response = await worker.fetch(request, { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.matched, true);
@@ -141,8 +141,8 @@ test("unsupported command does not invent an action", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
-    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
     const request = new Request("https://mmdbkk.com/v1/admin/ai-ops/command/preview", {
@@ -150,7 +150,7 @@ test("unsupported command does not invent an action", async () => {
       headers: { cookie: "mmd_admin_gate_v1=test", "content-type": "application/json" },
       body: JSON.stringify({ command: "ทำทุกอย่างแทนฉันเลย" }),
     });
-    const response = await worker.fetch(request, {}, {});
+    const response = await worker.fetch(request, { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.matched, false);
@@ -164,12 +164,12 @@ test("Create Job context returns advisory locks and missing identifiers", async 
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
-    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
     const request = new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fjobs%2Fcreate-job", { headers: { cookie: "mmd_admin_gate_v1=test" } });
-    const response = await worker.fetch(request, {}, {});
+    const response = await worker.fetch(request, { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.schema_version, "mmd_ai_ops_layer_v1");
@@ -187,14 +187,14 @@ test("Control Room context embeds Command Center P0 without a second fetch", asy
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
-    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
     if (url.pathname === "/v1/admin/dashboard") {
       return new Response(JSON.stringify({ ok: true, todos: [], boss: [], money: [], jobs: [], members: [], status: { admin: "พร้อม" } }), { status: 200, headers: { "content-type": "application/json" } });
     }
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room", { headers: { cookie: "mmd_admin_gate_v1=test" } }), {}, {});
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room", { headers: { cookie: "mmd_admin_gate_v1=test" } }), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     const body = await response.json();
     assert.equal(body.page.surface, "control_room");
     assert.equal(body.command_center.mode, "per_command_center_v1");
@@ -208,11 +208,11 @@ test("Customer Data remains explicitly HOLD", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
-    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    if (url.pathname === "/v1/admin/auth/me") return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
-    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcustomer-data", { headers: { cookie: "mmd_admin_gate_v1=test" } }), {}, {});
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcustomer-data", { headers: { cookie: "mmd_admin_gate_v1=test" } }), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     const body = await response.json();
     assert.equal(body.page.surface, "customer_data_hold");
     assert.equal(body.anomalies.some((item) => item.code === "surface_hold"), true);

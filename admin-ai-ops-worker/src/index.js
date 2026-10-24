@@ -64,7 +64,7 @@ export default {
 
     if (path === COMMAND_PREVIEW_PATH) {
       if (method !== "POST") return response(request, { ok: false, error: "method_not_allowed" }, 405);
-      const auth = await verifyAdmin(request);
+      const auth = await verifyAdmin(request, env.MMS_ADMIN);
       if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
       const body = await request.json().catch(() => null);
       return response(request, previewCommand(body?.command || body?.text || ""));
@@ -72,9 +72,9 @@ export default {
 
     if (path === COMMAND_CENTER_PATH) {
       if (method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
-      const auth = await verifyAdmin(request);
+      const auth = await verifyAdmin(request, env.MMS_ADMIN);
       if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
-      const dashboard = await readAdminJson(request, "/v1/admin/dashboard");
+      const dashboard = await readAdminJson(request, "/v1/admin/dashboard", env.MMS_ADMIN);
       return response(request, {
         ok: true,
         schema_version: SCHEMA,
@@ -90,11 +90,10 @@ export default {
     if (method !== "GET") return response(request, { ok: false, error: "method_not_allowed" }, 405);
 
     const page = resolveSurface(url.searchParams.get("path") || "");
-    // Same-zone Worker routes cannot be called with global fetch. Only the MMS
-    // context uses this service; every read still carries the caller's session.
-    const service = page.surface === "mms" ? env.MMS_ADMIN : null;
-    if (page.surface === "mms" && typeof service?.fetch !== "function") {
-      return response(request, { ok: false, error: "mms_admin_service_unavailable" }, 503);
+    // Same-zone Worker routes require the admin service binding on every surface.
+    const service = env.MMS_ADMIN;
+    if (typeof service?.fetch !== "function") {
+      return response(request, { ok: false, error: "admin_service_unavailable" }, 503);
     }
     const auth = await verifyAdmin(request, service);
     if (!auth.ok) return response(request, { ok: false, error: "unauthorized" }, 401);
@@ -126,7 +125,7 @@ export default {
 async function verifyAdmin(request, service = null) {
   try {
     const u = new URL(request.url);
-    if (service && !["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(u.origin)) return { ok: false };
+    if (!["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(u.origin)) return { ok: false };
     u.pathname = "/v1/admin/auth/me";
     u.search = "";
     const headers = new Headers();
@@ -135,13 +134,11 @@ async function verifyAdmin(request, service = null) {
       if (value) headers.set(key, value);
     }
     const init = { method: "GET", headers, redirect: "manual" };
-    const r = service
-      ? await service.fetch(new Request(u, { ...init, signal: AbortSignal.timeout(7000) }))
-      : await fetch(u.toString(), init);
+    if (typeof service?.fetch !== "function") return { ok: false };
+    const r = await service.fetch(new Request(u, { ...init, signal: AbortSignal.timeout(7000) }));
     if (!r.ok) return { ok: false };
     const body = await r.json().catch(() => null);
-    if (service) return { ok: body?.ok === true && body?.authenticated === true && body?.worker === "admin-worker", actor: null };
-    return { ok: Boolean(body?.ok !== false), actor: body || null };
+    return { ok: body?.ok === true && body?.authenticated === true && body?.worker === "admin-worker", actor: null };
   } catch {
     return { ok: false };
   }
@@ -162,9 +159,7 @@ async function readAdminJson(request, route, service = null) {
   }
   try {
     const init = { method: "GET", headers, redirect: "manual" };
-    const r = service
-      ? await service.fetch(new Request(target, { ...init, signal: AbortSignal.timeout(9000) }))
-      : await fetch(target.toString(), init);
+    const r = await service.fetch(new Request(target, { ...init, signal: AbortSignal.timeout(9000) }));
     const text = await r.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}

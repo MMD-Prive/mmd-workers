@@ -3,7 +3,7 @@ import test from "node:test";
 import gate from "../src/gate.js";
 
 test("shared AI Ops client supports CEO, single-owner mode and no longer self-blocks", async () => {
-  const response = await gate.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js?v=3"), {}, {});
+  const response = await gate.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js?v=3"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-ai-ops-client"), "v3-single-owner");
   const source = await response.text();
@@ -21,7 +21,7 @@ test("CEO context is canonical, single-owner and reads admin dashboard worker", 
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, authenticated: true, actor: "per" }), {
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -45,7 +45,7 @@ test("CEO context is canonical, single-owner and reads admin dashboard worker", 
       "https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fceo",
       { headers: { cookie: "mmd_admin_gate_v1=test" } },
     );
-    const response = await gate.fetch(request, {}, {});
+    const response = await gate.fetch(request, { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-owner-mode"), "single-owner-v1");
     const body = await response.json();
@@ -71,7 +71,7 @@ test("normal admin context is decorated with the same single-owner contract", as
   globalThis.fetch = async (input) => {
     const url = new URL(typeof input === "string" ? input : input.url);
     if (url.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, authenticated: true, actor: "per" }), {
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -90,7 +90,7 @@ test("normal admin context is decorated with the same single-owner contract", as
       "https://mmdbkk.com/v1/admin/ai-ops/context?path=%2Finternal%2Fadmin%2Fcontrol-room",
       { headers: { cookie: "mmd_admin_gate_v1=test" } },
     );
-    const response = await gate.fetch(request, {}, {});
+    const response = await gate.fetch(request, { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-owner-mode"), "single-owner-v1");
     const body = await response.json();

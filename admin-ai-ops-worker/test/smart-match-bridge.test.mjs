@@ -12,7 +12,7 @@ test("Smart Matching is fail-closed without authenticated=true", async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ work_type: "public", folder: "travel" }),
-    }), {}, {});
+    }), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 401);
     assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
   } finally {
@@ -26,7 +26,7 @@ test("Smart Matching asks canonical model search and ranks only returned candida
   globalThis.fetch = async (input) => {
     const target = new URL(typeof input === "string" ? input : input.url);
     if (target.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, authenticated: true, actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker", actor: "per" }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.pathname === "/v1/admin/models/search") {
       modelSearchUrl = target;
@@ -62,7 +62,7 @@ test("Smart Matching asks canonical model search and ranks only returned candida
         orientation: "gay",
         mk: true,
       }),
-    }), {}, {});
+    }), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.matches.length, 1);
@@ -82,7 +82,7 @@ test("canonical model-search block is preserved and never replaced with invented
   globalThis.fetch = async (input) => {
     const target = new URL(typeof input === "string" ? input : input.url);
     if (target.pathname === "/v1/admin/auth/me") {
-      return new Response(JSON.stringify({ ok: true, authenticated: true }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, authenticated: true, worker: "admin-worker" }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (target.pathname === "/v1/admin/models/search") {
       return new Response(JSON.stringify({ ok: false, error: "private_folder_not_allowed" }), { status: 403, headers: { "content-type": "application/json" } });
@@ -94,7 +94,7 @@ test("canonical model-search block is preserved and never replaced with invented
       method: "POST",
       headers: { cookie: "mmd_admin_gate_v1=test", "content-type": "application/json" },
       body: JSON.stringify({ client_id: "recClient1", work_type: "private", folder: "exclusive", orientation: "gay" }),
-    }), {}, {});
+    }), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
     assert.equal(response.status, 403);
     const body = await response.json();
     assert.equal(body.error, "canonical_model_search_blocked");
@@ -106,7 +106,7 @@ test("canonical model-search block is preserved and never replaced with invented
 });
 
 test("shared AI Ops client exposes Smart Match without another standalone admin home", async () => {
-  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), {}, {});
+  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/ai-ops/client.js"), { MMS_ADMIN: { fetch: globalThis.fetch } }, {});
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-smart-matching"), "p1");
   const source = await response.text();

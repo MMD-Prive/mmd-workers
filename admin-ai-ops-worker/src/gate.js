@@ -22,9 +22,8 @@ export default {
     const method = request.method.toUpperCase();
 
     if (method !== "OPTIONS" && path.startsWith(AI_OPS_PREFIX) && path !== CLIENT_PATH) {
-      const mmsContext = path === CONTEXT_PATH && normalizePath(url.searchParams.get("path") || "") === "/internal/admin/mms";
-      const service = mmsContext ? env.MMS_ADMIN : null;
-      if (mmsContext && typeof service?.fetch !== "function") return json({ ok: false, error: "mms_admin_service_unavailable" }, 503);
+      const service = env.MMS_ADMIN;
+      if (typeof service?.fetch !== "function") return json({ ok: false, error: "admin_service_unavailable" }, 503);
       const auth = await verifyAdminStrict(request, service);
       if (!auth.ok) return unauthorized();
     }
@@ -36,7 +35,7 @@ export default {
 
     if (path === FOLLOW_UP_SYNC_PATH) {
       if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-      const dashboard = await readAdminJson(request, "/v1/admin/dashboard");
+      const dashboard = await readAdminJson(request, "/v1/admin/dashboard", env.MMS_ADMIN);
       if (!dashboard.ok || !dashboard.data) {
         return json({
           ok: false,
@@ -203,7 +202,7 @@ async function decorateCommandCenter(response, followUp) {
 async function verifyAdminStrict(request, service = null) {
   try {
     const url = new URL(request.url);
-    if (service && !["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(url.origin)) return { ok: false };
+    if (!["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(url.origin)) return { ok: false };
     url.pathname = "/v1/admin/auth/me";
     url.search = "";
     const headers = new Headers({ accept: "application/json" });
@@ -216,13 +215,11 @@ async function verifyAdminStrict(request, service = null) {
       headers,
       redirect: "manual",
     };
-    const response = service
-      ? await service.fetch(new Request(url, { ...init, signal: AbortSignal.timeout(7000) }))
-      : await fetch(url.toString(), init);
+    const response = await service.fetch(new Request(url, { ...init, signal: AbortSignal.timeout(7000) }));
     if (!response.ok) return { ok: false };
     const body = await response.json().catch(() => null);
     return {
-      ok: Boolean(body && body.ok === true && body.authenticated === true),
+      ok: Boolean(body && body.ok === true && body.authenticated === true && body.worker === "admin-worker"),
       actor: body || null,
     };
   } catch {
@@ -230,7 +227,7 @@ async function verifyAdminStrict(request, service = null) {
   }
 }
 
-async function readAdminJson(request, route) {
+async function readAdminJson(request, route, service) {
   const base = new URL(request.url);
   const target = new URL(route, `${base.protocol}//${base.host}`);
   const headers = new Headers({ accept: "application/json" });
@@ -239,7 +236,7 @@ async function readAdminJson(request, route) {
     if (value) headers.set(key, value);
   }
   try {
-    const response = await fetch(target.toString(), { method: "GET", headers, redirect: "manual" });
+    const response = await service.fetch(new Request(target, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(9000) }));
     const text = await response.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch {}
