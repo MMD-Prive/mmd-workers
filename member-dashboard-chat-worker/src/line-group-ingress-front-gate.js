@@ -472,7 +472,7 @@ async function createPendingProof(env = {}, evidence = {}) {
   if (payerName) fields.payer_name = payerName;
   if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
   const paymentRef = asString(analysis.canonical_payment?.payment_ref || extraction.payment_ref);
-  if (paymentRef && !analysis.session_binding) fields.payment_ref = paymentRef;
+  if (paymentRef && !analysis.session_binding?.duplicate_of) fields.payment_ref = paymentRef;
   if (safePaidDate(extraction.paid_at)) fields.paid_at = safePaidDate(extraction.paid_at);
   if (asString(links.member)) fields.member = [asString(links.member)];
   if (asString(links.client)) fields.Client = [asString(links.client)];

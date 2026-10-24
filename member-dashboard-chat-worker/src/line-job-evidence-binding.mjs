@@ -48,7 +48,7 @@ export async function bindLineJobEvidence(env, analysis, { proofId, contextText 
     const session = selectedSession?.fields?.session_id === sessionId ? selectedSession : await lookup(env, "SESSIONS", `{session_id}='${quote(sessionId)}'`), sf = session.fields || {};
     if (excluded([sf.session_type_raw, sf["Session Type"], sf.job_type, sf.model_work_lane].join(" "))) return analysis;
     if (text(sf.session_id) !== sessionId || ids(sf.Client).length !== 1 || ids(sf.Client)[0] !== analysis.links.client || stopped(sf["Session Status"] || sf.session_state)) return hold("session_identity_or_state_conflict");
-    let stage, duplicate = null;
+    let stage, duplicate = null, canonicalPayment = { status: "unresolved", reason: "evidence_only_binding" };
     if (canonical) {
       const original = await lookup(env, "PAYMENT_PROOFS", `{proof_id}='${quote(precheck.primary_proof_id)}'`), of = original.fields || {};
       const incoming = paymentProofIdentity({ fields: { note: JSON.stringify({ schema: "line_payment_evidence_v4", evidence_sha256: evidenceSha256, extraction: { ...analysis.extraction, bank_transaction_ref: analysis.extraction?.payment_ref } }) } });
@@ -76,13 +76,22 @@ export async function bindLineJobEvidence(env, analysis, { proofId, contextText 
       const explicitStages = [/(?:มัดจำ|\bdeposit\b)/i.test(contextText) && "deposit", /(?:ยอดคงเหลือ|ค่าจบ|\bfinal\b|\bbalance\b)/i.test(contextText) && "final", /(?:เต็มจำนวน|\bfull\b)/i.test(contextText) && "full"].filter(Boolean);
       if (explicitStages.length !== 1 || !analysis.extraction?.payment_ref || !(Number(analysis.extraction?.amount_thb) > 0) || precheck.status !== "clear") return hold("explicit_stage_and_transfer_evidence_required");
       stage = explicitStages[0];
+      const existing = analysis.canonical_payment;
+      if (existing?.status === "exact") {
+        if (existing.session_id !== sessionId || existing.payment_stage !== stage) return hold("existing_payment_context_conflict");
+        const row = await lookup(env, "PAYMENTS", `{payment_ref}='${quote(existing.payment_ref)}'`), f = row.fields || {};
+        if (row.id !== existing.payment_record_id || text(f.session_id) !== sessionId || ids(f.Client).length !== 1 || ids(f.Client)[0] !== analysis.links.client
+          || text(f.payment_stage || f.payment_type) !== stage || Number(f.amount_thb ?? f.Amount) !== Number(analysis.extraction.amount_thb)
+          || stopped(f.payment_status || f["Payment Status"])) return hold("existing_payment_context_conflict");
+        canonicalPayment = existing; // Existing pending intent link, never a new Payment or approval.
+      }
     }
     const binding = { schema: "proof_session_binding_v1", session_id: sessionId, session_record_id: session.id, client_record_id: analysis.links.client, payment_stage: stage,
       duplicate_of: duplicate, actor: "system:line-evidence", bound_at: now, evidence_checked: true, money_truth_changed: false,
       reason: duplicate ? "exact_evidence_verified_original" : "explicit_session_and_canonical_client", source: "line_automatic_evidence_v1" };
-    return { ...analysis, links: { ...analysis.links, session: session.id, payment: "" }, session_binding: binding,
-      // Do not attach another money reference or redirect review to an approved proof.
-      canonical_payment: { status: "unresolved", reason: "evidence_only_binding" },
+    return { ...analysis, links: { ...analysis.links, session: session.id, payment: canonicalPayment.payment_record_id || "" }, session_binding: binding,
+      // Received duplicates carry no money link; review always opens the pending LINE proof.
+      canonical_payment: canonicalPayment,
       proof_precheck: { ...precheck, primary_proof_id: proofId, review_url: null },
       review_summary: { ...analysis.review_summary, job_correlation_status: "exact", session_id: sessionId, payment_stage: stage },
       payment_intelligence: { ...pi, inferred_stage: stage, tracking_kind: `job_${stage}`, official_verification_required: true, may_mark_paid: false },

@@ -129,3 +129,13 @@ test("automatically bound duplicate appears in the job without increasing receiv
  assert.equal(result.pending_complete, true); assert.equal(result.pending_amount_thb, 0);
  assert.equal(proof.fields.status, "pending"); assert.equal(result.money_truth_changed, false);
 });
+
+test("explicit job context preserves a freshly checked existing intent link without creating money", async () => {
+ const a = analysis(); a.canonical_payment = { status: "exact", session_id: "sess_job", payment_stage: "deposit", payment_ref: "pay_job", payment_record_id: "recPayment" };
+ const result = await bindLineJobEvidence(fixture().env, a, { proofId: "line_new", contextText: "deposit sess_job" });
+ assert.equal(result.links.payment, "recPayment"); assert.equal(result.session_binding.duplicate_of, null);
+ for (const change of [p => p.fields.Client = ["other"], p => p.fields["Payment Status"] = "refunded"]) {
+  const p = payment(); change(p);
+  assert.equal((await bindLineJobEvidence(fixture({ PAYMENTS: p }).env, a, { proofId: "line_new", contextText: "deposit sess_job" })).session_binding, undefined);
+ }
+});

@@ -139,6 +139,9 @@ test('MMS Kenji control projection uses code-only release and rejects unrelated 
 });
 
 const lineEvidenceFiles = [
+  'payments-worker/cross-channel-proof-flow.test.mjs',
+  '.github/workflows/deploy-payments-worker.yml',
+  '.github/workflows/payment-evidence-delivery-contract.yml',
   'member-dashboard-chat-worker/src/line-group-ingress-front-gate.js',
   'member-dashboard-chat-worker/src/line-job-evidence-binding.mjs',
   'member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs',
@@ -150,4 +153,9 @@ test('LINE job evidence uses code-only release without legacy MMS deploy or rout
   for (const extra of [config, 'mms-worker/src/index.js', 'member-dashboard-chat-worker/src/index.js', '.github/workflows/deploy-member-dashboard-chat-worker.yml']) {
     assert.throws(() => deployRequired('push', [...lineEvidenceFiles, extra]), /LINE_JOB_EVIDENCE_MIXED_DELTA/);
   }
+});
+
+test('cross-channel test updates do not trigger Payments deployment or secret rotation', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/deploy-payments-worker.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /- "!payments-worker\/cross-channel-proof-flow\.test\.mjs"/);
 });

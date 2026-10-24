@@ -103,7 +103,7 @@ async function fixture() {
       const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(byte => byte.toString(16).padStart(2,"0")).join("");
       const image = { body: bytes.buffer, mimeType: "image/png", extension: "png", byteSize: bytes.length, sha256: hash };
       return LINE_GROUP_INGRESS_INTERNALS.persistAcceptedEvidence(env, {
-        proofId: "line_test", image, sourceType: "user", lineUserId: "U11111111111111111111111111111111",
+        proofId: "line_test", contextText: "deposit sess-shared", image, sourceType: "user", lineUserId: "U11111111111111111111111111111111",
         analysis: {
           accepted: true, customer: { status: "matched", display_name: "Test Customer", source: "clients.line_user_id" },
           links: { client: "recClient", session: "recSession" },
@@ -145,18 +145,24 @@ test("LINE first: bank ref is preserved, payment page sees evidence, web upload 
   } finally { globalThis.fetch = original; }
 });
 
-test("web first: LINE reuses canonical evidence and warns once without creating another proof", async () => {
+test("web first: verified original receives a separate pending LINE duplicate without another money row", async () => {
   const h = await fixture();
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init) => h.airtable(input instanceof Request ? input : new Request(input, init));
   try {
     assert.equal((await h.web()).telegram_file_received, true);
-    assert.equal((await h.line()).deduped, true);
-    assert.equal(h.calls.proofCreates, 1);
+    h.records.Proofs[0].fields.status = "verified";
+    h.records.Payments[0].fields.fldJ7a0Ube9F0bmRy = "verified";
+    h.records.Payments[0].fields.fldEJ1hmm7KwWuI6q = "paid";
+    assert.equal((await h.line()).deduped, false);
+    assert.equal(h.calls.proofCreates, 2);
+    assert.equal(h.records.Payments.length, 1);
+    assert.equal(h.records.Proofs[1].fields.status, "pending");
+    assert.equal(JSON.parse(h.records.Proofs[1].fields.note).session_binding.duplicate_of.proof_id, h.records.Proofs[0].fields.proof_id);
     assert.equal(h.calls.telegramDocuments, 1);
     assert.equal(h.calls.telegramMessages, 1);
     assert.match(h.calls.telegramPayloads[0].text, /หลักฐานซ้ำ/);
-    assert.equal(h.records.Proofs[0].fields.status, "pending");
+    assert.equal(h.records.Proofs[0].fields.status, "verified");
   } finally { globalThis.fetch = original; }
 });
 
@@ -176,7 +182,7 @@ test("the same Payment Ref never discards a different web or LINE image as a dup
   }
 });
 
-test("web then LINE same image recovers unknown LINE purpose, warns Per and links directly to the canonical proof", async () => {
+test("web pending then LINE unreadable evidence remains pending for manual review without marking received", async () => {
   const h=await fixture(), original=globalThis.fetch;
   globalThis.fetch=async(input,init)=>h.airtable(input instanceof Request?input:new Request(input,init));
   try {
@@ -187,9 +193,13 @@ test("web then LINE same image recovers unknown LINE purpose, warns Per and link
       image:{body:new TextEncoder().encode("synthetic proof, no customer data").buffer,mimeType:"image/png",extension:"png",byteSize:33,sha256:hash},
       analysis:{accepted:true,customer:{status:"matched",display_name:"Synthetic"},links:{client:"recClient"},extraction:{amount_thb:null,extraction_method:"none"},payment_intelligence:{inferred_stage:"unknown"},job_correlation:{status:"unresolved"},ops_route:{topic:"payment",reason:"synthetic",should_alert:false}},
     });
-    assert.equal(result.deduped,true); assert.equal(h.calls.proofCreates,1); assert.equal(h.calls.downstream,1);
+    assert.equal(result.deduped,false); assert.equal(h.calls.proofCreates,2); assert.equal(h.calls.downstream,1);
     assert.equal(h.calls.telegramMessages,1); assert.match(h.calls.telegramPayloads[0].text,/หลักฐานซ้ำ/);
-    assert.ok(h.calls.telegramPayloads[0].text.includes(`proof_id=${proof.fields.proof_id}&focus=verify`));
+    assert.ok(h.calls.telegramPayloads[0].text.includes("proof_id=line_same_picture&focus=verify"));
+    assert.equal(h.records.Proofs[1].fields.status, "pending");
+    assert.equal(h.records.Proofs[1].fields.session, undefined);
+    assert.equal(h.records.Proofs[1].fields.payment, undefined);
+    assert.equal(result.manualReviewRequired, true);
     assert.equal(h.records.Proofs[0].fields.status,"pending"); assert.equal(h.records.Payments[0].fields.fldEJ1hmm7KwWuI6q,"pending");
     assert.equal(result.paymentStage,"deposit");
   } finally { globalThis.fetch=original; }
