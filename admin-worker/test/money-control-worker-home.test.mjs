@@ -33,6 +33,10 @@ test("Worker page is private, self-contained, and states the operator payment bo
   assert.match(html, /v1\/admin\/payments\/evidence\?proof_id=/);
   assert.match(html, /image\/\*,application\/pdf/);
   assert.match(html, /mmd_worker_view','existing'/);
+  assert.match(html, /บันทึกปัญหาข้อมูล/);
+  assert.match(html, /ปฏิเสธหลักฐาน/);
+  assert.match(html, /v1\/admin\/payments\/review/);
+  assert.match(html, /payments-worker/);
   assert.match(html, /credentials:'include',cache:'no-store'/);
   assert.match(html, /เปิดตรวจ/);
   assert.match(html, /Proof ID ที่ระบุไม่อยู่ในคิว/);
@@ -50,7 +54,7 @@ test("queue view safely renders backend values and deep-links into the existing 
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(name, callback) { this.listeners[name] = callback; }
   }
-  const ids = ["q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review"];
+  const ids = ["q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id === "q-list" ? "div" : "input")]));
   const calls = [];
   const malicious = "<img src=x onerror=alert(1)>";
@@ -77,7 +81,8 @@ test("queue view safely renders backend values and deep-links into the existing 
     Date,
     Set,
     Option: FakeOption,
-    fetch: async (...args) => { calls.push(args); return calls.length === 1 ? { ok: true, json: async () => response } : { ok: false }; },
+    fetch: async (...args) => { calls.push(args); return calls.length === 1 ? { ok: true, json: async () => response } : calls.length === 2 ? { ok: false } : { ok: true, json: async () => ({ ok: true, decision: "issue" }) }; },
+    crypto: { randomUUID: () => "fixture-idempotency-key" },
     addEventListener() {},
   });
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -97,6 +102,15 @@ test("queue view safely renders backend values and deep-links into the existing 
   assert.equal(elements["continue-review"].href, "/internal/admin/payments?proof_id=proof_fixture_1&session_id=session_fixture_1&mmd_worker_view=existing");
   assert.match(elements["detail-grid"].textContent, /2,500\.00 บาท/);
   assert.match(elements["q-status"].textContent, /แสดง 1 จาก 1/);
+  elements["decision-reason"].value = "ยอดอ้างอิงไม่ตรง";
+  elements["log-issue"].listeners.click();
+  assert.equal(elements["decision-confirm"].hidden, false);
+  await elements["confirm-decision"].listeners.click();
+  assert.equal(calls[2][0], "/v1/admin/payments/review");
+  assert.equal(calls[2][1].method, "POST");
+  assert.equal(calls[2][1].headers["Idempotency-Key"], "fixture-idempotency-key");
+  assert.deepEqual(JSON.parse(calls[2][1].body), { proof_id: "proof_fixture_1", decision: "issue", admin_reason: "เหตุผลผู้ดูแล: ยอดอ้างอิงไม่ตรง", idempotency_key: "fixture-idempotency-key" });
+  assert.match(elements["decision-status"].textContent, /บันทึกปัญหาแล้ว/);
 });
 
 test("HEAD returns headers without a page body", async () => {
