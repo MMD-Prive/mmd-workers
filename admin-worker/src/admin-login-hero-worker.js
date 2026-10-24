@@ -1,3 +1,4 @@
+import { JOB_PREFLIGHT_PATH, handleJobPreflight, guardDuplicateJob } from './create-job-preflight.js';
 import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
 import {isMemberCompletenessRequest, handleMemberCompleteness} from "./member-completeness.js";
 import { decorateInternalSilverTheme } from "../../webflow/global/sigil-internal-theme-v1.mjs";
@@ -291,6 +292,11 @@ const adminLoginHeroWorker = {
       return handleModelJobPreview(gate.request, runtimeEnv);
     }
 
+    if (normalizedPath === JOB_PREFLIGHT_PATH && method === 'POST') {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleJobPreflight(request, runtimeEnv, actor);
+    }
+
     if (isCreateJobWorkerPageRequest(normalizedPath, method)) {
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
@@ -418,6 +424,9 @@ const adminLoginHeroWorker = {
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      const duplicate = await guardDuplicateJob(request, runtimeEnv, actor);
+      if (duplicate) return duplicate;
       const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), runtimeEnv);
       if (privateWorkBlocked) return privateWorkBlocked;
       const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, runtimeEnv);
