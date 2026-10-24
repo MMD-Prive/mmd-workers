@@ -171,3 +171,24 @@ test("active member-pages runtime wires the owner diagnostic before customer ses
   const customerFlowIndex = source.indexOf("const shellBoundary = createLiffShellBoundaryTrace");
   assert.ok(diagnosticIndex >= 0 && customerFlowIndex >= 0 && diagnosticIndex < customerFlowIndex);
 });
+
+
+test('reviewed owner refresh bypasses stale preload and reads back refreshed points', async()=>{
+  let calls=0;
+  const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true}),env(),{runRecovery:async input=>{
+    calls++;assert.equal(input.lineUserId,LINE_ID);assert.equal(input.forceSourceRefresh,true);
+    return {state:'reconciled',current_points_total:1500,pending_review_count:0};
+  }});
+  const body=await res.json();assert.equal(calls,1);assert.equal(body.points.value,1500);assert.equal(body.guardrails.read_only,false);
+});
+
+test('refresh failure never returns stale points as successful', async()=>{
+  const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true}),env(),{runRecovery:async()=>({state:'blocked',reason:'AIRTABLE_UNAVAILABLE'})});
+  assert.equal(res.status,503);assert.equal((await res.json()).ok,false);
+});
+
+test('public refresh cannot reach the recovery runner',async()=>{
+  let calls=0;
+  const res=await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest({line_user_id:LINE_ID,refresh_reviewed:true},'admin-worker','www.mmdbkk.com'),env(),{runRecovery:async()=>{calls++;}});
+  assert.equal(res.status,404);assert.equal(calls,0);
+});
