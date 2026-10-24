@@ -93,6 +93,7 @@ import {
   isSessionCreatorAssetRequest,
   isSessionCreatorPageRequest,
 } from "./session-creator-page-proxy.js";
+import { handleMoneyControlWorkerHome } from "./money-control-worker-home.js";
 import {
   handleCreateJobWorkerPage,
   isCreateJobWorkerPageRequest,
@@ -305,6 +306,12 @@ const adminLoginHeroWorker = {
       // fetching protected presentation pages from Session Creator.
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
       if (gate.response) return gate.response;
+      if (
+        normalizedPath === "/internal/admin/payments" &&
+        new URL(gate.request.url).searchParams.get("mmd_worker_view") !== "existing"
+      ) {
+        return handleMoneyControlWorkerHome(gate.request);
+      }
       return handleSessionCreatorPageRequest(gate.request);
     }
 

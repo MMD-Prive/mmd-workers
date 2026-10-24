@@ -95,6 +95,8 @@ export async function handleSessionCreatorPageRequest(request) {
 
   const upstreamUrl = new URL(upstreamPath, SESSION_CREATOR_ORIGIN);
   upstreamUrl.search = incoming.search;
+  // This selector stays at the Worker boundary and is not an app query parameter.
+  upstreamUrl.searchParams.delete("mmd_worker_view");
   const upstream = await fetch(new Request(upstreamUrl, {
     method: request.method,
     headers: upstreamRequestHeaders(request),
