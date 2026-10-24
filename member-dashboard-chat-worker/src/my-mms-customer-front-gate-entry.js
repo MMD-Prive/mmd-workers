@@ -15,6 +15,14 @@ export { KenjiShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
 export { SvipPhotoRevealModeAudit } from "./svip-photo-reveal-mode-audit.mjs";
 
 const MEDICAL_REQUEST_PATHS = new Set(["/api/member/medical-request", "/api/member/medical-request/"]);
+const CUSTOMER_MATCHING_PATH = "/male-massage/therapists";
+const CUSTOMER_MATCHING_MODE_PARAM = "mms_customer_ai";
+
+function isCustomerMatchingPageRequest(request) {
+  const url = new URL(request.url);
+  return url.pathname.replace(/\/$/, "") === CUSTOMER_MATCHING_PATH
+    && ["true", "1"].includes(url.searchParams.get(CUSTOMER_MATCHING_MODE_PARAM));
+}
 
 // The Cloudflare callback route must end in * to match query strings. Keep
 // unrelated public pages (and prefix lookalikes) on their original web origin.
@@ -45,6 +53,10 @@ export default {
   async fetch(request, env = {}, ctx) {
     if (isMmsMembershipRequest(request)) return proxyMmsMembership(request, env);
     if (isMmsMembershipOriginPassthrough(request)) return globalThis.fetch(request);
+    // The bare path is the Therapist LIFF endpoint. Only the customer AI link
+    // carries this discriminator, so direct loads/reloads reach the customer UI
+    // without taking ownership away from Therapist login.
+    if (isCustomerMatchingPageRequest(request)) return handleMyMmsCustomerUi(request, env);
     if (isTherapistOriginPassthroughRequest(request)) return globalThis.fetch(request);
     const therapistPage = await maybeHandleTherapistWorkspace(request, env);
     if (therapistPage) return therapistPage;
