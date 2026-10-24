@@ -1,3 +1,4 @@
+import { decorateCeoModels } from "./ceo-models-page.mjs";
 import canonicalWorker from "./control-room-dashboard-ingress-wrapper";
 import { decorateInternalSilverTheme } from "./internal-silver-theme";
 import { CUSTOMER_360_LIVE_CLIENT } from "./customer-360-live-client";
@@ -88,7 +89,7 @@ export default {
       : null;
     if (publicHandoff) return publicHandoff;
 
-    const response = await decorateInternalSilverTheme(request, await canonicalWorker.fetch(request, env));
+    const response = await decorateInternalSilverTheme(request, await decorateCeoModels(request, await canonicalWorker.fetch(request, env)));
     if ((method === "GET" || method === "HEAD") && path === CREATE_JOB_PAGE) {
       // Incident hotfix 2026-09-28: restore the canonical Worker-rendered Create Job
       // surface. The Lovable presentation cutover introduced production usability
