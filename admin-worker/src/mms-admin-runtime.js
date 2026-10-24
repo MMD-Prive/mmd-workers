@@ -1,4 +1,4 @@
-import { rebuildMmsAdminLv7 } from './mms-admin-lv7.js';
+import { renderMmsAdminShell } from './mms-admin-shell.js';
 import { MMS_LOGO_PATH, mmsLogoResponse } from './mms-internal-logo-asset.mjs';
 import coreWorker, { isAuthed } from "./index.js";
 import { hasValidAdminBrowserSession } from "./admin-browser-session.js";
@@ -99,7 +99,7 @@ export async function handleMmsAdminRequest(request, env = {}) {
   if (path === PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
     const build = mmsAdminBuild(env);
-    const page = rebuildMmsAdminLv7(stampMmsAdminBuild(wireMmsAiOpsUi(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))))), build))
+    const page = renderMmsAdminShell(stampMmsAdminBuild(wireMmsAiOpsUi(wireMmsWorkspaceUi(wireMmsJobsUi(wireMmsAdminMobileBundle(wireMmsApproveUi(renderMmsAdminPage()))))), build))
       .replace('<div id="attentionList"', '<a class="btn primary" href="/internal/admin/mms/relax-spa">Relax Spa by 9 · แนะนำคนและส่วนแบ่ง</a><div id="attentionList"');
     const response = html(page);
     response.headers.set("x-mmd-admin-build", build);
