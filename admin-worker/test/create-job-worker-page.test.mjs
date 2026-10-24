@@ -26,6 +26,9 @@ test("Create Job is served by the Worker only at its exact page route", () => {
 test("Worker-owned page calls canonical APIs and never loads Lovable assets", async () => {
   const response = handleCreateJobWorkerPage(new Request("https://mmdbkk.com/internal/admin/jobs/create-job"));
   const html = await response.text();
+  for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(script[1]);
+  assert.match(html, /\/internal\/admin\/jobs\/create-job\/preflight/);
+  assert.match(html, /id="create" disabled/);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store, private");
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-api-create-job");
