@@ -28,7 +28,7 @@ export async function decorateCeoModels(request, response) {
   // Replace the inline owner-review runtime once; keep the original markup and CTAs.
   const scripts = [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].filter(m => m[0].includes('var r=document.getElementById("model-supply-v3")'));
   if(scripts.length !== 1) return new Response(html,response);
-  html = html.replace(scripts[0][0],()=>`<script data-ceo-models-runtime="v1">(${modelsClient.toString()})();</script>`)
+  html = html.replace(scripts[0][0],()=>`<script data-ceo-models-runtime="v1">(function(){const __name=(fn)=>fn;(${modelsClient.toString()})();})();</script>`)
     .replace('</head>',`<style data-ceo-models-theme="v1">${MODELS_CSS}</style></head>`)
     .replace('TOTAL INVENTORY','รายการที่โหลด').replace('MULTI-LANE','หลายประเภทในชุดนี้').replace('ASSET READY</span>','สื่อพร้อมในชุดนี้</span>');
   // Initial server markup must not present zeroes before the API resolves.
