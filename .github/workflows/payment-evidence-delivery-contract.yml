@@ -29,3 +29,4 @@ jobs:
           node-version: "22"
       - run: npm run test:payment-delivery
       - run: node --test member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs
+      - run: node --test payments-worker/session-paid-projection.test.mjs payments-worker/verified-session-balance.test.mjs payments-worker/final-payment-flow.test.mjs

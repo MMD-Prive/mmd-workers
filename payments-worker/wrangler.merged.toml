@@ -1,10 +1,11 @@
 name = "payments-worker"
-main = "index.review-wrapper.js"
+main = "index.session-paid-projection-wrapper.js"
 triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-20"
 
 # Production entrypoint:
-# - index.review-wrapper.js adds unified payment + proof intake and reviewed-proof handoff.
+# - index.session-paid-projection-wrapper.js exports the derived job-cache coordinator.
+# - index.review-wrapper.js retains unified payment + proof intake and reviewed-proof handoff.
 # - index.phase1.js owns verified Base Points Phase 1 awards.
 # - index.with-slip-evidence.js remains the evidence-only compatibility writer.
 # - unified-payment-proof.js locks one payment_ref per session/stage, writes web proof records,
@@ -141,3 +142,13 @@ class_name = "KbankSandboxCoordinator"
 [[migrations]]
 tag = "kbank-sandbox-v1"
 new_sqlite_classes = ["KbankSandboxCoordinator"]
+
+# Derived MMD job cache only; never a Payment/verification or MMS writer.
+# Local release candidate: this binding/migration requires release approval.
+[[durable_objects.bindings]]
+name = "SESSION_PAID_PROJECTION_COORDINATOR"
+class_name = "SessionPaidProjectionCoordinator"
+
+[[migrations]]
+tag = "session-paid-projection-v1"
+new_sqlite_classes = ["SessionPaidProjectionCoordinator"]

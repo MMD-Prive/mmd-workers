@@ -1,3 +1,4 @@
+import { requestSessionPaidProjection } from './session-paid-projection.js';
 /**
  * =========================================================
  * MMD Privé — payments-worker (Production / Clean)
@@ -826,6 +827,12 @@ async function handleNotify(req, env) {
         })
       : { ok: false, skipped: true, reason: "missing_session_id" };
 
+    // Re-read committed money truth into the derived Session cache. A cache
+    // failure must never reclassify an already committed payment as failed.
+    const paid_received_projection = await requestSessionPaidProjection(env, {
+      session_id, stage, payment_ref,
+    });
+
     const points_ledger = await awardPointsIfEligible(env, {
       payment_ref,
       stage,
@@ -878,6 +885,7 @@ async function handleNotify(req, env) {
         session_id,
         amount_thb,
         payment_write: paymentWrite,
+        ...(paid_received_projection.status !== "skipped" ? { paid_received_projection } : {}),
         session_updated,
         points_ledger,
       })
