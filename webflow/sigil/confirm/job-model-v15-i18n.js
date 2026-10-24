@@ -74,6 +74,8 @@
       payout: "ยอดเงินถึงตัว",
       payoutKicker: "ยอดถึงตัว",
       payoutBreakdown: "แยกตามรูปแบบงาน",
+      standardRate: "เรทอ้างอิง",
+      jobAdjustment: "เพิ่มเฉพาะงานนี้",
       payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน",
       details: "รายละเอียดงาน",
       client: "ลูกค้า",
@@ -124,6 +126,8 @@
       payout: "Rate to you",
       payoutKicker: "YOUR PAYOUT",
       payoutBreakdown: "Rate breakdown",
+      standardRate: "Reference rate",
+      jobAdjustment: "Extra for this job",
       payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming.",
       details: "Job details",
       client: "Client",
@@ -174,6 +178,8 @@
       payout: "到手金额",
       payoutKicker: "到手金额",
       payoutBreakdown: "报酬明细",
+      standardRate: "参考费率",
+      jobAdjustment: "本次工作加价",
       payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。",
       details: "工作详情",
       client: "客户",
@@ -584,9 +590,14 @@
     let list = card.querySelector("[data-m-payout-breakdown]");
     const items = Array.isArray(source) ? source.slice(0, 6).map((item) => ({
       label: str(item?.label).slice(0, 40), amount_thb: Number(item?.amount_thb),
+      standard_amount_thb: item?.standard_amount_thb == null ? null : Number(item.standard_amount_thb),
+      job_adjustment_thb: item?.job_adjustment_thb == null ? null : Number(item.job_adjustment_thb),
     })).filter((item) => item.label && Number.isFinite(item.amount_thb) && item.amount_thb > 0) : [];
     const matchesTotal = items.length > 0 && Math.abs(items.reduce((sum, item) => sum + item.amount_thb, 0) - amount) < 0.01;
-    if (!matchesTotal) { if (list) list.hidden = true; return; }
+    const splitsValid = items.every((item) => item.standard_amount_thb == null && item.job_adjustment_thb == null
+      || Number.isFinite(item.standard_amount_thb) && Number.isFinite(item.job_adjustment_thb)
+        && Math.abs(item.standard_amount_thb + item.job_adjustment_thb - item.amount_thb) < 0.01);
+    if (!matchesTotal || !splitsValid) { if (list) list.hidden = true; return; }
     if (!list) {
       list = document.createElement("div");
       list.setAttribute("data-m-payout-breakdown", "1");
@@ -610,14 +621,22 @@
     rows.replaceChildren();
     for (const item of items) {
       const row = document.createElement("div");
-      row.style.cssText = "display:flex;justify-content:space-between;gap:12px;font-size:14px;line-height:1.5";
+      row.style.cssText = "display:grid;grid-template-columns:1fr auto;gap:2px 12px;font-size:14px;line-height:1.5";
       const label = document.createElement("span"); label.textContent = item.label;
       const value = document.createElement("strong"); value.textContent = money(item.amount_thb);
-      row.append(label, value); rows.appendChild(row);
+      row.append(label, value);
+      if (item.standard_amount_thb != null && item.job_adjustment_thb != null) {
+        const detail = document.createElement("small");
+        detail.style.cssText = "grid-column:1/-1;color:#c9bea9;font-size:12px";
+        const sign = item.job_adjustment_thb > 0 ? "+" : item.job_adjustment_thb < 0 ? "−" : "";
+        detail.textContent = `${dict().standardRate} ${money(item.standard_amount_thb)} · ${dict().jobAdjustment} ${sign}${money(Math.abs(item.job_adjustment_thb))}`;
+        row.appendChild(detail);
+      }
+      rows.appendChild(row);
     }
   }
 
-  function codedError(code, status = 0) {
+function codedError(code, status = 0) {
     const error = new Error(code || "request_failed");
     error.code = code || "request_failed";
     error.status = status;

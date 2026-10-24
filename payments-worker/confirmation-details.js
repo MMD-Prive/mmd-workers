@@ -271,16 +271,31 @@ function serviceOptions(note, servicePricing) {
 function modelPayoutBreakdown(servicePricing, modelPayout, jobType) {
   if (!servicePricing || !Array.isArray(servicePricing.addons) || modelPayout === null) return null;
   const base = numberOrNull(servicePricing.model_base_payout_thb);
-  const additions = servicePricing.addons.map((item) => ({ option: String(item?.option || "").toLowerCase(), amount_thb: numberOrNull(item?.model_payout_thb) }));
+  const baseLine = modelPayoutLine(base, servicePricing.model_standard_base_rate_thb, servicePricing.model_base_job_adjustment_thb);
+  const additions = servicePricing.addons.map((item) => ({
+    option: String(item?.option || "").toLowerCase(),
+    ...modelPayoutLine(item?.model_payout_thb, item?.model_standard_rate_thb, item?.model_job_adjustment_thb),
+  }));
   const total = numberOrNull(servicePricing.model_total_payout_thb);
   const allowed = new Set(["mk", "burn", "kiss", "live", "group"]);
-  if (base === null || base <= 0 || additions.some((item) => !allowed.has(item.option) || item.amount_thb === null || item.amount_thb < 0)
+  if (baseLine === null || base <= 0 || additions.some((item) => !allowed.has(item.option) || item.amount_thb === null || item.amount_thb < 0)
     || !Number.isFinite(total) || Math.abs(base + additions.reduce((sum, item) => sum + item.amount_thb, 0) - total) > 0.01
     || Math.abs(total - modelPayout) > 0.01) return null;
   const parts = text(jobType, 240).split(/[:+,|]/).map((part) => part.trim()).filter(Boolean);
   const baseLabel = parts.find((part) => ["pn", "vip"].includes(part.toLowerCase())) || parts.at(-1) || "งานหลัก";
-  return [{ label: text(baseLabel, 40).toUpperCase(), amount_thb: base },
-    ...additions.filter((item) => item.amount_thb > 0).map((item) => ({ label: item.option.toUpperCase(), amount_thb: item.amount_thb }))];
+  return [{ label: text(baseLabel, 40).toUpperCase(), ...baseLine },
+    ...additions.filter((item) => item.amount_thb > 0).map(({ option, ...line }) => ({ label: option.toUpperCase(), ...line }))];
+}
+
+function modelPayoutLine(amountValue, standardValue, adjustmentValue) {
+  const amount_thb = numberOrNull(amountValue);
+  const standard_amount_thb = numberOrNull(standardValue);
+  const job_adjustment_thb = numberOrNull(adjustmentValue);
+  if (amount_thb === null || amount_thb < 0) return null;
+  if (standard_amount_thb === null && job_adjustment_thb === null) return { amount_thb };
+  if (standard_amount_thb === null || standard_amount_thb < 0 || job_adjustment_thb === null
+    || Math.abs(standard_amount_thb + job_adjustment_thb - amount_thb) > 0.01) return null;
+  return { amount_thb, standard_amount_thb, job_adjustment_thb };
 }
 
 function customerPricing(raw, netFallback) {
