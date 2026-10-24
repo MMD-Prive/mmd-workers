@@ -9,6 +9,7 @@ on:
       - 'scripts/admin-current-session-code-only*'
       - 'scripts/admin-production-validation*'
       - 'scripts/admin-workflow-safety.test.mjs'
+      - 'scripts/payments-confirmation-release-guard*'
   push:
     branches: [main]
     paths:
@@ -18,6 +19,7 @@ on:
       - 'scripts/admin-current-session-code-only*'
       - 'scripts/admin-production-validation*'
       - 'scripts/admin-workflow-safety.test.mjs'
+      - 'scripts/payments-confirmation-release-guard*'
 
 permissions:
   contents: read
@@ -39,6 +41,10 @@ jobs:
           node --test scripts/admin-production-approval.test.mjs scripts/admin-workflow-safety.test.mjs
           node --test scripts/admin-current-session-code-only.test.mjs scripts/admin-production-validation.test.mjs
           node --experimental-global-webcrypto --test admin-worker/model-current-session.test.mjs admin-worker/model-session-runtime-v1a.test.mjs
+      - name: Payments confirmation release guard (no production access)
+        run: |
+          node --check scripts/payments-confirmation-release-guard.mjs
+          node --test scripts/payments-confirmation-release-guard.test.mjs
       - name: Read-only LINE brief diagnostics (mock only)
         run: |
           node --check admin-worker/src/model-line-job-briefs.js
