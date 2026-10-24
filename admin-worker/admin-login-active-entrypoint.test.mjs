@@ -376,7 +376,7 @@ test("Money Control opens the Worker task entrance first and preserves the gated
     assert.equal(home.headers.get("cache-control"), "no-store, private");
     const html = await home.text();
     assert.match(html, /proof_id/);
-    assert.match(html, /mmd_worker_view=existing/);
+    assert.match(html, /searchParams\.set\('mmd_worker_view','existing'\)/);
     assert.equal(requests.length, 0);
 
     const legacy = await worker.fetch(new Request("https://mmdbkk.com/internal/admin/payments?proof_id=proof_fixture&mmd_worker_view=existing", {
