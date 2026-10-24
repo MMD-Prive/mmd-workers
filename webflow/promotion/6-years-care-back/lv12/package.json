@@ -1,0 +1,1 @@
+{"name":"mmd-care-back-lv12","version":"12.0.0","private":true,"description":"Complete Webflow Care Back release and rollback","scripts":{"build":"node build.mjs","test":"node check.cjs && node loading-check.cjs"},"devDependencies":{"jsdom":"26.1.0"}}
