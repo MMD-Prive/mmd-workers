@@ -87,9 +87,10 @@ test('validation workflow never receives production credentials or invokes a mut
   assert.match(source, /^  pull_request:/m);
 });
 
-test('environment plan records owner-authorized policy but remains unapplied until GitHub change', () => {
+test('environment plan records the owner-authorized policy applied and verified in GitHub', () => {
   const plan = JSON.parse(readFileSync(new URL('./admin-production-environment-plan.json', import.meta.url)));
-  assert.equal(plan.applied, false); assert.equal(plan.configuration_change_authorized, true);
+  assert.equal(plan.applied, true); assert.equal(plan.configuration_change_authorized, true);
+  assert.match(plan.approval_state, /applied and read-back verified on 2026-10-24/);
   assert.deepEqual(plan.desired_protection.reviewers, [{ type: 'User', id: 216427112, login: 'mmdprive' }]);
   assert.equal(plan.desired_protection.prevent_self_review, false);
   assert.equal(plan.desired_protection.can_admins_bypass, false);
