@@ -19,7 +19,7 @@ test('CEO decoration scopes the blue palette to CEO while admin keeps the shared
   const ceo=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/ceo/dashboard'),response());
   const ceoHtml=await ceo.text();
   assert.match(ceoHtml,/data-sigil-ceo-theme="blue-v1"/);
-  assert.match(ceoHtml,/a\[aria-current="page"\]\{background:#2563eb!important/);
+  assert.match(ceoHtml,/a\[aria-current="page"\]\{background:#fed7aa!important/);
   const admin=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/dashboard'),response());
   assert.doesNotMatch((await admin.text()).match(/<html[^>]*>/i)[0],/data-sigil-ceo-theme/);
 });
@@ -109,7 +109,7 @@ test('browser loader applies CEO marker only to CEO paths',()=>{
   };
   assert.equal(run('/internal/ceo/dashboard'),'blue-v1');
   assert.equal(run('/internal/admin/dashboard'),undefined);
-  assert.match(SILVER_WORKSPACE_CSS,/data-sigil-ceo-theme="blue-v1".*#2563eb/s);
+  assert.match(SILVER_WORKSPACE_CSS,/data-sigil-ceo-theme="blue-v1".*#fed7aa/s);
 });
 test('browser loader makes no DOM changes for MMS and public pages',()=>{
   for(const path of ['/internal/admin/mms/relax-spa','/member/dashboard','/partner/dashboard/kalima-massage']) {

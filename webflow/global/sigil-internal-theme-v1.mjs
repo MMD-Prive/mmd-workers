@@ -65,15 +65,21 @@ html[data-sigil-internal-theme="silver-orange-v1"] .model-line-link-page :is(but
 
 ${DASHBOARD_POLISH_CSS}
 ${WHITE_ORANGE_WORKSPACE_CSS}
-/* CEO workspace directory: the generic rail text rule above can override its light-on-dark links. */
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory{border-color:#64748b!important}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(summary,a){color:#f8fafc!important;-webkit-text-fill-color:#f8fafc!important}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory h3{color:#cbd5e1!important;-webkit-text-fill-color:#cbd5e1!important}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a:hover{background:#334155!important}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a:active{background:#1e3a5f!important}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a[aria-current="page"]{background:#2563eb!important;color:#fff!important;-webkit-text-fill-color:#fff!important}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(a,summary):focus-visible{outline:3px solid #93c5fd!important;outline-offset:2px}
-html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory input{border-color:#64748b!important}
+/* Keep CEO navigation surfaces and glyphs on the same light palette. */
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory,
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(nav,section){background:#fff!important;color:#272b30!important;border-color:#c7ccd2!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(summary,a,h3,input){color:#272b30!important;-webkit-text-fill-color:#272b30!important;opacity:1!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a{background:transparent!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a:hover{background:#fff7ed!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory a[aria-current="page"]{background:#fed7aa!important;color:#272b30!important;-webkit-text-fill-color:#272b30!important}
+html[data-sigil-ceo-theme="blue-v1"] #sigil-workspace-directory#sigil-workspace-directory :is(a,summary,input):focus-visible{outline:3px solid #9a4a0b!important;outline-offset:2px}
+html[data-sigil-ceo-theme="blue-v1"] #ceo28 .ceo28-list,
+html[data-sigil-ceo-theme="blue-v1"] #ceo28 .ceo28-list :is(div,p,small){color:#545c66!important;-webkit-text-fill-color:#545c66!important;opacity:1!important}
+/* Preserve every shortcut while removing the fixed dock's content overlap. */
+html[data-sigil-ceo-theme="blue-v1"] body #mmdK{position:static!important;inset:auto!important;width:auto!important;max-width:100%!important;margin:16px!important;box-sizing:border-box;flex-wrap:wrap!important}
+html[data-sigil-ceo-theme="blue-v1"] body .mmd-aiops-btn{bottom:16px!important;right:16px!important}
+html[data-sigil-ceo-theme="blue-v1"] body{padding-bottom:88px!important}
+
 `;
 
 export function silverWorkspaceLoader() {
