@@ -1,8 +1,8 @@
 {
   "environment": "mmd-production-mutation",
-  "applied": false,
+  "applied": true,
   "configuration_change_authorized": true,
-  "approval_state": "Owner authorized Per self-approval across the shared production gate on 2026-10-24; GitHub application remains separate",
+  "approval_state": "Owner authorized Per self-approval across the shared production gate on 2026-10-24; GitHub environment configuration was applied and read-back verified on 2026-10-24",
   "desired_protection": {
     "reviewers": [{ "type": "User", "id": 216427112, "login": "mmdprive" }],
     "prevent_self_review": false,
@@ -18,7 +18,7 @@
   "constraints": [
     "This file is a desired-state plan, not an API payload or an apply script.",
     "Reviewers need at least read access; current access must be checked again before applying.",
-    "Self-review is owner-authorized; GitHub application is a separate, explicit settings change.",
+    "Self-review is owner-authorized; GitHub settings were applied and read back to verify the configuration.",
     "Do not substitute the unprotected production environment.",
     "No secrets are needed for validation; do not provision or copy any."
   ]
