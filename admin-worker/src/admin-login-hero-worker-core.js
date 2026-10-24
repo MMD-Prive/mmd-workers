@@ -1,3 +1,4 @@
+import { LINE_NOTES_PAGE, renderLineNotesImportPage } from './line-notes-import-page.js';
 import { isJobConfirmationReissuePath, handleJobConfirmationReissue } from './job-confirmation-reissue.js';
 import worker from "./studio-telegram-worker.js";
 import dashboardWorker from "./dashboard-worker.js";
@@ -151,6 +152,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/ceo/payment-slip-inbox",
   "/internal/ceo/kenji-control",
   "/internal/ceo/models",
+  LINE_NOTES_PAGE,
   OWNER_MY_MMD_RECOVERY_PAGE_PATH,
   RECOVERY_CONTROL_PAGE_PATH,
   "/internal/jobs/create-job",
@@ -273,6 +275,7 @@ export default {
     const strictGate = await applyCredentialBoundAdminGate(request, env, path, method);
     if (strictGate.response) return strictGate.response;
     request = strictGate.request || request;
+    if (path === LINE_NOTES_PAGE && (method === "GET" || method === "HEAD")) return renderLineNotesImportPage();
 
     // Refund Ops is owned by the active credential-bound admin gate.
     // Do not delegate authenticated browser/API traffic back to legacy index.js,
