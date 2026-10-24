@@ -1,6 +1,7 @@
 import currentWorker from "./front-gate-index.js";
 export { KenjiModelIdempotency } from "./front-gate-index.js";
 import { classifyPaymentOpsRoute, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
+import { bindLineJobEvidence } from "./line-job-evidence-binding.mjs";
 import { analyzeProductionPaymentProof } from "./payment-proof-intelligence.mjs";
 import { dispatchOpsNotification, drainOpsNotificationOutbox } from "./line-ops-notification-outbox.mjs";
 import { heldEvidenceAuditRecord, holdUncertainEvidence, reprocessHeldEvidence } from "./line-held-evidence-lane.mjs";
@@ -447,6 +448,8 @@ async function createPendingProof(env = {}, evidence = {}) {
     payment_intelligence: analysis.payment_intelligence || null,
     job_correlation: analysis.job_correlation || null,
     canonical_payment: analysis.canonical_payment || null,
+    ...(analysis.session_binding ? { session_binding: analysis.session_binding } : {}),
+    ...(analysis.automatic_job_binding ? { automatic_job_binding: analysis.automatic_job_binding } : {}),
     review_summary: analysis.review_summary || null,
     payment_ops_route: { topic: opsRoute.topic, classification: opsRoute.classification, confidence: opsRoute.confidence, reason: opsRoute.reason, should_alert: opsRoute.should_alert === true },
     payment_truth: "unverified",
@@ -469,7 +472,7 @@ async function createPendingProof(env = {}, evidence = {}) {
   if (payerName) fields.payer_name = payerName;
   if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
   const paymentRef = asString(analysis.canonical_payment?.payment_ref || extraction.payment_ref);
-  if (paymentRef) fields.payment_ref = paymentRef;
+  if (paymentRef && !analysis.session_binding) fields.payment_ref = paymentRef;
   if (safePaidDate(extraction.paid_at)) fields.paid_at = safePaidDate(extraction.paid_at);
   if (asString(links.member)) fields.member = [asString(links.member)];
   if (asString(links.client)) fields.Client = [asString(links.client)];
@@ -836,6 +839,7 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
   if (canonicalPayment.status === "exact") {
     analysis.links = { ...analysis.links, payment: canonicalPayment.payment_record_id };
   }
+  analysis = await bindLineJobEvidence(env, analysis, { proofId, contextText: input.contextText, sourceContext: input.sourceContext, evidenceSha256: image.sha256 });
   const source = asString(input.sourceType);
   const userId = asString(input.lineUserId);
   const now = new Date();
@@ -880,6 +884,7 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
   const missing = Array.isArray(analysis.review_summary?.missing) ? analysis.review_summary.missing : [];
   const manualReviewRequired = missing.length > 0
     || analysis.customer?.status !== "matched"
+    || analysis.automatic_job_binding?.status === "needs_review"
     || analysis.job_correlation?.status === "ambiguous"
     || analysis.extraction?.extraction_method === "none"
     || analysis.classification?.confidence < 0.8;
@@ -889,7 +894,7 @@ async function persistAcceptedEvidence(env = {}, input = {}) {
     verified: false,
     proofId,
     reviewProofId: proof.proofId || proofId,
-    reviewUrl: analysis.proof_precheck?.review_url || paymentProofReviewUrl(proof.proofId || proofId, canonicalPayment.session_id),
+    reviewUrl: analysis.proof_precheck?.review_url || paymentProofReviewUrl(proof.proofId || proofId, analysis.session_binding?.session_id || analysis.canonical_payment?.session_id),
     recordId: proof.id,
     imageClass: analysis.classification?.image_class,
     paymentStage: analysis.payment_intelligence?.inferred_stage,
