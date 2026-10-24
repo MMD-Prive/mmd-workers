@@ -16,7 +16,7 @@ export function rebuildMmsAdminLv7(page) {
   html = html.replace("var catalogTask=call('/catalog').then", "var catalogTask=lv7Track(call('/catalog')).then");
   const tools = [];
   for (const [marker, title, hint] of [
-    ['data-mms-workspace-admin-v1', 'ความพร้อมและงานในแอป', 'ผูก LINE · ตรวจสิทธิ์ · งานทดสอบ'],
+    ['data-mms-workspace-admin-v1', 'ความพร้อมและงานในแอป', 'ผูก LINE · ตรวจสิทธิ์'],
     ['data-mms-ai-ops-v1', 'Kenji AI + HENNA', 'สถานะการทำงานและข้อความสำหรับตอบลูกค้า'],
   ]) {
     const pattern = new RegExp('<section[^>]*' + marker + '[\\s\\S]*?</section>');
