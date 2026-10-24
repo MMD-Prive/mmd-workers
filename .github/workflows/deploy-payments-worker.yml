@@ -27,6 +27,8 @@ on:
       - "!.github/workflows/deploy-payments-worker.yml"
       - "!payments-worker/confirmation-details.js"
       - "!payments-worker/confirmation-details.test.mjs"
+      # Test-only cross-channel evidence changes do not deploy Payments or rotate secrets.
+      - "!payments-worker/cross-channel-proof-flow.test.mjs"
 
 concurrency:
   group: telegram-router-secret-rotation-production

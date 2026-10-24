@@ -6,6 +6,8 @@ on:
       - "admin-worker/**"
       - "payments-worker/**"
       - "member-dashboard-chat-worker/src/line-group-ingress-front-gate.js"
+      - "member-dashboard-chat-worker/src/line-job-evidence-binding.mjs"
+      - "member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs"
       - "shared/canonical-payment-evidence*"
       - "shared/payment-notification-outbox*"
       - "shared/test/payment-memory-r2.mjs"
@@ -26,3 +28,4 @@ jobs:
         with:
           node-version: "22"
       - run: npm run test:payment-delivery
+      - run: node --test member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs

@@ -103,9 +103,25 @@ const personalMainGuardPaths = new Set([
   'scripts/kenji-pause-release-scope.test.mjs',
 ]);
 
+// LINE evidence binding uses a code-only release with live bindings preserved.
+// It must never fall through to the legacy MMS deployment and route sync.
+export const LINE_JOB_EVIDENCE_RELEASE_PATHS = new Set([
+  'member-dashboard-chat-worker/src/line-group-ingress-front-gate.js',
+  'member-dashboard-chat-worker/src/line-job-evidence-binding.mjs',
+  'member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs',
+  'payments-worker/cross-channel-proof-flow.test.mjs',
+  '.github/workflows/deploy-payments-worker.yml',
+  '.github/workflows/payment-evidence-delivery-contract.yml',
+]);
+
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.some(file => LINE_JOB_EVIDENCE_RELEASE_PATHS.has(file))) {
+    assert.ok(files.every(file => LINE_JOB_EVIDENCE_RELEASE_PATHS.has(file) || personalMainGuardPaths.has(file)),
+      'LINE_JOB_EVIDENCE_MIXED_DELTA: stop; separately review unrelated deployment changes');
+    return false;
+  }
   if (files.includes('admin-worker/src/mms-ai-ops-read.js') && files.includes('member-dashboard-chat-worker/src/index.js')) {
     assert.ok(files.every(file => mmsKenjiControlPaths.has(file)), 'MMS_KENJI_CONTROL_MIXED_DELTA: stop; separate code-only release review required');
     return false;
