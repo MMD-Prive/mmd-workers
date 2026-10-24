@@ -9,6 +9,23 @@ triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 
+# LINE Notes evidence intake: own only this page and its existing import API.
+[[routes]]
+pattern = "mmdbkk.com/internal/ceo/line-notes-import*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/control/line-ofc/import"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/ceo/line-notes-import*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/control/line-ofc/import"
+zone_name = "mmdbkk.com"
+
 # Model LIFF auth and session runtime. Keep these exact so the public page stays
 # owned by Webflow while API traffic is owned by admin-worker.
 [[routes]]
