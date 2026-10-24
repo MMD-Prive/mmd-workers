@@ -149,3 +149,18 @@ test('serialized internal workspace loader keeps esbuild helpers inside browser 
   assert.doesNotThrow(()=>new Script(loader).runInNewContext(context));
   assert.ok(body.children.some(node=>node.id==='sigil-workspace-directory'));
 });
+
+ test('Audience contrast survives replacement of the legacy shared style node', async () => {
+  for (const existing of ['', '<style id="sigil-internal-silver-v1">old</style>']) {
+    const source = html.replace('</head>', existing + '<script nonce="test-nonce">void 0</script></head>');
+    const request = new Request('https://www.mmdbkk.com/internal/ceo/audience');
+    const r = await decorateInternalSilverTheme(request, new Response(source, {headers: {'content-type':'text/html', etag:'old', 'content-length':'1'}}));
+    let output = await r.text();
+    output = output.replace(/<style id="sigil-internal-silver-v1"[^>]*>[\s\S]*?<\/style>/, '<style id="sigil-internal-silver-v1">legacy overwrite</style>');
+    assert.match(output, /id="sigil-audience-contrast-v1" nonce="test-nonce"/);
+    assert.match(output, /body:has\(\.aud27\) #mmdK\{position:relative!important/);
+    assert.equal(r.headers.get('etag'), null);
+    const twice = await decorateInternalSilverTheme(request, new Response(output, {headers:{'content-type':'text/html'}}));
+    assert.equal((await twice.text()).match(/id="sigil-audience-contrast-v1"/g).length, 1);
+  }
+});
