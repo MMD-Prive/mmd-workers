@@ -1,0 +1,13 @@
+{
+  "version": "lv15-mobile-20261024",
+  "route": "https://www.mmdbkk.com/promotion/6-years-care-back",
+  "publishTaskId": "aa7b1974-bbb6-4509-ac48-46712c80c962",
+  "domains": [
+    "www.mmdbkk.com",
+    "mmdbkk.com",
+    "mmdprive.webflow.io"
+  ],
+  "publishScope": "site",
+  "exactWebflowReadback": true,
+  "rollbackVersion": "LV12"
+}
