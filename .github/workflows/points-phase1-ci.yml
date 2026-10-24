@@ -48,7 +48,7 @@ jobs:
           node --test payments-worker/confirmation-details.test.mjs
           node --test payments-worker/session-finance-write.test.mjs
       - name: Production entrypoint contract
-        run: grep -F 'main = "index.review-wrapper.js"' payments-worker/wrangler.merged.toml
+        run: grep -F 'main = "index.session-paid-projection-wrapper.js"' payments-worker/wrangler.merged.toml
       - name: Reviewed proof contract
         run: |
           grep -F '/v1/internal/payments/reviewed-proof' payments-worker/reviewed-proof.js

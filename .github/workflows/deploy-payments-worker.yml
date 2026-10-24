@@ -74,6 +74,8 @@ jobs:
           payments-worker/session-paid-projection.js
           payments-worker/session-paid-projection.test.mjs
           payments-worker/wrangler.merged.toml
+          .github/workflows/payment-review-facade-ci.yml
+          .github/workflows/points-phase1-ci.yml
           FILES
           )"
 
@@ -106,6 +108,7 @@ jobs:
           npm run test:payment-delivery
           node --check payments-worker/canonical-confirm-link.js
           node --check payments-worker/index.review-wrapper.js
+          node --check payments-worker/index.session-paid-projection-wrapper.js
           node --check payments-worker/shop-payment-v1.js
           node --check payments-worker/index.phase1.js
           node --check payments-worker/historical-cancellation-credit-recovery.test.mjs
