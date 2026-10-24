@@ -6,6 +6,14 @@
 
   const byId=(id)=>document.getElementById(id);
   const clean=(value)=>String(value==null?"":value).trim();
+  function cleanInlineArtifacts(root){
+    if(!root)return;
+    root.querySelectorAll("*").forEach(element=>{
+      Array.from(element.childNodes).forEach(node=>{
+        if(node.nodeType===3&&/^##INLINE\d+##$/.test(clean(node.nodeValue)))node.remove();
+      });
+    });
+  }
   const lower=(value)=>clean(value).toLowerCase();
   const display=(value)=>clean(value)||"—";
   const loginNext=`/internal/admin/login?next=${encodeURIComponent(location.pathname+location.search)}`;
@@ -1669,7 +1677,9 @@
   }
 
   function boot(){
-    if(!byId("mmdMemberIntelligence"))return;
+    const root=byId("mmdMemberIntelligence");
+    if(!root)return;
+    cleanInlineArtifacts(root);
 
     ensureRecoveryQueueUi();
     ensureIdentityReadinessUi();
