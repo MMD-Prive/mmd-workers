@@ -254,6 +254,8 @@
     const allowed = await preflight;
     if (allowed) return nativeFetch(input, init);
 
-    return new Promise(() => {});
+    // The rules screen remains visible, but the confirmation runtime must be
+    // allowed to leave its loading state while the model reads the rules.
+    throw new Error("job_day_rules_required");
   };
 })();

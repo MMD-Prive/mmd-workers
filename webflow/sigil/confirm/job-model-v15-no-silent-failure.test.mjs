@@ -327,6 +327,19 @@ test("gate: inside LIFF a missing session shows a manual screen, never an automa
   assert.ok(h.body.children.find((c) => c.hasAttribute("data-mmd-direct-first-job-gate")));
 });
 
+test("gate: first private job requiring rules leaves the loading state without reading details", async () => {
+  const h = harness({ withGate: true, routes: {
+    "/v1/model/direct-job-gate/status": { status: 200, body: { ok: true, applies: true, required: true, rules_url: "https://mmdbkk.com/rules/model/private/job-day" } },
+    "/v1/confirm/details": DETAILS_OK,
+  } });
+  await settle();
+  assert.equal(h.root.dataset.mmdState, "gate");
+  assert.equal(h.el["data-m-pill"].textContent, "");
+  assert.ok(h.body.children.find(c => c.hasAttribute("data-mmd-direct-first-job-gate")));
+  assert.equal(h.calls.filter(c => c.path === "/v1/confirm/details").length, 0);
+  assert.equal(h.el["data-m-confirm"].disabled, true);
+});
+
 test("gate: failed preflight is not cached, so retry can recover", async () => {
   const ok = { status: 200, body: { ok: true, applies: false, required: false } };
   const h = harness({ withGate: true, routes: { "/v1/model/direct-job-gate/status": [new TypeError("Failed to fetch"), ok], "/v1/confirm/details": DETAILS_OK } });

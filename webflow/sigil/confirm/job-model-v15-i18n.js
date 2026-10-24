@@ -920,6 +920,8 @@ function codedError(code, status = 0) {
     } catch (error) {
       logFailure(error, "load");
       if (gateVisible()) {
+        setPill("");
+        setStatus("");
         setState("gate");
       } else {
         const result = classify(error, "load");
