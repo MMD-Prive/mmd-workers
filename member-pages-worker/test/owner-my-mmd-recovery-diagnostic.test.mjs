@@ -159,6 +159,33 @@ test("pending recovery never reports canonical-profile zero as final points", as
   assert.equal(body.points.value, null);
 });
 
+test("LINE OFC Points remain visible when the Member profile is unavailable, without inferring membership", async () => {
+  const missingProfile = env();
+  missingProfile.MEMBER_STATUS_RESOLVER.fetch = async () => Response.json({ ok: false, error: { code: "MEMBER_NOT_FOUND" } }, { status: 404 });
+  const response = await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest(), missingProfile);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.membership.status, "unavailable");
+  assert.equal(body.membership.level, null);
+  assert.equal(body.membership.active_through, null);
+  assert.equal(body.points.value, 1250);
+  assert.equal(body.points.source, "history_recovery");
+  assert.equal(body.guardrails.member_profile_available, false);
+  assert.doesNotMatch(JSON.stringify(body), new RegExp(LINE_ID));
+});
+
+test("missing profile and incomplete history never report a made-up zero balance", async () => {
+  const missingBoth = env();
+  missingBoth.MEMBER_STATUS_RESOLVER.fetch = async () => Response.json({ ok: false }, { status: 503 });
+  missingBoth.LIFF_IDENTITY_KV.get = async () => null;
+  const response = await handleOwnerMyMmdRecoveryDiagnosticRpc(internalRequest(), missingBoth);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.membership.status, "unavailable");
+  assert.equal(body.points.status, "pending");
+  assert.equal(body.points.value, null);
+});
+
 
 
 

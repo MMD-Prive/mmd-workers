@@ -191,7 +191,7 @@ h1{font-size:clamp(28px,5vw,48px);line-height:1.04;margin:8px 0 10px}p{color:var
     result.className='grid';
     result.innerHTML=''
       +'<article class="card wide"><span>ลูกค้า</span><strong>'+esc(c.display_name||'—')+'</strong><div class="meta">'+esc(c.canonical_client_id||'')+'</div></article>'
-      +'<article class="card"><span>Membership</span><strong>'+esc(m.label||m.level||'—')+'</strong><div class="meta">lifecycle: '+esc(m.lifecycle||'—')+'</div></article>'
+      +'<article class="card"><span>Membership</span><strong>'+esc(m.label||m.level||'ยังยืนยันไม่ได้')+'</strong><div class="meta">'+(m.status==='unavailable'?'ยังไม่มีข้อมูลสมาชิกที่ยืนยันได้':'lifecycle: '+esc(m.lifecycle||'—'))+'</div></article>'
       +'<article class="card"><span>Active-through</span><strong>'+fmtDate(m.active_through)+'</strong><div class="meta">source: '+esc(m.source||'—')+'</div></article>'
       +'<article class="card"><span>Recovery</span><strong class="'+stateClass(r.state)+'">'+esc(r.state||'—')+'</strong><div class="meta">terminal: '+esc(r.terminal===true?'yes':'no')+' · review '+esc(r.pending_review_count||0)+'</div></article>'
       +'<article class="card"><span>Points</span><strong>'+esc(p.value==null?'—':p.value)+'</strong><div class="meta">'+esc(p.status||'—')+' · '+esc(p.source||'—')+'</div></article>'
