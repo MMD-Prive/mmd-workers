@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
+import { soloReviewer } from './admin-production-approval.mjs';
 
 const name = 'mmd-production-mutation';
 const env = { GITHUB_REPOSITORY: 'MMD-Prive/mmd-workers', GH_TOKEN: 'fixture' };
@@ -10,8 +11,8 @@ function mock(overrides = {}) {
   const values = {
     list: { status: 200, value: { total_count: 1, environments: [{ name }] } },
     protection: { status: 200, value: { name, can_admins_bypass: false,
-      protection_rules: [{ type: 'required_reviewers', prevent_self_review: true,
-        reviewers: [{ type: 'User', reviewer: { id: 216427112 } }] }],
+      protection_rules: [{ type: 'required_reviewers', prevent_self_review: false,
+        reviewers: [{ type: 'User', reviewer: { ...soloReviewer } }] }],
       deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } } },
     branches: { status: 200, value: { total_count: 1, branch_policies: [{ name: 'main', type: 'branch' }] } },
     ...overrides,
@@ -46,7 +47,9 @@ for (const key of ['list', 'protection']) for (const status of [401, 403]) test(
 
 for (const [label, mutate] of [
   ['reviewers missing', x => { x.protection_rules = []; }],
-  ['self review allowed', x => { x.protection_rules[0].prevent_self_review = false; }],
+  ['independent review required', x => { x.protection_rules[0].prevent_self_review = true; }],
+  ['wrong reviewer', x => { x.protection_rules[0].reviewers[0].reviewer.id = 1; }],
+  ['multiple reviewers', x => { x.protection_rules[0].reviewers.push({ type: 'User', reviewer: { login: 'other', id: 2 } }); }],
   ['admin bypass', x => { x.can_admins_bypass = true; }],
   ['unknown bypass', x => { delete x.can_admins_bypass; }],
   ['invalid reviewer', x => { x.protection_rules[0].reviewers[0].reviewer.id = 0; }],
@@ -84,10 +87,10 @@ test('validation workflow never receives production credentials or invokes a mut
   assert.match(source, /^  pull_request:/m);
 });
 
-test('environment plan is unapplied; no identity is silently appointed', () => {
+test('environment plan records owner-authorized policy but remains unapplied until GitHub change', () => {
   const plan = JSON.parse(readFileSync(new URL('./admin-production-environment-plan.json', import.meta.url)));
-  assert.equal(plan.applied, false); assert.equal(plan.configuration_change_authorized, false);
+  assert.equal(plan.applied, false); assert.equal(plan.configuration_change_authorized, true);
   assert.deepEqual(plan.desired_protection.reviewers, [{ type: 'User', id: 216427112, login: 'mmdprive' }]);
-  assert.equal(plan.desired_protection.prevent_self_review, true);
+  assert.equal(plan.desired_protection.prevent_self_review, false);
   assert.equal(plan.desired_protection.can_admins_bypass, false);
 });
