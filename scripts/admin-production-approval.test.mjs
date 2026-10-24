@@ -10,10 +10,8 @@ const base = {
 };
 const protectedEnvironment = (name = environmentName) => ({
   name, can_admins_bypass: false,
-  protection_rules: [{ type: 'required_reviewers', prevent_self_review: name !== adminWorkerSoloEnvironmentName,
-    reviewers: name === adminWorkerSoloEnvironmentName
-      ? [{ type: 'User', reviewer: { ...soloReviewer } }]
-      : [{ type: 'Team', reviewer: { id: 1 } }] }],
+  protection_rules: [{ type: 'required_reviewers', prevent_self_review: false,
+    reviewers: [{ type: 'User', reviewer: { ...soloReviewer } }] }],
 });
 const response = (value, status = 200) => async () => ({ status, json: async () => value });
 
@@ -42,7 +40,7 @@ for (const status of [401, 403, 404, 429, 500]) test(`fail closed on protection 
 for (const [name, change] of [
   ['unprotected environment', x => { x.protection_rules = []; }],
   ['wrong environment', x => { x.name = 'other'; }],
-  ['self review policy mismatch', x => { x.protection_rules[0].prevent_self_review = false; }],
+  ['self review still prohibited', x => { x.protection_rules[0].prevent_self_review = true; }],
   ['admin bypass', x => { x.can_admins_bypass = true; }],
   ['unknown bypass', x => { delete x.can_admins_bypass; }],
   ['no reviewers', x => { x.protection_rules[0].reviewers = []; }],
@@ -70,7 +68,7 @@ test('valid protection uses exactly one GET, with no production writes', async (
   assert.deepEqual(result, { environment: environmentName, approved_sha: sha });
 });
 
-test('shared environment retains independent reviewer policy', async () => {
+test('shared environment allows only Per to self-approve with no admin bypass', async () => {
   const result = await verifyProductionApproval(base, async url => {
     assert.equal(url, `https://api.github.com/repos/MMD-Prive/mmd-workers/environments/${environmentName}`);
     return { status: 200, json: async () => protectedEnvironment() };
@@ -87,18 +85,20 @@ test('admin-worker solo environment requires only Per and permits self-review', 
   assert.deepEqual(result, { environment: adminWorkerSoloEnvironmentName, approved_sha: sha });
 });
 
-for (const [name, change] of [
-  ['wrong reviewer login', rule => { rule.reviewers[0].reviewer.login = 'someone-else'; }],
-  ['wrong reviewer identity', rule => { rule.reviewers[0].reviewer.id = 1; }],
-  ['team reviewer', rule => { rule.reviewers[0].type = 'Team'; }],
-  ['multiple reviewers', rule => { rule.reviewers.push({ type: 'User', reviewer: { login: 'other', id: 2 } }); }],
-  ['self-review forbidden', rule => { rule.prevent_self_review = true; }],
-]) test(`admin-worker solo rejects ${name}`, async () => {
-  const env = { ...base, PRODUCTION_ENVIRONMENT_NAME: adminWorkerSoloEnvironmentName };
-  const protection = protectedEnvironment(adminWorkerSoloEnvironmentName);
-  change(protection.protection_rules[0]);
-  await assert.rejects(verifyProductionApproval(env, response(protection)));
-});
+for (const targetEnvironment of [environmentName, adminWorkerSoloEnvironmentName]) {
+  for (const [name, change] of [
+    ['wrong reviewer login', rule => { rule.reviewers[0].reviewer.login = 'someone-else'; }],
+    ['wrong reviewer identity', rule => { rule.reviewers[0].reviewer.id = 1; }],
+    ['team reviewer', rule => { rule.reviewers[0].type = 'Team'; }],
+    ['multiple reviewers', rule => { rule.reviewers.push({ type: 'User', reviewer: { login: 'other', id: 2 } }); }],
+    ['self-review forbidden', rule => { rule.prevent_self_review = true; }],
+  ]) test(`${targetEnvironment} rejects ${name}`, async () => {
+    const env = { ...base, PRODUCTION_ENVIRONMENT_NAME: targetEnvironment };
+    const protection = protectedEnvironment(targetEnvironment);
+    change(protection.protection_rules[0]);
+    await assert.rejects(verifyProductionApproval(env, response(protection)));
+  });
+}
 
 test('reject unapproved environment before network request', async () => {
   let calls = 0;
