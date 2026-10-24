@@ -1,7 +1,7 @@
 {
   "version": "lv15-mobile-20261024",
   "route": "https://www.mmdbkk.com/promotion/6-years-care-back",
-  "publishTaskId": "aa7b1974-bbb6-4509-ac48-46712c80c962",
+  "publishTaskId": "19f49f28-8779-40ed-8d21-5045cfd0079c",
   "domains": [
     "www.mmdbkk.com",
     "mmdbkk.com",
@@ -9,5 +9,12 @@
   ],
   "publishScope": "site",
   "exactWebflowReadback": true,
-  "rollbackVersion": "LV12"
+  "rollbackVersion": "LV12",
+  "statusOrder": [
+    "STANDARD",
+    "PREMIUM",
+    "RED CARD",
+    "VIP",
+    "BLACKCARD"
+  ]
 }
