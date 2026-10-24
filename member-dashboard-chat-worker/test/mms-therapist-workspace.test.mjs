@@ -37,6 +37,30 @@ test('query-bearing registered LIFF endpoint reaches native login through the co
     }
   }
 });
+test('customer AI discriminator serves customer UI on reload while the bare Therapist LIFF endpoint stays native', async () => {
+  const calls = [];
+  const env = {
+    MMS_THERAPIST_UI_SOURCE: 'native',
+    MMS_CUSTOMER_UI: { async fetch(request) {
+      calls.push(request);
+      return new Response('<html><body>customer-ai</body></html>', { headers: { 'content-type': 'text/html' } });
+    } },
+  };
+  for (const host of ['mmdbkk.com', 'www.mmdbkk.com']) {
+    const customerRequest = new Request(`https://${host}${path}?mms_customer_ai=true`);
+    const customer = await productionWorker.fetch(customerRequest, env);
+    assert.equal(customer.status, 200);
+    assert.equal(customer.headers.get('x-mmd-ui-source'), 'my-mms-therapist-github-via-cloudflare');
+    assert.match(await customer.text(), /customer-ai/);
+    assert.equal(new URL(calls.at(-1).url).pathname, '/therapists');
+    assert.equal(new URL(calls.at(-1).url).search, '?mms_customer_ai=true');
+
+    const therapist = await productionWorker.fetch(new Request(`https://${host}${path}?liff.state=%3Finvite%3Dsafe`), env);
+    assert.equal(therapist.status, 200);
+    assert.equal(therapist.headers.get('x-mmd-ui-source'), 'mms-native-workspace-v1');
+    assert.match(await therapist.text(), /mms-therapist-invite-v1/);
+  }
+});
 test('callback wildcard passes unrelated public pages and prefix lookalikes directly to origin', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
