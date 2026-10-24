@@ -22,15 +22,20 @@ test("Worker page is private, self-contained, and states the operator payment bo
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker-money-control-home");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.match(response.headers.get("content-security-policy"), /connect-src 'self'/);
+  assert.match(response.headers.get("content-security-policy"), /img-src 'self' data: blob:/);
   const html = await response.text();
   assert.match(html, /เปิดหลักฐาน/);
   assert.match(html, /เทียบยอดและลูกค้า\/งาน/);
   assert.match(html, /การรับสลิปเข้าคิวเป็นเพียงการรับหลักฐาน/);
   assert.match(html, /searchParams\.set\('mmd_worker_view','existing'\)/);
-  assert.match(html, /review-queue\?limit=100&include_context=1/);
+  assert.match(html, /review-queue/);
+  assert.match(html, /proof-detail/);
+  assert.match(html, /v1\/admin\/payments\/evidence\?proof_id=/);
+  assert.match(html, /image\/\*,application\/pdf/);
+  assert.match(html, /mmd_worker_view','existing'/);
   assert.match(html, /credentials:'include',cache:'no-store'/);
   assert.match(html, /เปิดตรวจ/);
-  assert.match(html, /Proof ID ที่ระบุไม่อยู่ในคิวที่โหลด/);
+  assert.match(html, /Proof ID ที่ระบุไม่อยู่ในคิว/);
   assert.doesNotMatch(html, /\.innerHTML\s*=/);
   assert.doesNotMatch(html, /https?:\/\//);
   assert.doesNotMatch(html, /<iframe\b|cdn\./i);
@@ -45,7 +50,7 @@ test("queue view safely renders backend values and deep-links into the existing 
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(name, callback) { this.listeners[name] = callback; }
   }
-  const ids = ["q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh"];
+  const ids = ["q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id === "q-list" ? "div" : "input")]));
   const calls = [];
   const malicious = "<img src=x onerror=alert(1)>";
@@ -72,19 +77,26 @@ test("queue view safely renders backend values and deep-links into the existing 
     Date,
     Set,
     Option: FakeOption,
-    fetch: async (...args) => { calls.push(args); return { ok: true, json: async () => response }; },
+    fetch: async (...args) => { calls.push(args); return calls.length === 1 ? { ok: true, json: async () => response } : { ok: false }; },
+    addEventListener() {},
   });
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], "/v1/admin/payments/review-queue?limit=100&include_context=1");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][0], "/v1/admin/payments/review-queue?limit=100&include_context=1&proof_id=proof_fixture_1");
   assert.equal(calls[0][1].credentials, "include");
   assert.equal(calls[0][1].cache, "no-store");
+  assert.equal(calls[1][0], "/v1/admin/payments/evidence?proof_id=proof_fixture_1");
+  assert.equal(calls[1][1].credentials, "include");
+  assert.equal(calls[1][1].cache, "no-store");
   const link = elements["q-list"].children[0];
   assert.equal(link.tagName, "a");
-  assert.equal(link.href, "/internal/admin/payments?proof_id=proof_fixture_1&session_id=session_fixture_1&mmd_worker_view=existing");
+  assert.equal(link.href, "/internal/admin/payments?proof_id=proof_fixture_1&session_id=session_fixture_1");
   assert.ok(link.textContent.includes(malicious));
   assert.equal(link.children[0].children[0].textContent, malicious);
-  assert.match(elements["q-status"].textContent, /พบ Proof ID/);
+  assert.equal(elements["proof-detail"].hidden, false);
+  assert.equal(elements["continue-review"].href, "/internal/admin/payments?proof_id=proof_fixture_1&session_id=session_fixture_1&mmd_worker_view=existing");
+  assert.match(elements["detail-grid"].textContent, /2,500\.00 บาท/);
+  assert.match(elements["q-status"].textContent, /แสดง 1 จาก 1/);
 });
 
 test("HEAD returns headers without a page body", async () => {
