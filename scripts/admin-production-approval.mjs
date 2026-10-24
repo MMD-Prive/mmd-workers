@@ -5,10 +5,10 @@ export const environmentName = 'mmd-production-mutation';
 export const adminWorkerSoloEnvironmentName = 'mmd-admin-worker-solo-mutation';
 export const soloReviewer = { login: 'mmdprive', id: 216427112 };
 
-// Keep the shared production environment independent-review-only. The
-// owner-authorized single-operator exception is limited to admin-worker's
-// dedicated environment. Never change environments here; missing, forbidden,
-// or ambiguous protection stops release.
+// The owner-authorized single-operator policy applies to every approved
+// production environment: Per is the sole required reviewer, self-review is
+// allowed, and administrator bypass remains disabled. Never mutate environment
+// settings here; missing, forbidden, or ambiguous protection stops release.
 export async function verifyProductionApproval(env, request = fetch) {
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch', 'manual dispatch required');
   assert.equal(env.GITHUB_REF, 'refs/heads/main', 'production must use main');
@@ -33,18 +33,11 @@ export async function verifyProductionApproval(env, request = fetch) {
   assert.equal(protection.can_admins_bypass, false, 'admin protection bypass must be disabled');
   const reviewers = protection.protection_rules?.filter(rule => rule.type === 'required_reviewers');
   assert.equal(reviewers?.length, 1, 'one required-reviewer rule must exist');
-  if (targetEnvironment === adminWorkerSoloEnvironmentName) {
-    assert.equal(reviewers[0].prevent_self_review, false, 'admin-worker solo policy must allow self-review');
-    assert.equal(reviewers[0].reviewers?.length, 1, 'Per must be the sole required reviewer');
-    assert.equal(reviewers[0].reviewers[0].type, 'User', 'required reviewer must be an individual user');
-    assert.equal(reviewers[0].reviewers[0].reviewer?.login, soloReviewer.login, 'Per must be the required reviewer');
-    assert.equal(reviewers[0].reviewers[0].reviewer?.id, soloReviewer.id, 'required reviewer identity must match Per');
-  } else {
-    assert.equal(reviewers[0].prevent_self_review, true, 'shared production environment must prevent self-review');
-    assert.ok(reviewers[0].reviewers?.some(entry =>
-      ['User', 'Team'].includes(entry.type) && Number.isSafeInteger(entry.reviewer?.id) && entry.reviewer.id > 0),
-    'required reviewer must be configured');
-  }
+  assert.equal(reviewers[0].prevent_self_review, false, 'owner-only production policy must allow self-review');
+  assert.equal(reviewers[0].reviewers?.length, 1, 'Per must be the sole required reviewer');
+  assert.equal(reviewers[0].reviewers[0].type, 'User', 'required reviewer must be an individual user');
+  assert.equal(reviewers[0].reviewers[0].reviewer?.login, soloReviewer.login, 'Per must be the required reviewer');
+  assert.equal(reviewers[0].reviewers[0].reviewer?.id, soloReviewer.id, 'required reviewer identity must match Per');
   return { environment: targetEnvironment, approved_sha: env.GITHUB_SHA };
 }
 
