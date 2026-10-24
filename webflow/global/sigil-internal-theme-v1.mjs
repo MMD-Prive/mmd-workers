@@ -12,6 +12,22 @@ export function usesSilverWorkspace(pathname) {
 }
 
 export const SILVER_WORKSPACE_CSS = String.raw`
+/* Keep menus readable even when an older Webflow loader created them first. */
+html[data-sigil-internal-theme] body #sigil-workspace-directory,
+html[data-sigil-internal-theme] body #sigil-workspace-directory :is(nav,section,summary){background:#fff!important;color:#27313b!important;border-color:#c7ccd2!important}
+html[data-sigil-internal-theme] body #sigil-workspace-directory :is(summary,h3,a,input,span,strong){color:#27313b!important;-webkit-text-fill-color:#27313b!important;opacity:1!important}
+html[data-sigil-internal-theme] body #sigil-workspace-directory a{background:transparent!important}
+html[data-sigil-internal-theme] body #sigil-workspace-directory a:is(:hover,[aria-current="page"]){background:#ffdab0!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important}
+/* Audience keeps the source list and its existing navigation in the light theme. */
+html[data-sigil-internal-theme] body .aud27 .aud27-sourcebar,
+html[data-sigil-internal-theme] body .aud27 .aud27-sourcebar :is(span,b,strong,small,code,a){background:#fff!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important;border-color:#c7ccd2!important}
+html[data-sigil-internal-theme] body .aud27 .aud27-sourcebar{flex-wrap:wrap;gap:8px}
+html[data-sigil-internal-theme] body .aud27 .aud27-btn,
+html[data-sigil-internal-theme] body .aud27 .aud27-nav button{background:#ffdab0!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important;border-color:#c7833c!important}
+html[data-sigil-internal-theme] body .aud27 .aud27-nav button:is(:hover,.is-active){background:#ffc88c!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important}
+html[data-sigil-internal-theme] body:has(.aud27) #mmdK{position:relative!important;inset:auto!important;width:auto!important;max-width:100%!important;margin:16px!important;background:#fff!important;color:#27313b!important;border:1px solid #c7ccd2!important;box-shadow:none!important}
+html[data-sigil-internal-theme] body:has(.aud27) #mmdK :is(a,b,span,strong){color:#27313b!important;-webkit-text-fill-color:#27313b!important}
+
 .sigil-system-logo{display:block!important;width:190px;max-width:100%;background:none!important;border:0!important;padding:0!important}.sigil-system-logo svg{display:block!important;width:100%!important;height:auto!important}@media(max-width:640px){.sigil-system-logo{width:160px}}
 html[data-sigil-internal-theme="silver-orange-v1"]{color-scheme:light;--bg:#ffffff;--paper:#ffffff;--panel:#ffffff;--panel2:#edf0f3;--soft:#edf0f3;--ink:#272b30;--text:#272b30;--muted:#545c66;--mute:#545c66;--gold2:#a93e09;--line:#c7ccd2;--line2:#c7ccd2;--lime:#fed7aa;--sage:#edf0f3;--sage-deep:#454b54;--chip:#edf0f3;--background:#fff;--foreground:oklch(0.28714359 0.01078794 254.00936431);--surface:#fff;--surface-2:oklch(0.95 0.004 260);--card:var(--surface);--card-foreground:var(--foreground);--popover:var(--surface);--popover-foreground:var(--foreground);--primary:#fed7aa;--primary-foreground:#272b30;--gold:var(--primary);--gold-foreground:var(--primary-foreground);--gold-muted:oklch(.953 .028 55);--border:oklch(.81 .009 255);--input:var(--border);--ring:oklch(0.54607639 0.15962265 41.74058897 / 65%)}
 html[data-sigil-internal-theme="silver-orange-v1"] body{background:#ffffff!important;color:#272b30!important}
