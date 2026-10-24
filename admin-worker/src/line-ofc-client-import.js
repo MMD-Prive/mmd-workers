@@ -339,3 +339,17 @@ function safeHashRef(value) { const text = clean(value, 180); return text ? text
 function escapeFormula(value) { return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"'); }
 function clean(value, max = 4000) { return String(value ?? "").trim().slice(0, max); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Cache-Control": "no-store, private", "Content-Type": "application/json; charset=utf-8" } }); }
+
+// Replay returns the already stored identity handoff, never re-imports evidence.
+export async function readLineOfcImportReplay(env, recordId) {
+  if (!/^rec[A-Za-z0-9]+$/.test(recordId || "")) throw new Error("idempotency_incomplete");
+  const config = airtableConfig(env);
+  const table = clean(env.AIRTABLE_LINE_OFC_IMPORT_TABLE_ID) || STAGING_TABLE_DEFAULT;
+  const response = await fetch(`${AIRTABLE_API}/${config.base}/${table}/${recordId}`, { headers: { Authorization: `Bearer ${config.token}` } });
+  if (!response.ok) throw new Error("idempotency_incomplete");
+  const record = await response.json();
+  const fields = record.fields || {};
+  const clients = fields["Canonical Client"] || [];
+  return json({ ok: true, duplicate: true, operation: "line_ofc_client_import", import_id: fields["Import ID"], staging_record_id: record.id,
+    canonical_client_id: clients.length === 1 ? clients[0] : null, status: fields["Import Status"], membership_mutation: false, entitlement_mutation: false });
+}
