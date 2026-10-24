@@ -57,6 +57,11 @@ test('config parser reads only the Worker vars, asset binding and service bindin
   });
 });
 
+test('config parser keeps vars after blank lines and comments in the vars section',()=>{
+  const source=`name = "immigrate-worker"\nmain = "src/index.ts"\ncompatibility_date = "2026-03-25"\n\n[assets]\ndirectory = "./public"\nbinding = "ASSETS"\n\n[vars]\nFIRST = "one"\n\n# Keep parsing across comments and blank lines.\nSECOND = "two"\n\n[[services]]\nbinding = "ADMIN_WORKER"\nservice = "admin-worker"\n`;
+  assert.deepEqual(parseImmigrateWorkerConfig(source).vars,{FIRST:'one',SECOND:'two'});
+});
+
 test('preflight compares active version and config using read-only Worker API calls',async()=>{
   const f=fixture();
   const result=await verifyImmigrateWorkerBaseline({expectedVersion:version,expectedDeployment:deployment,token:'test',configText:config,fetcher:f.fetcher});

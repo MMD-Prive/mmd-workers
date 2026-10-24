@@ -21,7 +21,7 @@ function uuid(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 export function parseImmigrateWorkerConfig(source) {
   const worker = source.match(/^name\s*=\s*"([^"]+)"/m)?.[1];
   const compatibilityDate = source.match(/^compatibility_date\s*=\s*"([^"]+)"/m)?.[1];
-  const varsBlock = source.match(/^\[vars\]\s*\n([\s\S]*?)(?=^\[|^$)/m)?.[1];
+  const varsBlock = source.match(/^\[vars\]\s*\n([\s\S]*?)(?=^\[)/m)?.[1];
   if (!worker || !compatibilityDate || !varsBlock) fail('Worker config is incomplete');
   const vars = {};
   for (const line of varsBlock.split(/\r?\n/)) {

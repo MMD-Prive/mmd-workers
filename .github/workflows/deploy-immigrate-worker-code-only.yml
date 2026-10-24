@@ -72,7 +72,7 @@ jobs:
       - name: Install pinned Wrangler
         run: npm install --global wrangler@4.128.0 --no-audit --no-fund
 
-      - name: Verify the active version, bindings, config and CEO routes before upload
+      - name: Verify the active version, bindings and config before upload
         run: node ../scripts/immigrate-worker-code-only-release.mjs --preflight
 
       - name: Validate the exact Worker bundle without upload
