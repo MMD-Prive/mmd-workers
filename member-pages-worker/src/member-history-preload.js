@@ -12,7 +12,9 @@ export async function readMemberHistoryPreload(env = {}, lineUserId, { now = new
 
   const cacheKey = await preloadCacheKey(lineUserId);
   const cached = await env.LIFF_IDENTITY_KV?.get?.(cacheKey, "json").catch(() => null);
+  const invalidatedAt = Number(await env.LIFF_IDENTITY_KV?.get?.(`${cacheKey}:invalidated`).catch(() => 0)) || 0;
   const cachedResult = validateCachedResult(cached, now, env);
+  if (cachedResult && Date.parse(cachedResult.projection?.computed_at || "") < invalidatedAt) return unavailable("source_changed");
   if (cachedResult) return { ...cachedResult, cache: "hit" };
 
   const clients = await airtableList(env, env.AIRTABLE_TABLE_CLIENTS || CLIENTS_TABLE, {
@@ -30,6 +32,7 @@ export async function readMemberHistoryPreload(env = {}, lineUserId, { now = new
   if (rows.length !== 1) return unavailable(rows.length > 1 ? "projection_ambiguous" : "projection_missing", { clientId });
 
   const projection = parseObject(rows[0]?.fields?.projection_json);
+  if (Date.parse(projection.computed_at || "") < invalidatedAt) return unavailable("source_changed", { clientId });
   const validated = validateProjection(projection, { clientId, now, env });
   if (!validated.available) return validated;
   const result = {
@@ -227,3 +230,9 @@ export const __test = Object.freeze({
   preloadCacheKey,
   validateCachedResult,
 });
+
+export async function invalidateMemberHistoryPreload(env, lineUserId, now = new Date()) {
+  if (!safeLineUserId(lineUserId) || !env.LIFF_IDENTITY_KV?.put) throw new Error("history_cache_unavailable");
+  const key = await preloadCacheKey(lineUserId);
+  await env.LIFF_IDENTITY_KV.put(`${key}:invalidated`, String(now.getTime()), { expirationTtl: 30 * 24 * 60 * 60 });
+}
