@@ -285,6 +285,8 @@ test('rendered Webflow scripts are syntactically valid and connection check is e
     const page=await calendarPageResponse(req,env,'2026-09-17');const html=await page.text();
     assert.match(html,/calendar-owner-recovery-queue-v1-20260923/);
     assert.match(html,/calendar-coverage-health-v1-20260923/);
+    assert.equal((html.match(/const selected=date\(\),endpoint='\/v1\/admin\/calendar'/g)||[]).length,2);
+    assert.doesNotMatch(html,/fetch\('\/v1\/admin\/calendar\?date='\+encodeURIComponent\(date\(\)\)/);
     assert.match(html,/calv5__people--recovery-authority/);
     assert.match(html,/availability-activation/);
     assert.match(html,/reminder_follow_up_due/);
