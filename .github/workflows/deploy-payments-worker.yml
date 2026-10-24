@@ -38,7 +38,53 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      projection_only: ${{ steps.check.outputs.projection_only }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect the narrowly approved paid projection release
+        id: check
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo 'projection_only=false' >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" != "push" || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            exit 0
+          fi
+
+          actual="$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" | LC_ALL=C sort)"
+          expected="$(cat <<'FILES' | LC_ALL=C sort
+          .github/workflows/deploy-payments-worker.yml
+          .github/workflows/payment-evidence-delivery-contract.yml
+          payments-worker/final-payment-flow.js
+          payments-worker/final-payment-flow.test.mjs
+          payments-worker/index.js
+          payments-worker/index.session-paid-projection-wrapper.js
+          payments-worker/session-paid-projection-coordinator.js
+          payments-worker/session-paid-projection.js
+          payments-worker/session-paid-projection.test.mjs
+          payments-worker/wrangler.merged.toml
+          FILES
+          )"
+
+          if [[ "$actual" == "$expected" ]]; then
+            echo 'projection_only=true' >> "$GITHUB_OUTPUT"
+            echo 'Scoped paid_received_sum projection release: skip the integrated Telegram/secret/schedule pipeline.'
+          fi
+
   validate-and-deploy:
+    needs: scope
+    if: needs.scope.outputs.projection_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
