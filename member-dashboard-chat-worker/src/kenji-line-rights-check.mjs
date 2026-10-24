@@ -15,7 +15,7 @@ export function isRightsCommand(message = "") {
   // เช็กสิทธิ์). Normalize only for command matching; preserve intake text.
   const value = clean(message).normalize("NFKC").replace(/[\u200B\uFEFF]/g, "").trim();
   // Owner-approved complete sentence copied into LINE; keep the alias exact.
-  if (value === "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็กสิทธิ์") return true;
+  if (/^อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ (?:เช็ก|เช็ค)สิทธิ์(?:[ \t]*[.!?])?$/.test(value)) return true;
   return /^(?:ขอ)?(?:เช็ก|เช็ค)\s*สิท(?:ธิ์|ธ์)(?:สมาชิก)?(?:ของ(?:ผม|ฉัน|หนู))?(?:หน่อย|ให้หน่อย)?(?:ครับ|ค่ะ|คะ|นะ)?[.!?]*$/.test(value);
 }
 
