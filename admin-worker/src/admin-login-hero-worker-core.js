@@ -474,7 +474,7 @@ function isMmsPartnerAllowedPath(path) {
 }
 
 function isBrowserAdminPath(path) {
-  return path === "/studio/api/payments/slip-intake" || path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
+  return path === LINE_NOTES_PAGE || path === "/studio/api/payments/slip-intake" || path.startsWith("/internal/admin") || path.startsWith("/sigil/internal/admin") || path.startsWith("/v1/admin");
 }
 
 function isApiAdminPath(path) {
