@@ -45,6 +45,7 @@
     memory:null,
     intelligence:null,
     selectionSeq:0,
+    searchSeq:0,
     draftText:"",
     draftAvailable:false,
     runtimeCopyAllowed:false,
@@ -1197,14 +1198,13 @@
 
   function memoryFromIntelligence(payload,record){
     const identity=payload?.identity||{};
-    const relationship=payload?.relationship||{};
     const current=payload?.current_state||{};
     const membership=current.membership||{};
     const access=current.access||{};
     return {
       display_name:identity.display_name||recordName(record),
       verification_status:identity.verified===true?"verified":"review_required",
-      relationship_tier:access.relationship_tier||relationship.relationship_state||membership.tier||"",
+      relationship_tier:access.relationship_tier||membership.tier||"",
       membership_tier:membership.tier||"",
       membership_status:membership.status||"unknown",
       package_code:membership.package_code||"",
@@ -1221,7 +1221,7 @@
 
   function recordSummary(record){
     if(record?.manual_public_only)return "IDENTITY REVIEW · ยังไม่ใช่ Canonical Client";
-    const pieces=["Canonical Client"];
+    const pieces=["มีระเบียนลูกค้า · ตรวจตัวตนในรายละเอียด"];
     if(clean(record?.tier))pieces.push(clean(record.tier));
     else if(clean(record?.package_code))pieces.push(clean(record.package_code));
     if(clean(record?.membership_status))pieces.push(clean(record.membership_status));
@@ -1441,15 +1441,16 @@
 
     if(/blocked|suspended|revoked/.test(combined))return {label:"OWNER REVIEW",tone:"bad"};
     if(/expired/.test(member)||/due|expired|renew/.test(renewal))return {label:"RENEWAL REVIEW",tone:"warn"};
-    if(!verification||/pending|unverified|unknown/.test(verification))return {label:"VERIFY CONTEXT",tone:"warn"};
-    if(!access)return {label:"REVIEW",tone:"warn"};
+    if(verification!=="verified")return {label:"รอตรวจหลักฐานตัวตน",tone:"warn"};
+    if(!["active","granted","allowed","eligible"].includes(access))return {label:"รอตรวจสิทธิ์ปัจจุบัน",tone:"warn"};
+    if(!member||["unknown","pending","review_required"].includes(member))return {label:"รอตรวจสถานะสมาชิก",tone:"warn"};
     return {label:"CONTEXT READY",tone:"ok"};
   }
 
   function accessTone(value){
     const normalized=lower(value);
-    if(/active|granted|allowed|eligible/.test(normalized))return "ok";
-    if(/blocked|suspended|revoked|expired|denied/.test(normalized))return "bad";
+    if(["blocked","suspended","revoked","expired","denied","inactive","not_allowed","ineligible"].includes(normalized))return "bad";
+    if(["active","granted","allowed","eligible"].includes(normalized))return "ok";
     return "warn";
   }
 
@@ -1460,9 +1461,9 @@
 
     const confidence=Number(record?.confidence);
     const rows=[
-      ["Canonical Client",clean(record?.client_id)?"Linked":"Not resolved"],
+      ["ระเบียนลูกค้า",clean(record?.client_id)?"เชื่อมระเบียนแล้ว · ไม่ใช่การยืนยันตัวตน":"ยังไม่เชื่อมระเบียน"],
       ["Matched on",display(record?.matched_on||record?.lineage_source)],
-      ["Confidence",Number.isFinite(confidence)?`${Math.round(confidence)}%`:"—"],
+      ["คะแนนจับคู่จากระบบ",record?.confidence!=null&&Number.isFinite(confidence)?String(confidence):"—"],
       ["Relationship level",display(memory?.relationship_tier||memory?.membership_tier||record?.tier||record?.package_code)],
       ["Membership evidence",display(memory?.membership_status||record?.membership_status)],
       ["Package",display(memory?.package_code||record?.package_code)],
@@ -1485,11 +1486,11 @@
 
   function paintLineage(record){
     setText("miName",recordName(record));
-    setText("miIdentity",record?.manual_public_only?"Identity Review":(clean(record?.client_id)?"Canonical Client":"Identity Review"));
+    setText("miIdentity",record?.manual_public_only?"รอตรวจตัวตน":(clean(record?.client_id)?"มีระเบียน · รอตรวจหลักฐาน":"รอตรวจตัวตน"));
     setText("miIdentityMeta",[
       clean(record?.canonical_name),
       clean(record?.matched_on),
-      Number.isFinite(Number(record?.confidence))?`${Math.round(Number(record.confidence))}%`:""
+      ""
     ].filter(Boolean).join(" · "));
     setText("miSource",record?.lineage_source||record?.entitlement_snapshot_source||"canonical_client_lineage");
     setText("miLevel",record?.tier||record?.package_code||"—");
@@ -1498,7 +1499,7 @@
     setText("miAccessMeta","My MMD Resolver เป็น authority; กำลังอ่าน bounded entitlement evidence");
     setText("miReview",record?.manual_public_only?"IDENTITY REVIEW":"WAITING");
 
-    setLayerTone("miIdentity",record?.manual_public_only?"warn":"ok");
+    setLayerTone("miIdentity","warn");
     setLayerTone("miLevel","warn");
     setTone("miAccessCard","warn");
     setTone("miReviewCard","warn");
@@ -1559,14 +1560,16 @@
       if(clean(payload?.client_id)!==clientId)throw new Error("client_intelligence_mismatch");
       const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,record);
       paintMemory(record,memory);
-      renderIdentityReadiness(payload,clientId);
+      const identityReady=renderIdentityReadiness(payload,clientId);
+      setText("miIdentity",identityReady?"ยืนยันตัวตนและหลักฐานครบ":"มีระเบียน · ยังต้องตรวจตัวตน");
+      setLayerTone("miIdentity",identityReady?"ok":"warn");
       renderSourceEvidenceWorkbench(payload,clientId);
       await renderDraft(payload,clientId,selectionSeq);
       if(selectionSeq!==state.selectionSeq)return;
       const ready=memory&&payload?.data_status==="live";
       setStatus(
-        ready?"พร้อม · Client Intelligence + Matrix loaded":memory?"REVIEW · Projection degraded":"REVIEW · ไม่พบ bounded member context",
-        ready?"ok":"warn"
+        ready?"อ่านข้อมูลล่าสุดแล้ว · ตรวจสถานะและสิ่งที่ต้องระวังด้านล่าง":memory?"ข้อมูลบางส่วนยังไม่พร้อม · กรุณาตรวจแหล่งข้อมูล":"ยังไม่มีข้อมูลสมาชิกที่ยืนยันได้",
+        ready&&identityReady&&reviewRecommendation(memory).tone==="ok"?"ok":"warn"
       );
     }catch(error){
       if(selectionSeq!==state.selectionSeq||lower(error?.message)==="unauthorized")return;
@@ -1589,6 +1592,17 @@
   }
 
   async function loadRecords(query=""){
+    const searchSeq=++state.searchSeq;
+    state.selectionSeq+=1;
+    state.selected=null;
+    state.memory=null;
+    state.intelligence=null;
+    state.records=[];
+    state.recoveryByClient.clear();
+    setDetailVisible(false);
+    resetDraftUi("กำลังค้นหาลูกค้า · เลือกลูกค้าจากผลค้นหาใหม่ก่อนใช้งาน");
+    const results=byId("miResults");
+    if(results)results.textContent="กำลังค้นหาลูกค้า…";
     state.recoverySeq+=1;
     state.recoveryLoading=false;
     state.recoveryFilter=query?"all":"pending";
@@ -1598,6 +1612,7 @@
       const payload=query
         ?await api("/v1/admin/clients/lineage-lookup",{method:"POST",body:JSON.stringify({query})})
         :await api("/v1/admin/clients/recent");
+      if(searchSeq!==state.searchSeq)return;
       state.intelligenceCache.clear();
       state.recoveryByClient.clear();
       state.recoveryErrors=0;
@@ -1610,7 +1625,7 @@
       setDetailVisible(false);
 
       if(payload?.manual_fallback)setStatus("IDENTITY REVIEW · พบ candidate แต่ยังไม่ใช่ Canonical Client","warn");
-      else setStatus(`พร้อม · ${state.records.length} Canonical Client${state.records.length===1?"":"s"}`,"ok");
+      else setStatus(`พบ ${state.records.length} รายการ · เลือกลูกค้าเพื่อตรวจสถานะ`,"ok");
 
       loadRecoveryQueue(state.records);
 
@@ -1620,6 +1635,7 @@
         if(found)await selectRecord(found);
       }
     }catch(error){
+      if(searchSeq!==state.searchSeq)return;
       if(lower(error?.message)==="unauthorized")return;
       state.records=[];
       state.recoveryByClient.clear();
@@ -1685,6 +1701,7 @@
     ensureIdentityReadinessUi();
     ensureSourceEvidenceWorkbenchUi();
     ensureDraftUi();
+    installOwnerPresentation(root);
     addNavigation("Customer 360","/internal/admin/customer-data","miNavCustomer360");
     addNavigation("Control Room","/internal/admin/control-room","miNavControlRoom");
 
@@ -1707,10 +1724,62 @@
     const clientId=clean(params.get("client_id"));
     if(query&&input)input.value=query;
 
+    const initialSearch=state.searchSeq+1;
     loadRecords(query).then(()=>{
+      if(state.searchSeq!==initialSearch)return;
       if(clientId&&!state.records.some((record)=>clean(record.client_id)===clientId))openDirectClient(clientId);
     });
   }
 
+  function installOwnerPresentation(root){
+    if(byId("miOwnerPresentation"))return;
+    const style=document.createElement("style");
+    style.id="miOwnerPresentation";
+    style.textContent=`
+html body #mmdMemberIntelligence{--text:#252b32;--muted:#505b68;--muted2:#505b68;--panel:#fff;--panel2:#f1f3f5;--line:#c7cdd5;--line2:#c7cdd5;--gold:#9a4515;--gold2:#9a4515;background:#f3f4f6!important;color:#252b32!important;padding:24px 20px 150px!important;min-height:100vh}
+html body #mmdMemberIntelligence,html body #mmdMemberIntelligence *{box-sizing:border-box;font-family:"LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif!important;text-shadow:none!important;-webkit-text-fill-color:currentColor!important}
+html body #mmdMemberIntelligence [hidden]{display:none!important}
+html body #mmdMemberIntelligence :is(.mi-search,.mi-panel,.mi-card,.mi-layer,.mi-recovery-queue,.mi-identity-readiness,.mi-source-evidence-workbench,.mi-draft-card,.mi-inspector){background:#fff!important;color:#252b32!important;border:1px solid #c7cdd5!important;box-shadow:none!important;border-radius:16px}
+html body #mmdMemberIntelligence h1{font-size:clamp(28px,4vw,38px)!important;line-height:1.3!important;letter-spacing:-.02em!important;color:#252b32!important}
+html body #mmdMemberIntelligence :is(h2,h3){font-size:20px!important;line-height:1.5!important;color:#252b32!important}
+html body #mmdMemberIntelligence :is(p,small,span,label,b,strong){color:inherit!important}
+html body #mmdMemberIntelligence :is(p,small,label,.mi-result span,.mi-result small){font-size:14px!important;line-height:1.65!important;letter-spacing:normal!important}
+html body #mmdMemberIntelligence :is(input,select,textarea){font:inherit!important;font-size:16px!important;line-height:1.6!important;background:#fff!important;color:#252b32!important;border:1px solid #8793a2!important;border-radius:10px}
+html body #mmdMemberIntelligence :is(button,.mi-links a,.mi-source-evidence-link){font-size:14px!important;line-height:1.5!important;min-height:44px;border:1px solid #aeb7c2!important;background:#fff!important;color:#303b47!important;box-shadow:none!important}
+html body #mmdMemberIntelligence :is(button:hover,a:hover){border-color:#9a4515!important}
+html body #mmdMemberIntelligence :is(button:focus-visible,a:focus-visible,input:focus-visible,summary:focus-visible){outline:3px solid #9a4515!important;outline-offset:3px}
+html body #mmdMemberIntelligence :is(#miSearchForm button,.mi-result.is-active,[data-selected="true"],[data-active="true"]){background:#ffdfbd!important;color:#60300d!important;border-color:#b56329!important}
+html body #mmdMemberIntelligence :is(button:disabled,input:disabled,select:disabled,textarea:disabled){opacity:1!important;background:#edf0f3!important;color:#596573!important;border-color:#c7cdd5!important;cursor:not-allowed}
+html body #mmdMemberIntelligence .mi-result{display:block;width:100%;text-align:left;padding:14px;margin-bottom:10px;border-radius:12px}
+html body #mmdMemberIntelligence .mi-result strong{display:block;font-size:17px!important}
+html body #mmdMemberIntelligence .mi-result :is(span,small){display:block;margin-top:4px}
+html body #mmdMemberIntelligence [data-tone="bad"]{border-color:#ba6963!important}
+html body #mmdMemberIntelligence :is(.mi-result-recovery,.mi-draft-state,.mi-recovery-state)[data-tone="bad"]{background:#fbe9e7!important;color:#8f2823!important}
+html body #mmdMemberIntelligence :is(.mi-result-recovery,.mi-draft-state,.mi-recovery-state)[data-tone="ok"]{background:#e9f3eb!important;color:#245d36!important}
+html body #mmdMemberIntelligence #miStatus{padding:12px 14px;border-radius:10px;border-left:4px solid #a46b20;background:#fff2df!important;color:#68410c!important}
+html body #mmdMemberIntelligence #miStatus[data-tone="bad"]{background:#fbe9e7!important;color:#8f2823!important;border-left-color:#ba6963}
+html body #mmdMemberIntelligence #miStatus[data-tone="ok"]{background:#e9f3eb!important;color:#245d36!important;border-left-color:#438557}
+html body #mmdMemberIntelligence .mi-inspector{grid-column:1/-1;margin-top:16px;padding:0 16px}
+html body #mmdMemberIntelligence .mi-inspector>summary{cursor:pointer;padding:16px 0;font-size:16px;font-weight:700}
+html body #mmdMemberIntelligence .mi-inspector>section{border:0!important;margin-top:0!important;padding:0 0 16px!important}
+html body #mmdMemberIntelligence .mi-layers{gap:12px}
+@media(max-width:767px){html body #mmdMemberIntelligence{padding:16px 12px 150px!important}html body #mmdMemberIntelligence .mi-layout,html body #mmdMemberIntelligence .mi-layers{grid-template-columns:1fr!important}html body #mmdMemberIntelligence .mi-draft-meta div,html body #mmdMemberIntelligence .mi-source-evidence-meta{grid-template-columns:1fr!important}html body #mmdMemberIntelligence .mi-recovery-head,html body #mmdMemberIntelligence .mi-draft-head{flex-wrap:wrap}}
+`;
+    document.head.appendChild(style);
+    for(const [id,title] of [["miSourceEvidenceWorkbench","ตรวจหลักฐานและขั้นตอนถัดไป"],["miDraftCard","ร่างคำตอบจาก Kenji · เปอร์ตรวจเอง"]]){
+      const section=byId(id);
+      if(!section||section.closest(".mi-inspector"))continue;
+      const details=document.createElement("details");
+      details.className="mi-inspector";
+      const summary=document.createElement("summary");
+      summary.textContent=title;
+      section.before(details);
+      details.append(summary,section);
+    }
+    const hero=root.querySelector(".mi-hero p:last-child");
+    if(hero)hero.textContent="ค้นหาลูกค้า เลือกรายชื่อ แล้วตรวจสถานะสมาชิกและหลักฐานก่อนทำงานต่อ";
+  }
+
   document.readyState==="loading"?document.addEventListener("DOMContentLoaded",boot,{once:true}):boot();
 })();
+
