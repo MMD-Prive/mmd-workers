@@ -440,7 +440,8 @@ KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 KENJI_LINE_PRIVATE_INTEREST_ENABLED = "false"
 # Exact command "MMD Membership" -> static signup/renewal link menu. Enabled
 # 2026-10-12 by the owner (needs command mode above). Set "false" to stop.
-KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "true"
+# Owner limits Kenji to entitlement checks; keep the separate navigation menu paused.
+KENJI_LINE_MEMBERSHIP_MENU_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
 # The model-only restriction is disabled for the bounded deterministic concierge
 # lane. This does not enable external model calls; LINE_KENJI_MODEL_ENABLED stays
