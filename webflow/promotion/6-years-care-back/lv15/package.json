@@ -1,0 +1,12 @@
+{
+  "name": "mmd-care-back-mobile",
+  "version": "15.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node check.cjs && node loading-check.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
