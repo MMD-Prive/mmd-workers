@@ -210,6 +210,17 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES) {
   #sigil-workspace-directory input{background:#f8fafc!important;border-color:#aab5c0!important}
   @media(max-width:991px){body.sigil-directory-offset{padding-left:0!important;padding-top:72px!important}#sigil-workspace-directory.sigil-floating{width:min(320px,calc(100vw - 28px))}#sigil-workspace-directory nav{max-height:60dvh}}
   `;
+
+  // Keep the Model Link directory isolated from page-wide section/anchor themes.
+  if (path === '/internal/admin/model-link') style.textContent += `
+  html[data-sigil-readable] body #sigil-workspace-directory,
+  html[data-sigil-readable] body #sigil-workspace-directory :is(nav,section){background:#fff!important;color:#27313b!important;border-color:#c7cfd7!important}
+  html[data-sigil-readable] body #sigil-workspace-directory :is(summary,h3,a,input){color:#27313b!important;-webkit-text-fill-color:#27313b!important;opacity:1!important}
+  html[data-sigil-readable] body #sigil-workspace-directory a{background:transparent!important}
+  html[data-sigil-readable] body #sigil-workspace-directory a:hover,
+  html[data-sigil-readable] body #sigil-workspace-directory a[aria-current="page"]{background:#ffdfc7!important;color:#78350f!important;-webkit-text-fill-color:#78350f!important}
+  html[data-sigil-readable] body #sigil-workspace-directory :is(a,summary,input):focus-visible{outline:3px solid #9a3412!important;outline-offset:2px}
+  `;
   document.head.appendChild(style);
   document.documentElement.dataset.sigilReadable='v3';
   const directory=document.createElement('details');directory.id='sigil-workspace-directory';
