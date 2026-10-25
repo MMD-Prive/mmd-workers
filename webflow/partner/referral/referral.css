@@ -111,6 +111,7 @@ html[data-wf-page="6a6affbb7583793304d749de"] body{margin:0;background:#160d08}
 #mmd-referral-v7.rf15 .rf15-plus::after{transform:rotate(90deg)}
 #mmd-referral-v7.rf15 details[open]>summary .rf15-plus::after{transform:none}
 #mmd-referral-v7.rf15 .rf15-details-body{padding:0 22px 18px 1px;color:var(--rf15-muted);font-size:14px;line-height:1.85}
+#mmd-referral-v7.rf15 .rf15-owner-copy p+p{margin-top:14px}
 #mmd-referral-v7.rf15 .rf15-inline-link{display:inline-flex;align-items:center;min-height:44px;margin-top:5px;color:var(--rf15-heading);font-size:13px;text-decoration:underline;text-underline-offset:4px}
 #mmd-referral-v7.rf15 .rf15-role-list{display:grid;gap:15px;margin:0;padding-left:21px}
 #mmd-referral-v7.rf15 .rf15-role-list li{padding-left:3px}
