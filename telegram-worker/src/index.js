@@ -31,6 +31,7 @@ const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
+import { isPrivateCareBackAnnouncementVisible } from "../../shared/membership-promotion-policy.mjs";
 import { MEMBER_PRESENCE_PATHS, handleMemberPresence } from "./member-presence.js";
 const HYPE_PREMIUM_ROOM_SYNC_CONFIRMATION = "SYNC_HYPE_PREMIUM_ROOM_V1";
 const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
@@ -4425,7 +4426,8 @@ function hypePreviewJoinWelcomeText() {
     "ผม <b>HYPE</b> ผู้ช่วยของ MMD ครับ",
     "สนใจดูหนุ่ม ๆ หรืออยากรู้จัก MMD มากขึ้น ผมช่วยแนะนำได้ครับ",
     "",
-    "กด <b>เริ่มกับ HYPE</b> เพื่อคุยกันส่วนตัวได้เลยครับ 🔒",
+    ...hypeMembershipPromotionLines(),
+    "กด <b>เริ่มกับ HYPE</b> เพื่อดูโปรสมัคร / ต่ออายุ และคุยกันส่วนตัวครับ 🔒",
   ].join("\n");
 }
 
@@ -4951,6 +4953,7 @@ async function postPreviewChannelCta(body, env) {
 
   const text = clean(body.text) || [
     "MMD Privé · 6 YEARS CARE BACK — CARE BACK CONTINUES",
+    ...hypeMembershipPromotionLines(),
     "Phase 2 เปิดถึง 31 ตุลาคม 2026 ครับ",
     "",
     "Phase 2 ใช้สิทธิ์ชุดเดียวกับช่วง Birthday เดิม ไม่ใช่สิทธิ์รอบสอง และไม่สร้าง claim / coupon / points bonus ซ้ำครับ",
@@ -5049,14 +5052,34 @@ function hypePreviewEntryButtons(env) {
   };
 }
 
+function hypeMembershipPromotionLines() {
+  if (!isPrivateCareBackAnnouncementVisible()) return [];
+  return [
+    "🎁 MMD CARE BACK · สมัคร / ต่ออายุสมาชิก",
+    "สมัคร Premium ใหม่ รับสมาชิก รวม 2 ปี",
+    "ต่ออายุ Premium 1 ปี รับเพิ่มฟรีอีก 1 ปี",
+    "ต่ออายุ Standard 1 ปี รับเพิ่มฟรีอีก 180 วัน",
+    "วันนี้ถึง 31 ต.ค. 2569 · ตามเงื่อนไขแพ็กเกจและสิทธิ์ของสมาชิก",
+    "",
+  ];
+}
+
 function hypePreviewLeadRoutingText() {
-  return "สวัสดีครับ ผม HYPE จาก MMD Privé 👋\n\nสนใจดูหนุ่ม ๆ หรือสอบถามบริการ คุยต่อทาง LINE Official ของ MMD ได้เลยครับ";
+  return [
+    "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
+    "",
+    ...hypeMembershipPromotionLines(),
+    "เลือกสมัครใหม่หรือต่ออายุด้านล่างได้เลยครับ",
+    "สนใจดูหนุ่ม ๆ หรือสอบถามบริการ คุยต่อทาง LINE Official ของ MMD ได้ครับ",
+  ].join("\n");
 }
 
 function hypePreviewLeadRoutingButtons(env) {
   const lineUrl = clean(env.MMD_LINE_OFC_URL) || "https://lin.ee/xRqsALs";
   return {
     inline_keyboard: [
+      [{ text: "สมัครสมาชิกใหม่", url: publicUrl(env, "/pay/membership") }],
+      [{ text: "ต่ออายุสมาชิก", url: publicUrl(env, "/member/liff?intent=renew") }],
       [{ text: "ดูหนุ่ม ๆ · คุยต่อทาง LINE", url: lineUrl }],
       [{ text: "กลับไป Telegram Preview", url: previewChannelUrl(env) }],
     ],
