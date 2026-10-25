@@ -28,14 +28,20 @@ async function airtable(env, url, init = {}) {
   if (!response.ok || !data || data.details) fail('mirror_request_failed');
   return data;
 }
-async function loadMirror(env, row, memberRecordId) {
+async function loadMirror(env, row, memberRecordId, redactionOnly = false) {
   const url = new URL(endpoint(env));
   url.searchParams.set('filterByFormula', `{fldPYEff5pSnpjk0p}='${row.idempotency_key}'`);
   url.searchParams.set('maxRecords','2'); url.searchParams.set('returnFieldsByFieldId','true');
   const data = await airtable(env, url);
   if (!Array.isArray(data.records) || data.offset || data.records.length > 1) fail('mirror_identity_conflict');
   const record = data.records[0] || null;
-  if (record && !mirrorMatches(record, row, row.member_id, memberRecordId)) fail('mirror_payload_conflict');
+  if (record && !mirrorMatches(record, row, row.member_id, memberRecordId)) {
+    // A removed linked Member must not retain request free text forever. This
+    // exception clears text only; every other request fingerprint still matches.
+    const links = record.fields?.fld6I0jkPbACVSVWV || [];
+    const withoutMissingLink = { ...record, fields:{ ...record.fields, fld6I0jkPbACVSVWV:[memberRecordId] } };
+    if (!redactionOnly || !Array.isArray(links) || links.length !== 0 || !mirrorMatches(withoutMissingLink, row, row.member_id, memberRecordId)) fail('mirror_payload_conflict');
+  }
   return record;
 }
 async function patch(env, record, fields) {
@@ -71,7 +77,7 @@ async function redact(env, row, now) {
   ]);
   const memberRecordId = row.member_record_id || await resolveMemberRecordId(env, row.member_id);
   if (!memberRecordId) fail("canonical_member_unresolved");
-  const record = await loadMirror(env, row, memberRecordId);
+  const record = await loadMirror(env, row, memberRecordId, true);
   if (record) {
     const f = record.fields || {};
     let meta = {}; try { meta = JSON.parse(f[F.metadata] || '{}'); } catch {}

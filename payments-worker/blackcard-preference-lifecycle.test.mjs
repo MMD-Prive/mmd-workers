@@ -256,3 +256,15 @@ test('notification outbox failure cannot prevent canonical retention cleanup in 
     assert.equal(rowOf(h).note,''); assert.ok(rowOf(h).retention_mirrored_at);
   } finally { hooks.deregister(); h.restore(); }
 });
+
+test('a missing linked Member cannot prevent matching-request redaction but cannot authorize review', async () => {
+  const h=await seed();
+  try {
+    review(h); h.mirror.records[0].fields.fld6I0jkPbACVSVWV=[];
+    assert.equal((await run(h.env,{now:later(h.row,2)})).failed,1);
+    assert.equal(rowOf(h).status,'pending_review');
+    expire(h);
+    assert.equal((await run(h.env,{now:later(h.row,3)})).redacted,1);
+    assert.equal(rowOf(h).note,''); assert.equal(h.mirror.records[0].fields[F.requestNote],'');
+  } finally { h.restore(); }
+});
