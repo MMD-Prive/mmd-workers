@@ -8,8 +8,8 @@ const DEFAULT_PACKAGE_FIELD = "fldp6xNSvxDh5pjR9";
 const BLACKCARD_STATES = new Set(["pending", "awaiting_payment", "payment_started", "evidence_submitted", "pending_verification", "paid", "verified", "success", "completed"]);
 const CLOSED_STATES = new Set(["cancelled", "canceled", "expired", "refunded", "reversed", "void", "failed", "rejected", "chargeback", "disputed"]);
 
-const clean = (value, max = 5000) => String(value == null ? "" : value).trim().slice(0, max).replace(/[\\u0000-\\u001F\\u007F]/g, " ");
-const code = value => clean(value, 120).toLowerCase().replace(/[\\s_-]+/g, "_");
+const clean = (value, max = 5000) => String(value == null ? "" : value).trim().slice(0, max).replace(/[\u0000-\u001F\u007F]/g, " ");
+const code = value => clean(value, 120).toLowerCase().replace(/[\s_-]+/g, "_");
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 const withCors = (request, env, response) => {
   const headers = new Headers(response.headers);
@@ -45,7 +45,7 @@ const isBlackCardSession = (session, env) => {
   const packageValue = code(sessionValue(session, env, "AT_SESSIONS__PACKAGE_CODE", DEFAULT_PACKAGE_FIELD));
   const note = clean(sessionValue(session, env, "AT_SESSIONS__NOTE", DEFAULT_NOTE_FIELD) || sessionValue(session, env, "AT_SESSIONS__NOTES", "fldwl9Gs5tYlXG5ls"), 12000);
   const haystack = (packageValue + " " + note).toLowerCase();
-  return packageValue === "black_card" || packageValue === "blackcard" || /black\\s*card|blackcard/.test(haystack);
+  return packageValue === "black_card" || packageValue === "blackcard" || /black\s*card|blackcard/.test(haystack);
 };
 const paymentState = (session, env) => {
   const value = code(sessionValue(session, env, "AT_SESSIONS__PAYMENT_STATUS", "fldTY5lE6m0kQf72n") || sessionValue(session, env, "AT_SESSIONS__SESSION_STATUS", "fldmwuvOaiCFdzzRa"));
@@ -54,7 +54,7 @@ const paymentState = (session, env) => {
 const replaceMarker = (note, data) => {
   const next = marker(data);
   const re = new RegExp("\\[" + NOTE_MARKER.replace(/[.*+?^{}()|[\\]\\\\]/g, "\\\\$&") + "\\]\\s*\\{.*?\\}(?=\\n|$)");
-  return re.test(note) ? note.replace(re, next) : [note, next].filter(Boolean).join("\\n");
+  return re.test(note) ? note.replace(re, next) : [note, next].filter(Boolean).join("\n");
 };
 const readPreference = (session, env) => {
   const note = clean(sessionValue(session, env, "AT_SESSIONS__NOTE", DEFAULT_NOTE_FIELD) || sessionValue(session, env, "AT_SESSIONS__NOTES", "fldwl9Gs5tYlXG5ls"), 12000);
@@ -72,7 +72,7 @@ const selected = id => personalMain(normalizeId(id));
 const preferenceStatus = state => CLOSED_STATES.has(state) ? "unavailable" : state === "paid" || state === "verified" || state === "success" || state === "completed" ? "selected_verified_pending_entitlement" : "selected_pending_verification";
 
 export function isBlackCardCompanionPreferenceRequest(path, method) {
-  const p = String(path || "/").replace(/\\/{2,}/g, "/").replace(/\\/+$/g, "") || "/";
+  const p = String(path || "/").replace(/\/{2,}/g, "/").replace(/\/+$/g, "") || "/";
   return p === BLACKCARD_COMPANION_PREFERENCE_PATH && ["GET", "POST", "OPTIONS"].includes(String(method || "GET").toUpperCase());
 }
 
@@ -101,3 +101,4 @@ export async function handleBlackCardCompanionPreference(request, env = {}) {
 }
 
 export { PERSONAL_MAINS, isBlackCardSession, parseStored, preferenceStatus, replaceMarker, selected };
+
