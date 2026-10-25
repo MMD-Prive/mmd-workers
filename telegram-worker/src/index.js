@@ -716,11 +716,12 @@ async function handleTelegramWebhook(update, env) {
   const startArg = parseStartArg(text);
   if (update.message && chatType === "private" && message.from?.is_bot !== true
     && startArg.toLowerCase() === PREVIEW_LEAD_ROUTING_START) {
+    const previewRoute = await resolveHypePreviewLeadDestination(clean(message.from?.id), env);
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: hypePreviewLeadRoutingText(),
+      text: hypePreviewLeadRoutingText(previewRoute),
       disable_web_page_preview: true,
-      reply_markup: hypePreviewLeadRoutingButtons(env),
+      reply_markup: hypePreviewLeadRoutingButtons(env, previewRoute),
     }, env);
     return { handled: true, flow: "hype_preview_lead_routing", telegram };
   }
@@ -4423,10 +4424,10 @@ function hypePreviewJoinWelcomeText() {
     "👋 <b>ยินดีต้อนรับสู่ MMD Privé Preview</b>",
     "",
     "ผม <b>HYPE</b> ผู้ช่วยของ MMD ครับ",
-    "มีทั้งผู้ชายและผู้หญิงที่เข้ามาดู Preview เลยอยากให้ทุกคนเลือกช่องทางที่ตรงกับสิ่งที่สนใจด้วยตัวเอง",
+    "สนใจดูหนุ่ม ๆ หรืออยากรู้จัก MMD มากขึ้น ผมช่วยแนะนำได้ครับ",
     "",
-    "กด <b>เริ่มกับ HYPE</b> เพื่อเลือกไป LINE Official หรือ BELIEVE IN ME",
-    "ไม่ต้องบอกเพศหรือรายละเอียดส่วนตัวในกลุ่มนี้ครับ 🔒",
+    "กด <b>เริ่มกับ HYPE</b> เพื่อคุยกันส่วนตัว",
+    "ไม่ต้องส่งข้อมูลส่วนตัวในกลุ่มนี้ครับ 🔒",
   ].join("\n");
 }
 
@@ -5050,25 +5051,68 @@ function hypePreviewEntryButtons(env) {
   };
 }
 
-function hypePreviewLeadRoutingText() {
+async function resolveHypePreviewLeadDestination(telegramUserId, env) {
+  // Unknown visitors must never be classified by Telegram profile, title, avatar,
+  // pronouns or greeting style. Only a canonical, explicitly sourced field is valid.
+  const binding = env.HYPE_OPERATIONS || env.TELEGRAM_BIND_AUTHORITY;
+  if (!/^\\d{5,20}$/.test(telegramUserId) || !binding?.fetch) return "unknown";
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/operational-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramUserId,
+        intent: { type: "general", trigger: "telegram_preview_lead_route" },
+      }),
+    }));
+    const result = await response.json().catch(() => null);
+    if (!response.ok || result?.ok !== true || result?.routing_context?.gender_explicit !== true) return "unknown";
+    if (result.routing_context.customer_gender === "female") return "believe";
+    if (result.routing_context.customer_gender === "male") return "mmd";
+  } catch {
+    // Never guess or block a welcome if the canonical authority is unavailable.
+  }
+  return "unknown";
+}
+
+function hypePreviewLeadRoutingText(destination = "unknown") {
+  if (destination === "believe") {
+    return [
+      "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
+      "",
+      "ผมมีหน้าแนะนำที่น่าจะตรงกับคุณ กดดูได้ด้านล่างเลยครับ",
+      "ถ้าอยากถามอะไรเพิ่ม ทักผมต่อได้เลย",
+    ].join("\\n");
+  }
+  if (destination === "mmd") {
+    return [
+      "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
+      "",
+      "สนใจสอบถามบริการของ MMD กด LINE Official ด้านล่างได้เลยครับ",
+    ].join("\\n");
+  }
   return [
     "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
     "",
-    "อยากให้ผมพาไปทางไหน เลือกได้เลยครับ",
-    "• ผู้ชาย → LINE Official ของ MMD",
-    "• ผู้หญิง → BELIEVE IN ME",
-    "",
-    "เลือกตามสิ่งที่สนใจได้เอง ผมจะไม่เดาเพศจากรูปหรือชื่อ และไม่บันทึกเพศจากการกดปุ่มนี้ครับ",
-  ].join("\n");
+    "สนใจเรื่องไหนเป็นพิเศษครับ? เลือกจากปุ่มด้านล่างได้เลย",
+    "ผมจะไม่เดาข้อมูลส่วนตัวจากชื่อหรือรูปโปรไฟล์ครับ",
+  ].join("\\n");
 }
 
-function hypePreviewLeadRoutingButtons(env) {
+function hypePreviewLeadRoutingButtons(env, destination = "unknown") {
   const lineUrl = clean(env.MMD_LINE_OFC_URL) || "https://lin.ee/xRqsALs";
+  const mmd = { text: "ติดต่อ MMD · LINE Official", url: lineUrl };
+  const believe = { text: "รู้จัก BELIEVE IN ME", url: publicUrl(env, "/believe/inme") };
+  const back = { text: "กลับไป Telegram Preview", url: previewChannelUrl(env) };
   return {
     inline_keyboard: [
-      [{ text: "ผู้ชาย · เข้า LINE Official", url: lineUrl }],
-      [{ text: "ผู้หญิง · BELIEVE IN ME", url: publicUrl(env, "/believe/inme") }],
-      [{ text: "กลับไป Telegram Preview", url: previewChannelUrl(env) }],
+      ...(destination === "believe" ? [[believe]]
+        : destination === "mmd" ? [[mmd]]
+          : [[mmd], [believe]]),
+      [back],
     ],
   };
 }
