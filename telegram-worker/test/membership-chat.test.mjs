@@ -287,3 +287,29 @@ test("explicit owner handoff commands retain their original handler", async () =
   const { body } = await receive("/case-review HYPE-PER-20260919120000-abc12345");
   assert.equal(body.flow, "hype_owner_handoff_transition");
 });
+
+test("HYPE private acquisition route offers LINE OFC for men and BELIEVE IN ME for women", async () => {
+  const sent = mockTelegram();
+  const { status, body } = await receiveUpdate({
+    update_id: 200,
+    message: { message_id: 12, text: "/start route", chat: { id: 123, type: "private" }, from: { id: 123, is_bot: false } },
+  });
+  assert.equal(status, 200);
+  assert.equal(body.flow, "hype_preview_lead_routing");
+  assert.match(sent[0].text, /เลือกตามสิ่งที่สนใจได้เอง/);
+  assert.deepEqual(sent[0].reply_markup.inline_keyboard, [
+    [{ text: "ผู้ชาย · เข้า LINE Official", url: "https://lin.ee/xRqsALs" }],
+    [{ text: "ผู้หญิง · BELIEVE IN ME", url: "https://www.mmdbkk.com/believe/inme" }],
+    [{ text: "กลับไป Telegram Preview", url: "https://t.me/MMDPriveTH" }],
+  ]);
+});
+
+test("HYPE acquisition routing does not run or reveal choices in a public Telegram group", async () => {
+  const sent = mockTelegram();
+  const { body } = await receiveUpdate({
+    update_id: 201,
+    message: { message_id: 13, text: "/start route", chat: { id: 123, type: "group" }, from: { id: 123, is_bot: false } },
+  });
+  assert.notEqual(body.flow, "hype_preview_lead_routing");
+  assert.equal(sent.length, 0);
+});
