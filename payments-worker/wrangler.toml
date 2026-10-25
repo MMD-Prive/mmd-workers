@@ -22,14 +22,6 @@ AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER = "tbl5dfnwjUFMLbnWL"
 
-# Black Card Companion preference ledger. The D1 database exists but its
-# migration and retention policy are intentionally not activated by this PR.
-[[d1_databases]]
-binding = "BLACKCARD_DB"
-database_name = "mmd-blackcard-companion-preferences"
-database_id = "18880ae8-2bf6-4c6a-8cc0-70c5d998324d"
-migrations_dir = "migrations"
-
 # Payments table field mappings for slip evidence writes.
 # Field IDs avoid hard-coded display-name drift in Airtable.
 AT_PAYMENTS__PAYMENT_REF = "fldOO6SY49iDw8VBZ"

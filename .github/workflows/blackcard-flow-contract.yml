@@ -1,0 +1,24 @@
+name: Black Card preference contract
+on:
+  pull_request:
+    paths:
+      - 'payments-worker/**'
+      - 'webflow/blackcard/confirm/**'
+      - '.github/workflows/blackcard-flow-contract.yml'
+permissions:
+  contents: read
+jobs:
+  preference-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Signed auth, real SQLite concurrency, payment and UI contracts (fixtures only)
+        run: node --test payments-worker/blackcard-companion-preference.test.mjs payments-worker/confirmation-details.test.mjs payments-worker/payment-instructions-v1.test.mjs webflow/blackcard/confirm/blackcard-flow-embed.test.mjs
+      - name: Parse release and compatibility TOML configuration
+        run: python3 payments-worker/blackcard-config.test.py

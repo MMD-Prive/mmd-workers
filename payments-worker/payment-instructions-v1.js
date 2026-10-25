@@ -81,8 +81,16 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     instruction_profile: instructionIds[0],
   };
 
-  if ((isBlackCardStage(payment.stage) || isBlackCardStage(details.payment_type) || isBlackCardStage(details.payment_stage)) && !await blackCardSaleIsActive(env)) {
-    return responseJson({ ...base, available: false, reason: "blackcard_not_activated_for_sale" }, 200, responseHeaders);
+  const blackCard = isBlackCardStage(details.package_code) || isBlackCardStage(payment.stage) || isBlackCardStage(details.payment_type) || isBlackCardStage(details.payment_stage);
+  if (blackCard) {
+    const membershipToken = ["membership", "blackcard"].includes(text(details.payment_type, 80).toLowerCase().replace(/[\s_-]+/g, ""));
+    if (!isBlackCardStage(details.package_code) || !membershipToken) return responseJson({ ...base, available: false, reason: "blackcard_subject_mismatch" }, 200, responseHeaders);
+    try {
+      if (!await blackCardSaleIsActive(env)) return responseJson({ ...base, available: false, reason: "blackcard_not_activated_for_sale" }, 200, responseHeaders);
+      if (base.amount_due_thb !== 35000) return responseJson({ ...base, available: false, reason: "blackcard_amount_mismatch" }, 200, responseHeaders);
+    } catch {
+      return responseJson({ ok: false, error: "blackcard_policy_unavailable", authority: "payments-worker" }, 503, responseHeaders);
+    }
   }
 
   if (payment.accepting_payment === false) {
@@ -203,7 +211,7 @@ function isBlackCardStage(value) {
 // Ordered candidates: the first profile with an active, effective Airtable row wins.
 // Unknown item types stay on the primary profile only (never guessed into job/membership).
 function paymentInstructionIds(details = {}, payment = {}) {
-  if (isBlackCardStage(details.payment_type) || isBlackCardStage(details.payment_stage) || isBlackCardStage(payment.stage)) return [MEMBERSHIP_INSTRUCTION_ID, PRIMARY_INSTRUCTION_ID];
+  if (isBlackCardStage(details.package_code) || isBlackCardStage(details.payment_type) || isBlackCardStage(details.payment_stage) || isBlackCardStage(payment.stage)) return [MEMBERSHIP_INSTRUCTION_ID, PRIMARY_INSTRUCTION_ID];
   const raw = text(payment.stage || details.payment_type || details.payment_stage, 80).toLowerCase();
   if (raw === "shop" || details.shop_order) return [SHOP_INSTRUCTION_ID];
   const stage = raw.replace(/[\s_-]+/g, "");

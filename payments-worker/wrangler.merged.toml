@@ -152,3 +152,11 @@ class_name = "SessionPaidProjectionCoordinator"
 [[migrations]]
 tag = "session-paid-projection-v1"
 new_sqlite_classes = ["SessionPaidProjectionCoordinator"]
+
+# Black Card Companion preference ledger. The D1 database exists but its
+# migration and retention policy are intentionally not activated by this PR.
+[[d1_databases]]
+binding = "BLACKCARD_DB"
+database_name = "mmd-blackcard-companion-preferences"
+database_id = "18880ae8-2bf6-4c6a-8cc0-70c5d998324d"
+migrations_dir = "migrations"
