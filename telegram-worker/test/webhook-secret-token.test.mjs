@@ -778,18 +778,18 @@ test("/telegram/preview/post remains protected by INTERNAL_API_TOKEN", async () 
   assert.equal(allowedBody.ok, true);
   assert.equal(allowedBody.dry_run, true);
   assert.match(allowedBody.text, /CARE BACK CONTINUES/);
-  assert.match(allowedBody.text, /30 กันยายน 2026/);
+  assert.match(allowedBody.text, /31 ตุลาคม 2026/);
   assert.match(allowedBody.text, /Birthday Wish/);
   assert.match(allowedBody.text, /ส่วนลดสูงสุด 10%/);
   assert.match(allowedBody.text, /ไม่สร้าง claim \/ coupon \/ points bonus ซ้ำ/);
   assert.doesNotMatch(allowedBody.text, /โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้น/);
-  assert.deepEqual(allowedBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
-  const urls = flattenKeyboardUrls(allowedBody.reply_markup);
-  assert.equal(urls.some((url) => url.includes("/sigil/")), false);
-  assert.equal(urls.includes("https://www.mmdbkk.com/pay/membership"), true);
+  assert.deepEqual(allowedBody.reply_markup.inline_keyboard, [[{
+    text: "เริ่มกับ HYPE · เลือกช่องทางที่สนใจ", url: "https://t.me/mmdprivebot?start=route",
+  }]]);
+  assert.equal(flattenKeyboardUrls(allowedBody.reply_markup).length, 1);
 });
 
-test("/telegram/preview/post uses configured public and preview channel URLs", async () => {
+test("/telegram/preview/post uses configured HYPE bot entry", async () => {
   const response = await worker.fetch(new Request(PREVIEW_POST_URL, {
     method: "POST",
     headers: {
@@ -798,16 +798,14 @@ test("/telegram/preview/post uses configured public and preview channel URLs", a
     },
     body: JSON.stringify({ dry_run: true }),
   }), env({
-    MMD_PUBLIC_BASE_URL: "https://mmd.example",
-    TELEGRAM_PREVIEW_CHANNEL_URL: "https://t.me/examplePreview",
+    TELEGRAM_BOT_USERNAME: "hypeExample",
   }));
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(body.reply_markup.inline_keyboard, expectedCareBackKeyboard("https://mmd.example", "https://t.me/examplePreview"));
-  const urls = flattenKeyboardUrls(body.reply_markup);
-  assert.equal(urls.some((url) => url.includes("/sigil/")), false);
-  assert.equal(urls.includes("https://mmd.example/pay/membership"), true);
+  assert.deepEqual(body.reply_markup.inline_keyboard, [[{
+    text: "เริ่มกับ HYPE · เลือกช่องทางที่สนใจ", url: "https://t.me/hypeExample?start=route",
+  }]]);
 });
 
 
