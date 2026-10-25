@@ -2,7 +2,7 @@
  *
  * This route family must never render a fallback payment page.
  * - Signed renewal links continue on the canonical /sigil/pay?t=... surface.
- * - Unsigned renewal entry returns to the canonical membership renewal entry.
+ * - Unsigned entry opens the Renewal view inside MY MMD, not a separate catalog.
  */
 export const RENEWAL_PAGE_MARKER = "mmd-renewal-redirect-only";
 export const RENEWAL_PAGE_NAME = "sigil-pay-renewal";
@@ -12,7 +12,8 @@ const WORKER_NAME = "member-dashboard-chat-worker";
 const RENEWAL_PATHS = new Set(["/pay/renewal", "/sigil/pay/renewal"]);
 const CANONICAL_ORIGIN = "https://mmdbkk.com";
 const SIGNED_PAY_PATH = "/sigil/pay";
-const RENEWAL_ENTRY_PATH = "/sigil/member/membership";
+// Owner-confirmed MY MMD entry. Never derive this destination from query input.
+const RENEWAL_ENTRY_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/";
 
 const SAFE_ENTRY_PARAMS = new Set([
   "plan",
@@ -55,15 +56,18 @@ export function resolveRenewalRedirect(requestUrl) {
   const token = String(source.searchParams.get("t") || "").trim();
 
   if (token) {
+    // Existing payment links resume their original signed payment; never send
+    // a payment token to LINE or generate a second payment from the entry link.
     const target = new URL(SIGNED_PAY_PATH, CANONICAL_ORIGIN);
     target.searchParams.set("t", token);
     return target.toString();
   }
 
-  const target = new URL(RENEWAL_ENTRY_PATH, CANONICAL_ORIGIN);
+  const target = new URL(RENEWAL_ENTRY_URL);
   target.searchParams.set("intent", "renew");
-  // This compatibility family is Private membership; Public purchases have
-  // their own entry. Never let browser context switch a renewal to Public.
+  target.searchParams.set("view", "package");
+  // Navigation hints only. MY MMD still verifies LINE identity and the server
+  // quote. Browser context cannot switch this compatibility lane to Public.
   target.searchParams.set("world", "private");
 
   for (const [key, value] of source.searchParams.entries()) {

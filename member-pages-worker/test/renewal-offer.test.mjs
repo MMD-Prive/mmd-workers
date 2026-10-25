@@ -7,22 +7,33 @@ import {
   resolveCanonicalRenewalOffer,
 } from "../src/renewal-offer.js";
 
-test("renewal pricing follows verified Standard spend bands", () => {
-  assert.equal(renewalPriceForSpend("standard", 0).amount_thb, 1000);
-  assert.equal(renewalPriceForSpend("standard", 9999.99).amount_thb, 1000);
-  assert.equal(renewalPriceForSpend("standard", 10000).amount_thb, 799);
-  assert.equal(renewalPriceForSpend("standard", 49999.99).amount_thb, 799);
-  assert.equal(renewalPriceForSpend("standard", 50000).amount_thb, 499);
+test("Standard compatibility quote never revives retired spend-band prices", () => {
+  for (const spend of [0, 9999.99, 10000, 49999.99, 50000, 1000000]) {
+    const quote = renewalPriceForSpend("standard", spend);
+    assert.equal(quote.amount_thb, 1000);
+    assert.equal(quote.price_rule, "private_standard_renewal");
+    assert.equal(quote.membership_years, 1);
+  }
 });
 
-test("renewal pricing follows verified Premium spend bands and keeps the one-year renewal term", () => {
-  assert.equal(renewalPriceForSpend("premium", 0).amount_thb, 2500);
-  assert.equal(renewalPriceForSpend("premium", 19999.99).amount_thb, 2500);
-  assert.equal(renewalPriceForSpend("premium", 20000).amount_thb, 1999);
-  assert.equal(renewalPriceForSpend("premium", 99999.99).amount_thb, 1999);
-  const top = renewalPriceForSpend("premium", 100000);
-  assert.equal(top.amount_thb, 999);
-  assert.equal(top.membership_years, 1);
+test("Premium compatibility quote never revives retired spend-band prices", () => {
+  for (const spend of [0, 19999.99, 20000, 99999.99, 100000, 1000000]) {
+    const quote = renewalPriceForSpend("premium", spend);
+    assert.equal(quote.amount_thb, 2500);
+    assert.equal(quote.price_rule, "private_premium_renewal");
+    assert.equal(quote.membership_years, 1);
+  }
+});
+
+test("compatibility quote does not imply verified eligibility for a zero or unknown history", () => {
+  for (const spend of [undefined, null, NaN, Infinity, -1, 0]) {
+    const quote = renewalPriceForSpend("standard", spend);
+    assert.equal(quote.amount_thb, 1000);
+    assert.equal(quote.service_spend_365_thb, 0);
+    assert.equal(Object.hasOwn(quote, "discount_verified"), false);
+    assert.equal(Object.hasOwn(quote, "history_status"), false);
+  }
+  assert.equal(renewalPriceForSpend("unknown", 100000), null);
 });
 
 test("renewal package is fixed by the verified current private tier", () => {
