@@ -121,10 +121,11 @@ class Airtable {
   }
 }
 
-function decodeManifest(sourceRecords) {
+function decodeManifest(sourceRecords, expectedSnapshot = "") {
   const chunks = sourceRecords
     .map((r) => ({ id: r.id, ...(r.fields || {}) }))
-    .filter((f) => clean(f[F.source.status], 80) === MATCH_STATUS)
+    .filter((f) => clean(f[F.source.status], 80) === MATCH_STATUS
+      && (!expectedSnapshot || clean(f[F.source.snapshot], 100) === expectedSnapshot))
     .sort((a, b) => Number(a[F.source.index] || 0) - Number(b[F.source.index] || 0));
   if (!chunks.length) throw new Error("matcher_source_chunks_missing");
   const total = Number(chunks[0][F.source.total] || 0);
@@ -176,6 +177,8 @@ function buildInboxIndex(records) {
 
 function matchManifest(manifest, inboxIndex, fullSha) {
   const results = [];
+  const snapshotDate = clean(manifest.snapshot, 100).slice(0, 10).replace(/-/g, "");
+  if (!/^\d{8}$/.test(snapshotDate)) throw new Error("matcher_snapshot_date_invalid");
   const counts = {
     source_chat_rows: manifest.rows.length,
     source_snapshot_total_chats: Number(manifest.count || 0),
@@ -224,7 +227,7 @@ function matchManifest(manifest, inboxIndex, fullSha) {
       counts.unmatched++;
     }
     results.push({
-      key: `line_oa_per_rename_20260906_${Number(row.r)}`,
+      key: `line_oa_per_rename_${snapshotDate}_${Number(row.r)}`,
       snapshot: clean(manifest.snapshot, 100),
       chatRef: Number(row.r),
       rename,
@@ -300,7 +303,8 @@ function selfTest() {
     rows: [{ r: 1, n: "Example Rename", u: false, e: [{ t: 1776588954, h: expected, l: 30 }] }],
   };
   const { results, counts } = matchManifest(manifest, idx, "x");
-  if (counts.exact_named_matches !== 1 || results[0].uid !== uid || results[0].status !== "exact") {
+  if (counts.exact_named_matches !== 1 || results[0].uid !== uid || results[0].status !== "exact"
+    || results[0].key !== "line_oa_per_rename_20260906_1") {
     throw new Error("self_test_match_failed");
   }
   console.log(JSON.stringify({ ok: true, self_test: true }));
@@ -310,9 +314,10 @@ async function main() {
   if (boolArg("--self-test")) return selfTest();
   const apply = boolArg("--apply-results");
   const reportPath = argValue("--report");
+  const expectedSnapshot = argValue("--snapshot");
   const air = new Airtable();
   const source = await air.list(TABLES.source, Object.values(F.source));
-  const { manifest, fullSha } = decodeManifest(source);
+  const { manifest, fullSha } = decodeManifest(source, expectedSnapshot);
   const inbox = await air.list(TABLES.inbox, Object.values(F.inbox));
   const built = buildInboxIndex(inbox);
   const matched = matchManifest(manifest, built.index, fullSha);
