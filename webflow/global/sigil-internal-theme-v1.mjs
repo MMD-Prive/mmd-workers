@@ -161,7 +161,7 @@ export async function decorateInternalSilverTheme(request, response) {
   const branded = silver ? html.replace(/<html\b/i, `<html data-sigil-internal-theme="silver-orange-v1"${ceoTheme}`) : html;
   const nonceValue = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
   const nonce = nonceValue ? ` nonce="${nonceValue}"` : '';
-  const workspace = /^\/internal\/(?:admin|ceo)(?:\/|$)/.test(path) ? `<script data-sigil-workspace="v3"${nonce}>document.addEventListener('DOMContentLoaded',()=>{${internalWorkspaceLoader()}});</script>` : '';
+  const workspace = path !== '/internal/admin/payments' && /^\/internal\/(?:admin|ceo)(?:\/|$)/.test(path) ? `<script data-sigil-workspace="v3"${nonce}>document.addEventListener('DOMContentLoaded',()=>{${internalWorkspaceLoader()}});</script>` : '';
   const themed = branded.replace(/<\/head>/i, `<style id="sigil-internal-silver-v1"${nonce}>${css}</style><script data-sigil-brand="v1"${nonce}>${internalBrandLoader(true)}</script>${workspace}</head>`);
   const headers = new Headers(response.headers);
   headers.delete('content-length'); headers.delete('content-encoding'); headers.delete('etag');
