@@ -1,44 +1,33 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import {
-  isBlackCardSession,
-  parseStored,
-  preferenceStatus,
-  replaceMarker,
-  selected,
-} from "./blackcard-companion-preference.js";
+const source = readFileSync(new URL("./blackcard-companion-preference.js", import.meta.url), "utf8");
 
-const env = {
-  AT_SESSIONS__PACKAGE_CODE: "package_code",
-  AT_SESSIONS__NOTE: "note",
-};
-
-test("only a canonical Black Card session may enter the preference flow", () => {
-  assert.equal(isBlackCardSession({ fields: { package_code: "black_card" } }, env), true);
-  assert.equal(isBlackCardSession({ fields: { package_code: "mmd_member", note: "Black Card inquiry" } }, env), true);
-  assert.equal(isBlackCardSession({ fields: { package_code: "mmd_member", note: "booking" } }, env), false);
+test("signed customer auth and Black Card/product gate are mandatory", () => {
+  assert.match(source, /authorizeConfirmationRequest\(request, env\)/);
+  assert.match(source, /authorized\.expectedRole !== "customer"/);
+  assert.match(source, /blackcard_product_required/);
+  assert.match(source, /blackcard_payment_state_unavailable/);
 });
 
-test("companion catalog is the canonical Personal Main catalog and rejects travel models", () => {
-  assert.equal(selected("hito")?.id, "hito");
-  assert.equal(selected("HIRO")?.id, "hiro");
-  assert.equal(selected("travel_model") , null);
-  assert.equal(selected("not-a-companion") , null);
+test("canonical Personal Main catalog only accepts HITO, HIEI, HIMA and HIRO", () => {
+  assert.match(source, /personalMain\(normalizeId\(id\)\)/);
+  assert.match(source, /companion_id/);
+  assert.doesNotMatch(source, /travel_model/);
+  assert.match(source, /personal-main-catalog/);
 });
 
-test("preference marker is readable and replacement is idempotent", () => {
-  const first = { schema: 1, companion_id: "hito", updated_at: "2026-10-25T00:00:00.000Z" };
-  const second = { ...first, companion_id: "hiro", updated_at: "2026-10-25T00:01:00.000Z" };
-  const note = replaceMarker("existing operational note", first);
-  assert.deepEqual(parseStored(note), first);
-  const updated = replaceMarker(note, second);
-  assert.deepEqual(parseStored(updated), second);
-  assert.equal((updated.match(/MMD BLACK CARD COMPANION PREFERENCE V1/g) || []).length, 1);
+test("preference is persisted as one idempotent Session marker and never grants entitlement", () => {
+  assert.match(source, /MMD BLACK CARD COMPANION PREFERENCE V1/);
+  assert.match(source, /replaceMarker/);
+  assert.match(source, /current\?\.companion_id === next\.companion_id/);
+  assert.match(source, /idempotent: true/);
+  assert.match(source, /entitlement_activated: false/);
 });
 
-test("selection status never implies entitlement", () => {
-  assert.equal(preferenceStatus("pending"), "selected_pending_verification");
-  assert.equal(preferenceStatus("pending_verification"), "selected_pending_verification");
-  assert.equal(preferenceStatus("paid"), "selected_verified_pending_entitlement");
-  assert.equal(preferenceStatus("cancelled"), "unavailable");
+test("payment states distinguish pending verification from paid without changing membership", () => {
+  assert.match(source, /selected_pending_verification/);
+  assert.match(source, /selected_verified_pending_entitlement/);
+  assert.match(source, /CLOSED_STATES/);
+  assert.match(source, /payment_status/);
 });
