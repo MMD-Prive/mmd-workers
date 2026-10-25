@@ -87,7 +87,7 @@ export async function handleBlackCardCompanionPreference(request, env = {}) {
     const state = paymentState(authorized.session, env);
     if (!BLACKCARD_STATES.has(state) || CLOSED_STATES.has(state)) return withCors(request, env, json({ ok: false, error: "blackcard_payment_state_unavailable" }, 409));
     const current = readPreference(authorized.session, env);
-    if (request.method.toUpperCase() === "GET") return withCors(request, env, json({ ok: true, authority: "payments-worker", schema: "blackcard_companion_preference_v1", companion: current ? selected(current.companion_id) : null, preference_status: current ? preferenceStatus(state) : "not_selected", entitlement_activated: false, payment_status: state, session_id: authorized.claims.session_id }));
+    if (request.method.toUpperCase() === "GET" || authorized.body?.read === true) return withCors(request, env, json({ ok: true, authority: "payments-worker", schema: "blackcard_companion_preference_v1", companion: current ? selected(current.companion_id) : null, preference_status: current ? preferenceStatus(state) : "not_selected", entitlement_activated: false, payment_status: state, session_id: authorized.claims.session_id }));
     const body = authorized.body || {};
     const companion = selected(body.companion_id || body.companion_preference);
     if (!companion) return withCors(request, env, json({ ok: false, error: "invalid_companion" }, 400));
