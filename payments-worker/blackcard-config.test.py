@@ -9,6 +9,7 @@ class BlackCardConfigTest(unittest.TestCase):
     def test_release_binding_and_existing_payment_vars(self):
         config = tomllib.loads((ROOT / 'wrangler.merged.toml').read_text())
         self.assertEqual(config['main'], 'index.session-paid-projection-wrapper.js')
+        self.assertEqual(config['triggers']['crons'], ['*/5 * * * *'])
         bindings = [b for b in config['d1_databases'] if b['binding'] == 'BLACKCARD_DB']
         self.assertEqual(bindings, [{
             'binding': 'BLACKCARD_DB', 'database_name': 'mmd-blackcard-companion-preferences',

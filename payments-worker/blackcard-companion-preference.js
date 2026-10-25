@@ -1,3 +1,4 @@
+export { replaceMarker, parseStored } from "./blackcard-legacy-marker.js";
 import { authorizeConfirmationRequest } from "./confirmation-ack.js";
 import { findSession, readConfirmationPaymentEvidence } from "./confirmation-details.js";
 import { personalMain } from "../shared/personal-main-catalog.mjs";
@@ -92,8 +93,8 @@ export async function handleBlackCardCompanionPreference(request, env = {}) {
     const auditId = `bca_${crypto.randomUUID().replace(/-/g, "")}`;
     const recorded = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${TABLE} WHERE member_id = ? AND status = 'recorded' ORDER BY rowid DESC LIMIT 1`).bind(memberId).first();
     const currentCompanion = recorded && !retentionExpired(recorded) ? recorded.companion_preference : null;
-    const insert = env.BLACKCARD_DB.prepare(`INSERT OR IGNORE INTO ${TABLE} (request_id, member_id, line_user_id_hash, correlation_hash, source_session_id_hash, idempotency_key, payload_hash, request_type, companion_preference, experience_preferences_json, note, change_reason, current_companion_snapshot, status, audit_event_id, retention_expires_at, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ? WHERE COALESCE((SELECT request_id FROM ${TABLE} WHERE member_id = ? ORDER BY rowid DESC LIMIT 1), '') = ?`)
-      .bind(requestId, memberId, "", correlationHash, await sha256(session.id), idempotencyKey, payloadHash, requestType, companion.id, JSON.stringify(experiencePreferences), note, changeReason, currentCompanion, auditId, new Date(Date.now() + retentionDays * 86400000).toISOString(), now, now, memberId, previous?.request_id || "");
+    const insert = env.BLACKCARD_DB.prepare(`INSERT OR IGNORE INTO ${TABLE} (request_id, member_id, member_record_id, line_user_id_hash, correlation_hash, source_session_id_hash, idempotency_key, payload_hash, request_type, companion_preference, experience_preferences_json, note, change_reason, current_companion_snapshot, status, audit_event_id, retention_expires_at, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ? WHERE COALESCE((SELECT request_id FROM ${TABLE} WHERE member_id = ? ORDER BY rowid DESC LIMIT 1), '') = ?`)
+      .bind(requestId, memberId, memberRecordId, "", correlationHash, await sha256(session.id), idempotencyKey, payloadHash, requestType, companion.id, JSON.stringify(experiencePreferences), note, changeReason, currentCompanion, auditId, new Date(Date.now() + retentionDays * 86400000).toISOString(), now, now, memberId, previous?.request_id || "");
     const audit = env.BLACKCARD_DB.prepare(`INSERT OR IGNORE INTO ${OUTBOX} (event_id, idempotency_key, event_type, member_id_hash, request_id, created_at, delivery_status) SELECT audit_event_id, idempotency_key, 'blackcard.companion_preference.requested', ?, request_id, ?, 'pending' FROM ${TABLE} WHERE idempotency_key = ?`)
       .bind(await sha256(memberId), now, idempotencyKey);
     await env.BLACKCARD_DB.batch([insert, audit]);
@@ -131,7 +132,8 @@ function sessionPaymentState(session, env) {
   const status = code(sessionValue(session, env, "AT_SESSIONS__PAYMENT_STATUS", "fldTY5lE6m0kQf72n"));
   return status || "pending";
 }
-async function mirrorPendingPreference(env, row, memberId, memberRecordId) {
+export async function mirrorPendingPreference(env, row, memberId, memberRecordId) {
+  if (retentionExpired(row)) return false;
   const key = row.idempotency_key;
   const lock = crypto.randomUUID();
   const outbox = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${OUTBOX} WHERE idempotency_key = ?`).bind(key).first();
@@ -183,11 +185,11 @@ async function mirrorPendingPreference(env, row, memberId, memberRecordId) {
     return false;
   }
 }
-function mirrorMatches(record, row, memberId, memberRecordId) {
+export function mirrorMatches(record, row, memberId, memberRecordId) {
   const f = record?.fields || {};
   return /^rec[A-Za-z0-9]{14}$/.test(record?.id || "") && f.fldOlcIzDs5QbDN2c === row.request_id && f.fldLiLJd4SmBkKO5B === row.payload_hash && f.fldPYEff5pSnpjk0p === row.idempotency_key && f.fldMiUCgSuP229TcZ === memberId && f.fldlR0h05dSjyDIcw === row.companion_preference && f.fldhdZwWJBB7CTbA5 === row.audit_event_id && Array.isArray(f.fld6I0jkPbACVSVWV) && f.fld6I0jkPbACVSVWV.length === 1 && f.fld6I0jkPbACVSVWV[0] === memberRecordId;
 }
-async function resolveMemberRecordId(env, memberId) {
+export async function resolveMemberRecordId(env, memberId) {
   const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${MEMBERS_TABLE}`);
   url.searchParams.set("filterByFormula", `{${MEMBER_RECORD_ID_FIELD}}='${escapeFormula(memberId)}'`); url.searchParams.set("maxRecords", "2"); url.searchParams.set("returnFieldsByFieldId", "true"); url.searchParams.append("fields[]", MEMBER_RECORD_ID_FIELD);
   const response = await airtableFetch(env, new Request(url, { headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}`, accept: "application/json" } }));

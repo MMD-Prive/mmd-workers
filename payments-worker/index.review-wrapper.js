@@ -1,3 +1,4 @@
+import { runBlackCardPreferenceMaintenance, handleBlackCardRetentionAdmin, BLACKCARD_RETENTION_ADMIN_PATH } from "./blackcard-preference-lifecycle.js";
 import { handleKbankSandbox } from "./kbank-sandbox.mjs";
 export { KbankSandboxCoordinator } from "./kbank-sandbox.mjs";
 import phase1Worker from "./index.phase1.js";
@@ -91,7 +92,12 @@ function canonicalTelegramEnv(env = {}) {
 
 export default {
   async scheduled(event, env, ctx) {
-    await drainWebProofNotifications(canonicalTelegramEnv(env));
+    const [proofs, lifecycle] = await Promise.allSettled([
+      drainWebProofNotifications(canonicalTelegramEnv(env)),
+      runBlackCardPreferenceMaintenance(env),
+    ]);
+    if (lifecycle.status === 'rejected' || !lifecycle.value?.ok) console.warn(JSON.stringify({ event:'blackcard_lifecycle_retry_required', failed:lifecycle.value?.failed || 0 }));
+    if (proofs.status === 'rejected') throw proofs.reason;
     if (typeof phase1Worker.scheduled === "function") await phase1Worker.scheduled(event, env, ctx);
   },
   async fetch(request, env, ctx) {
@@ -158,6 +164,8 @@ export default {
     if (isFinalPaymentFlowRequest(path, method)) {
       return handleFinalPaymentFlow(request, env);
     }
+
+    if (path === BLACKCARD_RETENTION_ADMIN_PATH) return handleBlackCardRetentionAdmin(request, env);
 
     if (path === BLACKCARD_INTERNAL_PATH) {
       return handleBlackCardMemberPayment(request, env, {

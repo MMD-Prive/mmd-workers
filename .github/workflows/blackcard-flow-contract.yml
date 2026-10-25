@@ -19,6 +19,6 @@ jobs:
         with:
           node-version: '24'
       - name: Signed auth, real SQLite concurrency, payment and UI contracts (fixtures only)
-        run: node --test payments-worker/blackcard-companion-preference.test.mjs payments-worker/confirmation-details.test.mjs payments-worker/payment-instructions-v1.test.mjs webflow/blackcard/confirm/blackcard-flow-embed.test.mjs
+        run: node --test payments-worker/blackcard-companion-preference.test.mjs payments-worker/blackcard-preference-lifecycle.test.mjs payments-worker/blackcard-member-payment.test.mjs payments-worker/confirmation-details.test.mjs payments-worker/payment-instructions-v1.test.mjs webflow/blackcard/confirm/blackcard-flow-embed.test.mjs
       - name: Parse release and compatibility TOML configuration
         run: python3 payments-worker/blackcard-config.test.py
