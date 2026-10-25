@@ -400,12 +400,28 @@ test("session extension payment uses the job profile", async () => {
   assert.equal(payload.instructions.bank_transfer.account_number, "2222222222");
 });
 
-test("membership, renewal and black card payments use the membership profile", async () => {
-  for (const paymentType of ["membership", "renewal", "blackcard", "black_card", "red_card", "elite", "mmd_member"]) {
+test("membership and other configured product stages use the membership profile", async () => {
+  for (const paymentType of ["membership", "renewal", "red_card", "elite", "mmd_member"]) {
     const payload = await instructionsFor({ ...details({ stage: "" }), payment_type: paymentType });
     assert.equal(payload.instruction_profile, "mmd_membership_v1", paymentType);
     assert.equal(payload.instructions.bank_transfer.account_number, "3333333333", paymentType);
     assert.doesNotMatch(JSON.stringify(payload), /1111111111|2222222222|4444444444/);
+  }
+});
+
+test("Black Card checkout stays closed until both owner policy and active package authorize sale", async () => {
+  for (const detailsPayload of [
+    { ...details({ stage: "" }), payment_type: "blackcard" },
+    { ...details({ stage: "full" }), payment_type: "blackcard" },
+  ]) {
+    const queried = [];
+    const env = envWithRows(ALL_PROFILES(), queried);
+    const response = await handlePaymentInstructions(request(), env, detailsFetcher(detailsPayload));
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.available, false);
+    assert.equal(payload.reason, "blackcard_not_activated_for_sale");
+    assert.equal(queried.length, 0, "closed policy must stop before reading any payment destinations");
   }
 });
 
