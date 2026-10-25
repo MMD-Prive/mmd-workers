@@ -288,20 +288,75 @@ test("explicit owner handoff commands retain their original handler", async () =
   assert.equal(body.flow, "hype_owner_handoff_transition");
 });
 
-test("HYPE private acquisition route offers LINE OFC for men and BELIEVE IN ME for women", async () => {
+test("HYPE Preview welcome stays neutral when no verified canonical gender is available", async () => {
   const sent = mockTelegram();
   const { status, body } = await receiveUpdate({
     update_id: 200,
-    message: { message_id: 12, text: "/start route", chat: { id: 123, type: "private" }, from: { id: 123, is_bot: false } },
+    message: { message_id: 12, text: "/start route", chat: { id: 123456, type: "private" }, from: { id: 123456, is_bot: false } },
   });
   assert.equal(status, 200);
   assert.equal(body.flow, "hype_preview_lead_routing");
-  assert.match(sent[0].text, /เลือกตามสิ่งที่สนใจได้เอง/);
+  assert.doesNotMatch(sent[0].text, /ผู้หญิง|ผู้ชาย/);
   assert.deepEqual(sent[0].reply_markup.inline_keyboard, [
-    [{ text: "ผู้ชาย · เข้า LINE Official", url: "https://lin.ee/xRqsALs" }],
-    [{ text: "ผู้หญิง · BELIEVE IN ME", url: "https://www.mmdbkk.com/believe/inme" }],
+    [{ text: "ติดต่อ MMD · LINE Official", url: "https://lin.ee/xRqsALs" }],
+    [{ text: "รู้จัก BELIEVE IN ME", url: "https://www.mmdbkk.com/believe/inme" }],
     [{ text: "กลับไป Telegram Preview", url: "https://t.me/MMDPriveTH" }],
   ]);
+});
+
+test("HYPE reads explicitly sourced canonical female routing only in private chat", async () => {
+  const sent = mockTelegram();
+  let calls = 0;
+  const operation = {
+    async fetch(request) {
+      calls++;
+      assert.equal(new URL(request.url).pathname, "/__internal/hype/operational-status");
+      const payload = await request.json();
+      assert.equal(payload.telegram_user_id, "123456");
+      assert.equal(payload.intent.trigger, "telegram_preview_lead_route");
+      return Response.json({ ok: true, routing_context: { gender_explicit: true, customer_gender: "female" } });
+    },
+  };
+  const { body } = await receiveUpdate({
+    update_id: 202,
+    message: { message_id: 12, text: "/start route", chat: { id: 123456, type: "private" }, from: { id: 123456, is_bot: false } },
+  }, { ...runtime(), HYPE_OPERATIONS: operation });
+  assert.equal(body.flow, "hype_preview_lead_routing");
+  assert.equal(calls, 1);
+  assert.doesNotMatch(sent[0].text, /ผู้หญิง|ผู้ชาย/);
+  assert.deepEqual(sent[0].reply_markup.inline_keyboard, [
+    [{ text: "รู้จัก BELIEVE IN ME", url: "https://www.mmdbkk.com/believe/inme" }],
+    [{ text: "กลับไป Telegram Preview", url: "https://t.me/MMDPriveTH" }],
+  ]);
+});
+
+test("HYPE sends verified male visitors to MMD LINE Official", async () => {
+  const sent = mockTelegram();
+  const operation = {
+    async fetch() { return Response.json({ ok: true, routing_context: { gender_explicit: true, customer_gender: "male" } }); },
+  };
+  await receiveUpdate({
+    update_id: 203,
+    message: { message_id: 12, text: "/start route", chat: { id: 123456, type: "private" }, from: { id: 123456, is_bot: false } },
+  }, { ...runtime(), HYPE_OPERATIONS: operation });
+  assert.deepEqual(sent[0].reply_markup.inline_keyboard, [
+    [{ text: "ติดต่อ MMD · LINE Official", url: "https://lin.ee/xRqsALs" }],
+    [{ text: "กลับไป Telegram Preview", url: "https://t.me/MMDPriveTH" }],
+  ]);
+});
+
+test("HYPE never treats unverified gender, unavailable identity or a gender guess as verified", async () => {
+  const sent = mockTelegram();
+  const operation = {
+    async fetch() { return Response.json({ ok: true, routing_context: { gender_explicit: false, customer_gender: "female" } }); },
+  };
+  await receiveUpdate({
+    update_id: 204,
+    message: { message_id: 12, text: "/start route", chat: { id: 123456, type: "private" }, from: { id: 123456, is_bot: false } },
+  }, { ...runtime(), HYPE_OPERATIONS: operation });
+  assert.equal(sent[0].reply_markup.inline_keyboard.length, 3);
+  assert.equal(sent[0].reply_markup.inline_keyboard[0][0].url, "https://lin.ee/xRqsALs");
+  assert.equal(sent[0].reply_markup.inline_keyboard[1][0].url, "https://www.mmdbkk.com/believe/inme");
 });
 
 test("HYPE acquisition routing does not run or reveal choices in a public Telegram group", async () => {
