@@ -13,5 +13,5 @@ export const BLACKCARD_PAYMENT_TH = Object.freeze({
   error:'ยังทำรายการไม่สำเร็จครับ ลองอีกครั้งได้ รายการเดิมยังอยู่',
   loading:'กำลังตรวจรายการ', uploading:'กำลังส่งหลักฐาน', saving:'กำลังบันทึกตัวเลือก',
   slip:'หลักฐานการชำระ', fileNote:'JPG, PNG, WEBP หรือ PDF ไม่เกิน 10 MB',
-  account:'โอนเข้าบัญชี', qr:'สแกนชำระ', companionNote:'Companion คือ Personal Main ผู้ดูแล ไม่ใช่ Travel Model สำหรับจองงาน',
+  account:'โอนเข้าบัญชี', numberHidden:'เลขบัญชีและเลข PromptPay ซ่อนไว้ · ใช้ QR หรือ PayPal', qr:'สแกนชำระ', paypal:'ชำระผ่าน PayPal', paypalNote:'เปิด PayPal ในหน้าใหม่ แล้วกลับมา MY MMD เพื่อส่งหลักฐาน การกดลิงก์อย่างเดียวไม่ยืนยันการชำระเงิน', companionNote:'Companion คือ Personal Main ผู้ดูแล ไม่ใช่ Travel Model สำหรับจองงาน',
 });

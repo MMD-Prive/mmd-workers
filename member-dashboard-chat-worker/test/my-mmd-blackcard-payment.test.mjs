@@ -31,9 +31,9 @@ test('missing LINE session shows LIFF payment login with bounded return to Black
   const page=await ui(()=>response({ok:false,auth_required:true},401));
   assert.equal(page.doc.getElementById('login').hidden,false);const url=new URL(page.doc.getElementById('login').href);assert.equal(url.hostname,'miniapp.line.me');assert.equal(url.searchParams.get('intent'),'continue_payment');assert.equal(url.searchParams.get('view'),'blackcard');assert.equal(page.doc.getElementById('pay').hidden,true);page.dom.window.close();
 });
-test('new account starts explicitly and renders only backend bank/QR; no automatic duplicate purchase',async()=>{
+test('new account starts explicitly, offers the fixed PayPal CTA, and hides account numbers',async()=>{
   const page=await ui(url=>response(url.endsWith('/state')?{...base,status:'not_started'}:url.endsWith('/purchase')?{...base,status:'awaiting_payment'}:{...base,status:'awaiting_payment',instructions:{bank_transfer:{enabled:true,bank_name_th:'ธนาคารทดสอบ',account_name_th:'ชื่อทดสอบ',account_number:'123-test'},promptpay:{enabled:false}}}));
-  assert.equal(page.calls.length,1);assert.equal(page.doc.getElementById('new').hidden,false);page.click('start');await tick();assert.equal(page.doc.getElementById('pay').hidden,false);assert.match(page.doc.getElementById('bank').textContent,/ชื่อทดสอบ/);assert.equal(page.calls.filter(c=>c.url.endsWith('/purchase')).length,1);page.dom.window.close();
+  assert.equal(page.calls.length,1);assert.equal(page.doc.getElementById('new').hidden,false);page.click('start');await tick();assert.equal(page.doc.getElementById('pay').hidden,false);assert.match(page.doc.getElementById('bank').textContent,/ชื่อทดสอบ/);assert.doesNotMatch(page.doc.getElementById('bank').textContent,/123-test/);assert.equal(new URL(page.doc.getElementById('paypal').href).href,'https://www.paypal.com/ncp/payment/M697T7AW2QZZJ');assert.equal(page.doc.getElementById('paypal').target,'_blank');assert.equal(page.calls.filter(c=>c.url.endsWith('/purchase')).length,1);page.dom.window.close();
 });
 test('pending proof immediately opens Companion; saved selection is restored on refresh',async()=>{
   const page=await ui(()=>response({...base,status:'pending_verification',can_choose_companion:true,companion:PERSONAL_MAINS[2]}));
