@@ -167,17 +167,17 @@ Current normalized values: `male`, `female`, `nonbinary`, `other`, `prefer_not_t
 
 ## X / Preview lead handoff (25 October 2026)
 
-The social acquisition CTA links to `https://t.me/MMDPriveTH`, a public Preview surface with visitors of different genders. A passive channel viewer cannot receive a private HYPE DM. The Preview channel CTA and join welcome therefore offer only the HYPE deep link `https://t.me/mmdprivebot?start=route`.
+The social CTA links to `https://t.me/MMDPriveTH`. A passive channel viewer cannot receive a private HYPE DM. The public Preview CTA and welcome therefore only show `https://t.me/mmdprivebot?start=route` ("เริ่มกับ HYPE"); neither the message nor public buttons mention female audience segmentation.
 
-After an explicit **private** `/start route`, HYPE shows a short self-selection menu:
+When the visitor opts into **private** `/start route`, HYPE reads only `/__internal/hype/operational-status` via the existing `HYPE_OPERATIONS` or `TELEGRAM_BIND_AUTHORITY` binding, using the Telegram User ID. The authoritative response must be `ok=true`, `routing_context.gender_explicit=true`, and carry a canonical gender. Private destination links:
 
-- `ผู้ชาย · เข้า LINE Official` → `https://lin.ee/xRqsALs` (MMD LINE OFC)
-- `ผู้หญิง · BELIEVE IN ME` → `https://www.mmdbkk.com/believe/inme`
-- `กลับไป Telegram Preview` → `https://t.me/MMDPriveTH`
+- verified `female` → `https://www.mmdbkk.com/believe/inme` (BELIEVE IN ME);
+- verified `male` → `https://lin.ee/xRqsALs` (MMD LINE OFC);
+- absent, unbound, unverified, unknown, other, or authority unavailable → a private neutral choice between MMD LINE OFC and BELIEVE IN ME, without labels or claims about a person's gender.
 
-This is a customer-selected **destination** only, not verification or storage of gender identity. It must not modify Client 360, LINE/Telegram identity bindings, membership, gender provenance, entitlements, Points, or customer history. Do not infer a choice from a profile, group membership, or public reply. Preserve existing verified-gender / Hall/model-visibility gates for actual discovery. Public posts and group welcomes show no customer's private selection.
+**The bot cannot infer female gender merely because someone writes or starts a chat.** A user's explicit self-identification in conversation can be handled only through an explicitly consented intake or trusted identity update; do not assign canonical gender from an unverified message or Telegram profile. Never infer from names, avatars, pronouns, writing style or room membership.
 
-The legacy `/start preview` campaign verification route remains intact for backward compatibility. Posting to Telegram, pinning messages, and production deployment require a separately approved operational action.
+The preference is used solely to route the response. No gender change, registration, Client 360 write, Points/member update, or audience expansion occurs. Keep the existing verified Client/Hall model-visibility rules intact. The legacy `/start preview` route continues. Publishing or pinning a Telegram post and deploying production remain separate owner-approved steps.
 
 ## Preview presence and welcome
 
