@@ -1,0 +1,48 @@
+{
+  "scope": "Studio home, Upload, Review, Final Preview",
+  "verified_at": "2026-10-24 23:59:14 UTC",
+  "git_base": "f4d23828fb05873270324a31a80f08a83ba6549d",
+  "webflow": {
+    "site_id": "68f879d546d2f4e2ab186e90",
+    "publication": "draft_only",
+    "last_published_unchanged": "2026-10-24T17:30:43.469Z",
+    "primary_embeds_exact": 4,
+    "freeform_blocks_exact": 8,
+    "retired_embed_controllers": 24,
+    "retired_script_elements": 8,
+    "hidden_legacy_native_sections": 2
+  },
+  "validation": {
+    "node_tests": {
+      "passed": 120,
+      "failed": 0
+    },
+    "browser_tests": {
+      "passed": 4,
+      "failed": 0,
+      "network": "fully intercepted; synthetic models and photos; exact built package",
+      "widths": [
+        360,
+        390,
+        768,
+        1440
+      ],
+      "stages": 4,
+      "real_thai_fonts": true,
+      "minimum_tested_text_contrast": 4.5,
+      "minimum_tested_target_height_px": 44,
+      "manual_png_dimensions": [
+        1316,
+        1195
+      ]
+    },
+    "authenticated_live_e2e": false,
+    "worker_deployed": false
+  },
+  "notes": [
+    "Source frames are the owner-approved clean-v1 set, pinned and verified by SHA-256 in the renderer.",
+    "Automatic card generation stays under its existing server gate.",
+    "No production model, Airtable, or R2 test writes were made.",
+    "Serial idempotent recovery is verified; concurrent cross-request uniqueness is not guaranteed by Airtable lookup/create."
+  ]
+}

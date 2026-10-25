@@ -3,6 +3,7 @@
 import { internalBrandLoader, SYSTEM_LIGHT, SYMBOL_BLACK, BRAND_SELECTOR } from './sigil-brand-v1.mjs';
 import { WHITE_ORANGE_WORKSPACE_CSS } from './sigil-white-orange-v2.mjs';
 import { DASHBOARD_POLISH_CSS } from './sigil-dashboard-polish-v2.mjs';
+import { STUDIO_READABLE_CSS } from './sigil-studio-readable-v1.mjs';
 import { usesMmsWorkspace, installMmsWorkspaceTheme } from './mms-workspace-theme-v1.mjs';
 import { internalWorkspaceLoader } from './sigil-internal-workspace-v3.mjs';
 export function usesSilverWorkspace(pathname) {
@@ -96,6 +97,7 @@ html[data-sigil-ceo-theme="blue-v1"] body #mmdK{position:static!important;inset:
 html[data-sigil-ceo-theme="blue-v1"] body .mmd-aiops-btn{bottom:16px!important;right:16px!important}
 html[data-sigil-ceo-theme="blue-v1"] body{padding-bottom:88px!important}
 
+${STUDIO_READABLE_CSS}
 `;
 
 export function silverWorkspaceLoader() {
@@ -140,6 +142,12 @@ export async function decorateInternalSilverTheme(request, response) {
     const nonce = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
     const contrast = SILVER_WORKSPACE_CSS.split('.sigil-system-logo')[0];
     html = html.replace(/<\/head>/i, `<style id="sigil-audience-contrast-v1"${nonce ? ` nonce="${nonce}"` : ''}>${contrast}</style></head>`);
+  }
+  // Studio link cards are not semantic sections. Their background and text must
+  // stay paired, including when a legacy loader replaces the shared style node.
+  if (path.replace(/\/+$/, '') === '/internal/admin/studio' && !html.includes('id="sigil-studio-readable-v1"')) {
+    const nonce = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
+    html = html.replace(/<\/head>/i, `<style id="sigil-studio-readable-v1"${nonce ? ` nonce="${nonce}"` : ''}>${STUDIO_READABLE_CSS}</style></head>`);
   }
   if (html.includes('id="sigil-internal-silver-v1"')) {
     const headers = new Headers(response.headers);

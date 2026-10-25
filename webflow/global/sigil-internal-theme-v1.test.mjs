@@ -128,6 +128,32 @@ test('text on the shipped internal palettes meets 4.5:1 contrast',()=>{
   for(const [fg,bg] of [['272b30','ffffff'],['545c66','ffffff'],['272b30','fed7aa'],['272b30','fdba74'],['272b30','fb923c'],['545c66','edf0f3'],['ffffff','2563eb'],['f8fafc','252c34'],['cbd5e1','252c34']]) {const [high,low]=[lum(fg),lum(bg)].sort((a,b)=>b-a);assert.ok((high+.05)/(low+.05)>=4.5,fg+' on '+bg);}
 });
 
+test('Studio repair survives a pinned theme reload, keeps CSP and is added only once on its route', async()=>{
+  const { STUDIO_READABLE_CSS } = await import('./sigil-studio-readable-v1.mjs');
+  const csp="script-src 'nonce-studio-test'; style-src 'nonce-studio-test'";
+  for(const path of ['/internal/admin/studio','/internal/admin/studio/']) {
+    for(const existing of ['', '<style id="sigil-internal-silver-v1">old</style>']) {
+      const input=html.replace('</head>',existing+'<script nonce="studio-test">void 0</script></head>');
+      const request=new Request('https://www.mmdbkk.com'+path);
+      const result=await decorateInternalSilverTheme(request,new Response(input,{headers:{'content-type':'text/html','content-security-policy':csp,'set-cookie':'existing=unchanged; Secure','cache-control':'no-store',etag:'old','content-length':'1'}}));
+      let output=await result.text();
+      output=output.replace(/<style id="sigil-internal-silver-v1"[^>]*>[\s\S]*?<\/style>/,'<style id="sigil-internal-silver-v1">legacy reload</style>');
+      assert.ok(output.includes(`<style id="sigil-studio-readable-v1" nonce="studio-test">${STUDIO_READABLE_CSS}</style>`));
+      assert.equal(result.headers.get('content-security-policy'),csp);
+      assert.equal(result.headers.get('set-cookie'),'existing=unchanged; Secure');
+      assert.equal(result.headers.get('cache-control'),'no-store');
+      assert.equal(result.headers.get('etag'),null);
+      assert.equal(result.headers.get('content-length'),null);
+      const twice=await decorateInternalSilverTheme(request,new Response(output,{headers:{'content-type':'text/html'}}));
+      assert.equal((await twice.text()).match(/id="sigil-studio-readable-v1"/g).length,1);
+    }
+  }
+  for(const path of ['/internal/admin/studio/upload','/internal/admin/studio/review','/internal/admin/studio/model-preview','/internal/admin/studio-other','/internal/ceo/audience']) {
+    const result=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com'+path),response());
+    assert.doesNotMatch(await result.text(),/id="sigil-studio-readable-v1"/);
+  }
+});
+
 
 test('serialized internal workspace loader keeps esbuild helpers inside browser scope',()=>{
   const makeNode=()=>({
