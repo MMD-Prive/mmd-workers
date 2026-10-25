@@ -169,15 +169,12 @@ Current normalized values: `male`, `female`, `nonbinary`, `other`, `prefer_not_t
 
 The social acquisition CTA links to `https://t.me/MMDPriveTH`, a public Preview surface with visitors of different genders. A passive channel viewer cannot receive a private HYPE DM. The Preview channel CTA and join welcome therefore offer only the HYPE deep link `https://t.me/mmdprivebot?start=route`.
 
-After a new human **private** `/start route` or bare `/start`, HYPE reads the existing authenticated operational-status projection using the Telegram user ID. Only `gender_explicit: true` with provenance `canonical_field` or `explicit_labeled_note` may personalize the service recommendation: `female` → BELIEVE IN ME first, `male` → MMD LINE first. The response and Telegram reply never expose gender, provenance, or other operational-status fields. Missing identity, failed reads, or unknown/unconfirmed gender leave both service choices open. Names, photos, usernames and writing style are never evidence.
+After a new human **private** `/start route` or bare `/start`, HYPE introduces itself and offers only:
 
-The service buttons use neutral labels:
+- `ดูหนุ่ม ๆ · คุยต่อทาง LINE` → `https://lin.ee/xRqsALs` (or configured MMD LINE URL)
+- `กลับไป Telegram Preview` → `https://t.me/MMDPriveTH` (or configured Preview URL)
 
-- `ดูหนุ่ม ๆ · คุยต่อทาง LINE` → `https://lin.ee/xRqsALs`
-- `รู้จัก BELIEVE IN ME` → `/believe/inme`
-- `กลับไป Telegram Preview` → `https://t.me/MMDPriveTH`
-
-Public join welcomes only introduce HYPE and invite a private conversation; no mention of women, gender, or BELIEVE IN ME. Public/group starts and edited messages never read private acquisition context. This flow does not write Client 360, identity bindings, gender, membership, Points, or customer history. A service click is not gender verification. Existing Hall/model-visibility gates remain authoritative.
+The acquisition flow does not read personal operational status or gender and does not split visitors into service lanes. Public join welcomes only introduce HYPE and invite a private conversation. This flow does not write Client 360, identity bindings, gender, membership, Points, or customer history. Existing Hall/model-visibility gates remain authoritative for discovery outside this acquisition flow.
 
 The legacy `/start preview` campaign verification route remains intact for backward compatibility. Posting to Telegram, pinning messages, and production deployment require a separately approved operational action.
 

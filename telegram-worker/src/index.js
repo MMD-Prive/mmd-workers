@@ -716,12 +716,11 @@ async function handleTelegramWebhook(update, env) {
   const startArg = parseStartArg(text);
   if (update.message && chatType === "private" && message.from?.is_bot !== true
     && (startArg.toLowerCase() === PREVIEW_LEAD_ROUTING_START || /^\/start(?:@\w+)?$/i.test(text))) {
-    const destination = await readHypePreviewDestination(message, env);
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: hypePreviewLeadRoutingText(destination),
+      text: hypePreviewLeadRoutingText(),
       disable_web_page_preview: true,
-      reply_markup: hypePreviewLeadRoutingButtons(env, destination),
+      reply_markup: hypePreviewLeadRoutingButtons(env),
     }, env);
     return { handled: true, flow: "hype_preview_lead_routing", telegram };
   }
@@ -5050,49 +5049,15 @@ function hypePreviewEntryButtons(env) {
   };
 }
 
-async function readHypePreviewDestination(message, env) {
-  const telegramUserId = clean(message.from?.id);
-  const binding = env.HYPE_OPERATIONS || env.TELEGRAM_BIND_AUTHORITY;
-  if (!/^\d{5,20}$/.test(telegramUserId) || !binding?.fetch) return "choose";
-  try {
-    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/operational-status", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-mmd-service-binding": "telegram-worker" },
-      body: JSON.stringify({
-        telegram_user_id: telegramUserId,
-        intent: { type: "general", trigger: "telegram_preview_lead_routing" },
-      }),
-    }));
-    const result = await response.json();
-    const context = result?.routing_context;
-    if (!response.ok || result?.ok !== true || context?.gender_explicit !== true
-      || !["canonical_field", "explicit_labeled_note"].includes(context?.gender_source)) return "choose";
-    if (context.customer_gender === "female") return "believe";
-    if (context.customer_gender === "male") return "mmd";
-  } catch {
-    // Missing or unavailable authority must leave the service choice to the visitor.
-  }
-  return "choose";
+function hypePreviewLeadRoutingText() {
+  return "สวัสดีครับ ผม HYPE จาก MMD Privé 👋\n\nสนใจดูหนุ่ม ๆ หรือสอบถามบริการ คุยต่อทาง LINE Official ของ MMD ได้เลยครับ";
 }
 
-function hypePreviewLeadRoutingText(destination) {
-  if (destination === "believe") return "สวัสดีครับ ผม HYPE จาก MMD Privé 👋\n\nผมแนะนำให้รู้จัก BELIEVE IN ME ครับ ดูรายละเอียดด้านล่างได้เลย";
-  if (destination === "mmd") return "สวัสดีครับ ผม HYPE จาก MMD Privé 👋\n\nสนใจดูหนุ่ม ๆ หรือสอบถามบริการ คุยต่อทาง LINE Official ของ MMD ได้เลยครับ";
-  return [
-    "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
-    "",
-    "อยากให้ผมพาไปทางไหน เลือกได้เลยครับ",
-    "ดูหนุ่ม ๆ และสอบถามบริการของ MMD หรือรู้จัก BELIEVE IN ME",
-  ].join("\n");
-}
-
-function hypePreviewLeadRoutingButtons(env, destination = "choose") {
+function hypePreviewLeadRoutingButtons(env) {
   const lineUrl = clean(env.MMD_LINE_OFC_URL) || "https://lin.ee/xRqsALs";
-  const mmd = [{ text: "ดูหนุ่ม ๆ · คุยต่อทาง LINE", url: lineUrl }];
-  const believe = [{ text: "รู้จัก BELIEVE IN ME", url: publicUrl(env, "/believe/inme") }];
   return {
     inline_keyboard: [
-      ...(destination === "believe" ? [believe, mmd] : [mmd, believe]),
+      [{ text: "ดูหนุ่ม ๆ · คุยต่อทาง LINE", url: lineUrl }],
       [{ text: "กลับไป Telegram Preview", url: previewChannelUrl(env) }],
     ],
   };
