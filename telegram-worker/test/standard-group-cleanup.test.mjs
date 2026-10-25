@@ -72,7 +72,7 @@ async function expectDeletedJoin(chatId, expectedSurface, { expectWelcome = fals
       assert.equal(body.welcome_sent, true);
       assert.match(welcomeCall.body.text, /ยินดีต้อนรับสู่ MMD Privé Preview/);
       assert.match(welcomeCall.body.text, /เริ่มกับ HYPE/);
-      assert.match(welcomeCall.body.text, /ไม่ต้องบอกเพศหรือรายละเอียดส่วนตัว/);
+      assert.doesNotMatch(welcomeCall.body.text, /ผู้หญิง|เพศ|BELIEVE|LGBT/i);
       assert.doesNotMatch(welcomeCall.body.text, /payment_ref|canonical_client_id/i);
       const urls = welcomeCall.body.reply_markup.inline_keyboard.flat().map((button) => button.url);
       assert.deepEqual(urls, ["https://t.me/mmdprivebot?start=route"]);
