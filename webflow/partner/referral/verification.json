@@ -1,12 +1,12 @@
 {
-  "scope": "Initial LV15 pre-publication verification plus focused owner-clarification copy/FAQ checks; no production forms or messages submitted.",
+  "scope": "Initial LV15 verification and focused owner-clarification revisions, including firm fair-pricing copy and its expanded disclosure; no production forms or messages submitted.",
   "source_sha256": {
-    "referral.html": "13aaaf60758bc830b05b5cb7fa07209e341b02f96476b80dc6227f7e1c9a63fd",
-    "referral.css": "28b7b84646542184867aaa15a96f12deea7093398c726fc4b66d46161af23071",
+    "referral.html": "097472535cc24fad0caa9418b021f17c7e87ea539d31d4d906c2da2ba231bc1e",
+    "referral.css": "b1fa718f7f3370a7ebb7ae2eb157e0f3d5fe1fe4a6cfb62673e4497244cbcc04",
     "referral.js": "d44f38d8c69d661de66a151bb76231170c459259eefdb704c5c12244056f5cf8",
-    "page-head.html": "ebcf35470ea58bcde8c79cbd37cd77afb4adb00a2392c7d3d1d0833025d4e167",
+    "page-head.html": "36492da1b056226c32e8db3de8f260498fe320655d0e7352f3b83ec7787ca6a0",
     "page-footer.html": "6ac1fd9623663ecc35f49d5d8f38780a7999d87a6d89d48c43100dea10af63bf",
-    "preview.html": "0863fff85d623d3e1c47af785544c51beb739c4f0f29f6f951b994b410fc8437"
+    "preview.html": "057a194739c869916917f7aedaa5699a0ffb03bf9c2a8b3bbd15de8d5e689c6a"
   },
   "baseline_390": {
     "page_height_px": 7088,
@@ -16,7 +16,7 @@
     {
       "width": 320,
       "document_width": 320,
-      "page_height_px": 2876,
+      "page_height_px": 3009,
       "rates_y_px": 628.47,
       "cta": {
         "x": 18,
@@ -28,7 +28,7 @@
     {
       "width": 390,
       "document_width": 390,
-      "page_height_px": 2843,
+      "page_height_px": 2977,
       "rates_y_px": 618.81,
       "cta": {
         "x": 22,
@@ -62,7 +62,7 @@
     390,
     1440
   ],
-  "mobile_height_reduction_percent": 59.9,
+  "mobile_height_reduction_percent": 58.0,
   "visual_checks": [
     "Native menu opens with all five ordered links, closes on Escape",
     "Four method tabs, ArrowRight/Home/End and one visible panel work",
@@ -195,9 +195,9 @@
   "composer_all_passed": true,
   "composer_check_limit": "Synthetic input only; all remote requests blocked or served locally. No backend intake or actual LINE send was tested.",
   "i18n": {
-    "new_Thai_keys": 126,
-    "bound_HTML_keys": 114,
-    "bound_HTML_keys_covered": 114,
+    "new_Thai_keys": 143,
+    "bound_HTML_keys": 131,
+    "bound_HTML_keys_covered": 131,
     "existing_locale_keys_preserved": 306,
     "strict_audit_passed": true,
     "syntax_passed": true,
@@ -209,17 +209,30 @@
     "no_international_tariff_claim": true,
     "legacy_management_table_reclassified": true,
     "legacy_table_preserved_in": "original-webflow.json",
-    "unresolved": "Confirm which four Partner types, MMD percentage denominator and deductible costs; model-rate unit/work scope and included-versus-added price treatment remain undefined.",
     "legacy_management_table_published": false,
     "owner_clarification": {
+      "relationship_types_confirmed": [
+        "Management Partner",
+        "Contact Provider",
+        "Personal Referral",
+        "High-profile Referral"
+      ],
       "legacy_large_amounts": "Model rates",
-      "mmd_15_to_45_percent": "MMD portion dependent on Partner type",
-      "net_profit_formula_confirmed": false,
-      "tier_to_mmd_percentage_mapping_confirmed": false
+      "bundled_quote": "Model + Partner quote may already include the Partner compensation",
+      "mmd_agency_fee": "Retained by MMD without splitting it with the same Partner again for the bundled-quote arrangement",
+      "reference_matrix": "Separately agreed introduction/Bridge compensation",
+      "corporate_accounting_formula_claimed": false,
+      "internal_pricing_targets_published": false,
+      "legacy_tier_to_percentage_mapping_reinstated": false,
+      "ongoing_pricing_preference": "Fair percentage sharing based on duties and an agreed calculation base",
+      "bundled_quote_acceptance": "Review model pay, Partner component, duties, scope and actual client price before per-deal agreement",
+      "cross_channel_comparison": "Compare similar scope and terms; explain the value behind price differences",
+      "booking_volume_guaranteed": false,
+      "retained_agency_fee_automatically_shared": false
     }
   },
   "initial_lv15_verified_at": "2026-10-25T00:13:59.647013+00:00",
-  "verified_at": "2026-10-25T01:34:25.521307+00:00",
+  "verified_at": "2026-10-25T02:23:13.261813+00:00",
   "initial_lv15_layout": [
     {
       "width": 320,
@@ -258,34 +271,106 @@
       }
     }
   ],
+  "content_revision_history": [
+    {
+      "scope": "Four copy changes and one native money-distinction FAQ; CSS/JS and numeric referral matrix unchanged.",
+      "checks": [
+        "114/114 Thai HTML bindings covered; 126 referral keys total",
+        "Only four prior Thai values changed and seven money FAQ values added; every other locale entry preserved",
+        "Money FAQ collapsed/expanded at320/390/1440 without horizontal overflow",
+        "All changed Thai labels rendered in Anuphan; table header fits at320",
+        "No runtime errors, asset failures or network writes in focused smoke",
+        "Source/derived consistency and strict i18n audit passed"
+      ],
+      "dimensions": [
+        {
+          "width": 320,
+          "collapsed_height": 2876,
+          "expanded_height": 3285,
+          "document_width": 320
+        },
+        {
+          "width": 390,
+          "collapsed_height": 2843,
+          "expanded_height": 3228,
+          "document_width": 390
+        },
+        {
+          "width": 1440,
+          "collapsed_height": 2014,
+          "expanded_height": 2269,
+          "document_width": 1440
+        }
+      ]
+    },
+    {
+      "scope": "Confirmed four relationship types; bundled Model + Partner quote and MMD retained Agency Fee; numeric referral matrix, other payment methods, CSS, JavaScript and form contract unchanged.",
+      "checks": [
+        "124/124 HTML bindings covered; 136 referral dictionary keys; strict audit and syntax pass",
+        "Eleven existing referral values changed and ten type FAQ values added from preceding draft; all other locale entries preserved",
+        "Four exact confirmed type names protected from deployed global translation",
+        "320/390/1440: collapsed page, Co-Partner panel, type FAQ and money FAQ readable without overflow",
+        "No copy substitutions, runtime errors, asset failures or network writes in final focused smoke",
+        "Numeric reference table and Direct Contact/Bridge/Profit Share panels are exact-equal to the preceding draft",
+        "No internal pricing-target percentage appears in public HTML or dictionary copy",
+        "Derived files current"
+      ],
+      "dimensions": [
+        {
+          "width": 320,
+          "collapsed_height": 2931,
+          "copartner_height": 3017,
+          "types_expanded_height": 3419,
+          "money_expanded_height": 3436
+        },
+        {
+          "width": 390,
+          "collapsed_height": 2898,
+          "copartner_height": 2980,
+          "types_expanded_height": 3363,
+          "money_expanded_height": 3332
+        },
+        {
+          "width": 1440,
+          "collapsed_height": 2014,
+          "copartner_height": 2014,
+          "types_expanded_height": 2348,
+          "money_expanded_height": 2293
+        }
+      ]
+    }
+  ],
   "followup_content_revision": {
-    "scope": "Four copy changes and one native money-distinction FAQ; CSS/JS and numeric referral matrix unchanged.",
+    "scope": "Four copy revisions and a complete six-paragraph owner pricing statement in one native disclosure; one page-scoped paragraph-spacing rule. Numeric rates, Direct Contact/Bridge/project Profit Share panels, retained MMD fee wording, four Partner types, seven roles, JavaScript and form contract preserved.",
     "checks": [
-      "114/114 Thai HTML bindings covered; 126 referral keys total",
-      "Only four prior Thai values changed and seven money FAQ values added; every other locale entry preserved",
-      "Money FAQ collapsed/expanded at320/390/1440 without horizontal overflow",
-      "All changed Thai labels rendered in Anuphan; table header fits at320",
-      "No runtime errors, asset failures or network writes in focused smoke",
-      "Source/derived consistency and strict i18n audit passed"
+      "131/131 HTML bindings covered; 143 referral keys; strict i18n audit and dictionary syntax passed",
+      "Four existing referral values changed and seven owner-statement values added; every other locale entry preserved",
+      "All six owner paragraphs and revised copy match authored dictionary under deployed globals",
+      "320/390/1440: visible note, Co-Partner panel, collapsed/expanded disclosure and updated money FAQ readable with no overflow",
+      "Expanded statement:14px Anuphan,25.9px line height,14px paragraph spacing",
+      "No copy substitutions, runtime errors, asset failures or network writes in focused smoke",
+      "Pricing copy is firm without personal insults; comparable-scope qualification retained and additional jobs presented as opportunity",
+      "Only CSS change is the scoped paragraph-spacing rule; JavaScript hash unchanged",
+      "Numeric table, unchanged payment panels, MMD retained-fee clause and form compare exact to preceding draft"
     ],
     "dimensions": [
       {
         "width": 320,
-        "collapsed_height": 2876,
-        "expanded_height": 3285,
-        "document_width": 320
+        "collapsed_height": 3009,
+        "copartner_height": 3091,
+        "pricing_expanded_height": 4137
       },
       {
         "width": 390,
-        "collapsed_height": 2843,
-        "expanded_height": 3228,
-        "document_width": 390
+        "collapsed_height": 2977,
+        "copartner_height": 3059,
+        "pricing_expanded_height": 3924
       },
       {
         "width": 1440,
         "collapsed_height": 2014,
-        "expanded_height": 2269,
-        "document_width": 1440
+        "copartner_height": 2014,
+        "pricing_expanded_height": 2607
       }
     ]
   }

@@ -50,7 +50,7 @@
       <section class="rf15-rates" id="referral-rates" aria-labelledby="rf15-rates-title">
         <span class="rf15-anchor" id="referral-layers" aria-hidden="true"></span>
         <div class="rf15-section-heading"><div><p class="rf15-eyebrow rf15-reference"><span class="rf15-reference-dot" aria-hidden="true"></span><span data-i18n-text="partner.referral.rates.reference">เรทอ้างอิง MMD</span></p><h2 id="rf15-rates-title" data-i18n-text="partner.referral.rates.title">ค่าตอบแทนสำหรับผู้แนะนำ</h2></div></div>
-        <p class="rf15-rates-direction" data-i18n-text="partner.referral.rates.direction">ตารางนี้คือค่าตอบแทนที่ MMD จ่ายให้ผู้แนะนำหรือผู้ดูแลตามข้อตกลง</p>
+        <p class="rf15-rates-direction" data-i18n-text="partner.referral.rates.direction">ค่าแนะนำครั้งเดียวหรือ Bridge ที่ MMD ตกลงจ่ายแยกให้ผู้แนะนำหรือผู้ดูแล</p>
         <div class="rf15-table-shell">
           <table class="rf15-rate-table">
             <caption class="rf15-sr-only" data-i18n-text="partner.referral.rates.caption">ค่าตอบแทนอ้างอิงสำหรับผู้แนะนำ แยกตาม Tier และรูปแบบความร่วมมือ</caption>
@@ -70,8 +70,8 @@
       </section>
 
       <section class="rf15-methods" id="referral-types" aria-labelledby="rf15-methods-title">
-        <div class="rf15-section-heading"><div><p class="rf15-eyebrow">WAYS TO WORK TOGETHER</p><h2 id="rf15-methods-title" data-i18n-text="partner.referral.methods.title">เลือกวิธีร่วมงานให้ตรงกัน</h2></div></div>
-        <div class="rf15-method-tabs" aria-label="รูปแบบความร่วมมือ" data-i18n-aria-label="partner.referral.methods.label" data-rf15-tabs hidden>
+        <div class="rf15-section-heading"><div><p class="rf15-eyebrow">WAYS TO WORK TOGETHER</p><h2 id="rf15-methods-title" data-i18n-text="partner.referral.methods.title">วิธีตกลงค่าตอบแทน</h2></div></div>
+        <div class="rf15-method-tabs" aria-label="รูปแบบค่าตอบแทน" data-i18n-aria-label="partner.referral.methods.label" data-rf15-tabs hidden>
           <button type="button" id="rf15-tab-bridge" data-rf15-tab="bridge"><span>Bridge</span><small data-i18n-text="partner.referral.methods.bridge.tab">ประสานต่อ</small></button>
           <button type="button" id="rf15-tab-contact" data-rf15-tab="contact"><span data-i18n-text="partner.referral.methods.contact.tab">เปิดคอนแทค</span><small data-i18n-text="partner.referral.methods.contact.sub">ครั้งเดียว</small></button>
           <button type="button" id="rf15-tab-copartner" data-rf15-tab="copartner"><span data-i18n-text="partner.referral.methods.copartner.tab">ราคารวม</span><small>Co-Partner</small></button>
@@ -80,10 +80,18 @@
         <div class="rf15-method-panels">
           <div class="rf15-method-panel" id="rf15-panel-bridge" data-rf15-panel="bridge"><h3 data-i18n-text="partner.referral.methods.bridge.title">ประสานงานต่อในบทบาทที่ตกลง</h3><p data-i18n-text="partner.referral.methods.bridge.body">ช่วยดูบรีฟ คิว และการเปลี่ยนแปลงตามหน้าที่ที่รับไว้ ยืนยันเปอร์เซ็นต์ ฐานคำนวณ และช่วงงานก่อนเริ่ม จ่ายเมื่องานและการชำระเงินครบเงื่อนไขครับ</p></div>
           <div class="rf15-method-panel" id="rf15-panel-contact" data-rf15-panel="contact"><h3 data-i18n-text="partner.referral.methods.contact.title">เปิดคอนแทคที่เจ้าตัวอนุญาต</h3><p data-i18n-text="partner.referral.methods.contact.body">เหมาะกับการแนะนำครั้งเดียว เมื่อเจ้าตัวอนุญาตให้ติดต่อและตรวจคอนแทคตรงกันแล้ว MMD จ่ายค่าแนะนำครั้งเดียวตามที่ตกลงไว้ครับ</p></div>
-          <div class="rf15-method-panel" id="rf15-panel-copartner" data-rf15-panel="copartner"><h3 data-i18n-text="partner.referral.methods.copartner.title">เสนอราคาโมเดลและผู้ดูแลรวมกัน</h3><p data-i18n-text="partner.referral.methods.copartner.body">เสนอราคารวมให้เปอร์เห็นยอดเดียว โดยผู้ดูแลกับนายแบบตกลงการแบ่งภายในกันเอง แล้วระบุขอบเขตงานและเงื่อนไขการจ่ายก่อนเริ่มครับ</p></div>
+          <div class="rf15-method-panel" id="rf15-panel-copartner" data-rf15-panel="copartner"><h3 data-i18n-text="partner.referral.methods.copartner.title">ราคารวมต้องคุยโครงสร้างก่อน</h3><p data-i18n-text="partner.referral.methods.copartner.body">หากจะเสนอราคา Model + Partner ขอคุยค่าตัว ส่วนของผู้ดูแล หน้าที่ และราคาที่ลูกค้าจะจ่ายจริงก่อน เปอร์จะพิจารณาตามขอบเขตงานและบริการ แล้วตกลงเป็นรายดีลครับ</p></div>
           <div class="rf15-method-panel" id="rf15-panel-profit" data-rf15-panel="profit"><h3 data-i18n-text="partner.referral.methods.profit.title">แบ่งกำไรตามข้อตกลงของโครงการ</h3><p data-i18n-text="partner.referral.methods.profit.body">ตกลงรายได้ ต้นทุนที่นับรวม และสัดส่วนแบ่งกำไรก่อนเริ่มแต่ละโครงการ จ่ายเมื่องานและยอดรับครบตามข้อตกลงครับ</p></div>
         </div>
-        <p class="rf15-method-note" data-i18n-text="partner.referral.methods.pricing">ต้นทุนและส่วนของผู้ดูแลที่ชัด ช่วยให้ตั้งราคาเหมาะกับงานและมีโอกาสขายได้ครับ</p>
+        <p class="rf15-method-note" data-i18n-text="partner.referral.methods.pricing">สำหรับการดูแลต่อเนื่อง เปอร์อยากเริ่มคุยจากส่วนแบ่งเป็นเปอร์เซ็นต์ตามหน้าที่ ให้ราคาเป็นธรรม ขายได้จริง และมีโอกาสร่วมงานกันระยะยาวครับ</p>
+        <details class="rf15-details rf15-pricing-policy"><summary><span data-i18n-text="partner.referral.pricing.title">ราคาต้องขายได้ และเป็นธรรมกับทุกฝ่าย</span><span class="rf15-plus" aria-hidden="true"></span></summary><div class="rf15-details-body rf15-owner-copy">
+          <p data-i18n-text="partner.referral.pricing.intro">ผมขอคุยเรื่องราคาให้ตรงกันก่อนครับ การบวกส่วนของตัวเองเข้าไปในเรทโมเดล แล้วส่งยอดรวมมาให้เอเจนซีขายต่อ โดยไม่คุยโครงสร้างราคาและเงื่อนไขที่เสนอผ่านช่องทางอื่น เป็นการผลักภาระเรื่องราคาและความเชื่อมั่นมาให้เอเจนซี</p>
+          <p data-i18n-text="partner.referral.pricing.investment">MMD ลงทุนสูงทั้งการหาลูกค้าที่มีกำลังจ่าย การประสานงาน และการดูแลประสบการณ์ของลูกค้า เพื่อสร้างโอกาสให้นายแบบและ Partner เข้าถึงงานที่มีมูลค่าสูงขึ้น ราคาจึงต้องเผื่อให้ทุกฝ่ายทำหน้าที่ของตัวเองได้อย่างเหมาะสม</p>
+          <p data-i18n-text="partner.referral.pricing.channels">ถ้านายแบบคนเดียวกันถูกเสนอหลายช่องทาง แล้วลูกค้าพบราคาที่ต่ำกว่ามากในงานที่มีขอบเขตและเงื่อนไขใกล้เคียงกัน ลูกค้าย่อมตั้งคำถามกับ MMD เราต้องอธิบายได้ว่าราคาต่างกันเพราะอะไรและลูกค้าได้รับคุณค่าเพิ่มตรงไหน</p>
+          <p data-i18n-text="partner.referral.pricing.trust">เมื่อราคาถูกบวกซ้อนหลายชั้นจนยอดที่ลูกค้าจ่ายห่างจากยอดที่นายแบบได้รับมาก โดยไม่มีหน้าที่หรือบริการรองรับ ความรู้สึกของทั้งลูกค้าและนายแบบย่อมได้รับผลกระทบ ความเชื่อมั่นที่เสียไปอาจทำให้ทุกฝ่ายเสียโอกาสระยะยาว</p>
+          <p data-i18n-text="partner.referral.pricing.percentage">ผมจึงอยากเริ่มจากการตกลงแบ่งเปอร์เซ็นต์ตามหน้าที่และฐานคำนวณที่ชัดเจน ส่วนของ Partner ต่อหนึ่งงานอาจลดลง เพื่อให้ราคาเหมาะสมและเพิ่มโอกาสให้นายแบบได้งานต่อเนื่องมากขึ้นครับ</p>
+          <p data-i18n-text="partner.referral.pricing.partnership">การติดต่อโมเดล ผมทำเองได้ แต่ผมเลือกทำงานกับ Partner เพื่อแบ่งหน้าที่อย่างมืออาชีพ และใช้เวลากับการหาลูกค้าและดูแลลูกค้าให้ดี การร่วมงานกันจึงต้องเคารพต้นทุนและหน้าที่ของกันและกัน ตั้งราคาที่ขายได้จริง และไม่เอากำไรของฝ่ายเดียวเป็นตัวตั้งจนลูกค้า นายแบบ และเอเจนซีต้องเสียประโยชน์</p>
+        </div></details>
         <div class="rf15-partner-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h8M12 8v8M5 3h14v18H5z"/></svg><p><span data-i18n-text="partner.referral.methods.partnerNote">ถ้ารับหน้าที่ประสานต่อ ให้ใช้ MY Partner เพื่อยืนยันข้อตกลงและติดตามงาน</span> <a href="/partner/dashboard" data-rf15-partner-link data-i18n-text="partner.referral.methods.partnerLink">เปิด MY Partner</a></p></div>
       </section>
     </div>
@@ -91,12 +99,18 @@
     <section class="rf15-questions" id="referral-rules" aria-labelledby="rf15-rules-title">
       <div class="rf15-section-heading"><div><p class="rf15-eyebrow">BEFORE WE BEGIN</p><h2 id="rf15-rules-title" data-i18n-text="partner.referral.faq.title">คุยให้เข้าใจก่อนเริ่ม</h2></div></div>
       <div class="rf15-faq-grid">
-        <details class="rf15-details"><summary><span data-i18n-text="partner.referral.faq.money.title">เรทโมเดล ค่าแนะนำ และส่วนของ MMD</span><span class="rf15-plus" aria-hidden="true"></span></summary><div class="rf15-details-body"><ul class="rf15-role-list">
-          <li><strong data-i18n-text="partner.referral.faq.money.modelTitle">เรทโมเดล</strong><p data-i18n-text="partner.referral.faq.money.modelBody">ราคาสำหรับงานของนายแบบ ตามบรีฟและขอบเขตที่ตกลง</p></li>
-          <li><strong data-i18n-text="partner.referral.faq.money.referrerTitle">ค่าตอบแทนผู้แนะนำ</strong><p data-i18n-text="partner.referral.faq.money.referrerBody">เงินที่ MMD จ่ายให้ผู้แนะนำหรือผู้ดูแลตามข้อตกลง ตารางด้านบนแสดงค่าตอบแทนส่วนนี้ครับ</p></li>
-          <li><strong data-i18n-text="partner.referral.faq.money.mmdTitle">ส่วนของ MMD</strong><p data-i18n-text="partner.referral.faq.money.mmdBody">กำหนดตามประเภท Partner โดยต้องยืนยันฐานคำนวณและรายการต้นทุนในข้อตกลงของงานให้ชัดครับ</p></li>
+        <details class="rf15-details"><summary><span data-i18n-text="partner.referral.faq.types.title">Partner 4 ประเภทของหน้านี้</span><span class="rf15-plus" aria-hidden="true"></span></summary><div class="rf15-details-body"><ul class="rf15-role-list">
+          <li><strong data-i18n-text="partner.referral.faq.types.managementTitle">Management Partner</strong><p data-i18n-text="partner.referral.faq.types.management">ผู้ดูแลนายแบบจริง ประสานบรีฟ คิว คุณภาพ และความพร้อม</p></li>
+          <li><strong data-i18n-text="partner.referral.faq.types.contactTitle">Contact Provider</strong><p data-i18n-text="partner.referral.faq.types.contact">ผู้เชื่อมคอนแทคที่เจ้าตัวอนุญาตให้ติดต่อ</p></li>
+          <li><strong data-i18n-text="partner.referral.faq.types.personalTitle">Personal Referral</strong><p data-i18n-text="partner.referral.faq.types.personal">ผู้แนะนำเพื่อนหรือคนรู้จักเป็นการส่วนตัว</p></li>
+          <li><strong data-i18n-text="partner.referral.faq.types.highProfileTitle">High-profile Referral</strong><p data-i18n-text="partner.referral.faq.types.highProfile">เคสที่ต้องดูแลชื่อเสียง ข้อมูล และความเป็นส่วนตัวเป็นพิเศษ</p></li>
+        </ul><p class="rf15-rate-note" data-i18n-text="partner.referral.faq.types.distinction">ประเภท Partner บอกความสัมพันธ์และลักษณะการดูแล ส่วนค่าตอบแทนให้ตกลงตามหน้าที่ของแต่ละดีลครับ</p></div></details>
+        <details class="rf15-details"><summary><span data-i18n-text="partner.referral.faq.money.title">เรทโมเดล ค่าแนะนำ และ Agency Fee</span><span class="rf15-plus" aria-hidden="true"></span></summary><div class="rf15-details-body"><ul class="rf15-role-list">
+          <li><strong data-i18n-text="partner.referral.faq.money.modelTitle">เรทโมเดล / ราคา Model + Partner</strong><p data-i18n-text="partner.referral.faq.money.modelBody">เรทโมเดลคือราคางานของนายแบบ หากรวมส่วนของผู้ดูแลมาแล้ว ขอคุยส่วนที่รวมอยู่ หน้าที่ และขอบเขตงานกับเปอร์ก่อนยืนยันราคาเป็นรายดีลครับ</p></li>
+          <li><strong data-i18n-text="partner.referral.faq.money.referrerTitle">ค่าตอบแทนผู้แนะนำ</strong><p data-i18n-text="partner.referral.faq.money.referrerBody">ค่าแนะนำครั้งเดียวหรือ Bridge ตามข้อตกลง แยกให้ชัดจากส่วนผู้ดูแลที่รวมอยู่ในราคา Co-Partner แล้ว เพื่อไม่คิดค่าตอบแทนหน้าที่เดียวกันซ้ำครับ</p></li>
+          <li><strong data-i18n-text="partner.referral.faq.money.mmdTitle">Agency Fee ของ MMD</strong><p data-i18n-text="partner.referral.faq.money.mmdBody">ในดีลที่ราคา Model + Partner รวมส่วนของผู้ดูแลแล้ว Agency Fee ที่ตกลงสำหรับ MMD เป็นส่วนที่ MMD เก็บไว้ ไม่ต้องนำมาแบ่ง Partner อีกครับ</p></li>
         </ul></div></details>
-        <details class="rf15-details"><summary><span data-i18n-text="partner.referral.faq.roles.title">บทบาทผู้แนะนำทั้ง 7 แบบ</span><span class="rf15-plus" aria-hidden="true"></span></summary><div class="rf15-details-body"><ol class="rf15-role-list">
+        <details class="rf15-details"><summary><span data-i18n-text="partner.referral.faq.roles.title">ผู้แนะนำมาจากบทบาทไหนได้บ้าง?</span><span class="rf15-plus" aria-hidden="true"></span></summary><div class="rf15-details-body"><ol class="rf15-role-list">
           <li><strong data-i18n-text="partner.referral.role.model">นายแบบแนะนำนายแบบ</strong><p data-i18n-text="partner.referral.role.model.body">ขออนุญาตเพื่อน เชื่อมคุย และติดตามบรีฟตามที่รับปาก</p></li>
           <li><strong data-i18n-text="partner.referral.role.client">ลูกค้าแนะนำนายแบบ</strong><p data-i18n-text="partner.referral.role.client.body">แจ้งความสัมพันธ์และความยินยอม แยกบทบาทประสานออกจากการจ้าง โดย MMD พิจารณาการร่วมงาน</p></li>
           <li><strong data-i18n-text="partner.referral.role.friend">เพื่อนแนะนำเพื่อน</strong><p data-i18n-text="partner.referral.role.friend.body">เชื่อมคุยและช่วยตอบคำถาม โดยให้เพื่อนตัดสินใจได้อย่างสบายใจ</p></li>
