@@ -99,6 +99,16 @@ try {
   assert.match(scopedHtml, /getAll\('client_id'\),directClient=clientIds\.length===1/);
   assert.match(scopedHtml, /String\(clientIds\[0\]\|\|''\)\.trim\(\)/);
   assert.match(scopedHtml, /INTEL\+'\?client_id='\+encodeURIComponent\(id\)/);
+  // Points/history is an authenticated, read-only, exact-client Owner readback.
+  assert.match(scopedHtml, /data-mmd-c360-member-history/);
+  assert.match(scopedHtml, /\/v1\/admin\/my-mmd\/recovery-diagnostic/);
+  assert.match(scopedHtml, /loadMemberHistoryReadback\(id,seq\)/);
+  assert.match(scopedHtml, /txt\(data\.customer\?\.canonical_client_id\)!==id/);
+  assert.match(scopedHtml, /response\.status===403/);
+  assert.match(scopedHtml, /points\.status==='verified'/);
+  assert.match(scopedHtml, /credentials:'include',cache:'no-store'/);
+  assert.doesNotMatch(scopedHtml, /\/api\/member\/app\/history\/refresh/);
+  assert.doesNotMatch(scopedHtml, /confirm_reviewed:true/);
   const emptyScopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><script>load(\'review_required\');summary()})();</script></body></html>', { headers: { 'content-type': 'text/html' } }), '');
   assert.equal(emptyScopedPage.status, 200);
   const emptyScopedHtml = await emptyScopedPage.text();
