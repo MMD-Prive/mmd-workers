@@ -4,21 +4,21 @@ import test from "node:test";
 const source = readFileSync(new URL("./blackcard-flow-embed.html", import.meta.url), "utf8");
 
 test("Black Card embed uses one route and preserves signed t", () => {
-  assert.match(source, /v1\\/confirm\\/companion-preference/);
-  assert.match(source, /expected_role:'customer'/);
-  assert.match(source, /new URL\\('\\/sigil\\/pay\\/blackcard'/);
-  assert.match(source, /p\\.get\\('step'\\)===\\'companion\\'/);
+  assert.ok(source.includes("v1/confirm/companion-preference"));
+  assert.ok(source.includes("expected_role:'customer'"));
+  assert.ok(source.includes("new URL('/sigil/pay/blackcard'"));
+  assert.ok(source.includes("p.get('step')==='companion'"));
 });
 
 test("Companion choice never falls back to LINE or browser storage", () => {
-  assert.doesNotMatch(source, /line\\.me\\/R\\/oaMessage/);
-  assert.doesNotMatch(source, /localStorage/);
-  assert.match(source, /บันทึกแล้ว/);
-  assert.match(source, /API ตอบสำเร็จ/);
+  assert.ok(!source.includes("line.me/R/oaMessage"));
+  assert.ok(!source.includes("localStorage"));
+  assert.ok(source.includes("บันทึกแล้ว"));
+  assert.ok(source.includes("API ตอบสำเร็จ"));
 });
 
 test("all canonical Personal Main cards and safe HIRO asset are present", () => {
-  for (const id of ["hito", "hiei", "hima", "hiro"]) assert.match(source, new RegExp(`value="${id}"`));
-  assert.match(source, /HIRO%20-%20SIGIL%20-%20GUIDE/);
-  assert.match(source, /ไม่ใช่ Travel Model/);
+  for (const id of ["hito", "hiei", "hima", "hiro"]) assert.ok(source.includes(`value="${id}"`));
+  assert.ok(source.includes("HIRO%20-%20SIGIL%20-%20GUIDE"));
+  assert.ok(source.includes("ไม่ใช่ Travel Model"));
 });
