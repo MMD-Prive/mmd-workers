@@ -1,5 +1,6 @@
 import { authorizeConfirmationRequest } from "./confirmation-ack.js";
 import { personalMain, PERSONAL_MAINS } from "../shared/personal-main-catalog.mjs";
+import { parseMarkedJson } from './confirmation-details.js';
 
 export const BLACKCARD_COMPANION_PREFERENCE_PATH = "/v1/confirm/companion-preference";
 const NOTE_MARKER = "MMD BLACK CARD COMPANION PREFERENCE V1";
@@ -8,7 +9,7 @@ const DEFAULT_PACKAGE_FIELD = "fldp6xNSvxDh5pjR9";
 const BLACKCARD_STATES = new Set(["pending", "awaiting_payment", "payment_started", "evidence_submitted", "pending_verification", "paid", "verified", "success", "completed"]);
 const CLOSED_STATES = new Set(["cancelled", "canceled", "expired", "refunded", "reversed", "void", "failed", "rejected", "chargeback", "disputed"]);
 
-const clean = (value, max = 5000) => String(value == null ? "" : value).trim().slice(0, max).replace(/[\u0000-\u001F\u007F]/g, " ");
+const clean = (value, max = 5000) => String(value == null ? "" : value).trim().slice(0, max).replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ");
 const code = value => clean(value, 120).toLowerCase().replace(/[\s_-]+/g, "_");
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 const withCors = (request, env, response) => {
@@ -36,9 +37,7 @@ const airtableRequest = async (env, path, init = {}) => {
 const escapeFormula = value => clean(value, 300).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 const parseStored = raw => {
   const text = clean(raw, 12000);
-  const match = text.match(new RegExp("\\[" + NOTE_MARKER.replace(/[.*+?^{}()|[\\]\\\\]/g, "\\\\$&") + "\\]\\s*(\\{.*?\\})(?=\\n|$)"));
-  if (!match) return null;
-  try { const data = JSON.parse(match[1]); return data && typeof data === "object" ? data : null; } catch { return null; }
+  return parseMarkedJson(text, NOTE_MARKER);
 };
 const marker = value => "[" + NOTE_MARKER + "] " + JSON.stringify(value);
 const isBlackCardSession = (session, env) => {
@@ -53,8 +52,10 @@ const paymentState = (session, env) => {
 };
 const replaceMarker = (note, data) => {
   const next = marker(data);
-  const re = new RegExp("\\[" + NOTE_MARKER.replace(/[.*+?^{}()|[\\]\\\\]/g, "\\\\$&") + "\\]\\s*\\{.*?\\}(?=\\n|$)");
-  return re.test(note) ? note.replace(re, next) : [note, next].filter(Boolean).join("\n");
+  // Older Webflow writes flattened note newlines. Remove their flat JSON marker
+  // even when it shares a line with other notes, preserving unrelated content.
+  const kept = String(note || '').replace(/\[MMD BLACK CARD COMPANION PREFERENCE V1\]\s*\{[^\n]*?\}/g, '').trim();
+  return [kept, next].filter(Boolean).join('\n');
 };
 const readPreference = (session, env) => {
   const note = clean(sessionValue(session, env, "AT_SESSIONS__NOTE", DEFAULT_NOTE_FIELD) || sessionValue(session, env, "AT_SESSIONS__NOTES", "fldwl9Gs5tYlXG5ls"), 12000);

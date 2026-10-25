@@ -363,6 +363,7 @@ function customerPaymentDisplay({ paymentRecord, proofRecord, pricing, customerA
 }
 
 function paymentAmountDue(stage, pricing, customerAmountDue) {
+  if (stage === 'membership') return customerAmountDue ?? numberOrNull(pricing?.net_price_thb);
   if (stage === "deposit") return numberOrNull(pricing?.deposit_due_thb) ?? customerAmountDue;
   if (stage === "balance" || stage === "final") return numberOrNull(pricing?.balance_thb) ?? customerAmountDue;
   if (stage === "full") return numberOrNull(pricing?.net_price_thb) ?? customerAmountDue;
@@ -375,6 +376,7 @@ function normalizePaymentStage(value) {
   if (["balance", "remaining", "remainder", "คงเหลือ"].includes(raw)) return "balance";
   if (["final", "finalpayment"].includes(raw)) return "final";
   if (["full", "fullpayment", "payinfull"].includes(raw)) return "full";
+  if (raw === 'membership') return 'membership';
   return "";
 }
 

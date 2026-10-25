@@ -126,7 +126,7 @@ function tokenTtl(env) {
   return Math.min(Math.max(Number.isFinite(seconds) ? seconds : 2592000, 60), 2592000);
 }
 
-async function mintCustomerToken(env, { session_id, payment_ref, payment_type }) {
+export async function mintCustomerToken(env, { session_id, payment_ref, payment_type }) {
   const secret = signingSecret(env);
   if (!secret) throw new Error("missing_payment_confirmation_signing_secret");
   if (!env.PAY_SESSIONS_KV) throw new Error("missing_pay_sessions_kv");

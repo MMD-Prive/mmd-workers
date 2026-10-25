@@ -36,6 +36,8 @@ import {
   handlePaymentInstructions,
   isPaymentInstructionsRequest,
 } from "./payment-instructions-v1.js";
+import { handleBlackCardMemberPayment } from './blackcard-member-payment.js';
+import { BLACKCARD_INTERNAL_PATH } from '../shared/blackcard-policy.mjs';
 import {
   enrichUnifiedConfirmVerify,
   handleUnifiedPaymentIntent,
@@ -155,6 +157,15 @@ export default {
 
     if (isFinalPaymentFlowRequest(path, method)) {
       return handleFinalPaymentFlow(request, env);
+    }
+
+    if (path === BLACKCARD_INTERNAL_PATH) {
+      return handleBlackCardMemberPayment(request, env, {
+        intent: next => handleUnifiedPaymentIntent(next, env, payment => phase1Worker.fetch(payment, env, ctx)),
+        instructions: next => handlePaymentInstructions(next, env, details =>
+          handleCustomerSessionDetails(details, env, payment => phase1Worker.fetch(payment, env, ctx))),
+        evidence: next => handleUnifiedSlipEvidence(next, env, payment => phase1Worker.fetch(payment, env, ctx)),
+      });
     }
 
     if (isDoubleMomentRequest(path, method)) {
