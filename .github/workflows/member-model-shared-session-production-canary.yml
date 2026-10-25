@@ -1,16 +1,8 @@
 name: Member Model shared-session production canary
 
 on:
+  # Reissues live confirmation links. A source merge must never run this canary.
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/member-model-shared-session-production-canary.yml"
-      - "payments-worker/confirmation-link-reissue.js"
-      - "payments-worker/index.review-wrapper.js"
-      - "admin-worker/src/payment-issuer-diagnostic.js"
-      - "admin-worker/src/payments-issuer-transport.js"
 
 permissions:
   contents: read
@@ -21,6 +13,7 @@ concurrency:
 
 jobs:
   shared-session-canary:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:

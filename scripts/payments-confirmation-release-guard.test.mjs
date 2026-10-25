@@ -17,6 +17,14 @@ const patch = [
 const classify = files => classifyConfirmationRelease({ event: 'push', before, after, head: after, files, confirmationChanges: [] });
 const source = name => readFileSync(new URL(`../.github/workflows/${name}`, import.meta.url), 'utf8');
 
+test('source merges cannot run the live confirmation-link reissue canary', () => {
+  const workflow = source('member-model-shared-session-production-canary.yml');
+  assert.match(workflow, /^  workflow_dispatch:/m);
+  assert.doesNotMatch(workflow, /^  (?:push|pull_request|pull_request_target|schedule|workflow_run|workflow_call|repository_dispatch):/m);
+  assert.match(workflow, /if: github.event_name == 'workflow_dispatch' && github.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /refresh_confirmation_links/);
+});
+
 test('PR 2706 and each protected path require owner-approved release, including mixed pushes', () => {
   assert.equal(classify(patch).ownerApprovedRequired, true);
   for (const file of patch) {

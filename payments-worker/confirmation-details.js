@@ -217,6 +217,7 @@ export async function handleConfirmationDetails(request, env = {}) {
         ? `https://miniapp.line.me/2010830159-0n1O3ANK?t=${encodeURIComponent(token)}` : null;
       return withCors(request, env, json({
         ...common,
+        package_code: text(fields[field(env.AT_SESSIONS__PACKAGE_CODE, "fldp6xNSvxDh5pjR9")], 120),
         payment_ref: activePaymentRef,
         amount_thb: net,
         pricing: safePricing,
@@ -320,6 +321,29 @@ function customerPricing(raw, netFallback) {
 
 function snapshotClaimsDepositReceived(pricing) {
   return (numberOrNull(pricing?.deposit_received_thb) || 0) > 0;
+}
+
+// Exact signed payment subject for Black Card preferences. No Session status or
+// pricing snapshot can stand in for provider/Official Verify or received proof.
+export async function readConfirmationPaymentEvidence(env, claims) {
+  const record = await findPayment(env, claims.payment_ref, claims.session_id);
+  if (!record) return { verified: false, proof_received: false, closed: false };
+  const fields = record.fields || {};
+  const closed = [fields[PAYMENT_FIELDS.paymentStatus], fields[PAYMENT_FIELDS.verificationStatus], fields[PAYMENT_FIELDS.intentStatus]]
+    .some(value => ["cancelled", "canceled", "expired", "refunded", "reversed", "void", "failed", "rejected", "chargeback", "disputed"].includes(text(value, 80).toLowerCase()));
+  if (closed) return { verified: false, proof_received: false, closed: true };
+  // Payment Status alone can be a legacy/manual summary. Official/provider
+  // verification must be present in the canonical verification field.
+  const verified = ["verified", "approved"].includes(text(fields[PAYMENT_FIELDS.verificationStatus], 80).toLowerCase());
+  if (verified) return { verified: true, proof_received: false, closed: false };
+  if (isProofReceived(fields[PAYMENT_FIELDS.intentStatus])) return { verified: false, proof_received: true, closed: false };
+  const proof = await findProofEvidence(env, claims.payment_ref);
+  const proofMatches = proof?.fields?.payment_ref === claims.payment_ref && Boolean(text(proof?.fields?.status, 80));
+  return {
+    closed,
+    verified: false,
+    proof_received: Boolean(proofMatches && isProofEvidenceRecord(proof)),
+  };
 }
 
 function customerPaymentDisplay({ paymentRecord, proofRecord, pricing, customerAmountDue, claimedPaymentType, sessionPaymentStatus, paymentRef }) {

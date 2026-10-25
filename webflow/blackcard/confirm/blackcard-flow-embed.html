@@ -1,21 +1,138 @@
-<main id="bcflow" lang="th">
+<main id="bcflow" lang="th" data-mmd-i18n-bundle="blackcard-confirm">
 <style>
 #bcflow{--ink:#f3f0e8;--muted:#bebdb8;--gold:#c9b38a;max-width:1040px;margin:auto;padding:24px 22px 48px;color:var(--ink);font:400 15px/1.8 "LINE Seed Sans TH","Noto Sans Thai",Tahoma,sans-serif;background:#101313}#bcflow *{box-sizing:border-box}#bcflow [hidden]{display:none!important}#bcflow a{color:var(--gold);text-decoration:none}#bcflow header,#bcflow nav{display:flex;gap:18px;justify-content:space-between;align-items:center}#bcflow header{padding-bottom:20px;border-bottom:1px solid #ffffff24}#bcflow header img{width:34px;height:34px;object-fit:contain}#bcflow .brand{display:flex;align-items:center;gap:12px;color:var(--ink);letter-spacing:.12em;font-size:12px}#bcflow .steps{margin:24px 0;color:var(--muted);font-size:12px}#bcflow h1{font-size:clamp(30px,6vw,52px);font-weight:500;line-height:1.35;margin:18px 0}#bcflow h2{font-size:23px;font-weight:500;color:var(--ink)!important}#bcflow p{color:var(--muted)}#bcflow .kicker{color:var(--gold);font-size:10px;letter-spacing:.16em}#bcflow section{padding:24px 0;border-bottom:1px solid #ffffff24;scroll-margin-top:20px}#bcflow .btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:10px 22px;background:var(--gold);border-radius:99px;color:#151817!important;font-weight:600;font-size:14px;border:0;cursor:pointer}#bcflow .actions{display:flex;gap:14px;align-items:center;flex-wrap:wrap}#bcflow .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0}#bcflow label{position:relative;display:block;cursor:pointer;border:1px solid #ffffff25;border-radius:18px;overflow:hidden;background:#191d1d}#bcflow label:has(input:checked){border:2px solid var(--gold)}#bcflow label img{width:100%;aspect-ratio:4/5;object-fit:cover;display:block}#bcflow label span{display:flex;align-items:center;gap:8px;padding:12px;font-size:14px}#bcflow input{accent-color:var(--gold);width:18px;height:18px}#bcflow fieldset{border:0;padding:0;margin:0;min-width:0}#bcflow legend{font-size:14px;color:var(--muted)}#bcflow small{display:block;color:var(--muted);font-size:12px;margin-top:12px}#bcflow :focus-visible{outline:2px solid var(--gold);outline-offset:5px}#bcflow .summary{padding:16px;border:1px solid #ffffff25;border-radius:16px}#bcflow .status{padding:14px;border:1px solid #ffffff25;border-radius:14px;margin:18px 0;color:var(--muted)}#bcflow .error{color:#f0b3a9;border-color:#8f5148}#bcflow progress{width:100%;height:2px;accent-color:var(--gold)}@media(max-width:700px){#bcflow .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}#bcflow{padding-top:16px}#bcflow label img{aspect-ratio:1.2;object-position:50% 25%}#bcflow h1{font-size:32px}#bcflow header>a:last-child{font-size:12px}}
 </style>
 <header><a class="brand" href="/blackcard"><img alt="MMD Privé" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8ea257c27c93043f03e65c_04-mmd-prive-compact-m-symbol-gold.webp">MMD PRIVÉ</a><a href="/blackcard/black-card">← รายละเอียดสมาชิก</a></header>
 <div id="flowload" aria-live="polite"><small>กำลังตรวจรายการ <b id="loadpct">0%</b></small><progress id="loadbar" max="100" value="0"></progress></div>
-<p class="steps">01 รู้จัก Black Card → 02 ชำระเงิน → 03 เลือก Companion</p>
-<p class="kicker">BLACK CARD / YOUR NEXT CHAPTER</p><h1 id="title">เริ่มต้นการดูแล<br>ในแบบที่คุณเลือก</h1>
-<section id="payment"><h2>ค่าสมาชิก 35,000 บาท / 3 ปี</h2><p>เป็นค่าสมาชิก ไม่รวมค่าจองหรือค่าบริการ หลังส่งหลักฐานแล้ว เลือก Companion ได้ทันทีระหว่างรอตรวจยอดครับ</p><div class="actions"><a class="btn" id="paylink" href="/my-mmd/payments/blackcard">ชำระใน MY MMD</a><a href="#companion">มีรายการแล้ว · เลือก Companion ↓</a></div><small id="paynote">ยืนยันตัวตนผ่าน LINE เพื่อเปิดรายการ Black Card ของคุณ กลับมาชำระต่อและดู Companion ที่เลือกไว้ได้ใน MY MMD</small></section>
-<section id="companion"><p class="kicker">03 / CHOOSE YOUR COMPANION</p><h2>อยากให้ใครดูแลคุณต่อ</h2><p id="choosenote">เลือกไว้ได้ทันที ระบบจะบันทึกเป็น Preference ของรายการนี้ ไม่เปิดสิทธิ์สมาชิกก่อน MMD ตรวจยอดจริง</p><div id="status" class="status" role="status" aria-live="polite">กำลังตรวจสถานะรายการ…</div>
-<form id="companionform"><fieldset><legend>เลือก Companion / Personal Main 1 คน</legend><div class="grid">
+<p class="steps" data-i18n="bc.confirm.flow.steps">01 ตรวจสอบรายการเดิม → 02 เลือก Companion → 03 รอการตรวจจาก MMD</p>
+<p class="kicker">BLACK CARD / YOUR NEXT CHAPTER</p><h1 id="title" data-i18n="bc.confirm.flow.title">เริ่มต้นการดูแล<br>ในแบบที่คุณเลือก</h1>
+<section id="payment"><h2 data-i18n="bc.confirm.flow.closed_title">Black Card ยังไม่เปิดรับสมัครใหม่</h2><p data-i18n="bc.confirm.flow.closed_body">นโยบาย Black Card ได้รับการยืนยันแล้ว แต่ระบบแพ็กเกจและการชำระยังไม่เปิดใช้งานครับ หน้านี้ไม่รับชำระเงินและไม่สร้างสิทธิ์สมาชิก</p><div class="actions"><a href="#companion" data-i18n="bc.confirm.flow.existing_link">มีรายการ Black Card เดิมจาก MMD แล้ว · ตรวจตัวเลือก Companion ↓</a></div><small id="paynote" data-i18n="bc.confirm.flow.existing_hint">กรุณาใช้เฉพาะลิงก์ยืนยันรายการเดิมที่ MMD ออกให้ ระบบจะตรวจ token และข้อมูลรายการกับ payments-worker</small></section>
+<section id="companion"><p class="kicker">EXISTING BLACK CARD REQUEST</p><h2 data-i18n="bc.confirm.flow.companion_title">เลือก Companion ที่คุณต้องการ</h2><p id="choosenote" data-i18n="bc.confirm.flow.companion_body">ตัวเลือกนี้เป็น Preference ของบัญชีสมาชิกที่ผูกกับรายการ ไม่ใช่การจองบุคคลจริง และไม่เปลี่ยนสถานะชำระเงินหรือสิทธิ์สมาชิก</p><div id="status" class="status" role="status" aria-live="polite">กำลังตรวจสถานะรายการ…</div>
+<button type="button" class="btn" id="retry" data-i18n="bc.confirm.runtime.retry">ตรวจรายการอีกครั้ง</button>
+<form id="companionform"><fieldset id="choices" disabled><legend>เลือก Companion / Personal Main 1 คน</legend><div class="grid">
 <label><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a881dd06540c1a7ede54fbc_HITO%20-%20SIGIL%20-%20GUIDE.webp" alt="HITO · The Anchor" loading="lazy"><span><input type="radio" name="guide" value="hito" required>HITO</span></label>
 <label><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69f13b3f78698d853ab11bda_HITEI_Compa2.webp" alt="HIEI · The Boundary" loading="lazy"><span><input type="radio" name="guide" value="hiei" required>HIEI</span></label>
 <label><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a881dd055fd78e105a14ad6_HIMA%20-%20SIGIL%20-%20GUIDE.webp" alt="HIMA · The Warm Spark" loading="lazy"><span><input type="radio" name="guide" value="hima" required>HIMA</span></label>
 <label><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a881dd05ebe5ef18a552581_HIRO%20-%20SIGIL%20-%20GUIDE.webp" alt="HIRO · The Observer" loading="lazy"><span><input type="radio" name="guide" value="hiro" required>HIRO</span></label>
-</div></fieldset><div class="summary"><p id="selection" role="status" aria-live="polite">เลือกคนที่คุณอยากเริ่มต้นด้วยครับ</p><button class="btn" type="submit" id="save">บันทึก Preference</button><small id="savehint">จะขึ้นว่า “บันทึกแล้ว” เมื่อ API ตอบสำเร็จเท่านั้น</small></div></form>
+</div></fieldset><label id="reasonwrap" hidden><span data-i18n="bc.confirm.runtime.change_reason">เหตุผลที่ต้องการเปลี่ยน Companion</span><textarea id="reason" maxlength="500"></textarea></label><div class="summary"><p id="selection" role="status" aria-live="polite">เลือกคนที่คุณอยากเริ่มต้นด้วยครับ</p><button class="btn" type="submit" id="save" disabled>บันทึก Preference</button><small id="savehint">จะขึ้นว่า “บันทึกแล้ว” เมื่อ API ตอบสำเร็จเท่านั้น</small></div></form>
 <small>Companion ตรงนี้คือ Personal Main สำหรับแนวทางการดูแล ไม่ใช่การจองบุคคลจริง และไม่ใช่ Travel Model</small></section>
 <footer>MMD PRIVÉ · DISCREET BY DESIRE, ELEGANCE BY CHOICE.</footer>
 <script>
-(()=>{'use strict';const API='https://sigil.mmdbkk.com/v1/confirm/companion-preference',p=new URLSearchParams(location.search),t=p.get('t')||'',form=document.getElementById('companionform'),status=document.getElementById('status'),save=document.getElementById('save'),selection=document.getElementById('selection'),pay=document.getElementById('paylink'),pct=document.getElementById('loadpct'),bar=document.getElementById('loadbar');const names={hito:'HITO',hiei:'HIEI',hima:'HIMA',hiro:'HIRO'};let busy=false;function progress(v){pct.textContent=v+'%';bar.value=v}function message(v,error){status.textContent=v;status.classList.toggle('error',!!error)}function api(body){return fetch(API,{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},credentials:'omit',body:JSON.stringify(Object.assign({t,expected_role:'customer'},body||{}))}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok||d.ok!==true)throw new Error(d.error||'บันทึกไม่สำเร็จ');return d})}function apply(d){const id=d.companion&&d.companion.id;if(id){form.elements.guide.value=id;selection.textContent='เลือก '+names[id]+' แล้ว · '+(d.idempotent?'จำตัวเลือกเดิมไว้แล้ว':'พร้อมบันทึก');}if(d.payment_status)message(d.preference_status==='selected_verified_pending_entitlement'?'ชำระแล้ว · รอเปิดสิทธิ์หลังตรวจขั้นตอนสุดท้าย':'ชำระ/หลักฐานอยู่ระหว่างตรวจ · เลือกไว้ได้ทันที');}function load(){if(!t){message('ต้องเปิดจากลิงก์รายการของ MMD เพื่อผูกบัญชีและยอดให้ถูกต้อง',true);save.disabled=true;progress(100);return}progress(30);api({read:true}).then(d=>{apply(d);progress(100);setTimeout(()=>document.getElementById('flowload').hidden=true,300)}).catch(e=>{message(e.message||'เปิดรายการไม่ได้ · ลองใหม่อีกครั้ง',true);progress(100)});}form.addEventListener('change',()=>{const id=new FormData(form).get('guide');selection.textContent=id?'คุณเลือก '+names[id]+' · กดบันทึกได้เลย':'เลือกคนที่คุณอยากเริ่มต้นด้วยครับ'});form.addEventListener('submit',e=>{e.preventDefault();if(busy||!form.reportValidity())return;busy=true;save.disabled=true;message('กำลังบันทึกกับ MMD…');const id=new FormData(form).get('guide');api({companion_id:id}).then(d=>{apply(d);selection.textContent='บันทึกแล้ว · '+names[id];message(d.preference_status==='selected_verified_pending_entitlement'?'บันทึกแล้ว · ชำระแล้ว แต่ยังไม่เปิดสิทธิ์สมาชิก':'บันทึกแล้ว · รอตรวจยอดจริง');}).catch(e=>message(e.message||'บันทึกไม่สำเร็จ · ลองใหม่ได้ครับ',true)).finally(()=>{busy=false;save.disabled=false})});if(t){const u=new URL('/sigil/pay/blackcard',location.origin);u.searchParams.set('t',t);pay.href=u.href;pay.textContent='เปิดรายการชำระเงิน'}if(p.get('step')==='companion'||location.hash==='#companion'){document.getElementById('payment').hidden=true;document.getElementById('title').textContent='เลือก Companion ของคุณ';document.getElementById('companion').scrollIntoView({block:'start'})}progress(10);load();})();
+(() => {
+  'use strict';
+  const API = 'https://sigil.mmdbkk.com/v1/confirm/companion-preference';
+  const p = new URLSearchParams(location.search), t = p.get('t') || '';
+  const get = id => document.getElementById(id);
+  const form = get('companionform'), status = get('status'), save = get('save'), selection = get('selection');
+  const names = { hito: 'HITO', hiei: 'HIEI', hima: 'HIMA', hiro: 'HIRO' };
+  const COPY = {
+  "bc.confirm.runtime.loading": "กำลังตรวจรายการ…",
+  "bc.confirm.runtime.choose": "เลือกคนที่คุณอยากเริ่มต้นด้วยครับ",
+  "bc.confirm.runtime.choice": "คุณเลือก {name} · กดบันทึกได้เลย",
+  "bc.confirm.runtime.saved": "บันทึก Preference แล้ว · {name}",
+  "bc.confirm.runtime.saving": "กำลังบันทึกกับ MMD…",
+  "bc.confirm.runtime.no_token": "กรุณาเปิดลิงก์รายการเดิมที่ MMD ออกให้ เพื่อยืนยันบัญชีสมาชิกครับ",
+  "bc.confirm.runtime.pending": "ส่ง Preference แล้ว · รอ MMD ตรวจสอบ",
+  "bc.confirm.runtime.recorded": "MMD บันทึก Preference นี้แล้วครับ",
+  "bc.confirm.runtime.follow_up": "MMD ขอข้อมูลเพิ่มเติมสำหรับ Preference นี้ครับ",
+  "bc.confirm.runtime.declined": "คำขอ Preference นี้ไม่ได้รับการอนุมัติครับ",
+  "bc.confirm.runtime.cancelled": "ยกเลิกคำขอ Preference นี้แล้วครับ",
+  "bc.confirm.runtime.expired": "ข้อมูล Preference หมดอายุแล้วครับ กรุณาติดต่อ MMD",
+  "bc.confirm.runtime.verified": "ยืนยันการชำระแล้ว · เลือก Preference ได้ โดยสิทธิ์สมาชิกยังขึ้นกับการอนุมัติของ MMD",
+  "bc.confirm.runtime.evidence": "รับหลักฐานแล้ว · เลือก Preference ได้ระหว่างรอตรวจยอดครับ",
+  "bc.confirm.runtime.error": "ตรวจหรือบันทึกไม่สำเร็จครับ กรุณาลองอีกครั้ง",
+  "bc.confirm.runtime.error_expired": "ลิงก์หมดอายุครับ กรุณาขอลิงก์ยืนยันใหม่จาก MMD",
+  "bc.confirm.runtime.error_payment": "ยังไม่พบการชำระที่ยืนยันแล้วหรือหลักฐานที่ระบบรับไว้ครับ",
+  "bc.confirm.runtime.error_product": "ลิงก์นี้ไม่มีรายการ Black Card ที่ตรงกับบัญชีครับ",
+  "bc.confirm.runtime.error_sync": "รับคำขอไว้แล้ว แต่ยังส่งให้ทีมตรวจไม่ได้ครับ ลองบันทึกอีกครั้งได้",
+  "bc.confirm.runtime.error_conflict": "ข้อมูลเปลี่ยนแล้วครับ กดตรวจรายการอีกครั้งก่อนแก้ตัวเลือก",
+  "bc.confirm.runtime.error_reason": "กรุณาระบุเหตุผลสั้น ๆ สำหรับการเปลี่ยน Companion ครับ",
+  "bc.confirm.runtime.change_reason": "เหตุผลที่ต้องการเปลี่ยน Companion",
+  "bc.confirm.runtime.retry": "ตรวจรายการอีกครั้ง"
+};
+  const states = new Set(['not_selected', 'pending_review', 'in_review', 'recorded', 'needs_follow_up', 'declined', 'cancelled', 'expired']);
+  let busy = false, ready = false, loaded = null, command = null;
+  let statusKey = 'loading', selectionKey = 'choose', selectionName = '', hasError = false;
+  function tr(key, name) {
+    const full = 'bc.confirm.runtime.' + key;
+    const value = window.MMD_I18N && window.MMD_I18N.t(full);
+    return (value && value !== full ? value : COPY[full]).replace('{name}', name || '');
+  }
+  function render() {
+    status.textContent = tr(statusKey); status.classList.toggle('error', hasError);
+    selection.textContent = tr(selectionKey, selectionName);
+  }
+  function message(key, error = false) { statusKey = key; hasError = error; render(); }
+  function controls() {
+    const selected = form.elements.guide.value;
+    const changed = loaded && loaded.companion && selected !== loaded.companion.id;
+    get('reasonwrap').hidden = !changed; get('reason').required = !!changed;
+    get('choices').disabled = busy || !ready;
+    get('reason').disabled = busy || !ready;
+    save.disabled = busy || !ready || !selected || (!!loaded?.companion && !changed);
+    get('retry').disabled = busy || !t;
+  }
+  function valid(d, body) {
+    if (!d || d.ok !== true || d.authority !== 'payments-worker' || d.schema !== 'blackcard_companion_preference_v1' || d.entitlement_activated !== false || typeof d.session_id !== 'string' || !d.session_id || !states.has(d.preference_status) || !['pending', 'evidence_submitted', 'verified'].includes(d.payment_status)) return false;
+    if (d.companion === null) return body.read === true && ['not_selected', 'expired'].includes(d.preference_status) && d.request_id === null;
+    if (!d.companion || !Object.hasOwn(names, d.companion.id) || typeof d.request_id !== 'string' || !/^bcp_[a-f0-9]{32}$/.test(d.request_id)) return false;
+    return body.read === true || (d.session_id === loaded?.session_id && d.companion.id === body.companion_id && Number.isFinite(Date.parse(d.submitted_at)) && typeof d.idempotent === 'boolean');
+  }
+  async function api(body) {
+    const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, credentials: 'omit', signal: AbortSignal.timeout(15000), body: JSON.stringify({ t, expected_role: 'customer', ...body }) });
+    const d = await r.json().catch(() => null);
+    if (!r.ok || !valid(d, body)) throw new Error(d?.ok === false && typeof d.error === 'string' ? d.error : 'invalid_response');
+    return d;
+  }
+  function apply(d) {
+    loaded = d;
+    ready = d.preference_status !== 'expired';
+    form.elements.guide.value = d.companion?.id || '';
+    selectionKey = d.companion ? 'saved' : 'choose'; selectionName = names[d.companion?.id] || '';
+    const mapped = { pending_review: 'pending', in_review: 'pending', recorded: 'recorded', needs_follow_up: 'follow_up', declined: 'declined', cancelled: 'cancelled', expired: 'expired' };
+    message(mapped[d.preference_status] || (d.payment_status === 'verified' ? 'verified' : 'evidence'));
+  }
+  function errorKey(code) {
+    if (code === 'confirmation_token_expired') return 'error_expired';
+    if (code === 'preference_expired') return 'expired';
+    if (['preference_request_retired', 'preference_new_request_required'].includes(code)) return 'error_conflict';
+    if (code === 'blackcard_payment_state_unavailable') return 'error_payment';
+    if (['blackcard_confirmation_required', 'blackcard_product_required', 'verified_member_account_required'].includes(code)) return 'error_product';
+    if (code === 'preference_review_sync_pending') return 'error_sync';
+    if (['idempotency_conflict', 'preference_concurrent_conflict'].includes(code)) return 'error_conflict';
+    if (code === 'change_reason_required') return 'error_reason';
+    return 'error';
+  }
+  async function load() {
+    if (busy) return;
+    ready = false; command = null; busy = true; controls();
+    message(t ? 'loading' : 'no_token', !t);
+    get('flowload').hidden = false; get('loadpct').textContent = ''; get('loadbar').removeAttribute('value');
+    try { if (t) apply(await api({ read: true })); }
+    catch (e) { message(errorKey(e.message), true); }
+    finally { busy = false; get('flowload').hidden = true; controls(); }
+  }
+  form.addEventListener('change', () => {
+    command = null; selectionKey = 'choice'; selectionName = names[form.elements.guide.value] || ''; render(); controls();
+  });
+  get('reason').addEventListener('input', () => { command = null; });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (busy || !ready || save.disabled || !form.reportValidity()) return;
+    if (!command) command = { companion_id: form.elements.guide.value, change_reason: get('reason').value.trim(), request_key: crypto.randomUUID(), previous_request_id: loaded?.request_id || null };
+    busy = true; controls(); message('saving');
+    try { const d = await api(command); apply(d); command = null; get('reason').value = ''; }
+    catch (e) {
+      if (['confirmation_token_expired', 'preference_expired', 'preference_request_retired', 'preference_new_request_required', 'preference_concurrent_conflict', 'idempotency_conflict'].includes(e.message)) ready = false;
+      message(errorKey(e.message), true);
+    } finally { busy = false; controls(); }
+  });
+  get('retry').addEventListener('click', load);
+  document.addEventListener('mmd:i18n:ready', render); document.addEventListener('mmd:i18n:change', render);
+  if (p.get('step') === 'companion' || location.hash === '#companion') {
+    get('title').setAttribute('data-i18n', 'bc.confirm.flow.companion_title');
+    get('companion').scrollIntoView({ block: 'start' });
+  }
+  load();
+})();
 </script></main>

@@ -8,6 +8,17 @@ const SHOP_INSTRUCTION_ID = "mmd_shop_himai_v1";
 // Airtable row does not exist yet, so deploying this code never removes a working destination.
 const JOB_INSTRUCTION_ID = "mmd_job_v1";
 const MEMBERSHIP_INSTRUCTION_ID = "mmd_membership_v1";
+const BLACKCARD_POLICY_TABLE = "tbl1SaC6KrcmsdTcc";
+const BLACKCARD_PACKAGES_TABLE = "tblg2z8dENx75yHka";
+const BLACKCARD_POLICY_KEY_FIELD = "fldD1KRV5tv8I01lh";
+const BLACKCARD_POLICY_STATUS_FIELD = "fldenQShc6H828u7K";
+const BLACKCARD_POLICY_PRICE_FIELD = "fldwQS9RrBw144y2u";
+const BLACKCARD_POLICY_DURATION_FIELD = "fld3skEnauU7GbR3b";
+const PACKAGE_CODE_FIELD = "fldWtPdGpHi6YSwP2";
+const PACKAGE_PRICE_FIELD = "fldoEWuXFM1NEOpTq";
+const PACKAGE_DURATION_FIELD = "fld5yB479gSiwUUMW";
+const PACKAGE_TIER_FIELD = "fldbyKiFwelihSsjn";
+const PACKAGE_ACTIVE_FIELD = "fldavrXJPlMxjCY65";
 const JOB_STAGES = new Set(["deposit", "มัดจำ", "balance", "remaining", "remainder", "คงเหลือ", "final", "finalpayment", "full", "fullpayment", "payinfull", "extension", "adjustment", "pointstopup", "topup", "tmibstory"]);
 const MEMBERSHIP_STAGES = new Set(["membership", "renewal", "renew", "blackcard", "redcard", "elite", "mmdmember"]);
 const PUBLIC_MEMBERSHIP_SESSION_PREFIX = "publicmem_";
@@ -69,6 +80,18 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     currency: "THB",
     instruction_profile: instructionIds[0],
   };
+
+  const blackCard = isBlackCardStage(details.package_code) || isBlackCardStage(payment.stage) || isBlackCardStage(details.payment_type) || isBlackCardStage(details.payment_stage);
+  if (blackCard) {
+    const membershipToken = ["membership", "blackcard"].includes(text(details.payment_type, 80).toLowerCase().replace(/[\s_-]+/g, ""));
+    if (!isBlackCardStage(details.package_code) || !membershipToken) return responseJson({ ...base, available: false, reason: "blackcard_subject_mismatch" }, 200, responseHeaders);
+    try {
+      if (!await blackCardSaleIsActive(env)) return responseJson({ ...base, available: false, reason: "blackcard_not_activated_for_sale" }, 200, responseHeaders);
+      if (base.amount_due_thb !== 35000) return responseJson({ ...base, available: false, reason: "blackcard_amount_mismatch" }, 200, responseHeaders);
+    } catch {
+      return responseJson({ ok: false, error: "blackcard_policy_unavailable", authority: "payments-worker" }, 503, responseHeaders);
+    }
+  }
 
   if (payment.accepting_payment === false) {
     return responseJson({ ...base, available: false, reason: "payment_not_accepting" }, 200, responseHeaders);
@@ -152,9 +175,43 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
   return responseJson({ ...base, instruction_profile: instructionId, available: true, instructions }, 200, responseHeaders);
 }
 
+async function blackCardSaleIsActive(env) {
+  if (env.BLACKCARD_SALES_ENABLED !== "true") return false;
+  const policy = await readCatalogRows(env, BLACKCARD_POLICY_TABLE, BLACKCARD_POLICY_KEY_FIELD, "black_card_35000_3y_final", [BLACKCARD_POLICY_KEY_FIELD, BLACKCARD_POLICY_STATUS_FIELD, BLACKCARD_POLICY_PRICE_FIELD, BLACKCARD_POLICY_DURATION_FIELD]);
+  const packages = await readCatalogRows(env, BLACKCARD_PACKAGES_TABLE, PACKAGE_CODE_FIELD, "blackcard", [PACKAGE_CODE_FIELD, PACKAGE_PRICE_FIELD, PACKAGE_DURATION_FIELD, PACKAGE_TIER_FIELD, PACKAGE_ACTIVE_FIELD]);
+  if (policy.length !== 1 || packages.length !== 1) return false;
+  const p = policy[0], product = packages[0];
+  return p[BLACKCARD_POLICY_STATUS_FIELD] === "Owner Confirmed / Activated" &&
+    Number(p[BLACKCARD_POLICY_PRICE_FIELD]) === 35000 && Number(p[BLACKCARD_POLICY_DURATION_FIELD]) === 3 &&
+    product[PACKAGE_CODE_FIELD] === "blackcard" && product[PACKAGE_ACTIVE_FIELD] === true &&
+    Number(product[PACKAGE_PRICE_FIELD]) === 35000 && Number(product[PACKAGE_DURATION_FIELD]) === 1095 &&
+    String(product[PACKAGE_TIER_FIELD]?.name || product[PACKAGE_TIER_FIELD] || "").toLowerCase() === "blackcard";
+}
+
+async function readCatalogRows(env, tableId, keyFieldId, key, fieldIds) {
+  const baseId = text(env.AIRTABLE_BASE_ID, 120), apiKey = text(env.AIRTABLE_API_KEY, 500);
+  if (!baseId || !apiKey) return [];
+  const table = tableId === BLACKCARD_PACKAGES_TABLE ? text(env.AIRTABLE_TABLE_PACKAGES, 120) || tableId : tableId;
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+  url.searchParams.set("maxRecords", "2");
+  url.searchParams.set("returnFieldsByFieldId", "true");
+  url.searchParams.set("filterByFormula", `{${keyFieldId}}='${formulaValue(key)}'`);
+  for (const fieldId of fieldIds) url.searchParams.append("fields[]", fieldId);
+  const http = env.AIRTABLE_HTTP && typeof env.AIRTABLE_HTTP.fetch === "function" ? env.AIRTABLE_HTTP : globalThis;
+  const response = await http.fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
+  if (!response.ok) return [];
+  const payload = await response.json().catch(() => null);
+  return array(payload?.records).map(record => record?.fields || {});
+}
+
+function isBlackCardStage(value) {
+  return text(value, 80).toLowerCase().replace(/[\s_-]+/g, "") === "blackcard";
+}
+
 // Ordered candidates: the first profile with an active, effective Airtable row wins.
 // Unknown item types stay on the primary profile only (never guessed into job/membership).
 function paymentInstructionIds(details = {}, payment = {}) {
+  if (isBlackCardStage(details.package_code) || isBlackCardStage(details.payment_type) || isBlackCardStage(details.payment_stage) || isBlackCardStage(payment.stage)) return [MEMBERSHIP_INSTRUCTION_ID, PRIMARY_INSTRUCTION_ID];
   const raw = text(payment.stage || details.payment_type || details.payment_stage, 80).toLowerCase();
   if (raw === "shop" || details.shop_order) return [SHOP_INSTRUCTION_ID];
   const stage = raw.replace(/[\s_-]+/g, "");
