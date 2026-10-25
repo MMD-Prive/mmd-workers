@@ -169,12 +169,16 @@ Current normalized values: `male`, `female`, `nonbinary`, `other`, `prefer_not_t
 
 The social acquisition CTA links to `https://t.me/MMDPriveTH`, a public Preview surface with visitors of different genders. A passive channel viewer cannot receive a private HYPE DM. The Preview channel CTA and join welcome therefore offer only the HYPE deep link `https://t.me/mmdprivebot?start=route`.
 
-After a new human **private** `/start route` or bare `/start`, HYPE introduces itself and offers only:
+After a new human **private** `/start route` or bare `/start`, HYPE introduces itself and offers:
 
+- `สมัครสมาชิกใหม่` → `/pay/membership`
+- `ต่ออายุสมาชิก` → `/member/liff?intent=renew`
 - `ดูหนุ่ม ๆ · คุยต่อทาง LINE` → `https://lin.ee/xRqsALs` (or configured MMD LINE URL)
 - `กลับไป Telegram Preview` → `https://t.me/MMDPriveTH` (or configured Preview URL)
 
-The acquisition flow does not read personal operational status or gender and does not split visitors into service lanes. Public join welcomes only introduce HYPE and invite a private conversation. This flow does not write Client 360, identity bindings, gender, membership, Points, or customer history. Existing Hall/model-visibility gates remain authoritative for discovery outside this acquisition flow.
+Public join welcomes and private starts also display the approved CARE BACK membership announcement while `isPrivateCareBackAnnouncementVisible()` is true: Premium signup totals 2 years; Premium renewal buys 1 year plus 1 bonus year; Standard renewal buys 1 year plus 180 bonus days, subject to canonical eligibility. Announcement ends at 1 November 2026 00:00 Bangkok; signup/renewal links remain available after the announcement. No amounts, individual eligibility, or payment approval are asserted in the welcome.
+
+The acquisition flow does not read personal operational status or gender and does not split visitors into service lanes. Public join welcomes introduce HYPE, show the current membership announcement, and invite a private conversation. This flow does not write Client 360, identity bindings, gender, membership, Points, or customer history. Existing Hall/model-visibility gates remain authoritative for discovery outside this acquisition flow.
 
 The legacy `/start preview` campaign verification route remains intact for backward compatibility. Posting to Telegram, pinning messages, and production deployment require a separately approved operational action.
 
