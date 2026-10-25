@@ -5,7 +5,9 @@ const fail=code=>{throw Object.assign(new Error(code),{status:503});};
 export async function confirmationRevision(env,session,sessionId){
   const source=session.fields||{}, linked=source.fld1NL4YdaEQHO2dC||[];
   if(!Array.isArray(linked)||linked.length>100)fail("confirmation_changes_unavailable");
-  let required=false,blocked=false,versions=[];
+  const editNote=String(source.fldEcDkF7CH9VixWM||source.fldwl9Gs5tYlXG5ls||'');
+  const ownerAmended=/^\s*\[MMD JOB EDIT v1\]/m.test(editNote);
+  let required=ownerAmended,blocked=false,versions=[];
   if(linked.length){
     const url=new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(env.AIRTABLE_TABLE_CUSTOMER_CHANGE_REQUESTS||"tblhQGfJc4GgiteZr")}`);
     url.searchParams.set("filterByFormula",`{session_id}='${String(sessionId).replace(/\\/g,"\\\\").replace(/'/g,"\\'")}'`);
@@ -29,6 +31,6 @@ export async function confirmationRevision(env,session,sessionId){
     }
     if(seen.size!==linked.length)fail("confirmation_changes_incomplete");
   }
-  const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify([session.id,fields.map(f=>source[f]??null),versions.sort((a,b)=>a[0].localeCompare(b[0]))])));
+  const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify([session.id,fields.map(f=>source[f]??null),versions.sort((a,b)=>a[0].localeCompare(b[0])),...(ownerAmended?[source.fldhwC79ndbnEXSZz??null,source.fldlTO5aNfqUmlNWm??null,source.fld703jI4zQ0CYMHh??null,source.fldqYkGm9Vd3P366W??null,editNote]:[])])));
   return {confirmation_revision:[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join(""),confirmation_revision_required:required,confirmation_change_pending:blocked};
 }
