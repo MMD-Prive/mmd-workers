@@ -5055,7 +5055,7 @@ async function resolveHypePreviewLeadDestination(telegramUserId, env) {
   // Unknown visitors must never be classified by Telegram profile, title, avatar,
   // pronouns or greeting style. Only a canonical, explicitly sourced field is valid.
   const binding = env.HYPE_OPERATIONS || env.TELEGRAM_BIND_AUTHORITY;
-  if (!/^\\d{5,20}$/.test(telegramUserId) || !binding?.fetch) return "unknown";
+  if (!/^\d{5,20}$/.test(telegramUserId) || !binding?.fetch) return "unknown";
   try {
     const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/operational-status", {
       method: "POST",
@@ -5085,21 +5085,21 @@ function hypePreviewLeadRoutingText(destination = "unknown") {
       "",
       "ผมมีหน้าแนะนำที่น่าจะตรงกับคุณ กดดูได้ด้านล่างเลยครับ",
       "ถ้าอยากถามอะไรเพิ่ม ทักผมต่อได้เลย",
-    ].join("\\n");
+    ].join("\n");
   }
   if (destination === "mmd") {
     return [
       "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
       "",
       "สนใจสอบถามบริการของ MMD กด LINE Official ด้านล่างได้เลยครับ",
-    ].join("\\n");
+    ].join("\n");
   }
   return [
     "สวัสดีครับ ผม HYPE จาก MMD Privé 👋",
     "",
     "สนใจเรื่องไหนเป็นพิเศษครับ? เลือกจากปุ่มด้านล่างได้เลย",
     "ผมจะไม่เดาข้อมูลส่วนตัวจากชื่อหรือรูปโปรไฟล์ครับ",
-  ].join("\\n");
+  ].join("\n");
 }
 
 function hypePreviewLeadRoutingButtons(env, destination = "unknown") {
