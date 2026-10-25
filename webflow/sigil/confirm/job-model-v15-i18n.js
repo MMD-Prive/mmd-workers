@@ -84,7 +84,8 @@
       time: "เวลา",
       location: "สถานที่",
       map: "เปิด Google Maps ↗",
-      remark: "ข้อความจาก MMD ถึงคุณ",
+      remark: "บรีฟจาก MMD",
+      briefMissing: "ยังไม่มีข้อมูลบรีฟ",
       meeting: "จุดนัดพบ",
       readyKicker: "พร้อมสำหรับคืนนี้?",
       loadingStatus: "กำลังโหลดรายละเอียดงาน…",
@@ -137,7 +138,8 @@
       time: "Time",
       location: "Location",
       map: "Open Google Maps ↗",
-      remark: "Message from MMD for you",
+      remark: "Brief from MMD",
+      briefMissing: "No brief has been added yet.",
       meeting: "Meeting point",
       readyKicker: "READY FOR TONIGHT?",
       loadingStatus: "Loading job details…",
@@ -190,7 +192,8 @@
       time: "时间",
       location: "地点",
       map: "打开 Google Maps ↗",
-      remark: "MMD 给你的留言",
+      remark: "MMD 工作简报",
+      briefMissing: "尚未添加工作简报。",
       meeting: "见面地点",
       readyKicker: "今晚准备好了吗？",
       loadingStatus: "正在加载工作详情…",
@@ -830,7 +833,7 @@ function codedError(code, status = 0) {
     const rowsContainer = root.querySelector(".mm15__rows");
     if (rowsContainer) {
       let remarkRow = rowsContainer.querySelector("[data-m-model-remark]");
-      if (!remarkRow && remark) {
+      if (!remarkRow) {
         remarkRow = document.createElement("div");
         remarkRow.setAttribute("data-m-model-remark", "1");
         const label = document.createElement("span");
@@ -842,13 +845,18 @@ function codedError(code, status = 0) {
         rowsContainer.appendChild(remarkRow);
       }
       if (remarkRow) {
-        remarkRow.hidden = !remark;
+        remarkRow.hidden = false;
         remarkRow.querySelector("[data-m-model-remark-label]").textContent = dict().remark;
-        remarkRow.querySelector("[data-m-model-remark-text]").textContent = remark;
+        remarkRow.querySelector("[data-m-model-remark-text]").textContent = remark || dict().briefMissing;
       }
     }
-    const mapUrl = str(data.google_map_url);
-    if (el.map && /^https:\/\//i.test(mapUrl)) {
+    const explicitMapUrl = str(data.google_map_url);
+    const mapUrl = /^https:\/\//i.test(explicitMapUrl)
+      ? explicitMapUrl
+      : str(data.location_name)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(str(data.location_name))}`
+        : "";
+    if (el.map && mapUrl) {
       el.map.href = mapUrl;
       el.map.hidden = false;
     } else if (el.map) {
