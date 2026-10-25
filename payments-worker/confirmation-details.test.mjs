@@ -50,6 +50,23 @@ function kvStore() {
   };
 }
 
+test('Black Card membership instructions use canonical 35,000 when amount-due snapshot is empty', async () => {
+  const session = sessionRecord({[F.amountThb]:35000,[F.customerAmountDueThb]:null,[F.note]:'MMD Black Card membership'});
+  const payment = paymentRecord({[P.amountThb]:35000,[P.paymentStage]:'membership',[P.paymentType]:'',[P.intentStatus]:'Pending Confirmation'});
+  const {env,customerToken} = await envAndTokens({session,payment,paymentType:'membership'});
+  const original = env.AIRTABLE_HTTP.fetch;
+  env.AIRTABLE_HTTP.fetch = async (request, init) => {
+    const url = new URL(typeof request === 'string' ? request : request.url);
+    if (url.pathname.includes('tblTPC2yV1P3CwbgU')) return Response.json({records:[{id:'recInstructions',fields:{'Instruction ID':'mmd_membership_v1',Status:'active',Methods:['bank_transfer'],'Account Number':'test-account','Bank Name TH':'ธนาคารทดสอบ','Account Name TH':'บัญชีทดสอบ','Effective From':'2026-01-01'}}]});
+    return original(request,init);
+  };
+  const req = new Request('https://sigil.mmdbkk.com/v1/confirm/payment-instructions',{method:'POST',headers:{origin:'https://mmdbkk.com','content-type':'application/json'},body:JSON.stringify({t:customerToken,expected_role:'customer'})});
+  const response = await handlePaymentInstructions(req,env,next=>handleConfirmationDetails(next,env));
+  const data = await response.json();
+  assert.equal(response.status,200,JSON.stringify(data));
+  assert.equal(data.available,true);assert.equal(data.amount_due_thb,35000);assert.equal(data.stage,'membership');assert.equal(data.instructions.bank_transfer.account_number,'test-account');
+});
+
 function sessionRecord(overrides = {}) {
   return {
     id: "rec_session_test",

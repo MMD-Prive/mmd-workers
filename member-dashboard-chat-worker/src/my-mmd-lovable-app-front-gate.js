@@ -3,6 +3,7 @@ import { isMyMmdOrdersPage, proxyMyMmdOrdersPage } from "./my-mmd-orders-webflow
 import { isMyMmdPrivateTeaserViewerPath, myMmdPrivateTeaserViewerPage } from "./my-mmd-private-teaser-viewer.js";
 import { MY_MMD_BANGKOK_BOARD_URL, MY_MMD_BRAND_LOGO_URL } from "./my-mmd-visual-assets.js";
 import { myMmdSessionPanel } from "./my-mmd-session-panel.js";
+import { isMyMmdBlackCardPayment, myMmdBlackCardPaymentPage } from './my-mmd-blackcard-payment.js';
 export { KenjiModelIdempotency } from "./line-group-ingress-front-gate.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -336,6 +337,9 @@ function rewriteMyMmdHtml(html, path = "/my-mmd/") {
   if (/^\/my-mmd\/?$/.test(path) && !output.includes('id="mmd-session-panel"')) {
     output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>` + myMmdSessionPanel());
   }
+  if (/^\/my-mmd\/payments\/?$/.test(path)) {
+    output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}><nav aria-label="Black Card" style="position:relative;z-index:10;padding:14px 20px;background:#171b1d"><a href="/my-mmd/payments/blackcard" style="color:#f3f0e8">Black Card · ชำระต่อ / เลือก Companion →</a></nav>`);
+  }
   return output;
 }
 
@@ -498,7 +502,7 @@ function liffAuthBridgeTarget(request) {
     return `/api/member/app/private-preview/resume?g=${encodeURIComponent(grant)}`;
   }
   if (!intent || intent === "unknown" || intent === "status") return "";
-  if (intent === "continue_payment") return "/my-mmd/payments";
+  if (intent === "continue_payment") return (url.searchParams.get('view') || stateParams.get('view')) === 'blackcard' ? '/my-mmd/payments/blackcard' : '/my-mmd/payments';
   return "";
 }
 
@@ -581,6 +585,7 @@ export default {
     const path = normalizedPath(request);
 
     if (isLegacyMyMmdUiPath(path)) return redirectLegacyMyMmd(request);
+    if (isMyMmdBlackCardPayment(request)) return myMmdBlackCardPaymentPage(request);
     if (isMyMmdOrdersPage(request)) return proxyMyMmdOrdersPage(request);
     if (isMyMmdPrivateTeaserViewerPath(request)) return myMmdPrivateTeaserViewerPage(request);
     if (isMyMmdAssetPath(path)) return proxyLovableAsset(request);
