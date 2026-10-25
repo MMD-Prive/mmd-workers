@@ -13,7 +13,12 @@ test('all internal spaces share white/orange; MMS is the only internal exception
 test('theme decoration preserves the backend cookie, CSP and no-store policy',async()=>{
   const r=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/payments'),response());
   const text=await r.text();assert.match(text,/data-sigil-internal-theme="silver-orange-v1"/);assert.match(text,/sigil-internal-silver-v1/);
+  assert.doesNotMatch(text,/data-sigil-workspace="v3"/);
   assert.equal(r.headers.get('set-cookie'),'existing=unchanged; Secure');assert.equal(r.headers.get('content-security-policy'),"default-src 'self'");assert.equal(r.headers.get('cache-control'),'no-store');
+});
+test('other admin pages keep the workspace directory',async()=>{
+  const r=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/admin/dashboard'),response());
+  assert.match(await r.text(),/data-sigil-workspace="v3"/);
 });
 test('CEO decoration scopes the blue palette to CEO while admin keeps the shared palette',async()=>{
   const ceo=await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com/internal/ceo/dashboard'),response());
