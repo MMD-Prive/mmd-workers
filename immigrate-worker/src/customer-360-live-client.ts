@@ -34,7 +34,7 @@ async function loadMemberHistoryReadback(id,seq){
     if(seq!==requestSeq)return;
     if(data?.ok!==true||txt(data.customer?.canonical_client_id)!==id){if(state)state.textContent='ข้อมูลลูกค้ายังไม่ตรงกัน';return}
     const points=data.points||{},recovery=data.recovery||{};
-    const safeCount=v=>Number.isSafeInteger(Number(v))&&Number(v)>=0?Number(v).toLocaleString('th-TH'):'—';
+    const safeCount=v=>v!==null&&v!==undefined&&v!==''&&Number.isSafeInteger(Number(v))&&Number(v)>=0?Number(v).toLocaleString('th-TH'):'—';
     set('[data-ci-history-points]',points.status==='verified'?safeCount(points.value):'รอยืนยัน');
     set('[data-ci-history-points-status]',points.status==='verified'?'จาก Points ที่ผ่านการยืนยัน':'ยังไม่ใช่คะแนนยืนยัน');
     set('[data-ci-history-count]',safeCount(recovery.materialized_count));
