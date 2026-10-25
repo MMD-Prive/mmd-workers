@@ -165,6 +165,20 @@ Rules:
 
 Current normalized values: `male`, `female`, `nonbinary`, `other`, `prefer_not_to_say`, `unknown`.
 
+## X / Preview lead handoff (25 October 2026)
+
+The social acquisition CTA links to `https://t.me/MMDPriveTH`, a public Preview surface with visitors of different genders. A passive channel viewer cannot receive a private HYPE DM. The Preview channel CTA and join welcome therefore offer only the HYPE deep link `https://t.me/mmdprivebot?start=route`.
+
+After an explicit **private** `/start route`, HYPE shows a short self-selection menu:
+
+- `ผู้ชาย · เข้า LINE Official` → `https://lin.ee/xRqsALs` (MMD LINE OFC)
+- `ผู้หญิง · BELIEVE IN ME` → `https://www.mmdbkk.com/believe/inme`
+- `กลับไป Telegram Preview` → `https://t.me/MMDPriveTH`
+
+This is a customer-selected **destination** only, not verification or storage of gender identity. It must not modify Client 360, LINE/Telegram identity bindings, membership, gender provenance, entitlements, Points, or customer history. Do not infer a choice from a profile, group membership, or public reply. Preserve existing verified-gender / Hall/model-visibility gates for actual discovery. Public posts and group welcomes show no customer's private selection.
+
+The legacy `/start preview` campaign verification route remains intact for backward compatibility. Posting to Telegram, pinning messages, and production deployment require a separately approved operational action.
+
 ## Preview presence and welcome
 
 Preview is a HYPE-managed public-safe Telegram surface.
