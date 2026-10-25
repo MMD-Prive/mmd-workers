@@ -1,0 +1,292 @@
+{
+  "scope": "Initial LV15 pre-publication verification plus focused owner-clarification copy/FAQ checks; no production forms or messages submitted.",
+  "source_sha256": {
+    "referral.html": "13aaaf60758bc830b05b5cb7fa07209e341b02f96476b80dc6227f7e1c9a63fd",
+    "referral.css": "28b7b84646542184867aaa15a96f12deea7093398c726fc4b66d46161af23071",
+    "referral.js": "d44f38d8c69d661de66a151bb76231170c459259eefdb704c5c12244056f5cf8",
+    "page-head.html": "ebcf35470ea58bcde8c79cbd37cd77afb4adb00a2392c7d3d1d0833025d4e167",
+    "page-footer.html": "6ac1fd9623663ecc35f49d5d8f38780a7999d87a6d89d48c43100dea10af63bf",
+    "preview.html": "0863fff85d623d3e1c47af785544c51beb739c4f0f29f6f951b994b410fc8437"
+  },
+  "baseline_390": {
+    "page_height_px": 7088,
+    "rates_y_px": 4662
+  },
+  "final_layout": [
+    {
+      "width": 320,
+      "document_width": 320,
+      "page_height_px": 2876,
+      "rates_y_px": 628.47,
+      "cta": {
+        "x": 18,
+        "y": 500.28125,
+        "width": 158,
+        "height": 50
+      }
+    },
+    {
+      "width": 390,
+      "document_width": 390,
+      "page_height_px": 2843,
+      "rates_y_px": 618.81,
+      "cta": {
+        "x": 22,
+        "y": 490.625,
+        "width": 167,
+        "height": 50
+      }
+    },
+    {
+      "width": 1440,
+      "document_width": 1440,
+      "page_height_px": 2014,
+      "rates_y_px": 601.58,
+      "cta": {
+        "x": 160,
+        "y": 415.78125,
+        "width": 167,
+        "height": 50
+      }
+    }
+  ],
+  "responsive_widths_checked": [
+    320,
+    390,
+    430,
+    768,
+    1440
+  ],
+  "final_spacing_regression_widths": [
+    320,
+    390,
+    1440
+  ],
+  "mobile_height_reduction_percent": 59.9,
+  "visual_checks": [
+    "Native menu opens with all five ordered links, closes on Escape",
+    "Four method tabs, ArrowRight/Home/End and one visible panel work",
+    "All four original images load when their native sections open; form controls retain dark theme and Thai font",
+    "No JavaScript: four method descriptions, native composer, direct LINE fallback, disabled fields, no overflow",
+    "Reduced motion disables photo transforms and page animations",
+    "Hero image failure shows a readable fallback while primary CTA remains usable",
+    "Final menu typography guard: all five labels render, including Terms"
+  ],
+  "visible_touch_targets_minimum_px": 44,
+  "preserved_original_images": 4,
+  "runtime_errors": [],
+  "attempted_network_writes": [],
+  "asset_failures": [],
+  "visual_check_limit": "Original Webflow document and deployed globals, with only page embed/head/footer replaced; shared site assets and canonical i18n v21 used. Third-party chat loader was blocked.",
+  "composer_checks": {
+    "token": {
+      "passed": true,
+      "productionTaggedLinks": 20,
+      "fixtures": 6,
+      "preserveQueryAndHash": true
+    },
+    "invalidConsent": {
+      "passed": true,
+      "draftHidden": true,
+      "noStoredDraft": true,
+      "focusedConsent": true
+    },
+    "prepare": {
+      "passed": true,
+      "draftLength": 329,
+      "storageKey": "mmdReferralDraft",
+      "readonly": true,
+      "focusedDraft": true,
+      "noAutomaticClipboard": true,
+      "bareLineUrl": true,
+      "urlUnchanged": true
+    },
+    "clipboardDenied": {
+      "passed": true,
+      "selection": {
+        "start": 0,
+        "end": 329,
+        "length": 329,
+        "focused": true
+      },
+      "copyButtonReenabled": true
+    },
+    "staleOutput": {
+      "passed": true,
+      "briefEditHides": true,
+      "consentRevocationHides": true
+    },
+    "accessibility": {
+      "passed": true,
+      "fieldLabels": [
+        {
+          "name": "referrerRole",
+          "labels": 1
+        },
+        {
+          "name": "modelLayer",
+          "labels": 1
+        },
+        {
+          "name": "dealType",
+          "labels": 1
+        },
+        {
+          "name": "jobType",
+          "labels": 1
+        },
+        {
+          "name": "brief",
+          "labels": 1
+        },
+        {
+          "name": "consent",
+          "labels": 1
+        },
+        {
+          "name": "draft",
+          "labels": 1
+        }
+      ],
+      "liveStatus": true
+    },
+    "noJavaScript": {
+      "passed": true,
+      "namedFields": [
+        {
+          "name": "referrerRole",
+          "disabled": true
+        },
+        {
+          "name": "modelLayer",
+          "disabled": true
+        },
+        {
+          "name": "dealType",
+          "disabled": true
+        },
+        {
+          "name": "jobType",
+          "disabled": true
+        },
+        {
+          "name": "brief",
+          "disabled": true
+        },
+        {
+          "name": "consent",
+          "disabled": true
+        }
+      ],
+      "prepareDisabled": true,
+      "prepareIsButton": true,
+      "visibleLineFallback": true,
+      "allMethodPanelsReadable": true
+    },
+    "network": {
+      "passed": true,
+      "documentLoads": 2,
+      "fetchOrXhr": 0,
+      "privateBriefInUrl": false,
+      "nonGet": 0,
+      "allResourcesServedLocallyOrBlocked": true
+    }
+  },
+  "composer_all_passed": true,
+  "composer_check_limit": "Synthetic input only; all remote requests blocked or served locally. No backend intake or actual LINE send was tested.",
+  "i18n": {
+    "new_Thai_keys": 126,
+    "bound_HTML_keys": 114,
+    "bound_HTML_keys_covered": 114,
+    "existing_locale_keys_preserved": 306,
+    "strict_audit_passed": true,
+    "syntax_passed": true,
+    "runtime_changed": false
+  },
+  "content": {
+    "source": "Owner-shared chat decisions, existing fee/Terms and direct owner clarification on 25 October 2026",
+    "rates_label": "MMD reference rates",
+    "no_international_tariff_claim": true,
+    "legacy_management_table_reclassified": true,
+    "legacy_table_preserved_in": "original-webflow.json",
+    "unresolved": "Confirm which four Partner types, MMD percentage denominator and deductible costs; model-rate unit/work scope and included-versus-added price treatment remain undefined.",
+    "legacy_management_table_published": false,
+    "owner_clarification": {
+      "legacy_large_amounts": "Model rates",
+      "mmd_15_to_45_percent": "MMD portion dependent on Partner type",
+      "net_profit_formula_confirmed": false,
+      "tier_to_mmd_percentage_mapping_confirmed": false
+    }
+  },
+  "initial_lv15_verified_at": "2026-10-25T00:13:59.647013+00:00",
+  "verified_at": "2026-10-25T01:34:25.521307+00:00",
+  "initial_lv15_layout": [
+    {
+      "width": 320,
+      "document_width": 320,
+      "page_height_px": 2799,
+      "rates_y_px": 628.47,
+      "cta": {
+        "x": 18,
+        "y": 500.28125,
+        "width": 158,
+        "height": 50
+      }
+    },
+    {
+      "width": 390,
+      "document_width": 390,
+      "page_height_px": 2766,
+      "rates_y_px": 618.81,
+      "cta": {
+        "x": 22,
+        "y": 490.625,
+        "width": 167,
+        "height": 50
+      }
+    },
+    {
+      "width": 1440,
+      "document_width": 1440,
+      "page_height_px": 1948,
+      "rates_y_px": 601.58,
+      "cta": {
+        "x": 160,
+        "y": 415.78125,
+        "width": 167,
+        "height": 50
+      }
+    }
+  ],
+  "followup_content_revision": {
+    "scope": "Four copy changes and one native money-distinction FAQ; CSS/JS and numeric referral matrix unchanged.",
+    "checks": [
+      "114/114 Thai HTML bindings covered; 126 referral keys total",
+      "Only four prior Thai values changed and seven money FAQ values added; every other locale entry preserved",
+      "Money FAQ collapsed/expanded at320/390/1440 without horizontal overflow",
+      "All changed Thai labels rendered in Anuphan; table header fits at320",
+      "No runtime errors, asset failures or network writes in focused smoke",
+      "Source/derived consistency and strict i18n audit passed"
+    ],
+    "dimensions": [
+      {
+        "width": 320,
+        "collapsed_height": 2876,
+        "expanded_height": 3285,
+        "document_width": 320
+      },
+      {
+        "width": 390,
+        "collapsed_height": 2843,
+        "expanded_height": 3228,
+        "document_width": 390
+      },
+      {
+        "width": 1440,
+        "collapsed_height": 2014,
+        "expanded_height": 2269,
+        "document_width": 1440
+      }
+    ]
+  }
+}
