@@ -21,6 +21,14 @@ const PRIVATE_CARE_BACK = Object.freeze({
   }),
 });
 
+// Read-only presentation window, separate from paid-time eligibility below.
+// Public messaging stops after October; this must never gate renewal settlement.
+export function isPrivateCareBackAnnouncementVisible(at = new Date()) {
+  const time = at instanceof Date ? at.getTime() : Date.parse(String(at || ""));
+  return Number.isFinite(time) && time >= CARE_BACK_START_MS
+    && time < Date.parse(PROMO_PUBLIC_ENDS_BEFORE);
+}
+
 export function isProtectedPrivateMembership(value) {
   return new Set(["vip", "svip", "blackcard", "black_card"]).has(token(value));
 }
