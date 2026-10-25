@@ -7,7 +7,7 @@ import { parseMarkedJson } from './confirmation-details.js';
 import { replaceMarker } from './blackcard-companion-preference.js';
 
 const MARKER = 'MMD BLACK CARD COMPANION PREFERENCE V1';
-const F = Object.freeze({ id:'fldLTq2kZbyRv22IA', ref:'fldojgjSQLaO0uQLX', amount:'fldhwC79ndbnEXSZz', due:'fldvJowquu8RrsOMc', note:'fldEcDkF7CH9VixWM' });
+const F = Object.freeze({ id:'fldLTq2kZbyRv22IA', ref:'fldojgjSQLaO0uQLX', amount:'fldhwC79ndbnEXSZz', note:'fldEcDkF7CH9VixWM' });
 const clean = v => String(v ?? '').trim();
 const norm = v => clean(v).toLowerCase().replace(/[\s-]+/g, '_');
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control':'no-store, private', 'x-mmd-payment-authority':'payments-worker' } });
@@ -116,7 +116,9 @@ export async function handleBlackCardMemberPayment(request, env, adapters) {
       if (named?.fields?.Client?.length !== 1 || named.fields.Client[0] !== client.id || clean(session.fields?.[F.id]) !== sessionId || clean(session.fields?.[F.ref]) !== ref || (!previous && !/MMD Black Card membership/.test(session.fields?.[F.note] || ''))) throw httpError(403,'blackcard_session_owner_mismatch');
       let payment = await unique(env,'payments',`{Payment Reference}='${formulaValue(ref)}'`);
       if (!payment && action === 'start') {
-        const intent = await adapters.intent(internalRequest('/v1/pay/verify',{session_id:sessionId,payment_ref:ref,payment_stage:'membership',package_code:'black_card',amount:BLACKCARD_POLICY.amount_thb,notes:'MMD Black Card membership;source=my_mmd_blackcard;official_verify_required=true'}));
+        // Existing production Package Code select is "blackcard". The public
+        // API keeps canonical black_card; no select option/typecast is needed.
+        const intent = await adapters.intent(internalRequest('/v1/pay/verify',{session_id:sessionId,payment_ref:ref,payment_stage:'membership',package_code:'blackcard',amount:BLACKCARD_POLICY.amount_thb,notes:'MMD Black Card membership;source=my_mmd_blackcard;official_verify_required=true'}));
         const data = await intent.json().catch(()=>null);
         if (!intent.ok || data?.ok !== true || data.payment_ref !== ref || data.session_id !== sessionId || data.unified_payment_flow !== 'v1') throw httpError(503,'blackcard_intent_failed');
         payment = await unique(env,'payments',`{Payment Reference}='${formulaValue(ref)}'`);

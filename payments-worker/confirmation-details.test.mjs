@@ -50,7 +50,7 @@ function kvStore() {
   };
 }
 
-test('Black Card membership instructions use canonical 35,000 without writing customer due formula', async () => {
+test('Black Card membership instructions use canonical 35,000 when amount-due snapshot is empty', async () => {
   const session = sessionRecord({[F.amountThb]:35000,[F.customerAmountDueThb]:null,[F.note]:'MMD Black Card membership'});
   const payment = paymentRecord({[P.amountThb]:35000,[P.paymentStage]:'membership',[P.paymentType]:'',[P.intentStatus]:'Pending Confirmation'});
   const {env,customerToken} = await envAndTokens({session,payment,paymentType:'membership'});

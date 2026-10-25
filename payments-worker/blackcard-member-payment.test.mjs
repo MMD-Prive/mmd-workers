@@ -52,6 +52,7 @@ test('new customer creates canonical client, one order, and repeated start resum
   const f=fixture();assert.equal((await f.call('read')).body.status,'not_started');assert.equal(f.db.clients.length,0);
   const first=await f.call('start');assert.equal(first.status,200);assert.equal(first.body.status,'awaiting_payment');assert.equal(first.body.entitlement_granted,false);
   const retry=await f.call('start');assert.equal(retry.body.payment_ref,first.body.payment_ref);assert.equal(f.options.intents,1);assert.equal(f.db.clients.length,1);assert.equal(f.db.sessions.length,1);assert.equal(f.db.payments.length,1);
+  assert.equal(f.db.payments[0].fields['Package Code'],'blackcard','use the existing production select, not a new schema choice');
 });
 test('concurrent starts create one order and return resumable conflict for competing request',async()=>{
   const f=fixture();const results=await Promise.all([f.call('start'),f.call('start')]);assert.ok(results.some(r=>r.status===200));assert.ok(results.some(r=>r.status===409));assert.equal(f.options.intents,1);assert.equal((await f.call('start')).status,200);

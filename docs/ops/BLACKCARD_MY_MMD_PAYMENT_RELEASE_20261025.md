@@ -46,10 +46,10 @@ No new table, DO migration, bucket or secret is introduced. Verify existing:
 Run `node scripts/check-blackcard-payment-schema.mjs` with
 `MMD_AIRTABLE_TOKEN` in the approved staging environment. It is read-only and
 requires metadata access. It checks canonical Client/Session/Payment fields and
-`black_card` / `membership` select options if those fields are selects.
+`blackcard` / `membership` select options if those fields are selects.
 If an option is absent, add that exact option before deploy through the normal
 schema change process. The runtime never typecasts or changes schema automatically.
-Do not write the derived Session customer-amount-due field. The details reader now
+The new purchase does not write the Session customer-amount-due snapshot. The details reader now
 recognizes `membership` and uses canonical net price when that derived value is empty.
 
 Canonical Thai copy: `MMD-Prive/mmd-i18n/assets/i18n/pages/my-mmd-blackcard-payment.th.json`.
@@ -68,8 +68,13 @@ No runtime dependency on the translation CDN or additional language engine.
   (`ERR_CONNECTION_REFUSED`); direct HTML preview was blocked by browser policy.
 - `node scripts/blackcard-payment-preview.mjs` is a local test fixture only;
   `/fixture/pending` opens the Companion state. Never deploy this preview server.
+- Read-only connected Airtable schema inspection confirmed writable canonical
+  Client LINE, Session ID/reference/amount/note fields and existing Payments
+  Package Code `blackcard` plus payment_stage `membership` options. The API maps
+  canonical `black_card` to that existing storage code; no schema mutation needed.
+  Full staging preflight and runtime acceptance still remain.
 - No live payment, customer message, schema write, Worker deploy or Webflow publish
-  was performed. Read-only schema preflight still requires staging credentials.
+  was performed.
 - PayPal is not presented as working: no verified provider order/capture/webhook
   lifecycle was found in the current Worker implementation. This change supports
   QR/bank proof intake. PayPal return/cancel/delayed webhook remains a separate

@@ -156,10 +156,11 @@ test('cross-app contract workflow has only local tests and no production authori
     'npm ci --ignore-scripts --no-audit --no-fund',
     'npm run test:my-mmd-model-payment',
     'npm run test:payment-delivery',
+    'npm run test:blackcard-member-payment',
   ]);
   for (const checkout of job.checkouts) assert.equal(checkout['persist-credentials'], false);
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  for (const name of ['test:my-mmd-model-payment', 'test:payment-delivery']) {
+  for (const name of ['test:my-mmd-model-payment', 'test:payment-delivery', 'test:blackcard-member-payment']) {
     assert.match(pkg.scripts[name], /^node (?:--experimental-global-webcrypto )?--test [A-Za-z0-9_./ -]+$/);
     for (const hook of ['pre', 'post']) assert.equal(pkg.scripts[hook + name], undefined);
   }

@@ -15,7 +15,7 @@ for(const [id,keys] of Object.entries(requirements)){
   const table=data.tables?.find(t=>t.id===id);if(!table){errors.push('missing table '+id);continue;}
   for(const key of keys){const field=table.fields.find(f=>f.id===key||f.name===key);if(!field){errors.push(id+': missing '+key);continue;}
     if(id==='tblC98mKWbzmPuNzX'&&['formula','rollup','lookup','multipleLookupValues','autoNumber'].includes(field.type))errors.push(id+': not writable '+key);
-    const option=key==='Package Code'?'black_card':key==='payment_stage'?'membership':null;
+    const option=key==='Package Code'?'blackcard':key==='payment_stage'?'membership':null;
     if(option&&field.type==='singleSelect'&&!field.options?.choices?.some(c=>c.name===option))errors.push(id+': missing select option '+key+'='+option);
   }
 }
