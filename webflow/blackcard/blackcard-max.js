@@ -1,0 +1,3 @@
+// Presentation only. All purchase, payment and Companion state stays in MY MMD.
+(()=>{'use strict';if(matchMedia('(prefers-reduced-motion: reduce)').matches||!('IntersectionObserver'in window))return;const items=[...document.querySelectorAll('.reveal')];const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){entry.target.classList.remove('pending');observer.unobserve(entry.target)}},{threshold:.08});document.documentElement.classList.add('motion');for(const item of items){item.classList.add('pending');observer.observe(item)}// Fail open if observation is interrupted.
+setTimeout(()=>items.forEach(item=>item.classList.remove('pending')),5000);})();
