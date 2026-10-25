@@ -7,7 +7,7 @@ test("Black Card embed uses one route and preserves signed t", () => {
   assert.match(source, /v1\/confirm\/companion-preference/);
   assert.match(source, /expected_role:'customer'/);
   assert.match(source, /new URL\('\/sigil\/pay\/blackcard'/);
-  assert.match(source, /step=companion/);
+  assert.match(source, /p\\.get\\(\\x27step\\x27\\)===\\x27companion\\x27/);
 });
 
 test("Companion choice never falls back to LINE or browser storage", () => {
