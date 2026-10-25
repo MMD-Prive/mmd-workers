@@ -30,7 +30,11 @@ Pre-booking is request-only. The interface must not imply confirmed availability
 
 ## `/apply/mms-therapist` canonical source
 
-The application page has one repository-backed implementation. Do not reintroduce the live `mta4a`–`mta4f`, `mta4inject`, or `mta4h1`–`mta4h3` script chain.
+The application page has one repository-backed five-step implementation, reconciled with the live Webflow embeds on 2026-10-25. Photos and certificates are optional. Province → Service Zone selection is part of Step 04; do not load the legacy `apply-therapist-service-zones.js` bridge. The six-step replacement runtime is retired.
+
+Submission progress is based on confirmed stages (0% sending, 40% application synced, up to 95% linked file receipts, 100% complete), not elapsed time. Failed/mismatched upload receipts stay pending; retry reuses the original payload/idempotency key and an available upload grant. Completion does not grant Therapist access.
+
+The three canonical files are staged in the existing page HTML embeds (CSS, HTML, JS respectively); do not also install a second runtime in the page footer. Do not reintroduce the live `mta4a`–`mta4f`, `mta4inject`, or `mta4h1`–`mta4h3` script chain.
 
 | Webflow placement | Canonical file |
 | --- | --- |

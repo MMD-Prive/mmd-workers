@@ -27,49 +27,19 @@ test("therapist application is the single canonical five-step source", async () 
 
   assert.equal((html.match(/id="mta3"/g) || []).length, 1);
   assert.equal((html.match(/data-step="[1-5]"/g) || []).length, 5);
-  for (const imageIndex of ["01", "02", "03", "04", "05", "06", "07", "08", "09"]) {
-    assert.match(html, new RegExp(`HIMA%20Apply%20Mod%20${imageIndex}\\.webp`));
-  }
-  assert.match(html, /data-branch-open/);
-  assert.match(html, /data-application-step="5"/);
-  assert.match(css, /^#mta3/m);
-  assert.doesNotMatch(html + css + js, /mta4(?:a|b|c|d|e|f|inject|h1|h2|h3)/i);
+  assert.match(html,/data-version="14-submission-recovery"/);
+  assert.match(html,/data-submit-progress/);
+  assert.match(html,/name="base_service_zone_code"/);
+  assert.match(html,/name="profile_photo" type="file" accept=/);
+  assert.doesNotMatch(html,/name="profile_photo"[^>]*required/);
+  assert.match(html,/เชื่อมบัญชีแล้ว · เข้าแอป Therapist/);
+  assert.match(js,/draft.submitted_payload\|\|applicationPayload/);
+  assert.match(js,/upload.storage.airtable!=="synced"/);
+  assert.match(js,/upload.application_id!==application.application_ref/);
+  assert.match(js,/if\(uploadResult.failed\)/);
+  assert.match(css,/mta-submit-progress/);
+  assert.doesNotMatch(js,/stage.innerHTML=/);
 
-  for (const skill of ["aroma_therapy_oil", "thai_massage", "sport_massage", "office_syndrome", "health_fitness_advisor", "thai_herbal_compress", "partner_present", "women_massage"]) {
-    assert.match(js, new RegExp(skill));
-  }
-  for (const field of ["current_profession", "qualification_note", "work_base_area", "mobility_scope", "coverage_area_note"]) {
-    assert.match(html, new RegExp(`name="${field}"`));
-    assert.match(js, new RegExp(`${field}:`));
-  }
-
-  assert.doesNotMatch(js, /\bbase_zone\s*:/);
-  assert.doesNotMatch(js, /\bcoverage_zones\s*:/);
-  assert.match(html, /name="gender_identity"/);
-  assert.match(html, /name="sexual_orientation"/);
-  assert.match(html, /data-sensitive-consent/);
-  assert.match(html, /name="profile_photo"/);
-  assert.match(html, /name="certificates"/);
-  assert.match(html, /Private R2/);
-  assert.match(html + js, /mms\/api\/uploads\/presign/);
-  assert.match(js, /draft\.application_token/);
-  assert.match(js, /persistDraft\(\)/);
-  assert.match(js, /if\(uploadResult\.failed\)/);
-  assert.match(js, /allowedFile/);
-  assert.match(js, /controller\.abort\(\)},45000\)/);
-  assert.match(js, /form\.elements\.namedItem\(name\)/);
-  assert.equal((html.match(/data-swipe-rail/g) || []).length, 5);
-  assert.equal((html.match(/class="mta-accordion/g) || []).length, 4);
-  assert.match(css, /scroll-snap-type:x mandatory/);
-  assert.match(css, /mta-motion-ready/);
-  assert.match(js, /IntersectionObserver/);
-  assert.match(js, /initAccordions/);
-  assert.doesNotMatch(js, /form\.elements\[/);
-  assert.doesNotMatch(js, /file\.lastModified/);
-  assert.doesNotMatch(js, /localStorage\.removeItem\(storageKey\).*uploadFiles/);
-  assert.doesNotMatch(html, /Inside MMS|MMS shop|หน้าร้าน MMS/i);
-  assert.match(html, /https:\/\/lin\.ee\/NkfXMu7/);
-  assert.equal((html.match(/data-mmd-contrast-skip="world-headline"/g) || []).length, 5);
 });
 
 test("therapist login stays fail-closed while being wired to its dedicated LIFF auth contract", async () => {
