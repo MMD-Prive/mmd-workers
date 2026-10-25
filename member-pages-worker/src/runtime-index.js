@@ -17,6 +17,9 @@ import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
 import { augmentMemberModelWishNotes } from "./member-model-wish-notes.js";
 import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
+import { applyMyMmdRenewalPageResponse } from "./liff-renewal-page-response.js";
+import { withLiffRenewalEligibility } from "./liff-renewal-eligibility.js";
+import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
 import {
   handleMemberClientCredits,
   isMemberClientCreditsRequest,
@@ -103,6 +106,13 @@ export function normalizeCareBackWebViewOrigin(request) {
   return new Request(request, { headers });
 }
 
+async function fetchBaseWithRenewal(request, env, ctx) {
+  const response = await withLiffRenewalEligibility(request, env,
+    () => baseWorker.fetch(request, env, ctx),
+    { readSession: readMemberAppSession, readSpend: readMyMmdVerifiedPointsContext });
+  return applyMyMmdRenewalPageResponse(request, response);
+}
+
 const worker = {
   async fetch(request, env, ctx) {
     if (isPersonalMainRequest(request)) return handlePersonalMain(request, env, readMemberAppSession);
@@ -171,7 +181,7 @@ const worker = {
     const runtimeEnv = withStatusFirstMemberResolver(request, channelCompatibleEnv);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
-    let firstResponse = await baseWorker.fetch(firstRequest, runtimeEnv, ctx);
+    let firstResponse = await fetchBaseWithRenewal(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
     firstResponse = await augmentMemberModelWishNotes(request, firstResponse, env);
     let firstPayload = await jsonPayload(firstResponse);
@@ -215,7 +225,7 @@ const worker = {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        let retriedResponse = await baseWorker.fetch(request, runtimeEnv, ctx);
+        let retriedResponse = await fetchBaseWithRenewal(request, runtimeEnv, ctx);
         retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
         retriedResponse = await augmentMemberModelWishNotes(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
