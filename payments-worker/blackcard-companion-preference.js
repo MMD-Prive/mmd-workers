@@ -100,4 +100,4 @@ export async function handleBlackCardCompanionPreference(request, env = {}) {
   }
 }
 
-export { PERSONAL_MAINS };
+export { PERSONAL_MAINS, isBlackCardSession, parseStored, preferenceStatus, replaceMarker, selected };
