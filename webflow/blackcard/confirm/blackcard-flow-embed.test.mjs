@@ -4,14 +4,14 @@ import test from "node:test";
 const source = readFileSync(new URL("./blackcard-flow-embed.html", import.meta.url), "utf8");
 
 test("Black Card embed uses one route and preserves signed t", () => {
-  assert.match(source, /v1\/confirm\/companion-preference/);
+  assert.match(source, /v1\\/confirm\\/companion-preference/);
   assert.match(source, /expected_role:'customer'/);
-  assert.match(source, /new URL\('\/sigil\/pay\/blackcard'/);
-  assert.match(source, /p\\.get\\(\\x27step\\x27\\)===\\x27companion\\x27/);
+  assert.match(source, /new URL\\('\\/sigil\\/pay\\/blackcard'/);
+  assert.match(source, /p\\.get\\('step'\\)===\\'companion\\'/);
 });
 
 test("Companion choice never falls back to LINE or browser storage", () => {
-  assert.doesNotMatch(source, /line\.me\/R\/oaMessage/);
+  assert.doesNotMatch(source, /line\\.me\\/R\\/oaMessage/);
   assert.doesNotMatch(source, /localStorage/);
   assert.match(source, /บันทึกแล้ว/);
   assert.match(source, /API ตอบสำเร็จ/);
