@@ -35,9 +35,15 @@ Public/Private are work types. Standard/Premium/GWs/EMs/Secretive are model tier
 
 The friend exception retains the first three qualifying jobs. The exact friend percentage and detailed deduction formula are left to the confirmed agreement rather than resolving differences between earlier drafts and the current fee page. No automatic 12-month entitlement is added.
 
-### Legacy Management table: unresolved business meaning
+### Owner clarification: model rates and the MMD portion
 
-The previous page's Management amounts (฿10,000–250,000+) and “MMD % per job” (15–45%) do not define payer, recipient, or calculation base sufficiently. The user permits separate tables and requires clear audience separation. This rebuild does not relabel those amounts as introduction fees or relocate them to a page for models. They remain intact in `original-webflow.json`; a separate Management presentation requires the owner to identify the money flow and scope.
+On 25 October 2026, the owner clarified that the previous Management table's large amounts (฿10,000–250,000+) are **model rates**. The 15–45% is **MMD's portion**, depending on which of four Partner types applies. The owner's wording about MMD-only profit is not yet a defined net-profit calculation.
+
+The public draft now distinguishes model rates, compensation MMD pays an introducer/manager, and MMD's own portion. One-time introducer payments are explicitly called “ค่าแนะนำครั้งเดียว” rather than the ambiguous “เงินก้อน”. The confirmed introduction/Bridge matrix remains separate.
+
+The original page's four relationship labels were Management Partner, Contact Provider, Personal Referral, and High-profile Referral. They are distinct from the four compensation choices shown in this rebuild: Direct Contact, Bridge, Co-Partner, and Profit Share. Confirm which set the owner means before mapping a percentage to a category. High-profile handling can overlap other relationships.
+
+The legacy percentages were displayed by model tier, but the owner now describes them by Partner type. Do not carry those old row-to-percentage mappings forward as confirmed policy. The percentage denominator, costs already deducted, whether the amount is included in or added to the quoted price, and the model-rate unit/work scope remain undefined. Therefore the public draft uses the neutral label “ส่วนของ MMD”, with no net-profit claim or calculator. The old numeric Management table remains intact in `original-webflow.json` pending those definitions.
 
 The previous valid-contact/onboarding/commission-share table is superseded in this draft by the later tier matrix above. Internal EMs job margins used during the historical discussion are not included in the page.
 
