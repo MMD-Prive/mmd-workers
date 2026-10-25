@@ -34,10 +34,10 @@ test("signed renewal links redirect to canonical signed SIGIL Pay only", () => {
   );
 });
 
-test("unsigned renewal links redirect to canonical renewal entry and preserve safe context only", () => {
+test("unsigned renewal links open MY MMD Renewal and preserve safe context only", () => {
   assert.equal(
     resolveRenewalRedirect("https://mmdbkk.com/sigil/pay/renewal?package=premium&promo=CARE&amount=5000&payment_ref=BAD"),
-    "https://mmdbkk.com/sigil/member/membership?intent=renew&world=private&package=premium&promo=CARE",
+    "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package&world=private&package=premium&promo=CARE",
   );
 });
 
@@ -49,7 +49,7 @@ test("all renewal hosts return redirect-only responses with canonical owner head
     assert.equal(response.headers.get("x-mmd-page"), "sigil-pay-renewal");
     assert.equal(response.headers.get("x-mmd-route-source"), "member-dashboard-chat-worker:renewal-redirect-bridge");
     assert.equal(response.headers.get("x-mmd-upstream-source"), "redirect-bridge");
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/member/membership?intent=renew&world=private");
+    assert.equal(response.headers.get("location"), "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package&world=private");
     assert.equal(await response.text(), "");
   }
 });
@@ -87,6 +87,7 @@ test("header helper exposes redirect bridge and no rendered upstream", () => {
     const target = new URL(resolveRenewalRedirect(`https://mmdbkk.com/pay/renewal?world=${world}&amount=1&member_id=bad`));
     assert.equal(target.searchParams.get("world"), "private");
     assert.equal(target.searchParams.get("intent"), "renew");
+    assert.equal(target.searchParams.get("view"), "package");
     assert.equal(target.searchParams.has("amount"), false);
     assert.equal(target.searchParams.has("member_id"), false);
   }

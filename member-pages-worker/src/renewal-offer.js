@@ -5,20 +5,12 @@ const PACKAGE_POLICY = Object.freeze({
     label: "Standard",
     years: privateRenewalBaseYears("standard"),
     base_amount_thb: 1000,
-    thresholds: Object.freeze([
-      Object.freeze({ spend_thb: 50000, amount_thb: 499, price_rule: "private_standard_spend_50000" }),
-      Object.freeze({ spend_thb: 10000, amount_thb: 799, price_rule: "private_standard_spend_10000" }),
-    ]),
     base_price_rule: "private_standard_renewal",
   }),
   premium: Object.freeze({
     label: "Premium",
     years: privateRenewalBaseYears("premium"),
     base_amount_thb: 2500,
-    thresholds: Object.freeze([
-      Object.freeze({ spend_thb: 100000, amount_thb: 999, price_rule: "private_premium_spend_100000" }),
-      Object.freeze({ spend_thb: 20000, amount_thb: 1999, price_rule: "private_premium_spend_20000" }),
-    ]),
     base_price_rule: "private_premium_renewal",
   }),
 });
@@ -30,19 +22,22 @@ export function canonicalRenewalPackageFromTier(value) {
   return "";
 }
 
+// Compatibility helper for the existing fixed-price renewal policy, not an
+// eligibility check. Retired spend-band prices must never be offered again.
+// The new 365-day threshold policy and below-threshold pricing need their own
+// verified-history integration; this cleanup does not approve either fallback.
 export function renewalPriceForSpend(packageCode, spendThb) {
   const code = String(packageCode || "").trim().toLowerCase();
   const policy = PACKAGE_POLICY[code];
   if (!policy) return null;
   const spend = Number(spendThb);
   const verifiedSpend = Number.isFinite(spend) && spend > 0 ? Math.round((spend + Number.EPSILON) * 100) / 100 : 0;
-  const discount = policy.thresholds.find((item) => verifiedSpend >= item.spend_thb);
   return {
     package_code: code,
     package_label: policy.label,
-    amount_thb: discount?.amount_thb ?? policy.base_amount_thb,
+    amount_thb: policy.base_amount_thb,
     service_spend_365_thb: verifiedSpend,
-    price_rule: discount?.price_rule ?? policy.base_price_rule,
+    price_rule: policy.base_price_rule,
     membership_years: policy.years,
   };
 }
