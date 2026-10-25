@@ -20,7 +20,7 @@ function setup(){
   const path=new URL(req.url).pathname;const isSession=path.includes('tblC98mKWbzmPuNzX'),isJob=path.includes('tbl0jxIjN8QYwGABX');
   if(!isSession&&!isJob){assert.match(path,/tblI4B0bI446vp9GX/);return Response.json(model);}
   const row=isSession?data.session:data.job;
-  if(req.method==='PATCH'){calls.push(isSession?'session':'job');if(isSession&&failSession){failSession=false;throw Error('network failure');}const patch=(await req.json()).fields;Object.assign(row.fields,patch);for(const [k,v]of Object.entries(row.fields))if(v===null||v==='')delete row.fields[k];return Response.json(row);}
+  if(req.method==='PATCH'){calls.push(isSession?'session':'job');if(isSession&&failSession){failSession=false;throw Error('network failure');}const patch=(await req.json()).fields;Object.assign(row.fields,patch);for(const [k,v]of Object.entries(row.fields))if(v===null||v===''||v===false)delete row.fields[k];return Response.json(row);}
   return Response.json({records:[row]});
  }}};
  const coordinator=new JobEditJournal(storage,env);env.JOB_EDIT_COORDINATOR={getByName:id=>{assert.equal(id,sid);return coordinator;}};

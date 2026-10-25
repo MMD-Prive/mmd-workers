@@ -35,7 +35,7 @@ export class JobEditJournal {
     // GETs and comparisons exclude fields owned by unrelated workflows. A stale
     // lifecycle/payment acknowledgement is still included in the session revision.
     let current=await loadJob(this.env,body.session_id);
-    const matches=(record,patch)=>Object.entries(patch).every(([k,v])=>JSON.stringify(record.fields[k]??null)===JSON.stringify(v===''?null:v));
+    const matches=(record,patch)=>Object.entries(patch).every(([k,v])=>JSON.stringify(record.fields[k]??(v===false?false:null))===JSON.stringify(v===''?null:v));
     const beforeJob=await revision(current.job)===await revision(data.job);
     const beforeSession=await revision(current.session)===await revision(data.session);
     const afterJob=matches(current.job,plan.jobPatch),afterSession=matches(current.session,plan.sessionPatch);
