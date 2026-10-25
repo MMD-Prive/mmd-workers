@@ -2,16 +2,20 @@ import modelLiffWorker from "./model-liff-worker.js";
 import { isAuthed as isCoreAuthed } from "./index.js";
 import { handleCareBackRequest, isCareBackPath } from "./care-back-worker.js";
 import { handleStudioCards } from "./model-card-automation.js";
+import { readStudioModelContext, searchStudioModels } from "./studio-flow-model-context.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const STUDIO_API_PREFIX = "/studio/api";
 const INTAKE_VALIDATE_PATH = `${STUDIO_API_PREFIX}/intake/validate`;
 const INTAKE_COMMIT_PATH = `${STUDIO_API_PREFIX}/intake/commit`;
+const INTAKE_READ_PATH = `${STUDIO_API_PREFIX}/intake/read`;
 const REVIEW_VALIDATE_PATH = `${STUDIO_API_PREFIX}/review/validate`;
 const REVIEW_COMMIT_PATH = `${STUDIO_API_PREFIX}/review/commit`;
+const REVIEW_READ_PATH = `${STUDIO_API_PREFIX}/review/read`;
 const PREVIEW_PLAN_PATH = `${STUDIO_API_PREFIX}/model-preview/publish-plan`;
 const PREVIEW_COMMIT_PATH = `${STUDIO_API_PREFIX}/model-preview/commit`;
 const UPLOAD_PATH = `${STUDIO_API_PREFIX}/upload`;
+const ASSET_READ_PATH = `${STUDIO_API_PREFIX}/assets/read`;
 const MY_CARD_REQUEST_LIST_PATH = `${STUDIO_API_PREFIX}/compcard-requests/list`;
 const MY_CARD_REQUEST_IMPORT_PATH = `${STUDIO_API_PREFIX}/compcard-requests/import`;
 const MY_CARD_REQUEST_MEDIA_PATH = `${STUDIO_API_PREFIX}/compcard-requests/media`;
@@ -52,6 +56,9 @@ const NORMAL_LAYER = new Map([
   ["Exclusive / Black Card Review", "Exclusive / Black Card Review"],
 ]);
 const DECISION_SET = new Set(["Needs Review", "Approved Direction", "Revise Source", "Reject"]);
+const STUDIO_RECORD_ID = /^rec[A-Za-z0-9]{14,24}$/;
+const STUDIO_REVIEW_CHECKS = ["identity", "photo", "safe"];
+const STUDIO_FAMILY_BY_FIELD = Object.freeze({ ST: "A", GY: "B", FR: "E", EN: "C", EX: "D", GWs: "GWs", EMs: "EMs" });
 
 export default {
   async fetch(request, env, ctx) {
@@ -91,24 +98,39 @@ export async function handleStudioRequest(request, env, path = normalizePathname
     if (path === MY_CARD_REQUEST_LIST_PATH) return await handleMyCardRequestList(env);
     if (path === MY_CARD_REQUEST_IMPORT_PATH) return await handleMyCardRequestImport(env, body);
     if (path === MY_CARD_REQUEST_MEDIA_PATH) return await handleMyCardRequestMedia(env, body);
+    if (path === ASSET_READ_PATH) return await readStudioAsset(env, body);
+    if (path === INTAKE_READ_PATH) {
+      const record = await readStudioFlowRequest(env, "intake", body);
+      return json({ ok: true, intake: safeStudioIntake(record.normalized, record.record.id) });
+    }
+    if (path === REVIEW_READ_PATH) {
+      const record = await readStudioFlowRequest(env, "review", body);
+      const review = safeStudioReview(record.normalized, record.record.id);
+      return json({ ok: true, review, ...await studioPreviewReadiness(env, review) });
+    }
+    if (path === `${STUDIO_API_PREFIX}/model-context`) return json(await readStudioModelContext(env, body.model_record_id));
+    if (path === `${STUDIO_API_PREFIX}/models/search`) return json(await searchStudioModels(env, body.q));
 
     if (path === INTAKE_VALIDATE_PATH) {
       const normalized = normalizeStudioIntake(body);
+      if (normalized.flow_version === 2) await verifyStudioIntakeV2(env, normalized);
       return json({ ok: true, safe_preview_only: true, normalized, warnings: buildIntakeWarnings(normalized) });
     }
 
     if (path === INTAKE_COMMIT_PATH) {
+      if (body.flow_version === 2) return json({ ok: true, status: "committed", ...await commitStudioFlowV2(env, "intake", body) });
       const normalized = normalizeStudioIntake(body);
       const result = await commitStudioIntake(env, normalized, body);
       return json({ ok: true, status: "committed", ...result });
     }
 
     if (path === REVIEW_VALIDATE_PATH) {
-      const normalized = normalizeStudioReview(body);
+      const normalized = body.flow_version === 2 ? await normalizeStudioReviewV2(env, body) : normalizeStudioReview(body);
       return json({ ok: true, safe_preview_only: true, normalized, warnings: [] });
     }
 
     if (path === REVIEW_COMMIT_PATH) {
+      if (body.flow_version === 2) return json({ ok: true, status: "committed", published: false, ...await commitStudioFlowV2(env, "review", body) });
       const normalized = normalizeStudioReview(body);
       const result = await commitStudioReview(env, normalized, body);
       return json({ ok: true, status: "committed", published: false, ...result });
@@ -247,6 +269,7 @@ function safeStudioMyCardRequest(record) {
   if (!requestId || !clean(payload.model_record_id) || !clean(media.media_id)) return null;
   return {
     request_id: requestId,
+    model_record_id: STUDIO_RECORD_ID.test(clean(payload.model_record_id)) ? clean(payload.model_record_id) : "",
     status: clean(fields.status) || "model_request_pending",
     submitted_at: clean(fields.created_at) || clean(payload.requested_at),
     model_name: clean(model.working_name) || clean(fields.model_name),
@@ -321,9 +344,10 @@ async function lookupStudioMyCardMedia(env, payload) {
   return { ok: true, object_key: objectKey, file_type: mime };
 }
 
-async function syncMyCardReviewDecision(env, requestId, review) {
+async function syncMyCardReviewDecision(env, requestId, review, expectedModelRecordId = "") {
   const lookup = await lookupMyCardRequest(env, requestId);
   if (!lookup.ok) return { ok: false, error: lookup.error || "my_card_request_not_found" };
+  if (expectedModelRecordId && clean(lookup.payload.model_record_id) !== expectedModelRecordId) return { ok: false, error: "my_card_model_mismatch" };
   const payload = lookup.payload;
   const statusByDecision = {
     "Approved Direction": "studio_approved",
@@ -361,6 +385,7 @@ function finiteNumberOrNull(value) {
 }
 
 export function normalizeStudioIntake(body = {}) {
+  assertStudioFlowVersion(body);
   const compcardRequestId = clean(body.compcard_request_id || body.my_card_request_id);
   const field = normalizeField(body.field || body.field_code);
   const layer = normalizeLayer(body.layer);
@@ -381,9 +406,11 @@ export function normalizeStudioIntake(body = {}) {
   if (modelTemplateId && !MY_CARD_TEMPLATE_IDS.has(modelTemplateId)) throw badRequest("invalid_model_template_id");
   assertSafePathText(sourceOwner, "invalid_source_owner", false);
   assertSafePathText(categoryPath, "invalid_category_path", false);
-  requireGradeRunNumber(field, runNumber);
+  if (body.flow_version === 2) {
+    if (GRADE_FIELDS.has(field) && runNumber && !(new RegExp(`^${field}\\d{1,6}$`)).test(runNumber)) throw badRequest("invalid_run_number");
+  } else requireGradeRunNumber(field, runNumber);
 
-  return {
+  const normalized = {
     studio_intake_id: clean(body.studio_intake_id || body.intake_id),
     compcard_request_id: compcardRequestId,
     idempotency_key: clean(body.idempotency_key || body.idempotencyKey),
@@ -401,9 +428,11 @@ export function normalizeStudioIntake(body = {}) {
     files: normalizeFileList(body.files),
     created_at: clean(body.created_at) || new Date().toISOString(),
   };
+  return body.flow_version === 2 ? normalizeStudioIntakeV2(body, normalized) : normalized;
 }
 
 export function normalizeStudioReview(body = {}) {
+  assertStudioFlowVersion(body);
   const seed = body.seed && typeof body.seed === "object" ? body.seed : {};
   const compcardRequestId = clean(body.compcard_request_id || body.my_card_request_id || seed.compcard_request_id || seed.my_card_request_id);
   const field = normalizeField(body.field || seed.field);
@@ -434,6 +463,456 @@ export function normalizeStudioReview(body = {}) {
     final_note: clean(body.final_note || body.output || body.note || body.prompt || seed.prompt),
     created_at: clean(body.created_at) || new Date().toISOString(),
   };
+}
+
+function assertStudioFlowVersion(body) {
+  if (body.flow_version !== undefined && body.flow_version !== 1 && body.flow_version !== 2) throw badRequest("invalid_flow_version");
+}
+
+function studioText(value, max, error, { required = false, multiline = false } = {}) {
+  if (value !== undefined && value !== null && typeof value !== "string") throw badRequest(error);
+  const text = clean(value);
+  if ((required && !text) || text.length > max || (multiline ? /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/ : /[\x00-\x1f\x7f]/).test(text)) throw badRequest(error);
+  return text;
+}
+
+function studioChoice(value, choices, error) {
+  const text = studioText(value, 120, error);
+  if (text && !choices.includes(text)) throw badRequest(error);
+  return text;
+}
+
+function studioChoices(value, choices, error, required = false) {
+  if (value === undefined && !required) return [];
+  if (!Array.isArray(value) || value.length > choices.length || value.some((item) => typeof item !== "string" || !choices.includes(item))) throw badRequest(error);
+  const unique = [...new Set(value)];
+  if ((required && !unique.length) || unique.length !== value.length) throw badRequest(error);
+  return unique;
+}
+
+function studioMetric(value, min, max, error) {
+  if (value === undefined || value === null || value === "") return null;
+  if (!["number", "string"].includes(typeof value)) throw badRequest(error);
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min || number > max) throw badRequest(error);
+  return number;
+}
+
+function studioReviewChecklist(value) {
+  if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) throw badRequest("invalid_checklist");
+  const source = value || {};
+  if (Object.keys(source).some((key) => !STUDIO_REVIEW_CHECKS.includes(key))) throw badRequest("invalid_checklist");
+  const checklist = {};
+  for (const key of STUDIO_REVIEW_CHECKS) {
+    if (source[key] !== undefined && typeof source[key] !== "boolean") throw badRequest("invalid_checklist");
+    checklist[key] = source[key] === true;
+  }
+  return checklist;
+}
+
+function assertNoStudioAuthorityInput(body) {
+  for (const key of ["intake_snapshot", "approved_review_snapshot", "model_context", "canonical_context", "model_asset_policy", "ready", "published"]) {
+    if (Object.hasOwn(body, key)) throw badRequest("server_owned_field_not_allowed");
+  }
+}
+
+function normalizeStudioIntakeV2(body, normalized) {
+  assertNoStudioAuthorityInput(body);
+  if (!Array.isArray(body.files) || !body.files.length || body.files.length > 10) throw badRequest("one_to_ten_photos_required");
+  const files = body.files.map((file) => {
+    if (!file || typeof file !== "object" || Array.isArray(file) || !isStudioAssetId(file.asset_id)) throw badRequest("invalid_asset_id");
+    const size = Number(file.size);
+    const type = clean(file.type).toLowerCase();
+    if (!Number.isSafeInteger(size) || size <= 0 || !isAllowedImageMime(type)) throw badRequest("invalid_photo_metadata");
+    return { name: studioText(file.name, 240, "invalid_photo_name"), size, type, asset_id: file.asset_id };
+  });
+  const assetIds = files.map((file) => file.asset_id);
+  if (new Set(assetIds).size !== assetIds.length) throw badRequest("duplicate_photo");
+  if (body.asset_ids !== undefined && (!Array.isArray(body.asset_ids) || JSON.stringify(body.asset_ids) !== JSON.stringify(assetIds))) throw badRequest("asset_list_mismatch");
+  const mainAssetId = body.main_asset_id === undefined ? assetIds[0] : clean(body.main_asset_id);
+  if (!assetIds.includes(mainAssetId)) throw badRequest("invalid_main_asset_id");
+  if (body.consent !== true) throw badRequest("consent_required");
+  const modelRecordId = studioText(body.model_record_id, 27, "invalid_model_record_id");
+  if (modelRecordId && !STUDIO_RECORD_ID.test(modelRecordId)) throw badRequest("invalid_model_record_id");
+  const family = clean(body.compcard_family) || STUDIO_FAMILY_BY_FIELD[normalized.field];
+  if (family !== STUDIO_FAMILY_BY_FIELD[normalized.field]) throw badRequest("compcard_family_mismatch");
+  const variant = body.visual_variant_number === undefined || body.visual_variant_number === null || body.visual_variant_number === "" ? null : Number(body.visual_variant_number);
+  if (variant !== null && (!Number.isInteger(variant) || variant < 1 || variant > 7)) throw badRequest("invalid_visual_variant_number");
+  return {
+    ...normalized,
+    flow_version: 2,
+    // V2 never accepts an external record identifier or timestamp as its receipt.
+    studio_intake_id: "",
+    created_at: new Date().toISOString(),
+    model_name: studioText(normalized.model_name, 80, "invalid_model_name", { required: true }),
+    template_hint: studioText(normalized.template_hint, 160, "invalid_template_hint", { required: true }),
+    direction: studioText(body.direction || body.note, 1000, "invalid_direction", { multiline: true }),
+    checklist: studioReviewChecklist(body.checklist),
+    files,
+    asset_ids: assetIds,
+    main_asset_id: mainAssetId,
+    model_record_id: modelRecordId,
+    model_mode: modelRecordId ? "existing" : "new",
+    category: studioChoice(body.category, ["Standard", "Premium", "Exclusive", "Travel", "Extreme"], "invalid_category"),
+    audiences: studioChoices(body.audiences, ["public", "private"], "audience_required", true),
+    gender: studioChoice(body.gender, ["male", "gay"], "invalid_gender"),
+    client_types: studioChoice(body.client_types, ["gay", "women", "both"], "invalid_client_types"),
+    drive_folder: studioText(body.drive_folder, 2048, "invalid_drive_folder"),
+    promotion_albums: studioChoices(body.promotion_albums, ["new-coming", "hot-sha", "mmd-recommend"], "invalid_promotion_albums"),
+    note: studioText(body.note, 1000, "invalid_note", { multiline: true }),
+    consent: true,
+    height_cm: studioMetric(body.height_cm, 130, 230, "invalid_height_cm"),
+    weight_kg: studioMetric(body.weight_kg, 35, 200, "invalid_weight_kg"),
+    compcard_family: family,
+    visual_variant_number: variant,
+    title: studioText(body.title, 120, "invalid_title", { multiline: true }),
+  };
+}
+
+function safeStudioModelContext(value, modelRecordId = "") {
+  const context = value?.context && typeof value.context === "object" ? value.context : {};
+  return {
+    ok: true,
+    ready: value?.ready === true,
+    model_record_id: clean(modelRecordId),
+    context: {
+      display_name: clean(context.display_name).slice(0, 80),
+      field: normalizeField(context.field),
+      world: ["public", "private"].includes(context.world) ? context.world : "",
+      layer: normalizeLayer(context.layer),
+      run_number: clean(context.run_number).slice(0, 12),
+      height_cm: context.height_cm == null ? null : finiteNumberOrNull(context.height_cm),
+      weight_kg: context.weight_kg == null ? null : finiteNumberOrNull(context.weight_kg),
+      model_asset_policy: ["real_photo", "ai_generated"].includes(context.model_asset_policy) ? context.model_asset_policy : "",
+      province: clean(context.province).slice(0, 120),
+    },
+    blockers: Array.isArray(value?.blockers) ? value.blockers.filter((item) => typeof item === "string").map((item) => item.slice(0, 160)).slice(0, 20) : [],
+  };
+}
+
+function assertStudioCanonicalIdentity(intake, modelContext) {
+  const context = modelContext.context;
+  if (intake.model_record_id !== modelContext.model_record_id || intake.model_name !== context.display_name ||
+      intake.field !== context.field || intake.layer !== context.layer || intake.run_number !== context.run_number ||
+      intake.height_cm !== context.height_cm || intake.weight_kg !== context.weight_kg) throw conflict("model_context_mismatch");
+}
+
+async function verifyStudioIntakeV2(env, normalized) {
+  await verifyStudioFilesV2(env, normalized.files);
+  const context = normalized.model_record_id
+    ? await readStudioModelContext(env, normalized.model_record_id)
+    : { ready: false, context: {}, blockers: ["model_record_required"] };
+  normalized.model_context = safeStudioModelContext(context, normalized.model_record_id);
+  if (normalized.model_context.ready) assertStudioCanonicalIdentity(normalized, normalized.model_context);
+  await assertStudioMyCardModel(env, normalized);
+  return normalized;
+}
+
+async function assertStudioMyCardModel(env, intake) {
+  if (!intake.compcard_request_id) return;
+  let lookup;
+  try { lookup = await lookupMyCardRequest(env, intake.compcard_request_id); }
+  catch { throw studioError("my_card_request_lookup_unavailable", 503); }
+  if (!lookup.ok) throw studioError(lookup.error || "my_card_request_lookup_unavailable", lookup.status === 404 ? 404 : 503);
+  if (!intake.model_record_id || clean(lookup.payload.model_record_id) !== intake.model_record_id) throw conflict("my_card_model_mismatch");
+}
+
+function assertStudioPresentation(intake) {
+  const special = GRADE_FIELDS.has(intake.field);
+  const variant = intake.visual_variant_number;
+  if (special ? variant !== (intake.field === "EMs" ? 6 : 7) : ![1, 2, 3, 4, 5].includes(variant)) throw conflict("studio_frame_required");
+  if (!Number.isFinite(intake.height_cm) || intake.height_cm < 130 || intake.height_cm > 230 ||
+      !Number.isFinite(intake.weight_kg) || intake.weight_kg < 35 || intake.weight_kg > 200) throw conflict("studio_metrics_required");
+  if (!intake.model_name || intake.model_name.length > 80 || /[\x00-\x1f\x7f]/.test(intake.model_name)) throw conflict("studio_name_required");
+  if (special) {
+    const title = clean(intake.title).replace(/\r\n/g, "\n");
+    if (!title || Array.from(title).length > 120 || title.split("\n").length > 2 || /[\x00-\x09\x0b-\x1f\x7f]/.test(title)) throw conflict("studio_title_required");
+    if (!(new RegExp(`^${intake.field}\\d{1,6}$`)).test(intake.run_number)) throw conflict("studio_assigned_run_required");
+  }
+  const photo = intake.files.find((file) => file.asset_id === intake.main_asset_id);
+  if (!photo || !isAllowedImageMime(photo.type) || !Number.isSafeInteger(photo.size) || photo.size < 1 || photo.size > DEFAULT_UPLOAD_MAX_BYTES) throw conflict("studio_photo_required");
+}
+
+async function normalizeStudioReviewV2(env, body) {
+  assertNoStudioAuthorityInput(body);
+  const saved = await readStudioFlowRecord(env, "intake", body.studio_intake_id);
+  if (saved.normalized.flow_version !== 2) throw conflict("intake_version_not_supported");
+  const intake = safeStudioIntake(saved.normalized, saved.record.id);
+  await assertStudioMyCardModel(env, intake);
+  const decision = studioChoice(body.decision || "Needs Review", [...DECISION_SET], "invalid_decision");
+  const checklist = studioReviewChecklist(body.checklist);
+  if (decision === "Approved Direction") {
+    if (!STUDIO_REVIEW_CHECKS.every((key) => checklist[key])) throw badRequest("review_checklist_required");
+    assertStudioPresentation(intake);
+    if (!intake.model_record_id) throw conflict("model_record_required");
+    const current = safeStudioModelContext(await readStudioModelContext(env, intake.model_record_id), intake.model_record_id);
+    if (!current.ready) throw conflict("model_context_not_ready");
+    assertStudioCanonicalIdentity(intake, current);
+    if (current.context.model_asset_policy !== "real_photo") throw conflict("generated_media_required");
+    if (intake.model_context.ready !== true || intake.model_context.context.model_asset_policy !== current.context.model_asset_policy) throw conflict("model_context_mismatch");
+    await verifyStudioFilesV2(env, intake.files);
+  }
+  return {
+    flow_version: 2,
+    studio_review_id: "",
+    studio_intake_id: intake.studio_intake_id,
+    compcard_request_id: intake.compcard_request_id,
+    model_name: intake.model_name,
+    field: intake.field,
+    run_number: intake.run_number,
+    layer: intake.layer,
+    decision,
+    checklist,
+    checklist_score: STUDIO_REVIEW_CHECKS.filter((key) => checklist[key]).length,
+    ewvon_note: studioText(body.ewvon_note, 1000, "invalid_review_note", { multiline: true }),
+    final_note: studioText(body.final_note, 2000, "invalid_final_note", { multiline: true }),
+    created_at: new Date().toISOString(),
+    intake_snapshot: intake,
+  };
+}
+
+async function verifyStudioFilesV2(env, files) {
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.head !== "function") throw studioError("asset_storage_unavailable", 503);
+  for (const file of files) {
+    let object;
+    try { object = await env.MMD_MODEL_ASSETS.head(studioAssetKey(file.asset_id)); }
+    catch { throw studioError("asset_storage_unavailable", 503); }
+    if (!isVerifiedStudioAssetObject(object, file.asset_id, env) || Number(object.size) !== file.size || object.customMetadata.content_type !== file.type) throw conflict("asset_verification_failed");
+  }
+}
+
+function isVerifiedStudioAssetObject(object, assetId, env) {
+  if (!isValidStudioAssetObject(object, assetId)) return false;
+  const meta = object.customMetadata;
+  const checksum = object.checksums?.sha256;
+  return object.key === studioAssetKey(assetId) && Number.isSafeInteger(object.size) && object.size > 0 &&
+    object.size <= uploadMaxBytes(env) && String(object.size) === meta.size &&
+    object.httpMetadata?.contentType === meta.content_type &&
+    meta.staging_prefix === STUDIO_ASSET_PREFIX.replace(/\/$/, "") &&
+    checksum instanceof ArrayBuffer && checksum.byteLength === 32 && arrayBufferToHex(checksum) === meta.sha256;
+}
+
+async function readStudioAsset(env, body) {
+  const assetId = clean(body.asset_id);
+  if (!isStudioAssetId(assetId)) throw badRequest("invalid_asset_id");
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") throw studioError("asset_storage_unavailable", 503);
+  let object;
+  try { object = await env.MMD_MODEL_ASSETS.get(studioAssetKey(assetId)); }
+  catch { throw studioError("asset_storage_unavailable", 503); }
+  if (!object) throw studioError("asset_not_found", 404);
+  if (!object.body || !isVerifiedStudioAssetObject(object, assetId, env)) {
+    if (object.body?.cancel) await object.body.cancel().catch(() => {});
+    throw conflict("asset_verification_failed");
+  }
+  return new Response(object.body, { headers: {
+    "content-type": object.customMetadata.content_type,
+    "content-length": String(object.size),
+    "cache-control": "private, no-store",
+    "content-disposition": "inline",
+    "x-content-type-options": "nosniff",
+  } });
+}
+
+const STUDIO_INTAKE_PUBLIC_FIELDS = [
+  "compcard_request_id", "model_name", "internal_code", "source_owner", "category_path", "field", "run_number", "layer",
+  "template_hint", "model_template_id", "direction", "model_record_id", "model_mode", "category", "gender", "client_types",
+  "drive_folder", "note", "compcard_family", "title",
+];
+
+function safeStudioIntake(normalized, recordId) {
+  const result = { flow_version: normalized.flow_version === 2 ? 2 : 1, studio_intake_id: recordId };
+  for (const field of STUDIO_INTAKE_PUBLIC_FIELDS) result[field] = clean(normalized[field]).slice(0, field === "drive_folder" ? 2048 : 1000);
+  result.created_at = clean(normalized.created_at).slice(0, 40);
+  result.field = normalizeField(result.field);
+  result.layer = normalizeLayer(result.layer);
+  result.height_cm = normalized.height_cm == null ? null : finiteNumberOrNull(normalized.height_cm);
+  result.weight_kg = normalized.weight_kg == null ? null : finiteNumberOrNull(normalized.weight_kg);
+  result.visual_variant_number = Number.isInteger(normalized.visual_variant_number) && normalized.visual_variant_number >= 1 && normalized.visual_variant_number <= 7 ? normalized.visual_variant_number : null;
+  result.audiences = Array.isArray(normalized.audiences) ? normalized.audiences.filter((value) => ["public", "private"].includes(value)).slice(0, 2) : [];
+  result.promotion_albums = Array.isArray(normalized.promotion_albums) ? normalized.promotion_albums.filter((value) => ["new-coming", "hot-sha", "mmd-recommend"].includes(value)).slice(0, 3) : [];
+  result.consent = normalized.consent === true;
+  result.checklist = Object.fromEntries(STUDIO_REVIEW_CHECKS.map((key) => [key, normalized.checklist?.[key] === true]));
+  result.files = normalizeFileList(normalized.files).filter((file) => isStudioAssetId(file.asset_id) && isAllowedImageMime(file.type) && Number.isSafeInteger(file.size) && file.size > 0).slice(0, 10);
+  result.asset_ids = result.files.map((file) => file.asset_id);
+  result.main_asset_id = result.asset_ids.includes(normalized.main_asset_id) ? normalized.main_asset_id : (result.flow_version === 1 ? result.asset_ids[0] || "" : "");
+  result.model_context = safeStudioModelContext(normalized.model_context, result.model_record_id);
+  if (result.flow_version === 2 && (!result.field || !result.layer || !result.model_name || !result.consent ||
+      !result.files.length || result.files.length !== normalized.files?.length || new Set(result.asset_ids).size !== result.asset_ids.length ||
+      JSON.stringify(result.asset_ids) !== JSON.stringify(normalized.asset_ids) || !result.main_asset_id)) throw conflict("intake_record_invalid");
+  return result;
+}
+
+function safeStudioReview(normalized, recordId) {
+  const result = {
+    flow_version: normalized.flow_version === 2 ? 2 : 1,
+    studio_review_id: recordId,
+    studio_intake_id: clean(normalized.studio_intake_id),
+    compcard_request_id: clean(normalized.compcard_request_id),
+    model_name: clean(normalized.model_name).slice(0, 80),
+    field: normalizeField(normalized.field),
+    layer: normalizeLayer(normalized.layer),
+    run_number: clean(normalized.run_number).slice(0, 12),
+    decision: DECISION_SET.has(normalized.decision) ? normalized.decision : "Needs Review",
+    checklist: Object.fromEntries(STUDIO_REVIEW_CHECKS.map((key) => [key, normalized.checklist?.[key] === true])),
+    checklist_score: clampInt(normalized.checklist_score, 0, 20, 0),
+    ewvon_note: clean(normalized.ewvon_note).slice(0, 1000),
+    final_note: clean(normalized.final_note).slice(0, 2000),
+    created_at: clean(normalized.created_at).slice(0, 40),
+    intake_snapshot: null,
+  };
+  if (result.flow_version === 2) {
+    const snapshot = normalized.intake_snapshot;
+    if (!snapshot || snapshot.flow_version !== 2 || !STUDIO_RECORD_ID.test(result.studio_intake_id) || snapshot.studio_intake_id !== result.studio_intake_id) throw conflict("review_snapshot_invalid");
+    result.intake_snapshot = safeStudioIntake(snapshot, result.studio_intake_id);
+    for (const key of ["model_name", "field", "layer", "run_number", "compcard_request_id"]) {
+      if (result[key] !== result.intake_snapshot[key]) throw conflict("review_snapshot_invalid");
+    }
+  }
+  return result;
+}
+
+async function studioPreviewReadiness(env, review) {
+  if (review.flow_version !== 2 || !review.intake_snapshot) return { preview_ready: false, blockers: ["review_version_not_supported"] };
+  if (review.decision !== "Approved Direction") return { preview_ready: false, blockers: ["review_not_approved"] };
+  if (!STUDIO_REVIEW_CHECKS.every((key) => review.checklist[key] === true)) return { preview_ready: false, blockers: ["review_checklist_required"] };
+  const intake = review.intake_snapshot;
+  try {
+    assertStudioPresentation(intake);
+    await assertStudioMyCardModel(env, intake);
+    if (!intake.model_record_id) throw conflict("model_record_required");
+    const current = safeStudioModelContext(await readStudioModelContext(env, intake.model_record_id), intake.model_record_id);
+    if (!current.ready) throw conflict("model_context_not_ready");
+    assertStudioCanonicalIdentity(intake, current);
+    if (current.context.model_asset_policy !== "real_photo") throw conflict("generated_media_required");
+    if (intake.model_context.ready !== true || intake.model_context.context.model_asset_policy !== current.context.model_asset_policy) throw conflict("model_context_mismatch");
+    await verifyStudioFilesV2(env, intake.files);
+    return { preview_ready: true, blockers: [] };
+  } catch (error) {
+    const allowed = new Set(["model_record_required", "model_not_found", "model_context_not_ready", "model_context_mismatch", "generated_media_required", "asset_verification_failed", "asset_storage_unavailable", "studio_frame_required", "studio_metrics_required", "studio_name_required", "studio_title_required", "studio_assigned_run_required", "studio_photo_required", "my_card_model_mismatch", "my_card_request_not_found", "my_card_request_lookup_unavailable"]);
+    return { preview_ready: false, blockers: [allowed.has(error?.message) ? error.message : "model_context_unavailable"] };
+  }
+}
+
+function parseStudioFlowRecord(record, kind, requireV2 = false) {
+  const fields = record?.fields || {};
+  if (!STUDIO_RECORD_ID.test(record?.id || "") || fields.source !== `mmd_studio_${kind}` || fields.intent !== `studio_${kind}_commit` || fields.status !== `${kind}_committed`) throw studioError(`${kind}_not_found`, 404);
+  const payload = parseMyCardPayload(fields.payload_json);
+  const normalized = payload.normalized;
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized) || (requireV2 && normalized.flow_version !== 2)) throw conflict(`${kind}_record_invalid`);
+  return { record, payload, normalized };
+}
+
+async function readStudioFlowRecord(env, kind, recordId) {
+  const id = clean(recordId);
+  if (!STUDIO_RECORD_ID.test(id)) throw badRequest(`invalid_studio_${kind}_id`);
+  let result;
+  try { result = await airtableGet(env, resolveStudioTable(env, kind).name, id); }
+  catch { throw studioError(`${kind}_lookup_unavailable`, 503); }
+  if (!result.ok) throw studioError(result.status === 404 ? `${kind}_not_found` : `${kind}_lookup_unavailable`, result.status === 404 ? 404 : 503);
+  if (result.record?.id !== id) throw studioError(`${kind}_lookup_unavailable`, 503);
+  return parseStudioFlowRecord(result.record, kind);
+}
+
+async function findStudioV2Duplicate(env, table, idempotencyKey) {
+  const field = table.mode === "console_inbox_fallback" ? "inbox_id" : "idempotency_key";
+  let result;
+  try { result = await airtableList(env, table.name, { filterByFormula: `{${field}}="${escapeFormula(idempotencyKey)}"`, maxRecords: 2 }); }
+  catch { throw studioError("idempotency_lookup_unavailable", 503); }
+  // Airtable lookup then create is serial retry protection, not a cross-request CAS.
+  // A failed or ambiguous lookup must never fall through to another create.
+  if (!result.ok) throw studioError("idempotency_lookup_unavailable", 503);
+  if (result.records.length > 1) throw conflict("idempotency_record_ambiguous");
+  if (result.records[0] && result.records[0].fields?.[field] !== idempotencyKey) throw studioError("idempotency_lookup_unavailable", 503);
+  return result.records[0] || null;
+}
+
+async function readStudioFlowRequest(env, kind, body) {
+  const recordId = clean(body[`studio_${kind}_id`]);
+  if (recordId) {
+    if (body.idempotency_key) throw badRequest("one_reference_required");
+    return readStudioFlowRecord(env, kind, recordId);
+  }
+  const key = requireIdempotencyKey(body, "idempotency_key_required");
+  const record = await findStudioV2Duplicate(env, resolveStudioTable(env, kind), key);
+  if (!record) throw studioError(`${kind}_not_found`, 404);
+  return parseStudioFlowRecord(record, kind, true);
+}
+
+function canonicalStudioJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalStudioJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalStudioJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+function studioFlowReceipt(kind, record, normalized, idempotencyKey, table, replayed) {
+  return {
+    flow_version: 2,
+    [`studio_${kind}_id`]: record.id,
+    ...(kind === "review" ? { studio_intake_id: normalized.studio_intake_id } : {}),
+    record_id: record.id,
+    compcard_request_id: normalized.compcard_request_id || null,
+    idempotency_key: idempotencyKey,
+    table_mode: table.mode,
+    replayed,
+  };
+}
+
+async function commitStudioFlowV2(env, kind, body) {
+  assertNoStudioAuthorityInput(body);
+  const idempotencyKey = requireIdempotencyKey(body, "idempotency_key_required");
+  const table = resolveStudioTable(env, kind);
+  const fingerprint = await sha256Hex(new TextEncoder().encode(canonicalStudioJson(body)));
+  const duplicate = await findStudioV2Duplicate(env, table, idempotencyKey);
+  if (duplicate) {
+    let saved;
+    try { saved = parseStudioFlowRecord(duplicate, kind, true); }
+    catch { throw conflict("idempotency_conflict"); }
+    if (saved.payload.request_fingerprint !== fingerprint) throw conflict("idempotency_conflict");
+    return studioFlowReceipt(kind, saved.record, saved.normalized, idempotencyKey, table, true);
+  }
+  const normalized = kind === "intake"
+    ? await verifyStudioIntakeV2(env, normalizeStudioIntake(body))
+    : await normalizeStudioReviewV2(env, body);
+  const fields = fieldsForTable(table, {
+    [`studio_${kind}_id`]: crypto.randomUUID(),
+    ...(kind === "review" ? { studio_intake_id: normalized.studio_intake_id } : {}),
+    source: `mmd_studio_${kind}`,
+    intent: `studio_${kind}_commit`,
+    model_name: normalized.model_name,
+    field: normalized.field,
+    run_number: normalized.run_number,
+    layer: normalized.layer,
+    ...(kind === "intake" ? {
+      internal_code: normalized.internal_code,
+      source_owner: normalized.source_owner,
+      category_path: normalized.category_path,
+      template_hint: normalized.template_hint,
+      direction: normalized.direction,
+      checklist_json: JSON.stringify(normalized.checklist),
+      created_by: "assistant",
+    } : {
+      decision: normalized.decision,
+      checklist_score: normalized.checklist_score,
+      ewvon_note: normalized.ewvon_note,
+      final_note: normalized.final_note,
+    }),
+    // Only validated fields and server-owned context are persisted in the V2 payload.
+    payload_json: JSON.stringify({ normalized, request_fingerprint: fingerprint }),
+    status: `${kind}_committed`,
+    created_at: normalized.created_at,
+    idempotency_key: idempotencyKey,
+  });
+  let record;
+  try { record = await airtableCreate(env, table.name, fields); }
+  catch { throw studioError(`${kind}_save_unconfirmed`, 503); }
+  if (!STUDIO_RECORD_ID.test(record?.id || "")) throw studioError(`${kind}_save_unconfirmed`, 503);
+  if (kind === "review" && normalized.compcard_request_id) {
+    // Preserve the inbox update once on create; a receipt replay never mutates it.
+    await syncMyCardReviewDecision(env, normalized.compcard_request_id, {
+      ...normalized, studio_review_id: record.id, reviewed_at: normalized.created_at,
+    }, normalized.intake_snapshot.model_record_id).catch(() => null);
+  }
+  return studioFlowReceipt(kind, record, normalized, idempotencyKey, table, false);
 }
 
 export function normalizeStudioPreview(body = {}) {
@@ -1125,7 +1604,8 @@ function json(payload, status = 200) {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
+      "cache-control": "private, no-store",
+      "x-content-type-options": "nosniff",
     },
   });
 }
@@ -1145,6 +1625,12 @@ function conflict(message) {
 function serverError(message) {
   const error = new Error(message);
   error.status = 500;
+  return error;
+}
+
+function studioError(message, status) {
+  const error = new Error(message);
+  error.status = status;
   return error;
 }
 
