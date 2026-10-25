@@ -37,3 +37,5 @@ jobs:
         run: npm run test:my-mmd-model-payment
       - name: Verify payment evidence and delivery recovery
         run: npm run test:payment-delivery
+      - name: Verify Black Card LIFF payment and Companion persistence
+        run: npm run test:blackcard-member-payment
