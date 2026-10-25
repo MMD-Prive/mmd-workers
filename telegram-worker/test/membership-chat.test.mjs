@@ -299,7 +299,6 @@ test("HYPE private acquisition route offers services without asking for gender",
   assert.doesNotMatch(sent[0].text, /ผู้หญิง|เพศ|gender/i);
   assert.deepEqual(sent[0].reply_markup.inline_keyboard, [
     [{ text: "ดูหนุ่ม ๆ · คุยต่อทาง LINE", url: "https://lin.ee/xRqsALs" }],
-    [{ text: "รู้จัก BELIEVE IN ME", url: "https://www.mmdbkk.com/believe/inme" }],
     [{ text: "กลับไป Telegram Preview", url: "https://t.me/MMDPriveTH" }],
   ]);
 });
@@ -315,54 +314,34 @@ test("HYPE acquisition routing does not run or reveal choices in a public Telegr
 });
 
 
-test("private start uses only explicit canonical routing and keeps profile context out of replies", async () => {
+test("private acquisition starts offer only MMD LINE and Preview without reading personal context", async () => {
   const sent = mockTelegram();
+  let reads = 0;
+  const authority = { fetch() { reads++; throw new Error("Start must not read personal context"); } };
   for (const text of ["/start route", "/start", "/start@mmdprivebot"]) {
-    for (const [gender, source] of [["female", "canonical_field"], ["female", "explicit_labeled_note"], ["male", "canonical_field"]]) {
-      let reads = 0;
-      const env = { ...runtime(), HYPE_OPERATIONS: { async fetch(req) {
-        reads++;
-        assert.equal(new URL(req.url).pathname, "/__internal/hype/operational-status");
-        assert.equal(req.headers.get("x-mmd-service-binding"), "telegram-worker");
-        assert.equal((await req.json()).telegram_user_id, "123456");
-        return Response.json({ ok: true, state: "ready", routing_context: {
-          customer_gender: gender, gender_source: source, gender_explicit: true,
-        }, payment: { outstanding_amount_thb: 98765 } });
-      } } };
-      const { body } = await receiveUpdate({ message: {
-        text, chat: { id: 123456, type: "private" }, from: { id: 123456, is_bot: false },
-      } }, env);
-      assert.equal(body.flow, "hype_preview_lead_routing");
-      assert.equal(reads, 1);
-      const reply = sent.at(-1);
-      assert.equal(reply.reply_markup.inline_keyboard[0][0].url,
-        gender === "female" ? "https://www.mmdbkk.com/believe/inme" : "https://lin.ee/xRqsALs");
-      assert.doesNotMatch(JSON.stringify(reply), /female|male|canonical_field|98765|ผู้หญิง|เพศ/);
-      assert.doesNotMatch(JSON.stringify(body), /routing_context|customer_gender|98765/);
-    }
+    const { body } = await receiveUpdate({ message: {
+      text, chat: { id: 123456, type: "private" },
+      from: { id: 123456, is_bot: false, first_name: "ผู้หญิง", username: "female" },
+    } }, { ...runtime(), HYPE_OPERATIONS: authority, TELEGRAM_BIND_AUTHORITY: authority });
+    assert.equal(body.flow, "hype_preview_lead_routing");
+    const reply = sent.at(-1);
+    assert.match(reply.text, /LINE Official/);
+    assert.deepEqual(reply.reply_markup.inline_keyboard.flat().map(button => button.url), [
+      "https://lin.ee/xRqsALs", "https://t.me/MMDPriveTH",
+    ]);
+    assert.doesNotMatch(JSON.stringify(reply), /believe|inme|female|male|ผู้หญิง|เพศ/i);
   }
+  assert.equal(reads, 0);
 });
 
-test("unknown, unconfirmed and unavailable routing always leave the service choice open", async () => {
+test("private acquisition preserves configured MMD LINE and Preview destinations", async () => {
   const sent = mockTelegram();
-  const variants = [
-    { ok: true, routing_context: { customer_gender: "female", gender_explicit: false, gender_source: "canonical_field" } },
-    { ok: true, routing_context: { customer_gender: "female", gender_explicit: true, gender_source: "profile_guess" } },
-    { ok: true, routing_context: { customer_gender: "unknown", gender_explicit: true, gender_source: "canonical_field" } },
-    { ok: false, state: "connect_required" }, null, "invalid_json", "throw",
-  ];
-  for (const result of variants) {
-    const env = { ...runtime(), HYPE_OPERATIONS: { async fetch() {
-      if (result === "throw") throw new Error("unavailable");
-      if (result === "invalid_json") return new Response("invalid");
-      return Response.json(result);
-    } } };
-    await receiveUpdate({ message: { text: "/start route", chat: { id: 123456, type: "private" },
-      from: { id: 123456, is_bot: false, first_name: "ผู้หญิง", username: "female" },
-    } }, env);
-    assert.match(sent.at(-1).text, /เลือกได้เลย/);
-    assert.equal(sent.at(-1).reply_markup.inline_keyboard[0][0].url, "https://lin.ee/xRqsALs");
-  }
+  await receiveUpdate({ message: { text: "/start route", chat: { id: 123456, type: "private" },
+    from: { id: 123456, is_bot: false },
+  } }, { ...runtime(), MMD_LINE_OFC_URL: "https://line.me/test-mmd", TELEGRAM_PREVIEW_CHANNEL_URL: "https://t.me/testPreview" });
+  assert.deepEqual(sent.at(-1).reply_markup.inline_keyboard.flat().map(button => button.url), [
+    "https://line.me/test-mmd", "https://t.me/testPreview",
+  ]);
 });
 
 test("public or edited acquisition starts never read private routing context", async () => {
