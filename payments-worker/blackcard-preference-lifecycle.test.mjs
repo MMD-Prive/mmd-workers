@@ -115,7 +115,7 @@ test('retention redacts private text in D1 and Airtable, preserves minimal repla
     // Fixture PATCH replaces its fields object; inspect current server state.
     assert.equal(h.mirror.records[0].fields[F.note],''); assert.equal(events(h).length,count);
     const read=await (await handleBlackCardCompanionPreference(request(h.token,{read:true}),h.env)).json();
-    assert.equal(read.preference_status,'expired'); assert.equal(read.companion,null);
+    assert.equal(read.preference_status,'recorded'); assert.equal(read.companion.id,'hito');
   } finally { h.restore(); }
 });
 
@@ -153,7 +153,9 @@ test('only the existing admin service can place an approved hold; hold/release r
     assert.ok(!JSON.stringify(holds).includes(body.reason)); assert.ok(!JSON.stringify(holds).includes(body.actor));
     expire(h); assert.equal((await run(h.env,{now:later(h.row,1)})).held,1); assert.equal(rowOf(h).note,'private customer note');
     const expiredRead=await (await handleBlackCardCompanionPreference(request(h.token,{read:true}),h.env)).json();
-    assert.equal(expiredRead.preference_status,'expired'); assert.equal(expiredRead.companion,null);
+    assert.equal(expiredRead.preference_status,'pending_review'); assert.equal(expiredRead.companion.id,'hito');
+    const replay=await handleBlackCardCompanionPreference(request(h.token,{companion_id:'hito',note:'private customer note',change_reason:'private request reason',experience_preferences:['privacy']}),h.env);
+    assert.equal(replay.status,410); assert.equal(h.db.preferences.size,1);
     const release={...body,action:'release_hold',hold_id:placed.hold_id,operation_id:crypto.randomUUID()}; delete release.hold_until;
     assert.equal((await admin(holdRequest(h,{...release,hold_id:'another'}),h.env)).status,409);
     assert.equal((await admin(holdRequest(h,release),h.env)).status,200);
@@ -267,4 +269,77 @@ test('a missing linked Member cannot prevent matching-request redaction but cann
     assert.equal((await run(h.env,{now:later(h.row,3)})).redacted,1);
     assert.equal(rowOf(h).note,''); assert.equal(h.mirror.records[0].fields[F.requestNote],'');
   } finally { h.restore(); }
+});
+
+test('review after text cutoff keeps operational state and hashed audit without reviving private fields',async()=>{
+  const h=await seed();
+  try {
+    expire(h); await run(h.env,{now:later(h.row,1)});
+    review(h,'in_review',2);
+    const result=await run(h.env,{now:later(h.row,3)});
+    assert.equal(result.failed,0); assert.equal(rowOf(h).status,'in_review');
+    for(const key of ['note','change_reason']) assert.equal(rowOf(h)[key],'');
+    for(const key of ['reviewed_by','review_note']) assert.equal(rowOf(h)[key],null);
+    for(const key of [F.requestNote,F.reason,F.actor,F.note]) assert.equal(h.mirror.records[0].fields[key],'');
+    const event=events(h).find(e=>e.event_type==='review_reconciled');
+    assert.match(event.actor_hash,/^[a-f0-9]{64}$/); assert.ok(!JSON.stringify(event).includes('operator:owner'));
+    const count=events(h).length; await run(h.env,{now:later(h.row,4)}); assert.equal(events(h).length,count);
+    review(h,'recorded',5); await run(h.env,{now:later(h.row,6)});
+    assert.equal(rowOf(h).status,'recorded'); assert.equal(rowOf(h).reviewed_by,null);
+    const read=await (await handleBlackCardCompanionPreference(request(h.token,{read:true}),h.env)).json();
+    assert.equal(read.companion.id,'hito'); assert.equal(read.preference_status,'recorded');
+  }finally{h.restore();}
+});
+
+test('post-cutoff review ACK retries from the receipt after reviewer text is erased',async()=>{
+  const h=await seed();
+  try {
+    expire(h); review(h,'recorded',1);
+    const fetch=h.env.AIRTABLE_HTTP.fetch.bind(h.mirror); let failAck=true;
+    h.env.AIRTABLE_HTTP={async fetch(req){
+      const fields=req.method==='PATCH' ? (await req.clone().json()).fields : null;
+      if(fields && fields[F.meta] && !Object.hasOwn(fields,F.actor) && failAck){failAck=false; return Response.json({}, {status:503});}
+      return fetch(req);
+    }};
+    assert.equal((await run(h.env,{now:later(h.row,2)})).failed,1);
+    assert.equal(rowOf(h).status,'recorded'); assert.equal(rowOf(h).reviewed_by,null);
+    const count=events(h).length; assert.equal(h.mirror.records[0].fields[F.actor],'');
+    assert.equal((await run(h.env,{now:later(h.row,3)})).failed,0);
+    assert.equal(rowOf(h).review_mirrored_revision_hash,rowOf(h).review_revision_hash); assert.equal(events(h).length,count);
+  }finally{h.restore();}
+});
+
+test('post-cutoff review cannot alter structured preferences, member link or terminal decisions',async()=>{
+  for(const mutate of [f=>f.fldxw53oA5eTu8MKy=['warm-energy'], f=>f.fld6I0jkPbACVSVWV=['recOther000000001'], f=>f.fldlR0h05dSjyDIcw='hiro']) {
+    const h=await seed();
+    try {
+      expire(h); await run(h.env,{now:later(h.row,1)}); review(h,'recorded',2); mutate(h.mirror.records[0].fields);
+      assert.equal((await run(h.env,{now:later(h.row,3)})).failed,1); assert.equal(rowOf(h).status,'pending_review');
+      assert.equal(events(h).filter(e=>e.event_type==='review_reconciled').length,0);
+    }finally{h.restore();}
+  }
+  const h=await seed();
+  try {
+    expire(h); review(h,'declined',1); await run(h.env,{now:later(h.row,2)});
+    review(h,'recorded',3); assert.equal((await run(h.env,{now:later(h.row,4)})).failed,1);
+    assert.equal(rowOf(h).status,'declined');
+  }finally{h.restore();}
+});
+
+test('a D1 review write failure cannot erase an uncommitted post-cutoff proposal',async()=>{
+  const h=await seed();
+  try {
+    expire(h); review(h,'recorded',1);
+    const batch=h.db.batch.bind(h.db); let calls=0;
+    h.db.batch=async statements=>{ if(++calls===2) throw new Error('fixture D1 unavailable'); return batch(statements); };
+    assert.equal((await run(h.env,{now:later(h.row,2)})).failed,1);
+    assert.equal(rowOf(h).note,''); assert.equal(rowOf(h).status,'pending_review');
+    assert.equal(h.mirror.records[0].fields[F.actor],'operator:owner');
+    assert.equal(events(h).filter(e=>e.event_type==='review_reconciled').length,0);
+    h.db.batch=batch;
+    assert.equal((await run(h.env,{now:later(h.row,3)})).failed,0);
+    assert.equal(rowOf(h).status,'recorded'); assert.equal(rowOf(h).reviewed_by,null);
+    assert.equal(h.mirror.records[0].fields[F.actor],'');
+    assert.equal(events(h).filter(e=>e.event_type==='review_reconciled').length,1);
+  }finally{h.restore();}
 });

@@ -95,6 +95,7 @@
   function errorKey(code) {
     if (code === 'confirmation_token_expired') return 'error_expired';
     if (code === 'preference_expired') return 'expired';
+    if (['preference_request_retired', 'preference_new_request_required'].includes(code)) return 'error_conflict';
     if (code === 'blackcard_payment_state_unavailable') return 'error_payment';
     if (['blackcard_confirmation_required', 'blackcard_product_required', 'verified_member_account_required'].includes(code)) return 'error_product';
     if (code === 'preference_review_sync_pending') return 'error_sync';
@@ -122,7 +123,7 @@
     busy = true; controls(); message('saving');
     try { const d = await api(command); apply(d); command = null; get('reason').value = ''; }
     catch (e) {
-      if (['confirmation_token_expired', 'preference_expired', 'preference_concurrent_conflict', 'idempotency_conflict'].includes(e.message)) ready = false;
+      if (['confirmation_token_expired', 'preference_expired', 'preference_request_retired', 'preference_new_request_required', 'preference_concurrent_conflict', 'idempotency_conflict'].includes(e.message)) ready = false;
       message(errorKey(e.message), true);
     } finally { busy = false; controls(); }
   });

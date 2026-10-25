@@ -33,7 +33,7 @@ class SqliteD1 {
   }
 }
 
-export function makeHarness({ memberId = MEMBER_ID, packageCode = "blackcard", paymentType = "blackcard", paymentStatus = "evidence_submitted", retention = "365", mirrorFails = false } = {}) {
+export function makeHarness({ memberId = MEMBER_ID, packageCode = "blackcard", paymentType = "blackcard", paymentStatus = "evidence_submitted", retention = "90", mirrorFails = false } = {}) {
   const db = new SqliteD1();
   const tokenRecords = new Map();
   const sessions = new Map([[SESSION_ID, { memberId, packageCode, paymentRef: PAYMENT_REF, paymentStatus }]]);
@@ -84,7 +84,7 @@ export function makeHarness({ memberId = MEMBER_ID, packageCode = "blackcard", p
     }
     throw new Error("unexpected fixture route: " + url.pathname);
   } };
-  const env = { PAYMENT_CONFIRMATION_SIGNING_SECRET: SECRET, PAY_SESSIONS_KV: { async get(key) { return tokenRecords.get(key) || null; }, async put(key, value) { tokenRecords.set(key, value); } }, AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_API_KEY: "fixture-only", AIRTABLE_HTTP: mirror, ALLOWED_ORIGINS: "https://mmdbkk.com", BLACKCARD_DB: db, BLACKCARD_PREFERENCE_RETENTION_DAYS: retention, AUTH_SERVICE_ADMIN_TO_PAYMENTS: "fixture-admin-service-secret" };
+  const env = { PAYMENT_CONFIRMATION_SIGNING_SECRET: SECRET, PAY_SESSIONS_KV: { async get(key) { return tokenRecords.get(key) || null; }, async put(key, value) { tokenRecords.set(key, value); } }, AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_API_KEY: "fixture-only", AIRTABLE_HTTP: mirror, ALLOWED_ORIGINS: "https://mmdbkk.com", BLACKCARD_DB: db, BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS: retention, AUTH_SERVICE_ADMIN_TO_PAYMENTS: "fixture-admin-service-secret" };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = mirror.fetch.bind(mirror);
   return { db, env, mirror, restore() { globalThis.fetch = originalFetch; db.sqlite.close(); }, paymentType };

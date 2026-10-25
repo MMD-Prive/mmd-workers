@@ -1,6 +1,7 @@
 export { replaceMarker, parseStored } from "./blackcard-legacy-marker.js";
 import { authorizeConfirmationRequest } from "./confirmation-ack.js";
 import { findSession, readConfirmationPaymentEvidence } from "./confirmation-details.js";
+import { BLACKCARD_FREE_TEXT_RETENTION_DAYS, textRetentionDue } from "./blackcard-preference-retention-policy.js";
 import { personalMain } from "../shared/personal-main-catalog.mjs";
 
 export const BLACKCARD_COMPANION_PREFERENCE_PATH = "/v1/confirm/companion-preference";
@@ -54,17 +55,19 @@ export async function handleBlackCardCompanionPreference(request, env = {}) {
 
     if (body.read === true) {
       const row = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${TABLE} WHERE member_id = ? ORDER BY rowid DESC LIMIT 1`).bind(memberId).first();
-      if (row && retentionExpired(row)) return corsJson(request, env, { ok: true, authority: "payments-worker", schema: "blackcard_companion_preference_v1", companion: null, preference_status: "expired", payment_status: paymentStatus, entitlement_activated: false, session_id: claims.session_id, request_id: null, idempotent: false });
-      if (row && !await mirrorPendingPreference(env, row, memberId, memberRecordId)) return corsJson(request, env, { ok: false, error: "preference_review_sync_pending" }, 503);
+      if (row && !textRetentionDue(row) && !await mirrorPendingPreference(env, row, memberId, memberRecordId)) return corsJson(request, env, { ok: false, error: "preference_review_sync_pending" }, 503);
       const companion = row ? personalMain(row.companion_preference) : null;
       return corsJson(request, env, { ok: true, authority: "payments-worker", schema: "blackcard_companion_preference_v1", companion, preference_status: row?.status || "not_selected", payment_status: paymentStatus, entitlement_activated: false, session_id: claims.session_id, request_id: row?.request_id || null, idempotent: Boolean(row) });
     }
 
+    // Retired operation keys remain tombstones. Never reconstruct their erased
+    // payload from a replay, even when the signed Session is still valid.
+    if (current && textRetentionDue(current)) return corsJson(request, env, { ok: false, error: "preference_request_retired" }, 410);
     const companion = normalizeCompanion(body.companion_id || body.companion_preference);
     if (!companion) return corsJson(request, env, { ok: false, error: "invalid_companion" }, 400);
     const previous = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${TABLE} WHERE member_id = ? ORDER BY rowid DESC LIMIT 1`).bind(memberId).first();
     const metadata = current || previous;
-    const note = body.note === undefined ? metadata?.note || "" : clean(body.note, 500);
+    const note = body.note === undefined ? current?.note || "" : clean(body.note, 500);
     const changeReason = clean(body.change_reason, 500);
     const experiencePreferences = body.experience_preferences === undefined ? parseArray(metadata?.experience_preferences_json) : Array.isArray(body.experience_preferences) ? [...new Set(body.experience_preferences.filter(value => EXPERIENCE_PREFERENCES.has(value)))].sort() : [];
     if (body.experience_preferences !== undefined && !Array.isArray(body.experience_preferences)) return corsJson(request, env, { ok: false, error: "preference_invalid" }, 400);
@@ -72,29 +75,31 @@ export async function handleBlackCardCompanionPreference(request, env = {}) {
     const payloadHash = await sha256(JSON.stringify({ companion_preference: companion.id, experience_preferences: experiencePreferences, note, change_reason: changeReason }));
     const prior = current;
     if (prior) {
-      if (retentionExpired(prior)) return corsJson(request, env, { ok: false, error: "preference_expired" }, 410);
       if (prior.payload_hash !== payloadHash) return corsJson(request, env, { ok: false, error: "idempotency_conflict" }, 409);
       if (!await mirrorPendingPreference(env, prior, memberId, memberRecordId)) return corsJson(request, env, { ok: false, error: "preference_review_sync_pending", request_id: prior.request_id }, 503);
       return accepted(request, env, prior, companion, claims.session_id, true, paymentStatus);
     }
 
-    if (previous && retentionExpired(previous)) return corsJson(request, env, { ok: false, error: "preference_expired" }, 410);
-    if (previous && previous.payload_hash === payloadHash) {
+    const afterTextExpiry = previous && textRetentionDue(previous);
+    // A fresh intent must acknowledge the latest ledger version after the text
+    // window. Changing only the key of an old body cannot revive old payloads.
+    if (afterTextExpiry && (!requestKey || body.previous_request_id !== previous.request_id)) return corsJson(request, env, { ok: false, error: "preference_new_request_required" }, 409);
+    if (previous && !afterTextExpiry && previous.payload_hash === payloadHash) {
       if (!await mirrorPendingPreference(env, previous, memberId, memberRecordId)) return corsJson(request, env, { ok: false, error: "preference_review_sync_pending", request_id: previous.request_id }, 503);
       return accepted(request, env, previous, personalMain(previous.companion_preference), claims.session_id, true, paymentStatus);
     }
     const requestType = previous ? "companion_change_request" : "first_companion_preference";
     if (body.previous_request_id !== undefined && body.previous_request_id !== (previous?.request_id || null)) return corsJson(request, env, { ok: false, error: "preference_concurrent_conflict" }, 409);
     if (previous && !changeReason) return corsJson(request, env, { ok: false, error: "change_reason_required" }, 400);
-    const retentionDays = Number(env.BLACKCARD_PREFERENCE_RETENTION_DAYS);
-    if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) return corsJson(request, env, { ok: false, error: "preference_retention_policy_unavailable" }, 503);
+    const retentionDays = Number(env.BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS);
+    if (retentionDays !== BLACKCARD_FREE_TEXT_RETENTION_DAYS) return corsJson(request, env, { ok: false, error: "preference_retention_policy_unavailable" }, 503);
     const now = new Date().toISOString();
     const requestId = `bcp_${crypto.randomUUID().replace(/-/g, "")}`;
     const auditId = `bca_${crypto.randomUUID().replace(/-/g, "")}`;
     const recorded = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${TABLE} WHERE member_id = ? AND status = 'recorded' ORDER BY rowid DESC LIMIT 1`).bind(memberId).first();
-    const currentCompanion = recorded && !retentionExpired(recorded) ? recorded.companion_preference : null;
+    const currentCompanion = recorded?.companion_preference || null;
     const insert = env.BLACKCARD_DB.prepare(`INSERT OR IGNORE INTO ${TABLE} (request_id, member_id, member_record_id, line_user_id_hash, correlation_hash, source_session_id_hash, idempotency_key, payload_hash, request_type, companion_preference, experience_preferences_json, note, change_reason, current_companion_snapshot, status, audit_event_id, retention_expires_at, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ? WHERE COALESCE((SELECT request_id FROM ${TABLE} WHERE member_id = ? ORDER BY rowid DESC LIMIT 1), '') = ?`)
-      .bind(requestId, memberId, memberRecordId, "", correlationHash, await sha256(session.id), idempotencyKey, payloadHash, requestType, companion.id, JSON.stringify(experiencePreferences), note, changeReason, currentCompanion, auditId, new Date(Date.now() + retentionDays * 86400000).toISOString(), now, now, memberId, previous?.request_id || "");
+      .bind(requestId, memberId, memberRecordId, "", correlationHash, await sha256(session.id), idempotencyKey, payloadHash, requestType, companion.id, JSON.stringify(experiencePreferences), note, changeReason, currentCompanion, auditId, new Date(Date.parse(now) + retentionDays * 86400000).toISOString(), now, now, memberId, previous?.request_id || "");
     const audit = env.BLACKCARD_DB.prepare(`INSERT OR IGNORE INTO ${OUTBOX} (event_id, idempotency_key, event_type, member_id_hash, request_id, created_at, delivery_status) SELECT audit_event_id, idempotency_key, 'blackcard.companion_preference.requested', ?, request_id, ?, 'pending' FROM ${TABLE} WHERE idempotency_key = ?`)
       .bind(await sha256(memberId), now, idempotencyKey);
     await env.BLACKCARD_DB.batch([insert, audit]);
@@ -119,7 +124,6 @@ function corsJson(request, env, payload, status = 200) {
 
 const EXPERIENCE_PREFERENCES = new Set(["calm-presence", "easy-conversation", "privacy", "warm-energy", "clear-boundaries", "bangkok-guidance"]);
 const requestToken = body => body?.t || body?.token || "";
-function retentionExpired(row) { const expires = Date.parse(row.retention_expires_at); return !Number.isFinite(expires) || expires <= Date.now(); }
 function normalizeCompanion(value) { const id = clean(value, 40).toLowerCase(); return COMPANIONS.has(id) ? personalMain(id) : null; }
 function accepted(request, env, row, companion, sessionId, idempotent, paymentStatus) {
   return corsJson(request, env, { ok: true, authority: "payments-worker", schema: "blackcard_companion_preference_v1", companion, preference_status: row.status, status: row.status, request_id: row.request_id, submitted_at: row.created_at, payment_status: paymentStatus, entitlement_activated: false, session_id: sessionId, idempotent }, 202);
@@ -133,7 +137,7 @@ function sessionPaymentState(session, env) {
   return status || "pending";
 }
 export async function mirrorPendingPreference(env, row, memberId, memberRecordId) {
-  if (retentionExpired(row)) return false;
+  if (textRetentionDue(row)) return false;
   const key = row.idempotency_key;
   const lock = crypto.randomUUID();
   const outbox = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${OUTBOX} WHERE idempotency_key = ?`).bind(key).first();

@@ -96,3 +96,17 @@ test('already-selected review states and retention expiry render as backend stat
   const expired = await harness([payload({ preference_status: 'expired' })]);
   assert.equal(expired.nodes.save.disabled, true); assert.match(expired.nodes.status.textContent, /หมดอายุ/);
 });
+
+test('retired operations reload structured readback and start a fresh key against the current version',async()=>{
+  for(const error of ['preference_request_retired','preference_new_request_required']) {
+    const latest='bcp_'+'b'.repeat(32);
+    const h=await harness([saved(),{httpStatus:error==='preference_request_retired'?410:409,body:{ok:false,error}},saved({request_id:latest}),saved({companion:{id:'hima'}})]);
+    await h.choose('hima'); h.nodes.reason.value='Fresh request'; await h.nodes.reason.emit('input'); await h.submit();
+    assert.equal(h.nodes.save.disabled,true); assert.match(h.nodes.status.textContent,/ตรวจรายการ/);
+    assert.ok(!h.nodes.selection.textContent.includes('บันทึก Preference แล้ว'));
+    await h.nodes.retry.emit('click'); assert.equal(h.nodes.companionform.elements.guide.value,'hiro');
+    await h.choose('hima'); h.nodes.reason.value='Fresh request'; await h.nodes.reason.emit('input'); await h.submit();
+    assert.notEqual(h.calls[1].request_key,h.calls[3].request_key); assert.equal(h.calls[3].previous_request_id,latest);
+    assert.match(h.nodes.selection.textContent,/บันทึก Preference แล้ว.*HIMA/);
+  }
+});

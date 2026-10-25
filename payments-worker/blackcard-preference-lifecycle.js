@@ -1,3 +1,4 @@
+import { textRetentionDue } from "./blackcard-preference-retention-policy.js";
 import { constantTimeEqual } from './lib/payment-primitives.js';
 import { mirrorMatches, mirrorPendingPreference, resolveMemberRecordId } from './blackcard-companion-preference.js';
 
@@ -17,7 +18,7 @@ const iso = date => new Date(date).toISOString();
 const digest = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(n => n.toString(16).padStart(2,'0')).join('');
 const fail = code => { throw new Error(code); };
 const text = (value, max) => typeof value === 'string' && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : '';
-const expired = (row, now) => !Number.isFinite(Date.parse(row.retention_expires_at)) || Date.parse(row.retention_expires_at) <= Date.parse(now);
+const expired = (row, now) => textRetentionDue(row, now);
 const endpoint = env => `https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${MIRROR}`;
 
 async function airtable(env, url, init = {}) {
@@ -68,7 +69,7 @@ function metadata(row, extra = {}) {
 }
 
 async function redact(env, row, now) {
-  if (await held(env, row.request_id, now)) return 'held';
+  if (await held(env, row.request_id, now)) return { outcome:'held', record:null };
   const revision = await digest(row.request_id + ':retention:' + row.retention_expires_at);
   const at = row.retention_redacted_at || now;
   await env.BLACKCARD_DB.batch([
@@ -78,7 +79,17 @@ async function redact(env, row, now) {
   const memberRecordId = row.member_record_id || await resolveMemberRecordId(env, row.member_id);
   if (!memberRecordId) fail("canonical_member_unresolved");
   const record = await loadMirror(env, row, memberRecordId, true);
+  const reviewSnapshot = record ? structuredClone(record) : null;
   if (record) {
+    // Persist an accepted operational revision before erasing its proposal text.
+    // On a D1/CAS failure leave the mirror proposal for the next leased retry;
+    // rejected proposals still have their private text scrubbed when due.
+    try {
+      await reconcile(env, { ...row, retention_redacted_at:at }, reviewSnapshot, now, memberRecordId, false, false);
+      row = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${T} WHERE request_id = ?`).bind(row.request_id).first();
+    } catch (error) {
+      if (!ERRORS.has(error?.message) || error.message === 'review_concurrent_conflict') throw error;
+    }
     const f = record.fields || {};
     let meta = {}; try { meta = JSON.parse(f[F.metadata] || '{}'); } catch {}
     if ([F.note,F.reason,F.reviewNote,F.actor].some(key => f[key]) || meta.retention_redacted_at !== at || Date.parse(f[F.expiry]) !== Date.parse(row.retention_expires_at)) {
@@ -91,38 +102,53 @@ async function redact(env, row, now) {
     env.BLACKCARD_DB.prepare(`UPDATE ${T} SET retention_mirrored_at = COALESCE(retention_mirrored_at, ?), maintenance_error = NULL WHERE request_id = ?`).bind(now, row.request_id),
     await eventStatement(env, row, 'retention_mirrored', revision, null, row.status, row.status, now),
   ]);
-  return 'redacted';
+  return { outcome:'redacted', record:reviewSnapshot };
 }
 
-async function reconcile(env, row, record, now) {
+async function ackReview(env, row, record) {
+  const revision = row.review_revision_hash;
+  if (revision && row.review_mirrored_revision_hash !== revision) {
+    await patch(env, record, { [F.sync]:'synced', [F.error]:'', [F.metadata]:metadata(row, row.retention_redacted_at ? { retention_redacted_at:row.retention_redacted_at } : {}) });
+    await env.BLACKCARD_DB.prepare(`UPDATE ${T} SET review_mirrored_revision_hash = ? WHERE request_id = ? AND review_revision_hash = ?`).bind(revision, row.request_id, revision).run();
+  }
+}
+async function reconcile(env, row, record, now, memberRecordId, retainText, acknowledge = true) {
+  // The missing-link exception is redaction-only, never review authority.
+  if (!mirrorMatches(record, row, row.member_id, memberRecordId)) fail('mirror_payload_conflict');
   const f = record.fields || {}, status = f[F.status];
   if (!Object.hasOwn(NEXT, status)) fail('review_status_invalid');
   const actor = text(f[F.actor], 160), note = f[F.reviewNote] || '';
+  // Redaction removes private reviewer fields but preserves the accepted revision.
+  // Finish an interrupted ACK from that receipt, without reconstructing any text.
+  if (!retainText && status === row.status && !actor) {
+    if (acknowledge) await ackReview(env, row, record);
+    return row.review_revision_hash ? 'reconciled' : 'unchanged';
+  }
   if (status === row.status && !actor && !note && !f[F.reviewedAt] && !row.review_revision_hash) return 'unchanged';
   const reviewed = Date.parse(f[F.reviewedAt]);
   if (!actor || typeof note !== 'string' || note.length > 500 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(note) || !Number.isFinite(reviewed) || reviewed < Date.parse(row.created_at) || reviewed > Date.parse(now) + 60000) fail('review_metadata_invalid');
   if (Date.parse(f[F.expiry]) !== Date.parse(row.retention_expires_at)) fail('review_retention_mismatch');
   const experience = f[F.experience] || [];
   if (!Array.isArray(experience) || experience.some(v => typeof v !== 'string')) fail('review_payload_changed');
-  const hash = await digest(JSON.stringify({ companion_preference:row.companion_preference, experience_preferences:[...experience].sort(), note:f[F.note] || '', change_reason:f[F.reason] || '' }));
-  if (hash !== row.payload_hash) fail('review_payload_changed');
+  if (JSON.stringify([...experience].sort()) !== JSON.stringify(JSON.parse(row.experience_preferences_json || '[]'))) fail('review_payload_changed');
+  // Before redaction, validate the full payload too. Afterwards the immutable
+  // stored payload hash + structured fields are authoritative; text stays erased.
+  if (retainText) {
+    const hash = await digest(JSON.stringify({ companion_preference:row.companion_preference, experience_preferences:[...experience].sort(), note:f[F.note] || '', change_reason:f[F.reason] || '' }));
+    if (hash !== row.payload_hash) fail('review_payload_changed');
+  }
   const reviewAt = iso(reviewed), revision = await digest(JSON.stringify({ status, actor, note, reviewed_at:reviewAt }));
   if (revision !== row.review_revision_hash) {
     if (row.reviewed_at && reviewed <= Date.parse(row.reviewed_at)) fail('review_revision_stale');
     if (status !== row.status && !NEXT[row.status]?.includes(status)) fail('review_transition_invalid');
     const result = await env.BLACKCARD_DB.batch([
-      env.BLACKCARD_DB.prepare(`UPDATE ${T} SET status = ?, reviewed_by = ?, review_note = ?, reviewed_at = ?, review_revision_hash = ?, updated_at = ?, maintenance_error = NULL WHERE request_id = ? AND COALESCE(review_revision_hash, '') = ? AND retention_redacted_at IS NULL AND retention_expires_at > ?`).bind(status, actor, note, reviewAt, revision, now, row.request_id, row.review_revision_hash || '', now),
-      // The per-request lease serializes review and retention; batch rollback
-      // keeps the decision and its non-sensitive audit event atomic.
+      env.BLACKCARD_DB.prepare(`UPDATE ${T} SET status = ?, reviewed_by = ?, review_note = ?, reviewed_at = ?, review_revision_hash = ?, updated_at = ?, maintenance_error = NULL WHERE request_id = ? AND COALESCE(review_revision_hash, '') = ? AND (? = 0 OR (retention_redacted_at IS NULL AND (retention_expires_at > ? OR EXISTS (SELECT request_id FROM ${H} WHERE request_id = ${T}.request_id AND released_at IS NULL AND hold_until > ?))))`).bind(status, retainText ? actor : null, retainText ? note : null, reviewAt, revision, now, row.request_id, row.review_revision_hash || '', retainText ? 1 : 0, now, now),
       env.BLACKCARD_DB.prepare(`INSERT OR IGNORE INTO ${E} (event_id, request_id, event_type, revision_hash, actor_hash, from_status, to_status, created_at) SELECT ?, request_id, 'review_reconciled', ?, ?, ?, ?, ? FROM ${T} WHERE request_id = ? AND review_revision_hash = ?`).bind('bcl_' + await digest(`${row.request_id}:review_reconciled:${revision}`), revision, await digest(actor), row.status, status, now, row.request_id, revision),
     ]);
     if (result[0].meta?.changes !== 1) fail('review_concurrent_conflict');
     row = { ...row, status, review_revision_hash:revision };
   }
-  if (row.review_mirrored_revision_hash !== revision) {
-    await patch(env, record, { [F.sync]:'synced', [F.error]:'', [F.metadata]:metadata(row) });
-    await env.BLACKCARD_DB.prepare(`UPDATE ${T} SET review_mirrored_revision_hash = ? WHERE request_id = ? AND review_revision_hash = ?`).bind(revision, row.request_id, revision).run();
-  }
+  if (acknowledge) await ackReview(env, row, record);
   return 'reconciled';
 }
 
@@ -149,17 +175,28 @@ export async function runBlackCardPreferenceMaintenance(env, { now, limit = 10 }
         token = await lock(env, row, clock());
         if (!token) { stats.busy++; continue; }
         row = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${T} WHERE request_id = ?`).bind(row.request_id).first();
-        // Scrub canonical free text before remote lookup, even during outages.
-        let result;
-        if (expired(row, clock())) result = await redact(env, row, clock());
-        else {
-          const member = row.member_record_id || await resolveMemberRecordId(env, row.member_id);
-          if (!member) fail('canonical_member_unresolved');
-          record = await loadMirror(env, row, member);
-          if (!record) fail('review_mirror_missing');
-          result = expired(row, clock()) ? await redact(env, row, clock()) : await reconcile(env, row, record, clock());
+        // Free-text expiry never closes the structured preference/review state.
+        let retainText = true;
+        if (expired(row, clock())) {
+          const result = await redact(env, row, clock());
+          stats[result.outcome]++;
+          record = result.record;
+          row = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${T} WHERE request_id = ?`).bind(row.request_id).first();
+          retainText = result.outcome === 'held' && !row.retention_redacted_at;
         }
-        if (Object.hasOwn(stats, result)) stats[result]++;
+        const member = row.member_record_id || await resolveMemberRecordId(env, row.member_id);
+        if (!member) fail('canonical_member_unresolved');
+        if (!record && retainText) record = await loadMirror(env, row, member);
+        if (record && expired(row, clock()) && retainText && !await held(env, row.request_id, clock())) {
+          const result = await redact(env, row, clock());
+          stats[result.outcome]++; record = result.record;
+          row = await env.BLACKCARD_DB.prepare(`SELECT * FROM ${T} WHERE request_id = ?`).bind(row.request_id).first();
+          retainText = false;
+        }
+        if (record) {
+          const result = await reconcile(env, row, record, clock(), member, retainText);
+          if (Object.hasOwn(stats, result)) stats[result]++;
+        } else if (retainText) fail('review_mirror_missing');
         await env.BLACKCARD_DB.prepare(`UPDATE ${T} SET maintenance_error = NULL WHERE request_id = ?`).bind(row.request_id).run();
       } catch (error) {
         stats.failed++;

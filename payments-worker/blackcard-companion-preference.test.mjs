@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleBlackCardCompanionPreference } from "./blackcard-companion-preference.js";
+import { textRetentionDue } from './blackcard-preference-retention-policy.js';
 import { makeHarness, makeToken, request, MEMBER_ID, SESSION_ID, PAYMENT_REF } from "./blackcard-preference.test-fixtures.mjs";
 
 test("verified signed Black Card session persists and reads the preference by canonical member account", async () => {
@@ -106,7 +107,7 @@ test("invalid choice, unapproved origin, and missing retention policy never writ
     const foreign = request(token, { companion_id: "hito" });
     const foreignRequest = new Request(foreign, { headers: { origin: "https://evil.example", "content-type": "application/json" } });
     assert.equal((await handleBlackCardCompanionPreference(foreignRequest, h.env)).status, 403);
-    delete h.env.BLACKCARD_PREFERENCE_RETENTION_DAYS;
+    delete h.env.BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS;
     const response = await handleBlackCardCompanionPreference(request(token, { companion_id: "hito" }), h.env);
     assert.equal(response.status, 503); assert.equal((await response.json()).error, "preference_retention_policy_unavailable");
     assert.equal(h.db.preferences.size, 0); assert.equal(h.db.outbox.size, 0);
@@ -256,14 +257,14 @@ test("lost mirror response retries without duplication; delivered readback does 
   } finally { h.restore(); }
 });
 
-test("retention-expired preference is neither returned nor recreated on a retry", async () => {
+test("free-text expiry preserves structured readback while retiring the old operation key", async () => {
   const h = makeHarness();
   try {
     const token = await makeToken(h.env);
     await handleBlackCardCompanionPreference(request(token, { companion_id: 'hito' }), h.env);
     h.db.sqlite.exec("UPDATE mmd_blackcard_companion_preferences SET retention_expires_at = '2000-01-01T00:00:00.000Z'");
     const read = await (await handleBlackCardCompanionPreference(request(token, { read: true }), h.env)).json();
-    assert.equal(read.companion, null); assert.equal(read.preference_status, 'expired');
+    assert.equal(read.companion.id, 'hito'); assert.equal(read.preference_status, 'pending_review');
     assert.equal((await handleBlackCardCompanionPreference(request(token, { companion_id: 'hito' }), h.env)).status, 410);
     assert.equal(h.db.preferences.size, 1); assert.equal(h.mirror.writes, 1);
   } finally { h.restore(); }
@@ -308,7 +309,7 @@ test('manual paid ledger summary is not verification, and proof records must mat
   } finally { h.restore(); }
 });
 
-test('simultaneous changes use compare-and-set and keep existing note/preferences when omitted', async () => {
+test('simultaneous changes preserve structured context without copying prior free text', async () => {
   const h = makeHarness();
   try {
     const token = await makeToken(h.env);
@@ -317,7 +318,7 @@ test('simultaneous changes use compare-and-set and keep existing note/preference
     assert.deepEqual(responses.map(r => r.status).sort(), [202, 409]);
     assert.equal(h.db.preferences.size, 2); assert.equal(h.db.outbox.size, 2);
     const latest = [...h.db.preferences.values()].at(-1);
-    assert.equal(latest.note, 'Keep this note'); assert.equal(latest.experience_preferences_json, '["privacy"]');
+    assert.equal(latest.note, ''); assert.equal(latest.experience_preferences_json, '["privacy"]');
   } finally { h.restore(); }
 });
 
@@ -331,4 +332,81 @@ test('a mirror record attached to another member cannot be treated as a successf
     assert.equal(retry.status, 503); assert.equal(h.mirror.writes, 1);
     assert.equal([...h.db.outbox.values()][0].delivery_status, 'retry_required');
   } finally { h.restore(); }
+});
+
+test('only the approved 90-day free-text window is accepted, independently of legacy retention config', async () => {
+  const cutoff='2026-10-25T12:00:00.000Z', row={retention_expires_at:cutoff};
+  assert.equal(textRetentionDue(row,Date.parse(cutoff)-1),false);
+  assert.equal(textRetentionDue(row,cutoff),true);
+  assert.equal(textRetentionDue({...row,retention_redacted_at:'2026-10-24T00:00:00Z'},Date.parse(cutoff)-1),true);
+  assert.equal(textRetentionDue({retention_expires_at:'invalid'}),true);
+  for (const days of ['365', '0', 'invalid', undefined]) {
+    const h = makeHarness();
+    try {
+      h.env.BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS = days;
+      h.env.BLACKCARD_PREFERENCE_RETENTION_DAYS = '90';
+      const r = await handleBlackCardCompanionPreference(request(await makeToken(h.env), { companion_id:'hiro' }),h.env);
+      assert.equal(r.status,503); assert.equal(h.db.preferences.size,0);
+    } finally { h.restore(); }
+  }
+  const h = makeHarness();
+  try {
+    await handleBlackCardCompanionPreference(request(await makeToken(h.env),{companion_id:'hiro'}),h.env);
+    const row=[...h.db.preferences.values()][0];
+    assert.equal(Date.parse(row.retention_expires_at)-Date.parse(row.created_at),90*86400000);
+  } finally { h.restore(); }
+});
+
+test('post-expiry intent requires a fresh key, exact latest version and reason; concurrent changes keep one winner', async () => {
+  const h=makeHarness();
+  try {
+    const token=await makeToken(h.env);
+    const original={companion_id:'hito',note:'old private note',experience_preferences:['privacy'],request_key:crypto.randomUUID()};
+    await handleBlackCardCompanionPreference(request(token,original),h.env);
+    const old=[...h.db.preferences.values()][0];
+    h.db.sqlite.exec("UPDATE mmd_blackcard_companion_preferences SET status='recorded', retention_expires_at='2000-01-01T00:00:00.000Z', retention_redacted_at='2000-01-01T00:00:01.000Z', note='', change_reason=''");
+    for(const body of [original,{...original,note:'reintroduced text'}]) {
+      const r=await handleBlackCardCompanionPreference(request(token,body),h.env);
+      assert.equal(r.status,410); assert.equal((await r.json()).error,'preference_request_retired');
+    }
+    const fresh={companion_id:'hito',request_key:crypto.randomUUID(),change_reason:'New request after text expiry'};
+    for(const previous_request_id of [undefined,'stale']) {
+      const r=await handleBlackCardCompanionPreference(request(token,{...fresh,previous_request_id}),h.env);
+      assert.equal(r.status,409); assert.equal((await r.json()).error,'preference_new_request_required');
+    }
+    assert.equal((await handleBlackCardCompanionPreference(request(token,{...fresh,previous_request_id:old.request_id,change_reason:''}),h.env)).status,400);
+    const responses=await Promise.all(['hito','hiro'].map(companion_id=>handleBlackCardCompanionPreference(request(token,{...fresh,companion_id,request_key:crypto.randomUUID(),previous_request_id:old.request_id}),h.env)));
+    assert.deepEqual(responses.map(r=>r.status).sort(),[202,409]);
+    assert.equal(h.db.preferences.size,2); assert.equal(h.db.outbox.size,2);
+    const [ledger,latest]=[...h.db.preferences.values()];
+    assert.equal(ledger.payload_hash,old.payload_hash); assert.equal(ledger.audit_event_id,old.audit_event_id); assert.equal(ledger.note,'');
+    assert.equal(latest.note,''); assert.equal(latest.experience_preferences_json,'["privacy"]');
+    assert.equal(latest.current_companion_snapshot,'hito');
+    assert.equal(Date.parse(latest.retention_expires_at)-Date.parse(latest.created_at),90*86400000);
+    // Even an old request key reads the latest member state; it cannot replay a write.
+    const read=await (await handleBlackCardCompanionPreference(request(token,{read:true,request_key:original.request_key}),h.env)).json();
+    assert.equal(read.request_id,latest.request_id); assert.equal(read.companion.id,latest.companion_preference);
+  } finally {h.restore();}
+});
+
+test('expired pending mirror stays absent while fresh signed member sessions can read and submit, behind unchanged gates', async()=>{
+  const h=makeHarness({mirrorFails:true});
+  try {
+    const token=await makeToken(h.env);
+    await handleBlackCardCompanionPreference(request(token,{companion_id:'hiro'}),h.env);
+    h.db.sqlite.exec("UPDATE mmd_blackcard_companion_preferences SET retention_expires_at='2000-01-01T00:00:00.000Z'");
+    const old=[...h.db.preferences.values()][0];
+    h.mirror.setSession('fresh_session',{memberId:MEMBER_ID,packageCode:'blackcard',paymentRef:'fresh_payment'});
+    const freshToken=await makeToken(h.env,'blackcard','customer','fresh_session','fresh_payment');
+    const read=await (await handleBlackCardCompanionPreference(request(freshToken,{read:true}),h.env)).json();
+    assert.equal(read.companion.id,'hiro'); assert.equal(read.request_id,old.request_id); assert.equal(h.mirror.writes,0);
+    assert.equal((await handleBlackCardCompanionPreference(request('invalid.token',{read:true}),h.env)).status,401);
+    h.mirror.verification='refunded';
+    assert.equal((await handleBlackCardCompanionPreference(request(freshToken,{read:true}),h.env)).status,409);
+    h.mirror.verification=''; h.mirror.fail=false;
+    const r=await handleBlackCardCompanionPreference(request(freshToken,{companion_id:'hiro',change_reason:'Fresh same-choice request',request_key:crypto.randomUUID(),previous_request_id:old.request_id}),h.env);
+    assert.equal(r.status,202,await r.clone().text()); assert.equal((await r.json()).idempotent,false);
+    assert.equal(h.db.preferences.size,2); assert.equal(h.mirror.records.length,1);
+    assert.notEqual(h.mirror.records[0].fields.fldOlcIzDs5QbDN2c,old.request_id);
+  } finally {h.restore();}
 });

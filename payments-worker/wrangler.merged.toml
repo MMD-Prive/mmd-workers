@@ -42,6 +42,8 @@ tag = "points-phase1-v1"
 new_sqlite_classes = ["PointsPhase1Coordinator"]
 
 [vars]
+# Approved free-text retention only; structured Companion/readback has no TTL here.
+BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS = "90"
 KBANK_SANDBOX_ENABLED = "true"
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
@@ -154,7 +156,7 @@ tag = "session-paid-projection-v1"
 new_sqlite_classes = ["SessionPaidProjectionCoordinator"]
 
 # Black Card Companion preference ledger. The D1 database exists but its
-# migration and retention policy are intentionally not activated by this PR.
+# migrations remain unapplied until a separately approved release.
 [[d1_databases]]
 binding = "BLACKCARD_DB"
 database_name = "mmd-blackcard-companion-preferences"

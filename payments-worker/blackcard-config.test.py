@@ -17,6 +17,7 @@ class BlackCardConfigTest(unittest.TestCase):
         }])
         self.assertNotIn('BLACKCARD_SALES_ENABLED', config['vars'])
         self.assertNotIn('BLACKCARD_PREFERENCE_RETENTION_DAYS', config['vars'])
+        self.assertEqual(config['vars']['BLACKCARD_PREFERENCE_TEXT_RETENTION_DAYS'], '90')
         self.assertIn('wrangler.merged.toml', (ROOT.parent / '.github/workflows/deploy-payments-worker.yml').read_text())
         for name in ['wrangler.toml', 'wrangler.merged.toml']:
             parsed = tomllib.loads((ROOT / name).read_text())
