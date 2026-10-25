@@ -1,0 +1,24 @@
+name: Owner Job Edit CI
+on:
+  pull_request:
+    paths:
+      - 'admin-worker/src/owner-job-edit*'
+      - 'admin-worker/src/admin-login-hero-worker.js'
+      - 'admin-worker/src/session-creator-page-proxy.js'
+      - 'admin-worker/owner-job-edit*.test.mjs'
+      - 'admin-worker/wrangler.toml'
+      - 'shared/confirmation-revision.mjs'
+      - '.github/workflows/owner-job-edit-ci.yml'
+permissions:
+  contents: read
+jobs:
+  owner-job-edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test admin-worker/owner-job-edit.test.mjs admin-worker/owner-job-edit-ui.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs admin-worker/job-confirmation-reissue.test.mjs admin-worker/model-job-preview.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/confirmation-details.test.mjs
+      - run: npx --yes esbuild@0.25.5 admin-worker/src/admin-login-hero-worker.js --bundle --format=esm --platform=browser --external:cloudflare:workers --external:node:* --outfile=/tmp/admin-owner-edit.js

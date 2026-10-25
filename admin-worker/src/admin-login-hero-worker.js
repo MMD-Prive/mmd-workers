@@ -1,3 +1,5 @@
+import { handleOwnerJobEdit, isOwnerJobEditRequest } from './owner-job-edit.js';
+export { JobEditCoordinator } from './owner-job-edit-do.js';
 import { JOB_PREFLIGHT_PATH, handleJobPreflight, guardDuplicateJob } from './create-job-preflight.js';
 import {isMyMmdOperationsRequest, handleMyMmdOperations} from './my-mmd-operations-queue.js';
 import {isMemberCompletenessRequest, handleMemberCompleteness} from "./member-completeness.js";
@@ -285,6 +287,8 @@ const adminLoginHeroWorker = {
     } catch {
       // Core worker remains authoritative if URL parsing fails.
     }
+
+    if (isOwnerJobEditRequest(normalizedPath)) return handleOwnerJobEdit(request, runtimeEnv);
 
     if (isModelJobPreviewRequest(normalizedPath)) {
       const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);

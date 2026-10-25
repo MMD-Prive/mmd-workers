@@ -1455,3 +1455,25 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/models/drive-select*"
 zone_name = "mmdbkk.com"
+
+# Owner edit journal: one coordinator per existing Session.
+[[durable_objects.bindings]]
+name = "JOB_EDIT_COORDINATOR"
+class_name = "JobEditCoordinator"
+
+[[migrations]]
+tag = "job-edit-v1"
+new_sqlite_classes = ["JobEditCoordinator"]
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/jobs/edit"
+zone_name = "mmdbkk.com"
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/jobs/edit"
+zone_name = "mmdbkk.com"
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/jobs/edit*"
+zone_name = "mmdbkk.com"
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/jobs/edit*"
+zone_name = "mmdbkk.com"
