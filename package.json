@@ -76,7 +76,8 @@
     "test:app-sigil-release-gate": "node scripts/check-app-sigil-always-on-gate.mjs",
     "test:liff-commerce": "node --test member-pages-worker/test/liff-commerce-ui.test.mjs member-pages-worker/test/liff-promotion-purchase.test.mjs member-pages-worker/test/liff-renewal-card.test.mjs payments-worker/double-moment-purchase-v1.test.mjs shared/membership-promotion-policy.test.mjs",
     "test:line-notes-history": "node --test admin-worker/line-notes-import-page.test.mjs admin-worker/line-ofc-client-import.test.mjs admin-worker/owner-my-mmd-recovery-diagnostic.test.mjs member-pages-worker/test/owner-my-mmd-recovery-diagnostic.test.mjs member-pages-worker/test/member-history-preload.test.mjs member-pages-worker/member-history-recovery.test.mjs",
-    "test:blackcard-companion-preference": "node --test payments-worker/blackcard-companion-preference.test.mjs"
+    "test:blackcard-companion-preference": "node --test payments-worker/blackcard-companion-preference.test.mjs",
+    "test:blackcard-flow": "node --test payments-worker/blackcard-companion-preference.test.mjs webflow/blackcard/confirm/blackcard-flow-embed.test.mjs"
   },
   "devDependencies": {
     "clean-css": "5.3.3",
