@@ -132,7 +132,7 @@ export function blackCardClient({copy,root,paypal}) {
     el('recovery-login').hidden=true;status('กำลังส่งคำขอตรวจสอบข้อมูลเดิม');
     const response=await fetch('/member/api/liff/recovery',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({...email?{email}:{},...phone?{phone}:{}})});
     const result=await response.json().catch(()=>null);
-    if(response.status===401){el('recovery-login').hidden=false;throw new Error('กรุณายืนยันผ่าน LINE ก่อนส่งคำขอ เพื่อให้เปอร์เชื่อมสมาชิกกลับมาที่บัญชีของคุณได้ครับ');}
+    if(response.status===401){el('recovery-login').hidden=false;el('login').hidden=false;const error=new Error('กรุณายืนยันผ่าน LINE ก่อนส่งคำขอ เพื่อให้เปอร์เชื่อมสมาชิกกลับมาที่บัญชีของคุณได้ครับ');error.authRequired=true;throw error;}
     if(!response.ok||result?.ok!==true)throw new Error('ยังส่งคำขอไม่สำเร็จครับ ลองใหม่อีกครั้งได้');
     if(result.data?.state==='already_linked'){status('บัญชีนี้เชื่อมสมาชิกเดิมแล้วครับ');await load();return;}
     status('รับคำขอแล้วครับ เปอร์จะตรวจสอบข้อมูลเดิมก่อนเชื่อมสมาชิกและสิทธิ์ให้ ยังไม่ต้องสมัครหรือชำระซ้ำ');
