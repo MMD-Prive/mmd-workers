@@ -52,6 +52,7 @@ const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
 const MEMBER_SIGNUP_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=signup&view=signup`;
 const PRIVATE_MEMBER_SIGNUP_URL = MEMBER_SIGNUP_URL;
 const MEMBER_RENEWAL_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=renew&view=package`;
+const MEMBER_PAYMENT_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=continue_payment`;
 const MEMBER_STATUS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=overview`;
 const MEMBER_POINTS_URL = `https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=status&view=points`;
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
@@ -1101,13 +1102,13 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_center") {
-    return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → https://mmdbkk.com/member/payments
+    return `${prefix}เปิด Payment Center เพื่อดูรายการที่ต้องชำระ รายการที่กำลังตรวจ และประวัติการชำระของบัญชีนี้ได้ครับ → ${MEMBER_PAYMENT_URL}
 
 ถ้ามีรายการเดิมอยู่แล้ว ให้ใช้รายการเดิมครับ ระบบจะไม่ถือว่าชำระสำเร็จจนกว่าสถานะทางการจะอัปเดต`;
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: https://mmdbkk.com/member/payments
+    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: ${MEMBER_PAYMENT_URL}
 
 ถ้ามีรายการเดิมหรือส่งหลักฐานไว้แล้ว ให้ใช้รายการเดิมและไม่ต้องส่งซ้ำครับ MMD จะตรวจยอด จับคู่รายการ และอัปเดตสถานะอย่างเป็นทางการก่อนครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
@@ -2203,10 +2204,10 @@ export function createPublicWorldRichMenuDraft() {
     chatBarText: "MMD",
     areas: [
       { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "message", text: "Hi Per" } },
-      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("public_membership") } },
+      { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("signup", "signup") } },
       { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
       { bounds: richMenuBounds(0, 843, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("booking_request", "&service=dinner_travel") } },
-      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: MEMBER_PAYMENT_URL } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
     ],
   };
@@ -2223,7 +2224,7 @@ export function createPrivateMemberRichMenuDraft() {
     areas: [
       { bounds: richMenuBounds(0, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
       { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "points") } },
-      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("renew", "profile") } },
+      { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: MEMBER_RENEWAL_URL } },
       {
         bounds: richMenuBounds(0, 843, 833, 843),
         action: {
@@ -2232,7 +2233,7 @@ export function createPrivateMemberRichMenuDraft() {
           displayText: "Private Support",
         },
       },
-      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: MEMBER_PAYMENT_URL } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
     ],
   };
