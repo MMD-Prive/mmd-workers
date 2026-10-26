@@ -1,3 +1,4 @@
+export { ModelDiscoveryCoordinator } from "./model-customer-discovery-settings.js";
 import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
 import { handleOwnerJobEdit, isOwnerJobEditRequest } from './owner-job-edit.js';
 export { JobEditCoordinator } from './owner-job-edit-do.js';
