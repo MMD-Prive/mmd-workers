@@ -1,3 +1,4 @@
+import { resolveDiscoveryViewer } from "./customer-discovery-policy.js";
 import bookingWorker, { sanitizeModelForBooking } from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -35,7 +36,7 @@ export default {
     if (!["GET", "POST"].includes(method) || path !== MODEL_SEARCH_PATH || !response.ok) return response;
     const original = await response.json().catch(() => null);
     if (!original || original.ok !== true) return jsonWithHeaders(original, response);
-    const hydrated = await hydrateModelAssetPolicy(env, original).catch(() => projectModelsWithoutMedia(original));
+    const hydrated = await hydrateModelAssetPolicy(env, original, await resolveDiscoveryViewer(request, env)).catch(() => projectModelsWithoutMedia(original));
     return jsonWithHeaders(hydrated, response);
   },
 };
@@ -47,7 +48,7 @@ function jsonWithHeaders(payload, response) {
   return new Response(JSON.stringify(payload), { status: response.status, headers });
 }
 
-export async function hydrateModelAssetPolicy(env, payload) {
+export async function hydrateModelAssetPolicy(env, payload, viewerRef = "") {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return projectModelsWithoutMedia(payload);
   const models = collectModels(payload);
   if (!models.length) return payload;
@@ -59,7 +60,7 @@ export async function hydrateModelAssetPolicy(env, payload) {
     const id = clean(model.model_id || model.model_record_id);
     if (!id || model.scope === "private" || eligible.has(id)) continue;
     const record = await fetchModelRecord(env, id).catch(() => null);
-    eligible.set(id, isPublicModelRecord(record));
+    eligible.set(id, isPublicModelRecord(record, viewerRef));
   }
   const publicModels = models.filter((model) => model.scope !== "private" && eligible.get(clean(model.model_id || model.model_record_id)));
   const mediaByModel = await fetchPublicModelMedia(env, publicModels).catch(() => new Map());
@@ -152,8 +153,8 @@ function linkedModelId(fields) {
   return Array.isArray(links) && links.length === 1 ? clean(typeof links[0] === "string" ? links[0] : links[0]?.id) : "";
 }
 
-function isPublicModelRecord(record) {
-  return Boolean(record?.id && sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, env: {} }));
+function isPublicModelRecord(record, viewerRef = "") {
+  return Boolean(record?.id && sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, viewerRef, env: {} }));
 }
 
 async function servePublicModelMedia(request, env, mediaId) {
@@ -162,7 +163,8 @@ async function servePublicModelMedia(request, env, mediaId) {
   const fields = rows[0]?.fields || {};
   if (rows.length !== 1 || clean(fields.media_id) !== mediaId || !isPublicMedia(fields)) return json({ ok: false, error: "media_not_found" }, 404);
   const record = await fetchModelRecord(env, linkedModelId(fields)).catch(() => null);
-  if (!isPublicModelRecord(record)) return json({ ok: false, error: "media_not_found" }, 404);
+  const viewerRef = await resolveDiscoveryViewer(request, env);
+  if (!isPublicModelRecord(record, viewerRef)) return json({ ok: false, error: "media_not_found" }, 404);
 
   const bucket = env.MMD_MODEL_ASSETS;
   const readMethod = request.method === "HEAD" ? "head" : "get";
