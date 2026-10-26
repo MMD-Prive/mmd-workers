@@ -262,37 +262,50 @@ function isLegacyAggregatePoint(fields = {}) {
   return key.startsWith("historical_note_total_v2:") || key.startsWith("historical_note_total_v1:");
 }
 
-function summarizeLifetimePoints(rows = []) {
+function summarizeLifetimePoints(rows = [], now = new Date()) {
   const seen = new Set();
-  let balance = 0;
-  let earned = 0;
-  let redeemed = 0;
-  let activeRecords = 0;
-  let legacyAggregates = 0;
-
-  for (const row of rows || []) {
+  const lots = [];
+  let earned = 0, redeemed = 0, activeRecords = 0, legacyAggregates = 0;
+  const timestamp = (row) => dateMs(row?.fields?.posted_at || row?.fields?.created_at || row?.createdTime);
+  const ordered = [...(rows || [])].sort((a, b) => timestamp(a) - timestamp(b));
+  for (const row of ordered) {
     const fields = row?.fields || {};
     const status = token(fields.transaction_status || fields.status);
     if (!["posted", "completed", "verified"].includes(status) || fields.reversed_at) continue;
-    if (isLegacyAggregatePoint(fields)) legacyAggregates += 1;
-    const key = clean(fields.idempotency_key || fields.logical_source_id || fields.transaction_id || row?.id);
+    const key = clean(fields.idempotency_key || fields.logical_source_id || fields.transaction_id || fields.source_event_id || fields.service_event_id || fields.session_id || row?.id);
     if (key && seen.has(key)) continue;
-    if (key) seen.add(key);
     const points = pointValue(fields);
     if (points == null) continue;
+    if (key) seen.add(key);
+    if (isLegacyAggregatePoint(fields)) legacyAggregates += 1;
     activeRecords += 1;
-    balance += points;
-    if (points >= 0) earned += points;
-    else redeemed += Math.abs(points);
+    const enteredAt = timestamp(row);
+    if (points > 0) {
+      earned += points;
+      const expiresAt = dateMs(fields.expires_at) || (enteredAt ? enteredAt + 365 * 86400000 : 0);
+      // Undated awards cannot become spendable merely because this batch ran.
+      lots.push({ remaining: points, enteredAt, expiresAt });
+    } else if (points < 0) {
+      redeemed += Math.abs(points);
+      let remaining = Math.abs(points);
+      for (const lot of lots.filter(lot => enteredAt && lot.enteredAt <= enteredAt && lot.expiresAt >= enteredAt).sort((a, b) => a.expiresAt - b.expiresAt)) {
+        const used = Math.min(lot.remaining, remaining);
+        lot.remaining -= used;
+        remaining -= used;
+        if (!remaining) break;
+      }
+    }
   }
-
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
+  const active = lots.filter(lot => lot.enteredAt <= nowMs && lot.expiresAt > nowMs && lot.remaining > 0);
+  const nearest = active.reduce((value, lot) => Math.min(value, lot.expiresAt), Infinity);
   return {
-    current_points_confirmed: Math.max(0, Math.trunc(balance)),
+    current_points_confirmed: Math.max(0, Math.trunc(active.reduce((sum, lot) => sum + lot.remaining, 0))),
     points_earned_lifetime_ledger: Math.max(0, Math.trunc(earned)),
     points_redeemed_lifetime: Math.max(0, Math.trunc(redeemed)),
     points_active_record_count: activeRecords,
-    points_expiring_30d: 0,
-    nearest_points_expiry: null,
+    points_expiring_30d: active.filter(lot => lot.expiresAt <= nowMs + 30 * 86400000).reduce((sum, lot) => sum + lot.remaining, 0),
+    nearest_points_expiry: Number.isFinite(nearest) ? new Date(nearest).toISOString() : null,
     legacy_aggregate_count: legacyAggregates,
   };
 }
@@ -388,7 +401,7 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
   const backlogCount = pendingReviews.length + unqueuedLegacyCount + privateCandidateCount;
 
   const memberPointRows = pointsRowsForMember(input?.pointsRows || [], member);
-  const points = summarizeLifetimePoints(memberPointRows);
+  const points = summarizeLifetimePoints(memberPointRows, now);
   const pointsMismatch = service.points_earned_lifetime_projected !== points.points_earned_lifetime_ledger;
   const pointsState = !member
     ? "no_member_wallet"
@@ -471,9 +484,9 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
     lifecycle_status: lifecycle,
     points_policy: {
       thb_per_point: POINT_RATE_THB,
-      expires: false,
-      validity_days: null,
-      mode: "lifetime_total",
+      expires: true,
+      validity_days: 365,
+      mode: "expiring_lots",
       tr_eligible: false,
       completed_jobs_only: true,
     },
