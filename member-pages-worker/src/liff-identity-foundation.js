@@ -1507,7 +1507,7 @@ async function resolveMemberIdentity(env, lineUserId) {
   }
 }
 async function refreshStaleMemberSession(env, session, includeWorlds = false) {
-  if (!session || session.member_exists === true && session.member_id && (!includeWorlds || session.member_profile?.membership_worlds?.schema === "member_worlds_v1" || session.member_profile?.customer_360?.membership_worlds?.schema === "member_worlds_v1")) {
+  if (!session || session.member_exists === true && session.member_id && session.member_profile && (!includeWorlds || session.member_profile?.membership_worlds?.schema === "member_worlds_v1" || session.member_profile?.customer_360?.membership_worlds?.schema === "member_worlds_v1")) {
     return { refreshed: false, reason: "session_already_resolved" };
   }
   const lineUserId = String(session?.line_user_id || "").trim();
@@ -1520,6 +1520,7 @@ async function refreshStaleMemberSession(env, session, includeWorlds = false) {
   }
 
   if (session.member_exists === true && session.member_id && session.member_profile) {
+    if (session.member_id !== resolved.member_id) return { refreshed: false, reason: "member_identity_changed" };
     // Schema migration only: never replace existing blocking, expiry or identity.
     const worlds = resolved.profile.membership_worlds || resolved.profile.customer_360?.membership_worlds;
     if (worlds?.schema !== "member_worlds_v1") return { refreshed: false, reason: "worlds_projection_unavailable" };
