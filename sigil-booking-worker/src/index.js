@@ -617,13 +617,10 @@ function projectBookingSalesControl(model, context, requestContext = {}) {
 async function searchModels(env, q, limit) {
   const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
   const needle = q.toLowerCase();
-  const formula = `OR(FIND(${formulaText(needle)},LOWER({working_name})),FIND(${formulaText(needle)},LOWER({nickname})),FIND(${formulaText(needle)},LOWER({unique_key})),FIND(${formulaText(needle)},LOWER({folder_name})),FIND(${formulaText(needle)},LOWER({r2_prefix})),FIND(${formulaText(needle)},LOWER({primary_image_key})))`;
-  let rows = await airtableListByFormula(env, table, formula, limit);
-  if (!rows.length) {
-    rows = await airtableListByFormula(env, table, "", Math.max(limit, 100));
-    rows = rows.filter((row) => JSON.stringify(row.fields || {}).toLowerCase().includes(needle)).slice(0, limit);
-  }
-  return rows;
+  // Customer discovery may match only approved display names. Never search IDs,
+  // folder names, storage keys, private notes, or arbitrary Airtable fields.
+  const formula = `OR(FIND(${formulaText(needle)},LOWER({working_name})),FIND(${formulaText(needle)},LOWER({nickname})))`;
+  return airtableListByFormula(env, table, formula, limit);
 }
 
 async function listModels(env, limit) {
@@ -649,11 +646,26 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
   const f = record.fields || {};
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
+  const clientVisibilityStatus = token(f.client_visibility_status);
+  const approvedVisibility = token(f.approved_client_visibility);
+  const visibilityReviewStatus = token(f.visibility_review_status);
+  const visibilityConfigured = ["client_visibility_status", "approved_client_visibility", "visibility_review_status"]
+    .some((field) => Object.hasOwn(f, field));
+  // MY MODEL visibility updates are authoritative. When those fields are in
+  // use, only an approved selection can enter customer search; hidden/internal
+  // and unapproved VIP/Black Card selections stay out of public discovery.
+  if (visibilityConfigured && (
+    clientVisibilityStatus !== "approved" ||
+    visibilityReviewStatus && visibilityReviewStatus !== "approved" ||
+    !approvedVisibility ||
+    ["hidden", "internal", "private", "none"].includes(approvedVisibility)
+  )) return null;
   if (isProtectedCampaignModel(f)) return null;
   if (!customerLaneMatches(f, customerLane)) return null;
   if (!modelProfileMatches(f, profileFilters)) return null;
 
-  const canPublic = bool(f.can_work_public) || bool(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public";
+  const protectedVisibility = ["vip", "black_card", "blackcard"].includes(approvedVisibility);
+  const canPublic = !protectedVisibility && (bool(f.can_work_public) || bool(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public");
   const canPrivate = bool(f.can_work_private) || token(f.sales_layer).includes("private") || token(f.private_tier) || token(f.private_work_format);
   const folder = canPrivate ? inferCustomerModelFolder(f) : "";
   const folderAllowed = Boolean(folder && allowedFolders.includes(folder));
