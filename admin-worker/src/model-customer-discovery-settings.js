@@ -71,7 +71,7 @@ export async function applyModelDiscoverySettings(env, input) {
         || policy.blocked_member_refs.some(ref => !/^[a-f0-9]{64}$/.test(ref))) return json({ ok: false, error: "privacy_policy_requires_review" }, 409);
     }
     const revision = await memberDiscoveryRef(raw);
-    const view = () => ({ ok: true, revision, blocked_count: policy.blocked_member_refs.length,
+    const view = () => ({ ok: true, revision, ready: model.fields?.discovery_asset_isolation_status === "verified", blocked_count: policy.blocked_member_refs.length,
       blocked_session_ids: (policy.blocked_jobs || []).map(job => job.session_id) });
     if (input.read_only) return json(view());
     if (input.revision !== revision) return json({ ok: false, error: "privacy_settings_changed" }, 409);
