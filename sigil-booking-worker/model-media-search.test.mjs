@@ -1008,6 +1008,7 @@ test("Model block writes verify owned jobs and canonical member linkage; stale c
       fldrXQAyOMPCvbOaY: [id], fld6P6if0vDZCeV0C: ["recClient123"], fldHsczyzr8axfwUC: "MMD-TEST",
     } }] });
     if (url.pathname.endsWith("/tblgWc5VRon5o8Mhk")) return Response.json({ records: [{ id: "recMember123", fields: { fldlhDy68MDQgUihs: ["recClient123"] } }] });
+    if (url.hostname === "models.mmdbkk.com" || url.pathname.endsWith("/public-catalog")) return new Response(null, { status: 410, headers: { "x-mmd-route-owner": "sigil-booking-worker" } });
     throw new Error("unexpected source");
   };
   try {
