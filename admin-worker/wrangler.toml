@@ -1477,3 +1477,20 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/jobs/edit*"
 zone_name = "mmdbkk.com"
+
+
+[[durable_objects.bindings]]
+name = "MODEL_DISCOVERY_COORDINATOR"
+class_name = "ModelDiscoveryCoordinator"
+
+[[migrations]]
+tag = "model-discovery-v1"
+new_sqlite_classes = ["ModelDiscoveryCoordinator"]
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/settings/customer-visibility"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/settings/customer-visibility"
+zone_name = "mmdbkk.com"
