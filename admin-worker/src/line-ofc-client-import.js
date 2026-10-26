@@ -37,7 +37,7 @@ export async function handleLineOfcClientImport(request, env = {}, actor = {}, c
   // context and candidate service history stay in the private staging table above.
   // Create Job reads the reviewed snake_case staging table, so project only the
   // minimum identity evidence needed for deterministic alias lookup.
-  const identityProjection = await syncLineOfcIdentityProjection(env, {
+  const identityProjection = !input.line_user_id ? {verified_staging_record_id:null,pre_session_index_record_id:null,session_lookup_status:"review_required"} : await syncLineOfcIdentityProjection(env, {
     input,
     privateStagingRecordId: record.id,
     candidates,
@@ -76,6 +76,7 @@ export async function handleLineOfcClientImport(request, env = {}, actor = {}, c
 function normalizeInput(body = {}) {
   const input = {
     import_id: clean(body.import_id, 180),
+    client_id: clean(body.client_id, 180),
     line_user_id: clean(body.line_user_id, 180),
     email: clean(body.email, 254).toLowerCase(),
     phone: clean(body.phone, 80),
@@ -90,13 +91,23 @@ function normalizeInput(body = {}) {
     source_hash: clean(body.source_hash, 180),
     reason: clean(body.reason, 1000),
   };
-  if (!input.import_id || !input.line_user_id || !input.reason) throw new Error("invalid_request");
+  if (!input.import_id || (!input.line_user_id && !input.current_line_rename) || !input.reason) throw new Error("invalid_request");
   if (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) throw new Error("invalid_request");
   if (!input.raw_line_notes && !input.membership_application_sensitive && !input.behaviour_care_context && !input.service_history_candidate) throw new Error("invalid_request");
   return input;
 }
 
 async function collectCandidates(env, table, input) {
+  if (input.client_id) {
+    if (!/^rec[a-zA-Z0-9]+$/.test(input.client_id)) throw new Error("invalid_client_id");
+    const config = airtableConfig(env);
+    const response = await fetch(`${AIRTABLE_API}/${config.base}/${table}/${encodeURIComponent(input.client_id)}`, {headers:{Authorization:`Bearer ${config.token}`}});
+    if (!response.ok) throw new Error("client_not_found");
+    const row = await response.json();
+    if (row.id !== input.client_id) throw new Error("client_mismatch");
+    input.line_user_id = clean(row.fields?.line_user_id);
+    return [row];
+  }
   const found = new Map();
   const keys = [
     ["line_user_id", input.line_user_id],

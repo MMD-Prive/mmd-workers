@@ -8,9 +8,9 @@ async function ui(replies) {
  const input={line_user_id:'U'+'a'.repeat(32),current_line_rename:'fixture',raw_line_notes:'fixture completed service',reason:'reviewed fixture',service_date:'2026-09-01',service_amount_thb:'2500',model_name:'fixture',confirmed:'on'};
  const nodes=new Map(),calls=[];
  function node(id){if(!nodes.has(id))nodes.set(id,{hidden:true,children:[],listeners:{},addEventListener(event,fn){this.listeners[event]=fn},replaceChildren(){this.children=[]},append(child){this.children.push(child)}});return nodes.get(id)}
- const html=await renderLineNotesImportPage().text();
+ node('selected-client');node('customer-query');node('selected-line');node('selected-customer');const html=await renderLineNotesImportPage().text();
  vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],{
-  document:{getElementById:node,createElement:()=>({})},crypto:webcrypto,TextEncoder,
+  document:{getElementById:node,createElement:()=>({listeners:{},addEventListener(event,fn){this.listeners[event]=fn}})},crypto:webcrypto,TextEncoder,
   FormData:class{constructor(){return Object.entries(input)}},
   fetch:async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return replies.shift()()},
  });
@@ -35,3 +35,15 @@ test('failed refresh keeps evidence and retries only recovery, never a second im
 test('unconfirmed service amounts cannot be submitted',async()=>{
  const page=await ui([]);delete page.input.confirmed;await page.submit();assert.equal(page.calls.length,0);assert.match(page.nodes.get('status').textContent,/ยืนยัน/);
 });
+
+ test('customer search selects Per Rename and supplies LINE identity without manual entry',async()=>{
+ const page=await ui([()=>Response.json({ok:true,records:[{current_line_rename:'เปอร์ตั้งชื่อ',line_user_id:'Ufixture'}]})]);
+ const form=page.nodes.get('intake');form.elements={current_line_rename:{value:''}};
+ page.nodes.get('customer-query').value='เปอร์';
+ await page.nodes.get('customer-search').listeners.click();
+ const button=page.nodes.get('customer-results').children[0];
+ assert.equal(button.textContent,'เปอร์ตั้งชื่อ');
+ button.listeners.click();
+ assert.equal(page.nodes.get('selected-line').value,'Ufixture');
+ assert.equal(form.elements.current_line_rename.value,'เปอร์ตั้งชื่อ');
+ });
