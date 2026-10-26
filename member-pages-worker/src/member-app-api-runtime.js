@@ -678,7 +678,7 @@ function enrichMembership(baseMembership, session, legacy, {
   if (fixedExpiry) {
     expiry = fixedExpiry.expiresAt;
     lifecycle = fixedExpiry.lifecycle;
-    if (membership.status === "expired" || membership.status === "checking") membership.status = "active";
+    if (["active", "expired", "checking"].includes(membership.status)) membership.status = fixedExpiry.lifecycle;
   }
 
   membership.lifecycle = lifecycle;
