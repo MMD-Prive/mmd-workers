@@ -428,6 +428,8 @@ jobs:
         if: steps.route_sync.outcome == 'success'
         shell: bash
         run: |
+          set -euo pipefail
+          trap 'echo "::error::Production route smoke failed at script line $LINENO" >&2' ERR
           kenji_headers="$RUNNER_TEMP/member-kenji.headers"
           kenji_body="$RUNNER_TEMP/member-kenji.html"
           kenji_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
@@ -530,10 +532,22 @@ jobs:
           grep -qi '^x-mmd-presentation-owner: lovable' "$payment_center_headers"
 
           continue_headers="$RUNNER_TEMP/liff-continue-payment.headers"
-          continue_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$continue_headers" -o /dev/null -w "%{http_code}"             'https://www.mmdbkk.com/member/liff?intent=continue_payment' || true)"
+          continue_body="$RUNNER_TEMP/liff-continue-payment.html"
+          continue_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$continue_headers" -o "$continue_body" -w "%{http_code}"             'https://www.mmdbkk.com/member/liff?intent=continue_payment' || true)"
           test "$continue_code" = "200"
           grep -qi '^x-mmd-liff-return-target: /my-mmd/payments' "$continue_headers"
-          grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$continue_headers"
+          if grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$continue_headers"; then
+            grep -q 'mmd-status-bridge-veil' "$continue_body"
+          else
+            # The full Digital Home deliberately owns its own recovery UI.
+            grep -q 'id="customer-boot-progress"' "$continue_body"
+            grep -qi '^x-mmd-liff-return-bridge: my-mmd-payment-center-v1' "$continue_headers"
+            grep -q 'const target = "/my-mmd/payments";' "$continue_body"
+            if grep -Eq 'mmd-status-bridge-veil|mmd-status-hard-timeout-gate|mmd-status-single-surface-fix' "$continue_body"; then
+              echo "Legacy auth overlay leaked into the Digital Home return" >&2
+              exit 1
+            fi
+          fi
 
           auth_headers="$RUNNER_TEMP/mms-therapist-auth.headers"
           auth_body="$RUNNER_TEMP/mms-therapist-auth.json"
