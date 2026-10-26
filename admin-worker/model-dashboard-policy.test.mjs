@@ -35,7 +35,7 @@ test("public profile/gallery media is model self-managed", () => {
 });
 
 
-test("My Card accepts only active public profile and gallery media", () => {
+test("My Card requires Studio-approved cover media, while active gallery stays view-only", () => {
   const eligible = {
     media_type: "public_gallery",
     asset_role: "gallery_candidate",
@@ -44,7 +44,8 @@ test("My Card accepts only active public profile and gallery media", () => {
     public_safe: true,
     private_original_key: "models/rec12345678901234/public_gallery/media_12345678.jpg",
   };
-  assert.equal(isMyCardSelectableMedia(eligible), true);
+  assert.equal(isMyCardSelectableMedia(eligible), false);
+  assert.equal(isMyCardSelectableMedia({ ...eligible, review_status: "approved" }), true);
   assert.equal(isMyCardSelectableMedia({ ...eligible, media_type: "intro_video" }), false);
   assert.equal(isMyCardSelectableMedia({ ...eligible, public_safe: false }), false);
   assert.equal(isMyCardSelectableMedia({ ...eligible, review_status: "pending_review" }), false);
