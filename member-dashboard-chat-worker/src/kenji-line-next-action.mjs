@@ -8,7 +8,7 @@ const ROUTES = Object.freeze({
   privateMembershipSignup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
   membershipRenewal: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
   points: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points",
-  payments: "https://mmdbkk.com/member/payments",
+  payments: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=continue_payment",
   history: "https://mmdbkk.com/my-mmd/history",
   mms: "https://mmdbkk.com/male-massage/home",
   partnerVenue: "https://mmdbkk.com/male-massage/therapists/relax-spa",

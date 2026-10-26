@@ -28,7 +28,7 @@ export const SALES_ROUTES = Object.freeze({
   privateSignup: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=signup&view=signup",
   renewal: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
   membership: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview",
-  payment: REVIEWED_CARD_ROUTES.payment,
+  payment: "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=continue_payment",
 });
 export function currentSalesRoute(url) {
   const key = Object.keys(REVIEWED_CARD_ROUTES).find(key => REVIEWED_CARD_ROUTES[key] === url);
