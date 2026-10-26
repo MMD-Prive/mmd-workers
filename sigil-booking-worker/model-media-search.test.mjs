@@ -838,10 +838,9 @@ const restrictedDiscovery = JSON.stringify({
   blocked_member_refs: [blockedViewerRef],
 });
 const verifiedViewerService = ref => ({ fetch: async request => {
-  assert.equal(new URL(request.url).pathname, "/api/member/app/profile");
+  assert.equal(new URL(request.url).pathname, "/__internal/booking/discovery-viewer");
   assert.equal(request.headers.get("authorization"), null);
-  return Response.json({ match_state: "matched", line_connected: true,
-    membership_status: "active", memberRef: ref });
+  return Response.json({ ok: true, memberRef: ref });
 } });
 
 test("restricted Model discovery denies blocked and anonymous viewers; malformed rules fail closed", () => {
@@ -862,7 +861,7 @@ test("customer claims in query, body or identity headers cannot replace verified
     method: "POST", headers: { "content-type": "application/json", "x-member-ref": allowedViewerRef },
     body: JSON.stringify({ member_ref: allowedViewerRef, member_id: "recForged" }),
   });
-  assert.equal(await resolveDiscoveryViewer(request, { MEMBER_PAGES_WORKER: service }), "");
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), "");
   assert.equal(calls, 0);
 });
 
@@ -872,17 +871,17 @@ test("viewer identity comes only from member-service session validation and fail
   });
   const service = { fetch: async forwarded => {
     assert.equal(forwarded.headers.get("cookie"), "__Host-mmd_liff_session=opaque");
-    return Response.json({ match_state: "matched", line_connected: true, memberRef: allowedViewerRef, membership_status: "active" });
+    return Response.json({ ok: true, memberRef: allowedViewerRef });
   } };
-  assert.equal(await resolveDiscoveryViewer(request, { MEMBER_PAGES_WORKER: service }), allowedViewerRef);
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), allowedViewerRef);
   for (const payload of [
     { memberRef: allowedViewerRef },
-    { match_state: "matched", line_connected: true, memberRef: allowedViewerRef, membership_status: "blocked" },
+    { ok: false, memberRef: allowedViewerRef },
     { match_state: "matched", line_connected: true, memberRef: "recNotOpaque" },
   ]) {
-    assert.equal(await resolveDiscoveryViewer(request, { MEMBER_PAGES_WORKER: { fetch: async () => Response.json(payload) } }), "");
+    assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: { fetch: async () => Response.json(payload) } }), "");
   }
-  assert.equal(await resolveDiscoveryViewer(request, { MEMBER_PAGES_WORKER: { fetch: async () => { throw new Error("offline"); } } }), "");
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: { fetch: async () => { throw new Error("offline"); } } }), "");
 });
 
 test("search excludes restricted Models without leaking deny rules or counts", async () => {
@@ -899,7 +898,7 @@ test("search excludes restricted Models without leaking deny rules or counts", a
       const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public", {
         headers: ref ? { cookie: "__Host-mmd_liff_session=opaque" } : {},
       });
-      const response = await bookingWorker.fetch(request, { ...filterEnv, MEMBER_PAGES_WORKER: verifiedViewerService(ref) });
+      const response = await bookingWorker.fetch(request, { ...filterEnv, AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(ref) });
       const body = await response.json();
       assert.deepEqual(body.items.map(model => model.model_id), expected);
       assert.doesNotMatch(JSON.stringify(body), /blocked_member_refs|customer_discovery_policy_json|blocked_count/);
@@ -915,7 +914,7 @@ test("GET and HEAD media deny restricted viewers before storage reads and rechec
       for (const ref of ["", blockedViewerRef]) {
         const headers = ref ? { cookie: "__Host-mmd_liff_session=opaque" } : {};
         const response = await worker.fetch(mediaRequest(headers, method), {
-          ...mediaEnv(state), MEMBER_PAGES_WORKER: verifiedViewerService(ref),
+          ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(ref),
         });
         assert.equal(response.status, 404);
         assert.equal(response.headers.get("cache-control"), "private, no-store");
@@ -923,7 +922,7 @@ test("GET and HEAD media deny restricted viewers before storage reads and rechec
     }
     assert.equal(state.storageReads.length, 0);
     const allowed = await worker.fetch(mediaRequest({ cookie: "__Host-mmd_liff_session=opaque" }), {
-      ...mediaEnv(state), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
+      ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
     });
     assert.equal(allowed.status, 200);
     state.modelFields.customer_discovery_policy_json = JSON.stringify({
@@ -931,7 +930,7 @@ test("GET and HEAD media deny restricted viewers before storage reads and rechec
       blocked_member_refs: [blockedViewerRef, allowedViewerRef],
     });
     const denied = await worker.fetch(mediaRequest({ cookie: "__Host-mmd_liff_session=opaque" }), {
-      ...mediaEnv(state), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
+      ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
     });
     assert.equal(denied.status, 404);
     assert.equal(state.storageReads.length, 1);
