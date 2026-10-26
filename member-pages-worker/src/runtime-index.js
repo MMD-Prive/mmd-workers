@@ -1,4 +1,4 @@
-import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer } from "./booking-discovery-viewer.js";
+import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer, attachDiscoverySession } from "./booking-discovery-viewer.js";
 import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
 import { isMemberAttentionRequest, handleMemberAttention } from "./member-attention.js";
 import { isMemberUpdatesRequest, handleMemberUpdates } from "./member-updates.js";
@@ -247,7 +247,10 @@ const worker = {
   },
 };
 
-export default worker;
+export default { async fetch(request, env, ctx) {
+  const response = await worker.fetch(request, env, ctx);
+  return attachDiscoverySession(request, env, response);
+} };
 
 async function jsonPayload(response) {
   if (!(response instanceof Response)) return null;
