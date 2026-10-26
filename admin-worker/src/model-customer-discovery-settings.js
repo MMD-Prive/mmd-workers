@@ -103,12 +103,14 @@ export async function applyModelDiscoverySettings(env, input) {
 // One instance per canonical Model serializes source revision checks + writes.
 // Airtable stays canonical; this object stores no customer or policy snapshot.
 export class ModelDiscoveryCoordinator {
-  constructor(ctx, env) { this.ctx = ctx; this.env = env; }
+  constructor(ctx, env) { this.ctx = ctx; this.env = env; this.tail = Promise.resolve(); }
   fetch(request) {
-    return this.ctx.blockConcurrencyWhile(async () => {
+    const operation = this.tail.then(async () => {
       const input = await request.json().catch(() => null);
       if (!input || !/^rec[a-zA-Z0-9]{10,}$/.test(input.model_id || "")) return json({ ok: false }, 400);
       return applyModelDiscoverySettings(this.env, input);
     });
+    this.tail = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 }
