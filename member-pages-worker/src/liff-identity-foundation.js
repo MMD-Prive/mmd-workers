@@ -1,3 +1,4 @@
+import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 import { getLiffGatewayStore, LiffGatewayStorageError } from "./liff-gateway-airtable.js";
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
 import { assertBirthdayWishOwnership, BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
@@ -824,7 +825,7 @@ export async function handleMemberProfile(request, env = {}) {
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
-  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile?.customer_360?.membership_worlds) {
     await refreshStaleMemberSession(env, auth.session);
   }
   if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
@@ -916,7 +917,7 @@ export async function handleMemberDashboard(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return dashboardError("checking", 401);
-  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile?.customer_360?.membership_worlds) {
     await refreshStaleMemberSession(env, auth.session);
   }
   if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
@@ -1007,6 +1008,7 @@ function buildMemberDashboardData(profile = {}, request) {
       tier,
       membership_status: membershipStatus,
       membership_expires_at: profile.membership_expires_at || null,
+      worlds: serializeMemberWorlds(profile.customer_360?.membership_worlds),
     },
     points,
     history,
@@ -1031,7 +1033,7 @@ function dashboardDisplayName(value) {
 function dashboardTier(profile = {}) {
   const value = String(profile.tier || "").trim();
   if (!value || /^svip$/i.test(value)) return checkingField("member_profile");
-  if (!["Member", "Standard", "Premium", "VIP", "Black Card"].includes(value)) return checkingField("member_profile");
+  if (!["Member", "MMD Member", "Elite", "Red Card", "Standard", "Premium", "VIP", "Black Card"].includes(value)) return checkingField("member_profile");
   return verifiedField(value, "member_profile_resolver");
 }
 
@@ -1497,7 +1499,7 @@ async function resolveMemberIdentity(env, lineUserId) {
   }
 }
 async function refreshStaleMemberSession(env, session) {
-  if (!session || session.member_exists === true && session.member_id && session.member_profile) {
+  if (!session || session.member_exists === true && session.member_id && session.member_profile?.customer_360?.membership_worlds?.schema === "member_worlds_v1") {
     return { refreshed: false, reason: "session_already_resolved" };
   }
   const lineUserId = String(session?.line_user_id || "").trim();

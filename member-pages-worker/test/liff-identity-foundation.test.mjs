@@ -2355,3 +2355,11 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.match(await dashboard.text(), /MMD Privé \\| Member Dashboard/);
   });
 });
+
+it('one verified LINE session carries independent Public and SIGIL worlds through the profile and dashboard',async()=>{
+ const worlds={schema:'member_worlds_v1',public:{state:'active',tier:'Elite',expiresAt:'2027-10-01'},sigil:{state:'expired',tier:'Premium',expiresAt:'2026-01-01'}};
+ const runtime=env({MEMBER_STATUS_RESOLVER:resolver({member_exists:true,mmd_member_id:'MMD-DUAL-01',profile:{customer_360:{member:{member_id:'MMD-DUAL-01',display_name:'สมาชิกทดสอบ',tier:'Elite',membership_status:'active'},membership_worlds:worlds}}})});
+ const started=await start(runtime,{id_token:'valid-token',liff_intent:'status'});
+ const dashboard=await request('/api/member/dashboard',{method:'GET',cookie:cookiePair(findCookie(started.response,'__Host-mmd_liff_session'))},runtime);
+ assert.equal(dashboard.response.status,200);assert.deepEqual(dashboard.payload.data.member.worlds,worlds);assert.equal(dashboard.payload.data.member.tier.value,'Elite');
+});
