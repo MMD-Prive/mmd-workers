@@ -4,7 +4,7 @@ import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUS
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
-import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS } from "./liff-lovable-design.js";
+import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS, MY_MMD_VERIFICATION_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 
@@ -295,10 +295,11 @@ function renderShell(config, nonce) {
   ${CUSTOMER_V6_CSS}
   ${MY_MMD_PUBLIC_BLEND_CSS}
 ${PERSONAL_MAIN_CSS}
+${MY_MMD_VERIFICATION_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0% · กำลังรอข้อมูล</span></div><button id="customer-boot-retry" type="button" hidden>เปิดหน้าใหม่</button></div>`}
+${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img class="verification-logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" width="64" height="64"><div class="verification-art" aria-hidden="true">${customerGraphic("current-booking")}<img class="verification-hype verification-motion" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="" width="176" height="176"><img class="verification-hype verification-still" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp" alt="" width="176" height="176"></div><div class="hype-loader-text">MY MMD</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0% · กำลังรอข้อมูล</span></div><button id="customer-boot-retry" type="button" hidden>เปิดหน้าใหม่</button></div>`}
 <main>
   <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
     <div class="welcome-hero">
