@@ -1,150 +1,119 @@
-import bookingWorker from "./index.js";
+import bookingWorker, { sanitizeModelForBooking } from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MODEL_SEARCH_PATH = "/sigil/api/models/search";
 const MODEL_MEDIA_PREFIX = "/sigil/api/models/media/";
+const MEDIA_SOURCE = "mmd_model_media_assets";
+const MEDIA_ID = /^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i;
 const PUBLIC_MEDIA_TYPES = new Set(["profile_photo", "public_gallery", "intro_video"]);
+const SEARCH_FIELDS = [
+  "model_id", "model_record_id", "model_key", "unique_key", "display_name", "working_name", "nickname",
+  "height_cm", "weight_kg", "body_type", "skin_tone", "preview_approved", "scope", "access_folder",
+  "duration_options", "private_service_level", "private_work_capabilities", "work_lane", "booking_discovery",
+  "sales_control", "offer",
+];
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
+    const path = normalizePath(new URL(request.url).pathname);
     const method = request.method.toUpperCase();
-    const path = normalizePath(url.pathname);
-    if (method === "GET" && path.startsWith(MODEL_MEDIA_PREFIX)) {
-      return servePublicModelMedia(request, env, decodeURIComponent(path.slice(MODEL_MEDIA_PREFIX.length)));
+    if (path.startsWith(MODEL_MEDIA_PREFIX)) {
+      const origin = request.headers.get("origin");
+      if (origin && !allowedOrigin(origin, env)) return mediaCors(json({ ok: false, error: "forbidden_origin" }, 403), request, env);
+      if (method === "OPTIONS") return mediaCors(new Response(null, { status: 204 }), request, env);
+      if (!["GET", "HEAD"].includes(method)) return mediaCors(json({ ok: false, error: "method_not_allowed" }, 405), request, env);
+      let response;
+      try {
+        response = await servePublicModelMedia(request, env, decodeURIComponent(path.slice(MODEL_MEDIA_PREFIX.length)));
+      } catch {
+        response = json({ ok: false, error: "media_not_found" }, 404);
+      }
+      return mediaCors(response, request, env);
     }
+
     const response = await bookingWorker.fetch(request, env, ctx);
-
-    if (!shouldHydrateModelAssets(method, path, response)) return response;
-
-    const original = await response.clone().json().catch(() => null);
-    if (!original || original.ok !== true) return response;
-
+    if (!["GET", "POST"].includes(method) || path !== MODEL_SEARCH_PATH || !response.ok) return response;
+    const original = await response.json().catch(() => null);
+    if (!original || original.ok !== true) return jsonWithHeaders(original, response);
     const hydrated = await hydrateModelAssetPolicy(env, original).catch(() => projectModelsWithoutMedia(original));
-    const headers = new Headers(response.headers);
-    headers.set("content-type", "application/json; charset=utf-8");
-    headers.set("cache-control", "no-store");
-    return new Response(JSON.stringify(hydrated), { status: response.status, headers });
+    return jsonWithHeaders(hydrated, response);
   },
 };
 
-function shouldHydrateModelAssets(method, path, response) {
-  if ((method !== "GET" && method !== "POST") || path !== MODEL_SEARCH_PATH) return false;
-  if (!response || !response.ok) return false;
-  const contentType = response.headers.get("content-type") || "";
-  return !contentType || contentType.includes("json");
+function jsonWithHeaders(payload, response) {
+  const headers = new Headers(response.headers);
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  return new Response(JSON.stringify(payload), { status: response.status, headers });
 }
 
 export async function hydrateModelAssetPolicy(env, payload) {
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return projectModelsWithoutMedia(payload);
-
   const models = collectModels(payload);
   if (!models.length) return payload;
 
-  const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
-  const mediaByModel = await fetchPublicModelMedia(env, models).catch(() => new Map());
-  const cache = new Map();
-  const hydratedModels = [];
-
+  // The search result is already audience-filtered. Re-read canonical Model
+  // state before attaching public media; never grant public access from a name.
+  const eligible = new Map();
   for (const model of models) {
-    const modelId = clean(model?.model_id || model?.model_record_id);
-    if (!modelId) {
-      hydratedModels.push(projectModelMedia(model));
-      continue;
-    }
-    if (!cache.has(modelId)) cache.set(modelId, fetchModelRecord(env, table, modelId));
-    const record = await cache.get(modelId).catch(() => null);
-    const media = mediaByModel.get(modelId) || { primary: null, photos: [], clips: [] };
-    const projected = record ? applyImagePolicy(model, record.fields || {}, env) : model;
-    hydratedModels.push(projectModelMedia(projected, media));
+    const id = clean(model.model_id || model.model_record_id);
+    if (!id || model.scope === "private" || eligible.has(id)) continue;
+    const record = await fetchModelRecord(env, id).catch(() => null);
+    eligible.set(id, isPublicModelRecord(record));
   }
-
-  let cursor = 0;
-  const next = { ...payload };
-  if (payload.model) next.model = hydratedModels[cursor++] || payload.model;
-  if (Array.isArray(payload.items)) next.items = payload.items.map(() => hydratedModels[cursor++] || null).filter(Boolean);
-  if (next.model && Array.isArray(next.items)) {
-    const first = next.items[0];
-    if (first && clean(first.model_id) === clean(next.model.model_id)) next.model = first;
-  }
-  next.asset_policy = "standard_premium_real_photo__gws_ems_ai_image";
+  const publicModels = models.filter((model) => model.scope !== "private" && eligible.get(clean(model.model_id || model.model_record_id)));
+  const mediaByModel = await fetchPublicModelMedia(env, publicModels).catch(() => new Map());
+  const project = (model) => projectModelMedia(model, model.scope === "private" ? undefined : mediaByModel.get(clean(model.model_id || model.model_record_id)));
+  const next = { ...payload, asset_policy: "approved_media_registry_v1" };
+  if (payload.model) next.model = project(payload.model);
+  if (Array.isArray(payload.items)) next.items = payload.items.map(project);
   return next;
 }
 
 function projectModelsWithoutMedia(payload) {
-  const next = { ...payload };
-  if (payload.model && typeof payload.model === "object") next.model = projectModelMedia(payload.model);
-  if (Array.isArray(payload.items)) next.items = payload.items.map((model) => model && typeof model === "object" ? projectModelMedia(model) : model);
+  const next = { ...payload, asset_policy: "approved_media_registry_v1" };
+  if (payload.model) next.model = projectModelMedia(payload.model);
+  if (Array.isArray(payload.items)) next.items = payload.items.map((model) => projectModelMedia(model));
   return next;
 }
 
-function projectModelMedia(model, media = { primary: null, photos: [], clips: [] }) {
-  const primary = media.primary;
-  const {
-    drive_folder_id: _driveFolderId,
-    drive_folder_url: _driveFolderUrl,
-    folder_name: _folderName,
-    source_folder: _sourceFolder,
-    folder_path: _folderPath,
-    private_real_name: _privateRealName,
-    r2_key: _r2Key,
-    r2_prefix: _r2Prefix,
-    primary_image_key: _primaryImageKey,
-    ...customerSafe
-  } = model || {};
+function projectModelMedia(model, media) {
+  if (!model || typeof model !== "object") return model;
+  const customerSafe = Object.fromEntries(SEARCH_FIELDS.filter((key) => Object.hasOwn(model, key)).map((key) => [key, model[key]]));
+  const assets = [media?.primary, ...(media?.photos || []), ...(media?.clips || [])].filter(Boolean);
+  const approved = [...new Map(assets.map((asset) => [asset.media_id, {
+    media_id: asset.media_id,
+    media_source: MEDIA_SOURCE,
+    kind: asset.media_type === "intro_video" ? "clip" : "photo",
+  }])).values()];
   return {
     ...customerSafe,
-    source: primary ? "mmd_model_media_assets" : "",
-    asset_source: primary ? "mmd_model_media_assets" : "",
-    public_image_url: primary?.url || "",
-    cover_url: primary?.url || "",
-    primary_image_url: primary?.url || "",
-    primary_media_id: primary?.media_id || "",
-    r2_key: "",
-    r2_prefix: "",
-    primary_image_key: "",
-    additional_images: media.photos,
-    clips: media.clips,
-    media_source: "mmd_model_media_assets",
+    source: approved.length ? MEDIA_SOURCE : "",
+    asset_source: approved.length ? MEDIA_SOURCE : "",
+    media_source: MEDIA_SOURCE,
+    primary_media_id: approved.find((asset) => asset.kind === "photo")?.media_id || "",
+    approved_media: approved,
   };
 }
 
 export async function fetchPublicModelMedia(env, models) {
-  const modelEntries = models.map((model) => ({
-    id: clean(model?.model_id || model?.model_record_id),
-    name: clean(model?.working_name || model?.model_name || model?.display_name || model?.name),
-  })).filter((model) => model.id);
-  const modelIds = [...new Set(modelEntries.map((model) => model.id))];
-  if (!modelIds.length) return new Map();
-  const result = new Map(modelIds.map((id) => [id, { primary: null, photos: [], clips: [] }]));
-  const modelNames = [...new Set(modelEntries.map((model) => model.name).filter(Boolean))];
-  if (!modelNames.length) return result;
-  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
-  const clauses = modelNames.map((name) => `FIND(${formulaText(name)},ARRAYJOIN({Model}))`);
-  const rows = await airtableList(env, table, `OR(${clauses.join(",")})`, 1000);
+  const ids = [...new Set(models.filter((model) => model.scope !== "private").map((model) => clean(model.model_id || model.model_record_id)).filter(Boolean))];
+  const result = new Map(ids.map((id) => [id, { primary: null, photos: [], clips: [] }]));
+  if (!ids.length) return result;
+  // Linked-field formulas contain display names, not record IDs. Scan only the
+  // approved registry subset, then join actual Model links by canonical ID.
+  const rows = await airtableList(env, mediaTable(env), 'AND({public_safe}=TRUE(),OR({review_status}="approved",{review_status}="active"))', 5000);
   for (const row of rows) {
     const fields = row.fields || {};
     if (!isPublicMedia(fields)) continue;
-    const modelLinks = Array.isArray(fields.Model) ? fields.Model : [];
-    const media = {
-      media_id: clean(fields.media_id),
-      media_type: clean(fields.media_type),
-      asset_role: clean(fields.asset_role),
-      file_type: clean(fields.file_type),
-      url: mediaUrl(env, fields.media_id),
-    };
-    if (!media.media_id || !media.url) continue;
-    for (const link of modelLinks) {
-      const modelId = clean(typeof link === "string" ? link : link?.id);
-      const group = result.get(modelId);
-      if (!group) continue;
-      if (media.asset_role === "profile_main" && media.media_type !== "intro_video") group.primary = media;
-      else if (media.media_type === "intro_video") group.clips.push(media);
-      else group.photos.push(media);
-    }
+    const group = result.get(linkedModelId(fields));
+    if (!group) continue;
+    const media = { media_id: clean(fields.media_id), media_type: clean(fields.media_type).toLowerCase(), asset_role: clean(fields.asset_role).toLowerCase() };
+    if (media.asset_role === "profile_main" && media.media_type !== "intro_video" && !group.primary) group.primary = media;
+    else if (media.media_type === "intro_video") group.clips.push(media);
+    else group.photos.push(media);
   }
   for (const group of result.values()) {
-    group.photos.sort((a, b) => Number(b.asset_role === "profile_main") - Number(a.asset_role === "profile_main"));
     group.photos = group.photos.slice(0, 12);
     group.clips = group.clips.slice(0, 5);
   }
@@ -153,65 +122,70 @@ export async function fetchPublicModelMedia(env, models) {
 
 export function isPublicMedia(fields) {
   const type = clean(fields.media_type).toLowerCase();
-  const role = clean(fields.asset_role).toLowerCase();
-  const visibility = clean(fields.media_visibility).toLowerCase();
-  const status = clean(fields.review_status).toLowerCase();
-  return PUBLIC_MEDIA_TYPES.has(type)
-    && hasLinkedModel(fields)
+  const modelId = linkedModelId(fields);
+  const key = clean(fields.private_original_key);
+  return MEDIA_ID.test(clean(fields.media_id))
+    && PUBLIC_MEDIA_TYPES.has(type)
+    && /^rec[a-zA-Z0-9]+$/.test(modelId)
     && fields.public_safe === true
-    && ["active", "approved", "public"].includes(status)
-    && ["public", "public_candidate"].includes(visibility)
-    && !/private|flash|sensitive/.test(role)
-    && clean(fields.private_original_key).length > 0;
+    && fields.private_safe !== true && fields.flash_safe !== true
+    && ["active", "approved"].includes(clean(fields.review_status).toLowerCase())
+    && ["public", "public_candidate"].includes(clean(fields.media_visibility).toLowerCase())
+    && !/private|flash|sensitive/.test(clean(fields.asset_role).toLowerCase())
+    && fields.r2_bucket === "mmd-models"
+    && key.startsWith(`models/${modelId}/`) && !key.includes("..")
+    && (type === "intro_video" ? /^video\/(mp4|webm|quicktime)$/.test(clean(fields.file_type)) : /^image\/(jpeg|png|webp|avif)$/.test(clean(fields.file_type)));
 }
 
-function hasLinkedModel(fields) {
-  return Array.isArray(fields.Model) && fields.Model.some((link) => clean(typeof link === "string" ? link : link?.id).length > 0);
+function linkedModelId(fields) {
+  const links = fields.Model;
+  return Array.isArray(links) && links.length === 1 ? clean(typeof links[0] === "string" ? links[0] : links[0]?.id) : "";
+}
+
+function isPublicModelRecord(record) {
+  return Boolean(record?.id && sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, env: {} }));
 }
 
 async function servePublicModelMedia(request, env, mediaId) {
-  if (!/^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
-  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") return json({ ok: false, error: "media_storage_unavailable" }, 503);
-  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
-  const escaped = mediaId.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-  const rows = await airtableList(env, table, `{media_id}="${escaped}"`, 2).catch(() => []);
+  if (!MEDIA_ID.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
+  const rows = await airtableList(env, mediaTable(env), `{media_id}=${formulaText(mediaId)}`, 2).catch(() => []);
   const fields = rows[0]?.fields || {};
-  if (!rows.length || !isPublicMedia(fields)) return json({ ok: false, error: "media_not_found" }, 404);
-  const rangeHeader = request.headers.get("range") || "";
-  const rangeMatch = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
-  let range = undefined;
-  if (rangeMatch && objectSizeHint(fields) > 0) {
-    const size = objectSizeHint(fields);
-    const start = rangeMatch[1] ? Number(rangeMatch[1]) : Math.max(0, size - Number(rangeMatch[2] || 0));
-    const end = rangeMatch[2] && rangeMatch[1] ? Number(rangeMatch[2]) : size - 1;
-    if (start >= size || end < start) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
-    range = { offset: start, length: Math.min(end, size - 1) - start + 1 };
+  if (rows.length !== 1 || clean(fields.media_id) !== mediaId || !isPublicMedia(fields)) return json({ ok: false, error: "media_not_found" }, 404);
+  const record = await fetchModelRecord(env, linkedModelId(fields)).catch(() => null);
+  if (!isPublicModelRecord(record)) return json({ ok: false, error: "media_not_found" }, 404);
+
+  const bucket = env.MMD_MODEL_ASSETS;
+  const readMethod = request.method === "HEAD" ? "head" : "get";
+  if (typeof bucket?.[readMethod] !== "function") return json({ ok: false, error: "media_storage_unavailable" }, 503);
+  const size = Number(fields.file_size_bytes);
+  if (!Number.isSafeInteger(size) || size <= 0) return json({ ok: false, error: "media_not_found" }, 404);
+  let range;
+  const rangeHeader = request.headers.get("range");
+  if (rangeHeader && request.method !== "HEAD") {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    const start = match?.[1] ? Number(match[1]) : Math.max(0, size - Number(match?.[2] || 0));
+    const end = match?.[1] && match?.[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+    if (!match || (!match[1] && !match[2]) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= size || end < start) {
+      return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+    }
+    range = { offset: start, length: end - start + 1 };
   }
-  const object = await env.MMD_MODEL_ASSETS.get(clean(fields.private_original_key), range ? { range } : undefined).catch(() => null);
-  if (!object) return json({ ok: false, error: "media_not_found" }, 404);
-  const size = object.size || objectSizeHint(fields);
+  const object = await bucket[readMethod](clean(fields.private_original_key), ...(readMethod === "get" && range ? [{ range }] : []));
+  if (!object || object.size !== size || object.httpMetadata?.contentType !== fields.file_type
+    || object.customMetadata?.media_id !== mediaId || object.customMetadata?.model_record_id !== record.id
+    || !/^[a-f0-9]{64}$/i.test(object.customMetadata?.sha256 || "")) {
+    if (typeof object?.body?.cancel === "function") await object.body.cancel();
+    return json({ ok: false, error: "media_not_found" }, 404);
+  }
   const headers = new Headers({
-    "content-type": clean(fields.file_type || object.httpMetadata?.contentType) || "application/octet-stream",
-    "cache-control": "public, max-age=300, s-maxage=3600",
+    "content-type": fields.file_type,
     "x-content-type-options": "nosniff",
     "content-disposition": "inline",
     "accept-ranges": "bytes",
+    "content-length": String(range?.length || size),
   });
-  if (range && size > 0) {
-    headers.set("content-range", `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`);
-    headers.set("content-length", String(range.length));
-  }
-  const origin = request.headers.get("origin");
-  if (origin && allowedOrigin(origin, env)) {
-    headers.set("access-control-allow-origin", origin);
-    headers.set("vary", "origin");
-  }
-  return new Response(object.body, { status: range ? 206 : 200, headers });
-}
-
-function objectSizeHint(fields) {
-  const size = Number(fields.file_size_bytes);
-  return Number.isFinite(size) && size > 0 ? size : 0;
+  if (range) headers.set("content-range", `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`);
+  return new Response(request.method === "HEAD" ? null : object.body, { status: range ? 206 : 200, headers });
 }
 
 async function airtableList(env, table, formula, limit) {
@@ -219,7 +193,7 @@ async function airtableList(env, table, formula, limit) {
   let offset = "";
   do {
     const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
-    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("pageSize", String(Math.min(100, limit - records.length)));
     url.searchParams.set("filterByFormula", formula);
     if (offset) url.searchParams.set("offset", offset);
     const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
@@ -228,246 +202,43 @@ async function airtableList(env, table, formula, limit) {
     records.push(...(Array.isArray(payload.records) ? payload.records : []));
     offset = payload.offset || "";
   } while (offset && records.length < limit);
+  if (offset) throw new Error("media_registry_scan_limit");
   return records.slice(0, limit);
 }
 
-function mediaUrl(env, mediaId) {
-  const base = clean(env.SIGIL_MODEL_MEDIA_BASE_URL || "https://sigil.mmdbkk.com").replace(/\/+$/, "");
-  return `${base}${MODEL_MEDIA_PREFIX}${encodeURIComponent(clean(mediaId))}`;
-}
-
-function formulaText(value) {
-  return `"${clean(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
-}
-
-function allowedOrigin(origin, env) {
-  const allowed = clean(env.ALLOWED_ORIGINS).split(",").map((item) => item.trim());
-  return allowed.includes(origin);
-}
-
-function json(payload, status = 200) {
-  return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
-}
-
-function collectModels(payload) {
-  const out = [];
-  if (payload.model && typeof payload.model === "object") out.push(payload.model);
-  if (Array.isArray(payload.items)) out.push(...payload.items.filter((item) => item && typeof item === "object"));
-  return out;
-}
-
-async function fetchModelRecord(env, table, recordId) {
+async function fetchModelRecord(env, recordId) {
+  if (!/^rec[a-zA-Z0-9]+$/.test(recordId)) return null;
+  const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
   const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
   });
   if (!response.ok) return null;
-  return response.json();
+  const record = await response.json();
+  return record?.id === recordId ? record : null;
 }
 
-function applyImagePolicy(model, fields, env) {
-  const policy = detectImagePolicy(fields, model);
-  const real = resolveRealPhotoAsset(fields, env);
-  const ai = resolveAiImageAsset(fields, env);
-  const fallback = resolveFallbackAsset(model, fields, env);
-
-  if (policy === "real_photo") {
-    return finalizeAsset(model, real.url || fallback.url, real.key || fallback.key, real.source || fallback.source, policy, "Standard/Premium real photo");
-  }
-
-  if (policy === "ai_generated") {
-    return finalizeAsset(model, ai.url || fallback.url, ai.key || fallback.key, ai.source || fallback.source, policy, "GWs/EMs AI image");
-  }
-
-  return finalizeAsset(model, fallback.url, fallback.key, fallback.source, policy, "Default public preview");
+function mediaCors(response, request, env) {
+  const headers = new Headers(response.headers);
+  const origin = request.headers.get("origin");
+  if (origin && allowedOrigin(origin, env)) headers.set("access-control-allow-origin", origin);
+  headers.set("vary", "Origin");
+  headers.set("access-control-allow-methods", "GET,HEAD,OPTIONS");
+  headers.set("access-control-allow-headers", "Range");
+  headers.set("access-control-expose-headers", "Content-Length,Content-Range,Accept-Ranges");
+  // Revocation must reach the authorization gate on every request.
+  headers.set("cache-control", "private, no-store");
+  headers.set("cdn-cache-control", "no-store");
+  headers.set("cloudflare-cdn-cache-control", "no-store");
+  headers.set("x-mmd-route-owner", "sigil-booking-worker");
+  return new Response(request.method === "HEAD" ? null : response.body, { status: response.status, headers });
 }
 
-function detectImagePolicy(fields, model) {
-  const text = token([
-    fields.field,
-    fields.model_field,
-    fields.category,
-    fields.category_path,
-    fields.folder_name,
-    fields.folder_scope_key,
-    fields.r2_prefix,
-    fields.primary_image_key,
-    fields.unique_key,
-    fields.model_key,
-    fields.model_record_id,
-    fields["model_record_id"],
-    fields["Model Record ID"],
-    fields["Model ID"],
-    fields.internal_code,
-    fields.run_number,
-    fields.runNumber,
-    fields.private_tier,
-    fields.tier,
-    fields.package_code,
-    fields.package,
-    fields.sales_layer,
-    fields.private_work_format,
-    fields.exclusive_group,
-    fields.catalog_group,
-    model.field,
-    model.run_number,
-    model.unique_key,
-    model.model_key,
-    model.model_record_id,
-    model.model_id,
-    model.r2_prefix,
-    model.primary_image_key,
-  ].map(clean).filter(Boolean).join(" "));
-
-  if (
-    /(^|_)gws\d*(_|$)/.test(text) ||
-    /(^|_)ems\d*(_|$)/.test(text) ||
-    text.includes("_gws_") ||
-    text.includes("_ems_") ||
-    text.includes("guest_who") ||
-    /(^|_)mdl_exc_oth(_|$)/.test(text) ||
-    /(^|_)exc_oth(_|$)/.test(text)
-  ) {
-    return "ai_generated";
-  }
-
-  if (isStandardOrPremiumPrivateTier(text)) return "real_photo";
-  return "public_preview";
+function allowedOrigin(origin, env) {
+  return clean(env.ALLOWED_ORIGINS).split(",").map((item) => item.trim()).filter(Boolean).includes(origin);
 }
-
-function isStandardOrPremiumPrivateTier(text) {
-  if (text.includes("standard") || text.includes("premium")) return true;
-  if (/(^|_)mdl_pri_str(_|$)/.test(text) || /(^|_)pri_str(_|$)/.test(text)) return true;
-  if (/(^|_)mdl_pri_std(_|$)/.test(text) || /(^|_)pri_std(_|$)/.test(text)) return true;
-  if (/(^|_)mdl_pri_prm(_|$)/.test(text) || /(^|_)pri_prm(_|$)/.test(text)) return true;
-  if (/(^|_)mdl_pri_prem(_|$)/.test(text) || /(^|_)pri_prem(_|$)/.test(text)) return true;
-  if (text.includes("private_models_standard_package") || text.includes("mmd_private_models_standard_package")) return true;
-  if (text.includes("private_models_premium_package") || text.includes("mmd_private_models_premium_package")) return true;
-  return false;
-}
-
-function resolveRealPhotoAsset(fields, env) {
-  const url = firstValue(fields, [
-    "Real Photo URL",
-    "real_photo_url",
-    "Real Image URL",
-    "real_image_url",
-    "Private Real Photo URL",
-    "private_real_photo_url",
-    "Private Image URL",
-    "private_image_url",
-    "Standard Real Photo URL",
-    "standard_real_photo_url",
-    "Premium Real Photo URL",
-    "premium_real_photo_url",
-    "Actual Photo URL",
-    "actual_photo_url",
-    "Photo URL",
-    "photo_url",
-  ]);
-  const key = firstValue(fields, [
-    "real_photo_key",
-    "Real Photo Key",
-    "real_image_key",
-    "Real Image Key",
-    "private_real_photo_key",
-    "Private Real Photo Key",
-    "private_image_key",
-    "Private Image Key",
-    "standard_real_photo_key",
-    "premium_real_photo_key",
-  ]);
-  return {
-    url: url || publicUrlFromKey(env, key),
-    key,
-    source: url ? "airtable_attachment" : key ? "r2_prefix" : "",
-  };
-}
-
-function resolveAiImageAsset(fields, env) {
-  const url = firstValue(fields, [
-    "AI Image URL",
-    "ai_image_url",
-    "AI Preview URL",
-    "ai_preview_url",
-    "Generated Image URL",
-    "generated_image_url",
-    "Compcard Image URL",
-    "compcard_image_url",
-    "Card Image URL",
-    "card_image_url",
-    "Hero Image URL",
-    "hero_image_url",
-    "Public Image URL",
-    "public_image_url",
-  ]);
-  const key = firstValue(fields, [
-    "ai_image_key",
-    "AI Image Key",
-    "ai_preview_key",
-    "generated_image_key",
-    "compcard_image_key",
-    "card_image_key",
-    "hero_image_key",
-    "primary_image_key",
-    "Primary Image Key",
-    "r2_key",
-    "r2_prefix",
-  ]);
-  return {
-    url: url || publicUrlFromKey(env, key),
-    key,
-    source: url ? "airtable_attachment" : key ? "r2_prefix" : "",
-  };
-}
-
-function resolveFallbackAsset(model, fields, env) {
-  const url = clean(model.public_image_url || model.cover_url) || firstValue(fields, ["Public Image URL", "public_image_url", "card_image_url", "hero_image_url"]);
-  const key = clean(model.primary_image_key || model.r2_key || model.r2_prefix) || firstValue(fields, ["primary_image_key", "r2_key", "r2_prefix"]);
-  return {
-    url: url || publicUrlFromKey(env, key),
-    key,
-    source: clean(model.source || model.asset_source) || (url ? "airtable_attachment" : key ? "r2_prefix" : "manual_review"),
-  };
-}
-
-function finalizeAsset(model, url, key, source, policy, note) {
-  const safeSource = source === "real_photo" || source === "ai_generated" ? "airtable_attachment" : clean(source || "manual_review");
-  return {
-    ...model,
-    source: safeSource,
-    asset_source: safeSource,
-    public_image_url: clean(url),
-    cover_url: clean(url),
-    r2_key: clean(key),
-    primary_image_key: clean(key),
-    model_asset_policy: policy,
-    image_policy_note: note,
-  };
-}
-
-function firstValue(fields, keys) {
-  for (const key of keys) {
-    const value = clean(fields?.[key]);
-    if (value) return value;
-  }
-  return "";
-}
-
-function publicUrlFromKey(env, key) {
-  const base = clean(env.MODEL_PUBLIC_ASSET_BASE_URL).replace(/\/+$/, "");
-  const k = clean(key).replace(/^\/+/, "");
-  return base && k ? `${base}/${encodeURI(k)}` : "";
-}
-
-function normalizePath(pathname = "") {
-  const path = String(pathname || "/").replace(/\/{2,}/g, "/");
-  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
-}
-
-function clean(value) {
-  return String(value ?? "").trim();
-}
-
-function token(value) {
-  return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
+function mediaTable(env) { return env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW"; }
+function formulaText(value) { return `"${clean(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`; }
+function json(payload, status = 200) { return Response.json(payload, { status, headers: { "cache-control": "no-store" } }); }
+function collectModels(payload) { return [payload.model, ...(Array.isArray(payload.items) ? payload.items : [])].filter((model) => model && typeof model === "object"); }
+function normalizePath(pathname = "/") { return pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "") || "/"; }
+function clean(value) { return String(value ?? "").trim(); }

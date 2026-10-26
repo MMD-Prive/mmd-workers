@@ -18,9 +18,43 @@ Webflow must not read Airtable, R2, Google Drive, or Gmail directly. This worker
   - Searches Airtable `Models` by `working_name`, `nickname`, `unique_key`, `folder_name`, `r2_prefix`, and `primary_image_key`.
   - Hydrates the selected primary image, additional public gallery images, and intro clips from the MMD Model Media Assets registry. Only active, `public_safe` assets with public visibility are included.
 - `GET /sigil/api/models/media/:media_id`
-  - Streams public-safe MMD MODEL media from R2 and supports byte ranges for video playback. Private, pending, and unsafe media return not found.
+  - Streams approved public-safe MMD MODEL media from R2 and supports byte ranges for video playback. Private, pending, revoked, and unsafe media return not found.
   - Returns only public-safe preview fields.
   - Private search requires a prior booking request with `member_status=active` and `access_scope=public_private`.
+
+### Public booking media contract
+
+Each returned Model includes `approved_media`, even when empty. Entries contain only:
+
+```json
+{
+  "media_id": "media_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "media_source": "mmd_model_media_assets",
+  "kind": "photo"
+}
+```
+
+`kind` is `photo` or `clip`. Clients construct the media endpoint exclusively as
+`https://sigil.mmdbkk.com/sigil/api/models/media/{media_id}`. Search responses do
+not expose `public_image_url`, `cover_url`, storage URLs, Drive links, or R2 keys.
+The gallery's first approved photo is usable even when no `profile_main` exists.
+
+The registry is joined using its actual `Model` record links, never a display
+name. Only public-safe, approved assets (including legacy `active` approved
+registry entries) with the correct public bucket, Model-owned key, and media MIME
+type are eligible. A current canonical Public Model is required both when
+hydrating search and on **every** media GET/HEAD. R2 metadata must match the media
+ID, Model ID, file size, MIME type, and recorded SHA-256 metadata format. Missing,
+revoked, ambiguous, or unverifiable records fail closed; no approval is created
+or changed by discovery.
+
+The approved registry scan is paginated and capped at 5,000 rows per search; an
+incomplete or unavailable registry yields no media instead of legacy fallbacks.
+Media responses use browser/CDN `no-store` to keep revocation checks active.
+Exact origins come from `ALLOWED_ORIGINS`, including mmdbkk.com, the connected
+Lovable preview and `sigil-booking.lovable.app`, and `mmdprive.webflow.io`.
+GET, HEAD, byte-range requests, and OPTIONS preflight are supported; other browser
+origins are denied before any registry or storage read.
 
 - `POST /sigil/api/booking/intake`
   - Saves the booking draft into `SIGIL Booking Requests`.
@@ -178,3 +212,4 @@ If `telegram_notify.ok` is false, check:
 ## Safety lock
 
 This worker never confirms booking, model availability, private access, or payment by itself. Records are booking drafts only until official review and payment verification.
+

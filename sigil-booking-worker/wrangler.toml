@@ -65,8 +65,8 @@ AIRTABLE_TABLE_MODEL_OFFER_RULES_ID = "tblSbxUGTFqd2CgPy"
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
 
-# Optional R2 lookup for object-exists checks. Public URLs still come from Airtable
-# Public Image URL or MODEL_PUBLIC_ASSET_BASE_URL + primary_image_key.
+# Public media is streamed only through the approved-media authorization gate.
+# Never construct customer-facing URLs from R2 keys or Airtable attachments.
 [[r2_buckets]]
 binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
@@ -77,3 +77,4 @@ bucket_name = "mmd-models"
 # CONFIRM_KEY optional fallback for trusted booking confirmation / telegram-worker auth
 # AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES must be the same 32+ character
 # service secret configured on member-pages-worker.
+
