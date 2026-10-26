@@ -429,6 +429,7 @@ jobs:
             "/v1/admin/kenji/control/conversations*",
             "/v1/admin/kenji/control/approvals*",
             "/v1/admin/kenji/conversation-shadow-receipt",
+            "/v1/model/settings/customer-visibility",
             "/v1/model/visibility/update",
             "/v1/model/rate/request",
             "/v1/model/telegram/bind",
