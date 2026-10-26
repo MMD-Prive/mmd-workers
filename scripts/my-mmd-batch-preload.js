@@ -2,6 +2,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const { summarizeMembershipDates } = require("./membership-date-review.js");
 const { createHash } = require("node:crypto");
 const { AirtableClient } = require("./line-official-legacy/dry-run-import.js");
 const {
@@ -25,6 +26,7 @@ const TABLES = Object.freeze({
   payments: process.env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ",
   points: process.env.AIRTABLE_TABLE_POINTS_LEDGER || "tbl5dfnwjUFMLbnWL",
   intelligence: process.env.AIRTABLE_CLIENT_INTELLIGENCE_EVIDENCE_TABLE || "tblx7NdfHO5iY6qtg",
+  membershipDates: process.env.AIRTABLE_MEMBERSHIP_EVIDENCE_REVIEW_TABLE || "tblWoodj1nWEzazCi",
   reconciliation: process.env.AIRTABLE_CLIENT_LIFECYCLE_RECONCILIATION_TABLE || "tblNV1b5sMC2fQPxt",
 });
 
@@ -466,6 +468,7 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
       member_linked: Boolean(member),
       member_match_count: Number(input?.memberMatchCount || (member ? 1 : 0)),
     },
+    membership_dates: summarizeMembershipDates(input?.membershipDateRows || [], clientId, now),
     history_backfill_status: historyStatus,
     recent_services: service.events.filter(event => event.amount_thb > 0 && !event.amount_anomaly).slice(-5).reverse().map(event => ({ id: `client-service-${event.record_id}`, kind: "booking", occurredAt: event.date, title: "ประวัติใช้บริการ MMD", statusLabel: "Completed", model: event.model_name, totalAmountThb: event.amount_thb, currency: "THB", source: "canonical_session" })),
     source_note_count: sourceNoteCount,
@@ -627,7 +630,7 @@ async function runBatchPreload({
   now = new Date(),
   thresholds = DEFAULT_THRESHOLDS,
 } = {}) {
-  const [clients, members, legacy, privateRows, reviews, sessions, payments, points, intelligence, existing] = await Promise.all([
+  const [clients, members, legacy, privateRows, reviews, sessions, payments, points, intelligence, existing, membershipDates] = await Promise.all([
     airtable.list(TABLES.clients),
     airtable.list(TABLES.members),
     airtable.list(TABLES.legacyStaging, { filterByFormula: `FIND("#client",LOWER({line_tags_raw}&""))>0` }),
@@ -638,6 +641,7 @@ async function runBatchPreload({
     airtable.list(TABLES.points),
     airtable.list(TABLES.intelligence).catch(() => []),
     airtable.list(TABLES.reconciliation),
+    airtable.list(TABLES.membershipDates),
   ]);
 
   if (!clients.length || clients.length > 5000) throw new Error(`MY_MMD_PRELOAD_CLIENT_GUARDRAIL:${clients.length}`);
@@ -671,6 +675,7 @@ async function runBatchPreload({
   const sessionsByClient = indexByLinkedClient(sessions, ["Client"]);
   const paymentsByClient = indexByLinkedClient(payments, ["Client"]);
   const intelligenceByClient = indexByLinkedClient(intelligence, ["Client", "client"]);
+  const membershipDatesByClient = indexByLinkedClient(membershipDates, ["client"]);
   const lineCounts = lineIdentityCounts(clients);
   const results = [];
   for (const client of selectedClients) {
@@ -690,6 +695,7 @@ async function runBatchPreload({
       paymentRows: paymentsByClient.get(id) || [],
       pointsRows: points,
       intelligenceRows: intelligenceByClient.get(id) || [],
+      membershipDateRows: membershipDatesByClient.get(id) || [],
     }, now, thresholds));
   }
 
@@ -711,6 +717,7 @@ async function runBatchPreload({
     mode: apply ? "apply" : "dry_run",
     canonical_clients_scanned: selectedClients.length,
     members_scanned: members.length,
+    membership_date_review_rows_scanned: membershipDates.length,
     legacy_history_rows_scanned: legacy.length,
     private_staging_rows_scanned: privateRows.length,
     reviews_scanned: reviews.length,
