@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateRenewalEligibility, withLiffRenewalEligibility, RENEWAL_PRICE_POLICY } from '../src/liff-renewal-eligibility.js';
-const session = tier => ({ memberExists: true, memberId: 'TEST-MEMBER', lineUserId: 'U' + 'a'.repeat(32), memberProfile: { tier, membership_status: 'active', membership_expires_at: '2027-02-28T16:59:59.999Z' } });
+const session = tier => ({ memberExists: true, memberId: 'TEST-MEMBER', lineUserId: 'U' + 'a'.repeat(32), memberProfile: { tier, membership_status: 'active', membership_expires_at: '2026-10-01T16:59:59.999Z' } });
 const spend = n => ({ state: 'resolved', sourceVerified: true, serviceSpendVerified: true, serviceSpend365Thb: n, recordsCount: 1, pointsRecoveryPending: false });
 const offer = code => ({ ok: true, status: 'ready', package_code: code, amount_thb: code === 'standard' ? 1000 : 2500, payment_available: true, membership_years: 1, entitlement_granted: false, official_verification_required: true });
 const req = (path = 'offer', init) => new Request('https://mmdbkk.com/member/api/liff/renewal/' + path, init);
@@ -101,4 +101,37 @@ test('missing authentication preserves owner 401 and source failures remain revi
   const response = await withLiffRenewalEligibility(req(), env, () => { throw new Error('must not create'); },
     { readSession: async () => session('standard'), readSpend: async () => { throw new Error('offline'); } });
   assert.equal((await response.json()).reason, 'history_pending');
+});
+
+test('active same-tier advance renewal needs no service spend and starts after future expiry', () => {
+  for (const [tier, amount] of [['standard', 1000], ['premium', 2500]]) {
+    const member = session(tier);
+    member.memberProfile.membership_expires_at = '2027-02-28T16:59:59.999Z';
+    const result = evaluateRenewalEligibility(member, null, tier, new Date('2026-10-26T00:00:00Z'));
+    assert.equal(result.state, 'eligible');
+    assert.equal(result.amount_thb, amount);
+    assert.equal(result.price_rule, 'active_advance_' + tier);
+    assert.equal(result.renewal_starts_at, member.memberProfile.membership_expires_at);
+    assert.equal(result.history_status, 'not_required_for_advance');
+  }
+});
+test('active advance GET bypasses history read but checks the existing owner quote', async () => {
+  const member = session('standard');
+  member.memberProfile.membership_expires_at = new Date(Date.now() + 90 * 86400000).toISOString();
+  let reads = 0, delegates = 0;
+  const response = await withLiffRenewalEligibility(req(), env,
+    () => { delegates++; return Response.json(offer('standard')); },
+    { readSession: async () => member, readSpend: async () => { reads++; throw new Error('not needed'); } });
+  const body = await response.json();
+  assert.equal(reads, 0); assert.equal(delegates, 1);
+  assert.equal(body.amount_thb, 1000);
+  assert.equal(body.renewal_starts_at, member.memberProfile.membership_expires_at);
+  assert.equal(body.entitlement_granted, false);
+});
+test('blocked active member and active package switch remain owner review', () => {
+  const member = session('premium');
+  member.memberProfile.membership_expires_at = new Date(Date.now() + 90 * 86400000).toISOString();
+  assert.equal(evaluateRenewalEligibility(member, null, 'standard').reason, 'package_change_review');
+  member.memberProfile.membership_status = 'blocked';
+  assert.equal(evaluateRenewalEligibility(member, null).reason, 'membership_review');
 });
