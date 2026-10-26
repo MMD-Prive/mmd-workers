@@ -222,6 +222,7 @@ function buildServiceSummary(sessionRows = [], paymentRows = [], now = new Date(
       key,
       record_id: clean(row?.id),
       date: sessionDate(row),
+      model_name: typeof fields.model_name === "string" ? fields.model_name.trim().slice(0, 120) : typeof fields["Assigned Model"] === "string" && !/^rec[A-Za-z0-9]+$/.test(fields["Assigned Model"]) ? fields["Assigned Model"].trim().slice(0, 120) : null,
       amount_thb: amount.amount,
       amount_source: amount.source,
       amount_anomaly: amount.anomaly,
@@ -231,7 +232,7 @@ function buildServiceSummary(sessionRows = [], paymentRows = [], now = new Date(
     if (!prior || event.amount_thb > prior.amount_thb || (!prior.date && event.date)) byKey.set(key, event);
   }
 
-  const events = [...byKey.values()].sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
+  const events = [...byKey.values()].filter(event => event.date && event.date <= today).sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
   const lifetimeSpend = events.reduce((sum, event) => sum + event.amount_thb, 0);
   const eligibleEvents = events.filter((event) => event.date && event.date >= cutoff && (!today || event.date <= today));
   const eligibleSpend365 = eligibleEvents.reduce((sum, event) => sum + event.amount_thb, 0);
@@ -466,6 +467,7 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
       member_match_count: Number(input?.memberMatchCount || (member ? 1 : 0)),
     },
     history_backfill_status: historyStatus,
+    recent_services: service.events.filter(event => event.amount_thb > 0 && !event.amount_anomaly).slice(-5).reverse().map(event => ({ id: `client-service-${event.record_id}`, kind: "booking", occurredAt: event.date, title: "ประวัติใช้บริการ MMD", statusLabel: "Completed", model: event.model_name, totalAmountThb: event.amount_thb, currency: "THB", source: "canonical_session" })),
     source_note_count: sourceNoteCount,
     private_history_candidate_count: privateCandidateCount,
     unqueued_legacy_history_count: unqueuedLegacyCount,
