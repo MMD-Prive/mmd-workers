@@ -1,3 +1,5 @@
+import { attachDiscoverySession } from "../member-pages-worker/src/booking-discovery-viewer.js";
+import { applyModelDiscoverySettings, memberDiscoveryRef, ModelDiscoveryCoordinator } from "../admin-worker/src/model-customer-discovery-settings.js";
 import { webcrypto } from "node:crypto";
 import { handleDiscoveryViewer } from "../member-pages-worker/src/booking-discovery-viewer.js";
 import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./src/customer-discovery-policy.js";
@@ -962,4 +964,62 @@ test("service-only viewer reads are stable and never rotate or reveal the source
     memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "blocked" },
   }));
   assert.equal(blocked.status, 401);
+});
+
+test("cross-host discovery uses a short-lived scoped alias and preserves the primary cookie", async () => {
+  globalThis.crypto ||= webcrypto;
+  const records = new Map();
+  const env = { LIFF_IDENTITY_KV: { put: async (key, value) => records.set(key, JSON.parse(value)), get: async key => records.get(key) } };
+  const token = "c".repeat(64);
+  const source = new Request("https://mmdbkk.com/member/api/liff/start");
+  const response = new Response("{}", { headers: { "set-cookie": "__Host-mmd_liff_session=" + token + "; Path=/; HttpOnly; Secure; SameSite=Lax" } });
+  const identity = async () => ({ memberExists: true, memberId: "MMD-TEST", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "active" } });
+  const issued = await attachDiscoverySession(source, env, response, identity);
+  assert.equal(records.size, 1);
+  const cookies = issued.headers.get("set-cookie");
+  assert.match(cookies, /__Host-mmd_liff_session=/);
+  assert.match(cookies, /__Secure-mmd_discovery_session=[a-f0-9]{64}; Domain=mmdbkk.com; Path=\/sigil\/api\/; Max-Age=1800; HttpOnly; Secure; SameSite=Strict/);
+  const alias = [...records.keys()][0].slice("booking-discovery:".length);
+  const verified = await handleDiscoveryViewer(new Request("https://internal/__internal/booking/discovery-viewer", {
+    headers: { "x-mmd-booking-service-secret": "s".repeat(32), cookie: "__Secure-mmd_discovery_session=" + alias },
+  }), { ...env, AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32) }, async request => {
+    assert.equal(request.headers.get("cookie"), "__Host-mmd_liff_session=" + token);
+    return identity();
+  });
+  assert.equal(verified.status, 200);
+  const foreign = await attachDiscoverySession(new Request("https://untrusted.example/member/api/liff/start"), env,
+    new Response("{}", { headers: { "set-cookie": "__Host-mmd_liff_session=" + token } }), identity);
+  assert.doesNotMatch(foreign.headers.get("set-cookie"), /__Secure-mmd_discovery_session/);
+});
+
+test("Model block writes verify owned jobs and canonical member linkage; stale concurrent revisions cannot overwrite", async () => {
+  globalThis.crypto ||= webcrypto;
+  const original = globalThis.fetch;
+  let raw = "", writes = 0;
+  const id = "recModelPrivacy123";
+  const env = { AIRTABLE_API_KEY: "synthetic", AIRTABLE_BASE_ID: "base" };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith("/tblI4B0bI446vp9GX/" + id)) {
+      if (init.method === "PATCH") { raw = JSON.parse(init.body).fields.customer_discovery_policy_json; writes++; }
+      return Response.json({ id, fields: { status: "active", customer_discovery_policy_json: raw, discovery_asset_isolation_status: "verified" } });
+    }
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) return Response.json({ records: [{ id: "recJobPrivacy", fields: {
+      fldrXQAyOMPCvbOaY: [id], fld6P6if0vDZCeV0C: ["recClient123"], fldHsczyzr8axfwUC: "MMD-TEST",
+    } }] });
+    if (url.pathname.endsWith("/tblgWc5VRon5o8Mhk")) return Response.json({ records: [{ id: "recMember123", fields: { fldlhDy68MDQgUihs: ["recClient123"] } }] });
+    throw new Error("unexpected source");
+  };
+  try {
+    const base = { model_id: id, action: "block", session_id: "JOB-TEST", revision: await memberDiscoveryRef("") };
+    const coordinator = new ModelDiscoveryCoordinator({}, env);
+    const request = () => new Request("https://internal/control", { method: "POST", body: JSON.stringify(base) });
+    const responses = await Promise.all([coordinator.fetch(request()), coordinator.fetch(request())]);
+    assert.deepEqual(responses.map(response => response.status), [200, 409]);
+    assert.equal(writes, 1);
+    const policy = JSON.parse(raw);
+    assert.deepEqual(policy.blocked_member_refs, [await memberDiscoveryRef("MMD-TEST")]);
+    const visible = await applyModelDiscoverySettings(env, { model_id: id, read_only: true });
+    assert.doesNotMatch(JSON.stringify(await visible.json()), /blocked_member_refs|recClient123|MMD-TEST/);
+  } finally { globalThis.fetch = original; }
 });
