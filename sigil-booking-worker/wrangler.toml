@@ -80,12 +80,7 @@ bucket_name = "mmd-models"
 # service secret configured on member-pages-worker.
 
 
-# Retire only legacy Model-media URL families. /webflow/* static assets retain
-# their existing R2 custom-domain owner.
+# Asset host gate preserves non-Model static files and closes legacy Model paths.
 [[routes]]
-pattern = "models.mmdbkk.com/models/*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "models.mmdbkk.com/MMD*"
+pattern = "models.mmdbkk.com/*"
 zone_name = "mmdbkk.com"
