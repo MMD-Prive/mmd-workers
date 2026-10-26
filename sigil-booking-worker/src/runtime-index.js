@@ -1,3 +1,4 @@
+import { handleLegacyAssetHost } from "./legacy-media-retirement.js";
 import entitlementRuntime from "./entitlement-runtime-worker.js";
 import { withBrowserCors } from "./index.js";
 import modelImagePolicyWorker from "./model-image-policy-worker.js";
@@ -16,16 +17,7 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
-    // Old storage URLs are not an authorization surface. Keep webflow/static
-    // assets outside these exact media prefixes; all Model media uses media_id.
-    if (url.hostname === "models.mmdbkk.com") {
-      return new Response(null, { status: 410, headers: {
-        "cache-control": "private, no-store", "cdn-cache-control": "no-store",
-        "cloudflare-cdn-cache-control": "no-store", "x-content-type-options": "nosniff",
-        "x-mmd-route-owner": "sigil-booking-worker",
-      } });
-    }
-
+    if (url.hostname === "models.mmdbkk.com") return handleLegacyAssetHost(request, env);
 
     if (isPublicProfilesCatalogRequest(path, method)) {
       return handlePublicProfilesCatalogRequest(request, env);
