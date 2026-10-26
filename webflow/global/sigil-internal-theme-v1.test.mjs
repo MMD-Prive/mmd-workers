@@ -195,3 +195,23 @@ test('serialized internal workspace loader keeps esbuild helpers inside browser 
     assert.equal((await twice.text()).match(/id="sigil-audience-contrast-v1"/g).length, 1);
   }
 });
+
+test('Payment inbox repair survives legacy style replacement, preserves nonce and stays route scoped', async () => {
+  const request = new Request('https://www.mmdbkk.com/internal/ceo/payment-slip-inbox');
+  for (const oldStyle of ['', '<style id="sigil-internal-silver-v1">legacy</style>']) {
+    const source = html.replace('</head>', oldStyle + '<script nonce="pay-nonce">void 0</script></head>');
+    const decorated = await decorateInternalSilverTheme(request, new Response(source, {headers:{'content-type':'text/html',etag:'old'}}));
+    let output = await decorated.text();
+    output = output.replace(/<style id="sigil-internal-silver-v1"[^>]*>[\s\S]*?<\/style>/, '<style id="sigil-internal-silver-v1">legacy replacement</style>');
+    assert.match(output, /id="sigil-payment-inbox-readable-v1" nonce="pay-nonce"/);
+    assert.match(output, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/);
+    assert.match(output, /body:has\(#mmd-payment-review\) #mmdK\{position:relative!important/);
+    assert.equal(decorated.headers.get('etag'), null);
+    const repeated = await decorateInternalSilverTheme(request, new Response(output,{headers:{'content-type':'text/html'}}));
+    assert.equal((await repeated.text()).match(/id="sigil-payment-inbox-readable-v1"/g).length,1);
+  }
+  for(const path of ['/internal/ceo/audience','/internal/admin/payments','/internal/admin/mms','/member/dashboard']) {
+    const r = await decorateInternalSilverTheme(new Request('https://www.mmdbkk.com'+path),response());
+    assert.doesNotMatch(await r.text(), /id="sigil-payment-inbox-readable-v1"/);
+  }
+});
