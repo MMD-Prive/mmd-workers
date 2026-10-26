@@ -9,7 +9,7 @@ export async function handleLegacyAssetHost(request, env) {
   let key;
   try { key = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, ""); }
   catch { return new Response(null, { status: 400, headers }); }
-  if (/^(?:models\/|mmd)/i.test(key)) return new Response(null, { status: 410, headers });
+  if (/^(?:models(?:\/|$)|mmd[ _-]+(?:public[ _-]+|private[ _-]+)?models?(?:\/|$))/i.test(key)) return new Response(null, { status: 410, headers });
   if (!key || key.includes("\\") || key.split("/").includes("..") || key.includes("\u0000")) return new Response(null, { status: 404, headers });
   const bucket = env.MMD_MODEL_ASSETS;
   if (!bucket) return new Response(null, { status: 503, headers });
