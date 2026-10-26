@@ -179,7 +179,7 @@ test("greeting action keywords enter canonical intents", () => {
   assert.equal(inferLineIntent("payment", lineEvent("payment")), "payment_center");
   assert.equal(inferLineIntent("ส่งสลิป", lineEvent("ส่งสลิป")), "payment_slip");
   assert.match(buildKenjiLineReply(lineEvent("ชำระเงิน")), /Payment Center/);
-  assert.match(buildKenjiLineReply(lineEvent("ชำระเงิน")), /member\/payments/);
+  assert.match(buildKenjiLineReply(lineEvent("ชำระเงิน")), /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=continue_payment/);
   assert.doesNotMatch(buildKenjiLineReply(lineEvent("ชำระเงิน")), /ส่งสลิปหรือหลักฐาน/);
 });
 
