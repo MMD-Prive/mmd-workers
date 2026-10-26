@@ -63,3 +63,28 @@ test('expired LINE session clears private companion UI and returns to a neutral 
   assert.equal(page.doc.getElementById('step-1').getAttribute('aria-current'),'step');
   page.dom.window.close();
 });
+
+test('phone/email recovery uses canonical endpoint and never grants Companion from a match',async()=>{
+  const page=await ui(url=>url==='/member/api/liff/recovery'?response({ok:true,data:{state:'known_identity',verification_available:false,next_action:'manual_review'}}):response({...base,status:'not_started',can_choose_companion:false}));
+  page.doc.getElementById('recovery-email').value='Example@Email.com';
+  page.doc.getElementById('recovery-phone').value='0812345678';
+  page.doc.getElementById('recovery-form').dispatchEvent(new page.dom.window.Event('submit',{cancelable:true}));
+  await tick();
+  const call=page.calls.find(c=>c.url==='/member/api/liff/recovery');
+  assert.deepEqual(JSON.parse(call.init.body),{email:'example@email.com',phone:'0812345678'});
+  assert.equal(page.doc.getElementById('open-companion').hidden,true);
+  assert.equal(page.doc.querySelectorAll('#cards img').length,4);
+  assert.match(page.doc.getElementById('recovery-feedback').textContent,/รับคำขอแล้ว/);
+  assert.equal(page.calls.filter(c=>c.url.endsWith('/purchase')).length,0);
+  page.dom.window.close();
+});
+test('recovery without LINE session asks for login and reports no verified identity',async()=>{
+  const page=await ui(()=>response({ok:false},401));
+  page.doc.getElementById('recovery-email').value='example@email.com';
+  page.doc.getElementById('recovery-form').dispatchEvent(new page.dom.window.Event('submit',{cancelable:true}));
+  await tick();
+  assert.equal(page.doc.getElementById('recovery-login').hidden,false);
+  assert.match(page.doc.getElementById('recovery-feedback').textContent,/กรุณายืนยันผ่าน LINE/);
+  assert.equal(page.doc.getElementById('companion').hidden,true);
+  page.dom.window.close();
+});
