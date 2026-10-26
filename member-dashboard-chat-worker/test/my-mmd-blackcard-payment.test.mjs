@@ -37,7 +37,12 @@ test('new account starts explicitly, offers the fixed PayPal CTA, and hides acco
 });
 test('pending proof immediately opens Companion; saved selection is restored on refresh',async()=>{
   const page=await ui(()=>response({...base,status:'pending_verification',can_choose_companion:true,companion:PERSONAL_MAINS[2]}));
-  assert.equal(page.doc.getElementById('companion').hidden,false);assert.equal(page.doc.getElementById('pay').hidden,true);assert.equal(page.doc.querySelector('input:checked').value,'hiro');assert.match(page.doc.getElementById('selection').textContent,/HIRO/);assert.equal(page.doc.getElementById('cards').children.length,4);page.dom.window.close();
+  assert.equal(page.doc.getElementById('companion').hidden,false);assert.equal(page.doc.getElementById('pay').hidden,true);assert.equal(page.doc.querySelector('input:checked').value,'hiro');assert.match(page.doc.getElementById('selection').textContent,/HIRO/);assert.equal(page.doc.getElementById('cards').children.length,4);assert.equal(page.doc.querySelector('img[alt="Hiro"]').src,PERSONAL_MAINS[2].image);page.dom.window.close();
+});
+test('verified payment swaps the four standard portraits for same-origin exclusive media',async()=>{
+  const page=await ui(()=>response({...base,status:'verified',can_choose_companion:true}));
+  assert.deepEqual([...page.doc.querySelectorAll('#cards img')].map(img=>new URL(img.src).pathname),PERSONAL_MAINS.map(item=>'/member/api/liff/blackcard/exclusive/'+item.id));
+  page.dom.window.close();
 });
 test('failed save never displays success and retry can save; double submit is disabled while pending',async()=>{
   let release,failed=true;
