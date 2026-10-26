@@ -233,6 +233,7 @@ function mediaCors(response, request, env) {
   const headers = new Headers(response.headers);
   const origin = request.headers.get("origin");
   if (origin && allowedOrigin(origin, env)) headers.set("access-control-allow-origin", origin);
+  if (origin && allowedOrigin(origin, env)) headers.set("access-control-allow-credentials", "true");
   headers.set("vary", "Origin");
   headers.set("access-control-allow-methods", "GET,HEAD,OPTIONS");
   headers.set("access-control-allow-headers", "Range");
