@@ -115,3 +115,38 @@ test("failed footer OCR retains the primary evidence and terminates", async () =
   assert.equal(result.paid_at, "");
   assert.equal(terminated, true);
 });
+
+for (const [name, retryText, expectedAmount] of [
+  ['separated amount blocks', 'จำนวนเงิน 12,500.00 บาท\nReference no: FIRST-123456', 12500],
+  ['conflicting reference', 'จำนวนเงิน 12,500.00 บาท\nReference no: OTHER-123456', null],
+  ['conflicting time', '25 Oct 26 21:07\nจำนวนเงิน 12,500.00 บาท', null],
+  ['ambiguous amount', 'Amount 12500\nAmount 15000', null],
+  ['still unreadable', 'Transfer successful', null],
+]) test(`missing amount retry: ${name}`, async () => {
+  let calls = 0, terminated = false, parameters;
+  const result = await extractOcr(Buffer.from('synthetic'), async () => ({
+    recognize: async () => ({ data: { text: ++calls === 1
+      ? 'Reference no: FIRST-123456\n25 Oct 26 20:07'
+      : retryText, confidence: 90 } }),
+    setParameters: async value => { parameters = value; },
+    terminate: async () => { terminated = true; },
+  }));
+  assert.equal(calls, 2);
+  assert.deepEqual(parameters, { tessedit_pageseg_mode: '3' });
+  assert.equal(result.amount_thb, expectedAmount);
+  assert.equal(result.paid_at, '2026-10-25T13:07:00.000Z');
+  assert.equal(result.payment_ref, 'FIRST-123456');
+  assert.equal(terminated, true);
+});
+
+test('missing amount retry failure preserves evidence and terminates', async () => {
+  let calls = 0, terminated = false;
+  const result = await extractOcr(Buffer.from('synthetic'), async () => ({
+    recognize: async () => { if (++calls > 1) throw Error('OCR failed'); return { data: { text: 'Reference no: FIRST-123456', confidence: 90 } }; },
+    setParameters: async () => {},
+    terminate: async () => { terminated = true; },
+  }));
+  assert.equal(result.amount_thb, null);
+  assert.equal(result.payment_ref, 'FIRST-123456');
+  assert.equal(terminated, true);
+});
