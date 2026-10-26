@@ -18,16 +18,26 @@ const recordId=id=>/^rec[A-Za-z0-9]{14}$/.test(id||'');
 const money=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=10000000&&Math.abs(v*100-Math.round(v*100))<1e-6;
 const round=v=>Math.round(v*100)/100;
 export function marker(note,label){const line=String(note||'').split('\n').find(l=>l.trimStart().startsWith('['+label+']'));if(!line)return null;try{return JSON.parse(line.slice(line.indexOf(']')+1).trim());}catch{fail('pricing_review_required');}}
-export async function at(env,table,{id='',formula='',fields=[],patch}={}){
+export async function at(env,table,{id='',formula='',fields=[],patch,complete=false}={}){
   if(!env.AIRTABLE_API_KEY||!env.AIRTABLE_BASE_ID)fail('edit_unavailable',503);
   const q=new URLSearchParams({returnFieldsByFieldId:'true'});
-  if(formula){q.set('filterByFormula',formula);q.set('maxRecords','30');}
+  if(formula){q.set('filterByFormula',formula);if(!complete)q.set('maxRecords','30');else q.set('pageSize','100');}
   if(!patch)for(const f of fields)q.append('fields[]',f);
+  const records=[],seen=new Set();
+  for(let page=0;page<50;page++){
   const url=`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${tables[table]}${id?'/'+id:''}?${q}`;
   const request=new Request(url,{method:patch?'PATCH':'GET',headers:{authorization:`Bearer ${env.AIRTABLE_API_KEY}`,'content-type':'application/json'},...(patch?{body:JSON.stringify({fields:patch})}:{})});
   const response=await (env.AIRTABLE_HTTP?.fetch?env.AIRTABLE_HTTP.fetch(request):fetch(request));
   if(!response.ok)fail('edit_storage_unavailable',503);
-  return response.json();
+  const data=await response.json();
+  if(!complete||patch||id)return data;
+  if(!Array.isArray(data.records))fail('edit_storage_unavailable',503);
+  records.push(...data.records);
+  if(!data.offset)return {records};
+  if(typeof data.offset!=='string'||seen.has(data.offset))fail('edit_list_incomplete',503);
+  seen.add(data.offset);q.set('offset',data.offset);
+  }
+  fail('edit_list_incomplete',503);
 }
 export async function loadJob(env,id){
   if(!validSession(id))fail('invalid_session',400);
@@ -101,7 +111,7 @@ export async function handleOwnerJobEdit(request,env){
       if(u.searchParams.get('list')==='1'){
         const q=(u.searchParams.get('q')||'').trim().slice(0,60);
         const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok'}).format(new Date());
-        const found=await at(env,'sessions',{formula:`AND({${S.date}}>='${today}',${q?`FIND(LOWER(${literal(q)}),LOWER({${S.client}}&" "&{${S.name}}))`:'TRUE()'})`,fields:[S.id,S.client,S.name,S.date,S.amount,S.location]});
+        const found=await at(env,'sessions',{complete:true,formula:`AND({${S.date}}>='${today}',${q?`FIND(LOWER(${literal(q)}),LOWER({${S.client}}&" "&{${S.name}}))`:'TRUE()'})`,fields:[S.id,S.client,S.name,S.date,S.amount,S.location]});
         return reply({ok:true,jobs:(found.records||[]).map(r=>({session_id:r.fields[S.id],client:r.fields[S.client],model:r.fields[S.name],date:r.fields[S.date],amount:r.fields[S.amount]})).filter(r=>validSession(r.session_id)).sort((a,b)=>String(a.date).localeCompare(String(b.date)))});
       }
       const id=u.searchParams.get('session_id');
