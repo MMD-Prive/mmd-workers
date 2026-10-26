@@ -39,6 +39,12 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
   const destinations = getMmdRichMenuDestinationMap();
   for (const [menu, actions] of Object.entries(getMmdRichMenuActionMap())) {
     for (const [index, action] of actions.entries()) {
+      if (action.type === "uri") {
+        assert.equal(menu, "private");
+        assert.equal(index, 0);
+        assert.equal(action.uri, "https://www.mmdbkk.com/concierge/kenji?source=line&entry_route=rich_menu_private_kenji");
+        continue;
+      }
 
       const result = await run(action.data, { auto: true });
       assert.equal(result.status, 200);
@@ -67,6 +73,7 @@ test("menu commands respect auto reply pause, LINE/global stop, owner takeover, 
 test("pause silences every installed navigation postback including support without changing mappings", async () => {
   for (const actions of Object.values(getMmdRichMenuActionMap())) {
     for (const action of actions) {
+      if (action.type === "uri") continue;
       const result = await run(action.data, { auto: false });
       assert.equal(result.status, 200);
       assert.equal(result.replies.length, 0);
