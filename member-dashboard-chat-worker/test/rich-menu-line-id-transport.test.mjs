@@ -11,7 +11,7 @@ test("unknown and smoke IDs cannot poison bulk menu assignment; valid members ke
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
     if (url.includes("api.airtable.com")) return Response.json({ records: url.includes("tblVv58TCbwh5j1fS") ? clients : ents });
-    if (url.endsWith("/richmenu/list")) return Response.json({ richmenus: Object.keys(ids).map(key => ({ richMenuId: `${key}-menu`, name: `MMD ${key[0].toUpperCase() + key.slice(1)} ${getMmdRichMenuVersion()}` })) });
+    if (url.endsWith("/richmenu/list")) return Response.json({ richmenus: Object.keys(ids).map(key => ({ richMenuId: `${key}-menu`, name: `MMD ${key[0].toUpperCase() + key.slice(1)} ${key === "private" ? getMmdRichMenuVersion() : "mmd-rm3-20261004-v4.15"}` })) });
     calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : null });
     return Response.json({});
   };
