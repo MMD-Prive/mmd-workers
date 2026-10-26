@@ -25,10 +25,7 @@ export async function handleDiscoveryViewer(request, env = {}, readSession = rea
     const status = String(session?.memberProfile?.membership_status || session?.memberProfile?.status || "").toLowerCase();
     if (!session?.lineUserId || session.memberExists !== true || !session.memberId || session.readGraceOnly === true
       || ["blocked", "suspended", "revoked", "pending_review"].includes(status)) return respond({ ok: false }, 401);
-    const secret = String(env.LIFF_SESSION_SECRET || "");
-    if (secret.length < 32) return respond({ ok: false }, 503);
-    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("member-binding:" + session.memberId));
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:" + session.memberId));
     const memberRef = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
     return respond({ ok: true, memberRef }, 200);
   } catch { return respond({ ok: false }, 503); }
