@@ -54,7 +54,7 @@ test("queue view safely renders backend values and deep-links into the existing 
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(name, callback) { this.listeners[name] = callback; }
   }
-  const ids = ["extract-slip", "extract-status","upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
+  const ids = ["binding-jobs","binding-job","binding-stage","binding-preview","binding-status","binding-checked","binding-reason","binding-save","extract-slip", "extract-status","upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id === "q-list" ? "div" : "input")]));
   const calls = [];
   let extractionFails = false;
