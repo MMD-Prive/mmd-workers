@@ -6,7 +6,7 @@ const ids = value => Array.isArray(value) ? value.map(text).filter(Boolean) : []
 const unique = values => [...new Set(values.map(text).filter(Boolean))];
 const one = value => ids(value).length === 1 ? ids(value)[0] : null;
 const positive = value => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null;
-const pending = new Set(["pending", "review", "review_required", "needs_review", "unmatched", "new", "submitted"]);
+const pending = new Set(["pending", "pending_review", "under_review", "review", "review_required", "needs_review", "unmatched", "new", "submitted"]);
 const cancelled = new Set(["cancelled", "canceled", "rejected", "void", "failed", "refunded"]);
 const paid = new Set(["paid", "verified", "approved"]);
 const stageFields = ["Payment Reference", "payment_ref", "Amount", "Payment Status", "payment_stage", "payment_type", "session_id", "Client"];
@@ -72,15 +72,22 @@ export async function enrichDiscoveryNames(items, { list, page, tables }) {
 export async function recentPaymentJobs({ list, page, tables, paymentsTable, proofsTable, limit = 100 }) {
   const sessions = await list(tables.sessions, {
     maxRecords: limit, sort: [{ field: "created_at", direction: "desc" }],
-    fields: ["session_id", "job_id", "Client", "Canonical Model", "client_name", "model_name", "created_at", "job_date", "start_time", "end_time", "location_name", "amount_thb", "Total Amount", "Session Status"],
+    fields: ["session_id", "job_id", "Client", "Canonical Model", "client_name", "model_name", "created_at", "job_date", "start_time", "end_time", "location_name", "amount_thb", "Total Amount", "Session Status", "MMD — Payment Proofs"],
   });
   const payments = await exactRows((table, params) => list(table, { ...params, fields: stageFields }), paymentsTable, "session_id", sessions.map(row => text(row.fields?.session_id)));
   const proofs = await exactRows(list, proofsTable, "payment_ref", payments.map(row => text(row.fields?.["Payment Reference"] || row.fields?.payment_ref)));
+  const linkedProofs = await exactRows(list, proofsTable, "RECORD_ID()", sessions.flatMap(row => ids(row.fields?.["MMD — Payment Proofs"])));
+  for (const proof of linkedProofs) if (!proofs.some(row => row.id === proof.id)) proofs.push(proof);
   const jobs = sessions.map(row => {
     const s = row.fields || {}, sessionId = text(s.session_id);
     const requests = payments.filter(p => sessionId && text(p.fields?.session_id) === sessionId).map(payment => {
       const p = payment.fields || {}, ref = text(p["Payment Reference"] || p.payment_ref);
-      const matches = proofs.filter(proof => text(proof.fields?.payment_ref) === ref);
+      const matches = proofs.filter(proof => text(proof.fields?.payment_ref) === ref || ids(proof.fields?.payment).includes(payment.id));
+      const hasEvidence = matches.some(proof => !cancelled.has(text(proof.fields?.status).toLowerCase()))
+        || linkedProofs.some(proof => ids(s["MMD — Payment Proofs"]).includes(proof.id)
+          && !payments.some(payment => text(payment.fields?.["Payment Reference"] || payment.fields?.payment_ref) === text(proof.fields?.payment_ref))
+          && !ids(proof.fields?.payment).length
+          && !cancelled.has(text(proof.fields?.status).toLowerCase()));
       const mismatch = sessions.filter(other => text(other.fields?.session_id) === sessionId).length !== 1
         || (ids(s.Client).length > 1 || ids(p.Client).length > 1 || (one(s.Client) && one(p.Client) && one(s.Client) !== one(p.Client)))
         || payments.filter(other => text(other.fields?.["Payment Reference"] || other.fields?.payment_ref) === ref).length !== 1;
@@ -116,7 +123,7 @@ export async function recentPaymentJobs({ list, page, tables, paymentsTable, pro
         proof_channel: singleProof ? text(proofFields.channel) : "",
         proof_created_at: singleProof ? text(proofFields.created_at || singleProof.createdTime) : "",
         auto_match_source: singleProof ? (exactRecordLinks ? "exact_record_links" : "payment_ref_context") : null,
-        payment_status: status, state,
+        payment_status: status, state, has_evidence: hasEvidence,
         proof_ids: state === "proof_pending" ? unique(reviewProofs.map(proof => proof.fields.proof_id)) : [],
       };
     });
