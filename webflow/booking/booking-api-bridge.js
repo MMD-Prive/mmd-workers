@@ -54,7 +54,7 @@
     return n;
   }
   async function api(path, options) {
-    const response = await fetch(API + path, {...options, signal:AbortSignal.timeout(25000)});
+    const response = await fetch(API + path, {...options, credentials:"include", signal:AbortSignal.timeout(25000)});
     const data = await response.json();
     if (!response.ok || data.ok !== true || data.blocked) throw new Error('request_failed');
     return data;
