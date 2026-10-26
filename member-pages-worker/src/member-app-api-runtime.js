@@ -1011,7 +1011,7 @@ async function adaptPoints(request, env, delegate) {
 async function adaptHistory(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
   if (sessionSnapshot?.lineUserId && sessionSnapshot?.memberId) {
-    const preload = await readMemberHistoryPreload(env, sessionSnapshot.lineUserId);
+    const preload = await readMemberHistoryPreload(env, sessionSnapshot.lineUserId).catch(() => null);
     const recent = recentServicesFromPreload(preload, sessionSnapshot.memberId);
     if (recent?.length) return Response.json(recent, { headers: { "cache-control": "no-store" } });
   }
