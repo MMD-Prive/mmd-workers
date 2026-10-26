@@ -81,6 +81,7 @@ jobs:
             "/v1/model/compcard/request",
             "/v1/model/compcard/request*",
             "/v1/model/media*",
+            "/v1/model/settings/customer-visibility",
             "/v1/model/settings/gps-visibility",
             "/v1/model/location/capability",
             "/v1/model/location/current*",
