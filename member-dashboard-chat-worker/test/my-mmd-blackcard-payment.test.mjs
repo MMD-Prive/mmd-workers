@@ -50,3 +50,16 @@ test('failed save never displays success and retry can save; double submit is di
   page.doc.querySelector('input[value=hito]').checked=true;
   const submit=()=>page.doc.getElementById('choice').dispatchEvent(new page.dom.window.Event('submit',{cancelable:true}));submit();submit();await tick();assert.equal(page.calls.filter(c=>c.url.endsWith('/companion')).length,1);assert.doesNotMatch(page.doc.getElementById('selection').textContent,/บันทึกตัวเลือกแล้ว/);release();await tick();assert.match(page.doc.getElementById('status').textContent,/ยังทำรายการไม่สำเร็จ/);assert.doesNotMatch(page.doc.getElementById('selection').textContent,/บันทึกตัวเลือกแล้ว/);failed=false;submit();await tick();release();await tick();assert.match(page.doc.getElementById('selection').textContent,/บันทึกตัวเลือกแล้ว · HITO/);page.dom.window.close();
 });
+
+test('expired LINE session clears private companion UI and returns to a neutral login step',async()=>{
+  let authenticated=true;
+  const page=await ui(()=>authenticated?response({...base,status:'verified',can_choose_companion:true}):response({ok:false},401));
+  assert.equal(page.doc.querySelectorAll('#cards img').length,4);
+  authenticated=false;page.click('retry');await tick();
+  assert.equal(page.doc.getElementById('login').hidden,false);
+  assert.equal(page.doc.getElementById('companion').hidden,true);
+  assert.equal(page.doc.querySelectorAll('#cards img').length,0);
+  assert.equal(page.doc.getElementById('status').classList.contains('error'),false);
+  assert.equal(page.doc.getElementById('step-1').getAttribute('aria-current'),'step');
+  page.dom.window.close();
+});
