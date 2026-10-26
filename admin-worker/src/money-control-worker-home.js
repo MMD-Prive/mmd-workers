@@ -1,4 +1,4 @@
-import { suggestPaymentJobs } from "./payment-job-suggestions.mjs";
+import { PAYMENT_JOB_SUGGESTIONS_SCRIPT } from "./payment-job-suggestions.mjs";
 // Payment authority remains payments-worker; this view only displays evidence and submits existing review actions.
 const PAGE = `<!doctype html>
 <html lang="th">
@@ -71,7 +71,7 @@ const PAGE = `<!doctype html>
 </main>
 <script>
 (()=>{
-  const suggestPaymentJobs = ${suggestPaymentJobs.toString()};
+  ${PAYMENT_JOB_SUGGESTIONS_SCRIPT}
   const params=new URL(location.href).searchParams,proofFocus=params.get('proof_id')||'',sessionFocus=params.get('session_id')||'';
   if(proofFocus)document.body?.classList?.add('proof-focused');
   const status=document.getElementById('q-status'),list=document.getElementById('q-list'),search=document.getElementById('search');
