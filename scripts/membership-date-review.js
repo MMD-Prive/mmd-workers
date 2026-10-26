@@ -32,6 +32,7 @@ function summarizeMembershipDates(rows = [], clientId, now = new Date()) {
   if (linkedIds(f.client).length !== 1 || f.key !== "memstart:" + clientId) return empty("invalid_evidence");
   const decision = typeof f.review_decision === "object" ? f.review_decision?.name : f.review_decision;
   if (decision === "rejected") return empty("rejected");
+  if (f.membership_dates_json == null || (typeof f.membership_dates_json === "string" && !f.membership_dates_json.trim())) return empty("not_prepared");
   let p;
   try {
     if (typeof f.membership_dates_json !== "string" || f.membership_dates_json.length > 64000) return empty("invalid_evidence");
