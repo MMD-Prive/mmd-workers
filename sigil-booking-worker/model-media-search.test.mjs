@@ -1,3 +1,10 @@
+import { handleLegacyAssetHost } from "./src/legacy-media-retirement.js";
+import { handleModelDiscoverySettings } from "../admin-worker/src/model-customer-discovery-settings.js";
+import { attachDiscoverySession } from "../member-pages-worker/src/booking-discovery-viewer.js";
+import { applyModelDiscoverySettings, memberDiscoveryRef, ModelDiscoveryCoordinator } from "../admin-worker/src/model-customer-discovery-settings.js";
+import { webcrypto } from "node:crypto";
+import { handleDiscoveryViewer } from "../member-pages-worker/src/booking-discovery-viewer.js";
+import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./src/customer-discovery-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia } from "./src/model-image-policy-worker.js";
@@ -827,4 +834,223 @@ test("name search formula excludes private identifiers and storage metadata", as
   } finally {
     globalThis.fetch = original;
   }
+});
+
+const blockedViewerRef = "a".repeat(64);
+const allowedViewerRef = "b".repeat(64);
+const restrictedDiscovery = JSON.stringify({
+  schema_version: "model_customer_discovery_v1",
+  require_verified_customer: true,
+  blocked_member_refs: [blockedViewerRef],
+});
+const verifiedViewerService = ref => ({ fetch: async request => {
+  assert.equal(new URL(request.url).pathname, "/__internal/booking/discovery-viewer");
+  assert.equal(request.headers.get("authorization"), null);
+  return Response.json({ ok: true, memberRef: ref });
+} });
+
+test("restricted Model discovery denies blocked and anonymous viewers; malformed rules fail closed", () => {
+  assert.equal(customerDiscoveryAllowed({}), true);
+  const fields = { customer_discovery_policy_json: restrictedDiscovery };
+  assert.equal(customerDiscoveryAllowed(fields, blockedViewerRef), false);
+  assert.equal(customerDiscoveryAllowed(fields), false);
+  assert.equal(customerDiscoveryAllowed(fields, allowedViewerRef), true);
+  for (const raw of ["{", "null", "{}", JSON.stringify({ schema_version: "future", blocked_member_refs: [] })]) {
+    assert.equal(customerDiscoveryAllowed({ customer_discovery_policy_json: raw }, allowedViewerRef), false);
+  }
+});
+
+test("customer claims in query, body or identity headers cannot replace verified session", async () => {
+  let calls = 0;
+  const service = { fetch: async () => { calls++; throw new Error("must not run"); } };
+  const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search?member_ref=" + allowedViewerRef + "&booking_ref=forged", {
+    method: "POST", headers: { "content-type": "application/json", "x-member-ref": allowedViewerRef },
+    body: JSON.stringify({ member_ref: allowedViewerRef, member_id: "recForged" }),
+  });
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), "");
+  assert.equal(calls, 0);
+});
+
+test("viewer identity comes only from member-service session validation and failures stay closed", async () => {
+  const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search", {
+    headers: { cookie: "__Host-mmd_liff_session=opaque; unrelated=do-not-forward" },
+  });
+  const service = { fetch: async forwarded => {
+    assert.equal(forwarded.headers.get("cookie"), "__Host-mmd_liff_session=opaque");
+    return Response.json({ ok: true, memberRef: allowedViewerRef });
+  } };
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: service }), allowedViewerRef);
+  for (const payload of [
+    { memberRef: allowedViewerRef },
+    { ok: false, memberRef: allowedViewerRef },
+    { match_state: "matched", line_connected: true, memberRef: "recNotOpaque" },
+  ]) {
+    assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: { fetch: async () => Response.json(payload) } }), "");
+  }
+  assert.equal(await resolveDiscoveryViewer(request, { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: { fetch: async () => { throw new Error("offline"); } } }), "");
+});
+
+test("search excludes restricted Models without leaking deny rules or counts", async () => {
+  const models = [
+    filterModel("recOpenDiscovery", { can_work_public: true }),
+    filterModel("recRestrictedDiscovery", { can_work_public: true, customer_discovery_policy_json: restrictedDiscovery }),
+  ];
+  await withFilterInventory(models, async () => {
+    for (const [ref, expected] of [
+      ["", ["recOpenDiscovery"]],
+      [blockedViewerRef, ["recOpenDiscovery"]],
+      [allowedViewerRef, ["recOpenDiscovery", "recRestrictedDiscovery"]],
+    ]) {
+      const request = new Request("https://sigil.mmdbkk.com/sigil/api/models/search?scope=public", {
+        headers: ref ? { cookie: "__Host-mmd_liff_session=opaque" } : {},
+      });
+      const response = await bookingWorker.fetch(request, { ...filterEnv, AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(ref) });
+      const body = await response.json();
+      assert.deepEqual(body.items.map(model => model.model_id), expected);
+      assert.doesNotMatch(JSON.stringify(body), /blocked_member_refs|customer_discovery_policy_json|blocked_count/);
+      assert.equal(JSON.stringify(body).includes(blockedViewerRef), false);
+    }
+  });
+});
+
+test("GET and HEAD media deny restricted viewers before storage reads and recheck revocation", async () => {
+  await withMediaInventory({ modelFields: { can_work_public: true, status: "active",
+    customer_discovery_policy_json: restrictedDiscovery } }, async state => {
+    for (const method of ["GET", "HEAD"]) {
+      for (const ref of ["", blockedViewerRef]) {
+        const headers = ref ? { cookie: "__Host-mmd_liff_session=opaque" } : {};
+        const response = await worker.fetch(mediaRequest(headers, method), {
+          ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(ref),
+        });
+        assert.equal(response.status, 404);
+        assert.equal(response.headers.get("cache-control"), "private, no-store");
+      }
+    }
+    assert.equal(state.storageReads.length, 0);
+    const allowed = await worker.fetch(mediaRequest({ cookie: "__Host-mmd_liff_session=opaque" }), {
+      ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
+    });
+    assert.equal(allowed.status, 200);
+    state.modelFields.customer_discovery_policy_json = JSON.stringify({
+      schema_version: "model_customer_discovery_v1", require_verified_customer: true,
+      blocked_member_refs: [blockedViewerRef, allowedViewerRef],
+    });
+    const denied = await worker.fetch(mediaRequest({ cookie: "__Host-mmd_liff_session=opaque" }), {
+      ...mediaEnv(state), AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), MEMBER_PAGES_WORKER: verifiedViewerService(allowedViewerRef),
+    });
+    assert.equal(denied.status, 404);
+    assert.equal(state.storageReads.length, 1);
+  });
+});
+
+test("service-only viewer reads are stable and never rotate or reveal the source session", async () => {
+  globalThis.crypto ||= webcrypto;
+  const env = { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), LIFF_SESSION_SECRET: "k".repeat(32) };
+  const request = new Request("https://member-pages.internal/__internal/booking/discovery-viewer", {
+    headers: { "x-mmd-booking-service-secret": "s".repeat(32) },
+  });
+  let reads = 0;
+  const session = async () => { reads++; return { memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "active" } }; };
+  const unauthorized = await handleDiscoveryViewer(new Request(request.url), env, session);
+  assert.equal(unauthorized.status, 401);
+  assert.equal(reads, 0);
+  const first = await handleDiscoveryViewer(request, env, session);
+  const second = await handleDiscoveryViewer(request, env, session);
+  assert.equal(first.headers.get("set-cookie"), null);
+  const a = await first.json(), b = await second.json();
+  assert.equal(a.ok, true);
+  assert.match(a.memberRef, /^[a-f0-9]{64}$/);
+  assert.equal(a.memberRef, b.memberRef);
+  assert.equal(JSON.stringify(a).includes("recCanonicalMember"), false);
+  const blocked = await handleDiscoveryViewer(request, env, async () => ({
+    memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "blocked" },
+  }));
+  assert.equal(blocked.status, 401);
+});
+
+test("cross-host discovery uses a short-lived scoped alias and preserves the primary cookie", async () => {
+  globalThis.crypto ||= webcrypto;
+  const records = new Map();
+  const env = { LIFF_IDENTITY_KV: { put: async (key, value) => records.set(key, JSON.parse(value)), get: async key => records.get(key) } };
+  const token = "c".repeat(64);
+  const source = new Request("https://mmdbkk.com/member/api/liff/start");
+  const response = new Response("{}", { headers: { "set-cookie": "__Host-mmd_liff_session=" + token + "; Path=/; HttpOnly; Secure; SameSite=Lax" } });
+  const identity = async () => ({ memberExists: true, memberId: "MMD-TEST", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "active" } });
+  const issued = await attachDiscoverySession(source, env, response, identity);
+  assert.equal(records.size, 1);
+  const cookies = issued.headers.get("set-cookie");
+  assert.match(cookies, /__Host-mmd_liff_session=/);
+  assert.match(cookies, /__Secure-mmd_discovery_session=[a-f0-9]{64}; Domain=mmdbkk.com; Path=\/sigil\/api\/; Max-Age=1800; HttpOnly; Secure; SameSite=Strict/);
+  const alias = [...records.keys()][0].slice("booking-discovery:".length);
+  const verified = await handleDiscoveryViewer(new Request("https://internal/__internal/booking/discovery-viewer", {
+    headers: { "x-mmd-booking-service-secret": "s".repeat(32), cookie: "__Secure-mmd_discovery_session=" + alias },
+  }), { ...env, AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32) }, async request => {
+    assert.equal(request.headers.get("cookie"), "__Host-mmd_liff_session=" + token);
+    return identity();
+  });
+  assert.equal(verified.status, 200);
+  const foreign = await attachDiscoverySession(new Request("https://untrusted.example/member/api/liff/start"), env,
+    new Response("{}", { headers: { "set-cookie": "__Host-mmd_liff_session=" + token } }), identity);
+  assert.doesNotMatch(foreign.headers.get("set-cookie"), /__Secure-mmd_discovery_session/);
+});
+
+test("Model block writes verify owned jobs and canonical member linkage; stale concurrent revisions cannot overwrite", async () => {
+  globalThis.crypto ||= webcrypto;
+  const original = globalThis.fetch;
+  let raw = "", writes = 0;
+  const id = "recModelPrivacy123";
+  const env = { AIRTABLE_API_KEY: "synthetic", AIRTABLE_BASE_ID: "base" };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith("/tblI4B0bI446vp9GX/" + id)) {
+      if (init.method === "PATCH") { raw = JSON.parse(init.body).fields.customer_discovery_policy_json; writes++; }
+      return Response.json({ id, fields: { status: "active", customer_discovery_policy_json: raw, discovery_asset_isolation_status: "verified" } });
+    }
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) return Response.json({ records: [{ id: "recJobPrivacy", fields: {
+      fldrXQAyOMPCvbOaY: [id], fld6P6if0vDZCeV0C: ["recClient123"], fldHsczyzr8axfwUC: "MMD-TEST",
+    } }] });
+    if (url.pathname.endsWith("/tblgWc5VRon5o8Mhk")) return Response.json({ records: [{ id: "recMember123", fields: { fldlhDy68MDQgUihs: ["recClient123"] } }] });
+    if (url.hostname === "models.mmdbkk.com" || url.pathname.endsWith("/public-catalog")) return new Response(null, { status: 410, headers: { "x-mmd-route-owner": "sigil-booking-worker" } });
+    throw new Error("unexpected source");
+  };
+  try {
+    const base = { model_id: id, action: "block", session_id: "JOB-TEST", revision: await memberDiscoveryRef("") };
+    const coordinator = new ModelDiscoveryCoordinator({}, env);
+    const request = () => new Request("https://internal/control", { method: "POST", body: JSON.stringify(base) });
+    const responses = await Promise.all([coordinator.fetch(request()), coordinator.fetch(request())]);
+    assert.deepEqual(responses.map(response => response.status), [200, 409]);
+    assert.equal(writes, 1);
+    const policy = JSON.parse(raw);
+    assert.deepEqual(policy.blocked_member_refs, [await memberDiscoveryRef("MMD-TEST")]);
+    const visible = await applyModelDiscoverySettings(env, { model_id: id, read_only: true });
+    assert.doesNotMatch(JSON.stringify(await visible.json()), /blocked_member_refs|recClient123|MMD-TEST/);
+  } finally { globalThis.fetch = original; }
+});
+
+test("legacy storage media including encoded names is closed before any bucket read; static UI assets remain available", async () => {
+  let reads = 0;
+  const env = { MMD_MODEL_ASSETS: { get: async key => { reads++; assert.ok(["webflow/app.js", "MMD-logo.svg"].includes(key)); return {
+    body: new TextEncoder().encode("export{}"), size: 8, httpEtag: '"static"',
+    writeHttpMetadata: headers => headers.set("content-type", "application/javascript"),
+  }; } } };
+  for (const path of ["/models/recAny/photo.webp", "/%6dodels/recAny/photo.webp", "/MMD%20Public%20Models/Name/photo.webp"]) {
+    const response = await handleLegacyAssetHost(new Request("https://models.mmdbkk.com" + path), env);
+    assert.equal(response.status, 410);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+  }
+  assert.equal(reads, 0);
+  const staticAsset = await handleLegacyAssetHost(new Request("https://models.mmdbkk.com/webflow/app.js"), env);
+  assert.equal(staticAsset.status, 200);
+  assert.equal(staticAsset.headers.get("content-type"), "application/javascript");
+  assert.equal(reads, 1);
+  assert.equal((await handleLegacyAssetHost(new Request("https://models.mmdbkk.com/MMD-logo.svg"), env)).status, 200);
+});
+
+test("privacy settings reject cross-origin writes and unauthenticated Model access", async () => {
+  const endpoint = "https://mmdbkk.com/v1/model/settings/customer-visibility";
+  const denied = await handleModelDiscoverySettings(new Request(endpoint, {
+    method: "POST", headers: { origin: "https://untrusted.example", "content-type": "application/json" }, body: "{}",
+  }), {});
+  assert.equal(denied.status, 403);
+  assert.equal((await handleModelDiscoverySettings(new Request(endpoint), {})).status, 401);
 });

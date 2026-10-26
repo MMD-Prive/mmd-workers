@@ -100,6 +100,7 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "models.mmdbkk.com/*",
             "sigil.mmdbkk.com/sigil/api/client/resolve*",
             "sigil.mmdbkk.com/sigil/api/models/search*",
             "sigil.mmdbkk.com/sigil/api/models/media/*",
@@ -159,3 +160,18 @@ jobs:
           test "$code" = "200"
           grep -q '"blocked":true' "$body"
           grep -q 'private_requires_entitlement_snapshot' "$body"
+
+      - name: Verify legacy Model storage paths are closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in 'models/__mmd_privacy_gate_probe__' '%6dodels/__mmd_privacy_gate_probe__' 'MMD%20Public%20Models/__mmd_privacy_gate_probe__'; do
+            headers="$(mktemp)"
+            code="$(curl --path-as-is --retry 3 --retry-delay 2 -sS -I -D "$headers" -o /dev/null -w "%{http_code}" "https://models.mmdbkk.com/$path")"
+            test "$code" = "410"
+            grep -qi 'x-mmd-route-owner: sigil-booking-worker' "$headers"
+          done
+          headers="$(mktemp)"
+          code="$(curl -sS -I -D "$headers" -o /dev/null -w "%{http_code}" "$CUSTOM_HOST_BASE/sigil/api/models/search/public-catalog")"
+          test "$code" = "410"
+          grep -qi 'x-mmd-route-owner: sigil-booking-worker' "$headers"

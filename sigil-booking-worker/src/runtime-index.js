@@ -1,3 +1,4 @@
+import { handleLegacyAssetHost } from "./legacy-media-retirement.js";
 import entitlementRuntime from "./entitlement-runtime-worker.js";
 import { withBrowserCors } from "./index.js";
 import modelImagePolicyWorker from "./model-image-policy-worker.js";
@@ -16,6 +17,7 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+    if (url.hostname === "models.mmdbkk.com") return handleLegacyAssetHost(request, env);
 
     if (isPublicProfilesCatalogRequest(path, method)) {
       return handlePublicProfilesCatalogRequest(request, env);

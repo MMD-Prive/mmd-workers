@@ -1,3 +1,4 @@
+import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./customer-discovery-policy.js";
 // sigil-booking-worker/src/index.js
 // MMD Booking / SIGIL public booking resolver
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
@@ -155,11 +156,13 @@ async function handleModelSearch(req, env, url) {
     };
   }
 
+  const viewerRef = await resolveDiscoveryViewer(req, env);
   const records = q ? await searchModels(env, q, 40) : await listModels(env, 500);
   const baseModels = records
     .map((record) => sanitizeModelForBooking(record, {
       scope,
       privateAllowed,
+      viewerRef,
       allowedFolders: effectiveAllowedFolders,
       customerLane: intent.customer_lane,
       workLane: intent.work_lane,
@@ -642,8 +645,9 @@ async function listModels(env, limit) {
   return records.slice(0, cap);
 }
 
-export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", profileFilters = {}, env }) {
+export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", profileFilters = {}, viewerRef = "", env }) {
   const f = record.fields || {};
+  if (!customerDiscoveryAllowed(f, viewerRef)) return null;
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
   const clientVisibilityStatus = token(f.client_visibility_status);
@@ -946,6 +950,7 @@ function corsHeaders(req, env) {
   const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean);
   const h = new Headers();
   if (origin && (!allowed.length || allowed.includes(origin))) h.set("Access-Control-Allow-Origin", origin);
+  if (origin && allowed.includes(origin)) h.set("Access-Control-Allow-Credentials", "true");
   h.set("Vary", "Origin");
   h.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
