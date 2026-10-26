@@ -1,64 +1,96 @@
 # Model customer discovery restrictions V1
 
-Status: backend foundation. Do not present this as an enabled MY MODEL control.
+Status: implementation in PR #2792; keep draft until integrated CI and production gates pass.
 
-## Storage and ownership
+## Canonical ownership
 
-Proposed Models long-text field: `customer_discovery_policy_json`. It is server-only.
-An absent/blank value preserves the existing catalog policy. A malformed/nonblank
-value denies discovery. No records or schema are automatically changed by this PR.
+Models.customer_discovery_policy_json is server-only. Provisioned field:
+fldwY92oSYUKoRdLy. Blank preserves existing rules; malformed rules fail closed.
+No real customer's block list has been populated by implementation work.
 
+MY MODEL's YOU view contains a compact privacy panel. It selects a canonical
+historical job, not a customer name, contact, free-typed member ID or hash.
+The existing signed Model session owns the API:
+GET|POST /v1/model/settings/customer-visibility.
+
+A POST verifies the job's Models record link, a single linked Client, the
+session's canonical member_id and the Members-to-Clients relationship. It
+does not use names or retired Memberstack IDs. A per-Model coordinator serializes
+source revision checks and Airtable writes. Stale revisions return 409.
+Airtable remains canonical; the coordinator stores no policy/customer snapshot.
+Blocking/unblocking does not cancel already-confirmed jobs or change finances.
+
+## Viewer identity
+
+The member service exposes a service-authenticated, read-only discovery viewer
+endpoint. It never rotates the underlying member session, returns contacts,
+or accepts a browser-claimed identity. It derives an opaque, purpose-scoped
+SHA-256 binding from the server-verified canonical member_id:
+mmd-discovery-member-v1:<canonical member id>. The Model writer derives the
+same ref only after validating historical job/Client/Member linkage.
+
+After a verified member login/session refresh on mmdbkk.com or www.mmdbkk.com,
+the service issues __Secure-mmd_discovery_session. This is an opaque random
+alias backed by LIFF_IDENTITY_KV, expires in 30 minutes, is HttpOnly/Secure,
+SameSite=Strict, Domain=mmdbkk.com, Path=/sigil/api/.
+The primary __Host member cookie remains host-only.
+Every viewer read checks the source session again; expired, rotated, revoked,
+unmatched and blocked sessions fail closed. The alias grants no membership tier.
+Missing cross-site cookies on unrelated preview domains also fail closed.
+
+sigil-booking PR #33 includes credentials on canonical API calls. Worker CORS
+allows credentials only for explicitly configured exact origins. Media URLs
+remain on sigil.mmdbkk.com; no storage URL enters the customer projection.
+
+## Search and media
+
+A restricted Model is omitted from blocked and anonymous discovery. Logging
+out is not a bypass. Each media GET/HEAD checks the current canonical Model
+policy before R2 reads, returns generic 404 on denial and uses no-store.
+No block list, binding, denied count, or customer-specific deny reason is
+returned in customer search. Existing tier/approval gates remain mandatory.
+
+Policy schema:
 ```json
 {
   "schema_version": "model_customer_discovery_v1",
   "require_verified_customer": true,
-  "blocked_member_refs": ["64-character lowercase hex member binding"]
+  "blocked_member_refs": ["64-character lowercase hex purpose-scoped binding"],
+  "blocked_jobs": [{"member_ref": "same binding", "session_id": "owned job reference"}]
 }
 ```
 
-Refs must come from MY MMD's server-verified `memberRef`, never from a customer
-email, phone, display name, browser-supplied member ID or booking reference.
-The current implementation caps the list at 500 refs and the JSON at 40 KB.
+## Legacy public media closure
 
-An owner-authenticated MY MODEL writer must resolve a customer choice from an
-owned historical booking, validate the canonical identity, and update only that
-Model's policy. It must reject cross-Model writes, use an audit/revision check,
-and never offer arbitrary memberRef entry. This writer/UI is not in this PR.
+The asset-host route models.mmdbkk.com/* catches encoded path variants before
+the R2 public custom-domain origin. Legacy models/* and MMD* media paths return
+410. Other static files remain in the same R2 bucket; the existing more-specific
+studio/api and health owners are preserved.
+The old /sigil/api/models/search/public-catalog returns 410 with empty items
+when LEGACY_PUBLIC_MEDIA_CLOSED=true. Its direct public image URLs are retired.
+Previously saved direct Model-storage image links will stop working; approved
+media must use /sigil/api/models/media/:media_id. This does not delete objects.
 
-## Booking search and media
+The mmd-models managed r2.dev domain was read-only verified disabled. The only
+enabled custom domain was models.mmdbkk.com. Recheck this before rollout and
+monitor config drift. Files already downloaded to another device cannot be
+recalled by a server-side block.
 
-The existing MEMBER_PAGES_WORKER service binding validates the session cookie
-through /api/member/app/profile. Only a matched, LINE-connected, non-blocked
-profile with an opaque memberRef establishes the viewer. IDs in body/query/header
-are not accepted. Unavailable identity service or expired/unmatched sessions
-cannot view a restricted Model.
+The Model settings API probes the live raw/encoded legacy paths and retired
+catalog on every settings read/write. It requires 410 plus the correct route
+owner before reporting ready or accepting a mutation. A Model cannot submit
+its own readiness/isolation flag. Thus admin/presentation deployment preceding
+the media deployment cannot falsely enable blocking.
 
-Both search sanitization and every media GET/HEAD apply the policy. A denied
-Model is omitted, and media returns the same generic 404 as missing media.
-Policy JSON, refs, counts, and individual deny reasons are never projected.
-The policy can only narrow existing tier/approval rules; it grants no tier.
+## Release gates
 
-Restricted Models also require a verified customer when the deny list is
-nonempty, even if require_verified_customer is false, so signing out is not a
-bypass. Each request rereads current Model state; media uses no-store.
-
-## Required integration gates before enabling real blocks
-
-1. Provision the proposed field and the authenticated MY MODEL writer/UI.
-2. Verify the member session is available on the canonical booking host.
-   __Host cookies from mmdbkk.com are NOT inherited by sigil.mmdbkk.com,
-   Webflow or Lovable origins. Missing sessions intentionally fail closed;
-   no cross-host identity bridge is created here.
-3. Migrate restricted Models off anonymous public promotion/catalog and direct
-   public CDN storage. The separate /sigil/api/models/search/public-catalog
-   endpoint is application/consent based and uses public URLs; it is not a
-   private audience gate. Existing public URLs cannot provide individual
-   revocation. Block activation must first withdraw public promotion and serve
-   restricted assets only through the authenticated media endpoint.
-4. Audit customer detail, recommendation, legacy catalog and other discovery
-   surfaces for the same Model restrictions before promising complete hiding.
-5. Smoke a real allowed, blocked and signed-out viewer on mobile, including
-   saved media URLs, GET/HEAD/ranges and revocation.
-
-This PR deliberately does not create fake customer identities, populate a real
-deny list, alter promotion consent, or modify already-confirmed jobs/payments.
+1. All updated CI passes, including owner authorization, cross-host alias,
+   read-only session validation, concurrent revisions, encoded paths, static
+   assets, search privacy and media revocation.
+2. Merge paired worker/frontend changes and confirm member, admin, presentation
+   and booking deployments. Verify exact routes and static asset compatibility.
+3. Verify an actual allowed, blocked and signed-out viewer on mobile, including
+   GET/HEAD/ranges, saved media links, session expiry and source-session rotation.
+4. Audit recommendation/detail surfaces before claiming complete hiding across
+   every MMD channel. This release governs Booking search/media and retires
+   the legacy anonymous storage/catalog channels.
