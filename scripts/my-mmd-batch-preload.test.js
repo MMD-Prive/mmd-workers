@@ -298,3 +298,13 @@ test("batch joins reviewed membership dates by Client and writes only reconcilia
   const again = await runBatchPreload({assertIdempotent:true, airtable, now:NOW});
   assert.equal(again.summary.unchanged, 1);
 });
+
+test("tier-only membership reviews without a date scan are not prepared rather than invalid", () => {
+  for (const value of [undefined, null, "", "   "]) {
+    const row = membershipDateRow({}, {membership_dates_json: value});
+    const actual = summarizeMembershipDates([row], CLIENT_ID, NOW);
+    assert.equal(actual.state, "not_prepared");
+    assert.equal(actual.first_signup_date_candidate, null);
+    assert.equal(actual.verified, false);
+  }
+});
