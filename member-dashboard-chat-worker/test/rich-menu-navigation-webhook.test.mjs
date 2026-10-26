@@ -4,7 +4,7 @@ import { createLineSignature } from "../src/index.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { getMmdRichMenuActionMap, getMmdRichMenuDestinationMap } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
-async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null } = {}) {
+async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null, rightsCommand = false } = {}) {
   const replies = [], reads = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
@@ -18,7 +18,7 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
     return Response.json({ records: [] });
   };
   try {
-    const event = { type: message ? "message" : "postback", mode, deliveryContext: { isRedelivery: redelivery },
+    const event = { type: message ? "message" : "postback", mode, ...(rightsCommand ? { timestamp: Date.now() } : {}), deliveryContext: { isRedelivery: redelivery },
       source: { type: "user", userId: `U${"1".repeat(32)}` }, replyToken: "test-reply", webhookEventId: "test-tap",
       ...(message ? { message: { type: "text", text: message } } : { postback: { data } }) };
     const raw = JSON.stringify({ events: [event] });
@@ -29,6 +29,8 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
       LINE_CHANNEL_SECRET: "test-secret", LINE_CHANNEL_ACCESS_TOKEN: "test-token",
       LINE_AUTO_REPLY_ENABLED: String(auto), LINE_KENJI_AI_ENABLED: "true", LINE_FIRST_CONTACT_ENABLED: String(firstContact),
       LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: String(deterministic),
+      KENJI_LINE_RIGHTS_CHECK_MODE: rightsCommand ? "command" : "off",
+      KENJI_LINE_RIGHTS_COMMAND_ENABLED: String(rightsCommand),
       KENJI_LINE_CONTINUITY_ENABLED: "true", AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "test",
       INTERNAL_TOKEN: "test",
       ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: { line_oa_auto_reply: kill, all_kenji_mutations: globalKill } }) },
@@ -54,7 +56,7 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
       assert.equal(result.status, 200);
       assert.equal(result.replies.length, 1);
       if (destinations[menu][index].type === "uri") assert.ok(result.replies[0].messages[0].text.endsWith(destinations[menu][index].uri));
-      else assert.match(result.replies[0].messages[0].text, /พี่เปอร์ดูแลงาน|เช็กสิทธิ์/);
+      else assert.match(result.replies[0].messages[0].text, /พี่เปอร์ดูแลงาน|เช็กสิทธิ์|checkpts/);
       assert.equal(result.body.saved[0].reply_source, "rich_menu_navigation_v1");
       assert.equal(result.body.saved[0].cta_appended, false);
       assert.equal(result.body.saved[0].continuity_topic, "");
@@ -111,4 +113,17 @@ test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified
   for (const other of [{ topic: "support", expires_at }, { topic: "models", entry: "per_support_button", expires_at }])
     assert.equal((await run("", { message: "เช็ก Points", matrixState: other, auto: false, deterministic: true })).replies.length, 0);
   assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true, kill: true })).replies.length, 0);
+});
+
+test("SUPPORT follow-up เช็กสิทธิ์ stays in Per AI instead of the broad rights command", async () => {
+  const state = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
+  const support = await run("", { message: "เช็กสิทธิ์", matrixState: state, auto: false, deterministic: true, rightsCommand: true });
+  assert.equal(support.replies.length, 1);
+  assert.equal(support.body.saved[0].reply_source, "rich_menu_conversation_v1");
+  assert.match(support.replies[0].messages[0].text, /MY MMD|miniapp\.line\.me/);
+  assert.doesNotMatch(support.replies[0].messages[0].text, /CARE BACK|Standard|Premium|สถานะสมาชิกยังตรวจยืนยันไม่ครบ/);
+
+  const standalone = await run("", { message: "เช็กสิทธิ์", auto: false, deterministic: true, rightsCommand: true });
+  assert.equal(standalone.body.saved[0].rights_check, true);
+  assert.equal(standalone.replies.length, 0);
 });

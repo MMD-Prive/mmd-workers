@@ -646,11 +646,6 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       saved.push({ ok: true, type: text(event?.type), campaign_handled: true, replied: legacyOutcome.saved[index].replied === true });
       continue;
     }
-    const rightsOutcome = await handleLineRightsCheck({ env, event, runtime });
-    if (rightsOutcome) {
-      saved.push(rightsOutcome);
-      continue;
-    }
     const eventMode = text(event?.mode).toLowerCase() || "unknown";
     const redelivered = event?.deliveryContext?.isRedelivery === true;
     const replyToken = replyTokenOf(event);
@@ -682,6 +677,15 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
       directUser && eventMode !== "standby" && !redelivered && replyToken
       ? resolveRichMenuConversation(event, continuity) : null;
+    // The exact rights command normally owns its own checked response. After
+    // a Guest/Public SUPPORT tap, keep it inside that bounded Per AI conversation
+    // so an unverified customer gets the MY MMD route instead of a broad rights report.
+    const rightsOutcome = supportConversation && menuConversation
+      ? null : await handleLineRightsCheck({ env, event, runtime });
+    if (rightsOutcome) {
+      saved.push(rightsOutcome);
+      continue;
+    }
     // Check canonical takeover for both the menu tap and every bounded follow-up.
     let menuOwnerClear = false;
     if (menuCommandEnabled || menuConversation) {

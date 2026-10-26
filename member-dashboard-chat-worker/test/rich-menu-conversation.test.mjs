@@ -142,6 +142,18 @@ test("SUPPORT continues renewal, Points and status without confirming truth or c
   });
 });
 
+test("Guest/Public SUPPORT offers checkpts and routes it to verified MY MMD Points", async () => {
+  for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
+    env.LINE_AUTO_REPLY_ENABLED = "false";
+    await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
+    assert.match(replies.at(-1).messages[0].text, /checkpts/);
+    const result = await send(textEvent("checkpts"));
+    assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
+    assert.match(replies.at(-1).messages[0].text, /intent=status&view=points/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
+  });
+});
+
 test("no opt-in, different customer, expired window, disabled model-free lane and failed delivery cannot start menu chat", async () => {
   await conversation(async ({ tap, send, replies, matrices, set }) => {
     const initial = await send(textEvent("สมัครสมาชิก"));
