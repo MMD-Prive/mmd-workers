@@ -119,207 +119,237 @@ test("Premium 90-minute offer may expose its canonical resolved customer rate", 
   assert.equal(offer.rate_review_required, false);
 });
 
-test("SIGIL hydrates MMD MODEL primary image, public gallery and intro clips only", async () => {
-  const records = [
-    item(primaryMediaId, { asset_role: "profile_main", media_type: "profile_photo" }),
-    item(galleryMediaId, { asset_role: "gallery_candidate", media_type: "public_gallery" }),
-    item(clipMediaId, { asset_role: "intro_video_candidate", media_type: "intro_video", file_type: "video/mp4" }),
-    item(`media_${"f".repeat(32)}`, { asset_role: "private_gallery", media_type: "private_gallery" }),
-    item(`media_${"1".repeat(32)}`, { asset_role: "gallery_candidate", media_type: "public_gallery", public_safe: false }),
-  ];
-  const originalFetch = globalThis.fetch;
-  const formulas = [];
-  globalThis.fetch = async (input) => {
-    formulas.push(new URL(input).searchParams.get("filterByFormula"));
-    return Response.json({ records });
-  };
-  try {
-    const grouped = await fetchPublicModelMedia({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, [{ model_id: modelId, working_name: "EMs21 J Dye" }]);
-    assert.deepEqual(formulas, ['OR(FIND("EMs21 J Dye",ARRAYJOIN({Model})))']);
-    const assets = grouped.get(modelId);
-    assert.equal(assets.primary.asset_role, "profile_main");
-    assert.deepEqual(assets.photos.map((photo) => photo.media_id), [galleryMediaId]);
-    assert.deepEqual(assets.clips.map((clip) => clip.media_id), [clipMediaId]);
-    assert.equal(assets.clips[0].url, `https://sigil.mmdbkk.com/sigil/api/models/media/${clipMediaId}`);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("search projection uses approved media linked to each Model ID and clears legacy image fallbacks", async () => {
-  const records = [
-    item(primaryMediaId, { asset_role: "profile_main", media_type: "profile_photo" }),
-    item(galleryMediaId, { asset_role: "gallery_candidate", media_type: "public_gallery" }),
-    item(clipMediaId, { asset_role: "intro_video_candidate", media_type: "intro_video", file_type: "video/mp4" }),
-    item(secondPrimaryMediaId, { asset_role: "profile_main", media_type: "profile_photo", Model: [secondModelId] }),
-    item(`media_${"2".repeat(32)}`, { review_status: "pending_review", Model: [secondModelId] }),
-    item(`media_${"3".repeat(32)}`, { media_type: "private_gallery", Model: [secondModelId] }),
-    item(`media_${"4".repeat(32)}`, { public_safe: false, Model: [secondModelId] }),
-    item(`media_${"5".repeat(32)}`, { media_visibility: "private_candidate", Model: [secondModelId] }),
-    item(`media_${"6".repeat(32)}`, { Model: ["recModel000000003"] }),
-  ];
-  const models = [
-    { model_id: modelId, working_name: "Model One", public_image_url: "https://legacy.invalid/one.webp", cover_url: "https://legacy.invalid/one.webp", primary_image_key: "legacy-one", r2_key: "legacy-one" },
-    { model_id: secondModelId, working_name: "Model Two", public_image_url: "https://legacy.invalid/two.webp", cover_url: "https://legacy.invalid/two.webp", primary_image_url: "https://legacy.invalid/two.webp", primary_media_id: "legacy-two", primary_image_key: "legacy-two", r2_key: "legacy-two", additional_images: [{ url: "https://legacy.invalid/other.webp" }], clips: [{ url: "https://legacy.invalid/other.mp4" }] },
-  ];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
+test("registry lookup joins canonical Model links across pages without relying on names", async () => {
+  const original = globalThis.fetch;
+  const reads = [];
+  globalThis.fetch = async (input, init = {}) => {
+    assert.ok(!init.method || init.method === "GET");
     const url = new URL(input);
-    if (url.searchParams.has("filterByFormula")) return Response.json({ records });
-    return Response.json({ fields: { public_image_url: "https://legacy.invalid/from-record.webp", primary_image_key: "legacy-record" } });
+    reads.push(url);
+    assert.doesNotMatch(url.searchParams.get("filterByFormula"), /FIND|ARRAYJOIN|Same Name/);
+    return Response.json(url.searchParams.has("offset") ? { records: [
+      item(secondPrimaryMediaId, { Model: [secondModelId], asset_role: "profile_main" }),
+    ] } : { records: [
+      item(primaryMediaId, { asset_role: "profile_main", media_type: "profile_photo" }),
+      item(galleryMediaId),
+      item(clipMediaId, { media_type: "intro_video", file_type: "video/mp4" }),
+      item(`media_${"f".repeat(32)}`, { media_type: "private_gallery" }),
+      item(`media_${"1".repeat(32)}`, { public_safe: false }),
+    ], offset: "next-page" });
   };
   try {
-    const grouped = await fetchPublicModelMedia({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, models);
+    const grouped = await fetchPublicModelMedia(mediaEnv(), [{ model_id: modelId }, { model_id: secondModelId, working_name: "Same Name" }]);
+    assert.equal(reads.length, 2);
     assert.equal(grouped.get(modelId).primary.media_id, primaryMediaId);
+    assert.deepEqual(grouped.get(modelId).photos.map(m => m.media_id), [galleryMediaId]);
+    assert.deepEqual(grouped.get(modelId).clips.map(m => m.media_id), [clipMediaId]);
     assert.equal(grouped.get(secondModelId).primary.media_id, secondPrimaryMediaId);
-    assert.deepEqual(grouped.get(secondModelId).photos, []);
-    assert.deepEqual(grouped.get(secondModelId).clips, []);
+  } finally { globalThis.fetch = original; }
+});
 
-    const projected = await hydrateModelAssetPolicy({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, { ok: true, model: models[0], items: models });
-    const [first, second] = projected.items;
-    assert.equal(first.public_image_url, `https://sigil.mmdbkk.com/sigil/api/models/media/${primaryMediaId}`);
-    assert.equal(first.cover_url, first.public_image_url);
-    assert.equal(first.primary_media_id, primaryMediaId);
-    assert.deepEqual(first.additional_images.map((photo) => photo.media_id), [galleryMediaId]);
-    assert.deepEqual(first.clips.map((clip) => clip.media_id), [clipMediaId]);
-    assert.equal(projected.model.public_image_url, first.public_image_url);
-    assert.equal(second.primary_media_id, secondPrimaryMediaId);
-    assert.equal(second.public_image_url, `https://sigil.mmdbkk.com/sigil/api/models/media/${secondPrimaryMediaId}`);
-    assert.equal(second.source, "mmd_model_media_assets");
-    assert.equal(second.asset_source, "mmd_model_media_assets");
-    for (const key of ["primary_image_key", "r2_key", "r2_prefix"]) assert.equal(second[key], "", `${key} must not expose a storage key`);
-    assert.deepEqual(second.additional_images, []);
-    assert.deepEqual(second.clips, []);
-  } finally {
-    globalThis.fetch = originalFetch;
+test("search returns only approved_media descriptors and removes every legacy storage field", async () => {
+  await withMediaInventory({ assets: [
+    item(primaryMediaId, { asset_role: "profile_main" }), item(galleryMediaId),
+    item(clipMediaId, { media_type: "intro_video", file_type: "video/mp4" }),
+    item(`media_${"2".repeat(32)}`, { review_status: "pending_review" }),
+    item(`media_${"3".repeat(32)}`, { media_type: "private_gallery" }),
+  ] }, async () => {
+    const legacy = { model_id: modelId, scope: "public", working_name: "Public One", height_cm: 180,
+      public_image_url: "https://drive.google.com/secret", cover_url: "https://storage.invalid/secret",
+      r2_prefix: "private/secret", private_original_key: "private/secret", drive_folder_id: "secret",
+      primary_image_url: "https://storage.invalid/secret", additional_images: [{ url: "https://storage.invalid/secret" }],
+      approved_media: [{ media_id: "forged" }], arbitrary_url: "https://storage.invalid/secret" };
+    const projected = await hydrateModelAssetPolicy(mediaEnv(), { ok: true, model: legacy, items: [legacy] });
+    assert.deepEqual(projected.model, projected.items[0]);
+    assert.deepEqual(projected.model.approved_media, [
+      { media_id: primaryMediaId, media_source: "mmd_model_media_assets", kind: "photo" },
+      { media_id: galleryMediaId, media_source: "mmd_model_media_assets", kind: "photo" },
+      { media_id: clipMediaId, media_source: "mmd_model_media_assets", kind: "clip" },
+    ]);
+    assert.equal(projected.model.height_cm, 180);
+    assert.equal(projected.model.primary_media_id, primaryMediaId);
+    assert.doesNotMatch(JSON.stringify(projected), /https?:|drive_folder|private_original|r2_|public_image_url|cover_url|primary_image_url|additional_images/);
+  });
+});
+
+test("missing credentials, registry failure, non-public and hidden Models never restore media fallbacks", async () => {
+  const legacy = { model_id: modelId, scope: "public", public_image_url: "https://legacy.invalid/secret" };
+  const noCredentials = await hydrateModelAssetPolicy({}, { ok: true, model: legacy, items: [legacy] });
+  assert.deepEqual(noCredentials.model.approved_media, []);
+  assert.doesNotMatch(JSON.stringify(noCredentials), /legacy.invalid|public_image_url/);
+  for (const options of [
+    { registryDown: true }, { modelFields: { can_work_public: false, can_work_private: true } },
+    { modelFields: { status: "hidden" } }, { modelFields: { working_name: "EMs11 Protected" } }, { modelDown: true },
+  ]) {
+    await withMediaInventory(options, async () => {
+      const result = await hydrateModelAssetPolicy(mediaEnv(), { ok: true, items: [legacy] });
+      assert.deepEqual(result.items[0].approved_media, []);
+      assert.doesNotMatch(JSON.stringify(result), /legacy.invalid|public_image_url/);
+    });
   }
+  await withMediaInventory({}, async () => {
+    const result = await hydrateModelAssetPolicy(mediaEnv(), { ok: true, items: [{ ...legacy, scope: "private" }] });
+    assert.deepEqual(result.items[0].approved_media, []);
+  });
 });
 
-test("search projection is media-empty when registry credentials are unavailable", async () => {
-  const legacy = { model_id: secondModelId, source: "legacy", asset_source: "legacy", r2_prefix: "models/legacy", public_image_url: "https://legacy.invalid/model.webp", cover_url: "https://legacy.invalid/model.webp", additional_images: [{ url: "https://legacy.invalid/gallery.webp" }] };
-  const projected = await hydrateModelAssetPolicy({}, { ok: true, model: legacy, items: [legacy] });
-  assert.equal(projected.model.public_image_url, "");
-  assert.equal(projected.items[0].cover_url, "");
-  assert.equal(projected.items[0].source, "");
-  assert.equal(projected.items[0].asset_source, "");
-  assert.equal(projected.items[0].r2_prefix, "");
-  assert.deepEqual(projected.items[0].additional_images, []);
-});
-
-test("search projection does not restore legacy images when the media registry fails", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    const url = new URL(input);
-    if (url.searchParams.has("filterByFormula")) return new Response(null, { status: 503 });
-    return Response.json({ fields: { public_image_url: "https://legacy.invalid/from-record.webp" } });
-  };
-  try {
-    const model = { model_id: modelId, working_name: "Model One", public_image_url: "https://legacy.invalid/from-search.webp", cover_url: "https://legacy.invalid/from-search.webp" };
-    const projected = await hydrateModelAssetPolicy({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, { ok: true, items: [model] });
-    assert.equal(projected.items[0].public_image_url, "");
-    assert.equal(projected.items[0].cover_url, "");
-    assert.equal(projected.items[0].source, "");
-    assert.equal(projected.items[0].asset_source, "");
-    assert.equal(projected.items[0].r2_prefix, "");
-    assert.deepEqual(projected.items[0].additional_images, []);
-    assert.deepEqual(projected.items[0].clips, []);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("public media gate rejects private, pending and unsafe registry records", () => {
-  const base = {
-    Model: [modelId],
-    media_type: "public_gallery",
-    asset_role: "gallery_candidate",
-    media_visibility: "public_candidate",
-    review_status: "active",
-    public_safe: true,
-    private_original_key: "models/model/public_gallery/image.webp",
-  };
+test("public media policy rejects unsafe, unapproved, ambiguous or mismatched registry assets", () => {
+  const base = item(mediaId).fields;
   assert.equal(isPublicMedia(base), true);
-  assert.equal(isPublicMedia({ ...base, Model: [] }), false);
-  assert.equal(isPublicMedia({ ...base, media_type: "private_gallery" }), false);
-  assert.equal(isPublicMedia({ ...base, review_status: "pending_review" }), false);
-  assert.equal(isPublicMedia({ ...base, public_safe: false }), false);
-  assert.equal(isPublicMedia({ ...base, media_visibility: "private_candidate" }), false);
+  for (const override of [
+    { Model: [] }, { Model: [modelId, secondModelId] }, { media_id: "unsafe/../id" },
+    { media_type: "private_gallery" }, { review_status: "pending_review" }, { review_status: "revoked" },
+    { public_safe: false }, { private_safe: true }, { flash_safe: true },
+    { media_visibility: "private_candidate" }, { asset_role: "private_gallery" },
+    { r2_bucket: "mmd-private-model-media" }, { private_original_key: "models/another/secret.webp" },
+    { private_original_key: `models/${modelId}/../secret.webp` }, { file_type: "text/html" },
+  ]) assert.equal(isPublicMedia({ ...base, ...override }), false, JSON.stringify(override));
 });
 
-test("public media route streams only eligible assets and honors video byte ranges", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async () => Response.json({ records: [{ fields: {
-    Model: [modelId],
-    media_id: mediaId,
-    media_type: "intro_video",
-    asset_role: "intro_video_candidate",
-    media_visibility: "public_candidate",
-    review_status: "active",
-    public_safe: true,
-    private_original_key: "models/model/intro_video/clip.mp4",
-    file_type: "video/mp4",
-    file_size_bytes: 100,
-  } }] });
-  try {
-    const request = new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${mediaId}`, { headers: { range: "bytes=0-9", origin: "https://mmdbkk.com" } });
-    const response = await worker.fetch(request, {
-      AIRTABLE_API_KEY: "key",
-      AIRTABLE_BASE_ID: "base",
-      ALLOWED_ORIGINS: "https://mmdbkk.com",
-      MMD_MODEL_ASSETS: { get: async (key, options) => {
-        calls.push({ key, options });
-        return { body: new Uint8Array(10), size: 100, httpMetadata: { contentType: "video/mp4" } };
-      } },
-    });
-    assert.equal(response.status, 206);
-    assert.equal(response.headers.get("content-range"), "bytes 0-9/100");
-    assert.equal(response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
-    assert.equal(calls[0].key, "models/model/intro_video/clip.mp4");
-    assert.deepEqual(calls[0].options, { range: { offset: 0, length: 10 } });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test("public media GET streams approved R2 bytes, supports ranges and prevents authorization caching", async () => {
+  await withMediaInventory({ assets: [item(mediaId, { media_type: "intro_video", file_type: "video/mp4" })] }, async (state) => {
+    for (const [range, status, contentRange, length] of [[null, 200, null, "100"], ["bytes=0-9", 206, "bytes 0-9/100", "10"], ["bytes=-10", 206, "bytes 90-99/100", "10"], ["bytes=95-200", 206, "bytes 95-99/100", "5"]]) {
+      const response = await worker.fetch(mediaRequest({ origin: "https://mmdbkk.com", ...(range ? { range } : {}) }), mediaEnv(state));
+      assert.equal(response.status, status);
+      assert.equal(response.headers.get("content-range"), contentRange);
+      assert.equal(response.headers.get("content-length"), length);
+      assert.equal(response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+      assert.equal(response.headers.get("cloudflare-cdn-cache-control"), "no-store");
+      assert.equal(response.headers.get("location"), null);
+      await response.arrayBuffer();
+    }
+    assert.equal(state.storageReads.length, 4);
+    assert.equal(state.modelReads, 4);
+    assert.equal(state.registryReads, 4);
+    assert.deepEqual(state.storageReads[1].options, { range: { offset: 0, length: 10 } });
+  });
 });
 
-test("public media route rejects an approved asset that is not linked to a Model", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ records: [{ fields: {
-    Model: [],
-    media_id: mediaId,
-    media_type: "public_gallery",
-    asset_role: "gallery_candidate",
-    media_visibility: "public_candidate",
-    review_status: "approved",
-    public_safe: true,
-    private_original_key: "models/unlinked/asset.webp",
-    file_type: "image/webp",
-  } }] });
-  try {
-    const response = await worker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${mediaId}`), {
-      AIRTABLE_API_KEY: "key",
-      AIRTABLE_BASE_ID: "base",
-      MMD_MODEL_ASSETS: { get: async () => { throw new Error("must not read unlinked storage"); } },
-    });
+test("media gate rechecks revocation and current public Model state on every request", async () => {
+  await withMediaInventory({}, async (state) => {
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 200);
+    state.assets[0].fields.review_status = "revoked";
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 404);
+    state.assets[0].fields.review_status = "approved";
+    state.modelFields.can_work_public = false;
+    state.modelFields.can_work_private = true;
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 404);
+    state.modelFields.can_work_public = true;
+    state.modelFields.status = "hidden";
+    assert.equal((await worker.fetch(mediaRequest(), mediaEnv(state))).status, 404);
+    assert.equal(state.storageReads.length, 1);
+  });
+});
+
+test("direct media requests fail closed for missing, duplicated, unlinked or unverified assets", async () => {
+  for (const options of [
+    { assets: [] }, { assets: [item(mediaId), item(mediaId)] }, { assets: [item(mediaId, { Model: [] })] },
+    { registryDown: true }, { modelDown: true }, { objectOverride: { size: 99 } },
+    { objectOverride: { customMetadata: { media_id: "other" } } },
+    { objectOverride: { httpMetadata: { contentType: "text/html" } } },
+  ]) await withMediaInventory(options, async (state) => {
+    const response = await worker.fetch(mediaRequest({ origin: "https://sigil-booking.lovable.app" }), mediaEnv(state));
     assert.equal(response.status, 404);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://sigil-booking.lovable.app");
+    assert.doesNotMatch(await response.text(), /models\/|private_original|api.airtable/);
+  });
 });
 
-function item(id, overrides) {
-  return { fields: {
-    Model: [modelId],
-    media_id: id,
-    media_type: "public_gallery",
-    asset_role: "gallery_candidate",
-    media_visibility: "public_candidate",
-    review_status: "active",
-    public_safe: true,
-    private_original_key: `models/${modelId}/asset/${id}.webp`,
-    file_type: id === "clip" ? "video/mp4" : "image/webp",
-    ...overrides,
-  } };
+test("MMD, Lovable and Webflow origins support GET, HEAD, preflight and readable denials", async () => {
+  await withMediaInventory({}, async (state) => {
+    for (const origin of mediaEnv().ALLOWED_ORIGINS.split(",")) {
+      for (const method of ["GET", "HEAD", "OPTIONS"]) {
+        const response = await worker.fetch(mediaRequest({ origin }, method), mediaEnv(state));
+        assert.equal(response.status, method === "OPTIONS" ? 204 : 200);
+        assert.equal(response.headers.get("access-control-allow-origin"), origin);
+        assert.equal(response.headers.get("vary"), "Origin");
+        if (method !== "GET") assert.equal((await response.arrayBuffer()).byteLength, 0);
+      }
+    }
+    const readCount = state.registryReads;
+    const blocked = await worker.fetch(mediaRequest({ origin: "https://untrusted.example" }), mediaEnv(state));
+    assert.equal(blocked.status, 403);
+    assert.equal(blocked.headers.get("access-control-allow-origin"), null);
+    assert.equal(state.registryReads, readCount);
+    const method = await worker.fetch(mediaRequest({ origin: "https://mmdbkk.com" }, "POST"), mediaEnv(state));
+    assert.equal(method.status, 405);
+    for (const range of ["bytes=100-", "bytes=-0", "bytes=20-10", "bytes=-", "bytes=1-2,5-6"]) {
+      assert.equal((await worker.fetch(mediaRequest({ range }), mediaEnv(state))).status, 416);
+    }
+    for (const suffix of ["../secret", "%broken", "not-a-media-id"]) {
+      const response = await worker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${suffix}`), mediaEnv(state));
+      assert.equal(response.status, 404);
+    }
+  });
+});
+
+test("runtime entrypoint GET and POST Public search expose the same approved_media contract without private Models", async () => {
+  await withMediaInventory({ inventory: [
+    { id: modelId, fields: { working_name: "Public One", can_work_public: true, status: "active" } },
+    { id: secondModelId, fields: { working_name: "Private One", can_work_private: true, private_tier: "premium" } },
+  ] }, async (state) => {
+    for (const method of ["GET", "POST"]) {
+      const response = await runtimeWorker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/search${method === "GET" ? "?scope=public&search_mode=booking" : ""}`, {
+        method, headers: { origin: "https://sigil-booking.lovable.app", "content-type": "application/json" },
+        ...(method === "POST" ? { body: JSON.stringify({ scope: "public", search_mode: "booking" }) } : {}),
+      }), mediaEnv(state));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("access-control-allow-origin"), "https://sigil-booking.lovable.app");
+      const payload = await response.json();
+      assert.deepEqual(payload.items.map(model => model.model_id), [modelId]);
+      assert.deepEqual(payload.items[0].approved_media, [{ media_id: mediaId, media_source: "mmd_model_media_assets", kind: "photo" }]);
+      assert.doesNotMatch(JSON.stringify(payload), /public_image_url|cover_url|https?:|private_original_key|r2_key|drive_folder/);
+    }
+  });
+});
+
+function item(id, overrides = {}) {
+  const fields = {
+    Model: [modelId], media_id: id, media_type: "public_gallery", asset_role: "gallery_candidate",
+    media_visibility: "public_candidate", review_status: "approved", public_safe: true,
+    r2_bucket: "mmd-models", file_type: "image/webp", file_size_bytes: 100, ...overrides,
+  };
+  fields.private_original_key = overrides.private_original_key || `models/${fields.Model[0]}/asset/${id}.webp`;
+  return { id: `recAsset${id.replace(/[^a-z0-9]/gi, "")}`, fields };
+}
+function mediaRequest(headers = {}, method = "GET") {
+  return new Request(`https://sigil.mmdbkk.com/sigil/api/models/media/${mediaId}`, { method, headers });
+}
+function mediaEnv(state = {}) {
+  const read = async (key, options) => {
+    state.storageReads.push({ key, options });
+    const asset = state.assets.find(asset => asset.fields.private_original_key === key)?.fields;
+    if (!asset) return null;
+    return { body: new Uint8Array(options?.range?.length || 100), size: 100,
+      httpMetadata: { contentType: asset.file_type },
+      customMetadata: { media_id: asset.media_id, model_record_id: asset.Model[0], sha256: "a".repeat(64) },
+      ...state.objectOverride };
+  };
+  return { AIRTABLE_API_KEY: "synthetic", AIRTABLE_BASE_ID: "base",
+    ALLOWED_ORIGINS: "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil-booking.lovable.app,https://mmdprive.webflow.io",
+    MMD_MODEL_ASSETS: { get: read, head: read } };
+}
+async function withMediaInventory(options, run) {
+  const state = { assets: [item(mediaId)], modelFields: { can_work_public: true, status: "active" },
+    storageReads: [], modelReads: 0, registryReads: 0, ...options };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    assert.ok(!init.method || init.method === "GET", "media reads must never mutate records");
+    const url = new URL(input);
+    if (url.pathname.endsWith("/tblrpQXhHnbTU9RhW")) {
+      state.registryReads++;
+      return state.registryDown ? new Response(null, { status: 503 }) : Response.json({ records: state.assets });
+    }
+    if (/\/Models\/rec/.test(url.pathname)) {
+      state.modelReads++;
+      const id = url.pathname.split("/").pop();
+      return state.modelDown ? new Response(null, { status: 503 }) : Response.json({ id, fields: state.modelFields });
+    }
+    if (url.pathname.endsWith("/Models")) return Response.json({ records: state.inventory || [] });
+    return Response.json({ records: [] });
+  };
+  try { await run(state); } finally { globalThis.fetch = original; }
 }
 
 test("booking intake stores approved MMD media registry provenance and fails closed on unknown sources", async () => {
@@ -727,3 +757,4 @@ test("customer Booking rejects Live/Group and stores MK/Burn only as draft prefe
     assert.equal(resolver.job_creation_state, "waiting_for_per");
   } finally { globalThis.fetch = original; }
 });
+
