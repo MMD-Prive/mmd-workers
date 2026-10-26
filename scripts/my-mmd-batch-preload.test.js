@@ -219,3 +219,82 @@ test("batch prepares five latest dated bills with model names before customer ac
  assert.equal(result.projection.recent_services[0].totalAmountThb,1007);
  assert.equal(result.projection.completed_service_count,8);
 });
+
+const { summarizeMembershipDates } = require("./membership-date-review.js");
+function membershipDateRow(changes = {}, fieldChanges = {}) {
+  const payload = {
+    schema_version: "membership_dates_review_v1", authority: "review_only",
+    client_record_id: CLIENT_ID, reviewed_at: "2026-09-20T00:00:00Z",
+    review_status: "dates_extracted_review_required", grants_entitlement: false, grants_points: false,
+    first_signup_date_candidate: "2022-11-24", latest_membership_date_candidate: "2026-07-23",
+    original_notes: { source_url: "https://chat.line.biz/U" + "a".repeat(32) + "/chat/U" + "b".repeat(32), note_count: 3 },
+    events: [{ kind: "signup_candidate", date: "2022-11-24", excerpt: "private profile" },
+      { kind: "renewal_candidate", date: "2025-07-23" }, { kind: "renewal_candidate", date: "2026-07-23" }],
+    flags: [], ...changes,
+  };
+  return { id: "recDateReview", fields: { key: "memstart:" + CLIENT_ID, client: [CLIENT_ID],
+    review_decision: "pending", first_signup_date_candidate: payload.first_signup_date_candidate,
+    latest_membership_date_candidate: payload.latest_membership_date_candidate,
+    membership_dates_json: JSON.stringify(payload), ...fieldChanges } };
+}
+test("prepared membership dates preserve first signup and all renewal candidates without granting rights", () => {
+  const row = membershipDateRow();
+  const actual = summarizeMembershipDates([row], CLIENT_ID, NOW);
+  assert.equal(actual.first_signup_date_candidate, "2022-11-24");
+  assert.deepEqual(actual.renewal_date_candidates, ["2025-07-23", "2026-07-23"]);
+  assert.equal(actual.latest_membership_date_candidate, "2026-07-23");
+  assert.equal(actual.verified, false);
+  assert.equal(actual.access_verified, false);
+  assert.equal(actual.original_note_count, 3);
+  assert.doesNotMatch(JSON.stringify(actual), /private profile|chat.line.biz/);
+  const before = buildClientProjection({client: client(), member: member(), memberMatchCount: 1}, NOW).projection;
+  const after = buildClientProjection({client: client(), member: member(), memberMatchCount: 1, membershipDateRows: [row]}, NOW).projection;
+  assert.deepEqual(after.membership_dates, actual);
+  for (const field of ["lifecycle_status", "current_points_confirmed", "points_state", "history_backfill_status"]) assert.deepEqual(after[field], before[field]);
+});
+test("missing original Notes remain explicit and Per Rename never becomes first signup", () => {
+  const row = membershipDateRow({review_status: "original_notes_required", first_signup_date_candidate: null,
+    original_notes: null, events: [], flags: ["original_notes_not_reviewed_in_this_pass"],
+    per_rename_snapshot: {date_candidate: "2026-07-23", source_staging_record_ids: ["recStagedRename"]}});
+  const actual = summarizeMembershipDates([row], CLIENT_ID, NOW);
+  assert.equal(actual.state, "original_notes_required");
+  assert.equal(actual.first_signup_date_candidate, null);
+  assert.equal(actual.latest_membership_date_candidate, "2026-07-23");
+  assert.equal(actual.original_notes_reviewed, false);
+});
+test("conflicting signup stays blank while a separately evidenced renewal is retained", () => {
+  const row = membershipDateRow({review_status: "date_conflict_review_required", first_signup_date_candidate: null,
+    flags: ["conflicting_first_signup_dates"], events: [
+      {kind: "signup_conflicting_candidate", date: "2023-09-04"},
+      {kind: "signup_conflicting_candidate", date: "2023-09-09"},
+      {kind: "renewal_candidate", date: "2026-07-23"}]});
+  const actual = summarizeMembershipDates([row], CLIENT_ID, NOW);
+  assert.equal(actual.first_signup_date_candidate, null);
+  assert.equal(actual.latest_membership_date_candidate, "2026-07-23");
+  assert.equal(actual.has_date_conflicts, true);
+});
+test("membership date projection rejects mismatched identity, duplicates, invalid dates and rejected reviews", () => {
+  assert.equal(summarizeMembershipDates([], CLIENT_ID, NOW).state, "not_prepared");
+  const good = membershipDateRow();
+  assert.equal(summarizeMembershipDates([good, good], CLIENT_ID, NOW).state, "ambiguous_review");
+  assert.equal(summarizeMembershipDates([membershipDateRow({client_record_id:"another-client"})], CLIENT_ID, NOW).state, "invalid_evidence");
+  assert.equal(summarizeMembershipDates([membershipDateRow({}, {client:[CLIENT_ID, "another-client"]})], CLIENT_ID, NOW).state, "invalid_evidence");
+  assert.equal(summarizeMembershipDates([membershipDateRow({latest_membership_date_candidate:"2027-01-01"})], CLIENT_ID, NOW).state, "invalid_evidence");
+  assert.equal(summarizeMembershipDates([membershipDateRow({first_signup_date_candidate:"2023-02-30"})], CLIENT_ID, NOW).state, "invalid_evidence");
+  assert.equal(summarizeMembershipDates([membershipDateRow({reviewed_at:"2027-01-01"})], CLIENT_ID, NOW).state, "invalid_evidence");
+  assert.equal(summarizeMembershipDates([membershipDateRow({}, {review_decision:"rejected"})], CLIENT_ID, NOW).state, "rejected");
+  assert.equal(summarizeMembershipDates([membershipDateRow({}, {membership_dates_json:"broken"})], CLIENT_ID, NOW).state, "invalid_evidence");
+  assert.equal(summarizeMembershipDates([membershipDateRow({}, {latest_membership_date_candidate:"2025-01-01"})], CLIENT_ID, NOW).state, "invalid_evidence");
+});
+test("batch joins reviewed membership dates by Client and writes only reconciliation", async () => {
+  const airtable = new FakeAirtable();
+  airtable.rows.set(TABLES.membershipDates, [membershipDateRow()]);
+  const first = await runBatchPreload({apply:true, airtable, now:NOW});
+  assert.equal(first.summary.membership_date_review_rows_scanned, 1);
+  const actual = JSON.parse(airtable.writes[0].fields.projection_json);
+  assert.equal(actual.membership_dates.first_signup_date_candidate, "2022-11-24");
+  assert.deepEqual(actual.membership_dates.renewal_date_candidates, ["2025-07-23","2026-07-23"]);
+  assert.equal(first.truth_writes, false);
+  const again = await runBatchPreload({assertIdempotent:true, airtable, now:NOW});
+  assert.equal(again.summary.unchanged, 1);
+});
