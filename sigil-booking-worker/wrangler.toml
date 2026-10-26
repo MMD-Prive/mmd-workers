@@ -33,6 +33,7 @@ pattern = "sigil.mmdbkk.com/__internal/booking/confirm*"
 zone_name = "mmdbkk.com"
 
 [vars]
+LEGACY_PUBLIC_MEDIA_CLOSED = "true"
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io,https://id-preview--4a567363-c3ea-4ee4-aa32-4a6d5c79808a.lovable.app,https://sigil-booking.lovable.app,https://sigil-booking-app-preview.malemodel-bkk.workers.dev"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
@@ -78,3 +79,13 @@ bucket_name = "mmd-models"
 # AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES must be the same 32+ character
 # service secret configured on member-pages-worker.
 
+
+# Retire only legacy Model-media URL families. /webflow/* static assets retain
+# their existing R2 custom-domain owner.
+[[routes]]
+pattern = "models.mmdbkk.com/models/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "models.mmdbkk.com/MMD*"
+zone_name = "mmdbkk.com"
