@@ -950,6 +950,7 @@ function corsHeaders(req, env) {
   const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean);
   const h = new Headers();
   if (origin && (!allowed.length || allowed.includes(origin))) h.set("Access-Control-Allow-Origin", origin);
+  if (origin && allowed.includes(origin)) h.set("Access-Control-Allow-Credentials", "true");
   h.set("Vary", "Origin");
   h.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
