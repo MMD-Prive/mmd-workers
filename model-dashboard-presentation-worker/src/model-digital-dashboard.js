@@ -127,7 +127,7 @@ async function loadPrivacy(){try{
   privacyButtons();
 }catch(_){$("#privacy-status").textContent="ยังตรวจการตั้งค่าไม่ได้ กรุณาลองใหม่";privacyState=null;privacyButtons();}}
 function privacyButtons(){var id=$("#privacy-job").value,ready=Boolean(privacyState&&privacyState.ready&&id&&!privacyBusy),blocked=Boolean(privacyState&&(privacyState.blocked_session_ids||[]).indexOf(id)>=0);
-  $("#privacy-block").disabled=!ready||blocked;$("#privacy-unblock").disabled=!ready||!blocked;}
+  $("#privacy-block").disabled=!ready;$("#privacy-unblock").disabled=!ready;}
 $("#privacy-panel").ontoggle=function(){if(this.open)loadPrivacy();};
 $("#privacy-job").onchange=privacyButtons;
 async function savePrivacy(action){

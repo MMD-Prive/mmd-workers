@@ -63,7 +63,7 @@ Policy schema:
 ## Legacy public media closure
 
 The asset-host route models.mmdbkk.com/* catches encoded path variants before
-the R2 public custom-domain origin. Legacy models/* and MMD* media paths return
+the R2 public custom-domain origin. Legacy models/* and the MMD Public/Private Models/* folder families return
 410. Other static files remain in the same R2 bucket; the existing more-specific
 studio/api and health owners are preserved.
 The old /sigil/api/models/search/public-catalog returns 410 with empty items

@@ -1029,7 +1029,7 @@ test("Model block writes verify owned jobs and canonical member linkage; stale c
 
 test("legacy storage media including encoded names is closed before any bucket read; static UI assets remain available", async () => {
   let reads = 0;
-  const env = { MMD_MODEL_ASSETS: { get: async key => { reads++; assert.equal(key, "webflow/app.js"); return {
+  const env = { MMD_MODEL_ASSETS: { get: async key => { reads++; assert.ok(["webflow/app.js", "MMD-logo.svg"].includes(key)); return {
     body: new TextEncoder().encode("export{}"), size: 8, httpEtag: '"static"',
     writeHttpMetadata: headers => headers.set("content-type", "application/javascript"),
   }; } } };
@@ -1043,6 +1043,7 @@ test("legacy storage media including encoded names is closed before any bucket r
   assert.equal(staticAsset.status, 200);
   assert.equal(staticAsset.headers.get("content-type"), "application/javascript");
   assert.equal(reads, 1);
+  assert.equal((await handleLegacyAssetHost(new Request("https://models.mmdbkk.com/MMD-logo.svg"), env)).status, 200);
 });
 
 test("privacy settings reject cross-origin writes and unauthenticated Model access", async () => {
