@@ -2363,3 +2363,11 @@ it('one verified LINE session carries independent Public and SIGIL worlds throug
  const dashboard=await request('/api/member/dashboard',{method:'GET',cookie:cookiePair(findCookie(started.response,'__Host-mmd_liff_session'))},runtime);
  assert.equal(dashboard.response.status,200);assert.deepEqual(dashboard.payload.data.member.worlds,worlds);assert.equal(dashboard.payload.data.member.tier.value,'Elite');
 });
+
+it('world schema migration preserves an existing blocked status even if the refreshed projection is active',async()=>{
+ const runtime=env({MEMBER_STATUS_RESOLVER:resolver({member_exists:true,mmd_member_id:'MMD-DUAL-02',profile:{display_name:'Member',tier:'Premium',membership_status:'blocked'}})});
+ const started=await start(runtime,{id_token:'valid-token',liff_intent:'status'});
+ runtime.MEMBER_STATUS_RESOLVER=resolver({member_exists:true,mmd_member_id:'MMD-DUAL-02',profile:{customer_360:{member:{display_name:'Member',tier:'Premium',membership_status:'active'},membership_worlds:{schema:'member_worlds_v1',public:{state:'none',tier:null,expiresAt:null},sigil:{state:'active',tier:'Premium',expiresAt:'2027-01-01'}}}}});
+ const dashboard=await request('/api/member/dashboard',{method:'GET',cookie:cookiePair(findCookie(started.response,'__Host-mmd_liff_session'))},runtime);
+ assert.equal(dashboard.payload.data.member.membership_status.value,'blocked');assert.equal(dashboard.payload.data.member.worlds.sigil.state,'restricted');
+});
