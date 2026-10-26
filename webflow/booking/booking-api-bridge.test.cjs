@@ -34,6 +34,7 @@ test('public search filters scope, safely renders media, sends reviewed details,
   });
   try {
     d.querySelector('[data-public-search]').click(); await pause();
+    assert.equal(calls[0].opt.credentials,'include','public search must carry the verified discovery session');
     assert.match(calls[0].url,/scope=public/); assert.equal(d.querySelectorAll('[data-model-id]').length,1);
     assert.doesNotMatch(d.querySelector('.bk-api-results').textContent,/Private Hidden/);
     assert.equal(d.querySelector('.bk-api-model img'),null,'gallery is not promoted to cover');
@@ -50,6 +51,7 @@ test('public search filters scope, safely renders media, sends reviewed details,
     send.click(); await pause();
     assert.equal(posts,2);assert.equal(send.disabled,true);assert.match(d.querySelector('[data-status]').textContent,/ส่งคำขอแล้ว/);
     const bodies=calls.filter(c=>c.opt.method).map(c=>JSON.parse(c.opt.body));
+    assert.ok(calls.every(c=>c.opt.credentials==='include'),'retries and intake retain the same session transport');
     assert.equal(bodies[0].booking_ref,bodies[1].booking_ref);
     assert.equal(bodies[1].selected_model_id,'public1');assert.equal(bodies[1].lane,'public');assert.equal(bodies[1].private_allowed,false);
     assert.equal(bodies[1].service_context,'Dinner');assert.equal(bodies[1].city,'Bangkok');
