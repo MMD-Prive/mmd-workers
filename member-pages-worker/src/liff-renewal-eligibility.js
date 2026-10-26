@@ -1,3 +1,4 @@
+import { privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
 // Read-only guard around the existing renewal offer/purchase owner.
 // It never writes membership, Points, payment verification or historic evidence.
 export const RENEWAL_PRICE_POLICY = "renewal_spend_365_20261025";
@@ -11,7 +12,7 @@ const json = (data, status = 200) => Response.json(data, {
   status, headers: { "cache-control": "no-store", "x-mmd-renewal-policy": RENEWAL_PRICE_POLICY },
 });
 
-export function evaluateRenewalEligibility(session, spend, requestedPackage = "") {
+export function evaluateRenewalEligibility(session, spend, requestedPackage = "", now = new Date()) {
   const current = token(session?.memberProfile?.tier);
   const selected = token(requestedPackage) || current;
   if (session?.memberExists !== true || !isPackage(current)) return { state: "defer" };
@@ -25,6 +26,15 @@ export function evaluateRenewalEligibility(session, spend, requestedPackage = ""
   // Switching an active tier requires reviewed settlement semantics, not merely
   // replacing the current member tier in the quote. Do not downgrade benefits.
   if (selected !== current) return { ...base, state: "review", reason: "package_change_review" };
+  // Existing active members may prepay from their verified future expiry even
+  // when their service spend is below a spend-based renewal threshold.
+  // The existing offer owner still resolves the term, promotion and settlement.
+  const timing = privateRenewalTiming(session.memberProfile?.membership_expires_at, now);
+  if (timing?.active && token(session.memberProfile?.membership_status) === "active") {
+    return { ...base, state: "eligible", amount_thb: RULES[selected].amount,
+      price_rule: `active_advance_${selected}`, renewal_starts_at: timing.start_at,
+      history_status: "not_required_for_advance", discount_verified: true };
+  }
   const recovery = token(spend?.recoveryState);
   if (spend?.state !== "resolved" || spend?.sourceVerified !== true || spend?.serviceSpendVerified !== true
       || spend?.pointsRecoveryPending === true || (spend?.recordsCount === 0 && spend?.serviceSpendCoverageVerified !== true) || ["checking", "in_progress", "review_required", "blocked"].includes(recovery)
@@ -75,12 +85,13 @@ export async function withLiffRenewalEligibility(request, env, next, { readSessi
   let session;
   try { session = await readSession(request, env); } catch { return next(); }
   if (!/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return next();
-  let context = evaluateRenewalEligibility(session, null, selected);
+  const now = new Date();
+  let context = evaluateRenewalEligibility(session, null, selected, now);
   if (context.state === "defer") return next();
-  if (!["package_change_review", "membership_review"].includes(context.reason)) {
+  if (context.state !== "eligible" && !["package_change_review", "membership_review"].includes(context.reason)) {
     let spend = null;
     try { spend = await readSpend(env, { ...session, strictIdentity: true }); } catch { /* unknown is never zero */ }
-    context = evaluateRenewalEligibility(session, spend, selected);
+    context = evaluateRenewalEligibility(session, spend, selected, now);
   }
   if (context.state === "review") return reviewResponse(context, request.method);
   if (context.state !== "eligible") return json({ ok: false, error: { code: "INVALID_PACKAGE" } }, 400);
