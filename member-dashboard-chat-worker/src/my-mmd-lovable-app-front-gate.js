@@ -563,22 +563,23 @@ async function rewriteStatusReturnTarget(request, response) {
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
-  // Only the dedicated authentication bridge owns this overlay. The Digital
-  // Home also has #actions and #message; decorating it creates a second UI.
-  if (html.includes('id="customer-boot-progress"') || !/const target = ["\']\/member\/(?:my-mmd|payments)["\'];/.test(html)) {
-    const headers = new Headers(response.headers);
-    for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  const headers = new Headers(response.headers);
+  for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  const hasReturnBridge = html.includes('const target = "/member/my-mmd";') || html.includes('const target = "/member/payments";');
+  if (!hasReturnBridge) {
     return new Response(html, { status: response.status, statusText: response.statusText, headers });
   }
+  // Canonicalize the return destination in both shells. Only the dedicated
+  // auth shell owns the overlay; Digital Home retains its own status/actions.
   const canonical = html
     .replace('const target = "/member/my-mmd";', `const target = ${JSON.stringify(target)};`)
     .replace('const target = "/member/payments";', `const target = ${JSON.stringify(target)};`);
-  const rewritten = injectStatusBridgeSkin(canonical);
-
-  const headers = new Headers(response.headers);
-  for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
   headers.set("x-mmd-liff-return-target", target);
+  if (html.includes('id="customer-boot-progress"')) {
+    return new Response(canonical, { status: response.status, statusText: response.statusText, headers });
+  }
+  const rewritten = injectStatusBridgeSkin(canonical);
   headers.set("x-mmd-liff-ui-mode", "auth-bridge-only");
   return new Response(rewritten, {
     status: response.status,

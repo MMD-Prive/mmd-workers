@@ -104,10 +104,13 @@ test("canonical My MMD HTML receives the pending Wish bridge without moving coup
 test("Black Card LINE return never overlays the rendered Digital Home recovery UI", async () => {
   const html = '<!doctype html><html><head></head><body><main id="profile">SĪGIL system</main><div id="customer-boot-progress"></div><div id="message"></div><div id="actions"></div><script nonce="abc123">const homeReady=true;</script></body></html>';
   const env = { MEMBER_PAGES_WORKER: { fetch: async () => new Response(html, {headers:{"content-type":"text/html"}}) } };
-  for (const query of ["intent=continue_payment&view=blackcard","liff.state=%3Fintent%3Dcontinue_payment%26view%3Dblackcard"]) {
+  for (const query of ["intent=continue_payment","intent=continue_payment&view=blackcard","liff.state=%3Fintent%3Dcontinue_payment%26view%3Dblackcard"]) {
     const res = await worker.fetch(new Request("https://www.mmdbkk.com/member/liff?"+query),env);
     const body = await res.text();
     assert.match(body,/SĪGIL system/);
+    const target = query.includes('blackcard') ? '/my-mmd/payments/blackcard' : '/my-mmd/payments';
+    assert.equal(res.headers.get('x-mmd-liff-return-target'),target);
+    assert.ok(body.includes('const target = "'+target+'";'));
     assert.doesNotMatch(body,/mmd-status-bridge-veil|mmd-status-hard-timeout-gate|mmd-status-single-surface-fix/);
     assert.equal(res.headers.get("x-mmd-liff-ui-mode"),null);
     assert.equal(res.headers.get("x-mmd-liff-recovery-gate"),null);
