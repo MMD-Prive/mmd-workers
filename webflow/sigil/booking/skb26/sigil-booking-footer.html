@@ -5,26 +5,22 @@ function publicJobPayload(){if(scope!=='public')return null;return{schema_versio
   var empty={primary:null,photos:[],clips:[]};
   if(!item||item.media_source!=='mmd_model_media_assets')return empty;
   var seen=new Set();
-  function valid(id,url){
-    if(!/^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(id||'')))return null;
-    try{
-      var parsed=new URL(String(url||''),API);
-      if(parsed.origin!==new URL(API).origin||parsed.pathname!=='/sigil/api/models/media/'+encodeURIComponent(id)||parsed.search||parsed.hash)return null;
-      if(seen.has(id))return null;
-      seen.add(id);
-      return{media_id:id,url:parsed.href}
-    }catch(_){return null}
+  function valid(id){
+    if(!/^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(id||''))||seen.has(id))return null;
+    seen.add(id);
+    return{media_id:id,url:new URL('/sigil/api/models/media/'+encodeURIComponent(id),API).href}
   }
-  var primary=valid(item.primary_media_id,item.primary_image_url);
-  var photos=Array.isArray(item.additional_images)?item.additional_images.filter(function(m){return m&&['profile_photo','public_gallery'].includes(m.media_type)}).map(function(m){return valid(m.media_id,m.url)}).filter(Boolean).slice(0,12):[];
-  var clips=Array.isArray(item.clips)?item.clips.filter(function(m){return m&&m.media_type==='intro_video'}).map(function(m){return valid(m.media_id,m.url)}).filter(Boolean).slice(0,5):[];
+  var approved=Array.isArray(item.approved_media)?item.approved_media:[];
+  var primary=approved.some(function(m){return m&&m.media_id===item.primary_media_id&&m.kind==='photo'&&m.media_source==='mmd_model_media_assets'})?valid(item.primary_media_id):null;
+  var photos=Array.isArray(item.gallery_media)?item.gallery_media.filter(function(m){return m&&m.kind==='photo'&&m.media_source==='mmd_model_media_assets'}).map(function(m){return valid(m.media_id)}).filter(Boolean).slice(0,12):[];
+  var clips=approved.filter(function(m){return m&&m.kind==='clip'&&m.media_source==='mmd_model_media_assets'}).map(function(m){return valid(m.media_id)}).filter(Boolean).slice(0,5);
   return{primary:primary,photos:photos,clips:clips}
 }
 function mediaPlaceholder(){
-  var span=document.createElement('span');span.className='skb26-media-placeholder';span.textContent='ยังไม่มีสื่อสาธารณะที่อนุมัติ';return span
+  var span=document.createElement('span');span.className='skb26-media-placeholder';span.textContent='ยังไม่มีรูปปก';return span
 }
 function mediaImage(media){
-  var img=document.createElement('img');img.src=media.url;img.alt='สื่อ Model ที่อนุมัติให้แสดงสาธารณะ';img.loading='lazy';img.addEventListener('error',function(){img.replaceWith(mediaPlaceholder())},{once:true});return img
+  var img=document.createElement('img');img.src=media.url;img.alt='รูป Model สำหรับลูกค้า';img.loading='lazy';img.addEventListener('error',function(){img.replaceWith(mediaPlaceholder())},{once:true});return img
 }
 function setDurationOptions(item){
   var select=form.elements.duration_minutes,values=Array.isArray(item&&item.offer&&item.offer.duration_options)?item.offer.duration_options:Array.isArray(item&&item.duration_options)?item.duration_options:[];
@@ -45,7 +41,7 @@ function choose(item,btn){
   var offerLabels=durationOfferLabels(item);
   selectedName.textContent=form.elements.model_preference.value+(offerLabels[0]?' · '+offerLabels[0]:'');
   setDurationOptions(item);
-  var media=projectedMedia(item),cover=media.primary||media.photos[0];
+  var media=projectedMedia(item),cover=media.primary;
   if(cover){selectedImg.onerror=function(){selectedImg.removeAttribute('src');selectedImg.style.display='none';selectedBox.classList.remove('has-media')};selectedImg.src=cover.url;selectedImg.style.display='block';selectedBox.classList.add('has-media')}
   else{selectedImg.removeAttribute('src');selectedImg.style.display='none';selectedBox.classList.remove('has-media')}
   selectedBox.classList.remove('skb26-hidden');
@@ -56,7 +52,7 @@ function choose(item,btn){
   selectedMedia.appendChild(offerLine);
   if(!cover&&!media.photos.length&&!media.clips.length){selectedMedia.appendChild(mediaPlaceholder())}
   else{
-    var title=document.createElement('strong');title.textContent='รูปเพิ่มเติมที่อนุมัติ';selectedMedia.appendChild(title);
+    var title=document.createElement('strong');title.textContent='รูปเพิ่มเติมจาก Model';selectedMedia.appendChild(title);
     var photos=(media.primary?[media.primary]:[]).concat(media.photos);
     if(photos.length){var gallery=document.createElement('div');gallery.className='skb26-media-gallery';photos.forEach(function(m){gallery.appendChild(mediaImage(m))});selectedMedia.appendChild(gallery)}
     if(media.clips.length){var clips=document.createElement('div');clips.className='skb26-media-clips';media.clips.forEach(function(m){var video=document.createElement('video');video.src=m.url;video.controls=true;video.preload='metadata';video.playsInline=true;video.setAttribute('aria-label','คลิป Model ที่อนุมัติให้แสดง');video.addEventListener('error',function(){video.replaceWith(mediaPlaceholder())},{once:true});clips.appendChild(video)});selectedMedia.appendChild(clips)}
@@ -67,7 +63,7 @@ function renderItems(items){
   results.innerHTML='';
   items.slice(0,8).forEach(function(item){
     var b=document.createElement('button');b.type='button';b.className='skb26-model';
-    var media=projectedMedia(item),cover=media.primary||media.photos[0];
+    var media=projectedMedia(item),cover=media.primary;
     b.appendChild(cover?mediaImage(cover):mediaPlaceholder());
     var copy=document.createElement('span');copy.className='skb26-model-copy';
     var strong=document.createElement('strong');strong.textContent=item.display_name||item.working_name||item.nickname||item.model_key||'Model';
