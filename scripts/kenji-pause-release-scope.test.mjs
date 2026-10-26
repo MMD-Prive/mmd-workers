@@ -23,6 +23,21 @@ test('Rich Menu scope never masks unrelated source, deployment workflow or confi
   assert.equal(deployRequired('push', [...richMenuPauseFiles, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
   assert.equal(deployRequired('workflow_dispatch', richMenuPauseFiles), true);
 });
+test('Per AI checkpts and rights follow-up use the protected code-only release', () => {
+  const files = [
+    'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+    'member-dashboard-chat-worker/src/rich-menu-conversation.mjs',
+    'member-dashboard-chat-worker/src/rich-menu-navigation-reply.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-pause-release-scope.test.mjs',
+  ];
+  assert.equal(deployRequired('push', files), false);
+  assert.equal(deployRequired('push', [...files, 'mms-member-worker/src/index.js']), true);
+  assert.equal(deployRequired('push', [...files, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
+});
 test('exact rights alias uses manual Kenji-only release and never masks mixed deployment', () => {
   const files = ['member-dashboard-chat-worker/src/kenji-line-rights-check.mjs', 'member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs', 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs'];
   assert.equal(deployRequired('push', files), false);
