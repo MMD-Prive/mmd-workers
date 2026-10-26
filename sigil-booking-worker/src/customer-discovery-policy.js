@@ -2,6 +2,7 @@
 export const DISCOVERY_POLICY_FIELD = "customer_discovery_policy_json";
 const MEMBER_REF = /^[a-f0-9]{64}$/;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
+const DISCOVERY_COOKIE = "__Secure-mmd_discovery_session";
 
 export function customerDiscoveryAllowed(fields = {}, viewerRef = "") {
   const raw = fields[DISCOVERY_POLICY_FIELD];
@@ -21,14 +22,14 @@ export async function resolveDiscoveryViewer(request, env = {}) {
   // Browser-provided member IDs, headers, booking refs, emails and query strings
   // are never identity proof. The existing member service validates the session.
   const cookies = String(request.headers.get("cookie") || "").split(";")
-    .map(part => part.trim()).filter(part => part.startsWith(SESSION_COOKIE + "="));
+    .map(part => part.trim()).filter(part => part.startsWith(SESSION_COOKIE + "=") || part.startsWith(DISCOVERY_COOKIE + "="));
   const secret = String(env.AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES || "");
-  if (cookies.length !== 1 || cookies[0].length > 4096 || !env.MEMBER_PAGES_WORKER?.fetch || secret.length < 32) return "";
+  if (cookies.length < 1 || cookies.length > 2 || cookies[0].length > 4096 || !env.MEMBER_PAGES_WORKER?.fetch || secret.length < 32) return "";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://member-pages.internal/__internal/booking/discovery-viewer", {
-      headers: { cookie: cookies[0], accept: "application/json", "x-mmd-booking-service-secret": secret }, signal: controller.signal,
+      headers: { cookie: cookies.join("; "), accept: "application/json", "x-mmd-booking-service-secret": secret }, signal: controller.signal,
     }));
     if (!response.ok) return "";
     const payload = await response.json();
