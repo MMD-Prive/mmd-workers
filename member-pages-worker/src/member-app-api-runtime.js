@@ -1,3 +1,4 @@
+import { readMemberHistoryPreload, recentServicesFromPreload } from "./member-history-preload.js";
 import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 import liffFoundation from "./liff-identity-foundation.js";
 import { fixedTierExpiry } from "./fixed-tier-expiry.js";
@@ -1009,6 +1010,11 @@ async function adaptPoints(request, env, delegate) {
 
 async function adaptHistory(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
+  if (sessionSnapshot?.lineUserId && sessionSnapshot?.memberId) {
+    const preload = await readMemberHistoryPreload(env, sessionSnapshot.lineUserId);
+    const recent = recentServicesFromPreload(preload, sessionSnapshot.memberId);
+    if (recent?.length) return Response.json(recent, { headers: { "cache-control": "no-store" } });
+  }
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
   const data = asObject(result.payload.data);
