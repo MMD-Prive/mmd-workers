@@ -100,6 +100,8 @@ jobs:
           const zoneId = process.env.CLOUDFLARE_ZONE_ID;
           const worker = process.env.WORKER_NAME;
           const desired = [
+            "models.mmdbkk.com/models/*",
+            "models.mmdbkk.com/MMD*",
             "sigil.mmdbkk.com/sigil/api/client/resolve*",
             "sigil.mmdbkk.com/sigil/api/models/search*",
             "sigil.mmdbkk.com/sigil/api/models/media/*",
