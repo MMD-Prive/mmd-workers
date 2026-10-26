@@ -31,6 +31,7 @@ export const KENJI_MANUAL_RELEASE_PATHS = new Set([
   'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
   '.github/workflows/kenji-context-followup-ci.yml',
   '.github/workflows/kenji-code-only-promote.yml',
+  '.github/workflows/per-support-code-only-release.yml',
   'scripts/kenji-code-only-promote.mjs',
   'scripts/kenji-code-only-promote.test.mjs',
 ]);
