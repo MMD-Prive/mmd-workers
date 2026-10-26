@@ -74,6 +74,37 @@ export async function verifyMmsLineSignature(rawBody, signature, channelSecret) 
   return timingSafeEqual(expected, signature);
 }
 
+function getMmsLineCredentialProfiles(env = {}) {
+  return [
+    {
+      channel: "male_massage",
+      secret: clean(env.MMS_LINE_CHANNEL_SECRET),
+      accessToken: clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN),
+    },
+    {
+      channel: "male_massage_4_women",
+      secret: clean(env.MMS_LINE_4WOMEN_CHANNEL_SECRET),
+      accessToken: clean(env.MMS_LINE_4WOMEN_CHANNEL_ACCESS_TOKEN),
+    },
+  ];
+}
+
+async function authenticateMmsLineChannel(rawBody, signature, env = {}) {
+  const profiles = getMmsLineCredentialProfiles(env);
+  if (!profiles.some((profile) => profile.secret)) {
+    return { ok: false, status: 503, error: "mms_line_secret_missing" };
+  }
+
+  const matches = [];
+  for (const profile of profiles) {
+    if (profile.secret && await verifyMmsLineSignature(rawBody, signature, profile.secret)) matches.push(profile);
+  }
+  if (matches.length === 0) return { ok: false, status: 401, error: "invalid_signature" };
+  if (matches.length > 1) return { ok: false, status: 503, error: "mms_line_signature_ambiguous" };
+  if (!matches[0].accessToken) return { ok: false, status: 503, error: "mms_line_token_missing" };
+  return { ok: true, channel: matches[0] };
+}
+
 function eventText(event = {}) {
   if (event?.type === "message" && event?.message?.type === "text") return clean(event.message.text);
   if (event?.type === "postback") return clean(event?.postback?.displayText || event?.postback?.data);
@@ -204,8 +235,8 @@ async function generateMmsModelReply({ env = {}, message = "", role = "customer"
   }
 }
 
-async function sendMmsLineReply(env = {}, replyToken = "", replyText = "") {
-  const token = clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN);
+async function sendMmsLineReply(env = {}, replyToken = "", replyText = "", accessToken = "") {
+  const token = clean(accessToken || env.MMS_LINE_CHANNEL_ACCESS_TOKEN);
   const reply = clean(replyToken);
   const safe = clean(replyText).slice(0, 1800);
   if (!token) return { ok: false, error: "mms_line_token_missing" };
@@ -227,13 +258,10 @@ async function sendMmsLineReply(env = {}, replyToken = "", replyText = "") {
 
 export async function handleMmsLineWebhook(request, env = {}, ctx = null) {
   const rawBody = await request.text();
-  const secret = clean(env.MMS_LINE_CHANNEL_SECRET);
-  if (!secret) return json({ ok: false, error: "mms_line_secret_missing" }, 503);
-
   const signature = clean(request.headers.get("x-line-signature"));
-  if (!(await verifyMmsLineSignature(rawBody, signature, secret))) {
-    return json({ ok: false, error: "invalid_signature" }, 401);
-  }
+  const authentication = await authenticateMmsLineChannel(rawBody, signature, env);
+  if (!authentication.ok) return json({ ok: false, error: authentication.error }, authentication.status);
+  const channelCredentials = authentication.channel;
 
   let body;
   try {
@@ -269,7 +297,7 @@ export async function handleMmsLineWebhook(request, env = {}, ctx = null) {
       if (replyText) source = "mms_model_v4";
     }
 
-    const replyResult = replyText ? await sendMmsLineReply(env, replyToken, replyText) : null;
+    const replyResult = replyText ? await sendMmsLineReply(env, replyToken, replyText, channelCredentials.accessToken) : null;
 
     console.log(JSON.stringify({
       mms_line_ai: "reply_diagnostics",
@@ -325,7 +353,7 @@ export default {
         ai_enabled: enabled(env.MMS_LINE_AI_ENABLED),
         model_enabled: enabled(env.MMS_LINE_AI_MODEL_ENABLED),
         mms_worker_bound: Boolean(env.MMS_WORKER?.fetch),
-        line_credentials_present: Boolean(clean(env.MMS_LINE_CHANNEL_SECRET) && clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN)),
+        line_credentials_present: getMmsLineCredentialProfiles(env).some((profile) => profile.secret && profile.accessToken),
         mutation_allowed: false,
       };
       return request.method === "HEAD" ? new Response(null, { status: 200, headers: json(payload).headers }) : json(payload);
