@@ -12,6 +12,20 @@ export function usesSilverWorkspace(pathname) {
   return /^\/internal(?:\/|$)/.test(path);
 }
 
+// Isolated from legacy Webflow loaders that replace the shared theme node.
+export const PAYMENT_INBOX_READABLE_CSS = String.raw`
+html body #sigil-workspace-directory#sigil-workspace-directory,
+html body #sigil-workspace-directory#sigil-workspace-directory :is(nav,section,summary){background:#fff!important;color:#27313b!important;border-color:#c7ccd2!important}
+html body #sigil-workspace-directory#sigil-workspace-directory :is(summary,h3,a,input,span,strong){color:#27313b!important;-webkit-text-fill-color:#27313b!important;opacity:1!important}
+html body #sigil-workspace-directory#sigil-workspace-directory a{background:transparent!important}
+html body #sigil-workspace-directory#sigil-workspace-directory a:is(:hover,[aria-current="page"]){background:#ffdab0!important}
+html body:has(#mmd-payment-review) #mmdK{position:relative!important;inset:auto!important;width:auto!important;max-width:100%!important;margin:16px!important;background:#fff!important;border:1px solid #c7ccd2!important;box-shadow:none!important}
+html body:has(#mmd-payment-review) #mmdK :is(a,b,span,strong){color:#27313b!important;-webkit-text-fill-color:#27313b!important}
+html body #mmd-payment-review .pf-filters{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;overflow:visible!important}
+html body #mmd-payment-review .pf-filters button{width:100%!important;min-width:0!important;min-height:44px;white-space:normal!important;padding:10px 8px!important;background:#ffdab0!important;color:#27313b!important;-webkit-text-fill-color:#27313b!important;border:1px solid #c7833c!important}
+html body #mmd-payment-review .pf-filters button[aria-pressed="true"]{background:#ffc88c!important;box-shadow:inset 0 0 0 1px #a65b17!important;font-weight:700}
+`;
+
 export const SILVER_WORKSPACE_CSS = String.raw`
 /* Keep menus readable even when an older Webflow loader created them first. */
 html[data-sigil-internal-theme] body #sigil-workspace-directory,
@@ -142,6 +156,10 @@ export async function decorateInternalSilverTheme(request, response) {
     const nonce = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
     const contrast = SILVER_WORKSPACE_CSS.split('.sigil-system-logo')[0];
     html = html.replace(/<\/head>/i, `<style id="sigil-audience-contrast-v1"${nonce ? ` nonce="${nonce}"` : ''}>${contrast}</style></head>`);
+  }
+  if (path.replace(/\/+$/, '') === '/internal/ceo/payment-slip-inbox' && !html.includes('id="sigil-payment-inbox-readable-v1"')) {
+    const nonce = html.match(/<script\b[^>]*\bnonce=["']([A-Za-z0-9+/_=-]+)["']/i)?.[1];
+    html = html.replace(/<\/head>/i, `<style id="sigil-payment-inbox-readable-v1"${nonce ? ` nonce="${nonce}"` : ''}>${PAYMENT_INBOX_READABLE_CSS}</style></head>`);
   }
   // Studio link cards are not semantic sections. Their background and text must
   // stay paired, including when a legacy loader replaces the shared style node.
