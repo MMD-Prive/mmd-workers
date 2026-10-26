@@ -99,7 +99,7 @@ test("implausible imported amount is quarantined instead of changing spend or po
   assert.equal(summary.events[0].raw_amount_thb, 6132082);
 });
 
-test("lifetime points include old and formerly expiring rows, aggregate history, and redemptions", () => {
+test("expired awards remain historical but are excluded from the available balance", () => {
   const summary = summarizeLifetimePoints([
     point("old-earned", 100, { expires_at: "2021-01-01T00:00:00.000Z" }),
     point("historical_note_total_v2:member", 600, {
@@ -112,7 +112,7 @@ test("lifetime points include old and formerly expiring rows, aggregate history,
     point("reversed", 999, { reversed_at: "2026-01-01T00:00:00.000Z" }),
   ]);
 
-  assert.equal(summary.current_points_confirmed, 650);
+  assert.equal(summary.current_points_confirmed, 0);
   assert.equal(summary.points_earned_lifetime_ledger, 700);
   assert.equal(summary.points_redeemed_lifetime, 50);
   assert.equal(summary.points_active_record_count, 3);
@@ -121,7 +121,7 @@ test("lifetime points include old and formerly expiring rows, aggregate history,
   assert.equal(summary.nearest_points_expiry, null);
 });
 
-test("client projection declares a non-expiring lifetime Points policy", () => {
+test("client projection declares the 365-day expiring-lot policy", () => {
   const result = buildClientProjection({
     client: client(),
     member: member(),
@@ -132,13 +132,13 @@ test("client projection declares a non-expiring lifetime Points policy", () => {
 
   assert.deepEqual(result.projection.points_policy, {
     thb_per_point: 100,
-    expires: false,
-    validity_days: null,
-    mode: "lifetime_total",
+    expires: true,
+    validity_days: 365,
+    mode: "expiring_lots",
     tr_eligible: false,
     completed_jobs_only: true,
   });
-  assert.equal(result.projection.current_points_confirmed, 100);
+  assert.equal(result.projection.current_points_confirmed, 0);
   assert.equal(result.projection.points_earned_lifetime_projected, 100);
   assert.equal(result.projection.points_earned_lifetime_ledger, 100);
   assert.equal(result.projection.points_active_record_count, 1);
@@ -186,10 +186,26 @@ test("projection-only apply is idempotent and never writes source-of-truth table
   assert.equal(first.projected_rows_written, 1);
   assert.equal(first.truth_writes, false);
   assert.equal(airtable.writes[0].fields.authority, SCHEMA);
-  assert.equal(JSON.parse(airtable.writes[0].fields.projection_json).points_policy.mode, "lifetime_total");
+  assert.equal(JSON.parse(airtable.writes[0].fields.projection_json).points_policy.mode, "expiring_lots");
 
   const second = await runBatchPreload({ assertIdempotent: true, airtable, now: NOW });
   assert.equal(second.summary.planned_creates, 0);
   assert.equal(second.summary.planned_updates, 0);
   assert.equal(second.summary.unchanged, 1);
+});
+
+test("preload orders redemptions by date, deduplicates awards and expires remaining lots", () => {
+  const rows = [
+    point("redeem", -25, {posted_at:"2026-09-10"}),
+    point("new", 200, {posted_at:"2026-09-01", expires_at:"2027-09-01"}),
+    point("near", 100, {posted_at:"2025-10-01", expires_at:"2026-10-01"}),
+    point("dup", 100, {posted_at:"2025-10-01", idempotency_key:"near"}),
+    point("expired", 800, {posted_at:"2024-01-01"}),
+    point("future", 999, {posted_at:"2027-01-01"}),
+  ];
+  const before = summarizeLifetimePoints(rows, NOW);
+  assert.equal(before.current_points_confirmed, 275);
+  assert.equal(before.points_expiring_30d, 75);
+  assert.equal(before.nearest_points_expiry, "2026-10-01T00:00:00.000Z");
+  assert.equal(summarizeLifetimePoints(rows, new Date("2026-10-01")).current_points_confirmed, 200);
 });
