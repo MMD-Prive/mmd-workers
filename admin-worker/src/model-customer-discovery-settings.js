@@ -1,3 +1,4 @@
+import { readBoundedJsonObject } from "../../member-pages-worker/src/bounded-json.js";
 import { requireModelSession } from "./model-year6-wish.js";
 
 export const MODEL_DISCOVERY_PATH = "/v1/model/settings/customer-visibility";
@@ -33,9 +34,9 @@ export async function handleModelDiscoverySettings(request, env) {
   let body = {};
   if (request.method === "POST") {
     if (!request.headers.get("content-type")?.startsWith("application/json")) return json({ ok: false, error: "json_required" }, 415);
-    const text = await request.text();
-    if (text.length > 2048) return json({ ok: false, error: "invalid_request" }, 400);
-    try { body = JSON.parse(text); } catch { return json({ ok: false, error: "invalid_request" }, 400); }
+    const parsed = await readBoundedJsonObject(request, 2048);
+    if (!parsed.ok) return json({ ok: false, error: "invalid_request" }, 400);
+    body = parsed.value;
     if (!body || Array.isArray(body) || Object.keys(body).some(key => !["action", "session_id", "revision"].includes(key))
       || !["block", "unblock"].includes(body.action) || typeof body.session_id !== "string"
       || !/^[A-Za-z0-9_.:-]{1,160}$/.test(body.session_id) || typeof body.revision !== "string") return json({ ok: false, error: "invalid_request" }, 400);
@@ -67,7 +68,7 @@ export async function applyModelDiscoverySettings(env, input) {
     let policy = { schema_version: "model_customer_discovery_v1", require_verified_customer: false, blocked_member_refs: [], blocked_jobs: [] };
     if (raw) {
       try { policy = JSON.parse(raw); } catch { return json({ ok: false, error: "privacy_policy_requires_review" }, 409); }
-      if (policy.schema_version !== "model_customer_discovery_v1" || !Array.isArray(policy.blocked_member_refs)
+      if (policy.schema_version !== "model_customer_discovery_v1" || typeof policy.require_verified_customer !== "boolean" || !Array.isArray(policy.blocked_member_refs)
         || policy.blocked_member_refs.some(ref => !/^[a-f0-9]{64}$/.test(ref))) return json({ ok: false, error: "privacy_policy_requires_review" }, 409);
     }
     const revision = await memberDiscoveryRef(raw);
