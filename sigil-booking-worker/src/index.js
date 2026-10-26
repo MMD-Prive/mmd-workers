@@ -657,15 +657,16 @@ export function sanitizeModelForBooking(record, { scope, privateAllowed, allowed
   if (visibilityConfigured && (
     clientVisibilityStatus !== "approved" ||
     visibilityReviewStatus && visibilityReviewStatus !== "approved" ||
-    !approvedVisibility ||
-    ["hidden", "internal", "private", "none"].includes(approvedVisibility)
+    !["standard", "featured", "vip", "black_card"].includes(approvedVisibility)
   )) return null;
   if (isProtectedCampaignModel(f)) return null;
   if (!customerLaneMatches(f, customerLane)) return null;
   if (!modelProfileMatches(f, profileFilters)) return null;
 
-  const protectedVisibility = ["vip", "black_card", "blackcard"].includes(approvedVisibility);
-  const canPublic = !protectedVisibility && (bool(f.can_work_public) || bool(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public");
+  // Protected visibility needs a curated per-model reveal gate. A stale lower
+  // access_folder must never downgrade a VIP/Black Card record into discovery.
+  if (["vip", "black_card"].includes(approvedVisibility)) return null;
+  const canPublic = bool(f.can_work_public) || bool(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public";
   const canPrivate = bool(f.can_work_private) || token(f.sales_layer).includes("private") || token(f.private_tier) || token(f.private_work_format);
   const folder = canPrivate ? inferCustomerModelFolder(f) : "";
   const folderAllowed = Boolean(folder && allowedFolders.includes(folder));
