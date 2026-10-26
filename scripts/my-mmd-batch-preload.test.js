@@ -209,3 +209,13 @@ test("preload orders redemptions by date, deduplicates awards and expires remain
   assert.equal(before.nearest_points_expiry, "2026-10-01T00:00:00.000Z");
   assert.equal(summarizeLifetimePoints(rows, new Date("2026-10-01")).current_points_confirmed, 200);
 });
+
+test("batch prepares five latest dated bills with model names before customer access", () => {
+ const rows=Array.from({length:8},(_,i)=>session("job-"+i,"2026-09-"+String(i+1).padStart(2,"0"),1000+i,{model_name:"Model "+i}));
+ rows.push(session("future","2027-01-01",999999));
+ const result=buildClientProjection({client:client(),member:member(),memberMatchCount:1,sessionRows:rows},NOW);
+ assert.equal(result.projection.recent_services.length,5);
+ assert.equal(result.projection.recent_services[0].model,"Model 7");
+ assert.equal(result.projection.recent_services[0].totalAmountThb,1007);
+ assert.equal(result.projection.completed_service_count,8);
+});

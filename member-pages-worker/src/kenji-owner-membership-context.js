@@ -53,11 +53,14 @@ export function projectOwnerMembershipContext({ lineUserId, clients = [], stagin
   else if (fact?.years) {
     if (start === fact.start_date) { expiry = membershipExpiryFromStart(start, fact.years); provenance = fact.source; }
     else conflict = "owner_confirmed_start_conflicts_with_per_rename";
-  } else if (["vip","svip"].includes(level)) { expiry = "2028-07-31"; provenance = "owner_existing_vip_svip_expiry_20261004_090704"; }
+  } else if (level === "vip") { expiry = "2027-08-31"; provenance = "owner_vip_expiry_20261027"; }
+  else if (level === "svip") { provenance = "owner_svip_lifetime_20261027"; }
+  const nonExpiring = level === "svip" && !fact;
   const expireAt = expiry ? `${expiry}T16:59:59.999Z` : "";
   return { authority: OWNER_MEMBERSHIP_AUTHORITY, membership_known: true, canonical_sync: "pending",
-    status: expireAt ? "owner_confirmed_expiry" : "known_member_pending_sync",
-    start_date: start, expire_at: expireAt, level, lifecycle: expireAt ? (Date.parse(expireAt) < now ? "expired" : "active") : "unknown",
+    status: nonExpiring ? "owner_confirmed_lifetime" : expireAt ? "owner_confirmed_expiry" : "known_member_pending_sync",
+    non_expiring: nonExpiring,
+    start_date: start, expire_at: expireAt, level, lifecycle: nonExpiring ? "active" : expireAt ? (Date.parse(expireAt) < now ? "expired" : "active") : "unknown",
     source_record_id: rows[0].id, source_imported_at: f["Imported At"], expiry_source: provenance,
     source_freshness: "import_timestamp_only", conflict: conflict || "", access_verified: false };
 }
