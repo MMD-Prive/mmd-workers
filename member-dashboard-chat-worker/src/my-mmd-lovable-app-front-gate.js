@@ -563,6 +563,13 @@ async function rewriteStatusReturnTarget(request, response) {
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
+  // Only the dedicated authentication bridge owns this overlay. The Digital
+  // Home also has #actions and #message; decorating it creates a second UI.
+  if (html.includes('id="customer-boot-progress"') || !/const target = ["\']\/member\/(?:my-mmd|payments)["\'];/.test(html)) {
+    const headers = new Headers(response.headers);
+    for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+    return new Response(html, { status: response.status, statusText: response.statusText, headers });
+  }
   const canonical = html
     .replace('const target = "/member/my-mmd";', `const target = ${JSON.stringify(target)};`)
     .replace('const target = "/member/payments";', `const target = ${JSON.stringify(target)};`);
