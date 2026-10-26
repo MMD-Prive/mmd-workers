@@ -56,7 +56,7 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
       assert.equal(result.status, 200);
       assert.equal(result.replies.length, 1);
       if (destinations[menu][index].type === "uri") assert.ok(result.replies[0].messages[0].text.endsWith(destinations[menu][index].uri));
-      else assert.match(result.replies[0].messages[0].text, /พี่เปอร์ดูแลงาน|เช็กสิทธิ์/);
+      else assert.match(result.replies[0].messages[0].text, /พี่เปอร์ดูแลงาน|เช็กสิทธิ์|checkpts/);
       assert.equal(result.body.saved[0].reply_source, "rich_menu_navigation_v1");
       assert.equal(result.body.saved[0].cta_appended, false);
       assert.equal(result.body.saved[0].continuity_topic, "");

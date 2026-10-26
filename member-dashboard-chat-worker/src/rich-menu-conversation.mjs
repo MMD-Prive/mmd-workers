@@ -38,7 +38,7 @@ export function resolveRichMenuConversation(event = {}, continuity = {}, now = D
   } else if (/(ต่ออายุ|renew)/i.test(raw)) {
     answer = `เริ่มตรวจตัวเลือกต่ออายุของบัญชีเดิมได้ที่ ${route("renew", "package")} ครับ สถานะจะเปลี่ยนหลังการตรวจสอบทางการเท่านั้นครับ`;
     intent = "membership_renewal";
-  } else if (/(คะแนน|แต้ม|points?)/i.test(raw)) {
+  } else if (/(คะแนน|แต้ม|points?|\bcheckpts\b)/i.test(raw)) {
     answer = `ดูคะแนนที่ระบบตรวจสอบให้บัญชีนี้ได้ที่ ${route("status", "points")} ครับ ผมยังไม่ยืนยันยอดจากข้อความในแชตครับ`;
     intent = "points_status";
   } else if (/(สถานะ|หมดอายุ|สิทธิ์|status)/i.test(raw)) {
