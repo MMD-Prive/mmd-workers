@@ -3,15 +3,15 @@ export const INTERNAL_PAGES = [
   {title:'MMD MEMORY · จัดการคู่มือ MY MODEL',path:'/internal/ceo/documents/my-model'},
   {title:'MMD MEMORY · จัดการเอกสาร',path:'/docs/manage'},
   {title:'Model LINE Link',path:'/internal/admin/model-link'},
-  {title:'Broadcast',path:'/internal/admin/broadcast'},
+  {title:'Broadcast',path:'/internal/admin/jobs/job-board'},
   {title:'MMS Workspace',path:'/internal/admin/mms'},
   {
     "title": "Kenji Knowledge",
     "path": "/internal/admin/kenji-knowledge"
   },
   {
-    "title": "Admin Preview",
-    "path": "/internal/ceo/admin-preview"
+    "title": "คิวงาน Admin",
+    "path": "/internal/admin/control-room"
   },
   {
     "title": "Payment Slip Inbox",
@@ -107,7 +107,7 @@ export const INTERNAL_PAGES = [
   },
   {
     "title": "Kenji Client Intake",
-    "path": "/internal/admin/kenji-client-intake"
+    "path": "/internal/admin/kenji/client-intake"
   },
   {
     "title": "Kenji Control",
@@ -142,8 +142,8 @@ export const INTERNAL_PAGES = [
     "path": "/internal/ceo/dashboard"
   },
   {
-    "title": "Console",
-    "path": "/internal/admin/console"
+    "title": "Console · งานจริง",
+    "path": "/internal/admin/jobs/all"
   },
   {
     "title": "LEGACY · Kenji-AI",

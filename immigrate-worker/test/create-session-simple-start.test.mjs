@@ -35,7 +35,7 @@ try {
   assert.match(body, /query\.setAttribute\("placeholder", "LINE \/ โทร \/ Email \/ Member ID \/ Client ID"\)/);
   assert.match(body, /search\.textContent = "ค้นหา Client"/);
   assert.match(body, /recent\.textContent = "ลูกค้าล่าสุด"/);
-  assert.match(body, /\/internal\/admin\/kenji-client-intake/);
+  assert.match(body, /\/internal\/admin\/kenji\/client-intake/);
   assert.match(body, /KENJI CLIENT INTAKE → AIRTABLE/);
   assert.match(body, /Client ต้องอยู่ใน Airtable ก่อนเปิด Session/);
   assert.match(body, /Airtable Client only/);

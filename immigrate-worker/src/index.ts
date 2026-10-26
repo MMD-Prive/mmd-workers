@@ -2415,6 +2415,7 @@ function isSigilProtectedBrowserRoute(pathname: string): boolean {
 }
 
 function shouldUseInternalRoutesBridge(pathname: string): boolean {
+  if (pathname === "/internal/admin/customer-data" || pathname.startsWith("/v1/admin/customer-data")) return true;
   if (pathname.startsWith("/a/")) return true;
   if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;
   return (

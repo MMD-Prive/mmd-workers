@@ -1,3 +1,4 @@
+import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
 import { handleOwnerJobEdit, isOwnerJobEditRequest } from './owner-job-edit.js';
 export { JobEditCoordinator } from './owner-job-edit-do.js';
 import { JOB_PREFLIGHT_PATH, handleJobPreflight, guardDuplicateJob } from './create-job-preflight.js';
@@ -286,6 +287,13 @@ const adminLoginHeroWorker = {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (isAdminRecoveryPage(normalizedPath)) {
+      const gate = await applyCredentialBoundAdminGate(request, runtimeEnv, normalizedPath, method);
+      if (gate.response) return gate.response;
+      if (!["GET", "HEAD"].includes(method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
+      return renderAdminRecoveryPage(gate.request || request);
     }
 
     if (isOwnerJobEditRequest(normalizedPath)) return handleOwnerJobEdit(request, runtimeEnv);
