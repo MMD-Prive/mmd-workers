@@ -238,7 +238,7 @@ const SIMPLE_START_SCRIPT = `
 (function () {
   "use strict";
 
-  var KENJI_INTAKE_PATH = "/internal/admin/kenji-client-intake";
+  var KENJI_INTAKE_PATH = "/internal/admin/kenji/client-intake";
   var CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
   var IMG_KENJI = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a53f69aac6671f077397a31_Kenji%20know4.webp";
   var IMG_MEMBER = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a548060e5132b9ba40ef0aa_Member%20Account.webp";

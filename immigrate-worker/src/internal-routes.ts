@@ -150,7 +150,6 @@ async function serveAsset(request: Request, env: InternalRoutesEnv): Promise<Res
 
 async function requireAdminGate(request: Request, env: InternalRoutesEnv): Promise<Response | null> {
   const url = new URL(request.url);
-  if (url.searchParams.has("mock")) return null;
 
   const adminBase = publicAdminAuthBaseUrl(request);
   if (!adminBase || !env.ADMIN_WORKER) return adminLoginRedirect(url);
@@ -394,6 +393,9 @@ async function handleCustomerDataApi(request: Request, env: InternalRoutesEnv): 
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (!path.startsWith("/v1/admin/customer-data")) return null;
+  if (request.method !== "GET" && request.method !== "HEAD" && request.headers.get("origin") !== url.origin) {
+    return Response.json({ ok: false, error: "forbidden_origin" }, { status: 403, headers: { "cache-control": "no-store" } });
+  }
   const gate = await requireAdminGate(request, env);
   if (gate) return gate;
   try {
