@@ -132,3 +132,15 @@ test('recent job discovery and targeted proof lookup use existing auth and GET-o
   assert.deepEqual(data.items.map(row => row.proof_id), ['target-proof']);
   assert.match(new URL(calls.at(-1).url).searchParams.get('filterByFormula'), /AND\(.*\{proof_id\}='target-proof'/);
 });
+
+test('suggestion evidence flag includes historical, approved and directly linked proofs', async () => {
+  const s=session('suggestion'),p=payment('request','suggestion');
+  const historical=proof('old','request','suggestion');historical.fields.status='verified';historical.fields.note='mmd_historical_slip_backfill_v1';
+  assert.equal((await jobs([s],[p],[historical]))[0].payments[0].has_evidence,true);
+  const direct=proof('direct','request','suggestion');delete direct.fields.payment_ref;s.fields['MMD — Payment Proofs']=['direct'];
+  assert.equal((await jobs([s],[p],[direct]))[0].payments[0].has_evidence,true);
+  delete direct.fields.payment;direct.fields.payment_ref='mmd_evidence_unassigned';
+  assert.equal((await jobs([s],[p],[direct]))[0].payments[0].has_evidence,true);
+  direct.fields.status='rejected';
+  assert.equal((await jobs([s],[p],[direct]))[0].payments[0].has_evidence,false);
+});

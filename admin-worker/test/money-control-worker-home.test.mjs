@@ -59,8 +59,9 @@ test("queue view safely renders backend values and deep-links into the existing 
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(name, callback) { this.listeners[name] = callback; }
+    click() { return this.listeners.click?.(); }
   }
-  const ids = ["binding-jobs","binding-job","binding-stage","binding-preview","binding-status","binding-checked","binding-reason","binding-save","extract-slip", "extract-status","upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
+  const ids = ["suggestion-refresh","suggestion-status","suggestion-list","binding-jobs","binding-job","binding-stage","binding-preview","binding-status","binding-checked","binding-reason","binding-save","extract-slip", "extract-status","upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id === "q-list" ? "div" : "input")]));
   const calls = [];
   let extractionFails = false;
@@ -85,10 +86,11 @@ test("queue view safely renders backend values and deep-links into the existing 
     document,
     location: { href: "https://mmdbkk.com/internal/admin/payments?proof_id=proof_fixture_1", origin: "https://mmdbkk.com" },
     URL,
+    URLSearchParams,
     Date,
     Set,
     Option: FakeOption,
-    fetch: async (...args) => { calls.push(args); if(args[1]?.body && JSON.parse(args[1].body).action === 'extract_evidence') return {ok: !extractionFails, json: async()=>extractionFails?{ok:false,error:'payment_evidence_sha_mismatch'}:{ok:true,result:{amount_thb:12500,paid_at:'2026-10-25T13:07:00Z'},money_truth_changed:false}}; return calls.length === 1 ? { ok: true, json: async () => response } : calls.length === 2 ? { ok: false } : { ok: true, json: async () => ({ ok: true, decision: "issue" }) }; },
+    fetch: async (...args) => { calls.push(args); if(String(args[0]).includes('view=recent_jobs'))return {ok:true,json:async()=>({ok:true,jobs:[{session_id:'suggested-job',client_record_id:'client',customer_name:malicious,model_name:'MODEL',job_date:'2026-10-25',payments:[{payment_ref:'request',payment_stage:'final',expected_amount_thb:12500,state:'waiting_proof',has_evidence:false}]}]})}; if(String(args[0]).includes('view=bind_session'))return {ok:true,json:async()=>({ok:true,session_id:'suggested-job',payment_stage:'final',remaining_amount_thb:12500,snapshot:'test'})}; if(args[1]?.body && JSON.parse(args[1].body).action === 'extract_evidence') return {ok: !extractionFails, json: async()=>extractionFails?{ok:false,error:'payment_evidence_sha_mismatch'}:{ok:true,result:{amount_thb:12500,paid_at:'2026-10-25T13:07:00Z'},money_truth_changed:false}}; return calls.length === 1 ? { ok: true, json: async () => response } : calls.length === 2 ? { ok: false } : { ok: true, json: async () => ({ ok: true, decision: "issue" }) }; },
     crypto: { randomUUID: () => "fixture-idempotency-key" },
     addEventListener() {},
   });
@@ -119,9 +121,21 @@ test("queue view safely renders backend values and deep-links into the existing 
   assert.deepEqual(JSON.parse(calls[2][1].body), { proof_id: "proof_fixture_1", decision: "issue", admin_reason: "เหตุผลผู้ดูแล: ยอดอ้างอิงไม่ตรง", idempotency_key: "fixture-idempotency-key" });
   assert.match(elements["decision-status"].textContent, /บันทึกปัญหาแล้ว/);
   await elements['extract-slip'].listeners.click();
-  assert.deepEqual(JSON.parse(calls.at(-1)[1].body),{action:'extract_evidence',proof_id:'proof_fixture_1'});
+  assert.deepEqual(JSON.parse(calls.findLast(c=>c[1]?.body&&JSON.parse(c[1].body).action==='extract_evidence')[1].body),{action:'extract_evidence',proof_id:'proof_fixture_1'});
   assert.match(elements['extract-status'].textContent,/12,500.00/);
   assert.match(elements['extract-status'].textContent,/ยังไม่ได้บันทึกหรือยืนยันเงินเข้า/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(elements['suggestion-list'].children.length,1);
+  const candidate=elements['suggestion-list'].children[0];
+  assert.match(candidate.textContent,/ยอดตรง/);
+  assert.ok(candidate.textContent.includes(malicious));
+  candidate.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(elements['binding-job'].value,'suggested-job');
+  assert.equal(elements['binding-stage'].value,'final');
+  assert.equal(elements['binding-checked'].checked,false);
+  assert.ok(calls.some(c=>String(c[0]).includes('view=bind_session')));
+  assert.equal(calls.filter(c=>c[1]?.body&&JSON.parse(c[1].body).action==='bind_session').length,0);
   extractionFails=true;
   await elements['extract-slip'].listeners.click();
   assert.match(elements['extract-status'].textContent,/อ่านสลิปไม่สำเร็จ/);
