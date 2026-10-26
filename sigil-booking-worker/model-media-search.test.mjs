@@ -163,9 +163,9 @@ test("search returns only approved_media descriptors and removes every legacy st
     assert.deepEqual(projected.model, projected.items[0]);
     assert.deepEqual(projected.model.approved_media, [
       { media_id: primaryMediaId, media_source: "mmd_model_media_assets", kind: "photo" },
-      { media_id: galleryMediaId, media_source: "mmd_model_media_assets", kind: "photo" },
       { media_id: clipMediaId, media_source: "mmd_model_media_assets", kind: "clip" },
     ]);
+    assert.deepEqual(projected.model.gallery_media, [{ media_id: galleryMediaId, media_source: "mmd_model_media_assets", kind: "photo" }]);
     assert.equal(projected.model.height_cm, 180);
     assert.equal(projected.model.primary_media_id, primaryMediaId);
     assert.doesNotMatch(JSON.stringify(projected), /https?:|drive_folder|private_original|r2_|public_image_url|cover_url|primary_image_url|additional_images/);
@@ -196,6 +196,8 @@ test("missing credentials, registry failure, non-public and hidden Models never 
 test("public media policy rejects unsafe, unapproved, ambiguous or mismatched registry assets", () => {
   const base = item(mediaId).fields;
   assert.equal(isPublicMedia(base), true);
+  assert.equal(isPublicMedia({ ...base, review_status: "active" }), true, "Model gallery is available after upload");
+  assert.equal(isPublicMedia({ ...base, review_status: "active", asset_role: "profile_main" }), false, "gallery cannot promote itself to cover");
   for (const override of [
     { Model: [] }, { Model: [modelId, secondModelId] }, { media_id: "unsafe/../id" },
     { media_type: "private_gallery" }, { review_status: "pending_review" }, { review_status: "revoked" },
@@ -298,7 +300,9 @@ test("runtime entrypoint GET and POST Public search expose the same approved_med
       assert.equal(response.headers.get("access-control-allow-origin"), "https://sigil-booking.lovable.app");
       const payload = await response.json();
       assert.deepEqual(payload.items.map(model => model.model_id), [modelId]);
-      assert.deepEqual(payload.items[0].approved_media, [{ media_id: mediaId, media_source: "mmd_model_media_assets", kind: "photo" }]);
+      assert.deepEqual(payload.items[0].approved_media, []);
+      assert.deepEqual(payload.items[0].gallery_media, [{ media_id: mediaId, media_source: "mmd_model_media_assets", kind: "photo" }]);
+      assert.equal(payload.items[0].primary_media_id, "");
       assert.doesNotMatch(JSON.stringify(payload), /public_image_url|cover_url|https?:|private_original_key|r2_key|drive_folder/);
     }
   });
