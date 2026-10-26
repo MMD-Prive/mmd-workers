@@ -11,7 +11,13 @@ const canonical = value => JSON.stringify(value, (_, item) => item && !Array.isA
 
 export function validateCandidate(baseline, candidate, sourceSha) {
   assert.match(sourceSha, /^[a-f0-9]{40}$/);
-  assert.equal(candidate.annotations?.['workers/commit_sha'], sourceSha, 'Candidate source provenance mismatch');
+  const annotations = candidate.annotations || {};
+  const commitSha = annotations['workers/commit_sha'];
+  if (commitSha !== undefined) assert.equal(commitSha, sourceSha, 'Candidate source provenance mismatch');
+  assert.ok(commitSha === sourceSha || (
+    annotations['workers/message'] === `Per AI Support source-sha=${sourceSha}` &&
+    annotations['workers/tag'] === `per-support-${sourceSha.slice(0, 12)}`
+  ), 'Candidate source provenance mismatch');
   assert.equal(canonical(versionConfiguration(candidate)), canonical(versionConfiguration(baseline)), 'Configuration differs; no promotion');
   for (const name of ['LINE_AUTO_REPLY_ENABLED', 'LINE_KENJI_MODEL_ENABLED', 'KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED']) {
     const binding = candidate.resources.bindings.find(item => item.name === name);

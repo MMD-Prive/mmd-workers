@@ -630,6 +630,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   const runtimeAllKill = runtime.ok !== true || controls.all_kenji_mutations === true;
   const runtimeLineKill = runtimeAllKill || controls.line_oa_auto_reply === true;
   const autoReplyEnabled = enabled(env.LINE_AUTO_REPLY_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
+  const supportReplyEnabled = enabled(env.LINE_KENJI_AI_ENABLED) &&
+    enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
+    enabled(env.KENJI_LINE_CONTINUITY_ENABLED) && !runtimeLineKill;
   const firstContactEnabled = !autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
   const continuityEnabled = enabled(env.KENJI_LINE_CONTINUITY_ENABLED);
   const saved = [];
@@ -653,9 +656,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const replyToken = replyTokenOf(event);
     const support = isRichMenuSupport(event);
     const navigation = richMenuNavigation(event);
-    // Pausing general replies also pauses menu transport. A remembered topic or
-    // deliberate tap must not bypass the pause or the runtime LINE kill switch.
-    let menuCommandEnabled = Boolean(navigation && autoReplyEnabled && directUser &&
+    const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
+    // General replies stay paused. Only an explicit SUPPORT tap may enter the
+    // separately enabled Per AI lane; the runtime LINE kill switch still wins.
+    let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || (supportReplyEnabled && supportButtonTap)) && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
     const currentIntent = navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
@@ -671,7 +675,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           available: false,
         };
     const effectiveIntent = text(continuity.effective_intent || currentIntent);
-    const menuConversation = !navigation && !support && eventAutoReplyEnabled &&
+    const supportConversation = supportReplyEnabled &&
+      continuity.matrix?.payload_json?.rich_menu_v1?.entry === "per_support_button" &&
+      continuity.matrix?.payload_json?.rich_menu_v1?.topic === "support";
+    const menuConversation = !navigation && !support && (eventAutoReplyEnabled || supportConversation) &&
       enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
       directUser && eventMode !== "standby" && !redelivered && replyToken
       ? resolveRichMenuConversation(event, continuity) : null;
@@ -692,11 +699,12 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       ? await resolveKenjiLineAvailability({ env, continuity })
       : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
 
+    const menuState = menuCommandEnabled ? richMenuConversationStart(navigation) : null;
     const baseDecision = menuCommandEnabled
       ? withDecisionMetadata({}, { ...await resolveRichMenuNavigation(event, {
           getContext: () => resolveKenjiLiveMemberContext(env, event.source.userId, "support"),
         }), ...(continuity.matrix?.handoff_required !== true && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED)
-          ? { rich_menu_state: richMenuConversationStart(navigation) } : {}) })
+          ? { rich_menu_state: supportButtonTap && menuState ? { ...menuState, entry: "per_support_button" } : menuState } : {}) })
       : menuConversation
         ? withDecisionMetadata({}, menuConversationEnabled ? menuConversation : { text: "", reply_source: "silent", guard_blocked: true, guard_reason: "owner_takeover" })
       : !navigation && eventAutoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken

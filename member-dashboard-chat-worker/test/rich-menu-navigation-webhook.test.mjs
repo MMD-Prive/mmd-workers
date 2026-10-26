@@ -4,7 +4,7 @@ import { createLineSignature } from "../src/index.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { getMmdRichMenuActionMap, getMmdRichMenuDestinationMap } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
-async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true } = {}) {
+async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null } = {}) {
   const replies = [], reads = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
@@ -12,12 +12,15 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
     if (url === "https://api.line.me/v2/bot/message/reply") { replies.push(JSON.parse(init.body)); return Response.json({}); }
     reads.push(url);
     if (url.includes("filterByFormula") && url.includes("processing")) return Response.json({ records: takeover ? [{ id: "owner", fields: { status: "processing" } }] : [] });
+    if (matrixState && url.includes("tblS6iRgPjYLBqZJh") && init.method !== "POST")
+      return Response.json({ records: [{ id: "matrix", fields: { payload_json: JSON.stringify({ rich_menu_v1: matrixState }), matrix_status: "active", state_expires_at: matrixState.expires_at } }] });
     if (init.method === "POST") return Response.json({ id: "test-event" });
     return Response.json({ records: [] });
   };
   try {
-    const event = { type: "postback", mode, deliveryContext: { isRedelivery: redelivery },
-      source: { type: "user", userId: `U${"1".repeat(32)}` }, replyToken: "test-reply", webhookEventId: "test-tap", postback: { data } };
+    const event = { type: message ? "message" : "postback", mode, deliveryContext: { isRedelivery: redelivery },
+      source: { type: "user", userId: `U${"1".repeat(32)}` }, replyToken: "test-reply", webhookEventId: "test-tap",
+      ...(message ? { message: { type: "text", text: message } } : { postback: { data } }) };
     const raw = JSON.stringify({ events: [event] });
     const signature = signatureValid ? await createLineSignature(raw, "test-secret") : "invalid";
     const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
@@ -25,6 +28,7 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
     }), {
       LINE_CHANNEL_SECRET: "test-secret", LINE_CHANNEL_ACCESS_TOKEN: "test-token",
       LINE_AUTO_REPLY_ENABLED: String(auto), LINE_KENJI_AI_ENABLED: "true", LINE_FIRST_CONTACT_ENABLED: String(firstContact),
+      LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: String(deterministic),
       KENJI_LINE_CONTINUITY_ENABLED: "true", AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "test",
       INTERNAL_TOKEN: "test",
       ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: { line_oa_auto_reply: kill, all_kenji_mutations: globalKill } }) },
@@ -80,4 +84,31 @@ test("pause silences every installed navigation postback including support witho
       assert.equal(result.body.saved[0].replied, false);
     }
   }
+});
+
+test("scoped Per AI replies only to Guest/Public SUPPORT taps while the general LINE pause stays on", async () => {
+  const map = getMmdRichMenuActionMap();
+  for (const menu of ["guest", "public"]) {
+    const support = await run(map[menu][5].data, { auto: false, deterministic: true });
+    assert.equal(support.replies.length, 1);
+    assert.equal(support.body.saved[0].reply_source, "rich_menu_navigation_v1");
+    assert.match(support.replies[0].messages[0].text, /เปอร์|เช็กสิทธิ์/);
+    for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }])
+      assert.equal((await run(map[menu][5].data, { auto: false, deterministic: true, ...options })).replies.length, 0);
+    assert.equal((await run(map[menu][1].data, { auto: false, deterministic: true })).replies.length, 0);
+  }
+  assert.equal((await run(map.private[5].data, { auto: false, deterministic: true })).replies.length, 0);
+});
+
+test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified Points number", async () => {
+  const expires_at = new Date(Date.now() + 10 * 60_000).toISOString();
+  const state = { topic: "support", entry: "per_support_button", expires_at };
+  const result = await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true });
+  assert.equal(result.replies.length, 1);
+  assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
+  assert.match(result.replies[0].messages[0].text, /MY MMD|miniapp\.line\.me|คะแนน/);
+  assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
+  for (const other of [{ topic: "support", expires_at }, { topic: "models", entry: "per_support_button", expires_at }])
+    assert.equal((await run("", { message: "เช็ก Points", matrixState: other, auto: false, deterministic: true })).replies.length, 0);
+  assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true, kill: true })).replies.length, 0);
 });
