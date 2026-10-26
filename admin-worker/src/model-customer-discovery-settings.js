@@ -60,6 +60,21 @@ async function airtable(env, path, init = {}) {
 }
 const linked = (value, id) => Array.isArray(value) && value.includes(id);
 
+export async function discoveryMediaGateReady() {
+  const urls = [
+    "https://models.mmdbkk.com/models/__mmd_privacy_gate_probe__",
+    "https://models.mmdbkk.com/%6dodels/__mmd_privacy_gate_probe__",
+    "https://models.mmdbkk.com/MMD%20Public%20Models/__mmd_privacy_gate_probe__",
+    "https://sigil.mmdbkk.com/sigil/api/models/search/public-catalog",
+  ];
+  try {
+    const responses = await Promise.all(urls.map(url => fetch(url, {
+      method: "HEAD", headers: { "cache-control": "no-cache" }, cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(4000),
+    })));
+    return responses.every(response => response.status === 410 && response.headers.get("x-mmd-route-owner") === "sigil-booking-worker");
+  } catch { return false; }
+}
+
 export async function applyModelDiscoverySettings(env, input) {
   try {
     const model = await airtable(env, "/" + MODELS + "/" + input.model_id);
@@ -72,13 +87,13 @@ export async function applyModelDiscoverySettings(env, input) {
         || policy.blocked_member_refs.some(ref => !/^[a-f0-9]{64}$/.test(ref))) return json({ ok: false, error: "privacy_policy_requires_review" }, 409);
     }
     const revision = await memberDiscoveryRef(raw);
-    const view = () => ({ ok: true, revision, ready: model.fields?.discovery_asset_isolation_status === "verified", blocked_count: policy.blocked_member_refs.length,
+    const mediaReady = await discoveryMediaGateReady();
+    const view = () => ({ ok: true, revision, ready: mediaReady, blocked_count: policy.blocked_member_refs.length,
       blocked_session_ids: (policy.blocked_jobs || []).map(job => job.session_id) });
     if (input.read_only) return json(view());
     if (input.revision !== revision) return json({ ok: false, error: "privacy_settings_changed" }, 409);
-    // The isolation flag is operator-owned. The Model cannot claim that old
-    // public promotion and raw CDN assets have been withdrawn.
-    if (model.fields?.discovery_asset_isolation_status !== "verified") return json({ ok: false, error: "legacy_assets_require_review" }, 409);
+    // Readiness is proved by live gate probes, never a Model-supplied flag.
+    if (!mediaReady) return json({ ok: false, error: "legacy_assets_require_review" }, 409);
     const qs = new URLSearchParams({ filterByFormula: "{" + SESSION_ID + "}=" + quote(input.session_id), maxRecords: "2", returnFieldsByFieldId: "true" });
     const rows = await airtable(env, "/" + SESSIONS + "?" + qs);
     if (rows.records?.length !== 1) return json({ ok: false, error: "owned_session_required" }, 403);
