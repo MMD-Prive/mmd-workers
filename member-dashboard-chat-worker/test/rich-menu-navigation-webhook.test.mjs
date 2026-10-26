@@ -4,7 +4,7 @@ import { createLineSignature } from "../src/index.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { getMmdRichMenuActionMap, getMmdRichMenuDestinationMap } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
-async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, supportReply = false, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null } = {}) {
+async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null } = {}) {
   const replies = [], reads = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
@@ -28,7 +28,6 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
     }), {
       LINE_CHANNEL_SECRET: "test-secret", LINE_CHANNEL_ACCESS_TOKEN: "test-token",
       LINE_AUTO_REPLY_ENABLED: String(auto), LINE_KENJI_AI_ENABLED: "true", LINE_FIRST_CONTACT_ENABLED: String(firstContact),
-      LINE_RICH_MENU_SUPPORT_REPLY_ENABLED: String(supportReply),
       LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: String(deterministic),
       KENJI_LINE_CONTINUITY_ENABLED: "true", AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "test",
       INTERNAL_TOKEN: "test",
@@ -87,28 +86,29 @@ test("pause silences every installed navigation postback including support witho
   }
 });
 
-test("scoped Per AI replies only to SUPPORT taps while the general LINE pause stays on", async () => {
+test("scoped Per AI replies only to Guest/Public SUPPORT taps while the general LINE pause stays on", async () => {
   const map = getMmdRichMenuActionMap();
-  for (const menu of ["guest", "public", "private"]) {
-    const support = await run(map[menu][5].data, { auto: false, supportReply: true, deterministic: true });
+  for (const menu of ["guest", "public"]) {
+    const support = await run(map[menu][5].data, { auto: false, deterministic: true });
     assert.equal(support.replies.length, 1);
     assert.equal(support.body.saved[0].reply_source, "rich_menu_navigation_v1");
     assert.match(support.replies[0].messages[0].text, /เปอร์|เช็กสิทธิ์/);
     for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }])
-      assert.equal((await run(map[menu][5].data, { auto: false, supportReply: true, deterministic: true, ...options })).replies.length, 0);
-    assert.equal((await run(map[menu][1].data, { auto: false, supportReply: true, deterministic: true })).replies.length, 0);
+      assert.equal((await run(map[menu][5].data, { auto: false, deterministic: true, ...options })).replies.length, 0);
+    assert.equal((await run(map[menu][1].data, { auto: false, deterministic: true })).replies.length, 0);
   }
+  assert.equal((await run(map.private[5].data, { auto: false, deterministic: true })).replies.length, 0);
 });
 
 test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified Points number", async () => {
   const expires_at = new Date(Date.now() + 10 * 60_000).toISOString();
-  const state = { topic: "support", entry: "support_button", expires_at };
-  const result = await run("", { message: "เช็ก Points", matrixState: state, auto: false, supportReply: true, deterministic: true });
+  const state = { topic: "support", entry: "per_support_button", expires_at };
+  const result = await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true });
   assert.equal(result.replies.length, 1);
   assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
   assert.match(result.replies[0].messages[0].text, /MY MMD|miniapp\.line\.me|คะแนน/);
   assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
-  for (const other of [{ topic: "support", expires_at }, { topic: "models", entry: "support_button", expires_at }])
-    assert.equal((await run("", { message: "เช็ก Points", matrixState: other, auto: false, supportReply: true, deterministic: true })).replies.length, 0);
-  assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, supportReply: true, deterministic: true, kill: true })).replies.length, 0);
+  for (const other of [{ topic: "support", expires_at }, { topic: "models", entry: "per_support_button", expires_at }])
+    assert.equal((await run("", { message: "เช็ก Points", matrixState: other, auto: false, deterministic: true })).replies.length, 0);
+  assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true, kill: true })).replies.length, 0);
 });

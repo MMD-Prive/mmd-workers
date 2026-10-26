@@ -10,8 +10,7 @@ const TOPICS = {
 
 export function richMenuConversationStart(navigation, now = Date.now()) {
   const topic = TOPICS[navigation?.menu]?.[navigation?.button];
-  return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString(),
-    ...(navigation?.button === 5 ? { entry: "support_button" } : {}) } : null;
+  return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : null;
 }
 
 export function resolveRichMenuConversation(event = {}, continuity = {}, now = Date.now()) {
