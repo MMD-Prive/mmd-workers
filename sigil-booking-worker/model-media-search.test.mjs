@@ -1,3 +1,5 @@
+import { handleLegacyAssetHost } from "./src/legacy-media-retirement.js";
+import { handleModelDiscoverySettings } from "../admin-worker/src/model-customer-discovery-settings.js";
 import { attachDiscoverySession } from "../member-pages-worker/src/booking-discovery-viewer.js";
 import { applyModelDiscoverySettings, memberDiscoveryRef, ModelDiscoveryCoordinator } from "../admin-worker/src/model-customer-discovery-settings.js";
 import { webcrypto } from "node:crypto";
@@ -1023,4 +1025,31 @@ test("Model block writes verify owned jobs and canonical member linkage; stale c
     const visible = await applyModelDiscoverySettings(env, { model_id: id, read_only: true });
     assert.doesNotMatch(JSON.stringify(await visible.json()), /blocked_member_refs|recClient123|MMD-TEST/);
   } finally { globalThis.fetch = original; }
+});
+
+test("legacy storage media including encoded names is closed before any bucket read; static UI assets remain available", async () => {
+  let reads = 0;
+  const env = { MMD_MODEL_ASSETS: { get: async key => { reads++; assert.equal(key, "webflow/app.js"); return {
+    body: new TextEncoder().encode("export{}"), size: 8, httpEtag: '"static"',
+    writeHttpMetadata: headers => headers.set("content-type", "application/javascript"),
+  }; } } };
+  for (const path of ["/models/recAny/photo.webp", "/%6dodels/recAny/photo.webp", "/MMD%20Public%20Models/Name/photo.webp"]) {
+    const response = await handleLegacyAssetHost(new Request("https://models.mmdbkk.com" + path), env);
+    assert.equal(response.status, 410);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+  }
+  assert.equal(reads, 0);
+  const staticAsset = await handleLegacyAssetHost(new Request("https://models.mmdbkk.com/webflow/app.js"), env);
+  assert.equal(staticAsset.status, 200);
+  assert.equal(staticAsset.headers.get("content-type"), "application/javascript");
+  assert.equal(reads, 1);
+});
+
+test("privacy settings reject cross-origin writes and unauthenticated Model access", async () => {
+  const endpoint = "https://mmdbkk.com/v1/model/settings/customer-visibility";
+  const denied = await handleModelDiscoverySettings(new Request(endpoint, {
+    method: "POST", headers: { origin: "https://untrusted.example", "content-type": "application/json" }, body: "{}",
+  }), {});
+  assert.equal(denied.status, 403);
+  assert.equal((await handleModelDiscoverySettings(new Request(endpoint), {})).status, 401);
 });
