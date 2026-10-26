@@ -448,3 +448,15 @@
 #sigil-pay-v21 .sp21__promo-form[hidden]+.sp21__promo-status:not(:empty){padding-top:13px}
 #sigil-pay-v21 .sp21__promo-status.is-error{color:var(--sp21-danger)}
 #sigil-pay-v21 .sp21__promo-status.is-ok{color:var(--sp21-success)}
+
+/* Private checkout: Midnight Bangkok Private Atelier. */
+html,body{background:#0B0E10}
+#sigil-pay-v21{color-scheme:dark;--sp21-bg:#0B0E10;--sp21-panel:#171B1D;--sp21-panel-strong:#232729;--sp21-panel-soft:rgba(243,240,232,.04);--sp21-line:rgba(201,179,138,.2);--sp21-line-strong:#C9B38A;--sp21-text:#F3F0E8;--sp21-body:#D3D0C8;--sp21-muted:#BEBDB8;--sp21-gold:#C9B38A;--sp21-gold-deep:#A58C62;--sp21-danger:#F2A5A0;--sp21-success:#A9D4B3;background:radial-gradient(ellipse at 10% 0,rgba(201,179,138,.06),transparent 40rem),#0B0E10}
+#sigil-pay-v21 .sp21__card,#sigil-pay-v21 .sp21__summary{background:#171B1D;box-shadow:inset 0 1px rgba(243,240,232,.04)}
+#sigil-pay-v21 .sp21__panel,#sigil-pay-v21 .sp21__method,#sigil-pay-v21 textarea,#sigil-pay-v21 input:not([type=file]){background:#232729;color:#F3F0E8;border-color:rgba(201,179,138,.24)}
+#sigil-pay-v21 .sp21__method[aria-selected=true]{background:rgba(201,179,138,.12);border-color:#C9B38A}
+#sigil-pay-v21 .sp21__btn--primary{background:linear-gradient(135deg,#D9C6A2,#B89C6D);color:#141719!important;border-color:#C9B38A}
+#sigil-pay-v21 .sp21__avatar{color:#141719}
+#sigil-pay-v21 .sp21__qr{background:transparent}
+#sigil-pay-v21 [data-sp21-qr]{background:#fff;color-scheme:light;padding:10px;border-radius:12px}
+#sigil-pay-v21 .sp21__qr-fallback{background:#232729;color:#F3F0E8}
