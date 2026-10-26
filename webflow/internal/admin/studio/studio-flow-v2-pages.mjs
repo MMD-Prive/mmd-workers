@@ -26,13 +26,20 @@ function preview(help = 'เลือกภาพและใส่ข้อม�
 }
 
 function home() {
-  return `<section class="sf-panel">
-    <h2>เริ่มทำการ์ด</h2>
-    <p class="sf-lead">ใช้รูปจากนายแบบที่มีอยู่ เพิ่มข้อมูลใหม่ หรือเลือกคำขอทำการ์ดที่ส่งเข้ามา</p>
+  return `<section class="sf-panel sf-start">
+    <div class="sf-start-copy"><span class="sf-kicker">MODEL CARD WORKSPACE</span>
+    <h2>จากรูปต้นฉบับ<br>สู่การ์ดที่พร้อมใช้</h2>
+    <p class="sf-lead">เลือกนายแบบ จัดรูปและข้อมูล แล้วตรวจการ์ดก่อนดาวน์โหลด</p>
     <div class="sf-actions">
-      <a class="sf-button sf-button-primary" href="${paths.upload}?new=1">เริ่มอัปโหลดรูป</a>
+      <a class="sf-button sf-button-primary" href="${paths.upload}?new=1">เริ่มทำการ์ด <span aria-hidden="true">↗</span></a>
       <button id="sfResume" class="sf-button sf-button-secondary" type="button" hidden>ทำงานเดิมต่อ</button>
-    </div>
+    </div></div>
+    <div class="sf-card-art" aria-hidden="true"><div class="sf-art-top"><span>SĪGIL</span><span>STUDIO</span></div><div class="sf-art-window"><svg viewBox="0 0 120 100" fill="none"><rect x="20" y="12" width="80" height="76" rx="4"/><circle cx="76" cy="33" r="8"/><path d="m20 72 24-25 22 22 12-12 22 20"/></svg></div><div class="sf-art-bottom"><span>MODEL CARD</span><span>01 / 03</span></div></div>
+  </section>
+  <section class="sf-workflow" aria-label="วิธีทำการ์ด">
+    <article><span class="sf-section-number">01</span><h2>เตรียมรูป</h2><p>เลือก 1–10 รูป แล้วกำหนดรูปหลัก</p></article>
+    <article><span class="sf-section-number">02</span><h2>ตรวจรายละเอียด</h2><p>เช็กชื่อ รูป และข้อมูลบนการ์ด</p></article>
+    <article><span class="sf-section-number">03</span><h2>ดูและดาวน์โหลด</h2><p>ตรวจตัวอย่างจริง แล้วเก็บไฟล์ PNG</p></article>
   </section>`;
 }
 
@@ -40,7 +47,7 @@ function upload() {
   return `<form id="sfUploadForm" method="post">
     <div class="sf-grid">
       <section class="sf-panel">
-        <h2>นายแบบและรายละเอียด</h2>
+        <span class="sf-kicker">01 / MODEL DETAILS</span><h2>นายแบบและรายละเอียด</h2>
         <label class="sf-field">เริ่มจาก<select name="source_mode"><option value="existing">นายแบบที่มีข้อมูลแล้ว</option><option value="new">นายแบบที่ยังไม่มีในระบบ</option><option value="mycard">คำขอทำการ์ด</option></select></label>
         <div id="sfExisting">
           <div class="sf-actions">
@@ -86,15 +93,15 @@ function upload() {
           </div>
         </details>
       </section>
-      <section class="sf-panel">
-        <h2>รูปและตัวอย่างการ์ด</h2>
+      <section class="sf-panel sf-photo-panel">
+        <span class="sf-kicker">02 / PHOTOS & PREVIEW</span><h2>รูปและตัวอย่างการ์ด</h2>
         <label class="sf-field" for="sfFiles">เลือกรูป<input id="sfFiles" name="files" type="file" multiple accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"><small>เลือก 1–10 รูป · JPG, PNG หรือ WebP · ไม่เกิน 12 MB ต่อรูป</small></label>
         <div id="sfThumbs" class="sf-thumbs" role="list" aria-label="รูปที่เลือก"></div>
         ${preview()}
         <label class="sf-check"><input type="checkbox" name="consent" required><span>ยืนยันว่าได้รับอนุญาตให้ใช้รูปและข้อมูลสำหรับงานนี้</span></label>
         <progress id="sfProgress" class="sf-progress" value="0" max="100" hidden aria-label="ความคืบหน้าการอัปโหลด"></progress>
         <p id="sfProgressText" class="sf-hint" aria-live="polite"></p>
-        <div class="sf-actions"><button id="sfSave" class="sf-button sf-button-primary" type="submit">บันทึกและตรวจงาน</button></div>
+        <div class="sf-actions sf-submit"><button id="sfSave" class="sf-button sf-button-primary" type="submit">บันทึกและตรวจงาน</button></div>
       </section>
     </div>
   </form>
@@ -114,7 +121,7 @@ function review() {
           <label class="sf-check"><input type="checkbox" name="safe"><span>ได้รับอนุญาตให้ใช้รูป และไม่มีข้อมูลส่วนตัวที่ไม่ควรเผย</span></label>
           <label class="sf-field">ผลการตรวจ<select name="decision"><option value="Approved Direction">ผ่านการตรวจ</option><option value="Needs Review" selected>รอตรวจ</option><option value="Revise Source">ขอแก้ไข</option><option value="Reject">ไม่ใช้ภาพนี้</option></select></label>
           <label class="sf-field">หมายเหตุการตรวจ<textarea name="final_note" rows="3"></textarea></label>
-          <div class="sf-actions"><button id="sfReviewSave" class="sf-button sf-button-primary" type="submit">ยืนยันและดูตัวอย่าง</button></div>
+          <div class="sf-actions sf-submit"><button id="sfReviewSave" class="sf-button sf-button-primary" type="submit">ยืนยันและดูตัวอย่าง</button></div>
         </fieldset>
       </form>
     </section>
@@ -142,7 +149,7 @@ export function renderStudioPage(stage = 'home') {
   if (!Object.hasOwn(copy, stage)) throw new Error('Unknown Studio stage');
   const [title, lead] = copy[stage];
   const content = { home, upload, review, preview: finalPreview }[stage]();
-  return `<main id="studioFlow" data-studio-flow data-stage="${stage}">
+  return `<main id="studioFlow" data-studio-flow data-design-version="3" data-stage="${stage}">
     <div class="sf-shell">
       <header class="sf-header">
         <div><span class="sf-kicker">SĪGIL · STUDIO</span><h1 class="sf-title">${title}</h1><p class="sf-lead">${lead}</p></div>
