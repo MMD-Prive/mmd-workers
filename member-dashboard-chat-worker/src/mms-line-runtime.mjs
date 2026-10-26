@@ -166,8 +166,8 @@ function protectedTruthReply(text) {
   return comebackReply(lang);
 }
 
-async function lineReply(env, replyToken, text) {
-  const token = clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN, 4096);
+async function lineReply(accessToken, replyToken, text) {
+  const token = clean(accessToken, 4096);
   const reply = clean(text, 5000);
   if (!token || !replyToken || !reply) return { ok: false, skipped: true };
   const response = await fetch(`${LINE_API}/message/reply`, {
@@ -418,7 +418,10 @@ async function handleWebhook(request, env, ctx) {
       ok: true,
       worker: "member-dashboard-chat-worker",
       route: "mms_line_webhook",
-      configured: Boolean(clean(env.MMS_LINE_CHANNEL_SECRET) && clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN)),
+      configured: Boolean(
+        (clean(env.MMS_LINE_CHANNEL_SECRET) && clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN))
+        || (clean(env.MMS_LINE_4WOMEN_CHANNEL_SECRET) && clean(env.MMS_LINE_4WOMEN_CHANNEL_ACCESS_TOKEN))
+      ),
       ai_enabled: enabled(env.MMS_LINE_AI_ENABLED),
       rich_menu_mode: "24/7",
       rich_menu_publisher: MMS_RICH_MENU_PUBLISHER_VERSION,
@@ -430,9 +433,26 @@ async function handleWebhook(request, env, ctx) {
 
   const rawBody = await request.text();
   const signature = request.headers.get("x-line-signature") || "";
-  const secret = clean(env.MMS_LINE_CHANNEL_SECRET, 512);
-  if (!secret) return json({ ok: false, error: "mms_line_secret_missing" }, 503);
-  if (!(await verifyLineSignature(rawBody, signature, secret))) return json({ ok: false, error: "invalid_signature" }, 401);
+  const profiles = [
+    {
+      secret: clean(env.MMS_LINE_CHANNEL_SECRET, 512),
+      accessToken: clean(env.MMS_LINE_CHANNEL_ACCESS_TOKEN, 4096),
+    },
+    {
+      secret: clean(env.MMS_LINE_4WOMEN_CHANNEL_SECRET, 512),
+      accessToken: clean(env.MMS_LINE_4WOMEN_CHANNEL_ACCESS_TOKEN, 4096),
+    },
+  ].filter((profile) => profile.secret);
+  if (!profiles.length) return json({ ok: false, error: "mms_line_secret_missing" }, 503);
+
+  const matches = [];
+  for (const profile of profiles) {
+    if (await verifyLineSignature(rawBody, signature, profile.secret)) matches.push(profile);
+  }
+  if (!matches.length) return json({ ok: false, error: "invalid_signature" }, 401);
+  if (matches.length !== 1) return json({ ok: false, error: "ambiguous_line_channel" }, 503);
+  const channel = matches[0];
+  if (!channel.accessToken) return json({ ok: false, error: "mms_line_token_missing" }, 503);
 
   const body = (() => { try { return JSON.parse(rawBody); } catch (_) { return null; } })();
   if (!body || !Array.isArray(body.events)) return json({ ok: false, error: "invalid_json" }, 400);
@@ -442,7 +462,7 @@ async function handleWebhook(request, env, ctx) {
     if (!replyToken || event?.deliveryContext?.isRedelivery === true) continue;
     tasks.push((async () => {
       const text = await responseForEvent(env, event);
-      if (text) await lineReply(env, replyToken, text);
+      if (text) await lineReply(channel.accessToken, replyToken, text);
     })());
   }
   const done = Promise.allSettled(tasks);
