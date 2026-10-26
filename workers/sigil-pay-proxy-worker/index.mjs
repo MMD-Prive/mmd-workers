@@ -1,3 +1,4 @@
+const PRIVATE_PAYMENT_THEME = "/* Private checkout: Midnight Bangkok Private Atelier. */\nhtml,body{background:#0B0E10}\n#sigil-pay-v21{color-scheme:dark;--sp21-bg:#0B0E10;--sp21-panel:#171B1D;--sp21-panel-strong:#232729;--sp21-panel-soft:rgba(243,240,232,.04);--sp21-line:rgba(201,179,138,.2);--sp21-line-strong:#C9B38A;--sp21-text:#F3F0E8;--sp21-body:#D3D0C8;--sp21-muted:#BEBDB8;--sp21-gold:#C9B38A;--sp21-gold-deep:#A58C62;--sp21-danger:#F2A5A0;--sp21-success:#A9D4B3;background:radial-gradient(ellipse at 10% 0,rgba(201,179,138,.06),transparent 40rem),#0B0E10}\n#sigil-pay-v21 .sp21__card,#sigil-pay-v21 .sp21__summary{background:#171B1D;box-shadow:inset 0 1px rgba(243,240,232,.04)}\n#sigil-pay-v21 .sp21__panel,#sigil-pay-v21 .sp21__method,#sigil-pay-v21 textarea,#sigil-pay-v21 input:not([type=file]){background:#232729;color:#F3F0E8;border-color:rgba(201,179,138,.24)}\n#sigil-pay-v21 .sp21__method[aria-selected=true]{background:rgba(201,179,138,.12);border-color:#C9B38A}\n#sigil-pay-v21 .sp21__btn--primary{background:linear-gradient(135deg,#D9C6A2,#B89C6D);color:#141719!important;border-color:#C9B38A}\n#sigil-pay-v21 .sp21__avatar{color:#141719}\n#sigil-pay-v21 .sp21__qr{background:transparent}\n#sigil-pay-v21 [data-sp21-qr]{background:#fff;color-scheme:light;padding:10px;border-radius:12px}\n#sigil-pay-v21 .sp21__qr-fallback{background:#232729;color:#F3F0E8}\n";
 import { QR_LIBRARY } from './qr-library.mjs';
 // Presentation ingress only. Payment APIs and signed-link authority stay in payments-worker.
 export const LIFF_ID = '2010830159-0n1O3ANK';
@@ -100,7 +101,7 @@ export function prepareHtml(html) {
   if (!patched || !/<\/head>/i.test(result)) throw new Error('payment_page_contract_changed');
   return result.replace(/<div class="sp21__qr-ref">[\s\S]*?<\/div>/g,'')
     .replace(/<small>PromptPay<\/small>\s*<strong data-sp21-promptpay-ref>[\s\S]*?<\/strong>/g,'โหลด QR ไม่สำเร็จ กรุณาลองใหม่หรือเลือกโอนธนาคาร')
-    .replace(/<\/head>/i, BOOTSTRAP + '</head>');
+    .replace(/<\/head>/i, '<style data-private-payment-theme>'+PRIVATE_PAYMENT_THEME+'</style>'+BOOTSTRAP + '</head>');
 }
 
 export async function handle(request, fetcher = fetch, rewriter = () => new HTMLRewriter()) {
