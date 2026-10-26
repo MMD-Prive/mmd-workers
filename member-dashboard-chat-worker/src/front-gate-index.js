@@ -140,7 +140,8 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   const bridge = `<script nonce="${nonce}">
 (() => {
   const target = ${JSON.stringify(target)};
-  const profileEndpoint = "/member/api/liff/profile";
+  const digitalHome = Boolean(document.getElementById("customer-boot-progress"));
+  const profileEndpoint = digitalHome ? "/member/api/liff/status" : "/member/api/liff/profile";
   const telegramBindEndpoint = "/member/api/liff/telegram-bind";
   const maxAttempts = 20;
   let attempts = 0;
@@ -148,11 +149,13 @@ function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   let retryTimer = 0;
 
   function setShellMessage(text) {
+    if (digitalHome) return;
     const message = document.getElementById("message");
     if (message) message.textContent = text;
   }
 
   function clearShellActions() {
+    if (digitalHome) return null;
     const actions = document.getElementById("actions");
     if (actions) actions.replaceChildren();
     return actions;
