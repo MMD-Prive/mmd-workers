@@ -80,19 +80,25 @@ function projectModelsWithoutMedia(payload) {
 function projectModelMedia(model, media) {
   if (!model || typeof model !== "object") return model;
   const customerSafe = Object.fromEntries(SEARCH_FIELDS.filter((key) => Object.hasOwn(model, key)).map((key) => [key, model[key]]));
-  const assets = [media?.primary, ...(media?.photos || []), ...(media?.clips || [])].filter(Boolean);
+  const assets = [media?.primary, ...(media?.clips || [])].filter(Boolean);
   const approved = [...new Map(assets.map((asset) => [asset.media_id, {
     media_id: asset.media_id,
     media_source: MEDIA_SOURCE,
     kind: asset.media_type === "intro_video" ? "clip" : "photo",
   }])).values()];
+  const gallery = [...new Map((media?.photos || []).map((asset) => [asset.media_id, {
+    media_id: asset.media_id,
+    media_source: MEDIA_SOURCE,
+    kind: "photo",
+  }])).values()];
   return {
     ...customerSafe,
-    source: approved.length ? MEDIA_SOURCE : "",
-    asset_source: approved.length ? MEDIA_SOURCE : "",
+    source: approved.length || gallery.length ? MEDIA_SOURCE : "",
+    asset_source: approved.length || gallery.length ? MEDIA_SOURCE : "",
     media_source: MEDIA_SOURCE,
     primary_media_id: approved.find((asset) => asset.kind === "photo")?.media_id || "",
     approved_media: approved,
+    gallery_media: gallery,
   };
 }
 
@@ -102,16 +108,16 @@ export async function fetchPublicModelMedia(env, models) {
   if (!ids.length) return result;
   // Linked-field formulas contain display names, not record IDs. Scan only the
   // approved registry subset, then join actual Model links by canonical ID.
-  const rows = await airtableList(env, mediaTable(env), 'AND({public_safe}=TRUE(),OR({review_status}="approved",{review_status}="active"))', 5000);
+  const rows = await airtableList(env, mediaTable(env), 'AND({public_safe}=TRUE(),OR({review_status}="approved",{review_status}="published",AND({media_type}="public_gallery",{review_status}="active")))', 5000);
   for (const row of rows) {
     const fields = row.fields || {};
     if (!isPublicMedia(fields)) continue;
     const group = result.get(linkedModelId(fields));
     if (!group) continue;
     const media = { media_id: clean(fields.media_id), media_type: clean(fields.media_type).toLowerCase(), asset_role: clean(fields.asset_role).toLowerCase() };
-    if (media.asset_role === "profile_main" && media.media_type !== "intro_video" && !group.primary) group.primary = media;
+    if (media.asset_role === "profile_main" && media.media_type !== "intro_video" && isApprovedCover(fields) && !group.primary) group.primary = media;
     else if (media.media_type === "intro_video") group.clips.push(media);
-    else group.photos.push(media);
+    else if (media.media_type === "public_gallery") group.photos.push(media);
   }
   for (const group of result.values()) {
     group.photos = group.photos.slice(0, 12);
@@ -129,12 +135,16 @@ export function isPublicMedia(fields) {
     && /^rec[a-zA-Z0-9]+$/.test(modelId)
     && fields.public_safe === true
     && fields.private_safe !== true && fields.flash_safe !== true
-    && ["active", "approved"].includes(clean(fields.review_status).toLowerCase())
+    && (isApprovedCover(fields) || (type === "public_gallery" && clean(fields.review_status).toLowerCase() === "active" && clean(fields.asset_role).toLowerCase() !== "profile_main") || (type === "intro_video" && ["approved", "published"].includes(clean(fields.review_status).toLowerCase())))
     && ["public", "public_candidate"].includes(clean(fields.media_visibility).toLowerCase())
     && !/private|flash|sensitive/.test(clean(fields.asset_role).toLowerCase())
     && fields.r2_bucket === "mmd-models"
     && key.startsWith(`models/${modelId}/`) && !key.includes("..")
     && (type === "intro_video" ? /^video\/(mp4|webm|quicktime)$/.test(clean(fields.file_type)) : /^image\/(jpeg|png|webp|avif)$/.test(clean(fields.file_type)));
+}
+
+function isApprovedCover(fields) {
+  return ["approved", "published"].includes(clean(fields.review_status).toLowerCase());
 }
 
 function linkedModelId(fields) {
