@@ -54,9 +54,10 @@ test("queue view safely renders backend values and deep-links into the existing 
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(name, callback) { this.listeners[name] = callback; }
   }
-  const ids = ["upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
+  const ids = ["extract-slip", "extract-status","upload-panel", "upload-form", "upload-submit", "upload-status", "upload-file", "upload-source", "upload-stage", "upload-job", "queue-scope", "q-status", "q-list", "search", "status-filter", "stage-filter", "channel-filter", "refresh", "proof-detail", "detail-grid", "evidence-view", "detail-title", "detail-note", "continue-review", "decision-reason", "decision-confirm", "decision-prompt", "decision-status", "confirm-decision", "cancel-decision", "log-issue", "reject-proof"];
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id === "q-list" ? "div" : "input")]));
   const calls = [];
+  let extractionFails = false;
   const malicious = "<img src=x onerror=alert(1)>";
   const response = {
     ok: true,
@@ -81,7 +82,7 @@ test("queue view safely renders backend values and deep-links into the existing 
     Date,
     Set,
     Option: FakeOption,
-    fetch: async (...args) => { calls.push(args); return calls.length === 1 ? { ok: true, json: async () => response } : calls.length === 2 ? { ok: false } : { ok: true, json: async () => ({ ok: true, decision: "issue" }) }; },
+    fetch: async (...args) => { calls.push(args); if(args[1]?.body && JSON.parse(args[1].body).action === 'extract_evidence') return {ok: !extractionFails, json: async()=>extractionFails?{ok:false,error:'payment_evidence_sha_mismatch'}:{ok:true,result:{amount_thb:12500,paid_at:'2026-10-25T13:07:00Z'},money_truth_changed:false}}; return calls.length === 1 ? { ok: true, json: async () => response } : calls.length === 2 ? { ok: false } : { ok: true, json: async () => ({ ok: true, decision: "issue" }) }; },
     crypto: { randomUUID: () => "fixture-idempotency-key" },
     addEventListener() {},
   });
@@ -111,6 +112,16 @@ test("queue view safely renders backend values and deep-links into the existing 
   assert.equal(calls[2][1].headers["Idempotency-Key"], "fixture-idempotency-key");
   assert.deepEqual(JSON.parse(calls[2][1].body), { proof_id: "proof_fixture_1", decision: "issue", admin_reason: "เหตุผลผู้ดูแล: ยอดอ้างอิงไม่ตรง", idempotency_key: "fixture-idempotency-key" });
   assert.match(elements["decision-status"].textContent, /บันทึกปัญหาแล้ว/);
+  await elements['extract-slip'].listeners.click();
+  assert.deepEqual(JSON.parse(calls.at(-1)[1].body),{action:'extract_evidence',proof_id:'proof_fixture_1'});
+  assert.match(elements['extract-status'].textContent,/12,500.00/);
+  assert.match(elements['extract-status'].textContent,/ยังไม่ได้บันทึกหรือยืนยันเงินเข้า/);
+  extractionFails=true;
+  await elements['extract-slip'].listeners.click();
+  assert.match(elements['extract-status'].textContent,/อ่านสลิปไม่สำเร็จ/);
+  assert.doesNotMatch(elements['extract-status'].textContent,/12,500/);
+  assert.equal(elements['extract-slip'].disabled,false);
+
 });
 
 test("HEAD returns headers without a page body", async () => {
