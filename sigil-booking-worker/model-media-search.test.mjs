@@ -780,6 +780,25 @@ test("MY MODEL visibility selections gate customer discovery and pending reviews
   assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "black_card", visibility_review_status: "approved" }), null);
 });
 
+test("protected visibility cannot be downgraded by a stale lower access folder", () => {
+  for (const visibility of ["vip", "black_card", "unknown_future_value"]) {
+    for (const scope of ["public", "private", "booking"]) {
+      const result = sanitizeModelForBooking({
+        id: "recConflictingVisibility",
+        fields: {
+          working_name: "Private Name", status: "active",
+          can_work_public: true, can_work_private: true,
+          access_folder: "standard", private_tier: "standard",
+          client_visibility_status: "approved",
+          approved_client_visibility: visibility,
+          visibility_review_status: "approved",
+        },
+      }, { scope, privateAllowed: true, allowedFolders: ["standard", "premium"], env: {} });
+      assert.equal(result, null);
+    }
+  }
+});
+
 test("name search formula excludes private identifiers and storage metadata", async () => {
   const original = globalThis.fetch;
   const seen = [];
