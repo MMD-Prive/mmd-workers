@@ -152,7 +152,27 @@ export async function extractOcr(bytes, workerFactory = createWorker) {
   try {
     const { data = {} } = await worker.recognize(bytes);
     const primary = normalizeOcrText(data.text, data.confidence);
-    if (primary.amount_thb == null || primary.paid_at || typeof worker.setParameters !== "function") return primary;
+    if (typeof worker.setParameters !== "function") return primary;
+    if (primary.amount_thb == null) {
+      // Bank slips have separate text blocks. The default single-block mode can
+      // read the digits but misread the adjacent currency and discard the amount.
+      // Retry the entire original image with automatic page segmentation once.
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: "3" });
+        const { data: retry = {} } = await worker.recognize(bytes);
+        const alternate = normalizeOcrText(retry.text, retry.confidence);
+        if (alternate.amount_thb == null ||
+            (primary.payment_ref && alternate.payment_ref && primary.payment_ref !== alternate.payment_ref) ||
+            (primary.paid_at && alternate.paid_at && primary.paid_at !== alternate.paid_at)) return primary;
+        return { ...primary, amount_thb: alternate.amount_thb,
+          paid_at: primary.paid_at || alternate.paid_at,
+          payment_ref: primary.payment_ref || alternate.payment_ref,
+          confidence_score: Math.min(primary.confidence_score, alternate.confidence_score) };
+      } catch {
+        return primary;
+      }
+    }
+    if (primary.paid_at) return primary;
     // A small, patterned slip may lose its footer date in full-page OCR. Retry
     // the lower evidence area once, retaining the original reading on failure.
     try {

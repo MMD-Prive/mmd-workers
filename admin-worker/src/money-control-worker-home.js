@@ -25,12 +25,12 @@ const PAGE = `<!doctype html>
     body.proof-focused h1{font-size:26px;margin-top:14px}
     .detail-actions button,.q-head button{background:#ffdfc5;color:#572b13;border-color:#d4a27c;min-height:44px}
     .review-layout{display:grid;gap:16px;margin-top:12px;align-items:start}
-    .evidence{margin:0;padding:10px;background:#eef0f3;overflow:auto;min-width:0}
-    .evidence img{display:block;width:100%;max-width:760px;max-height:none;height:auto;object-fit:contain}
+    .evidence{margin:0;padding:10px;background:#eef0f3;min-width:0;min-height:0}
+    .evidence img{display:block;width:auto;max-width:100%;max-height:min(52vh,480px);max-height:min(52svh,480px);height:auto;object-fit:contain}
     .evidence a{display:block;padding:10px;font-weight:700}
     .detail-grid{margin:0}.detail-cell dt{font-size:13px}.detail-cell dd{font-size:17px}
     #decision-status{white-space:pre-line}#extract-status{flex-basis:100%;margin:0}
-    @media(min-width:900px){.review-layout{grid-template-columns:minmax(0,1.15fr) minmax(300px,1fr)}.evidence{max-height:80vh}.detail-grid{grid-template-columns:1fr 1fr}}
+    @media(min-width:900px){.review-layout{grid-template-columns:minmax(0,1.15fr) minmax(300px,1fr)}.detail-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:700px){.brand span{display:none}.lead{font-size:13px}.detail{padding:12px}.detail-head{flex-wrap:wrap}.detail-actions button{flex:1}.detail-actions label{flex-basis:100%!important}.detail-grid{gap:6px}}
   </style>
 </head>
