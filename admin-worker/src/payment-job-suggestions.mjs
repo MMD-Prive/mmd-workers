@@ -1,5 +1,5 @@
-// Read-only suggestions. Choosing a candidate still uses the binding preview and confirmation.
-export function suggestPaymentJobs(jobs, amount, paidAt = '') {
+// Literal browser script stays intact when Wrangler adds server-side function-name helpers.
+export const PAYMENT_JOB_SUGGESTIONS_SCRIPT = String.raw`function suggestPaymentJobs(jobs, amount, paidAt = '') {
   const cents = value => { const n = Number(value); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0; };
   const target = cents(amount);
   if (!target) return [];
@@ -23,3 +23,4 @@ export function suggestPaymentJobs(jobs, amount, paidAt = '') {
   return candidates.sort((a, b) => Math.abs(a.difference_thb) - Math.abs(b.difference_thb) ||
     a.date_distance - b.date_distance || a.session_id.localeCompare(b.session_id) || a.payment_ref.localeCompare(b.payment_ref)).slice(0, 10);
 }
+`;
