@@ -7,8 +7,12 @@ const PAGE = `<!doctype html>
   <meta name="robots" content="noindex,nofollow">
   <title>Money Control · MMD</title>
   <style>
+    @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
+    @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}
+    @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-style:normal;font-weight:800;font-display:swap}
     :root{color-scheme:light;--ink:#26332c;--muted:#68756b;--line:#dce4da;--paper:#f7f9f5;--white:#fff;--green:#31563c;--gold:#b89550;--warn:#805c1f;--bad:#8c3e37}
     *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 "LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif}
+    button,input,select,textarea{font:inherit}body{font-synthesis:none;-webkit-font-smoothing:antialiased}
     main{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:18px 0 56px}.brand{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--line);padding:6px 0 13px;color:var(--muted);font-size:13px}.brand strong{color:var(--green);letter-spacing:.08em}
     h1{margin:20px 0 4px;font-size:clamp(27px,4vw,38px);line-height:1.15;letter-spacing:-.03em}.lead{max-width:780px;margin:0;color:var(--muted);font-size:14px}
     .notice{margin-top:14px;padding:12px 14px;border:1px solid #e7d4a4;border-radius:12px;background:#fffaf0;color:#594619;font-size:14px}.notice strong{display:block;margin-bottom:2px}
@@ -113,7 +117,7 @@ export function handleMoneyControlWorkerHome(request) {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store, private",
     "x-mmd-route-owner": "admin-worker-money-control-home",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: blob:; font-src https://cdn.prod.website-files.com; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "x-content-type-options": "nosniff",
     "referrer-policy": "same-origin",
     "x-robots-tag": "noindex, nofollow",
