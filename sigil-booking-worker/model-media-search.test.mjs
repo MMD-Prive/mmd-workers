@@ -762,3 +762,69 @@ test("customer Booking rejects Live/Group and stores MK/Burn only as draft prefe
   } finally { globalThis.fetch = original; }
 });
 
+
+
+test("MY MODEL visibility selections gate customer discovery and pending reviews fail closed", () => {
+  const base = { status: "active", can_work_public: true };
+  const model = visibility => sanitizeModelForBooking({
+    id: "recVisibility",
+    fields: { working_name: "Visible Name", ...base, ...visibility },
+  }, { scope: "public", privateAllowed: false, env: {} });
+
+  assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "standard", visibility_review_status: "approved" }).display_name, "Visible Name");
+  for (const selection of ["hidden", "internal", "private", ""]) {
+    assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: selection, visibility_review_status: "approved" }), null);
+  }
+  assert.equal(model({ client_visibility_status: "pending", approved_client_visibility: "standard", visibility_review_status: "pending_review" }), null);
+  assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "vip", visibility_review_status: "approved" }), null);
+  assert.equal(model({ client_visibility_status: "approved", approved_client_visibility: "black_card", visibility_review_status: "approved" }), null);
+});
+
+test("protected visibility cannot be downgraded by a stale lower access folder", () => {
+  for (const visibility of ["vip", "black_card", "unknown_future_value"]) {
+    for (const scope of ["public", "private", "booking"]) {
+      const result = sanitizeModelForBooking({
+        id: "recConflictingVisibility",
+        fields: {
+          working_name: "Private Name", status: "active",
+          can_work_public: true, can_work_private: true,
+          access_folder: "standard", private_tier: "standard",
+          client_visibility_status: "approved",
+          approved_client_visibility: visibility,
+          visibility_review_status: "approved",
+        },
+      }, { scope, privateAllowed: true, allowedFolders: ["standard", "premium"], env: {} });
+      assert.equal(result, null);
+    }
+  }
+});
+
+test("name search formula excludes private identifiers and storage metadata", async () => {
+  const original = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async input => {
+    const url = new URL(input);
+    const table = decodeURIComponent(url.pathname.split("/").pop());
+    if (table === "Models") {
+      const formula = url.searchParams.get("filterByFormula") || "";
+      seen.push(formula);
+      return Response.json({ records: [{
+        id: "recSearchSafe",
+        fields: { working_name: "Atom IX", can_work_public: true },
+      }] });
+    }
+    return Response.json({ records: [] });
+  };
+  try {
+    const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?q=Atom%20IX&scope=public"), filterEnv);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.items[0].working_name, "Atom IX");
+    assert.equal(seen.length, 1);
+    assert.match(seen[0], /working_name/);
+    assert.match(seen[0], /nickname/);
+    assert.doesNotMatch(seen[0], /unique_key|folder_name|r2_prefix|primary_image_key|private_real_name/i);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

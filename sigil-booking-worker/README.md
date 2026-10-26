@@ -15,7 +15,7 @@ Webflow must not read Airtable, R2, Google Drive, or Gmail directly. This worker
   - Active members become `public_private`.
 
 - `GET|POST /sigil/api/models/search`
-  - Searches Airtable `Models` by `working_name`, `nickname`, `unique_key`, `folder_name`, `r2_prefix`, and `primary_image_key`.
+  - Searches Airtable `Models` by customer-facing `working_name` and `nickname` only. Search never falls back to scanning arbitrary Airtable fields or private/storage identifiers. When MY MODEL visibility fields are configured, the record must have an approved visibility selection; hidden/internal and pending-review records are excluded. Private discovery still requires the server-resolved entitlement and matching access folder.
   - Hydrates the Studio-approved cover and Model-published public gallery separately from the MMD Model Media Assets registry.
 - `GET /sigil/api/models/media/:media_id`
   - Streams eligible public-safe MMD MODEL media from R2 and supports byte ranges for video playback. Private, pending, revoked, and unsafe media return not found.
