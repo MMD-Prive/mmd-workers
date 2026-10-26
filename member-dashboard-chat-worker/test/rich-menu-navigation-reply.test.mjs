@@ -2,9 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { getMmdRichMenuActionMap, getMmdRichMenuDestinationMap } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 import { richMenuNavigation, resolveRichMenuNavigation } from "../src/rich-menu-navigation-reply.mjs";
+import { richMenuConversationStart } from "../src/rich-menu-conversation.mjs";
 
 const event = data => ({ type: "postback", postback: { data } });
 const active = { live_truth: true, identity_state: "matched", membership_state: "active", level: "private", private_visibility_envelope: "premium" };
+
+test("only a SUPPORT tap marks a scoped Per AI follow-up", () => {
+  for (const menu of ["guest", "public", "private"]) {
+    assert.equal(richMenuConversationStart({ menu, button: 5 }, 0).entry, "support_button");
+    assert.equal(richMenuConversationStart({ menu, button: 1 }, 0).entry, undefined);
+  }
+});
 
 test("Private Kenji opens the web directly; other navigation taps keep bounded replies", async () => {
   const destinations = getMmdRichMenuDestinationMap(), actions = getMmdRichMenuActionMap();

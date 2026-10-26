@@ -432,6 +432,9 @@ MMS_THERAPIST_UI_SOURCE = "native"
 # Re-enabling requires separate owner approval and a deliberate change to
 # both this value and the production release guard.
 LINE_AUTO_REPLY_ENABLED = "false"
+# Per AI may answer only after an explicit Rich Menu SUPPORT tap. The general
+# LINE auto-reply pause and the existing runtime LINE kill switch remain active.
+LINE_RICH_MENU_SUPPORT_REPLY_ENABLED = "true"
 KENJI_LINE_RIGHTS_CHECK_MODE = "command"
 KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 # 2026-10-12: owner paused the bare "สนใจ" auto-reply. Too ambiguous (customer may
