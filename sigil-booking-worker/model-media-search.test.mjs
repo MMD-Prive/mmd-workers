@@ -1,3 +1,5 @@
+import { webcrypto } from "node:crypto";
+import { handleDiscoveryViewer } from "../member-pages-worker/src/booking-discovery-viewer.js";
 import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./src/customer-discovery-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -935,4 +937,29 @@ test("GET and HEAD media deny restricted viewers before storage reads and rechec
     assert.equal(denied.status, 404);
     assert.equal(state.storageReads.length, 1);
   });
+});
+
+test("service-only viewer reads are stable and never rotate or reveal the source session", async () => {
+  globalThis.crypto ||= webcrypto;
+  const env = { AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "s".repeat(32), LIFF_SESSION_SECRET: "k".repeat(32) };
+  const request = new Request("https://member-pages.internal/__internal/booking/discovery-viewer", {
+    headers: { "x-mmd-booking-service-secret": "s".repeat(32) },
+  });
+  let reads = 0;
+  const session = async () => { reads++; return { memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "active" } }; };
+  const unauthorized = await handleDiscoveryViewer(new Request(request.url), env, session);
+  assert.equal(unauthorized.status, 401);
+  assert.equal(reads, 0);
+  const first = await handleDiscoveryViewer(request, env, session);
+  const second = await handleDiscoveryViewer(request, env, session);
+  assert.equal(first.headers.get("set-cookie"), null);
+  const a = await first.json(), b = await second.json();
+  assert.equal(a.ok, true);
+  assert.match(a.memberRef, /^[a-f0-9]{64}$/);
+  assert.equal(a.memberRef, b.memberRef);
+  assert.equal(JSON.stringify(a).includes("recCanonicalMember"), false);
+  const blocked = await handleDiscoveryViewer(request, env, async () => ({
+    memberExists: true, memberId: "recCanonicalMember", lineUserId: "U" + "a".repeat(32), memberProfile: { membership_status: "blocked" },
+  }));
+  assert.equal(blocked.status, 401);
 });
