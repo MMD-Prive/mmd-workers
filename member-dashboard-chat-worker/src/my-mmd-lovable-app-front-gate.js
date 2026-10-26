@@ -1,3 +1,4 @@
+import { myMmdMembershipWorlds } from "./my-mmd-membership-worlds.js";
 import currentWorker from "./line-group-ingress-front-gate.js";
 import { isMyMmdOrdersPage, proxyMyMmdOrdersPage } from "./my-mmd-orders-webflow-page.js";
 import { isMyMmdPrivateTeaserViewerPath, myMmdPrivateTeaserViewerPage } from "./my-mmd-private-teaser-viewer.js";
@@ -336,6 +337,9 @@ function rewriteMyMmdHtml(html, path = "/my-mmd/") {
   }
   if (/^\/my-mmd\/?$/.test(path) && !output.includes('id="mmd-session-panel"')) {
     output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>` + myMmdSessionPanel());
+  }
+  if (/^\/my-mmd(?:\/membership)?\/?$/.test(path) && !output.includes('id="mmd-membership-worlds"')) {
+    output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>` + myMmdMembershipWorlds());
   }
   if (/^\/my-mmd\/payments\/?$/.test(path)) {
     output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}><nav aria-label="Black Card" style="position:relative;z-index:10;padding:14px 20px;background:#171b1d"><a href="/my-mmd/payments/blackcard" style="color:#f3f0e8">Black Card · ชำระต่อ / เลือก Companion →</a></nav>`);

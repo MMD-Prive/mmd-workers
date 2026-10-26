@@ -1,3 +1,4 @@
+import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 import liffFoundation from "./liff-identity-foundation.js";
 import { fixedTierExpiry } from "./fixed-tier-expiry.js";
 import { readClientBackedHistoryResult } from "./member-app-client-history.js";
@@ -606,6 +607,7 @@ function membershipFromDashboard(data) {
   const level = tier.status === "verified" ? normalizeLevel(tier.value) : "unknown";
   return {
     level,
+    worlds: serializeMemberWorlds(member.worlds),
     couponCardVariant: tier.status === "verified" ? couponCardVariant(tier.value) : null,
     couponCardVerified: tier.status === "verified" && Boolean(couponCardVariant(tier.value)),
     levelVerified: tier.status === "verified" && level !== "unknown",
@@ -946,6 +948,7 @@ async function adaptProfile(request, env, delegate) {
     member_display_name: asString(profile.display_name, 120) || null,
     line_display_name: asString(profile.line_display_name, 120) || null,
     line_connected: true,
+    membership_worlds: serializeMemberWorlds(profile.membership_worlds || profile.customer_360?.membership_worlds),
     membership_tier: matched ? normalizeLevel(profile.tier) : null,
     membership_status: matched ? status : null,
     points_confirmed: matched ? points : null,

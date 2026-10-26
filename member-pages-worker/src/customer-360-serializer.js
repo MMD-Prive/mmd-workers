@@ -1,5 +1,6 @@
+import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const SAFE_TIERS = new Set(["Member", "Standard", "Premium", "VIP", "Black Card"]);
+const SAFE_TIERS = new Set(["Member", "MMD Member", "Elite", "Red Card", "Standard", "Premium", "VIP", "Black Card"]);
 const SAFE_MEMBERSHIP_STATES = new Set(["active", "grace", "expired", "checking", "under_review", "pending_review", "blocked", "suspended", "revoked"]);
 const SAFE_SOURCE_STATES = new Set(["verified", "checking", "not_available"]);
 const SAFE_PAYMENT_STATES = new Set(["verified", "pending_review", "unavailable"]);
@@ -33,6 +34,7 @@ function serializeV2(source) {
   return {
     version: "customer_360_v2",
     member,
+    membership_worlds: serializeMemberWorlds(source.membership_worlds),
     points: serializePoints(source.points),
     packages: serializePackages(source.packages, blackCardVisible),
     jobs: serializeJobs(source.jobs),
@@ -61,6 +63,7 @@ function compactCompatibilityProfile(source, customer360) {
       timezone: "Asia/Bangkok",
     },
     history: customer360.history.events,
+    membership_worlds: customer360.membership_worlds,
     customer_360: customer360,
   };
   const memberId = safeIdentifier(source.member_id) || customer360.member.member_id;
@@ -77,6 +80,7 @@ function serializeLegacyCompatibilityProfile(source) {
   // bounded record count. Do not let a legacy summary value look authoritative.
   const pointsRecordsCount = safeNonNegativeInteger(source.points_records_count);
   const profile = {
+    ...(source.membership_worlds?.schema === "member_worlds_v1" ? { membership_worlds: serializeMemberWorlds(source.membership_worlds) } : {}),
     display_name: safeText(source.display_name, 120) || "สมาชิก MMD",
     tier: blockedLegacyTier(source.tier) ? "" : safeTier(source.tier, false),
     membership_status: safeChoice(source.membership_status, SAFE_MEMBERSHIP_STATES, "under_review"),

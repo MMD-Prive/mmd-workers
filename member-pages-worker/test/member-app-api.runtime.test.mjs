@@ -434,3 +434,10 @@ test("unknown history stays checking while explicitly empty verified history is 
     assert.deepEqual(body.items, []);
   }
 });
+
+test('membership app API preserves both worlds and Elite without granting protected access',async()=>{
+ const worlds={schema:'member_worlds_v1',public:{state:'active',tier:'Elite',expiresAt:'2027-10-01'},sigil:{state:'expired',tier:'Premium',expiresAt:'2026-01-01'}};
+ const upstream=delegate({'/api/member/dashboard':{ok:true,data:{member:{tier:{value:'Elite',status:'verified'},membership_status:{value:'active',status:'verified'},worlds}}}});
+ const response=await handleMemberAppApi(request('/api/member/app/membership'),{},upstream),payload=await response.json();
+ assert.equal(payload.level,'elite');assert.deepEqual(payload.worlds,worlds);assert.equal(payload.access,'checking');
+});

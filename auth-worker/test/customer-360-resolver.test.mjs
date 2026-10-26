@@ -176,3 +176,13 @@ test("LINE OFC is the source of truth for jobs and points without a slip", async
   assert.equal(profile.customer_360.jobs.completed_jobs[0].source, "line_ofc_history");
   assert.equal(profile.customer_360.jobs.completed_jobs[0].amount_due_thb, 30000);
 });
+
+test('canonical Public and SIGIL packages survive Customer 360 separately even when Public is newer', async()=>{
+ const profile=await resolve({MEMBER_PACKAGES:[
+  {package_code:'premium',status:'active',start_date:'2026-01-01',end_date:'2027-01-01',created_at:'2026-01-01T00:00:00Z'},
+  {package_code:'red_card',status:'active',start_date:'2026-08-01',end_date:'2029-08-01',created_at:'2026-08-01T00:00:00Z'},
+ ]});
+ assert.equal(profile.tier,'Red Card');
+ assert.deepEqual(profile.customer_360.membership_worlds.public,{state:'active',tier:'Red Card',expiresAt:'2029-08-01'});
+ assert.deepEqual(profile.customer_360.membership_worlds.sigil,{state:'active',tier:'Premium',expiresAt:'2027-01-01'});
+});
