@@ -22,17 +22,17 @@ export async function resolveDiscoveryViewer(request, env = {}) {
   // are never identity proof. The existing member service validates the session.
   const cookies = String(request.headers.get("cookie") || "").split(";")
     .map(part => part.trim()).filter(part => part.startsWith(SESSION_COOKIE + "="));
-  if (cookies.length !== 1 || cookies[0].length > 4096 || !env.MEMBER_PAGES_WORKER?.fetch) return "";
+  const secret = String(env.AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES || "");
+  if (cookies.length !== 1 || cookies[0].length > 4096 || !env.MEMBER_PAGES_WORKER?.fetch || secret.length < 32) return "";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://mmdbkk.com/api/member/app/profile", {
-      headers: { cookie: cookies[0], accept: "application/json" }, signal: controller.signal,
+    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://member-pages.internal/__internal/booking/discovery-viewer", {
+      headers: { cookie: cookies[0], accept: "application/json", "x-mmd-booking-service-secret": secret }, signal: controller.signal,
     }));
     if (!response.ok) return "";
     const payload = await response.json();
-    if (payload.match_state !== "matched" || payload.line_connected !== true
-      || ["blocked", "suspended", "revoked", "pending_review"].includes(payload.membership_status)) return "";
+    if (payload.ok !== true) return "";
     return MEMBER_REF.test(payload.memberRef || "") ? payload.memberRef : "";
   } catch { return ""; }
   finally { clearTimeout(timeout); }
