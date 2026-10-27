@@ -23,8 +23,8 @@ body:is([data-brand-audience="public"],[data-brand-audience="private"],[data-bra
 #intro-screen .mark{font-size:12px;color:var(--entry-accent)!important;letter-spacing:.12em}
 body:not(.signup-mode):not(.app-entered) #intro-screen .title{margin:8px 0;font-family:inherit;font-size:28px;font-weight:600;line-height:1.35;color:var(--entry-ink)}
 body:not(.signup-mode):not(.app-entered) #intro-screen .sub{font-size:14px;line-height:1.6;color:var(--entry-muted)}
-#intro-screen .per-letter{margin:18px 0 0;color:var(--entry-ink)}#intro-screen .per-letter:has(.per-letter-copy:empty){display:none}
-#intro-screen .per-letter-copy{font-size:14px;line-height:1.6}
+
+
 #intro-screen .welcome-divider{width:100%;height:48px;margin:18px 0;color:var(--entry-accent);background:none;opacity:.2}
 #intro-screen .welcome-divider svg{display:block;width:100%;height:100%}
 body:not(.signup-mode):not(.app-entered) #intro-screen .intro-continue{width:100%;min-height:48px;margin:0;border:1px solid var(--entry-ink);border-radius:10px;background:var(--entry-ink)!important;color:var(--entry-bg)!important;box-shadow:none;font-family:inherit;font-size:16px;font-weight:400;letter-spacing:0}
@@ -157,7 +157,6 @@ body:is([data-brand-audience="public"],[data-brand-audience="unresolved"][data-w
 @keyframes hype-ground-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.015,.99)}}
 @media(prefers-reduced-motion:reduce){#hype-loader .hype-flyer{transition:none!important;transform:none!important}#hype-loader .hype-sprite{animation:none!important}#hype-loader .hype-floor-shadow{transition:none}}
 body:not(.app-entered):not(.signup-mode){padding:0!important}
-#intro-screen .entry-legacy-copy[hidden]{display:none!important}
 `;
 export function renderApprovedEntry() { return `<section id="intro-screen" class="intro-screen my-mmd-welcome" aria-label="ยืนยันตัวตน">
     <div class="sigil-portrait-wall" aria-hidden="true"></div>
@@ -171,7 +170,6 @@ export function renderApprovedEntry() { return `<section id="intro-screen" class
     </div>
     <div class="welcome-letter">
 
-<div class="entry-legacy-copy" hidden aria-hidden="true"><span class="mark" data-copy="mark"></span><span class="title" data-copy="title"></span><span class="sub" data-copy="subtitle"></span><div id="message" class="welcome-context-note hidden" role="status" aria-live="polite"></div><div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div></div>
       <div class="welcome-divider" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 64" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M0 58H480M24 58V28H62V58M92 58V18H132V58M104 18V6H120V18M166 58V34H220V58M256 58V10H300V58M270 10V2H286V10M338 58V24H376V58M414 58V36H456V58"/></svg></div>
       <button id="intro-continue" class="intro-continue" type="button" aria-label="ยืนยันตัวตนผ่าน LINE" aria-expanded="false" disabled><span>ยืนยันผ่าน LINE</span><span aria-hidden="true">→</span></button>
       <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
