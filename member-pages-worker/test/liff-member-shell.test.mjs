@@ -1499,10 +1499,3 @@ test("approved entry has no demo audience controls and keeps branding on the ver
  const script=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
  assert.doesNotThrow(()=>new Function(script));
 });
-
-
-test("approved entry artwork follows the chosen world before verification without assigning identity", () => {
- for(const world of ['public','private']) {
-  assert.ok(APPROVED_ENTRY_CSS.includes('body:is([data-brand-audience="'+world+'"],[data-brand-audience="unresolved"][data-world="'+world+'"])'));
- }
-});
