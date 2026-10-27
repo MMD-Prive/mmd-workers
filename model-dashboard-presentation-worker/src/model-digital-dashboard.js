@@ -119,23 +119,25 @@ async function loadHistory(){try{var d=await api("/v1/model/history"),sum=d.summ
 var privacyState=null,privacyBusy=false;
 async function loadPrivacy(){try{
   var result=await Promise.all([api("/v1/model/settings/customer-visibility"),api("/v1/model/history")]);
-  privacyState=result[0];var select=$("#privacy-job");select.replaceChildren();
+  privacyState=result[0];var select=$("#privacy-job"),previous=select.value;select.replaceChildren();
   (result[1].items||[]).filter(function(job){return job.source==="canonical_session"&&String(job.id||"").indexOf("session:")===0}).forEach(function(job){
     var option=document.createElement("option");option.value=job.id.slice(8);option.textContent=(job.work_date||"ไม่ระบุวันที่")+" · "+option.value;select.append(option);
   });
+  if(Array.from(select.options).some(function(option){return option.value===previous}))select.value=previous;
   $("#privacy-status").textContent=privacyState.ready?"ซ่อนไว้ "+privacyState.blocked_count+" คน":"MMD ต้องตรวจและย้ายรูปสาธารณะเดิมให้ปลอดภัยก่อน จึงจะเปิดใช้การซ่อนได้";
   privacyButtons();
 }catch(_){$("#privacy-status").textContent="ยังตรวจการตั้งค่าไม่ได้ กรุณาลองใหม่";privacyState=null;privacyButtons();}}
 function privacyButtons(){var id=$("#privacy-job").value,ready=Boolean(privacyState&&privacyState.ready&&id&&!privacyBusy),blocked=Boolean(privacyState&&(privacyState.blocked_session_ids||[]).indexOf(id)>=0);
-  $("#privacy-block").disabled=!ready;$("#privacy-unblock").disabled=!ready;}
+  $("#privacy-block").disabled=!ready||blocked;$("#privacy-unblock").disabled=!ready||!blocked;}
 $("#privacy-panel").ontoggle=function(){if(this.open)loadPrivacy();};
+if(window.location.hash==="#privacy-panel")$("#privacy-panel").open=true;
 $("#privacy-job").onchange=privacyButtons;
 async function savePrivacy(action){
   if(!privacyState||privacyBusy||!$("#privacy-job").value)return;
   privacyBusy=true;privacyButtons();$("#privacy-status").textContent="กำลังบันทึก";
   try{await api("/v1/model/settings/customer-visibility",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({action:action,session_id:$("#privacy-job").value,revision:privacyState.revision})});
     await loadPrivacy();notify(action==="block"?"ซ่อนจากลูกค้าคนนี้แล้ว":"ยกเลิกการซ่อนแล้ว");
-  }catch(_){$("#privacy-status").textContent="ยังบันทึกไม่ได้ ข้อมูลอาจเปลี่ยนหรือยังตรวจสิทธิ์ไม่ครบ กรุณาเปิดแผงนี้ใหม่";notify("ยังไม่ได้เปลี่ยนการตั้งค่า",true);}
+  }catch(_){privacyState=null;$("#privacy-status").textContent="ยังบันทึกไม่ได้ ข้อมูลอาจเปลี่ยนหรือยังตรวจสิทธิ์ไม่ครบ กรุณาเปิดแผงนี้ใหม่";notify("ยังไม่ได้เปลี่ยนการตั้งค่า",true);}
   finally{privacyBusy=false;privacyButtons();}
 }
 $("#privacy-block").onclick=function(){savePrivacy("block");};$("#privacy-unblock").onclick=function(){savePrivacy("unblock");};
