@@ -582,6 +582,14 @@ async function createOrUpdatePaymentIntent(env, payload, options = {}) {
   });
 
   if (existing?.id) {
+    if (payload.payment_stage === "membership" && /^liffrenew_(standard|premium)_[a-f0-9]{24}$/.test(toStr(payload.session_id))) {
+      for (const key of ["SESSION_ID", "PACKAGE_CODE", "AMOUNT", "PAYMENT_STAGE"]) {
+        const fallback={SESSION_ID:"session_id",PACKAGE_CODE:"Package Code",AMOUNT:"Amount",PAYMENT_STAGE:"payment_stage"}[key];
+        const field=toStr(env[`AT_PAYMENTS__${key}`] || fallback);
+        if (String(existing.fields?.[field] ?? "") !== String(fields[field] ?? "")) throw new Error("renewal_payment_identity_conflict");
+      }
+      return { ok:true, mode:"reuse", record_id:existing.id };
+    }
     await airtablePatch(env, table, existing.id, fields, { typecast });
     return { ok: true, mode: "update", record_id: existing.id };
   }
