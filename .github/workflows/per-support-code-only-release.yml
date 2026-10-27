@@ -15,6 +15,11 @@ on:
         description: Owner approval for Guest/Public SUPPORT and exact checkpts shortcut
         required: true
         type: string
+      snapshot_activation:
+        description: Allow only the reviewed Checkpts snapshot flag to turn on
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,6 +39,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       BASELINE_VERSION: ${{ inputs.baseline_version }}
       SOURCE_SHA: ${{ inputs.approved_sha }}
+      MEMBER_REPLY_SNAPSHOT_ACTIVATION: ${{ inputs.snapshot_activation }}
       NO_COLOR: '1'
     steps:
       - uses: actions/checkout@v4
@@ -51,8 +57,12 @@ jobs:
       - name: Validate scoped source and release guard
         run: |
           grep -Eq '^LINE_AUTO_REPLY_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          if [ "$MEMBER_REPLY_SNAPSHOT_ACTIVATION" = "true" ]; then
+            grep -Eq '^LINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
+          fi
           node --check member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
-          node --test member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
+          node --check member-dashboard-chat-worker/src/index.js
+          node --test member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs member-dashboard-chat-worker/test/kenji-line-turn-aggregation.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs member-dashboard-chat-worker/src/kenji-line-snapshot.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs member-dashboard-chat-worker/test/line-webhook.test.mjs scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
       - name: Verify exact active baseline before upload
         run: |
           node --input-type=module <<'NODE'
@@ -88,4 +98,5 @@ jobs:
           echo "- Baseline: ${BASELINE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Active candidate: ${CANDIDATE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           echo '- Guest/Public SUPPORT plus exact checkpts utility; general LINE replies remain paused' >> "$GITHUB_STEP_SUMMARY"
-          echo '- Worker code only; no route or secret write' >> "$GITHUB_STEP_SUMMARY"
+          echo "- Snapshot activation: ${MEMBER_REPLY_SNAPSHOT_ACTIVATION}" >> "$GITHUB_STEP_SUMMARY"
+          echo '- No route or secret write; snapshot activation permits exactly one reviewed plain-text flag change' >> "$GITHUB_STEP_SUMMARY"
