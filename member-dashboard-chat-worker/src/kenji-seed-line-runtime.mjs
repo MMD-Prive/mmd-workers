@@ -1,5 +1,5 @@
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
-import { richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
+import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
 import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membership-response.mjs";
@@ -652,8 +652,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const support = isRichMenuSupport(event);
     const navigation = richMenuNavigation(event);
     const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
-    // General replies stay paused. Only an explicit SUPPORT tap may enter the
-    // separately enabled Per AI lane; the runtime LINE kill switch still wins.
+    const checkptsShortcut = isCheckptsShortcut(event);
+    // General replies stay paused. SUPPORT opens the bounded Per AI lane;
+    // exact checkpts is a one-shot MY MMD link under the same kill switch.
     let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || (supportReplyEnabled && supportButtonTap)) && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
@@ -677,6 +678,10 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
       directUser && eventMode !== "standby" && !redelivered && replyToken
       ? resolveRichMenuConversation(event, continuity) : null;
+    // An exact, one-shot MY MMD shortcut remains usable after the SUPPORT
+    // conversation expires. It never reads or claims a Points balance in LINE.
+    let checkptsShortcutEnabled = Boolean(checkptsShortcut && supportReplyEnabled && directUser &&
+      eventMode !== "standby" && !redelivered && replyToken);
     // The exact rights command normally owns its own checked response. After
     // a Guest/Public SUPPORT tap, keep it inside that bounded Per AI conversation
     // so an unverified customer gets the MY MMD route instead of a broad rights report.
@@ -686,19 +691,20 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       saved.push(rightsOutcome);
       continue;
     }
-    // Check canonical takeover for both the menu tap and every bounded follow-up.
+    // Check canonical takeover for menu taps, bounded follow-ups, and checkpts.
     let menuOwnerClear = false;
-    if (menuCommandEnabled || menuConversation) {
+    if (menuCommandEnabled || menuConversation || checkptsShortcutEnabled) {
       const owner = await getLineOwnerTakeoverState(env, event.source.userId, continuity, { signal: AbortSignal.timeout(1500) })
         .catch(() => ({ ok: false }));
       menuOwnerClear = owner.ok === true && owner.active !== true;
       menuCommandEnabled = menuCommandEnabled && menuOwnerClear;
+      checkptsShortcutEnabled = checkptsShortcutEnabled && menuOwnerClear;
     }
     const menuConversationEnabled = Boolean(menuConversation && menuOwnerClear);
-    const liveTruth = !support && !navigation && !menuConversation && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+    const liveTruth = !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
-    const liveAvailability = !support && !navigation && !menuConversation && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
+    const liveAvailability = !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
       effectiveIntent === "availability_request"
       ? await resolveKenjiLineAvailability({ env, continuity })
       : { ok: false, status: "not_attempted", authority: "sigil_availability_snapshot_v1" };
@@ -711,6 +717,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           ? { rich_menu_state: supportButtonTap && menuState ? { ...menuState, entry: "per_support_button" } : menuState } : {}) })
       : menuConversation
         ? withDecisionMetadata({}, menuConversationEnabled ? menuConversation : { text: "", reply_source: "silent", guard_blocked: true, guard_reason: "owner_takeover" })
+      : checkptsShortcutEnabled
+        ? withDecisionMetadata({}, resolveCheckptsShortcut())
       : !navigation && eventAutoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: !ownerContextTest && controls.model_keyword_auto_reply !== true,
@@ -739,13 +747,13 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       : baseDecision;
     const decision = firstContactEnabled && !autoReplyEnabled
       ? firstContactFallback
-      : navigation || support || menuConversation || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
+      : navigation || support || menuConversation || checkptsShortcut || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
       intent: text(firstContactFallback.intent || effectiveIntent),
       continuity,
     });
     // OA Manager sends the add-friend greeting. A follow event must not get a
     // second Worker greeting, even if the broader reply flag is enabled later.
-    const shouldReply = Boolean(directUser && (eventAutoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
+    const shouldReply = Boolean(directUser && (eventAutoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled || checkptsShortcutEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
 
@@ -764,7 +772,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         ? await recordDeliveredKenjiLineReply({ env, event, replyText: decision.text }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
         : { skipped: true, reason: "reply_not_delivered" };
       const matrix = continuityEnabled && directUser &&
-        ((!support && !navigation && !menuConversation) || (delivered && decision.rich_menu_state)) && eventMode !== "standby" && !redelivered
+        ((!support && !navigation && !menuConversation && !checkptsShortcut) || (delivered && decision.rich_menu_state)) && eventMode !== "standby" && !redelivered
         ? await writeKenjiLineMatrixTurn({
             env,
             continuity,

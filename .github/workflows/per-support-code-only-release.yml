@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       approval_ref:
-        description: Owner approval for Guest/Public SUPPORT replies
+        description: Owner approval for Guest/Public SUPPORT and exact checkpts shortcut
         required: true
         type: string
 
@@ -87,5 +87,5 @@ jobs:
           echo "- Source: ${SOURCE_SHA}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Baseline: ${BASELINE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Active candidate: ${CANDIDATE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
-          echo '- Guest/Public SUPPORT only; general LINE replies remain paused' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Guest/Public SUPPORT plus exact checkpts utility; general LINE replies remain paused' >> "$GITHUB_STEP_SUMMARY"
           echo '- Worker code only; no route or secret write' >> "$GITHUB_STEP_SUMMARY"

@@ -115,6 +115,20 @@ test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified
   assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true, kill: true })).replies.length, 0);
 });
 
+test("Checkpts is a one-shot MY MMD shortcut even after SUPPORT expires", async () => {
+  const expired = { topic: "support", entry: "per_support_button", expires_at: "2000-01-01T00:00:00Z" };
+  for (const [message, matrixState] of [["checkpts", null], ["Checkpts", expired]]) {
+    const result = await run("", { message, matrixState, auto: false, deterministic: true });
+    assert.equal(result.replies.length, 1);
+    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v1");
+    assert.match(result.replies[0].messages[0].text, /intent=status&view=points/);
+    assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
+  }
+  for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }, { signatureValid: false }, { deterministic: false }])
+    assert.equal((await run("", { message: "Checkpts", auto: false, deterministic: true, ...options })).replies.length, 0);
+  assert.equal((await run("", { message: "mycheckpts", auto: false, deterministic: true })).replies.length, 0);
+});
+
 test("SUPPORT follow-up เช็กสิทธิ์ stays in Per AI instead of the broad rights command", async () => {
   const state = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
   const support = await run("", { message: "เช็กสิทธิ์", matrixState: state, auto: false, deterministic: true, rightsCommand: true });
