@@ -1,3 +1,4 @@
+import { createHypeLoaderMotion, APPROVED_ENTRY_CSS } from "../src/liff-approved-entry.js";
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 import { runInNewContext } from "node:vm";
@@ -70,9 +71,10 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /MMD%20Academy%20fback%20inside\.webp/);
       assert.match(html, /SIGIL%20Apply%20Hero\.webp/);
       assert.match(html, /data-welcome-audience="existing"/);
-      assert.match(html, /width="31" height="31"/);
-      assert.match(html, /aria-label="เข้าสู่บอร์ดสมาชิก MY MMD"/);
-      assert.match(html, /ENTER →/);
+      assert.match(html, /entry-brand-footer/);
+      assert.match(html, /sigil-primary-logo/);
+      assert.match(html, /aria-label="ยืนยันตัวตนผ่าน LINE"/);
+      assert.match(html, /ยืนยันผ่าน LINE/);
       assert.match(html, /ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน/);
       assert.match(html, /id="member-logout"/);
       assert.match(html, /\/member\/api\/liff\/logout/);
@@ -191,7 +193,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /if \(profileReady\) void hydrateMemberHome\(target\.id === "history-panel" \? "history" : target\.id\)/);
     assert.match(html, /if \(!profileReady \|\| !read\) return/);
     assert.doesNotMatch(html, /const hydrationReads = \[/);
-    assert.match(html, /<progress id="hype-progress" aria-label="กำลังเปิด MY MMD"><\/progress>/);
+    assert.match(html, /id="hype-progress" class="loading-bar" role="progressbar"/);
+    assert.match(html, /class="hype-sprite"[^>]+width="38" height="57"/);
     assert.doesNotMatch(html, /hype-loader-img|hype-progress-number|setLoadingPercent/);
     assert.match(html, /void readSignupCatalog\(\)/);
     assert.match(html, /readProfile\(\{ hydrate: false \}\)/);
@@ -1464,4 +1467,35 @@ test('assistant dock activates Home before opening and scrolling to Personal Mai
  let click;const calls=[];
  runInNewContext(html.slice(start,end),{document:{querySelectorAll:()=>[{addEventListener:(_,handler)=>{click=handler;},hasAttribute:()=>true,getAttribute:()=> 'home'}]},showView:(...args)=>calls.push(args),personalMainUI:{open:()=>calls.push('open')}});
  click();assert.deepEqual(calls,[['home',false],'open']);
+});
+
+
+test("approved HYPE loader lands during a wait, resumes, and never creates percentage progress from timers", () => {
+ let now=0,nextId=0;const queue=new Map(),percentages=[];
+ const setTimeout=(fn,ms)=>{queue.set(++nextId,{at:now+ms,fn});return nextId;};
+ const tick=ms=>{const end=now+ms;for(;;){const next=[...queue].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;queue.delete(next[0]);now=next[1].at;next[1].fn();}now=end;};
+ const create=runInNewContext('('+createHypeLoaderMotion.toString()+')',{setTimeout,clearTimeout:id=>queue.delete(id)});
+ const motion=create({onProgress:value=>percentages.push(value)});
+ motion.open();tick(6000);assert.equal(motion.state().phase,'landing');
+ tick(900);assert.equal(motion.state().phase,'standing');
+ tick(2600);assert.equal(motion.state().phase,'flying');
+ assert.deepEqual(percentages,[0]);
+ motion.stall();tick(900);motion.progress(50);assert.equal(motion.state().phase,'flying');
+ assert.equal(motion.progress(25),false);
+ motion.progress(100);assert.equal(queue.size,0);tick(60000);assert.equal(motion.state().phase,'standing');
+ motion.close();assert.equal(queue.size,0);assert.equal(motion.state().phase,'idle');
+ motion.open();assert.equal(motion.state().percent,0);motion.close();
+});
+
+test("approved entry has no demo audience controls and keeps branding on the verified projection", async () => {
+ const html=await (await shell('/member/liff?world=private&audience=sigil')).text();
+ assert.match(html,/data-brand-audience="unresolved"/);
+ assert.match(html,/SĪGIL System/);
+ assert.match(APPROVED_ENTRY_CSS,/linear-gradient\(110deg,#a42138/);
+ assert.doesNotMatch(html,/preview-mode|hypeLoadingPreview|preview-hype|ขั้นตอนถัดไป \+25%/);
+ const loader=html.slice(html.indexOf('<div id="hype-loader"'),html.indexOf('<main>'));
+ assert.doesNotMatch(loader,/hype-loader-text|verification-logo|<svg/);
+ assert.match(loader,/data-confirmed-percent="0">0%/);
+ const script=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+ assert.doesNotThrow(()=>new Function(script));
 });
