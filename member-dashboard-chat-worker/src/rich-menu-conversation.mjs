@@ -2,7 +2,36 @@
 // State is stored in the existing Conversation Matrix and is never entitlement.
 const WINDOW_MS = 30 * 60 * 1000;
 const ENTRY = "https://miniapp.line.me/2010862595-yT4DCEMc/";
-const pointsAnswer = () => `ดูคะแนนที่ระบบตรวจสอบให้บัญชีนี้ได้ที่ ${ENTRY}?intent=status&view=points ครับ ผมยังไม่ยืนยันยอดจากข้อความในแชตครับ`;
+const pointsAnswer = () => pointsInChatAnswer();
+const POINTS_AUTHORITY = "my_mmd_entitlement_resolver_v1";
+
+function membershipStatus(membership = {}) {
+  if (membership.member_blocked === true || membership.lifecycle === "blocked") return "ระงับการใช้งานครับ";
+  if (membership.lifecycle === "revoked") return "สิทธิ์ถูกยกเลิกแล้วครับ";
+  if (["active", "expiring_soon", "grace"].includes(membership.lifecycle)) {
+    const label = String(membership.label || "").trim();
+    return `${label || "สมาชิก MMD"} (${membership.lifecycle === "grace" ? "ช่วงผ่อนผัน" : "ใช้งานอยู่"}) ครับ`;
+  }
+  if (membership.lifecycle === "expired") return "หมดอายุแล้วครับ";
+  return "ยังไม่พบสิทธิ์สมาชิกที่ใช้งานอยู่ครับ";
+}
+
+function membershipExpiry(membership = {}) {
+  if (!/^(?:active|expiring_soon|grace|expired)$/.test(membership.lifecycle || "")) return "ยังไม่มีวันที่ยืนยันได้ครับ";
+  const match = String(membership.expire_at || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+  if (!match || Number(match[2]) < 1 || Number(match[2]) > 12 || Number(match[3]) < 1 || Number(match[3]) > 31)
+    return "ยังไม่มีวันที่ยืนยันได้ครับ";
+  return `${match[3]}/${match[2]}/${match[1]} ครับ`;
+}
+
+function pointsInChatAnswer(liveTruth = {}) {
+  if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
+    return "สถานะสมาชิก: ยังยืนยันบัญชีนี้ไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังยืนยันไม่ได้ครับ";
+  }
+  const points = liveTruth.points || {};
+  const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
+  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ"}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}`;
+}
 const TOPICS = {
   guest: ["membership", "models", "booking", "services", "stories", "support"],
   public: ["support", "models", "booking", "membership", "membership", "support"],
@@ -19,10 +48,14 @@ export function isCheckptsShortcut(event = {}) {
     /^checkpts$/i.test(String(event.message.text || "").trim());
 }
 
-export function resolveCheckptsShortcut() {
+export function resolveCheckptsShortcut(liveTruth = {}) {
+  const verified = liveTruth.ok === true && liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved" &&
+    liveTruth.points?.status === "verified" && Number.isSafeInteger(liveTruth.points.active_points) && liveTruth.points.active_points >= 0;
   return {
-    text: pointsAnswer(), intent: "points_status", inferred_intent: "points_status",
-    reply_source: "my_mmd_points_shortcut_v1", model_attempted: false,
+    text: pointsInChatAnswer(liveTruth), intent: "points_status", inferred_intent: "points_status",
+    reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
+    truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
+    live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
     handoff_required: false, cta_appended: false,
   };
 }

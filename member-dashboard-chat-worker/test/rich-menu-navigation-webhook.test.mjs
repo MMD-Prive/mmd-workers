@@ -4,7 +4,7 @@ import { createLineSignature } from "../src/index.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { getMmdRichMenuActionMap, getMmdRichMenuDestinationMap } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
-async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null, rightsCommand = false } = {}) {
+async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null, rightsCommand = false, memberTruth = null } = {}) {
   const replies = [], reads = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
@@ -34,7 +34,7 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
       KENJI_LINE_CONTINUITY_ENABLED: "true", AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "test",
       INTERNAL_TOKEN: "test",
       ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: { line_oa_auto_reply: kill, all_kenji_mutations: globalKill } }) },
-      MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+      MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth || { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
         membership: { level: "private_premium", lifecycle: "active", private_visibility_envelope: "premium" } }) },
     }, null, { fetch: async () => Response.json({ ok: true, saved: intake ? [{ campaign_event: false }] : [] }) });
     return { status: response.status, body: await response.json(), replies, reads };
@@ -108,25 +108,55 @@ test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified
   const result = await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true });
   assert.equal(result.replies.length, 1);
   assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
-  assert.match(result.replies[0].messages[0].text, /MY MMD|miniapp\.line\.me|คะแนน/);
+  assert.match(result.replies[0].messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+  assert.doesNotMatch(result.replies[0].messages[0].text, /https?:\/\//);
   assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   for (const other of [{ topic: "support", expires_at }, { topic: "models", entry: "per_support_button", expires_at }])
     assert.equal((await run("", { message: "เช็ก Points", matrixState: other, auto: false, deterministic: true })).replies.length, 0);
   assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true, kill: true })).replies.length, 0);
 });
 
-test("Checkpts is a one-shot MY MMD shortcut even after SUPPORT expires", async () => {
+test("Checkpts gives three in-chat fields after SUPPORT expires without exposing unverified values", async () => {
   const expired = { topic: "support", entry: "per_support_button", expires_at: "2000-01-01T00:00:00Z" };
   for (const [message, matrixState] of [["checkpts", null], ["Checkpts", expired]]) {
     const result = await run("", { message, matrixState, auto: false, deterministic: true });
     assert.equal(result.replies.length, 1);
-    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v1");
-    assert.match(result.replies[0].messages[0].text, /intent=status&view=points/);
+    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
+    assert.match(result.replies[0].messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(result.replies[0].messages[0].text, /https?:\/\//);
     assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   }
   for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }, { signatureValid: false }, { deterministic: false }])
     assert.equal((await run("", { message: "Checkpts", auto: false, deterministic: true, ...options })).replies.length, 0);
   assert.equal((await run("", { message: "mycheckpts", auto: false, deterministic: true })).replies.length, 0);
+});
+
+test("Checkpts reports verified status, zero Points and expiry from canonical member truth", async () => {
+  const memberTruth = { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+    membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
+    points: { status: "verified", active_points: 0 } };
+  const active = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
+  for (const [message, matrixState] of [["Checkpts", null], ["checkpts", active], ["เช็ก Points", active]]) {
+    const result = await run("", { message, matrixState, memberTruth, auto: false, deterministic: true });
+    assert.equal(result.replies.length, 1);
+    assert.equal(result.replies[0].messages[0].text, "สถานะสมาชิก: Private Premium (ใช้งานอยู่) ครับ\nPoints: 0 Points ครับ\nวันหมดอายุ: 03/02/2027 ครับ");
+  }
+});
+
+test("Checkpts has separate replies for unverified Points and unverified identity", async () => {
+  const known = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruth: {
+    ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+    membership: { level: "public_member", label: "Public Member", lifecycle: "active", expire_at: "" },
+    points: { status: "unavailable", active_points: null },
+  } });
+  assert.match(known.replies[0].messages[0].text, /สถานะสมาชิก: Public Member.*\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังไม่มีวันที่ยืนยันได้ครับ/);
+  const unknown = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruth: {
+    ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "unresolved",
+    membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
+    points: { status: "verified", active_points: 999 },
+  } });
+  assert.equal(unknown.replies[0].messages[0].text, "สถานะสมาชิก: ยังยืนยันบัญชีนี้ไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังยืนยันไม่ได้ครับ");
+  assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027|https?:\/\//);
 });
 
 test("SUPPORT follow-up เช็กสิทธิ์ stays in Per AI instead of the broad rights command", async () => {
