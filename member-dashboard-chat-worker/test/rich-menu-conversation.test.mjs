@@ -151,7 +151,7 @@ test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
     assert.match(replies.at(-1).messages[0].text, /checkpts/);
     const result = await send(textEvent("checkpts"));
-    assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
+    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
     assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);

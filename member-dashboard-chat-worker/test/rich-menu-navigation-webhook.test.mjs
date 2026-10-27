@@ -186,15 +186,16 @@ test("Checkpts retains canonical SVIP status and expiry if the Points lookup tim
     "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ");
 });
 
-test("SUPPORT follow-up เช็กสิทธิ์ stays in Per AI instead of the broad rights command", async () => {
+test("exact rights alias uses the same Points shortcut inside and outside SUPPORT", async () => {
   const state = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
   const support = await run("", { message: "เช็กสิทธิ์", matrixState: state, auto: false, deterministic: true, rightsCommand: true });
   assert.equal(support.replies.length, 1);
-  assert.equal(support.body.saved[0].reply_source, "rich_menu_conversation_v1");
-  assert.match(support.replies[0].messages[0].text, /MY MMD|miniapp\.line\.me/);
+  assert.equal(support.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
+  assert.match(support.replies[0].messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
   assert.doesNotMatch(support.replies[0].messages[0].text, /CARE BACK|Standard|Premium|สถานะสมาชิกยังตรวจยืนยันไม่ครบ/);
 
   const standalone = await run("", { message: "เช็กสิทธิ์", auto: false, deterministic: true, rightsCommand: true });
-  assert.equal(standalone.body.saved[0].rights_check, true);
-  assert.equal(standalone.replies.length, 0);
+  assert.equal(standalone.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
+  assert.equal(standalone.replies.length, 1);
+  assert.equal(standalone.replies[0].messages[0].text, support.replies[0].messages[0].text);
 });
