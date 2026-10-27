@@ -7,8 +7,8 @@ workers_dev = true
 routes = []
 
 [triggers]
-# Offset from admin/payments (:00/:05/...) and Rich Menu (:00) maintenance.
-crons = ["2,7,12,17,22,27,32,37,42,47,52,57 * * * *"]
+# Daily 04:02 Bangkok (21:02 UTC), offset from :00 maintenance.
+crons = ["2 21 * * *"]
 
 [[d1_databases]]
 binding = "MEMBER_REPLY_DB"
