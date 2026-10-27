@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectMemberReplySnapshot, snapshotProjection } from "./member-reply-snapshot.js";
+import { memberReplyMorningWindowReady, projectMemberReplySnapshot, snapshotProjection } from "./member-reply-snapshot.js";
 
 const authority = "my_mmd_entitlement_resolver_v1";
 const membership = { level: "svip", label: "SVIP", lifecycle: "active", expire_at: "2026-11-30" };
@@ -31,8 +31,13 @@ test("pending updates, aged rows and temporal expiry hide prior values", () => {
   const row = { line_key: "hash", ...projectMemberReplySnapshot(truth, points, "2026-10-27T06:00:00Z"), refresh_generation: 1 };
   assert.equal(snapshotProjection(row, null, now)?.points.active_points, 320);
   assert.equal(snapshotProjection(row, { generation: 2 }, now), null);
-  assert.equal(snapshotProjection(row, { generation: 2, reason: "daily_0600_bkk" }, now)?.points.active_points, 320);
+  assert.equal(snapshotProjection(row, { generation: 2, reason: "daily_0402_bkk" }, now)?.points.active_points, 320);
   assert.equal(snapshotProjection(row, null, now + 31 * 60 * 60 * 1000), null);
   assert.equal(snapshotProjection({ ...row, points_valid_until: "2026-10-27T06:59:00Z" }, null, now)?.points.status, "unavailable");
   assert.equal(snapshotProjection({ ...row, membership_expire_at: "2026-10-27" }, null, now), null);
+});
+
+test("morning rebuild begins at 04:02 Bangkok, away from top-of-hour jobs", () => {
+  assert.equal(memberReplyMorningWindowReady(new Date("2026-10-26T21:01:59Z")), false);
+  assert.equal(memberReplyMorningWindowReady(new Date("2026-10-26T21:02:00Z")), true);
 });

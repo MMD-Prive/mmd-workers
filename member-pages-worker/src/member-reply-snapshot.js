@@ -9,6 +9,7 @@ const LINE_ID = /^U[0-9a-f]{32}$/i;
 const MEMBER_ID = /^[A-Za-z0-9_:-]{3,100}$/;
 const STALE_MS = 30 * 60 * 60 * 1000;
 const MAX_DAILY_LINES = 1000;
+const DAILY_REASON = "daily_0402_bkk";
 const MEMBERS = "tblgWc5VRon5o8Mhk";
 const ENTITLEMENTS = "tblNImdF9PKAxhXGi";
 
@@ -118,7 +119,7 @@ async function queueRefresh(env, lineUserId, reason = "event") {
     (line_key,line_user_id,generation,reason,requested_at,next_attempt_at)
     VALUES (?,?,1,?,?,?) ON CONFLICT(line_key) DO UPDATE SET
     generation=generation+1,
-    reason=CASE WHEN excluded.reason='daily_0600_bkk' AND member_reply_refresh_queue.reason!='daily_0600_bkk'
+    reason=CASE WHEN excluded.reason='${DAILY_REASON}' AND member_reply_refresh_queue.reason!='${DAILY_REASON}'
       THEN member_reply_refresh_queue.reason ELSE excluded.reason END,
     requested_at=excluded.requested_at,
     next_attempt_at=excluded.next_attempt_at,attempts=0`)
@@ -192,15 +193,21 @@ async function allLinkedLines(env) {
   return [...lines];
 }
 
+export function memberReplyMorningWindowReady(now = new Date()) {
+  const bangkok = new Date(now.getTime() + 7 * 60 * 60_000);
+  return bangkok.getUTCHours() > 4 ||
+    (bangkok.getUTCHours() === 4 && bangkok.getUTCMinutes() >= 2);
+}
+
 export async function scheduleMemberReplySnapshots(env, now = new Date()) {
   if (!env.MEMBER_REPLY_DB) return { ok: false, reason: "db_unavailable" };
   const bangkok = new Date(now.getTime() + 7 * 60 * 60_000);
   const date = bangkok.toISOString().slice(0, 10);
-  if (bangkok.getUTCHours() >= 6) {
+  if (memberReplyMorningWindowReady(now)) {
     const done = await env.MEMBER_REPLY_DB.prepare("SELECT bangkok_date FROM member_reply_daily_rebuilds WHERE bangkok_date=?").bind(date).first();
     if (!done) {
       const lines = await allLinkedLines(env);
-      for (const id of lines) await queueRefresh(env, id, "daily_0600_bkk");
+      for (const id of lines) await queueRefresh(env, id, DAILY_REASON);
       await env.MEMBER_REPLY_DB.prepare("INSERT OR IGNORE INTO member_reply_daily_rebuilds (bangkok_date,queued_at,line_count) VALUES (?,?,?)")
         .bind(date, now.toISOString(), lines.length).run();
     }
@@ -212,7 +219,7 @@ export function snapshotProjection(row, pending, now = Date.now()) {
   const age = row ? now - Date.parse(row.refreshed_at) : NaN;
   const recent = row && Number.isFinite(age) && age >= 0 && age <= STALE_MS;
   const current = recent && (!pending || row.refresh_generation >= pending.generation ||
-    pending.reason === "daily_0600_bkk");
+    pending.reason === DAILY_REASON);
   if (!current || row.source_authority !== AUTHORITY) return null;
   const expiryDate = /^\d{4}-\d{2}-\d{2}/.test(row.membership_expire_at || "")
     ? Date.parse(`${row.membership_expire_at.slice(0, 10)}T00:00:00+07:00`) : NaN;
