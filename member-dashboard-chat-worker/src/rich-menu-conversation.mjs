@@ -26,7 +26,7 @@ function membershipExpiry(membership = {}) {
 
 function pointsInChatAnswer(liveTruth = {}) {
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
-    return "สถานะสมาชิก: ยังยืนยันบัญชีนี้ไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังยืนยันไม่ได้ครับ";
+    return "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ";
   }
   const points = liveTruth.points || {};
   const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;

@@ -4,8 +4,8 @@ import { createLineSignature } from "../src/index.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { getMmdRichMenuActionMap, getMmdRichMenuDestinationMap } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
-async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null, rightsCommand = false, memberTruth = null } = {}) {
-  const replies = [], reads = [];
+async function run(data, { kill = false, globalKill = false, takeover = false, auto = true, deterministic = false, firstContact = false, mode = "active", redelivery = false, intake = true, signatureValid = true, message = "", matrixState = null, rightsCommand = false, memberTruth = null, memberTruthByIntent = null } = {}) {
+  const replies = [], reads = [], memberTruthCalls = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
@@ -34,10 +34,16 @@ async function run(data, { kill = false, globalKill = false, takeover = false, a
       KENJI_LINE_CONTINUITY_ENABLED: "true", AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "test",
       INTERNAL_TOKEN: "test",
       ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: { line_oa_auto_reply: kill, all_kenji_mutations: globalKill } }) },
-      MEMBER_PAGES_WORKER: { fetch: async () => Response.json(memberTruth || { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
-        membership: { level: "private_premium", lifecycle: "active", private_visibility_envelope: "premium" } }) },
+      MEMBER_PAGES_WORKER: { fetch: async request => {
+        const intent = (await request.json()).intent;
+        memberTruthCalls.push(intent);
+        const override = memberTruthByIntent?.[intent];
+        return Response.json(override?.body || memberTruth || { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+          membership: { level: "private_premium", lifecycle: "active", private_visibility_envelope: "premium" } },
+        { status: override?.httpStatus || 200 });
+      } },
     }, null, { fetch: async () => Response.json({ ok: true, saved: intake ? [{ campaign_event: false }] : [] }) });
-    return { status: response.status, body: await response.json(), replies, reads };
+    return { status: response.status, body: await response.json(), replies, reads, memberTruthCalls };
   } finally { globalThis.fetch = original; }
 }
 
@@ -155,8 +161,29 @@ test("Checkpts has separate replies for unverified Points and unverified identit
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 999 },
   } });
-  assert.equal(unknown.replies[0].messages[0].text, "สถานะสมาชิก: ยังยืนยันบัญชีนี้ไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังยืนยันไม่ได้ครับ");
+  assert.equal(unknown.replies[0].messages[0].text, "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ");
   assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027|https?:\/\//);
+});
+
+test("Checkpts retains canonical SVIP status and expiry if the Points lookup times out", async () => {
+  const result = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruthByIntent: {
+    points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
+    membership_status: { body: { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+      membership: { level: "svip", label: "SVIP", lifecycle: "active", expire_at: "2027-02-03" },
+      points: { status: "verified", active_points: 999 } } },
+  } });
+  assert.deepEqual(result.memberTruthCalls, ["points_status", "membership_status"]);
+  assert.equal(result.replies.length, 1);
+  assert.equal(result.replies[0].messages[0].text,
+    "สถานะสมาชิก: SVIP (ใช้งานอยู่) ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: 03/02/2027 ครับ");
+  assert.doesNotMatch(result.replies[0].messages[0].text, /999|https?:\/\//);
+
+  const unavailable = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruthByIntent: {
+    points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
+    membership_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
+  } });
+  assert.equal(unavailable.replies[0].messages[0].text,
+    "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ");
 });
 
 test("SUPPORT follow-up เช็กสิทธิ์ stays in Per AI instead of the broad rights command", async () => {

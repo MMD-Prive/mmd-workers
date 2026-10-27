@@ -703,9 +703,19 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const menuConversationEnabled = Boolean(menuConversation && menuOwnerClear);
     const pointsConversationEnabled = Boolean(menuConversationEnabled && menuConversation.intent === "points_status");
     const pointsReplyEnabled = pointsConversationEnabled || checkptsShortcutEnabled;
-    const pointsTruth = pointsReplyEnabled
+    let pointsTruth = pointsReplyEnabled
       ? await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
       : null;
+    if (pointsReplyEnabled && pointsTruth?.ok !== true) {
+      // A slow Points ledger must not hide a separately verified membership.
+      // The membership-only resolver is bound to this LINE ID; never reuse a
+      // profile balance as a substitute for canonical paid Points.
+      const membershipTruth = await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" });
+      if (membershipTruth.ok === true) pointsTruth = {
+        ...membershipTruth,
+        points: { status: "unavailable", active_points: null },
+      };
+    }
     const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth) : null;
     const liveTruth = !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
