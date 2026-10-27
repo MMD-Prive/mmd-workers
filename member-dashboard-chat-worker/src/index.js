@@ -15,6 +15,7 @@ import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from
 import { fetchKenjiCanonicalPublishedKnowledge } from "./kenji-canonical-knowledge-runtime.mjs";
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "./kenji-line-continuity-runtime.mjs";
 import { aggregateKenjiLineTurn, prepareKenjiLineWebhookBatch } from "./kenji-line-turn-aggregation.mjs";
+import { CHECKPTS_INTAKE, isCheckptsShortcut } from "./checkpts-command.mjs";
 import { buildKenjiLineConversationHistory, recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-understanding-shadow.mjs";
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
@@ -2976,7 +2977,11 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
 
   const events = Array.isArray(body.events) ? body.events : [];
   const preparedEvents = prepareKenjiLineWebhookBatch(events);
-  const runtimeStatus = await requestKenjiRuntimeStatus(env);
+  const commandIntake = env[CHECKPTS_INTAKE] === true;
+  const pointsOnlyIntake = commandIntake && events.length > 0 && events.every(isCheckptsShortcut);
+  // The signed Seed owner checks controls, identity and takeover before replying.
+  // This private intake branch can only persist an inbound event; it cannot reply.
+  const runtimeStatus = pointsOnlyIntake ? { ok: false, controls: {} } : await requestKenjiRuntimeStatus(env);
   const runtimeControls = runtimeStatus.controls || {};
   const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
   const runtimeLineKill = runtimeAllKill || runtimeControls.line_oa_auto_reply === true;
@@ -2989,6 +2994,17 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
 
   for (const prepared of preparedEvents) {
     const rawEvent = prepared.raw_event || prepared.turn_event || {};
+    if (commandIntake && isCheckptsShortcut(rawEvent)) {
+      const persist = syncLineEventAfterReply(env, rawEvent, "points_status", false, false, {
+        turn_aggregation: { source: "points_command", suppressed: false, aggregate_count: 1 },
+      }).catch(() => ({ skipped: true, reason: "airtable_sync_failed", deduped: false }));
+      const canDefer = typeof ctx?.waitUntil === "function";
+      if (canDefer) ctx.waitUntil(persist);
+      const record = canDefer ? { pending: true } : await persist;
+      saved.push({ ok: true, type: rawEvent.type, intent: "points_status", replied: false,
+        recorded: Boolean(record?.id), record_pending: Boolean(record?.pending), message_id: getLineEventId(rawEvent) });
+      continue;
+    }
     if (prepared.suppressed === true) {
       const rawText = getLineEventText(rawEvent);
       const rawIntent = inferLineIntent(rawText, rawEvent);

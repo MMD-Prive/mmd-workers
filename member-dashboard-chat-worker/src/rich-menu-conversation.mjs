@@ -1,3 +1,5 @@
+export { isCheckptsShortcut } from "./checkpts-command.mjs";
+
 // A delivered menu reply opens a bounded conversation, not general auto-reply.
 // State is stored in the existing Conversation Matrix and is never entitlement.
 const WINDOW_MS = 30 * 60 * 1000;
@@ -41,11 +43,6 @@ const TOPICS = {
 export function richMenuConversationStart(navigation, now = Date.now()) {
   const topic = TOPICS[navigation?.menu]?.[navigation?.button];
   return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : null;
-}
-
-export function isCheckptsShortcut(event = {}) {
-  return event.type === "message" && event.message?.type === "text" && event.source?.type === "user" &&
-    /^checkpts$/i.test(String(event.message.text || "").trim());
 }
 
 export function resolveCheckptsShortcut(liveTruth = {}) {

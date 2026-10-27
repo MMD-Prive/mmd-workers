@@ -39,6 +39,21 @@ export const KENJI_MANUAL_RELEASE_PATHS = new Set([
   'scripts/kenji-code-only-promote.test.mjs',
 ]);
 
+// Checkpts fast-path edits use the protected code-only release. Keep this
+// exact set separate so unrelated index.js edits cannot bypass legacy scope.
+const CHECKPTS_MANUAL_RELEASE_PATHS = new Set([
+  'member-dashboard-chat-worker/src/checkpts-command.mjs',
+  'member-dashboard-chat-worker/src/index.js',
+  'member-dashboard-chat-worker/src/kenji-line-turn-aggregation.mjs',
+  'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+  'member-dashboard-chat-worker/src/rich-menu-conversation.mjs',
+  'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs',
+  'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
+  'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
+  '.github/workflows/per-support-code-only-release.yml',
+]);
+
 // HENNA copy changes use an owner-approved code-only release, never the
 // legacy job that deploys unrelated MMS code and reconciles routes.
 const hennaCopyPaths = new Set([
@@ -129,6 +144,12 @@ export const LINE_JOB_EVIDENCE_RELEASE_PATHS = new Set([
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.some(file => file === 'member-dashboard-chat-worker/src/checkpts-command.mjs' ||
+    file === 'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs')) {
+    assert.ok(files.every(file => CHECKPTS_MANUAL_RELEASE_PATHS.has(file) || pausePaths.has(file)),
+      'CHECKPTS_MIXED_DELTA: stop; separately review unrelated deployment changes');
+    return false;
+  }
   if (files.includes(configPath) && files.every(file => snapshotActivationPaths.has(file)) &&
       files.includes('scripts/kenji-code-only-promote.mjs')) {
     const line = /^LINE_MEMBER_REPLY_SNAPSHOT_ENABLED\s*=\s*"(true|false)"$/m;

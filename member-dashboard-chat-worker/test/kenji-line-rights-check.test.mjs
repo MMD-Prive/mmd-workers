@@ -39,7 +39,7 @@ for (const level of ["vip", "svip", "black_card"]) test(`preserves ${level} and 
 test("blocked member cannot receive renewal price", () => { const t=truth(); t.membership.member_blocked=true; assert.doesNotMatch(renderLineRightsCheck(t).text,/2,500/); });
 test("new signup classification is honest", () => { const t=truth(); t.membership.lifecycle="expired"; t.renewal={status:"review_required",classification:"new_signup"}; assert.match(renderLineRightsCheck(t).text,/สมัครใหม่/); });
 
-for (const commandText of ["เช็กสิทธิ์\u200B", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็กสิทธิ์", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็คสิทธิ์", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็คสิทธิ์ ."]) test(`signed ingress reaches ${JSON.stringify(commandText)} with general stop; invalid signature cannot read or reply`, async () => {
+for (const commandText of ["เช็กสิทธิ์\u200B", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็กสิทธิ์", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็คสิทธิ์", "อยากทราบสถานะสมาชิกตอนนี้ พิมพ์ เช็คสิทธิ์ ."]) test(`signed ingress preserves the shared shortcut stop or the legacy sentence gate for ${JSON.stringify(commandText)}`, async () => {
   const { createLineSignature } = await import("../src/index.js");
   const { handleKenjiSeedLineRequest } = await import("../src/kenji-seed-line-runtime.mjs");
   const f = commandFixture(await fixture()); let delivered = 0; let truthReads = 0; let intakes = 0;
@@ -55,7 +55,13 @@ for (const commandText of ["เช็กสิทธิ์\u200B", "อยาก
     assert.equal((await handleKenjiSeedLineRequest(req("bad"),f.env,null,legacy)).status,401);
     assert.equal(intakes,0);assert.equal(truthReads,0);assert.equal(delivered,0);
     const result = await handleKenjiSeedLineRequest(req(await createLineSignature(body,f.env.LINE_CHANNEL_SECRET)),f.env,null,legacy);
-    assert.equal(result.status,200);assert.equal(truthReads,1);assert.equal(delivered,1);assert.equal((await result.json()).saved[0].rights_check,true);
+    assert.equal(result.status,200);
+    if (commandText === "เช็กสิทธิ์\u200B") {
+      assert.equal(truthReads,0); assert.equal(delivered,0);
+      assert.equal((await result.json()).saved[0].reply_source,"silent", "exact aliases share Checkpts controls, including the LINE stop");
+    } else {
+      assert.equal(truthReads,1);assert.equal(delivered,1);assert.equal((await result.json()).saved[0].rights_check,true);
+    }
   } finally { globalThis.fetch=previous; }
 });
 

@@ -61,7 +61,8 @@ jobs:
             grep -Eq '^LINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
           fi
           node --check member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
-          node --test member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
+          node --check member-dashboard-chat-worker/src/index.js
+          node --test member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs member-dashboard-chat-worker/test/kenji-line-turn-aggregation.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs member-dashboard-chat-worker/src/kenji-line-snapshot.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs member-dashboard-chat-worker/test/line-webhook.test.mjs scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
       - name: Verify exact active baseline before upload
         run: |
           node --input-type=module <<'NODE'

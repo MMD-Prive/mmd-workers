@@ -1,5 +1,6 @@
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
+import { CHECKPTS_INTAKE } from "./checkpts-command.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
 import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membership-response.mjs";
@@ -559,7 +560,7 @@ async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events 
     headers: new Headers(request.headers),
     body: rawBody,
   });
-  const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false" };
+  const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false", [CHECKPTS_INTAKE]: true };
   // Finish the menu tap's intake state before the reply owner writes its
   // delivered context. A deferred legacy write could otherwise overwrite it.
   const intakeCtx = events.some(event => richMenuNavigation(event)) ? null : ctx;
@@ -655,11 +656,11 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
     const checkptsShortcut = isCheckptsShortcut(event);
     // General replies stay paused. SUPPORT opens the bounded Per AI lane;
-    // exact checkpts is a one-shot read of canonical MY MMD truth.
+    // Exact Points aliases are a one-shot read of canonical MY MMD truth.
     let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || (supportReplyEnabled && supportButtonTap)) && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
-    const currentIntent = navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
+    const currentIntent = checkptsShortcut ? "points_status" : navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
     const continuity = continuityEnabled && directUser && ((!support && !navigation) || menuCommandEnabled)
       ? await resolveKenjiLineContinuity({ env, event, currentIntent })
       : {
@@ -675,7 +676,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const supportConversation = supportReplyEnabled &&
       continuity.matrix?.payload_json?.rich_menu_v1?.entry === "per_support_button" &&
       continuity.matrix?.payload_json?.rich_menu_v1?.topic === "support";
-    const menuConversation = !navigation && !support && (eventAutoReplyEnabled || supportConversation) &&
+    const menuConversation = !checkptsShortcut && !navigation && !support && (eventAutoReplyEnabled || supportConversation) &&
       enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
       directUser && eventMode !== "standby" && !redelivered && replyToken
       ? resolveRichMenuConversation(event, continuity) : null;
@@ -683,10 +684,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     // conversation expires. It can report only a canonically verified balance.
     let checkptsShortcutEnabled = Boolean(checkptsShortcut && supportReplyEnabled && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
-    // The exact rights command normally owns its own checked response. After
-    // a Guest/Public SUPPORT tap, keep it inside that bounded Per AI conversation
-    // so an unverified customer gets the MY MMD route instead of a broad rights report.
-    const rightsOutcome = supportConversation && menuConversation
+    // Exact Points aliases always use the same shortcut, even during SUPPORT.
+    // Other rights sentences retain their existing bounded command behavior.
+    const rightsOutcome = checkptsShortcut || (supportConversation && menuConversation)
       ? null : await handleLineRightsCheck({ env, event, runtime });
     if (rightsOutcome) {
       saved.push(rightsOutcome);
@@ -717,6 +717,20 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       };
     }
     const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth) : null;
+    if (checkptsShortcutEnabled) {
+      // Recheck at the delivery boundary, not in the duplicate legacy intake.
+      // Per may take over (including Matrix-only takeover) during a slow read.
+      const fresh = await resolveKenjiLineContinuity({ env, event, currentIntent: "points_status" })
+        .catch(() => ({ available: false }));
+      const [currentRuntime, owner] = await Promise.all([
+        requestKenjiRuntimeStatus(env),
+        getLineOwnerTakeoverState(env, event.source.userId, fresh, { signal: AbortSignal.timeout(1500) })
+          .catch(() => ({ ok: false })),
+      ]);
+      checkptsShortcutEnabled = fresh.available === true && currentRuntime.ok === true &&
+        currentRuntime.controls?.all_kenji_mutations !== true && currentRuntime.controls?.line_oa_auto_reply !== true &&
+        owner.ok === true && owner.active !== true;
+    }
     const liveTruth = !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
@@ -737,7 +751,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         ? withDecisionMetadata({}, menuConversationEnabled ? menuConversation : { text: "", reply_source: "silent", guard_blocked: true, guard_reason: "owner_takeover" })
       : checkptsShortcutEnabled
         ? withDecisionMetadata({}, pointsDecision)
-      : !navigation && eventAutoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
+      : !checkptsShortcut && !navigation && eventAutoReplyEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
       ? support ? withDecisionMetadata({}, await resolveRichMenuSupport(event, env)) : await resolveKenjiSeedDecision(event, env, {
           modelAccessAllowed: !ownerContextTest && controls.model_keyword_auto_reply !== true,
           currentIntent,
@@ -745,7 +759,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           liveTruth,
           liveAvailability,
         })
-      : !navigation && firstContactEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
+      : !checkptsShortcut && !navigation && firstContactEnabled && directUser && eventMode !== "standby" && !redelivered && replyToken
         ? withDecisionMetadata({}, await decideKenjiFirstContactMembership(event, currentIntent, continuity, env))
       : withDecisionMetadata({}, {
         ...continuityMetadata({ continuity }, currentIntent),
