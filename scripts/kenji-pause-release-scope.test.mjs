@@ -9,6 +9,17 @@ const richMenuPauseFiles = [
   'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
   'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
 ];
+test('snapshot flag activation skips legacy route deployment only for its exact reviewed delta', () => {
+  const files = [config, 'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-code-only-promote.mjs', '.github/workflows/per-support-code-only-release.yml'];
+  const before = 'LINE_AUTO_REPLY_ENABLED = "false"\nLINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "false"\n';
+  const after = before.replace('SNAPSHOT_ENABLED = "false"', 'SNAPSHOT_ENABLED = "true"');
+  assert.equal(deployRequired('push', files, before, after), false);
+  assert.throws(() => deployRequired('push', files, before, after + 'OTHER = "true"\n'));
+  assert.throws(() => deployRequired('push', files, before, after.replace('LINE_AUTO_REPLY_ENABLED = "false"', 'LINE_AUTO_REPLY_ENABLED = "true"')));
+  assert.throws(() => deployRequired('push', [...files, 'member-pages-worker/src/runtime-index.js'], before, after),
+    /PERSONAL_MAIN_MIXED_DELTA/);
+});
 test('PR 2608 exact Rich Menu pause scope skips the entire automatic deployment job', () => {
   assert.equal(deployRequired('push', richMenuPauseFiles), false);
   assert.equal(deployRequired('push', [...richMenuPauseFiles,

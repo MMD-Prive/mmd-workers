@@ -106,6 +106,14 @@ const personalMainGuardPaths = new Set([
   'scripts/kenji-pause-release-scope.mjs',
   'scripts/kenji-pause-release-scope.test.mjs',
 ]);
+const snapshotActivationPaths = new Set([
+  configPath,
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+  'scripts/kenji-code-only-promote.mjs',
+  'scripts/kenji-code-only-promote.test.mjs',
+  '.github/workflows/per-support-code-only-release.yml',
+]);
 
 // LINE evidence binding uses a code-only release with live bindings preserved.
 // It must never fall through to the legacy MMS deployment and route sync.
@@ -121,6 +129,16 @@ export const LINE_JOB_EVIDENCE_RELEASE_PATHS = new Set([
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.includes(configPath) && files.every(file => snapshotActivationPaths.has(file)) &&
+      files.includes('scripts/kenji-code-only-promote.mjs')) {
+    const line = /^LINE_MEMBER_REPLY_SNAPSHOT_ENABLED\s*=\s*"(true|false)"$/m;
+    assert.equal(beforeConfig.match(line)?.[1], 'false', 'Snapshot baseline must be OFF');
+    assert.equal(afterConfig.match(line)?.[1], 'true', 'Snapshot candidate must be ON');
+    assert.match(afterConfig, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
+    assert.equal(beforeConfig.replace(line, ''), afterConfig.replace(line, ''),
+      'Only the reviewed snapshot flag may change');
+    return false;
+  }
   if (files.some(file => LINE_JOB_EVIDENCE_RELEASE_PATHS.has(file))) {
     assert.ok(files.every(file => LINE_JOB_EVIDENCE_RELEASE_PATHS.has(file) || personalMainGuardPaths.has(file)),
       'LINE_JOB_EVIDENCE_MIXED_DELTA: stop; separately review unrelated deployment changes');

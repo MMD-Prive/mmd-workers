@@ -9,7 +9,7 @@ const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const canonical = value => JSON.stringify(value, (_, item) => item && !Array.isArray(item) && typeof item === 'object'
   ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
-export function validateCandidate(baseline, candidate, sourceSha) {
+export function validateCandidate(baseline, candidate, sourceSha, snapshotActivation = false) {
   assert.match(sourceSha, /^[a-f0-9]{40}$/);
   const annotations = candidate.annotations || {};
   const commitSha = annotations['workers/commit_sha'];
@@ -18,7 +18,22 @@ export function validateCandidate(baseline, candidate, sourceSha) {
     annotations['workers/message'] === `Per AI Support source-sha=${sourceSha}` &&
     annotations['workers/tag'] === `per-support-${sourceSha.slice(0, 12)}`
   ), 'Candidate source provenance mismatch');
-  assert.equal(canonical(versionConfiguration(candidate)), canonical(versionConfiguration(baseline)), 'Configuration differs; no promotion');
+  const baselineConfig = versionConfiguration(baseline);
+  const candidateConfig = versionConfiguration(candidate);
+  if (snapshotActivation) {
+    const readFlag = config => config.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED');
+    const before = readFlag(baselineConfig);
+    const after = readFlag(candidateConfig);
+    assert.equal(before?.type, 'plain_text');
+    assert.equal(before.text, 'false', 'Snapshot baseline must be OFF');
+    assert.equal(after?.type, 'plain_text');
+    assert.equal(after.text, 'true', 'Snapshot candidate must be ON');
+    const normalizedCandidate = { ...candidateConfig,
+      bindings: candidateConfig.bindings.map(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED' ? before : item) };
+    assert.equal(canonical(normalizedCandidate), canonical(baselineConfig), 'Unapproved configuration delta');
+  } else {
+    assert.equal(canonical(candidateConfig), canonical(baselineConfig), 'Configuration differs; no promotion');
+  }
   for (const name of ['LINE_AUTO_REPLY_ENABLED', 'LINE_KENJI_MODEL_ENABLED', 'KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED']) {
     const binding = candidate.resources.bindings.find(item => item.name === name);
     assert.equal(binding?.type, 'plain_text');
@@ -42,7 +57,7 @@ export function createTransport(token, request = fetch) {
   };
 }
 
-export async function promote({ call, baselineId, candidateId, sourceSha }) {
+export async function promote({ call, baselineId, candidateId, sourceSha, snapshotActivation = false }) {
   for (const id of [baselineId, candidateId]) assert.match(id || '', uuid);
   assert.notEqual(baselineId, candidateId);
   const active = async () => {
@@ -55,7 +70,7 @@ export async function promote({ call, baselineId, candidateId, sourceSha }) {
   assert.equal(before.versions[0].version_id, baselineId, 'Active baseline drift');
   const baseline = await call(ROOT + '/versions/' + baselineId);
   const candidate = await call(ROOT + '/versions/' + candidateId);
-  validateCandidate(baseline, candidate, sourceSha);
+  validateCandidate(baseline, candidate, sourceSha, snapshotActivation);
   assert.equal((await active()).id, before.id, 'Deployment drift before promotion');
   // One write, no retries even when outcome is unknown.
   const written = await call(ROOT + '/deployments', 'POST', {
@@ -64,13 +79,15 @@ export async function promote({ call, baselineId, candidateId, sourceSha }) {
   const after = await active();
   assert.equal(after.id, written.id);
   assert.equal(after.versions[0].version_id, candidateId);
-  validateCandidate(baseline, await call(ROOT + '/versions/' + candidateId), sourceSha);
+  validateCandidate(baseline, await call(ROOT + '/versions/' + candidateId), sourceSha, snapshotActivation);
   return { worker: 'member-dashboard-chat-worker', deployment: after.id, version: candidateId,
-    auto_reply: 'OFF', model: 'OFF', config_unchanged: true, route_writes: 0, secret_writes: 0 };
+    auto_reply: 'OFF', model: 'OFF', config_unchanged: !snapshotActivation,
+    snapshot_enabled: snapshotActivation, route_writes: 0, secret_writes: 0 };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = await promote({ call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    baselineId: process.env.BASELINE_VERSION, candidateId: process.env.CANDIDATE_VERSION, sourceSha: process.env.SOURCE_SHA });
+    baselineId: process.env.BASELINE_VERSION, candidateId: process.env.CANDIDATE_VERSION,
+    sourceSha: process.env.SOURCE_SHA, snapshotActivation: process.env.MEMBER_REPLY_SNAPSHOT_ACTIVATION === 'true' });
   console.log(JSON.stringify(result));
 }
