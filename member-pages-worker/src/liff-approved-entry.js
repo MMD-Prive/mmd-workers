@@ -137,9 +137,10 @@ body:is([data-brand-audience="private"],[data-brand-audience="unresolved"][data-
 body.context-resolving:not(.signup-mode) #hype-loader{gap:0;padding:24px}
 #hype-loader .hype-progress{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:min(100%,280px);margin:0;color:var(--entry-muted)}
 #hype-loader .loading-bar{position:relative;height:4px;width:100%;overflow:hidden;border-radius:3px;background:var(--entry-line)}
+#hype-loader .loading-bar-fill{position:absolute;inset:0 auto 0 0;width:var(--entry-progress,0%);border-radius:inherit;background:var(--entry-accent)}
 #hype-loader .loading-bar-segment{position:absolute;inset:0 auto 0 0;width:38%;border-radius:inherit;background:var(--entry-accent);animation:entry-bar-slide 1.3s ease-in-out infinite}
 #hype-loader .customer-boot-progress{width:auto;font-size:11px;line-height:1;font-variant-numeric:tabular-nums}
-body:is([data-brand-audience="public"],[data-brand-audience="unresolved"][data-world="public"]) #hype-loader .loading-bar-segment{background:linear-gradient(100deg,#a42138,#61131f)}
+body:is([data-brand-audience="public"],[data-brand-audience="unresolved"][data-world="public"]) #hype-loader :is(.loading-bar-segment,.loading-bar-fill){background:linear-gradient(100deg,#a42138,#61131f)}
 @keyframes entry-bar-slide{from{transform:translateX(-110%)}to{transform:translateX(365%)}}
 @media(prefers-reduced-motion:reduce){#hype-loader .loading-bar-segment{animation:none;left:31%}}
 
@@ -184,7 +185,7 @@ export function renderApprovedEntry() { return `<section id="intro-screen" class
       </footer>
     </div>
   </section>`; }
-export function renderApprovedLoader() { return `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังยืนยันตัวตน"><div class="hype-flight-stage" aria-hidden="true"><span class="hype-floor-shadow"></span><div id="hype-flyer" class="hype-flyer"><img class="hype-sprite" src="${ENTRY_ASSETS.hype}" alt="" width="38" height="57"></div></div><div class="hype-progress"><div id="hype-progress" class="loading-bar" role="progressbar" aria-label="กำลังยืนยันตัวตน" aria-valuemin="0" aria-valuemax="100"><span class="loading-bar-segment" aria-hidden="true"></span></div><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0%</span></div><button id="customer-boot-retry" type="button" hidden>ลองอีกครั้ง</button></div>`; }
+export function renderApprovedLoader() { return `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังยืนยันตัวตน"><div class="hype-flight-stage" aria-hidden="true"><span class="hype-floor-shadow"></span><div id="hype-flyer" class="hype-flyer"><img class="hype-sprite" src="${ENTRY_ASSETS.hype}" alt="" width="38" height="57"></div></div><div class="hype-progress"><div id="hype-progress" class="loading-bar" role="progressbar" aria-label="กำลังยืนยันตัวตน" aria-valuemin="0" aria-valuemax="100"><span class="loading-bar-fill" aria-hidden="true"></span><span class="loading-bar-segment" aria-hidden="true"></span></div><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0%</span></div><button id="customer-boot-retry" type="button" hidden>ลองอีกครั้ง</button></div>`; }
 // Presentation-only loading motion. Timers never change confirmed percentages.
 export function createHypeLoaderMotion({onMotion,onProgress,stallMs=6000,landingMs=900,restMs=2600,moveMs=2600}) {
   const timers = {};
@@ -221,8 +222,33 @@ export function createHypeLoaderMotion({onMotion,onProgress,stallMs=6000,landing
   return {open,close,progress,stall:land,state:()=>({active,complete,percent,phase})};
 }
 
+// Animate only toward a confirmed milestone; waiting never advances the target.
+export function createEntryPercentMotion({onRender,reduced=false,now=()=>Date.now()}) {
+  let active=false,value=0,target=0,timer;
+  function cancel(){if(timer!==undefined)clearTimeout(timer);timer=undefined;}
+  function paint(){onRender?.(Math.floor(value));}
+  function open(){cancel();active=true;value=target=0;paint();}
+  function close(){cancel();active=false;}
+  function progress(next){
+    if(!active||typeof next!=='number'||!Number.isFinite(next))return;
+    next=Math.min(100,Math.max(0,Math.floor(next)));
+    if(next<=target){paint();return;}
+    cancel();target=next;
+    if(reduced){value=target;paint();return;}
+    const start=value,started=now(),duration=target===100?180:600;
+    function frame(){
+      timer=undefined;if(!active)return;
+      const fraction=Math.min(1,Math.max(0,(now()-started)/duration));
+      value=start+(target-start)*fraction;paint();
+      if(fraction<1)timer=setTimeout(frame,16);
+    }
+    frame();
+  }
+  return {open,close,progress,paint};
+}
+
 // Observe only presentation state; never start, retry or authorize a request here.
-export function installApprovedEntryLoading(createMotion) {
+export function installApprovedEntryLoading(createMotion,createPercentMotion) {
   const loader=document.getElementById('hype-loader');
   const flyer=document.getElementById('hype-flyer');
   const label=document.getElementById('customer-boot-progress');
@@ -230,6 +256,10 @@ export function installApprovedEntryLoading(createMotion) {
   if(!loader||!flyer)return {update(){},complete(){}};
   const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
   let shown=false, failed=false, completed=false;
+  const numbers=createPercentMotion({reduced,onRender(value){
+    if(label)label.textContent=value+'%';
+    if(bar){bar.style.setProperty('--entry-progress',value+'%');bar.setAttribute('aria-valuenow',String(value));bar.classList.toggle('is-complete',value===100);}
+  }});
   const motion=createMotion({onMotion(phase,point){
     loader.dataset.motion=phase;
     flyer.style.transitionDuration=(reduced?0:point.duration)+'ms';
@@ -237,27 +267,29 @@ export function installApprovedEntryLoading(createMotion) {
   }});
   function sync(){
     const visible=document.body.classList.contains('context-resolving');
-    if(visible&&!shown){shown=true;failed=false;completed=false;motion.open();}
-    else if(!visible&&shown){shown=false;motion.close();}
+    if(visible&&!shown){shown=true;failed=false;completed=false;motion.open();numbers.open();}
+    else if(!visible&&shown){shown=false;motion.close();numbers.close();}
   }
   function update(state){
     sync();
-    if(!shown||completed||state.overallPending===undefined)return;
+    if(!shown||state.overallPending===undefined)return;
+    if(completed){numbers.paint();return;}
     const error=Boolean(state.overallError&&!state.overallPending);
-    if(error){failed=true;motion.close();return;}
-    if(failed&&state.overallPending){failed=false;motion.open();}
-    if(state.reset){motion.close();motion.open();}
-    if(state.overallPending&&state.overallPercent===50)motion.progress(50);
+    if(error){failed=true;motion.close();numbers.close();return;}
+    if(failed&&state.overallPending){failed=false;motion.open();numbers.open();}
+    if(state.reset){motion.close();motion.open();numbers.open();}
+    if(state.overallPending&&state.overallPercent===50){motion.progress(50);numbers.progress(50);}
+    numbers.paint();
   }
   function complete(){
     if(!shown||failed||completed)return;
     completed=true;motion.progress(100);
-    if(label){label.textContent='100%';label.dataset.confirmedPercent='100';}
-    if(bar){bar.classList.add('is-complete');bar.setAttribute('aria-valuenow','100');}
+    if(label)label.dataset.confirmedPercent='100';
+    numbers.progress(100);
   }
   sync();
   const observer=typeof MutationObserver==='function'?new MutationObserver(sync):null;
   observer?.observe(document.body,{attributes:true,attributeFilter:['class']});
-  window.addEventListener('pagehide',()=>{motion.close();observer?.disconnect();},{once:true});
+  window.addEventListener('pagehide',()=>{motion.close();numbers.close();observer?.disconnect();},{once:true});
   return {update,complete};
 }

@@ -1,4 +1,4 @@
-import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
+import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
 import { createAccountView } from "./liff-account-view.js";
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
@@ -463,7 +463,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
   // live in this browser scope, not only in the Worker bundle that renders it.
   const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });
   const CONFIG = ${safeConfig};
-  const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()});
+  const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()}, ${createEntryPercentMotion.toString()});
   const renderLoadingProgress = ${renderCustomerProgress.toString()};
   const customerLoading = (${createCustomerProgress.toString()})({ render: (panel, state) => { renderLoadingProgress(panel, state); entryLoading.update(state); }, request: window.fetch.bind(window) });
   const fetch = customerLoading.fetch;

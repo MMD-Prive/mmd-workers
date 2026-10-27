@@ -1,4 +1,4 @@
-import { createHypeLoaderMotion, APPROVED_ENTRY_CSS } from "../src/liff-approved-entry.js";
+import { createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading, APPROVED_ENTRY_CSS } from "../src/liff-approved-entry.js";
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 import { runInNewContext } from "node:vm";
@@ -1498,4 +1498,34 @@ test("approved entry has no demo audience controls and keeps branding on the ver
  assert.match(loader,/data-confirmed-percent="0">0%/);
  const script=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
  assert.doesNotThrow(()=>new Function(script));
+});
+
+
+test("entry percentage counts between confirmed milestones, pauses, finishes and cancels", () => {
+ let now=0,nextId=0;const queue=new Map(),values=[];
+ const tick=ms=>{const end=now+ms;for(;;){const next=[...queue].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;queue.delete(next[0]);now=next[1].at;next[1].fn();}now=end;};
+ const create=runInNewContext('('+createEntryPercentMotion.toString()+')',{setTimeout:(fn,ms)=>{queue.set(++nextId,{at:now+ms,fn});return nextId;},clearTimeout:id=>queue.delete(id)});
+ const counter=create({now:()=>now,onRender:n=>values.push(n)});
+ counter.open();tick(1000);assert.deepEqual(values,[0]);
+ counter.progress(50);tick(300);assert.ok(values.at(-1)>0&&values.at(-1)<50);
+ tick(400);assert.equal(values.at(-1),50);assert.equal(queue.size,0);
+ tick(6000);assert.equal(values.at(-1),50);
+ counter.progress(0);assert.equal(values.at(-1),50);
+ counter.progress(100);tick(192);assert.equal(values.at(-1),100);assert.equal(queue.size,0);
+ assert.ok(values.every((v,i)=>i===0||v>=values[i-1]));
+ counter.open();counter.progress(50);tick(100);counter.close();assert.equal(queue.size,0);
+ const reduced=[];const still=create({reduced:true,onRender:n=>reduced.push(n)});still.open();still.progress(50);assert.deepEqual(reduced,[0,50]);assert.equal(queue.size,0);
+});
+
+test("entry numeric animation survives progress rerenders and leaves error copy visible", () => {
+ let visible=true,onRender,ended=0;const classes=new Set();
+ const label={textContent:'0%',dataset:{}},bar={style:{setProperty(k,v){this[k]=v;}},setAttribute(k,v){this[k]=v;},classList:{toggle(k,v){if(v)classes.add(k);else classes.delete(k);}}};
+ const loader={dataset:{}},flyer={style:{}};
+ const document={body:{classList:{contains:()=>visible}},getElementById:id=>({'hype-loader':loader,'hype-flyer':flyer,'customer-boot-progress':label,'hype-progress':bar}[id])};
+ const install=runInNewContext('('+installApprovedEntryLoading.toString()+')',{document,window:{matchMedia:()=>({matches:false}),addEventListener(){}}});
+ const controller=install(()=>({open(){},close(){},progress(){}}),options=>{onRender=options.onRender;return {open(){onRender(0);},close(){ended++;},progress(n){onRender(n===100?72:25);},paint(){onRender(25);}};});
+ controller.update({overallPending:1,overallPercent:50});assert.equal(label.textContent,'25%');assert.equal(bar['aria-valuenow'],'25');assert.equal(bar.style['--entry-progress'],'25%');
+ label.textContent='50%';controller.update({overallPending:1,overallPercent:0});assert.equal(label.textContent,'25%');
+ label.textContent='รับข้อมูลไม่สำเร็จ';controller.update({overallPending:0,overallError:true});assert.equal(label.textContent,'รับข้อมูลไม่สำเร็จ');assert.ok(ended>0);
+ visible=false;controller.update({overallPending:0});
 });
