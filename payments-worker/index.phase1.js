@@ -1,6 +1,5 @@
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
-import { requestMemberReplyRefresh } from "../shared/member-reply-refresh.mjs";
 import {
   CONFIRM_ACK_PATH,
   CONFIRM_CONTEXT_PATH,
@@ -302,12 +301,6 @@ async function runTrustedNotify(request, env, ctx, body, { injectInternalToken, 
         awarded: false,
         error: String(error?.message || error || "points_phase1_failed"),
       }));
-
-  if (pointsLedger?.ok === true && pointsLedger.record_id && pointsLedger.duplicate !== true) {
-    const refresh = requestMemberReplyRefresh(env, "MEMBER_PAGES_WORKER", "payments-worker",
-      { member_id: pointsLedger.member_id }, "points_posted");
-    if (ctx?.waitUntil) ctx.waitUntil(refresh); else await refresh;
-  }
 
   const partnerConfirmation = skipPointsAndPartner
     ? { ok: true, sent: false, skipped: true, reason: "cancellation_credit_recovery" }

@@ -7,7 +7,6 @@ import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { PointsPhase1Coordinator } from "./index.phase1.js";
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
-import { requestMemberReplyRefresh } from "../shared/member-reply-refresh.mjs";
 import { handleReviewedProof, isReviewedProofRequest } from "./reviewed-proof.js";
 import {
   commitEmailLessLineRenewalMoneyTruth,
@@ -284,15 +283,6 @@ export default {
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
       const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
-      if (finalResponse.ok) {
-        const finalPayload = await finalResponse.clone().json().catch(() => null);
-        const materialized = finalPayload?.membership_write_through;
-        if (materialized?.status === "materialized" && materialized.member_id) {
-          const refresh = requestMemberReplyRefresh(env, "MEMBER_PAGES_WORKER", "payments-worker",
-            { member_id: materialized.member_id }, "membership_materialized");
-          if (ctx?.waitUntil) ctx.waitUntil(refresh); else await refresh;
-        }
-      }
       queueReviewedPaymentAuthorityEvents(ctx, env, analyticsRequest, finalResponse);
       return finalResponse;
     }
@@ -414,12 +404,6 @@ async function runSigilCombinedReviewedNotify(request, env, ctx, body, component
     awarded: false,
     error: String(error?.message || error || "points_phase1_failed"),
   }));
-
-  if (pointsLedger?.ok === true && pointsLedger.record_id && pointsLedger.duplicate !== true) {
-    const refresh = requestMemberReplyRefresh(env, "MEMBER_PAGES_WORKER", "payments-worker",
-      { member_id: pointsLedger.member_id }, "points_posted");
-    if (ctx?.waitUntil) ctx.waitUntil(refresh); else await refresh;
-  }
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
