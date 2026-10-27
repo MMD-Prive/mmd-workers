@@ -41,6 +41,12 @@ jobs:
           node --test index.test.mjs model-webflow-home.test.mjs
           node --test ../webflow/sigil/model/model-webflow-entry-recovery.test.mjs ../webflow/sigil/model/model-console-v3-identity-first.test.mjs
 
+      - name: Validate MY MODEL privacy navigation and controls
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/model-privacy-ui" --no-save --ignore-scripts --package-lock=false jsdom@24.1.3
+          NODE_PATH="$RUNNER_TEMP/model-privacy-ui/node_modules" node --test model-dashboard-presentation-worker/model-customer-privacy-ui.test.cjs
+
   deploy:
     if: github.event_name != 'pull_request'
     needs: test

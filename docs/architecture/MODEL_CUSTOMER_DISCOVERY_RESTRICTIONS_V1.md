@@ -1,6 +1,8 @@
 # Model customer discovery restrictions V1
 
-Status: implementation in PR #2792; keep draft until integrated CI and production gates pass.
+Status: worker and paired Booking deployments completed in PR #2792 and
+follow-ups on 2026-10-27 ICT. Actual signed-in allowed/blocked verification
+remains pending; do not claim complete hiding across all MMD channels.
 
 ## Canonical ownership
 
@@ -8,7 +10,16 @@ Models.customer_discovery_policy_json is server-only. Provisioned field:
 fldwY92oSYUKoRdLy. Blank preserves existing rules; malformed rules fail closed.
 No real customer's block list has been populated by implementation work.
 
-MY MODEL's YOU view contains a compact privacy panel. It selects a canonical
+MY MODEL's YOU view contains a compact privacy panel. The normal Webflow
+home uses `webflow/sigil/model/customer-discovery-privacy-entry-v1.js` to place
+a link inside the existing verified workspace/account section. The link opens
+the canonical apex `/sigil/model/dashboard/more#privacy-panel`, where the
+existing signed Model session and privacy API remain authoritative. It carries
+no customer identifier, callback token or query-supplied identity. The fragment
+opens the panel, and rejected/stale writes leave controls disabled until reload.
+The Thai navigation key is `myModel.privacy.open` in MMD-Prive/mmd-i18n.
+
+The panel It selects a canonical
 historical job, not a customer name, contact, free-typed member ID or hash.
 The existing signed Model session owns the API:
 GET|POST /v1/model/settings/customer-visibility.
