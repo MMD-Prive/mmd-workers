@@ -66,24 +66,24 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
 
     const member = await resolveMember(env, session.memberId);
     if (!member) return unavailable;
-    const formula = pointsFormula(member.memberId, session.strictIdentity === true ? "" : member.email);
+    const clients = await airtableList(env, env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS", {
+      filterByFormula: `{line_user_id}=${formulaString(session.lineUserId)}`, maxRecords: 3,
+    });
+    if (clients.length !== 1 || clean(clients[0]?.fields?.line_user_id) !== session.lineUserId) {
+      return { ...unavailable, reason: "canonical_client_unresolved" };
+    }
+    const clientId = clean(clients[0]?.id);
+    if (!/^rec[A-Za-z0-9]+$/.test(clientId) || member.clientIds.length !== 1 || member.clientIds[0] !== clientId) {
+      return { ...unavailable, reason: "member_client_mismatch" };
+    }
+    const formula = pointsFormula(member.memberId);
     if (!formula) return unavailable;
     const records = await airtableList(env, env.AIRTABLE_TABLE_POINTS_LEDGER || POINTS_LEDGER_TABLE, {
       filterByFormula: formula,
       maxRecords: MAX_RECORDS,
     });
-    if (session.strictIdentity === true && records.some(row => clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
-    let clientId = "";
-    if (records.some(isHistoricalPointsRecord)) {
-      if (records.some(row => isHistoricalPointsRecord(row) && clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
-      // Identity matching only: do not request another slip/review as evidence
-      // for an already posted historical award. The aggregate's owner must
-      // match the same canonical LINE identity, not just a copied source label.
-      const clients = await airtableList(env, env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS", {
-        filterByFormula: `{line_user_id}=${formulaString(session.lineUserId)}`, maxRecords: 3,
-      });
-      if (clients.length !== 1 || clean(clients[0]?.fields?.line_user_id) !== session.lineUserId) return unavailable;
-      clientId = clean(clients[0]?.id);
+    if (records.some(row => typeof row?.fields?.member_id !== "string" || clean(row.fields.member_id) !== member.memberId)) {
+      return { ...unavailable, reason: "ledger_owner_mismatch" };
     }
     const refs = paymentRefsForPoints(records);
     const payments = [];
@@ -96,8 +96,8 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
       }));
     }
     const currentRefs = new Set(records.filter(row => !isHistoricalPointsRecord(row)).map(row => clean(row?.fields?.payment_ref)).filter(Boolean));
-    if (session.strictIdentity === true && payments.some(row => currentRefs.has(clean(row?.fields?.["Payment Reference"]))
-      && clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
+    if (payments.some(row => currentRefs.has(clean(row?.fields?.["Payment Reference"]))
+      && clean(row?.fields?.member_id) && clean(row?.fields?.member_id) !== member.memberId)) return unavailable;
     const sessionIds = sessionIdsForHistoricalPoints(records);
     const sessions = [];
     for (let offset = 0; offset < sessionIds.length; offset += 40) {
@@ -438,20 +438,16 @@ async function resolveMember(env, memberId) {
   });
   if (rows.length !== 1) return null;
   const fields = rows[0].fields || {};
-  const canonicalMemberId = clean(fields.member_id || memberId);
-  if (!canonicalMemberId) return null;
+  const canonicalMemberId = typeof fields.member_id === "string" ? clean(fields.member_id) : "";
+  if (!canonicalMemberId || canonicalMemberId !== memberId) return null;
   return {
     memberId: canonicalMemberId,
-    email: normalizeEmail(fields["Contact Email"] || fields.email),
+    clientIds: Array.isArray(fields.Clients) ? fields.Clients.map(value => clean(value?.id || value)) : [],
   };
 }
 
-function pointsFormula(memberId, email) {
-  const clauses = [];
-  if (memberId) clauses.push(`{member_id}=${formulaString(memberId)}`);
-  if (email) clauses.push(`LOWER({member_email}&"")=${formulaString(email)}`);
-  if (!clauses.length) return "";
-  return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+function pointsFormula(memberId) {
+  return memberId ? `{member_id}=${formulaString(memberId)}` : "";
 }
 
 async function airtableList(env, table, { filterByFormula = "", maxRecords = MAX_RECORDS } = {}) {
@@ -509,11 +505,6 @@ function parseDate(value) {
 
 function formulaString(value) {
   return `'${clean(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
-}
-
-function normalizeEmail(value) {
-  const email = clean(value).toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
 function normalizeToken(value) {
