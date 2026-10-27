@@ -24,7 +24,7 @@ function linkedIds(value) {
 }
 function summarizeMembershipDates(rows = [], clientId, now = new Date()) {
   const empty = state => ({ authority: SCHEMA, state, verified: false, access_verified: false,
-    first_signup_date_candidate: null, latest_membership_date_candidate: null, renewal_date_candidates: [] });
+    first_signup_date_candidate: null, latest_membership_date_candidate: null, selected_signup_date: null, renewal_date_candidates: [] });
   const matches = rows.filter(row => linkedIds(row?.fields?.client).includes(clientId));
   if (!matches.length) return empty("not_prepared");
   if (matches.length !== 1) return empty("ambiguous_review");
@@ -62,8 +62,23 @@ function summarizeMembershipDates(rows = [], clientId, now = new Date()) {
   if ((first && (!noteReviewed || !events.some(e => e.date === first && ["signup_candidate", "profile_note_date"].includes(e.kind))))
       || (latest && !renameSupportsLatest && !(noteReviewed && events.some(e => e.date === latest)))
       || (p.review_status === "original_notes_required" && (first || noteReviewed))) return empty("invalid_evidence");
+  const resolution = p.date_resolution;
+  let selected = null;
+  if (resolution?.owner_approved === true) {
+    selected = pastDate(resolution.selected_signup_date);
+    const approvedAt = Date.parse(resolution.owner_approved_at);
+    const selectedAt = Date.parse(resolution.selected_at);
+    const supported = selected && (p.per_rename_snapshot?.date_candidate === selected || (noteReviewed && events.some(e => e.date === selected)));
+    if (!selected || f.selected_signup_date !== selected || !supported
+        || resolution.state !== "selected_by_owner_delegation"
+        || resolution.selection_type !== "best_effort_reference_date"
+        || resolution.verified !== false || resolution.changes_entitlement !== false
+        || !Number.isFinite(approvedAt) || !Number.isFinite(selectedAt)
+        || selectedAt > approvedAt || approvedAt > time) return empty("invalid_evidence");
+  }
   return { ...empty(p.review_status), source_review_record_id: row.id, reviewed_at: p.reviewed_at,
     first_signup_date_candidate: first, latest_membership_date_candidate: latest,
+    selected_signup_date: selected, selected_date_source: selected ? "owner_approved_best_effort" : null,
     renewal_date_candidates: noteReviewed ? [...new Set(events.filter(e => e.kind === "renewal_candidate").map(e => e.date))].sort() : [],
     original_notes_reviewed: Boolean(noteReviewed), original_note_count: noteReviewed ? p.original_notes.note_count : 0,
     has_date_conflicts: p.review_status === "date_conflict_review_required",
