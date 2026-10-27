@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { guardPointsDisplaySources, paymentRefsForPoints, sessionIdsForHistoricalPoints } from "../src/points-display-source-guard.js";
-import { prepareMyMmdLifetimePointsContext, applyMyMmdLifetimePointsResponse } from "../src/my-mmd-lifetime-points.js";
-const ledger = (fields = {}) => ({ id:"rec-ledger", fields: { transaction_status:"posted", points:10, amount_thb:1000, payment_ref:"pay-fixture", posted_at:new Date().toISOString(), ...fields } });
-const payment = (fields = {}) => ({ id:"rec-payment", fields: { "Payment Reference":"pay-fixture", "Payment Status":"Paid", "Verification Status":"verified", Amount:1000, ...fields } });
+import { prepareMyMmdLifetimePointsContext, applyMyMmdLifetimePointsResponse, readMyMmdVerifiedPointsContext } from "../src/my-mmd-lifetime-points.js";
+
+const ledger = (fields = {}) => ({ id:"rec-ledger", fields: { member_id:"member-fixture", transaction_status:"posted", points:10, amount_thb:1000, payment_ref:"pay-fixture", posted_at:new Date().toISOString(), ...fields } });
+const payment = (fields = {}) => ({ id:"rec-payment", fields: { Client:["recFixtureClient"], "Payment Reference":"pay-fixture", "Payment Status":"Paid", "Verification Status":"verified", Amount:1000, ...fields } });
 const historical = (fields = {}) => ledger({
   member_id:"member-fixture",
   source:"line_ofc_history", created_by:"member_history_recovery_v2_note_first",
@@ -169,7 +170,7 @@ function fixture(records = [ledger()], payments = [payment()], fail = "", sessio
       if (table === "tblVv58TCbwh5j1fS") return Response.json({records:[{
         id:"recFixtureClient",fields:{line_user_id:`U${"a".repeat(32)}`},
       }]});
-      return Response.json({ records:table === "tblgWc5VRon5o8Mhk" ? [{id:"rec-member", fields:{ member_id:"member-fixture", email:"fixture@example.test" }}]
+      return Response.json({ records:table === "tblgWc5VRon5o8Mhk" ? [{id:"rec-member", fields:{ member_id:"member-fixture", Clients:["recFixtureClient"], email:"fixture@example.test" }}]
         : table === "tbl5dfnwjUFMLbnWL" ? records
         : table === "tblC98mKWbzmPuNzX" ? sessions : payments });
     } },
@@ -301,4 +302,101 @@ test("duplicate payment awards, conflicting idempotency rows and missing dates n
   assert.equal(guardPointsDisplaySources([ledger(), {...ledger(),id:"rec-duplicate"}], [payment()]).state, "review_required");
   assert.equal(guardPointsDisplaySources([ledger(),ledger({points:20})], [payment()]).state, "review_required");
   assert.equal(guardPointsDisplaySources([ledger({posted_at:"",created_at:""})], [payment()]).state, "review_required");
+});
+
+
+test("canonical Points reader scopes by member ID only and accepts the Payments Client link without a member_id field", async () => {
+  const { env } = fixture();
+  const original = env.AIRTABLE_HTTP.fetch;
+  const formulas = [];
+  env.AIRTABLE_HTTP.fetch = async req => {
+    const url = new URL(req.url);
+    if (url.pathname.endsWith("tbl5dfnwjUFMLbnWL")) formulas.push(url.searchParams.get("filterByFormula"));
+    return original(req);
+  };
+  for (const strictIdentity of [false,true]) {
+    const result = await readMyMmdVerifiedPointsContext(env, {memberId:"member-fixture",lineUserId:`U${"a".repeat(32)}`,strictIdentity});
+    assert.equal(result.sourceVerified, true);
+    assert.equal(result.confirmedBalance, 10);
+  }
+  assert.deepEqual(formulas, ["{member_id}='member-fixture'","{member_id}='member-fixture'"]);
+});
+
+for (const [label, alter, expectedReason] of [
+  ["shared-email foreign ledger", (table, payload) => { if(table === "tbl5dfnwjUFMLbnWL") payload.records[0].fields.member_id = "foreign"; }, "ledger_owner_mismatch"],
+  ["Member linked to other Client", (table, payload) => { if(table === "tblgWc5VRon5o8Mhk") payload.records[0].fields.Clients = ["recOtherClient"]; }, "member_client_mismatch"],
+  ["Member with no Client", (table, payload) => { if(table === "tblgWc5VRon5o8Mhk") delete payload.records[0].fields.Clients; }, "member_client_mismatch"],
+  ["ambiguous canonical Client", (table, payload) => { if(table === "tblVv58TCbwh5j1fS") payload.records.push({...payload.records[0],id:"recOtherClient"}); }, "canonical_client_unresolved"],
+  ["Payment linked to other Client", (table, payload) => { if(table === "tblWGGJJOx5eBvBZJ") payload.records[0].fields.Client = ["recOtherClient"]; }, undefined],
+  ["Member linked to multiple Clients", (table, payload) => { if(table === "tblgWc5VRon5o8Mhk") payload.records[0].fields.Clients = ["recFixtureClient","recOtherClient"]; }, "member_client_mismatch"],
+  ["Payment missing Client", (table, payload) => { if(table === "tblWGGJJOx5eBvBZJ") delete payload.records[0].fields.Client; }, undefined],
+  ["non-string ledger owner", (table, payload) => { if(table === "tbl5dfnwjUFMLbnWL") payload.records[0].fields.member_id = ["member-fixture"]; }, "ledger_owner_mismatch"],
+]) test(`Points reader fails closed for ${label}`, async () => {
+  const {env} = fixture();
+  const original = env.AIRTABLE_HTTP.fetch;
+  env.AIRTABLE_HTTP.fetch = async req => {
+    const payload = await (await original(req)).json();
+    alter(new URL(req.url).pathname.split("/").pop(), payload);
+    return Response.json(payload);
+  };
+  const result = await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"), env);
+  assert.notEqual(result.sourceVerified, true);
+  assert.equal(result.pointsRecoveryPending, true);
+  if(expectedReason) assert.equal(result.reason, expectedReason);
+});
+
+test("current Phase 1 posted Points preserve the writer's carried remainder", async () => {
+  const row = ledger({amount_thb:150,eligible_amount_thb:150,points:2,prior_remainder_thb:50,pool_thb:200,remainder_after_thb:0,
+    source:"system",points_bucket:"base_phase1",rate_policy:"phase1_100_thb_1_pt_remainder",idempotency_key:"base_phase1:pay-fixture"});
+  const paid = payment({Amount:150});
+  assert.equal(guardPointsDisplaySources([row],[paid],{clientId:"recFixtureClient"}).state,"verified");
+  const {env} = fixture([row],[paid]);
+  const result = await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.equal(result.sourceVerified,true);
+  assert.equal(result.confirmedBalance,2);
+  for(const change of [{prior_remainder_thb:100},{pool_thb:201},{remainder_after_thb:1},{points:3},{idempotency_key:"forged"}]) {
+    assert.equal(guardPointsDisplaySources([{...row,fields:{...row.fields,...change}}],[paid]).state,"review_required");
+  }
+});
+
+test("missing ledger status keeps the balance unresolved instead of certifying zero", async () => {
+  const row = ledger({transaction_status:undefined});
+  assert.equal(guardPointsDisplaySources([row],[payment()]).state,"review_required");
+  const {env} = fixture([row]);
+  const context = await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.notEqual(context.sourceVerified,true);
+  assert.equal(context.pointsRecoveryPending,true);
+});
+
+test("Members lookup must return the exact canonical member ID requested by the session", async () => {
+  for(const id of [undefined,"other-member",["member-fixture"]]) {
+    const {env} = fixture();
+    const original = env.AIRTABLE_HTTP.fetch;
+    env.AIRTABLE_HTTP.fetch = async req => {
+      const payload = await (await original(req)).json();
+      if(new URL(req.url).pathname.endsWith("tblgWc5VRon5o8Mhk")) payload.records[0].fields.member_id=id;
+      return Response.json(payload);
+    };
+    const context = await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+    assert.notEqual(context.sourceVerified,true);
+  }
+});
+
+test("ordinary LIFF reads reject conflicting payment member identity despite a matching Client link", async () => {
+  const {env} = fixture(undefined,[payment({member_id:"other-member"})]);
+  const context = await prepareMyMmdLifetimePointsContext(request("/member/api/liff/profile"),env);
+  assert.notEqual(context.sourceVerified,true);
+  assert.equal(context.pointsRecoveryPending,true);
+});
+
+test("unknown ledger states cannot be silently converted into a verified zero", () => {
+  assert.equal(guardPointsDisplaySources([ledger({transaction_status:"unexpected"})],[payment()]).state,"review_required");
+});
+
+test("Phase 1 bucket cannot downgrade to generic arithmetic by losing its writer policy", () => {
+  const row = ledger({points_bucket:"base_phase1",rate_policy:"unknown",source:"system",idempotency_key:"base_phase1:pay-fixture",
+    eligible_amount_thb:1000,prior_remainder_thb:50,pool_thb:1050,remainder_after_thb:50});
+  assert.equal(guardPointsDisplaySources([row],[payment()]).state,"review_required");
+  row.fields.rate_policy="phase1_100_thb_1_pt_remainder";
+  assert.equal(guardPointsDisplaySources([row],[payment()]).state,"verified");
 });

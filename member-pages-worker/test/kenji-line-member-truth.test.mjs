@@ -166,7 +166,7 @@ for (const mode of ["verified", "historical", "historical_foreign", "unavailable
         }]});
         if (table === "tblgWc5VRon5o8Mhk") {
           assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
-          return Response.json({ records: [{ fields: { member_id: "member-test", email: "private@example.test" } }] });
+          return Response.json({ records: [{ fields: { member_id: "member-test", Clients: ["recFixtureClient"], email: "private@example.test" } }] });
         }
         if (table === "tbl5dfnwjUFMLbnWL") {
           assert.equal(url.searchParams.get("filterByFormula"), "{member_id}='member-test'");
@@ -186,6 +186,7 @@ for (const mode of ["verified", "historical", "historical_foreign", "unavailable
         assert.equal(table, "tblWGGJJOx5eBvBZJ");
         return Response.json({ records: [{ fields: {
           member_id: mode === "foreign_payment" ? "other-member" : "member-test",
+          Client: ["recFixtureClient"],
           "Payment Reference": "fixture-payment", "Payment Status": "paid",
           "Verification Status": mode === "unverified_payment" ? "pending" : "verified",
           Amount: 4200, session_id: "fixture-session",
