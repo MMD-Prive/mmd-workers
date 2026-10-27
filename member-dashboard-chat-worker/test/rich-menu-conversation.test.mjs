@@ -131,10 +131,13 @@ test("pause blocks repeated guest-models taps and existing continuity without cl
 test("SUPPORT continues renewal, Points and status without confirming truth or changing the payment contract", async () => {
   await conversation(async ({ tap, send, replies }) => {
     await tap("mmd_action=rich_menu&menu=public&button=5");
-    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"], ["ดูคะแนน", "intent=status&view=points"], ["สถานะสมาชิก", "intent=status&view=overview"]]) {
+    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"], ["สถานะสมาชิก", "intent=status&view=overview"]]) {
       await send(textEvent(text));
       assert.match(replies.at(-1).messages[0].text, new RegExp(route));
     }
+    await send(textEvent("ดูคะแนน"));
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
     const result = await send(textEvent("ส่งสลิปสมัคร Premium แล้ว"));
     assert.equal(result.body.saved[0].handoff_required, true);
     assert.match(replies.at(-1).messages[0].text, /ยังไม่ยืนยันการชำระเงิน/);
@@ -142,14 +145,15 @@ test("SUPPORT continues renewal, Points and status without confirming truth or c
   });
 });
 
-test("Guest/Public SUPPORT offers checkpts and routes it to verified MY MMD Points", async () => {
+test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields", async () => {
   for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
     env.LINE_AUTO_REPLY_ENABLED = "false";
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
     assert.match(replies.at(-1).messages[0].text, /checkpts/);
     const result = await send(textEvent("checkpts"));
     assert.equal(result.body.saved[0].reply_source, "rich_menu_conversation_v1");
-    assert.match(replies.at(-1).messages[0].text, /intent=status&view=points/);
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });
