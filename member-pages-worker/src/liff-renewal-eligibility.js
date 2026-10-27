@@ -1,10 +1,10 @@
 import { privateRenewalTiming } from "../../shared/membership-promotion-policy.mjs";
 // Read-only guard around the existing renewal offer/purchase owner.
 // It never writes membership, Points, payment verification or historic evidence.
-export const RENEWAL_PRICE_POLICY = "renewal_spend_365_20261025";
+export const RENEWAL_PRICE_POLICY = "renewal_90_days_20261027";
 const RULES = Object.freeze({
-  standard: Object.freeze({ amount: 1000, threshold: 10000 }),
-  premium: Object.freeze({ amount: 2500, threshold: 20000 }),
+  standard: Object.freeze({ amount: 1000 }),
+  premium: Object.freeze({ amount: 2500 }),
 });
 const token = value => String(value || "").trim().toLowerCase();
 const isPackage = value => Object.hasOwn(RULES, value);
@@ -19,7 +19,7 @@ export function evaluateRenewalEligibility(session, spend, requestedPackage = ""
   if (!isPackage(selected)) return { state: "invalid" };
   const base = { package_code: selected, current_package_code: current,
     current_expires_at: session.memberProfile?.membership_expires_at || null,
-    threshold_thb: RULES[selected].threshold, pricing_policy: RENEWAL_PRICE_POLICY };
+    pricing_policy: RENEWAL_PRICE_POLICY };
   if (["blocked", "suspended", "revoked", "pending_review", "under_review"].includes(token(session.memberProfile?.membership_status))) {
     return { ...base, state: "review", reason: "membership_review" };
   }
@@ -35,20 +35,11 @@ export function evaluateRenewalEligibility(session, spend, requestedPackage = ""
       price_rule: `active_advance_${selected}`, renewal_starts_at: timing.start_at,
       history_status: "not_required_for_advance", discount_verified: true };
   }
-  const recovery = token(spend?.recoveryState);
-  if (spend?.state !== "resolved" || spend?.sourceVerified !== true || spend?.serviceSpendVerified !== true
-      || spend?.pointsRecoveryPending === true || (spend?.recordsCount === 0 && spend?.serviceSpendCoverageVerified !== true) || ["checking", "in_progress", "review_required", "blocked"].includes(recovery)
-      || typeof spend?.serviceSpend365Thb !== "number" || !Number.isFinite(spend.serviceSpend365Thb)
-      || spend.serviceSpend365Thb < 0) {
-    return { ...base, state: "review", reason: "history_pending", service_spend_365_thb: null, history_status: "checking" };
-  }
-  const verified = { ...base, service_spend_365_thb: spend.serviceSpend365Thb, history_status: "verified" };
-  if (spend.serviceSpend365Thb < RULES[selected].threshold) {
-    // A known zero is not evidence that someone has never been a paid member.
-    // The owner has not approved a below-threshold renewal price or exception.
-    return { ...verified, state: "review", reason: "below_threshold_price_review" };
-  }
-  return { ...verified, state: "eligible", amount_thb: RULES[selected].amount, discount_verified: true };
+  if (timing?.expired_within_90_days) return { ...base, state: "eligible", amount_thb: RULES[selected].amount,
+    price_rule: `expired_within_90_days_${selected}`, renewal_starts_at: timing.start_at,
+    history_status: "not_required_for_90_day_renewal", discount_verified: true };
+  return { ...base, state: "review", reason: timing?.expiry_known
+    ? "renewal_expired_over_90_days_review_required" : "canonical_expiry_required" };
 }
 
 function reviewResponse(context, method) {
@@ -62,7 +53,7 @@ function reviewResponse(context, method) {
 
 export async function withLiffRenewalEligibility(request, env, next, { readSession, readSpend }) {
   const url = new URL(request.url);
-  const path = url.pathname.replace(/\/+$/, "");
+  const path = url.pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
   const offer = path === "/member/api/liff/renewal/offer" && request.method === "GET";
   const purchase = path === "/member/api/liff/renewal/purchase" && request.method === "POST";
   if ((!offer && !purchase) || token(env?.LIFF_RENEWAL_CARD_ENABLED) !== "true") return next();
@@ -83,22 +74,20 @@ export async function withLiffRenewalEligibility(request, env, next, { readSessi
     if (selected && !isPackage(selected)) return json({ ok: false, error: { code: "INVALID_PACKAGE" } }, 400);
   }
   let session;
-  try { session = await readSession(request, env); } catch { return next(); }
-  if (!/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return next();
+  try { session = await readSession(request, env); } catch {
+    return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" }, auth_required: true }, 401);
+  }
+  if (!/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" }, auth_required: true }, 401);
+  if (session.readGraceOnly) return json({ ok: false, error: { code: "LINE_SESSION_REFRESH_REQUIRED" }, auth_required: true }, 401);
   const now = new Date();
   let context = evaluateRenewalEligibility(session, null, selected, now);
   if (context.state === "defer") return next();
-  if (context.state !== "eligible" && !["package_change_review", "membership_review"].includes(context.reason)) {
-    let spend = null;
-    try { spend = await readSpend(env, { ...session, strictIdentity: true }); } catch { /* unknown is never zero */ }
-    context = evaluateRenewalEligibility(session, spend, selected, now);
-  }
   if (context.state === "review") return reviewResponse(context, request.method);
   if (context.state !== "eligible") return json({ ok: false, error: { code: "INVALID_PACKAGE" } }, 400);
 
   // The existing handler re-resolves identity, term and price; it alone creates
   // the pending payment reference. No grant is made by this guard.
-  const response = await next();
+  const response = await next(session);
   if (!offer || !response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return response;
   const payload = await response.clone().json().catch(() => null);
   if (payload?.ok !== true || payload.status !== "ready") return response;

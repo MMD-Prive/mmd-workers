@@ -67,6 +67,9 @@ export async function reconcileCanonicalWebRenewalProof(request, response, env =
 
     const proof = await resolveProof(env, payload, paymentRef);
     if (!proof) return withSettlement(response, payload, reviewReceipt("canonical_payment_proof_not_found"));
+    if (text(proof.fields?.payment_ref || proof.fields?.transaction_ref, 180) !== paymentRef) {
+      return withSettlement(response, payload, reviewReceipt("canonical_payment_proof_reference_mismatch"));
+    }
 
     // Upload is evidence only. Only the canonical payment authority may verify money.
     // Reuse the existing reviewed-proof path for approval; this intake never writes paid.
@@ -175,8 +178,8 @@ async function materializeRenewal(env, input) {
   const priorExpiry = latestFutureExpiry(exactRows, input.paid_at) || latestHistoricalExpiry(exactRows);
   const timing = privateRenewalTiming(priorExpiry, input.paid_at);
   if (!timing.expiry_known) return entitlementReview("canonical_expiry_required");
-  if (timing.expired_one_year_or_more) return entitlementReview("expired_one_year_or_more_policy_review_required");
-  const expectedAmount = timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[input.snapshot.package_code]) : catalog.renew_price;
+  if (!timing.active && !timing.expired_within_90_days) return entitlementReview("renewal_expired_over_90_days_review_required");
+  const expectedAmount = ({standard:1000,premium:2500}[input.snapshot.package_code]);
   if (!(expectedAmount > 0) || input.snapshot.amount_thb !== expectedAmount) return entitlementReview("renewal_price_policy_review_required");
   const startAt = timing.start_at;
   const renewalYears = privateRenewalBaseYears(input.snapshot.package_code);
@@ -434,9 +437,9 @@ async function airtableGet(env, tableName, recordId) {
 
 async function airtableCreate(env, tableName, fields) {
   const response = await airtableFetch(env, new Request(airtableUrl(env, tableName).toString(), {
-    method: "POST",
+    method: "PATCH",
     headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ records: [{ fields }], typecast: false }),
+    body: JSON.stringify({ performUpsert: { fieldsToMergeOn: ["payment_ref"] }, records: [{ fields }], typecast: false }),
   }));
   const payload = await response.json().catch(() => ({}));
   const row = payload?.records?.[0];

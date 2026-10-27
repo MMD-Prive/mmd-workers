@@ -10,6 +10,7 @@ import { addBangkokCalendarYears, applyMembershipPromotion } from "../../shared/
 import { readMemberAppSession, rememberMemberPaymentSnapshot } from "./member-app-api.js";
 import { getLiffGatewayStore } from "./liff-gateway-airtable.js";
 import { resolveCanonicalRenewalOffer } from "./renewal-offer.js";
+import { RENEWAL_VERIFIED_SESSION, sameRenewalIdentity } from "./renewal-session-context.js";
 
 const ROOT = "/member/api/liff/renewal";
 const OFFER_PATH = ROOT + "/offer";
@@ -83,8 +84,9 @@ function promoLabel(promotion) {
 }
 
 async function resolveOffer(request, env) {
-  const session = await readMemberAppSession(request, env);
+  const session = env[RENEWAL_VERIFIED_SESSION] || await readMemberAppSession(request, env);
   if (!session?.lineUserId) return { error: json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" }, auth_required: true }, 401) };
+  if (session.readGraceOnly) return { error: json({ ok: false, error: { code: "LINE_SESSION_REFRESH_REQUIRED" }, auth_required: true }, 401) };
   let offer;
   try { offer = await resolveCanonicalRenewalOffer(env, sessionForOffer(session)); }
   catch { offer = { status: "review_required", reason: "renewal_offer_resolution_failed" }; }
@@ -163,7 +165,12 @@ async function createPaymentIntent(env, { sessionId, offer }) {
     error.status = 502;
     throw error;
   }
-  return { payment_ref: clean(payload.payment_ref, 220), session_id: clean(payload.session_id || sessionId, 220), customer_payment_url: redirect };
+  if (!clean(payload.payment_ref, 220) || payload.session_id !== sessionId) {
+    const error = new Error("payments_worker_session_contract_invalid");
+    error.status = 502;
+    throw error;
+  }
+  return { payment_ref: clean(payload.payment_ref, 220), session_id: sessionId, customer_payment_url: redirect };
 }
 
 async function handlePurchase(request, env) {
@@ -184,6 +191,9 @@ async function handlePurchase(request, env) {
     const gateway = getLiffGatewayStore(env);
     if (!gateway?.ensureRenewalPaymentSession) throw new Error("LIFF_RENEWAL_GATEWAY_UNAVAILABLE");
     await gateway.ensureRenewalPaymentSession({ sessionId, lineUserId: session.lineUserId, packageCode: offer.package_code, amountThb: offer.amount_thb });
+    if (!sameRenewalIdentity(session, await readMemberAppSession(request, env))) {
+      return json({ ok: false, error: { code: "LIFF_RENEWAL_IDENTITY_CHANGED" }, auth_required: true }, 409);
+    }
     const payment = await createPaymentIntent(env, { sessionId, offer });
     const remembered = await rememberMemberPaymentSnapshot(request, env, {
       payment_ref: payment.payment_ref,
@@ -192,7 +202,7 @@ async function handlePurchase(request, env) {
       package_code: offer.package_code,
       amount_thb: offer.amount_thb,
       customer_payment_url: payment.customer_payment_url,
-    });
+    }, session);
     if (!remembered) {
       const failure = new Error("LIFF_RENEWAL_PAYMENT_STATE_PERSIST_FAILED");
       failure.status = 503;

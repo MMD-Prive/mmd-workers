@@ -23,6 +23,12 @@ export function classifyConfirmationRelease({ event, before, after, head, files,
   if (!Array.isArray(confirmationChanges) || confirmationChanges.some(file => typeof file !== 'string' || !CONFIRMATION_PATHS.has(file))) return blocked('unverified_confirmation_baseline');
   if (confirmationChanges.length) return blocked('confirmation_owner_approval_required');
   if (files.some(file => CONFIRMATION_PATHS.has(file))) return blocked('confirmation_owner_approval_required');
+  if (files.some(file => [
+    'shared/membership-promotion-policy.mjs',
+    'payments-worker/canonical-web-renewal-settlement.js',
+    'payments-worker/reviewed-membership-write-through.js',
+    'payments-worker/reviewed-proof.js',
+  ].includes(file))) return blocked('renewal_owner_approval_required');
   return { ownerApprovedRequired: false, reason: 'unrelated_push' };
 }
 

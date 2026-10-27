@@ -41,6 +41,12 @@ export function privateRenewalBaseYears(packageCode) {
   return PRIVATE_RENEWAL_BASE_YEARS[token(packageCode)] || 0;
 }
 
+// Owner decision 2026-10-27: the existing renewal price is available through
+// day 90 after expiry. Thailand has no DST; the exact expiry instant is kept.
+export function privateRenewalPriceEligible(timing) {
+  return timing?.expiry_known === true && (timing.active === true || timing.expired_within_90_days === true);
+}
+
 export function privateRenewalTiming(expireAtValue, renewalAtValue) {
   const renewalAt = new Date(renewalAtValue);
   const expiry = new Date(expireAtValue || "invalid");
@@ -49,7 +55,9 @@ export function privateRenewalTiming(expireAtValue, renewalAtValue) {
   const active = knownExpiry && expiry > renewalAt;
   const oneYearAfterExpiry = knownExpiry ? new Date(expiry) : null;
   if (oneYearAfterExpiry) addBangkokCalendarYears(oneYearAfterExpiry, 1);
-  return {expiry_known:knownExpiry, active, expired_less_than_one_year:knownExpiry && !active && renewalAt < oneYearAfterExpiry, expired_one_year_or_more:knownExpiry && !active && renewalAt >= oneYearAfterExpiry, start_at:(active ? expiry : renewalAt).toISOString(), expired_over_one_year:!!oneYearAfterExpiry && oneYearAfterExpiry < renewalAt};
+  return {expiry_known:knownExpiry, active,
+    expired_within_90_days:knownExpiry && !active && renewalAt.getTime() - expiry.getTime() <= 90 * 86400000,
+    expired_less_than_one_year:knownExpiry && !active && renewalAt < oneYearAfterExpiry, expired_one_year_or_more:knownExpiry && !active && renewalAt >= oneYearAfterExpiry, start_at:(active ? expiry : renewalAt).toISOString(), expired_over_one_year:!!oneYearAfterExpiry && oneYearAfterExpiry < renewalAt};
 }
 
 // Payment time is canonical evidence; verification processing time is not eligibility.

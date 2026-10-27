@@ -194,13 +194,17 @@ export async function resolveWriteThroughPlan(env = {}, body = {}, options = {})
 
   const futureExpiry = latestFutureExpiry(exactPackageRows, verifiedAt);
   const timing = privateRenewalTiming(futureExpiry || latestHistoricalExpiry(exactPackageRows), verifiedAt);
+  if (policy.private_catalog && hasExactHistory && timing?.expiry_known
+    && !timing.active && !timing.expired_within_90_days) {
+    return review("renewal_expired_over_90_days_review_required", { package_code: packageCode, action: "review_required" });
+  }
   const requiresSignupReview = policy.private_catalog ? timing?.expired_one_year_or_more : timing?.expired_over_one_year;
   if (hasExactHistory && requiresSignupReview && inferredIntent === "renewal") return review(policy.private_catalog ? "expired_one_year_or_more_policy_review_required" : "expired_over_one_year_new_signup_required", {package_code:packageCode, action:timing.expired_over_one_year ? "signup" : "review_required"});
   const action = hasExactHistory && !requiresSignupReview ? "renewal" : "signup";
   if (policy.private_catalog && hasExactHistory && !timing?.expiry_known) return review("canonical_expiry_required", {package_code:packageCode});
   if (policy.private_catalog && hasExactHistory && timing.expired_one_year_or_more) return review("expired_one_year_or_more_policy_review_required", {package_code:packageCode});
   if (policy.private_catalog && action === "renewal") {
-    const expectedAmount = timing.expired_less_than_one_year ? ({standard:1000,premium:2500}[packageCode]) : catalog.renew_price;
+    const expectedAmount = ({standard:1000,premium:2500}[packageCode]);
     if (!(expectedAmount > 0) || amountThb !== expectedAmount) return review("renewal_price_policy_review_required", {package_code:packageCode});
   }
   const startAt = timing?.start_at || verifiedAt;
@@ -457,14 +461,15 @@ async function airtableList(env, tableName, params = {}) {
 }
 
 async function airtableCreate(env, tableName, fields) {
+  const renewal = String(fields.notes || "").includes("action=renewal;");
   const response = await airtableFetch(env, new Request(airtableUrl(env, tableName).toString(), {
-    method: "POST",
+    method: renewal ? "PATCH" : "POST",
     headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
     // Reached only after service-authenticated Official Verify, canonical
     // package/amount policy validation, and exact member resolution.
     // This permits policy-owned Public Membership values to extend legacy
     // Airtable single-select choices without giving the browser schema authority.
-    body: JSON.stringify({ records: [{ fields }], typecast: true }),
+    body: JSON.stringify({ ...(renewal ? { performUpsert: { fieldsToMergeOn: ["payment_ref"] } } : {}), records: [{ fields }], typecast: true }),
   }));
   const payload = await response.json().catch(() => ({}));
   const row = payload?.records?.[0];

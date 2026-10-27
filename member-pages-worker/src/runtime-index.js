@@ -20,6 +20,7 @@ import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 import { applyMyMmdRenewalPageResponse } from "./liff-renewal-page-response.js";
 import { withLiffRenewalEligibility } from "./liff-renewal-eligibility.js";
+import { RENEWAL_VERIFIED_SESSION } from "./renewal-session-context.js";
 import { readMyMmdVerifiedPointsContext } from "./my-mmd-lifetime-points.js";
 import {
   handleMemberClientCredits,
@@ -110,7 +111,7 @@ export function normalizeCareBackWebViewOrigin(request) {
 
 async function fetchBaseWithRenewal(request, env, ctx) {
   const response = await withLiffRenewalEligibility(request, env,
-    () => baseWorker.fetch(request, env, ctx),
+    session => baseWorker.fetch(request, session ? { ...env, [RENEWAL_VERIFIED_SESSION]: session } : env, ctx),
     { readSession: readMemberAppSession, readSpend: readMyMmdVerifiedPointsContext });
   return applyMyMmdRenewalPageResponse(request, response);
 }

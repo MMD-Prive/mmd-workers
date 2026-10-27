@@ -1,0 +1,25 @@
+name: MY MMD Renewal release candidate
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/**'
+      - 'payments-worker/*renewal*'
+      - 'payments-worker/reviewed-*'
+      - 'shared/membership-promotion-policy*'
+      - 'scripts/payments-confirmation-release-guard*'
+      - '.github/workflows/my-mmd-renewal-ci.yml'
+permissions:
+  contents: read
+jobs:
+  renewal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: node --test member-pages-worker/test/liff-renewal-*.test.mjs member-pages-worker/test/renewal-offer.test.mjs member-pages-worker/test/liff-payment-binding.test.mjs payments-worker/renewal-payment-intent.test.mjs payments-worker/canonical-web-renewal-settlement.test.mjs payments-worker/reviewed-membership-write-through.test.mjs payments-worker/reviewed-proof-line-recovery.test.mjs shared/membership-promotion-policy.test.mjs scripts/payments-confirmation-release-guard.test.mjs
+      - run: npm ci --prefix member-pages-worker/test-runtime --ignore-scripts --no-audit --no-fund
+      - run: npm run check --prefix member-pages-worker/test-runtime
+      - run: npm test --prefix member-pages-worker/test-runtime

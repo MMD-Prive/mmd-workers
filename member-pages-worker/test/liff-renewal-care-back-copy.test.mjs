@@ -21,6 +21,10 @@ function render(code='premium',extra={}) {
   const d=dom();
   const ui=createRenewalView({document:d.document,fetcher:()=>{throw new Error('must not fetch from render')},navigate:()=>{throw new Error('must not navigate from render')},showView:()=>{},checkoutUrl:()=>'',getBusy:()=>false,setBusy:()=>{}});
   const offer={ok:true,status:'ready',payment_available:true,package_code:code,current_package_code:code,amount_thb:code==='premium'?2500:1000,history_status:'verified',service_spend_365_thb:25000,pricing_policy:'renewal_spend_365_20261025',discount_verified:true,official_verification_required:true,entitlement_granted:false,membership_years:1,current_expires_at:'2027-02-28T16:59:59.999Z',renewal_starts_at:'2027-02-28T16:59:59.999Z',new_expires_at:'2029-02-28T16:59:59.999Z',promotion_label:code==='premium'?'CARE BACK เพิ่ม 1 ปี':'CARE BACK เพิ่ม 180 วัน',bonus_years:code==='premium'?1:0,bonus_days:code==='standard'?180:0,...extra};
+  offer.pricing_policy='renewal_90_days_20261027';
+  if (!Object.hasOwn(extra,'history_status')) {
+    offer.history_status='not_required_for_advance'; offer.price_rule='active_advance_'+code;
+  }
   ui.render(offer); return {...d,ui};
 }
 
@@ -116,6 +120,23 @@ test('unknown history still blocks payment and hides personal bonus',()=>{
   assert.equal(d.get('renewal-action').disabled,true);
   assert.equal(d.get('renewal-amount').textContent,'—');
   assert.equal(d.get('renewal-promo').hidden,true);
+});
+
+test('active same-tier advance quote enables payment without spend evidence',()=>{
+  const d=render('standard',{service_spend_365_thb:null});
+  assert.equal(d.get('renewal-action').disabled,false);
+  assert.match(d.get('rn-spend-note').textContent,/ไม่ต้องใช้ยอดบริการขั้นต่ำ/);
+});
+test('within-90-day quote enables payment without mistaking unknown service history for zero',()=>{
+  const d=render('premium',{history_status:'not_required_for_90_day_renewal',price_rule:'expired_within_90_days_premium',
+    service_spend_365_thb:null,current_expires_at:new Date(Date.now()-30*86400000).toISOString()});
+  assert.equal(d.get('renewal-action').disabled,false); assert.equal(d.get('rn-spend').textContent,'—');
+});
+test('mismatched advance expiry and over-90-day offers never enable payment',()=>{
+  assert.equal(render('standard',{renewal_starts_at:'2030-01-01'}).get('renewal-action').disabled,true);
+  const d=render('premium',{history_status:'not_required_for_90_day_renewal',price_rule:'expired_within_90_days_premium',
+    current_expires_at:new Date(Date.now()-91*86400000).toISOString()});
+  assert.equal(d.get('renewal-action').disabled,true);
 });
 
 test('announcement helper is never referenced by payment or benefit calculation functions',()=>{
