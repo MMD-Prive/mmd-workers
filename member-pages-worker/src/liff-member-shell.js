@@ -1,3 +1,4 @@
+import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
 import { createAccountView } from "./liff-account-view.js";
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
@@ -299,26 +300,9 @@ ${MY_MMD_VERIFICATION_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><img class="verification-logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" width="64" height="64"><div class="verification-art" aria-hidden="true">${customerGraphic("current-booking")}<img class="verification-hype verification-motion" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif" alt="" width="176" height="176"><img class="verification-hype verification-still" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp" alt="" width="176" height="176"></div><div class="hype-loader-text">MY MMD</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0% · กำลังรอข้อมูล</span></div><button id="customer-boot-retry" type="button" hidden>เปิดหน้าใหม่</button></div>`}
+${config.intent === "signup" ? "" : renderApprovedLoader()}
 <main>
-  <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
-    <div class="welcome-hero">
-      <div class="welcome-brand">
-        <span class="welcome-logo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" width="31" height="31"></span>
-        <span><strong>MY MMD</strong><small>MMD PRIVÉ · MEMBER APP</small></span>
-      </div>
-    </div>
-    <div class="welcome-letter">
-      <div class="mark" data-copy="mark">MMD PRIVÉ · MY MMD</div>
-      <h1 id="intro-title" class="title" data-copy="title">ยินดีที่ได้รู้จัก</h1>
-      <p class="sub" data-copy="subtitle">MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์</p>
-      <div id="message" class="welcome-context-note hidden" role="status" aria-live="polite"></div>
-      <div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div>
-      <div class="welcome-divider" aria-hidden="true"></div>
-      <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
-      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
-    </div>
-  </section>
+  ${renderApprovedEntry()}
   <div id="customer-entry-progress" class="customer-entry-progress"></div>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
@@ -479,7 +463,9 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // live in this browser scope, not only in the Worker bundle that renders it.
   const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });
   const CONFIG = ${safeConfig};
-  const customerLoading = (${createCustomerProgress.toString()})({ render: ${renderCustomerProgress.toString()}, request: window.fetch.bind(window) });
+  const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()});
+  const renderLoadingProgress = ${renderCustomerProgress.toString()};
+  const customerLoading = (${createCustomerProgress.toString()})({ render: (panel, state) => { renderLoadingProgress(panel, state); entryLoading.update(state); }, request: window.fetch.bind(window) });
   const fetch = customerLoading.fetch;
   const loadDoubleMomentCard = ${loadDoubleMomentCard.toString()};
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
@@ -560,7 +546,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     message.textContent = welcomeCopy.note;
     message.classList.toggle("hidden", !welcomeCopy.note);
     document.getElementById("per-letter-copy").textContent = welcomeCopy.letter;
-    if (introContinue) introContinue.textContent = "ENTER →";
+    if (introContinue) introContinue.innerHTML = '<span>ยืนยันผ่าน LINE</span><span aria-hidden="true">→</span>';
   }
   applyWorldTheme();
   let welcomeContextPromise;
@@ -714,6 +700,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       } finally {
         // The opening decision is complete: either signed-in Home is ready
         // or a manual ENTER remains available for an unverified visitor.
+        entryLoading.complete();
         window.setTimeout(() => document.body.classList.remove("context-resolving"), 240);
       }
     });

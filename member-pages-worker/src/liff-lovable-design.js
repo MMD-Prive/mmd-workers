@@ -3,37 +3,7 @@
 // Source: docs/worker-design-export/my-mmd-tokens.css
 // Commit: b91ad04dbeb0da9767be5e4a37d09c19751145f1
 // Refresh deliberately after reviewing the source design; never import preview data.
-// The verification surface uses the same reviewed palette before app-entered.
-// Neutral branding remains in place until the existing Worker resolves identity.
-export const MY_MMD_VERIFICATION_CSS = `
-body:not(.signup-mode) #hype-loader,
-body:not(.signup-mode) #intro-screen {
-  --verify-base:#111110;--verify-surface:#1C1B19;--verify-ink:#F5F1E8;
-  --verify-muted:#bcb6aa;--verify-gold:#C6A16A;--verify-line:#555248;
-  font-family:MmdV6Thai,"Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-}
-body.context-resolving:not(.signup-mode) #hype-loader {
-  background:radial-gradient(ellipse at 50% 30%,#272825 0,transparent 65%),var(--verify-base);
-  color:var(--verify-ink);gap:16px;padding:max(24px,env(safe-area-inset-top)) 24px max(24px,env(safe-area-inset-bottom));
-  overflow-y:auto;
-}
-#hype-loader .verification-art{position:relative;flex:none;display:grid;place-items:center;width:min(64vw,240px);height:min(64vw,240px)}
-#hype-loader .verification-art .customer-graphic{inset:auto 0 0;width:100%;height:90px;color:var(--verify-gold);opacity:.24}
-#hype-loader .verification-hype{display:block;position:relative;width:176px;height:176px;max-width:100%;object-fit:contain}
-#hype-loader .verification-still{display:none}
-#hype-loader .verification-logo{display:block;width:64px;height:64px;object-fit:contain}
-#hype-loader .hype-loader-text{color:var(--verify-gold);font-size:11px;letter-spacing:.18em}
-#hype-loader .hype-loader-text::after{display:none;animation:none}
-#hype-loader .hype-progress{width:min(100%,300px);margin:0;color:var(--verify-muted);font-size:12px;line-height:1.6}
-#hype-loader progress{height:6px;accent-color:var(--verify-gold)}
-#hype-loader #customer-boot-retry{width:min(100%,300px);min-height:48px;border:1px solid var(--verify-line);border-radius:999px;background:var(--verify-surface);color:var(--verify-ink);text-align:center}
-body:not(.signup-mode):not(.app-entered) #intro-screen{background:var(--verify-base);color:var(--verify-ink)}
-body:not(.signup-mode):not(.app-entered) #intro-screen :is(.title,.welcome-brand strong){font-family:inherit;font-weight:600;color:var(--verify-ink)}
-body:not(.signup-mode):not(.app-entered) #intro-screen :is(.sub,.remember-login-note){color:var(--verify-muted)}
-body:not(.signup-mode):not(.app-entered) #intro-screen .intro-continue{background:var(--verify-gold)!important;color:var(--verify-base)!important}
-@media(max-height:540px){#hype-loader .verification-art{width:120px;height:120px}#hype-loader .verification-hype{width:112px;height:112px}#hype-loader .verification-logo{width:40px;height:40px}}
-@media(prefers-reduced-motion:reduce){#hype-loader .verification-motion{display:none}#hype-loader .verification-still{display:block}}
-`;
+export { APPROVED_ENTRY_CSS as MY_MMD_VERIFICATION_CSS } from "./liff-approved-entry.js";
 
 export const MY_MMD_LOVABLE_DESIGN_CSS = `
 body.app-entered:not(.signup-mode) {

@@ -109,7 +109,7 @@ export function renderCustomerProgress(panel, state) {
     if (state.overallPending) boot.dataset.confirmedPercent = String(state.overallPercent);
     const percent = boot.dataset.confirmedPercent === '50' ? '50%' : '0%';
     boot.textContent = state.overallError && !state.overallPending ? 'เปิดข้อมูลไม่สำเร็จครับ กรุณาเปิดหน้าใหม่'
-      : percent + ' · ความคืบหน้าขั้นตอน · ' + (state.overallPending ? 'กำลังรอหรืออ่านข้อมูล' : 'กำลังเตรียมหน้า');
+      : percent;
     if (bootBar) bootBar.hidden = state.overallError && !state.overallPending;
     if (bootRetry?.dataset) {
       bootRetry.hidden = !state.overallError || state.overallPending > 0;
