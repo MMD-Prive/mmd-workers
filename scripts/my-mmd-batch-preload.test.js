@@ -308,3 +308,33 @@ test("tier-only membership reviews without a date scan are not prepared rather t
     assert.equal(actual.verified, false);
   }
 });
+
+test("owner-approved reference date is exposed separately from verified signup evidence", () => {
+  const resolution = {state:"selected_by_owner_delegation", selection_type:"best_effort_reference_date",
+    selected_signup_date:"2026-07-23", selected_at:"2026-09-20T00:00:00Z",
+    owner_approved:true, owner_approved_at:"2026-09-21T00:00:00Z",
+    verified:false, changes_entitlement:false, basis:"private rationale must stay private"};
+  const row = membershipDateRow({first_signup_date_candidate:null, date_resolution:resolution,
+    per_rename_snapshot:{date_candidate:"2026-07-23",source_staging_record_ids:["recRename"]}},
+    {selected_signup_date:"2026-07-23"});
+  const actual = summarizeMembershipDates([row],CLIENT_ID,NOW);
+  assert.equal(actual.selected_signup_date,"2026-07-23");
+  assert.equal(actual.first_signup_date_candidate,null);
+  assert.equal(actual.selected_date_source,"owner_approved_best_effort");
+  assert.equal(actual.verified,false);
+  assert.equal(actual.access_verified,false);
+  assert.doesNotMatch(JSON.stringify(actual),/private rationale/);
+  for (const changes of [{owner_approved:false},{owner_approved:undefined}]) {
+    const pending=membershipDateRow({date_resolution:{...resolution,...changes}},{selected_signup_date:"2026-07-23"});
+    assert.equal(summarizeMembershipDates([pending],CLIENT_ID,NOW).selected_signup_date,null);
+  }
+  for (const changes of [
+    {selected_signup_date:"2027-01-01"}, {owner_approved_at:"2027-01-01"},
+    {selected_at:"2026-09-22T00:00:00Z"}, {selected_signup_date:"2020-01-01"},
+    {verified:true}, {changes_entitlement:true},
+  ]) {
+    const invalid=membershipDateRow({date_resolution:{...resolution,...changes}},{selected_signup_date:changes.selected_signup_date||"2026-07-23"});
+    assert.equal(summarizeMembershipDates([invalid],CLIENT_ID,NOW).state,"invalid_evidence");
+  }
+  assert.equal(summarizeMembershipDates([membershipDateRow({date_resolution:resolution},{selected_signup_date:"2025-01-01"})],CLIENT_ID,NOW).state,"invalid_evidence");
+});
