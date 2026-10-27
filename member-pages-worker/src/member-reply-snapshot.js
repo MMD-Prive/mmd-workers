@@ -135,6 +135,14 @@ async function refreshOne(env, item) {
     canonicalTruth(env, item.line_user_id, "points_status").catch(() => null),
   ]);
   const snapshot = projectMemberReplySnapshot(membership, points, now);
+  if (snapshot.points_status !== "verified") {
+    console.warn({ event: "member_reply_points_unavailable",
+      member_truth: resolved(membership) ? "resolved" : "unavailable",
+      points_truth: resolved(points) ? "resolved" : "unavailable",
+      ledger_status: points?.points?.status === "verified" ? "verified" : "unavailable",
+      membership_match: resolved(membership) && resolved(points)
+        ? membershipKey(membership) === membershipKey(points) : null });
+  }
   await env.MEMBER_REPLY_DB.prepare(`INSERT INTO member_reply_snapshots
     (line_key,membership_status,membership_level,membership_label,membership_lifecycle,membership_expire_at,
       membership_verified_at,points_status,points_balance,points_verified_at,points_valid_until,source_authority,refreshed_at,refresh_generation)
