@@ -134,6 +134,7 @@ const snapshotActivationPaths = new Set([
 // It must never fall through to the legacy MMS deployment and route sync.
 export const LINE_JOB_EVIDENCE_RELEASE_PATHS = new Set([
   'member-dashboard-chat-worker/src/line-group-ingress-front-gate.js',
+  'member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs',
   'member-dashboard-chat-worker/src/line-job-evidence-binding.mjs',
   'member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs',
   'payments-worker/cross-channel-proof-flow.test.mjs',

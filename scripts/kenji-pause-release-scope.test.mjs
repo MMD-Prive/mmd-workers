@@ -193,6 +193,12 @@ const lineEvidenceFiles = [
   'member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs',
 ];
 test('LINE job evidence uses code-only release without legacy MMS deploy or routes', () => {
+  assert.equal(deployRequired('push', [
+    'member-dashboard-chat-worker/src/line-group-ingress-front-gate.js',
+    'member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-pause-release-scope.test.mjs',
+  ]), false);
   for (const files of [lineEvidenceFiles, [...lineEvidenceFiles, 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs']]) {
     assert.equal(deployRequired('push', files), false);
   }

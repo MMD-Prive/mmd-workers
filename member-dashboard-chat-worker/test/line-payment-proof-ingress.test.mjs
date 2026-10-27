@@ -385,7 +385,7 @@ test("Telegram review-required membership remains pending and asks for Official 
 });
 
 
-test("direct LINE customer receives SAFE acknowledgement through Reply API without Push fallback", async () => {
+test("direct LINE customer receives no automatic acknowledgement or Push fallback", async () => {
   const calls = [];
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
@@ -421,26 +421,43 @@ test("direct LINE customer receives SAFE acknowledgement through Reply API witho
       { deduped: true, acknowledgement: "safe" },
       "reply-token-1",
     );
-    assert.equal(result.sent, true);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].replyToken, "reply-token-1");
-    assert.equal(calls[0].to, undefined);
-    assert.equal(calls[0].messages[0].text, "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ");
-    assert.doesNotMatch(calls[0].messages[0].text, /paid|verified|ยืนยันรับเงิน/i);
+    assert.equal(result.skipped, true);
+    assert.equal(calls.length, 0);
   } finally {
     globalThis.fetch = previousFetch;
   }
 });
 
-test("acknowledgement policy distinguishes manual, safe replay, and pre-durable retry", () => {
+test("manual, replay, and retry acknowledgements are all empty", () => {
   const evidence = { sourceType: "user" };
   const manual = buildDirectPaymentAcknowledgement(evidence, { manualReviewRequired: true });
   const safe = buildDirectPaymentAcknowledgement(evidence, { deduped: true });
   const retry = buildDirectPaymentAcknowledgement(evidence, { acknowledgement: "retry" });
-  assert.equal(manual, "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
-  assert.equal(safe, "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ");
-  assert.equal(retry, "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ");
+  assert.equal(manual, "");
+  assert.equal(safe, "");
+  assert.equal(retry, "");
   for (const text of [manual, safe, retry]) assert.doesNotMatch(text, /paid|verified|ยืนยัน(?:รับเงิน|การชำระ)/i);
+});
+
+test("membership 2999 text, held extractor failure, and genuine slips never send acknowledgements", async () => {
+  const previousFetch = globalThis.fetch;
+  let sends = 0;
+  globalThis.fetch = async () => { sends += 1; throw new Error("unexpected_customer_send"); };
+  try {
+    for (const result of [
+      { heldStored: true, imageClass: "uncertain", reason: "extractor_failed" },
+      { captured: true, manualReviewRequired: true },
+      { captured: true, imageClass: "bank_transfer_slip" },
+      { deduped: true }, { acknowledgement: "retry" },
+    ]) {
+      const response = await acknowledgeDirectSlipResult({ LINE_CHANNEL_ACCESS_TOKEN: "test-token" }, {
+        source: { type: "user" }, replyToken: "test-reply", message: { type: "text", text: "ของผมจ่ายไป 2999 ก็คือเลือกได้เท่านี้ สมาชิก" },
+      }, result);
+      assert.equal(response.skipped, true);
+      assert.equal(buildDirectPaymentAcknowledgement({}, result), "");
+    }
+    assert.equal(sends, 0);
+  } finally { globalThis.fetch = previousFetch; }
 });
 
 test("acknowledgement is withheld before durable evidence and Telegram state cannot reclassify it", async () => {
@@ -454,9 +471,9 @@ test("acknowledgement is withheld before durable evidence and Telegram state can
       { captured: false, opsDelivery: { delivered: false } },
     );
     assert.equal(beforeDurable.skipped, true);
-    assert.equal(beforeDurable.reason, "no_durable_payment_evidence");
+    assert.equal(beforeDurable.reason, "automatic_customer_acknowledgement_disabled");
     assert.equal(calls, 0);
-    assert.equal(buildDirectPaymentAcknowledgement({}, { captured: true, manualReviewRequired: true, opsDelivery: { delivered: false } }), "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+    assert.equal(buildDirectPaymentAcknowledgement({}, { captured: true, manualReviewRequired: true, opsDelivery: { delivered: false } }), "");
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -477,8 +494,8 @@ test("LINE Reply API failure is bounded and never falls back to Push", async () 
       { captured: true, manualReviewRequired: true },
       "reply-secret-token",
     );
-    assert.deepEqual(result, { sent: false, status: 503, reason: "line_reply_503" });
-    assert.deepEqual(calls, ["https://api.line.me/v2/bot/message/reply"]);
+    assert.deepEqual(result, { skipped: true, reason: "message_empty" });
+    assert.deepEqual(calls, []);
     assert.equal(JSON.stringify(result).includes("reply-secret-token"), false);
   } finally {
     globalThis.fetch = previousFetch;
@@ -587,7 +604,7 @@ test("explicit payment context attempts read-only QR/OCR and preserves pending e
   assert.equal(r2.store.size, 1);
 });
 
-test("signed direct intake replies MANUAL only after private R2 and pending Airtable persistence", async () => {
+test("signed direct intake persists private R2 and pending proof without customer reply", async () => {
   const order = [];
   const r2 = memoryR2();
   const originalPut = r2.put.bind(r2);
@@ -635,14 +652,13 @@ test("signed direct intake replies MANUAL only after private R2 and pending Airt
     globalThis.fetch = previousFetch;
   }
   assert.equal(proofFields.status, "pending");
-  assert.equal(replyBody.replyToken, "reply-durable");
-  assert.equal(replyBody.messages[0].text, "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+  assert.equal(replyBody, null);
   assert.ok(order.indexOf("line_download") < order.indexOf("r2_put"));
   assert.ok(order.indexOf("r2_put") < order.indexOf("airtable_proof"));
-  assert.ok(order.indexOf("airtable_proof") < order.indexOf("line_reply"));
+  assert.equal(order.includes("line_reply"), false);
 });
 
-test("durable replay uses SAFE acknowledgement without downloading or duplicating evidence", async () => {
+test("durable replay is silent without downloading or duplicating evidence", async () => {
   const r2 = memoryR2();
   const previousFetch = globalThis.fetch;
   let downloads = 0;
@@ -671,10 +687,10 @@ test("durable replay uses SAFE acknowledgement without downloading or duplicatin
   assert.equal(downloads, 0);
   assert.equal(writes, 0);
   assert.equal(r2.store.size, 0);
-  assert.equal(replyBody.messages[0].text, "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ");
+  assert.equal(replyBody, null);
 });
 
-test("pre-durable download failure replies RETRY and creates no evidence", async () => {
+test("pre-durable download failure is silent and creates no evidence", async () => {
   const r2 = memoryR2();
   const previousFetch = globalThis.fetch;
   let proofWrites = 0;
@@ -701,7 +717,7 @@ test("pre-durable download failure replies RETRY and creates no evidence", async
   }
   assert.equal(proofWrites, 0);
   assert.equal(r2.store.size, 0);
-  assert.equal(replyBody.messages[0].text, "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ");
+  assert.equal(replyBody, null);
 });
 
 test("non-payment follow-up does not promote a direct image candidate", async () => {
@@ -999,12 +1015,11 @@ test("signed image then payment text finds the same user's candidate and persist
   assert.equal(proofFields?.status, "pending");
   assert.equal(proofFields?.channel, "line_ofc");
   assert.equal(paymentCalls, 0);
-  assert.equal(replyBody?.replyToken, "reply-text");
-  assert.equal(replyBody?.messages?.[0]?.text, "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ");
+  assert.equal(replyBody, null);
   assert.ok(order.indexOf("candidate_put") < order.indexOf("line_download"));
   assert.ok(order.indexOf("line_download") < order.indexOf("evidence_put"));
   assert.ok(order.indexOf("evidence_put") < order.indexOf("airtable_proof"));
-  assert.ok(order.indexOf("airtable_proof") < order.indexOf("line_reply"));
+  assert.equal(order.includes("line_reply"), false);
   for (const privateValue of ["U-candidate-test", "img-candidate-test", "msg-candidate-test", "reply-text", "โอนแล้ว", "line-token"]) assert.equal(logs.join("\n").includes(privateValue), false);
 });
 

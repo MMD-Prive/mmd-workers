@@ -11,9 +11,6 @@ import { inspectPaymentProof, paymentProofReviewUrl, proofPrecheckLines } from "
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
-const MANUAL_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ";
-const SAFE_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ";
-const RETRY_SLIP_ACK = "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_PAYMENT_PROOFS_TABLE = "tblfJfM4Sqag9zrLi";
@@ -593,10 +590,9 @@ function paymentProofCategory(trackingKind, isMembership) {
 
 
 function buildDirectPaymentAcknowledgement(evidence = {}, result = {}) {
-  if (result?.acknowledgement === "retry") return RETRY_SLIP_ACK;
-  if (result?.deduped === true || result?.acknowledgement === "safe") return SAFE_SLIP_ACK;
-  if (result?.manualReviewRequired === true || result?.heldStored === true || result?.acknowledgement === "manual") return MANUAL_SLIP_ACK;
-  return SAFE_SLIP_ACK;
+  // Intake is silent in customer conversations, including manual review,
+  // durable replay and extraction failures. Ops review runs independently.
+  return "";
 }
 
 async function notifyDirectCustomerPaymentEvidence(env = {}, evidence = {}, result = {}, replyToken = "") {
@@ -1049,10 +1045,7 @@ async function promoteDirectUserCandidate(env = {}, event = {}) {
 }
 
 async function acknowledgeDirectSlipResult(env = {}, event = {}, result = {}) {
-  if (sourceType(event) !== "user" || !asString(event?.replyToken)) return { skipped: true, reason: "reply_not_available" };
-  if (result?.imageClass === "bank_account_detail") return { skipped: true, reason: "not_payment_proof" };
-  if (!(result?.captured || result?.deduped || result?.heldStored || result?.acknowledgement === "retry")) return { skipped: true, reason: "no_durable_payment_evidence" };
-  return notifyDirectCustomerPaymentEvidence(env, { sourceType: "user" }, result, event.replyToken);
+  return { skipped: true, reason: "automatic_customer_acknowledgement_disabled" };
 }
 
 async function observeSignedLineEvents(request, env = {}) {
