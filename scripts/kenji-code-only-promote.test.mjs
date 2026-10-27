@@ -9,6 +9,7 @@ const sha = 'a'.repeat(40);
 const version = () => ({ annotations: { 'workers/commit_sha': sha }, resources: {
   script: {}, script_runtime: { compatibility_date: '2026-07-02' }, bindings: [
     ...['LINE_AUTO_REPLY_ENABLED', 'LINE_KENJI_MODEL_ENABLED', 'KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED'].map(name => ({ name, type: 'plain_text', text: 'false' })),
+    { name: 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED', type: 'plain_text', text: 'false' },
     { name: 'SECRET_FIXTURE', type: 'secret_text' },
     { name: 'ADMIN_WORKER', type: 'service', service: 'admin-worker' },
   ],
@@ -35,6 +36,14 @@ test('ON flags, binding drift and source mismatch block promotion', () => {
   const drift = version(); drift.resources.bindings.pop();
   assert.throws(() => validateCandidate(version(), drift, sha));
   assert.throws(() => validateCandidate(version(), version(), 'b'.repeat(40)));
+});
+test('snapshot activation permits exactly one flag and keeps general auto-reply paused', () => {
+  const candidate = version();
+  candidate.resources.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED').text = 'true';
+  validateCandidate(version(), candidate, sha, true);
+  assert.throws(() => validateCandidate(version(), candidate, sha));
+  candidate.resources.bindings.find(item => item.name === 'LINE_KENJI_MODEL_ENABLED').text = 'true';
+  assert.throws(() => validateCandidate(version(), candidate, sha, true));
 });
 test('transport rejects routes, secrets, uploads and other Workers before any request', async () => {
   let calls = 0;
