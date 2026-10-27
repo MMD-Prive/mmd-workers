@@ -143,13 +143,13 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /payload\?\.entitlement_granted === false/);
     assert.match(html, /url\.hostname === "mmdbkk\.com"/);
     assert.match(html, /welcomeContextPromise = resolveInitialWelcomeContext\(\)/);
-    assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
+    assert.doesNotMatch(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
     assert.doesNotMatch(html, /MMD PRIVÉ · LINE MEMBERSHIP|สมัครสมาชิก MMD|เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE/);
     assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("void readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
     assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
   });
 
-  it("resolves Welcome audience before rendering customer-specific copy and never auto-logins", async () => {
+  it("resolves entry audience without greetings and never auto-logins", async () => {
     const response = await shell("/member/liff?intent=promo&campaign=care_back&view=care_back");
     const html = await response.text();
 
