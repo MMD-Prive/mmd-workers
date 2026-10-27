@@ -24,12 +24,13 @@ export function validateCandidate(baseline, candidate, sourceSha, snapshotActiva
     const readFlag = config => config.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED');
     const before = readFlag(baselineConfig);
     const after = readFlag(candidateConfig);
-    assert.equal(before?.type, 'plain_text');
-    assert.equal(before.text, 'false', 'Snapshot baseline must be OFF');
+    assert.ok(before === undefined || (before.type === 'plain_text' && before.text === 'false'),
+      'Snapshot baseline must be OFF');
     assert.equal(after?.type, 'plain_text');
     assert.equal(after.text, 'true', 'Snapshot candidate must be ON');
     const normalizedCandidate = { ...candidateConfig,
-      bindings: candidateConfig.bindings.map(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED' ? before : item) };
+      bindings: candidateConfig.bindings.flatMap(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED'
+        ? before === undefined ? [] : [before] : [item]) };
     assert.equal(canonical(normalizedCandidate), canonical(baselineConfig), 'Unapproved configuration delta');
   } else {
     assert.equal(canonical(candidateConfig), canonical(baselineConfig), 'Configuration differs; no promotion');

@@ -45,6 +45,16 @@ test('snapshot activation permits exactly one flag and keeps general auto-reply 
   candidate.resources.bindings.find(item => item.name === 'LINE_KENJI_MODEL_ENABLED').text = 'true';
   assert.throws(() => validateCandidate(version(), candidate, sha, true));
 });
+test('snapshot activation accepts an absent OFF baseline and no other configuration delta', () => {
+  const baseline = version();
+  baseline.resources.bindings = baseline.resources.bindings.filter(item => item.name !== 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED');
+  const candidate = version();
+  candidate.resources.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED').text = 'true';
+  validateCandidate(baseline, candidate, sha, true);
+  assert.throws(() => validateCandidate(baseline, candidate, sha));
+  candidate.resources.bindings.find(item => item.name === 'ADMIN_WORKER').service = 'other-worker';
+  assert.throws(() => validateCandidate(baseline, candidate, sha, true));
+});
 test('transport rejects routes, secrets, uploads and other Workers before any request', async () => {
   let calls = 0;
   const call = createTransport('fixture', async () => { calls++; });
