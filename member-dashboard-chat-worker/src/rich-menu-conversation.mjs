@@ -2,6 +2,7 @@
 // State is stored in the existing Conversation Matrix and is never entitlement.
 const WINDOW_MS = 30 * 60 * 1000;
 const ENTRY = "https://miniapp.line.me/2010862595-yT4DCEMc/";
+const pointsAnswer = () => `ดูคะแนนที่ระบบตรวจสอบให้บัญชีนี้ได้ที่ ${ENTRY}?intent=status&view=points ครับ ผมยังไม่ยืนยันยอดจากข้อความในแชตครับ`;
 const TOPICS = {
   guest: ["membership", "models", "booking", "services", "stories", "support"],
   public: ["support", "models", "booking", "membership", "membership", "support"],
@@ -11,6 +12,19 @@ const TOPICS = {
 export function richMenuConversationStart(navigation, now = Date.now()) {
   const topic = TOPICS[navigation?.menu]?.[navigation?.button];
   return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : null;
+}
+
+export function isCheckptsShortcut(event = {}) {
+  return event.type === "message" && event.message?.type === "text" && event.source?.type === "user" &&
+    /^checkpts$/i.test(String(event.message.text || "").trim());
+}
+
+export function resolveCheckptsShortcut() {
+  return {
+    text: pointsAnswer(), intent: "points_status", inferred_intent: "points_status",
+    reply_source: "my_mmd_points_shortcut_v1", model_attempted: false,
+    handoff_required: false, cta_appended: false,
+  };
 }
 
 export function resolveRichMenuConversation(event = {}, continuity = {}, now = Date.now()) {
@@ -39,7 +53,7 @@ export function resolveRichMenuConversation(event = {}, continuity = {}, now = D
     answer = `เริ่มตรวจตัวเลือกต่ออายุของบัญชีเดิมได้ที่ ${route("renew", "package")} ครับ สถานะจะเปลี่ยนหลังการตรวจสอบทางการเท่านั้นครับ`;
     intent = "membership_renewal";
   } else if (/(คะแนน|แต้ม|points?|\bcheckpts\b)/i.test(raw)) {
-    answer = `ดูคะแนนที่ระบบตรวจสอบให้บัญชีนี้ได้ที่ ${route("status", "points")} ครับ ผมยังไม่ยืนยันยอดจากข้อความในแชตครับ`;
+    answer = pointsAnswer();
     intent = "points_status";
   } else if (/(สถานะ|หมดอายุ|สิทธิ์|status)/i.test(raw)) {
     answer = `ตรวจสถานะของบัญชีนี้ผ่าน MY MMD ได้ที่ ${route("status", "overview")} ครับ การกดเมนูหรือส่งข้อความไม่ได้เปิดสิทธิ์สมาชิกครับ`;
