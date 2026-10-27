@@ -299,9 +299,15 @@ function withIdentityRecovery(membership, state) {
   return { ...membership, identity_recovery: { state } };
 }
 
-export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}) {
+export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}, expectedSession = null) {
   const state = await loadMemberAppSessionState(request, env);
   if (!state?.store?.put) return false;
+  if (expectedSession && (state.session.read_grace_only === true
+    || expectedSession.readGraceOnly || state.lineUserId !== expectedSession.lineUserId
+    || state.session.member_exists !== true || state.session.member_id !== expectedSession.memberId
+    || state.session.member_profile?.tier !== expectedSession.memberProfile?.tier
+    || state.session.member_profile?.membership_status !== expectedSession.memberProfile?.membership_status
+    || state.session.member_profile?.membership_expires_at !== expectedSession.memberProfile?.membership_expires_at)) return false;
   const paymentUrl = canonicalMemberPaymentUrl(input.customerPaymentUrl || input.customer_payment_url);
   const paymentRef = asString(input.paymentRef || input.payment_ref, 220);
   const sessionId = asString(input.sessionId || input.session_id, 220);

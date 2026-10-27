@@ -586,6 +586,22 @@ async function createOrUpdatePaymentIntent(env, payload, options = {}) {
     return { ok: true, mode: "update", record_id: existing.id };
   }
 
+  if (payload.payment_stage === "membership" && /^liffrenew_(standard|premium)_[a-f0-9]{24}$/.test(toStr(payload.session_id))) {
+    // Concurrent creation must never reset money truth written by Official
+    // Verify between the lookup and upsert. Blank new rows are pending, not paid.
+    const intentFields = { ...fields };
+    for (const name of ["PAYMENT_STATUS", "VERIFICATION_STATUS", "PAYMENT_INTENT_STATUS", "PAYMENT_DATE"]) {
+      const fallback = { PAYMENT_STATUS:"Payment Status", VERIFICATION_STATUS:"Verification Status", PAYMENT_INTENT_STATUS:"Payment Intent Status", PAYMENT_DATE:"Payment Date" }[name];
+      delete intentFields[toStr(env[`AT_PAYMENTS__${name}`] || fallback)];
+    }
+    const data = await airtableFetch(env, encodeURIComponent(table), {
+      method: "PATCH",
+      body: JSON.stringify({ performUpsert: { fieldsToMergeOn: [toStr(env.AT_PAYMENTS__PAYMENT_REF || "Payment Reference")] }, records: [{ fields:intentFields }], ...(typecast ? { typecast:true } : {}) }),
+    });
+    if (data?.records?.length !== 1 || !data.records[0]?.id) throw new Error("renewal_payment_upsert_failed");
+    return { ok:true, mode:"upsert", record_id:data.records[0].id };
+  }
+
   const created = await airtableCreate(env, table, fields, { typecast });
   return { ok: true, mode: "create", record_id: created?.id || null };
 }
@@ -686,6 +702,15 @@ async function handleVerify(req, env) {
 
     const duplicateByRef = await findPaymentByPaymentRef(env, payment_ref);
     if (duplicateByRef?.id) {
+      if (/^liffrenew_(standard|premium)_[a-f0-9]{24}$/.test(session_id)) {
+        const f = duplicateByRef.fields || {};
+        if (toStr(f[toStr(env.AT_PAYMENTS__SESSION_ID || "session_id")]) !== session_id
+          || toStr(f[toStr(env.AT_PAYMENTS__PACKAGE_CODE || "Package Code")]) !== package_code
+          || toNum(f[toStr(env.AT_PAYMENTS__AMOUNT || "Amount")]) !== amount
+          || toStr(f[toStr(env.AT_PAYMENTS__PAYMENT_STAGE || "payment_stage")]) !== payment_stage) {
+          throw new Error("renewal_payment_identity_conflict");
+        }
+      }
       return withCors(
         req,
         env,

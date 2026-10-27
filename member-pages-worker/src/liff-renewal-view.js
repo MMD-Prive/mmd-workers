@@ -7,7 +7,7 @@ export const RENEWAL_COPY = Object.freeze({
   eyebrow: "MEMBERSHIP RENEWAL", title: "ยังมีเรื่องดี ๆ", titleAccent: "ให้เราไปต่อด้วยกัน",
   intro: "เลือกแพ็กเกจที่เป็นคุณ แล้วชำระต่อใน LINE",
   heading: "ต่ออายุสมาชิก", home: "เข้า MY MMD ก่อน", current: "สมาชิกปัจจุบัน",
-  spend: "ยอดใช้บริการที่ยืนยันได้ · 365 วัน", checking: "กำลังตรวจสิทธิ์ของคุณ",
+  spend: "เงื่อนไขต่ออายุแพ็กเกจเดิม", checking: "กำลังตรวจสิทธิ์ของคุณ",
   unknown: "กำลังตรวจประวัติเดิม ไม่ได้นับเป็นยอดศูนย์",
   contact: "ให้เปอร์ช่วยตรวจ", pending: "ให้เปอร์ตรวจราคาต่ออายุก่อน",
   signupPremium: "สมัครใหม่ 2,999 บาท / 2 ปี · ระยะสมาชิกปกติ",
@@ -29,15 +29,15 @@ export function renewalViewHtml(now = new Date()) {
   <ol class="rn-steps" aria-label="ขั้นตอนต่ออายุสมาชิก"><li aria-current="step"><b>1</b> เลือกแพ็กเกจ</li><li><b>2</b> ชำระเงิน</li><li><b>3</b> ยืนยันสิทธิ์</li></ol>
   <div class="rn-member"><span class="rn-monogram" aria-hidden="true">M</span><div><span>${RENEWAL_COPY.current}</span><strong id="rn-current">กำลังตรวจสถานะ</strong></div><span id="rn-expiry" class="rn-expiry"></span></div>
   <fieldset class="rn-packages"><legend>${RENEWAL_COPY.heading}<small>ต่ออายุพื้นฐาน 1 ปี</small></legend>
-    <label class="rn-plan" data-rn-plan="premium"><input type="radio" name="renewal-package" value="premium" aria-describedby="rn-premium-rule"><span class="rn-plan-top"><span><span class="rn-kicker">PRIVATE COLLECTION</span><strong>Premium</strong></span><span class="rn-radio" aria-hidden="true"></span></span><span class="rn-plan-bottom"><span id="rn-premium-rule" class="rn-rule">ยอดสะสมครบ 20,000 บาท<br><small>ภายใน 365 วัน</small></span><span class="rn-price">฿2,500<small>ราคาต่ออายุเมื่อถึงเกณฑ์</small></span></span><span class="rn-signup-price">${RENEWAL_COPY.signupPremium}</span></label>
-    <label class="rn-plan" data-rn-plan="standard"><input type="radio" name="renewal-package" value="standard" aria-describedby="rn-standard-rule"><span class="rn-plan-top"><span><span class="rn-kicker">THE ESSENTIAL</span><strong>Standard</strong></span><span class="rn-radio" aria-hidden="true"></span></span><span class="rn-plan-bottom"><span id="rn-standard-rule" class="rn-rule">ยอดสะสมครบ 10,000 บาท<br><small>ภายใน 365 วัน</small></span><span class="rn-price">฿1,000<small>ราคาต่ออายุเมื่อถึงเกณฑ์</small></span></span><span class="rn-signup-price">${RENEWAL_COPY.signupStandard}</span></label>
+    <label class="rn-plan" data-rn-plan="premium"><input type="radio" name="renewal-package" value="premium" aria-describedby="rn-premium-rule"><span class="rn-plan-top"><span><span class="rn-kicker">PRIVATE COLLECTION</span><strong>Premium</strong></span><span class="rn-radio" aria-hidden="true"></span></span><span class="rn-plan-bottom"><span id="rn-premium-rule" class="rn-rule">ต่อแพ็กเกจเดิม<br><small>ล่วงหน้า หรือหมดอายุภายใน 90 วัน</small></span><span class="rn-price">—<small>ราคาแสดงหลังตรวจสิทธิ์</small></span></span><span class="rn-signup-price">${RENEWAL_COPY.signupPremium}</span></label>
+    <label class="rn-plan" data-rn-plan="standard"><input type="radio" name="renewal-package" value="standard" aria-describedby="rn-standard-rule"><span class="rn-plan-top"><span><span class="rn-kicker">THE ESSENTIAL</span><strong>Standard</strong></span><span class="rn-radio" aria-hidden="true"></span></span><span class="rn-plan-bottom"><span id="rn-standard-rule" class="rn-rule">ต่อแพ็กเกจเดิม<br><small>ล่วงหน้า หรือหมดอายุภายใน 90 วัน</small></span><span class="rn-price">—<small>ราคาแสดงหลังตรวจสิทธิ์</small></span></span><span class="rn-signup-price">${RENEWAL_COPY.signupStandard}</span></label>
   </fieldset>
   <div class="rn-spend"><div><span>${RENEWAL_COPY.spend}</span><strong id="rn-spend">—</strong></div><progress id="rn-spend-progress" max="100" value="0" aria-label="ยอดสะสมที่ยืนยันได้เทียบกับเกณฑ์" hidden></progress><p id="rn-spend-note">${RENEWAL_COPY.unknown}</p></div>
   <div id="rn-loading" class="rn-loading" role="status"><progress id="rn-load-progress" max="100" value="0" aria-label="ความคืบหน้าการตรวจสิทธิ์ต่ออายุ"></progress><span id="rn-load-label">0% · ${RENEWAL_COPY.checking}</span></div>
   <details id="rn-validity" class="rn-details rn-validity" hidden><summary>วันหมดอายุหลังต่อ <b id="rn-new-expiry"></b></summary><div id="renewal-rows" class="rn-dates" hidden></div></details><p id="renewal-promo" class="rn-promo" hidden></p>
   <p id="renewal-note" class="rn-note" role="status"></p>
   <div class="rn-help"><button id="rn-retry" type="button" hidden>ตรวจอีกครั้ง</button><a id="renewal-signup" href="https://lin.ee/xRqsALs" target="_blank" rel="noopener noreferrer">${RENEWAL_COPY.contact} ↗</a></div>
-  <details class="rn-details"><summary>รายละเอียดการต่ออายุ</summary><p>ราคาต่ออายุพิเศษขึ้นอยู่กับยอดใช้บริการที่ MMD ยืนยันได้ใน 365 วัน หากประวัติยังไม่ครบ เปอร์จะตรวจให้ก่อน ไม่ถือว่ายอดเป็นศูนย์</p><p>Premium สมัครใหม่ได้ 2 ปีตามแพ็กเกจปกติ ไม่ใช่ระยะต่ออายุ 1 ปี และไม่บวกโบนัสต่ออายุให้เป็น 3 ปีโดยอัตโนมัติ</p><p>ค่าสมัครใหม่เป็นข้อมูลเปรียบเทียบ ไม่ใช่ราคาต่ออายุของผู้ที่ยังไม่ถึงเกณฑ์ ระยะต่ออายุพื้นฐาน โบนัส CARE BACK และวันหมดอายุใหม่จะแสดงแยกเมื่อยืนยันได้</p><p>การเลือกแพ็กเกจหรือแนบสลิปยังไม่เปลี่ยนสถานะสมาชิก สิทธิ์จะอัปเดตเมื่อ MMD ยืนยันการชำระเรียบร้อยแล้ว</p></details>
+  <details class="rn-details"><summary>รายละเอียดการต่ออายุ</summary><p>ต่อแพ็กเกจเดิมล่วงหน้า หรือหมดอายุภายใน 90 วัน ใช้ราคาต่ออายุเดิมได้ โดยไม่กำหนดยอดใช้บริการขั้นต่ำ หากหมดอายุเกิน 90 วัน ให้เปอร์ตรวจเงื่อนไขก่อนชำระครับ</p><p>Premium สมัครใหม่ได้ 2 ปีตามแพ็กเกจปกติ ไม่ใช่ระยะต่ออายุ 1 ปี และไม่บวกโบนัสต่ออายุให้เป็น 3 ปีโดยอัตโนมัติ</p><p>ระยะต่ออายุพื้นฐาน โบนัส CARE BACK และวันหมดอายุใหม่จะแสดงแยกเมื่อยืนยันได้</p><p>การเลือกแพ็กเกจหรือแนบสลิปยังไม่เปลี่ยนสถานะสมาชิก สิทธิ์จะอัปเดตเมื่อ MMD ยืนยันการชำระเรียบร้อยแล้ว</p></details>
   <footer class="rn-checkout"><div class="rn-total"><span id="rn-selection">เลือกแพ็กเกจของคุณ</span><strong id="renewal-amount">—</strong></div><div id="renewal-price" hidden></div><button id="renewal-action" type="button" disabled>กำลังตรวจสิทธิ์ของคุณ</button><p id="renewal-message" role="status" aria-live="polite">ชำระใน LINE · สิทธิ์อัปเดตหลังยืนยันยอดจริง</p></footer>
 </div>`;
 }
@@ -49,7 +49,7 @@ body.app-entered.mmd-renewal-view #package{max-width:100%;padding:0!important;mi
 body.app-entered.mmd-renewal-view #package>.card,body.app-entered.mmd-renewal-view .digital-dock{display:none!important}
 body.app-entered.mmd-renewal-view #profile{padding-bottom:0!important}
 .mmd-renewal{--rn-ink:#F3F0E8;--rn-muted:#BEBDB8;--rn-brass:#C9B38A;position:relative;width:min(100%,760px);margin:0 auto;padding:10px 20px 142px;color:var(--rn-ink);font:15px/1.6 "LINE Seed Sans TH","Noto Sans Thai",system-ui,sans-serif;isolation:isolate}
-.mmd-renewal *{box-sizing:border-box}.mmd-renewal [hidden]{display:none!important}.mmd-renewal p{margin:0}.mmd-renewal button,.mmd-renewal a{touch-action:manipulation}.mmd-renewal button,.mmd-renewal input{font:inherit}.mmd-renewal button:focus-visible,.mmd-renewal a:focus-visible,.mmd-renewal summary:focus-visible{outline:2px solid #F3F0E8;outline-offset:4px}
+.mmd-renewal,.mmd-renewal *{box-sizing:border-box}.mmd-renewal [hidden]{display:none!important}.mmd-renewal p{margin:0}.mmd-renewal button,.mmd-renewal a{touch-action:manipulation}.mmd-renewal button,.mmd-renewal input{font:inherit}.mmd-renewal button:focus-visible,.mmd-renewal a:focus-visible,.mmd-renewal summary:focus-visible{outline:2px solid #F3F0E8;outline-offset:4px}
 .rn-brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.rn-brand img{object-fit:contain;object-position:left;width:84px;height:32px}.mmd-renewal .rn-home{width:auto;min-height:44px;padding:8px 0 8px 10px;background:none;border:0;color:var(--rn-muted);font-size:12px;text-align:right}.rn-logo{display:block;min-width:84px;height:32px}.rn-wordmark{display:block;color:#F3F0E8;font:600 19px/1 Georgia,serif;letter-spacing:.14em}.rn-wordmark small{display:block;margin-top:3px;font:8px/1 Georgia,serif;letter-spacing:.32em}.rn-validity summary b{margin-left:auto;font-size:12px;color:#E4D3B1}.rn-validity summary:after{margin-left:8px}.rn-kicker{display:block;color:var(--rn-brass);font-size:10px;letter-spacing:.17em;font-weight:600}.rn-heading h2{margin:8px 0;font-size:clamp(24px,6.2vw,32px);line-height:1.28;font-weight:650;color:var(--rn-ink)}.rn-heading h2 span{color:#DDC8A2}.mmd-renewal .rn-intro{color:var(--rn-muted);font-size:13px;margin-top:8px}.rn-steps{display:flex;justify-content:space-between;gap:8px;margin:12px 0;padding:0;list-style:none;color:var(--rn-muted);font-size:11px}.rn-steps li{display:flex;align-items:center;gap:7px}.rn-steps b{display:grid;place-items:center;width:20px;height:20px;border:1px solid #62645E;border-radius:50%;font-size:10px;font-weight:500}.rn-steps [aria-current] b{border-color:var(--rn-brass);background:var(--rn-brass);color:#171B1D}.rn-steps [aria-current]{color:#DDC8A2}
 .rn-campaign{margin:12px 0;padding:12px 14px;border:1px solid #756549;border-radius:12px;background:linear-gradient(115deg,#302A20,#191D1E);color:var(--rn-ink)}.rn-campaign>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 10px}.rn-campaign strong{display:block;margin-top:5px;font-size:16px;line-height:1.5;color:#E4D3B1}.rn-campaign small,.mmd-renewal .rn-campaign p{display:block;font-size:11px;color:var(--rn-muted)}.mmd-renewal .rn-campaign p{margin-top:4px}.mmd-renewal .rn-coupon-entry{display:block;width:auto;max-width:100%;min-height:44px;margin-top:4px;padding:6px 0;background:none;border:0;border-radius:0;color:#F3F0E8;font-size:12px;text-align:left;text-decoration:underline;text-underline-offset:4px}
 .rn-member{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid #373B3A;border-radius:12px;background:#171B1D}.rn-monogram{display:grid;place-items:center;flex:0 0 32px;height:32px;border:1px solid #736953;border-radius:50%;color:#D9C39D;font:20px Georgia,serif}.rn-member div{flex:1;min-width:0}.rn-member div>span{display:block;color:var(--rn-muted);font-size:11px}.rn-member strong{display:block;font-size:14px;font-weight:550}.rn-expiry{max-width:40%;color:var(--rn-muted);font-size:11px;text-align:right}
@@ -59,6 +59,7 @@ body.app-entered.mmd-renewal-view #profile{padding-bottom:0!important}
 @media(min-width:680px){.mmd-renewal{padding:24px 34px 170px}.rn-heading h2{font-size:36px}.rn-packages{grid-template-columns:1fr 1fr}.rn-packages legend{grid-column:1/-1}.rn-plan{padding:19px}.rn-plan-bottom{margin-top:25px;align-items:flex-start;flex-direction:column;gap:18px}.rn-price{text-align:left;font-size:32px}.rn-brand{margin-bottom:24px}.rn-checkout{border-radius:14px 14px 0 0;padding-left:34px;padding-right:34px}.rn-steps{max-width:380px}.rn-member{margin-top:20px}}
 @media(max-width:350px){.mmd-renewal{padding-left:14px;padding-right:14px}.rn-home{font-size:11px!important}.rn-plan{padding:12px}.rn-price{font-size:23px}.rn-rule{font-size:11px}.rn-price small{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.mmd-renewal *{transition:none!important;animation:none!important}}
+.mmd-renewal{padding-bottom:24px}.mmd-renewal .rn-checkout{position:relative;bottom:auto;left:auto;transform:none;margin-top:16px;border-radius:12px;padding:12px}
 `;
 
 // Self-contained because the shell embeds this function inside its existing
@@ -73,8 +74,8 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     if (logo.complete) { if (logo.naturalWidth > 0) loaded(); else failed(); }
   }
   const fields = [...document.querySelectorAll('input[name="renewal-package"]')];
-  const policy = "renewal_spend_365_20261025";
-  const rules = { standard: { label: "Standard", threshold: 10000, price: 1000 }, premium: { label: "Premium", threshold: 20000, price: 2500 } };
+  const policy = "renewal_90_days_20261027";
+  const rules = { standard: { label: "Standard", price: 1000 }, premium: { label: "Premium", price: 2500 } };
   let selected = "", accepted = null, generation = 0, purchasing = false, loading = false, handedOff = false;
   const money = n => new Intl.NumberFormat("th-TH", { maximumFractionDigits: 2 }).format(n);
   const date = value => {
@@ -105,6 +106,7 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
       package_change_review: "เลือกแพ็กเกจนี้ไว้ได้ครับ ให้เปอร์ตรวจการเปลี่ยนระดับและวันเริ่มสิทธิ์ก่อนชำระ",
       below_threshold_price_review: "ยอดที่ยืนยันได้ยังไม่ถึงเกณฑ์ราคาพิเศษ ให้เปอร์ตรวจราคาต่ออายุให้ก่อนนะครับ",
       history_pending: "ประวัติเดิมยังตรวจไม่ครบ ให้เปอร์ตรวจสิทธิ์ให้ก่อน ไม่ได้นับยอดของคุณเป็นศูนย์",
+      renewal_expired_over_90_days_review_required: "สมาชิกหมดอายุเกิน 90 วัน ให้เปอร์ตรวจเงื่อนไขที่เหมาะสมก่อนชำระครับ",
       signup_instead: "ให้เปอร์ตรวจสมาชิกเดิมและตัวเลือกที่เหมาะกับคุณก่อนนะครับ ยังไม่มีรายการชำระใหม่",
       unavailable: "ตอนนี้ยังเปิดรายละเอียดการต่ออายุไม่ได้ ลองอีกครั้งหรือให้เปอร์ช่วยตรวจได้ครับ",
       auth: "กรุณาเปิดลิงก์ต่ออายุจาก LINE อีกครั้งเพื่อยืนยันบัญชีของคุณ",
@@ -126,16 +128,25 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     const spend = offer?.service_spend_365_thb;
     const verifiedSpend = offer?.history_status === "verified" && typeof spend === "number" && Number.isFinite(spend) && spend >= 0;
     $("rn-spend").textContent = verifiedSpend ? "฿" + money(spend) : "—";
-    $("rn-spend-progress").hidden = !verifiedSpend || !rules[selected];
-    if (verifiedSpend && rules[selected]) {
-      const threshold = rules[selected].threshold;
-      $("rn-spend-progress").value = Math.min(100, spend / threshold * 100);
-      $("rn-spend-note").textContent = spend >= threshold ? "ยอดที่ยืนยันได้ถึงเกณฑ์ " + rules[selected].label : "ยอดที่ยืนยันได้ยังขาด ฿" + money(threshold - spend) + " จากเกณฑ์ " + rules[selected].label;
-    } else $("rn-spend-note").textContent = "กำลังตรวจประวัติเดิม ไม่ได้นับเป็นยอดศูนย์";
+    $("rn-spend-progress").hidden = true;
+    $("rn-spend-note").textContent = offer?.history_status === "not_required_for_advance"
+      ? "ต่อแพ็กเกจเดิมล่วงหน้าได้ โดยเริ่มจากวันหมดอายุเดิม ไม่ต้องใช้ยอดบริการขั้นต่ำ"
+      : offer?.history_status === "not_required_for_90_day_renewal" ? "หมดอายุภายใน 90 วัน ต่อแพ็กเกจเดิมราคาเดิมได้ ไม่ต้องใช้ยอดบริการขั้นต่ำ"
+      : "กำลังตรวจประวัติเดิม ไม่ได้นับเป็นยอดศูนย์";
+    const advance = offer?.history_status === "not_required_for_advance"
+      && offer.price_rule === "active_advance_" + selected
+      && offer.renewal_starts_at === offer.current_expires_at
+      && Number.isFinite(Date.parse(offer.current_expires_at))
+      && Date.parse(offer.current_expires_at) > Date.now();
+    const within90 = offer?.history_status === "not_required_for_90_day_renewal"
+      && offer.price_rule === "expired_within_90_days_" + selected
+      && Number.isFinite(Date.parse(offer.current_expires_at))
+      && Date.parse(offer.current_expires_at) <= Date.now()
+      && Date.now() - Date.parse(offer.current_expires_at) <= 90 * 86400000;
     const valid = offer?.ok === true && offer.status === "ready" && offer.payment_available === true
       && rules[selected] && offer.package_code === selected && offer.amount_thb === rules[selected].price
-      && offer.pricing_policy === policy && offer.discount_verified === true && verifiedSpend
-      && spend >= rules[selected].threshold && offer.official_verification_required === true
+      && offer.pricing_policy === policy && offer.discount_verified === true
+      && (advance || within90) && offer.official_verification_required === true
       && offer.entitlement_granted === false && Number(offer.membership_years) === 1;
     if (!valid) { review(offer?.status === "signup_instead" ? "signup_instead" : offer?.reason || "history_pending"); return; }
     accepted = { ...offer };
@@ -178,6 +189,10 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     $("rn-spend-progress").hidden = true;
     $("renewal-message").textContent = "ชำระใน LINE · สิทธิ์อัปเดตหลังยืนยันยอดจริง";
     progress(0, "กำลังตรวจสิทธิ์ของคุณ");
+    let percent = 0;
+    const loadingTimer = setInterval(() => {
+      if (mine === generation) progress(percent = Math.min(90, percent + (percent < 50 ? 5 : 1)), "กำลังตรวจสิทธิ์ของคุณ");
+    }, 180);
     try {
       const query = selected ? "?package_code=" + encodeURIComponent(selected) : "";
       const response = await fetcher("/member/api/liff/renewal/offer" + query, { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } });
@@ -190,7 +205,7 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
       if (!response.ok || offer?.ok !== true) { review("unavailable"); return; }
       render(offer);
     } catch { if (mine === generation) review("unavailable"); }
-    finally { if (mine === generation) { loading = false; progress(100, "ตรวจรายการแล้ว"); } }
+    finally { clearInterval(loadingTimer); if (mine === generation) { loading = false; progress(100, "ตรวจรายการแล้ว"); } }
   }
   async function purchase(code = selected) {
     if (purchasing || handedOff || loading || getBusy() || !accepted || code !== selected || accepted.package_code !== selected) return;

@@ -42,6 +42,12 @@ test('unrelated verified push retains the existing integrated release decision',
   assert.deepEqual(classify(['payments-worker/final-payment-flow.js']), { ownerApprovedRequired: false, reason: 'unrelated_push' });
 });
 
+test('Renewal preparation cannot automatically deploy Payments or rotate Telegram secrets',()=>{
+  for(const path of ['shared/membership-promotion-policy.mjs','payments-worker/canonical-web-renewal-settlement.js','payments-worker/reviewed-membership-write-through.js','payments-worker/reviewed-proof.js']) {
+    assert.deepEqual(classify([path]),{ownerApprovedRequired:true,reason:'renewal_owner_approval_required'});
+  }
+});
+
 test('manual, missing/zero SHA, wrong checkout, and empty diff fail closed', () => {
   for (const override of [
     { event: 'workflow_dispatch' }, { event: 'pull_request' }, { before: undefined },
