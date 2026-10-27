@@ -48,7 +48,7 @@ describe("same-site /member/liff shell", () => {
       if (expectedReads) assert.equal(calls[0], "/api/member/app/session/current?session_id=SESSION-A");
     }
   });
- it("keeps browser hints fail-closed and renders both trusted customer welcome copies", async () => {
+ it("keeps browser hints fail-closed without retired customer greetings", async () => {
     for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous", "?intent=signup&view=signup"]) {
       const response = await shell(`/member/liff${query}`);
       const html = await response.text();
@@ -60,14 +60,7 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /canonical_client/);
       assert.match(html, /canonical_member_client_absence/);
       assert.match(html, /audience === "existing"/);
-      assert.match(html, /checking: \{ title: "MY MMD", subtitle: "กำลังเตรียมพื้นที่ของคุณ"/);
-      assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
-      assert.match(html, /ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว/);
-      assert.match(html, /ไม่ได้หายไปติดผู้ชายนะครับ 5555/);
-      assert.match(html, /ถามไป หายไม่มีคนตอบ/);
-      assert.match(html, /AI เปอร์ก็รำคาญนะ 555/);
-      assert.match(html, /กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี/);
-      assert.match(html, /ระบบจะรวมสิทธิ์ให้เป็น 2 ปี/);
+      assert.doesNotMatch(html, /WELCOME_COPY|per-letter|entry-legacy-copy|welcome-context-note|ฮายยย|ยินดีที่ได้รู้จัก|ขอบคุณที่ยังอยู่|พื้นที่ของคุณ|Hello |你好 |สวัสดี/);
       assert.match(html, /MMD%20Academy%20fback%20inside\.webp/);
       assert.match(html, /SIGIL%20Apply%20Hero\.webp/);
       assert.match(html, /data-welcome-audience="existing"/);
@@ -701,7 +694,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /@media\(min-width:700px\)/);
     assert.match(html, /body:not\(\.app-entered\) main,\s*body\.world-public:not\(\.signup-mode\):not\(\.app-entered\) main,\s*body\.world-private:not\(\.signup-mode\):not\(\.app-entered\) main\{[^}]*width:100%[^}]*max-width:none/);
     assert.match(html, /overflow-x:hidden/);
-    assert.match(html, /\.my-mmd-welcome \.per-letter-copy\{[^}]*max-height:none[^}]*overflow:visible/);
+    assert.doesNotMatch(html, /id="per-letter"/);
     assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
   });
 
@@ -1437,8 +1430,8 @@ test('late welcome preserves a verified brand while startup remains neutral', as
   let resets=0;
   const element={textContent:'',classList:{toggle(){}}};
   const context={profileReady:true,resetCustomerBrand(){resets++;},detectWorld:()=> 'public',resolveWelcomeAudience:()=> 'existing',
-    WELCOME_COPY:{existing:{title:'',subtitle:'',note:'',letter:''}},message:element,introContinue:element,
-    document:{body:{dataset:{},classList:{toggle(){}}},querySelector:()=>element,getElementById:()=>element}};
+    introContinue:element,
+    document:{body:{dataset:{},classList:{toggle(){}}},querySelector(){throw new Error("retired greeting DOM accessed");},getElementById(){throw new Error("retired greeting DOM accessed");}}};
   runInNewContext(html.slice(start,end)+'applyWorldTheme({});',context);
   assert.equal(resets,0);
   context.profileReady=false;
@@ -1528,4 +1521,21 @@ test("entry numeric animation survives progress rerenders and leaves error copy 
  label.textContent='50%';controller.update({overallPending:1,overallPercent:0});assert.equal(label.textContent,'25%');
  label.textContent='รับข้อมูลไม่สำเร็จ';controller.update({overallPending:0,overallError:true});assert.equal(label.textContent,'รับข้อมูลไม่สำเร็จ');assert.ok(ended>0);
  visible=false;controller.update({overallPending:0});
+});
+
+
+test("member entry omits the fallback greeting while retaining actions and operational notices", async () => {
+ const html=await(await shell('/member/liff?intent=status')).text();
+ const start=html.indexOf('  function render(data) {'),end=html.indexOf('  async function boot(',start);
+ const notices=[],buttons=[],appStatus={textContent:'old greeting',dataset:{}};
+ const context={CONFIG:{intent:'status'},appStatus,show:text=>notices.push(text),allowedIntentIds:new Set(['renew']),
+  actions:{replaceChildren(){buttons.length=0;},append(button){buttons.push(button);}},
+  document:{createElement:()=>({addEventListener(){}})}};
+ runInNewContext(html.slice(start,end)+'render({screen:{key:"start_intent",copy:"old greeting",actions:[{id:"renew",endpoint:"/member/api/liff/intent",label:"ต่ออายุสมาชิก"}]}});',context);
+ assert.equal(appStatus.textContent,'');assert.equal(notices.length,0);assert.equal(buttons.length,1);assert.equal(buttons[0].textContent,'ต่ออายุสมาชิก');
+ runInNewContext('render({screen:{key:"manual_review",copy:"ต้องตรวจสอบข้อมูลก่อน",actions:[]}});',context);
+ assert.deepEqual(notices,['ต้องตรวจสอบข้อมูลก่อน']);assert.equal(buttons.length,0);
+ const showStart=html.indexOf('  function show(text) {'),showEnd=html.indexOf('  function setBusy(',showStart);
+ runInNewContext(html.slice(showStart,showEnd)+'show("เชื่อมต่อไม่สำเร็จ");',{appStatus});
+ assert.equal(appStatus.textContent,'เชื่อมต่อไม่สำเร็จ');
 });
