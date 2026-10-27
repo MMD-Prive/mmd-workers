@@ -1,6 +1,7 @@
 import { readCanonicalCurrentSession, canonicalModelIds } from "./model-current-session.js";
 import { normalizeModelDecline } from "../../shared/model-decline-options.mjs";
 import { notifyTravelEvent } from "./model-travel-notification.js";
+import { requestMemberReplyRefresh } from "../../shared/member-reply-refresh.mjs";
 import { validateJobServicePricing, withJobServicePricingNote } from "./job-service-pricing.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
@@ -3051,10 +3052,18 @@ async function handleModelSessionAction(req, env) {
     ? await notifyTravelEvent(env, { id: updated.id, fields: { ...reread.session.fields, ...updated.fields } }, action, action)
     : null;
 
+  const memberReplyRefreshQueued = ["mark_work_finished", "confirm_separated"].includes(action)
+    ? await requestMemberReplyRefresh(env, "MEMBER_PAGES_MEMBER_WALLET", "admin-worker", {
+        line_user_id: updated.fields?.line_user_id || reread.session.fields?.line_user_id,
+        member_id: updated.fields?.member_id || reread.session.fields?.member_id,
+      }, "session_" + action)
+    : null;
+
   return modelSessionJson({
     ok: true,
     session: modelSessionResponseSession(reread.tables, { id: updated.id, fields: updated.fields }),
     ...(notification ? { notification } : {}),
+    ...(memberReplyRefreshQueued !== null ? { member_reply_refresh_queued: memberReplyRefreshQueued } : {}),
   });
 }
 

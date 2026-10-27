@@ -18,6 +18,7 @@ import { applyKenjiNextAction } from "./kenji-line-next-action.mjs";
 import {
   buildKenjiLiveTruthDecision,
   resolveKenjiLineLiveTruth,
+  resolveKenjiLineSnapshotTruth,
 } from "./kenji-line-live-truth.mjs";
 import {
   buildKenjiAvailabilityDecision,
@@ -704,12 +705,11 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const pointsConversationEnabled = Boolean(menuConversationEnabled && menuConversation.intent === "points_status");
     const pointsReplyEnabled = pointsConversationEnabled || checkptsShortcutEnabled;
     let pointsTruth = pointsReplyEnabled
-      ? await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
+      ? enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED)
+        ? await resolveKenjiLineSnapshotTruth({ env, event })
+        : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
       : null;
-    if (pointsReplyEnabled && pointsTruth?.ok !== true) {
-      // A slow Points ledger must not hide a separately verified membership.
-      // The membership-only resolver is bound to this LINE ID; never reuse a
-      // profile balance as a substitute for canonical paid Points.
+    if (pointsReplyEnabled && !enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED) && pointsTruth?.ok !== true) {
       const membershipTruth = await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" });
       if (membershipTruth.ok === true) pointsTruth = {
         ...membershipTruth,

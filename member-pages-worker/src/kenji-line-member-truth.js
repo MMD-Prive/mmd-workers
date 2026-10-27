@@ -364,7 +364,7 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
     // A profile snapshot is never a fallback for an unavailable current read.
     const context = await readMyMmdVerifiedPointsContext(env, { memberId: resolved.memberId, lineUserId, strictIdentity: true });
     projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance) && context.confirmedBalance >= 0
-      ? { status: "verified", active_points: context.confirmedBalance, authority: "canonical_paid_points_source_guard_v1" }
+      ? { status: "verified", active_points: context.confirmedBalance, valid_until: context.nearestExpiry || null, authority: "canonical_paid_points_source_guard_v1" }
       : { status: "unavailable", active_points: null };
   }
   if (intent === "rights_check") {

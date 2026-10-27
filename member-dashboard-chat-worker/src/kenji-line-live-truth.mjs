@@ -1,4 +1,5 @@
 const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/member-truth";
+const MEMBER_SNAPSHOT_URL = "https://member-pages-worker.internal/__internal/kenji/member-reply-snapshot";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 1600;
 const LIVE_TRUTH_INTENTS = new Set(["membership_status", "points_status"]);
@@ -102,6 +103,34 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
     const payload = await response.json().catch(() => null);
     const truth = boundedTruth(payload || {});
     return truth || { ok: false, status: "unavailable", authority: AUTHORITY };
+  } catch {
+    return { ok: false, status: "unavailable", authority: AUTHORITY };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function resolveKenjiLineSnapshotTruth({ env = {}, event = {} } = {}) {
+  const lineUserId = lineUserIdOf(event);
+  if (!lineUserId || !env.MEMBER_PAGES_WORKER?.fetch) {
+    return { ok: false, status: "unavailable", authority: AUTHORITY };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_snapshot_timeout"), 900);
+  try {
+    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request(MEMBER_SNAPSHOT_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: JSON.stringify({ line_user_id: lineUserId }),
+      signal: controller.signal,
+    }));
+    if (!response.ok) return { ok: false, status: "unavailable", authority: AUTHORITY };
+    return boundedTruth(await response.json().catch(() => null)) ||
+      { ok: false, status: "unavailable", authority: AUTHORITY };
   } catch {
     return { ok: false, status: "unavailable", authority: AUTHORITY };
   } finally {

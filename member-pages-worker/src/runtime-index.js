@@ -68,6 +68,7 @@ import {
 } from "./private-preview.js";
 import { handlePrivateTeaser, isPrivateTeaserRequest } from "./private-teaser.js";
 import { handleMemberCustomerRequest, isMemberCustomerRequestPath } from "./member-customer-requests.js";
+import { handleMemberReplySnapshot, isMemberReplySnapshotPath, scheduleMemberReplySnapshots } from "./member-reply-snapshot.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -156,6 +157,9 @@ const worker = {
     }
     if (isKenjiLineMemberTruthRequest(request)) {
       return handleKenjiLineMemberTruth(request, env);
+    }
+    if (isMemberReplySnapshotPath(request)) {
+      return handleMemberReplySnapshot(request, env, ctx);
     }
     if (isKenjiMemberSessionTruthRequest(request)) {
       return handleKenjiMemberSessionTruth(request, env);
@@ -247,10 +251,15 @@ const worker = {
   },
 };
 
-export default { async fetch(request, env, ctx) {
-  const response = await worker.fetch(request, env, ctx);
-  return attachDiscoverySession(request, env, response);
-} };
+export default {
+  async fetch(request, env, ctx) {
+    const response = await worker.fetch(request, env, ctx);
+    return attachDiscoverySession(request, env, response);
+  },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(scheduleMemberReplySnapshots(env));
+  },
+};
 
 async function jsonPayload(response) {
   if (!(response instanceof Response)) return null;
