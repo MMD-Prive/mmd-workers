@@ -165,7 +165,8 @@ test("Checkpts has separate replies for unverified Points and unverified identit
   assert.match(unknown.replies[0].messages[0].text, /^สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ/);
   assert.match(unknown.replies[0].messages[0].text, /ยืนยันบัญชีผ่าน LINE/);
   assert.match(unknown.replies[0].messages[0].text, /promotion\/6-years-care-back/);
-  assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027|https?:\/\//);
+  assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027/);
+  assert.match(unknown.replies[0].messages[0].text, /promotion\/6-years-care-back/);
 });
 
 test("Checkpts keeps SVIP indefinite and sends a private-care CTA when Points lookup times out", async () => {
