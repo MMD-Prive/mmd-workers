@@ -12,6 +12,8 @@ const MAX_DAILY_LINES = 1000;
 const DAILY_REASON = "daily_0402_bkk";
 const MEMBERS = "tblgWc5VRon5o8Mhk";
 const ENTITLEMENTS = "tblNImdF9PKAxhXGi";
+const RETRY_DELAY_MS = 5 * 60 * 1000;
+const DAILY_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 
 const clean = value => value == null ? "" : String(value).trim();
 const json = (body, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -111,6 +113,38 @@ export function projectMemberReplySnapshot(membershipTruth, pointsTruth, now = n
   };
 }
 
+// Keep queue diagnostics categorical and identifier-free. These values are
+// operator evidence only; they never authorize a balance or entitlement write.
+export function classifySnapshotRefreshFailure(membershipTruth, pointsTruth) {
+  const membershipReady = resolved(membershipTruth);
+  const pointsReady = resolved(pointsTruth);
+  if (!membershipReady && !pointsReady) return "canonical_membership_and_points_unavailable";
+  if (!membershipReady) return "canonical_membership_unavailable";
+  if (!pointsReady) return "canonical_points_unavailable";
+  if (membershipKey(membershipTruth) !== membershipKey(pointsTruth)) return "canonical_membership_conflict";
+  if (pointsTruth?.points?.authority !== POINTS_AUTHORITY || pointsTruth?.points?.status !== "verified") {
+    return "canonical_points_unverified";
+  }
+  if (!Number.isSafeInteger(pointsTruth?.points?.active_points) || pointsTruth.points.active_points < 0) {
+    return "canonical_points_invalid";
+  }
+  return null;
+}
+
+export function snapshotRetryAt(attempts, now = new Date(), reason = "event") {
+  const base = now instanceof Date ? now.getTime() : Date.parse(now);
+  // The daily reason changes scope, not retry semantics. A cron invocation
+  // still gets bounded short retries; after three failed attempts it waits for
+  // the next daily rebuild window. The timestamp itself is not an executor.
+  const delay = Number(attempts || 0) < 3 ? RETRY_DELAY_MS : DAILY_RETRY_DELAY_MS;
+  return new Date(base + delay).toISOString();
+}
+
+export function snapshotDrainAllowlist(env = {}) {
+  return clean(env.MEMBER_REPLY_SNAPSHOT_DRAIN_ALLOWLIST)
+    .split(",").map(value => value.trim()).filter(Boolean);
+}
+
 async function queueRefresh(env, lineUserId, reason = "event") {
   const key = await lineKey(lineUserId);
   if (!key || !env.MEMBER_REPLY_DB) return false;
@@ -122,7 +156,8 @@ async function queueRefresh(env, lineUserId, reason = "event") {
     reason=CASE WHEN excluded.reason='${DAILY_REASON}' AND member_reply_refresh_queue.reason!='${DAILY_REASON}'
       THEN member_reply_refresh_queue.reason ELSE excluded.reason END,
     requested_at=excluded.requested_at,
-    next_attempt_at=excluded.next_attempt_at,attempts=0`)
+    next_attempt_at=excluded.next_attempt_at,attempts=0,
+    last_error_code=NULL,last_error_at=NULL`)
     .bind(key, lineUserId, clean(reason).slice(0,40), now, now).run();
   return env.MEMBER_REPLY_DB.prepare(`SELECT line_key,line_user_id,generation,attempts
     FROM member_reply_refresh_queue WHERE line_key=?`).bind(key).first();
@@ -135,6 +170,7 @@ async function refreshOne(env, item) {
     canonicalTruth(env, item.line_user_id, "points_status").catch(() => null),
   ]);
   const snapshot = projectMemberReplySnapshot(membership, points, now);
+  const failureClass = classifySnapshotRefreshFailure(membership, points);
   if (snapshot.points_status !== "verified") {
     console.warn({ event: "member_reply_points_unavailable",
       member_truth: resolved(membership) ? "resolved" : "unavailable",
@@ -164,24 +200,38 @@ async function refreshOne(env, item) {
       .bind(item.line_key, item.generation).run();
   } else {
     const attempts = Number(item.attempts || 0) + 1;
-    const delayMinutes = attempts < 3 ? 5 : 24 * 60;
-    const next = new Date(Date.now() + delayMinutes * 60_000).toISOString();
-    await env.MEMBER_REPLY_DB.prepare(`UPDATE member_reply_refresh_queue SET attempts=?,next_attempt_at=?
-      WHERE line_key=? AND generation=?`).bind(attempts, next, item.line_key, item.generation).run();
+    const next = snapshotRetryAt(attempts, new Date(), item.reason);
+    await env.MEMBER_REPLY_DB.prepare(`UPDATE member_reply_refresh_queue SET attempts=?,next_attempt_at=?,
+      last_error_code=?,last_error_at=? WHERE line_key=? AND generation=?`)
+      .bind(attempts, next, failureClass || "snapshot_unavailable", now, item.line_key, item.generation).run();
   }
 }
 
 export async function drainMemberReplyRefreshes(env, limit = 24) {
   if (!env.MEMBER_REPLY_DB) return { ok: false, reason: "db_unavailable" };
+  const allowlist = snapshotDrainAllowlist(env);
   const { results = [] } = await env.MEMBER_REPLY_DB.prepare(`SELECT line_key,line_user_id,generation,attempts
     FROM member_reply_refresh_queue WHERE next_attempt_at<=? ORDER BY requested_at LIMIT ?`)
     .bind(new Date().toISOString(), Math.min(50, Math.max(1, limit))).all();
+  const boundedResults = allowlist.length
+    ? results.filter(item => allowlist.includes(item.line_key))
+    : results;
   let failed = 0;
-  for (let index = 0; index < results.length; index += 2) {
-    const settled = await Promise.allSettled(results.slice(index, index + 2).map(item => refreshOne(env, item)));
-    failed += settled.filter(result => result.status === "rejected").length;
+  for (let index = 0; index < boundedResults.length; index += 2) {
+    const settled = await Promise.allSettled(boundedResults.slice(index, index + 2).map(item => refreshOne(env, item)));
+    for (let offset = 0; offset < settled.length; offset += 1) {
+      const result = settled[offset];
+      if (result.status === "fulfilled") continue;
+      failed += 1;
+      const item = boundedResults[index + offset];
+      const attempts = Number(item.attempts || 0) + 1;
+      await env.MEMBER_REPLY_DB.prepare(`UPDATE member_reply_refresh_queue SET attempts=?,next_attempt_at=?,
+        last_error_code=?,last_error_at=? WHERE line_key=? AND generation=?`)
+        .bind(attempts, snapshotRetryAt(attempts, new Date(), item.reason), "refresh_write_failed", new Date().toISOString(), item.line_key, item.generation)
+        .run().catch(() => null);
+    }
   }
-  return { ok: failed === 0, processed: results.length - failed, failed };
+  return { ok: failed === 0, processed: boundedResults.length - failed, skipped: results.length - boundedResults.length, failed };
 }
 
 async function allLinkedLines(env) {
