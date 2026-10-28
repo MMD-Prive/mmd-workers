@@ -166,9 +166,29 @@ export const INTERNAL_PAGES = [
     "path": "/internal/admin/sitemap"
   }
 ];
-export function installInternalWorkspace(pages = INTERNAL_PAGES) {
+// Existing destinations only; these shortcuts never fetch or modify customer data.
+export const DAILY_INTERNAL_PAGES = [
+  {title:'เช็กสมาชิก · Points',path:'/internal/admin/my-mmd/recovery',description:'ค้นสมาชิก · ประวัติ · ยอด Points',ownerOnly:true},
+  {title:'ค้นลูกค้า · Customer 360',path:'/internal/admin/customer-data',description:'ตัวตน · LINE · ประวัติลูกค้า'},
+  {title:'สถานะข้อมูลสมาชิก',path:'/internal/admin/member-intelligence',description:'ข้อมูลที่ขาด · รายการต้องตรวจ'},
+  {title:'สิทธิ์เข้าใช้งาน',path:'/internal/admin/membership-access',description:'สมาชิก · Telegram · Drive'},
+  {title:'งานทั้งหมด',path:'/internal/admin/jobs/all',description:'สถานะงาน · รายละเอียด · การชำระ'},
+  {title:'ตรวจรับเงิน',path:'/internal/admin/payments',description:'สลิป · ยอดรับ · รอตรวจ'},
+  {title:'ปฏิทินงาน',path:'/internal/admin/calendar',description:'งานวันนี้ · คิวถัดไป'},
+  {title:'สร้างงาน',path:'/internal/admin/jobs/create-job',description:'เริ่มงานใหม่'}
+];
+export const INTERNAL_MENU_OMISSIONS = [
+  '/docs/manage',
+  '/internal/ceo/documents/my-model',
+  '/internal/ceo/telegram-preview',
+  '/internal/ceo/kenji-ai'
+];
+export function installInternalWorkspace(pages = INTERNAL_PAGES, dailyPages = DAILY_INTERNAL_PAGES, omittedPaths = INTERNAL_MENU_OMISSIONS) {
   const path = location.pathname.replace(/\/+$/, '') || '/';
-  if (!/^\/internal(?:\/|$)/.test(path) || /\/(?:login|setup|invite)$/.test(path) || document.getElementById('sigil-workspace-directory')) return;
+  const dailyLayout = !/^\/internal\/admin\/mms(?:\/|$)/.test(path);
+  const previous=document.getElementById('sigil-workspace-directory');
+  if (!/^\/internal(?:\/|$)/.test(path) || /\/(?:login|setup|invite)$/.test(path) || previous?.dataset.directoryLayout==='daily-v1' || (!dailyLayout&&previous)) return;
+  if(previous){previous.remove();document.getElementById('sigil-workspace-readable-v3')?.remove();}
   const style = document.createElement('style');
   style.id = 'sigil-workspace-readable-v3';
   style.textContent = `
@@ -223,13 +243,85 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES) {
   html[data-sigil-readable] body #sigil-workspace-directory a[aria-current="page"]{background:#ffdfc7!important;color:#78350f!important;-webkit-text-fill-color:#78350f!important}
   html[data-sigil-readable] body #sigil-workspace-directory :is(a,summary,input):focus-visible{outline:3px solid #9a3412!important;outline-offset:2px}
   `;
+  if (dailyLayout) style.textContent += `
+  #sigil-workspace-directory{padding:12px!important;font-size:13px!important}
+  #sigil-workspace-directory>summary{font-size:14px!important;min-height:24px;line-height:24px}
+  #sigil-workspace-directory input{margin:10px 0;padding:8px 10px;min-height:36px}
+  #sigil-workspace-directory nav{max-height:65dvh}
+  #sigil-workspace-directory nav>details{border-top:1px solid #d9dfe5;padding:6px 0}
+  #sigil-workspace-directory nav>details>summary{min-height:36px;padding:6px 8px;font-size:12px!important;color:#526070!important}
+  #sigil-workspace-directory nav a{padding:7px 9px!important;min-height:36px}
+  #sigil-workspace-directory nav h3{margin:8px!important;letter-spacing:0;font-size:12px!important}
+  #sigil-workspace-directory.sigil-floating{top:10px;left:14px;width:248px}
+  body.sigil-directory-offset{padding-left:0!important;padding-top:64px!important}
+  #adm27 #sigil-daily-desk{background:#fff!important;border:1px solid #d8dce1!important;border-radius:16px;padding:18px;color:#27313b!important}
+  #adm27 #sigil-daily-desk h2{margin:0;font-size:20px;color:#27313b!important;-webkit-text-fill-color:#27313b!important}
+  #adm27 #sigil-daily-desk p{margin:4px 0 14px;font-size:14px;color:#56616b!important;-webkit-text-fill-color:#56616b!important}
+  #adm27 #sigil-daily-desk nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  #adm27 #sigil-daily-desk a{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px;border:1px solid #d8dce1;border-radius:10px;background:#f8fafb!important;color:#27313b!important;text-decoration:none;overflow-wrap:anywhere}
+  #adm27 #sigil-daily-desk a:nth-child(-n+4){background:#f7f2e8!important;border-color:#d7c8a9}
+  #adm27 #sigil-daily-desk a strong{font-size:14px;line-height:1.5;color:#27313b!important;-webkit-text-fill-color:#27313b!important}
+  #adm27 #sigil-daily-desk a span{font-size:12px;line-height:1.5;color:#56616b!important;-webkit-text-fill-color:#56616b!important}
+  #adm27 #sigil-daily-desk a:hover{background:#eceff3!important;border-color:#9ca8b3}
+  #adm27 #sigil-daily-desk a:active{background:#e1e7ec!important}
+  #adm27 #sigil-daily-desk a:focus-visible{outline:3px solid #8d692e;outline-offset:2px}
+  @media(max-width:900px){#adm27 #sigil-daily-desk nav{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:991px){#sigil-workspace-directory nav a,#sigil-workspace-directory nav>details>summary{min-height:44px}#sigil-workspace-directory.sigil-floating{width:min(300px,calc(100vw - 28px))}}
+  @media(max-width:440px){#adm27 #sigil-daily-desk{padding:14px}#adm27 #sigil-daily-desk a{padding:10px}#adm27 #sigil-daily-desk a strong{font-size:13px}}
+  `;
   document.head.appendChild(style);
   document.documentElement.dataset.sigilReadable='v3';
-  const directory=document.createElement('details');directory.id='sigil-workspace-directory';
-  directory.open=matchMedia('(min-width:992px)').matches;
-  const summary=document.createElement('summary');summary.textContent='SĪGIL · เมนูทุกหน้า';directory.append(summary);
+  const directory=document.createElement('details');directory.id='sigil-workspace-directory';if(dailyLayout)directory.dataset.directoryLayout='daily-v1';
+  directory.open=!dailyLayout && matchMedia('(min-width:992px)').matches;
+  const summary=document.createElement('summary');summary.textContent=dailyLayout?'SĪGIL · เมนูทำงาน':'SĪGIL · เมนูทุกหน้า';directory.append(summary);
   const search=document.createElement('input');search.type='search';search.placeholder='ค้นหาหน้า / Search pages';search.setAttribute('aria-label','ค้นหาหน้าภายใน');directory.append(search);
   const nav=document.createElement('nav');nav.setAttribute('aria-label','หน้าภายในทั้งหมด');directory.append(nav);
+  if (dailyLayout) {
+    const unique=new Map([['/internal/admin/dashboard',{title:'หน้าหลัก · งานของ Per',path:'/internal/admin/dashboard'}]]);
+    for(const page of [...dailyPages,...pages]) if(!omittedPaths.includes(page.path)&&!unique.has(page.path)) unique.set(page.path,page);
+    const all=[...unique.values()];
+    const dailyPaths=new Set(['/internal/admin/dashboard',...dailyPages.map(page=>page.path)]);
+    const buckets=[
+      ['ใช้ประจำ',page=>dailyPaths.has(page.path)],
+      ['ลูกค้าและสมาชิก',page=>/customer|member|relink|client-intake|my-mmd/.test(page.path)],
+      ['งานและคิว',page=>/jobs|calendar|control-room|applications/.test(page.path)],
+      ['การเงินและหลักฐาน',page=>/payment|slip|backfill/.test(page.path)],
+      ['โมเดลและสื่อ',page=>/models|studio|model-link|drive/.test(page.path)],
+      ['ภาพธุรกิจ',page=>/audience|ceo\/dashboard/.test(page.path)||page.path==='/internal/ceo'],
+      ['ระบบและเครื่องมืออื่น',()=>true]
+    ];
+    const assigned=new Set();
+    for(const [index,[name,filter]] of buckets.entries()){
+      const items=all.filter(page=>!assigned.has(page.path)&&filter(page));
+      if(!items.length)continue;
+      const group=document.createElement(index===0?'section':'details');
+      const heading=document.createElement(index===0?'h3':'summary');heading.textContent=name;group.append(heading);
+      if(index>0)group.open=items.some(page=>page.path===path);
+      for(const page of items){
+        assigned.add(page.path);
+        const a=document.createElement('a');a.href=page.path;a.textContent=page.title+(page.ownerOnly?' · Owner':'');a.dataset.search=(page.title+' '+page.path+' '+(page.description||'')).toLowerCase();
+        if(page.path===path)a.setAttribute('aria-current','page');group.append(a);
+      }nav.append(group);
+    }
+    const main=path==='/internal/admin/dashboard'&&document.querySelector('#adm27 .adm27-main');
+    if(main&&!document.getElementById('sigil-daily-desk')){
+      const desk=document.createElement('section');desk.id='sigil-daily-desk';desk.setAttribute('aria-label','เช็กลูกค้าและงานประจำ');
+      const title=document.createElement('h2');title.textContent='เช็กลูกค้า แล้วไปทำงานต่อ';
+      const hint=document.createElement('p');hint.textContent='สมาชิก · Points · สิทธิ์ · สถานะงาน ในจุดเดียว';
+      const links=document.createElement('nav');links.setAttribute('aria-label','เครื่องมือที่ใช้ประจำ');
+      for(const page of dailyPages){const a=document.createElement('a');a.href=page.path;const label=document.createElement('strong');label.textContent=page.title;const detail=document.createElement('span');detail.textContent=page.description+(page.ownerOnly?' · สำหรับ Owner':'');a.append(label,detail);links.append(a);}
+      desk.append(title,hint,links);
+      const focus=main.querySelector('.adm27-brief');
+      if(focus)focus.after(desk);else main.prepend(desk);
+      const summary=main.querySelector('.adm27-summary');if(summary)desk.before(summary);
+      const actions=focus?.querySelector('.adm27-actions');
+      if(actions&&!actions.querySelector('[data-focus-next]')){const next=document.createElement('a');next.className='adm27-btn';next.href='/internal/admin/control-room';next.dataset.focusNext='';next.textContent='เปิดเรื่องที่ต้องจัดการ →';actions.prepend(next);}
+      const more=main.querySelector('.adm27-more');
+      if(more){for(const extra of main.querySelectorAll(':scope>.adm27-owner,:scope>.adm27-daily'))more.append(extra);}
+
+    }
+    search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();for(const group of nav.children){let found=false;for(const a of group.querySelectorAll('a')){a.hidden=!a.dataset.search.includes(query);if(!a.hidden)found=true;}group.hidden=!found;if(group.tagName==='DETAILS')group.open=!!query||!!group.querySelector('[aria-current="page"]');}});
+  } else {
   for(const [name,filter] of [['CEO',p=>p.path.startsWith('/internal/ceo')],['OPERATIONS',p=>!p.path.startsWith('/internal/ceo')]]){
     const group=document.createElement('section'),heading=document.createElement('h3');heading.textContent=name;group.append(heading);
     for(const page of pages.filter(filter).sort((a,b)=>a.title.localeCompare(b.title))){
@@ -237,9 +329,10 @@ export function installInternalWorkspace(pages = INTERNAL_PAGES) {
     }nav.append(group);
   }
   search.addEventListener('input',()=>{for(const group of nav.children){let found=false;for(const a of group.querySelectorAll('a')){a.hidden=!a.dataset.search.includes(search.value.toLowerCase());if(!a.hidden)found=true;}group.hidden=!found;}});
+  }
   // Reuse page rails so in-page controls and their event handlers remain intact.
   const rail=document.querySelector('.aud27-side,.adm27-side,.adm27-sidebar,.cr4__rail,.sigil-navigation-rail,.access-card[aria-label="เมนูระบบภายใน"]');
-  if(rail && matchMedia('(min-width:992px)').matches){rail.prepend(directory);}else{directory.classList.add('sigil-floating');document.body.prepend(directory);document.body.classList.add('sigil-directory-offset');}
+  if(rail && matchMedia('(min-width:992px)').matches){rail.prepend(directory);directory.open=true;}else{directory.classList.add('sigil-floating');document.body.prepend(directory);document.body.classList.add('sigil-directory-offset');}
   const rgba=value=>{const m=value.match(/[\d.]+/g);return m&&m.length>=3?[+m[0],+m[1],+m[2],m.length>3?+m[3]:1]:null};
   const lum=c=>c.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
   const ratio=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
@@ -269,6 +362,6 @@ export function internalWorkspaceLoader(){
   // esbuild annotates nested callbacks in the serialized function with __name.
   // Define the helper outside that function so bundling cannot turn its own
   // declaration into a temporal-dead-zone reference in the browser payload.
-  return '(()=>{const __name=(target,value)=>{Object.defineProperty(target,"name",{value,configurable:true});return target;};return ('+installInternalWorkspace.toString()+')('+JSON.stringify(INTERNAL_PAGES)+');})()';
+  return '(()=>{const __name=(target,value)=>{Object.defineProperty(target,"name",{value,configurable:true});return target;};return ('+installInternalWorkspace.toString()+')('+JSON.stringify(INTERNAL_PAGES)+','+JSON.stringify(DAILY_INTERNAL_PAGES)+','+JSON.stringify(INTERNAL_MENU_OMISSIONS)+');})()';
 }
 

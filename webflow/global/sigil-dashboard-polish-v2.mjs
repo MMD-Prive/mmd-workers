@@ -94,5 +94,19 @@ html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-sidebrand 
 html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 :is(.adm27-btn,.adm27-refresh):not(:disabled):not([aria-disabled="true"]){background:#fed7aa!important;color:#272b30!important;-webkit-text-fill-color:currentColor!important;border-color:#c47a38!important}
 @media(hover:hover){html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 :is(.adm27-btn,.adm27-refresh):hover:not(:disabled):not([aria-disabled="true"]){background:#fdba74!important;border-color:#9a4a0b!important}}
 html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 :is(.adm27-btn,.adm27-refresh):active:not(:disabled):not([aria-disabled="true"]){background:#fb923c!important;border-color:#9a4a0b!important}
+/* Daily desk: urgent focus first, compact controls and secondary tools folded. */
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-main{gap:14px}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 :is(.adm27-btn,.adm27-refresh,.adm27-daily a){min-height:36px!important;padding:7px 12px!important;font-size:14px!important}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-summary article{padding:12px 14px}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-summary strong{font-size:24px;margin-top:5px}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-ownergrid>a{min-height:72px;padding:12px;gap:4px}
+@media(pointer:coarse),(max-width:700px){html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 :is(.adm27-btn,.adm27-refresh,.adm27-daily a){min-height:44px!important}}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-brief .adm27-btn.is-primary:not(:disabled){background:#fff!important;border-color:#c7ccd2!important}
+@media(max-width:700px){
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-actions a{display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-summary article{padding:10px 12px}
+html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-summary strong{font-size:22px;margin-top:4px}
+}
 `;
 
