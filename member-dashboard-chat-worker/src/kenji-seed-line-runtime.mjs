@@ -716,7 +716,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         points: { status: "unavailable", active_points: null },
       };
     }
-    const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth) : null;
+    const pointsDecision = pointsReplyEnabled ? resolveCheckptsShortcut(pointsTruth, Date.now(), !pointsConversationEnabled) : null;
     if (checkptsShortcutEnabled) {
       // Recheck at the delivery boundary, not in the duplicate legacy intake.
       // Per may take over (including Matrix-only takeover) during a slow read.
