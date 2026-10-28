@@ -8,7 +8,9 @@ routes = []
 
 [triggers]
 # Daily 04:02 Bangkok (21:02 UTC), offset from :00 maintenance.
-crons = ["2 21 * * *"]
+# 04:02 Bangkok full rebuild plus a bounded queue-only drain every five
+# minutes. The second cron never re-enumerates Airtable identities.
+crons = ["2 21 * * *", "*/5 * * * *"]
 
 [[d1_databases]]
 binding = "MEMBER_REPLY_DB"

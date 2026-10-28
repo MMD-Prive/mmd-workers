@@ -257,8 +257,12 @@ export default {
     const response = await worker.fetch(request, env, ctx);
     return attachDiscoverySession(request, env, response);
   },
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(scheduleMemberReplySnapshots(env));
+  async scheduled(event, env, ctx) {
+    // scheduleMemberReplySnapshots performs the daily full enumeration only
+    // inside the 04:02 Bangkok window; every other invocation is a bounded
+    // due-queue drain. This makes the 5-minute retry timestamp executable
+    // without changing the daily rebuild policy.
+    ctx.waitUntil(scheduleMemberReplySnapshots(env, new Date(event.scheduledTime || Date.now())));
   },
 };
 
