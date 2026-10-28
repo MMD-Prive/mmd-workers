@@ -122,14 +122,14 @@ test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified
   assert.equal((await run("", { message: "เช็ก Points", matrixState: state, auto: false, deterministic: true, kill: true })).replies.length, 0);
 });
 
-test("Checkpts gives three in-chat fields after SUPPORT expires without exposing unverified values", async () => {
+test("Checkpts gives three fields plus campaign route after SUPPORT expires", async () => {
   const expired = { topic: "support", entry: "per_support_button", expires_at: "2000-01-01T00:00:00Z" };
   for (const [message, matrixState] of [["checkpts", null], ["Checkpts", expired]]) {
     const result = await run("", { message, matrixState, auto: false, deterministic: true });
     assert.equal(result.replies.length, 1);
     assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
     assert.match(result.replies[0].messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
-    assert.doesNotMatch(result.replies[0].messages[0].text, /https?:\/\//);
+    assert.match(result.replies[0].messages[0].text, /promotion\/6-years-care-back/);
     assert.doesNotMatch(result.replies[0].messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   }
   for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }, { signatureValid: false }, { deterministic: false }])
@@ -142,10 +142,11 @@ test("Checkpts reports verified status, zero Points and expiry from canonical me
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 0 } };
   const active = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
-  for (const [message, matrixState] of [["Checkpts", null], ["checkpts", active], ["เช็ก Points", active]]) {
+  for (const [message, matrixState] of [["Checkpts", null], ["checkpts", active]]) {
     const result = await run("", { message, matrixState, memberTruth, auto: false, deterministic: true });
     assert.equal(result.replies.length, 1);
-    assert.equal(result.replies[0].messages[0].text, "สถานะสมาชิก: Private Premium (ใช้งานอยู่) ครับ\nPoints: 0 Points ครับ\nวันหมดอายุ: 03/02/2027 ครับ");
+    assert.match(result.replies[0].messages[0].text, /^สถานะสมาชิก: Private Premium.*\nPoints: 0 Points ครับ\nวันหมดอายุ: 03\/02\/2027 ครับ/);
+    assert.match(result.replies[0].messages[0].text, /promotion\/6-years-care-back/);
   }
 });
 
@@ -161,11 +162,14 @@ test("Checkpts has separate replies for unverified Points and unverified identit
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 999 },
   } });
-  assert.equal(unknown.replies[0].messages[0].text, "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ");
-  assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027|https?:\/\//);
+  assert.match(unknown.replies[0].messages[0].text, /^สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ/);
+  assert.match(unknown.replies[0].messages[0].text, /ยืนยันบัญชีผ่าน LINE/);
+  assert.match(unknown.replies[0].messages[0].text, /promotion\/6-years-care-back/);
+  assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027/);
+  assert.match(unknown.replies[0].messages[0].text, /promotion\/6-years-care-back/);
 });
 
-test("Checkpts retains canonical SVIP status and expiry if the Points lookup times out", async () => {
+test("Checkpts keeps SVIP indefinite and sends a private-care CTA when Points lookup times out", async () => {
   const result = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruthByIntent: {
     points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
     membership_status: { body: { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
@@ -174,16 +178,17 @@ test("Checkpts retains canonical SVIP status and expiry if the Points lookup tim
   } });
   assert.deepEqual(result.memberTruthCalls, ["points_status", "membership_status"]);
   assert.equal(result.replies.length, 1);
-  assert.equal(result.replies[0].messages[0].text,
-    "สถานะสมาชิก: SVIP (ใช้งานอยู่) ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: 03/02/2027 ครับ");
-  assert.doesNotMatch(result.replies[0].messages[0].text, /999|https?:\/\//);
+  assert.match(result.replies[0].messages[0].text, /^สถานะสมาชิก: SVIP.*\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: SVIP ไม่มีวันหมดอายุปกติครับ/);
+  assert.match(result.replies[0].messages[0].text, /ดูแลเป็นรายบุคคล/);
+  assert.match(result.replies[0].messages[0].text, /promotion\/6-years-care-back/);
+  assert.doesNotMatch(result.replies[0].messages[0].text, /999|03\/02\/2027/);
 
   const unavailable = await run("", { message: "Checkpts", auto: false, deterministic: true, memberTruthByIntent: {
     points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
     membership_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
   } });
-  assert.equal(unavailable.replies[0].messages[0].text,
-    "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ");
+  assert.match(unavailable.replies[0].messages[0].text, /^สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ/);
+  assert.match(unavailable.replies[0].messages[0].text, /promotion\/6-years-care-back/);
 });
 
 test("exact rights alias uses the same Points shortcut inside and outside SUPPORT", async () => {
@@ -192,7 +197,8 @@ test("exact rights alias uses the same Points shortcut inside and outside SUPPOR
   assert.equal(support.replies.length, 1);
   assert.equal(support.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
   assert.match(support.replies[0].messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
-  assert.doesNotMatch(support.replies[0].messages[0].text, /CARE BACK|Standard|Premium|สถานะสมาชิกยังตรวจยืนยันไม่ครบ/);
+  assert.match(support.replies[0].messages[0].text, /CARE BACK|Standard|Premium/);
+  assert.match(support.replies[0].messages[0].text, /promotion\/6-years-care-back/);
 
   const standalone = await run("", { message: "เช็กสิทธิ์", auto: false, deterministic: true, rightsCommand: true });
   assert.equal(standalone.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
