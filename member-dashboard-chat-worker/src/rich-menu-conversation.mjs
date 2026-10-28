@@ -114,11 +114,11 @@ export function richMenuConversationStart(navigation, now = Date.now()) {
   return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : null;
 }
 
-export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now()) {
+export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now(), includeCta = true) {
   const verified = liveTruth.ok === true && liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved" &&
     liveTruth.points?.status === "verified" && Number.isSafeInteger(liveTruth.points.active_points) && liveTruth.points.active_points >= 0;
   return {
-    text: pointsInChatAnswer(liveTruth, now, true), intent: "points_status", inferred_intent: "points_status",
+    text: pointsInChatAnswer(liveTruth, now, includeCta), intent: "points_status", inferred_intent: "points_status",
     reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
     truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
     live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
