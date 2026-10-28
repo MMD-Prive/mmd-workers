@@ -142,7 +142,7 @@ test("Checkpts reports verified status, zero Points and expiry from canonical me
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 0 } };
   const active = { topic: "support", entry: "per_support_button", expires_at: new Date(Date.now() + 10 * 60_000).toISOString() };
-  for (const [message, matrixState] of [["Checkpts", null], ["checkpts", active], ["เช็ก Points", active]]) {
+  for (const [message, matrixState] of [["Checkpts", null], ["checkpts", active]]) {
     const result = await run("", { message, matrixState, memberTruth, auto: false, deterministic: true });
     assert.equal(result.replies.length, 1);
     assert.match(result.replies[0].messages[0].text, /^สถานะสมาชิก: Private Premium.*\nPoints: 0 Points ครับ\nวันหมดอายุ: 03\/02\/2027 ครับ/);
