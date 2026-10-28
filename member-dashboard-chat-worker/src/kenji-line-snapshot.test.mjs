@@ -6,7 +6,7 @@ import { resolveCheckptsShortcut } from "./rich-menu-conversation.mjs";
 const lineUserId = "U" + "a".repeat(32);
 const event = { source: { type: "user", userId: lineUserId } };
 
-test("Checkpts uses the bounded snapshot and renders three verified fields", async () => {
+test("Checkpts uses the bounded snapshot and keeps curated SVIP expiry private", async () => {
   let called = 0;
   const env = { MEMBER_PAGES_WORKER: { fetch: async request => {
     called++;
