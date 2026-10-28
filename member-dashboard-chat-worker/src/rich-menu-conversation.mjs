@@ -18,38 +18,21 @@ function membershipStatus(membership = {}) {
   return "ยังไม่พบสิทธิ์สมาชิกที่ใช้งานอยู่ครับ";
 }
 
-function membershipExpiry(membership = {}) {\n  const level = String(membership.level || "").trim().toLowerCase();\n  const label = String(membership.label || "").trim().toLowerCase();\n  const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();\n  if (level === "svip" || label === "svip") {\n    return ["active", "expiring_soon", "grace"].includes(lifecycle)\n      ? "SVIP ไม่มีวันหมดอายุปกติครับ"\n      : "ให้เปอร์ตรวจสถานะ SVIP เป็นรายบุคคลครับ";\n  }
-  if (!/^(?:active|expiring_soon|grace|expired)$/.test(membership.lifecycle || "")) return "ยังไม่มีวันที่ยืนยันได้ครับ";
+function membershipExpiry(membership = {}) {
+  const level = String(membership.level || "").trim().toLowerCase();
+  const label = String(membership.label || "").trim().toLowerCase();
+  const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();
+  if (level === "svip" || label === "svip") {
+    return ["active", "expiring_soon", "grace"].includes(lifecycle)
+      ? "SVIP ไม่มีวันหมดอายุปกติครับ"
+      : "ให้เปอร์ตรวจสถานะ SVIP เป็นรายบุคคลครับ";
+  }
+  if (!/^(?:active|expiring_soon|grace|expired)$/.test(lifecycle)) return "ยังไม่มีวันที่ยืนยันได้ครับ";
   const match = String(membership.expire_at || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
   if (!match || Number(match[2]) < 1 || Number(match[2]) > 12 || Number(match[3]) < 1 || Number(match[3]) > 31)
     return "ยังไม่มีวันที่ยืนยันได้ครับ";
   return `${match[3]}/${match[2]}/${match[1]} ครับ`;
 }
-
-const CARE_BACK_URL = "https://www.mmdbkk.com/promotion/6-years-care-back";
-const RENEW_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package";
-const CARE_BACK_END = Date.parse("2026-10-31T23:59:59+07:00");
-const CARE_BACK_START = Date.parse("2026-09-01T00:00:00+07:00");
-
-function campaignOpen(now) {
-  const value = now instanceof Date ? now.getTime() : Number(now);
-  return Number.isFinite(value) && value >= CARE_BACK_START && value <= CARE_BACK_END;
-}
-
-function isPaidPrivateTier(membership = {}) {
-  const level = String(membership.level || "").trim().toLowerCase();
-  const label = String(membership.label || "").trim().toLowerCase();
-  return ["standard", "lite", "private_standard", "premium", "private_premium"].includes(level) ||
-    ["standard", "lite", "private standard", "private premium", "premium"].includes(label);
-}
-
-function isCuratedTier(membership = {}) {
-  const level = String(membership.level || "").trim().toLowerCase();
-  const label = String(membership.label || "").trim().toLowerCase();
-  return ["vip", "svip", "black_card"].includes(level) ||
-    /^(vip|svip|black ?card|black_card)$/.test(label);
-}
-
 function checkptsCta(liveTruth = {}, now = Date.now()) {
   const membership = liveTruth.membership || {};
   const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();
@@ -81,15 +64,16 @@ function checkptsCta(liveTruth = {}, now = Date.now()) {
   return `CTA: สถานะยังแยกไม่ได้ว่า active หรือหมดอายุ กรุณายืนยันบัญชีผ่าน LINE ก่อนครับ. ${campaign}`;
 }
 
-function pointsInChatAnswer(liveTruth = {}, now = Date.now(), includeCta = false) {\n  const cta = includeCta ? `\\n${checkptsCta(liveTruth, now)}` : "";
+function pointsInChatAnswer(liveTruth = {}, now = Date.now(), includeCta = false) {
+  const cta = includeCta ? "\n" + checkptsCta(liveTruth, now) : "";
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
-    return `สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ\n${checkptsCta(liveTruth, now)}`;
+    return "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ" + cta;
   }
   const points = liveTruth.points || {};
   const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
-  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ"}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}\n${checkptsCta(liveTruth, now)}`;
+  const pointText = verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ";
+  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${pointText}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}` + cta;
 }
-
 const TOPICS = {
   guest: ["membership", "models", "booking", "services", "stories", "support"],
   public: ["support", "models", "booking", "membership", "membership", "support"],
