@@ -1,3 +1,4 @@
+import { currentPrivateAccess } from "./current-private-access.js";
 import { customerDiscoveryAllowed, resolveDiscoveryViewer } from "./customer-discovery-policy.js";
 // sigil-booking-worker/src/index.js
 // MMD Booking / SIGIL public booking resolver
@@ -33,6 +34,13 @@ const PUBLIC_JOB_V2_FORMATS = new Set([
   "other",
 ]);
 const PRIVATE_JOB_TYPE_TOKENS = new Set(["pn", "vip", "private_review"]);
+// Exact records withheld from customer discovery and intake. Names and other
+// registry classifications do not extend this bounded exclusion.
+const CUSTOMER_EXCLUDED_MODEL_IDS = new Set(["rec13E9zF71wnDotX", "rec687cy5e8sx6yLI"]);
+
+export function customerModelExcluded(recordId) {
+  return CUSTOMER_EXCLUDED_MODEL_IDS.has(str(recordId));
+}
 
 export default {
   async fetch(req, env, ctx) {
@@ -112,13 +120,16 @@ async function handleClientResolve(req, env) {
 }
 
 async function handleModelSearch(req, env, url) {
-  requireAirtable(env);
   const body = req.method.toUpperCase() === "POST" ? await safeJson(req) : {};
   const queryInput = Object.fromEntries(url.searchParams.entries());
   const intent = safeSearchIntent({ ...queryInput, ...body });
   const q = str(url.searchParams.get("q") || body.q || body.model_search_query || body.model_id_or_name || intent.preferred_model_name);
   const scopeToken = token(url.searchParams.get("scope") || body.scope || body.model_scope || "public");
   const scope = scopeToken === "private" ? "private" : scopeToken === "booking" ? "booking" : "public";
+  if (scope === "private" && (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID)) {
+    return { ok: true, matched: false, blocked: true, reason: "private_requires_active_member", access_scope: "public_only", member_status: "unknown", items: [] };
+  }
+  requireAirtable(env);
   const bookingRef = str(url.searchParams.get("booking_ref") || body.booking_ref || body.request_id);
   const sessionId = str(url.searchParams.get("session_id") || body.session_id);
 
@@ -133,13 +144,19 @@ async function handleModelSearch(req, env, url) {
   // The same server access and model projection gates below still apply.
 
   const storedAccess = await lookupStoredBookingAccess(env, { bookingRef, sessionId });
-  const salesContext = await resolveBookingSalesContext(env, storedAccess);
-  const allowedFolders = allowedCustomerModelFolders(salesContext.entitlement_snapshot);
+  const viewerRef = await resolveDiscoveryViewer(req, env);
+  const current = scope === "private" || scope === "booking"
+    ? await currentPrivateAccess(req, env, storedAccess.member_record_id, viewerRef)
+    : null;
+  const salesContext = await resolveBookingSalesContext(env, current
+    ? { ...storedAccess, entitlement_snapshot: current.snapshot }
+    : storedAccess);
+  const allowedFolders = current?.allowedFolders || [];
   const requestedFolder = token(url.searchParams.get("selected_access_folder") || body.selected_access_folder || body.access_folder);
   const effectiveAllowedFolders = requestedFolder
     ? (allowedFolders.includes(requestedFolder) ? [requestedFolder] : [])
     : allowedFolders;
-  const privateAllowed = storedAccess.member_status === "active" && allowedFolders.length > 0;
+  const privateAllowed = allowedFolders.length > 0;
 
   if (scope === "private" && (!privateAllowed || (requestedFolder && effectiveAllowedFolders.length === 0))) {
     return {
@@ -156,7 +173,6 @@ async function handleModelSearch(req, env, url) {
     };
   }
 
-  const viewerRef = await resolveDiscoveryViewer(req, env);
   const records = q ? await searchModels(env, q, 40) : await listModels(env, 500);
   const baseModels = records
     .map((record) => sanitizeModelForBooking(record, {
@@ -212,6 +228,11 @@ async function handleBookingIntake(req, env, ctx) {
 
   const bookingRef = str(body.booking_ref || body.request_id || makeRef("book"));
   const sessionId = str(body.session_id || makeRef("mmd_session"));
+  if (customerModelExcluded(body.selected_model_id) || customerModelExcluded(body.resolved_model_key)) {
+    const error = new Error("selected_model_unavailable");
+    error.status = 422;
+    throw error;
+  }
   const incomingResolver = body.resolver_payload_json && typeof body.resolver_payload_json === "object" ? body.resolver_payload_json : {};
   const intakeScope = token(body.lane || body.model_scope) === "private" ? "private" : "public";
   const requestedOptions = body.service_options ?? incomingResolver.filters?.service_options ?? [];
@@ -647,6 +668,7 @@ async function listModels(env, limit) {
 
 export function sanitizeModelForBooking(record, { scope, privateAllowed, allowedFolders = [], customerLane = "", workLane = "", profileFilters = {}, viewerRef = "", env }) {
   const f = record.fields || {};
+  if (customerModelExcluded(record.id)) return null;
   if (!customerDiscoveryAllowed(f, viewerRef)) return null;
   const status = token(f.status || f.availability_status);
   if (["inactive", "blocked", "archived", "hidden", "retired"].includes(status)) return null;
