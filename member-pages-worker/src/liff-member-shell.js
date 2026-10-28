@@ -316,7 +316,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
     ${config.liffId ? `<a id="signup-line-entry" class="signup-line-entry" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">เปิดใน LINE เพื่อสมัคร</a>` : ""}
     <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
-    <div class="card signup-private"><strong>Standard / Premium / Private Access</strong><p class="signup-note">ให้เปอร์ช่วยตรวจตัวเลือกและเงื่อนไข Standard / Premium ก่อนครับ เปิดแชต MMD แล้วพิมพ์ “ขอคุยกับเปอร์ สนใจ Standard / Premium” ขั้นตอนนี้ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์</p><a id="private-review-chat" class="private-link" href="https://lin.ee/xRqsALs" rel="noreferrer">เปิดแชต MMD เพื่อส่งเรื่องให้เปอร์</a></div>
+    <div class="card signup-private"><strong>Private Membership</strong><p class="signup-note">เลือก Standard หรือ Premium เพื่อให้ระบบตรวจสอบสิทธิ์และเตรียมหน้าชำระเงินให้ครับ</p><div id="private-signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE ก่อนจึงจะแสดงแพ็กเกจ Private ครับ</p></div></div>
     <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
   </section>
   <nav class="member-nav" aria-label="Member sections">
@@ -740,6 +740,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     busy = Boolean(value);
     for (const button of actions.querySelectorAll("button")) button.disabled = busy;
     for (const button of signupPackages.querySelectorAll("button")) button.disabled = busy;
+    for (const button of document.querySelectorAll("#private-signup-packages button")) button.disabled = busy;
   }
 
   function verifiedCheckoutUrl(value) {
@@ -749,6 +750,58 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout" && !url.port && !url.username && !url.password
         && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
     } catch { return ""; }
+  }
+
+  function canonicalSigilPaymentUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const keys = [...url.searchParams.keys()];
+      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && !url.port && !url.username && !url.password
+        && url.pathname === "/sigil/pay" && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
+    } catch { return ""; }
+  }
+
+  async function purchasePrivateMembership(packageCode) {
+    if (busy) return;
+    setBusy(true);
+    show("กำลังตรวจสอบแพ็กเกจและเตรียมหน้าชำระเงินครับ");
+    try {
+      const selected = await call("/member/api/liff/package", { requested_package_code: packageCode });
+      if (!selected) return;
+      const payment = await call("/member/api/liff/payment-intent", { package_code: packageCode, payment_stage: "membership" });
+      const url = canonicalSigilPaymentUrl(payment?.customer_payment_url || payment?.redirect_to);
+      if (!url) {
+        show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง");
+        return;
+      }
+      window.location.assign(url);
+    } catch {
+      show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderPrivateSignupPackages() {
+    const container = document.getElementById("private-signup-packages");
+    if (!container || container.dataset.ready === "true") return;
+    container.replaceChildren();
+    for (const packageCode of ["standard", "premium"]) {
+      const card = document.createElement("div");
+      card.className = "card signup-package signup-package-" + packageCode;
+      const title = document.createElement("strong");
+      title.textContent = packageCode === "premium" ? "Premium" : "Standard";
+      const note = document.createElement("p");
+      note.className = "signup-period";
+      note.textContent = "ระบบจะแสดงราคาและระยะเวลาที่ตรวจสอบจากสิทธิ์ของคุณ";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = locale === "th" ? "เลือกแพ็กเกจนี้  →" : "Choose this package  →";
+      button.addEventListener("click", () => purchasePrivateMembership(packageCode));
+      card.append(title, note, button);
+      container.append(card);
+    }
+    container.dataset.ready = "true";
   }
 
   async function purchasePublicMembership(packageCode) {
@@ -2161,6 +2214,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
       if (started) {
+        if (started.member_resolved === false) renderPrivateSignupPackages();
         if (started.member_resolved) {
           await readProfile({ hydrate: false });
           void hydrateMemberHome();
