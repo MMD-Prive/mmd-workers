@@ -6,6 +6,35 @@ const WINDOW_MS = 30 * 60 * 1000;
 const ENTRY = "https://miniapp.line.me/2010862595-yT4DCEMc/";
 const pointsAnswer = () => pointsInChatAnswer();
 const POINTS_AUTHORITY = "my_mmd_entitlement_resolver_v1";
+const CARE_BACK_URL = "https://www.mmdbkk.com/promotion/6-years-care-back";
+const RENEW_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package";
+
+function bangkokDate(now) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now instanceof Date ? now : new Date(now));
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function campaignOpen(now) {
+  const today = bangkokDate(now);
+  return today >= "2026-09-01" && today <= "2026-10-31";
+}
+
+function tierKey(membership = {}) {
+  return [membership.level, membership.label].map(value => String(value || "").trim().toLowerCase()).join(" ");
+}
+
+function isCuratedTier(membership = {}) {
+  return /(?:^|[ _-])(?:svip|vip|black\s*card|blackcard)(?:$|[ _-])/.test(tierKey(membership));
+}
+
+function isPaidPrivateTier(membership = {}) {
+  const tier = tierKey(membership);
+  return /(?:^|[ _-])private(?:$|[ _-])/.test(tier) &&
+    /(?:^|[ _-])(?:standard|premium)(?:$|[ _-])/.test(tier);
+}
 
 function membershipStatus(membership = {}) {
   if (membership.member_blocked === true || membership.lifecycle === "blocked") return "ระงับการใช้งานครับ";
