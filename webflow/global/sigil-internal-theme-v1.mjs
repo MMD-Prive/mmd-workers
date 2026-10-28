@@ -112,6 +112,9 @@ html[data-sigil-ceo-theme="blue-v1"] body .mmd-aiops-btn{bottom:16px!important;r
 html[data-sigil-ceo-theme="blue-v1"] body{padding-bottom:88px!important}
 
 ${STUDIO_READABLE_CSS}
+/* Compact everyday controls; touch targets remain generous on phones. */
+html[data-sigil-internal-theme="silver-orange-v1"] body :is(.cr4__btn,.aud27-btn,.c360 .btn,.model-line-link-page button,.mmdop__ghost){min-height:36px!important;padding:7px 12px!important;font-size:14px!important;line-height:1.4!important;border-radius:9px!important}
+@media(pointer:coarse),(max-width:760px){html[data-sigil-internal-theme="silver-orange-v1"] body :is(.cr4__btn,.aud27-btn,.c360 .btn,.model-line-link-page button,.mmdop__ghost){min-height:44px!important}}
 `;
 
 export function silverWorkspaceLoader() {
