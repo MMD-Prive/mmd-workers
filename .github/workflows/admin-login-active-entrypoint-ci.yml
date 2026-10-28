@@ -5,6 +5,10 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/admin-login-active-entrypoint.test.mjs"
+      - "admin-worker/src/hype-console.js"
+      - "admin-worker/src/hype-console-page.js"
+      - "admin-worker/hype-console.test.mjs"
+      - "admin-worker/hype-console-bundle.test.mjs"
       - "admin-worker/src/admin-login-hero-worker-core.js"
       - "admin-worker/src/kenji-owner-line-unlock.js"
       - "admin-worker/kenji-owner-line-unlock.test.mjs"
@@ -20,6 +24,10 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/admin-login-active-entrypoint.test.mjs"
+      - "admin-worker/src/hype-console.js"
+      - "admin-worker/src/hype-console-page.js"
+      - "admin-worker/hype-console.test.mjs"
+      - "admin-worker/hype-console-bundle.test.mjs"
       - "admin-worker/src/admin-login-hero-worker-core.js"
       - "admin-worker/src/kenji-owner-line-unlock.js"
       - "admin-worker/kenji-owner-line-unlock.test.mjs"
@@ -57,3 +65,5 @@ jobs:
       - name: Test actual ingress to Owner control boundary
         working-directory: .
         run: node --test immigrate-worker/test/kenji-owner-line-bridge.test.mjs
+      - name: Test HYPE read-only contract and actual bundled browser runtime
+        run: node --test hype-console.test.mjs hype-console-bundle.test.mjs
