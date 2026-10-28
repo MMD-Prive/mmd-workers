@@ -27,6 +27,12 @@ POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
+# Empty by default. During scoped acceptance this may contain only approved
+# line_key hashes; it is never a list of raw LINE identities.
+MEMBER_REPLY_SNAPSHOT_DRAIN_ALLOWLIST = ""
+# Empty by default. Collect-only recovery is inactive unless explicitly
+# allowlisted with SHA-256/24 prefixes by an owner-reviewed release.
+HISTORY_RECOVERY_COLLECT_ALLOWLIST = ""
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_CONSOLE_INBOX = "MMD — Console Inbox"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"

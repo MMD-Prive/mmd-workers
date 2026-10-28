@@ -140,6 +140,11 @@ export function snapshotRetryAt(attempts, now = new Date(), reason = "event") {
   return new Date(base + delay).toISOString();
 }
 
+export function snapshotDrainAllowlist(env = {}) {
+  return clean(env.MEMBER_REPLY_SNAPSHOT_DRAIN_ALLOWLIST)
+    .split(",").map(value => value.trim()).filter(Boolean);
+}
+
 async function queueRefresh(env, lineUserId, reason = "event") {
   const key = await lineKey(lineUserId);
   if (!key || !env.MEMBER_REPLY_DB) return false;
@@ -204,17 +209,21 @@ async function refreshOne(env, item) {
 
 export async function drainMemberReplyRefreshes(env, limit = 24) {
   if (!env.MEMBER_REPLY_DB) return { ok: false, reason: "db_unavailable" };
+  const allowlist = snapshotDrainAllowlist(env);
   const { results = [] } = await env.MEMBER_REPLY_DB.prepare(`SELECT line_key,line_user_id,generation,attempts
     FROM member_reply_refresh_queue WHERE next_attempt_at<=? ORDER BY requested_at LIMIT ?`)
     .bind(new Date().toISOString(), Math.min(50, Math.max(1, limit))).all();
+  const boundedResults = allowlist.length
+    ? results.filter(item => allowlist.includes(item.line_key))
+    : results;
   let failed = 0;
-  for (let index = 0; index < results.length; index += 2) {
-    const settled = await Promise.allSettled(results.slice(index, index + 2).map(item => refreshOne(env, item)));
+  for (let index = 0; index < boundedResults.length; index += 2) {
+    const settled = await Promise.allSettled(boundedResults.slice(index, index + 2).map(item => refreshOne(env, item)));
     for (let offset = 0; offset < settled.length; offset += 1) {
       const result = settled[offset];
       if (result.status === "fulfilled") continue;
       failed += 1;
-      const item = results[index + offset];
+      const item = boundedResults[index + offset];
       const attempts = Number(item.attempts || 0) + 1;
       await env.MEMBER_REPLY_DB.prepare(`UPDATE member_reply_refresh_queue SET attempts=?,next_attempt_at=?,
         last_error_code=?,last_error_at=? WHERE line_key=? AND generation=?`)
@@ -222,7 +231,7 @@ export async function drainMemberReplyRefreshes(env, limit = 24) {
         .run().catch(() => null);
     }
   }
-  return { ok: failed === 0, processed: results.length - failed, failed };
+  return { ok: failed === 0, processed: boundedResults.length - failed, skipped: results.length - boundedResults.length, failed };
 }
 
 async function allLinkedLines(env) {

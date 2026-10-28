@@ -146,6 +146,24 @@ test("history recovery uses a fresh batch projection without scanning source tab
   assert.deepEqual(calls.map((call) => call.table), ["tblVv58TCbwh5j1fS", "tblNV1b5sMC2fQPxt"]);
 });
 
+test("collect-only recovery reads source evidence without status or canonical writes", async () => {
+  const writes = [];
+  const env = {
+    LIFF_IDENTITY_KV: {
+      async get() { return null; },
+      async put(...args) { writes.push(["put", args]); },
+      async delete(...args) { writes.push(["delete", args]); },
+    },
+  };
+  const store = { async list() { return []; } };
+  const result = await runMemberHistoryRecovery({ env, store, lineUserId: LINE_ID, collectOnly: true, now: NOW });
+  assert.equal(result.state, "checking");
+  assert.equal(result.reason, "collect_only_evidence_collected");
+  assert.equal(result.current_points_total, null);
+  assert.equal(result.historical_points_added, 0);
+  assert.deepEqual(writes, []);
+});
+
 
 test('owner import invalidation prevents cached and persisted old projections from replacing fresh totals',async()=>{
  const {env}=fakeEnv();
