@@ -26,14 +26,70 @@ function membershipExpiry(membership = {}) {
   return `${match[3]}/${match[2]}/${match[1]} ครับ`;
 }
 
-function pointsInChatAnswer(liveTruth = {}) {
+const CARE_BACK_URL = "https://www.mmdbkk.com/promotion/6-years-care-back";
+const RENEW_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package";
+const CARE_BACK_END = Date.parse("2026-10-31T23:59:59+07:00");
+const CARE_BACK_START = Date.parse("2026-09-01T00:00:00+07:00");
+
+function campaignOpen(now) {
+  const value = now instanceof Date ? now.getTime() : Number(now);
+  return Number.isFinite(value) && value >= CARE_BACK_START && value <= CARE_BACK_END;
+}
+
+function isPaidPrivateTier(membership = {}) {
+  const level = String(membership.level || "").trim().toLowerCase();
+  const label = String(membership.label || "").trim().toLowerCase();
+  return ["standard", "lite", "private_standard", "premium", "private_premium"].includes(level) ||
+    ["standard", "lite", "private standard", "private premium", "premium"].includes(label);
+}
+
+function isCuratedTier(membership = {}) {
+  const level = String(membership.level || "").trim().toLowerCase();
+  const label = String(membership.label || "").trim().toLowerCase();
+  return ["vip", "svip", "black_card"].includes(level) ||
+    /^(vip|svip|black ?card|black_card)$/.test(label);
+}
+
+function checkptsCta(liveTruth = {}, now = Date.now()) {
+  const membership = liveTruth.membership || {};
+  const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();
+  const open = campaignOpen(now);
+  const campaign = open
+    ? `CARE BACK ถึง 31 ต.ค. 2569: บันทึก Birthday Wish สำเร็จแล้วจึงรับคูปองส่วนตัวสูงสุด 10% ใช้ได้ 1 ครั้ง; ส่วนลดจริงขึ้นกับระดับนายแบบและรูปแบบบริการ. รายละเอียดและโปสเตอร์: ${CARE_BACK_URL}`
+    : `ดูสิทธิ์และเงื่อนไขล่าสุดได้ที่ ${CARE_BACK_URL}`;
+
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
-    return "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ";
+    return `CTA: ยืนยันบัญชีผ่าน LINE ในหน้า CARE BACK ก่อน เปอร์จะตรวจสถานะให้ครับ. ${campaign}`;
+  }
+  if (["active", "expiring_soon", "grace"].includes(lifecycle)) {
+    if (isCuratedTier(membership)) {
+      return `CTA: สิทธิ์ ${String(membership.label || "สมาชิก")} ต้องให้เปอร์ดูแลเป็นรายบุคคลครับ ยังไม่แสดงแพ็กเกจต่ออายุทั่วไป. ${campaign}`;
+    }
+    if (isPaidPrivateTier(membership) && open) {
+      return `CTA: สมาชิกยังใช้งานอยู่ ต่ออายุล่วงหน้าได้ถึง 31 ต.ค. 2569 เท่านั้นครับ. ดูแพ็กเกจต่ออายุ: ${RENEW_URL}. Verify CARE BACK เพิ่มสมาชิก 1 ปีจากวันหมดอายุจริง; Standard ที่เข้าเงื่อนไขเพิ่ม 180 วัน, Premium เพิ่ม 1 ปี. ${campaign}`;
+    }
+    return `CTA: ตรวจตัวเลือกต่ออายุใน MY MMD ได้ที่ ${RENEW_URL}. ${campaign}`;
+  }
+  if (lifecycle === "expired") {
+    return open
+      ? `CTA: สถานะหมดอายุแล้วครับ ยืนยันบัญชีเดิมผ่านหน้า CARE BACK ภายใน 31 ต.ค. เพื่อรับสิทธิ์ต่อสมาชิก 1 ปีนับจากวันที่ Verify สำเร็จ; การสมัครแพ็กเกจภายหลังเป็นอีกขั้นตอนหนึ่ง. ${campaign}`
+      : `CTA: สถานะหมดอายุแล้วครับ ส่งคำว่า “คุยกับเปอร์” เพื่อให้ตรวจสิทธิ์กลับมาเป็นรายบุคคลได้ครับ. ${campaign}`;
+  }
+  if (["blocked", "revoked"].includes(lifecycle)) {
+    return `CTA: สถานะนี้ต้องให้เปอร์ตรวจเป็นรายบุคคลก่อนครับ. ${campaign}`;
+  }
+  return `CTA: สถานะยังแยกไม่ได้ว่า active หรือหมดอายุ กรุณายืนยันบัญชีผ่าน LINE ก่อนครับ. ${campaign}`;
+}
+
+function pointsInChatAnswer(liveTruth = {}, now = Date.now()) {
+  if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
+    return `สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ\n${checkptsCta(liveTruth, now)}`;
   }
   const points = liveTruth.points || {};
   const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
-  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ"}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}`;
+  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ"}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}\n${checkptsCta(liveTruth, now)}`;
 }
+
 const TOPICS = {
   guest: ["membership", "models", "booking", "services", "stories", "support"],
   public: ["support", "models", "booking", "membership", "membership", "support"],
@@ -45,15 +101,15 @@ export function richMenuConversationStart(navigation, now = Date.now()) {
   return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : null;
 }
 
-export function resolveCheckptsShortcut(liveTruth = {}) {
+export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now()) {
   const verified = liveTruth.ok === true && liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved" &&
     liveTruth.points?.status === "verified" && Number.isSafeInteger(liveTruth.points.active_points) && liveTruth.points.active_points >= 0;
   return {
-    text: pointsInChatAnswer(liveTruth), intent: "points_status", inferred_intent: "points_status",
+    text: pointsInChatAnswer(liveTruth, now), intent: "points_status", inferred_intent: "points_status",
     reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
     truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
     live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
-    handoff_required: false, cta_appended: false,
+    handoff_required: false, cta_appended: true,
   };
 }
 
