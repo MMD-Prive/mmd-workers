@@ -21,8 +21,15 @@ test('HAY has its own hero, work examples and isolated brief while preserving HE
  const root={dataset:{},querySelector:node,querySelectorAll:s=>s==='.tb-bot[data-bot]'?buttons:[]};let copied='';
  runInNewContext(script,{document:{getElementById:()=>root,createElement:()=>({})},navigator:{clipboard:{writeText:async text=>{copied=text}}},fetch:async()=>({status:401}),AbortController,setTimeout:()=>1,clearTimeout(){},console});
  node('#tb-instruction').value='HYPE draft';buttons[2].onclick();
- assert.equal(node('#tb-hero-title').textContent,'หน่วยวิ่งไว · หน่วยผลิตสื่อ');assert.match(node('#tb-hero-image').src,/hay-telegram-profile\.webp$/);assert.equal(node('#tb-hero-next').hidden,true);assert.equal(root.dataset.mascot,'hay');assert.equal(node('#tb-case').children.length,3);assert.match(node('#tb-instruction').value,/ผู้ตรวจอนุมัติ/);assert.equal(node('#tb-compose').textContent,'Brief Composer · HAY');
+ assert.equal(node('#tb-hero-title').textContent,'หน่วยวิ่งไว · หน่วยผลิตสื่อ');assert.match(node('#tb-hero-image').src,/hay-reception-hero-v1\.webp$/);assert.equal(node('#tb-hero-next').hidden,true);assert.equal(root.dataset.mascot,'hay');assert.equal(node('#tb-case').children.length,3);assert.match(node('#tb-instruction').value,/ผู้ตรวจอนุมัติ/);assert.equal(node('#tb-compose').textContent,'Brief Composer · HAY');
  node('#tb-instruction').value='HAY private draft';node('#tb-copy-brief').onclick();assert.match(copied,/^HAY \/ SĪGIL BRIEF/);assert.match(copied,/HAY private draft/);
  buttons[1].onclick();assert.equal(node('#tb-instruction').value,'');assert.equal(node('[data-field="next-link"]').href,'https://lin.ee/wNQ68VE');assert.equal(node('[data-field="next-link"]').textContent,'แอด LINE MMD ↗');assert.equal(node('#tb-hay-note').hidden,true);
  buttons[0].onclick();assert.equal(node('#tb-instruction').value,'HYPE draft');buttons[2].onclick();assert.equal(node('#tb-instruction').value,'HAY private draft');assert.equal(node('#tb-hay-note').hidden,false);
 });
+
+ test('reception heroes use pinned artwork without replacing canonical selector avatars',()=>{
+ const images=runInNewContext(script.slice(script.indexOf('var heroImages='),script.indexOf('function renderHero'))+'heroImages');
+ for(const who of ['henna','hay']){assert.match(images[who][0].src,/\/mmd-workers@[0-9a-f]{40}\/webflow\/internal\/admin\/telegram-brief\/assets\//);assert.ok(images[who][0].src.endsWith(who+'-reception-hero-v1.webp'));}
+ assert.equal(images.hype.length,2);assert.match(images.hype[0].src,/6a65e131bf33efae2edd1c0c_OWL%20HYPE.webp/);
+ assert.match(html,/6ae22ec8b6370647ea97a6ef_hay-telegram-profile.webp/);
+ });
