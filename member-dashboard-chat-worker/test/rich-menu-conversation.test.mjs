@@ -185,7 +185,7 @@ test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields
     const result = await send(textEvent("checkpts"));
     assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
     assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
-    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
+    assert.match(replies.at(-1).messages[0].text, /promotion\/6-years-care-back/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });
