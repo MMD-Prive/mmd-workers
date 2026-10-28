@@ -18,7 +18,7 @@ function membershipStatus(membership = {}) {
   return "ยังไม่พบสิทธิ์สมาชิกที่ใช้งานอยู่ครับ";
 }
 
-function membershipExpiry(membership = {}) {
+function membershipExpiry(membership = {}) {\n  const level = String(membership.level || "").trim().toLowerCase();\n  const label = String(membership.label || "").trim().toLowerCase();\n  const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();\n  if (level === "svip" || label === "svip") {\n    return ["active", "expiring_soon", "grace"].includes(lifecycle)\n      ? "SVIP ไม่มีวันหมดอายุปกติครับ"\n      : "ให้เปอร์ตรวจสถานะ SVIP เป็นรายบุคคลครับ";\n  }
   if (!/^(?:active|expiring_soon|grace|expired)$/.test(membership.lifecycle || "")) return "ยังไม่มีวันที่ยืนยันได้ครับ";
   const match = String(membership.expire_at || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
   if (!match || Number(match[2]) < 1 || Number(match[2]) > 12 || Number(match[3]) < 1 || Number(match[3]) > 31)
@@ -81,7 +81,7 @@ function checkptsCta(liveTruth = {}, now = Date.now()) {
   return `CTA: สถานะยังแยกไม่ได้ว่า active หรือหมดอายุ กรุณายืนยันบัญชีผ่าน LINE ก่อนครับ. ${campaign}`;
 }
 
-function pointsInChatAnswer(liveTruth = {}, now = Date.now()) {
+function pointsInChatAnswer(liveTruth = {}, now = Date.now(), includeCta = false) {\n  const cta = includeCta ? `\\n${checkptsCta(liveTruth, now)}` : "";
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
     return `สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ\n${checkptsCta(liveTruth, now)}`;
   }
@@ -105,7 +105,7 @@ export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now()) {
   const verified = liveTruth.ok === true && liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved" &&
     liveTruth.points?.status === "verified" && Number.isSafeInteger(liveTruth.points.active_points) && liveTruth.points.active_points >= 0;
   return {
-    text: pointsInChatAnswer(liveTruth, now), intent: "points_status", inferred_intent: "points_status",
+    text: pointsInChatAnswer(liveTruth, now, true), intent: "points_status", inferred_intent: "points_status",
     reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
     truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
     live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
