@@ -137,7 +137,7 @@ test("SUPPORT continues renewal, Points and status without confirming truth or c
     }
     await send(textEvent("ดูคะแนน"));
     assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
-    assert.match(replies.at(-1).messages[0].text, /promotion\/6-years-care-back/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
     const result = await send(textEvent("ส่งสลิปสมัคร Premium แล้ว"));
     assert.equal(result.body.saved[0].handoff_required, true);
     assert.match(replies.at(-1).messages[0].text, /ยังไม่ยืนยันการชำระเงิน/);
