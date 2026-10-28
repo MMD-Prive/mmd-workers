@@ -11,3 +11,18 @@ function hexLuminance(hex){const c=hex.replace('#','').match(/../g).map(x=>parse
 function contrast(a,b){const x=hexLuminance(a),y=hexLuminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
 test('LV10 premium rebuild stays scoped and readable on mobile',()=>{assert.ok(!html.includes('format(\"woff2)}'));assert.match(html,/data-release="telegram-brief-rebuilt-lv10-20261028"/);assert.match(html,/--canvas:#f4f1e8/);assert.match(html,/--gold:#c6a867/);assert.match(html,/@media\(max-width:440px\)/);assert.match(html,/prefers-reduced-motion:reduce/);assert.ok(contrast('#202a27','#f4f1e8')>=4.5);assert.ok(contrast('#5d6863','#fffdf8')>=4.5);assert.ok(contrast('#fffdf8','#173f35')>=4.5);});
 
+
+test('LV10 preserves the existing HENNA welcome scenario and official LINE CTA',()=>{const start=script.indexOf('var cases=');const end=script.indexOf('var selected=');assert.ok(start>=0&&end>start);const model=runInNewContext(script.slice(start,end)+'\n({cases,profiles})');const welcome=model.cases.henna[0];assert.equal(welcome[0],'welcome');assert.equal(welcome[5],'https://lin.ee/wNQ68VE');assert.equal(welcome[6],'แอด LINE MMD');assert.equal(model.profiles.henna.links[0][1],welcome[5]);assert.match(script,/textContent=\(c\[6\]\|\|'เปิดหน้าจัดการ'\)/);});
+
+
+test('HAY has its own hero, work examples and isolated brief while preserving HENNA LINE',()=>{
+ const nodes=new Map();const buttons=['hype','henna','hay'].map(bot=>({dataset:{bot},setAttribute(k,v){this[k]=v}}));
+ const node=s=>{if(!nodes.has(s))nodes.set(s,{value:'',textContent:'',hidden:false,dataset:{},children:[],replaceChildren(){this.children=[];if(s==='#tb-case')this.value=''},appendChild(x){this.children.push(x)},append(...x){this.children.push(...x)},focus(){},select(){}});return nodes.get(s)};
+ const root={dataset:{},querySelector:node,querySelectorAll:s=>s==='.tb-bot[data-bot]'?buttons:[]};let copied='';
+ runInNewContext(script,{document:{getElementById:()=>root,createElement:()=>({})},navigator:{clipboard:{writeText:async text=>{copied=text}}},fetch:async()=>({status:401}),AbortController,setTimeout:()=>1,clearTimeout(){},console});
+ node('#tb-instruction').value='HYPE draft';buttons[2].onclick();
+ assert.equal(node('#tb-hero-title').textContent,'หน่วยวิ่งไว · หน่วยผลิตสื่อ');assert.match(node('#tb-hero-image').src,/hay-telegram-profile\.webp$/);assert.equal(node('#tb-hero-next').hidden,true);assert.equal(root.dataset.mascot,'hay');assert.equal(node('#tb-case').children.length,3);assert.match(node('#tb-instruction').value,/ผู้ตรวจอนุมัติ/);assert.equal(node('#tb-compose').textContent,'Brief Composer · HAY');
+ node('#tb-instruction').value='HAY private draft';node('#tb-copy-brief').onclick();assert.match(copied,/^HAY \/ SĪGIL BRIEF/);assert.match(copied,/HAY private draft/);
+ buttons[1].onclick();assert.equal(node('#tb-instruction').value,'');assert.equal(node('[data-field="next-link"]').href,'https://lin.ee/wNQ68VE');assert.equal(node('[data-field="next-link"]').textContent,'แอด LINE MMD ↗');assert.equal(node('#tb-hay-note').hidden,true);
+ buttons[0].onclick();assert.equal(node('#tb-instruction').value,'HYPE draft');buttons[2].onclick();assert.equal(node('#tb-instruction').value,'HAY private draft');assert.equal(node('#tb-hay-note').hidden,false);
+});
