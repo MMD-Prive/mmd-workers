@@ -8,6 +8,9 @@ const PAGE = `<!doctype html>
   <meta name="robots" content="noindex,nofollow">
   <title>Money Control · MMD</title>
   <style>
+@font-face{font-family:"LINE Seed Sans TH";font-style:normal;font-weight:400;font-display:swap;src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2")}
+@font-face{font-family:"LINE Seed Sans TH";font-style:normal;font-weight:700;font-display:swap;src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2")}
+    button,input,select,textarea{font:inherit}h1,h2,h3{font-weight:700}body{font-synthesis:none}
     @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
     @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}
     @font-face{font-family:"LINE Seed Sans TH";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd5cdf166a1e9e45b98_LINESeedSansTH_W_XBd.woff2") format("woff2");font-style:normal;font-weight:800;font-display:swap}
@@ -148,6 +151,7 @@ export function handleMoneyControlWorkerHome(request) {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store, private",
     "x-mmd-route-owner": "admin-worker-money-control-home",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; font-src https://cdn.prod.website-files.com; script-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: blob:; font-src https://cdn.prod.website-files.com; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     "x-content-type-options": "nosniff",
     "referrer-policy": "same-origin",

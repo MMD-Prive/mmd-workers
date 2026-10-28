@@ -15,6 +15,7 @@ test("Money Control task entrance is limited to its existing GET/HEAD page", () 
   assert.equal(isMoneyControlWorkerHomeRequest("/v1/admin/payments/review", "GET"), false);
 });
 
+test("Worker page is private, uses only approved font assets, and states the operator payment boundary", async () => {
 test("Worker page keeps evidence private and loads only approved brand fonts", async () => {
   const response = handleMoneyControlWorkerHome(new Request("https://mmdbkk.com/internal/admin/payments"));
   assert.equal(response.status, 200);
@@ -41,6 +42,13 @@ test("Worker page keeps evidence private and loads only approved brand fonts", a
   assert.match(html, /เปิดตรวจ/);
   assert.match(html, /Proof ID ที่ระบุไม่อยู่ในคิว/);
   assert.doesNotMatch(html, /\.innerHTML\s*=/);
+  const fontUrls = [...html.matchAll(/https?:\/\/[^"\s)]+/g)].map(m => m[0]);
+  assert.deepEqual(fontUrls, [
+    "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2",
+    "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd4dc8d84b48cc84959_LINESeedSansTH_W_Bd.woff2",
+  ]);
+  assert.match(response.headers.get("content-security-policy"), /font-src https:\/\/cdn\.prod\.website-files\.com;/);
+  assert.doesNotMatch(html, /<iframe\b/i);
   const fontUrls = [...html.matchAll(/https?:\/\/[^"\s)]+/g)].map(match => match[0]);
   assert.deepEqual(fontUrls, [
     "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a619dd598baf067153fd1cc_LINESeedSansTH_W_Rg.woff2",
