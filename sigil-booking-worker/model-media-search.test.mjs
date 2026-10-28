@@ -635,7 +635,7 @@ test("SIGIL private denial is readable to approved browser origins without leaki
     "https://sigil.mmdbkk.com/sigil/api/models/search?scope=private",
     { headers: { Origin: "https://untrusted.example" } },
   ), env);
-  assert.equal((await blocked.json()).blocked, true);
+  assert.equal((await blocked.json()).error, "origin_not_allowed");
   assert.equal(blocked.headers.get("access-control-allow-origin"), null);
 });
 
@@ -653,17 +653,25 @@ async function withFilterInventory(models, run, { stored = false, secondPage = [
     const url = new URL(input);
     reads.push(url);
     const table = decodeURIComponent(url.pathname.split("/").pop());
+    if (table === "recFilterMember001") return Response.json({ id: "recFilterMember001", fields: { member_id: "fixture-filter-member", "MMD — Member Entitlements": ["recFilterEntitle01"] } });
+    if (table === "MMD — Member Entitlements") return Response.json({ records: [{ id: "recFilterEntitle01", fields: { member: ["recFilterMember001"], capability: "private_premium", member_status: "active", access_status: "active" } }] });
     if (table === "Models") return Response.json(url.searchParams.get("offset") === "page-two"
       ? { records: secondPage } : { records: models, ...(secondPage.length ? { offset: "page-two" } : {}) });
     if (table === "SIGIL Booking Requests" && stored) return Response.json({ records: [{
       id: "recStoredFilterRequest", fields: { member_status: "active", access_scope: "public_private",
-        resolver_payload_json: JSON.stringify({ entitlement_snapshot: filterSnapshot }) },
+        resolver_payload_json: JSON.stringify({ entitlement_snapshot: filterSnapshot, access: { member_record_id: "recFilterMember001" } }) },
     }] });
     return Response.json({ records: [] });
   };
   try { await run(reads); } finally { globalThis.fetch = original; }
 }
-const filterEnv = { AIRTABLE_API_KEY: "synthetic-key", AIRTABLE_BASE_ID: "synthetic-base" };
+const filterEnv = { AIRTABLE_API_KEY: "synthetic-key", AIRTABLE_BASE_ID: "synthetic-base",
+  AUTH_SERVICE_SIGIL_BOOKING_TO_MEMBER_PAGES: "fixture-service-secret-at-least-32-characters",
+  MEMBER_PAGES_WORKER: { fetch: async () => {
+    const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode("mmd-discovery-member-v1:fixture-filter-member"));
+    return Response.json({ ok: true, memberRef: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("") });
+  } },
+};
 
 test("Booking filters work without a name and include eligible records after the first Airtable page", async () => {
   const hiddenPage = Array.from({ length: 100 }, (_, i) => filterModel(`recHidden${i}`, { status: "hidden", can_work_public: true }));
@@ -712,7 +720,7 @@ test("Create Job scope filters combine allowed group, Straight/Gay and canonical
   ];
   await withFilterInventory(inventory, async () => {
     for (const [work, expected] of [["vip", ["recVipPremium"]], ["pn", ["recVipPremium", "recPnPremium"]]]) {
-      const response = await bookingWorker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&booking_ref=synthetic&selected_access_folder=premium&customer_lane=straight&work_lane=${work}`), filterEnv);
+      const response = await bookingWorker.fetch(new Request(`https://sigil.mmdbkk.com/sigil/api/models/search?scope=private&search_mode=booking&booking_ref=synthetic&selected_access_folder=premium&customer_lane=straight&work_lane=${work}`, { headers: { cookie: "__Secure-mmd_discovery_session=fixture" } }), filterEnv);
       const body = await response.json();
       assert.deepEqual(body.items.map(m => m.model_id), expected);
       assert.deepEqual(body.items[0].private_work_capabilities, ["vip", "pn"]);
