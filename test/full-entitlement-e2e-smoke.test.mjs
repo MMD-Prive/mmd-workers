@@ -111,8 +111,10 @@ test("Consumer contracts stay wired to canonical snapshot and confirmed-booking 
 
   assert.match(authRuntime, /entitlement_snapshot/);
   assert.match(consumerContract, /entitlement_snapshot\.access/);
-  assert.match(bookingRuntime, /honor_after_expiry/);
-  assert.match(bookingRuntime, /entitlement_snapshot_at_confirm/);
+  assert.match(bookingRuntime, /entitlementRuntime\.fetch/);
+  assert.match(bookingConfirm, /currentPrivateAccess/);
+  assert.match(bookingConfirm, /honor_after_expiry/);
+  assert.match(bookingConfirm, /entitlement_snapshot_at_confirm/);
   assert.match(bookingConfirm, /booking_entitlement_snapshot_v1/);
   assert.match(bookingConfirm, /payment_verified_at_confirm/);
   assert.match(telegramRuntime, /AUTH_SERVICE_AUTH_TO_TELEGRAM/);

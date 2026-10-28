@@ -428,6 +428,7 @@ zone_name = "mmdbkk.com"
 # Releases must preserve the owner-approved auto-reply pause.
 # --keep-vars does not override explicit values specified here.
 [vars]
+LINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "true"
 MMS_THERAPIST_UI_SOURCE = "native"
 # Re-enabling requires separate owner approval and a deliberate change to
 # both this value and the production release guard.

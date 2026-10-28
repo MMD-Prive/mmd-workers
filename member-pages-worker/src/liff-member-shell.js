@@ -1,10 +1,11 @@
+import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
 import { createAccountView } from "./liff-account-view.js";
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
-import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS } from "./liff-lovable-design.js";
+import { MY_MMD_LOVABLE_DESIGN_CSS, MY_MMD_PUBLIC_BLEND_CSS, MY_MMD_VERIFICATION_CSS } from "./liff-lovable-design.js";
 import { MY_MMD_LIFF_COMPACT_V4_CSS } from "./liff-member-compact-v4-style.js";
 import { travelClientBundle, travelClientCss } from '../../shared/model-travel-client-source.mjs';
 
@@ -90,7 +91,7 @@ function renderShell(config, nonce) {
     *{box-sizing:border-box}body:not(.app-entered):not(.signup-mode){padding:20px 16px 40px}
     main{width:min(100%,760px);margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
-    #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
+.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea,input,select{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:12px;padding:12px 14px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}input[type=file]{padding:10px}.form-stack{display:grid;gap:10px}.form-stack label{display:grid;gap:6px}.form-stack button{background:#f0d892;color:#181207;font-weight:700;text-align:center}.form-note{margin:0;color:#aaa29a;font-size:12px;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .signup{display:grid;gap:12px;margin-top:24px}.signup h2{margin:0;color:#f0d892;font-size:22px}.signup .card{display:grid;gap:8px}.signup .card strong{font-size:18px}.signup .card button{margin-top:4px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.signup .card button:disabled{opacity:.5}.signup .private-link{display:block;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;color:#f0d892;text-align:center;text-decoration:none}.signup-note{color:#b7afa4;font-size:13px;line-height:1.6}.profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
@@ -98,7 +99,7 @@ function renderShell(config, nonce) {
     body.signup-mode{width:100%;max-width:100%;min-height:100vh;min-height:100dvh;padding:0;overflow-x:clip;overflow-y:auto;background:radial-gradient(circle at 50% -8%,#473026 0,transparent 38%),#080809}
     body.signup-mode main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:calc(26px + env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) calc(34px + env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));border:0;border-radius:0;background:linear-gradient(160deg,#241d1c,#101012 55%,#09090b);box-shadow:none}
     body.signup-mode .mark{font-size:10px;letter-spacing:.25em}body.signup-mode .title{margin:12px 0 6px;color:#fff7ed;font-size:32px}body.signup-mode .sub{color:#c6bdb3}
-    body.signup-mode #message{margin:16px 0 0;padding:11px 13px;border-left:2px solid #d9ae77;border-radius:0 8px 8px 0;background:#dfb58014;color:#e5d0b2;font-size:13px;line-height:1.55}
+
     body.signup-mode .member-nav,body.signup-mode #profile{display:none!important}body.signup-mode .signup{margin-top:18px;gap:15px}
     .signup-hero{position:relative;display:flex;align-items:center;min-height:150px;overflow:hidden;padding:22px;border:1px solid #e7bb8159;border-radius:18px;background:radial-gradient(circle at 85% 12%,#b6824f55,transparent 42%),linear-gradient(130deg,#292321,#131315 70%);box-shadow:0 18px 44px #0004}
     .signup-hero::before,.signup-hero::after{content:"";position:absolute;right:-43px;top:-78px;width:230px;height:230px;border:1px solid #f1cd9c45;border-radius:50%;pointer-events:none}.signup-hero::after{right:-14px;top:-49px;width:172px;height:172px;border-color:#f1cd9c30}
@@ -126,14 +127,14 @@ function renderShell(config, nonce) {
     body.world-public:not(.signup-mode) .mark{color:#8d684a}
     body.world-public:not(.signup-mode) .title{color:#26211d}
     body.world-public:not(.signup-mode) .sub{color:#76695d}
-    body.world-public:not(.signup-mode) #message{color:#4e443a;border-left:2px solid #b98357;background:#fffaf3}
+
     body.world-public:not(.signup-mode) .member-nav{border-color:#d9cabb;background:#fffaf4}
     body.world-public:not(.signup-mode) .member-nav button{color:#7b6f64}
     body.world-public:not(.signup-mode) .member-nav button[aria-current="true"]{background:#1f1b18;color:#fffaf4}
     body.world-private:not(.signup-mode){background:radial-gradient(circle at 50% -10%,#2a201d 0,transparent 42%),#080809;color:#f5f2eb}
     body.world-private:not(.signup-mode) main{border-color:rgba(212,181,123,.22);background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
     body.world-private:not(.signup-mode) .mark{color:#d7bd8a}
-    body.world-private:not(.signup-mode) #message{color:#e5d0b2;border-left:2px solid #d9ae77;background:#dfb58014}
+
     body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#f0d892;color:#181207}
     /* Full-screen mobile-first intro, then a deliberate hand-off into the app. */
     body.world-public:not(.signup-mode):not(.app-entered),
@@ -144,7 +145,7 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode):not(.app-entered) .intro-screen{min-height:100svh;display:flex;flex-direction:column;justify-content:center;gap:0}
     .intro-screen .title{max-width:680px;margin-top:14px;font-size:clamp(34px,10vw,68px);letter-spacing:-.04em}
     .intro-screen .sub{max-width:640px;margin-top:12px;font-size:clamp(14px,3.8vw,19px)}
-    .intro-screen #message{max-width:680px;margin-top:clamp(22px,6vw,46px);font-size:clamp(15px,4.2vw,20px);line-height:1.78}
+
     .intro-continue{width:100%;max-width:360px;margin-top:clamp(24px,7vw,52px);padding:15px 20px;border:0;border-radius:999px;text-align:center;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(0,0,0,.16)}.remember-login-note{max-width:680px;margin:10px 0 0;color:rgba(244,237,225,.62);font-size:11px;line-height:1.5}
     body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:#b94a3f;color:#fffaf4}
     body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:#e5bf72;color:#20170f}
@@ -156,14 +157,14 @@ function renderShell(config, nonce) {
     body.signup-mode.app-entered #signup{width:100%;max-width:560px;margin-left:auto;margin-right:auto}
     body.app-entered.world-public main,body.app-entered.world-private main{width:100%;max-width:none;min-height:100vh;min-height:100dvh;margin:0;padding:0;border:0;border-radius:0;display:block;box-shadow:none}
     body.app-entered.world-public,body.app-entered.world-private{min-height:100vh;min-height:100dvh;padding:0;overflow-x:clip;overflow-y:auto}
-    @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
+    @media(max-width:430px){.intro-continue{max-width:none}}
     /* MMD Memory theme locks: Bangkok ivory for Public, SIGIL Wall for Private. */
     body.world-public:not(.signup-mode){font-family:"Manrope","Noto Sans Thai","LINE Seed Sans TH",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% 110%,rgba(184,132,82,.22),transparent 48%),linear-gradient(180deg,#fffdf8 0%,#f6ede2 56%,#e7d8c7 100%);color:#2a2521}
     body.world-public:not(.signup-mode) main{background:linear-gradient(160deg,rgba(255,253,249,.96),rgba(248,239,228,.94) 62%,rgba(235,220,203,.95));border-color:#d8c6b2;box-shadow:0 28px 90px rgba(105,77,47,.18)}
     body.world-public:not(.signup-mode) .mark{font-weight:800;letter-spacing:.22em;color:#9c6744}
     body.world-public:not(.signup-mode) .title{font-family:"Manrope","Noto Sans Thai",sans-serif;font-weight:800;color:#231e1a}
     body.world-public:not(.signup-mode) .sub{color:#715f51}
-    body.world-public:not(.signup-mode) #message{color:#493d34;border-left-color:#b86f45;background:rgba(255,250,243,.84)}
+
     body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:linear-gradient(100deg,#b7473d,#d06c55);color:#fffaf4;box-shadow:0 14px 30px rgba(152,62,47,.24)}
     body.world-public:not(.signup-mode) .member-nav{border-color:#d8c6b3;background:rgba(255,250,244,.86)}
     body.world-public:not(.signup-mode) .member-nav button{color:#78675b}
@@ -173,7 +174,7 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode) .mark{font-weight:800;letter-spacing:.24em;color:#e0bf7a}
     body.world-private:not(.signup-mode) .title{font-family:"Noto Sans Thai","LINE Seed Sans TH",sans-serif;font-weight:750;color:#f7e8c9}
     body.world-private:not(.signup-mode) .sub{color:#c2b29a}
-    body.world-private:not(.signup-mode) #message{color:#ecdcbd;border-left-color:#d2a95d;background:rgba(218,172,83,.08)}
+
     body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:linear-gradient(100deg,#c79a4d,#f0d38c);color:#21170c;box-shadow:0 14px 32px rgba(194,148,63,.24)}
     body.world-private:not(.signup-mode) .member-nav{border-color:rgba(214,174,94,.28);background:rgba(13,11,10,.78)}
     body.world-private:not(.signup-mode) .member-nav button{color:#bcae96}
@@ -181,8 +182,8 @@ function renderShell(config, nonce) {
     .welcome-benefits{display:grid;gap:7px;margin:18px 0 0;padding:0;list-style:none;color:#594b3e;font-size:14px;line-height:1.5}
     .welcome-benefits li::before{content:"•";margin-right:9px;color:#b94a3f;font-weight:900}
     body.world-private .welcome-benefits{color:#e1d1b5}.world-private .welcome-benefits li::before{color:#e5bf72}
-    .per-letter{max-width:680px;margin-top:18px;border-top:1px solid currentColor;padding-top:13px;color:inherit}
-    .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
+
+
     /* MY MMD customer welcome: member world only, before the board. */
     body:not(.app-entered){background:#171715;color:#f4ede1}
     body:not(.app-entered) main,
@@ -201,8 +202,8 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .title{color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-weight:400}
     body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome .sub,
     body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .sub{color:rgba(244,237,225,.68)}
-    .my-mmd-welcome #message{max-width:680px;margin:18px 0 0;padding:12px 14px;border:1px solid rgba(201,168,102,.28);border-left:2px solid #c9a866;border-radius:0 8px 8px 0;background:rgba(201,168,102,.07);color:#eadcc1;font-size:13px;line-height:1.65}
-    .my-mmd-welcome .per-letter{max-width:680px;margin:24px 0 0;padding:0;border:0;color:#f4ede1}.my-mmd-welcome .per-letter-copy{max-height:none;overflow:visible;margin:0;padding:0;white-space:pre-line;font-size:16px;line-height:1.65}
+
+
     .welcome-divider{width:min(100%,680px);height:1px;margin:30px 0 0;background:rgba(201,168,102,.34)}.my-mmd-welcome .intro-continue{width:195px;min-height:48px;margin:26px 0 0;padding:12px 20px;border:0;border-radius:999px;background:#c9a866!important;color:#171715!important;box-shadow:none;font-size:14px;font-weight:800;text-align:center;letter-spacing:.05em}.my-mmd-welcome .intro-continue:disabled{opacity:.55}
     .hype-loader{display:none}body.context-resolving .hype-loader{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;background:#000;color:#f6f1e8;text-align:center}
     .hype-loader-text{color:#caa45e;font-size:12px;font-weight:800;letter-spacing:.22em}.hype-loader-text::after{content:"";display:inline-block;width:1.6em;text-align:left;animation:hype-dots 1.2s steps(4,end) infinite}
@@ -211,8 +212,8 @@ function renderShell(config, nonce) {
     @keyframes hype-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
     @media(prefers-reduced-motion:reduce){.hype-loader-text::after{animation:none;content:"..."}}
     body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
-    @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .per-letter-copy{font-size:16px;line-height:1.65}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
-    @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
+    @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
+    @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}}
     @media(min-width:700px){.welcome-hero{min-height:188px}.welcome-letter{width:min(100%,760px);margin:0 auto}}
     body.context-resolving .intro-screen{visibility:visible}
 
@@ -295,29 +296,13 @@ function renderShell(config, nonce) {
   ${CUSTOMER_V6_CSS}
   ${MY_MMD_PUBLIC_BLEND_CSS}
 ${PERSONAL_MAIN_CSS}
+${MY_MMD_VERIFICATION_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
-${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังเปิด MY MMD"><div class="hype-loader-text">MMD PRIVÉ</div><div class="hype-progress"><progress id="hype-progress" aria-label="กำลังเปิด MY MMD"></progress><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0% · กำลังรอข้อมูล</span></div><button id="customer-boot-retry" type="button" hidden>เปิดหน้าใหม่</button></div>`}
+${config.intent === "signup" ? "" : renderApprovedLoader()}
 <main>
-  <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
-    <div class="welcome-hero">
-      <div class="welcome-brand">
-        <span class="welcome-logo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" width="31" height="31"></span>
-        <span><strong>MY MMD</strong><small>MMD PRIVÉ · MEMBER APP</small></span>
-      </div>
-    </div>
-    <div class="welcome-letter">
-      <div class="mark" data-copy="mark">MMD PRIVÉ · MY MMD</div>
-      <h1 id="intro-title" class="title" data-copy="title">ยินดีที่ได้รู้จัก</h1>
-      <p class="sub" data-copy="subtitle">MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์</p>
-      <div id="message" class="welcome-context-note hidden" role="status" aria-live="polite"></div>
-      <div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div>
-      <div class="welcome-divider" aria-hidden="true"></div>
-      <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
-      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
-    </div>
-  </section>
+  ${renderApprovedEntry()}
   <div id="customer-entry-progress" class="customer-entry-progress"></div>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
@@ -331,7 +316,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
     ${config.liffId ? `<a id="signup-line-entry" class="signup-line-entry" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">เปิดใน LINE เพื่อสมัคร</a>` : ""}
     <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
-    <div class="card signup-private"><strong>Standard / Premium / Private Access</strong><p class="signup-note">ให้เปอร์ช่วยตรวจตัวเลือกและเงื่อนไข Standard / Premium ก่อนครับ เปิดแชต MMD แล้วพิมพ์ “ขอคุยกับเปอร์ สนใจ Standard / Premium” ขั้นตอนนี้ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์</p><a id="private-review-chat" class="private-link" href="https://lin.ee/xRqsALs" rel="noreferrer">เปิดแชต MMD เพื่อส่งเรื่องให้เปอร์</a></div>
+    <div class="card signup-private"><strong>Private Membership</strong><p class="signup-note">เลือก Standard หรือ Premium เพื่อให้ระบบตรวจสอบสิทธิ์และเตรียมหน้าชำระเงินให้ครับ</p><div id="private-signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE ก่อนจึงจะแสดงแพ็กเกจ Private ครับ</p></div></div>
     <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
   </section>
   <nav class="member-nav" aria-label="Member sections">
@@ -478,11 +463,12 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   // live in this browser scope, not only in the Worker bundle that renders it.
   const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true });
   const CONFIG = ${safeConfig};
-  const customerLoading = (${createCustomerProgress.toString()})({ render: ${renderCustomerProgress.toString()}, request: window.fetch.bind(window) });
+  const entryLoading = (${installApprovedEntryLoading.toString()})(${createHypeLoaderMotion.toString()}, ${createEntryPercentMotion.toString()});
+  const renderLoadingProgress = ${renderCustomerProgress.toString()};
+  const customerLoading = (${createCustomerProgress.toString()})({ render: (panel, state) => { renderLoadingProgress(panel, state); entryLoading.update(state); }, request: window.fetch.bind(window) });
   const fetch = customerLoading.fetch;
   const loadDoubleMomentCard = ${loadDoubleMomentCard.toString()};
   const CANONICAL_POINTS_PATH = "/my-mmd/points";
-  const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
   const resolveVerifiedCustomerBrand = ${resolveVerifiedCustomerBrand.toString()};
@@ -506,7 +492,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
   const yourRequestStatus = document.getElementById("your-request-status");
   const locale = CONFIG.language || "th";
   const copy = {
-    th: { mark:"MMD Privé · MY MMD", title:"My MMD", subtitle:"พื้นที่สมาชิกแบบดิจิทัลใน LINE ของ MMD", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
+    th: { mark:"MMD Privé · MY MMD", title:"My MMD", subtitle:"พื้นที่สมาชิกแบบดิจิทัลใน LINE ของ MMD", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สมาชิก", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
     en: { mark:"MMD Privé · MY MMD", title:"My MMD", subtitle:"Your digital member space inside LINE.", navProfile:"Overview", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"Member", contactLabel:"Contact", emailLabel:"Email", phoneLabel:"Phone", tierLabel:"Member tier", pointsLabel:"Active points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"Points history", packageTitle:"📦 Package", packageHistoryLabel:"Package history", jobsTitle:"💼 Jobs", requestsLabel:"Recent requests", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"Payment history", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"We will check CARE BACK first. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your confirmed information is ready.", checking:"We are checking your information.", checkingPoints:"Your points are being checked.", pointsRate:"Every THB 100 = 1 point", expiring:"Points expiring soon", empty:"No confirmed activity is available here yet.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
     zh: { mark:"MMD Privé · MY MMD", title:"我的 MMD", subtitle:"在 LINE 内使用您的数字会员空间。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", contactLabel:"联系方式", emailLabel:"邮箱", phoneLabel:"电话", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐历史", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
@@ -531,11 +517,6 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
-  const WELCOME_COPY = {
-    checking: { title: "MY MMD", subtitle: "กำลังเตรียมพื้นที่ของคุณ", note: "", letter: "" },
-    new: { title: "ยินดีที่ได้รู้จัก", subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์", note: "", letter: "ยินดีที่ได้รู้จัก\\n\\nMY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา และจากสิ่งที่เปอร์ค้นพบว่า ในยุคที่กำลังย่างเข้าสู่ปี 2027 โลกไปไกลมากแล้ว การมีระบบดูแลที่ดีจึงเป็นสิ่งที่ปลอดภัยที่สุด\\n\\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขมากขึ้น\\n\\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจองและจ่ายเงิน แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรอย่างชัดเจน รวมถึงรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\\n\\nขอให้มีความสุข\\nเปอร์" },
-    existing: { title: "ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว", subtitle: "MY MMD · ขอบคุณที่ยังอยู่และยังรอ", note: "กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี ทั้งสมาชิกปัจจุบันและสมาชิกที่หมดอายุแล้ว เมื่อสมัครหรือต่ออายุอีกครั้ง ระบบจะรวมสิทธิ์ให้เป็น 2 ปี", letter: "ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว\\n\\nเปอร์หายไปนานจริง ๆ\\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\\n\\nถึงจะยังเห็นอัปเดตกันอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\\n\\nเปอร์ไม่ได้หายไปติดผู้ชายนะครับ 5555\\nแต่ใช้เวลาปีกว่า ๆ ศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมาจากที่ทำไม่เป็นเลย\\n\\nจริงๆแล้วเราจะทำงานกันแบบเดิมก็ได้ ที่ต้องมานั่งจ้องมือถือกัน\\nเมื่อไหร่จะจองสักทีวะ เมื่อไหร่จะตอบสักที\\n(อุ๊ย! ขออภัยที่คิดดัง) เมื่อไหร่จะตอบซักที ถามไป หายไม่มีคนตอบ\\nมีใครสะดวกบ้างก็ไม่รุ้ แล้วรำคาญกันไหม AI เปอร์ก็รำคาญนะ 555\\n\\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท และทำทุกอย่างด้วยตัวเอง\\nเพื่อให้ทุกคนค้นหา จอง จ่าย และติดตามงานกับ MMD ได้สะดวกและปลอดภัยขึ้น\\n\\nมันอาจยังไม่สมบูรณ์ทั้งหมดในวันนี้\\nแต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\\n\\nขอบคุณที่ยังอยู่\\nขอบคุณที่ยังรอ\\n\\nเปอร์เองครับ" },
-  };
   function detectWorld(data, authority) {
     return resolveTrustedWelcomeWorldInBrowser(data, authority);
   }
@@ -548,18 +529,11 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     if (!profileReady) resetCustomerBrand();
     const world = detectWorld(data, authority);
     const audience = resolveWelcomeAudience(data, audienceAuthority);
-    const welcomeCopy = WELCOME_COPY[audience];
     document.body.classList.toggle("world-public", world === "public");
     document.body.classList.toggle("world-private", world === "private");
     document.body.dataset.world = world;
     document.body.dataset.welcomeAudience = audience;
-    document.querySelector(".mark").textContent = "MMD PRIVÉ · MY MMD";
-    document.querySelector(".title").textContent = welcomeCopy.title;
-    document.querySelector(".sub").textContent = welcomeCopy.subtitle;
-    message.textContent = welcomeCopy.note;
-    message.classList.toggle("hidden", !welcomeCopy.note);
-    document.getElementById("per-letter-copy").textContent = welcomeCopy.letter;
-    if (introContinue) introContinue.textContent = "ENTER →";
+    if (introContinue) introContinue.innerHTML = '<span>ยืนยันผ่าน LINE</span><span aria-hidden="true">→</span>';
   }
   applyWorldTheme();
   let welcomeContextPromise;
@@ -713,6 +687,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       } finally {
         // The opening decision is complete: either signed-in Home is ready
         // or a manual ENTER remains available for an unverified visitor.
+        entryLoading.complete();
         window.setTimeout(() => document.body.classList.remove("context-resolving"), 240);
       }
     });
@@ -758,7 +733,6 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   function show(text) {
     const value = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
-    message.textContent = value;
     if (appStatus) { appStatus.textContent = value; appStatus.dataset.mmdStatusKind = "notice"; }
   }
 
@@ -766,6 +740,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     busy = Boolean(value);
     for (const button of actions.querySelectorAll("button")) button.disabled = busy;
     for (const button of signupPackages.querySelectorAll("button")) button.disabled = busy;
+    for (const button of document.querySelectorAll("#private-signup-packages button")) button.disabled = busy;
   }
 
   function verifiedCheckoutUrl(value) {
@@ -775,6 +750,58 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout" && !url.port && !url.username && !url.password
         && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
     } catch { return ""; }
+  }
+
+  function canonicalSigilPaymentUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const keys = [...url.searchParams.keys()];
+      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && !url.port && !url.username && !url.password
+        && url.pathname === "/sigil/pay" && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
+    } catch { return ""; }
+  }
+
+  async function purchasePrivateMembership(packageCode) {
+    if (busy) return;
+    setBusy(true);
+    show("กำลังตรวจสอบแพ็กเกจและเตรียมหน้าชำระเงินครับ");
+    try {
+      const selected = await call("/member/api/liff/package", { requested_package_code: packageCode });
+      if (!selected) return;
+      const payment = await call("/member/api/liff/payment-intent", { package_code: packageCode, payment_stage: "membership" });
+      const url = canonicalSigilPaymentUrl(payment?.customer_payment_url || payment?.redirect_to);
+      if (!url) {
+        show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง");
+        return;
+      }
+      window.location.assign(url);
+    } catch {
+      show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function renderPrivateSignupPackages() {
+    const container = document.getElementById("private-signup-packages");
+    if (!container || container.dataset.ready === "true") return;
+    container.replaceChildren();
+    for (const packageCode of ["standard", "premium"]) {
+      const card = document.createElement("div");
+      card.className = "card signup-package signup-package-" + packageCode;
+      const title = document.createElement("strong");
+      title.textContent = packageCode === "premium" ? "Premium" : "Standard";
+      const note = document.createElement("p");
+      note.className = "signup-period";
+      note.textContent = "ระบบจะแสดงราคาและระยะเวลาที่ตรวจสอบจากสิทธิ์ของคุณ";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = locale === "th" ? "เลือกแพ็กเกจนี้  →" : "Choose this package  →";
+      button.addEventListener("click", () => purchasePrivateMembership(packageCode));
+      card.append(title, note, button);
+      container.append(card);
+    }
+    container.dataset.ready = "true";
   }
 
   async function purchasePublicMembership(packageCode) {
@@ -1592,7 +1619,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
     const needsLabel = document.getElementById("digital-needs-label");
     const needsAction = document.getElementById("digital-needs-action");
     const name = String(profileData?.customer_360?.member?.display_name || profileData?.display_name || "").trim();
-    if (greeting) greeting.textContent = name ? (locale === "en" ? "Hello " + name : locale === "zh" ? "你好 " + name : "สวัสดี " + name) : "MY MMD";
+    if (greeting) greeting.textContent = name || "MY MMD";
     try {
       const dashboardRead = memberApiFetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
       // Enqueue canonical Home data before Mission, keeping the shared session lane serialized.
@@ -2102,7 +2129,11 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       show("กำลังเตรียมแพ็กเกจสมัครสมาชิกใน LINE ครับ");
       return;
     }
-    show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
+    if (screen.key === "start_intent") {
+      if (appStatus) appStatus.textContent = "";
+    } else {
+      show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
+    }
     actions.replaceChildren();
     const serverActions = Array.isArray(screen.actions) ? screen.actions : [];
     for (const action of serverActions) {
@@ -2183,6 +2214,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
       if (started) {
+        if (started.member_resolved === false) renderPrivateSignupPackages();
         if (started.member_resolved) {
           await readProfile({ hydrate: false });
           void hydrateMemberHome();
@@ -2196,7 +2228,7 @@ ${config.intent === "signup" ? "" : `<div id="hype-loader" class="hype-loader" r
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  // Welcome remains user-led. An already-authenticated LINE client may preflight a same-site session only to select the correct returning/new copy; this path never calls liff.login before Continue.
+  // Entry remains user-led. An already-authenticated LINE client may preflight a same-site session; this path never calls liff.login before Continue.
 })();
 </script>
 </body>

@@ -69,7 +69,7 @@ const protectedPayment = decideKenjiCapability({
 assert.equal(protectedPayment.capability, "protected_authority");
 assert.equal(protectedPayment.requested_domain, "payment");
 const protectedPaymentReply = buildProtectedCapabilityReply(protectedPayment);
-assert.match(protectedPaymentReply, /https:\/\/mmdbkk\.com\/member\/payments/);
+assert.match(protectedPaymentReply, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=continue_payment/);
 assert.match(protectedPaymentReply, /ไม่ต้องสร้างรายการหรือส่งหลักฐานซ้ำ/);
 assert.doesNotMatch(protectedPaymentReply, /confirm\/payment-proof/);
 assert.doesNotMatch(protectedPaymentReply, /ชำระ(?:เงิน)?สำเร็จ(?:แล้ว)?|อนุมัติแล้ว|(?:ได้รับการ)?ยืนยัน(?:การ)?ชำระ(?:เงิน)?แล้ว/i);
@@ -96,7 +96,7 @@ const paymentNeedsAction = resolveKenjiNextAction({
   continuity: { matrix: { conversation_stage: "in_progress", do_not_ask_again: [] } },
 });
 assert.equal(paymentNeedsAction.type, "open_action_route");
-assert.equal(paymentNeedsAction.route, "https://mmdbkk.com/member/payments");
+assert.equal(paymentNeedsAction.route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=continue_payment");
 assert.match(paymentNeedsAction.customer_text, /รายการชำระเงิน/);
 assert.match(paymentNeedsAction.customer_text, /ไม่ต้องสร้างหรือส่งซ้ำ/);
 assert.doesNotMatch(paymentNeedsAction.customer_text, /confirm\/payment-proof/);

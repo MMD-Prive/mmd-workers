@@ -1,3 +1,4 @@
+import { createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading, APPROVED_ENTRY_CSS } from "../src/liff-approved-entry.js";
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 import { runInNewContext } from "node:vm";
@@ -47,7 +48,7 @@ describe("same-site /member/liff shell", () => {
       if (expectedReads) assert.equal(calls[0], "/api/member/app/session/current?session_id=SESSION-A");
     }
   });
- it("keeps browser hints fail-closed and renders both trusted customer welcome copies", async () => {
+ it("keeps browser hints fail-closed without retired customer greetings", async () => {
     for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous", "?intent=signup&view=signup"]) {
       const response = await shell(`/member/liff${query}`);
       const html = await response.text();
@@ -59,20 +60,14 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /canonical_client/);
       assert.match(html, /canonical_member_client_absence/);
       assert.match(html, /audience === "existing"/);
-      assert.match(html, /checking: \{ title: "MY MMD", subtitle: "กำลังเตรียมพื้นที่ของคุณ"/);
-      assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
-      assert.match(html, /ฮายยย เปอร์เองครับ เปอร์กลับมาแล้ววว/);
-      assert.match(html, /ไม่ได้หายไปติดผู้ชายนะครับ 5555/);
-      assert.match(html, /ถามไป หายไม่มีคนตอบ/);
-      assert.match(html, /AI เปอร์ก็รำคาญนะ 555/);
-      assert.match(html, /กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี/);
-      assert.match(html, /ระบบจะรวมสิทธิ์ให้เป็น 2 ปี/);
+      assert.doesNotMatch(html, /WELCOME_COPY|per-letter|entry-legacy-copy|welcome-context-note|ฮายยย|ยินดีที่ได้รู้จัก|ขอบคุณที่ยังอยู่|พื้นที่ของคุณ|Hello |你好 |สวัสดี/);
       assert.match(html, /MMD%20Academy%20fback%20inside\.webp/);
       assert.match(html, /SIGIL%20Apply%20Hero\.webp/);
       assert.match(html, /data-welcome-audience="existing"/);
-      assert.match(html, /width="31" height="31"/);
-      assert.match(html, /aria-label="เข้าสู่บอร์ดสมาชิก MY MMD"/);
-      assert.match(html, /ENTER →/);
+      assert.match(html, /entry-brand-footer/);
+      assert.match(html, /sigil-primary-logo/);
+      assert.match(html, /aria-label="ยืนยันตัวตนผ่าน LINE"/);
+      assert.match(html, /ยืนยันผ่าน LINE/);
       assert.match(html, /ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน/);
       assert.match(html, /id="member-logout"/);
       assert.match(html, /\/member\/api\/liff\/logout/);
@@ -148,13 +143,13 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /payload\?\.entitlement_granted === false/);
     assert.match(html, /url\.hostname === "mmdbkk\.com"/);
     assert.match(html, /welcomeContextPromise = resolveInitialWelcomeContext\(\)/);
-    assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
+    assert.doesNotMatch(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
     assert.doesNotMatch(html, /MMD PRIVÉ · LINE MEMBERSHIP|สมัครสมาชิก MMD|เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE/);
     assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("void readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
     assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
   });
 
-  it("resolves Welcome audience before rendering customer-specific copy and never auto-logins", async () => {
+  it("resolves entry audience without greetings and never auto-logins", async () => {
     const response = await shell("/member/liff?intent=promo&campaign=care_back&view=care_back");
     const html = await response.text();
 
@@ -191,7 +186,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /if \(profileReady\) void hydrateMemberHome\(target\.id === "history-panel" \? "history" : target\.id\)/);
     assert.match(html, /if \(!profileReady \|\| !read\) return/);
     assert.doesNotMatch(html, /const hydrationReads = \[/);
-    assert.match(html, /<progress id="hype-progress" aria-label="กำลังเปิด MY MMD"><\/progress>/);
+    assert.match(html, /id="hype-progress" class="loading-bar" role="progressbar"/);
+    assert.match(html, /class="hype-sprite"[^>]+width="38" height="57"/);
     assert.doesNotMatch(html, /hype-loader-img|hype-progress-number|setLoadingPercent/);
     assert.match(html, /void readSignupCatalog\(\)/);
     assert.match(html, /readProfile\(\{ hydrate: false \}\)/);
@@ -698,7 +694,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /@media\(min-width:700px\)/);
     assert.match(html, /body:not\(\.app-entered\) main,\s*body\.world-public:not\(\.signup-mode\):not\(\.app-entered\) main,\s*body\.world-private:not\(\.signup-mode\):not\(\.app-entered\) main\{[^}]*width:100%[^}]*max-width:none/);
     assert.match(html, /overflow-x:hidden/);
-    assert.match(html, /\.my-mmd-welcome \.per-letter-copy\{[^}]*max-height:none[^}]*overflow:visible/);
+    assert.doesNotMatch(html, /id="per-letter"/);
     assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
   });
 
@@ -1039,15 +1035,17 @@ describe("signup offers the basic Member package only", () => {
     assert.ok(!html.includes("Elite%20Card.webp") && !html.includes("Red%20Card.webp"));
   });
 
-  it("hands Standard and Premium interest to the existing MMD chat without looping or claiming submission", async () => {
+  it("keeps Private Standard/Premium on the verified server package and payment flow", async () => {
     const html = await (await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=signup&view=signup"), { LIFF_ID: "2010862595-yT4DCEMc" })).text();
-    assert.match(html, /Standard \/ Premium \/ Private Access/);
+    assert.match(html, /Private Membership/);
     const card = html.match(/<div class="card signup-private">(.*?)<\/div>/s)[1];
-    assert.match(card, /href="https:\/\/lin\.ee\/xRqsALs"/);
-    assert.match(card, /ขอคุยกับเปอร์ สนใจ Standard \/ Premium/);
-    assert.match(card, /ยังไม่ใช่การสมัคร ชำระเงิน หรือเปิดสิทธิ์/);
-    assert.doesNotMatch(card, /miniapp\.line\.me|ส่งเรื่องแล้ว|ได้รับคำขอแล้ว/);
-    assert.doesNotMatch(html, /href="\/sigil\/member\/membership/);
+    assert.match(html, /packageCode of \["standard", "premium"\]/);
+    assert.match(html, /purchasePrivateMembership/);
+    assert.match(html, /\/member\/api\/liff\/package/);
+    assert.match(html, /\/member\/api\/liff\/payment-intent/);
+    assert.match(html, /pathname === "\/sigil\/pay"/);
+    assert.doesNotMatch(card, /lin\.ee|private-review-chat|ขอคุยกับเปอร์/);
+    assert.doesNotMatch(card, /เปิดสิทธิ์/);
   });
 });
 
@@ -1434,8 +1432,8 @@ test('late welcome preserves a verified brand while startup remains neutral', as
   let resets=0;
   const element={textContent:'',classList:{toggle(){}}};
   const context={profileReady:true,resetCustomerBrand(){resets++;},detectWorld:()=> 'public',resolveWelcomeAudience:()=> 'existing',
-    WELCOME_COPY:{existing:{title:'',subtitle:'',note:'',letter:''}},message:element,introContinue:element,
-    document:{body:{dataset:{},classList:{toggle(){}}},querySelector:()=>element,getElementById:()=>element}};
+    introContinue:element,
+    document:{body:{dataset:{},classList:{toggle(){}}},querySelector(){throw new Error("retired greeting DOM accessed");},getElementById(){throw new Error("retired greeting DOM accessed");}}};
   runInNewContext(html.slice(start,end)+'applyWorldTheme({});',context);
   assert.equal(resets,0);
   context.profileReady=false;
@@ -1464,4 +1462,82 @@ test('assistant dock activates Home before opening and scrolling to Personal Mai
  let click;const calls=[];
  runInNewContext(html.slice(start,end),{document:{querySelectorAll:()=>[{addEventListener:(_,handler)=>{click=handler;},hasAttribute:()=>true,getAttribute:()=> 'home'}]},showView:(...args)=>calls.push(args),personalMainUI:{open:()=>calls.push('open')}});
  click();assert.deepEqual(calls,[['home',false],'open']);
+});
+
+
+test("approved HYPE loader lands during a wait, resumes, and never creates percentage progress from timers", () => {
+ let now=0,nextId=0;const queue=new Map(),percentages=[];
+ const setTimeout=(fn,ms)=>{queue.set(++nextId,{at:now+ms,fn});return nextId;};
+ const tick=ms=>{const end=now+ms;for(;;){const next=[...queue].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;queue.delete(next[0]);now=next[1].at;next[1].fn();}now=end;};
+ const create=runInNewContext('('+createHypeLoaderMotion.toString()+')',{setTimeout,clearTimeout:id=>queue.delete(id)});
+ const motion=create({onProgress:value=>percentages.push(value)});
+ motion.open();tick(6000);assert.equal(motion.state().phase,'landing');
+ tick(900);assert.equal(motion.state().phase,'standing');
+ tick(2600);assert.equal(motion.state().phase,'flying');
+ assert.deepEqual(percentages,[0]);
+ motion.stall();tick(900);motion.progress(50);assert.equal(motion.state().phase,'flying');
+ assert.equal(motion.progress(25),false);
+ motion.progress(100);assert.equal(queue.size,0);tick(60000);assert.equal(motion.state().phase,'standing');
+ motion.close();assert.equal(queue.size,0);assert.equal(motion.state().phase,'idle');
+ motion.open();assert.equal(motion.state().percent,0);motion.close();
+});
+
+test("approved entry has no demo audience controls and keeps branding on the verified projection", async () => {
+ const html=await (await shell('/member/liff?world=private&audience=sigil')).text();
+ assert.match(html,/data-brand-audience="unresolved"/);
+ assert.match(html,/SĪGIL System/);
+ assert.match(APPROVED_ENTRY_CSS,/linear-gradient\(110deg,#a42138/);
+ assert.doesNotMatch(html,/preview-mode|hypeLoadingPreview|preview-hype|ขั้นตอนถัดไป \+25%/);
+ const loader=html.slice(html.indexOf('<div id="hype-loader"'),html.indexOf('<main>'));
+ assert.doesNotMatch(loader,/hype-loader-text|verification-logo|<svg/);
+ assert.match(loader,/data-confirmed-percent="0">0%/);
+ const script=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1];
+ assert.doesNotThrow(()=>new Function(script));
+});
+
+
+test("entry percentage counts between confirmed milestones, pauses, finishes and cancels", () => {
+ let now=0,nextId=0;const queue=new Map(),values=[];
+ const tick=ms=>{const end=now+ms;for(;;){const next=[...queue].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;queue.delete(next[0]);now=next[1].at;next[1].fn();}now=end;};
+ const create=runInNewContext('('+createEntryPercentMotion.toString()+')',{setTimeout:(fn,ms)=>{queue.set(++nextId,{at:now+ms,fn});return nextId;},clearTimeout:id=>queue.delete(id)});
+ const counter=create({now:()=>now,onRender:n=>values.push(n)});
+ counter.open();tick(1000);assert.deepEqual(values,[0]);
+ counter.progress(50);tick(300);assert.ok(values.at(-1)>0&&values.at(-1)<50);
+ tick(400);assert.equal(values.at(-1),50);assert.equal(queue.size,0);
+ tick(6000);assert.equal(values.at(-1),50);
+ counter.progress(0);assert.equal(values.at(-1),50);
+ counter.progress(100);tick(192);assert.equal(values.at(-1),100);assert.equal(queue.size,0);
+ assert.ok(values.every((v,i)=>i===0||v>=values[i-1]));
+ counter.open();counter.progress(50);tick(100);counter.close();assert.equal(queue.size,0);
+ const reduced=[];const still=create({reduced:true,onRender:n=>reduced.push(n)});still.open();still.progress(50);assert.deepEqual(reduced,[0,50]);assert.equal(queue.size,0);
+});
+
+test("entry numeric animation survives progress rerenders and leaves error copy visible", () => {
+ let visible=true,onRender,ended=0;const classes=new Set();
+ const label={textContent:'0%',dataset:{}},bar={style:{setProperty(k,v){this[k]=v;}},setAttribute(k,v){this[k]=v;},classList:{toggle(k,v){if(v)classes.add(k);else classes.delete(k);}}};
+ const loader={dataset:{}},flyer={style:{}};
+ const document={body:{classList:{contains:()=>visible}},getElementById:id=>({'hype-loader':loader,'hype-flyer':flyer,'customer-boot-progress':label,'hype-progress':bar}[id])};
+ const install=runInNewContext('('+installApprovedEntryLoading.toString()+')',{document,window:{matchMedia:()=>({matches:false}),addEventListener(){}}});
+ const controller=install(()=>({open(){},close(){},progress(){}}),options=>{onRender=options.onRender;return {open(){onRender(0);},close(){ended++;},progress(n){onRender(n===100?72:25);},paint(){onRender(25);}};});
+ controller.update({overallPending:1,overallPercent:50});assert.equal(label.textContent,'25%');assert.equal(bar['aria-valuenow'],'25');assert.equal(bar.style['--entry-progress'],'25%');
+ label.textContent='50%';controller.update({overallPending:1,overallPercent:0});assert.equal(label.textContent,'25%');
+ label.textContent='รับข้อมูลไม่สำเร็จ';controller.update({overallPending:0,overallError:true});assert.equal(label.textContent,'รับข้อมูลไม่สำเร็จ');assert.ok(ended>0);
+ visible=false;controller.update({overallPending:0});
+});
+
+
+test("member entry omits the fallback greeting while retaining actions and operational notices", async () => {
+ const html=await(await shell('/member/liff?intent=status')).text();
+ const start=html.indexOf('  function render(data) {'),end=html.indexOf('  async function boot(',start);
+ const notices=[],buttons=[],appStatus={textContent:'old greeting',dataset:{}};
+ const context={CONFIG:{intent:'status'},appStatus,show:text=>notices.push(text),allowedIntentIds:new Set(['renew']),
+  actions:{replaceChildren(){buttons.length=0;},append(button){buttons.push(button);}},
+  document:{createElement:()=>({addEventListener(){}})}};
+ runInNewContext(html.slice(start,end)+'render({screen:{key:"start_intent",copy:"old greeting",actions:[{id:"renew",endpoint:"/member/api/liff/intent",label:"ต่ออายุสมาชิก"}]}});',context);
+ assert.equal(appStatus.textContent,'');assert.equal(notices.length,0);assert.equal(buttons.length,1);assert.equal(buttons[0].textContent,'ต่ออายุสมาชิก');
+ runInNewContext('render({screen:{key:"manual_review",copy:"ต้องตรวจสอบข้อมูลก่อน",actions:[]}});',context);
+ assert.deepEqual(notices,['ต้องตรวจสอบข้อมูลก่อน']);assert.equal(buttons.length,0);
+ const showStart=html.indexOf('  function show(text) {'),showEnd=html.indexOf('  function setBusy(',showStart);
+ runInNewContext(html.slice(showStart,showEnd)+'show("เชื่อมต่อไม่สำเร็จ");',{appStatus});
+ assert.equal(appStatus.textContent,'เชื่อมต่อไม่สำเร็จ');
 });

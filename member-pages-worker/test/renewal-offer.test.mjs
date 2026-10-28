@@ -97,15 +97,15 @@ test('exact expiry anniversary and older require separate policy review',async()
   const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier:'Standard',membership_expires_at:'2025-10-02T00:00:00Z'}};
   const env={RENEWAL_OFFER_RESOLVER:{resolve:async()=>({status:'ready',package_code:'standard',amount_thb:1000})}};
   assert.equal((await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-02T00:00:00Z'))).status,'review_required');
-  const past=await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-02T00:00:00.001Z'));assert.equal(past.classification,'new_signup');assert.equal(past.status,'review_required');
+  const past=await resolveCanonicalRenewalOffer(env,session,new Date('2026-10-02T00:00:00.001Z'));assert.equal(past.reason,'renewal_expired_over_90_days_review_required');assert.equal(past.status,'review_required');
 });
 
-test('expired strictly less than1yr uses approved fixed price, ignores spend discount and keeps base term separate',async()=>{
+test('expired within 90 days uses approved fixed price and keeps base term separate',async()=>{
  for(const [tier,price,years,bonus] of [['Standard',1000,1,180],['Premium',2500,1,1]]) {
- const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier,membership_expires_at:'2026-01-01T00:00:00Z'}};
+ const session={liff_intent:'renew',member_exists:true,line_user_id:'U'+'a'.repeat(32),member_profile:{tier,membership_expires_at:'2026-10-01T00:00:00Z'}};
  const offer=await resolveCanonicalRenewalOffer({},session,new Date('2026-10-31T16:59:59Z'));
  assert.equal(offer.status,'ready');assert.equal(offer.amount_thb,price);assert.equal(offer.membership_years,years);assert.equal(offer.promotion[tier==='Standard'?'bonus_days':'bonus_years'],bonus);assert.equal(offer.promotion_requires_verified_payment,true);
- assert.equal((await resolveCanonicalRenewalOffer({},session,new Date('2026-12-31T17:00:00Z'))).promotion,null);
+ assert.equal((await resolveCanonicalRenewalOffer({},session,new Date('2026-12-31T17:00:00Z'))).status,'review_required');
  }
 });
 

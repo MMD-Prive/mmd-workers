@@ -93,6 +93,21 @@ function validNoteAggregateOwnership(row, clientId) {
     && clean(row?.fields?.idempotency_key) === `historical_note_total_v2:${clientId}`;
 }
 
+function validCurrentPointsArithmetic(fields, points, amount) {
+  if (fields.rate_policy !== "phase1_100_thb_1_pt_remainder" && selectName(fields.points_bucket) !== "base_phase1") {
+    return points === Math.floor(amount / 100);
+  }
+  const prior = numeric(fields.prior_remainder_thb);
+  const pool = numeric(fields.pool_thb);
+  const after = numeric(fields.remainder_after_thb);
+  return fields.rate_policy === "phase1_100_thb_1_pt_remainder"
+    && selectName(fields.source) === "system" && selectName(fields.points_bucket) === "base_phase1"
+    && clean(fields.idempotency_key) === `base_phase1:${clean(fields.payment_ref)}`
+    && Number.isSafeInteger(amount) && Number.isSafeInteger(prior) && prior >= 0 && prior < 100
+    && Number.isSafeInteger(pool) && pool === prior + amount
+    && points === Math.floor(pool / 100) && Number.isSafeInteger(after) && after === pool % 100;
+}
+
 export function guardPointsDisplaySources(records = [], payments = [], { clientId = "", sessions = [] } = {}) {
   const byRef = new Map();
   for (const row of payments) {
@@ -117,6 +132,10 @@ export function guardPointsDisplaySources(records = [], payments = [], { clientI
   const seenRefs = new Set();
   for (const row of records) {
     const f = row?.fields || {};
+    if (!["posted", "completed", "verified", "pending", "reversed", "failed"].includes(status(f.transaction_status || f.status))) {
+      unresolved += 1;
+      continue;
+    }
     if (!["posted", "completed", "verified"].includes(status(f.transaction_status || f.status)) || f.reversed_at) continue;
     const key = clean(f.idempotency_key || f.logical_source_id || f.transaction_id || f.source_event_id || f.service_event_id || f.session_id || row.id);
     const signature = JSON.stringify([f.points, f.eligible_amount_thb ?? f.amount_thb, f.payment_ref, f.session_id, f.posted_at || f.created_at || row.createdTime, f.expires_at, f.source, f.created_by, f.rate_policy, f.prior_remainder_thb, f.pool_thb, f.remainder_after_thb]);
@@ -151,7 +170,8 @@ export function guardPointsDisplaySources(records = [], payments = [], { clientI
       && status(payment["Verification Status"]) === "verified"
       && Number.isSafeInteger(points) && points >= 0
       && amount !== null && amount > 0 && ledgerAmount === amount
-      && points === Math.floor(amount / 100) && sameSession
+      && validCurrentPointsArithmetic(f, points, amount) && sameSession
+      && (!clientId || ownedByClient({ fields: payment }, clientId))
       && Number.isFinite(Date.parse(clean(f.posted_at || f.created_at || row.createdTime)));
     if (!valid) { unresolved += 1; continue; }
     verifiedRecords.push(row);

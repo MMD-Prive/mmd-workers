@@ -329,19 +329,37 @@
 
   var selectedMethod="";
 
+  function privatePaymentQr(url){
+    var u=new URL(url);
+    if(u.origin!=="https://promptpay.io")return url;
+    var match=u.pathname.match(/^\/(\d{10}|\d{13})\/(\d{1,9}\.\d{2})\.png$/);
+    if(!match)throw new Error("invalid_promptpay_qr");
+    var ref=match[1],amount=match[2];
+    var account=ref.length===10?"01130066"+ref.slice(1):"0213"+ref;
+    var merchant="0016A000000677010111"+account;
+    function tlv(id,value){return id+String(value.length).padStart(2,"0")+value;}
+    var payload="000201010212"+tlv("29",merchant)+"5303764"+tlv("54",amount)+"5802TH6304";
+    var crc=65535;
+    for(var i=0;i<payload.length;i++){crc^=payload.charCodeAt(i)<<8;for(var j=0;j<8;j++)crc=(crc&32768)?((crc<<1)^4129)&65535:(crc<<1)&65535;}
+    payload+=crc.toString(16).toUpperCase().padStart(4,"0");
+    var code=qrcode(0,"M");code.addData(payload,"Byte");code.make();
+    return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(code.createSvgTag({cellSize:5,margin:20,scalable:true}));
+  }
+
   function renderQr(){
     var pp=(instructions&&instructions.promptpay)||{};
-    var on=pp.enabled===true&&clean(pp.display_ref)!==""&&selectedMethod==="promptpay";
+    var on=pp.enabled===true&&!!safeHttps(pp.qr_url)&&selectedMethod==="promptpay";
     var qr=$("[data-sp21-qr]");
     var qrFallback=$("[data-sp21-qr-fallback]");
     var qrUrl=on?safeHttps(pp.qr_url):"";
     if(qr){
       qr.hidden=!qrUrl;
-      if(qrUrl)qr.src=qrUrl;else qr.removeAttribute("src");
+      if(qrUrl){try{qr.src=privatePaymentQr(qrUrl);}catch(e){qr.hidden=true;if(qrFallback)qrFallback.hidden=false;}}else qr.removeAttribute("src");
+      qr.onerror=function(){qr.hidden=true;if(qrFallback)qrFallback.hidden=false;};
     }
     if(qrFallback)qrFallback.hidden=!!qrUrl||!on;
-    text("[data-sp21-promptpay-ref]",on?(pp.display_ref||"—"):"—");
-    text("[data-sp21-promptpay-ref-inline]",on?(pp.display_ref||"—"):"—");
+
+
   }
 
   function renderBank(){
@@ -392,7 +410,7 @@
     var bank=instructions.bank_transfer||{};
     var card=instructions.paypal_card||{};
 
-    var ppOn=pp.enabled===true&&clean(pp.display_ref)!=="";
+    var ppOn=pp.enabled===true&&!!safeHttps(pp.qr_url);
     var bankOn=bank.enabled===true&&clean(bank.account_number)!=="";
     var cardUrl=card.enabled===true?safeHttps(card.url):"";
     var cardOn=!!cardUrl;

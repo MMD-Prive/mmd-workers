@@ -1,6 +1,7 @@
-import bookingWorker from "./index.js";
+import bookingWorker, { sanitizeModelForBooking, withBrowserCors } from "./index.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
-import { allowedCustomerModelFolders, protectedCustomerModelAccess } from "./customer-search-policy.js";
+import { allowedCustomerModelFolders, protectedCustomerModelAccess, safeSearchIntent } from "./customer-search-policy.js";
+import { currentPrivateAccess } from "./current-private-access.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENT_RESOLVE_PATH = "/sigil/api/client/resolve";
@@ -19,11 +20,6 @@ export default {
     }
 
     if ((method === "GET" || method === "POST") && path === MODEL_SEARCH_PATH) {
-      const scope = await requestedScope(request, url);
-      if (scope === "private") {
-        const allowed = await canonicalStoredPrivateAccess(env, request, url).catch(() => false);
-        if (!allowed) return json({ ok: true, matched: false, blocked: true, reason: "private_requires_entitlement_snapshot", access_scope: "public_only", member_status: "unknown", items: [] }, 200);
-      }
       return bookingWorker.fetch(request, env, ctx);
     }
 
@@ -54,10 +50,39 @@ async function handleCanonicalBookingIntake(request, env, ctx) {
   const bookingRef = clean(body.booking_ref || body.request_id);
   const sessionId = clean(body.session_id);
   const stored = await readBookingRequest(env, { bookingRef, sessionId }).catch(() => null);
-  const parsed = parseJson(stored?.fields?.resolver_payload_json);
-  const snapshot = parsed?.entitlement_snapshot;
+  let parsed = parseJson(stored?.fields?.resolver_payload_json);
+  let snapshot = parsed?.entitlement_snapshot;
+  const privateIntake = clean(body.lane || body.model_scope).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") === "private";
+  if (privateIntake) {
+    const canonical = await currentPrivateAccess(request, env, clean(parsed?.access?.member_record_id));
+    const allowedFolders = canonical.allowedFolders;
+    const reject = (error, status) => withBrowserCors(json({ ok: false, error }, status), request, env);
+    if (!allowedFolders.length) return reject("private_requires_current_entitlement", 403);
+    const requestedFolder = clean(body.selected_access_folder || body.access_folder).toLowerCase();
+    if (requestedFolder && !allowedFolders.includes(requestedFolder)) return reject("selected_model_unavailable", 422);
+    const selectedModelId = clean(body.selected_model_id || body.resolved_model_key);
+    if (selectedModelId) {
+      const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
+      const rows = await airtableList(env, table, `RECORD_ID()=${formulaText(selectedModelId)}`, 2).catch(() => []);
+      const intent = safeSearchIntent({ ...(body.resolver_payload_json?.filters || {}), ...body });
+      const model = rows.length === 1 && clean(rows[0].id) === selectedModelId && !intent.errors.length
+        ? sanitizeModelForBooking(rows[0], {
+          scope: "private", privateAllowed: true,
+          allowedFolders: requestedFolder ? [requestedFolder] : allowedFolders,
+          customerLane: intent.customer_lane, workLane: intent.work_lane, profileFilters: intent.profile_filters,
+          viewerRef: canonical.viewerRef, env,
+        }) : null;
+      if (!model) return reject("selected_model_unavailable", 422);
+    }
+    snapshot = canonical.snapshot;
+    parsed = { ...parsed, entitlement_snapshot: snapshot, saved_at: new Date().toISOString() };
+  }
 
   const safeBody = { ...body };
+  if (privateIntake) {
+    safeBody.client_contact = clean(stored?.fields?.client_contact || stored?.fields?.["Contact Value"]);
+    safeBody.line_or_member_id = clean(stored?.fields?.line_or_member_id);
+  }
   if (snapshot?.schema_version === "my_mmd_entitlement_resolver_v1") {
     const access = accessFromSnapshot(snapshot);
     safeBody.resolver_payload_json = parsed;
@@ -227,24 +252,6 @@ async function persistCanonicalAccess(env, payload, canonical) {
   });
 }
 
-async function canonicalStoredPrivateAccess(env, request, url) {
-  requireAirtable(env);
-  let body = {};
-  if (request.method.toUpperCase() === "POST") body = await request.clone().json().catch(() => ({}));
-  const bookingRef = clean(url.searchParams.get("booking_ref") || body.booking_ref || body.request_id);
-  const sessionId = clean(url.searchParams.get("session_id") || body.session_id);
-  const row = await readBookingRequest(env, { bookingRef, sessionId });
-  const fields = row?.fields || {};
-  if (fields.honor_after_expiry === true && fields.entitlement_valid_at_confirm === true && fields.payment_verified_at_confirm === true) {
-    const locked = parseJson(fields.entitlement_snapshot_at_confirm);
-    if (locked?.booking_access?.private_booking === true && locked?.entitlement_snapshot?.member_blocked !== true) return true;
-  }
-  const parsed = parseJson(fields.resolver_payload_json);
-  const snapshot = parsed?.entitlement_snapshot;
-  if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1") return false;
-  return allowedCustomerModelFolders(snapshot).length > 0;
-}
-
 async function verifyBookingPayment(env, { paymentRef, sessionId, bookingRef }) {
   const table = env.AIRTABLE_TABLE_PAYMENTS_ID || env.AIRTABLE_TABLE_PAYMENTS || "Payments";
   const candidates = [];
@@ -280,13 +287,6 @@ async function readBookingRequest(env, { bookingRef, sessionId }) {
     } catch {}
   }
   return null;
-}
-
-async function requestedScope(request, url) {
-  if (clean(url.searchParams.get("scope")).toLowerCase() === "private") return "private";
-  if (request.method.toUpperCase() !== "POST") return "public";
-  const body = await request.clone().json().catch(() => ({}));
-  return clean(body.scope || body.model_scope).toLowerCase() === "private" ? "private" : "public";
 }
 
 async function airtableList(env, table, formula, maxRecords) {

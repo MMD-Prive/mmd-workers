@@ -9,11 +9,25 @@ const sha = 'a'.repeat(40);
 const version = () => ({ annotations: { 'workers/commit_sha': sha }, resources: {
   script: {}, script_runtime: { compatibility_date: '2026-07-02' }, bindings: [
     ...['LINE_AUTO_REPLY_ENABLED', 'LINE_KENJI_MODEL_ENABLED', 'KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED'].map(name => ({ name, type: 'plain_text', text: 'false' })),
+    { name: 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED', type: 'plain_text', text: 'false' },
     { name: 'SECRET_FIXTURE', type: 'secret_text' },
     { name: 'ADMIN_WORKER', type: 'service', service: 'admin-worker' },
   ],
 } });
 test('matching configuration and owner-approved source accepted', () => validateCandidate(version(), version(), sha));
+test('protected Per AI upload tag and message bind the exact reviewed source', () => {
+  const candidate = version();
+  candidate.annotations = {
+    'workers/message': `Per AI Support source-sha=${sha}`,
+    'workers/tag': `per-support-${sha.slice(0, 12)}`,
+  };
+  validateCandidate(version(), candidate, sha);
+  candidate.annotations['workers/tag'] = 'unrelated';
+  assert.throws(() => validateCandidate(version(), candidate, sha));
+  candidate.annotations['workers/tag'] = `per-support-${sha.slice(0, 12)}`;
+  candidate.annotations['workers/commit_sha'] = 'b'.repeat(40);
+  assert.throws(() => validateCandidate(version(), candidate, sha));
+});
 test('ON flags, binding drift and source mismatch block promotion', () => {
   for (let index = 0; index < 3; index++) {
     const candidate = version(); candidate.resources.bindings[index].text = 'true';
@@ -22,6 +36,24 @@ test('ON flags, binding drift and source mismatch block promotion', () => {
   const drift = version(); drift.resources.bindings.pop();
   assert.throws(() => validateCandidate(version(), drift, sha));
   assert.throws(() => validateCandidate(version(), version(), 'b'.repeat(40)));
+});
+test('snapshot activation permits exactly one flag and keeps general auto-reply paused', () => {
+  const candidate = version();
+  candidate.resources.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED').text = 'true';
+  validateCandidate(version(), candidate, sha, true);
+  assert.throws(() => validateCandidate(version(), candidate, sha));
+  candidate.resources.bindings.find(item => item.name === 'LINE_KENJI_MODEL_ENABLED').text = 'true';
+  assert.throws(() => validateCandidate(version(), candidate, sha, true));
+});
+test('snapshot activation accepts an absent OFF baseline and no other configuration delta', () => {
+  const baseline = version();
+  baseline.resources.bindings = baseline.resources.bindings.filter(item => item.name !== 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED');
+  const candidate = version();
+  candidate.resources.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED').text = 'true';
+  validateCandidate(baseline, candidate, sha, true);
+  assert.throws(() => validateCandidate(baseline, candidate, sha));
+  candidate.resources.bindings.find(item => item.name === 'ADMIN_WORKER').service = 'other-worker';
+  assert.throws(() => validateCandidate(baseline, candidate, sha, true));
 });
 test('transport rejects routes, secrets, uploads and other Workers before any request', async () => {
   let calls = 0;
@@ -74,4 +106,22 @@ test('manual-only protected workflow has no route sync, uploads, sibling deploy 
   assert.doesNotMatch(workflow, /\n  (?:push|pull_request):|wrangler|route_sync|CLOUDFLARE_ROUTES_API_TOKEN|mms-member-worker|secret put|webhook/);
   assert.match(workflow, /environment: mmd-production-mutation/);
   assert.match(workflow, /github.ref == 'refs\/heads\/main'/);
+});
+test('Per AI release uploads under protection and promotes only exact reviewed code', () => {
+  const path = '.github/workflows/per-support-code-only-release.yml';
+  const workflow = readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+  assert.equal(deployRequired('push', [
+    'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
+    path,
+    'scripts/kenji-code-only-promote.mjs',
+    'scripts/kenji-code-only-promote.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+  ]), false);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /environment: mmd-production-mutation/);
+  assert.match(workflow, /inputs\.approved_sha == github\.sha/);
+  assert.match(workflow, /wrangler@4 versions upload --keep-vars/);
+  assert.match(workflow, /node scripts\/kenji-code-only-promote\.mjs/);
+  assert.doesNotMatch(workflow, /\n  (?:push|pull_request):|wrangler@4 deploy|route_sync|CLOUDFLARE_ROUTES_API_TOKEN|secret put|mms-member-worker/);
 });

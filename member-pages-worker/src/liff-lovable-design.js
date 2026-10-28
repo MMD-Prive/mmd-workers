@@ -3,6 +3,8 @@
 // Source: docs/worker-design-export/my-mmd-tokens.css
 // Commit: b91ad04dbeb0da9767be5e4a37d09c19751145f1
 // Refresh deliberately after reviewing the source design; never import preview data.
+export { APPROVED_ENTRY_CSS as MY_MMD_VERIFICATION_CSS } from "./liff-approved-entry.js";
+
 export const MY_MMD_LOVABLE_DESIGN_CSS = `
 body.app-entered:not(.signup-mode) {
   --mmd-base: #111110;

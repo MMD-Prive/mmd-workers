@@ -1,0 +1,24 @@
+name: SIGIL Customer Access CI
+on:
+  pull_request:
+    paths:
+      - "sigil-booking-worker/src/**"
+      - "sigil-booking-worker/customer-intake-current-access.test.mjs"
+      - "sigil-booking-worker/customer-search-policy.test.mjs"
+      - "sigil-booking-worker/model-media-search.test.mjs"
+      - ".github/workflows/sigil-customer-access-ci.yml"
+permissions:
+  contents: read
+jobs:
+  customer-access:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Current customer ownership and policy
+        run: node --test sigil-booking-worker/customer-intake-current-access.test.mjs sigil-booking-worker/customer-search-policy.test.mjs sigil-booking-worker/src/entitlement-runtime-worker.test.js
+      - name: Existing search and media regression
+        run: node --test --test-name-pattern='booking discovery requires|runtime entrypoint GET|media gate rechecks|customer Booking rejects Live|customer body and skin filters|Create Job scope filters|MY MODEL visibility selections|SIGIL private denial|filter-only Private' sigil-booking-worker/model-media-search.test.mjs

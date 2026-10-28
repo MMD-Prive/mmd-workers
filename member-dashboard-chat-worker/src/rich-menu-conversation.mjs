@@ -1,7 +1,108 @@
+export { isCheckptsShortcut } from "./checkpts-command.mjs";
+
 // A delivered menu reply opens a bounded conversation, not general auto-reply.
 // State is stored in the existing Conversation Matrix and is never entitlement.
 const WINDOW_MS = 30 * 60 * 1000;
 const ENTRY = "https://miniapp.line.me/2010862595-yT4DCEMc/";
+const pointsAnswer = () => pointsInChatAnswer();
+const POINTS_AUTHORITY = "my_mmd_entitlement_resolver_v1";
+const CARE_BACK_URL = "https://www.mmdbkk.com/promotion/6-years-care-back";
+const RENEW_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package";
+
+function bangkokDate(now) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now instanceof Date ? now : new Date(now));
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function campaignOpen(now) {
+  const today = bangkokDate(now);
+  return today >= "2026-09-01" && today <= "2026-10-31";
+}
+
+function tierKey(membership = {}) {
+  return [membership.level, membership.label].map(value => String(value || "").trim().toLowerCase()).join(" ");
+}
+
+function isCuratedTier(membership = {}) {
+  return /(?:^|[ _-])(?:svip|vip|black\s*card|blackcard)(?:$|[ _-])/.test(tierKey(membership));
+}
+
+function isPaidPrivateTier(membership = {}) {
+  const tier = tierKey(membership);
+  return /(?:^|[ _-])private(?:$|[ _-])/.test(tier) &&
+    /(?:^|[ _-])(?:standard|premium)(?:$|[ _-])/.test(tier);
+}
+
+function membershipStatus(membership = {}) {
+  if (membership.member_blocked === true || membership.lifecycle === "blocked") return "ระงับการใช้งานครับ";
+  if (membership.lifecycle === "revoked") return "สิทธิ์ถูกยกเลิกแล้วครับ";
+  if (["active", "expiring_soon", "grace"].includes(membership.lifecycle)) {
+    const label = String(membership.label || "").trim();
+    return `${label || "สมาชิก MMD"} (${membership.lifecycle === "grace" ? "ช่วงผ่อนผัน" : "ใช้งานอยู่"}) ครับ`;
+  }
+  if (membership.lifecycle === "expired") return "หมดอายุแล้วครับ";
+  return "ยังไม่พบสิทธิ์สมาชิกที่ใช้งานอยู่ครับ";
+}
+
+function membershipExpiry(membership = {}) {
+  const level = String(membership.level || "").trim().toLowerCase();
+  const label = String(membership.label || "").trim().toLowerCase();
+  const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();
+  if (level === "svip" || label === "svip") {
+    return ["active", "expiring_soon", "grace"].includes(lifecycle)
+      ? "SVIP ไม่มีวันหมดอายุปกติครับ"
+      : "ให้เปอร์ตรวจสถานะ SVIP เป็นรายบุคคลครับ";
+  }
+  if (!/^(?:active|expiring_soon|grace|expired)$/.test(lifecycle)) return "ยังไม่มีวันที่ยืนยันได้ครับ";
+  const match = String(membership.expire_at || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+  if (!match || Number(match[2]) < 1 || Number(match[2]) > 12 || Number(match[3]) < 1 || Number(match[3]) > 31)
+    return "ยังไม่มีวันที่ยืนยันได้ครับ";
+  return `${match[3]}/${match[2]}/${match[1]} ครับ`;
+}
+function checkptsCta(liveTruth = {}, now = Date.now()) {
+  const membership = liveTruth.membership || {};
+  const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();
+  const open = campaignOpen(now);
+  const campaign = open
+    ? `CARE BACK ถึง 31 ต.ค. 2569: บันทึก Birthday Wish สำเร็จแล้วจึงรับคูปองส่วนตัวสูงสุด 10% ใช้ได้ 1 ครั้ง; ส่วนลดจริงขึ้นกับระดับนายแบบและรูปแบบบริการ. รายละเอียดและโปสเตอร์: ${CARE_BACK_URL}`
+    : `ดูสิทธิ์และเงื่อนไขล่าสุดได้ที่ ${CARE_BACK_URL}`;
+
+  if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
+    return `CTA: ยืนยันบัญชีผ่าน LINE ในหน้า CARE BACK ก่อน เปอร์จะตรวจสถานะให้ครับ. ${campaign}`;
+  }
+  if (["active", "expiring_soon", "grace"].includes(lifecycle)) {
+    if (isCuratedTier(membership)) {
+      return `CTA: สิทธิ์ ${String(membership.label || "สมาชิก")} ต้องให้เปอร์ดูแลเป็นรายบุคคลครับ ยังไม่แสดงแพ็กเกจต่ออายุทั่วไป. ${campaign}`;
+    }
+    if (isPaidPrivateTier(membership) && open) {
+      return `CTA: สมาชิกยังใช้งานอยู่ ต่ออายุล่วงหน้าได้ถึง 31 ต.ค. 2569 เท่านั้นครับ. ดูแพ็กเกจต่ออายุ: ${RENEW_URL}. Verify CARE BACK เพิ่มสมาชิก 1 ปีจากวันหมดอายุจริง; Standard ที่เข้าเงื่อนไขเพิ่ม 180 วัน, Premium เพิ่ม 1 ปี. ${campaign}`;
+    }
+    return `CTA: หน้าต่างต่ออายุล่วงหน้าถึง 31 ต.ค. 2569 ปิดแล้วครับ ส่งคำว่า “คุยกับเปอร์” หากต้องการให้ตรวจทางเลือกต่อไป. ${campaign}`;
+  }
+  if (lifecycle === "expired") {
+    return open
+      ? `CTA: สถานะหมดอายุแล้วครับ ยืนยันบัญชีเดิมผ่านหน้า CARE BACK ภายใน 31 ต.ค. เพื่อรับสิทธิ์ต่อสมาชิก 1 ปีนับจากวันที่ Verify สำเร็จ; การสมัครแพ็กเกจภายหลังเป็นอีกขั้นตอนหนึ่ง. ${campaign}`
+      : `CTA: สถานะหมดอายุแล้วครับ ส่งคำว่า “คุยกับเปอร์” เพื่อให้ตรวจสิทธิ์กลับมาเป็นรายบุคคลได้ครับ. ${campaign}`;
+  }
+  if (["blocked", "revoked"].includes(lifecycle)) {
+    return `CTA: สถานะนี้ต้องให้เปอร์ตรวจเป็นรายบุคคลก่อนครับ. ${campaign}`;
+  }
+  return `CTA: สถานะยังแยกไม่ได้ว่า active หรือหมดอายุ กรุณายืนยันบัญชีผ่าน LINE ก่อนครับ. ${campaign}`;
+}
+
+function pointsInChatAnswer(liveTruth = {}, now = Date.now(), includeCta = false) {
+  const cta = includeCta ? "\n" + checkptsCta(liveTruth, now) : "";
+  if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
+    return "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ" + cta;
+  }
+  const points = liveTruth.points || {};
+  const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
+  const pointText = verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ";
+  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${pointText}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}` + cta;
+}
 const TOPICS = {
   guest: ["membership", "models", "booking", "services", "stories", "support"],
   public: ["support", "models", "booking", "membership", "membership", "support"],
@@ -11,6 +112,18 @@ const TOPICS = {
 export function richMenuConversationStart(navigation, now = Date.now()) {
   const topic = TOPICS[navigation?.menu]?.[navigation?.button];
   return topic ? { topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : null;
+}
+
+export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now(), includeCta = true) {
+  const verified = liveTruth.ok === true && liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved" &&
+    liveTruth.points?.status === "verified" && Number.isSafeInteger(liveTruth.points.active_points) && liveTruth.points.active_points >= 0;
+  return {
+    text: pointsInChatAnswer(liveTruth, now, includeCta), intent: "points_status", inferred_intent: "points_status",
+    reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
+    truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
+    live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
+    handoff_required: false, cta_appended: true,
+  };
 }
 
 export function resolveRichMenuConversation(event = {}, continuity = {}, now = Date.now()) {
@@ -38,8 +151,8 @@ export function resolveRichMenuConversation(event = {}, continuity = {}, now = D
   } else if (/(ต่ออายุ|renew)/i.test(raw)) {
     answer = `เริ่มตรวจตัวเลือกต่ออายุของบัญชีเดิมได้ที่ ${route("renew", "package")} ครับ สถานะจะเปลี่ยนหลังการตรวจสอบทางการเท่านั้นครับ`;
     intent = "membership_renewal";
-  } else if (/(คะแนน|แต้ม|points?)/i.test(raw)) {
-    answer = `ดูคะแนนที่ระบบตรวจสอบให้บัญชีนี้ได้ที่ ${route("status", "points")} ครับ ผมยังไม่ยืนยันยอดจากข้อความในแชตครับ`;
+  } else if (/(คะแนน|แต้ม|points?|\bcheckpts\b)/i.test(raw)) {
+    answer = pointsAnswer();
     intent = "points_status";
   } else if (/(สถานะ|หมดอายุ|สิทธิ์|status)/i.test(raw)) {
     answer = `ตรวจสถานะของบัญชีนี้ผ่าน MY MMD ได้ที่ ${route("status", "overview")} ครับ การกดเมนูหรือส่งข้อความไม่ได้เปิดสิทธิ์สมาชิกครับ`;

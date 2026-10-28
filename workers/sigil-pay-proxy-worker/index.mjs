@@ -1,3 +1,5 @@
+const PRIVATE_PAYMENT_THEME = "/* Private checkout: Midnight Bangkok Private Atelier. */\nhtml,body{background:#0B0E10}\n#sigil-pay-v21{color-scheme:dark;--sp21-bg:#0B0E10;--sp21-panel:#171B1D;--sp21-panel-strong:#232729;--sp21-panel-soft:rgba(243,240,232,.04);--sp21-line:rgba(201,179,138,.2);--sp21-line-strong:#C9B38A;--sp21-text:#F3F0E8;--sp21-body:#D3D0C8;--sp21-muted:#BEBDB8;--sp21-gold:#C9B38A;--sp21-gold-deep:#A58C62;--sp21-danger:#F2A5A0;--sp21-success:#A9D4B3;background:radial-gradient(ellipse at 10% 0,rgba(201,179,138,.06),transparent 40rem),#0B0E10}\n#sigil-pay-v21 .sp21__card,#sigil-pay-v21 .sp21__summary{background:#171B1D;box-shadow:inset 0 1px rgba(243,240,232,.04)}\n#sigil-pay-v21 .sp21__panel,#sigil-pay-v21 .sp21__method,#sigil-pay-v21 textarea,#sigil-pay-v21 input:not([type=file]){background:#232729;color:#F3F0E8;border-color:rgba(201,179,138,.24)}\n#sigil-pay-v21 .sp21__method[aria-selected=true]{background:rgba(201,179,138,.12);border-color:#C9B38A}\n#sigil-pay-v21 .sp21__btn--primary{background:linear-gradient(135deg,#D9C6A2,#B89C6D);color:#141719!important;border-color:#C9B38A}\n#sigil-pay-v21 .sp21__avatar{color:#141719}\n#sigil-pay-v21 .sp21__qr{background:transparent}\n#sigil-pay-v21 [data-sp21-qr]{background:#fff;color-scheme:light;padding:10px;border-radius:12px}\n#sigil-pay-v21 .sp21__qr-fallback{background:#232729;color:#F3F0E8}\n";
+import { QR_LIBRARY } from './qr-library.mjs';
 // Presentation ingress only. Payment APIs and signed-link authority stay in payments-worker.
 export const LIFF_ID = '2010830159-0n1O3ANK';
 export const UPSTREAM = 'https://www.mmdbkk.com/sigil/pay';
@@ -23,6 +25,7 @@ export function tokenFromSearch(search) {
   } catch { return ''; }
 }
 
+const PRIVATE_QR = "function privatePaymentQr(url){\n    var u=new URL(url);\n    if(u.origin!==\"https://promptpay.io\")return url;\n    var match=u.pathname.match(/^\\/(\\d{10}|\\d{13})\\/(\\d{1,9}\\.\\d{2})\\.png$/);\n    if(!match)throw new Error(\"invalid_promptpay_qr\");\n    var ref=match[1],amount=match[2];\n    var account=ref.length===10?\"01130066\"+ref.slice(1):\"0213\"+ref;\n    var merchant=\"0016A000000677010111\"+account;\n    function tlv(id,value){return id+String(value.length).padStart(2,\"0\")+value;}\n    var payload=\"000201010212\"+tlv(\"29\",merchant)+\"5303764\"+tlv(\"54\",amount)+\"5802TH6304\";\n    var crc=65535;\n    for(var i=0;i<payload.length;i++){crc^=payload.charCodeAt(i)<<8;for(var j=0;j<8;j++)crc=(crc&32768)?((crc<<1)^4129)&65535:(crc<<1)&65535;}\n    payload+=crc.toString(16).toUpperCase().padStart(4,\"0\");\n    var code=qrcode(0,\"M\");code.addData(payload,\"Byte\");code.make();\n    return \"data:image/svg+xml;charset=utf-8,\"+encodeURIComponent(code.createSvgTag({cellSize:5,margin:20,scalable:true}));\n  }\n";
 const TOKEN_FUNCTION = `function tokenFromUrl(){return (${tokenFromSearch.toString()})(location.search);}`;
 export function patchPaymentRuntime(source) {
   if (!source.includes('document.getElementById("sigil-pay-v21")')) return source;
@@ -31,7 +34,13 @@ export function patchPaymentRuntime(source) {
   if (start < 0 || end < 0 || !/\n  load\(\);\s*\}\)\(\);\s*$/.test(source)) {
     throw new Error('payment_runtime_contract_changed');
   }
-  return (source.slice(0, start) + '  ' + TOKEN_FUNCTION + '\n' + source.slice(end))
+  source=source.replace('  function renderQr(){','  '+PRIVATE_QR+'\n  function renderQr(){')
+    .replaceAll('pp.enabled===true&&clean(pp.display_ref)!==""','pp.enabled===true&&!!safeHttps(pp.qr_url)')
+    .replace('if(qrUrl)qr.src=qrUrl;else qr.removeAttribute("src");','if(qrUrl){try{qr.src=privatePaymentQr(qrUrl);}catch(e){qr.hidden=true;if(qrFallback)qrFallback.hidden=false;}}else qr.removeAttribute("src");qr.onerror=function(){qr.hidden=true;if(qrFallback)qrFallback.hidden=false;};')
+    .replace(/    text\("\[data-sp21-promptpay-ref(?:-inline)?\]"[^\n]*\n/g,'');
+  const patchedStart=source.indexOf('  function tokenFromUrl(){');
+  const patchedEnd=source.indexOf('\n  function text(',patchedStart);
+  return (source.slice(0, patchedStart) + '  ' + TOKEN_FUNCTION + '\n' + source.slice(patchedEnd))
     .replace(/\n  load\(\);(\s*\}\)\(\);\s*)$/, `
   Promise.resolve(window.__sigilPayReady).then(function(ready){
     if(ready===false){
@@ -87,10 +96,12 @@ export function prepareHtml(html) {
   const result = html.replace(/(<script\b[^>]*>)([\s\S]*?)(<\/script\s*>)/gi, (all, open, code, close) => {
     if (!code.includes('document.getElementById("sigil-pay-v21")')) return all;
     patched = true;
-    return open + patchPaymentRuntime(code) + close;
+    return open + QR_LIBRARY + '\n' + patchPaymentRuntime(code) + close;
   });
   if (!patched || !/<\/head>/i.test(result)) throw new Error('payment_page_contract_changed');
-  return result.replace(/<\/head>/i, BOOTSTRAP + '</head>');
+  return result.replace(/<div class="sp21__qr-ref">[\s\S]*?<\/div>/g,'')
+    .replace(/<small>PromptPay<\/small>\s*<strong data-sp21-promptpay-ref>[\s\S]*?<\/strong>/g,'โหลด QR ไม่สำเร็จ กรุณาลองใหม่หรือเลือกโอนธนาคาร')
+    .replace(/<\/head>/i, '<style data-private-payment-theme>'+PRIVATE_PAYMENT_THEME+'</style>'+BOOTSTRAP + '</head>');
 }
 
 export async function handle(request, fetcher = fetch, rewriter = () => new HTMLRewriter()) {

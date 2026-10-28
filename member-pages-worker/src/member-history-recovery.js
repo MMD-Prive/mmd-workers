@@ -93,6 +93,20 @@ export async function handleMemberHistoryRecoveryRequest(request, env = {}, ctx)
   }
 
   if (request.method !== "POST") return methodNotAllowed("POST");
+  const body = await request.json().catch(() => null);
+  const collectOnly = body?.mode === "collect_only";
+  if (collectOnly) {
+    const allowed = await collectOnlyLineAllowed(env, session.line_user_id);
+    if (!allowed) return withCors(request, env, json({ ok: false, error: { code: "COLLECT_ONLY_NOT_ENABLED" } }, 403));
+    schedule(ctx, runMemberHistoryRecovery({
+      env,
+      lineUserId: session.line_user_id,
+      memberId: clean(session.member_id),
+      trigger: "collect_only",
+      collectOnly: true,
+    }));
+    return withCors(request, env, json({ ok: true, history_recovery: { state: "checking", reason: "collect_only_queued" }, accepted: true }, 202));
+  }
   const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) {
     return withCors(request, env, json({ ok: true, history_recovery: publicStatus(existing), accepted: false }, 200));
@@ -142,6 +156,7 @@ export async function runMemberHistoryRecovery({
   trigger = "login",
   store,
   forceSourceRefresh = false,
+  collectOnly = false,
   now = new Date(),
 } = {}) {
   if (!hasBindings(env) && !store) return statusPayload("blocked", { reason: "not_configured", trigger });
@@ -149,7 +164,7 @@ export async function runMemberHistoryRecovery({
 
   // The scheduled batch projection is the normal path. The broad historical
   // scan below runs only when that projection is missing, stale, or ambiguous.
-  if (!store && !forceSourceRefresh) {
+  if (!store && !forceSourceRefresh && !collectOnly) {
     const preloaded = await useBatchPreload(env, lineUserId, trigger, now);
     if (preloaded) return preloaded;
   }
@@ -165,18 +180,18 @@ export async function runMemberHistoryRecovery({
     if (held?.started_at && Date.now() - Date.parse(held.started_at) < LOCK_TTL_SECONDS * 1000) {
       return statusPayload("in_progress", { trigger, reason: "recovery_already_running", started_at: held.started_at });
     }
-    if (env.LIFF_IDENTITY_KV?.put) {
+    if (!collectOnly && env.LIFF_IDENTITY_KV?.put) {
       await env.LIFF_IDENTITY_KV.put(lockKey, JSON.stringify({ started_at: startedAt, trigger }), { expirationTtl: LOCK_TTL_SECONDS });
       ownsLock = true;
     }
 
-    await writeStatusKey(env, statusKey, statusPayload("in_progress", {
+    if (!collectOnly) await writeStatusKey(env, statusKey, statusPayload("in_progress", {
       trigger,
       started_at: startedAt,
       updated_at: startedAt,
     }));
 
-    if (forceSourceRefresh) await invalidateMemberHistoryPreload(env, lineUserId, now);
+    if (forceSourceRefresh && !collectOnly) await invalidateMemberHistoryPreload(env, lineUserId, now);
 
     // LINE OFC is the source of truth. Read it before trying to resolve a
     // canonical Client so a first-time login is never blocked by a missing or
@@ -226,7 +241,9 @@ export async function runMemberHistoryRecovery({
       // target live for the signed-in LINE identity, but do not manufacture a
       // Sessions row with an invalid Client link. The next login can
       // materialize it once the canonical link is available.
-      const outcome = client
+      const outcome = collectOnly
+        ? { kind: "collected" }
+        : client
         ? await processNoteCandidate({ db, candidate, trigger, now })
         : { kind: "source_only" };
       if (outcome.kind === "cancelled") {
@@ -250,7 +267,9 @@ export async function runMemberHistoryRecovery({
 
     const sourcePending = rawCandidates.length === 0;
     const pointsTarget = notePointSummary(acceptedCandidates);
-    const pointsResult = wallet
+    const pointsResult = collectOnly
+      ? { current_points_total: null, historical_points_added: 0 }
+      : wallet
       ? sourcePending
         ? await readCurrentPointsTotal(db, wallet, now)
         : await reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarget, now })
@@ -269,7 +288,7 @@ export async function runMemberHistoryRecovery({
     // Missing slips are never a reason to withhold points. Only unresolved
     // identity/details and an unavailable wallet remain review conditions.
     counters.pending_review_count += detailPendingCount + counters.unmatched_payment_count;
-    const state = counters.pending_review_count > 0 ? "review_required" : "reconciled";
+    const state = collectOnly ? "checking" : counters.pending_review_count > 0 ? "review_required" : "reconciled";
     const done = statusPayload(state, {
       ...counters,
       verified_service_spend_thb: roundMoney(eligibleSpend),
@@ -282,7 +301,9 @@ export async function runMemberHistoryRecovery({
       trigger,
       started_at: startedAt,
       updated_at: new Date().toISOString(),
-      reason: sourcePending
+      reason: collectOnly
+        ? "collect_only_evidence_collected"
+        : sourcePending
         ? "source_notes_pending"
         : !client
           ? "line_ofc_source_ready_client_link_pending"
@@ -290,7 +311,7 @@ export async function runMemberHistoryRecovery({
           ? "points_ready_history_details_pending"
           : "note_first_recovery_complete",
     });
-    await writeStatusKey(env, statusKey, done);
+    if (!collectOnly) await writeStatusKey(env, statusKey, done);
     return done;
   } catch (error) {
     const failed = statusPayload("blocked", {
@@ -299,12 +320,20 @@ export async function runMemberHistoryRecovery({
       started_at: startedAt,
       updated_at: new Date().toISOString(),
     });
-    await writeStatusKey(env, statusKey, failed).catch(() => {});
+    if (!collectOnly) await writeStatusKey(env, statusKey, failed).catch(() => {});
     console.warn({ event: "member_history_recovery_failed", policy: POLICY, reason: failed.reason });
     return failed;
   } finally {
     if (ownsLock && env.LIFF_IDENTITY_KV?.delete) await env.LIFF_IDENTITY_KV.delete(lockKey).catch(() => {});
   }
+}
+
+async function collectOnlyLineAllowed(env, lineUserId) {
+  const allowlist = clean(env.HISTORY_RECOVERY_COLLECT_ALLOWLIST)
+    .split(",").map(value => value.trim()).filter(Boolean);
+  if (!allowlist.length) return false;
+  const key = await sha24(lineUserId);
+  return allowlist.includes(key);
 }
 
 async function processNoteCandidate({ db, candidate, trigger, now }) {

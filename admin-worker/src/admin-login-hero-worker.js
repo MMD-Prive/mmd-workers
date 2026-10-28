@@ -1,4 +1,6 @@
+export { ModelDiscoveryCoordinator } from "./model-customer-discovery-settings.js";
 import { isAdminRecoveryPage, renderAdminRecoveryPage } from "./admin-recovery-pages.js";
+import { isHypeConsoleRequest, handleHypeConsole } from "./hype-console.js";
 import { handleOwnerJobEdit, isOwnerJobEditRequest } from './owner-job-edit.js';
 export { JobEditCoordinator } from './owner-job-edit-do.js';
 import { JOB_PREFLIGHT_PATH, handleJobPreflight, guardDuplicateJob } from './create-job-preflight.js';
@@ -259,6 +261,7 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isHypeConsoleRequest(request)) return handleHypeConsole(request, runtimeEnv);
     if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
     if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);
     if (isMemberResolverDiagnosticTriggerRequest(request)) return handleMemberResolverDiagnosticTrigger(request, runtimeEnv);

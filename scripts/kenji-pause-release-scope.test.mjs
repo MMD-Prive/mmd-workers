@@ -9,6 +9,17 @@ const richMenuPauseFiles = [
   'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
   'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
 ];
+test('snapshot flag activation skips legacy route deployment only for its exact reviewed delta', () => {
+  const files = [config, 'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-code-only-promote.mjs', '.github/workflows/per-support-code-only-release.yml'];
+  const before = 'LINE_AUTO_REPLY_ENABLED = "false"\nLINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "false"\n';
+  const after = before.replace('SNAPSHOT_ENABLED = "false"', 'SNAPSHOT_ENABLED = "true"');
+  assert.equal(deployRequired('push', files, before, after), false);
+  assert.throws(() => deployRequired('push', files, before, after + 'OTHER = "true"\n'));
+  assert.throws(() => deployRequired('push', files, before, after.replace('LINE_AUTO_REPLY_ENABLED = "false"', 'LINE_AUTO_REPLY_ENABLED = "true"')));
+  assert.throws(() => deployRequired('push', [...files, 'member-pages-worker/src/runtime-index.js'], before, after),
+    /PERSONAL_MAIN_MIXED_DELTA/);
+});
 test('PR 2608 exact Rich Menu pause scope skips the entire automatic deployment job', () => {
   assert.equal(deployRequired('push', richMenuPauseFiles), false);
   assert.equal(deployRequired('push', [...richMenuPauseFiles,
@@ -22,6 +33,41 @@ test('Rich Menu scope never masks unrelated source, deployment workflow or confi
   }
   assert.equal(deployRequired('push', [...richMenuPauseFiles, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
   assert.equal(deployRequired('workflow_dispatch', richMenuPauseFiles), true);
+});
+test('Per AI checkpts and rights follow-up use the protected code-only release', () => {
+  const files = [
+    'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+    'member-dashboard-chat-worker/src/rich-menu-conversation.mjs',
+    'member-dashboard-chat-worker/src/rich-menu-navigation-reply.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-pause-release-scope.test.mjs',
+  ];
+  assert.equal(deployRequired('push', files), false);
+  assert.equal(deployRequired('push', [...files, 'mms-member-worker/src/index.js']), true);
+  assert.equal(deployRequired('push', [...files, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
+});
+test('Checkpts fast path uses protected code-only release and rejects unrelated files', () => {
+  const files = [
+    'member-dashboard-chat-worker/src/checkpts-command.mjs',
+    'member-dashboard-chat-worker/src/index.js',
+    'member-dashboard-chat-worker/src/kenji-line-turn-aggregation.mjs',
+    'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+    'member-dashboard-chat-worker/src/rich-menu-conversation.mjs',
+    'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs',
+    'member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs',
+    'member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-pause-release-scope.test.mjs',
+    '.github/workflows/per-support-code-only-release.yml',
+  ];
+  assert.equal(deployRequired('push', files), false);
+  assert.throws(() => deployRequired('push', [...files, 'mms-member-worker/src/index.js']), /CHECKPTS_MIXED_DELTA/);
+  assert.equal(deployRequired('push', ['member-dashboard-chat-worker/src/index.js']), true);
+  assert.equal(deployRequired('workflow_dispatch', files), true);
 });
 test('exact rights alias uses manual Kenji-only release and never masks mixed deployment', () => {
   const files = ['member-dashboard-chat-worker/src/kenji-line-rights-check.mjs', 'member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs', 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs'];
@@ -147,6 +193,12 @@ const lineEvidenceFiles = [
   'member-dashboard-chat-worker/test/line-job-evidence-binding.test.mjs',
 ];
 test('LINE job evidence uses code-only release without legacy MMS deploy or routes', () => {
+  assert.equal(deployRequired('push', [
+    'member-dashboard-chat-worker/src/line-group-ingress-front-gate.js',
+    'member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-pause-release-scope.test.mjs',
+  ]), false);
   for (const files of [lineEvidenceFiles, [...lineEvidenceFiles, 'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs']]) {
     assert.equal(deployRequired('push', files), false);
   }

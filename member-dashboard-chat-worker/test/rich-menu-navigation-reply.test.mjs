@@ -6,15 +6,22 @@ import { richMenuNavigation, resolveRichMenuNavigation } from "../src/rich-menu-
 const event = data => ({ type: "postback", postback: { data } });
 const active = { live_truth: true, identity_state: "matched", membership_state: "active", level: "private", private_visibility_envelope: "premium" };
 
-test("all 13 navigation taps reply with their task destination; only app actions use Mini App", async () => {
+test("Private Kenji opens the web directly; other navigation taps keep bounded replies", async () => {
   const destinations = getMmdRichMenuDestinationMap(), actions = getMmdRichMenuActionMap();
-  let count = 0;
+  let count = 0, direct = 0;
   for (const [menu, items] of Object.entries(destinations)) {
     assert.equal(actions[menu].length, 6);
-    assert.ok(actions[menu].every(action => ["postback", "message"].includes(action.type)));
     for (const [index, destination] of items.entries()) {
       if (destination.type !== "uri") continue;
       count++;
+      if (actions[menu][index].type === "uri") {
+        assert.equal(menu, "private");
+        assert.equal(index, 0);
+        assert.equal(actions[menu][index].uri, destination.uri);
+        assert.equal(new URL(destination.uri).hostname, "www.mmdbkk.com");
+        direct++;
+        continue;
+      }
       const reply = await resolveRichMenuNavigation(event(actions[menu][index].data), { getContext: async () => active });
       assert.equal(reply.cta_route, destination.uri);
       assert.ok(reply.text.endsWith(destination.uri));
@@ -22,7 +29,8 @@ test("all 13 navigation taps reply with their task destination; only app actions
       assert.doesNotMatch(reply.text, /Kenji|เคนจิ|ยืนยันการจอง|ชำระเงินสำเร็จ/);
     }
   }
-  assert.equal(count, 13);
+  assert.equal(count, 14);
+  assert.equal(direct, 1);
 });
 
 test("spoofed Private menu never grants a private destination without fresh identity and entitlement", async () => {
@@ -51,14 +59,16 @@ test("postback cannot supply a redirect, duplicate keys, or an unknown button", 
 });
 
 
-test("KENJI and SUPPORT give bounded LINE help without sending the user to Mini App", async () => {
+test("SUPPORT keeps bounded LINE help while Private Kenji opens the web", async () => {
   const actions = getMmdRichMenuActionMap();
-  for (const [menu, button] of [["guest", 5], ["public", 5], ["private", 0], ["private", 5]]) {
+  assert.equal(actions.private[0].type, "uri");
+  assert.equal(richMenuNavigation(event(actions.private[0].data)), null);
+  for (const [menu, button] of [["guest", 5], ["public", 5], ["private", 5]]) {
     const reply = await resolveRichMenuNavigation(event(actions[menu][button].data), {
       getContext: async () => { throw Error("help should not request private truth"); },
     });
     assert.equal(reply.cta_route, "");
     assert.doesNotMatch(reply.text, /https:/);
-    assert.match(reply.text, /เช็กสิทธิ์/);
+    assert.match(reply.text, menu === "private" ? /เช็กสิทธิ์/ : /checkpts/);
   }
 });

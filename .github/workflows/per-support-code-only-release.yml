@@ -1,0 +1,102 @@
+name: Per AI SUPPORT code-only release
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Full reviewed main commit SHA
+        required: true
+        type: string
+      baseline_version:
+        description: Exact active member-dashboard version before release
+        required: true
+        type: string
+      approval_ref:
+        description: Owner approval for Guest/Public SUPPORT and exact checkpts shortcut
+        required: true
+        type: string
+      snapshot_activation:
+        description: Allow only the reviewed Checkpts snapshot flag to turn on
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-member-dashboard-chat-worker-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' && inputs.approved_sha == github.sha && inputs.approval_ref != ''
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      BASELINE_VERSION: ${{ inputs.baseline_version }}
+      SOURCE_SHA: ${{ inputs.approved_sha }}
+      MEMBER_REPLY_SNAPSHOT_ACTIVATION: ${{ inputs.snapshot_activation }}
+      NO_COLOR: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Normalize existing Cloudflare credential
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const token = String(process.env.CLOUDFLARE_API_TOKEN || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          if (!token) throw new Error('Cloudflare credential missing');
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          NODE
+      - name: Validate scoped source and release guard
+        run: |
+          grep -Eq '^LINE_AUTO_REPLY_ENABLED = "false"$' member-dashboard-chat-worker/wrangler.toml
+          if [ "$MEMBER_REPLY_SNAPSHOT_ACTIVATION" = "true" ]; then
+            grep -Eq '^LINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "true"$' member-dashboard-chat-worker/wrangler.toml
+          fi
+          node --check member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
+          node --check member-dashboard-chat-worker/src/index.js
+          node --test member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs member-dashboard-chat-worker/test/kenji-line-turn-aggregation.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-webhook.test.mjs member-dashboard-chat-worker/test/rich-menu-navigation-reply.test.mjs member-dashboard-chat-worker/test/rich-menu-membership-response.test.mjs member-dashboard-chat-worker/test/rich-menu-conversation.test.mjs member-dashboard-chat-worker/test/kenji-line-rights-check.test.mjs member-dashboard-chat-worker/src/kenji-line-snapshot.test.mjs member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs member-dashboard-chat-worker/test/kenji-seed-live-truth-cutover.test.mjs member-dashboard-chat-worker/test/line-webhook.test.mjs scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
+      - name: Verify exact active baseline before upload
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { createTransport, ROOT } from './scripts/kenji-code-only-promote.mjs';
+          const call = createTransport(process.env.CLOUDFLARE_API_TOKEN);
+          const deployment = (await call(ROOT + '/deployments')).deployments[0];
+          assert.equal(deployment.versions.length, 1);
+          assert.equal(deployment.versions[0].percentage, 100);
+          assert.equal(deployment.versions[0].version_id, process.env.BASELINE_VERSION);
+          NODE
+      - name: Validate code-only upload bundle
+        working-directory: member-dashboard-chat-worker
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+      - name: Upload inactive code-only candidate
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 versions upload --keep-vars \
+            --tag "per-support-${SOURCE_SHA:0:12}" \
+            --message "Per AI Support source-sha=${SOURCE_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/per-support-upload.log"
+          candidate="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/per-support-upload.log" | tail -n 1)"
+          test -n "$candidate"
+          echo "CANDIDATE_VERSION=$candidate" >> "$GITHUB_ENV"
+      - name: Promote only if code provenance and all live configuration match
+        run: node scripts/kenji-code-only-promote.mjs
+      - name: Release summary
+        run: |
+          echo '### Per AI SUPPORT release' >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source: ${SOURCE_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Baseline: ${BASELINE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Active candidate: ${CANDIDATE_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo '- Guest/Public SUPPORT plus exact checkpts utility; general LINE replies remain paused' >> "$GITHUB_STEP_SUMMARY"
+          echo "- Snapshot activation: ${MEMBER_REPLY_SNAPSHOT_ACTIVATION}" >> "$GITHUB_STEP_SUMMARY"
+          echo '- No route or secret write; snapshot activation permits exactly one reviewed plain-text flag change' >> "$GITHUB_STEP_SUMMARY"

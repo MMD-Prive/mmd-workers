@@ -19,6 +19,8 @@ function baseEnv(overrides = {}) {
     MMS_LINE_AI_MODEL_ENABLED: "false",
     MMS_LINE_CHANNEL_SECRET: "mms-secret",
     MMS_LINE_CHANNEL_ACCESS_TOKEN: "mms-access-token",
+    MMS_LINE_4WOMEN_CHANNEL_SECRET: "mms-4women-secret",
+    MMS_LINE_4WOMEN_CHANNEL_ACCESS_TOKEN: "mms-4women-access-token",
     MMS_WORKER: {
       async fetch(request) {
         const url = new URL(request.url);
@@ -61,9 +63,10 @@ function lineBody(text, overrides = {}) {
   });
 }
 
-async function signedRequest(text, env, overrides = {}) {
+async function signedRequest(text, env, overrides = {}, channel = "male_massage") {
   const body = lineBody(text, overrides);
-  const signature = await createMmsLineSignature(body, env.MMS_LINE_CHANNEL_SECRET);
+  const secret = channel === "male_massage_4_women" ? env.MMS_LINE_4WOMEN_CHANNEL_SECRET : env.MMS_LINE_CHANNEL_SECRET;
+  const signature = await createMmsLineSignature(body, secret);
   return new Request("https://mmdbkk.com/webhooks/line/mms", {
     method: "POST",
     headers: { "content-type": "application/json", "x-line-signature": signature },
@@ -93,6 +96,8 @@ test("MMS webhook health exposes V4 runtime without exposing secrets", async () 
   assert.equal(payload.mutation_allowed, false);
   assert.equal(JSON.stringify(payload).includes("mms-secret"), false);
   assert.equal(JSON.stringify(payload).includes("mms-access-token"), false);
+  assert.equal(JSON.stringify(payload).includes("mms-4women-secret"), false);
+  assert.equal(JSON.stringify(payload).includes("mms-4women-access-token"), false);
 });
 
 test("MMS webhook requires the dedicated MMS LINE signature secret", async () => {
@@ -130,6 +135,26 @@ test("service discovery replies from MMS V4 and uses only MMS LINE token", async
   assert.match(reply, /Office Syndrome/);
   assert.match(reply, /Women Massage/);
   assert.doesNotMatch(reply, /erotic|sexual|Soft Extra|Body to Body/i);
+});
+
+test("4 Women channel signature replies with its own LINE access token", async () => {
+  const env = baseEnv();
+  const calls = [];
+  await withFetchMock(async (url, init = {}) => {
+    calls.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers).entries()), body: init.body ? JSON.parse(init.body) : null });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  }, async () => {
+    const response = await worker.fetch(
+      await signedRequest("มีบริการอะไรบ้าง", env, {}, "male_massage_4_women"),
+      env,
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).knowledge_version, MMS_AI_KNOWLEDGE_VERSION);
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.authorization, "Bearer mms-4women-access-token");
+  assert.notEqual(calls[0].headers.authorization, "Bearer mms-access-token");
 });
 
 test("dynamic price questions do not reuse legacy fixed rates", async () => {

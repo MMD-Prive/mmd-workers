@@ -255,7 +255,7 @@ test("Kenji 2.0 recognizes booking status and Aftercare without inventing protec
 
 test("payment proof routes safely without confirming funds", () => {
   const reply = buildKenjiLineReply(lineTextEvent("ส่งสลิป"));
-  assert.match(reply, /\/member\/payments/);
+  assert.match(reply, /miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=continue_payment/);
   assert.doesNotMatch(reply, /\/confirm\/payment-proof/);
   assert.match(reply, /ไม่ต้องส่งซ้ำ/);
   assert.match(reply, /อัปเดตสถานะอย่างเป็นทางการ/);

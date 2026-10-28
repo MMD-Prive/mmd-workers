@@ -178,7 +178,7 @@ assert.equal(audit.menus.guest.action_labels[4], "MMD STORIES");
 assert.equal(audit.menus.guest.action_types[5], "postback");
 assert.equal(audit.menus.public.action_types[5], "postback");
 assert.equal(audit.menus.private.action_labels[0], "KENJI AI");
-assert.equal(audit.menus.private.action_types[0], "postback");
+assert.equal(audit.menus.private.action_types[0], "uri");
 
 console.log(JSON.stringify({
   ok: true,

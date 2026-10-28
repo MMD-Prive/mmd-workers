@@ -2,6 +2,7 @@ const WORKER = "member-pages-worker";
 const VERSION = "20260929-member-profile-digital-v1";
 const CANONICAL_MEMBERSHIP_PATH = "/sigil/member/membership";
 const LEGACY_MEMBERSHIP_PATH = "/member/membership";
+const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
 
 // ROUTE LOCK
 // /sigil/pay/membership and /pay/membership are membership payment routes.
@@ -310,8 +311,18 @@ function renderBlackCardPaymentBlocked(request) {
 
 function membershipPackageCard(pkg, selected, query) {
   const isSelected = selected === pkg.key;
-  const payUrl = appendQuery("/pay/membership", query, { plan: pkg.key, amount: pkg.price });
+  const payUrl = ["standard", "premium"].includes(pkg.key)
+    ? appendSignupQuery(query)
+    : appendQuery("/pay/membership", query, { plan: pkg.key, amount: pkg.price });
   return `<article class="panel package membership-card${isSelected ? " selected" : ""}"${isSelected ? ' aria-current="true"' : ""}><div><p class="eyebrow">${html(pkg.eyebrow)}</p><h3>${html(pkg.title)}</h3><p>${html(pkg.copy)}</p></div><div class="package-footer"><p class="price"><span>${money(pkg.price)}</span> THB</p><p class="fine">${html(pkg.duration)}</p><p class="actions"><a class="btn" href="${attr(payUrl)}">เลือกแพ็กเกจนี้ <span aria-hidden="true">→</span></a></p></div></article>`;
+}
+
+function appendSignupQuery(query) {
+  const target = new URL(`https://miniapp.line.me/${MEMBER_LIFF_ID}/?intent=signup&view=signup`);
+  const source = new URLSearchParams(query || "");
+  const promo = clean(source.get("promo") || source.get("code")).toLowerCase();
+  if (/^[a-z0-9][a-z0-9_-]{0,62}$/.test(promo)) target.searchParams.set("promo_code", promo);
+  return target.toString();
 }
 
 function nav(query = "") {

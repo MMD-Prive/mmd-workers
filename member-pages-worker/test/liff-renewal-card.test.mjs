@@ -80,18 +80,18 @@ test("Premium offer is 2,500", async () => {
   assert.equal(payload.package_label, "Premium");
 });
 
-test("expired less than one year (grace included) is still offered at the base price", async () => {
+test("expired within 90 days is offered at the original price", async () => {
   const fx = await fixture({ expires: new Date(Date.now() - 5 * 86400000).toISOString() });
   const payload = await (await get(fx)).json();
   assert.equal(payload.status, "ready");
-  assert.equal(payload.price_rule, "expired_less_than_one_year_standard");
+  assert.equal(payload.price_rule, "expired_within_90_days_standard");
   assert.equal(payload.amount_thb, 1000);
 });
 
-test("expired one year or more is sent to signup, with no payment", async () => {
+test("expired beyond 90 days requires owner review without a signup assumption", async () => {
   const fx = await fixture({ expires: new Date(Date.now() - 400 * 86400000).toISOString() });
   const payload = await (await get(fx)).json();
-  assert.equal(payload.status, "signup_instead");
+  assert.equal(payload.status, "contact_owner");
   assert.equal(payload.payment_available, false);
   assert.equal((await post(fx, { package_code: "standard" })).status, 409);
   assert.equal(fx.calls.length, 0);
@@ -205,4 +205,41 @@ test("renewal settlement link is atomically upserted before checkout, without pa
     assert.equal(body.records[0].fields.verified_at, undefined);
     assert.equal(body.records[0].fields.entitlement_granted, undefined);
   } finally { globalThis.fetch = original; }
+});
+
+test('read-only grace session cannot quote or create a renewal payment',async()=>{
+  const fx=await fixture({expires:future()});
+  const state=JSON.parse(fx.kv.map.get(fx.key)); state.read_grace_only=true; fx.kv.map.set(fx.key,JSON.stringify(state));
+  assert.equal((await get(fx)).status,401); assert.equal((await post(fx,{package_code:'standard'})).status,401);
+  assert.equal(fx.calls.length,0);
+});
+test('identity moving during gateway work cannot create a payment for the previous member',async()=>{
+  for(const field of ['line_user_id','member_id','tier','membership_expires_at']) {
+    const fx=await fixture({expires:future()});
+    fx.env.LIFF_GATEWAY_STORE.ensureRenewalPaymentSession=async()=>{
+      const state=JSON.parse(fx.kv.map.get(fx.key));
+      if(field==='line_user_id')state.line_user_id='U'+'b'.repeat(32);
+      else if(field==='member_id')state.member_id='other';
+      else state.member_profile[field]=field==='tier'?'Premium':future()+'changed';
+      fx.kv.map.set(fx.key,JSON.stringify(state));
+    };
+    assert.equal((await post(fx,{package_code:'standard'})).status,409,field); assert.equal(fx.calls.length,0);
+  }
+});
+test('identity moving after payment creation cannot attach its signed link to another account',async()=>{
+  const fx=await fixture({expires:future()}); const original=fx.env.PAYMENTS_WORKER.fetch;
+  fx.env.PAYMENTS_WORKER.fetch=async request=>{
+    const response=await original(request); const state=JSON.parse(fx.kv.map.get(fx.key));
+    state.member_id='other'; fx.kv.map.set(fx.key,JSON.stringify(state)); return response;
+  };
+  const result=await post(fx,{package_code:'standard'}); assert.equal(result.status,503);
+  assert.equal(JSON.parse(fx.kv.map.get(fx.key)).payment_ref,undefined);
+});
+test('foreign payment session id and missing payment reference fail closed',async()=>{
+  for(const invalid of [{session_id:'foreign'}, {payment_ref:''}]) {
+    const fx=await fixture({expires:future()}); const original=fx.env.PAYMENTS_WORKER.fetch;
+    fx.env.PAYMENTS_WORKER.fetch=async request=>Response.json({...await(await original(request)).json(),...invalid});
+    assert.equal((await post(fx,{package_code:'standard'})).status,502);
+    assert.equal(JSON.parse(fx.kv.map.get(fx.key)).payment_ref,undefined);
+  }
 });

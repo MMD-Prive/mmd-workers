@@ -127,6 +127,33 @@ test('signed customer messages produce one bounded LINE reply and no model call 
   } finally { globalThis.fetch = original; }
 });
 
+test('each MMS LINE channel uses its own signature secret and reply access token', async () => {
+  const original = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.line.com/v2/bot/message/reply'.replace('api.line.com','api.line.me'));
+    sent.push({ authorization: options.headers.authorization, body: JSON.parse(options.body) });
+    return Response.json({});
+  };
+  const env = {
+    MMS_LINE_CHANNEL_SECRET: 'legacy-secret',
+    MMS_LINE_CHANNEL_ACCESS_TOKEN: 'legacy-access-token',
+    MMS_LINE_4WOMEN_CHANNEL_SECRET: '4women-secret',
+    MMS_LINE_4WOMEN_CHANNEL_ACCESS_TOKEN: '4women-access-token',
+  };
+  try {
+    const legacy = await signedMmsRequest({ type: 'message', replyToken: 'legacy-reply', message: { type: 'text', text: 'MY MMS' } }, 'legacy-secret');
+    const fourWomen = await signedMmsRequest({ type: 'message', replyToken: '4women-reply', message: { type: 'text', text: 'MY MMS' } }, '4women-secret');
+    assert.equal((await handleMmsLineRequest(legacy, env)).status, 200);
+    assert.equal((await handleMmsLineRequest(fourWomen, env)).status, 200);
+    assert.equal(sent.length, 2);
+    assert.equal(sent[0].authorization, 'Bearer legacy-access-token');
+    assert.equal(sent[0].body.replyToken, 'legacy-reply');
+    assert.equal(sent[1].authorization, 'Bearer 4women-access-token');
+    assert.equal(sent[1].body.replyToken, '4women-reply');
+  } finally { globalThis.fetch = original; }
+});
+
 test('invalid signatures and redelivered events never send a second message', async () => {
   const original = globalThis.fetch; let sends = 0;
   globalThis.fetch = async () => { sends++; return Response.json({}); };

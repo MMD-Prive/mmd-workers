@@ -2,6 +2,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const { summarizeMembershipDates } = require("./membership-date-review.js");
 const { createHash } = require("node:crypto");
 const { AirtableClient } = require("./line-official-legacy/dry-run-import.js");
 const {
@@ -25,6 +26,7 @@ const TABLES = Object.freeze({
   payments: process.env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ",
   points: process.env.AIRTABLE_TABLE_POINTS_LEDGER || "tbl5dfnwjUFMLbnWL",
   intelligence: process.env.AIRTABLE_CLIENT_INTELLIGENCE_EVIDENCE_TABLE || "tblx7NdfHO5iY6qtg",
+  membershipDates: process.env.AIRTABLE_MEMBERSHIP_EVIDENCE_REVIEW_TABLE || "tblWoodj1nWEzazCi",
   reconciliation: process.env.AIRTABLE_CLIENT_LIFECYCLE_RECONCILIATION_TABLE || "tblNV1b5sMC2fQPxt",
 });
 
@@ -222,6 +224,7 @@ function buildServiceSummary(sessionRows = [], paymentRows = [], now = new Date(
       key,
       record_id: clean(row?.id),
       date: sessionDate(row),
+      model_name: typeof fields.model_name === "string" ? fields.model_name.trim().slice(0, 120) : typeof fields["Assigned Model"] === "string" && !/^rec[A-Za-z0-9]+$/.test(fields["Assigned Model"]) ? fields["Assigned Model"].trim().slice(0, 120) : null,
       amount_thb: amount.amount,
       amount_source: amount.source,
       amount_anomaly: amount.anomaly,
@@ -231,7 +234,7 @@ function buildServiceSummary(sessionRows = [], paymentRows = [], now = new Date(
     if (!prior || event.amount_thb > prior.amount_thb || (!prior.date && event.date)) byKey.set(key, event);
   }
 
-  const events = [...byKey.values()].sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
+  const events = [...byKey.values()].filter(event => event.date && event.date <= today).sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
   const lifetimeSpend = events.reduce((sum, event) => sum + event.amount_thb, 0);
   const eligibleEvents = events.filter((event) => event.date && event.date >= cutoff && (!today || event.date <= today));
   const eligibleSpend365 = eligibleEvents.reduce((sum, event) => sum + event.amount_thb, 0);
@@ -262,37 +265,50 @@ function isLegacyAggregatePoint(fields = {}) {
   return key.startsWith("historical_note_total_v2:") || key.startsWith("historical_note_total_v1:");
 }
 
-function summarizeLifetimePoints(rows = []) {
+function summarizeLifetimePoints(rows = [], now = new Date()) {
   const seen = new Set();
-  let balance = 0;
-  let earned = 0;
-  let redeemed = 0;
-  let activeRecords = 0;
-  let legacyAggregates = 0;
-
-  for (const row of rows || []) {
+  const lots = [];
+  let earned = 0, redeemed = 0, activeRecords = 0, legacyAggregates = 0;
+  const timestamp = (row) => dateMs(row?.fields?.posted_at || row?.fields?.created_at || row?.createdTime);
+  const ordered = [...(rows || [])].sort((a, b) => timestamp(a) - timestamp(b));
+  for (const row of ordered) {
     const fields = row?.fields || {};
     const status = token(fields.transaction_status || fields.status);
     if (!["posted", "completed", "verified"].includes(status) || fields.reversed_at) continue;
-    if (isLegacyAggregatePoint(fields)) legacyAggregates += 1;
-    const key = clean(fields.idempotency_key || fields.logical_source_id || fields.transaction_id || row?.id);
+    const key = clean(fields.idempotency_key || fields.logical_source_id || fields.transaction_id || fields.source_event_id || fields.service_event_id || fields.session_id || row?.id);
     if (key && seen.has(key)) continue;
-    if (key) seen.add(key);
     const points = pointValue(fields);
     if (points == null) continue;
+    if (key) seen.add(key);
+    if (isLegacyAggregatePoint(fields)) legacyAggregates += 1;
     activeRecords += 1;
-    balance += points;
-    if (points >= 0) earned += points;
-    else redeemed += Math.abs(points);
+    const enteredAt = timestamp(row);
+    if (points > 0) {
+      earned += points;
+      const expiresAt = dateMs(fields.expires_at) || (enteredAt ? enteredAt + 365 * 86400000 : 0);
+      // Undated awards cannot become spendable merely because this batch ran.
+      lots.push({ remaining: points, enteredAt, expiresAt });
+    } else if (points < 0) {
+      redeemed += Math.abs(points);
+      let remaining = Math.abs(points);
+      for (const lot of lots.filter(lot => enteredAt && lot.enteredAt <= enteredAt && lot.expiresAt >= enteredAt).sort((a, b) => a.expiresAt - b.expiresAt)) {
+        const used = Math.min(lot.remaining, remaining);
+        lot.remaining -= used;
+        remaining -= used;
+        if (!remaining) break;
+      }
+    }
   }
-
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
+  const active = lots.filter(lot => lot.enteredAt <= nowMs && lot.expiresAt > nowMs && lot.remaining > 0);
+  const nearest = active.reduce((value, lot) => Math.min(value, lot.expiresAt), Infinity);
   return {
-    current_points_confirmed: Math.max(0, Math.trunc(balance)),
+    current_points_confirmed: Math.max(0, Math.trunc(active.reduce((sum, lot) => sum + lot.remaining, 0))),
     points_earned_lifetime_ledger: Math.max(0, Math.trunc(earned)),
     points_redeemed_lifetime: Math.max(0, Math.trunc(redeemed)),
     points_active_record_count: activeRecords,
-    points_expiring_30d: 0,
-    nearest_points_expiry: null,
+    points_expiring_30d: active.filter(lot => lot.expiresAt <= nowMs + 30 * 86400000).reduce((sum, lot) => sum + lot.remaining, 0),
+    nearest_points_expiry: Number.isFinite(nearest) ? new Date(nearest).toISOString() : null,
     legacy_aggregate_count: legacyAggregates,
   };
 }
@@ -388,7 +404,7 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
   const backlogCount = pendingReviews.length + unqueuedLegacyCount + privateCandidateCount;
 
   const memberPointRows = pointsRowsForMember(input?.pointsRows || [], member);
-  const points = summarizeLifetimePoints(memberPointRows);
+  const points = summarizeLifetimePoints(memberPointRows, now);
   const pointsMismatch = service.points_earned_lifetime_projected !== points.points_earned_lifetime_ledger;
   const pointsState = !member
     ? "no_member_wallet"
@@ -452,7 +468,9 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
       member_linked: Boolean(member),
       member_match_count: Number(input?.memberMatchCount || (member ? 1 : 0)),
     },
+    membership_dates: summarizeMembershipDates(input?.membershipDateRows || [], clientId, now),
     history_backfill_status: historyStatus,
+    recent_services: service.events.filter(event => event.amount_thb > 0 && !event.amount_anomaly).slice(-5).reverse().map(event => ({ id: `client-service-${event.record_id}`, kind: "booking", occurredAt: event.date, title: "ประวัติใช้บริการ MMD", statusLabel: "Completed", model: event.model_name, totalAmountThb: event.amount_thb, currency: "THB", source: "canonical_session" })),
     source_note_count: sourceNoteCount,
     private_history_candidate_count: privateCandidateCount,
     unqueued_legacy_history_count: unqueuedLegacyCount,
@@ -471,9 +489,9 @@ function buildClientProjection(input, now = new Date(), thresholds = DEFAULT_THR
     lifecycle_status: lifecycle,
     points_policy: {
       thb_per_point: POINT_RATE_THB,
-      expires: false,
-      validity_days: null,
-      mode: "lifetime_total",
+      expires: true,
+      validity_days: 365,
+      mode: "expiring_lots",
       tr_eligible: false,
       completed_jobs_only: true,
     },
@@ -612,7 +630,7 @@ async function runBatchPreload({
   now = new Date(),
   thresholds = DEFAULT_THRESHOLDS,
 } = {}) {
-  const [clients, members, legacy, privateRows, reviews, sessions, payments, points, intelligence, existing] = await Promise.all([
+  const [clients, members, legacy, privateRows, reviews, sessions, payments, points, intelligence, existing, membershipDates] = await Promise.all([
     airtable.list(TABLES.clients),
     airtable.list(TABLES.members),
     airtable.list(TABLES.legacyStaging, { filterByFormula: `FIND("#client",LOWER({line_tags_raw}&""))>0` }),
@@ -623,6 +641,7 @@ async function runBatchPreload({
     airtable.list(TABLES.points),
     airtable.list(TABLES.intelligence).catch(() => []),
     airtable.list(TABLES.reconciliation),
+    airtable.list(TABLES.membershipDates),
   ]);
 
   if (!clients.length || clients.length > 5000) throw new Error(`MY_MMD_PRELOAD_CLIENT_GUARDRAIL:${clients.length}`);
@@ -656,6 +675,7 @@ async function runBatchPreload({
   const sessionsByClient = indexByLinkedClient(sessions, ["Client"]);
   const paymentsByClient = indexByLinkedClient(payments, ["Client"]);
   const intelligenceByClient = indexByLinkedClient(intelligence, ["Client", "client"]);
+  const membershipDatesByClient = indexByLinkedClient(membershipDates, ["client"]);
   const lineCounts = lineIdentityCounts(clients);
   const results = [];
   for (const client of selectedClients) {
@@ -675,6 +695,7 @@ async function runBatchPreload({
       paymentRows: paymentsByClient.get(id) || [],
       pointsRows: points,
       intelligenceRows: intelligenceByClient.get(id) || [],
+      membershipDateRows: membershipDatesByClient.get(id) || [],
     }, now, thresholds));
   }
 
@@ -696,6 +717,7 @@ async function runBatchPreload({
     mode: apply ? "apply" : "dry_run",
     canonical_clients_scanned: selectedClients.length,
     members_scanned: members.length,
+    membership_date_review_rows_scanned: membershipDates.length,
     legacy_history_rows_scanned: legacy.length,
     private_staging_rows_scanned: privateRows.length,
     reviews_scanned: reviews.length,

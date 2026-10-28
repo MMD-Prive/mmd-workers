@@ -84,8 +84,8 @@ export function lifetimePointsFromPreload(preload, memberId = "") {
     currencyLabel: "MMD Points",
     pointsExpire: true,
     expiryPolicy: "lot_365d_from_entry",
-    nearestExpiry: null,
-    expiringPoints: 0,
+    nearestExpiry: projection.nearest_points_expiry || null,
+    expiringPoints: nonNegativeInt(projection.points_expiring_30d),
     policy: "mmd_points_expiring_lots_365d",
     preloadSource: SCHEMA,
     lifetimeServiceSpendThb: money(projection.lifetime_service_spend_thb),
@@ -235,4 +235,28 @@ export async function invalidateMemberHistoryPreload(env, lineUserId, now = new 
   if (!safeLineUserId(lineUserId) || !env.LIFF_IDENTITY_KV?.put) throw new Error("history_cache_unavailable");
   const key = await preloadCacheKey(lineUserId);
   await env.LIFF_IDENTITY_KV.put(`${key}:invalidated`, String(now.getTime()), { expirationTtl: 30 * 24 * 60 * 60 });
+}
+
+/** A small, verified projection for the customer's most recent services. */
+export function recentServicesFromPreload(preload, memberId = "", now = new Date()) {
+  const p = preload?.projection;
+  if (preload?.available !== true || !memberId || p?.member_id !== memberId
+      || p?.identity?.member_linked !== true || p.identity.member_match_count !== 1
+      || p.identity.state === "review_required" || p.history_backfill_status !== "reconciled"
+      || !Array.isArray(p.recent_services)) return null;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const safeName = value => typeof value === "string" && !/rec[A-Za-z0-9]{14}|https?:|@|U[a-f0-9]{32}/i.test(value) ? value.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 120) : null;
+  const seen = new Set();
+  const items = [];
+  for (const row of [...p.recent_services].sort((a,b) => String(b?.occurredAt || "").localeCompare(String(a?.occurredAt || "")))) {
+    if (!row || typeof row.id !== "string" || seen.has(row.id) || row.kind !== "booking" || row.statusLabel !== "Completed"
+        || !/^\d{4}-\d{2}-\d{2}$/.test(row.occurredAt || "") || row.occurredAt > today
+        || !Number.isFinite(row.totalAmountThb) || row.totalAmountThb <= 0 || row.totalAmountThb > 500000) continue;
+    seen.add(row.id);
+    items.push({ id: row.id.slice(0, 120), kind: "booking", occurredAt: row.occurredAt,
+      title: "ประวัติใช้บริการ MMD", statusLabel: "Completed", model: safeName(row.model),
+      totalAmountThb: row.totalAmountThb, currency: "THB", source: "canonical_session" });
+    if (items.length === 5) break;
+  }
+  return items;
 }

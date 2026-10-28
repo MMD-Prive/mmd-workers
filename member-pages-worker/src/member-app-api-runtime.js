@@ -1,3 +1,5 @@
+import { readMemberHistoryPreload, recentServicesFromPreload } from "./member-history-preload.js";
+import { serializeMemberWorlds } from "../../shared/member-worlds.mjs";
 import liffFoundation from "./liff-identity-foundation.js";
 import { fixedTierExpiry } from "./fixed-tier-expiry.js";
 import { readClientBackedHistoryResult } from "./member-app-client-history.js";
@@ -297,9 +299,15 @@ function withIdentityRecovery(membership, state) {
   return { ...membership, identity_recovery: { state } };
 }
 
-export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}) {
+export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}, expectedSession = null) {
   const state = await loadMemberAppSessionState(request, env);
   if (!state?.store?.put) return false;
+  if (expectedSession && (state.session.read_grace_only === true
+    || expectedSession.readGraceOnly || state.lineUserId !== expectedSession.lineUserId
+    || state.session.member_exists !== true || state.session.member_id !== expectedSession.memberId
+    || state.session.member_profile?.tier !== expectedSession.memberProfile?.tier
+    || state.session.member_profile?.membership_status !== expectedSession.memberProfile?.membership_status
+    || state.session.member_profile?.membership_expires_at !== expectedSession.memberProfile?.membership_expires_at)) return false;
   const paymentUrl = canonicalMemberPaymentUrl(input.customerPaymentUrl || input.customer_payment_url);
   const paymentRef = asString(input.paymentRef || input.payment_ref, 220);
   const sessionId = asString(input.sessionId || input.session_id, 220);
@@ -606,6 +614,7 @@ function membershipFromDashboard(data) {
   const level = tier.status === "verified" ? normalizeLevel(tier.value) : "unknown";
   return {
     level,
+    worlds: serializeMemberWorlds(member.worlds),
     couponCardVariant: tier.status === "verified" ? couponCardVariant(tier.value) : null,
     couponCardVerified: tier.status === "verified" && Boolean(couponCardVariant(tier.value)),
     levelVerified: tier.status === "verified" && level !== "unknown",
@@ -675,7 +684,7 @@ function enrichMembership(baseMembership, session, legacy, {
   if (fixedExpiry) {
     expiry = fixedExpiry.expiresAt;
     lifecycle = fixedExpiry.lifecycle;
-    if (membership.status === "expired" || membership.status === "checking") membership.status = "active";
+    if (["active", "expired", "checking"].includes(membership.status)) membership.status = fixedExpiry.lifecycle;
   }
 
   membership.lifecycle = lifecycle;
@@ -946,6 +955,7 @@ async function adaptProfile(request, env, delegate) {
     member_display_name: asString(profile.display_name, 120) || null,
     line_display_name: asString(profile.line_display_name, 120) || null,
     line_connected: true,
+    membership_worlds: serializeMemberWorlds(profile.membership_worlds || profile.customer_360?.membership_worlds),
     membership_tier: matched ? normalizeLevel(profile.tier) : null,
     membership_status: matched ? status : null,
     points_confirmed: matched ? points : null,
@@ -1006,6 +1016,11 @@ async function adaptPoints(request, env, delegate) {
 
 async function adaptHistory(request, env, delegate) {
   const sessionSnapshot = await readMemberAppSession(request, env);
+  if (sessionSnapshot?.lineUserId && sessionSnapshot?.memberId) {
+    const preload = await readMemberHistoryPreload(env, sessionSnapshot.lineUserId).catch(() => null);
+    const recent = recentServicesFromPreload(preload, sessionSnapshot.memberId);
+    if (recent?.length) return Response.json(recent, { headers: { "cache-control": "no-store" } });
+  }
   const result = await readUpstream(request, env, delegate, "/api/member/dashboard");
   if (!result.ok) return result.response;
   const data = asObject(result.payload.data);

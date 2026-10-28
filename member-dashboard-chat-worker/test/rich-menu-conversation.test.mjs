@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createLineSignature } from "../src/index.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
-import { richMenuConversationStart, resolveRichMenuConversation } from "../src/rich-menu-conversation.mjs";
+import { richMenuConversationStart, resolveRichMenuConversation, resolveCheckptsShortcut } from "../src/rich-menu-conversation.mjs";
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "../src/kenji-line-continuity-runtime.mjs";
 
 const MATRIX = "tblS6iRgPjYLBqZJh";
@@ -131,14 +131,62 @@ test("pause blocks repeated guest-models taps and existing continuity without cl
 test("SUPPORT continues renewal, Points and status without confirming truth or changing the payment contract", async () => {
   await conversation(async ({ tap, send, replies }) => {
     await tap("mmd_action=rich_menu&menu=public&button=5");
-    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"], ["ดูคะแนน", "intent=status&view=points"], ["สถานะสมาชิก", "intent=status&view=overview"]]) {
+    for (const [text, route] of [["ต่ออายุ", "intent=renew&view=package"], ["สถานะสมาชิก", "intent=status&view=overview"]]) {
       await send(textEvent(text));
       assert.match(replies.at(-1).messages[0].text, new RegExp(route));
     }
+    await send(textEvent("ดูคะแนน"));
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
     const result = await send(textEvent("ส่งสลิปสมัคร Premium แล้ว"));
     assert.equal(result.body.saved[0].handoff_required, true);
     assert.match(replies.at(-1).messages[0].text, /ยังไม่ยืนยันการชำระเงิน/);
     assert.doesNotMatch(replies.map(r => r.messages[0].text).join("\n"), /ชำระเงินสำเร็จ|อนุมัติแล้ว|Kenji|เคนจิ|api\.openai/);
+  });
+});
+
+test("checkpts selects membership CTAs by verified lifecycle and package tier", () => {
+  const now = Date.parse("2026-10-28T12:00:00Z");
+  const base = { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved", points: { status: "unavailable" } };
+  const standard = resolveCheckptsShortcut({ ...base, membership: { level: "private_standard", label: "Standard", lifecycle: "active", expire_at: "2027-12-01" } }, now);
+  assert.match(standard.text, /ต่ออายุล่วงหน้าได้ถึง 31 ต.ค. 2569/);
+  assert.match(standard.text, /intent=renew&view=package/);
+  assert.match(standard.text, /CARE BACK/);
+  assert.match(standard.text, /Birthday Wish/);
+  assert.match(standard.text, /promotion\/6-years-care-back/);
+
+  const expired = resolveCheckptsShortcut({ ...base, membership: { level: "private_premium", label: "Premium", lifecycle: "expired" } }, now);
+  assert.match(expired.text, /สถานะหมดอายุแล้ว/);
+  assert.match(expired.text, /นับจากวันที่ Verify สำเร็จ/);
+
+  const svip = resolveCheckptsShortcut({ ...base, membership: { level: "svip", label: "SVIP", lifecycle: "active" } }, now);
+  assert.match(svip.text, /ดูแลเป็นรายบุคคล/);
+  assert.doesNotMatch(svip.text, /ต่ออายุล่วงหน้าได้/);
+
+  const inactive = resolveCheckptsShortcut({ ...base, membership: { level: "private_premium", label: "Premium", lifecycle: "inactive" } }, now);
+  assert.match(inactive.text, /ยังแยกไม่ได้ว่า active หรือหมดอายุ/);
+});
+
+test("checkpts stops advertising the October pre-renewal CTA after the campaign cutoff", () => {
+  const afterCutoff = resolveCheckptsShortcut({
+    ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "resolved",
+    membership: { level: "standard", label: "Standard", lifecycle: "active", expire_at: "2027-12-01" },
+    points: { status: "unavailable" },
+  }, Date.parse("2026-11-01T00:00:00+07:00"));
+  assert.doesNotMatch(afterCutoff.text, /ต่ออายุล่วงหน้าได้ถึง 31 ต.ค. 2569/);
+  assert.match(afterCutoff.text, /promotion\/6-years-care-back/);
+});
+
+test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields", async () => {
+  for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
+    env.LINE_AUTO_REPLY_ENABLED = "false";
+    await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
+    assert.match(replies.at(-1).messages[0].text, /checkpts/);
+    const result = await send(textEvent("checkpts"));
+    assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+    assert.match(replies.at(-1).messages[0].text, /promotion\/6-years-care-back/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });
 

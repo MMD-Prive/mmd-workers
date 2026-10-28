@@ -6,6 +6,17 @@ workers_dev = true
 # This also prevents stale mmdbkk.com routes from returning on future deploys.
 routes = []
 
+[triggers]
+# Daily 04:02 Bangkok (21:02 UTC), offset from :00 maintenance.
+# 04:02 Bangkok full rebuild plus a bounded queue-only drain every five
+# minutes. The second cron never re-enumerates Airtable identities.
+crons = ["2 21 * * *", "*/5 * * * *"]
+
+[[d1_databases]]
+binding = "MEMBER_REPLY_DB"
+database_name = "mmd-member-reply-snapshots"
+database_id = "bb7895c6-b2c9-4246-a1e5-2e98cf9599a8"
+
 [vars]
 # LIFF renewal card (PACKAGE view). Off until the owner has tried it on a real phone.
 LIFF_RENEWAL_CARD_ENABLED = "false"
@@ -16,6 +27,12 @@ POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 LIFF_VERIFY_TIMEOUT_MS = "5000"
 LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
 AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
+# Empty by default. During scoped acceptance this may contain only approved
+# line_key hashes; it is never a list of raw LINE identities.
+MEMBER_REPLY_SNAPSHOT_DRAIN_ALLOWLIST = ""
+# Empty by default. Collect-only recovery is inactive unless explicitly
+# allowlisted with SHA-256/24 prefixes by an owner-reviewed release.
+HISTORY_RECOVERY_COLLECT_ALLOWLIST = ""
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_CONSOLE_INBOX = "MMD — Console Inbox"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"

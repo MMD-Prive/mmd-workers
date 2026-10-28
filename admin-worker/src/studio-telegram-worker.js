@@ -1,3 +1,4 @@
+import { MODEL_DISCOVERY_PATH, handleModelDiscoverySettings } from "./model-customer-discovery-settings.js";
 import studioWorker from "./studio-finance-worker.js";
 import { listModelActivationCandidates } from "./index.js";
 import {
@@ -119,6 +120,7 @@ export default {
 
     // Model Dashboard GPS Visibility is a permission preference only. It never
     // accepts or stores coordinates and does not request device location access.
+    if (path === MODEL_DISCOVERY_PATH) return handleModelDiscoverySettings(request, env);
     if (isModelGpsVisibilityRequest(path)) {
       return handleModelGpsVisibilityRequest(request, env);
     }

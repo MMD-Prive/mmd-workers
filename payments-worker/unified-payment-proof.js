@@ -186,16 +186,17 @@ export async function handleUnifiedPaymentIntent(request, env, downstream) {
       payment_ref: canonicalRef,
       payment_type: canonicalStage,
     });
+    const liffRenewal = canonicalStage === "membership" && /^liffrenew_(standard|premium)_[a-f0-9]{24}$/.test(canonicalSession);
     return rebuildJson(response, {
       ...data,
       payment_ref: canonicalRef,
       session_id: canonicalSession,
       customer_t: customerToken,
-      customer_payment_url: paymentPageUrl(customerToken, {
+      customer_payment_url: liffRenewal ? `https://mmdbkk.com/pay/checkout?t=${encodeURIComponent(customerToken)}` : paymentPageUrl(customerToken, {
         package_code: canonicalPackage,
         payment_stage: canonicalStage,
       }),
-      payment_surface: paymentSurface,
+      payment_surface: liffRenewal ? "public" : paymentSurface,
       unified_payment_flow: "v1",
     });
   } catch (error) {

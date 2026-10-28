@@ -146,6 +146,24 @@ test("history recovery uses a fresh batch projection without scanning source tab
   assert.deepEqual(calls.map((call) => call.table), ["tblVv58TCbwh5j1fS", "tblNV1b5sMC2fQPxt"]);
 });
 
+test("collect-only recovery reads source evidence without status or canonical writes", async () => {
+  const writes = [];
+  const env = {
+    LIFF_IDENTITY_KV: {
+      async get() { return null; },
+      async put(...args) { writes.push(["put", args]); },
+      async delete(...args) { writes.push(["delete", args]); },
+    },
+  };
+  const store = { async list() { return []; } };
+  const result = await runMemberHistoryRecovery({ env, store, lineUserId: LINE_ID, collectOnly: true, now: NOW });
+  assert.equal(result.state, "checking");
+  assert.equal(result.reason, "collect_only_evidence_collected");
+  assert.equal(result.current_points_total, null);
+  assert.equal(result.historical_points_added, 0);
+  assert.deepEqual(writes, []);
+});
+
 
 test('owner import invalidation prevents cached and persisted old projections from replacing fresh totals',async()=>{
  const {env}=fakeEnv();
@@ -164,4 +182,28 @@ test('reviewed refresh scans source evidence even when the batch projection is f
  assert.notEqual(result.reason,'batch_preload_ready');
  assert.ok(calls.some(x=>x.table==='tblOs8yyLK09SKrCt'));
  assert.ok(!calls.some(x=>x.table==='tblNV1b5sMC2fQPxt'));
+});
+
+
+
+import {recentServicesFromPreload} from "../src/member-history-preload.js";
+const recentNow = new Date("2026-10-27");
+const recentRow = i => ({id:"service-"+i, kind:"booking", statusLabel:"Completed", occurredAt:"2026-10-"+String(i+1).padStart(2,"0"), model:"Model "+i, totalAmountThb:12000, internal_note:"private"});
+const recentReady = () => ({available:true, projection:{member_id:"member-1", identity:{member_linked:true,member_match_count:1,state:"ready"},history_backfill_status:"reconciled",recent_services:Array.from({length:8},(_,i)=>recentRow(i))}});
+test("recent services exposes only five newest own-member jobs and allowlisted fields", () => {
+  const result=recentServicesFromPreload(recentReady(),"member-1",recentNow);
+  assert.equal(result.length,5); assert.equal(result[0].occurredAt,"2026-10-08");
+  assert.equal(result[0].totalAmountThb,12000); assert.equal(result[0].model,"Model 7");
+  assert.equal(result[0].internal_note,undefined);
+});
+test("another member, ambiguous identity, pending evidence and unavailable preloads fall back", () => {
+  assert.equal(recentServicesFromPreload(recentReady(),"member-2",recentNow),null);
+  for(const mutate of [p=>p.available=false,p=>p.projection.history_backfill_status="review_required",p=>p.projection.identity.member_match_count=2,p=>p.projection.identity.state="review_required"]) {
+    const p=recentReady(); mutate(p); assert.equal(recentServicesFromPreload(p,"member-1",recentNow),null);
+  }
+});
+test("future, missing amounts and duplicates do not appear as customer bills", () => {
+  const p=recentReady(); p.projection.recent_services=[recentRow(0),recentRow(0),{...recentRow(1),totalAmountThb:0},{...recentRow(2),occurredAt:"2027-01-01"},{...recentRow(3),model:"https://private.invalid"}];
+  const result=recentServicesFromPreload(p,"member-1",recentNow);
+  assert.equal(result.length,2); assert.equal(result[0].model,null);
 });
