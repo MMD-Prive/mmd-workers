@@ -68,7 +68,7 @@ function checkptsCta(liveTruth = {}, now = Date.now()) {
     if (isPaidPrivateTier(membership) && open) {
       return `CTA: สมาชิกยังใช้งานอยู่ ต่ออายุล่วงหน้าได้ถึง 31 ต.ค. 2569 เท่านั้นครับ. ดูแพ็กเกจต่ออายุ: ${RENEW_URL}. Verify CARE BACK เพิ่มสมาชิก 1 ปีจากวันหมดอายุจริง; Standard ที่เข้าเงื่อนไขเพิ่ม 180 วัน, Premium เพิ่ม 1 ปี. ${campaign}`;
     }
-    return `CTA: ตรวจตัวเลือกต่ออายุใน MY MMD ได้ที่ ${RENEW_URL}. ${campaign}`;
+    return `CTA: หน้าต่างต่ออายุล่วงหน้าถึง 31 ต.ค. 2569 ปิดแล้วครับ ส่งคำว่า “คุยกับเปอร์” หากต้องการให้ตรวจทางเลือกต่อไป. ${campaign}`;
   }
   if (lifecycle === "expired") {
     return open
