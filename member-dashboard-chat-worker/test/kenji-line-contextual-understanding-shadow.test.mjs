@@ -297,12 +297,12 @@ test("disabled contextual shadow makes zero OpenAI requests", async () => {
   assert.equal(result.model_success, false);
 });
 
-test("production pauses auto replies and contextual OpenAI shadow while rights command configuration is retained", () => {
+test("production enables auto replies while contextual OpenAI shadow stays off", () => {
   const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"false"$/m);
   assert.match(wrangler, /^KENJI_CONTEXTUAL_OPENAI_MODEL\s*=\s*"gpt-4\.1-mini"$/m);
   assert.match(wrangler, /^KENJI_LINE_CONVERSATION_SHADOW_ENABLED\s*=\s*"true"$/m);
-  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
+  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m);
   assert.match(wrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
   assert.match(wrangler, /^KENJI_LINE_RIGHTS_CHECK_MODE\s*=\s*"command"$/m);
   assert.match(wrangler, /^KENJI_LINE_RIGHTS_COMMAND_ENABLED\s*=\s*"true"$/m);

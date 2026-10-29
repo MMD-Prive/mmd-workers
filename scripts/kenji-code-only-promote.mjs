@@ -9,7 +9,8 @@ const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const canonical = value => JSON.stringify(value, (_, item) => item && !Array.isArray(item) && typeof item === 'object'
   ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
-export function validateCandidate(baseline, candidate, sourceSha, snapshotActivation = false) {
+export function validateCandidate(baseline, candidate, sourceSha, snapshotActivation = false, autoReplyActivation = false) {
+  assert.ok(!(snapshotActivation && autoReplyActivation), 'Only one activation may be approved per release');
   assert.match(sourceSha, /^[a-f0-9]{40}$/);
   const annotations = candidate.annotations || {};
   const commitSha = annotations['workers/commit_sha'];
@@ -20,16 +21,17 @@ export function validateCandidate(baseline, candidate, sourceSha, snapshotActiva
   ), 'Candidate source provenance mismatch');
   const baselineConfig = versionConfiguration(baseline);
   const candidateConfig = versionConfiguration(candidate);
-  if (snapshotActivation) {
-    const readFlag = config => config.bindings.find(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED');
+  if (snapshotActivation || autoReplyActivation) {
+    const flag = snapshotActivation ? 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED' : 'LINE_AUTO_REPLY_ENABLED';
+    const readFlag = config => config.bindings.find(item => item.name === flag);
     const before = readFlag(baselineConfig);
     const after = readFlag(candidateConfig);
-    assert.ok(before === undefined || (before.type === 'plain_text' && before.text === 'false'),
-      'Snapshot baseline must be OFF');
+    assert.ok((snapshotActivation && before === undefined) || (before?.type === 'plain_text' && before.text === 'false'),
+      `${flag} baseline must be OFF`);
     assert.equal(after?.type, 'plain_text');
-    assert.equal(after.text, 'true', 'Snapshot candidate must be ON');
+    assert.equal(after.text, 'true', `${flag} candidate must be ON`);
     const normalizedCandidate = { ...candidateConfig,
-      bindings: candidateConfig.bindings.flatMap(item => item.name === 'LINE_MEMBER_REPLY_SNAPSHOT_ENABLED'
+      bindings: candidateConfig.bindings.flatMap(item => item.name === flag
         ? before === undefined ? [] : [before] : [item]) };
     assert.equal(canonical(normalizedCandidate), canonical(baselineConfig), 'Unapproved configuration delta');
   } else {
@@ -38,7 +40,8 @@ export function validateCandidate(baseline, candidate, sourceSha, snapshotActiva
   for (const name of ['LINE_AUTO_REPLY_ENABLED', 'LINE_KENJI_MODEL_ENABLED', 'KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED']) {
     const binding = candidate.resources.bindings.find(item => item.name === name);
     assert.equal(binding?.type, 'plain_text');
-    assert.equal(binding.text, 'false', `${name} must remain OFF`);
+    assert.equal(binding.text, name === 'LINE_AUTO_REPLY_ENABLED' && autoReplyActivation ? 'true' : 'false',
+      `${name} has an unapproved value`);
   }
 }
 
@@ -58,7 +61,7 @@ export function createTransport(token, request = fetch) {
   };
 }
 
-export async function promote({ call, baselineId, candidateId, sourceSha, snapshotActivation = false }) {
+export async function promote({ call, baselineId, candidateId, sourceSha, snapshotActivation = false, autoReplyActivation = false }) {
   for (const id of [baselineId, candidateId]) assert.match(id || '', uuid);
   assert.notEqual(baselineId, candidateId);
   const active = async () => {
@@ -71,7 +74,7 @@ export async function promote({ call, baselineId, candidateId, sourceSha, snapsh
   assert.equal(before.versions[0].version_id, baselineId, 'Active baseline drift');
   const baseline = await call(ROOT + '/versions/' + baselineId);
   const candidate = await call(ROOT + '/versions/' + candidateId);
-  validateCandidate(baseline, candidate, sourceSha, snapshotActivation);
+  validateCandidate(baseline, candidate, sourceSha, snapshotActivation, autoReplyActivation);
   assert.equal((await active()).id, before.id, 'Deployment drift before promotion');
   // One write, no retries even when outcome is unknown.
   const written = await call(ROOT + '/deployments', 'POST', {
@@ -80,15 +83,16 @@ export async function promote({ call, baselineId, candidateId, sourceSha, snapsh
   const after = await active();
   assert.equal(after.id, written.id);
   assert.equal(after.versions[0].version_id, candidateId);
-  validateCandidate(baseline, await call(ROOT + '/versions/' + candidateId), sourceSha, snapshotActivation);
+  validateCandidate(baseline, await call(ROOT + '/versions/' + candidateId), sourceSha, snapshotActivation, autoReplyActivation);
   return { worker: 'member-dashboard-chat-worker', deployment: after.id, version: candidateId,
-    auto_reply: 'OFF', model: 'OFF', config_unchanged: !snapshotActivation,
+    auto_reply: autoReplyActivation ? 'ON' : 'OFF', model: 'OFF', config_unchanged: !(snapshotActivation || autoReplyActivation),
     snapshot_enabled: snapshotActivation, route_writes: 0, secret_writes: 0 };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = await promote({ call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
     baselineId: process.env.BASELINE_VERSION, candidateId: process.env.CANDIDATE_VERSION,
-    sourceSha: process.env.SOURCE_SHA, snapshotActivation: process.env.MEMBER_REPLY_SNAPSHOT_ACTIVATION === 'true' });
+    sourceSha: process.env.SOURCE_SHA, snapshotActivation: process.env.MEMBER_REPLY_SNAPSHOT_ACTIVATION === 'true',
+    autoReplyActivation: process.env.KENJI_AUTO_REPLY_ACTIVATION === 'true' });
   console.log(JSON.stringify(result));
 }

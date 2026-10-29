@@ -55,6 +55,15 @@ test('snapshot activation accepts an absent OFF baseline and no other configurat
   candidate.resources.bindings.find(item => item.name === 'ADMIN_WORKER').service = 'other-worker';
   assert.throws(() => validateCandidate(baseline, candidate, sha, true));
 });
+test('owner-approved LINE auto-reply activation changes only that flag', () => {
+  const candidate = version();
+  candidate.resources.bindings.find(item => item.name === 'LINE_AUTO_REPLY_ENABLED').text = 'true';
+  validateCandidate(version(), candidate, sha, false, true);
+  assert.throws(() => validateCandidate(version(), candidate, sha));
+  assert.throws(() => validateCandidate(version(), candidate, sha, true, true));
+  candidate.resources.bindings.find(item => item.name === 'ADMIN_WORKER').service = 'other-worker';
+  assert.throws(() => validateCandidate(version(), candidate, sha, false, true));
+});
 test('transport rejects routes, secrets, uploads and other Workers before any request', async () => {
   let calls = 0;
   const call = createTransport('fixture', async () => { calls++; });

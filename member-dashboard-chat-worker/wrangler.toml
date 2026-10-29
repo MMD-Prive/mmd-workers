@@ -425,14 +425,13 @@ zone_name = "mmdbkk.com"
 # MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
 # LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
 #
-# Releases must preserve the owner-approved auto-reply pause.
+# Releases must preserve the owner-approved auto-reply setting.
 # --keep-vars does not override explicit values specified here.
 [vars]
 LINE_MEMBER_REPLY_SNAPSHOT_ENABLED = "true"
 MMS_THERAPIST_UI_SOURCE = "native"
-# Re-enabling requires separate owner approval and a deliberate change to
-# both this value and the production release guard.
-LINE_AUTO_REPLY_ENABLED = "false"
+# Owner approved enabling deterministic LINE replies on 2026-10-30.
+LINE_AUTO_REPLY_ENABLED = "true"
 KENJI_LINE_RIGHTS_CHECK_MODE = "command"
 KENJI_LINE_RIGHTS_COMMAND_ENABLED = "true"
 # 2026-10-12: owner paused the bare "สนใจ" auto-reply. Too ambiguous (customer may

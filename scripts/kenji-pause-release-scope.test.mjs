@@ -78,6 +78,16 @@ test('exact rights alias uses manual Kenji-only release and never masks mixed de
 test('owner pause config and guard files skip automatic release', () => {
   assert.equal(deployRequired('push', [config, 'scripts/kenji-pause-release-scope.mjs'], '# old\nLINE_AUTO_REPLY_ENABLED = "true"\nX = "same"', '# paused\nLINE_AUTO_REPLY_ENABLED = "false"\nX = "same"'), false);
 });
+test('exact owner-approved LINE auto-reply activation skips broad release', () => {
+  const files = [config, '.github/workflows/deploy-member-dashboard-chat-worker.yml',
+    '.github/workflows/per-support-code-only-release.yml', 'scripts/kenji-code-only-promote.mjs',
+    'scripts/kenji-code-only-promote.test.mjs', 'scripts/kenji-pause-release-scope.mjs'];
+  const before = 'LINE_AUTO_REPLY_ENABLED = "false"\nX = "same"';
+  const after = 'LINE_AUTO_REPLY_ENABLED = "true"\nX = "same"';
+  assert.equal(deployRequired('push', files, before, after), false);
+  assert.equal(deployRequired('push', [...files, 'mms-member-worker/src/index.js'], before, after), true);
+  assert.equal(deployRequired('push', files, before, after + '\nOTHER = "true"'), true);
+});
 test('test-only correction skips release', () => {
   assert.equal(deployRequired('push', ['member-dashboard-chat-worker/test/kenji-model-only-owner-lock.test.mjs']), false);
 });

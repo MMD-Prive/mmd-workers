@@ -142,9 +142,10 @@ test("signed webhook uses one mocked LINE reply and respects the existing off, s
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test("production reply and model switches remain off; links select Private without payment tokens", () => {
+test("production replies are enabled; model stays off and links select Private without payment tokens", () => {
   const config = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
-  for (const name of ["LINE_AUTO_REPLY_ENABLED", "LINE_KENJI_MODEL_ENABLED", "KENJI_LINE_PRIVATE_INTEREST_ENABLED", "KENJI_LINE_MEMBERSHIP_MENU_ENABLED"]) {
+  assert.match(config, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m);
+  for (const name of ["LINE_KENJI_MODEL_ENABLED", "KENJI_LINE_PRIVATE_INTEREST_ENABLED", "KENJI_LINE_MEMBERSHIP_MENU_ENABLED"]) {
     assert.match(config, new RegExp(`^${name}\\s*=\\s*"false"$`, "m"));
   }
   for (const intent of ["signup", "renew"]) {
