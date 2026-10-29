@@ -6,7 +6,12 @@ import { buildOwnerActionsQueue } from './owner-actions-queue.js';
 import { listMmdNowItems } from '../../member-pages-worker/src/member-updates.js';
 
 export const MY_MMD_OPERATIONS_PATH = '/v1/admin/my-mmd/operations';
-export const isMyMmdOperationsRequest = request => new URL(request.url).pathname.replace(/\/$/, '') === MY_MMD_OPERATIONS_PATH;
+// Reuse the existing exact admin-worker dashboard route; no new zone route is needed.
+export const MY_MMD_OPERATIONS_DASHBOARD_URL = '/v1/admin/dashboard?view=my-mmd-operations';
+export const isMyMmdOperationsRequest = request => {
+  const url = new URL(request.url), path = url.pathname.replace(/\/$/, '');
+  return path === MY_MMD_OPERATIONS_PATH || (path === '/v1/admin/dashboard' && url.searchParams.get('view') === 'my-mmd-operations');
+};
 const headers = { 'cache-control': 'private, no-store', vary: 'Cookie', 'x-content-type-options': 'nosniff' };
 
 export function projectOperations({ dashboard, completeness, drafts, watch }) {
@@ -28,7 +33,9 @@ export async function handleMyMmdOperations(request, env, dependencies = {}) {
   if (request.method !== 'GET') return json({ ok: false, error: 'method_not_allowed' }, 405);
   const actor = await (dependencies.readActor || readCredentialBoundAdminActor)(request, env);
   if (!isOwnerActor(actor)) return json({ ok: false, error: 'owner_required' }, 403);
-  if (new URL(request.url).search) return json({ ok: false, error: 'selectors_not_supported' }, 400);
+  const url = new URL(request.url);
+  const dashboardView = url.pathname === '/v1/admin/dashboard' && [...url.searchParams].length === 1 && url.searchParams.get('view') === 'my-mmd-operations';
+  if (url.search && !dashboardView) return json({ ok: false, error: 'selectors_not_supported' }, 400);
   const readers = dependencies.readers || {
     dashboard: () => buildAdminDashboard(env, { ownerActor: actor }),
     completeness: async () => {
