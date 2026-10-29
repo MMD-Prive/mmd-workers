@@ -655,9 +655,9 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const navigation = richMenuNavigation(event);
     const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
     const checkptsShortcut = isCheckptsShortcut(event);
-    // General replies stay paused. SUPPORT opens the bounded Per AI lane;
-    // Exact Points aliases are a one-shot read of canonical MY MMD truth.
-    let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || (supportReplyEnabled && supportButtonTap)) && directUser &&
+    // General replies stay paused. Rich Menu postbacks use fixed menu replies;
+    // only Guest/Public SUPPORT taps may enter the bounded Per AI lane.
+    let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || supportReplyEnabled) && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
     const currentIntent = checkptsShortcut ? "points_status" : navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));

@@ -62,7 +62,7 @@ test("signed navigation taps send exactly one topic reply without knowledge or a
       assert.equal(result.status, 200);
       assert.equal(result.replies.length, 1);
       if (destinations[menu][index].type === "uri") assert.ok(result.replies[0].messages[0].text.endsWith(destinations[menu][index].uri));
-      else assert.match(result.replies[0].messages[0].text, /พี่เปอร์ดูแลงาน|เช็กสิทธิ์|checkpts/);
+      else assert.match(result.replies[0].messages[0].text, menu === "guest" ? /ฮิโตะ Y1|Checkpts/ : menu === "public" ? /ฮิโตะ 04|Checkpts/ : /Kenji ดูแลสมาชิก Privé บนเว็บ/);
       assert.equal(result.body.saved[0].reply_source, "rich_menu_navigation_v1");
       assert.equal(result.body.saved[0].cta_appended, false);
       assert.equal(result.body.saved[0].continuity_topic, "");
@@ -94,18 +94,23 @@ test("pause silences every installed navigation postback including support witho
   }
 });
 
-test("scoped Per AI replies only to Guest/Public SUPPORT taps while the general LINE pause stays on", async () => {
+test("all Rich Menu buttons get fixed replies while only Guest/Public SUPPORT opens bounded Per AI", async () => {
   const map = getMmdRichMenuActionMap();
   for (const menu of ["guest", "public"]) {
     const support = await run(map[menu][5].data, { auto: false, deterministic: true });
     assert.equal(support.replies.length, 1);
     assert.equal(support.body.saved[0].reply_source, "rich_menu_navigation_v1");
-    assert.match(support.replies[0].messages[0].text, /เปอร์|เช็กสิทธิ์/);
+    assert.match(support.replies[0].messages[0].text, menu === "guest" ? /ฮิโตะ Y1|Checkpts/ : /ฮิโตะ 04|Checkpts/);
     for (const options of [{ kill: true }, { globalKill: true }, { takeover: true }, { mode: "standby" }, { redelivery: true }])
       assert.equal((await run(map[menu][5].data, { auto: false, deterministic: true, ...options })).replies.length, 0);
-    assert.equal((await run(map[menu][1].data, { auto: false, deterministic: true })).replies.length, 0);
+    const navigation = await run(map[menu][1].data, { auto: false, deterministic: true });
+    assert.equal(navigation.replies.length, 1);
+    assert.equal(navigation.body.saved[0].reply_source, "rich_menu_navigation_v1");
   }
-  assert.equal((await run(map.private[5].data, { auto: false, deterministic: true })).replies.length, 0);
+  const privateSupport = await run(map.private[5].data, { auto: false, deterministic: true });
+  assert.equal(privateSupport.replies.length, 1);
+  assert.equal(privateSupport.body.saved[0].reply_source, "rich_menu_navigation_v1");
+  assert.match(privateSupport.replies[0].messages[0].text, /Kenji ดูแลสมาชิก Privé บนเว็บ/);
 });
 
 test("Per AI handles a bounded SUPPORT follow-up and never exposes an unverified Points number", async () => {
