@@ -1424,6 +1424,11 @@ test('V6 uses SIGIL only with the Worker projection, irrespective of tier hints'
     assert.equal(resolveVerifiedCustomerBrand(data, 'canonical_member_account_v1'), 'unresolved');
   }
 });
+test('Public Companion audience requires the dedicated Worker brand authority', () => {
+  assert.equal(resolveVerifiedCustomerBrand({brand_audience:'public'}, 'canonical_member_account_v1'), 'public');
+  assert.equal(resolveVerifiedCustomerBrand({brand_audience:'public'}, ''), 'unresolved');
+  assert.equal(resolveVerifiedCustomerBrand({tier:'Standard',brand_audience:'public'}, 'member_profile_resolver'), 'unresolved');
+});
 
 test('late welcome preserves a verified brand while startup remains neutral', async () => {
   const html=await(await shell('/member/liff?intent=status')).text();
