@@ -2,6 +2,7 @@ import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, crea
 import { createAccountView } from "./liff-account-view.js";
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
+import { MY_MMD_SIGIL_PRIVATE_CSS } from "./liff-sigil-private-theme.js";
 import { customerGraphic, customerIcon, CUSTOMER_GRAPHICS_CSS } from "./liff-customer-graphics.js";
 import { createCustomerProgress, renderCustomerProgress } from "./liff-customer-progress.js";
 import { loadDoubleMomentCard } from "./liff-promotion-client.js";
@@ -297,6 +298,7 @@ function renderShell(config, nonce) {
   ${MY_MMD_PUBLIC_BLEND_CSS}
 ${PERSONAL_MAIN_CSS}
 ${MY_MMD_VERIFICATION_CSS}
+${MY_MMD_SIGIL_PRIVATE_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">

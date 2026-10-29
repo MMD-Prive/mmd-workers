@@ -1304,8 +1304,8 @@ test("native evidence FormData and mutations receive a longer bounded deadline w
 import { CUSTOMER_ICONS_V6 } from '../src/liff-customer-graphics.js';
 import { resolveVerifiedCustomerBrand, createCustomerBrand, renderCustomerBrand, V6_BRAND_ASSETS, CUSTOMER_V6_CSS } from '../src/liff-customer-brand-v6.js';
 
-test('V6 preserves original logo/font bytes and does not distort either aspect ratio',()=>{
- const expected={public:'4084a3ab23756f6090a3a4012f594b8f61ebb64a95ea9759225c01a0fd61985c',private:'ff87e2467cd1c9125bbe9b1e674582f39a5d66c3a1059298ee983dd856f96da7'};
+test('V6 preserves approved Public, SĪGIL Private and font bytes without distorting aspect ratios',()=>{
+ const expected={public:'4084a3ab23756f6090a3a4012f594b8f61ebb64a95ea9759225c01a0fd61985c',private:'48634296ca0751b24d58be42f85d0a1300daea96830f5bffcd5197c35472f04f'};
  for(const [key,value] of Object.entries(V6_BRAND_ASSETS))assert.equal(createHash('sha256').update(Buffer.from(value.split(',')[1],'base64')).digest('hex'),expected[key]);
  const font=CUSTOMER_V6_CSS.match(/data:font\/woff2;base64,([^\)]+)/)[1];assert.equal(createHash('sha256').update(Buffer.from(font,'base64')).digest('hex'),'caf74c95ba957707253e40747d8364c937970df80551ab0766afc073d1fd90d6');
  assert.match(renderCustomerBrand(),/width="256" height="172"/);assert.match(CUSTOMER_V6_CSS,/object-fit:contain;height:auto/);assert.match(CUSTOMER_V6_CSS,/filter:none;transform:none/);
