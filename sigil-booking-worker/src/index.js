@@ -197,7 +197,7 @@ async function handleModelSearch(req, env, url) {
     if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
     if (scope === "public") Object.assign(projected, projectPublicSearchModel(projected, salesContext.rules, requestedAt));
     const visibleRate = scope === "public"
-      ? projected.public_starting_price_thb
+      ? projected.sales_control?.public_starting_price_thb
       : (projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null);
     if (scope === "public" && intent.budget?.provided && (!Number.isFinite(visibleRate) || !priceFitsBudget(visibleRate, intent.budget))) continue;
     if (scope !== "public" && Number.isFinite(visibleRate) && !priceFitsBudget(visibleRate, intent.budget)) continue;
@@ -591,7 +591,10 @@ export function resolvePublicStartingPrice(model = {}, rules = [], requestedAt =
 export function projectPublicSearchModel(model = {}, rules = [], requestedAt = new Date().toISOString()) {
   return {
     ...model,
-    public_starting_price_thb: resolvePublicStartingPrice(model, rules, requestedAt),
+    sales_control: {
+      ...(model.sales_control || {}),
+      public_starting_price_thb: resolvePublicStartingPrice(model, rules, requestedAt),
+    },
   };
 }
 
