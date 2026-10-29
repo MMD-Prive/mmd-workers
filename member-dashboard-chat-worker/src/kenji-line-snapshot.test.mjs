@@ -21,7 +21,8 @@ test("Checkpts uses the bounded snapshot and keeps curated SVIP expiry private",
   assert.equal(called, 1);
   assert.match(answer, /สถานะสมาชิก: SVIP/);
   assert.match(answer, /Points: 320 Points/);
-  assert.match(answer, /วันหมดอายุ: 30\/11\/2026/);
+  assert.match(answer, /วันหมดอายุ: SVIP ไม่มีวันหมดอายุปกติ/);
+  assert.doesNotMatch(answer, /30\/11\/2026/);
 });
 
 test("a missing snapshot cannot become an inferred balance", async () => {
