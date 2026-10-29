@@ -9,3 +9,11 @@ class_name = "CareBackBirthdayWishCoordinator"
 [[migrations]]
 tag = "v1-care-back-birthday-wish-runtime-test"
 new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[[durable_objects.bindings]]
+name = "MEMBER_REMEMBERED_LOGIN"
+class_name = "MemberRememberedLoginStore"
+
+[[migrations]]
+tag = "v2-member-remembered-login-runtime-test"
+new_sqlite_classes = ["MemberRememberedLoginStore"]
