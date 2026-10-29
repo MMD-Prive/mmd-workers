@@ -71,7 +71,7 @@ function checkptsCta(liveTruth = {}, now = Date.now()) {
     : `ดูสิทธิ์และเงื่อนไขล่าสุดได้ที่ ${CARE_BACK_URL}`;
 
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
-    return `CTA: ยืนยันบัญชีผ่าน LINE ในหน้า CARE BACK ก่อน เปอร์จะตรวจสถานะให้ครับ. ${campaign}`;
+    return "";
   }
   if (["active", "expiring_soon", "grace"].includes(lifecycle)) {
     if (isCuratedTier(membership)) {
@@ -94,10 +94,10 @@ function checkptsCta(liveTruth = {}, now = Date.now()) {
 }
 
 function pointsInChatAnswer(liveTruth = {}, now = Date.now(), includeCta = false) {
-  const cta = includeCta ? "\n" + checkptsCta(liveTruth, now) : "";
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
-    return "สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ" + cta;
+    return "ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้\n\nผลนี้ยังไม่ได้หมายความว่าสมาชิกหมดอายุหรือ Points เป็นศูนย์นะครับ หากเคยส่ง Wish หรือยืนยัน LINE แล้ว ไม่ต้องทำซ้ำ ฝากข้อความไว้ในแชตนี้ให้เปอร์ตรวจต่อได้ครับ";
   }
+  const cta = includeCta ? "\n" + checkptsCta(liveTruth, now) : "";
   const points = liveTruth.points || {};
   const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
   const pointText = verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ";
@@ -122,7 +122,8 @@ export function resolveCheckptsShortcut(liveTruth = {}, now = Date.now(), includ
     reply_source: "my_mmd_points_shortcut_v2", model_attempted: false,
     truth_authority: POINTS_AUTHORITY, truth_status: verified ? "verified" : "unavailable",
     live_truth_used: liveTruth.ok === true, live_truth_verified: verified,
-    handoff_required: false, cta_appended: true,
+    handoff_required: false, cta_appended: includeCta && liveTruth.ok === true &&
+      liveTruth.authority === POINTS_AUTHORITY && liveTruth.identity_status === "resolved",
   };
 }
 

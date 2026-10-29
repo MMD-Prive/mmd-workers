@@ -136,13 +136,27 @@ test("SUPPORT continues renewal, Points and status without confirming truth or c
       assert.match(replies.at(-1).messages[0].text, new RegExp(route));
     }
     await send(textEvent("ดูคะแนน"));
-    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุสมาชิก:/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /https?:\/\//);
     const result = await send(textEvent("ส่งสลิปสมัคร Premium แล้ว"));
     assert.equal(result.body.saved[0].handoff_required, true);
     assert.match(replies.at(-1).messages[0].text, /ยังไม่ยืนยันการชำระเงิน/);
     assert.doesNotMatch(replies.map(r => r.messages[0].text).join("\n"), /ชำระเงินสำเร็จ|อนุมัติแล้ว|Kenji|เคนจิ|api\.openai/);
   });
+});
+
+test("unavailable Checkpts uses approved copy without campaigns or repeat verification", () => {
+  const expected = "ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้\n\nผลนี้ยังไม่ได้หมายความว่าสมาชิกหมดอายุหรือ Points เป็นศูนย์นะครับ หากเคยส่ง Wish หรือยืนยัน LINE แล้ว ไม่ต้องทำซ้ำ ฝากข้อความไว้ในแชตนี้ให้เปอร์ตรวจต่อได้ครับ";
+  for (const truth of [{}, { ok: false },
+    { ok: true, authority: "unverified", identity_status: "resolved" },
+    { ok: true, authority: "my_mmd_entitlement_resolver_v1", identity_status: "unknown" }]) {
+    for (const includeCta of [true, false]) {
+      const reply = resolveCheckptsShortcut(truth, Date.parse("2026-10-30T08:00:00+07:00"), includeCta);
+      assert.equal(reply.text, expected);
+      assert.equal(reply.cta_appended, false);
+      assert.equal(reply.truth_status, "unavailable");
+    }
+  }
 });
 
 test("checkpts selects membership CTAs by verified lifecycle and package tier", () => {
@@ -184,8 +198,8 @@ test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields
     assert.match(replies.at(-1).messages[0].text, /Checkpts/);
     const result = await send(textEvent("checkpts"));
     assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
-    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
-    assert.match(replies.at(-1).messages[0].text, /promotion\/6-years-care-back/);
+    assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุสมาชิก:/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /CARE BACK|promotion\/6-years-care-back|CTA:/);
     assert.doesNotMatch(replies.at(-1).messages[0].text, /\d[\d,]*\s*(?:Points|แต้ม)/);
   });
 });
