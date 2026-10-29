@@ -1711,7 +1711,8 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
 
   function renderProfile(data, authority = "", brandAuthority = "") {
     applyWorldTheme(data, authority);
-    customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
+    const verifiedAudience = customerBrand.render(resolveVerifiedCustomerBrand(data, brandAuthority));
+    personalMainUI.setAudience(verifiedAudience);
     currentMemberRef = /^[a-f0-9]{64}$/.test(String(data?.member_binding || "")) ? data.member_binding : "";
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};

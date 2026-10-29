@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createPersonalMainUI} from '../src/liff-personal-main.js';
 function fixture(request){
- const elements=new Map();const node=()=>({hidden:false,disabled:false,textContent:'',value:'',dataset:{},events:{},children:[],addEventListener(e,f){this.events[e]=f},setAttribute(){},focus(){},replaceChildren(){this.children=[]},appendChild(n){this.children.push(n)}});
+ const elements=new Map();const node=()=>({hidden:false,disabled:false,textContent:'',value:'',dataset:{},events:{},children:[],addEventListener(e,f){this.events[e]=f},setAttribute(){},removeAttribute(name){delete this[name]},hasAttribute(name){return Object.hasOwn(this,name)},focus(){},replaceChildren(){this.children=[]},appendChild(n){this.children.push(n)}});
  const get=s=>{if(!elements.has(s))elements.set(s,node());return elements.get(s)};
- const buttons=['hito','hiei','hiro','hima'].map(id=>({...node(),dataset:{pmChoice:id},querySelector:()=>({textContent:id})}));
+ const buttons=['hito','hiei','hiro','hima'].map(id=>{const image={...node(),dataset:{pmPublicSrc:`public-${id}`,pmPrivateSrc:`private-${id}`}};return {...node(),dataset:{pmChoice:id},querySelector:s=>s==='img'?image:{textContent:id}}});
  const root={...node(),querySelector:get,querySelectorAll:s=>s==='[data-pm-choice]'?buttons:[...buttons,...elements.values()],ownerDocument:{createElement:node}};
  return {root,get,buttons,ui:createPersonalMainUI(root,request)};
 }
@@ -47,4 +47,14 @@ test('mismatched saved persona is rejected and empty root supports dock safely',
  assert.equal(f.get('[data-pm-assistant]').hidden,true);
  assert.equal(f.get('[data-pm-retry]').hidden,false);
  assert.doesNotThrow(()=>createPersonalMainUI(null,()=>{}).open());
+});
+test('companion portraits follow only verified audience and clear between accounts',async()=>{
+ const f=fixture(async()=>ok({id:'hito'}));
+ const image=f.buttons[0].querySelector('img');
+ assert.equal(image.src,undefined);
+ f.ui.setAudience('public');assert.equal(image.src,'public-hito');
+ await f.ui.load();assert.equal(f.get('[data-pm-avatar]').src,'public-hito');
+ f.ui.setAudience('private');assert.equal(image.src,'private-hito');assert.equal(f.get('[data-pm-avatar]').src,'private-hito');
+ f.ui.reset();assert.equal(image.src,undefined);assert.equal(f.get('[data-pm-avatar]').src,undefined);
+ f.ui.setAudience('unresolved');assert.equal(image.src,undefined);
 });
