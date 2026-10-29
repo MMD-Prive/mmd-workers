@@ -167,11 +167,11 @@ test("Checkpts has separate replies for unverified Points and unverified identit
     membership: { level: "private_premium", label: "Private Premium", lifecycle: "active", expire_at: "2027-02-03" },
     points: { status: "verified", active_points: 999 },
   } });
-  assert.match(unknown.replies[0].messages[0].text, /^สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ/);
-  assert.match(unknown.replies[0].messages[0].text, /ยืนยันบัญชีผ่าน LINE/);
-  assert.match(unknown.replies[0].messages[0].text, /promotion\/6-years-care-back/);
+  assert.match(unknown.replies[0].messages[0].text, /^ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้/);
+  assert.match(unknown.replies[0].messages[0].text, /ไม่ต้องทำซ้ำ/);
+  assert.doesNotMatch(unknown.replies[0].messages[0].text, /CARE BACK|promotion\/6-years-care-back|CTA:/);
   assert.doesNotMatch(unknown.replies[0].messages[0].text, /999|Private Premium|2027/);
-  assert.match(unknown.replies[0].messages[0].text, /promotion\/6-years-care-back/);
+  assert.doesNotMatch(unknown.replies[0].messages[0].text, /CARE BACK|promotion\/6-years-care-back|CTA:/);
 });
 
 test("Checkpts keeps SVIP indefinite and sends a private-care CTA when Points lookup times out", async () => {
@@ -192,8 +192,8 @@ test("Checkpts keeps SVIP indefinite and sends a private-care CTA when Points lo
     points_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
     membership_status: { httpStatus: 503, body: { ok: false, status: "unavailable" } },
   } });
-  assert.match(unavailable.replies[0].messages[0].text, /^สถานะสมาชิก: ตอนนี้ยังตรวจสถานะจากระบบไม่ได้ครับ\nPoints: ยังยืนยันยอดไม่ได้ครับ\nวันหมดอายุ: ยังตรวจไม่ได้ครับ/);
-  assert.match(unavailable.replies[0].messages[0].text, /promotion\/6-years-care-back/);
+  assert.match(unavailable.replies[0].messages[0].text, /^ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้/);
+  assert.doesNotMatch(unavailable.replies[0].messages[0].text, /CARE BACK|promotion\/6-years-care-back|CTA:/);
 });
 
 test("exact rights alias uses the same Points shortcut inside and outside SUPPORT", async () => {
