@@ -129,6 +129,20 @@ const snapshotActivationPaths = new Set([
   'scripts/kenji-code-only-promote.test.mjs',
   '.github/workflows/per-support-code-only-release.yml',
 ]);
+const autoReplyActivationPaths = new Set([
+  configPath,
+  '.github/workflows/deploy-member-dashboard-chat-worker.yml',
+  '.github/workflows/per-support-code-only-release.yml',
+  'scripts/kenji-model-off-workflow.test.mjs',
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+  'scripts/kenji-code-only-promote.mjs',
+  'scripts/kenji-code-only-promote.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-line-contextual-understanding-shadow.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-line-conversation-history.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-model-only-owner-lock.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-private-membership-navigation.test.mjs',
+]);
 
 // LINE evidence binding uses a code-only release with live bindings preserved.
 // It must never fall through to the legacy MMS deployment and route sync.
@@ -145,6 +159,11 @@ export const LINE_JOB_EVIDENCE_RELEASE_PATHS = new Set([
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.includes(configPath) && files.includes('scripts/kenji-code-only-promote.mjs') &&
+      files.every(file => autoReplyActivationPaths.has(file)) &&
+      /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m.test(beforeConfig) &&
+      /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m.test(afterConfig) &&
+      normalize(beforeConfig) === normalize(afterConfig)) return false;
   if (files.some(file => file === 'member-dashboard-chat-worker/src/checkpts-command.mjs' ||
     file === 'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs')) {
     assert.ok(files.every(file => CHECKPTS_MANUAL_RELEASE_PATHS.has(file) || pausePaths.has(file)),

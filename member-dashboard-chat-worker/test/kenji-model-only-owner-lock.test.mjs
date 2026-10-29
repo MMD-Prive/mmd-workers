@@ -22,11 +22,11 @@ test("owner model-only gate allows only direct Model lookup continuations", () =
   }
 });
 
-test("production pauses auto replies while retaining deterministic configuration and model and First Contact lanes off", async () => {
+test("production enables deterministic auto replies while retaining model and First Contact lanes off", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /KENJI_LINE_MODEL_ONLY_ENABLED\s*=\s*"false"/);
   assert.match(wrangler, /LINE_FIRST_CONTACT_ENABLED\s*=\s*"false"/);
-  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
+  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m);
   assert.match(wrangler, /LINE_KENJI_MODEL_ENABLED\s*=\s*"false"/);
   assert.match(wrangler, /KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"false"/);
   assert.match(wrangler, /LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED\s*=\s*"true"/);
