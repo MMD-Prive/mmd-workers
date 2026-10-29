@@ -7,7 +7,20 @@ import { verifyOwnerApproval, environmentName } from './member-pages-owner-appro
 import {
   ACCOUNT, ROOT, VERSION_ROOT, ZONE, CODE_ONLY_BASE_SHA, CODE_ONLY_SOURCE_SHA, CODE_ONLY_GRAPHICS_SOURCE_SHA, CODE_ONLY_STARTUP_BASE_SHA, CODE_ONLY_STARTUP_PATHS, CODE_ONLY_STARTUP_BRIDGE_BLOBS, CODE_ONLY_PREVIOUS_SOURCE_SHA, CODE_ONLY_GRAPHICS_BASE_SHA, CODE_ONLY_GRAPHICS_PATHS, CODE_ONLY_RUNTIME_BOUNDARIES, CODE_ONLY_INCLUDED_PULL_REQUESTS, CODE_ONLY_EXCLUDED_CHANGE, CODE_ONLY_PATHS, CODE_ONLY_MY_MMD_SOURCE_SHA, CODE_ONLY_MY_MMD_INCLUDED_PULL_REQUESTS, CODE_ONLY_POST_STARTUP_PATHS, CODE_ONLY_SOURCE_CONFIG_BLOB, validateMyMmdSourceHistory, validatePostStartupSourcePaths, activeVersion, createTransport, inspectCodeOnlyCheckouts, releaseMemberPagesCodeOnly,
   buildMemberPagesBundle, uploadMetadata, validateBundleFiles, validateCodeOnlySourcePaths, validateStartupBridge, validateGraphicsSourcePaths, validateCodeOnlySourceHistory, validateBundleSourceMap, versionAnnotations, versionConfiguration,
+  COMPANION_DELTA_BASE_SHA, COMPANION_DELTA_SOURCE_SHA, COMPANION_DELTA_BLOBS, validateCompanionDelta,
 } from './member-pages-code-only-release.mjs';
+
+test('Companion #2843 candidate permits only its six exact reviewed blobs', () => {
+  // History verification belongs to the release checkout guard (fetch-depth: 0).
+  // Unit CI uses a shallow checkout and exercises the scope/blob rejection contract.
+  const paths=Object.keys(COMPANION_DELTA_BLOBS);
+  const readBlob=(sha,path)=>{assert.equal(sha,COMPANION_DELTA_SOURCE_SHA);return COMPANION_DELTA_BLOBS[path];};
+  assert.deepEqual(validateCompanionDelta(paths,readBlob),Object.keys(COMPANION_DELTA_BLOBS).sort());
+  assert.throws(() => validateCompanionDelta([...paths,'member-pages-worker/wrangler.toml'],readBlob));
+  assert.throws(() => validateCompanionDelta([...paths,'package.json'],readBlob));
+  assert.throws(() => validateCompanionDelta(paths.filter(path => path !== paths[0]),readBlob));
+  assert.throws(() => validateCompanionDelta(paths,() => '0'.repeat(40)));
+});
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const sha = CODE_ONLY_SOURCE_SHA;
@@ -749,4 +762,34 @@ for(const [kind,stage,reason] of [
  assert.equal(f.receipts.at(-1).stopped_after,'promotion-attempted-outcome-unknown');
  assert.equal(f.writes(),2);
  assert.doesNotMatch(JSON.stringify(f.receipts),/private-exception-token|private-config-value/);
+});
+
+test('Companion artifact mode rejects baseline drift before any Cloudflare request',async()=>{
+ const f=fixture();f.io.mode='companion-artifact';f.io.sha=COMPANION_DELTA_SOURCE_SHA;
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+ assert.equal(f.calls.length,0);assert.equal(f.writes(),0);
+});
+test('Companion artifact mode rejects missing artifact bytes before upload',async()=>{
+ const f=fixture();const original=f.io.call;
+ const v='d81d1bad-a225-43e5-b731-3a89651b165d';
+ const d='863698ec-9db5-48b0-9558-3a9263666573';
+ f.io.mode='companion-artifact';f.io.sha=COMPANION_DELTA_SOURCE_SHA;
+ f.io.expectedVersion=v;f.io.expectedDeployment=d;
+ f.io.call=async(path,init)=>{
+  if(path===ROOT+'/deployments')return {deployments:[deployment(v,d)]};
+  if(path===ROOT+'/versions/'+v)return version(v);
+  if(path===VERSION_ROOT+'/'+v)return {id:v,annotations:{}};
+  if(path===VERSION_ROOT+'/'+v+'?include=modules')return {id:v,main_module:'worker.js',modules:[]};
+  return original(path,init);
+ };
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));assert.equal(f.writes(),0);
+ assert.equal(f.receipts.at(-1).diagnostic.stage,'CF_BASELINE_SOURCE_CHECK');
+});
+
+test('artifact workflow selects explicit mode under existing owner gate without bundler install',()=>{
+ const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
+ assert.match(workflow,/options:[\s\S]*- companion-artifact/);
+ assert.match(workflow,/RELEASE_MODE: \$\{\{ inputs.execution_mode \}\}/);
+ assert.match(workflow,/Install pinned Wrangler bundler\s+if: inputs.execution_mode != 'companion-artifact'/);
+ assert.match(workflow,/if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'companion-artifact'\s+env:/);
 });

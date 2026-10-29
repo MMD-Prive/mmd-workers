@@ -1,6 +1,7 @@
 // Strict-inherit, code-only release transport for member-pages-worker.
 // Importing this file never contacts GitHub or Cloudflare.
 import assert from 'node:assert/strict';
+import {COMPANION_BASE_VERSION,COMPANION_BASE_DEPLOYMENT,COMPANION_CANDIDATE_SHA256,ACTIVE_ARTIFACT_SHA256,decodeBaselineModule,buildReviewedCompanionArtifact} from './member-pages-artifact-delta.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -21,6 +22,29 @@ export const CODE_ONLY_STARTUP_BASE_SHA = 'ebf5236b6d9a3e9bea28c89db1f6c2e18b8dd
 export const CODE_ONLY_SOURCE_SHA = 'fe5f9d98876b600421c5614efc049ffc890b8adb';
 export const CODE_ONLY_MY_MMD_SOURCE_SHA = '871d99cd9eb1c8d53e1d473160119030dca01d4c';
 export const CODE_ONLY_SOURCE_CONFIG_BLOB = 'e26a9d3436140f381f5d6f55311c43c81e7deb40';
+// #2843 is an isolated candidate scope. The active d81d1bad version was
+// uploaded from an earlier Worker artifact with six in-bundle edits, so this
+// inventory does not authorize changing the executable source pin below.
+export const COMPANION_DELTA_BASE_SHA = '5f7f09bffb6584df5a7322d178b39945fdef1aba';
+export const COMPANION_DELTA_SOURCE_SHA = '7f9c8f9f410a0ed0003d07de0c0675a0a56748d8';
+export const COMPANION_DELTA_BLOBS = {
+  'member-pages-worker/src/liff-customer-brand-v6.js': '2d0ca3be2e7101e71147bc9d3e4b37c78fd9291b',
+  'member-pages-worker/src/liff-member-shell.js': 'adf08770907963156a528241a0a052a9773df90f',
+  'member-pages-worker/src/liff-personal-main-public-images.js': 'e2f2afeb7e9b338eec4514ba98428d1b6932d08e',
+  'member-pages-worker/src/liff-personal-main.js': '6dfa638dbdf1369d2fefabdaf6ef1d66fad6fac9',
+  'member-pages-worker/test/liff-member-shell.test.mjs': 'fcd3eb34c60b3d1f2348f56d8cd74fb50300e9d7',
+  'member-pages-worker/test/liff-personal-main.test.mjs': '472ad05be48c0590e73bc34f1eee8d9bf733da11',
+};
+
+export function validateCompanionDelta(paths, readBlob) {
+  assert.deepEqual([...paths].sort(), Object.keys(COMPANION_DELTA_BLOBS).sort(),
+    'Companion source delta differs from reviewed #2843 paths');
+  for (const [path, expected] of Object.entries(COMPANION_DELTA_BLOBS)) {
+    assert.equal(readBlob(COMPANION_DELTA_SOURCE_SHA, path), expected,
+      'Companion reviewed source blob drift');
+  }
+  return Object.keys(COMPANION_DELTA_BLOBS).sort();
+}
 // Every runtime, test, and build-control path changed since the original startup release.
 // The source pin and exact path inventory prevent a later main change entering this release.
 export const CODE_ONLY_POST_STARTUP_PATHS = [
@@ -352,6 +376,7 @@ export function createTransport(token, request = fetch) {
     const id = '[a-f0-9-]{36}';
     const reads = new RegExp(`^${ROOT}/(deployments(?:/${id})?|versions(?:/${id})?|script-settings|schedules|subdomain)$`, 'i').test(path)
       || new RegExp(`^${VERSION_ROOT}/${id}$`, 'i').test(path)
+      || new RegExp(`^${VERSION_ROOT}/${id}\\?include=modules$`, 'i').test(path)
       || path === `/zones/${ZONE}/workers/routes`;
     const writes = method === 'POST' && [ROOT + '/versions?bindings_inherit=strict', ROOT + '/deployments'].includes(path);
     assert.ok((method === 'GET' && reads) || writes, 'Cloudflare call outside code-only allowlist');
@@ -376,7 +401,13 @@ export async function releaseMemberPagesCodeOnly(io) {
   try {
     await io.approve(diagnostics.mark);
     diagnostics.mark('RELEASE_SOURCE_PIN');
-    assert.equal(io.sha, CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed MY MMD merge');
+    const artifactMode=io.mode==='companion-artifact';
+    assert.ok(io.mode===undefined || artifactMode,'unsupported release mode');
+    assert.equal(io.sha, artifactMode ? COMPANION_DELTA_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed merge');
+    if(artifactMode){
+      assert.equal(io.expectedVersion,COMPANION_BASE_VERSION);
+      assert.equal(io.expectedDeployment,COMPANION_BASE_DEPLOYMENT);
+    }
     assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
     diagnostics.mark('CF_DEPLOYMENT_READ');
@@ -393,11 +424,19 @@ export async function releaseMemberPagesCodeOnly(io) {
     assert.equal(baselineAnnotation?.id, current, 'active version annotation identity mismatch');
     const baselineSourceSha = versionAnnotations(baselineAnnotation)?.['workers/commit_sha'];
     diagnostics.mark('CF_BASELINE_SOURCE_CHECK');
-    assert.match(baselineSourceSha || '', /^[a-f0-9]{40}$/, 'active source provenance missing');
-    state.baseline_source_sha = baselineSourceSha;
+    let artifactBaseline;
+    if(artifactMode){
+      artifactBaseline=decodeBaselineModule(await io.call(VERSION_ROOT+'/'+current+'?include=modules'));
+      state.baseline_artifact_sha256=ACTIVE_ARTIFACT_SHA256;
+      state.delta_source_sha=io.sha;
+    }else{
+      assert.match(baselineSourceSha || '', /^[a-f0-9]{40}$/, 'active source provenance missing');
+      state.baseline_source_sha = baselineSourceSha;
+    }
     diagnostics.mark('CF_CONFIG_CHECK');
     const config = versionConfiguration(baseline);
     const metadata = uploadMetadata(baseline, io.sha);
+    if(artifactMode) metadata.annotations['workers/message']=`member-pages artifact-delta base=${COMPANION_BASE_VERSION} delta-sha=${io.sha} bundle-sha256=${COMPANION_CANDIDATE_SHA256}`;
     state.configuration_digest = digest(config);
     diagnostics.mark('CF_SETTINGS_READ');
     state.settings_digest = digest(await call('/script-settings'));
@@ -425,7 +464,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     state.baseline_deployment = deployment.id;
     state.source_evidence = await io.sourceCheck(diagnostics.mark, baselineSourceSha);
     diagnostics.mark('BUNDLE_BUILD');
-    const module = await io.bundle(baseline);
+    const module = artifactMode ? buildReviewedCompanionArtifact(artifactBaseline) : await io.bundle(baseline);
     diagnostics.mark('BUNDLE_CHECK');
     assert.ok(module instanceof Uint8Array && module.byteLength > 0, 'compiled Worker module required');
     state.bundle_sha256 = createHash('sha256').update(module).digest('hex');
@@ -457,6 +496,15 @@ export async function releaseMemberPagesCodeOnly(io) {
     const exactAnnotations = versionAnnotations(annotationReadback);
     assert.equal(exactAnnotations?.['workers/commit_sha'], metadata.annotations['workers/commit_sha'], 'source SHA annotation mismatch');
     assert.equal(exactAnnotations?.['workers/message'], metadata.annotations['workers/message'], 'source message annotation mismatch');
+    if(artifactMode){
+      const artifact=await io.call(VERSION_ROOT+'/'+uploaded.id+'?include=modules');
+      assert.equal(artifact?.id,uploaded.id,'uploaded artifact identity mismatch');
+      assert.equal(artifact.modules?.length,1,'uploaded artifact module scope mismatch');
+      assert.equal(artifact.modules[0].name,artifact.main_module,'uploaded main module mismatch');
+      assert.equal(createHash('sha256').update(Buffer.from(artifact.modules[0].content_base64 || '', 'base64')).digest('hex'),
+        COMPANION_CANDIDATE_SHA256,'uploaded candidate bytes mismatch');
+    }
+
     diagnostics.mark('UPLOADED_LATEST_READ');
     const versions = (await call('/versions'))?.items;
     diagnostics.mark('UPLOADED_LATEST_CHECK');
@@ -533,27 +581,44 @@ export function buildMemberPagesBundle(dir, sourceDirectory, run = execFileSync)
   return readFileSync(join(dir,'runtime-index.js'));
 }
 
+export function inspectCompanionReleaseCheckout(releaseSha, directory=process.cwd()) {
+  const git=(...args)=>execFileSync('git',args,{cwd:directory,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
+  assert.match(releaseSha || '',/^[a-f0-9]{40}$/);
+  assert.equal(resolve(git('rev-parse','--show-toplevel')),resolve(directory),'checkout root mismatch');
+  assert.equal(git('rev-parse','HEAD'),releaseSha,'release checkout SHA drift');
+  assert.equal(git('status','--porcelain','--untracked-files=all','--ignored'),'','dirty release checkout');
+  git('merge-base','--is-ancestor',COMPANION_DELTA_SOURCE_SHA,releaseSha);
+  const paths=git('diff','--name-only',COMPANION_DELTA_BASE_SHA,COMPANION_DELTA_SOURCE_SHA).split('\n').filter(Boolean);
+  validateCompanionDelta(paths,(sha,path)=>git('rev-parse',sha+':'+path));
+  return {method:'verified-active-artifact-delta',delta_source_sha:COMPANION_DELTA_SOURCE_SHA,
+    baseline_artifact_sha256:ACTIVE_ARTIFACT_SHA256,candidate_sha256:COMPANION_CANDIDATE_SHA256};
+}
+
 async function main() {
   assert.equal(process.argv[2], '--execute-approved', 'explicit approved execution flag required');
   assert.equal(process.env.PRODUCTION_APPROVED, 'true', 'Owner approval input required');
   assert.equal(process.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong Cloudflare account');
   const releaseSha = process.env.GITHUB_SHA;
   const sourceDirectory = process.env.SOURCE_DIRECTORY;
+  const artifactMode=process.env.RELEASE_MODE==='companion-artifact';
+  assert.ok(process.env.RELEASE_MODE===undefined || ['release','companion-artifact'].includes(process.env.RELEASE_MODE),'unsupported release mode');
   const approve = async diagnostic => {
     await verifyOwnerApproval(process.env, fetch, {diagnostic});
-    inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+    if(artifactMode) inspectCompanionReleaseCheckout(releaseSha);
+    else inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
       {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA});
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir,'member-pages-code-only-receipt.json');
   await releaseMemberPagesCodeOnly({
-    sha:CODE_ONLY_MY_MMD_SOURCE_SHA,
+    sha:artifactMode ? COMPANION_DELTA_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA,
+    ...(artifactMode ? {mode:'companion-artifact'} : {}),
     releaseSha,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async (diagnostic, baselineSourceSha) => inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+    sourceCheck: async (diagnostic, baselineSourceSha) => artifactMode ? inspectCompanionReleaseCheckout(releaseSha) : inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
       {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA, baselineSourceSha}),
     bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),
