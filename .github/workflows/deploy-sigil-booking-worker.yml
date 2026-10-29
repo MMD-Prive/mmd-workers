@@ -67,6 +67,7 @@ jobs:
           node --check sigil-booking-worker/src/care-back-trusted-caller.js
           node --test sigil-booking-worker/src/entitlement-runtime-worker.test.js
           node --test sigil-booking-worker/test/care-back-trusted-caller.test.mjs
+          node --test sigil-booking-worker/test/private-search-smoke-contract.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config sigil-booking-worker/wrangler.toml
 
       - name: Upload worker version
@@ -158,8 +159,7 @@ jobs:
             "$CUSTOM_HOST_BASE/sigil/api/models/search?q=__mmd_smoke_no_match__&scope=private&booking_ref=smoke-entitlement-snapshot")"
           cat "$body"
           test "$code" = "200"
-          grep -q '"blocked":true' "$body"
-          grep -q 'private_requires_entitlement_snapshot' "$body"
+          node sigil-booking-worker/test/private-search-smoke-contract.mjs "$body"
 
       - name: Verify legacy Model storage paths are closed
         shell: bash

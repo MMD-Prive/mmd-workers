@@ -6,6 +6,8 @@ on:
       - "sigil-booking-worker/customer-intake-current-access.test.mjs"
       - "sigil-booking-worker/customer-search-policy.test.mjs"
       - "sigil-booking-worker/model-media-search.test.mjs"
+      - "sigil-booking-worker/test/private-search-smoke-contract.mjs"
+      - "sigil-booking-worker/test/private-search-smoke-contract.test.mjs"
       - ".github/workflows/sigil-customer-access-ci.yml"
 permissions:
   contents: read
@@ -22,3 +24,5 @@ jobs:
         run: node --test sigil-booking-worker/customer-intake-current-access.test.mjs sigil-booking-worker/customer-search-policy.test.mjs sigil-booking-worker/src/entitlement-runtime-worker.test.js
       - name: Existing search and media regression
         run: node --test --test-name-pattern='booking discovery requires|runtime entrypoint GET|media gate rechecks|customer Booking rejects Live|customer body and skin filters|Create Job scope filters|MY MODEL visibility selections|SIGIL private denial|filter-only Private' sigil-booking-worker/model-media-search.test.mjs
+      - name: Private no-member smoke contract
+        run: node --test sigil-booking-worker/test/private-search-smoke-contract.test.mjs
