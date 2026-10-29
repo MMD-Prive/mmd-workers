@@ -21,6 +21,11 @@ import { KENJI_CONTEXTUAL_SHADOW_INTERNALS } from "./kenji-line-contextual-under
 // Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
 import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
+import {
+  inferPrivateMembershipNavigation,
+  privateMembershipNavigationReply,
+  resolvePrivateMembershipFollowup,
+} from "./kenji-private-membership-navigation.mjs";
 import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 import {
   CONTEXTUAL_UNDERSTANDING_SHADOW_SMOKE_MODE,
@@ -466,6 +471,8 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(?:comp\s*card|คอมพ์?การ์ด|คอมการ์ด).{0,24}(?:ดู|ขอดู|ตัวอย่าง|standard|สแตนดาร์ด)|(?:อยาก|ขอ).{0,12}(?:ดู|เห็น).{0,12}(?:model|นายแบบ|โปรไฟล์)/i.test(normalized)) return "standard_comp_card_preview";
   if (/(?:เคยใช้บริการที่ไหน|เคยใช้ที่ไหน|ใช้บริการที่ไหนมาก่อน|ไม่เคยใช้บริการ|เคยใช้บริการ)/i.test(normalized)) return "membership_experience";
   if (/(?:งบ|บัดเจต|บัทเจท|budget).{0,24}(?:ต่อครั้ง|ครั้งละ|บริการ)|(?:ครั้งละ|ต่อครั้ง).{0,18}(?:กี่บาท|เท่าไหร่|เท่าไร|งบ|budget)/i.test(normalized)) return "membership_budget";
+  const privateNavigation = inferPrivateMembershipNavigation(text);
+  if (privateNavigation) return privateNavigation;
   if (/(?:standard|premium|สแตนดาร์ด|พรีเมียม|พรีเมี่ยม).{0,28}(?:ต่างกัน|ต่างจาก|เทียบ|เปรียบเทียบ|ข้อแตกต่าง|difference|compare)|(?:ต่างกัน|ต่างจาก|เทียบ|เปรียบเทียบ|ข้อแตกต่าง|difference|compare).{0,28}(?:standard|premium|สแตนดาร์ด|พรีเมียม|พรีเมี่ยม)/i.test(normalized)) return "membership_pricing";
   if (/(?:สนใจ|อยากรู้|สอบถาม|อยากดู).{0,18}(?:สมาชิก|membership|standard|premium|private)/i.test(normalized)) return "membership_interest";
   var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
@@ -965,6 +972,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   let intent = ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
     ? continuityIntent
     : inferredIntent;
+  intent = resolvePrivateMembershipFollowup(text, intent, options?.continuity);
   const priorIntent = asString(options?.continuity?.matrix?.last_customer_intent).toLowerCase();
   if (/^\s*\d[\d,]*(?:\s*(?:บาท|thb))?\s*(?:ครับ|ค่ะ|นะ)?\s*$/i.test(text) && [
     "membership_interest", "membership_experience", "membership_budget", "membership_pricing",
@@ -974,6 +982,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   const activeModel = contextualModelForTurn(text, intent, options);
   const name = asString(profile?.displayName).split(/\s+/).filter(Boolean)[0] || "";
   const prefix = name ? `คุณ ${name} ` : "";
+
+  const privateNavigation = privateMembershipNavigationReply({ intent, text, memberContext: options.verifiedMemberContext });
+  if (privateNavigation) return `${prefix}${privateNavigation}`;
 
   if (event?.type === "follow") {
     return `ครับ ${prefix}พิมพ์เรื่องที่อยากให้ช่วยได้เลยครับ`;
@@ -1099,7 +1110,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_pricing") {
-    return `${prefix}เรื่องเปรียบเทียบ Standard กับ Premium ให้ Per ช่วยตรวจรายละเอียดให้ตรงกับการใช้งานครับ ปกติตั้งงบต่อครั้งไว้ประมาณเท่าไหร่ครับ`;
+    return `${prefix}เดี๋ยวเปอร์ขอตรวจราคาเฉพาะคุณก่อนครับ\nดูแพ็กเกจ Private → https://www.mmdbkk.com/sigil/member/membership`;
   }
 
   if (intent === "payment_center") {
@@ -1201,6 +1212,9 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
 
 export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const fallback = buildKenjiLineReply(event, profile, options);
+  const text = getLineEventText(event);
+  const intent = resolvePrivateMembershipFollowup(text, inferLineIntent(text, event), options?.continuity);
+  if (privateMembershipNavigationReply({ intent, text, memberContext: options.verifiedMemberContext })) return fallback;
   if (!isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)) return fallback;
   const answer = await getPublishedPerVoiceReply(env, inferLineIntent(getLineEventText(event), event));
   return answer || fallback;
@@ -1214,11 +1228,12 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     ? canonicalRichMenuIntent({ data: event?.postback?.data })
     : "";
   const continuityIntent = asString(options?.continuity?.effective_intent);
-  const intent = postbackIntent || (
+  let intent = postbackIntent || (
     ["note_only", "line_event"].includes(inferredIntent) && continuityIntent
       ? continuityIntent
       : inferredIntent
   );
+  intent = resolvePrivateMembershipFollowup(eventText, intent, options?.continuity);
   const lineUserId = getLineUserId({ event });
   const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
 
@@ -1350,6 +1365,26 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access, { clearOnFailure: true });
     const pending = await modelAccessPending(env, lineUserId, "put", query);
     return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true, clearOnFailure: true });
+  }
+
+  // Membership navigation uses the existing verified context, but grants no
+  // rights or offers. Keep it ahead of generic/Public sales knowledge.
+  const privateNavigation = capabilityDecision.capability !== KENJI_CAPABILITIES.PROTECTED_AUTHORITY &&
+    privateMembershipNavigationReply({ intent, text: eventText, memberContext: replyOptions.verifiedMemberContext });
+  if (privateNavigation) {
+    return {
+      text: privateNavigation,
+      fallback: false,
+      reply_source: "private_membership_navigation",
+      model_attempted: false,
+      model_success: false,
+      model_latency_ms: 0,
+      knowledge_hits: 0,
+      guard_blocked: false,
+      guard_reason: "",
+      handoff_required: false,
+      handoff_reason: "",
+    };
   }
 
   const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
@@ -3095,7 +3130,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
           storage_status: "disabled",
           available: false,
         };
-    const effectiveIntent = asString(continuity?.effective_intent) || inferredIntent;
+    const effectiveIntent = resolvePrivateMembershipFollowup(text, asString(continuity?.effective_intent) || inferredIntent, continuity);
     const ownerTakeover = lineBrainEnabled && lineUserId
       ? await getLineOwnerTakeoverState(env, lineUserId, continuity)
       : { ok: true, active: false, reason: "", source: lineBrainEnabled ? "not_applicable" : "line_brain_v1_disabled" };
