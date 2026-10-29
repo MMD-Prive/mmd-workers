@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  customerModelExcluded,
   projectPublicSearchModel,
   resolvePublicStartingPrice,
   sanitizeModelForBooking,
@@ -102,12 +103,34 @@ test("Private or customer-specific pricing never becomes a Public starting price
 });
 
 test("Public projection exposes only the approved profile fields and public price", () => {
-  const projected = projectPublicSearchModel(MODEL, [publicRule()], "2026-10-29T00:00:00.000Z");
+  const projected = projectPublicSearchModel({
+    ...MODEL,
+    model_record_id: "recINTERNAL01",
+    unique_key: "private-unique-key",
+    working_name: "Internal Working Name",
+    nickname: "Internal Nickname",
+    legal_name: "Private Legal Name",
+    public_image_url: "https://drive.example/private.webp",
+  }, [publicRule()], "2026-10-29T00:00:00.000Z");
   assert.equal(projected.sales_control.public_starting_price_thb, 12000);
+  assert.equal(Object.hasOwn(projected, "model_record_id"), false);
+  assert.equal(Object.hasOwn(projected, "working_name"), false);
+  assert.equal(Object.hasOwn(projected, "unique_key"), false);
+  assert.equal(Object.hasOwn(projected, "nickname"), false);
+  assert.equal(Object.hasOwn(projected, "legal_name"), false);
+  assert.equal(Object.hasOwn(projected, "public_image_url"), false);
   assert.deepEqual(
     Object.keys(projected).sort(),
     ["body_type", "display_name", "height_cm", "model_id", "model_key", "sales_control", "skin_tone", "weight_kg"].sort(),
   );
+});
+
+test("Known test model is excluded from customer discovery", () => {
+  assert.equal(customerModelExcluded("rec88tNFcOJwgrQVE"), true);
+  assert.equal(sanitizeModelForBooking({
+    id: "rec88tNFcOJwgrQVE",
+    fields: { working_name: "TEST SIGIL MODEL", can_work_public: true, status: "active" },
+  }, { scope: "public", privateAllowed: false, env: {} }), null);
 });
 
 test("Customer projection omits legal names and storage URLs", () => {

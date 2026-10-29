@@ -834,7 +834,9 @@ test("name search formula excludes private identifiers and storage metadata", as
     const response = await bookingWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/search?q=Atom%20IX&scope=public"), filterEnv);
     const body = await response.json();
     assert.equal(body.ok, true);
-    assert.equal(body.items[0].working_name, "Atom IX");
+    assert.equal(body.items[0].display_name, "Atom IX");
+    assert.equal(Object.hasOwn(body.items[0], "working_name"), false);
+    assert.equal(Object.hasOwn(body.items[0], "model_record_id"), false);
     assert.equal(seen.length, 1);
     assert.match(seen[0], /working_name/);
     assert.match(seen[0], /nickname/);

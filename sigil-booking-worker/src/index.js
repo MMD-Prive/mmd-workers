@@ -36,7 +36,7 @@ const PUBLIC_JOB_V2_FORMATS = new Set([
 const PRIVATE_JOB_TYPE_TOKENS = new Set(["pn", "vip", "private_review"]);
 // Exact records withheld from customer discovery and intake. Names and other
 // registry classifications do not extend this bounded exclusion.
-const CUSTOMER_EXCLUDED_MODEL_IDS = new Set(["rec13E9zF71wnDotX", "rec687cy5e8sx6yLI"]);
+const CUSTOMER_EXCLUDED_MODEL_IDS = new Set(["rec13E9zF71wnDotX", "rec687cy5e8sx6yLI", "rec88tNFcOJwgrQVE"]);
 
 export function customerModelExcluded(recordId) {
   return CUSTOMER_EXCLUDED_MODEL_IDS.has(str(recordId));
@@ -190,12 +190,12 @@ async function handleModelSearch(req, env, url) {
   const allowed = [];
   const requestedAt = body.requested_at || body.preferred_at || body.date_time || url.searchParams.get("requested_at") || new Date().toISOString();
   for (const model of baseModels) {
-    const projected = projectBookingSalesControl(model, salesContext, {
+    let projected = projectBookingSalesControl(model, salesContext, {
       requested_at: requestedAt,
       work_lane: intent.work_lane || model.scope || scope,
     });
     if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
-    if (scope === "public") Object.assign(projected, projectPublicSearchModel(projected, salesContext.rules, requestedAt));
+    if (scope === "public") projected = projectPublicSearchModel(projected, salesContext.rules, requestedAt);
     const visibleRate = scope === "public"
       ? projected.sales_control?.public_starting_price_thb
       : (projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null);
@@ -589,12 +589,69 @@ export function resolvePublicStartingPrice(model = {}, rules = [], requestedAt =
 }
 
 export function projectPublicSearchModel(model = {}, rules = [], requestedAt = new Date().toISOString()) {
+  const projected = {};
+  for (const key of [
+    "model_id",
+    "model_key",
+    "display_name",
+    "height_cm",
+    "weight_kg",
+    "body_type",
+    "skin_tone",
+    "source",
+    "asset_source",
+    "media_source",
+    "preview_approved",
+    "scope",
+    "duration_options",
+    "primary_media_id",
+    "approved_media",
+    "gallery_media",
+  ]) {
+    if (Object.hasOwn(model, key)) projected[key] = model[key];
+  }
+  if (model.offer && typeof model.offer === "object") {
+    projected.offer = projectPublicDurationOffer(model.offer);
+  }
+  projected.sales_control = {
+    public_starting_price_thb: resolvePublicStartingPrice(model, rules, requestedAt),
+  };
+  return projected;
+}
+
+function projectPublicDurationOffer(offer = {}) {
+  const durationOffers = Array.isArray(offer.duration_offers)
+    ? offer.duration_offers.map((row) => ({
+        duration_minutes: Number(row?.duration_minutes),
+        price_visible: row?.price_visible === true,
+        customer_rate_thb: row?.price_visible === true && Number.isFinite(Number(row?.customer_rate_thb))
+          ? Number(row.customer_rate_thb)
+          : null,
+        requires_per_approval: row?.requires_per_approval !== false,
+        rate_review_required: row?.rate_review_required !== false,
+      })).filter((row) => Number.isFinite(row.duration_minutes) && row.duration_minutes > 0)
+    : [];
   return {
-    ...model,
-    sales_control: {
-      ...(model.sales_control || {}),
-      public_starting_price_thb: resolvePublicStartingPrice(model, rules, requestedAt),
-    },
+    price_visible: offer.price_visible === true && Number.isFinite(Number(offer.customer_rate_thb)),
+    customer_rate_thb: offer.price_visible === true && Number.isFinite(Number(offer.customer_rate_thb))
+      ? Number(offer.customer_rate_thb)
+      : null,
+    base_rate_duration_minutes: Number.isFinite(Number(offer.base_rate_duration_minutes))
+      ? Number(offer.base_rate_duration_minutes)
+      : null,
+    requires_per_approval: offer.requires_per_approval !== false,
+    rate_review_required: offer.rate_review_required !== false,
+    duration_options: Array.isArray(offer.duration_options)
+      ? offer.duration_options.map(Number).filter((value) => Number.isFinite(value) && value > 0)
+      : [],
+    duration_offers: durationOffers,
+    requested_duration_minutes: Number.isFinite(Number(offer.requested_duration_minutes))
+      ? Number(offer.requested_duration_minutes)
+      : null,
+    requested_duration_offer: offer.requested_duration_offer && typeof offer.requested_duration_offer === "object"
+      ? durationOffers.find((row) => row.duration_minutes === Number(offer.requested_duration_offer.duration_minutes)) || null
+      : null,
+    work_lane: str(offer.work_lane),
   };
 }
 
