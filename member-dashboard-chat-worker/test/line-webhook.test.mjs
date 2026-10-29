@@ -521,16 +521,16 @@ test("context-free CARE BACK routing accepts narrow typo and mixed variants with
 
   const negativeCases = [
     ["ราคาเท่าไหร่", "pricing_review"],
-    ["สมาชิกมีอะไรบ้าง", "membership"],
+    ["สมาชิกมีอะไรบ้าง", "private_membership_options"],
     ["คะแนนสะสมใช้ยังไง", "points"],
     ["ผมจะไปเที่ยวญี่ปุ่นเดือนกันยายน", "note_only"],
-    ["Standard กับ Premium ต่างกันยังไง", "membership_pricing"],
+    ["Standard กับ Premium ต่างกันยังไง", "private_membership_options"],
   ];
   for (const [text, intent] of negativeCases) assert.equal(inferLineIntent(text, lineTextEvent(text)), intent, text);
 });
 
-test("Standard and Premium comparison is classified and queued for Per review", async () => {
-  const text = "Standard กับ Premium ต่างกันยังไง";
+test("custom membership pricing is still classified and queued for Per review", async () => {
+  const text = "ขอราคาสมาชิกเฉพาะผม";
   const event = lineTextEvent(text);
   assert.equal(inferLineIntent(text, event), "membership_pricing");
 
@@ -539,7 +539,7 @@ test("Standard and Premium comparison is classified and queued for Per review", 
     LINE_KENJI_MODEL_ENABLED: "false",
     LINE_KENJI_KNOWLEDGE_ENABLED: "false",
   });
-  assert.match(decision.text, /ให้ Per ช่วยตรวจรายละเอียด/);
+  assert.match(decision.text, /เปอร์ขอตรวจราคาเฉพาะคุณ/);
   assert.equal(decision.handoff_required, true);
   assert.equal(decision.handoff_reason, "membership_pricing:per_review");
   assert.equal(decision.model_attempted, false);
@@ -577,7 +577,7 @@ test("pricing handoff is persisted before LINE delivery and fails closed on writ
       throw new Error("Unexpected pricing-path egress");
     };
 
-    const text = "Standard กับ Premium ต่างกันยังไง";
+    const text = "ขอราคาสมาชิกเฉพาะผม";
     const event = lineTextEvent(text, {
       mode: "active",
       timestamp: eventTimestamp,
@@ -647,7 +647,7 @@ test("pricing handoff is persisted before LINE delivery and fails closed on writ
     const fallbackText = JSON.parse(fallback.init.body).messages[0].text;
     assert.match(fallbackText, /เปิด MY MMD เพื่อยืนยันตัวตนก่อน/);
     assert.match(fallbackText, /https:\/\/miniapp\.line\.me\//);
-    assert.doesNotMatch(fallbackText, /ให้ Per ช่วยตรวจรายละเอียด|ส่งต่อสำเร็จ/);
+    assert.doesNotMatch(fallbackText, /เปอร์ขอตรวจราคาเฉพาะคุณ|ส่งต่อสำเร็จ/);
     assert.equal(unlinked.calls.some((call) => call.url.includes("tblS6iRgPjYLBqZJh") && ["POST", "PATCH"].includes(call.method)), false);
     assert.equal(unlinked.calls.some((call) => call.url.includes("api.openai.com")), false);
 
@@ -698,7 +698,7 @@ test("pricing handoff replay with an already-persisted Matrix event ID is suppre
   };
 
   try {
-    const text = "Standard กับ Premium ต่างกันยังไง";
+    const text = "ขอราคาสมาชิกเฉพาะผม";
     const event = lineTextEvent(text, { mode: "active", timestamp: Date.now(), message: { id: "msg-pricing-replay", type: "text", text } });
     const env = {
       ...BASE_ENV,

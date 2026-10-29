@@ -341,7 +341,7 @@ test("deterministic pre-model guards cover privacy, availability, complaint, int
     ["ขอคุยกับเปอร์", "per_continuity", /^อยู่ครับ มีอะไรบอกผมได้เลย$/],
     ["เมื่อกี้เราคุยเรื่องอะไรนะ", "context_clarification", /ยังไม่มีบริบทก่อนหน้า/],
     ["แล้วอันแรกสมัครยังไง", "context_clarification", /หมายถึงเรื่อง/],
-    ["Standard กับ Premium ต่างกันยังไง", "membership_pricing", /ให้ Per ช่วยตรวจรายละเอียด/],
+    ["ขอราคาสมาชิกเฉพาะผม", "membership_pricing", /เปอร์ขอตรวจราคาเฉพาะคุณ/],
   ];
   const originalFetch = globalThis.fetch;
   let modelCalls = 0;
