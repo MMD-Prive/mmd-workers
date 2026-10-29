@@ -20,5 +20,6 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: node --test admin-worker/owner-job-edit.test.mjs admin-worker/owner-job-edit-ui.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs admin-worker/job-confirmation-reissue.test.mjs admin-worker/model-job-preview.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/confirmation-details.test.mjs
+      - run: node --test admin-worker/owner-job-edit.test.mjs admin-worker/owner-job-edit-ui.test.mjs admin-worker/owner-job-edit-recovery.test.mjs admin-worker/admin-login-active-entrypoint.test.mjs admin-worker/job-confirmation-reissue.test.mjs admin-worker/model-job-preview.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/confirmation-details.test.mjs
       - run: npx --yes esbuild@0.25.5 admin-worker/src/admin-login-hero-worker.js --bundle --format=esm --platform=browser --external:cloudflare:workers --external:node:* --outfile=/tmp/admin-owner-edit.js
+
