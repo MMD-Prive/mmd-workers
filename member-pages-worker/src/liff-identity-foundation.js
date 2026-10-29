@@ -1925,7 +1925,7 @@ function fallbackScreen(key) {
     };
   }
   if (key === "renew_member_lookup") {
-    return { key, copy: "HYPE จะตรวจสอบข้อมูลสมาชิกอย่างระมัดระวังก่อนพาไปต่อครับ", actions: [] };
+    return { key, copy: "ยังยืนยันข้อมูลสมาชิกจาก LINE นี้ไม่ได้ครับ กรุณาติดต่อเปอร์ให้ตรวจการผูกบัญชีก่อนชำระเงินหรือส่งสลิป", actions: [] };
   }
   if (key === "status_result") {
     return { key, copy: "HYPE กำลังดูแลเส้นทางตรวจสอบข้อมูลสมาชิกให้อย่างปลอดภัยครับ", actions: [] };

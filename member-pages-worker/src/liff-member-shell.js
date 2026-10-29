@@ -2132,6 +2132,60 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       show("กำลังเตรียมแพ็กเกจสมัครสมาชิกใน LINE ครับ");
       return;
     }
+    if (screen.key === "renew_member_lookup") {
+      const lookupCopy = {
+        th: {
+          waiting: "ยังยืนยันข้อมูลสมาชิกจาก LINE นี้ไม่ได้ครับ กรุณาติดต่อเปอร์ให้ตรวจการผูกบัญชีก่อนชำระเงินหรือส่งสลิป",
+          retry: "ตรวจสมาชิกอีกครั้ง",
+          checking: "กำลังตรวจข้อมูลสมาชิกจากระบบอีกครั้งครับ",
+          unresolved: "ยังยืนยันสมาชิกไม่ได้ครับ กรุณาติดต่อเปอร์ให้ตรวจ LINE กับข้อมูลสมาชิกก่อนชำระเงินหรือส่งสลิป",
+          found: "ยืนยันข้อมูลสมาชิกแล้วครับ กำลังเปิด MY MMD",
+        },
+        en: {
+          waiting: "We could not verify a member record for this LINE account. Contact Per to check the account link before paying or uploading a slip.",
+          retry: "Check membership again",
+          checking: "Checking the member record again.",
+          unresolved: "Membership is still unverified. Contact Per to check this LINE account before paying or uploading a slip.",
+          found: "Membership verified. Opening MY MMD.",
+        },
+        zh: {
+          waiting: "目前无法确认此 LINE 账号的会员资料。付款或上传凭证前，请联系 Per 检查账号绑定。",
+          retry: "重新检查会员资料",
+          checking: "正在重新检查会员资料。",
+          unresolved: "会员身份仍未确认。付款或上传凭证前，请联系 Per 检查此 LINE 账号。",
+          found: "会员资料已确认，正在打开 MY MMD。",
+        },
+      };
+      const messages = lookupCopy[locale] || lookupCopy.th;
+      show(messages.waiting);
+      actions.replaceChildren();
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = messages.retry;
+      retry.addEventListener("click", async () => {
+        if (busy) return;
+        setBusy(true);
+        retry.disabled = true;
+        show(messages.checking);
+        try {
+          const profile = await readProfile({ hydrate: false, silent: true });
+          if (!/^[a-f0-9]{64}$/i.test(String(profile?.member_binding || ""))) {
+            show(messages.unresolved);
+            return;
+          }
+          actions.replaceChildren();
+          show(messages.found);
+          await hydrateMemberHome();
+        } catch {
+          show(messages.unresolved);
+        } finally {
+          setBusy(false);
+          retry.disabled = false;
+        }
+      });
+      actions.append(retry);
+      return;
+    }
     if (screen.key === "start_intent") {
       if (appStatus) appStatus.textContent = "";
     } else {
