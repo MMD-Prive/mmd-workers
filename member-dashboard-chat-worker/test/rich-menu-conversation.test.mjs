@@ -106,24 +106,24 @@ test("delivered Rich Menu -> membership -> Standard/Premium -> Per handoff works
   });
 });
 
-test("pause blocks repeated guest-models taps and existing continuity without clearing intake", async () => {
+test("fixed menu replies stay available while general auto reply is paused; other continuity stays silent", async () => {
   await conversation(async ({ tap, send, replies, env }) => {
     await tap("mmd_action=rich_menu&menu=guest&button=1");
     assert.equal(replies.length, 1);
     env.LINE_AUTO_REPLY_ENABLED = "false";
-    for (const action of [
-      () => tap("mmd_action=rich_menu&menu=guest&button=1"),
-      () => tap("mmd_action=rich_menu&menu=guest&button=1"),
-      () => send(textEvent("สวัสดีครับ")),
-      () => send(textEvent("Standard")),
-      () => send(textEvent("ขอรายละเอียดครับ")),
-    ]) {
-      const result = await action();
+    for (const _ of [1, 2]) {
+      const result = await tap("mmd_action=rich_menu&menu=guest&button=1");
+      assert.equal(result.status, 200);
+      assert.equal(result.body.saved[0].replied, true);
+      assert.equal(result.body.saved[0].reply_source, "rich_menu_navigation_v1");
+    }
+    for (const message of ["สวัสดีครับ", "Standard", "ขอรายละเอียดครับ"]) {
+      const result = await send(textEvent(message));
       assert.equal(result.status, 200);
       assert.equal(result.body.saved[0].replied, false);
       assert.equal(result.body.saved[0].reply_source, "silent");
     }
-    assert.equal(replies.length, 1);
+    assert.equal(replies.length, 3);
     assert.equal(env.LINE_KENJI_MODEL_ENABLED, "false");
   });
 });
@@ -181,7 +181,7 @@ test("Guest/Public SUPPORT offers checkpts and answers with three in-chat fields
   for (const menu of ["guest", "public"]) await conversation(async ({ tap, send, replies, env }) => {
     env.LINE_AUTO_REPLY_ENABLED = "false";
     await tap(`mmd_action=rich_menu&menu=${menu}&button=5`);
-    assert.match(replies.at(-1).messages[0].text, /checkpts/);
+    assert.match(replies.at(-1).messages[0].text, /Checkpts/);
     const result = await send(textEvent("checkpts"));
     assert.equal(result.body.saved[0].reply_source, "my_mmd_points_shortcut_v2");
     assert.match(replies.at(-1).messages[0].text, /สถานะสมาชิก:.*\nPoints:.*\nวันหมดอายุ:/);
