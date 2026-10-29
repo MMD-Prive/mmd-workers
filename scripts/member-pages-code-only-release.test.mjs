@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,10 +11,10 @@ import {
 } from './member-pages-code-only-release.mjs';
 
 test('Companion #2843 candidate permits only its six exact reviewed blobs', () => {
-  const git = (...args) => execFileSync('git', args, {encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
-  const paths = git('diff','--name-only',COMPANION_DELTA_BASE_SHA,COMPANION_DELTA_SOURCE_SHA)
-    .split('\n').filter(Boolean);
-  const readBlob = (sha,path) => git('rev-parse',`${sha}:${path}`);
+  // History verification belongs to the release checkout guard (fetch-depth: 0).
+  // Unit CI uses a shallow checkout and exercises the scope/blob rejection contract.
+  const paths=Object.keys(COMPANION_DELTA_BLOBS);
+  const readBlob=(sha,path)=>{assert.equal(sha,COMPANION_DELTA_SOURCE_SHA);return COMPANION_DELTA_BLOBS[path];};
   assert.deepEqual(validateCompanionDelta(paths,readBlob),Object.keys(COMPANION_DELTA_BLOBS).sort());
   assert.throws(() => validateCompanionDelta([...paths,'member-pages-worker/wrangler.toml'],readBlob));
   assert.throws(() => validateCompanionDelta([...paths,'package.json'],readBlob));

@@ -54,7 +54,7 @@ test('recovery job refuses missing authorization, automatic triggers, baseline o
 test('upload and recovery execution steps are mutually exclusive and source remains pinned',()=>{
  const release=jobs.get('release');
  assert.match(release,/ref: fe5f9d98876b600421c5614efc049ffc890b8adb/);
- assert.match(release,/Upload and promote exact source with strict binding inheritance\n        if: inputs.execution_mode == 'release'/);
+ assert.match(release,/Upload and promote reviewed code with strict binding inheritance\n        if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'companion-artifact'/);
  assert.match(release,/Promote only the verified existing startup version\n        if: inputs.execution_mode == 'promote-existing'/);
  assert.match(release,/EXPECTED_UPLOADED_VERSION: eef80a0c-afb7-4abc-bd91-6b02f5440d02/);
  assert.match(release,/node scripts\/member-pages-recovery-adapter.mjs --execute-approved/);
