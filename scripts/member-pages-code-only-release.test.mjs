@@ -771,8 +771,8 @@ test('Companion artifact mode rejects baseline drift before any Cloudflare reque
 });
 test('Companion artifact mode rejects missing artifact bytes before upload',async()=>{
  const f=fixture();const original=f.io.call;
- const v='d81d1bad-a225-43e5-b731-3a89651b165d';
- const d='863698ec-9db5-48b0-9558-3a9263666573';
+ const v='641cea01-6986-45d4-be33-2346bd6c28fb';
+ const d='e6eb7c7a-fe50-45fd-b7a2-8f1fdefcc16c';
  f.io.mode='companion-artifact';f.io.sha=COMPANION_DELTA_SOURCE_SHA;
  f.io.expectedVersion=v;f.io.expectedDeployment=d;
  f.io.call=async(path,init)=>{

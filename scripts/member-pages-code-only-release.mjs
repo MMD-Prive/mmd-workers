@@ -1,7 +1,7 @@
 // Strict-inherit, code-only release transport for member-pages-worker.
 // Importing this file never contacts GitHub or Cloudflare.
 import assert from 'node:assert/strict';
-import {COMPANION_BASE_VERSION,COMPANION_BASE_DEPLOYMENT,COMPANION_CANDIDATE_SHA256,ACTIVE_ARTIFACT_SHA256,decodeBaselineModule,buildReviewedCompanionArtifact} from './member-pages-artifact-delta.mjs';
+import {COMPANION_BASE_VERSION,COMPANION_BASE_DEPLOYMENT,COMPANION_CANDIDATE_SHA256,ACTIVE_ARTIFACT_SHA256,decodeBaselineModule,buildReviewedCompanionModules,verifyUploadedCompanionModules,COMPANION_MAIN_MODULE,COMPANION_WRAPPER_SHA256} from './member-pages-artifact-delta.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -428,6 +428,8 @@ export async function releaseMemberPagesCodeOnly(io) {
     if(artifactMode){
       artifactBaseline=decodeBaselineModule(await io.call(VERSION_ROOT+'/'+current+'?include=modules'));
       state.baseline_artifact_sha256=ACTIVE_ARTIFACT_SHA256;
+      state.preserved_wrapper_sha256=COMPANION_WRAPPER_SHA256;
+      delete state.source_sha;
       state.delta_source_sha=io.sha;
     }else{
       assert.match(baselineSourceSha || '', /^[a-f0-9]{40}$/, 'active source provenance missing');
@@ -436,6 +438,10 @@ export async function releaseMemberPagesCodeOnly(io) {
     diagnostics.mark('CF_CONFIG_CHECK');
     const config = versionConfiguration(baseline);
     const metadata = uploadMetadata(baseline, io.sha);
+    if(artifactMode){
+      metadata.main_module=COMPANION_MAIN_MODULE;
+      delete metadata.annotations['workers/commit_sha'];
+    }
     if(artifactMode) metadata.annotations['workers/message']=`member-pages artifact-delta base=${COMPANION_BASE_VERSION} delta-sha=${io.sha} bundle-sha256=${COMPANION_CANDIDATE_SHA256}`;
     state.configuration_digest = digest(config);
     diagnostics.mark('CF_SETTINGS_READ');
@@ -464,7 +470,8 @@ export async function releaseMemberPagesCodeOnly(io) {
     state.baseline_deployment = deployment.id;
     state.source_evidence = await io.sourceCheck(diagnostics.mark, baselineSourceSha);
     diagnostics.mark('BUNDLE_BUILD');
-    const module = artifactMode ? buildReviewedCompanionArtifact(artifactBaseline) : await io.bundle(baseline);
+    const artifactModules=artifactMode ? buildReviewedCompanionModules(artifactBaseline) : null;
+    const module = artifactMode ? artifactModules.find(m=>m.name==='runtime-index.js').bytes : await io.bundle(baseline);
     diagnostics.mark('BUNDLE_CHECK');
     assert.ok(module instanceof Uint8Array && module.byteLength > 0, 'compiled Worker module required');
     state.bundle_sha256 = createHash('sha256').update(module).digest('hex');
@@ -474,7 +481,9 @@ export async function releaseMemberPagesCodeOnly(io) {
 
     const form = new FormData();
     form.set('metadata', JSON.stringify(metadata));
-    form.set('worker.js', new Blob([module], { type: 'application/javascript+module' }), 'worker.js');
+    if(artifactMode){
+      for(const item of artifactModules)form.set(item.name,new Blob([item.bytes],{type:'application/javascript+module'}),item.name);
+    }else form.set('worker.js', new Blob([module], { type: 'application/javascript+module' }), 'worker.js');
     save('upload-attempted-outcome-unknown');
     diagnostics.mark('UPLOAD_REQUEST');
     const uploaded = await call('/versions?bindings_inherit=strict', { method: 'POST', body: form });
@@ -498,11 +507,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     assert.equal(exactAnnotations?.['workers/message'], metadata.annotations['workers/message'], 'source message annotation mismatch');
     if(artifactMode){
       const artifact=await io.call(VERSION_ROOT+'/'+uploaded.id+'?include=modules');
-      assert.equal(artifact?.id,uploaded.id,'uploaded artifact identity mismatch');
-      assert.equal(artifact.modules?.length,1,'uploaded artifact module scope mismatch');
-      assert.equal(artifact.modules[0].name,artifact.main_module,'uploaded main module mismatch');
-      assert.equal(createHash('sha256').update(Buffer.from(artifact.modules[0].content_base64 || '', 'base64')).digest('hex'),
-        COMPANION_CANDIDATE_SHA256,'uploaded candidate bytes mismatch');
+      verifyUploadedCompanionModules(artifact,uploaded.id);
     }
 
     diagnostics.mark('UPLOADED_LATEST_READ');

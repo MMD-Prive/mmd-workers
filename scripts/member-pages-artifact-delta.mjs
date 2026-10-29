@@ -25,8 +25,8 @@ export function applyReviewedArtifactDelta(baseline, edits, expectedBaselineHash
   return Buffer.concat(parts);
 }
 
-export const COMPANION_BASE_VERSION = 'd81d1bad-a225-43e5-b731-3a89651b165d';
-export const COMPANION_BASE_DEPLOYMENT = '863698ec-9db5-48b0-9558-3a9263666573';
+export const COMPANION_BASE_VERSION = '641cea01-6986-45d4-be33-2346bd6c28fb';
+export const COMPANION_BASE_DEPLOYMENT = 'e6eb7c7a-fe50-45fd-b7a2-8f1fdefcc16c';
 export const COMPANION_CANDIDATE_SHA256 = '026d466d8249fcae4d53bff08b2fdc7e8910d9930ff1fc330327b68117c008f5';
 export function buildReviewedCompanionArtifact(baseline) {
   const raw = readFileSync(new URL('./member-pages-companion-delta.json',import.meta.url));
@@ -41,13 +41,36 @@ export function buildReviewedCompanionArtifact(baseline) {
   assert.equal(hash(candidate),COMPANION_CANDIDATE_SHA256,'candidate artifact drift');
   return candidate;
 }
+
+export const COMPANION_MAIN_MODULE='tmib-release-entry.mjs';
+export const COMPANION_WRAPPER_SHA256='c596373634775859181796ef3ac36865921541b192ea52ba09931a40505bf789';
+// Inventory validation is reusable for small synthetic fixtures; release callers
+// always supply the fixed reviewed hashes below.
+export function verifyModuleInventory(version, expectedId, expectedMain, hashes) {
+  assert.equal(version?.id,expectedId,'artifact version drift');
+  assert.equal(version.main_module,expectedMain,'artifact main module drift');
+  assert.ok(Array.isArray(version.modules));
+  assert.deepEqual(version.modules.map(m=>m.name).sort(),Object.keys(hashes).sort(),'artifact module inventory drift');
+  return version.modules.map(module=>{
+    assert.ok(typeof module.content_base64==='string' && module.content_base64.length>0);
+    const bytes=Buffer.from(module.content_base64,'base64');
+    assert.equal(hash(bytes),hashes[module.name],'artifact module bytes drift');
+    return {name:module.name,bytes};
+  });
+}
 export function decodeBaselineModule(version) {
-  assert.equal(version?.id,COMPANION_BASE_VERSION,'baseline module version drift');
-  assert.equal(version.modules?.length,1,'single module baseline required');
-  const module=version.modules[0];
-  assert.equal(module.name,version.main_module,'main module identity mismatch');
-  assert.ok(typeof module.content_base64==='string' && module.content_base64.length>0);
-  const bytes=Buffer.from(module.content_base64,'base64');
-  assert.equal(hash(bytes),ACTIVE_ARTIFACT_SHA256,'active artifact drift');
-  return bytes;
+  return verifyModuleInventory(version,COMPANION_BASE_VERSION,COMPANION_MAIN_MODULE,{
+    'runtime-index.js':ACTIVE_ARTIFACT_SHA256,
+    [COMPANION_MAIN_MODULE]:COMPANION_WRAPPER_SHA256,
+  });
+}
+export function buildReviewedCompanionModules(modules) {
+  return modules.map(module=>({name:module.name,bytes:module.name==='runtime-index.js'
+    ? buildReviewedCompanionArtifact(module.bytes) : module.bytes}));
+}
+export function verifyUploadedCompanionModules(version,id) {
+  return verifyModuleInventory(version,id,COMPANION_MAIN_MODULE,{
+    'runtime-index.js':COMPANION_CANDIDATE_SHA256,
+    [COMPANION_MAIN_MODULE]:COMPANION_WRAPPER_SHA256,
+  });
 }
