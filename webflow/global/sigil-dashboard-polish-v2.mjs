@@ -108,5 +108,9 @@ html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-actions a{
 html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-summary article{padding:10px 12px}
 html[data-sigil-internal-theme="silver-orange-v1"]:root #adm27 .adm27-summary strong{font-size:22px;margin-top:4px}
 }
+/* Keep Dashboard shortcuts in document flow, clear of the fixed AI/owner controls. */
+html[data-sigil-internal-theme="silver-orange-v1"] body:has(#adm27) #mmdK{position:static!important;inset:auto!important;box-sizing:border-box;width:auto!important;max-width:calc(100% - 24px)!important;margin:16px 12px calc(96px + env(safe-area-inset-bottom,0px))!important;display:flex!important;flex-wrap:wrap!important;gap:8px!important}
+html[data-sigil-internal-theme="silver-orange-v1"] body:has(#adm27) #mmdK>:is(strong,b){flex-basis:100%}
+html[data-sigil-internal-theme="silver-orange-v1"] body:has(#adm27) #mmdK a{display:inline-flex!important;align-items:center;min-height:44px;white-space:normal;overflow-wrap:anywhere}
 `;
 

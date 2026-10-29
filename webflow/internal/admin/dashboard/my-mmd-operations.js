@@ -18,7 +18,7 @@
     const timeout = setTimeout(() => controller.abort(), 20000);
     state.textContent = 'กำลังอ่านคิว'; list.replaceChildren(); retry.disabled = true;
     try {
-      const response = await fetch('/v1/admin/my-mmd/operations', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers: { accept: 'application/json' } });
+      const response = await fetch('/v1/admin/dashboard?view=my-mmd-operations', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers: { accept: 'application/json' } });
       if (response.status === 401 || response.status === 403) { if (current === sequence) state.textContent = 'คิวนี้เปิดได้เฉพาะบัญชี Owner ที่เข้าสู่ระบบแล้ว'; return; }
       const data = await response.json(); if (current !== sequence) return;
       if (!response.ok || data.ok !== true || !Array.isArray(data.groups)) throw Error();
