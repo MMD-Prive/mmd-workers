@@ -7,7 +7,7 @@ export const PERSONAL_MAIN_CSS=`
 `;
 // Browser controller: no identity storage, tier inference or model/provider call.
 export function createPersonalMainUI(root,request){
-  if(!root)return {load(){},reset(){},open(){}};
+  if(!root)return {load(){},reset(){},setAudience(){},open(){}};
   const get=s=>root.querySelector(s), buttons=[...root.querySelectorAll('[data-pm-choice]')];
   const known=id=>buttons.some(b=>b.dataset.pmChoice===id);
   let generation=0,selected=null,busy=false;
@@ -21,7 +21,7 @@ export function createPersonalMainUI(root,request){
   const message=text=>{get('[data-pm-status]').textContent=text;};
   function loading(value){busy=value;get('[data-pm-progress]').hidden=!value;for(const b of root.querySelectorAll('button'))b.disabled=value;}
   function showChoice(value){get('[data-pm-choices]').hidden=!value;get('[data-pm-skip]').hidden=!value;}
-  function apply(value){get('[data-pm-title]').textContent=value?'ผู้ช่วยของคุณ':'เลือกคนที่คุยกันรู้เรื่อง';if(value && known(value.id)){get('[data-pm-avatar]').src=buttons.find(b=>b.dataset.pmChoice===value.id).querySelector('img').src;}selected=known(value?.id)?value:null;showChoice(!selected);get('[data-pm-assistant]').hidden=!selected;get('[data-pm-change]').hidden=!selected;for(const b of buttons)b.setAttribute('aria-pressed',String(b.dataset.pmChoice===selected?.id));get('[data-pm-name]').textContent=selected?buttons.find(b=>b.dataset.pmChoice===selected.id).querySelector('strong').textContent+' · ผู้ช่วย AI':'';}
+  function apply(value){get('[data-pm-title]').textContent=value?'ผู้ช่วยของคุณ':'เลือกคนที่คุยกันรู้เรื่อง';const choice=value&&buttons.find(b=>b.dataset.pmChoice===value.id)?.querySelector('img');const avatar=get('[data-pm-avatar]');if(choice?.hasAttribute('src'))avatar.src=choice.src;else avatar.removeAttribute('src');selected=known(value?.id)?value:null;showChoice(!selected);get('[data-pm-assistant]').hidden=!selected;get('[data-pm-change]').hidden=!selected;for(const b of buttons)b.setAttribute('aria-pressed',String(b.dataset.pmChoice===selected?.id));get('[data-pm-name]').textContent=selected?buttons.find(b=>b.dataset.pmChoice===selected.id).querySelector('strong').textContent+' · ผู้ช่วย AI':'';}
   function reset(){generation++;selected=null;root.hidden=true;loading(false);apply(null);setAudience('unresolved');get('[data-pm-messages]').replaceChildren();get('[data-pm-input]').value='';get('[data-pm-chat]').hidden=true;}
   async function preference(id){
     if(busy)return;const turn=++generation;root.hidden=false;loading(true);get('[data-pm-retry]').hidden=true;message(id?'กำลังบันทึกคนที่คุณเลือกครับ':'กำลังตรวจสอบผู้ช่วยของคุณครับ');

@@ -58,3 +58,10 @@ test('companion portraits follow only verified audience and clear between accoun
  f.ui.reset();assert.equal(image.src,undefined);assert.equal(f.get('[data-pm-avatar]').src,undefined);
  f.ui.setAudience('unresolved');assert.equal(image.src,undefined);
 });
+test('an unresolved audience never loads an empty avatar URL for a saved assistant',async()=>{
+ const f=fixture(async()=>ok({id:'hima'}));
+ await f.ui.load();
+ assert.equal(f.get('[data-pm-assistant]').hidden,false);
+ assert.equal(f.get('[data-pm-avatar]').src,undefined);
+ assert.doesNotThrow(()=>createPersonalMainUI(null,()=>{}).setAudience('public'));
+});
