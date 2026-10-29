@@ -1546,3 +1546,28 @@ test("member entry omits the fallback greeting while retaining actions and opera
  runInNewContext(html.slice(showStart,showEnd)+'show("เชื่อมต่อไม่สำเร็จ");',{appStatus});
  assert.equal(appStatus.textContent,'เชื่อมต่อไม่สำเร็จ');
 });
+
+test("renewal member lookup can retry canonical profile without exposing a payment action", async () => {
+ const html=await(await shell('/member/liff?intent=renew')).text();
+ const start=html.indexOf('  function render(data) {'),end=html.indexOf('  async function boot(',start);
+ const buttons=[],notices=[],busyStates=[],hydrations=[];
+ const context={CONFIG:{intent:'renew'},locale:'th',busy:false,
+  actions:{replaceChildren(){buttons.length=0;},append(button){buttons.push(button);}},
+  document:{createElement:()=>({addEventListener(_event,handler){this.handler=handler;}})},
+  show:text=>notices.push(text),setBusy:value=>busyStates.push(value),
+  async readProfile(){return null;},async hydrateMemberHome(){hydrations.push('hydrate');}};
+ runInNewContext(html.slice(start,end)+'render({screen:{key:"renew_member_lookup",copy:"stale configured copy",actions:[{id:"start_payment",endpoint:"/member/api/liff/payment-intent",label:"Pay"}]}});',context);
+ assert.equal(buttons.length,1);
+ assert.equal(buttons[0].textContent,'ตรวจสมาชิกอีกครั้ง');
+ assert.match(notices[0],/ติดต่อเปอร์/);
+ await buttons[0].handler();
+ assert.match(notices.at(-1),/ก่อนชำระเงินหรือส่งสลิป/);
+ assert.deepEqual(hydrations,[]);
+ assert.deepEqual(busyStates,[true,false]);
+ assert.equal(buttons.length,1);
+ context.readProfile=async()=>({member_binding:'a'.repeat(64)});
+ await buttons[0].handler();
+ assert.match(notices.at(-1),/ยืนยันข้อมูลสมาชิกแล้ว/);
+ assert.deepEqual(hydrations,['hydrate']);
+ assert.equal(buttons.length,0);
+});
