@@ -103,10 +103,10 @@ test("Private or customer-specific pricing never becomes a Public starting price
 
 test("Public projection exposes only the approved profile fields and public price", () => {
   const projected = projectPublicSearchModel(MODEL, [publicRule()], "2026-10-29T00:00:00.000Z");
-  assert.equal(projected.public_starting_price_thb, 12000);
+  assert.equal(projected.sales_control.public_starting_price_thb, 12000);
   assert.deepEqual(
     Object.keys(projected).sort(),
-    ["body_type", "display_name", "height_cm", "model_id", "model_key", "public_starting_price_thb", "skin_tone", "weight_kg"].sort(),
+    ["body_type", "display_name", "height_cm", "model_id", "model_key", "sales_control", "skin_tone", "weight_kg"].sort(),
   );
 });
 
