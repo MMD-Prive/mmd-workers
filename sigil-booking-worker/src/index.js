@@ -188,14 +188,19 @@ async function handleModelSearch(req, env, url) {
     .filter(Boolean);
 
   const allowed = [];
+  const requestedAt = body.requested_at || body.preferred_at || body.date_time || url.searchParams.get("requested_at") || new Date().toISOString();
   for (const model of baseModels) {
     const projected = projectBookingSalesControl(model, salesContext, {
-      requested_at: body.requested_at || body.preferred_at || body.date_time || url.searchParams.get("requested_at") || new Date().toISOString(),
+      requested_at: requestedAt,
       work_lane: intent.work_lane || model.scope || scope,
     });
     if (projected.sales_control?.configured === true && projected.sales_control.sellable !== true) continue;
-    const visibleRate = projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null;
-    if (Number.isFinite(visibleRate) && !priceFitsBudget(visibleRate, intent.budget)) continue;
+    if (scope === "public") Object.assign(projected, projectPublicSearchModel(projected, salesContext.rules, requestedAt));
+    const visibleRate = scope === "public"
+      ? projected.sales_control?.public_starting_price_thb
+      : (projected.sales_control?.price_visible === true ? projected.sales_control.customer_rate_thb : null);
+    if (scope === "public" && intent.budget?.provided && (!Number.isFinite(visibleRate) || !priceFitsBudget(visibleRate, intent.budget))) continue;
+    if (scope !== "public" && Number.isFinite(visibleRate) && !priceFitsBudget(visibleRate, intent.budget)) continue;
     projected.offer = buildCustomerDurationOffer(projected, {
       requested_duration_minutes: body.duration_minutes || url.searchParams.get("duration_minutes"),
       work_lane: intent.work_lane || "",
@@ -534,7 +539,7 @@ async function resolveBookingSalesContext(env, storedAccess) {
       };
     }
     if (!/^rec[A-Za-z0-9]{14,24}$/.test(memberRecordId)) {
-      return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
+      return { available: false, entitlement_snapshot: null, rules, client_record_id: clientRecordId, protected_review_required: false };
     }
 
     const entitlementTable = env.AIRTABLE_TABLE_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
@@ -553,6 +558,44 @@ async function resolveBookingSalesContext(env, storedAccess) {
   } catch {
     return { available: false, entitlement_snapshot: null, rules: [], client_record_id: clientRecordId, protected_review_required: false };
   }
+}
+
+const PUBLIC_SEARCH_ENTITLEMENT = Object.freeze({ access: { public_member: true } });
+
+function isPublicAudienceRule(record) {
+  const fields = record?.fields || {};
+  const values = Array.isArray(fields.audience_scope) ? fields.audience_scope : [fields.audience_scope];
+  return values
+    .map((value) => token(value?.name || value))
+    .some((value) => ["public_member", "public", "member"].includes(value));
+}
+
+export function resolvePublicStartingPrice(model = {}, rules = [], requestedAt = new Date().toISOString()) {
+  const modelId = str(model.model_id || model.model_record_id);
+  const modelKey = str(model.model_key || model.unique_key).toLowerCase();
+  const publicRules = (Array.isArray(rules) ? rules : []).filter((record) => isPublicAudienceRule(record));
+  if ((!modelId && !modelKey) || !publicRules.length) return null;
+  const offer = resolveModelSalesOffer({
+    model_id: modelId,
+    model_key: modelKey,
+    requested_at: requestedAt,
+    work_lane: "",
+    entitlement_snapshot: PUBLIC_SEARCH_ENTITLEMENT,
+    rules: publicRules,
+  });
+  return offer.price_visible === true && Number.isFinite(Number(offer.customer_rate_thb))
+    ? Number(offer.customer_rate_thb)
+    : null;
+}
+
+export function projectPublicSearchModel(model = {}, rules = [], requestedAt = new Date().toISOString()) {
+  return {
+    ...model,
+    sales_control: {
+      ...(model.sales_control || {}),
+      public_starting_price_thb: resolvePublicStartingPrice(model, rules, requestedAt),
+    },
+  };
 }
 
 export function buildCustomerDurationOffer(projected = {}, requestContext = {}) {
