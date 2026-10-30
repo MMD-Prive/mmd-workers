@@ -72,6 +72,7 @@ jobs:
       EXPECTED_VERSION: ${{ inputs.expected_version }}
       EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
       SOURCE_DIRECTORY: ${{ github.workspace }}/release-source
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
