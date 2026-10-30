@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import canonicalWorker, { createLineSignature } from "../src/index.js";
+import paymentIngressWorker from "../src/line-group-ingress-front-gate.js";
 import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
 import { resolveKenjiLineContinuity, writeKenjiLineMatrixTurn } from "../src/kenji-line-continuity-runtime.mjs";
-import { lineIntakeCommand, lineIntakeTopic, resolveLineIntakeReply } from "../src/kenji-line-intake-commands.mjs";
+import { APPLY_PROFILE_IMAGES, isApplyProfileImage, isMarkedApplyProfileImage, lineIntakeCommand, lineIntakeTopic, resolveLineIntakeReply } from "../src/kenji-line-intake-commands.mjs";
 import { prepareKenjiLineWebhookBatch, aggregateKenjiLineTurn } from "../src/kenji-line-turn-aggregation.mjs";
 
 const UID = `U${"1".repeat(32)}`;
@@ -15,12 +16,13 @@ const catalog = () => ({ authority: "canonical_private_signup_catalog_v1", statu
 
 async function conversation(fn, options = {}) {
   const original = globalThis.fetch;
-  const matrices = new Map(), replies = [], writes = [], reads = [];
+  const matrices = new Map(), replies = [], writes = [], reads = [], inbox = [], unexpected = [];
   let sequence = 0, takeover = false, matrixFail = false, kill = false, runtimeFail = false, replyFail = false;
   let afterCatalog = false;
   globalThis.fetch = async (input, init = {}) => {
     const request = input instanceof Request ? input : new Request(String(input), init);
     const url = new URL(request.url);
+    if (!["api.line.me", "api.airtable.com"].includes(url.hostname)) unexpected.push(url.hostname);
     if (url.hostname === "api.line.me") {
       assert.equal(url.pathname, "/v2/bot/message/reply");
       replies.push(await request.json());
@@ -47,7 +49,9 @@ async function conversation(fn, options = {}) {
       return Response.json({ records: takeover || afterCatalog && options.ownerAfterCatalog ? [{ id: "recOwner" }] : [] });
     }
     if (request.method !== "GET") {
-      assert.ok(url.pathname.endsWith("tbljCYfYqfm8gBTPq") || options.publicEntry && decodeURIComponent(url.pathname).endsWith("MMD — Console Inbox"), "only existing intake, conversation state and telemetry writes");
+      const isInbox = decodeURIComponent(url.pathname).endsWith("MMD — Console Inbox");
+      if (isInbox) inbox.push(await request.json());
+      assert.ok(url.pathname.endsWith("tbljCYfYqfm8gBTPq") || (options.publicEntry || options.legacyIngress) && isInbox, "only existing intake, conversation state and telemetry writes");
       return Response.json({ id: "fixture-event" });
     }
     return Response.json({ records: [] });
@@ -80,7 +84,7 @@ async function conversation(fn, options = {}) {
       method: "POST", body: raw, headers: { "x-line-signature": valid ? await createLineSignature(raw, env.LINE_CHANNEL_SECRET) : "invalid" },
     });
     const ctx = { waitUntil: task => background.push(task) };
-    const response = await handleKenjiSeedLineRequest(request, env, ctx, options.publicEntry ? canonicalWorker : { fetch: async (_request, _env, ctx) => {
+    const response = await handleKenjiSeedLineRequest(request, env, ctx, options.legacyIngress ? paymentIngressWorker : options.publicEntry ? canonicalWorker : { fetch: async (_request, _env, ctx) => {
       const work = (async () => {
         const continuity = await resolveKenjiLineContinuity({ env, event, currentIntent: "note_only" });
         return writeKenjiLineMatrixTurn({ env, continuity, decision: { intent: "note_only" } });
@@ -92,7 +96,7 @@ async function conversation(fn, options = {}) {
     return { status: response.status, body: await response.json() };
   }
   try {
-    await fn({ send, env, replies, writes, reads, matrices,
+    await fn({ send, env, replies, writes, reads, matrices, inbox, unexpected,
       set: values => { ({ takeover = takeover, matrixFail = matrixFail, kill = kill, runtimeFail = runtimeFail, replyFail = replyFail } = values); } });
   } finally { globalThis.fetch = original; }
 }
@@ -164,6 +168,71 @@ test("apply receives details without echoing personal input or creating a model/
   });
 });
 
+test("apply -> image reaches real inbox and Per handoff without slip download/extraction", async () => {
+  const slipCalls = [];
+  await conversation(async ({ send, replies, writes, reads, inbox, unexpected, env }) => {
+    await send("apply");
+    const image = { type: "image", id: "fixture-profile-1" };
+    const result = await send("", { message: image });
+    assert.equal(result.body.saved[0].intent, "model_application");
+    assert.equal(result.body.saved[0].handoff_required, true);
+    assert.equal(replies.length, 2);
+    assert.match(replies.at(-1).messages[0].text, /รับรูปสมัครนายแบบ[\s\S]*ยังไม่ถือว่าผ่านการคัดเลือก/);
+    assert.doesNotMatch(replies.at(-1).messages[0].text, /สลิป|ชำระ|fixture-profile|https?:/);
+    assert.equal(writes.at(-1).fields.handoff_owner, "Per");
+    assert.equal(writes.at(-1).fields.handoff_reason, "line_intake:model_profile_image");
+    assert.equal(JSON.parse(writes.at(-1).fields.payload_json).rich_menu_v1.closed, true);
+    assert.ok(inbox.some(row => JSON.parse(row.fields.payload_json).source_message_id === image.id), "retain original LINE image reference in existing inbox");
+    const count = replies.length;
+    await send("", { message: { type: "image", id: "fixture-profile-2" } });
+    assert.equal(replies.length, count, "additional profile photos stay in Per's handoff, not repeated acknowledgements");
+    assert.deepEqual(reads, [], "model application never reads a membership catalog");
+    assert.deepEqual(unexpected, []);
+    assert.deepEqual(slipCalls, []);
+    assert.equal(env[APPLY_PROFILE_IMAGES], undefined, "private marker never leaks onto shared env");
+  }, { legacyIngress: true, env: {
+    SLIP_EXTRACTOR: { fetch() { slipCalls.push("extract"); throw Error("profile must not be OCRed"); } },
+    LINE_SLIP_EVIDENCE: { get() { slipCalls.push("get"); return null; }, put() { slipCalls.push("put"); throw Error("no proof/candidate write"); } },
+  } });
+});
+
+test("a failed LINE image acknowledgement still queues the application for Per", async () => {
+  await conversation(async ({ send, set, writes }) => {
+    await send("apply");
+    set({ replyFail: true });
+    await send("", { message: { type: "image", id: "fixture-profile" } });
+    assert.equal(writes.at(-1).fields.handoff_required, true);
+    assert.equal(writes.at(-1).fields.handoff_owner, "Per");
+    assert.equal(writes.at(-1).fields.handoff_reason, "line_intake:model_profile_image");
+  });
+});
+
+test("profile image requires delivered apply context; unrelated images and forged JSON markers cannot opt in", () => {
+  const now = Date.now();
+  const first = resolveLineIntakeReply(textEvent("apply"), {}, null, now);
+  const continuity = { available: true, matrix: { payload_json: { rich_menu_v1: first.rich_menu_state } } };
+  const image = { ...textEvent(""), message: { type: "image", id: "fixture-profile" } };
+  assert.equal(lineIntakeTopic(image, continuity, now), "apply");
+  assert.equal(isApplyProfileImage(image, continuity, now), true);
+  assert.equal(isMarkedApplyProfileImage({ APPLY_PROFILE_IMAGES: [image.message.id], apply_profile_images: true }, image), false);
+  for (const context of [{}, { ...continuity, available: false }, { ...continuity, decision: "stale_refresh" },
+    { available: true, matrix: { payload_json: { rich_menu_v1: { ...first.rich_menu_state, topic: "regis" } } } },
+    { available: true, matrix: { payload_json: { rich_menu_v1: { ...first.rich_menu_state, expires_at: new Date(now - 1).toISOString() } } } }])
+    assert.equal(lineIntakeTopic(image, context, now), "");
+  for (const change of [{ source: { type: "group", userId: UID } }, { source: { type: "user", userId: "unverified" } },
+    { mode: "standby" }, { deliveryContext: { isRedelivery: true } }, { timestamp: now - 360000 }, { message: { type: "image" } }])
+    assert.equal(isApplyProfileImage({ ...image, ...change }, continuity, now), false);
+});
+
+test("profile image stays silent when Per takes over or reply controls stop", async () => {
+  for (const flag of ["takeover", "kill", "runtimeFail", "matrixFail"]) await conversation(async ({ send, set, replies }) => {
+    await send("apply");
+    set({ [flag]: true });
+    await send("", { message: { type: "image", id: "fixture-profile" } });
+    assert.equal(replies.length, 1);
+  });
+});
+
 test("checkpts retains its existing verified shortcut and unprompted text remains silent", async () => {
   await conversation(async ({ send, replies }) => {
     await send("hello");
@@ -212,6 +281,7 @@ test("bad signature, stale event, group, redelivery, missing token and malformed
 
 test("unavailable or malformed catalog never turns into a price or raw error", async () => {
   for (const options of [{ catalogStatus: 503 }, { catalog: { authority: "untrusted", status: "verified", packages: catalog().packages } },
+    ...[[null, {}], [null, catalog().packages[1]], [42, "premium"], [[], {}], [catalog().packages[0], null]].map(packages => ({ catalog: { ...catalog(), packages } })),
     { catalog: { ...catalog(), packages: [...catalog().packages, catalog().packages[0]] } }]) await conversation(async ({ send, replies }) => {
     await send("package");
     assert.match(replies[0].messages[0].text, /ราคาล่าสุดยังตรวจไม่ได้/);

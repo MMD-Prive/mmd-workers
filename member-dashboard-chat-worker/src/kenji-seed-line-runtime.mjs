@@ -1,7 +1,7 @@
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
 import { CHECKPTS_INTAKE } from "./checkpts-command.mjs";
-import { lineIntakeCommand, lineIntakeTopic, readLineIntakeCatalog, resolveLineIntakeReply } from "./kenji-line-intake-commands.mjs";
+import { APPLY_PROFILE_IMAGES, isApplyProfileImage, markApplyProfileImage, lineIntakeCommand, lineIntakeTopic, readLineIntakeCatalog, resolveLineIntakeReply } from "./kenji-line-intake-commands.mjs";
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { handleLineRightsCheck } from "./kenji-line-rights-check.mjs";
 import { isRichMenuSupport, resolveRichMenuSupport } from "./rich-menu-membership-response.mjs";
@@ -562,9 +562,16 @@ async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody, events 
     body: rawBody,
   });
   const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false", [CHECKPTS_INTAKE]: true };
+  const profileImages = new Set();
+  for (const event of events) {
+    if (event?.message?.type !== "image") continue;
+    const continuity = await resolveKenjiLineContinuity({ env, event, currentIntent: "model_application" }).catch(() => ({}));
+    if (isApplyProfileImage(event, continuity)) markApplyProfileImage(profileImages, event);
+  }
+  if (profileImages.size) shadowEnv[APPLY_PROFILE_IMAGES] = profileImages;
   // Finish the menu tap's intake state before the reply owner writes its
   // delivered context. A deferred legacy write could otherwise overwrite it.
-  const intakeCtx = events.some(event => richMenuNavigation(event) || lineIntakeCommand(event)) ? null : ctx;
+  const intakeCtx = profileImages.size || events.some(event => richMenuNavigation(event) || lineIntakeCommand(event)) ? null : ctx;
   const response = await legacyWorker.fetch(shadowRequest, shadowEnv, intakeCtx).catch(() => null);
   if (!response?.ok) return null;
   return response.json().catch(() => null);
@@ -828,7 +835,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         ? await recordDeliveredKenjiLineReply({ env, event, replyText: decision.text }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
         : { skipped: true, reason: "reply_not_delivered" };
       const matrix = continuityEnabled && directUser &&
-        ((!intakeRequested && !support && !navigation && !menuConversation && !checkptsShortcut) || (delivered && decision.rich_menu_state)) && eventMode !== "standby" && !redelivered
+        ((!intakeRequested && !support && !navigation && !menuConversation && !checkptsShortcut) || (delivered && decision.rich_menu_state) ||
+          (intakeEnabled && decision.profile_image_received)) && eventMode !== "standby" && !redelivered
         ? await writeKenjiLineMatrixTurn({
             env,
             continuity,

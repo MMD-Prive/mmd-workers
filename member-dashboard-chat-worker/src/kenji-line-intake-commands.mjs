@@ -3,6 +3,27 @@ const ENTRY = "line_intake_command_v1";
 const COMMANDS = new Set(["package", "regis", "apply"]);
 const INTENTS = { package: "membership_package", regis: "private_membership_signup", apply: "model_application" };
 const normalize = value => String(value ?? "").normalize("NFKC").replace(/[\u200B\uFEFF]/g, "").trim().toLowerCase();
+// Set only by the signature-verified Seed intake, never by webhook JSON/headers.
+export const APPLY_PROFILE_IMAGES = Symbol("apply_profile_images");
+const imageKey = event => `${event.source?.userId}:${event.message?.id}`;
+
+export function isApplyProfileImage(event = {}, continuity = {}, now = Date.now()) {
+  const state = continuity.matrix?.payload_json?.rich_menu_v1;
+  const expires = Date.parse(state?.expires_at);
+  const age = now - Number(event.timestamp);
+  return event.type === "message" && event.message?.type === "image" &&
+    event.source?.type === "user" && /^U[a-f0-9]{32}$/i.test(String(event.source.userId || "")) &&
+    typeof event.message.id === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(event.message.id) &&
+    event.mode !== "standby" && event.deliveryContext?.isRedelivery !== true && Number.isFinite(age) && age >= -60000 && age <= 300000 &&
+    continuity.available === true && continuity.decision !== "stale_refresh" &&
+    state?.entry === ENTRY && state.topic === "apply" &&
+    Number.isFinite(expires) && expires > now && expires <= now + WINDOW_MS;
+}
+
+export function markApplyProfileImage(keys, event) { keys.add(imageKey(event)); }
+export function isMarkedApplyProfileImage(env, event) {
+  return env[APPLY_PROFILE_IMAGES] instanceof Set && env[APPLY_PROFILE_IMAGES].has(imageKey(event));
+}
 
 export function lineIntakeCommand(event = {}) {
   if (event.type !== "message" || event.message?.type !== "text" || event.source?.type !== "user") return "";
@@ -15,11 +36,12 @@ export function lineIntakeTopic(event = {}, continuity = {}, now = Date.now()) {
   if (command) return command;
   const state = continuity.matrix?.payload_json?.rich_menu_v1;
   const expires = Date.parse(state?.expires_at);
-  if (event.type !== "message" || event.message?.type !== "text" || event.source?.type !== "user" ||
+  const profileImage = isApplyProfileImage(event, continuity, now);
+  if (event.type !== "message" || (!profileImage && event.message?.type !== "text") || event.source?.type !== "user" ||
       !continuity.available || continuity.decision === "stale_refresh" || continuity.matrix?.handoff_required === true ||
       state?.entry !== ENTRY || state.closed === true || !COMMANDS.has(state.topic) ||
       !Number.isFinite(expires) || expires <= now || expires > now + WINDOW_MS ||
-      !normalize(event.message.text) || String(event.message.text).length > 600) return "";
+      (!profileImage && (!normalize(event.message.text) || String(event.message.text).length > 600))) return "";
   return state.topic;
 }
 
@@ -40,12 +62,12 @@ export async function readLineIntakeCatalog(env = {}, event = {}) {
 
 function packageText(catalog) {
   const rows = Array.isArray(catalog?.packages) ? catalog.packages : [];
-  const standard = rows.filter(row => row.code === "standard");
-  const premium = rows.filter(row => row.code === "premium");
+  const standard = rows.filter(row => row?.code === "standard");
+  const premium = rows.filter(row => row?.code === "premium");
   const verified = catalog?.authority === "canonical_private_signup_catalog_v1" && catalog.status === "verified" &&
     rows.length === 2 && standard.length === 1 && premium.length === 1 &&
     standard[0].base_years === 1 && premium[0].base_years === 2 &&
-    rows.every(row => Number.isSafeInteger(row.price_thb) && row.price_thb > 0 && row.price_thb <= 250000);
+    rows.every(row => row && typeof row === "object" && !Array.isArray(row) && Number.isSafeInteger(row.price_thb) && row.price_thb > 0 && row.price_thb <= 250000);
   return [
     "Private มีแพ็กเกจหลัก 2 แบบครับ",
     verified ? `• Standard ${standard[0].price_thb.toLocaleString("th-TH")} บาท / 1 ปี` : "• Standard อายุสมาชิกพื้นฐาน 1 ปี",
@@ -64,7 +86,8 @@ export function resolveLineIntakeReply(event = {}, continuity = {}, catalog = nu
   const topic = lineIntakeTopic(event, continuity, now);
   if (!topic) return null;
   const command = lineIntakeCommand(event);
-  const raw = normalize(event.message.text);
+  const raw = event.message?.type === "text" ? normalize(event.message.text) : "";
+  const profileImage = isApplyProfileImage(event, continuity, now);
   const prior = continuity.matrix?.payload_json?.rich_menu_v1 || {};
   const state = command ? { entry: ENTRY, topic, expires_at: new Date(now + WINDOW_MS).toISOString() } : { ...prior };
   let answer, handoff = false;
@@ -72,7 +95,9 @@ export function resolveLineIntakeReply(event = {}, continuity = {}, catalog = nu
     answer = "ได้ครับ เดี๋ยวเปอร์ตรวจรายการและเงื่อนไขให้ก่อนนะครับ ถ้าโอนหรือส่งสลิปแล้ว ยังไม่ต้องโอนซ้ำครับ ข้อความนี้ยังไม่ยืนยันการชำระ สมาชิก หรือการจองครับ";
     handoff = true;
   } else if (topic === "apply") {
-    answer = command
+    answer = profileImage
+      ? "รับรูปสมัครนายแบบในแชตนี้แล้วครับ เดี๋ยวเปอร์ดูโปรไฟล์และแจ้งขั้นตอนต่อให้ ถ้ามีข้อมูลเพิ่มเติมส่งต่อไว้ในแชตนี้ได้เลยครับ ยังไม่ถือว่าผ่านการคัดเลือกนะครับ"
+      : command
       ? "สนใจสมัครเป็นนายแบบกับ MMD ใช่ไหมครับ 📸\nส่งชื่อที่สะดวกใช้ติดต่อกับจังหวัดที่อยู่มาได้เลยครับ ถ้ามีโปรไฟล์อยู่แล้วส่งประกอบในแชตนี้ได้ เปอร์จะดูและแจ้งขั้นตอนต่อให้ครับ"
       : "รับข้อมูลเบื้องต้นแล้วครับ ถ้ามีรูปหรือโปรไฟล์เพิ่มเติมส่งต่อในแชตนี้ได้เลย เดี๋ยวเปอร์ดูรายละเอียดและแจ้งขั้นตอนสมัครให้ครับ ยังไม่ถือว่าผ่านการคัดเลือกนะครับ";
     handoff = !command;
@@ -91,6 +116,7 @@ export function resolveLineIntakeReply(event = {}, continuity = {}, catalog = nu
   }
   return { text: answer, intent: INTENTS[state.topic], inferred_intent: INTENTS[state.topic],
     reply_source: "line_intake_command_v1", model_attempted: false, live_truth_used: false,
-    handoff_required: handoff, handoff_reason: handoff ? "line_intake:per_review" : "",
+    handoff_required: handoff, handoff_reason: handoff ? profileImage ? "line_intake:model_profile_image" : "line_intake:per_review" : "",
+    profile_image_received: profileImage,
     rich_menu_state: { ...state, closed: handoff }, cta_appended: false };
 }

@@ -1,4 +1,5 @@
 import currentWorker from "./front-gate-index.js";
+import { isMarkedApplyProfileImage } from "./kenji-line-intake-commands.mjs";
 export { KenjiModelIdempotency } from "./front-gate-index.js";
 import { classifyPaymentOpsRoute, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
 import { bindLineJobEvidence } from "./line-job-evidence-binding.mjs";
@@ -1071,6 +1072,7 @@ async function observeSignedLineEvents(request, env = {}) {
   console.log(JSON.stringify({ line_payment_observer: "batch_parsed", events_array: Array.isArray(body.events), event_count: events.length, event_type_counts: eventTypeCounts }));
   for (const event of events) {
     const source = sourceType(event); const type = messageType(event);
+    if (source === "user" && type === "image" && isMarkedApplyProfileImage(env, event)) continue;
     if (event?.type === "message") console.log(JSON.stringify({
       line_payment_match: "event_seen",
       source_type: source,
