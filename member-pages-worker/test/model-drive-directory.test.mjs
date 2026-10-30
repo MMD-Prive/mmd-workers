@@ -459,3 +459,20 @@ test("mirror is used only when the main catalogue has no model candidate", () =>
   assert.equal(prioritizeModelDriveCandidates("Film IT", rows)[0].drive_priority, "fallback");
   assert.deepEqual(prioritizeModelDriveCandidates("Film IT", [{...rows[0],folder_name:"Review Film IT"}]), []);
 });
+
+
+test('signed internal admin gallery lists nested source media and streams only current folder descendants',async t=>{
+ const saved=globalThis.fetch;t.after(()=>globalThis.fetch=saved);
+ const folder='1AdminModelFolder',photo='1AdminSourcePhoto',outside='1OutsideSourcePic',privateRoot='1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr';
+ globalThis.fetch=async(input,init={})=>{const u=new URL(input);if(u.hostname==='oauth2.googleapis.com')return Response.json({access_token:'fixture'});const id=u.pathname.split('/').at(-1);
+  if(u.searchParams.get('alt')==='media')return new Response(new Uint8Array([255,216,255,0]),{headers:{'content-type':'image/jpeg','content-length':'4'}});
+  if(id==='files')return Response.json({files:[{id:photo,mimeType:'image/jpeg',parents:[folder],size:'4'}]});
+  return Response.json(id===photo?{id,mimeType:'image/jpeg',size:'4',parents:[folder]}:id===outside?{id,mimeType:'image/jpeg',size:'4',parents:[]}:id===folder?{id,name:'Fixture Model',mimeType:'application/vnd.google-apps.folder',parents:[privateRoot]}:{id,name:'Private Models',mimeType:'application/vnd.google-apps.folder',parents:[]});
+ };
+ const env={GOOGLE_DRIVE_CLIENT_ID:'fixture',GOOGLE_DRIVE_CLIENT_SECRET:'fixture',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture'};
+ const call=(path,body)=>handleModelDriveDirectoryRequest(new Request('https://model-drive-directory.internal/__internal/model-drive/'+path,{method:'POST',body:JSON.stringify({drive_folder_id:folder,...body})}),env);
+ const list=await call('admin-media-list',{});assert.equal(list.status,200);const data=await list.json();assert.equal(data.items.length,1);assert.equal(data.items[0].audience,'private');assert.equal(data.items[0].status,'source_only');
+ const r=await call('admin-media-file',{file_id:photo});assert.equal(r.status,200);assert.equal((await r.arrayBuffer()).byteLength,4);assert.equal(r.headers.get('cache-control'),'private, no-store');
+ const denied=await call('admin-media-file',{file_id:outside});assert.equal(denied.status,404);
+ const head=await call('admin-media-file',{file_id:photo,head:true});assert.equal(head.status,200);assert.equal(head.body,null);
+});

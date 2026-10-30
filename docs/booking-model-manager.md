@@ -41,8 +41,9 @@ The admin now reads linked Drive originals alongside the R2 registry. No copy,
 customer approval or Model visibility is created. Exact canonical folder references
 must agree, and a fresh canonical lookup must have only this Model; duplicates are
 reported for review. The existing signed Model directory rechecks approved ancestry.
-OAuth uses the configured owner account and verifies its email; existing service
-account credentials are a fallback when owner OAuth is not configured. No credentials
+The admin uses signed requests to the existing Model Drive directory, whose OAuth
+credentials already serve Model discovery. The invalid admin-local OAuth credential
+is not used or copied. No credentials
 or Drive URLs are sent to the browser.
 
 Thumbnails use a same-origin owner route; opening detail loads a photo/clip gallery
@@ -55,3 +56,7 @@ remain available in the same detail. Unlinked Models are not matched by name.
 Validation: 36 backend + actual inline DOM tests, plus 7 bundled DOM cases. Live
 validation is recorded in the change PR; passing fixtures alone does not establish
 production Drive access or mean every Model has been linked.
+
+The directory adds signed/internal POST admin-media-list and admin-media-file routes.
+They recheck approved roots and exact file ancestry on each request. Unsigned
+workers.dev calls are rejected. Existing customer routes are unchanged.

@@ -1,5 +1,4 @@
 // Owner/admin Booking preview only. Never used by customer media routes.
-import { libraryDriveToken } from './compcard-library-sources.js';
 const DRIVE='https://www.googleapis.com/drive/v3/files';
 const ID=/^[A-Za-z0-9_-]{10,180}$/;
 const TYPES=new Set(['image/jpeg','image/png','image/webp','image/avif','image/heic','image/heif','video/mp4','video/webm','video/quicktime']);
@@ -23,7 +22,15 @@ async function canonical(env,modelId) {
   const matches=await read('?'+q);
   if(matches.offset||!Array.isArray(matches.records)||matches.records.length!==1||matches.records[0].id!==modelId)fail('model_folder_conflict',409);
   // Recheck ancestry using the existing signed Model directory, never a browser URL.
-  const path='/__internal/model-drive/resolve',body=JSON.stringify({drive_folder_id:folder});
+  const r=await directory(env,'/__internal/model-drive/resolve',{drive_folder_id:folder});
+  const data=await r.json().catch(()=>null);
+  if(!r.ok||!data?.ok||data.item?.drive_folder_id!==folder)fail('model_folder_unavailable',r.status>=500?503:409);
+  const scope=String(record.fields.folder_scope_key||'');
+  if(scope && scope!==data.item.folder_scope_key)fail('model_folder_scope_conflict',409);
+  return {folder,audience:data.item.lane==='public'?'public':'private'};
+}
+async function directory(env,path,payload) {
+  const body=JSON.stringify(payload);
   let r;
   if(env.MODEL_DRIVE_DIRECTORY?.fetch) r=await env.MODEL_DRIVE_DIRECTORY.fetch(new Request('https://model-drive-directory.internal'+path,{method:'POST',headers:{'content-type':'application/json'},body}));
   else {
@@ -34,58 +41,19 @@ async function canonical(env,modelId) {
     const sig=hex(await crypto.subtle.sign('HMAC',key,enc.encode(`${ts}\nPOST\n${path}\n\n${hash}`)));
     r=await fetch('https://member-pages-worker.malemodel-bkk.workers.dev'+path,{method:'POST',headers:{'content-type':'application/json','x-mmd-model-drive-ts':ts,'x-mmd-model-drive-signature':sig},body,redirect:'manual',signal:AbortSignal.timeout(20000)});
   }
-  const data=await r.json().catch(()=>null);
-  if(!r.ok||!data?.ok||data.item?.drive_folder_id!==folder)fail('model_folder_unavailable',r.status>=500?503:409);
-  const scope=String(record.fields.folder_scope_key||'');
-  if(scope && scope!==data.item.folder_scope_key)fail('model_folder_scope_conflict',409);
-  return {folder,audience:data.item.lane==='public'?'public':'private'};
+  return r;
 }
-async function client(env) {
-  const oauth=env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN;
-  const token=await libraryDriveToken(oauth?{...env,GOOGLE_SERVICE_ACCOUNT_JSON:undefined}:env),http=env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP)||fetch.bind(globalThis);
-  return async (suffix,headers={})=>{const r=await http(DRIVE+suffix,{headers:{authorization:'Bearer '+token,...headers},redirect:'manual',signal:AbortSignal.timeout(20000)});if(!r.ok && r.status!==206)fail('drive_media_unavailable',r.status===404?404:503);return r;};
-}
-async function metadata(read,id) {return (await read('/'+encodeURIComponent(id)+'?supportsAllDrives=true&fields=id,mimeType,parents,trashed,size')).json();}
 export async function listBookingDriveMedia(env,modelId,coverOnly=false) {
-  const {folder,audience}=await canonical(env,modelId),read=await client(env);
-  const queue=[{id:folder,depth:0}],visited=new Set(),items=[];let partial=false;
-  while(queue.length && visited.size<40 && items.length<500) {
-    const current=queue.shift();if(visited.has(current.id))continue;visited.add(current.id);
-    const meta=await metadata(read,current.id);if(meta.trashed||meta.mimeType!==FOLDER|| (current.id!==folder && meta.parents?.length!==1))continue;
-    let cursor='',pages=0;const seen=new Set();
-    do {
-      const q=new URLSearchParams({q:`'${current.id}' in parents and trashed=false`,pageSize:'100',fields:'files(id,mimeType,parents,trashed,size),nextPageToken',supportsAllDrives:'true',includeItemsFromAllDrives:'true'});if(cursor)q.set('pageToken',cursor);
-      const page=await (await read('?'+q)).json();if(!Array.isArray(page.files))fail('drive_inventory_unavailable');
-      for(const f of page.files) {
-        if(!ID.test(f.id)||f.trashed||f.parents?.length!==1||f.parents[0]!==current.id)continue;
-        if(f.mimeType===FOLDER) {if(current.depth<4)queue.push({id:f.id,depth:current.depth+1});else partial=true;}
-        else if(TYPES.has(f.mimeType)) {items.push({file_id:f.id,kind:f.mimeType.startsWith('video/')?'clip':'photo',audience,status:'source_only',preview_available:true}); if(coverOnly && !f.mimeType.startsWith('video/'))return {ok:true,items:[items.at(-1)],partial:false};}
-      }
-      cursor=page.nextPageToken||'';pages++;
-      if(cursor && seen.has(cursor))fail('drive_inventory_incomplete');if(cursor)seen.add(cursor);
-      if(items.length>=500||pages>=20){if(cursor)partial=true;break;}
-    } while(cursor);
-  }
-  return {ok:true,items:items.slice(0,500),partial:partial||queue.length>0||items.length>500};
+  const {folder}=await canonical(env,modelId);
+  const r=await directory(env,'/__internal/model-drive/admin-media-list',{drive_folder_id:folder,cover_only:coverOnly});
+  const data=await r.json().catch(()=>null);if(!r.ok || data?.ok!==true || !Array.isArray(data.items))fail('drive_media_unavailable',r.status===404?404:503);return data;
 }
 export async function readBookingDriveMedia(request,env,modelId,fileId) {
   if(!ID.test(fileId))fail('file_not_found',404);
-  const {folder}=await canonical(env,modelId),read=await client(env),file=await metadata(read,fileId);
-  if(file.trashed||!TYPES.has(file.mimeType)||!Number(file.size))fail('file_not_found',404);
-  let current=file;const seen=new Set();let linked=false;
-  for(let depth=0;depth<12;depth++) {
-    if(current.id===folder){linked=true;break;}
-    if(current.trashed||seen.has(current.id)||current.parents?.length!==1)break;
-    seen.add(current.id);current=await metadata(read,current.parents[0]);if(current.mimeType!==FOLDER)break;
-  }
-  if(!linked)fail('file_not_linked',404);
-  if(request.method==='HEAD')return new Response(null,{headers:{...HEADERS,'content-type':file.mimeType,'content-length':String(file.size)}});
-  const range=request.headers.get('range');if(range&&!/^bytes=\d*-\d*$/.test(range))fail('invalid_range',416);
-  const r=await read('/'+encodeURIComponent(fileId)+'?alt=media&supportsAllDrives=true',range?{range}:{});
-  if(r.headers.get('content-type')?.split(';')[0]!==file.mimeType){await r.body?.cancel();fail('file_type_changed',409);}
-  const headers={...HEADERS,'content-type':file.mimeType,'content-disposition':'inline','accept-ranges':'bytes'};
-  for(const key of ['content-length','content-range'])if(r.headers.has(key))headers[key]=r.headers.get(key);
-  return new Response(r.body,{status:r.status,headers});
+  const {folder}=await canonical(env,modelId);
+  const r=await directory(env,'/__internal/model-drive/admin-media-file',{drive_folder_id:folder,file_id:fileId,head:request.method==='HEAD',range:request.headers.get('range')||''});
+  if(!r.ok)fail('drive_media_unavailable',[404,409,416].includes(r.status)?r.status:503);
+  const headers=new Headers(HEADERS);for(const key of ['content-type','content-length','content-range','accept-ranges'])if(r.headers.has(key))headers.set(key,r.headers.get(key));headers.set('content-disposition','inline');
+  return new Response(request.method==='HEAD'?null:r.body,{status:r.status,headers});
 }
-
-export async function readBookingDriveCover(request,env,modelId) { const inventory=await listBookingDriveMedia(env,modelId,true);const photo=inventory.items.find(i=>i.kind==="photo");if(!photo)fail("photo_not_found",404);return readBookingDriveMedia(request,env,modelId,photo.file_id); }
+export async function readBookingDriveCover(request,env,modelId) {const d=await listBookingDriveMedia(env,modelId,true);const photo=d.items.find(i=>i.kind==='photo');if(!photo)fail('photo_not_found',404);return readBookingDriveMedia(request,env,modelId,photo.file_id);}
