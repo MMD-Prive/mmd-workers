@@ -6,7 +6,7 @@ const { parseHTML } = await import(process.env.BOOKING_MODELS_DOM_MODULE || "/tm
 
 const item = {model_id:"recFixture000001",name:"Leo Test",code:"LT01",height_cm:180,weight_kg:75,offers_public:true,offers_private:false,public_profile_allowed:true,private_profile_allowed:false,cover_status:"missing",cover_media_id:"",reasons:["missing_cover"],body_type:"athletic",skin_tone:"tan"};
 async function flush(){for(let i=0;i<10;i++)await new Promise(resolve=>setImmediate(resolve));}
-function setup(t, handler) {
+function setup(t, handler, extras={}) {
  const {document,window}=parseHTML(renderBookingModelsPage("fixture-nonce"));
  const originals = ["document","window"].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]);
  Object.defineProperty(globalThis,"document",{configurable:true,value:document});Object.defineProperty(globalThis,"window",{configurable:true,value:window});
@@ -19,7 +19,7 @@ function setup(t, handler) {
  const calls=[];t.mock.method(globalThis,"fetch",async(input,init)=>{calls.push({input,init});return handler(input,init,calls.length);});
  // Execute the script actually delivered in HTML, including when the server module is bundled.
  const inline = document.querySelector("script").textContent;
- runInNewContext(inline, {document,window,fetch:globalThis.fetch,AbortController,URLSearchParams,setTimeout,clearTimeout,Error});
+ runInNewContext(inline, {document,window,fetch:globalThis.fetch,AbortController,URLSearchParams,setTimeout,clearTimeout,Error,...extras});
  const event=(id,type)=>document.getElementById(id).dispatchEvent(new window.Event(type,{cancelable:true,bubbles:true}));
  return {document,window,event,calls,setSelect};
 }
@@ -81,4 +81,11 @@ test('late Drive inventory cannot reopen a closed profile and access expiry conc
  let resolve;const pending=new Promise(r=>resolve=r);
  const u=setup(t,async input=>input.endsWith('/drive')?pending:Response.json({ok:true,items:[{...item,drive_linked:true}],next_cursor:null}));
  await flush();u.document.querySelector('article button').click();u.event('close-detail','click');resolve(Response.json({ok:true,items:[{file_id:'photo_fixture_123',kind:'photo'}]}));await flush();assert.equal(u.document.getElementById('detail-content').children.length,0);
+});
+
+test('visible Drive photos load in a paced queue and closing detail releases pending media',async t=>{
+ let observer;class Observer{constructor(callback){this.callback=callback;this.images=new Set();observer=this;}observe(image){this.images.add(image);}unobserve(image){this.images.delete(image);}fire(){this.callback([...this.images].map(target=>({target,isIntersecting:true})));}}
+ const u=setup(t,async input=>input.endsWith('/drive')?Response.json({ok:true,items:[{file_id:'photo_fixture_one',kind:'photo'},{file_id:'photo_fixture_two',kind:'photo'}]}):Response.json({ok:true,items:[{...item,drive_linked:true}],next_cursor:null}),{IntersectionObserver:Observer,setTimeout:(fn,ms)=>ms===700?setTimeout(fn,0):setTimeout(fn,ms)});
+ await flush();const thumbnail=u.document.querySelector('article img');assert.equal(thumbnail.getAttribute('src'),null);observer.fire();assert.ok(thumbnail.getAttribute('src').endsWith('/drive-cover'));thumbnail.dispatchEvent(new u.window.Event('load'));await flush();
+ u.document.querySelector('article button').click();await flush();const images=[...u.document.querySelectorAll('.gallery img')];assert.equal(images.length,2);observer.fire();assert.ok(images[0].getAttribute('src'));assert.equal(images[1].getAttribute('src'),null);images[0].dispatchEvent(new u.window.Event('load'));await new Promise(r=>setTimeout(r,10));assert.ok(images[1].getAttribute('src'));u.event('close-detail','click');await flush();assert.equal(u.document.querySelectorAll('.gallery img').length,0);
 });
