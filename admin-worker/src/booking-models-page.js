@@ -52,7 +52,7 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
     const gallery = node("div",null,"gallery");
     for (const asset of model.media || []) {
       const figure = node("figure");
-      if (asset.preview_available && /^rec[a-zA-Z0-9]+$/.test(asset.asset_record_id)) {
+      if (asset.preview_available && /^(?:(?:rec|att)[a-zA-Z0-9]+|legacy)$/.test(asset.asset_record_id)) {
         const preview = node(asset.kind === "clip" ? "video" : "img");
         if (asset.kind === "clip") { preview.controls=true; preview.preload="none"; preview.playsInline=true; }
         else { preview.alt=model.name || c.noName; preview.loading="lazy"; }
@@ -101,7 +101,7 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
   }
   function card(model) {
     const article = node("article", null, "model"), portrait = node("div", model.cover_status === "unavailable" ? c.coverUnavailable : model.cover_status === "clip_only" ? c.videoOnly : c.noCover, "portrait");
-    if (model.cover_asset_id && /^rec[a-zA-Z0-9]+$/.test(model.model_id) && /^rec[a-zA-Z0-9]+$/.test(model.cover_asset_id)) {
+    if (model.cover_asset_id && /^rec[a-zA-Z0-9]+$/.test(model.model_id) && /^(?:(?:rec|att)[a-zA-Z0-9]+|legacy)$/.test(model.cover_asset_id)) {
       const img = node("img"); img.alt = model.name || c.noName; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
       queueDriveImage(img,mediaUrl(model,model.cover_asset_id));
       img.addEventListener("error", () => { portrait.replaceChildren(node("span",c.coverFailed)); }, {once:true}); portrait.replaceChildren(img);

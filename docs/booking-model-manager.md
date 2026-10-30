@@ -60,3 +60,19 @@ production Drive access or mean every Model has been linked.
 The directory adds signed/internal POST admin-media-list and admin-media-file routes.
 They recheck approved roots and exact file ancestry on each request. Unsigned
 workers.dev calls are rejected. Existing customer routes are unchanged.
+
+## Existing profile attachments and imported source paths
+
+A read-only inventory of all 126 Model records found 66 explicit folder IDs and
+60 without an ID. Ten of those unlinked records already have profile_photo
+attachments. The admin now projects those current attachments and exact
+primary_image_key legacy R2 covers through protected same-origin routes. CDN URLs
+and object keys stay server-side; foreign CDN hosts, redirects, MIME mismatches,
+unlinked attachment IDs and conflicting R2 object ownership are denied.
+
+Imported source_folder + source_file records may resolve a missing folder ID
+only when the complete approved-root path has one exact match. Generic compcard
+categories, conflicting explicit references and ambiguous paths cannot bind by
+name. This is a read-only admin lookup, with no canonical field, customer
+visibility, approval or source-file mutation. Existing Drive and R2 read policies
+remain separate from customer media policies. Thai copy is mirrored in mmd-i18n.
