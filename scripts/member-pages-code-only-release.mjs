@@ -1,3 +1,5 @@
+import { assertTmibPublicReaderArtifact } from './check-tmib-public-reader.mjs';
+export { assertTmibPublicReaderArtifact };
 // Strict-inherit, code-only release transport for member-pages-worker.
 // Importing this file never contacts GitHub or Cloudflare.
 import assert from 'node:assert/strict';
@@ -467,6 +469,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     const module = artifactMode ? buildReviewedCompanionArtifact(artifactBaseline) : await io.bundle(baseline);
     diagnostics.mark('BUNDLE_CHECK');
     assert.ok(module instanceof Uint8Array && module.byteLength > 0, 'compiled Worker module required');
+    state.tmib_public_reader = await (io.verifyTmibArtifact || assertTmibPublicReaderArtifact)(module);
     state.bundle_sha256 = createHash('sha256').update(module).digest('hex');
     await io.approve(diagnostics.mark);
     diagnostics.mark('CF_BASELINE_RECHECK');

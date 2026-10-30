@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {ROOT, VERSION_ROOT, ZONE, CODE_ONLY_SOURCE_SHA, activeVersion,
-  versionConfiguration, versionAnnotations, inspectCodeOnlyCheckouts} from './member-pages-code-only-release.mjs';
+  versionConfiguration, versionAnnotations, inspectCodeOnlyCheckouts, assertTmibPublicReaderArtifact} from './member-pages-code-only-release.mjs';
 import {RECOVERY_TARGET as T, inspectUploadedRecovery, verifyRecoveryArtifact} from './member-pages-uploaded-recovery.mjs';
 
 export const RECOVERY_WORKFLOW = '.github/workflows/deploy-member-pages-worker-code-only.yml';
@@ -138,6 +138,9 @@ export async function promoteExistingStartupVersion(io) {
     assert.equal(evidence.release_sha,io.env.GITHUB_SHA);assert.equal(evidence.config_unchanged,true);
     mark('RECOVERY_READBACK');const first=await inspectUploadedRecovery({originalReceipt:receipt,read:io.cf});
     assert.equal(first.state,'REVIEW_ONLY');assert.equal(first.artifact_bytes_match,true);
+    const tmibArtifact=await io.cf(VERSION_ROOT+'/'+T.uploaded_version,{method:'GET',query:{include:'modules'}});
+    verifyRecoveryArtifact(tmibArtifact,T);
+    await (io.verifyTmibArtifact || assertTmibPublicReaderArtifact)(Buffer.from(tmibArtifact.modules[0].content_base64,'base64'));
     mark('RECOVERY_VALIDATION_JOURNAL');await save('validated-not-promoted');
     // Durably record conservative unknown-outcome intent before final live checks.
     // A slow journal must not leave a stale approval or production baseline at write time.

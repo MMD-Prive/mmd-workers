@@ -99,6 +99,8 @@ function fixture(options = {}) {
     sha:myMmdSha, releaseSha, expectedVersion:id(1), expectedDeployment:id(10),
     approve:async()=>{ approvals++; if(options.rejectApproval===approvals) throw new Error('approval_denied'); },
     call,
+    // Transport fixtures isolate execution; the real artifact guard is tested separately.
+    verifyTmibArtifact: async () => ({ episodes: 2, images: 40, ep03: 'pending' }),
     sourceCheck:async(_diagnostic,baselineSourceSha)=>{
       assert.equal(baselineSourceSha,CODE_ONLY_SOURCE_SHA);
       return {method:'fixture_clean_main',source_sha:myMmdSha,config_unchanged:false};
@@ -792,4 +794,11 @@ test('artifact workflow selects explicit mode under existing owner gate without 
  assert.match(workflow,/RELEASE_MODE: \$\{\{ inputs.execution_mode \}\}/);
  assert.match(workflow,/Install pinned Wrangler bundler\s+if: inputs.execution_mode != 'companion-artifact'/);
  assert.match(workflow,/if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'companion-artifact'\s+env:/);
+});
+
+test('legacy artifact without public reader is blocked before upload', async () => {
+ const f=fixture(); delete f.io.verifyTmibArtifact;
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+ assert.equal(f.writes(),0);assert.equal(f.receipts.at(-1).phase,'stopped');
+ assert.equal(f.receipts.at(-1).diagnostic.stage,'BUNDLE_CHECK');
 });

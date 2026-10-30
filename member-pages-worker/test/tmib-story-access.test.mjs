@@ -29,9 +29,10 @@ test("ACT 001 catalog is the single pricing/package source", () => {
   const pub = publicTmibEpisodeMetadata(episode);
   assert.equal(pub.price_thb, 0);
   assert.equal(pub.purchasable, false);
-  assert.equal(pub.public_free, true);
-  assert.equal(pub.member_gate_starts_at_episode, 11);
-  assert.equal(TMIB_RELEASE_POLICY.publicFreeEpisodesThrough, 10);
+  assert.equal(pub.public_free, false);
+  assert.equal(pub.status, "archived");
+  assert.equal(pub.member_gate_starts_at_episode, null);
+  assert.equal(TMIB_RELEASE_POLICY.publicFreeEpisodesThrough, null);
   assert.equal(pub.membership_included, false);
 });
 
@@ -52,10 +53,11 @@ test("unknown episode fails closed", async () => {
   assert.equal(payload.error.code, "TMIB_EPISODE_NOT_FOUND");
 });
 
-test("grants active verified MMD Member through Black Card but not display-only or expired", () => {
-  for (const level of ["public_member", "elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]) {
+test("grants active verified Elite through Black Card but not display-only or expired", () => {
+  for (const level of ["elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]) {
     assert.equal(membershipGrantsTmib({ level, levelVerified: true, displayOnly: false, status: "active", lifecycle: "active", access: "checking" }), true, level);
   }
+  assert.equal(membershipGrantsTmib({ level: "public_member", levelVerified: true, status: "active", lifecycle: "active" }), false);
   assert.equal(membershipGrantsTmib({ level: "guest", levelVerified: true, status: "active", lifecycle: "active" }), false);
   assert.equal(membershipGrantsTmib({ level: "public_member", levelVerified: false, status: "active", lifecycle: "active" }), false);
   assert.equal(membershipGrantsTmib({ level: "public_member", levelVerified: true, displayOnly: true, status: "active", lifecycle: "active" }), false);
@@ -73,7 +75,7 @@ test("released public episode is not purchasable", async () => {
 });
 
 test("released TMIB reader is public without a verified LINE session", async () => {
-  const response = await handleTmibStoryAccess(new Request("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001/access"), { LIFF_SESSION_SECRET: "test-only-tmib-media-secret-12345678901234567890" });
+  const response = await handleTmibStoryAccess(new Request("https://mmdbkk.com/member/api/liff/tmib/episodes/act-001-ep01/access"), { LIFF_SESSION_SECRET: "test-only-tmib-media-secret-12345678901234567890" });
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.granted, true);

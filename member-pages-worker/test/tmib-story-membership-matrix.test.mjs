@@ -4,8 +4,9 @@ import { membershipGrantsTmib } from "../src/tmib-story-access.js";
 
 const active = (level) => ({ level, levelVerified: true, displayOnly: false, status: "active", lifecycle: "active", access: "checking" });
 
-test("TMIB includes the public 690 THB member lane through private Black Card", () => {
-  for (const level of ["public_member", "elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]) {
+test("After ACT001 TMIB includes Elite through Black Card; public member does not qualify", () => {
+  assert.equal(membershipGrantsTmib(active("public_member")), false);
+  for (const level of ["elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]) {
     assert.equal(membershipGrantsTmib(active(level)), true, level);
   }
 });

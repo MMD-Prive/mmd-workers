@@ -3,33 +3,24 @@ name: TMIB story access CI
 on:
   pull_request:
     paths:
-      - "member-pages-worker/src/tmib-episode-catalog.js"
-      - "member-pages-worker/src/tmib-story-access.js"
-      - "member-pages-worker/src/tmib-act001-content.js"
-      - "member-pages-worker/src/tmib-media-lazy-seed.js"
-      - "member-pages-worker/src/index.js"
-      - "member-pages-worker/test/tmib-story-access.test.mjs"
-      - "member-pages-worker/test/tmib-story-access-route-contract.test.mjs"
-      - "member-pages-worker/test/tmib-story-membership-matrix.test.mjs"
-      - "member-pages-worker/test/tmib-act001-content.test.mjs"
-      - "member-pages-worker/test/tmib-media-lazy-seed.test.mjs"
-      - "member-pages-worker/wrangler.toml"
+      - "package.json"
+      - "member-pages-worker/**"
+      - "scripts/check-tmib-public-reader*"
+      - "scripts/member-pages-code-only-release*"
+      - "scripts/member-pages-promotion-only-recovery*"
+      - ".github/workflows/deploy-member-pages-worker*.yml"
+      - ".github/workflows/care-back-prod-trusted-caller-rollout.yml"
       - ".github/workflows/tmib-story-access-ci.yml"
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - "member-pages-worker/src/tmib-episode-catalog.js"
-      - "member-pages-worker/src/tmib-story-access.js"
-      - "member-pages-worker/src/tmib-act001-content.js"
-      - "member-pages-worker/src/tmib-media-lazy-seed.js"
-      - "member-pages-worker/src/index.js"
-      - "member-pages-worker/test/tmib-story-access.test.mjs"
-      - "member-pages-worker/test/tmib-story-access-route-contract.test.mjs"
-      - "member-pages-worker/test/tmib-story-membership-matrix.test.mjs"
-      - "member-pages-worker/test/tmib-act001-content.test.mjs"
-      - "member-pages-worker/test/tmib-media-lazy-seed.test.mjs"
-      - "member-pages-worker/wrangler.toml"
+      - "package.json"
+      - "member-pages-worker/**"
+      - "scripts/check-tmib-public-reader*"
+      - "scripts/member-pages-code-only-release*"
+      - "scripts/member-pages-promotion-only-recovery*"
+      - ".github/workflows/deploy-member-pages-worker*.yml"
+      - ".github/workflows/care-back-prod-trusted-caller-rollout.yml"
       - ".github/workflows/tmib-story-access-ci.yml"
 
 permissions:
@@ -45,7 +36,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
+      - run: |
+          npm ci
+          npm ci --prefix member-pages-worker/test-runtime
       - name: Syntax check TMIB gate
         run: |
           node --check member-pages-worker/src/tmib-episode-catalog.js
@@ -55,6 +48,11 @@ jobs:
           node --check member-pages-worker/src/index.js
       - name: Test TMIB story access
         run: node --experimental-global-webcrypto --test member-pages-worker/test/tmib-story-access.test.mjs member-pages-worker/test/tmib-story-access-route-contract.test.mjs member-pages-worker/test/tmib-story-membership-matrix.test.mjs member-pages-worker/test/tmib-act001-content.test.mjs member-pages-worker/test/tmib-media-lazy-seed.test.mjs
+      - name: Verify the actual release artifact and regression rejection
+        run: |
+          npm run check:tmib-public-reader
+          npm run test:tmib-public-reader
+          node --test scripts/member-pages-code-only-release.test.mjs scripts/member-pages-promotion-only-recovery.test.mjs
       - name: Dry-run member pages worker
         working-directory: member-pages-worker
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars

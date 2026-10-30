@@ -1,3 +1,4 @@
+import { isTmibPublicEpisodeContentPath, handleTmibPublicEpisodeContent } from "./tmib-public-episode-content.js";
 import { handleTmibStoryAccess } from "./tmib-story-access.js";
 
 const CONTENT_PATH = "/member/api/liff/tmib/episodes/act-001/content";
@@ -35,10 +36,12 @@ function json(payload, status = 200) {
 
 export function isTmibAct001ContentPath(input) {
   const url = input instanceof URL ? input : new URL(String(input));
-  return url.pathname.replace(/\/+$/, "") === CONTENT_PATH;
+  return url.pathname.replace(/\/+$/, "") === CONTENT_PATH || isTmibPublicEpisodeContentPath(url);
 }
 
 export async function handleTmibAct001Content(request, env = {}) {
+  if (!isTmibAct001ContentPath(request.url)) return json({ok:false,error:{code:"TMIB_CONTENT_NOT_FOUND"}},404);
+  if (isTmibPublicEpisodeContentPath(request.url)) return handleTmibPublicEpisodeContent(request, env);
   if (request.method !== "GET") return json({ ok:false, error:{ code:"METHOD_NOT_ALLOWED" } }, 405);
   const url = new URL(request.url);
   url.pathname = ACCESS_PATH;
