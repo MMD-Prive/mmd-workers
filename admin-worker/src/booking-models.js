@@ -1,3 +1,4 @@
+import { bookingDriveFolder, listBookingDriveMedia, readBookingDriveMedia, readBookingDriveCover } from "./booking-model-drive.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { renderBookingModelsPage } from "./booking-models-page.js";
 import { sanitizeModelForBooking, customerModelExcluded } from "../../sigil-booking-worker/src/index.js";
@@ -36,6 +37,15 @@ export async function handleBookingModels(request, env = {}) {
     return new Response(request.method === "HEAD" ? null : renderBookingModelsPage(nonce), { headers: { ...headers, "content-type": "text/html; charset=utf-8", "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` } });
   }
   try {
+    const drive = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/drive(?:\/([A-Za-z0-9_-]{10,180}))?$/);
+    const driveCover=path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/drive-cover$/);
+    if(drive || driveCover) {
+      try {
+        if(driveCover)return await readBookingDriveCover(request,env,driveCover[1]);
+        if(drive[2])return await readBookingDriveMedia(request,env,drive[1],drive[2]);
+        return json(await listBookingDriveMedia(env,drive[1]));
+      }catch(error){return json({ok:false,error:error.status===409?"model_folder_conflict":"drive_media_unavailable"},[404,409,416].includes(error.status)?error.status:503);}
+    }
     const asset = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/media\/(rec[a-zA-Z0-9]+)$/);
     if (asset) return await readBookingAdminMedia(request, env, asset[1], asset[2]);
     const cover = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/cover$/);
@@ -100,7 +110,8 @@ export function projectBookingModel(record, assets = [], mediaStatus, env = {}) 
   // Admin previews are independent of customer visibility and approval status.
   const photos = assets.filter(asset => asset.kind === "photo" && asset.preview_available);
   const cover = photos[0] || null;
-  const coverStatus = mediaStatus === "unavailable" ? "unavailable" : cover ? "available" : assets.some(asset => asset.kind === "clip" && asset.preview_available) ? "clip_only" : assets.length ? "unavailable" : "missing";
+  const driveLinked=Boolean(bookingDriveFolder(f));
+  const coverStatus = mediaStatus === "unavailable" ? "unavailable" : cover ? "available" : assets.some(asset => asset.kind === "clip" && asset.preview_available) ? "clip_only" : assets.length ? "unavailable" : driveLinked ? "drive_linked" : "missing";
   if (coverStatus === "missing") reasons.push("missing_media");
   if (mediaStatus === "unavailable") reasons.push("cover_unavailable");
   if (offersPrivate) reasons.push("private_delivery_pending");
@@ -110,7 +121,7 @@ export function projectBookingModel(record, assets = [], mediaStatus, env = {}) 
     offers_public: offersPublic, offers_private: offersPrivate,
     public_profile_allowed: Boolean(publicModel), private_profile_allowed: Boolean(privateModel),
     access_folder: offersPrivate ? inferCustomerModelFolder(f) : "", reasons: [...new Set(reasons)],
-    cover_status: coverStatus, cover_media_id: cover?.media_id || "", cover_asset_id: cover?.asset_record_id || "", media_count: assets.length, media: assets,
+    drive_linked: driveLinked, cover_status: coverStatus, cover_media_id: cover?.media_id || "", cover_asset_id: cover?.asset_record_id || "", media_count: assets.length, media: assets,
   };
 }
 
@@ -131,3 +142,4 @@ async function airtable(env, path) {
   if (!response.ok) throw new Error("backend_unavailable");
   return response.json();
 }
+
