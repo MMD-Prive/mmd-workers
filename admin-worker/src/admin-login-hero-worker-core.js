@@ -136,6 +136,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/model-applications",
   "/internal/admin/model-link",
   "/internal/admin/mmd-review",
+  "/internal/admin/booking-models",
   MMS_PARTNER_PAGE_PATH,
   "/internal/admin/payments",
   "/internal/admin/refunds",

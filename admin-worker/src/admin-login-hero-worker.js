@@ -18,6 +18,7 @@ import { handleModelReconfirmOwnerRequest, isModelReconfirmOwnerRequest } from "
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { observeGenuineLiffAcceptance } from "./membership-genuine-liff-acceptance-observer.js";
+import { isBookingModelsRequest, handleBookingModels } from "./booking-models.js";
 import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
@@ -269,6 +270,7 @@ const adminLoginHeroWorker = {
     if (isCreateJobDriveDiscoveryRequest(request)) return handleCreateJobDriveDiscovery(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
+    if (isBookingModelsRequest(request)) return handleBookingModels(request, runtimeEnv);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);
     scheduleLineOfcContactBackfill(runtimeEnv, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, runtimeEnv);

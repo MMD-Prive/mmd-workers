@@ -1,0 +1,29 @@
+name: Booking Model Manager CI
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/booking-models*"
+      - "admin-worker/booking-models*.test.mjs"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/credential-bound-admin-session.js"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "webflow/global/sigil-internal-workspace-v3.mjs"
+      - "sigil-booking-worker/src/**"
+      - ".github/workflows/booking-models-ci.yml"
+permissions:
+  contents: read
+jobs:
+  booking-models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test admin-worker/booking-models.test.mjs
+      - name: Install isolated DOM test dependency
+        run: npm install --prefix "$RUNNER_TEMP/booking-models-dom" --no-save --ignore-scripts linkedom@0.18.12
+      - name: Test search UI
+        env:
+          BOOKING_MODELS_DOM_MODULE: ${{ runner.temp }}/booking-models-dom/node_modules/linkedom/esm/index.js
+        run: node --test admin-worker/booking-models-ui.test.mjs
