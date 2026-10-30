@@ -82,7 +82,8 @@ export async function verifyOwnerApproval(env, request = fetch, {preflight = fal
   assert.equal(run.head_branch, 'main');
   assert.equal(run.head_sha, env.GITHUB_SHA);
   assert.ok(['.github/workflows/deploy-member-pages-worker-code-only.yml',
-    '.github/workflows/deploy-member-pages-worker-code-only.yml@main'].includes(run.path), 'wrong workflow or ref');
+    '.github/workflows/deploy-member-pages-worker-code-only.yml@main',
+    '.github/workflows/deploy-member-pages-membership-points-artifact.yml'].includes(run.path), 'wrong workflow or ref');
   assert.ok(owner(run.actor) && owner(run.triggering_actor), 'only owner may dispatch or rerun');
   assert.equal(String(run.run_attempt), env.GITHUB_RUN_ATTEMPT);
   const main = await get('/git/ref/heads/main', 'OWNER_MAIN');
