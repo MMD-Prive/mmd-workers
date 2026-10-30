@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - "sigil-booking-worker/src/**"
+      - "sigil-booking-worker/wrangler.toml"
+      - "sigil-booking-worker/preview-origin-cors.test.mjs"
       - "sigil-booking-worker/customer-intake-current-access.test.mjs"
       - "sigil-booking-worker/customer-search-policy.test.mjs"
       - "sigil-booking-worker/model-media-search.test.mjs"
@@ -24,5 +26,7 @@ jobs:
         run: node --test sigil-booking-worker/customer-intake-current-access.test.mjs sigil-booking-worker/customer-search-policy.test.mjs sigil-booking-worker/src/entitlement-runtime-worker.test.js
       - name: Existing search and media regression
         run: node --test --test-name-pattern='booking discovery requires|runtime entrypoint GET|media gate rechecks|customer Booking rejects Live|customer body and skin filters|Create Job scope filters|MY MODEL visibility selections|SIGIL private denial|filter-only Private' sigil-booking-worker/model-media-search.test.mjs
+      - name: Approved browser origins and Private access boundary
+        run: node --test sigil-booking-worker/preview-origin-cors.test.mjs
       - name: Private no-member smoke contract
         run: node --test sigil-booking-worker/test/private-search-smoke-contract.test.mjs
