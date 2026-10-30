@@ -621,6 +621,14 @@ export default {
       if (!env.MEMBER_PAGES_WORKER?.fetch) return new Response("Service unavailable", { status: 503, headers: { "cache-control": "no-store" } });
       return env.MEMBER_PAGES_WORKER.fetch(request);
     }
+    // Temporary owner policy: collection navigation uses the existing Worker album lane.
+    // No member/album data is read here; that lane remains the access authority.
+    if (path === "/my-mmd/albums/ems" || path === "/my-mmd/albums/ems/") {
+      if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
+      if (new URL(request.url).search) return new Response(null, { status: 400, headers: { "cache-control": "no-store" } });
+      return new Response(null, { status: 307, headers: { location: "/my-mmd/ems", "cache-control": "no-store" } });
+    }
+
     if (isLegacyMyMmdUiPath(path)) return redirectLegacyMyMmd(request);
     if (isMyMmdBlackCardPayment(request)) return myMmdBlackCardPaymentPage(request);
     if (isMyMmdOrdersPage(request)) return proxyMyMmdOrdersPage(request);

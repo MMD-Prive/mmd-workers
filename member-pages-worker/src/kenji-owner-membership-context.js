@@ -4,13 +4,8 @@ const MONTHS = ["มกราคม|มค", "กุมภาพันธ์|ก
 const monthMap = new Map(MONTHS.flatMap((names, index) => names.split("|").map(name => [name, index + 1])));
 // Specific owner-confirmed display facts; no universal x2/tier-duration inference.
 const ACCOUNT_FACTS = Object.freeze({
-  U47880a424a18a501512b6fea35d3d44a: { start_date: "2022-01-14", years: 1,
-    historical_level: "private_premium", per_rename_key: "เล็ก14มค65",
-    source: "owner_confirmed_20261030_124817_Sentinel_3f2368f1ff3c81919a7a2a64e23af039",
-    renewal: { authority: "owner_reviewed_account_renewal_v1", status: "ready", package_code: "premium",
-      amount_thb: 2500, membership_years: 1, bonus_years: 1, discount_verified: true,
-      approval_ref: "Sentinel_3f2368f1ff3c81919a7a2a64e23af039", approved_at: "2026-10-30T12:48:17Z",
-      valid_before: "2026-11-01T00:00:00+07:00", requires_verified_payment: true, grants_access: false } },
+  // OA conversation identifiers are not verified webhook subject identities.
+  // The erroneous account-specific history/offer mapping is intentionally removed.
   U96f8216d8644acc6a7ae566cd5609842: { start_date: "2025-08-25", years: 1, source: "owner_confirmed_20261004_090613" },
   Ua379e5257fed424d57ecde5add22c0fb: { expiry_date: "2028-10-03", source: "owner_confirmed_eak94_expiry" },
 });

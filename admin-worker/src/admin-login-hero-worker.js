@@ -101,6 +101,7 @@ import {
   isSessionCreatorPageRequest,
 } from "./session-creator-page-proxy.js";
 import { handleMoneyControlWorkerHome } from "./money-control-worker-home.js";
+import { isHeldDocumentRequest, handleHeldDocumentRequest } from './held-document-review.js';
 import {
   handleCreateJobWorkerPage,
   isCreateJobWorkerPageRequest,
@@ -262,6 +263,7 @@ const adminLoginHeroWorker = {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isHeldDocumentRequest(request)) return handleHeldDocumentRequest(request, runtimeEnv, handleMoneyControlWorkerHome);
     if (isHypeConsoleRequest(request)) return handleHypeConsole(request, runtimeEnv);
     if (isMyMmdOperationsRequest(request)) return handleMyMmdOperations(request, runtimeEnv);
     if (isMemberCompletenessRequest(request)) return handleMemberCompleteness(request, runtimeEnv);

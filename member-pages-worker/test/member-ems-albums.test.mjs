@@ -85,11 +85,21 @@ test('source failure remains unavailable rather than becoming an empty catalog',
 });
 
 test('login return hint allows exactly the album list, including LINE liff.state',async()=>{
- for(const [q,state,expected] of [['return_to=albums_ems','','/my-mmd/albums/ems'],['','return_to=albums_ems','/my-mmd/albums/ems'],['return_to=https://evil.example','',''],['return_to=//evil.example','',''],['return_to=albums_ems&return_to=coupon','',''],['return_to=albums_ems','return_to=coupon','']])assert.equal(resolveEmsAlbumReturnTarget(new URLSearchParams(q),new URLSearchParams(state)),expected);
+ for(const [q,state,expected] of [['return_to=albums_ems','','/my-mmd/ems'],['','return_to=albums_ems','/my-mmd/ems'],['return_to=https://evil.example','',''],['return_to=//evil.example','',''],['return_to=albums_ems&return_to=coupon','',''],['return_to=albums_ems','return_to=coupon','']])assert.equal(resolveEmsAlbumReturnTarget(new URLSearchParams(q),new URLSearchParams(state)),expected);
  const response=handleLiffMemberShell(new Request('https://mmdbkk.com/member/liff?liff.state='+encodeURIComponent('?intent=status&return_to=albums_ems')),{LINE_LIFF_ID:'fixture'});
- const html=await response.text();assert.ok(html.includes('"returnTo":"/my-mmd/albums/ems"'));assert.ok(html.indexOf('profileReady = true;')<html.indexOf('window.location.replace(CONFIG.returnTo)'));
+ const html=await response.text();assert.ok(html.includes('"returnTo":"/my-mmd/ems"'));assert.ok(html.indexOf('profileReady = true;')<html.indexOf('window.location.replace(CONFIG.returnTo)'));
  for(const extra of ['intent=renew','intent=continue_payment','intent=signup','intent=promo','intent=status&campaign=care_back']){
   const response=handleLiffMemberShell(new Request('https://mmdbkk.com/member/liff?return_to=albums_ems&'+extra),{LINE_LIFF_ID:'fixture'});
   assert.ok((await response.text()).includes('"returnTo":""'),extra);
+ }
+});
+
+test('source LIFF shell accepts the legacy list/detail view only after verified profile',async()=>{
+ const slug='ems99-123456abcdef';
+ for(const nested of [false,true])for(const detail of [false,true]){
+  const q='intent=status&view=ems_albums'+(detail?'&album='+slug:'');
+  const r=handleLiffMemberShell(new Request('https://www.mmdbkk.com/member/liff?'+(nested?'liff.state='+encodeURIComponent('?'+q):q)),{LINE_LIFF_ID:'fixture'});
+  const html=await r.text();assert.ok(html.includes('"returnTo":"/my-mmd/ems'+(detail?'/'+slug:'')+'"'));
+  assert.ok(html.indexOf('profileReady = true;')<html.indexOf('window.location.replace(CONFIG.returnTo)'));
  }
 });
