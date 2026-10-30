@@ -105,6 +105,9 @@ export function resolveKenjiNextAction({ intent = "", decision = {}, continuity 
   });
 
   if (!text(decision.text)) return { ...noAction("no_customer_reply"), policy };
+  if (value === "membership_renewal" || (value === "membership_status" && decision.truth_status !== "verified")) {
+    return { ...noAction("membership_requires_in_chat_truth_or_review"), policy };
+  }
 
   let action = noAction();
   if (value === "membership_status") {
