@@ -1,7 +1,7 @@
 import { TG_THREADS } from "../lib/telegram.js";
 
 export const HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA = "mmd.hype_telegram_router_health.v1";
-export const HYPE_TELEGRAM_ROUTER_REGISTRY_VERSION = "2026-09-21.2";
+export const HYPE_TELEGRAM_ROUTER_REGISTRY_VERSION = "2026-10-01.1";
 
 const CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 
@@ -81,6 +81,16 @@ const ROUTER_LANES = Object.freeze([
     fallback: null,
     authority: "mms-worker",
     required_auth: ["AUTH_SERVICE_MMS_TO_TELEGRAM"],
+  },
+  {
+    key: "henna_customer_watch",
+    label: "HENNA MMS / WMS customer watch",
+    topic: "alerts",
+    sources: ["member-dashboard-chat-worker"],
+    flows: ["henna_customer_watch"],
+    fallback: null,
+    authority: "mms-worker current canonical state; notification only",
+    required_auth: ["AUTH_SERVICE_LINE_TO_TELEGRAM"],
   },
   {
     key: "partner_ops",
