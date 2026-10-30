@@ -1,4 +1,5 @@
-import { bookingDriveFolder, listBookingDriveMedia, readBookingDriveMedia, readBookingDriveCover } from "./booking-model-drive.js";
+import { projectLegacyModelMedia } from "./booking-model-legacy-media.js";
+import { hasBookingDriveSource, listBookingDriveMedia, readBookingDriveMedia, readBookingDriveCover } from "./booking-model-drive.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { renderBookingModelsPage } from "./booking-models-page.js";
 import { sanitizeModelForBooking, customerModelExcluded } from "../../sigil-booking-worker/src/index.js";
@@ -46,7 +47,7 @@ export async function handleBookingModels(request, env = {}) {
         return json(await listBookingDriveMedia(env,drive[1]));
       }catch(error){const allowed=new Set(["model_source_unavailable","model_folder_unlinked","model_folder_conflict","model_folder_unavailable","model_folder_scope_conflict","drive_credentials_not_configured","drive_oauth_unavailable","drive_account_mismatch","drive_access_unavailable","drive_media_unavailable","drive_inventory_unavailable","drive_inventory_incomplete","file_not_found","file_not_linked","drive_transport_redirect_unavailable","drive_transport_timeout_unavailable","drive_transport_receiver_unavailable","drive_transport_network_unavailable","owner_drive_service_account_missing","owner_drive_service_account_invalid","owner_drive_oauth_failed"]);return json({ok:false,error:error.status===409?"model_folder_conflict":"drive_media_unavailable",reason:allowed.has(error.code)?error.code:"source_read_failed"},[404,409,416].includes(error.status)?error.status:503);}
     }
-    const asset = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/media\/(rec[a-zA-Z0-9]+)$/);
+    const asset = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/media\/((?:rec|att)[a-zA-Z0-9]+|legacy)$/);
     if (asset) return await readBookingAdminMedia(request, env, asset[1], asset[2]);
     const cover = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/cover$/);
     if (cover) return await readCover(request, env, cover[1], url.searchParams.get("media_id"));
@@ -89,6 +90,7 @@ async function loadModels(env, query) {
 
 export function projectBookingModel(record, assets = [], mediaStatus, env = {}) {
   const f = record.fields || {};
+  assets=assets.concat(projectLegacyModelMedia(record,env));
   const publicModel = sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, env });
   const privateModel = sanitizeModelForBooking(record, { scope: "private", privateAllowed: true, allowedFolders: ["standard", "premium"], env });
   const offersPublic = enabled(f.can_work_public) || enabled(f["Public Search Enabled"]) || token(f.sales_layer).includes("public") || token(f.visibility) === "public";
@@ -110,8 +112,8 @@ export function projectBookingModel(record, assets = [], mediaStatus, env = {}) 
   // Admin previews are independent of customer visibility and approval status.
   const photos = assets.filter(asset => asset.kind === "photo" && asset.preview_available);
   const cover = photos[0] || null;
-  const driveLinked=Boolean(bookingDriveFolder(f));
-  const coverStatus = mediaStatus === "unavailable" ? "unavailable" : cover ? "available" : assets.some(asset => asset.kind === "clip" && asset.preview_available) ? "clip_only" : assets.length ? "unavailable" : driveLinked ? "drive_linked" : "missing";
+  const driveLinked=hasBookingDriveSource(f);
+  const coverStatus = cover ? "available" : mediaStatus === "unavailable" ? "unavailable" : assets.some(asset => asset.kind === "clip" && asset.preview_available) ? "clip_only" : assets.length ? "unavailable" : driveLinked ? "drive_linked" : "missing";
   if (coverStatus === "missing") reasons.push("missing_media");
   if (mediaStatus === "unavailable") reasons.push("cover_unavailable");
   if (offersPrivate) reasons.push("private_delivery_pending");

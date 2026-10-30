@@ -1,3 +1,4 @@
+import { readLegacyModelMedia } from "./booking-model-legacy-media.js";
 // Called only after the Booking Model owner/admin session gate.
 const ORIGIN = "https://api.airtable.com/v0/";
 const text = value => String(value ?? "").trim();
@@ -40,9 +41,10 @@ export async function loadBookingAdminMedia(env, modelIds) {
 }
 
 export async function readBookingAdminMedia(request, env, modelId, assetRecordId) {
-  if (!ID.test(modelId) || !ID.test(assetRecordId)) return denied(404);
+  if (!ID.test(modelId) || !/^(?:rec[a-zA-Z0-9]+|att[a-zA-Z0-9]+|legacy)$/.test(assetRecordId)) return denied(404);
   const model = await read(env, "/" + encodeURIComponent(env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models") + "/" + modelId);
   if (model.id !== modelId) return denied(404);
+  if(assetRecordId === "legacy" || assetRecordId.startsWith("att"))return readLegacyModelMedia(request,env,model,assetRecordId);
   const asset = await read(env, "/" + encodeURIComponent(mediaTable(env)) + "/" + assetRecordId);
   const f = asset.fields || {};
   if (asset.id !== assetRecordId || !Array.isArray(f.Model) || f.Model.length !== 1 || f.Model[0] !== modelId) return denied(404);
@@ -87,3 +89,4 @@ async function read(env, path) {
   if (!response.ok) throw new Error("backend_unavailable");
   return response.json();
 }
+
