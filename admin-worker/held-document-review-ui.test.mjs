@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { handleMoneyControlWorkerHome } from './src/money-control-worker-home.js';
+import { HELD_DOCUMENT_CLIENT } from './src/held-document-review-ui.js';
+const { handleMoneyControlWorkerHome } = await import(process.env.HELD_DOCUMENT_PAGE_MODULE || './src/money-control-worker-home.js');
 const require = createRequire(import.meta.url);
 const { JSDOM } = require(process.env.MMD_UI_TEST_MODULES ? `${process.env.MMD_UI_TEST_MODULES}/jsdom` : 'jsdom');
 
@@ -16,6 +17,15 @@ async function boot(fetcher) {
 }
 async function settled() { for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve)); }
 const ok = data => ({ ok: true, json: async () => ({ ok: true, read_only: true, ...data }) });
+
+test('delivered browser script does not depend on Worker-only bundle helpers', async () => {
+  assert.equal(typeof HELD_DOCUMENT_CLIENT, 'string');
+  assert.match(HELD_DOCUMENT_CLIENT, /^function heldDocumentClient\(copy\)/);
+  const html = await handleMoneyControlWorkerHome(new Request('https://mmdbkk.com/internal/admin/payments?view=held-images')).text();
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+  assert.equal(scripts.length, 1);
+  assert.doesNotMatch(scripts[0], /\b__name\s*\(/);
+});
 
 test('held UI loads via GET only, shows readable reason/customer/time and opens private image', async () => {
   const { dom, document, calls } = await boot(() => ok({ items: [item], next_cursor: null }));

@@ -52,10 +52,13 @@ export function renderHeldDocumentPage(template) {
   return template.replace(/<title>[^<]*<\/title>/, `<title>${copy.title} · Money Control</title>`)
     .replace('</head>', `${style}</head>`).replace(/<main>[\s\S]*?<\/main>/, main)
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '')
-    .replace('</body>', `<script>${heldDocumentClient.toString()};heldDocumentClient(${JSON.stringify(copy)});</script></body>`);
+    .replace('</body>', `<script>${HELD_DOCUMENT_CLIENT};heldDocumentClient(${JSON.stringify(copy)});</script></body>`);
 }
 
-export function heldDocumentClient(copy) {
+// A function serialized after Worker bundling can contain injected helpers such
+// as __name, which do not exist in the browser. Keep this standalone browser
+// program as source text, following the existing Booking Models page contract.
+export const HELD_DOCUMENT_CLIENT = String.raw`function heldDocumentClient(copy) {
   const byId = id => document.getElementById(id);
   const list = byId('held-list');
   const more = byId('held-more');
@@ -76,7 +79,7 @@ export function heldDocumentClient(copy) {
     byId('held-viewer-title').textContent = name;
     byId('held-image-status').textContent = copy.image_loading;
     const image = document.createElement('img');
-    image.alt = `${copy.title} · ${name}`;
+    image.alt = copy.title + ' · ' + name;
     image.referrerPolicy = 'no-referrer';
     image.addEventListener('load', () => { if (current === generation) byId('held-image-status').textContent = copy.notice; });
     image.addEventListener('error', () => { if (current === generation) { byId('held-image-status').textContent = copy.image_error; image.remove(); } });
@@ -95,8 +98,8 @@ export function heldDocumentClient(copy) {
     info.append(text('p', identity));
     if (copy[item.retention_state]) info.append(text('p', copy[item.retention_state]));
     const date = item.received_at && Number.isFinite(Date.parse(item.received_at)) ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(new Date(item.received_at)) : copy.unknown_date;
-    info.append(text('p', `${copy.received}: ${date}`));
-    info.append(text('small', `${copy.reference}: ${item.reference}`));
+    info.append(text('p', copy.received + ': ' + date));
+    info.append(text('small', copy.reference + ': ' + item.reference));
     el.append(info);
     if (typeof item.image_url === 'string' && /^\/v1\/admin\/payments\/held-images\/image\?id=[A-Za-z0-9_%.-]+$/.test(item.image_url)) {
       const button = text('button', copy.open); button.type = 'button'; button.addEventListener('click', () => show(item, name)); el.append(button);
@@ -109,7 +112,7 @@ export function heldDocumentClient(copy) {
     status.textContent = copy.loading;
     if (reset) { cursor = null; list.replaceChildren(); shown.clear(); close(); }
     try {
-      const response = await fetch(`/v1/admin/payments/held-images${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
+      const response = await fetch('/v1/admin/payments/held-images' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
       if (!response.ok) throw new Error('unavailable');
       const data = await response.json();
       if (data.ok !== true || data.read_only !== true || !Array.isArray(data.items)) throw new Error('invalid_data');
@@ -125,4 +128,4 @@ export function heldDocumentClient(copy) {
   refresh.addEventListener('click', () => void load(true));
   more.addEventListener('click', () => void load(false));
   void load(true);
-}
+}`;
