@@ -352,10 +352,54 @@ function hasLegacyHistoryEvidence(row) {
     || clean(fields.historical_events_json);
 }
 
+const CONTACT_ONLY_PRIVATE_HISTORY_SCHEMA = "line_ofc_contacts_v2_all_identities";
+const CONTACT_ONLY_PRIVATE_HISTORY_KEYS = new Set([
+  "schema",
+  "line_user_id",
+  "line_id",
+  "display_name",
+  "aliases",
+  "email_candidates",
+  "phone_candidates",
+  "telegram_username_candidates",
+  "telegram_id",
+  "message_count",
+  "first_seen_at",
+  "last_seen_at",
+  "matched_client_id",
+  "match_type",
+  "conflicts",
+  "raw_conversation_copied",
+]);
+
+function parsePrivateHistoryJson(value) {
+  const raw = clean(value);
+  if (!raw || raw === "{}" || raw === "[]" || raw === "null") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isContactOnlyPrivateHistory(value) {
+  const data = parsePrivateHistoryJson(value);
+  if (!data || data.schema !== CONTACT_ONLY_PRIVATE_HISTORY_SCHEMA) return false;
+  if (data.raw_conversation_copied !== false || typeof data.line_user_id !== "string") return false;
+  if (!Number.isInteger(data.message_count) || data.message_count < 0) return false;
+  if (!["line_id", "telegram_id", "matched_client_id"].every((key) => data[key] == null || typeof data[key] === "string")) return false;
+  if (!["aliases", "email_candidates", "phone_candidates", "telegram_username_candidates", "conflicts"]
+    .every((key) => Array.isArray(data[key]))) return false;
+  if (!Object.keys(data).every((key) => CONTACT_ONLY_PRIVATE_HISTORY_KEYS.has(key))) return false;
+  return true;
+}
+
 function hasPrivateHistoryCandidate(row) {
   const fields = row?.fields || {};
   const raw = clean(fields["Service History Candidate JSON"]);
   if (!raw || raw === "{}" || raw === "[]" || raw === "null") return false;
+  if (isContactOnlyPrivateHistory(raw)) return false;
   return true;
 }
 
@@ -799,6 +843,8 @@ module.exports = {
   canonicalClientIdFromLegacy,
   canonicalClientIdFromPrivate,
   hasPrivateHistoryCandidate,
+  isContactOnlyPrivateHistory,
+  parsePrivateHistoryJson,
   isLegacyAggregatePoint,
   parseArgs,
   runBatchPreload,
