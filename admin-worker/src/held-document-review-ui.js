@@ -2,6 +2,8 @@
 // remains a separate release dependency; this module contains no business rules.
 export const HELD_REVIEW_COPY = Object.freeze({
   title: 'ภาพรอตรวจ',
+  navigation_label: 'หมวดตรวจภาพ',
+  read_only: 'อ่านอย่างเดียว',
   proofs: 'หลักฐานชำระเงิน',
   lead: 'ภาพที่ระบบยังจัดประเภทไม่ได้ แยกจากหลักฐานชำระเงิน หน้านี้ดูข้อมูลได้อย่างเดียวครับ',
   notice: 'ยังไม่ยืนยันเงินเข้า · ไม่เพิ่มสิทธิ์ · หน้านี้ไม่มีคำสั่งลบภาพ',
@@ -34,12 +36,12 @@ export const HELD_REVIEW_COPY = Object.freeze({
 });
 
 export function heldDocumentNavigation(active = false) {
-  return `<nav class="held-nav" aria-label="หมวดตรวจภาพ"><a href="/internal/admin/payments"${!active ? ' aria-current="page"' : ''}>${HELD_REVIEW_COPY.proofs}</a><a href="/internal/admin/payments?view=held-images"${active ? ' aria-current="page"' : ''}>${HELD_REVIEW_COPY.title}</a></nav>`;
+  return `<nav class="held-nav" aria-label="${HELD_REVIEW_COPY.navigation_label}"><a href="/internal/admin/payments"${!active ? ' aria-current="page"' : ''}>${HELD_REVIEW_COPY.proofs}</a><a href="/internal/admin/payments?view=held-images"${active ? ' aria-current="page"' : ''}>${HELD_REVIEW_COPY.title}</a></nav>`;
 }
 
 export function renderHeldDocumentPage(template) {
   const copy = HELD_REVIEW_COPY;
-  const main = `<main>${heldDocumentNavigation(true)}<header class="brand"><strong>MMD PRIVÉ · MONEY CONTROL</strong><span>อ่านอย่างเดียว</span></header>
+  const main = `<main>${heldDocumentNavigation(true)}<header class="brand"><strong>MMD PRIVÉ · MONEY CONTROL</strong><span>${copy.read_only}</span></header>
   <h1>${copy.title}</h1><p class="lead">${copy.lead}</p><aside class="notice">${copy.notice}</aside>
   <section class="queue" aria-label="${copy.title}"><div class="q-head"><h2>${copy.title}</h2><button id="held-refresh" type="button">${copy.refresh}</button></div>
     <p id="held-status" class="held-status" role="status" aria-live="polite">${copy.loading}</p><div id="held-list"></div><div class="held-footer"><button id="held-more" type="button" hidden>${copy.more}</button></div></section>

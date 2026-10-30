@@ -171,6 +171,11 @@ async function resolveCustomer(env, uid) {
     const staging = await query(env, env.AIRTABLE_TABLE_PRIVATE_CUSTOMERS_STAGING_ID || 'tblOs8yyLK09SKrCt', `AND({LINE User ID}='${uid}',{Import ID}='line_ofc_per_rename_v1_${uid.toLowerCase()}')`, ['LINE User ID', 'Import ID', 'Source Hash', 'Canonical Client', 'Current LINE Rename']);
     const rename = projectPaymentCustomerRename(staging, uid, clients[0].id);
     // No name-only fallback and no read-repair/profile endpoint calls.
-    return rename ? { customer: rename.per_rename, identity_state: 'exact_line_client_per_rename_v1' } : unknown;
+    const name = rename?.per_rename || '';
+    // Even a source-bound display field must not disclose a pasted contact or
+    // credential in the queue. Dates/normal nicknames remain display-only.
+    if (!name || /[\r\n\t<>@]/u.test(name) || /https?:|www\.|\b(?:bearer|authorization|password|secret|token|cookie)\b|\bsk-/iu.test(name)
+      || /\d{6,}|\bU[a-f0-9]{32}\b|\brec[A-Za-z0-9]{14}\b/i.test(name) || name.replace(/\D/g, '').length >= 7) return unknown;
+    return { customer: name, identity_state: 'exact_line_client_per_rename_v1' };
   } catch { return { ...unknown, identity_state: 'lookup_unavailable' }; }
 }

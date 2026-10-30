@@ -154,14 +154,14 @@ test('terminal classification is not bank verification and unknown errors never 
 test('unique canonical Client and provenance-bound rename only; ambiguity/failure never falls back by name', async () => {
   const originalFetch = globalThis.fetch;
   try {
-    for (const state of ['match', 'duplicate', 'foreign', 'no_source', 'upstream']) {
+    for (const state of ['match', 'duplicate', 'foreign', 'no_source', 'upstream', 'unsafe_contact']) {
       const { env } = setup(); env.AIRTABLE_BASE_ID = 'appfixture'; env.AIRTABLE_API_KEY = 'fixture';
       globalThis.fetch = async (input, options) => {
         assert.equal(options.method, 'GET');
         const url = new URL(input); const formula = url.searchParams.get('filterByFormula'); assert.match(formula, /Uaaaa/);
         if (state === 'upstream') return new Response('private upstream detail', { status: 503 });
         if (url.pathname.endsWith('/Clients')) return Response.json({ records: state === 'duplicate' ? [{ id: 'rec1', fields: { line_user_id: uid } }, { id: 'rec2', fields: { line_user_id: uid } }] : [{ id: 'rec1', fields: { line_user_id: uid, Name: 'do not trust fallback name' } }] });
-        return Response.json({ records: [{ id: 'recstaging', fields: { 'LINE User ID': uid, 'Import ID': `line_ofc_per_rename_v1_${uid.toLowerCase()}`, 'Source Hash': state === 'no_source' ? '' : 'b'.repeat(64), 'Canonical Client': [state === 'foreign' ? 'recOTHER' : 'rec1'], 'Current LINE Rename': 'ลูกค้าทดสอบ 9 เมย 68' } }] });
+        return Response.json({ records: [{ id: 'recstaging', fields: { 'LINE User ID': uid, 'Import ID': `line_ofc_per_rename_v1_${uid.toLowerCase()}`, 'Source Hash': state === 'no_source' ? '' : 'b'.repeat(64), 'Canonical Client': [state === 'foreign' ? 'recOTHER' : 'rec1'], 'Current LINE Rename': state === 'unsafe_contact' ? 'person@example.com' : 'ลูกค้าทดสอบ 9 เมย 68' } }] });
       };
       const data = await (await run(env)).json();
       assert.equal(data.items[0].customer, state === 'match' ? 'ลูกค้าทดสอบ 9 เมย 68' : null);
