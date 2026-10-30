@@ -20,7 +20,7 @@ function projection(overrides = {}) {
     computed_at: "2026-09-22T10:00:00.000Z",
     client_id: CLIENT_ID,
     member_id: MEMBER_ID,
-    identity: { state: "ready", member_linked: true },
+    identity: { state: "ready", member_linked: true, member_match_count: 1 },
     history_backfill_status: "reconciled",
     source_note_count: 3,
     unresolved_history_reviews: 0,
@@ -154,6 +154,27 @@ test("projection exposes expiring lots even when the 365-day spend is lower", ()
   assert.equal(points.serviceSpend365dThb, 25000);
   assert.equal(status.current_points_total, 1475);
   assert.equal(status.preload_source, "my_mmd_batch_preload_v1");
+});
+
+test("contact enrichment pending remains readable only with unique canonical ownership", () => {
+  const preload = validateProjection(projection({
+    identity: { state: "contact_enrichment_pending", member_linked: true, member_match_count: 1 },
+  }), { clientId: CLIENT_ID, now: NOW });
+  const points = lifetimePointsFromPreload(preload, MEMBER_ID);
+  assert.equal(points?.confirmedBalance, 1475);
+});
+
+test("missing, ambiguous, review, and unknown identity states never expose preload points", () => {
+  for (const identity of [
+    { state: "contact_enrichment_pending", member_linked: false, member_match_count: 1 },
+    { state: "contact_enrichment_pending", member_linked: true, member_match_count: 2 },
+    { state: "review_required", member_linked: true, member_match_count: 1 },
+    { state: "line_identity_missing", member_linked: true, member_match_count: 1 },
+    { state: "unexpected", member_linked: true, member_match_count: 1 },
+  ]) {
+    const preload = validateProjection(projection({ identity }), { clientId: CLIENT_ID, now: NOW });
+    assert.equal(lifetimePointsFromPreload(preload, MEMBER_ID), null);
+  }
 });
 
 test("stale or rolling-expiry projections are rejected and fall back", () => {
