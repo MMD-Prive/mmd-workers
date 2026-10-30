@@ -13,7 +13,11 @@ on:
         type: string
         required: true
       approved_sha:
-        description: 'Must equal the exact merged release SHA'
+        description: 'Must equal the current main SHA containing this guarded workflow'
+        type: string
+        required: true
+      approved_source_sha:
+        description: 'Exact merged membership and Points source SHA'
         type: string
         required: true
       expected_version:
@@ -35,7 +39,7 @@ concurrency:
 
 jobs:
   production-approval:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && github.sha == 'd3ad42ec9d66639a3dc215045e5a4d5e9a040c86'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.approved_source_sha == 'd3ad42ec9d66639a3dc215045e5a4d5e9a040c86'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -53,7 +57,7 @@ jobs:
         run: node --test scripts/member-pages-membership-points-release.test.mjs
 
   release:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && github.sha == 'd3ad42ec9d66639a3dc215045e5a4d5e9a040c86'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha && inputs.approved_source_sha == 'd3ad42ec9d66639a3dc215045e5a4d5e9a040c86'
     needs: [production-approval]
     environment: member-pages-code-only-owner
     runs-on: ubuntu-latest
@@ -64,21 +68,32 @@ jobs:
       PRODUCTION_APPROVED: ${{ inputs.production_approved }}
       APPROVAL_REF: ${{ inputs.approval_ref }}
       APPROVED_SHA: ${{ inputs.approved_sha }}
+      APPROVED_SOURCE_SHA: ${{ inputs.approved_source_sha }}
       EXPECTED_VERSION: ${{ inputs.expected_version }}
       EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
-      SOURCE_DIRECTORY: ${{ github.workspace }}
+      SOURCE_DIRECTORY: ${{ github.workspace }}/release-source
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          path: release-tools
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: d3ad42ec9d66639a3dc215045e5a4d5e9a040c86
+          fetch-depth: 0
+          path: release-source
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Validate scoped source and artifact preservation contract
+        working-directory: release-tools
         run: node --test scripts/member-pages-membership-points-release.test.mjs
       - name: Install pinned Wrangler bundler
+        working-directory: release-tools
         run: npm install --global wrangler@4.151.1 --no-audit --no-fund
       - name: Upload and promote exact membership/Points artifact delta
+        working-directory: release-tools
         run: node scripts/member-pages-membership-points-release.mjs --execute-approved
