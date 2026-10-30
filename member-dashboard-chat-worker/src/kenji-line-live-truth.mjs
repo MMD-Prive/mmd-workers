@@ -1,3 +1,5 @@
+import { MMD_MEMBERSHIP_STATUS_COPY_TH } from "./mmd-i18n.mjs";
+
 const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/member-truth";
 const MEMBER_SNAPSHOT_URL = "https://member-pages-worker.internal/__internal/kenji/member-reply-snapshot";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
@@ -99,7 +101,11 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
       body: JSON.stringify({ line_user_id: lineUserId, intent: effectiveIntent }),
       signal: controller.signal,
     }));
-    if (!response.ok) return { ok: false, status: "unavailable", authority: AUTHORITY };
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      const status = text(payload?.status) || "unavailable";
+      return { ok: false, status, failure_class: text(payload?.failure_class) || status, authority: AUTHORITY };
+    }
     const payload = await response.json().catch(() => null);
     const truth = boundedTruth(payload || {});
     return truth || { ok: false, status: "unavailable", authority: AUTHORITY };
@@ -239,6 +245,23 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     };
   }
 
+  const failureClass = text(liveTruth?.failure_class || liveTruth?.status).toLowerCase();
+  if (value === "membership_status" && ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"].includes(failureClass)) {
+    const message = MMD_MEMBERSHIP_STATUS_COPY_TH[failureClass];
+    return {
+      text: message,
+      reply_source: "live_truth_unavailable",
+      guard_blocked: false,
+      guard_reason: `membership_status:${failureClass}`,
+      handoff_required: false,
+      handoff_reason: "",
+      truth_authority: AUTHORITY,
+      truth_status: failureClass,
+      live_truth_used: false,
+      live_truth_verified: false,
+    };
+  }
+
   if (knownIdentity(continuity)) {
     return {
       text: "ผมเจอบัญชีที่ผูกไว้แล้วครับ แต่สถานะล่าสุดยังอ่านจากตัวตรวจสิทธิ์ไม่สำเร็จ เลยยังไม่ยืนยันระดับหรือวันหมดอายุให้ผิดครับ",
@@ -257,7 +280,7 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
   // A missing Client link is not permission to bypass the canonical result and
   // fall through to legacy status copy (or infer identity from a typed name).
   return {
-    text: "ตอนนี้ยังอ่านสิทธิ์สมาชิกจากบัญชี LINE นี้ไม่สำเร็จครับ จึงยังไม่ยืนยันระดับหรือวันหมดอายุ เปิด MY MMD เพื่อเชื่อมบัญชีเดิมได้ครับ หากเชื่อมไว้แล้วให้เปอร์ตรวจการผูกบัญชีต่อ ไม่ต้องสมัครหรือชำระใหม่ครับ",
+    text: "ตอนนี้ยังอ่านสิทธิ์สมาชิกจากบัญชี LINE นี้ไม่สำเร็จครับ จึงยังไม่ยืนยันระดับหรือวันหมดอายุได้",
     reply_source: "live_truth_unavailable",
     guard_blocked: false,
     guard_reason: "live_truth_unavailable",

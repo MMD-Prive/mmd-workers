@@ -4,6 +4,7 @@ import { projectKenjiRenewalPromotion, readKenjiCareBackCoupon } from "./kenji-m
 import { readKenjiPrivateSignupCatalog } from "./kenji-private-interest.js";
 import { resolveCanonicalRenewalOffer, renewalPriceForSpend } from "./renewal-offer.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { resolveCanonicalClientForLine } from "./member-app-client-history.js";
 
 const PATH = "/__internal/kenji/member-truth";
 const SERVICE_HOST = "member-pages-worker.internal";
@@ -113,7 +114,7 @@ export function isKenjiLineMemberTruthRequest(request) {
 async function readCanonicalMemberProfile(env, lineUserId) {
   const resolver = env.MEMBER_STATUS_RESOLVER;
   const secret = text(env.MEMBER_STATUS_RESOLVER_SECRET);
-  if (!resolver?.fetch || secret.length < 32) return null;
+  if (!resolver?.fetch || secret.length < 32) return { status: "upstream_error" };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("kenji_member_truth_timeout"), TIMEOUT_MS);
@@ -127,29 +128,30 @@ async function readCanonicalMemberProfile(env, lineUserId) {
       body: JSON.stringify({ line_user_id: lineUserId, purpose: MEMBER_PROFILE_PURPOSE }),
       signal: controller.signal,
     }));
-    if (!response.ok) return null;
+    if (!response.ok) return { status: "upstream_error" };
     const payload = await response.json().catch(() => null);
     const data = isPlainObject(payload?.data) ? payload.data : null;
-    if (payload?.ok !== true || data?.member_exists !== true) return null;
+    if (payload?.ok !== true || typeof data?.member_exists !== "boolean") return { status: "upstream_error" };
+    if (data.member_exists !== true) return { status: "identity_unresolved" };
     const profile = isPlainObject(data.profile) ? data.profile : null;
     const snapshot = isPlainObject(data.entitlement_snapshot)
       ? data.entitlement_snapshot
       : (isPlainObject(profile?.entitlement_snapshot) ? profile.entitlement_snapshot : null);
-    if (!profile || !snapshot) return null;
-    return { profile, snapshot, memberId: text(data.member_id) };
+    if (!profile || !snapshot || !projectResolverSnapshot(snapshot)) return { status: "projection_invalid" };
+    return { status: "resolved", profile, snapshot, memberId: text(data.member_id) };
   } catch {
-    return null;
+    return { status: "upstream_error" };
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function readCanonicalEntitlementSnapshot(env, lineUserId) {
+async function readCanonicalEntitlementSnapshot(env, lineUserId, identity = {}) {
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const table = text(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || ENTITLEMENT_TABLE_FALLBACK);
   const lineField = text(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD || ENTITLEMENT_LINE_FIELD_FALLBACK);
-  if (!apiKey || !baseId || !table || !lineField) return null;
+  if (!apiKey || !baseId || !table || !lineField) return { status: "upstream_error" };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("kenji_member_entitlement_timeout"), ENTITLEMENT_TIMEOUT_MS);
@@ -157,7 +159,10 @@ async function readCanonicalEntitlementSnapshot(env, lineUserId) {
     const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
     url.searchParams.set("pageSize", "100");
     url.searchParams.set("maxRecords", "100");
-    url.searchParams.set("filterByFormula", `{${lineField}}=\"${escapeFormulaValue(lineUserId)}\"`);
+    const email = text(identity.email).toLowerCase();
+    const clauses = [`{${lineField}}=\"${escapeFormulaValue(lineUserId)}\"`];
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) clauses.push(`LOWER({member_email})=\"${escapeFormulaValue(email)}\"`);
+    url.searchParams.set("filterByFormula", clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`);
     const request = new Request(url.toString(), {
       method: "GET",
       headers: { authorization: `Bearer ${apiKey}` },
@@ -166,25 +171,51 @@ async function readCanonicalEntitlementSnapshot(env, lineUserId) {
     const response = env.AIRTABLE_HTTP?.fetch
       ? await env.AIRTABLE_HTTP.fetch(request)
       : await fetch(request);
-    if (!response.ok) return null;
+    if (!response.ok) return { status: "upstream_error" };
     const payload = await response.json().catch(() => null);
     const records = Array.isArray(payload?.records) ? payload.records : [];
-    if (!records.length) return null;
+    if (!records.length) return { status: "no_entitlement" };
     return {
+      status: "resolved",
       ...resolveMemberEntitlements(records),
       source_status: "verified",
     };
   } catch {
-    return null;
+    return { status: "upstream_error" };
   } finally {
     clearTimeout(timer);
   }
 }
 
 async function readTruthContext(env, lineUserId, intent) {
-  if (intent === "membership_status" || intent === "private_interest") {
-    const snapshot = await readCanonicalEntitlementSnapshot(env, lineUserId);
-    return snapshot ? { profile: {}, snapshot } : null;
+  if (intent === "private_interest") {
+    return readCanonicalEntitlementSnapshot(env, lineUserId);
+  }
+  if (intent === "membership_status") {
+    const member = await readCanonicalMemberProfile(env, lineUserId);
+    if (member.status === "resolved") return member;
+    let client = null;
+    try {
+      client = await resolveCanonicalClientForLine(env, lineUserId);
+    } catch {
+      return { status: "upstream_error" };
+    }
+    if (client?.id) {
+      const fields = client.fields || {};
+      const snapshot = await readCanonicalEntitlementSnapshot(env, lineUserId, {
+        email: fields["Contact Email"] || fields.contact_email || fields.email,
+      });
+      if (snapshot.status === "resolved") {
+        return {
+          status: "resolved",
+          profile: { display_name: fields["Client Name"] || fields.client_name || "" },
+          snapshot,
+          memberId: "",
+        };
+      }
+      return { status: snapshot.status };
+    }
+    return { status: member.status };
   }
   return readCanonicalMemberProfile(env, lineUserId);
 }
@@ -346,7 +377,7 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
   if (!lineUserId || (intent && !EXPLICIT_INTENTS.has(intent))) return json({ ok: false, error: "invalid_request" }, 400);
 
   const resolved = await readTruthContext(env, lineUserId, intent);
-  const projection = projectKenjiLineMemberTruth(resolved || {});
+  const projection = projectKenjiLineMemberTruth(resolved?.status === "resolved" ? resolved : {});
   const ownerContext = !projection && ["rights_check", "private_interest"].includes(intent)
     ? await readKenjiOwnerMembershipContext(env, lineUserId) : null;
   const ownerProjection = ownerContext ? { ok: true, authority: RESOLVER_SCHEMA, identity_status: "owner_oa_linked", owner_membership_context: ownerContext } : null;
@@ -357,7 +388,9 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
   }
   if (!projection) {
     if (ownerProjection) return json(ownerProjection);
-    return json({ ok: false, status: "unavailable", authority: RESOLVER_SCHEMA }, 503);
+    const status = resolved?.status || "upstream_error";
+    const body = { ok: false, status, failure_class: status, authority: RESOLVER_SCHEMA };
+    return json(body, ["identity_unresolved", "no_entitlement"].includes(status) ? 200 : 503);
   }
   if (intent === "points_status") {
     // Use the same read-only, payment-source-guarded ledger as My MMD.

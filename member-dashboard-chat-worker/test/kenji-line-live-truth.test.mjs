@@ -130,6 +130,20 @@ test("known identity never gets a reverification instruction when live truth is 
   assert.doesNotMatch(decision.text, /ยืนยันตัวตน|สมัครใหม่/);
 });
 
+for (const failure_class of ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"]) {
+  test(`membership failure ${failure_class} stays distinct and never asks for relinking`, async () => {
+    const env = { MEMBER_PAGES_WORKER: { async fetch() {
+      return new Response(JSON.stringify({ ok: false, status: failure_class, failure_class, authority: "my_mmd_entitlement_resolver_v1" }), { status: 503 });
+    } } };
+    const truth = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "membership_status" });
+    const decision = buildKenjiLiveTruthDecision("membership_status", truth);
+    assert.equal(truth.failure_class, failure_class);
+    assert.equal(decision.truth_status, failure_class);
+    assert.equal(decision.handoff_required, false);
+    assert.doesNotMatch(decision.text, /เชื่อม|สมัครใหม่|ชำระใหม่/);
+  });
+}
+
 test("verified Points truth renders the canonical value and dedicated LIFF route", () => {
   const decision = buildKenjiLiveTruthDecision("points_status", truthPayload(), {
     client_record_id: "recKnownCustomer",
