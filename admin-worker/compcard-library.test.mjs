@@ -180,9 +180,17 @@ test('default Drive transport keeps the Workers fetch receiver for OAuth and met
   Object.assign(env,{GOOGLE_DRIVE_CLIENT_ID:'fixture-client',GOOGLE_DRIVE_CLIENT_SECRET:'fixture-secret',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture-refresh'});
   t.mock.method(globalThis,'fetch',async function(input,options){
     assert.equal(this,globalThis,'Workers native fetch must keep its receiver');
+    assert.equal(options.redirect,'manual','never follow credentialed Google redirects');
     if(String(input)==='https://oauth2.googleapis.com/token')return Response.json({access_token:'fixture-only'});
     if(String(input).includes('/drive/v3/about?'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});
     return original(input,options);
   });
   assert.deepEqual((await readDriveSource(env,'drive_file_000001')).bytes,jpeg);
+});
+
+test('Drive transport failures return bounded diagnostics without leaking credentials or request URLs',async()=>{
+  const {env}=await driveFixture();delete env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  Object.assign(env,{GOOGLE_DRIVE_CLIENT_ID:'fixture-client',GOOGLE_DRIVE_CLIENT_SECRET:'fixture-secret',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture-refresh'});
+  env.GOOGLE_DRIVE_HTTP.fetch=async()=>{throw new TypeError('Invalid redirect value https://private.example/token?secret=never-return');};
+  await assert.rejects(readDriveSource(env,'drive_file_000001'),e=>e.code==='drive_transport_redirect_unavailable'&&!e.message.includes('secret='));
 });
