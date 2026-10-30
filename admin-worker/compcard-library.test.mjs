@@ -174,3 +174,15 @@ test('Drive rejects a different OAuth account or absent credentials without read
   const missing={COMPCARD_DRIVE_ROOTS_JSON:env.COMPCARD_DRIVE_ROOTS_JSON};
   await assert.rejects(readDriveSource(missing,'drive_file_000001'),{code:'drive_credentials_not_configured'});
 });
+test('default Drive transport keeps the Workers fetch receiver for OAuth and metadata calls',async t=>{
+  const {env}=await driveFixture(),original=env.GOOGLE_DRIVE_HTTP.fetch;
+  delete env.GOOGLE_DRIVE_HTTP;delete env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  Object.assign(env,{GOOGLE_DRIVE_CLIENT_ID:'fixture-client',GOOGLE_DRIVE_CLIENT_SECRET:'fixture-secret',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture-refresh'});
+  t.mock.method(globalThis,'fetch',async function(input,options){
+    assert.equal(this,globalThis,'Workers native fetch must keep its receiver');
+    if(String(input)==='https://oauth2.googleapis.com/token')return Response.json({access_token:'fixture-only'});
+    if(String(input).includes('/drive/v3/about?'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});
+    return original(input,options);
+  });
+  assert.deepEqual((await readDriveSource(env,'drive_file_000001')).bytes,jpeg);
+});
