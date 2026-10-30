@@ -1761,7 +1761,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     profileReady = true;
     // Only after the existing authenticated profile read succeeds. The album
     // endpoint independently rechecks account and media permission on arrival.
-    if (CONFIG.returnTo === "/my-mmd/albums/ems") { window.location.replace(CONFIG.returnTo); return; }
+    if (/^\/my-mmd\/ems(?:\/ems\d+-[a-f0-9]{12})?$/.test(CONFIG.returnTo)) { window.location.replace(CONFIG.returnTo); return; }
     if (newsDetails) newsDetails.open = true;
     void loadDigitalUpdates();
     if (CONFIG.intent === "promo") showView("care", false);
