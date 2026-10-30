@@ -783,10 +783,27 @@ async function readSessionByToken(token, env) {
   }
 }
 
-export async function readMemberHistoryRecoveryStatus(env, lineUserId) {
+export async function readMemberHistoryRecoveryStatus(env, lineUserId, { readPreloadOnMiss = false, memberId = "" } = {}) {
   if (!env.LIFF_IDENTITY_KV?.get) return statusPayload("checking", { reason: "status_unavailable" });
   const key = await recoveryKey("status", lineUserId);
-  const stored = await env.LIFF_IDENTITY_KV.get(key, "json").catch(() => null);
+  let statusReadFailed = false;
+  const stored = await env.LIFF_IDENTITY_KV.get(key, "json").catch(() => {
+    statusReadFailed = true;
+    return null;
+  });
+  // A missing cache is not evidence that the canonical batch has never run.
+  // Only the internal, identity-bound reader opts in; existing review/blocked
+  // status always wins, and this lookup never runs recovery or awards Points.
+  if (!stored && !statusReadFailed && readPreloadOnMiss && clean(memberId)) {
+    try {
+      const preload = await readMemberHistoryPreload(env, lineUserId);
+      if (preload.available === true && clean(preload.projection?.member_id) === clean(memberId)
+        && clean(preload.projection?.identity?.state) === "ready") {
+        const status = recoveryStatusFromPreload(preload, "checkpts_read");
+        if (status) return statusPayload(status.state, status);
+      }
+    } catch { /* Unavailable canonical evidence keeps the existing fail-closed result. */ }
+  }
   return stored && typeof stored === "object"
     ? statusPayload(stored.state, stored)
     : statusPayload("checking", { reason: "not_started" });

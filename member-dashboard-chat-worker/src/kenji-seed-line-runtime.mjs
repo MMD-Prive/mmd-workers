@@ -709,7 +709,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         ? await resolveKenjiLineSnapshotTruth({ env, event })
         : await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" })
       : null;
-    if (pointsReplyEnabled && !enabled(env.LINE_MEMBER_REPLY_SNAPSHOT_ENABLED) && pointsTruth?.ok !== true) {
+    if (pointsReplyEnabled && pointsTruth?.ok !== true) {
       const membershipTruth = await resolveKenjiLineLiveTruth({ env, event, intent: "membership_status" });
       if (membershipTruth.ok === true) pointsTruth = {
         ...membershipTruth,

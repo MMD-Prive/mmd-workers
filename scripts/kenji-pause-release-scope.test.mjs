@@ -49,6 +49,25 @@ test('Per AI checkpts and rights follow-up use the protected code-only release',
   assert.equal(deployRequired('push', [...files, 'mms-member-worker/src/index.js']), true);
   assert.equal(deployRequired('push', [...files, config], '', 'LINE_AUTO_REPLY_ENABLED = "false"'), true);
 });
+test('Checkpts reader recovery skips legacy deployment only for the reviewed two-Worker scope', () => {
+  const files = [
+    'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+    'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs',
+    'member-pages-worker/src/member-history-recovery.js',
+    'member-pages-worker/src/member-reply-snapshot.js',
+    'member-pages-worker/src/member-reply-snapshot.test.mjs',
+    'member-pages-worker/src/my-mmd-lifetime-points.js',
+    'member-pages-worker/test/member-history-preload.test.mjs',
+    'member-pages-worker/test/points-display-source-guard.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs',
+    'scripts/kenji-pause-release-scope.test.mjs',
+  ];
+  assert.equal(deployRequired('push', files), false);
+  for (const extra of [config, 'mms-worker/src/index.js', 'auth-worker/src/index.js']) {
+    assert.throws(() => deployRequired('push', [...files, extra]), /CHECKPTS_READ_MIXED_DELTA/);
+  }
+});
+
 test('Checkpts fast path uses protected code-only release and rejects unrelated files', () => {
   const files = [
     'member-dashboard-chat-worker/src/checkpts-command.mjs',

@@ -177,6 +177,34 @@ function fixture(records = [ledger()], payments = [payment()], fail = "", sessio
   };
   return {env, methods};
 }
+test("internal cache-miss recovery still reads the guarded ledger rather than preload Points", async () => {
+  for (const verified of [true, false]) {
+    const { env, methods } = fixture(undefined, [payment({ "Verification Status": verified ? "verified" : "pending_review" })]);
+    env.LIFF_IDENTITY_KV.get = async () => null;
+    const fetch = env.AIRTABLE_HTTP.fetch;
+    env.AIRTABLE_HTTP.fetch = async request => {
+      const table = new URL(request.url).pathname.split("/").pop();
+      if (table === "tblNV1b5sMC2fQPxt") {
+        assert.equal(request.method, "GET");
+        return Response.json({ records: [{ id: "recProjectionFixture", fields: { projection_json: JSON.stringify({
+          schema: "my_mmd_batch_preload_v1", computed_at: new Date().toISOString(),
+          client_id: "recFixtureClient", member_id: "member-fixture", identity: { state: "ready", member_linked: true },
+          history_backfill_status: "reconciled", current_points_confirmed: 999,
+          points_policy: { mode: "expiring_lots", expires: true },
+        }) } }] });
+      }
+      return fetch(request);
+    };
+    const context = await readMyMmdVerifiedPointsContext(env, {
+      memberId: "member-fixture", lineUserId: `U${"a".repeat(32)}`, strictIdentity: true,
+    });
+    assert.equal(context.sourceVerified === true, verified);
+    if (verified) assert.equal(context.confirmedBalance, 10);
+    assert.notEqual(context.confirmedBalance, 999);
+    assert.ok(methods.every(method => method === "GET"));
+  }
+});
+
 const request = path => new Request(`https://mmdbkk.com${path}`, { headers:{cookie:"__Host-mmd_liff_session=fixture"} });
 const profile = () => ({ ok:true, data:{tier:"SVIP", membership_status:"active", points:61320, points_records_count:1, customer_360:{member:{tier:"SVIP"},points:{status:"verified",active_points:61320}}} });
 

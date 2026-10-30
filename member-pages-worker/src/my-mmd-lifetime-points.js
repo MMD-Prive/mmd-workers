@@ -55,7 +55,9 @@ export async function readMyMmdVerifiedPointsContext(env = {}, session = {}) {
   const unavailable = { state: "checking", recoveryState: "review_required", pointsRecoveryPending: true };
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !session?.memberId || !/^U[0-9a-f]{32}$/i.test(session?.lineUserId || "")) return unavailable;
   try {
-    const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
+    const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId, {
+      readPreloadOnMiss: session.strictIdentity === true, memberId: session.memberId,
+    });
     const recoveryState = normalizeToken(recoveryStatus?.state);
     if (["checking", "in_progress", "review_required"].includes(recoveryState)) {
       return { state: "checking", recoveryState, pointsRecoveryPending: true };

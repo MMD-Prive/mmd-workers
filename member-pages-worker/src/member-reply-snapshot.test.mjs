@@ -32,6 +32,10 @@ test("pending updates, aged rows and temporal expiry hide prior values", () => {
   assert.equal(snapshotProjection(row, null, now)?.points.active_points, 320);
   assert.equal(snapshotProjection(row, { generation: 2 }, now), null);
   assert.equal(snapshotProjection(row, { generation: 2, reason: "daily_0402_bkk" }, now)?.points.active_points, 320);
+  assert.equal(snapshotProjection(row, { generation: 2, reason: "daily_0600_bkk" }, now)?.points.active_points, 320);
+  assert.equal(snapshotProjection(row, { generation: 2, reason: "event" }, now), null);
+  assert.equal(snapshotProjection(row, { generation: 2, reason: "daily_unknown" }, now), null);
+  assert.equal(snapshotProjection(row, { generation: 2, reason: "daily_0600_bkk" }, now + 31 * 60 * 60 * 1000), null);
   assert.equal(snapshotProjection(row, null, now + 31 * 60 * 60 * 1000), null);
   assert.equal(snapshotProjection({ ...row, points_valid_until: "2026-10-27T06:59:00Z" }, null, now)?.points.status, "unavailable");
   assert.equal(snapshotProjection({ ...row, membership_expire_at: "2026-10-27" }, null, now), null);
