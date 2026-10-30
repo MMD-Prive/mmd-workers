@@ -84,12 +84,12 @@ test("visual gate routes bank account detail outside payment proof", () => {
   });
 });
 
-test("visual gate rejects ordinary images with no transaction evidence", () => {
+test("visual gate preserves ordinary images outside payment proofs when transaction evidence is absent", () => {
   assert.deepEqual(classifyPaymentImageEvidence({ extraction_method: "ocr", confidence_score: 0 }), {
-    image_class: "non_payment_image",
-    gate: "reject",
+    image_class: "unclassified_document",
+    gate: "hold",
     is_payment_evidence: false,
-    confidence: 0.92,
+    confidence: 0,
     reason: "no_transaction_evidence_detected",
   });
 });
@@ -116,7 +116,7 @@ test("production LINE analyzer defaults QR and OCR extraction off", async () => 
   });
   assert.equal(calls, 0);
   assert.equal(result.accepted, false);
-  assert.equal(result.classification.reason, "automated_extraction_disabled_without_payment_context");
+  assert.equal(result.classification.reason, "automated_extraction_disabled_document_review");
 });
 
 test("service purpose infers final payment from exact balance due", () => {
@@ -537,7 +537,7 @@ test("LINE conflicting membership/service wording stays in Confirm and also rais
   assert.equal(h.messages[1].message_thread_id, 9);
 });
 
-test("explicit payment context attempts read-only QR/OCR and preserves pending evidence when extraction fails", async () => {
+test("explicit payment context and failed OCR preserve review evidence, never create a payment proof", async () => {
   const r2 = memoryR2();
   const previousFetch = globalThis.fetch;
   let proofPost = null;
@@ -583,27 +583,17 @@ test("explicit payment context attempts read-only QR/OCR and preserves pending e
   const event = { type: "message", timestamp: Date.now(), webhookEventId: "evt-1", source: { type: "user", userId: lineUserId }, message: { type: "image", id: "img-1" } };
   try {
     const result = await captureDirectUserImageEvidence(env, event, { recentPaymentContext: true, paymentContextText: "ต่ออายุสมาชิกครับ ส่งสลิปให้" });
-    assert.equal(result.captured, true);
-    assert.equal(result.settlementStatus, "pending");
-    assert.equal(result.verified, false);
-    assert.equal(result.manualReviewRequired, true);
-    assert.equal(result.acknowledgement, "manual");
-    assert.equal(proofPost.fields.status, "pending");
+    assert.equal(result.captured, false);
+    assert.equal(result.held, true);
+    assert.equal(result.imageClass, "unclassified_document");
+    assert.equal(proofPost, null);
     assert.equal(proofPatch, null);
-    const note = JSON.parse(proofPost.fields.note);
-    assert.equal(note.payment_truth, "unverified");
-    assert.equal(note.official_verification_required, true);
-    assert.equal(note.may_mark_paid, false);
-    assert.equal(note.may_award_points, false);
-    assert.equal(note.may_extend_membership, false);
-    assert.equal(note.may_confirm_session, false);
-    assert.equal(note.extraction.method, "none");
     assert.equal(extractorCalls, 2);
     assert.equal(paymentsCalls, 0);
   } finally {
     globalThis.fetch = previousFetch;
   }
-  assert.equal(r2.store.size, 1);
+  assert.equal([...r2.store.keys()].some(key=>key.startsWith("line-ofc/held-evidence-review/")&&key.endsWith("original.png")),true);
 });
 
 test("signed direct intake persists private R2 and pending proof without customer reply", async () => {
@@ -643,7 +633,7 @@ test("signed direct intake persists private R2 and pending proof without custome
     AIRTABLE_TABLE_CLIENTS_ID: "clients",
     AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID: "renewals",
     AIRTABLE_TABLE_SESSIONS_ID: "sessions",
-    SLIP_EXTRACTOR: { async fetch() { throw new Error("must_not_extract"); } },
+    SLIP_EXTRACTOR: { async fetch() { return Response.json({payment_ref:"fixture-bank-ref",amount_thb:2500,paid_at:"2026-10-30T13:13:00Z",provider:"bank_transfer"}); } },
     PAYMENTS_WORKER: { async fetch() { throw new Error("must_not_settle"); } },
   };
   const payload = JSON.stringify({ events: [{ type: "message", mode: "active", timestamp: Date.now(), webhookEventId: "evt-durable", replyToken: "reply-durable", source: { type: "user", userId: "U-durable" }, message: { type: "image", id: "img-durable" } }] });
@@ -995,7 +985,7 @@ test("signed image then payment text finds the same user's candidate and persist
     AIRTABLE_TABLE_CLIENTS_ID: "clients",
     AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID: "renewals",
     AIRTABLE_TABLE_SESSIONS_ID: "sessions",
-    SLIP_EXTRACTOR: { async fetch() { throw new Error("must_not_extract"); } },
+    SLIP_EXTRACTOR: { async fetch() { return Response.json({payment_ref:"fixture-bank-ref",amount_thb:2500,paid_at:"2026-10-30T13:13:00Z",provider:"bank_transfer"}); } },
     PAYMENTS_WORKER: { async fetch() { paymentCalls += 1; throw new Error("must_not_settle"); } },
   };
   const image = { type: "message", timestamp: Date.now(), webhookEventId: "evt-candidate-image", replyToken: "reply-image", source: { type: "user", userId: "U-candidate-test" }, message: { type: "image", id: "img-candidate-test" } };
