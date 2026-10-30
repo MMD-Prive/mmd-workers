@@ -2,7 +2,7 @@ import { isPrivateCareBackAnnouncementVisible } from "../../shared/membership-pr
 
 // MY MMD Renewal: presentation only. Prices paid, dates and eligibility are
 // supplied by the authenticated server offer, never query strings/localStorage.
-export const RENEWAL_VIEW_VERSION = "my-mmd-renewal-atelier-v1";
+export const RENEWAL_VIEW_VERSION = "my-mmd-renewal-atelier-v2";
 export const RENEWAL_COPY = Object.freeze({
   eyebrow: "MEMBERSHIP RENEWAL", title: "ยังมีเรื่องดี ๆ", titleAccent: "ให้เราไปต่อด้วยกัน",
   intro: "เลือกแพ็กเกจที่เป็นคุณ แล้วชำระต่อใน LINE",
@@ -37,6 +37,7 @@ export function renewalViewHtml(now = new Date()) {
   <details id="rn-validity" class="rn-details rn-validity" hidden><summary>วันหมดอายุหลังต่อ <b id="rn-new-expiry"></b></summary><div id="renewal-rows" class="rn-dates" hidden></div></details><p id="renewal-promo" class="rn-promo" hidden></p>
   <p id="renewal-note" class="rn-note" role="status"></p>
   <div class="rn-help"><button id="rn-retry" type="button" hidden>ตรวจอีกครั้ง</button><a id="renewal-signup" href="https://lin.ee/xRqsALs" target="_blank" rel="noopener noreferrer">${RENEWAL_COPY.contact} ↗</a></div>
+  <details id="rn-review-help"><summary>ชำระแล้ว / ข้อมูลสมาชิกเดิมยังไม่ตรง</summary><p>หากชำระแล้ว อย่าชำระซ้ำครับ เก็บสลิปต้นฉบับไว้ให้ตรวจยอด เวลา และบัญชีผู้รับ การรับภาพยังไม่ใช่การยืนยันเงินเข้า</p><button id="rn-already-paid" type="button">ชำระแล้ว · ดูขั้นตอนตรวจรายการ</button><p id="rn-paid-help" hidden>ยังไม่มีการยืนยันเงินเข้าหรือเปิดสิทธิ์จากหน้านี้ครับ ให้ตรวจสลิปเดิมและข้อมูล LINE กับประวัติสมาชิกก่อน ไม่ต้องสร้างรายการชำระใหม่</p></details>
   <details class="rn-details"><summary>รายละเอียดการต่ออายุ</summary><p>ต่อแพ็กเกจเดิมล่วงหน้า หรือหมดอายุภายใน 90 วัน ใช้ราคาต่ออายุเดิมได้ โดยไม่กำหนดยอดใช้บริการขั้นต่ำ หากหมดอายุเกิน 90 วัน ให้เปอร์ตรวจเงื่อนไขก่อนชำระครับ</p><p>Premium สมัครใหม่ได้ 2 ปีตามแพ็กเกจปกติ ไม่ใช่ระยะต่ออายุ 1 ปี และไม่บวกโบนัสต่ออายุให้เป็น 3 ปีโดยอัตโนมัติ</p><p>ระยะต่ออายุพื้นฐาน โบนัส CARE BACK และวันหมดอายุใหม่จะแสดงแยกเมื่อยืนยันได้</p><p>การเลือกแพ็กเกจหรือแนบสลิปยังไม่เปลี่ยนสถานะสมาชิก สิทธิ์จะอัปเดตเมื่อ MMD ยืนยันการชำระเรียบร้อยแล้ว</p></details>
   <footer class="rn-checkout"><div class="rn-total"><span id="rn-selection">เลือกแพ็กเกจของคุณ</span><strong id="renewal-amount">—</strong></div><div id="renewal-price" hidden></div><button id="renewal-action" type="button" disabled>กำลังตรวจสิทธิ์ของคุณ</button><p id="renewal-message" role="status" aria-live="polite">ชำระใน LINE · สิทธิ์อัปเดตหลังยืนยันยอดจริง</p></footer>
 </div>`;
@@ -64,7 +65,7 @@ body.app-entered.mmd-renewal-view #profile{padding-bottom:0!important}
 
 // Self-contained because the shell embeds this function inside its existing
 // CSP-nonced script. Use the shell's serialized memberApiFetch (rotating cookies).
-export function createRenewalView({ document, fetcher, navigate, showView, checkoutUrl, getBusy, setBusy }) {
+export function createRenewalView({ document, fetcher, navigate, showView, checkoutUrl, getBusy, setBusy, refreshIdentity }) {
   const $ = id => document.getElementById(id);
   const logo = $("rn-logo-image");
   if (logo) {
@@ -76,7 +77,7 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
   const fields = [...document.querySelectorAll('input[name="renewal-package"]')];
   const policy = "renewal_90_days_20261027";
   const rules = { standard: { label: "Standard", price: 1000 }, premium: { label: "Premium", price: 2500 } };
-  let selected = "", accepted = null, generation = 0, purchasing = false, loading = false, handedOff = false;
+  let selected = "", accepted = null, generation = 0, purchasing = false, loading = false, handedOff = false, paymentReported = false;
   const money = n => new Intl.NumberFormat("th-TH", { maximumFractionDigits: 2 }).format(n);
   const date = value => {
     if (!value || !Number.isFinite(Date.parse(value))) return "";
@@ -115,9 +116,10 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     $("renewal-note").textContent = notes[reason] || "ให้เปอร์ตรวจแพ็กเกจและราคาต่ออายุของคุณก่อนชำระนะครับ";
     if (["disabled", "auth"].includes(reason) && $("rn-current").textContent === "กำลังตรวจสถานะ") $("rn-current").textContent = "MY MMD";
     $("renewal-action").textContent = reason === "auth" ? "ยืนยันบัญชีใน LINE ก่อน" : "ให้เปอร์ตรวจรายการก่อนชำระ";
-    $("rn-retry").hidden = !["unavailable", "history_pending", "auth"].includes(reason);
+    $("rn-retry").hidden = paymentReported;
   }
   function render(offer) {
+    if (paymentReported) { clearQuote(); return; }
     clearQuote(); progress(100, "ตรวจรายการแล้ว");
     const current = offer?.current_package_code || offer?.package_code || "";
     if (!selected && rules[current]) selected = current;
@@ -208,6 +210,7 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     finally { clearInterval(loadingTimer); if (mine === generation) { loading = false; progress(100, "ตรวจรายการแล้ว"); } }
   }
   async function purchase(code = selected) {
+    if (paymentReported) return;
     if (purchasing || handedOff || loading || getBusy() || !accepted || code !== selected || accepted.package_code !== selected) return;
     const quote = accepted; purchasing = true; setBusy(true);
     for (const field of fields) field.disabled = true;
@@ -240,7 +243,26 @@ export function createRenewalView({ document, fetcher, navigate, showView, check
     }
   }
   for (const field of fields) field.addEventListener("change", () => { if (field.checked) void load(field.value); });
-  $("rn-retry").addEventListener("click", () => void load());
+  async function retry() {
+    if (loading || purchasing || paymentReported || getBusy()) return;
+    setBusy(true);
+    try {
+      // Existing LIFF resolver only; never bind by name or invent a session.
+      if (typeof refreshIdentity === "function") await refreshIdentity();
+    } catch { review("unavailable"); return; }
+    finally { setBusy(false); }
+    if (!paymentReported) await load();
+  }
+  $("rn-retry").addEventListener("click", () => void retry());
   $("renewal-action").addEventListener("click", () => void purchase());
-  return { load, render, purchase, selection: () => selected };
+  const paid = $("rn-already-paid");
+  if (paid) paid.addEventListener("click", () => {
+    paymentReported = true; ++generation; clearQuote(); progress(100, "ตรวจรายการเดิมก่อนชำระซ้ำ");
+    $("rn-paid-help").hidden = false;
+    $("renewal-note").textContent = $("rn-paid-help").textContent;
+    for (const field of fields) field.disabled = true;
+  });
+  // Stay inside Renewal; canonical offer endpoint remains the sole price gate.
+  async function lookup() { showView("package", false); await load(); }
+  return { load, render, purchase, lookup, retry, selection: () => selected };
 }
