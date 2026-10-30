@@ -54,6 +54,20 @@ const CHECKPTS_MANUAL_RELEASE_PATHS = new Set([
   '.github/workflows/per-support-code-only-release.yml',
 ]);
 
+// Checkpts reader recovery spans both Workers and must not run legacy route sync.
+const CHECKPTS_READ_RELEASE_PATHS = new Set([
+  'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs',
+  'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs',
+  'member-pages-worker/src/member-history-recovery.js',
+  'member-pages-worker/src/member-reply-snapshot.js',
+  'member-pages-worker/src/member-reply-snapshot.test.mjs',
+  'member-pages-worker/src/my-mmd-lifetime-points.js',
+  'member-pages-worker/test/member-history-preload.test.mjs',
+  'member-pages-worker/test/points-display-source-guard.test.mjs',
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+]);
+
 // HENNA copy changes use an owner-approved code-only release, never the
 // legacy job that deploys unrelated MMS code and reconciles routes.
 const hennaCopyPaths = new Set([
@@ -164,6 +178,12 @@ export function deployRequired(event, files, beforeConfig, afterConfig, manifest
       /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m.test(beforeConfig) &&
       /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m.test(afterConfig) &&
       normalize(beforeConfig) === normalize(afterConfig)) return false;
+  if (files.includes('member-pages-worker/src/member-reply-snapshot.js') &&
+      files.includes('member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs')) {
+    assert.ok(files.every(file => CHECKPTS_READ_RELEASE_PATHS.has(file)),
+      'CHECKPTS_READ_MIXED_DELTA: stop; separately review unrelated deployment changes');
+    return false;
+  }
   if (files.some(file => file === 'member-dashboard-chat-worker/src/checkpts-command.mjs' ||
     file === 'member-dashboard-chat-worker/test/checkpts-fastpath.test.mjs')) {
     assert.ok(files.every(file => CHECKPTS_MANUAL_RELEASE_PATHS.has(file) || pausePaths.has(file)),

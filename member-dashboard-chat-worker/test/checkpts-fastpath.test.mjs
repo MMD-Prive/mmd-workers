@@ -76,7 +76,10 @@ async function run(command, options = {}) {
       calls.truth.push({ path: new URL(request.url).pathname, intent: body.intent });
       calls.beforeTruth ||= { runtime: calls.runtime, matrix: calls.matrix, takeover: calls.takeover };
       afterTruth = true;
-      return Response.json(options.truth || truth(), { status: options.truthStatus || 200 });
+      const membershipRead = body.intent === "membership_status";
+      return Response.json(membershipRead ? options.membershipTruth || options.truth || truth() : options.truth || truth(), {
+        status: membershipRead ? options.membershipStatus || options.truthStatus || 200 : options.truthStatus || 200,
+      });
     } }, ...options.env };
   const background = [];
   try {
@@ -175,9 +178,43 @@ for (const invalid of [{ ...truth(), identity_status: "unresolved" }, { ...truth
 
 test("snapshot mode remains opt-in and cannot fall back to stale or unverified values", async () => {
   const { calls } = await run("เช็คสิทธิ์", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" }, truth: {}, truthStatus: 503 });
-  assert.deepEqual(calls.truth, [{ path: "/__internal/kenji/member-reply-snapshot", intent: undefined }]);
+  assert.deepEqual(calls.truth, [
+    { path: "/__internal/kenji/member-reply-snapshot", intent: undefined },
+    { path: "/__internal/kenji/member-truth", intent: "membership_status" },
+  ]);
   assert.equal(calls.replies.length, 1);
   assert.match(calls.replies[0].messages[0].text, /Points: ยังยืนยันยอดไม่ได้/);
+});
+
+test("snapshot miss reads canonical membership without accepting its profile Points", async () => {
+  for (const command of ALIASES) {
+    const { calls } = await run(command, { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+      truth: {}, truthStatus: 503, membershipStatus: 200,
+      membershipTruth: { ...truth(), points: { status: "verified", active_points: 999 } },
+    });
+    assert.deepEqual(calls.truth, [
+      { path: "/__internal/kenji/member-reply-snapshot", intent: undefined },
+      { path: "/__internal/kenji/member-truth", intent: "membership_status" },
+    ]);
+    const text = calls.replies[0].messages[0].text;
+    assert.match(text, /สถานะสมาชิก: Premium/);
+    assert.match(text, /วันหมดอายุ: 01\/01\/2027/);
+    assert.match(text, /Points: ยังยืนยันยอดไม่ได้/);
+    assert.doesNotMatch(text, /999|\d[\d,]* Points/);
+  }
+});
+
+test("a usable snapshot needs no extra membership read", async () => {
+  const { calls } = await run("checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" } });
+  assert.equal(calls.truth.length, 1);
+  assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
+});
+
+test("Per takeover during snapshot fallback still suppresses delivery", async () => {
+  const { calls } = await run("checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+    truth: {}, truthStatus: 503, membershipTruth: truth(), membershipStatus: 200, ownerAfterTruth: true,
+  });
+  assert.equal(calls.replies.length, 0);
 });
 
 test("malformed provider identity never reaches the canonical reader", async () => {

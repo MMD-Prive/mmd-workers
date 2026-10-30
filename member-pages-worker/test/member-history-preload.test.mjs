@@ -7,7 +7,7 @@ import {
   recoveryStatusFromPreload,
   validateProjection,
 } from "../src/member-history-preload.js";
-import { runMemberHistoryRecovery } from "../src/member-history-recovery.js";
+import { readMemberHistoryRecoveryStatus, runMemberHistoryRecovery } from "../src/member-history-recovery.js";
 
 const NOW = new Date("2026-09-22T12:00:00.000Z");
 const LINE_ID = `U${"a".repeat(32)}`;
@@ -91,6 +91,42 @@ function fakeEnv(preloadedProjection = projection()) {
     },
   };
 }
+
+test("internal recovery status can read a matching reconciled preload on a cache miss", async () => {
+  const { env, calls } = fakeEnv(projection({ computed_at: new Date().toISOString() }));
+  const status = await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId: MEMBER_ID });
+  assert.equal(status.state, "reconciled");
+  assert.equal(status.reason, "batch_preload_ready");
+  assert.equal(calls.length, 2);
+  assert.ok([...env.LIFF_IDENTITY_KV.values.keys()].every(key => key.startsWith("my-mmd-preload:")));
+});
+
+test("preload recovery fallback stays closed for stale, foreign or review-required evidence", async () => {
+  for (const [overrides, memberId, expected] of [
+    [{ computed_at: "2000-01-01T00:00:00Z" }, MEMBER_ID, "checking"],
+    [{ computed_at: new Date().toISOString() }, "other-member", "checking"],
+    [{ computed_at: new Date().toISOString(), identity: { state: "unknown" } }, MEMBER_ID, "checking"],
+    [{ computed_at: new Date().toISOString(), history_backfill_status: "review_required" }, MEMBER_ID, "review_required"],
+  ]) {
+    const { env } = fakeEnv(projection(overrides));
+    const status = await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId });
+    assert.equal(status.state, expected);
+  }
+});
+
+test("existing review and blocked status, KV failure and non-opted-in callers never use preload fallback", async () => {
+  for (const state of ["blocked", "review_required", "in_progress", "reconciled"]) {
+    const { env, calls } = fakeEnv();
+    env.LIFF_IDENTITY_KV.get = async () => ({ state });
+    assert.equal((await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId: MEMBER_ID })).state, state);
+    assert.equal(calls.length, 0);
+  }
+  const { env, calls } = fakeEnv();
+  assert.equal((await readMemberHistoryRecoveryStatus(env, LINE_ID)).state, "checking");
+  env.LIFF_IDENTITY_KV.get = async () => { throw Error("fixture_kv_unavailable"); };
+  assert.equal((await readMemberHistoryRecoveryStatus(env, LINE_ID, { readPreloadOnMiss: true, memberId: MEMBER_ID })).state, "checking");
+  assert.equal(calls.length, 0);
+});
 
 test("preload resolves the canonical client projection once and then uses KV cache", async () => {
   const { env, calls } = fakeEnv();

@@ -10,6 +10,8 @@ const MEMBER_ID = /^[A-Za-z0-9_:-]{3,100}$/;
 const STALE_MS = 30 * 60 * 60 * 1000;
 const MAX_DAILY_LINES = 1000;
 const DAILY_REASON = "daily_0402_bkk";
+const LEGACY_DAILY_REASON = "daily_0600_bkk";
+const DAILY_REASONS = new Set([DAILY_REASON, LEGACY_DAILY_REASON]);
 const MEMBERS = "tblgWc5VRon5o8Mhk";
 const ENTITLEMENTS = "tblNImdF9PKAxhXGi";
 const RETRY_DELAY_MS = 5 * 60 * 1000;
@@ -153,7 +155,7 @@ async function queueRefresh(env, lineUserId, reason = "event") {
     (line_key,line_user_id,generation,reason,requested_at,next_attempt_at)
     VALUES (?,?,1,?,?,?) ON CONFLICT(line_key) DO UPDATE SET
     generation=generation+1,
-    reason=CASE WHEN excluded.reason='${DAILY_REASON}' AND member_reply_refresh_queue.reason!='${DAILY_REASON}'
+    reason=CASE WHEN excluded.reason='${DAILY_REASON}' AND member_reply_refresh_queue.reason NOT IN ('${DAILY_REASON}','${LEGACY_DAILY_REASON}')
       THEN member_reply_refresh_queue.reason ELSE excluded.reason END,
     requested_at=excluded.requested_at,
     next_attempt_at=excluded.next_attempt_at,attempts=0,
@@ -277,7 +279,7 @@ export function snapshotProjection(row, pending, now = Date.now()) {
   const age = row ? now - Date.parse(row.refreshed_at) : NaN;
   const recent = row && Number.isFinite(age) && age >= 0 && age <= STALE_MS;
   const current = recent && (!pending || row.refresh_generation >= pending.generation ||
-    pending.reason === DAILY_REASON);
+    DAILY_REASONS.has(pending.reason));
   if (!current || row.source_authority !== AUTHORITY) return null;
   const expiryDate = /^\d{4}-\d{2}-\d{2}/.test(row.membership_expire_at || "")
     ? Date.parse(`${row.membership_expire_at.slice(0, 10)}T00:00:00+07:00`) : NaN;
