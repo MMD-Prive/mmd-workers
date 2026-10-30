@@ -16,11 +16,24 @@ export function driveRoots(env) {
 async function driveJson(env, suffix) {
   let cached = authCache.get(env);
   if (!cached || cached.until < Date.now()) {
-    cached = {token:await ownerDriveAccessToken(env,driveHttp(env)),until:Date.now()+50*60*1000}; authCache.set(env,cached);
+    cached = {token:await libraryDriveToken(env),until:Date.now()+50*60*1000}; authCache.set(env,cached);
   }
   const r = await driveHttp(env)(DRIVE + suffix,{headers:{authorization:"Bearer "+cached.token},redirect:"error",signal:AbortSignal.timeout(20000)});
   if (!r.ok) { if (r.status === 401) authCache.delete(env); fail(r.status === 404 ? "source_not_found" : "drive_access_unavailable",r.status === 404 ? 404 : 503); }
   return r.json();
+}
+async function libraryDriveToken(env) {
+  if(env.GOOGLE_SERVICE_ACCOUNT_JSON)return ownerDriveAccessToken(env,driveHttp(env));
+  if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)fail("drive_credentials_not_configured",503);
+  const http=driveHttp(env);
+  const response=await http("https://oauth2.googleapis.com/token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:env.GOOGLE_DRIVE_CLIENT_ID,client_secret:env.GOOGLE_DRIVE_CLIENT_SECRET,refresh_token:env.GOOGLE_DRIVE_REFRESH_TOKEN}),redirect:"error",signal:AbortSignal.timeout(20000)});
+  const data=await response.json().catch(()=>null);
+  if(!response.ok||!data?.access_token)fail("drive_oauth_unavailable",503);
+  const about=await http("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)",{headers:{authorization:"Bearer "+data.access_token},redirect:"error",signal:AbortSignal.timeout(20000)});
+  const identity=await about.json().catch(()=>null);
+  const expected=String(env.COMPCARD_DRIVE_OWNER_EMAIL||"malemodel.bkk@gmail.com").trim().toLowerCase();
+  if(!about.ok||String(identity?.user?.emailAddress||"").trim().toLowerCase()!==expected)fail("drive_account_mismatch",503);
+  return data.access_token;
 }
 const metadata = (env,id) => driveJson(env,"/"+encodeURIComponent(id)+"?supportsAllDrives=true&fields=id,name,mimeType,parents,trashed,size,modifiedTime,version");
 async function scopedFile(env,id) {

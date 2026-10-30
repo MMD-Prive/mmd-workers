@@ -32,6 +32,9 @@
     "file_content_mismatch": "ชนิดไฟล์ไม่ตรงกับเนื้อหา",
     "file_type_not_supported": "รองรับ JPG, PNG, WebP และ PDF",
     "file_unavailable": "ยังอ่านไฟล์นี้ไม่ได้",
-    "invalid_json": "ข้อมูลไม่ครบ กรุณาลองใหม่"
+    "invalid_json": "ข้อมูลไม่ครบ กรุณาลองใหม่",
+    "drive_credentials_not_configured": "ยังไม่ได้เชื่อมบัญชี Drive สำหรับคลังนี้",
+    "drive_oauth_unavailable": "การเชื่อมต่อ Drive หมดอายุ กรุณาตรวจบัญชีที่เชื่อมไว้",
+    "drive_account_mismatch": "บัญชี Drive ที่เชื่อมอยู่ไม่ตรงกับบัญชีคลังของเรา"
   }
 }
