@@ -1,4 +1,5 @@
 import { isCheckptsShortcut } from "./checkpts-command.mjs";
+import { lineIntakeCommand } from "./kenji-line-intake-commands.mjs";
 
 const DEFAULT_WAIT_MS = 650;
 const DEFAULT_WINDOW_MS = 2_200;
@@ -56,7 +57,7 @@ export function prepareKenjiLineWebhookBatch(events = []) {
   source.forEach((event, index) => {
     const uid = lineUserId(event);
     const value = customerText(event);
-    if (!uid || !value || isCheckptsShortcut(event) || event?.deliveryContext?.isRedelivery === true) return;
+    if (!uid || !value || isCheckptsShortcut(event) || lineIntakeCommand(event) || event?.deliveryContext?.isRedelivery === true) return;
     if (!grouped.has(uid)) grouped.set(uid, []);
     grouped.get(uid).push({ index, event, value });
   });
@@ -99,6 +100,7 @@ export function prepareKenjiLineWebhookBatch(events = []) {
 export async function aggregateKenjiLineTurn({ env = {}, event = {}, batchCount = 1 } = {}) {
   // A complete status command must not wait for, absorb, or supersede a burst.
   if (isCheckptsShortcut(event)) return { ok: true, event, should_reply: true, count: 1, source: "points_command" };
+  if (lineIntakeCommand(event)) return { ok: true, event, should_reply: true, count: 1, source: "line_intake_command" };
   const value = customerText(event);
   const uid = lineUserId(event);
   const eventId = stableEventId(event);
