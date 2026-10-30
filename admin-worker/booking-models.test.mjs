@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { handleBookingModels, isBookingModelsRequest, BOOKING_MODELS_PAGE as PAGE, BOOKING_MODELS_API as API } from "./src/booking-models.js";
+import customerMediaWorker from "../sigil-booking-worker/src/model-image-policy-worker.js";
 import { INTERNAL_PAGES } from "../webflow/global/sigil-internal-workspace-v3.mjs";
 import { createCredentialBoundAdminSession } from "./src/credential-bound-admin-session.js";
 
-const env = { ADMIN_LOGIN_CREDENTIAL: "fixture-only-login", AIRTABLE_API_KEY: "fixture-only", AIRTABLE_BASE_ID: "appFixture", AIRTABLE_TABLE_MODELS_ID: "Models", AIRTABLE_TABLE_MODEL_MEDIA_ID: "Media" };
+const env = { MMD_MODEL_ASSETS: {get:async()=>null,head:async()=>null}, ADMIN_LOGIN_CREDENTIAL: "fixture-only-login", AIRTABLE_API_KEY: "fixture-only", AIRTABLE_BASE_ID: "appFixture", AIRTABLE_TABLE_MODELS_ID: "Models", AIRTABLE_TABLE_MODEL_MEDIA_ID: "Media" };
 const id = "recPublic000000001", mediaId = "media_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const publicModel = { id, fields: { working_name: "Leo Test", nickname: "ลีโอ", unique_key: "LT01", can_work_public: true, height_cm: 180, weight_kg: 75, body_type: "athletic", skin_tone: "tan", phone: "LEAK_PHONE", private_real_name: "LEAK_REAL_NAME", notes: "LEAK_NOTES" } };
-const approved = { id: "recMedia000001", fields: { Model: [id], media_id: mediaId, media_type: "profile_photo", asset_role: "profile_main", public_safe: true, private_safe: false, flash_safe: false, review_status: "approved", media_visibility: "public", r2_bucket: "mmd-models", private_original_key: "models/" + id + "/LEAK_OBJECT", file_type: "image/jpeg" } };
+const approved = { id: "recMedia000001", fields: { Model: [id], media_id: mediaId, media_type: "profile_photo", asset_role: "profile_main", public_safe: true, private_safe: false, flash_safe: false, review_status: "approved", media_visibility: "public", r2_bucket: "mmd-models", private_original_key: "models/" + id + "/LEAK_OBJECT", file_type: "image/jpeg", file_size_bytes:3 } };
 async function setup(t, role = "owner", state = {}) {
   const cookie = "mmd_admin_gate_v1=" + await createCredentialBoundAdminSession(new Request("https://mmdbkk.com"), { id: "fixture-owner", role }, env);
   const calls = [];
@@ -24,7 +25,10 @@ async function setup(t, role = "owner", state = {}) {
     }
     if (table === "Media") {
       if (state.mediaError) return Response.json({}, {status:503});
-      return Response.json({ records: state.media || [approved] });
+      const rows=state.media || [approved];
+      const recordId=url.pathname.split("/")[4];
+      if(recordId) return rows.find(row=>row.id===recordId) ? Response.json(rows.find(row=>row.id===recordId)) : Response.json({}, {status:404});
+      return Response.json({ records: rows, ...(state.mediaOffset?{offset:state.mediaOffset}:{}) });
     }
     throw new Error("unexpected read");
   });
@@ -38,7 +42,7 @@ test("only exact manager paths are handled", () => {
 });
 test("anonymous, forged identity and Model sessions cannot read inventory or media", async t => {
   const {calls} = await setup(t);
-  for (const path of [API, API+"/"+id+"/cover?media_id="+mediaId]) for (const headers of [{},{"x-mmd-admin-role":"owner"},{cookie:"mmd_model_session_v1=forged"}]) {
+  for (const path of [API, API+"/"+id+"/cover?media_id="+mediaId,API+"/"+id+"/media/recMedia000001"]) for (const headers of [{},{"x-mmd-admin-role":"owner"},{cookie:"mmd_model_session_v1=forged"}]) {
     const r = await handleBookingModels(new Request("https://mmdbkk.com"+path,{headers}),env); assert.equal(r.status,401);
   }
   const page = await handleBookingModels(new Request("https://mmdbkk.com"+PAGE+"?q=private"),env);
@@ -78,10 +82,10 @@ test("invalid query, cursor and mutation requests never reach Airtable", async t
   for(const query of ["q="+"x".repeat(81),"audience=secret","attention=secret","cursor=%3Cscript%3E","q=%00"]) assert.equal((await handleBookingModels(request(API+"?"+query),env)).status,400);
   assert.equal((await handleBookingModels(request(API,{method:"POST",body:"{}"}),env)).status,405);assert.equal(calls.length,0);
 });
-test("visibility and withheld Models stay diagnostic-only; no cover is disclosed", async t => {
+test("customer visibility remains diagnostic while admin can preview the Model", async t => {
   const hidden={...publicModel,fields:{...publicModel.fields,status:"hidden",can_work_private:true,private_tier:"premium"}};
   const {request}=await setup(t,"owner",{models:[hidden]});const b=await(await handleBookingModels(request(),env)).json();
-  assert.equal(b.items[0].public_profile_allowed,false);assert.equal(b.items[0].cover_media_id,"");assert.ok(b.items[0].reasons.includes("inactive"));assert.ok(b.items[0].reasons.includes("private_delivery_pending"));
+  assert.equal(b.items[0].public_profile_allowed,false);assert.equal(b.items[0].cover_media_id,mediaId);assert.ok(b.items[0].reasons.includes("inactive"));assert.ok(b.items[0].reasons.includes("private_delivery_pending"));
 });
 test("Private inventory is visible only to admin and never presented as customer access", async t => {
   const privateModel={id:"recPrivate000001",fields:{working_name:"Private Test",can_work_private:true,private_tier:"premium"}};
@@ -99,9 +103,9 @@ test("unavailable media is distinct from no approved cover; profile failure neve
 test("looping model cursors fail instead of appending duplicate inventory", async t => {
   const {request}=await setup(t,"owner",{offset:"itrLoop"});assert.equal((await handleBookingModels(request(API+"?cursor=itrLoop"),env)).status,503);
 });
-test("cover rechecks current visibility and refuses a changed main photo without reading R2", async t => {
-  const hidden={...publicModel,fields:{...publicModel.fields,status:"hidden"}};
-  const a=await setup(t,"owner",{model:hidden});assert.equal((await handleBookingModels(a.request(API+"/"+id+"/cover?media_id="+mediaId),env)).status,404);
+test("media rechecks canonical ownership and refuses unlinked assets without reading R2", async t => {
+  const wrongOwner={...approved,fields:{...approved.fields,Model:["recOtherModel"]}};
+  const a=await setup(t,"owner",{media:[wrongOwner]});assert.equal((await handleBookingModels(a.request(API+"/"+id+"/cover?media_id="+mediaId),env)).status,404);
   const b=await setup(t,"owner",{media:[]});assert.equal((await handleBookingModels(b.request(API+"/"+id+"/cover?media_id="+mediaId),env)).status,404);
 });
 test("the deployed entry and exact route list include both manager surfaces", async()=>{
@@ -118,11 +122,14 @@ test("approved cover streams only after current policy and object metadata verif
   const response=await handleBookingModels(request(API+"/"+id+"/cover?media_id="+mediaId),runtime);
   assert.equal(response.status,200);assert.equal(await response.text(),"jpg");assert.equal(response.headers.get("cache-control"),"private, no-store");assert.equal(reads,1);
 });
-test("a pending or private-marked primary asset cannot be shown as a Public cover", async t => {
-  for(const fields of [{review_status:"pending_review"},{private_safe:true},{media_visibility:"private"}]){
+test("admin can preview pending, rejected and Private-marked assets while customer media stays closed", async t => {
+  for(const fields of [{review_status:"pending_review",public_safe:false},{review_status:"rejected",public_safe:false},{private_safe:true},{media_visibility:"private"}]){
     const {request}=await setup(t,"owner",{media:[{...approved,fields:{...approved.fields,...fields}}]});
-    const b=await(await handleBookingModels(request(),env)).json();assert.equal(b.items[0].cover_media_id,"");
-    assert.equal((await handleBookingModels(request(API+"/"+id+"/cover?media_id="+mediaId),env)).status,404);
+    const b=await(await handleBookingModels(request(),env)).json();assert.equal(b.items[0].cover_media_id,mediaId);
+    const runtime={...env,MMD_MODEL_ASSETS:{get:async()=>({size:3,body:new Response("jpg").body,httpMetadata:{contentType:"image/jpeg"},customMetadata:{media_id:mediaId,model_record_id:id,sha256:"a".repeat(64)}})}};
+    assert.equal((await handleBookingModels(request(API+"/"+id+"/media/recMedia000001"),runtime)).status,200);
+    const customer=await customerMediaWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/media/"+mediaId),runtime,{});
+    assert.equal(customer.status,404,"Admin preview must not approve customer delivery");
   }
 });
 
@@ -131,4 +138,46 @@ test("the admin directory exposes one searchable entry and login can return to t
   const core=await readFile(new URL("./src/admin-login-hero-worker-core.js",import.meta.url),"utf8");
   const allowlist=core.slice(core.indexOf("const ALLOWED_NEXT_PATHS = ["),core.indexOf("export function normalizeNext"));
   assert.ok(allowlist.includes('"'+PAGE+'"'));
+});
+
+test("Private bucket previews work for hidden Models and all review states through the admin gate",async t=>{
+  for(const status of ["pending_review","approved","rejected","revoked","archived","pending_upload"]){
+    const asset={...approved,fields:{...approved.fields,media_type:"private_gallery",review_status:status,public_safe:false,private_safe:false,r2_bucket:"mmd-private-model-media",private_original_key:"private-model-media/"+id+"/"+mediaId+".jpg"}};
+    const model={...publicModel,fields:{...publicModel.fields,status:"hidden"}};
+    const {request}=await setup(t,"owner",{media:[asset],model,models:[model]});
+    const runtime={...env,PRIVATE_MODEL_MEDIA:{get:async()=>({size:3,body:new Response("jpg").body,httpMetadata:{contentType:"image/jpeg"},customMetadata:{media_id:mediaId,model_record_id:id,sha256:"a".repeat(64)}})}};
+    const b=await(await handleBookingModels(request(),runtime)).json();
+    assert.equal(b.items[0].public_profile_allowed,false);assert.equal(b.items[0].media[0].status,status);assert.equal(b.items[0].media[0].audience,"private");assert.equal(b.items[0].media_count,1);
+    assert.equal((await handleBookingModels(request(API+"/"+id+"/media/recMedia000001"),runtime)).status,200);
+  }
+});
+test("all linked media are listed with statuses, without storage paths or approval filtering",async t=>{
+  const assets=["pending_review","approved","rejected","revoked"].map((status,i)=>({...approved,id:"recMedia"+i,fields:{...approved.fields,review_status:status,public_safe:false,media_id:mediaId+i}}));
+  const {request}=await setup(t,"owner",{media:assets});
+  const b=await(await handleBookingModels(request(),env)).json();
+  assert.equal(b.items[0].media_count,4);assert.deepEqual(new Set(b.items[0].media.map(asset=>asset.status)),new Set(["pending_review","approved","rejected","revoked"]));
+  assert.doesNotMatch(JSON.stringify(b),/private_original_key|r2_bucket|LEAK_OBJECT|LEAK_PHONE/);
+});
+test("media belonging to another Model, unknown buckets, unsafe MIME or mismatched R2 metadata stay closed",async t=>{
+  for(const fields of [{Model:["recOther"]},{r2_bucket:"unrelated-bucket"},{file_type:"text/html"},{private_original_key:"../other.jpg"}]){
+    const {request}=await setup(t,"owner",{media:[{...approved,fields:{...approved.fields,...fields}}]});
+    assert.equal((await handleBookingModels(request(API+"/"+id+"/media/recMedia000001"),env)).status,404);
+  }
+  const {request}=await setup(t);
+  const runtime={...env,MMD_MODEL_ASSETS:{get:async()=>({size:3,body:new Response("jpg").body,httpMetadata:{contentType:"image/jpeg"},customMetadata:{media_id:mediaId,model_record_id:"recOther",sha256:"a".repeat(64)}})}};
+  assert.equal((await handleBookingModels(request(API+"/"+id+"/media/recMedia000001"),runtime)).status,404);
+});
+test("admin clips support byte-range reads and HEAD without granting public access",async t=>{
+  const asset={...approved,fields:{...approved.fields,media_type:"private_gallery",review_status:"pending_review",public_safe:false,file_type:"video/mp4",file_size_bytes:6}};
+  const {request}=await setup(t,"owner",{media:[asset]});
+  let head=0;
+  const metadata={size:6,httpMetadata:{contentType:"video/mp4"},customMetadata:{media_id:mediaId,model_record_id:id,sha256:"a".repeat(64)}};
+  const runtime={...env,MMD_MODEL_ASSETS:{get:async(key,options)=>({...metadata,body:new Response(options?.range?"ab":"abcdef").body}),head:async()=>{head++;return metadata;}}};
+  const part=await handleBookingModels(request(API+"/"+id+"/media/recMedia000001",{headers:{range:"bytes=0-1"}}),runtime);
+  assert.equal(part.status,206);assert.equal(await part.text(),"ab");assert.equal(part.headers.get("content-range"),"bytes 0-1/6");
+  const h=await handleBookingModels(request(API+"/"+id+"/media/recMedia000001",{method:"HEAD"}),runtime);assert.equal(h.status,200);assert.equal(await h.text(),"");assert.equal(head,1);
+});
+test("looping registry scans are reported unavailable instead of hiding remaining media",async t=>{
+  const {request}=await setup(t,"owner",{mediaOffset:"itrLoop"});
+  const b=await(await handleBookingModels(request(),env)).json();assert.equal(b.media_status,"unavailable");assert.equal(b.items[0].cover_status,"unavailable");
 });

@@ -1,7 +1,7 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { renderBookingModelsPage } from "./booking-models-page.js";
 import { sanitizeModelForBooking, customerModelExcluded } from "../../sigil-booking-worker/src/index.js";
-import mediaWorker, { fetchPublicModelMedia } from "../../sigil-booking-worker/src/model-image-policy-worker.js";
+import { loadBookingAdminMedia, readBookingAdminMedia } from "./booking-model-media.js";
 import { inferCustomerModelFolder } from "../../sigil-booking-worker/src/customer-search-policy.js";
 import { customerDiscoveryAllowed } from "../../sigil-booking-worker/src/customer-discovery-policy.js";
 
@@ -9,7 +9,6 @@ export const BOOKING_MODELS_PAGE = "/internal/admin/booking-models";
 export const BOOKING_MODELS_API = "/v1/admin/booking-models";
 const ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
 const RECORD_ID = /^rec[a-zA-Z0-9]+$/;
-const MEDIA_ID = /^media_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const headers = { "cache-control": "private, no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-robots-tag": "noindex, nofollow", "x-mmd-route-owner": "admin-worker" };
 const json = (body, status = 200) => Response.json(body, { status, headers });
 const text = value => String(value ?? "").trim();
@@ -34,22 +33,24 @@ export async function handleBookingModels(request, env = {}) {
   if (!["GET", "HEAD"].includes(request.method)) return json({ ok: false, error: "method_not_allowed" }, 405);
   if (path === BOOKING_MODELS_PAGE) {
     const nonce = crypto.randomUUID();
-    return new Response(request.method === "HEAD" ? null : renderBookingModelsPage(nonce), { headers: { ...headers, "content-type": "text/html; charset=utf-8", "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` } });
+    return new Response(request.method === "HEAD" ? null : renderBookingModelsPage(nonce), { headers: { ...headers, "content-type": "text/html; charset=utf-8", "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` } });
   }
-  if (request.method === "HEAD") return new Response(null, { headers });
   try {
+    const asset = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/media\/(rec[a-zA-Z0-9]+)$/);
+    if (asset) return await readBookingAdminMedia(request, env, asset[1], asset[2]);
     const cover = path.match(/^\/v1\/admin\/booking-models\/(rec[a-zA-Z0-9]+)\/cover$/);
     if (cover) return await readCover(request, env, cover[1], url.searchParams.get("media_id"));
     if (path !== BOOKING_MODELS_API) return json({ ok: false, error: "not_found" }, 404);
+    if (request.method === "HEAD") return new Response(null, { headers });
     const query = readQuery(url);
     if (!query) return json({ ok: false, error: "invalid_search" }, 400);
     const rows = await loadModels(env, query);
     let media = new Map(), mediaStatus = "available";
-    try { media = await fetchPublicModelMedia(env, rows.records.map(record => ({ model_id: record.id, scope: "public" }))); }
+    try { media = await loadBookingAdminMedia(env, rows.records.map(record => record.id)); }
     catch { mediaStatus = "unavailable"; }
-    const items = rows.records.map(record => projectBookingModel(record, media.get(record.id)?.primary, mediaStatus, env))
+    const items = rows.records.map(record => projectBookingModel(record, media.get(record.id) || [], mediaStatus, env))
       .filter(item => query.audience === "all" || (query.audience === "public" ? item.offers_public : item.offers_private))
-      .filter(item => query.attention === "all" || (query.attention === "missing_cover" ? item.offers_public && item.cover_status === "missing" : item.reasons.some(reason => ["inactive", "protected", "customer_restricted", "visibility_review"].includes(reason))));
+      .filter(item => query.attention === "all" || (query.attention === "missing_cover" ? item.media_count === 0 && item.cover_status === "missing" : item.reasons.some(reason => ["inactive", "protected", "customer_restricted", "visibility_review"].includes(reason))));
     return json({ ok: true, items, next_cursor: rows.offset || null, media_status: mediaStatus, checks: "profile_only", source: "canonical_booking_models" });
   } catch { return json({ ok: false, error: "booking_models_unavailable" }, 503); }
 }
@@ -76,7 +77,7 @@ async function loadModels(env, query) {
   return { records: data.records, offset: data.offset };
 }
 
-export function projectBookingModel(record, primary, mediaStatus, env = {}) {
+export function projectBookingModel(record, assets = [], mediaStatus, env = {}) {
   const f = record.fields || {};
   const publicModel = sanitizeModelForBooking(record, { scope: "public", privateAllowed: false, env });
   const privateModel = sanitizeModelForBooking(record, { scope: "private", privateAllowed: true, allowedFolders: ["standard", "premium"], env });
@@ -96,11 +97,12 @@ export function projectBookingModel(record, primary, mediaStatus, env = {}) {
   if (customerModelExcluded(record.id) || ["vip", "black_card"].includes(token(f.approved_client_visibility)) || ["gws", "ems", "secretive", "exclusive"].includes(token(f.private_tier))) reasons.push("protected");
   if (!customerDiscoveryAllowed(f, "")) reasons.push("customer_restricted");
   if ((offersPublic && !publicModel) || (offersPrivate && !privateModel)) reasons.push("visibility_review");
-  // Only render a guest-eligible approved public cover, using the protected
-  // same-origin endpoint which rechecks the Model and object on every request.
-  const coverId = publicModel && MEDIA_ID.test(text(primary?.media_id)) ? primary.media_id : "";
-  const coverStatus = mediaStatus === "unavailable" ? "unavailable" : coverId ? "approved" : "missing";
-  if (offersPublic && coverStatus !== "approved") reasons.push(coverStatus === "unavailable" ? "cover_unavailable" : "missing_cover");
+  // Admin previews are independent of customer visibility and approval status.
+  const photos = assets.filter(asset => asset.kind === "photo" && asset.preview_available);
+  const cover = photos[0] || null;
+  const coverStatus = mediaStatus === "unavailable" ? "unavailable" : cover ? "available" : assets.some(asset => asset.kind === "clip" && asset.preview_available) ? "clip_only" : assets.length ? "unavailable" : "missing";
+  if (coverStatus === "missing") reasons.push("missing_media");
+  if (mediaStatus === "unavailable") reasons.push("cover_unavailable");
   if (offersPrivate) reasons.push("private_delivery_pending");
   return {
     model_id: text(record.id), name: text(f.working_name || f.nickname || f.display_name_compact), code: text(f.unique_key || f.canonical_slug || f.model_key),
@@ -108,20 +110,16 @@ export function projectBookingModel(record, primary, mediaStatus, env = {}) {
     offers_public: offersPublic, offers_private: offersPrivate,
     public_profile_allowed: Boolean(publicModel), private_profile_allowed: Boolean(privateModel),
     access_folder: offersPrivate ? inferCustomerModelFolder(f) : "", reasons: [...new Set(reasons)],
-    cover_status: coverStatus, cover_media_id: coverId,
+    cover_status: coverStatus, cover_media_id: cover?.media_id || "", cover_asset_id: cover?.asset_record_id || "", media_count: assets.length, media: assets,
   };
 }
 
 async function readCover(request, env, modelId, mediaId) {
-  if (!MEDIA_ID.test(text(mediaId)) || !RECORD_ID.test(modelId)) return json({ ok: false, error: "not_found" }, 404);
-  const model = await airtable(env, "/" + encodeURIComponent(modelTable(env)) + "/" + modelId);
-  if (model.id !== modelId || !sanitizeModelForBooking(model, { scope: "public", privateAllowed: false, env })) return json({ ok: false, error: "not_found" }, 404);
-  const groups = await fetchPublicModelMedia(env, [{ model_id: modelId, scope: "public" }]);
-  if (groups.get(modelId)?.primary?.media_id !== mediaId) return json({ ok: false, error: "not_found" }, 404);
-  const result = await mediaWorker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/models/media/" + mediaId), env, {});
-  const responseHeaders = new Headers(result.headers);
-  for (const [key, value] of Object.entries(headers)) responseHeaders.set(key, value);
-  return new Response(result.body, { status: result.status, headers: responseHeaders });
+  if (!text(mediaId) || !RECORD_ID.test(modelId)) return json({ ok: false, error: "not_found" }, 404);
+  const groups = await loadBookingAdminMedia(env, [modelId]);
+  const matches = (groups.get(modelId) || []).filter(asset => asset.media_id === mediaId);
+  if (matches.length !== 1) return json({ ok: false, error: "not_found" }, 404);
+  return readBookingAdminMedia(request, env, modelId, matches[0].asset_record_id);
 }
 
 function modelTable(env) { return env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models"; }

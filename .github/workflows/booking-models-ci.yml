@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - "admin-worker/src/booking-models*"
+      - "admin-worker/src/booking-model-media.js"
       - "admin-worker/booking-models*.test.mjs"
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/credential-bound-admin-session.js"

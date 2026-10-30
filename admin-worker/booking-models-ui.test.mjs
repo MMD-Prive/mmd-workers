@@ -58,3 +58,15 @@ test("an empty filtered page retains load-more and media lookup failure is expla
  assert.ok(u.document.getElementById("media-warning").textContent.includes(copy.mediaDegraded));
  u.event("clear","click");await flush();assert.equal(new URL(u.calls.at(-1).input,"https://mmdbkk.com").searchParams.get("q"),"");
 });
+
+test("detail gallery displays every status and Private media using protected same-origin URLs",async t=>{
+ const assets=[{asset_record_id:"recPending",kind:"photo",audience:"private",status:"pending_review",preview_available:true},{asset_record_id:"recRejected",kind:"photo",audience:"public",status:"rejected",preview_available:true},{asset_record_id:"recClip",kind:"clip",audience:"private",status:"approved",preview_available:true}];
+ const u=setup(t,async()=>Response.json({ok:true,items:[{...item,cover_asset_id:"recPending",cover_status:"available",media:assets,media_count:3}],next_cursor:null}));
+ await flush();assert.equal(u.document.querySelector("article img").getAttribute("src"),"/v1/admin/booking-models/"+item.model_id+"/media/recPending");
+ u.document.querySelector("article button").click();
+ assert.equal(u.document.querySelectorAll(".gallery figure").length,3);
+ assert.ok(u.document.querySelector("#detail-content").textContent.includes(copy.statuses.pending_review));assert.ok(u.document.querySelector("#detail-content").textContent.includes(copy.statuses.rejected));
+ assert.equal(u.document.querySelector(".gallery video").getAttribute("src"),"/v1/admin/booking-models/"+item.model_id+"/media/recClip");
+ assert.ok([...u.document.querySelectorAll(".gallery img,.gallery video")].every(el=>el.getAttribute("src").startsWith("/v1/admin/booking-models/")));
+ u.event("close-detail","click");assert.equal(u.document.querySelectorAll(".gallery img,.gallery video").length,0);
+});
