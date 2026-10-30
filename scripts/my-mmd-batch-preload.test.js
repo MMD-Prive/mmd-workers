@@ -6,6 +6,8 @@ const {
   TABLES,
   buildClientProjection,
   buildServiceSummary,
+  hasPrivateHistoryCandidate,
+  isContactOnlyPrivateHistory,
   runBatchPreload,
   summarizeLifetimePoints,
 } = require("./my-mmd-batch-preload.js");
@@ -119,6 +121,58 @@ test("expired awards remain historical but are excluded from the available balan
   assert.equal(summary.legacy_aggregate_count, 1);
   assert.equal(summary.points_expiring_30d, 0);
   assert.equal(summary.nearest_points_expiry, null);
+});
+
+function contactOnlyHistory(overrides = {}) {
+  return JSON.stringify({
+    schema: "line_ofc_contacts_v2_all_identities",
+    line_user_id: "U12345678901234567890123456789012",
+    line_id: null,
+    display_name: "คุณเอ็ม",
+    aliases: [],
+    email_candidates: [],
+    phone_candidates: [],
+    telegram_username_candidates: [],
+    telegram_id: null,
+    message_count: 3,
+    first_seen_at: "2026-09-01T00:00:00.000Z",
+    last_seen_at: "2026-09-02T00:00:00.000Z",
+    matched_client_id: CLIENT_ID,
+    match_type: "line_user_id_exact",
+    conflicts: [],
+    raw_conversation_copied: false,
+    ...overrides,
+  });
+}
+
+test("known contact-only metadata is not a service-history candidate", () => {
+  const row = { fields: { "Service History Candidate JSON": contactOnlyHistory() } };
+  assert.equal(isContactOnlyPrivateHistory(row.fields["Service History Candidate JSON"]), true);
+  assert.equal(hasPrivateHistoryCandidate(row), false);
+});
+
+test("mixed contact and service payload remains a candidate", () => {
+  const raw = contactOnlyHistory({ service_date: "2026-09-01", service_amount_thb: 2500 });
+  assert.equal(isContactOnlyPrivateHistory(raw), false);
+  assert.equal(hasPrivateHistoryCandidate({ fields: { "Service History Candidate JSON": raw } }), true);
+});
+
+test("unknown schema remains blocked as a candidate", () => {
+  const raw = contactOnlyHistory({ schema: "line_ofc_contacts_v3" });
+  assert.equal(isContactOnlyPrivateHistory(raw), false);
+  assert.equal(hasPrivateHistoryCandidate({ fields: { "Service History Candidate JSON": raw } }), true);
+});
+
+test("malformed JSON remains blocked as a candidate", () => {
+  const row = { fields: { "Service History Candidate JSON": "{\"schema\":\"line_ofc_contacts_v2_all_identities\"" } };
+  assert.equal(isContactOnlyPrivateHistory(row.fields["Service History Candidate JSON"]), false);
+  assert.equal(hasPrivateHistoryCandidate(row), true);
+});
+
+test("genuine service candidate remains blocked", () => {
+  const row = { fields: { "Service History Candidate JSON": JSON.stringify({ service_date: "2026-09-01", service_amount_thb: 2500 }) } };
+  assert.equal(isContactOnlyPrivateHistory(row.fields["Service History Candidate JSON"]), false);
+  assert.equal(hasPrivateHistoryCandidate(row), true);
 });
 
 test("client projection declares the 365-day expiring-lot policy", () => {
