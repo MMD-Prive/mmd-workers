@@ -1,0 +1,59 @@
+name: MY MODEL LV15 local presentation CI
+
+on:
+  pull_request:
+    paths:
+      - 'webflow/sigil/model/**'
+      - 'model-dashboard-presentation-worker/**'
+      - 'scripts/*model*.mjs'
+      - 'scripts/fixtures/model-lv15/**'
+      - 'shared/model-travel*.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/my-model-lv15-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'webflow/sigil/model/**'
+      - 'model-dashboard-presentation-worker/**'
+      - 'scripts/*model*.mjs'
+      - 'scripts/fixtures/model-lv15/**'
+      - 'shared/model-travel*.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/my-model-lv15-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  local-presentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Worker .js imports use module syntax detection available on Node 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Syntax and separate LV15 embed budget
+        run: |
+          node --check webflow/sigil/model/model-lv15-fonts.mjs
+          node --check webflow/sigil/model/model-lv15-presentation.mjs
+          node --check model-dashboard-presentation-worker/src/model-digital-dashboard.js
+          node --check scripts/preview-model-lv15.mjs
+          node --check scripts/model-lv15-fixtures.mjs
+          node --check scripts/build-model-lv15-skin.mjs
+          node scripts/build-model-lv15-skin.mjs "$RUNNER_TEMP/model-lv15.embed.html"
+          git diff --check
+      - name: Isolated fixtures, font parity and existing controls
+        run: |
+          node --test \
+            webflow/sigil/model/model-lv15-presentation.test.mjs \
+            scripts/model-lv15-fixtures.test.mjs \
+            scripts/model-lv15-ci.test.mjs \
+            webflow/sigil/model/model-console-decline-options.test.mjs \
+            webflow/sigil/model/model-console-atelier-v3.test.mjs \
+            webflow/sigil/model/my-model-lovable-vnext-skin-20261017.test.mjs \
+            model-dashboard-presentation-worker/model-customer-privacy-ui.test.cjs
