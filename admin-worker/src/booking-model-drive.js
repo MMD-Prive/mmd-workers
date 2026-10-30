@@ -42,7 +42,7 @@ async function canonical(env,modelId) {
 }
 async function client(env) {
   const oauth=env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN;
-  const token=await libraryDriveToken(oauth?{...env,GOOGLE_SERVICE_ACCOUNT_JSON:undefined}:env),http=env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP)||fetch;
+  const token=await libraryDriveToken(oauth?{...env,GOOGLE_SERVICE_ACCOUNT_JSON:undefined}:env),http=env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP)||fetch.bind(globalThis);
   return async (suffix,headers={})=>{const r=await http(DRIVE+suffix,{headers:{authorization:'Bearer '+token,...headers},redirect:'manual',signal:AbortSignal.timeout(20000)});if(!r.ok && r.status!==206)fail('drive_media_unavailable',r.status===404?404:503);return r;};
 }
 async function metadata(read,id) {return (await read('/'+encodeURIComponent(id)+'?supportsAllDrives=true&fields=id,mimeType,parents,trashed,size')).json();}
