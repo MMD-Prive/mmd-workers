@@ -12,6 +12,10 @@ export const fixture = () => `<!doctype html><html><head><title>MMD Privé</titl
 <script nonce="fixture-nonce">
 const CONFIG={intent:"renew"}; let busy=false;
   function showView(view, smooth = true) { return view; }
+  function render(data) {
+    const screen = data && typeof data.screen === "object" ? data.screen : {};
+    if (screen.key === "renew_member_lookup") { return 'old terminal lookup'; }
+  }
 async function bootFixture(){const profile=null,preflightVerifiedSession=false;
 if (profile || (preflightVerifiedSession && document.body.dataset.welcomeAudience === "existing")) { await enterApp(); }}
   async function loadRenewalCard() { /* old */ }
@@ -29,11 +33,13 @@ test('direct and nested LINE state entries select Renewal; normal Home/signup/pr
 });
 test('only renewal markup/client is replaced, original CSP script nonce and unrelated sections survive', () => {
   const output = enhanceRenewalShell(fixture());
-  assert.match(output, /my-mmd-renewal-atelier-v1/); assert.match(output, /name="renewal-package" value="premium"/);
+  assert.match(output, /my-mmd-renewal-atelier-v2/); assert.match(output, /name="renewal-package" value="premium"/);
   assert.match(output, /name="renewal-package" value="standard"/); assert.match(output, /data-copy="packageTitle"/);
   assert.match(output, /script nonce="fixture-nonce"/); assert.match(output, /fetcher: memberApiFetch/);
   assert.doesNotMatch(output, /old card/); assert.match(output, /CONFIG.intent === "renew" \|\| profile/);
   assert.equal((output.match(/id="renewal-card"/g) || []).length, 1);
+  assert.ok(output.indexOf('void atelierRenewalUI().lookup()') < output.indexOf("old terminal lookup"));
+  assert.match(output, /ชำระแล้ว · ดูขั้นตอนตรวจรายการ/);
   new Function(output.match(/<script nonce="fixture-nonce">([\s\S]*?)<\/script>/)[1]);
 });
 test('unknown shell contract and duplicate enhancement are not partially spliced', () => {

@@ -20,6 +20,7 @@ const ANCHORS = Object.freeze({
   afterClient: '  function legacyCustomerView(data) {',
   showView: '  function showView(view, smooth = true) {',
   entry: 'if (profile || (preflightVerifiedSession && document.body.dataset.welcomeAudience === "existing")) {',
+  render: '    const screen = data && typeof data.screen === "object" ? data.screen : {};',
 });
 const once = (text, marker) => text.indexOf(marker) >= 0 && text.indexOf(marker) === text.lastIndexOf(marker);
 
@@ -33,6 +34,7 @@ export function enhanceRenewalShell(html) {
     if (!atelierRenewalUI.instance) atelierRenewalUI.instance = (${createRenewalView.toString()})({
       document, fetcher: memberApiFetch, navigate: url => window.location.assign(url), showView,
       checkoutUrl: verifiedCheckoutUrl, getBusy: () => busy, setBusy,
+      refreshIdentity: () => readProfile({ hydrate: false, silent: true }),
     });
     return atelierRenewalUI.instance;
   }
@@ -45,6 +47,9 @@ export function enhanceRenewalShell(html) {
   let output = html.slice(0, clientStart) + script + html.slice(clientEnd);
   output = output.slice(0, cardStart) + renewalViewHtml() + '\n      ' + output.slice(cardEnd);
   output = output.replace(ANCHORS.showView, ANCHORS.showView + '\n    document.body.classList.toggle("mmd-renewal-view", view === "package");');
+  // Run before older artifact overlays' terminal lookup/status-app branch.
+  // This changes navigation only, never session verification or quote policy.
+  output = output.replace(ANCHORS.render, ANCHORS.render + '\n    if (CONFIG.intent === "renew" && screen.key === "renew_member_lookup") { actions.replaceChildren(); void atelierRenewalUI().lookup(); return; }');
   // Skip only the redundant welcome click, never the LINE/session verification.
   // enterApp still waits for welcomeContextPromise and runs the existing boot.
   output = output.replace(ANCHORS.entry, 'if (CONFIG.intent === "renew" || profile || (preflightVerifiedSession && document.body.dataset.welcomeAudience === "existing")) {');

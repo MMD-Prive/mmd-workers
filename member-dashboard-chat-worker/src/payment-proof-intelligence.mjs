@@ -105,20 +105,20 @@ export function classifyPaymentImageEvidence(extraction = {}) {
   return { image_class: "uncertain_payment_image", gate: "hold", is_payment_evidence: false, confidence: Number(extraction.confidence_score) || 0.3, reason: "insufficient_transaction_evidence" };
 }
 
-async function airtableRequest(env, table, { recordId = "", formula = "", maxRecords = 20 } = {}) {
+async function airtableRequest(env, table, { recordId = "", formula = "", maxRecords = 20, timeoutMs = 0 } = {}) {
   const baseId = clean(env.AIRTABLE_BASE_ID);
   const token = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN);
   if (!baseId || !token || !table) return null;
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${recordId ? `/${encodeURIComponent(recordId)}` : ""}`);
   if (formula) url.searchParams.set("filterByFormula", formula);
   if (!recordId) url.searchParams.set("maxRecords", String(maxRecords));
-  const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, "content-type": "application/json" } });
+  const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}) });
   if (!response.ok) return null;
   return response.json().catch(() => null);
 }
 
-async function queryRecords(env, table, formula, maxRecords = 20) {
-  const payload = await airtableRequest(env, table, { formula, maxRecords });
+async function queryRecords(env, table, formula, maxRecords = 20, timeoutMs = 0) {
+  const payload = await airtableRequest(env, table, { formula, maxRecords, timeoutMs });
   return Array.isArray(payload?.records) ? payload.records : [];
 }
 
@@ -134,6 +134,17 @@ async function getRecord(env, table, id) {
 function clientLabel(record) {
   const f = record?.fields || {};
   return clean(f["Client Name"] || f.client_name || f.display_name || f.line_display_name || f.Name || f.name || f.nickname);
+}
+
+// Read-only display enrichment. A rename is never identity, price or money truth.
+export function projectPaymentCustomerRename(rows, lineUserId, clientId) {
+  if (!/^U[a-f0-9]{32}$/i.test(lineUserId || "") || !clientId || !Array.isArray(rows) || rows.length !== 1) return null;
+  const f = rows[0]?.fields || {};
+  if (f["LINE User ID"] !== lineUserId || f["Import ID"] !== `line_ofc_per_rename_v1_${lineUserId.toLowerCase()}`
+    || !/^[a-f0-9]{64}$/i.test(f["Source Hash"] || "")
+    || !Array.isArray(f["Canonical Client"]) || f["Canonical Client"].length !== 1 || f["Canonical Client"][0] !== clientId) return null;
+  const name = clean(f["Current LINE Rename"]);
+  return name ? { per_rename: name.slice(0, 180), rename_source: "exact_line_client_per_rename_v1", rename_record_id: rows[0].id } : null;
 }
 
 function memberEmail(record) {
@@ -336,6 +347,14 @@ export async function analyzeProductionPaymentProof({
   }
   let member = memberLookup.record;
   const client = clientLookup.record;
+  let customerRename = null;
+  if (client && !memberLookup.ambiguous && !clientLookup.ambiguous) {
+    try {
+      const table = clean(env.AIRTABLE_TABLE_PRIVATE_CUSTOMERS_STAGING_ID || "tblOs8yyLK09SKrCt");
+      const rows = await queryRecords(env, table, `AND({LINE User ID}='${formulaValue(lineUserId)}',{Import ID}='line_ofc_per_rename_v1_${formulaValue(lineUserId.toLowerCase())}')`, 2, 900);
+      customerRename = projectPaymentCustomerRename(rows, lineUserId, client.id);
+    } catch { /* A failed optional name read cannot change payment processing. */ }
+  }
   if (!member && client) {
     const cf = client.fields || {};
     const directMemberId = unique([...linkedIds(cf.Member), ...linkedIds(cf.Members), ...linkedIds(cf["MMD Members"]), ...linkedIds(cf.member)])[0];
@@ -424,7 +443,7 @@ export async function analyzeProductionPaymentProof({
     extraction,
     classification,
     links,
-    customer: { status: memberLookup.ambiguous || clientLookup.ambiguous ? "ambiguous" : links.member || links.client ? "matched" : "unmatched", member_record_id: links.member || null, client_record_id: links.client || null, display_name: clientLabel(client) || null, source: links.member ? "members.line_id" : links.client ? "clients.line_user_id" : null },
+    customer: { status: memberLookup.ambiguous || clientLookup.ambiguous ? "ambiguous" : links.member || links.client ? "matched" : "unmatched", member_record_id: links.member || null, client_record_id: links.client || null, display_name: clientLabel(client) || null, source: links.member ? "members.line_id" : links.client ? "clients.line_user_id" : null, ...customerRename },
     payment_intelligence: { ...intelligence, tracking_kind: trackingKind, official_verification_required: true, may_mark_paid: false },
     job_correlation: jobCorrelation,
     review_summary: {

@@ -9,10 +9,10 @@ test('real MY MMD shell contract accepts Renewal without changing its auth scrip
     const base = handleLiffMemberShell(request, { LINE_LIFF_ID: '2010862595-yT4DCEMc' });
     const csp = base.headers.get('content-security-policy');
     const enhanced = await applyMyMmdRenewalPageResponse(request, base);
-    assert.equal(enhanced.headers.get('x-mmd-renewal-ui'), 'my-mmd-renewal-atelier-v1');
+    assert.equal(enhanced.headers.get('x-mmd-renewal-ui'), 'my-mmd-renewal-atelier-v2');
     assert.equal(enhanced.headers.get('content-security-policy'), csp);
     const html = await enhanced.text();
-    assert.match(html, /data-renewal-version="my-mmd-renewal-atelier-v1"/);
+    assert.match(html, /data-renewal-version="my-mmd-renewal-atelier-v2"/);
     assert.equal((html.match(/id="renewal-card"/g)||[]).length, 1);
     for (const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) if (match[1].trim()) new Function(match[1]);
   }

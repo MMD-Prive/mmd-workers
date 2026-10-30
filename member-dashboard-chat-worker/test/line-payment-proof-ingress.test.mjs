@@ -326,7 +326,9 @@ test("LINE membership or renewal proof routes to Membership topic 20", async () 
   assert.equal(h.messages.length, 1);
   assert.equal(h.messages[0].flow, "membership");
   assert.equal(h.messages[0].message_thread_id, 20);
-  assert.match(h.messages[0].text, /สลิปค่าสมาชิก/);
+  assert.match(h.messages[0].text, /ภาพจากลูกค้า · รอตรวจว่าเป็นสลิปหรือภาพแจ้งปัญหา/);
+  assert.doesNotMatch(h.messages[0].text, /^.*สลิปค่าสมาชิก/);
+  assert.match(h.messages[0].text, /สถานะเงิน: ยังไม่ยืนยันเงินเข้า/);
 });
 
 test("Telegram clearly labels four LINE slip categories and does not verify from classification alone", async () => {
