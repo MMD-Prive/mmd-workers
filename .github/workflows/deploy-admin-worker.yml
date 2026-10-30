@@ -390,6 +390,8 @@ jobs:
             "/internal/admin/mmd-review*",
             "/internal/admin/booking-models*",
             "/v1/admin/booking-models*",
+            "/internal/admin/compcards*",
+            "/v1/admin/compcards*",
             "/v1/admin/private-media*",
             "/v1/admin/line/rich-menu/three-level/prepare",
             "/v1/admin/line/rich-menu/three-level/activate",

@@ -6,7 +6,7 @@ const FOLDER = "application/vnd.google-apps.folder";
 const DRIVE_ID = /^[A-Za-z0-9_-]{10,180}$/;
 const SOURCE_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const authCache = new WeakMap();
-const driveHttp = env => env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch;
+const driveHttp = env => env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch.bind(globalThis);
 export function driveRoots(env) {
   let roots;
   try { roots = JSON.parse(env.COMPCARD_DRIVE_ROOTS_JSON || "[]"); } catch { fail("drive_roots_not_configured",503); }

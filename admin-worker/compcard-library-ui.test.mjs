@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { renderCompcardLibrary } from './src/compcard-library-page.js';
+const { renderCompcardLibrary } = await import(process.env.COMPCARD_UI_MODULE || './src/compcard-library-page.js');
 
 async function ready(check){for(let n=0;n<100;n++){if(check())return;await new Promise(r=>setTimeout(r,5));}assert.fail('UI condition timed out');}
 async function fixture(){
