@@ -8,6 +8,8 @@ import { heldEvidenceAuditRecord, holdUncertainEvidence, reprocessHeldEvidence }
 import { runPaymentObserverHealth } from "./payment-observer-health.mjs";
 import { resolveLineCanonicalPayment, withPaymentEvidenceLock } from "../../shared/canonical-payment-evidence.mjs";
 import { inspectPaymentProof, paymentProofReviewUrl, proofPrecheckLines } from "../../shared/payment-proof-precheck.mjs";
+import { paymentProofOpsSummary } from "../../shared/payment-proof-ops-summary.mjs";
+import { PAYMENT_PROOF_OPS_COPY_TH } from "./mmd-i18n.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -438,6 +440,7 @@ async function createPendingProof(env = {}, evidence = {}) {
       receiver_bank: extraction.receiver_bank || null,
       amount_thb: extraction.amount_thb ?? null,
       paid_at: extraction.paid_at || null,
+      error: asString(extraction.extraction_error).replace(/[^A-Za-z0-9_,.:-]/g, "_").slice(0, 160) || null,
     },
     image_classification: analysis.classification || null,
     client_match: analysis.customer || null,
@@ -640,13 +643,19 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     && (route.topic === "membership" || hasMembershipPaymentContext(evidence.paymentContextText));
   const threadId = isMembership ? membershipOpsThreadId(env) : paymentOpsThreadId(env);
   const purpose = asString(analysis.payment_intelligence?.inferred_label) || membershipInferenceLabel(route.inference) || (isMembership ? "Membership / Renewal" : "Payment / Service");
-  const customer = asString(analysis.customer?.display_name || evidence.payerName);
+  const summary = paymentProofOpsSummary({ customer: { display_name: evidence.payerName, ...analysis.customer }, extraction, intelligence: analysis.payment_intelligence, copy: PAYMENT_PROOF_OPS_COPY_TH });
+  const customer = summary.name;
   const trackingKind = asString(analysis.payment_intelligence?.tracking_kind) || "unresolved_payment";
   const settlement = result?.settlement || null;
   const category = paymentProofCategory(trackingKind, isMembership);
   const statusLine = "สถานะ: รอตรวจสอบ";
   const text = [
-    `${isMembership ? "🧾" : "💳"} สลิป${category}`,
+    analysis.classification?.image_class === "bank_transfer_slip"
+      ? `${isMembership ? "🧾" : "💳"} สลิป${category}` : `📎 ${PAYMENT_PROOF_OPS_COPY_TH.imagePending}`,
+    `ลูกค้า: ${customer}`,
+    `ยอด: ${summary.amount}`,
+    `สถานะเงิน: ${summary.bankStatus}`,
+    ...(isMembership ? [`ประเภทเงิน: ${summary.purpose}`] : []),
     statusLine,
     `เปิดตรวจและยืนยันเงินเข้า: ${analysis.proof_precheck?.review_url || paymentProofReviewUrl(result.proofId || evidence.proofId)}`,
     ...proofPrecheckLines(analysis.proof_precheck),
@@ -655,7 +664,6 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     `Classified: ${purpose}`,
     `ประเภท: ${category}`,
     customer ? `Customer: ${customer}` : "Customer: pending match",
-    extraction.amount_thb != null ? `Amount: ${Number(extraction.amount_thb).toLocaleString("en-US")} THB` : "Amount: pending extraction",
     ...(!isMembership ? paymentJobCorrelationLines(analysis) : []),
     `Routing: ${route.reason}`,
     analysis.job_correlation?.status === "exact" || isMembership
