@@ -43,11 +43,11 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
       } else figure.append(node("div",c.fileNotReady,"unavailable"));
       const caption = node("figcaption"); caption.append(node("span",asset.audience === "private" ? c.private : c.public,"tag"),node("span",c.statuses[asset.status] || asset.status || c.statusUnknown,"tag")); figure.append(caption); gallery.append(figure);
     }
-    if (!(model.media || []).length) gallery.append(node("p",model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover,"notice"));
+    if (!(model.media || []).length) gallery.append(node("p",model.drive_linked ? c.noR2 : model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover,"notice"));
     content.append(gallery);
     const facts = node("dl", null, "facts");
     const gate = (offered, allowed) => !offered ? c.notOffered : allowed ? c.passes : c.needsReview;
-    for (const [label, value] of [[c.code, model.code || c.notSet],[c.modelId,model.model_id],[c.height,metric(model.height_cm,c.cm)],[c.weight,metric(model.weight_kg,c.kg)],[c.body,c.bodies[model.body_type] || c.notSet],[c.skin,c.skins[model.skin_tone] || c.notSet],[c.publicGate,gate(model.offers_public,model.public_profile_allowed)],[c.privateGate,gate(model.offers_private,model.private_profile_allowed)],[c.media,model.cover_status === "available" ? c.coverReady : model.cover_status === "clip_only" ? c.videoOnly : model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover]]) {
+    for (const [label, value] of [[c.code, model.code || c.notSet],[c.modelId,model.model_id],[c.height,metric(model.height_cm,c.cm)],[c.weight,metric(model.weight_kg,c.kg)],[c.body,c.bodies[model.body_type] || c.notSet],[c.skin,c.skins[model.skin_tone] || c.notSet],[c.publicGate,gate(model.offers_public,model.public_profile_allowed)],[c.privateGate,gate(model.offers_private,model.private_profile_allowed)],[c.media,model.drive_linked && model.cover_status !== "available" ? c.driveLinked : model.cover_status === "available" ? c.coverReady : model.cover_status === "clip_only" ? c.videoOnly : model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover]]) {
       const fact = node("div", null, "fact"); fact.append(node("dt",label),node("dd",value)); facts.append(fact);
     }
     content.append(facts, node("h3", model.reasons.length ? c.next : c.noIssues));
