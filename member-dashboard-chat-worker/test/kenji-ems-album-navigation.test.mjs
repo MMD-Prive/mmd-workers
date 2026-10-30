@@ -39,15 +39,29 @@ test('configured public route owner forwards album paths and preserves the LIFF 
   assert.equal(response.status,200);assert.equal(calls.at(-1).path,path);assert.equal(calls.at(-1).cookie,'fixture-session');assert.match(response.headers.get('cache-control'),/no-store/);
  }
  const response=await publicOwner.fetch(new Request('https://www.mmdbkk.com/member/liff?intent=status&return_to=albums_ems'),env);
- assert.equal(response.status,200);const html=await response.text();assert.ok(html.includes('"returnTo":"/my-mmd/albums/ems"'));
+ assert.equal(response.status,200);const html=await response.text();assert.ok(html.includes('"returnTo":"/my-mmd/ems"'));
 });
 
 test('album collection, detail and menu SSR links stay under MY MMD before hydration',async()=>{
  const original=globalThis.fetch;
  globalThis.fetch=async()=>new Response('<html><head></head><body><a href="/albums/ems">Albums</a><a href="/albums/ems/EMs04">Model</a><a href="/menu">Menu</a><a href="/services">Other</a></body></html>',{headers:{'content-type':'text/html'}});
  try{
-  const response=await publicOwner.fetch(new Request('https://www.mmdbkk.com/my-mmd/albums/ems'),{});
+  const response=await publicOwner.fetch(new Request('https://www.mmdbkk.com/my-mmd/menu'),{});
   const html=await response.text();
   for(const href of ['/my-mmd/albums/ems','/my-mmd/albums/ems/EMs04','/my-mmd/menu','/services'])assert.ok(html.includes(`href="${href}"`),href);
  }finally{globalThis.fetch=original;}
+});
+
+test('temporary collection alias returns to existing Worker UI without upstream or identity reads', async () => {
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>{throw Error('No upstream expected');};
+ try {
+  for(const host of ['www.mmdbkk.com']) for(const suffix of ['', '/']) for(const method of ['GET','HEAD']) {
+   const r=await publicOwner.fetch(new Request('https://'+host+'/my-mmd/albums/ems'+suffix,{method}),{});
+   assert.equal(r.status,307);assert.equal(r.headers.get('location'),'/my-mmd/ems');
+   assert.equal(r.headers.get('cache-control'),'no-store');assert.equal(await r.text(),'');
+  }
+  assert.equal((await publicOwner.fetch(new Request('https://www.mmdbkk.com/my-mmd/albums/ems',{method:'POST'}),{})).status,405);
+  assert.equal((await publicOwner.fetch(new Request('https://www.mmdbkk.com/my-mmd/albums/ems?return_to=https://example.com'),{})).status,400);
+ } finally {globalThis.fetch=original;}
 });
