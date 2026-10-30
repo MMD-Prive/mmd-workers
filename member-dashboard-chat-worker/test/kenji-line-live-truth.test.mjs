@@ -11,6 +11,26 @@ function event() {
   return { source: { type: "user", userId: LINE_USER_ID } };
 }
 
+for (const status of ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"]) {
+  test(`preserves trusted ${status} from HTTP 200`, async () => {
+    const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+      MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false,
+        authority: "my_mmd_entitlement_resolver_v1", status, failure_class: status }) },
+    } });
+    assert.equal(result.failure_class, status);
+    assert.equal(result.ok, false);
+  });
+}
+
+test("untrusted HTTP 200 failure cannot assert an identity result", async () => {
+  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+    MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false,
+      authority: "other", status: "no_entitlement", failure_class: "no_entitlement" }) },
+  } });
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.failure_class, undefined);
+});
+
 function truthPayload(overrides = {}) {
   return {
     ok: true,
@@ -30,6 +50,53 @@ function truthPayload(overrides = {}) {
     ...overrides,
   };
 }
+
+test("renewal answers a verified canonical offer in chat without creating payment", () => {
+  const result = buildKenjiLiveTruthDecision("membership_renewal", truthPayload({
+    membership: { level: "private_standard", label: "Standard", lifecycle: "active", expire_at: "2027-01-01" },
+    renewal: { status: "ready", package_code: "standard", amount_thb: 1000, membership_years: 1, discount_verified: true },
+  }));
+  assert.match(result.text, /Standard.*1.*1,000/);
+  assert.doesNotMatch(result.text, /https:|intent=status/);
+  assert.equal(result.handoff_reason, "renewal:payment_destination_required");
+});
+
+for (const failure of ["identity_unresolved", "upstream_error", "no_entitlement"]) {
+  test(`renewal ${failure} requests review without an app loop or price`, () => {
+    const result = buildKenjiLiveTruthDecision("membership_renewal", {ok:false, status:failure});
+    assert.equal(result.handoff_required, true);
+    assert.doesNotMatch(result.text, /https:|intent=status|1,000|2,500/);
+  });
+}
+
+test("membership read accepts success after the former 1600ms deadline and makes one call", async () => {
+  let calls = 0;
+  const env = { MEMBER_PAGES_WORKER: { async fetch() {
+    calls += 1;
+    await new Promise(resolve => setTimeout(resolve, 1700));
+    return Response.json(truthPayload());
+  } } };
+  for (let i = 0; i < 2; i += 1) {
+    const result = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "membership_status" });
+    assert.equal(result.ok, true);
+  }
+  assert.equal(calls, 2);
+});
+
+test("membership read enforces total deadline even when binding ignores abort", async () => {
+  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+    MEMBER_PAGES_WORKER: { fetch: () => new Promise(() => {}) },
+  } });
+  assert.equal(result.failure_class, "upstream_error");
+  assert.equal(result.failure_reason, "timeout");
+});
+
+test("unclassified HTTP503 is upstream failure", async () => {
+  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
+    MEMBER_PAGES_WORKER: { fetch: async () => new Response("unavailable", { status: 503 }) },
+  } });
+  assert.equal(result.failure_class, "upstream_error");
+});
 
 for (const [label, value] of [
   ["null", null], ["missing", undefined], ["blank", ""], ["whitespace", " "],
@@ -184,53 +251,3 @@ test("expired membership status does not advertise stale access as currently ope
   assert.doesNotMatch(decision.text, /Public Service: ใช้ได้/);
   assert.doesNotMatch(decision.text, /Private visibility: Private Premium/);
 });
-
-for (const status of ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"]) {
-  test(`preserves trusted ${status} from HTTP 200`, async () => {
-    const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
-      MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false,
-        authority: "my_mmd_entitlement_resolver_v1", status, failure_class: status }) },
-    } });
-    assert.equal(result.failure_class, status);
-    assert.equal(result.ok, false);
-  });
-}
-
-test("untrusted HTTP 200 failure cannot assert an identity result", async () => {
-  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
-    MEMBER_PAGES_WORKER: { fetch: async () => Response.json({ ok: false,
-      authority: "other", status: "no_entitlement", failure_class: "no_entitlement" }) },
-  } });
-  assert.equal(result.status, "unavailable");
-  assert.equal(result.failure_class, undefined);
-});
-
-test("membership read accepts success after the former 1600ms deadline and makes one call", async () => {
-  let calls = 0;
-  const env = { MEMBER_PAGES_WORKER: { async fetch() {
-    calls += 1;
-    await new Promise(resolve => setTimeout(resolve, 1700));
-    return Response.json(truthPayload());
-  } } };
-  for (let i = 0; i < 2; i += 1) {
-    const result = await resolveKenjiLineLiveTruth({ env, event: event(), intent: "membership_status" });
-    assert.equal(result.ok, true);
-  }
-  assert.equal(calls, 2);
-});
-
-test("membership read enforces total deadline even when binding ignores abort", async () => {
-  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
-    MEMBER_PAGES_WORKER: { fetch: () => new Promise(() => {}) },
-  } });
-  assert.equal(result.failure_class, "upstream_error");
-  assert.equal(result.failure_reason, "timeout");
-});
-
-test("unclassified HTTP503 is upstream failure", async () => {
-  const result = await resolveKenjiLineLiveTruth({ event: event(), intent: "membership_status", env: {
-    MEMBER_PAGES_WORKER: { fetch: async () => new Response("unavailable", { status: 503 }) },
-  } });
-  assert.equal(result.failure_class, "upstream_error");
-});
-

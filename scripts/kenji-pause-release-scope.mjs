@@ -21,6 +21,12 @@ const normalize = value => value.split(/\r?\n/).map(line => line.trim())
 // These changes require a separately approved Kenji-only release. They must
 // never enter the legacy job that deploys MMS and reconciles routes.
 export const KENJI_MANUAL_RELEASE_PATHS = new Set([
+  'member-dashboard-chat-worker/src/kenji-line-next-action.mjs',
+  'member-dashboard-chat-worker/src/mmd-i18n.mjs',
+  'member-pages-worker/src/kenji-line-member-truth.js',
+  'member-dashboard-chat-worker/test/kenji-next-action.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-runtime-env-bindings.test.mjs',
+  'member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs',
   'member-dashboard-chat-worker/src/kenji-line-live-truth.mjs',
   'member-dashboard-chat-worker/test/kenji-line-live-truth.test.mjs',
   'member-dashboard-chat-worker/src/kenji-line-rights-check.mjs',

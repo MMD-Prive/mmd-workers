@@ -20,11 +20,10 @@ const membership = applyKenjiNextAction({
     },
   },
 });
-assert.equal(membership.cta_type, "open_action_route");
-assert.equal(membership.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview");
-assert.equal(membership.cta_appended, true);
-assert.match(membership.text, /MY MMD Home/);
-assert.match(membership.text, /https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?intent=status&view=overview/);
+assert.equal(membership.cta_type, "none");
+assert.equal(membership.cta_route, "");
+assert.equal(membership.cta_appended, false);
+assert.doesNotMatch(membership.text, /MY MMD Home|intent=status/);
 assert.equal(membership.next_action_policy.max_primary_cta, 1);
 assert.equal(membership.next_action_policy.relationship_mode, "known_customer_continuation");
 assert.doesNotMatch(membership.text, /อนุมัติสิทธิ์|ได้รับสิทธิ์แล้ว|เปิดสิทธิ์แล้ว/i);
@@ -57,8 +56,8 @@ const renewal = applyKenjiNextAction({
   text: "เริ่มขั้นตอนต่ออายุสมาชิกได้ที่นี่ครับ → https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package",
   intent: "membership_renewal",
 }, { continuity: {} });
-assert.equal(renewal.cta_type, "open_action_route");
-assert.equal(renewal.cta_route, "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=renew&view=package");
+assert.equal(renewal.cta_type, "none");
+assert.equal(renewal.cta_route, "");
 assert.equal(renewal.cta_appended, false);
 assert.doesNotMatch(renewal.text, /สถานะ.*(?:เปลี่ยนแล้ว|active แล้ว)|อนุมัติแล้ว/i);
 
@@ -102,6 +101,7 @@ assert.match(paymentNeedsAction.customer_text, /ไม่ต้องสร้�
 assert.doesNotMatch(paymentNeedsAction.customer_text, /confirm\/payment-proof/);
 
 const existingCta = applyKenjiNextAction({
+  truth_status: "verified",
   text: "ดูสถานะล่าสุดได้ที่ https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=overview ครับ",
   intent: "membership_status",
 }, { continuity: {} });

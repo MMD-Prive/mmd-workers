@@ -5,7 +5,7 @@ const MEMBER_SNAPSHOT_URL = "https://member-pages-worker.internal/__internal/ken
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 1600;
 const MEMBERSHIP_TIMEOUT_MS = 4500;
-const LIVE_TRUTH_INTENTS = new Set(["membership_status", "points_status"]);
+const LIVE_TRUTH_INTENTS = new Set(["membership_status", "membership_renewal", "points_status"]);
 const POINTS_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points";
 
 function text(value) {
@@ -72,6 +72,14 @@ function boundedTruth(payload = {}) {
       status: verifiedPoints ? "verified" : "unavailable",
       active_points: verifiedPoints ? points.active_points : null,
     },
+    renewal: payload.renewal?.status === "ready" && payload.membership?.member_blocked !== true &&
+      ({private_standard:"standard",private_premium:"premium"})[membership.level] === payload.renewal.package_code &&
+      Number.isSafeInteger(payload.renewal.amount_thb) && payload.renewal.amount_thb > 0 &&
+      Number.isSafeInteger(payload.renewal.membership_years) && payload.renewal.membership_years > 0 &&
+      payload.renewal.discount_verified === true
+      ? { status: "ready", package_code: payload.renewal.package_code,
+        amount_thb: payload.renewal.amount_thb, membership_years: payload.renewal.membership_years, discount_verified: true }
+      : { status: "review_required" },
   };
 }
 
@@ -95,7 +103,7 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
     timer = setTimeout(() => {
       controller.abort("kenji_live_truth_timeout");
       reject(new Error("kenji_live_truth_timeout"));
-    }, effectiveIntent === "membership_status" ? MEMBERSHIP_TIMEOUT_MS : TIMEOUT_MS);
+    }, ["membership_status", "membership_renewal"].includes(effectiveIntent) ? MEMBERSHIP_TIMEOUT_MS : TIMEOUT_MS);
   });
   try {
     const payloadResult = await Promise.race([deadline, (async () => {
@@ -211,6 +219,22 @@ function knownIdentity(continuity = {}) {
 export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continuity = {}) {
   const value = text(intent).toLowerCase();
   if (!kenjiLiveTruthRequired(value)) return null;
+
+  if (value === "membership_renewal") {
+    const trusted = boundedTruth(liveTruth);
+    const quote = trusted?.renewal;
+    const ready = quote?.status === "ready";
+    return {
+      text: ready ? `${membershipStatusText(trusted.membership)}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_offer({
+        label: quote.package_code === "standard" ? "Standard" : "Premium",
+        amount: quote.amount_thb.toLocaleString("th-TH"), years: quote.membership_years,
+      })}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_payment_pending}` : MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_pending,
+      reply_source: ready ? "live_truth" : "live_truth_unavailable",
+      truth_status: ready ? "verified" : "unavailable", truth_authority: AUTHORITY,
+      handoff_required: true, handoff_reason: ready ? "renewal:payment_destination_required" : "renewal:evidence_required",
+      guard_blocked: false, live_truth_used: ready, live_truth_verified: ready,
+    };
+  }
 
   if (liveTruth?.ok === true && liveTruth.authority === AUTHORITY && liveTruth.identity_status === "resolved") {
     if (value === "membership_status") {

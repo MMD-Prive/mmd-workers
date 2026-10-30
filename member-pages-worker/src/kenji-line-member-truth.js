@@ -17,7 +17,7 @@ const TIMEOUT_MS = 2500;
 const ENTITLEMENT_TIMEOUT_MS = 900;
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
-const EXPLICIT_INTENTS = new Set(["membership_status", "points_status", "rights_check", "private_interest"]);
+const EXPLICIT_INTENTS = new Set(["membership_status", "membership_renewal", "points_status", "rights_check", "private_interest"]);
 
 const CAPABILITY_PRIORITY = Object.freeze([
   "black_card",
@@ -191,7 +191,7 @@ async function readTruthContext(env, lineUserId, intent) {
   if (intent === "private_interest") {
     return readCanonicalEntitlementSnapshot(env, lineUserId);
   }
-  if (intent === "membership_status") {
+  if (["membership_status", "membership_renewal"].includes(intent)) {
     const member = await readCanonicalMemberProfile(env, lineUserId);
     if (member.status === "resolved") return member;
     let client = null;
@@ -399,6 +399,14 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
     projection.points = context.sourceVerified === true && context.state === "resolved" && Number.isSafeInteger(context.confirmedBalance) && context.confirmedBalance >= 0
       ? { status: "verified", active_points: context.confirmedBalance, valid_until: context.nearestExpiry || null, authority: "canonical_paid_points_source_guard_v1" }
       : { status: "unavailable", active_points: null };
+  }
+  if (intent === "membership_renewal") {
+    const membership = projection.membership;
+    const tier = { private_standard: "standard", private_premium: "premium" }[membership.level];
+    projection.renewal = membership.member_blocked || !tier
+      ? { status: "review_required", reason: "renewal_membership_review_required" }
+      : await resolveCanonicalRenewalOffer(env, { liff_intent: "renew", member_exists: true,
+        line_user_id: lineUserId, member_profile: { tier, membership_expires_at: membership.expire_at } });
   }
   if (intent === "rights_check") {
     const promotionMembership = projection.former_private_membership
