@@ -54,5 +54,7 @@ test('workflow uses existing protected environment, exact source/main approval a
   assert.doesNotMatch(contracts, /secrets\.|environment:/);
   assert.match(contracts, /--test-bundle/);
   assert.match(source, /needs: \[production-approval, contracts\]/);
+  assert.ok(source.includes("github.event_name == 'workflow_dispatch' && 'deploy-admin-worker-production'"));
+  assert.match(source, /format\('held-viewer-contracts-\{0\}', github.ref\)/);
   assert.doesNotMatch(source, /workflow_run:|prevent_self_review|can_admins_bypass/);
 });

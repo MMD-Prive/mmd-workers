@@ -36,7 +36,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: deploy-admin-worker-production
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-admin-worker-production' || format('held-viewer-contracts-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
