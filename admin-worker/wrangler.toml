@@ -1494,3 +1494,20 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/model/settings/customer-visibility"
 zone_name = "mmdbkk.com"
+
+# Owner/admin-only Booking Model search and profile diagnostics.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/booking-models*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/booking-models*"
+zone_name = "mmdbkk.com"

@@ -109,7 +109,7 @@ jobs:
           node --check src/model-owner-review-queue.js
           node --check src/model-direct-first-job-gate.js
           node --check src/model-selected-job-handoff.js
-          node --test create-job-drive-discovery.test.mjs
+          node --test create-job-drive-discovery.test.mjs booking-models.test.mjs
           node --test ../scripts/deploy-uploaded-worker-version.test.mjs
           node --test model-job-preview.test.mjs model-confirmation-flow-preview.test.mjs
           node --test model-selected-job-handoff.test.mjs
@@ -388,6 +388,8 @@ jobs:
             "/internal/admin/jobs/all*",
             "/internal/admin/work/assets/*",
             "/internal/admin/mmd-review*",
+            "/internal/admin/booking-models*",
+            "/v1/admin/booking-models*",
             "/v1/admin/private-media*",
             "/v1/admin/line/rich-menu/three-level/prepare",
             "/v1/admin/line/rich-menu/three-level/activate",
@@ -666,6 +668,11 @@ jobs:
             grep -q '\"error\":\"unauthorized\"' "$review_body"
             review_page_code="$(smoke_curl -sS --max-time 20 -o /dev/null -w "%{http_code}" "$origin/internal/admin/mmd-review")"
             test "$review_page_code" = "303"
+            # Booking Model inventory and protected covers must remain owner/admin-only.
+            booking_models_code="$(smoke_curl -sS --max-time 20 -o /dev/null -w "%{http_code}" "$origin/v1/admin/booking-models")"
+            test "$booking_models_code" = "401"
+            booking_models_page_code="$(smoke_curl -sS --max-time 20 -o /dev/null -w "%{http_code}" "$origin/internal/admin/booking-models")"
+            test "$booking_models_page_code" = "303"
             # An empty unauthenticated probe must reach the admin gate, never Webflow.
             diagnostic_body="$(mktemp)"
             diagnostic_code="$(smoke_curl -sS --max-time 20 -o "$diagnostic_body" -w "%{http_code}" \
