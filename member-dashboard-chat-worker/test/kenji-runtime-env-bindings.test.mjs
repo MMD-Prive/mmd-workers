@@ -282,7 +282,8 @@ test("natural membership status LINE request is refined into protected membershi
   assert.notEqual(body.saved[0].reply_source, "seed_knowledge");
   assert.equal(body.saved[0].replied, true);
   assert.equal(lineCalls, 1);
-  assert.match(sentReply, /สถานะ|My MMD/i);
+  assert.match(sentReply, /สิทธิ์สมาชิก|สถานะ/i);
+  assert.doesNotMatch(sentReply, /intent=status&view=overview/);
   const telemetry = JSON.parse(telemetryPayload?.fields?.payload_json || "{}");
   assert.equal(telemetry.exact_intent, "membership_status");
 });
