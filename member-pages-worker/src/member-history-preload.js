@@ -73,6 +73,15 @@ export function lifetimePointsFromPreload(preload, memberId = "") {
   const projection = preload.projection || {};
   const projectionMemberId = clean(projection.member_id);
   if (!projectionMemberId || (memberId && projectionMemberId !== clean(memberId))) return null;
+  // Missing contact enrichment is not an ownership failure.  It is safe to
+  // read the verified projection only when the projection independently proves
+  // one canonical Member match; ambiguous, missing, and review states must
+  // remain unavailable.  Do not use the projection's balance as identity
+  // evidence or bypass the source/expiry guards that produced it.
+  const identity = projection.identity || {};
+  const identityState = clean(identity.state);
+  if (identity.member_linked !== true || identity.member_match_count !== 1
+      || !["ready", "contact_enrichment_pending"].includes(identityState)) return null;
   const confirmedBalance = nonNegativeIntOrNull(projection.current_points_confirmed);
   if (confirmedBalance === null) return null;
   return {
