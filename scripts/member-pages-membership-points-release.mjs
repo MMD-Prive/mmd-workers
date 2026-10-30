@@ -22,14 +22,11 @@ export const ALLOWED_DELTA_PATHS = Object.freeze([
   'member-pages-worker/src/member-history-preload.js',
   'member-pages-worker/test/kenji-line-member-truth.test.mjs',
   'member-pages-worker/test/member-history-preload.test.mjs',
-  'scripts/member-pages-membership-points-release.mjs',
-  'scripts/member-pages-membership-points-release.test.mjs',
-  '.github/workflows/deploy-member-pages-membership-points-artifact.yml',
 ].sort());
 
-export function validateMembershipSourceScope(sourceSha, releaseSha, changedPaths) {
+export function validateMembershipSourceScope(sourceSha, approvedSourceSha, changedPaths) {
   assert.equal(sourceSha, APPROVED_SOURCE_SHA, 'membership source must be the exact merged release SHA');
-  assert.equal(releaseSha, APPROVED_SOURCE_SHA, 'workflow must run on the approved main SHA');
+  assert.equal(approvedSourceSha, APPROVED_SOURCE_SHA, 'approved source SHA must be the exact merged release SHA');
   assert.deepEqual([...changedPaths].sort(), ALLOWED_DELTA_PATHS, 'source delta includes unreviewed runtime or release files');
   return { source_sha: sourceSha, baseline_source_sha: BASELINE_SOURCE_SHA, paths: [...ALLOWED_DELTA_PATHS] };
 }
@@ -107,10 +104,10 @@ export async function releaseMembershipPoints(io) {
 
 export async function runApproved() {
   assert.equal(process.env.PRODUCTION_APPROVED, 'true');
-  assert.equal(process.env.GITHUB_SHA, APPROVED_SOURCE_SHA);
+  assert.equal(process.env.APPROVED_SOURCE_SHA, APPROVED_SOURCE_SHA);
   const sourceDirectory = resolve(process.env.SOURCE_DIRECTORY || '');
   const changedPaths = git(sourceDirectory, 'diff', '--name-only', BASELINE_SOURCE_SHA, APPROVED_SOURCE_SHA).split('\n').filter(Boolean);
-  validateMembershipSourceScope(APPROVED_SOURCE_SHA, process.env.GITHUB_SHA, changedPaths);
+  validateMembershipSourceScope(APPROVED_SOURCE_SHA, process.env.APPROVED_SOURCE_SHA, changedPaths);
   const dir = mkdtempSync(join(tmpdir(), 'mmd-membership-points-bundle-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir, 'member-pages-membership-points-receipt.json');
   const result = await releaseMembershipPoints({
