@@ -4,6 +4,7 @@ const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/
 const MEMBER_SNAPSHOT_URL = "https://member-pages-worker.internal/__internal/kenji/member-reply-snapshot";
 const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const TIMEOUT_MS = 1600;
+const MEMBERSHIP_TIMEOUT_MS = 4500;
 const LIVE_TRUTH_INTENTS = new Set(["membership_status", "points_status"]);
 const POINTS_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=points";
 
@@ -89,8 +90,15 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort("kenji_live_truth_timeout"), TIMEOUT_MS);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort("kenji_live_truth_timeout");
+      reject(new Error("kenji_live_truth_timeout"));
+    }, effectiveIntent === "membership_status" ? MEMBERSHIP_TIMEOUT_MS : TIMEOUT_MS);
+  });
   try {
+    const payloadResult = await Promise.race([deadline, (async () => {
     const response = await env.MEMBER_PAGES_WORKER.fetch(new Request(MEMBER_TRUTH_URL, {
       method: "POST",
       headers: {
@@ -101,15 +109,22 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
       body: JSON.stringify({ line_user_id: lineUserId, intent: effectiveIntent }),
       signal: controller.signal,
     }));
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      const status = text(payload?.status) || "unavailable";
-      return { ok: false, status, failure_class: text(payload?.failure_class) || status, authority: AUTHORITY };
-    }
     const payload = await response.json().catch(() => null);
+    return { response, payload };
+    })()]);
+    const { response, payload } = payloadResult;
+    // Expected unknown-identity/no-entitlement results use HTTP 200 too.
+    // Preserve only our authority's bounded failure vocabulary.
+    const failure = text(payload?.failure_class || payload?.status);
+    if (payload?.ok === false && payload?.authority === AUTHORITY &&
+      ["identity_unresolved", "no_entitlement", "upstream_error", "projection_invalid"].includes(failure)) {
+      return { ok: false, status: failure, failure_class: failure, authority: AUTHORITY };
+    }
+    if (!response.ok) return { ok: false, status: "upstream_error", failure_class: "upstream_error", authority: AUTHORITY };
     const truth = boundedTruth(payload || {});
     return truth || { ok: false, status: "unavailable", authority: AUTHORITY };
   } catch {
+    if (controller.signal.aborted) return { ok: false, status: "upstream_error", failure_class: "upstream_error", failure_reason: "timeout", authority: AUTHORITY };
     return { ok: false, status: "unavailable", authority: AUTHORITY };
   } finally {
     clearTimeout(timer);
