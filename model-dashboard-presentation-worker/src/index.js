@@ -4,6 +4,7 @@ import { MODEL_LINE_BRIEFS_JS, MODEL_LINE_BRIEFS_CSS } from "./model-line-briefs
 import { MODEL_MEDIA_UPLOAD_JS, MODEL_MEDIA_UPLOAD_CSS } from "./model-media-upload-presentation.js";
 import { modelLiffDigitalBootstrapHtml } from "./model-liff-digital-shell.js";
 import { modelDigitalDashboardHtml } from "./model-digital-dashboard.js";
+import { modelDocsVerificationResponse } from "./model-docs-verification-entry.js";
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
@@ -1470,6 +1471,8 @@ function unavailable() {
 
 export default {
   async fetch(request) {
+    const docsVerification = modelDocsVerificationResponse(request);
+    if (docsVerification) return docsVerification;
     const path = normalizePath(new URL(request.url).pathname);
     if (isPartnerLinePrimaryRequest(request)) return partnerLinePrimaryResponse(request);
     // Exact public documents only. Preserve browser host/query; strip credentials

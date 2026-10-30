@@ -42,6 +42,8 @@ jobs:
           node --check webflow/sigil/model/model-lv15-fonts.mjs
           node --check webflow/sigil/model/model-lv15-presentation.mjs
           node --check model-dashboard-presentation-worker/src/model-digital-dashboard.js
+          node --check model-dashboard-presentation-worker/src/model-docs-verification-entry.js
+          node --check model-dashboard-presentation-worker/src/model-docs-verification-page.js
           node --check scripts/preview-model-lv15.mjs
           node --check scripts/model-lv15-fixtures.mjs
           node --check scripts/build-model-lv15-skin.mjs
@@ -53,6 +55,7 @@ jobs:
             webflow/sigil/model/model-lv15-presentation.test.mjs \
             scripts/model-lv15-fixtures.test.mjs \
             scripts/model-lv15-ci.test.mjs \
+            model-dashboard-presentation-worker/model-docs-verification.test.mjs \
             webflow/sigil/model/model-console-decline-options.test.mjs \
             webflow/sigil/model/model-console-atelier-v3.test.mjs \
             webflow/sigil/model/my-model-lovable-vnext-skin-20261017.test.mjs \

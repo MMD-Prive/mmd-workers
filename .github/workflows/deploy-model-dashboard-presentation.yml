@@ -41,7 +41,10 @@ jobs:
         run: |
           set -euo pipefail
           node --check src/index.js
+          node --check src/model-docs-verification-entry.js
+          node --check src/model-docs-verification-page.js
           node --test index.test.mjs model-webflow-home.test.mjs
+          node --test model-docs-verification.test.mjs
           node --test ../webflow/sigil/model/model-webflow-entry-recovery.test.mjs ../webflow/sigil/model/model-console-v3-identity-first.test.mjs
 
       - name: Validate MY MODEL privacy navigation and controls
