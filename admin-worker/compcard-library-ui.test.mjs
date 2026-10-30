@@ -47,7 +47,7 @@ test('upload, escape model text, choose canonical model, save and view metadata 
 test('Drive folder navigation imports the selected source and clears selection after success',async()=>{
   const f=await fixture();try{
     f.click('[data-tab=drive]');await ready(()=>f.d.querySelector('[data-folder]'));assert.equal(f.$('search').hidden,true);
-    f.click('[data-folder]');await ready(()=>f.d.querySelector('[data-pick]'));const box=f.d.querySelector('[data-pick]');box.checked=true;box.dispatchEvent(new f.w.Event('change',{bubbles:true}));
+    f.click('[data-folder]');await ready(()=>f.d.querySelector('[data-pick]'));f.click('#selectAll');assert.equal(f.d.querySelector('[data-pick]').checked,true);
     f.click('#importSelected');await ready(()=>f.$('status').textContent.includes('นำเข้าสำเร็จ'));
     const write=f.calls.find(c=>c.url.pathname.endsWith('/import'));assert.deepEqual(JSON.parse(write.init.body),{provider:'google_drive',file_id:'file_00000001'});
     assert.equal(f.d.querySelector('[data-pick]').checked,false);

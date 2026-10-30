@@ -44,6 +44,7 @@ function compcardClient(copy) {
   function setTab(value){if(busy)return;tab=value;cursor=null;rows=[];selected.clear();folder='';stack=[];
     document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===tab)));
     $('search').hidden=tab!=='library';$('importTools').hidden=tab==='library';$('sourceNote').hidden=tab==='library';
+    $('selectAll').hidden=tab!=='drive';
     $('sourceNote').textContent=tab==='drive'?'เปิดโฟลเดอร์แล้วเลือก compcard ที่ต้องการนำเข้า ไฟล์ต้นทางและชื่อเดิมจะถูกเก็บไว้':tab==='job-board'?'ไฟล์แนบใบสมัครที่ส่งแล้ว · เลือกเฉพาะภาพที่เป็น compcard รายชื่อโมเดลจะจับคู่หลังตรวจสอบ':'';draw();load();
   }
   $('search').addEventListener('submit',e=>{e.preventDefault();load();});$('more').onclick=()=>load(true);
@@ -51,6 +52,8 @@ function compcardClient(copy) {
   $('crumbs').onclick=e=>{if(busy)return;if(e.target.closest('[data-root]')){folder='';stack=[];load();}else if(e.target.closest('[data-back]')){folder=stack.pop()||'';load();}};
   $('grid').onclick=e=>{const f=e.target.closest('[data-folder]');if(f&&!busy){stack.push(folder);folder=f.dataset.folder;load();}const open=e.target.closest('[data-open]');if(open)edit(rows[Number(open.dataset.open)].id);};
   $('grid').onchange=e=>{if(e.target.matches('[data-pick]')){const i=Number(e.target.dataset.pick);if(e.target.checked)selected.add(i);else selected.delete(i);}};
+  $('importSelected').insertAdjacentHTML('beforebegin','<button type="button" id="selectAll" hidden>เลือก / ยกเลิกการ์ดที่แสดงทั้งหมด</button>');
+  $('selectAll').onclick=()=>{if(busy)return;const ids=rows.map((r,i)=>r.folder?null:i).filter(i=>i!==null);if(ids.every(i=>selected.has(i)))selected.clear();else ids.forEach(i=>selected.add(i));draw();};
   $('importSelected').onclick=async()=>{
     if(busy)return;if(!selected.size)return say('เลือก compcard ก่อนค่ะ',true);busy=true;$('importSelected').disabled=true;let done=0,dupes=0;
     try{for(const i of [...selected]){const r=rows[i];say('กำลังนำเข้า '+(done+1)+' / '+selected.size);const d=await send('/import',tab==='drive'?{provider:'google_drive',file_id:r.id}:{provider:'job_board',job_id:r.job_id,application_ref:r.application_ref,slot:r.slot});done++;if(d.duplicate)dupes++;}say('นำเข้าสำเร็จ '+done+' รายการ'+(dupes?' · มีอยู่แล้ว '+dupes+' รายการ':''));selected.clear();draw();}
