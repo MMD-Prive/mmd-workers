@@ -1218,6 +1218,11 @@ bucket_name = "mmd-models"
 binding = "PRIVATE_MODEL_MEDIA"
 bucket_name = "mmd-private-model-media"
 
+# Compcard Library reads submitted Job Board images; originals remain private.
+[[r2_buckets]]
+binding = "JOB_BOARD_COMPCARDS"
+bucket_name = "mmd-public-access-evidence"
+
 [[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
@@ -1519,3 +1524,22 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/booking-models*"
 zone_name = "mmdbkk.com"
+
+# Owner/admin Compcard Library. Source files and proxy previews require the
+# credential-bound admin cookie on every request.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/compcards*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/compcards*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/compcards*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/compcards*"
+zone_name = "mmdbkk.com"
+

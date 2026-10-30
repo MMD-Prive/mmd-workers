@@ -1,6 +1,7 @@
 // Shared presentation only: no API, authentication, or business mutations.
 export const INTERNAL_PAGES = [
   {title:'Booking Models',path:'/internal/admin/booking-models'},
+  {title:'คลัง Compcard',path:'/internal/admin/compcards'},
   {title:'MMD MEMORY · จัดการคู่มือ MY MODEL',path:'/internal/ceo/documents/my-model'},
   {title:'MMD MEMORY · จัดการเอกสาร',path:'/docs/manage'},
   {title:'Model LINE Link',path:'/internal/admin/model-link'},
@@ -365,4 +366,5 @@ export function internalWorkspaceLoader(){
   // declaration into a temporal-dead-zone reference in the browser payload.
   return '(()=>{const __name=(target,value)=>{Object.defineProperty(target,"name",{value,configurable:true});return target;};return ('+installInternalWorkspace.toString()+')('+JSON.stringify(INTERNAL_PAGES)+','+JSON.stringify(DAILY_INTERNAL_PAGES)+','+JSON.stringify(INTERNAL_MENU_OMISSIONS)+');})()';
 }
+
 
