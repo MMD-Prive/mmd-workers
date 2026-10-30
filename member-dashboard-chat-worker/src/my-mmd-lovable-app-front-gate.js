@@ -1,3 +1,4 @@
+import { isEmsAlbumsPage, emsAlbumsPage } from "./my-mmd-ems-albums.mjs";
 import { myMmdMembershipWorlds } from "./my-mmd-membership-worlds.js";
 import currentWorker from "./line-group-ingress-front-gate.js";
 import { isMyMmdOrdersPage, proxyMyMmdOrdersPage } from "./my-mmd-orders-webflow-page.js";
@@ -337,6 +338,7 @@ function rewriteMyMmdHtml(html, path = "/my-mmd/") {
     const layout = /^\/my-mmd(?:\/(?:profile\/?)?)?$/.test(path) ? "hero" : "quiet";
     output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes} data-mmd-board-layout="${layout}">` + myMmdBrandMarkup());
   }
+  if (/^\/my-mmd\/?$/.test(path)) output = output.replace('</body>', '<nav aria-label="EMs Albums" style="padding:20px;text-align:center"><a href="/my-mmd/ems">ดูอัลบั้ม EMs →</a></nav></body>');
   if (/^\/my-mmd\/?$/.test(path) && !output.includes('id="mmd-session-panel"')) {
     output = output.replace(/<body\b([^>]*)>/i, (_match, attributes) => `<body${attributes}>` + myMmdSessionPanel());
   }
@@ -497,6 +499,11 @@ function liffAuthBridgeTarget(request) {
   const campaign = String(url.searchParams.get("campaign") || stateParams.get("campaign") || "").trim().toLowerCase();
 
   if (campaign) return "";
+  const view = String(url.searchParams.get("view") || stateParams.get("view") || "").trim().toLowerCase();
+  if (intent === "ems_albums" || (intent === "status" && view === "ems_albums")) {
+    const album = String(url.searchParams.get("album") || stateParams.get("album") || "").trim();
+    return /^ems\d+-[a-f0-9]{12}$/.test(album) ? `/my-mmd/ems/${album}` : "/my-mmd/ems";
+  }
   if (intent === "private_teaser") {
     const model = String(url.searchParams.get("model") || stateParams.get("model") || "").trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
@@ -571,6 +578,17 @@ async function rewriteStatusReturnTarget(request, response) {
   const html = await response.text();
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
+  // The current LIFF shell renders Digital Home, not the legacy target constant.
+  // Resume only the bounded EMs destination after the member API confirms a session.
+  if (target === "/my-mmd/ems" || /^\/my-mmd\/ems\/ems\d+-[a-f0-9]{12}$/.test(target)) {
+    const nonce = html.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i)?.[1];
+    if (!nonce || !html.includes("</body>")) return new Response(html, { status: response.status, headers });
+    const bridge = `<script nonce="${nonce}" id="mmd-ems-login-return">(()=>{const target=${JSON.stringify(target)};let busy=false,done=false,timer,attempts=0;async function check(){if(busy||done)return;busy=true;try{const r=await fetch('/api/member/app/ems-albums',{credentials:'same-origin',cache:'no-store'});const data=await r.json();if((r.status===200&&data.ok===true&&(Array.isArray(data.albums) ))||(r.status===403&&data.error==='VIP_REQUIRED')){done=true;clearTimeout(timer);location.replace(target);return;}}catch{}finally{busy=false;}if(!done&&++attempts<90)timer=setTimeout(check,2000);}function resume(){if(done)return;attempts=0;clearTimeout(timer);check();}addEventListener('pageshow',resume);addEventListener('focus',resume);document.addEventListener('visibilitychange',()=>{if(!document.hidden)resume();});document.getElementById('intro-continue')?.addEventListener('click',resume);check();})();</script>`;
+    const output = html.replace("</body>", bridge+"</body>");
+    headers.set("cache-control", "private, no-store");
+    headers.set("x-mmd-liff-return-target", target);
+    return new Response(output, { status: response.status, statusText: response.statusText, headers });
+  }
   const hasReturnBridge = html.includes('const target = "/member/my-mmd";') || html.includes('const target = "/member/payments";');
   if (!hasReturnBridge) {
     return new Response(html, { status: response.status, statusText: response.statusText, headers });
@@ -598,6 +616,11 @@ export default {
   async fetch(request, env = {}, ctx) {
     const path = normalizedPath(request);
 
+    if (isEmsAlbumsPage(request)) return emsAlbumsPage(request);
+    if (path === "/api/member/app/ems-albums" || path.startsWith("/api/member/app/ems-albums/")) {
+      if (!env.MEMBER_PAGES_WORKER?.fetch) return new Response("Service unavailable", { status: 503, headers: { "cache-control": "no-store" } });
+      return env.MEMBER_PAGES_WORKER.fetch(request);
+    }
     // Temporary owner policy: collection navigation uses the existing Worker album lane.
     // No member/album data is read here; that lane remains the access authority.
     if (path === "/my-mmd/albums/ems" || path === "/my-mmd/albums/ems/") {
