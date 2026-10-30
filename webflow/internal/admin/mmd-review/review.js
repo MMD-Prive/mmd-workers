@@ -6,6 +6,65 @@
   var q = function (id) { return root.querySelector('#mr-' + id); };
   var dialog = q('dialog'), selected = null, objectUrl = '', sha = '', busy = false, loading = false, cursor = null, generation = 0;
   var controllers = new Set();
+  var entries = new Map(), groups = new Map(), queue = [], activePreviews = 0, gridEpoch = 0;
+  var observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(function (records) {
+    records.forEach(function (record) { if (record.isIntersecting) { observer.unobserve(record.target); queue.push(record.target._entry); pump(); } });
+  }, { rootMargin: '200px' }) : null;
+  function batchControls(reset) {
+    if (reset) q('batch-confirm').checked = false;
+    var chosen = Array.from(entries.values()).filter(function (e) { return e.check.checked; });
+    var publicCount = chosen.filter(function (e) { return e.item.audience === 'public'; }).length;
+    q('batch').hidden = !chosen.length;
+    message('selection', 'เลือก ' + chosen.length + ' รูป · Public ' + publicCount + ' / Private ' + (chosen.length - publicCount));
+    q('batch-approve').disabled = busy || !chosen.length || !q('batch-confirm').checked || chosen.some(function (e) { return !e.sha; });
+    q('clear').disabled = busy; q('batch-confirm').disabled = busy;
+    entries.forEach(function (e) { e.check.disabled = busy || !e.sha || e.item.status !== 'pending_review'; e.open.disabled = busy; });
+    groups.forEach(function (g) { g.select.disabled = busy; });
+    q('refresh').disabled = busy || loading; q('filter').disabled = busy || loading; q('more').disabled = busy || loading;
+  }
+  function clearGrid() {
+    gridEpoch++; queue = []; if (observer) observer.disconnect();
+    entries.forEach(function (e) { if (e.url) URL.revokeObjectURL(e.url); });
+    entries.clear(); groups.clear(); q('list').replaceChildren(); batchControls(true);
+  }
+  function pump() {
+    while (activePreviews < 3 && queue.length) {
+      var e = queue.shift(); activePreviews++;
+      preview(e).finally(function () { activePreviews--; pump(); });
+    }
+  }
+  async function preview(e) {
+    var epoch = gridEpoch;
+    try {
+      var result = await api('/file', { model_id: e.item.model_id, media_asset_id: e.item.id });
+      if (epoch !== gridEpoch || document.hidden) return;
+      if (!result.blob.type.startsWith('image/')) throw new Error('not_image');
+      var img = element('img'); img.alt = e.item.name + ' · ' + e.item.audience.toUpperCase();
+      img.addEventListener('load', function () { if (epoch === gridEpoch) { e.sha = result.sha; e.hint.textContent = 'เลือกรูปนี้เมื่อดูครบแล้ว'; batchControls(false); } }, { once: true });
+      img.addEventListener('error', function () { if (epoch === gridEpoch) { e.sha = ''; e.hint.textContent = 'เปิดรูปไม่ได้ · ลองโหลดคิวใหม่'; batchControls(true); } });
+      e.url = URL.createObjectURL(result.blob); img.src = e.url; e.preview.replaceChildren(img);
+    } catch (error) { if (epoch === gridEpoch) { e.sha = ''; e.hint.textContent = errorText(error); batchControls(true); } }
+  }
+  async function approveBatch() {
+    if (busy || !q('batch-confirm').checked) return;
+    var chosen = Array.from(entries.values()).filter(function (e) { return e.check.checked; });
+    if (!chosen.length || chosen.some(function (e) { return !e.sha || e.item.status !== 'pending_review'; })) return;
+    busy = true; batchControls(false); var done = 0, failed = 0, epoch = gridEpoch;
+    for (var e of chosen) {
+      if (epoch !== gridEpoch || document.hidden) break;
+      message('batch-status', 'กำลังบันทึก ' + (done + failed + 1) + ' / ' + chosen.length);
+      try {
+        await api('/decision', { model_id: e.item.model_id, media_asset_id: e.item.id, expected_status: 'pending_review', media_sha256: e.sha, decision: 'approve', teaser_safe: e.item.audience === 'private' && e.item.teaser_safe === true, note: '' });
+        e.item.status = 'approved'; e.check.checked = false; e.sha = ''; e.hint.textContent = 'อนุมัติแล้ว · คงสิทธิ์ ' + e.item.audience.toUpperCase(); done++;
+      } catch (error) {
+        e.sha = ''; e.hint.textContent = errorText(error); failed++;
+        if (error.status === 401 || error.status === 403 || error.name === 'AbortError') break;
+      }
+    }
+    busy = false; batchControls(true);
+    message('batch-status', 'สำเร็จ ' + done + ' รูป · ไม่สำเร็จ ' + failed + ' รูป · ยังไม่ส่ง ' + (chosen.length - done - failed) + ' รูป');
+    message('status', 'อนุมัติแล้ว ' + done + ' รูป' + (failed ? ' · รายการที่ยังยืนยันไม่ได้ยังเลือกไว้ กรุณาโหลดคิวใหม่ก่อนลองอีกครั้ง' : ' · คงสิทธิ์ Public / Private เดิม'));
+  }
   var labels = { pending_review: 'รอตรวจ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ / เพิกถอนแล้ว' };
   function element(tag, cls, text) { var el = document.createElement(tag); if (cls) el.className = cls; if (text) el.textContent = text; return el; }
   function message(id, text) { q(id).textContent = text; }
@@ -68,26 +127,44 @@
     } catch (error) { if (version === generation) { message('review-status', errorText(error)); controls(); } }
   }
   function card(item) {
+    var key = item.model_id + ':' + item.id;
+    if (entries.has(key)) return;
+    var groupKey = item.model_id + ':' + item.audience, group = groups.get(groupKey);
+    if (!group) {
+      var section = element('section', 'mr-group'), heading = element('div', 'mr-group-heading');
+      heading.append(element('h2', '', (item.model_name || item.model_id) + ' · ' + (item.audience === 'public' ? 'PUBLIC · สาธารณะ' : 'PRIVATE · จำกัดสิทธิ์')));
+      var select = element('button', '', 'เลือกภาพที่โหลดแล้วในกลุ่ม'); select.type = 'button'; select.hidden = item.status !== 'pending_review';
+      select.addEventListener('click', function () { entries.forEach(function (e) { if (!busy && e.groupKey === groupKey && e.sha && e.item.status === 'pending_review') e.check.checked = true; }); batchControls(true); });
+      heading.append(select); var grid = element('div', 'mr-grid'); section.append(heading, grid); q('list').append(section);
+      group = { grid: grid, select: select }; groups.set(groupKey, group);
+    }
     var article = element('article', 'mr-card'), info = element('div', 'mr-card-info');
-    info.append(element('p', 'mr-kind', item.kind === 'private_clip' ? 'PRIVATE CLIP' : item.kind === 'private_pic' ? 'PRIVATE PIC' : item.kind === 'public_clip' ? 'PUBLIC CLIP' : 'PUBLIC PIC'), element('h2', '', item.name));
-    var date = new Date(item.uploaded_at), when = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' });
-    info.append(element('p', 'mr-muted', (item.model_name || item.model_id || 'ไม่พบ Model') + (when ? ' · ' + when : '')), element('p', 'mr-muted', labels[item.status] + (item.teaser_safe ? ' · PRIVATE TEASER' : '') + ' · ' + (Number(item.size) / 1024 / 1024).toFixed(1) + ' MB'));
-    article.append(info);
-    if (item.reviewable && item.status !== 'rejected') { var button = element('button', '', item.status === 'approved' ? 'ตรวจ / เพิกถอน' : 'เปิดตรวจ'); button.type = 'button'; button.addEventListener('click', function () { openReview(item); }); article.append(button); }
-    else if (!item.reviewable) info.append(element('p', 'mr-muted', 'ล็อกไว้: metadata หรือ object ไม่ผ่าน contract ของ audience นี้'));
-    return article;
+    var previewBox = element('div', 'mr-thumbnail', 'กำลังโหลดรูป…');
+    var isImage = /_pic$/.test(item.kind), check = element('input'); check.type = 'checkbox'; check.disabled = true;
+    var pick = element('label', 'mr-pick'); pick.append(check, document.createTextNode('เลือก')); pick.hidden = item.status !== 'pending_review' || !isImage || !item.reviewable;
+    check.setAttribute('aria-label', 'เลือก ' + item.name); check.addEventListener('change', function () { batchControls(true); });
+    info.append(element('p', 'mr-kind', item.audience === 'public' ? 'PUBLIC' : 'PRIVATE'), element('h3', '', item.name));
+    var hint = element('p', 'mr-muted', labels[item.status]); info.append(hint);
+    var button = element('button', '', item.status === 'approved' ? 'ตรวจ / เพิกถอน' : 'ดูเต็ม / ตรวจ'); button.type = 'button';
+    button.hidden = !item.reviewable || item.status === 'rejected'; button.addEventListener('click', function () { if (!busy) openReview(item); });
+    article.append(previewBox, pick, info, button); group.grid.append(article);
+    var entry = { item: item, groupKey: groupKey, check: check, open: button, preview: previewBox, hint: hint, sha: '', url: '' }; entries.set(key, entry);
+    if (!item.reviewable || item.status === 'rejected') previewBox.textContent = 'ไม่เปิดสื่อ · สิทธิ์หรือสถานะไม่พร้อม';
+    else if (!isImage) previewBox.textContent = 'วิดีโอ · เปิดตรวจเต็มก่อนอนุมัติ';
+    else if (observer) { previewBox._entry = entry; observer.observe(previewBox); }
+    else { queue.push(entry); pump(); }
   }
   async function load(more) {
-    if (loading) return;
+    if (loading || busy) return;
     loading = true; q('refresh').disabled = true; q('filter').disabled = true; q('more').disabled = true;
-    if (!more) { cursor = null; q('list').replaceChildren(); }
+    if (!more) { cursor = null; clearGrid(); }
     message('status', 'กำลังโหลดคิว…');
     try {
       var params = new URLSearchParams({ status: q('filter').value }); if (more && cursor) params.set('cursor', cursor);
       var data = await api('?' + params.toString());
       if (!Array.isArray(data.items)) throw new Error('invalid_queue');
-      data.items.forEach(function (item) { q('list').append(card(item)); }); cursor = data.next_cursor || null;
-      var count = q('list').children.length;
+      data.items.forEach(card); cursor = data.next_cursor || null;
+      var count = entries.size;
       message('status', count ? 'แสดง ' + count + ' รายการ' + (cursor ? ' · มีรายการเพิ่มเติม' : '') : 'ไม่มีรายการในสถานะนี้');
       if (!count) q('list').append(element('div', 'mr-empty', 'เมื่อมีสื่อในสถานะนี้ รายการจะแสดงที่นี่'));
     } catch (error) {
@@ -98,19 +175,22 @@
   async function decide(decision) {
     if (busy || !selected || !sha || !q('confirm').checked) return;
     if (decision !== 'approve' && !q('note').value.trim()) return;
-    var item = selected, teaserSafe = decision === 'approve' && item.audience === 'private' && q('teaser').checked; busy = true; controls(); message('review-status', 'กำลังบันทึกผลการตรวจ…');
+    var item = selected, teaserSafe = decision === 'approve' && item.audience === 'private' && q('teaser').checked; busy = true; controls(); batchControls(false); message('review-status', 'กำลังบันทึกผลการตรวจ…');
     try {
       await api('/decision', { model_id: item.model_id, media_asset_id: item.id, expected_status: item.status, media_sha256: sha, decision: decision, teaser_safe: teaserSafe, note: q('note').value.trim() });
       busy = false; closeReview(); await load(false);
-      message('status', decision === 'approve' ? (teaserSafe ? 'อนุมัติเป็น Private Teaser แล้ว · ลูกค้ายังต้องผ่านสิทธิ์ก่อนดู' : 'อนุมัติเป็นสื่อส่วนตัวแล้ว · ยังไม่ได้เปิดสิทธิ์ให้ลูกค้า') : decision === 'revoke' ? 'เพิกถอนการอนุมัติแล้ว' : 'ปฏิเสธสื่อแล้ว');
-    } catch (error) { busy = false; sha = ''; message('review-status', errorText(error)); controls(); }
+      message('status', decision === 'approve' ? (teaserSafe ? 'อนุมัติเป็น Private Teaser แล้ว · ลูกค้ายังต้องผ่านสิทธิ์ก่อนดู' : (item.audience === 'public' ? 'อนุมัติสื่อ Public แล้ว' : 'อนุมัติเป็นสื่อส่วนตัวแล้ว · ยังไม่ได้เปิดสิทธิ์ให้ลูกค้า')) : decision === 'revoke' ? 'เพิกถอนการอนุมัติแล้ว' : 'ปฏิเสธสื่อแล้ว');
+    } catch (error) { busy = false; batchControls(true); sha = ''; message('review-status', errorText(error)); controls(); }
   }
+  q('batch-confirm').addEventListener('change', function () { batchControls(false); });
+  q('batch-approve').addEventListener('click', approveBatch);
+  q('clear').addEventListener('click', function () { if (!busy) { entries.forEach(function (e) { e.check.checked = false; }); batchControls(true); } });
   q('refresh').addEventListener('click', function () { load(false); }); q('filter').addEventListener('change', function () { load(false); }); q('more').addEventListener('click', function () { load(true); });
   q('close').addEventListener('click', closeReview); dialog.addEventListener('cancel', function (event) { event.preventDefault(); closeReview(); });
   q('confirm').addEventListener('change', controls); q('teaser').addEventListener('change', controls); q('note').addEventListener('input', controls); q('form').addEventListener('submit', function (event) { event.preventDefault(); });
   ['approve', 'reject', 'revoke'].forEach(function (decision) { q(decision).addEventListener('click', function () { decide(decision); }); });
-  function conceal() { controllers.forEach(function (controller) { controller.abort(); }); clearMedia(); if (dialog.open) dialog.close(); }
-  document.addEventListener('visibilitychange', function () { if (document.hidden) conceal(); });
+  function conceal() { controllers.forEach(function (controller) { controller.abort(); }); clearMedia(); clearGrid(); if (dialog.open) dialog.close(); }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) conceal(); else if (!busy) load(false); });
   window.addEventListener('pagehide', conceal);
   load(false);
 }());
