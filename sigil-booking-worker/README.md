@@ -56,7 +56,10 @@ The approved registry scan is paginated and capped at 5,000 rows per search; an
 incomplete or unavailable registry yields no media instead of legacy fallbacks.
 Media responses use browser/CDN `no-store` to keep revocation checks active.
 Exact origins come from `ALLOWED_ORIGINS`, including mmdbkk.com, the connected
-Lovable preview and `sigil-booking.lovable.app`, and `mmdprive.webflow.io`.
+Lovable preview, the published `sigil-bookings.lovable.app` (plural), the existing
+`sigil-booking.lovable.app` origin, and `mmdprive.webflow.io`.
+Approved origins receive credentialed CORS for the browser session; this only
+permits communication and never grants Private package entitlement.
 GET, HEAD, byte-range requests, and OPTIONS preflight are supported; other browser
 origins are denied before any registry or storage read.
 
