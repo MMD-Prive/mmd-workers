@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createPersonalMainUI} from '../src/liff-personal-main.js';
+import {createPersonalMainUI,renderPersonalMain} from '../src/liff-personal-main.js';
+import {ENTRY_SIGIL_PORTRAITS} from '../src/liff-entry-sigil-portraits.js';
+import {PUBLIC_PERSONAL_MAIN_IMAGES} from '../src/liff-personal-main-public-images.js';
+test('member choices match approved entry artwork and retain canonical IDs without loading portraits before audience confirmation',()=>{
+ const html=renderPersonalMain();
+ const choices=[...html.matchAll(/data-pm-choice="([^"]+)"[^>]*><span class="pm-portrait"><img ([^>]+)/g)];
+ assert.deepEqual(choices.map(match=>match[1]),['hima','hiro','hiei','hito']);
+ for(const [,id,image] of choices){
+  assert.ok(image.includes(`data-pm-public-src="${PUBLIC_PERSONAL_MAIN_IMAGES[id]}"`));
+  assert.ok(image.includes(`data-pm-private-src="${ENTRY_SIGIL_PORTRAITS[id]}"`));
+  assert.doesNotMatch(image,/(?:^|\s)src=/);
+ }
+ assert.match(html,/id="personal-main" class="pm" hidden/);
+});
 function fixture(request){
  const elements=new Map();const node=()=>({hidden:false,disabled:false,textContent:'',value:'',dataset:{},events:{},children:[],addEventListener(e,f){this.events[e]=f},setAttribute(){},removeAttribute(name){delete this[name]},hasAttribute(name){return Object.hasOwn(this,name)},focus(){},replaceChildren(){this.children=[]},appendChild(n){this.children.push(n)}});
  const get=s=>{if(!elements.has(s))elements.set(s,node());return elements.get(s)};

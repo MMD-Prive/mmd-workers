@@ -1,3 +1,4 @@
+import { renderEditorialEntry, ENTRY_EDITORIAL_CSS } from './liff-entry-editorial.js';
 // Approved Public / Private verification presentation, 2026-10-27.
 // Display assets only; verified brand, identity and business authority stay in the existing runtime.
 import { V6_BRAND_ASSETS } from "./liff-customer-brand-v6.js";
@@ -157,32 +158,9 @@ body:is([data-brand-audience="public"],[data-brand-audience="unresolved"][data-w
 @keyframes hype-ground-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.015,.99)}}
 @media(prefers-reduced-motion:reduce){#hype-loader .hype-flyer{transition:none!important;transform:none!important}#hype-loader .hype-sprite{animation:none!important}#hype-loader .hype-floor-shadow{transition:none}}
 body:not(.app-entered):not(.signup-mode){padding:0!important}
+${ENTRY_EDITORIAL_CSS}
 `;
-export function renderApprovedEntry() { return `<section id="intro-screen" class="intro-screen my-mmd-welcome" aria-label="ยืนยันตัวตน">
-    <div class="sigil-portrait-wall" aria-hidden="true"></div>
-    <div class="welcome-hero">
-      <div class="sigil-primary-logo" role="img" aria-label="SĪGIL"></div>
-      <p class="sigil-system-name">SĪGIL System</p>
-      <div class="entry-title-lockup">
-        <div class="entry-title-frame" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 40V12H60M260 12H308V40M308 80V108H260M60 108H12V80M144 28L160 14L176 28L160 42Z"/></svg></div>
-        <h1 id="intro-title" class="entry-hero-title">MY MMD</h1>
-      </div>
-    </div>
-    <div class="welcome-letter">
-
-      <div class="welcome-divider" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 64" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M0 58H480M24 58V28H62V58M92 58V18H132V58M104 18V6H120V18M166 58V34H220V58M256 58V10H300V58M270 10V2H286V10M338 58V24H376V58M414 58V36H456V58"/></svg></div>
-      <button id="intro-continue" class="intro-continue" type="button" aria-label="ยืนยันตัวตนผ่าน LINE" aria-expanded="false" disabled><span>ยืนยันผ่าน LINE</span><span aria-hidden="true">→</span></button>
-      <p class="remember-login-note">ระบบจำการเข้าสู่ระบบในอุปกรณ์นี้ 30 วัน · ออกจากระบบได้ทุกเมื่อ</p>
-      <div class="entry-editorial-divider" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M0 8H218M262 8H480M234 8L240 2L246 8L240 14Z"/></svg></div>
-      <footer class="entry-brand-footer" aria-label="แบรนด์">
-        <div class="welcome-brand">
-        <div class="entry-brand-neutral" aria-hidden="true"></div>
-        <div class="entry-brand entry-brand-public"><img src="${V6_BRAND_ASSETS.public}" alt="MMD" width="64" height="43"><p>Discreet by desire,<br>Elegance by choice.</p></div>
-        <div class="entry-brand entry-brand-private"><img src="${V6_BRAND_ASSETS.private}" alt="SĪGIL" width="24" height="24"><p>SĪGIL system</p></div>
-      </div>
-      </footer>
-    </div>
-  </section>`; }
+export function renderApprovedEntry(language='th') { return renderEditorialEntry(language); }
 export function renderApprovedLoader() { return `<div id="hype-loader" class="hype-loader" role="status" aria-label="กำลังยืนยันตัวตน"><div class="hype-flight-stage" aria-hidden="true"><span class="hype-floor-shadow"></span><div id="hype-flyer" class="hype-flyer"><img class="hype-sprite" src="${ENTRY_ASSETS.hype}" alt="" width="38" height="57"></div></div><div class="hype-progress"><div id="hype-progress" class="loading-bar" role="progressbar" aria-label="กำลังยืนยันตัวตน" aria-valuemin="0" aria-valuemax="100"><span class="loading-bar-fill" aria-hidden="true"></span><span class="loading-bar-segment" aria-hidden="true"></span></div><span id="customer-boot-progress" class="customer-boot-progress" data-confirmed-percent="0">0%</span></div><button id="customer-boot-retry" type="button" hidden>ลองอีกครั้ง</button></div>`; }
 // Presentation-only loading motion. Timers never change confirmed percentages.
 export function createHypeLoaderMotion({onMotion,onProgress,stallMs=6000,landingMs=900,restMs=2600,moveMs=2600}) {

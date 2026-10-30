@@ -1490,7 +1490,7 @@ test("approved HYPE loader lands during a wait, resumes, and never creates perce
 test("approved entry has no demo audience controls and keeps branding on the verified projection", async () => {
  const html=await (await shell('/member/liff?world=private&audience=sigil')).text();
  assert.match(html,/data-brand-audience="unresolved"/);
- assert.match(html,/SĪGIL System/);
+ assert.match(html,/SĪGIL system/);
  assert.match(APPROVED_ENTRY_CSS,/linear-gradient\(110deg,#a42138/);
  assert.doesNotMatch(html,/preview-mode|hypeLoadingPreview|preview-hype|ขั้นตอนถัดไป \+25%/);
  const loader=html.slice(html.indexOf('<div id="hype-loader"'),html.indexOf('<main>'));

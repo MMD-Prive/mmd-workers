@@ -1,3 +1,4 @@
+import {MODEL_EDITORIAL_CSS,renderModelEditorialIdentity} from './model-editorial-theme.js';
 import { MODEL_JSON_DEADLINE_RUNTIME } from "./model-json-deadline-runtime.js";
 
 export const MMD_APP_DIGITAL_CSS = `
@@ -230,15 +231,16 @@ export function modelLiffDigitalBootstrapHtml({
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#080907">
 <title>${pageTitle}</title>
-<style>${MMD_APP_DIGITAL_CSS}</style>
+<style>${MMD_APP_DIGITAL_CSS}\n${MODEL_EDITORIAL_CSS}</style>
 </head>
-<body>
+<body data-model-editorial="ci-dusk">
 <div class="mmd-digital-app ${publicJobApplicant ? "mmd-applicant-compact" : ""}" data-mmd-app-digital="v1">
   <main class="mmd-digital-shell">
     <header class="mmd-digital-top">
       <div class="mmd-digital-brand"><img class="mmd-brand-mark" src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6aa58901dd74f803af616444_05-tiny-mark-256px.webp" alt="MMD" width="24" height="24" decoding="async"><span>MY MODEL<small>DIGITAL MODEL WORKSPACE</small></span></div>
       <span class="mmd-digital-pill" id="session-pill">${initialPill}</span>
     </header>
+    ${renderModelEditorialIdentity()}
     ${publicJobApplicant ? '<div class="mmd-welcome-art"><img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6abe018f9cd0657b75e96242_Bangkok%2027-p-800.webp" alt="" width="500" height="281" decoding="async"/><span>MY MODEL</span></div>' : ""}
     <p class="mmd-digital-kicker">${kicker}</p>
     <h1 class="mmd-digital-title">${title}</h1>

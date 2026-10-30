@@ -1,5 +1,6 @@
 import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
 import { createAccountView } from "./liff-account-view.js";
+import {renderMemberEditorialMasthead,MEMBER_EDITORIAL_CSS} from './liff-member-editorial.js';
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
 import { MY_MMD_SIGIL_PRIVATE_CSS } from "./liff-sigil-private-theme.js";
@@ -80,7 +81,7 @@ export function handleLiffMemberShell(request, env = {}) {
 function renderShell(config, nonce) {
   const safeConfig = jsonForInlineScript(config);
   return `<!doctype html>
-<html lang="th">
+<html lang="${config.language === "zh" ? "zh-CN" : config.language || "th"}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -299,12 +300,13 @@ function renderShell(config, nonce) {
 ${PERSONAL_MAIN_CSS}
 ${MY_MMD_VERIFICATION_CSS}
 ${MY_MMD_SIGIL_PRIVATE_CSS}
+${MEMBER_EDITORIAL_CSS}
 </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode app-entered " : "context-resolving "}world-${config.world}" data-world="${config.world}" data-mmd-liff-digital="v3" data-mmd-liff-compact="v4" data-mmd-graphics="v6" data-brand-audience="unresolved">
 ${config.intent === "signup" ? "" : renderApprovedLoader()}
 <main>
-  ${renderApprovedEntry()}
+  ${renderApprovedEntry(config.language)}
   <div id="customer-entry-progress" class="customer-entry-progress"></div>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
@@ -340,7 +342,7 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
       <path d="M9 28H511M61 28V17h24v11M82 17V9h11v19M132 28V14h18V5h25v23M182 28V19h27V12h13v16M254 28V11h20V2h18v26M291 28V21h34V15h15v13M385 28V20h18V9h29v19M441 28V18h25v10" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
       <path d="M8 8H96M420 6h94M24 13h21M476 15h36M10 32h500" stroke="currentColor" stroke-width=".8" opacity=".55"/>
     </svg>
-    <section class="digital-hello"><p class="digital-public-wordmark" aria-label="MY MMD"><span>MY</span> MMD</p><p class="digital-public-slogan">Discreet by desire, Elegance by choice.</p><p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
+    <section class="digital-hello">${renderMemberEditorialMasthead()}<p class="digital-eyebrow">MMD TODAY</p><h1 id="digital-greeting">MY MMD</h1><p class="digital-sub">เรื่องที่ต้องรู้ เรื่องที่ต้องทำ และอัปเดตจาก MMD ในที่เดียว</p></section>
     <details class="digital-news-disclosure" id="digital-news-disclosure">
       <summary class="digital-news-summary">
         <span class="digital-sectionline"><h2 id="digital-news-title"><small>MMD UPDATE</small>MMD NOW</h2><span class="digital-unread" id="digital-unread" hidden></span></span>
@@ -535,7 +537,10 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     document.body.classList.toggle("world-private", world === "private");
     document.body.dataset.world = world;
     document.body.dataset.welcomeAudience = audience;
-    if (introContinue) introContinue.innerHTML = '<span>ยืนยันผ่าน LINE</span><span aria-hidden="true">→</span>';
+    if (introContinue) {
+      const text = introContinue.querySelector?.('span');
+      if (text) text.textContent = introContinue.dataset?.entryContinue || (locale === 'en' ? 'Continue with LINE' : locale === 'zh' ? '通过 LINE 登录' : 'ยืนยันผ่าน LINE');
+    }
   }
   applyWorldTheme();
   let welcomeContextPromise;
@@ -656,6 +661,15 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     }
     void boot({ existingProfileChecked: true });
   }
+  document.querySelectorAll('[data-entry-language]').forEach(button => {
+    button.addEventListener('click', () => {
+      const language = button.dataset.entryLanguage;
+      if (!['th', 'en', 'zh'].includes(language)) return;
+      const destination = new URL(window.location.href);
+      destination.searchParams.set('lang', language);
+      window.location.assign(destination.href);
+    });
+  });
   introContinue?.addEventListener("click", enterApp);\n  logoutButton?.addEventListener("click", async () => {
     if (logoutButton.disabled) return;
     logoutButton.disabled = true;
