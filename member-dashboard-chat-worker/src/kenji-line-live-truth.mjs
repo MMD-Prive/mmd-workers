@@ -41,6 +41,21 @@ function hasVerifiedPoints(points) {
 }
 
 function boundedTruth(payload = {}) {
+  const owner = payload.owner_membership_context;
+  const reviewed = owner?.renewal_offer;
+  if (payload.ok === true && payload.authority === AUTHORITY && payload.identity_status === "owner_oa_linked" &&
+    owner?.authority === "owner_per_rename_membership_context_v1" && owner.access_verified === false &&
+    owner.level === "private_premium" && owner.status === "owner_confirmed_expiry" && !owner.conflict &&
+    reviewed?.authority === "owner_reviewed_account_renewal_v1" && reviewed.status === "ready" &&
+    reviewed.source_record_id === owner.source_record_id && reviewed.approval_ref &&
+    reviewed.package_code === "premium" && reviewed.amount_thb === 2500 && reviewed.membership_years === 1 && reviewed.bonus_years === 1 &&
+    reviewed.grants_access === false && reviewed.requires_verified_payment === true &&
+    Date.now() >= Date.parse(reviewed.approved_at) && Date.now() < Date.parse(reviewed.valid_before)) {
+    return { ok: true, authority: AUTHORITY, identity_status: "owner_oa_linked", owner_membership_context: owner,
+      membership: {level: "private_premium", label: "Premium", lifecycle: "expired", expire_at: owner.expire_at,
+        public_service_access:false, private_visibility_envelope:"none", member_blocked:false},
+      points:{status:"unavailable",active_points:null},renewal:{...reviewed} };
+  }
   if (payload?.ok !== true || payload?.authority !== AUTHORITY || payload?.identity_status !== "resolved") return null;
   const membership = payload?.membership && typeof payload.membership === "object" ? payload.membership : {};
   const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
@@ -219,6 +234,9 @@ function knownIdentity(continuity = {}) {
 export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continuity = {}) {
   const value = text(intent).toLowerCase();
   if (!kenjiLiveTruthRequired(value)) return null;
+  if (value === "membership_status" && boundedTruth(liveTruth)?.identity_status === "owner_oa_linked") {
+    return buildKenjiLiveTruthDecision("membership_renewal", liveTruth, continuity);
+  }
 
   if (value === "membership_renewal") {
     const trusted = boundedTruth(liveTruth);
@@ -227,7 +245,7 @@ export function buildKenjiLiveTruthDecision(intent = "", liveTruth = {}, continu
     return {
       text: ready ? `${membershipStatusText(trusted.membership)}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_offer({
         label: quote.package_code === "standard" ? "Standard" : "Premium",
-        amount: quote.amount_thb.toLocaleString("th-TH"), years: quote.membership_years,
+        amount: quote.amount_thb.toLocaleString("th-TH"), years: quote.bonus_years ? MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_term_bonus({years:quote.membership_years,bonus:quote.bonus_years}) : quote.membership_years,
       })}\n${MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_payment_pending}` : MMD_MEMBERSHIP_STATUS_COPY_TH.renewal_pending,
       reply_source: ready ? "live_truth" : "live_truth_unavailable",
       truth_status: ready ? "verified" : "unavailable", truth_authority: AUTHORITY,

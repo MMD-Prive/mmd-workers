@@ -1,4 +1,5 @@
 export const MMD_MEMBERSHIP_STATUS_COPY_TH = Object.freeze({
+  renewal_term_bonus: ({ years, bonus }) => `${years} ปี + โบนัสเพิ่ม ${bonus}`,
   renewal_pending: "ผมยังยืนยันข้อมูลสมาชิกเดิมและข้อเสนอต่ออายุของบัญชีนี้ไม่ได้ครับ ต้องให้เปอร์ตรวจประวัติก่อน จึงยังแจ้งราคาและช่องทางชำระไม่ได้ครับ",
   renewal_payment_pending: "ข้อเสนอนี้ยังไม่เปิดสิทธิ์สมาชิกครับ ต้องตรวจช่องทางชำระสำหรับบัญชีนี้ก่อน",
   renewal_offer: ({ label, amount, years }) => `ต่ออายุ ${label} ได้ ${years} ปี ราคา ${amount} บาทครับ`,
