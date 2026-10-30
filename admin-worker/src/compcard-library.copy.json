@@ -1,0 +1,37 @@
+{
+  "locale": "th",
+  "title": "คลัง Compcard",
+  "status": {
+    "unmatched": "รอจับคู่",
+    "linked": "จับคู่แล้ว",
+    "retired": "หยุดรับงาน",
+    "archived": "เก็บเข้าประวัติ"
+  },
+  "worlds": {
+    "unknown": "ยังไม่ระบุฝั่ง",
+    "public": "Public",
+    "private": "Private"
+  },
+  "work_types": {
+    "travel": "Travel",
+    "extreme": "Extreme",
+    "pn": "PN",
+    "vip": "VIP"
+  },
+  "errors": {
+    "unauthorized": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบหลังบ้านอีกครั้ง",
+    "drive_roots_not_configured": "ยังไม่ได้ตั้งค่าโฟลเดอร์ Drive สำหรับคลังนี้",
+    "drive_access_unavailable": "ยังอ่าน Drive ไม่ได้ กรุณาตรวจสิทธิ์บัญชีเชื่อมต่อ",
+    "owner_drive_service_account_missing": "ยังไม่ได้ตั้งค่าบัญชีสำหรับอ่าน Drive",
+    "job_board_storage_unavailable": "ยังไม่ได้เชื่อมพื้นที่เก็บไฟล์ของ Job Board",
+    "library_storage_unavailable": "พื้นที่เก็บคลังยังไม่พร้อม",
+    "record_changed_reload": "มีการแก้ข้อมูลนี้แล้ว กรุณาปิดแล้วเปิดการ์ดใหม่",
+    "source_changed_reload": "ไฟล์ต้นทางเปลี่ยน กรุณาโหลดรายการใหม่",
+    "model_registry_unavailable": "ยังอ่านรายชื่อโมเดลไม่ได้",
+    "file_too_large": "ไฟล์ต้องมีขนาดไม่เกิน 15 MB",
+    "file_content_mismatch": "ชนิดไฟล์ไม่ตรงกับเนื้อหา",
+    "file_type_not_supported": "รองรับ JPG, PNG, WebP และ PDF",
+    "file_unavailable": "ยังอ่านไฟล์นี้ไม่ได้",
+    "invalid_json": "ข้อมูลไม่ครบ กรุณาลองใหม่"
+  }
+}

@@ -1,0 +1,25 @@
+name: Compcard Library
+on:
+  pull_request:
+    paths:
+      - 'admin-worker/src/compcard-library*'
+      - 'admin-worker/src/credential-bound-admin-session.js'
+      - 'admin-worker/src/google-drive-owner-media.js'
+      - 'admin-worker/src/admin-login-hero-worker.js'
+      - 'admin-worker/compcard-library.test.mjs'
+      - 'admin-worker/compcard-library-ui.test.mjs'
+      - 'admin-worker/wrangler.toml'
+      - '.github/workflows/compcard-library-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm run test:compcard-library
