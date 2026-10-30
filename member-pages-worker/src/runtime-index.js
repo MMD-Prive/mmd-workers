@@ -1,3 +1,4 @@
+import { isTmibPublicReaderRequest, handleTmibPublicReader } from "./tmib-public-reader.js";
 import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer, attachDiscoverySession } from "./booking-discovery-viewer.js";
 import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
 import { isMemberAttentionRequest, handleMemberAttention } from "./member-attention.js";
@@ -254,6 +255,8 @@ const worker = {
 
 export default {
   async fetch(request, env, ctx) {
+    // Public TMIB must bypass member/session decorators in every ordinary build.
+    if (isTmibPublicReaderRequest(request)) return handleTmibPublicReader(request, env);
     const response = await worker.fetch(request, env, ctx);
     return attachDiscoverySession(request, env, response);
   },

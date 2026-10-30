@@ -2,9 +2,12 @@ import { handleMemberAppApi, normalizeLevel, readMemberAppSession } from "./memb
 import {
   TMIB_EPISODE_CATALOG,
   getTmibEpisode,
+  isTmibPublicEpisode,
   normalizeTmibEpisodeId,
   publicTmibEpisodeMetadata,
 } from "./tmib-episode-catalog.js";
+
+import { publicEpisodeMedia } from "./tmib-public-episode-media.js";
 
 const API_ROOT = "/member/api/liff/tmib/episodes";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
@@ -12,7 +15,7 @@ const REMEMBERED_LOGIN_COOKIE = "__Host-mmd_liff_remember";
 const MEDIA_TTL_SECONDS = 5 * 60;
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAYMENTS_TABLE_DEFAULT = "tblWGGJJOx5eBvBZJ";
-const MEMBER_LEVELS = new Set(["public_member", "elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]);
+const MEMBER_LEVELS = new Set(["elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]);
 const ACT_001 = getTmibEpisode("act-001");
 
 function clean(value, max = 4000) {
@@ -310,7 +313,7 @@ async function storeGrant(env, episode, hash, data) {
 }
 
 async function resolveEpisodeAccess(request, env, hash, episode, membershipCheck = null) {
-  if (episode.publicFree === true || episode.accessMode === "public_free") {
+  if (isTmibPublicEpisode(episode)) {
     return { granted: true, source: "public_free", cookies: [] };
   }
 
@@ -362,12 +365,13 @@ function catalogPayload(episode) {
     schema: "tmib_episode_catalog_v1",
     ...metadata,
     access_path: `${episodeRoot(episode)}/access`,
-    purchase_path: episode.purchasable === true ? `${episodeRoot(episode)}/purchase` : "",
+    purchase_path: !isTmibPublicEpisode(episode) && episode.purchasable === true ? `${episodeRoot(episode)}/purchase` : "",
   };
 }
 
 async function handleAccess(request, env, episode) {
-  const publicFree = episode.publicFree === true || episode.accessMode === "public_free";
+  if (episode.status !== "live") return json({ok:false,granted:false,episode_id:episode.id,error:{code:"TMIB_CONTENT_NOT_RELEASED"}},503);
+  const publicFree = isTmibPublicEpisode(episode);
   const context = publicFree
     ? { session: null, membershipCheck: null, cookies: [] }
     : await resolveMemberContext(request, env);
@@ -376,7 +380,7 @@ async function handleAccess(request, env, episode) {
     return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401, {}, context.cookies);
   }
   const hash = publicFree ? "public" : await userKey(env, session.lineUserId);
-  if (!hash) return json({ ok: false, granted: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503, {}, context.cookies);
+  if (!hash || secretFor(env).length < 32) return json({ ok: false, granted: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503, {}, context.cookies);
   const access = await resolveEpisodeAccess(request, env, hash, episode, context.membershipCheck);
   const cookies = mergeSetCookies(context.cookies, access.cookies || []);
   if (!access.granted) return json({ ...catalogPayload(episode), granted: false }, 200, {}, cookies);
@@ -393,7 +397,7 @@ async function handleAccess(request, env, episode) {
 
 async function handlePurchase(request, env, episode) {
   if (!sameOrigin(request)) return json({ ok: false, error: { code: "SAME_ORIGIN_REQUIRED" } }, 403);
-  if (episode.status !== "live" || episode.purchasable !== true) {
+  if (isTmibPublicEpisode(episode) || episode.status !== "live" || episode.purchasable !== true) {
     return json({ ok: false, error: { code: "EPISODE_NOT_PURCHASABLE" } }, 409);
   }
   const context = await resolveMemberContext(request, env);
@@ -433,8 +437,9 @@ async function handlePurchase(request, env, episode) {
 }
 
 async function handleMedia(request, env, episode, frame) {
+  if (episode.status !== "live") return json({ok:false,granted:false,episode_id:episode.id,error:{code:"TMIB_CONTENT_NOT_RELEASED"}},503);
   if (!episode.frames.includes(frame)) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
-  const publicFree = episode.publicFree === true || episode.accessMode === "public_free";
+  const publicFree = isTmibPublicEpisode(episode);
   const context = publicFree
     ? { session: null, cookies: [] }
     : await resolveMemberContext(request, env);
@@ -452,6 +457,25 @@ async function handleMedia(request, env, episode, frame) {
   }
   const expected = await hmacHex(secretFor(env), `tmib-media:${episode.id}:${frame}:${exp}:${hash}`);
   if (!timingSafeEqual(sig, expected)) return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403, {}, context.cookies);
+  // Only the catalog's released public image episodes may use these exact CDN objects.
+  // Signature checks above still apply. No bucket or prefix is made public.
+  if (publicFree && episode.contentKind === "image_sequence") {
+    const source = publicEpisodeMedia(episode.id, frame);
+    if (!source) return json({ ok:false, error:{code:"FRAME_NOT_FOUND"} }, 404);
+    let target;
+    try { target = new URL(source); } catch { return json({ok:false,error:{code:"TMIB_MEDIA_UNAVAILABLE",frame}},503); }
+    if (target.origin !== "https://cdn.prod.website-files.com" || !target.pathname.startsWith("/68f879d546d2f4e2ab186e90/") || target.search || target.hash || target.username || target.password) {
+      return json({ok:false,error:{code:"TMIB_MEDIA_UNAVAILABLE",frame}},503);
+    }
+    // These are already-public Webflow assets. Preserve signed episode checks,
+    // then let the browser load the exact approved asset without a Worker fetch.
+    return new Response(null,{status:307,headers:{
+      location:target.href,"cache-control":"private, no-store",
+      "cross-origin-resource-policy":"same-origin","x-content-type-options":"nosniff",
+      "referrer-policy":"no-referrer","x-robots-tag":"noindex, noarchive, nosnippet, noimageindex",
+      "x-mmd-tmib-story":"public-image-sequence-v1",
+    }});
+  }
   const bucket = env.MMD_MODEL_ASSETS;
   if (!bucket?.get) return json({ ok: false, error: { code: "TMIB_MEDIA_STORAGE_UNAVAILABLE" } }, 503, {}, context.cookies);
   const object = await bucket.get(`tmib/${episode.id}/${frame}.webp`);
