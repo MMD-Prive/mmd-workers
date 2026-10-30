@@ -14,7 +14,7 @@ const LEGACY_MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
 const MY_MMD_PRESENTATION_MODE = "lovable-full-app-20260905";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile", "payments"];
+const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile", "payments", "menu"];
 const HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp";
 const HYPE_LOADING_PATH = `${MY_MMD_ASSET_PREFIX}hype.webp`;
 const STATUS_HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif";
@@ -325,6 +325,8 @@ function rewriteMyMmdHtml(html, path = "/my-mmd/") {
   for (const suffix of MY_MMD_ROUTE_SUFFIXES) {
     output = output.replace(new RegExp(`href=["']\\/${suffix}(?:\\/)?["']`, "g"), `href="${MY_MMD_UI_PREFIX}/${suffix}"`);
   }
+  output = output.replace(/href=["'](\/albums\/ems(?:\/EMs\d{2,3})?)\/?["']/g,
+    (_match, albumPath) => `href="${MY_MMD_UI_PREFIX}${albumPath}"`);
   if (!output.includes('id="mmd-public-extension-v1"')) {
     if (output.includes("</head>")) output = output.replace("</head>", publicExtensionSkin() + "</head>");
     if (output.includes("<body>")) output = output.replace("<body>", "<body>" + publicExtensionMarkup());

@@ -1,4 +1,5 @@
 import { DISCOVERY_VIEWER_PATH, handleDiscoveryViewer, attachDiscoverySession } from "./booking-discovery-viewer.js";
+import { isEmsAlbumRequest, handleEmsAlbums } from './member-ems-albums.js';
 import {isPersonalMainRequest, handlePersonalMain} from "./member-personal-main.js";
 import { isMemberAttentionRequest, handleMemberAttention } from "./member-attention.js";
 import { isMemberUpdatesRequest, handleMemberUpdates } from "./member-updates.js";
@@ -118,6 +119,7 @@ async function fetchBaseWithRenewal(request, env, ctx) {
 
 const worker = {
   async fetch(request, env, ctx) {
+    if (isEmsAlbumRequest(request)) return handleEmsAlbums(request, env, { readSession: readMemberAppSession, readEntitlement: readEntitlementSnapshot });
     if (new URL(request.url).pathname === DISCOVERY_VIEWER_PATH) return handleDiscoveryViewer(request, env);
     if (isPersonalMainRequest(request)) return handlePersonalMain(request, env, readMemberAppSession);
     if (isMemberAttentionRequest(request)) return handleMemberAttention(request, env);

@@ -1,4 +1,5 @@
 import { renderApprovedEntry, renderApprovedLoader, createHypeLoaderMotion, createEntryPercentMotion, installApprovedEntryLoading } from "./liff-approved-entry.js";
+import { resolveEmsAlbumReturnTarget } from '../../shared/ems-album-navigation.mjs';
 import { createAccountView } from "./liff-account-view.js";
 import {renderPersonalMain, PERSONAL_MAIN_CSS, createPersonalMainUI} from "./liff-personal-main.js";
 import {resolveVerifiedCustomerBrand,createCustomerBrand,renderCustomerBrand,CUSTOMER_V6_CSS} from "./liff-customer-brand-v6.js";
@@ -44,6 +45,9 @@ export function handleLiffMemberShell(request, env = {}) {
     if (!url.searchParams.has(key) && state.has(key)) url.searchParams.set(key, state.get(key));
   }
   const config = {
+    returnTo: !normalizeCampaign(url.searchParams.get("campaign")) &&
+      ["status", "unknown"].includes(normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")))
+      ? resolveEmsAlbumReturnTarget(url.searchParams, state) : "",
     liffId: publicLiffId(env),
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
@@ -1755,6 +1759,9 @@ ${config.intent === "signup" ? "" : renderApprovedLoader()}
     if (appStatus) appStatus.dataset.mmdStatusKind = "ready";
     secondaryReads.clear();
     profileReady = true;
+    // Only after the existing authenticated profile read succeeds. The album
+    // endpoint independently rechecks account and media permission on arrival.
+    if (CONFIG.returnTo === "/my-mmd/albums/ems") { window.location.replace(CONFIG.returnTo); return; }
     if (newsDetails) newsDetails.open = true;
     void loadDigitalUpdates();
     if (CONFIG.intent === "promo") showView("care", false);
