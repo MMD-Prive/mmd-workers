@@ -6,7 +6,18 @@ const FOLDER = "application/vnd.google-apps.folder";
 const DRIVE_ID = /^[A-Za-z0-9_-]{10,180}$/;
 const SOURCE_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const authCache = new WeakMap();
-const driveHttp = env => env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch.bind(globalThis);
+const driveHttp = env => {
+  const transport = env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch.bind(globalThis);
+  return async (url,options) => {
+    try { return await transport(url,options); }
+    catch (error) {
+      // Expose only a bounded diagnostic code, never a URL, token or raw error.
+      const message=String(error?.message||"");
+      const reason=/redirect/i.test(message)?"redirect":/AbortSignal|timeout/i.test(message)?"timeout":/invocation|receiver/i.test(message)?"receiver":"network";
+      fail("drive_transport_"+reason+"_unavailable",503);
+    }
+  };
+};
 export function driveRoots(env) {
   let roots;
   try { roots = JSON.parse(env.COMPCARD_DRIVE_ROOTS_JSON || "[]"); } catch { fail("drive_roots_not_configured",503); }
@@ -18,7 +29,7 @@ async function driveJson(env, suffix) {
   if (!cached || cached.until < Date.now()) {
     cached = {token:await libraryDriveToken(env),until:Date.now()+50*60*1000}; authCache.set(env,cached);
   }
-  const r = await driveHttp(env)(DRIVE + suffix,{headers:{authorization:"Bearer "+cached.token},redirect:"error",signal:AbortSignal.timeout(20000)});
+  const r = await driveHttp(env)(DRIVE + suffix,{headers:{authorization:"Bearer "+cached.token},redirect:"manual",signal:AbortSignal.timeout(20000)});
   if (!r.ok) { if (r.status === 401) authCache.delete(env); fail(r.status === 404 ? "source_not_found" : "drive_access_unavailable",r.status === 404 ? 404 : 503); }
   return r.json();
 }
@@ -26,10 +37,10 @@ async function libraryDriveToken(env) {
   if(env.GOOGLE_SERVICE_ACCOUNT_JSON)return ownerDriveAccessToken(env,driveHttp(env));
   if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)fail("drive_credentials_not_configured",503);
   const http=driveHttp(env);
-  const response=await http("https://oauth2.googleapis.com/token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:env.GOOGLE_DRIVE_CLIENT_ID,client_secret:env.GOOGLE_DRIVE_CLIENT_SECRET,refresh_token:env.GOOGLE_DRIVE_REFRESH_TOKEN}),redirect:"error",signal:AbortSignal.timeout(20000)});
+  const response=await http("https://oauth2.googleapis.com/token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({grant_type:"refresh_token",client_id:env.GOOGLE_DRIVE_CLIENT_ID,client_secret:env.GOOGLE_DRIVE_CLIENT_SECRET,refresh_token:env.GOOGLE_DRIVE_REFRESH_TOKEN}),redirect:"manual",signal:AbortSignal.timeout(20000)});
   const data=await response.json().catch(()=>null);
   if(!response.ok||!data?.access_token)fail("drive_oauth_unavailable",503);
-  const about=await http("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)",{headers:{authorization:"Bearer "+data.access_token},redirect:"error",signal:AbortSignal.timeout(20000)});
+  const about=await http("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)",{headers:{authorization:"Bearer "+data.access_token},redirect:"manual",signal:AbortSignal.timeout(20000)});
   const identity=await about.json().catch(()=>null);
   const expected=String(env.COMPCARD_DRIVE_OWNER_EMAIL||"malemodel.bkk@gmail.com").trim().toLowerCase();
   if(!about.ok||String(identity?.user?.emailAddress||"").trim().toLowerCase()!==expected)fail("drive_account_mismatch",503);
@@ -68,7 +79,7 @@ export async function readDriveSource(env,id) {
   if (!TYPES.has(file.mimeType)) fail("file_type_not_supported",415);
   if (!Number(file.size) || Number(file.size)>MAX_BYTES) fail("file_too_large",413);
   const cached = authCache.get(env);
-  const r = await driveHttp(env)(DRIVE+"/"+encodeURIComponent(id)+"?alt=media&supportsAllDrives=true",{headers:{authorization:"Bearer "+cached.token},redirect:"error",signal:AbortSignal.timeout(20000)});
+  const r = await driveHttp(env)(DRIVE+"/"+encodeURIComponent(id)+"?alt=media&supportsAllDrives=true",{headers:{authorization:"Bearer "+cached.token},redirect:"manual",signal:AbortSignal.timeout(20000)});
   if (!r.ok) fail("drive_access_unavailable",503);
   const bytes = await boundedBytes(r.body);
   checkFile(bytes,file.mimeType);
