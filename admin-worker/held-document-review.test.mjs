@@ -181,3 +181,15 @@ test('admin entry intercepts held route before background contact backfill', asy
   const start = source.indexOf('async fetch(request, env, ctx)');
   assert.ok(source.indexOf('if (isHeldDocumentRequest(request))', start) < source.indexOf('scheduleLineOfcContactBackfill(runtimeEnv, ctx)', start));
 });
+
+test('both production hosts route queue, opaque cursor and image URLs to the protected admin worker', async () => {
+  const config = await readFile(new URL('./wrangler.toml', import.meta.url), 'utf8');
+  const patterns = [...config.matchAll(/^pattern = "([^"]+)"$/gm)].map(match => match[1]);
+  for (const host of ['mmdbkk.com', 'www.mmdbkk.com']) {
+    const expected = `${host}${HELD_DOCUMENT_API}*`;
+    assert.equal(patterns.filter(pattern => pattern === expected).length, 1);
+    for (const path of [HELD_DOCUMENT_API, `${HELD_DOCUMENT_API}?cursor=opaque`, `${HELD_DOCUMENT_API}/image?id=opaque`]) {
+      assert.ok(`${host}${path}`.startsWith(expected.slice(0, -1)));
+    }
+  }
+});
