@@ -19,6 +19,12 @@ export const END = '// src/money-control-worker-home.js\n';
 const UI = 'admin-worker/src/held-document-review-ui.js';
 const PATHS = [UI, 'admin-worker/held-document-review-ui.test.mjs'].sort();
 export const digest = value => createHash('sha256').update(value).digest('hex');
+export function parseWranglerVersion(output) {
+  const plain = String(output).replace(/\u001b\[[0-9;]*m/g, '').trim();
+  const match = plain.match(/^(?:[^\w]*wrangler\s+)?(\d+\.\d+\.\d+)$/i);
+  assert.ok(match, 'unrecognized Wrangler version output');
+  return match[1]; // The unchanged build-evidence guard still requires 4.105.0.
+}
 const require = createRequire(import.meta.url);
 
 export function validateViewerSource(runtime, changedPaths) {
@@ -133,7 +139,7 @@ async function main() {
       return new TextEncoder().encode(result.code);
     },
     buildEvidence: code => ({ ...createBuildEvidence({ code, releaseId, nodeVersion: process.version,
-      wranglerVersion: execFileSync('wrangler', ['--version'], { encoding: 'utf8' }).match(/wrangler\s+([\d.]+)/i)?.[1],
+      wranglerVersion: parseWranglerVersion(execFileSync('wrangler', ['--version'], { encoding: 'utf8' })),
       lockfile: readFileSync('package-lock.json'), wranglerConfig: new TextEncoder().encode(JSON.stringify({ overlay: UI, runtime: RUNTIME })) }), preservation }),
     now: () => new Date().toISOString(), save: state => writeFileSync(journal, JSON.stringify(state, null, 2), { mode: 0o600 }),
   });

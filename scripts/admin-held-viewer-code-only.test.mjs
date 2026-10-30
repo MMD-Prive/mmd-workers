@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BASE, RUNTIME, OLD_SECTION_SHA, START, END, digest, patchViewer, normalizeViewerBuild, validateViewerSource } from './admin-held-viewer-code-only.mjs';
+import { BASE, RUNTIME, OLD_SECTION_SHA, START, END, digest, patchViewer, normalizeViewerBuild, validateViewerSource, parseWranglerVersion } from './admin-held-viewer-code-only.mjs';
+
+test('Wrangler plain --version and banner output retain exact version without relaxing the guard', () => {
+  for (const output of ['4.105.0\n', ' \u26c5\ufe0f wrangler 4.105.0\n', '\u001b[32m4.105.0\u001b[0m\n']) assert.equal(parseWranglerVersion(output), '4.105.0');
+  assert.equal(parseWranglerVersion('4.104.0\n'), '4.104.0');
+  for (const output of ['', 'unknown', '4.105.0\n4.104.0', '4.105.0-beta.1', 'some-tool 4.105.0']) assert.throws(() => parseWranglerVersion(output));
+  const guard = readFileSync(new URL('./admin-current-session-code-only.mjs', import.meta.url), 'utf8');
+  assert.match(guard, /assert.equal\(wranglerVersion, '4\.105\.0'/);
+});
 
 const old = START + 'var HELD_REVIEW_COPY = {};\nfunction renderHeldDocumentPage(){ return heldDocumentClient.toString(); }\n\n';
 const before = 'var __name = (fn, name) => fn;\n// unrelated gateway, HYPE, MMS, session logic\n' + old + END + 'const unrelated = 42;\n';
