@@ -1,3 +1,4 @@
+import {RENEWAL,decodeRenewalBaseline,buildReviewedRenewalModules,verifyUploadedRenewalModules,inspectRenewalReleaseCheckout} from './member-pages-renewal-artifact.mjs';
 // Strict-inherit, code-only release transport for member-pages-worker.
 // Importing this file never contacts GitHub or Cloudflare.
 import assert from 'node:assert/strict';
@@ -401,12 +402,14 @@ export async function releaseMemberPagesCodeOnly(io) {
   try {
     await io.approve(diagnostics.mark);
     diagnostics.mark('RELEASE_SOURCE_PIN');
-    const artifactMode=io.mode==='companion-artifact';
+    const renewalMode=io.mode==='renewal-artifact';
+    const artifactMode=io.mode==='companion-artifact'||renewalMode;
+    const artifactContract=renewalMode ? {baseVersion:RENEWAL.baselineVersion,baseDeployment:RENEWAL.baselineDeployment,sourceSha:RENEWAL.sourceSha,baselineHash:RENEWAL.baselineSha256,candidateHash:RENEWAL.candidateSha256,mainModule:RENEWAL.mainModule,wrapperHash:RENEWAL.wrapperSha256,decode:decodeRenewalBaseline,build:buildReviewedRenewalModules,verify:verifyUploadedRenewalModules} : {baseVersion:COMPANION_BASE_VERSION,baseDeployment:COMPANION_BASE_DEPLOYMENT,sourceSha:COMPANION_DELTA_SOURCE_SHA,baselineHash:ACTIVE_ARTIFACT_SHA256,candidateHash:COMPANION_CANDIDATE_SHA256,mainModule:COMPANION_MAIN_MODULE,wrapperHash:COMPANION_WRAPPER_SHA256,decode:decodeBaselineModule,build:buildReviewedCompanionModules,verify:verifyUploadedCompanionModules};
     assert.ok(io.mode===undefined || artifactMode,'unsupported release mode');
-    assert.equal(io.sha, artifactMode ? COMPANION_DELTA_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed merge');
+    assert.equal(io.sha, artifactMode ? artifactContract.sourceSha : CODE_ONLY_MY_MMD_SOURCE_SHA, 'release source must be the exact reviewed merge');
     if(artifactMode){
-      assert.equal(io.expectedVersion,COMPANION_BASE_VERSION);
-      assert.equal(io.expectedDeployment,COMPANION_BASE_DEPLOYMENT);
+      assert.equal(io.expectedVersion,artifactContract.baseVersion);
+      assert.equal(io.expectedDeployment,artifactContract.baseDeployment);
     }
     assert.match(io.releaseSha || '', /^[a-f0-9]{40}$/);
     const call = (suffix, init) => io.call(ROOT + suffix, init);
@@ -426,9 +429,9 @@ export async function releaseMemberPagesCodeOnly(io) {
     diagnostics.mark('CF_BASELINE_SOURCE_CHECK');
     let artifactBaseline;
     if(artifactMode){
-      artifactBaseline=decodeBaselineModule(await io.call(VERSION_ROOT+'/'+current+'?include=modules'));
-      state.baseline_artifact_sha256=ACTIVE_ARTIFACT_SHA256;
-      state.preserved_wrapper_sha256=COMPANION_WRAPPER_SHA256;
+      artifactBaseline=artifactContract.decode(await io.call(VERSION_ROOT+'/'+current+'?include=modules'));
+      state.baseline_artifact_sha256=artifactContract.baselineHash;
+      state.preserved_wrapper_sha256=artifactContract.wrapperHash;
       delete state.source_sha;
       state.delta_source_sha=io.sha;
     }else{
@@ -439,10 +442,10 @@ export async function releaseMemberPagesCodeOnly(io) {
     const config = versionConfiguration(baseline);
     const metadata = uploadMetadata(baseline, io.sha);
     if(artifactMode){
-      metadata.main_module=COMPANION_MAIN_MODULE;
+      metadata.main_module=artifactContract.mainModule;
       delete metadata.annotations['workers/commit_sha'];
     }
-    if(artifactMode) metadata.annotations['workers/message']=`member-pages artifact-delta base=${COMPANION_BASE_VERSION} delta-sha=${io.sha} bundle-sha256=${COMPANION_CANDIDATE_SHA256}`;
+    if(artifactMode) metadata.annotations['workers/message']=`member-pages artifact-delta base=${artifactContract.baseVersion} delta-sha=${io.sha} bundle-sha256=${artifactContract.candidateHash}`;
     state.configuration_digest = digest(config);
     diagnostics.mark('CF_SETTINGS_READ');
     state.settings_digest = digest(await call('/script-settings'));
@@ -470,7 +473,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     state.baseline_deployment = deployment.id;
     state.source_evidence = await io.sourceCheck(diagnostics.mark, baselineSourceSha);
     diagnostics.mark('BUNDLE_BUILD');
-    const artifactModules=artifactMode ? buildReviewedCompanionModules(artifactBaseline) : null;
+    const artifactModules=artifactMode ? await artifactContract.build(artifactBaseline) : null;
     const module = artifactMode ? artifactModules.find(m=>m.name==='runtime-index.js').bytes : await io.bundle(baseline);
     diagnostics.mark('BUNDLE_CHECK');
     assert.ok(module instanceof Uint8Array && module.byteLength > 0, 'compiled Worker module required');
@@ -507,7 +510,7 @@ export async function releaseMemberPagesCodeOnly(io) {
     assert.equal(exactAnnotations?.['workers/message'], metadata.annotations['workers/message'], 'source message annotation mismatch');
     if(artifactMode){
       const artifact=await io.call(VERSION_ROOT+'/'+uploaded.id+'?include=modules');
-      verifyUploadedCompanionModules(artifact,uploaded.id);
+      artifactContract.verify(artifact,uploaded.id);
     }
 
     diagnostics.mark('UPLOADED_LATEST_READ');
@@ -605,25 +608,27 @@ async function main() {
   assert.equal(process.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT, 'wrong Cloudflare account');
   const releaseSha = process.env.GITHUB_SHA;
   const sourceDirectory = process.env.SOURCE_DIRECTORY;
-  const artifactMode=process.env.RELEASE_MODE==='companion-artifact';
-  assert.ok(process.env.RELEASE_MODE===undefined || ['release','companion-artifact'].includes(process.env.RELEASE_MODE),'unsupported release mode');
+  const renewalMode=process.env.RELEASE_MODE==='renewal-artifact';
+  const artifactMode=process.env.RELEASE_MODE==='companion-artifact'||renewalMode;
+  assert.ok(process.env.RELEASE_MODE===undefined || ['release','companion-artifact','renewal-artifact'].includes(process.env.RELEASE_MODE),'unsupported release mode');
   const approve = async diagnostic => {
     await verifyOwnerApproval(process.env, fetch, {diagnostic});
-    if(artifactMode) inspectCompanionReleaseCheckout(releaseSha);
+    if(renewalMode) inspectRenewalReleaseCheckout(releaseSha);
+    else if(artifactMode) inspectCompanionReleaseCheckout(releaseSha);
     else inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
       {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA});
   };
   const dir = mkdtempSync(join(tmpdir(),'mmd-member-pages-code-only-'));
   const journal = resolve(process.env.RUNNER_TEMP || dir,'member-pages-code-only-receipt.json');
   await releaseMemberPagesCodeOnly({
-    sha:artifactMode ? COMPANION_DELTA_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA,
-    ...(artifactMode ? {mode:'companion-artifact'} : {}),
+    sha:renewalMode ? RENEWAL.sourceSha : artifactMode ? COMPANION_DELTA_SOURCE_SHA : CODE_ONLY_MY_MMD_SOURCE_SHA,
+    ...(artifactMode ? {mode:process.env.RELEASE_MODE} : {}),
     releaseSha,
     expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT,
     approve,
     call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
-    sourceCheck: async (diagnostic, baselineSourceSha) => artifactMode ? inspectCompanionReleaseCheckout(releaseSha) : inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
+    sourceCheck: async (diagnostic, baselineSourceSha) => renewalMode ? inspectRenewalReleaseCheckout(releaseSha) : artifactMode ? inspectCompanionReleaseCheckout(releaseSha) : inspectCodeOnlyCheckouts(releaseSha, sourceDirectory,
       {diagnostic, targetSourceSha:CODE_ONLY_MY_MMD_SOURCE_SHA, baselineSourceSha}),
     bundle: async () => buildMemberPagesBundle(dir, sourceDirectory),
     save: value => writeFileSync(journal,JSON.stringify(value,null,2),{mode:0o600}),

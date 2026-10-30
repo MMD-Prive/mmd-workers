@@ -44,7 +44,7 @@ test('shared gate allows owner self-review but keeps admin bypass disabled',()=>
 test('only scoped release imports owner policy; approval repeats at write boundaries',()=>{
  const release=readFileSync(new URL('./member-pages-code-only-release.mjs',import.meta.url),'utf8');
  assert.match(release,/import \{ verifyOwnerApproval, createSafePreflightDiagnostics \} from '.\/member-pages-owner-approval.mjs'/);
- assert.match(release,/await verifyOwnerApproval\(process.env, fetch, \{diagnostic\}\);\s+if\(artifactMode\) inspectCompanionReleaseCheckout\(releaseSha\);\s+else inspectCodeOnlyCheckouts/);
+ assert.match(release,/await verifyOwnerApproval\(process.env, fetch, \{diagnostic\}\);\s+if\(renewalMode\) inspectRenewalReleaseCheckout\(releaseSha\);\s+else if\(artifactMode\) inspectCompanionReleaseCheckout\(releaseSha\);\s+else inspectCodeOnlyCheckouts/);
  assert.doesNotMatch(release,/inspectEnvironment|verifyProductionApproval/);
  const workflow=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
  assert.match(workflow,/environment: member-pages-code-only-owner/);
