@@ -82,3 +82,10 @@ or complete imported source path agrees with the same resolved folder. Duplicate
 catalog records do not require a merge before the owner can inspect their common
 source. Unexplained folder links, ambiguous source paths and mismatched scope
 remain unavailable. This does not consolidate records or grant customer access.
+
+The 126-record inventory also contains 27 records whose exact folder ID is already
+embedded in an imported public/private/exclusive folder_scope_key (without a
+separate drive_folder_id value). Read this existing ID directly, including typed
+legacy scopes. Conflicting explicit IDs still fail; old classification segments
+do not become a customer grant or an admin image approval requirement. No field
+migration is required to inspect these originals.
