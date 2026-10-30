@@ -100,9 +100,11 @@ export function classifyPaymentImageEvidence(extraction = {}) {
   if (hasAmount && hasTime && (hasBank || hasPayer)) return { image_class: "bank_transfer_slip", gate: "accept", is_payment_evidence: true, confidence: 0.88, reason: "amount_time_transfer_signal" };
   if (hasAccountNumber && !hasRef && !hasAmount && !hasTime) return { image_class: "bank_account_detail", gate: "reject", is_payment_evidence: false, confidence: 0.96, reason: "bank_account_detail_not_payment_proof" };
   if (clean(extraction.extraction_method) === "qr" && hasAmount && !hasRef) return { image_class: "payment_qr_request", gate: "reject", is_payment_evidence: false, confidence: 0.95, reason: "payment_request_not_completed_transfer" };
-  if (!hasUseful && clean(extraction.extraction_error)) return { image_class: "uncertain", gate: "hold", is_payment_evidence: false, confidence: 0, reason: "extractor_unavailable_or_failed" };
-  if (!hasUseful) return { image_class: "non_payment_image", gate: "reject", is_payment_evidence: false, confidence: 0.92, reason: "no_transaction_evidence_detected" };
-  return { image_class: "uncertain_payment_image", gate: "hold", is_payment_evidence: false, confidence: Number(extraction.confidence_score) || 0.3, reason: "insufficient_transaction_evidence" };
+  // Absence of extracted transfer evidence is not proof that an image is junk.
+  // Keep screenshots/unreadable documents outside Payment Proofs, reviewable.
+  if (!hasUseful && clean(extraction.extraction_error)) return { image_class: "unclassified_document", gate: "hold", is_payment_evidence: false, confidence: 0, reason: "extractor_unavailable_or_failed" };
+  if (!hasUseful) return { image_class: "unclassified_document", gate: "hold", is_payment_evidence: false, confidence: 0, reason: "no_transaction_evidence_detected" };
+  return { image_class: "unclassified_document", gate: "hold", is_payment_evidence: false, confidence: Number(extraction.confidence_score) || 0.3, reason: "insufficient_transaction_evidence" };
 }
 
 async function airtableRequest(env, table, { recordId = "", formula = "", maxRecords = 20, timeoutMs = 0 } = {}) {
@@ -310,26 +312,16 @@ export async function analyzeProductionPaymentProof({
         extraction_method: "none",
         extraction_error: "automated_extraction_disabled",
       };
-  let classification = automatedExtraction
+  const classification = automatedExtraction
     ? classifyPaymentImageEvidence(extraction)
-    : paymentContextConfirmed
-      ? {
-          image_class: "payment_evidence_candidate",
-          gate: "accept",
-          is_payment_evidence: true,
-          confidence: 0,
-          reason: "explicit_payment_context_manual_review",
-        }
-      : {
-          image_class: "uncertain",
+    : {
+          image_class: "unclassified_document",
           gate: "hold",
           is_payment_evidence: false,
           confidence: 0,
-          reason: "automated_extraction_disabled_without_payment_context",
+          reason: "automated_extraction_disabled_document_review",
         };
-  if (!classification.is_payment_evidence && paymentContextConfirmed && extraction.extraction_error) {
-    classification = { image_class: "payment_evidence_candidate", gate: "accept", is_payment_evidence: true, confidence: 0, reason: "explicit_payment_context_extraction_unavailable" };
-  }
+  // Context may explain intent, but can never turn failed OCR into a transfer.
   if (!classification.is_payment_evidence) return { accepted: false, extraction, classification, links: {}, customer: null, payment_intelligence: null, review_summary: null, ops_route: null };
 
   const membersTable = clean(env.AIRTABLE_TABLE_MEMBERS_ID || env.AIRTABLE_TABLE_MEMBERS || "Members");
