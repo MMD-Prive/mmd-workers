@@ -4,6 +4,9 @@ on:
     paths:
       - "admin-worker/src/booking-models*"
       - "admin-worker/src/booking-model-media.js"
+      - "admin-worker/src/booking-model-drive.js"
+      - "admin-worker/booking-model-drive.test.mjs"
+      - "admin-worker/src/compcard-library-sources.js"
       - "admin-worker/booking-models*.test.mjs"
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/credential-bound-admin-session.js"
@@ -21,7 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --test admin-worker/booking-models.test.mjs
+      - run: node --test admin-worker/booking-models.test.mjs admin-worker/booking-model-drive.test.mjs
       - name: Install isolated DOM test dependency
         run: npm install --prefix "$RUNNER_TEMP/booking-models-dom" --no-save --ignore-scripts linkedom@0.18.12 esbuild@0.28.2
       - name: Test search UI
@@ -37,3 +40,4 @@ jobs:
           BOOKING_MODELS_DOM_MODULE: ${{ runner.temp }}/booking-models-dom/node_modules/linkedom/esm/index.js
           BOOKING_MODELS_PAGE_MODULE: ${{ runner.temp }}/booking-models-page.bundle.mjs
         run: node --test admin-worker/booking-models-ui.test.mjs
+

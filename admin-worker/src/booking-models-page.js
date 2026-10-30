@@ -13,11 +13,11 @@ export function renderBookingModelsPage(nonce) {
 export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) {
   const $ = id => document.getElementById(id);
   const form = $("model-search"), results = $("model-results"), status = $("search-status"), dialog = $("model-detail");
-  let cursor = null, currentQuery = null, controller = null, generation = 0, active = true;
+  let cursor = null, currentQuery = null, controller = null, generation = 0, active = true, detailController = null, detailGeneration = 0;
   const node = (tag, text, cls) => { const el = document.createElement(tag); if (text != null) el.textContent = String(text); if (cls) el.className = cls; return el; };
   const metric = (value, unit) => value ? value + " " + unit : c.notSet;
   const reasonText = reason => c.reasons[reason] || c.needsReview;
-  function clearDetail() { for (const video of $("detail-content").querySelectorAll("video")) { if (typeof video.pause === "function") video.pause(); video.removeAttribute("src"); } $("detail-content").replaceChildren(); }
+  function clearDetail() { detailGeneration++; if(detailController)detailController.abort(); detailController=null; for (const video of $("detail-content").querySelectorAll("video")) { if (typeof video.pause === "function") video.pause(); video.removeAttribute("src"); } $("detail-content").replaceChildren(); }
   function clearSensitive() { results.replaceChildren(); clearDetail(); if (dialog.open) dialog.close(); }
   function mediaUrl(model, assetId) { return "/v1/admin/booking-models/" + encodeURIComponent(model.model_id) + "/media/" + encodeURIComponent(assetId); }
   function failure(error) {
@@ -43,11 +43,11 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
       } else figure.append(node("div",c.fileNotReady,"unavailable"));
       const caption = node("figcaption"); caption.append(node("span",asset.audience === "private" ? c.private : c.public,"tag"),node("span",c.statuses[asset.status] || asset.status || c.statusUnknown,"tag")); figure.append(caption); gallery.append(figure);
     }
-    if (!(model.media || []).length) gallery.append(node("p",model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover,"notice"));
+    if (!(model.media || []).length) gallery.append(node("p",model.drive_linked ? c.noR2 : model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover,"notice"));
     content.append(gallery);
     const facts = node("dl", null, "facts");
     const gate = (offered, allowed) => !offered ? c.notOffered : allowed ? c.passes : c.needsReview;
-    for (const [label, value] of [[c.code, model.code || c.notSet],[c.modelId,model.model_id],[c.height,metric(model.height_cm,c.cm)],[c.weight,metric(model.weight_kg,c.kg)],[c.body,c.bodies[model.body_type] || c.notSet],[c.skin,c.skins[model.skin_tone] || c.notSet],[c.publicGate,gate(model.offers_public,model.public_profile_allowed)],[c.privateGate,gate(model.offers_private,model.private_profile_allowed)],[c.media,model.cover_status === "available" ? c.coverReady : model.cover_status === "clip_only" ? c.videoOnly : model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover]]) {
+    for (const [label, value] of [[c.code, model.code || c.notSet],[c.modelId,model.model_id],[c.height,metric(model.height_cm,c.cm)],[c.weight,metric(model.weight_kg,c.kg)],[c.body,c.bodies[model.body_type] || c.notSet],[c.skin,c.skins[model.skin_tone] || c.notSet],[c.publicGate,gate(model.offers_public,model.public_profile_allowed)],[c.privateGate,gate(model.offers_private,model.private_profile_allowed)],[c.media,model.drive_linked && model.cover_status !== "available" ? c.driveLinked : model.cover_status === "available" ? c.coverReady : model.cover_status === "clip_only" ? c.videoOnly : model.cover_status === "unavailable" ? c.coverUnavailable : c.noCover]]) {
       const fact = node("div", null, "fact"); fact.append(node("dt",label),node("dd",value)); facts.append(fact);
     }
     content.append(facts, node("h3", model.reasons.length ? c.next : c.noIssues));
@@ -57,6 +57,29 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
     const links = node("div",null,"dialog-links"), review = node("a",c.reviewMedia,"action");
     review.href = "/internal/admin/mmd-review"; links.append(review); content.append(links);
     dialog.showModal();
+    if(model.drive_linked) loadDriveGallery(model,content);
+
+  }
+  async function loadDriveGallery(model,content) {
+    const version=detailGeneration, controller=new AbortController();detailController=controller;
+    const heading=node("h3",c.driveGallery),state=node("p",c.driveLoading,"notice"),gallery=node("div",null,"gallery");content.prepend(heading,state,gallery);
+    const timer=setTimeout(()=>controller.abort(),60000);
+    try {
+      const response=await fetch("/v1/admin/booking-models/"+encodeURIComponent(model.model_id)+"/drive",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
+      if(!response.ok){const error=new Error("drive_failed");error.status=response.status;throw error;}
+      const data=await response.json();if(!data.ok || !Array.isArray(data.items))throw new Error("drive_failed");
+      if(version!==detailGeneration || !dialog.open || !active)return;
+      state.textContent=data.partial?c.drivePartial:data.items.length?c.driveSource:c.driveEmpty;
+      for(const asset of data.items) {
+        if(!/^[A-Za-z0-9_-]{10,180}$/.test(asset.file_id))continue;
+        const figure=node("figure"),preview=node(asset.kind==="clip"?"video":"img");
+        if(asset.kind==="clip"){preview.controls=true;preview.preload="metadata";preview.playsInline=true;}else{preview.alt=model.name||c.noName;preview.loading="lazy";}
+        preview.setAttribute("src","/v1/admin/booking-models/"+encodeURIComponent(model.model_id)+"/drive/"+encodeURIComponent(asset.file_id));
+        preview.addEventListener("error",()=>preview.replaceWith(node("div",c.coverFailed,"unavailable")),{once:true});
+        const caption=node("figcaption");caption.append(node("span",asset.audience==="private"?c.private:c.public,"tag"),node("span",c.driveSource,"tag"));figure.append(preview,caption);gallery.append(figure);
+      }
+    }catch(error){if(version!==detailGeneration || !active)return;if(error.status===401 || error.status===403)failure(error);else state.textContent=error.status===409?c.driveConflict:c.driveFailed;}
+    finally{clearTimeout(timer);}
   }
   function card(model) {
     const article = node("article", null, "model"), portrait = node("div", model.cover_status === "unavailable" ? c.coverUnavailable : model.cover_status === "clip_only" ? c.videoOnly : c.noCover, "portrait");
@@ -64,6 +87,10 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
       const img = node("img"); img.alt = model.name || c.noName; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
       img.src = mediaUrl(model,model.cover_asset_id);
       img.addEventListener("error", () => { portrait.replaceChildren(node("span",c.coverFailed)); }, {once:true}); portrait.replaceChildren(img);
+    }
+    if(!model.cover_asset_id && model.drive_linked) {
+      const img=node("img");img.alt=model.name||c.noName;img.loading="lazy";img.referrerPolicy="no-referrer";img.src="/v1/admin/booking-models/"+encodeURIComponent(model.model_id)+"/drive-cover";
+      img.addEventListener("error",()=>portrait.replaceChildren(node("span",c.driveLinked)),{once:true});portrait.replaceChildren(img);
     }
     const info = node("div"); info.append(node("h2", model.name || c.noName),node("p",model.code || model.model_id,"code"),node("p",metric(model.height_cm,c.cm) + " · " + metric(model.weight_kg,c.kg),"metrics"));
     const tags = node("div",null,"tags"); if (model.offers_public) tags.append(node("span",c.public,"tag")); if (model.offers_private) tags.append(node("span",c.private,"tag"));
@@ -106,3 +133,4 @@ export const BOOKING_MODELS_CLIENT = String.raw`function bookingModelsClient(c) 
   window.addEventListener("pagehide",conceal); window.addEventListener("pageshow",event=>{if(event.persisted){active=true;load();}});
   load();
 }`;
+

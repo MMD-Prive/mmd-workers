@@ -11,13 +11,14 @@ import { releaseCurrentSession, createTransport, validateSourceState, createBuil
 import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 
-export const BASE = 'cf0eb6baa1eee7c1339b881ae92a5f1de2d171f6';
-export const RUNTIME = '8a6a1ba43c1e1c8753fecee368107dc8d39c0a61';
-export const OLD_SECTION_SHA = '938360b3fd86da99ac2a307f7b2e24ddad18dec0bb3cb3934e9ca11f323ff11d';
+export const BASE = '2360dc8a8edb2f13721e43793f7ebbf54f84adec';
+export const LIVE_SOURCE = '23d652828c5c14cf9d59c1f7a0fc64598859decf';
+export const RUNTIME = 'eb2896da2c3eecc7c7722d114c478cd0bdcb5127';
+export const OLD_SECTION_SHA = 'c55bc45b68cded8e66562d057048fffc756cc857fceb5a85341b8d4edbc50ffc';
 export const START = '// src/held-document-review-ui.js\n';
 export const END = '// src/money-control-worker-home.js\n';
 const UI = 'admin-worker/src/held-document-review-ui.js';
-const PATHS = [UI, 'admin-worker/held-document-review-ui.test.mjs'].sort();
+const PATHS = [UI, 'admin-worker/held-document-review-ui.test.mjs', 'admin-worker/held-document-review.test.mjs'].sort();
 export const digest = value => createHash('sha256').update(value).digest('hex');
 export function parseWranglerVersion(output) {
   const plain = String(output).replace(/\u001b\[[0-9;]*m/g, '').trim();
@@ -65,6 +66,38 @@ export function patchViewer(code, replacement, expectedDigest = OLD_SECTION_SHA)
     old_viewer_sha256: digest(old), new_viewer_sha256: digest(replacement),
     preserved_runtime_sha256: digest(beforeOutside), unrelated_runtime_bytes_unchanged: true } };
 }
+export const COPY_CHANGES = Object.freeze([
+  { key: 'title', from: 'ภาพรอตรวจ', to: 'สลิปรอตรวจ' },
+  { key: 'navigation_label', from: 'หมวดตรวจภาพ', to: 'หมวดตรวจสลิป' },
+  { key: 'loading', from: 'กำลังอ่านรายการภาพรอตรวจ…', to: 'กำลังอ่านรายการสลิปรอตรวจ…' },
+]);
+export function patchViewerCopy(code, expectedDigest = OLD_SECTION_SHA) {
+  const { start, end } = viewerBounds(code);
+  const old = code.slice(start, end);
+  assert.equal(digest(old), expectedDigest, 'active viewer bytes differ from reviewed copy baseline');
+  let next = old;
+  for (const { key, from, to } of COPY_CHANGES) {
+    const pattern = new RegExp('^(  ' + key + ': )("(?:[^"\\\\]|\\\\.)*")', 'gm');
+    const matches = [...next.matchAll(pattern)];
+    assert.equal(matches.length, 1, 'copy field must occur exactly once: ' + key);
+    assert.equal(JSON.parse(matches[0][2]), from, 'unexpected old copy: ' + key);
+    next = next.replace(pattern, (_, prefix) => prefix + JSON.stringify(to));
+  }
+  // Restore only the same three string literals: every other byte must match.
+  let restored = next;
+  for (const { key } of COPY_CHANGES) {
+    const pattern = new RegExp('^(  ' + key + ': )("(?:[^"\\\\]|\\\\.)*")', 'm');
+    const original = old.match(pattern);
+    restored = restored.replace(pattern, (_, prefix) => prefix + original[2]);
+  }
+  assert.equal(restored, old, 'non-copy viewer bytes changed');
+  const updated = code.slice(0, start) + next + code.slice(end);
+  return { code: updated, preservation: { baseline_sha256: digest(code), candidate_sha256: digest(updated),
+    old_viewer_sha256: digest(old), new_viewer_sha256: digest(next),
+    preserved_runtime_sha256: digest(code.slice(0, start) + code.slice(end)),
+    unrelated_runtime_bytes_unchanged: true, non_copy_viewer_bytes_unchanged: true,
+    changed_copy_keys: COPY_CHANGES.map(change => change.key) } };
+}
 function git(...args) { return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
 function compiler() {
   const root = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim();
@@ -93,6 +126,8 @@ function sourceScope() {
   validateViewerSource(RUNTIME, git('diff', '--name-only', BASE, RUNTIME).split('\n').filter(Boolean));
   git('merge-base', '--is-ancestor', RUNTIME, 'HEAD');
   assert.equal(git('show', `${RUNTIME}:${UI}`), readFileSync(UI, 'utf8').trim(), 'checked-out UI differs from reviewed runtime');
+  const reviewed = git('show', `${RUNTIME}:${UI}`);
+  for (const { key, to } of COPY_CHANGES) assert.ok(reviewed.includes("  " + key + ": '" + to + "'"), 'reviewed copy mismatch');
 }
 async function main() {
   sourceScope();
@@ -118,20 +153,18 @@ async function main() {
   };
   const releaseId = `${process.env.GITHUB_RUN_ID}.${process.env.GITHUB_RUN_ATTEMPT}`;
   const journal = join(process.env.RUNNER_TEMP, 'held-viewer-code-only-receipt.json');
-  const source = git('show', `${RUNTIME}:${UI}`);
-  const section = normalizeViewerBuild(esbuild.transformSync(source, { loader: 'js', format: 'esm', target: 'es2022', keepNames: true }).code);
   let preservation;
   await releaseCurrentSession({ sha, approve, expectedVersion: process.env.EXPECTED_VERSION,
     expectedDeployment: process.env.EXPECTED_DEPLOYMENT, call: createTransport(process.env.CLOUDFLARE_API_TOKEN),
     sourceCheck: async baseline => {
-      assert.equal(baseline.annotations?.['workers/message'], `GitHub Actions ${BASE}`, 'baseline source message differs');
-      assert.equal(baseline.annotations?.['workers/tag'], `gha-${BASE.slice(0, 12)}`, 'baseline tag differs');
-      return { commit_sha: sha, dirty_tree: false, dirty_path_count: 0, method: 'pinned-viewer-overlay-with-exact-active-section-digest',
-        baseline_source_sha: BASE, runtime_source_sha: RUNTIME, runtime_paths: PATHS };
+      assert.equal(baseline.annotations?.['workers/message'], `GitHub Actions ${LIVE_SOURCE}`, 'baseline source message differs');
+      assert.equal(baseline.annotations?.['workers/tag'], `gha-${LIVE_SOURCE.slice(0, 12)}`, 'baseline tag differs');
+      return { commit_sha: sha, dirty_tree: false, dirty_path_count: 0, method: 'pinned-three-literal-copy-overlay-with-exact-active-section-digest',
+        baseline_source_sha: LIVE_SOURCE, reviewed_copy_base_sha: BASE, runtime_source_sha: RUNTIME, runtime_paths: PATHS };
     },
     bundle: async () => {
       const live = await readActiveModule(process.env.CLOUDFLARE_API_TOKEN);
-      const result = patchViewer(live.code, section);
+      const result = patchViewerCopy(live.code);
       const syntaxFile = join(mkdtempSync(join(tmpdir(), 'held-viewer-syntax-')), 'candidate.mjs');
       writeFileSync(syntaxFile, result.code, { mode: 0o600 });
       execFileSync(process.execPath, ['--check', syntaxFile], { stdio: 'ignore', timeout: 60000 });

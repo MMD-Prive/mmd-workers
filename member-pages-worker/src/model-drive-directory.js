@@ -1,9 +1,12 @@
+import { listModelFolderMedia, readModelFolderMedia } from "./model-drive-admin-media.js";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const INTERNAL_HOST = "model-drive-directory.internal";
 const SEARCH_PATH = "/__internal/model-drive/search";
 const RESOLVE_PATH = "/__internal/model-drive/resolve";
 const PHOTO_PATH = "/__internal/model-drive/photo";
 const CANONICAL_FILE_PATH = "/__internal/model-drive/canonical-file";
+const ADMIN_MEDIA_LIST_PATH="/__internal/model-drive/admin-media-list";
+const ADMIN_MEDIA_FILE_PATH="/__internal/model-drive/admin-media-file";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SIGNATURE_TTL_SECONDS = 90;
 
@@ -34,7 +37,7 @@ export function isModelDriveDirectoryRequest(request) {
   let url;
   try { url = new URL(request.url); } catch { return false; }
   const routeMatches = (request.method === "GET" && (url.pathname === SEARCH_PATH || url.pathname === PHOTO_PATH))
-    || (request.method === "POST" && (url.pathname === RESOLVE_PATH || url.pathname === CANONICAL_FILE_PATH));
+    || (request.method === "POST" && (url.pathname === RESOLVE_PATH || url.pathname === CANONICAL_FILE_PATH || url.pathname === ADMIN_MEDIA_LIST_PATH || url.pathname === ADMIN_MEDIA_FILE_PATH));
   if (!routeMatches) return false;
   return url.hostname === INTERNAL_HOST || url.hostname.endsWith(".workers.dev");
 }
@@ -53,6 +56,17 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
 
   try {
     const accessToken = await googleDriveAccessToken(env);
+    if(request.method === "POST" && [ADMIN_MEDIA_LIST_PATH,ADMIN_MEDIA_FILE_PATH].includes(url.pathname)) {
+      const body=await request.json().catch(()=>null),folderId=clean(body?.drive_folder_id,160);
+      if(!isDriveId(folderId))return json({ok:false,error:"drive_folder_id_invalid"},400);
+      const resolved=await resolveApprovedModelFolder(accessToken,folderId,env);
+      if(!resolved)return json({ok:false,error:"drive_folder_not_approved"},404);
+      try {
+        if(url.pathname===ADMIN_MEDIA_LIST_PATH)return json(await listModelFolderMedia(accessToken,folderId,resolved.lane==="public"?"public":"private",body.cover_only===true));
+        const headers=new Headers();if(typeof body.range==="string")headers.set("range",body.range);
+        return await readModelFolderMedia(new Request("https://model-drive-directory.internal/media",{method:body.head===true?"HEAD":"GET",headers}),accessToken,folderId,clean(body.file_id,180));
+      }catch(error){return json({ok:false,error:"drive_media_unavailable"},[404,409,416].includes(error.status)?error.status:503);}
+    }
     if (request.method === "GET" && url.pathname === PHOTO_PATH) {
       const folderId = clean(url.searchParams.get("drive_folder_id"), 160);
       const fileName = clean(url.searchParams.get("file_name"), 240);
@@ -588,3 +602,4 @@ function json(data, status = 200) {
     },
   });
 }
+
