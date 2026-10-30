@@ -34,7 +34,7 @@ async function canonical(env,modelId) {
   }
   const q=new URLSearchParams({pageSize:'100',filterByFormula:`OR({drive_folder_id}="${folder}",{unique_key}="drive:${folder}",{folder_scope_key}="public:drive:${folder}",{folder_scope_key}="private:drive:${folder}",{folder_scope_key}="exclusive:drive:${folder}"${legacy?",{source_folder}="+JSON.stringify(record.fields.source_folder):""})`});
   const matches=await read('?'+q);
-  if(matches.offset||!Array.isArray(matches.records)||matches.records.length!==1||matches.records[0].id!==modelId)fail('model_folder_conflict',409);
+  if(matches.offset||!Array.isArray(matches.records)||!matches.records.some(r=>r.id===modelId)||matches.records.some(r=>r.id!==modelId && bookingDriveFolder(r.fields)!==folder && (!legacy || normalizedPath(r.fields?.source_folder)!==normalizedPath(record.fields.source_folder))))fail('model_folder_conflict',409);
   // Recheck ancestry using the existing signed Model directory, never a browser URL.
   const r=await directory(env,'/__internal/model-drive/resolve',{drive_folder_id:folder});
   const data=await r.json().catch(()=>null);
