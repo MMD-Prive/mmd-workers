@@ -378,7 +378,7 @@ export async function handleKenjiLineMemberTruth(request, env = {}) {
 
   const resolved = await readTruthContext(env, lineUserId, intent);
   const projection = projectKenjiLineMemberTruth(resolved?.status === "resolved" ? resolved : {});
-  const ownerContext = !projection && ["rights_check", "private_interest"].includes(intent)
+  const ownerContext = !projection && ["rights_check", "private_interest", "membership_status", "membership_renewal"].includes(intent)
     ? await readKenjiOwnerMembershipContext(env, lineUserId) : null;
   const ownerProjection = ownerContext ? { ok: true, authority: RESOLVER_SCHEMA, identity_status: "owner_oa_linked", owner_membership_context: ownerContext } : null;
   if (intent === "private_interest") {
