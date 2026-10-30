@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import vm from "node:vm";
 
 import worker, {
   canonicalMyMmdHostRedirect,
@@ -51,7 +52,7 @@ test("direct customer status bypasses the old auth-only Lovable recovery layer",
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
   assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), null);
   assert.equal(response.headers.get("x-mmd-liff-session-check"), null);
   assert.match(html, /MY MMD LIFF DIGITAL/);
@@ -59,6 +60,37 @@ test("direct customer status bypasses the old auth-only Lovable recovery layer",
   assert.match(html, /LOVABLE_POINTS_PATH="\/my-mmd\/points"/);
   assert.doesNotMatch(html, /mmd-status-hard-timeout-gate/);
   assert.doesNotMatch(html, /mmd-status-single-surface-fix/);
+  const script = html.match(/<script nonce="abc123" id="mmd-ems-login-return">([\s\S]*?)<\/script>/);
+  assert.ok(script);
+  for (const [label, reply, expected] of [
+    ["verified", () => Response.json({ ok: true }), "/my-mmd/"],
+    ["unverified", () => Response.json({ ok: false }), null],
+    ["unauthorized", () => Response.json({ ok: true }, { status: 401 }), null],
+    ["unavailable", () => Response.json({ ok: true }, { status: 503 }), null],
+    ["malformed", () => new Response("not json"), null],
+    ["network", () => { throw new Error("fixture failure"); }, null],
+  ]) {
+    let destination = null;
+    const requests = [];
+    vm.runInNewContext(script[1], {
+      fetch: async (url, options) => {
+        requests.push({ url, options });
+        return reply();
+      },
+      location: { replace: (url) => { destination = url; } },
+      clearTimeout() {}, setTimeout() {}, addEventListener() {},
+      document: {
+        createElement: () => ({ style: {}, setAttribute() {}, append() {} }),
+        body: { prepend() {} }, addEventListener() {}, getElementById: () => null,
+      },
+    });
+    await new Promise(setImmediate);
+    assert.equal(destination, expected, label);
+    assert.equal(requests.length, 1, label);
+    assert.equal(requests[0].url, "/api/member/app/profile");
+    assert.equal(requests[0].options.credentials, "same-origin");
+    assert.equal(requests[0].options.cache, "no-store");
+  }
 });
 
 test("My MMD serves the pending public-Wish coupon bridge as same-origin behavior code", async () => {
