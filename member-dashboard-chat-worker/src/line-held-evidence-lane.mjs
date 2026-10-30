@@ -2,7 +2,9 @@
 //
 // An image the canonical classifier could not accept is NOT a Payment Proof and
 // never becomes one by being held. It stays an evidence candidate in a private,
-// bounded-retention quarantine prefix until one of three canonical outcomes:
+// bounded retry quarantine until one of three canonical outcomes. Neutral
+// documents retain their private original + review manifest after queue closure;
+// their eventual deletion needs an explicit operator retention decision.
 //
 //   accepted  -> promoted through the SAME extractor + classifier + correlation
 //                gates as live intake, producing exactly one Payment Proof
@@ -23,6 +25,7 @@ const SCHEMA = "line_held_payment_evidence_v1";
 const TERMINAL_SCHEMA = "line_held_payment_evidence_terminal_v1";
 const HELD_PREFIX = "line-ofc/held-evidence/";
 const TERMINAL_PREFIX = "line-ofc/held-evidence-terminal/";
+const REVIEW_PREFIX = "line-ofc/held-evidence-review/";
 const DEFAULT_RETENTION_HOURS = 72;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_BASE_BACKOFF_MS = 15 * 60 * 1000;
@@ -79,8 +82,12 @@ export function heldStateKey(proofId = "") {
   return `${HELD_PREFIX}${safeProofId(proofId)}/state.json`;
 }
 
-export function heldObjectKey(proofId = "", extension = "bin") {
-  return `${HELD_PREFIX}${safeProofId(proofId)}/original.${safeCode(extension, 8) || "bin"}`;
+export function heldObjectKey(proofId = "", extension = "bin", reviewPreserved = false) {
+  return `${reviewPreserved ? REVIEW_PREFIX : HELD_PREFIX}${safeProofId(proofId)}/original.${safeCode(extension, 8) || "bin"}`;
+}
+
+export function heldReviewStateKey(proofId = "") {
+  return `${REVIEW_PREFIX}${safeProofId(proofId)}/state.json`;
 }
 
 export function heldTerminalKey(proofId = "") {
@@ -169,6 +176,17 @@ async function closeHeld(bucket, state, outcome, reason, nowMs) {
     httpMetadata: { contentType: "application/json" },
     customMetadata: { schema: TERMINAL_SCHEMA, proof_id: marker.proof_id, outcome: marker.outcome },
   });
+  if (state.review_preserve_original === true) {
+    // Private original + full review context are retained, not silently erased
+    // when retry/queue retention ends. No public URL or payment is created.
+    await bucket.put(heldReviewStateKey(state.proof_id), JSON.stringify({
+      ...state, terminal_outcome: marker.outcome, closed_at_ms: nowMs,
+      original_key: heldObjectKey(state.proof_id, state.extension, true),
+      requires_manual_retention_decision: true,
+    }), { httpMetadata: { contentType: "application/json" } });
+    if (typeof bucket.delete === "function") await bucket.delete(heldStateKey(state.proof_id));
+    return marker;
+  }
   if (typeof bucket.delete === "function") {
     await bucket.delete(heldObjectKey(state.proof_id, state.extension));
     await bucket.delete(heldStateKey(state.proof_id));
@@ -189,6 +207,11 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
   if (!bucket) return { held: false, reason: "held_evidence_bucket_missing", proof_id: proofId };
   if (!proofId) return { held: false, reason: "held_evidence_proof_id_invalid" };
   if (!input?.image?.body) return { held: false, reason: "held_evidence_image_missing", proof_id: proofId };
+
+  // A retained review manifest is also a permanent replay fence until an
+  // authorized operator applies the separate review/retention policy.
+  const reviewed = await readJson(bucket, heldReviewStateKey(proofId));
+  if (reviewed?.terminal_outcome) return { held: false, deduped: true, terminal: true, outcome: reviewed.terminal_outcome, proof_id: proofId };
 
   const terminal = await readJson(bucket, heldTerminalKey(proofId));
   if (terminal?.proof_id) {
@@ -224,6 +247,7 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
     processing_until_ms: 0,
     hold_reason: safeCode(input.holdReason || input.reason, 80) || "uncertain_payment_image",
     image_class: safeCode(input.imageClass, 60) || "uncertain",
+    review_preserve_original: input.imageClass === "unclassified_document",
     source_type: safeCode(input.sourceType, 20),
     source_context: safeCode(input.sourceContext, 60),
     message_id_hash: text(input.messageIdHash, 64),
@@ -245,7 +269,7 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
     money_truth: "payments-worker",
   };
 
-  await bucket.put(heldObjectKey(proofId, state.extension), input.image.body, {
+  await bucket.put(heldObjectKey(proofId, state.extension, state.review_preserve_original), input.image.body, {
     httpMetadata: { contentType: input.image.mimeType || "application/octet-stream" },
     customMetadata: {
       schema: SCHEMA,
@@ -255,6 +279,14 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
       hold_reason: state.hold_reason,
     },
   });
+  if (state.review_preserve_original) {
+    // Preserve review context immediately too, including if an older in-flight
+    // queue consumer cannot understand this original's separate private prefix.
+    await bucket.put(heldReviewStateKey(proofId), JSON.stringify({
+      ...state, original_key: heldObjectKey(proofId, state.extension, true),
+      requires_manual_retention_decision: true,
+    }), { httpMetadata: { contentType: "application/json" }, onlyIf: { etagDoesNotMatch: "*" } });
+  }
   const created = await writeState(bucket, state, { etagDoesNotMatch: "*" });
   if (created.stored === null) {
     return { held: true, deduped: true, proof_id: proofId, attempts: 0, concurrent: true };
@@ -263,7 +295,7 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
 }
 
 async function loadHeldImage(bucket, state) {
-  const object = await bucket.get(heldObjectKey(state.proof_id, state.extension));
+  const object = await bucket.get(heldObjectKey(state.proof_id, state.extension, state.review_preserve_original));
   if (!object || typeof object.arrayBuffer !== "function") return null;
   const body = await object.arrayBuffer();
   if (!body || !body.byteLength) return null;
@@ -321,7 +353,8 @@ export async function reprocessHeldEvidence(env = {}, options = {}) {
     const claimEtag = claim.etag || envelope?.etag || "";
 
     if (nowMs - (Number(state.created_at_ms) || nowMs) > retentionMs) {
-      await closeHeld(bucket, state, HELD_EVIDENCE_OUTCOME.EXPIRED, "retention_window_elapsed", nowMs);
+      const marker = await closeHeld(bucket, state, HELD_EVIDENCE_OUTCOME.EXPIRED, "retention_window_elapsed", nowMs);
+      if (state.review_preserve_original && notifyReviewRequired) await notifyReviewRequired({ env, audit: heldEvidenceAuditRecord(state), marker }).catch(() => {});
       summary.expired += 1;
       summary.processed += 1;
       continue;
