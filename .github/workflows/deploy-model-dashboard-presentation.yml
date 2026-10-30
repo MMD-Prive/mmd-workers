@@ -33,6 +33,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Validate manual release gate
+        run: node --test scripts/model-lv15-ci.test.mjs
+
       - name: Validate presentation proxy
         working-directory: model-dashboard-presentation-worker
         run: |
@@ -48,7 +51,8 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/model-privacy-ui/node_modules" node --test model-dashboard-presentation-worker/model-customer-privacy-ui.test.cjs
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    environment: owner-approved
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
