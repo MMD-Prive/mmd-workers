@@ -10,7 +10,8 @@ test("production auto-reply setting is explicit and guarded before every release
   const gate = source.indexOf("      - name: Verify Kenji production model-off contract");
   const gateEnd = source.indexOf("      - name:", gate + 10);
   assert.ok(source.slice(gate, gateEnd).includes(`grep -Eq '^LINE_AUTO_REPLY_ENABLED = "true"$'`));
-  for (const command of ["wrangler@4 versions upload", "wrangler deploy", "wrangler@4 deploy", "wrangler@4 versions deploy"]) {
+  assert.doesNotMatch(source, /wrangler(?:@4)? deploy/);
+  for (const command of ["wrangler@4 versions upload", "wrangler@4 versions deploy"]) {
     assert.ok(source.indexOf(command) > gateEnd, command);
   }
   for (const flag of ["LINE_KENJI_MODEL_ENABLED", "KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED"]) {
@@ -22,7 +23,7 @@ test("model-off gate must pass before any version upload or deployment", () => {
   assert.ok(gate > 0);
   const gateStep = source.slice(gate, source.indexOf("      - name:", gate + 10));
   assert.doesNotMatch(gateStep, /if: always\(\)/);
-  for (const command of ["wrangler@4 versions upload", "wrangler@4 deploy", "wrangler@4 versions deploy"]) {
+  for (const command of ["wrangler@4 versions upload", "wrangler@4 versions deploy"]) {
     const position = source.indexOf(command);
     assert.ok(position > gate, command);
   }

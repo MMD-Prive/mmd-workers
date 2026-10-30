@@ -1,4 +1,5 @@
 import { emsAlbumNavigationReply } from "../../shared/ems-album-navigation.mjs";
+import {isGwsAlbumQuestion,GWS_ALBUMS_URL} from './my-mmd-gws-albums.mjs';
 import { isEmsAlbumQuestion, EMS_ALBUMS_URL } from "./my-mmd-ems-albums.mjs";
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
@@ -250,6 +251,9 @@ function continuityMetadata(options = {}, inferredIntent = "") {
 }
 
 export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {}) {
+  if (event?.source?.type === "user" && event?.message?.type === "text" && isGwsAlbumQuestion(event.message.text)) {
+    return withDecisionMetadata({}, {intent:"gws_albums",reply_source:"my_mmd_gws_albums_v1",text:"ได้ครับ กดปุ่มดูอัลบั้ม GWs ใน MY MMD ได้เลยครับ หากต้องเข้าสู่ระบบ ระบบจะพากลับมาหน้าอัลบั้มต่อครับ",reply_button:{label:"ดูอัลบั้ม GWs",uri:GWS_ALBUMS_URL},handoff_required:false});
+  }
   if (event?.source?.type === "user" && event?.message?.type === "text" && isEmsAlbumQuestion(event.message.text)) {
     return withDecisionMetadata({}, { ...emsAlbumNavigationReply(), reply_source: "my_mmd_ems_albums_v1", reply_button: { uri: EMS_ALBUMS_URL } });
   }
@@ -550,7 +554,7 @@ async function sendReply(env = {}, replyToken = "", replyText = "", replyButton 
         "content-type": "application/json",
       },
       body: JSON.stringify({ replyToken: reply, messages: [{ type: "text", text: answer,
-        ...(replyButton?.uri === EMS_ALBUMS_URL ? { quickReply: { items: [{ type: "action", action: { type: "uri", label: "ดูอัลบั้ม EMs", uri: EMS_ALBUMS_URL } }] } } : {}) }] }),
+        ...([EMS_ALBUMS_URL, GWS_ALBUMS_URL].includes(replyButton?.uri) ? { quickReply: { items: [{ type: "action", action: { type: "uri", label: replyButton.uri === GWS_ALBUMS_URL ? "ดูอัลบั้ม GWs" : "ดูอัลบั้ม EMs", uri: replyButton.uri } }] } } : {}) }] }),
     });
     return response.ok
       ? { ok: true, status: response.status }
@@ -669,7 +673,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const navigation = richMenuNavigation(event);
     const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
     const checkptsShortcut = isCheckptsShortcut(event);
-    const emsAlbumQuestion = event?.type === "message" && event?.message?.type === "text" && isEmsAlbumQuestion(event.message.text);
+    const emsAlbumQuestion = event?.type === "message" && event?.message?.type === "text" && (isEmsAlbumQuestion(event.message.text) || isGwsAlbumQuestion(event.message.text));
     // General replies stay paused. Rich Menu postbacks use fixed menu replies;
     // only Guest/Public SUPPORT taps may enter the bounded Per AI lane.
     let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || supportReplyEnabled) && directUser &&

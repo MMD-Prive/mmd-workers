@@ -10,10 +10,10 @@ test("Console Session selection stays on MMD Workers and adds the customer panel
   const calls = [];
   globalThis.fetch = async (request) => {
     calls.push(request.url);
-    return new Response("<html><head></head><body><main>MY MMD</main></body></html>", {headers:{"content-type":"text/html"}});
+    return new Response("<html><head></head><body><main id=\"mymmd-wf\">MY MMD</main></body></html>", {headers:{"content-type":"text/html"}});
   };
   const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/?session_id=SESSION-A&lang=th"), {});
-  assert.deepEqual(calls, ["https://my-mmd-member-profile.lovable.app/?lang=th"]);
+  assert.deepEqual(calls, ["https://mmdprive.webflow.io/member/dashboard?mmd_release=20261030-native-2"]);
   const html = await response.text();
   assert.equal((html.match(/id="mmd-session-panel"/g)||[]).length, 1);
   assert.match(html, /\/api\/member\/app\/session\/current/);
@@ -112,17 +112,17 @@ test("Private Teaser is a dedicated MY MMD viewer and never fetches the Lovable 
   assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|media_id|localStorage|sessionStorage|indexedDB/);
 });
 
-test("Bangkok board uses hero treatment on home and profile, and Orders recovery keeps its closed state", async () => {
+test("Webflow owns home/profile and Orders recovery keeps its closed state", async () => {
   globalThis.fetch = async request => new Response(
-    new URL(request.url).hostname === "mmdprive.webflow.io" ? "unavailable" : "<!doctype html><html><head></head><body><main>MY MMD</main></body></html>",
-    { status: new URL(request.url).hostname === "mmdprive.webflow.io" ? 404 : 200, headers: { "content-type": "text/html" } },
+    new URL(request.url).pathname === "/member/dashboard" ? '<html><body><main id="mymmd-wf">MY MMD</main></body></html>' : "unavailable",
+    { status: new URL(request.url).pathname === "/member/dashboard" ? 200 : 404, headers: { "content-type": "text/html" } },
   );
-  for (const path of ["/my-mmd", "/my-mmd/", "/my-mmd/profile"]) {
+  for (const path of ["/my-mmd", "/my-mmd/"]) {
     const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`), {});
     const html = await response.text();
-    assert.match(html, /data-mmd-board-layout="hero"/);
-    assert.match(html, /BKK%20View%2001\.webp/);
-    assert.equal((html.match(/<header id="mmd-bangkok-theme-v1"/g) || []).length, 1);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-mmd-presentation-owner"), "webflow");
+    assert.match(html, /mymmd-wf/);
   }
   const orders = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
   const ordersHtml = await orders.text();
@@ -193,7 +193,7 @@ test("Lovable upstream failure returns a visible fail-closed recovery page with 
     throw new Error("origin unavailable");
   };
 
-  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/"), {});
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/menu"), {});
   const html = await response.text();
 
   assert.equal(response.status, 502);
@@ -326,7 +326,7 @@ test("My MMD presentation remains read-only while behavior stays on /api/member/
   assert.equal(api.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
-test("direct status LIFF stays in the Worker-rendered Digital Home", async () => {
+test("direct status LIFF keeps Digital Home while bridging to Webflow after session confirmation", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
@@ -340,7 +340,7 @@ test("direct status LIFF stays in the Worker-rendered Digital Home", async () =>
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), null);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), null);
   assert.match(html, /MMD Privé · LIFF Digital Home/);
   assert.match(html, /CANONICAL_POINTS_PATH = "\/my-mmd\/points"/);

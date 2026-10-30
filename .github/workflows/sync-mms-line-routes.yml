@@ -1,20 +1,14 @@
 name: Sync MMS LINE Routes
 
 on:
-  workflow_run:
-    workflows:
-      - "Deploy member-dashboard-chat-worker"
-    types:
-      - completed
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   sync:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

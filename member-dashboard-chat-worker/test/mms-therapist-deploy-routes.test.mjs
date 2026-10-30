@@ -3,26 +3,31 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 const workflow=readFileSync(new URL('../../.github/workflows/deploy-member-dashboard-chat-worker.yml',import.meta.url),'utf8');
-const routeBlock=workflow.split('- name: Sync MMS Therapist auth and AI smoke routes')[1].split('- name: Smoke production LINE and MMS route ownership')[0];
+const routeBlock=workflow.split('- name: Verify existing MMS Therapist auth and AI smoke routes')[1].split('- name: Smoke production LINE and MMS route ownership')[0];
 const script=routeBlock.split("<<'NODE'\n")[1].split('\n          NODE')[0].replace(/^          /gm,'');
 const expected=['mmdbkk.com','www.mmdbkk.com'].flatMap(host=>['*','/login*','/me*','/app*','/api/auth/*','/api/app/*'].map(suffix=>host+'/male-massage/therapists'+suffix));
+const desiredMatch=script.match(/const desired = (\[[\s\S]*?\]);/);
+assert.ok(desiredMatch, 'Read-only route verifier must declare its required routes');
+const desired=vm.runInNewContext(desiredMatch[1]);
 async function simulate(existing=[]) {
  const routes=existing.map(r=>({...r})), writes=[];
  const context={process:{env:{CLOUDFLARE_ROUTES_API_TOKEN:'test',CLOUDFLARE_ZONE_ID:'test-zone',WORKER_NAME:'member-dashboard-chat-worker'}},console:{log(){}},setTimeout:fn=>fn(),fetch:async(url,options={})=>{
-  if(options.method==='POST'){const body=JSON.parse(options.body);writes.push(body);routes.push(body);return {ok:true,status:200,text:async()=>JSON.stringify({success:true,result:body})};}
+  if((options.method||'GET')!=='GET'){writes.push(options.method);throw new Error('Unexpected route write');}
   return {ok:true,status:200,text:async()=>JSON.stringify({success:true,result:routes})};
  }};
- await vm.runInNewContext('(async()=>{'+script+'})()',context);
+ try { await vm.runInNewContext('(async()=>{'+script+'})()',context); }
+ finally { assert.equal(writes.length,0,'Route verification must never write'); }
  return {routes,writes};
 }
-test('primary deploy installs native Therapist pages, callback endpoint and APIs for both hosts',async()=>{
- const result=await simulate();for(const pattern of expected)assert.ok(result.routes.some(r=>r.pattern===pattern&&r.script==='member-dashboard-chat-worker'),pattern);
- assert.ok(result.routes.every(r=>!r.pattern.includes('therapists/*')));
+test('existing complete route set passes read-only verification',async()=>{
+ const existing=Array.from(desired,pattern=>({pattern,script:'member-dashboard-chat-worker'}));
+ const result=await simulate(existing);assert.equal(result.writes.length,0);
+ for(const pattern of expected)assert.ok(result.routes.some(r=>r.pattern===pattern));
 });
-test('already synced routes are not created twice',async()=>{
- const first=await simulate(), second=await simulate(first.routes);assert.equal(second.writes.length,0);
+test('missing routes fail without creating any route',async()=>{
+ await assert.rejects(simulate(),/missing required route/);
 });
-test('route conflict fails before creating any route',async()=>{
+test('conflicting owner fails without changing ownership',async()=>{
  await assert.rejects(simulate([{pattern:expected[1],script:'another-worker'}]),/route conflict/);
 });
 test('native UI smoke is required before reporting successful production deploy',()=>{

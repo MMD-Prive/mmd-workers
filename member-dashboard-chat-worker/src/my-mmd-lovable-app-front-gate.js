@@ -1,3 +1,5 @@
+import {isGwsAlbumsPage,gwsAlbumsPage} from './my-mmd-gws-albums.mjs';
+import { myMmdWebflowPage } from './my-mmd-webflow-page.mjs';
 import { isEmsAlbumsPage, emsAlbumsPage } from "./my-mmd-ems-albums.mjs";
 import { myMmdMembershipWorlds } from "./my-mmd-membership-worlds.js";
 import currentWorker from "./line-group-ingress-front-gate.js";
@@ -500,6 +502,11 @@ function liffAuthBridgeTarget(request) {
 
   if (campaign) return "";
   const view = String(url.searchParams.get("view") || stateParams.get("view") || "").trim().toLowerCase();
+  if (intent === "status" && ["", "home", "overview", "my_mmd"].includes(view)) return "/my-mmd/";
+  if (intent === "gws_albums" || (intent === "status" && view === "gws_albums")) {
+    const album = String(url.searchParams.get("album") || stateParams.get("album") || "").trim();
+    return /^gws\d+-[a-f0-9]{12}$/.test(album) ? `/my-mmd/gws/${album}` : "/my-mmd/gws";
+  }
   if (intent === "ems_albums" || (intent === "status" && view === "ems_albums")) {
     const album = String(url.searchParams.get("album") || stateParams.get("album") || "").trim();
     return /^ems\d+-[a-f0-9]{12}$/.test(album) ? `/my-mmd/ems/${album}` : "/my-mmd/ems";
@@ -580,10 +587,10 @@ async function rewriteStatusReturnTarget(request, response) {
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   // The current LIFF shell renders Digital Home, not the legacy target constant.
   // Resume only the bounded EMs destination after the member API confirms a session.
-  if (target === "/my-mmd/ems" || /^\/my-mmd\/ems\/ems\d+-[a-f0-9]{12}$/.test(target)) {
+  if (target === "/my-mmd/" || target === "/my-mmd/ems" || target === "/my-mmd/gws" || /^\/my-mmd\/(ems|gws)\/\1\d+-[a-f0-9]{12}$/.test(target)) {
     const nonce = html.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i)?.[1];
     if (!nonce || !html.includes("</body>")) return new Response(html, { status: response.status, headers });
-    const bridge = `<script nonce="${nonce}" id="mmd-ems-login-return">(()=>{const target=${JSON.stringify(target)};let busy=false,done=false,timer,attempts=0;async function check(){if(busy||done)return;busy=true;try{const r=await fetch('/api/member/app/ems-albums',{credentials:'same-origin',cache:'no-store'});const data=await r.json();if((r.status===200&&data.ok===true&&(Array.isArray(data.albums) ))||(r.status===403&&data.error==='VIP_REQUIRED')){done=true;clearTimeout(timer);location.replace(target);return;}}catch{}finally{busy=false;}if(!done&&++attempts<90)timer=setTimeout(check,2000);}function resume(){if(done)return;attempts=0;clearTimeout(timer);check();}addEventListener('pageshow',resume);addEventListener('focus',resume);document.addEventListener('visibilitychange',()=>{if(!document.hidden)resume();});document.getElementById('intro-continue')?.addEventListener('click',resume);check();})();</script>`;
+    const bridge = `<script nonce="${nonce}" id="mmd-ems-login-return">(()=>{const target=${JSON.stringify(target)};const nav=document.createElement('nav');nav.setAttribute('aria-label','MY MMD');nav.style.cssText='position:relative;z-index:20;padding:14px 20px;display:flex;gap:20px;background:#171717;color:#f4e4be';for(const [label,href]of [['MY MMD','/my-mmd/'],['อัลบั้ม EMs →','/my-mmd/ems'],['อัลบั้ม GWs →','/my-mmd/gws']]){const a=document.createElement('a');a.textContent=label;a.href=href;a.style.color='inherit';nav.append(a);}document.body.prepend(nav);let busy=false,done=false,timer,attempts=0;async function check(){if(busy||done)return;busy=true;try{const r=await fetch('${target === '/my-mmd/' ? '/api/member/app/profile' : target.startsWith('/my-mmd/gws') ? '/api/member/app/gws-albums' : '/api/member/app/ems-albums'}',{credentials:'same-origin',cache:'no-store'});const data=await r.json();if((r.status===200&&data.ok===true&&(${target === '/my-mmd/' ? 'true' : 'Array.isArray(data.albums)'} ))||(r.status===403&&data.error==='VIP_REQUIRED')){done=true;clearTimeout(timer);location.replace(target);return;}}catch{}finally{busy=false;}if(!done&&++attempts<90)timer=setTimeout(check,2000);}function resume(){if(done)return;attempts=0;clearTimeout(timer);check();}addEventListener('pageshow',resume);addEventListener('focus',resume);document.addEventListener('visibilitychange',()=>{if(!document.hidden)resume();});document.getElementById('intro-continue')?.addEventListener('click',resume);check();})();</script>`;
     const output = html.replace("</body>", bridge+"</body>");
     headers.set("cache-control", "private, no-store");
     headers.set("x-mmd-liff-return-target", target);
@@ -616,7 +623,12 @@ export default {
   async fetch(request, env = {}, ctx) {
     const path = normalizedPath(request);
 
+    if (isGwsAlbumsPage(request)) return gwsAlbumsPage(request);
     if (isEmsAlbumsPage(request)) return emsAlbumsPage(request);
+    if (path === '/api/member/app/gws-albums' || path.startsWith('/api/member/app/gws-albums/')) {
+      if (!env.MEMBER_PAGES_WORKER?.fetch) return new Response("Service unavailable", { status: 503, headers: { "cache-control": "no-store" } });
+      return env.MEMBER_PAGES_WORKER.fetch(request);
+    }
     if (path === "/api/member/app/ems-albums" || path.startsWith("/api/member/app/ems-albums/")) {
       if (!env.MEMBER_PAGES_WORKER?.fetch) return new Response("Service unavailable", { status: 503, headers: { "cache-control": "no-store" } });
       return env.MEMBER_PAGES_WORKER.fetch(request);
@@ -634,7 +646,10 @@ export default {
     if (isMyMmdOrdersPage(request)) return proxyMyMmdOrdersPage(request);
     if (isMyMmdPrivateTeaserViewerPath(request)) return myMmdPrivateTeaserViewerPage(request);
     if (isMyMmdAssetPath(path)) return proxyLovableAsset(request);
-    if (isMyMmdUiPath(path)) return proxyLovablePage(request);
+    if (/^\/my-mmd\/(?:points\/?|[^/]+\.(?:png|webp|jpg|jpeg|gif|svg|ico|js|css))$/.test(path)) return proxyLovablePage(request);
+    if (path === "/my-mmd/payments" || path === "/my-mmd/payments/") return proxyLovablePage(request);
+    if (/^\/my-mmd\/(menu\/?|albums\/ems\/[^/]+\/?)$/.test(path)) return proxyLovablePage(request);
+    if (isMyMmdUiPath(path)) return myMmdWebflowPage(request);
 
     // Identity, session, points, membership, entitlement, coupons, history,
     // CARE BACK and every authoritative calculation remain on MMD Workers.

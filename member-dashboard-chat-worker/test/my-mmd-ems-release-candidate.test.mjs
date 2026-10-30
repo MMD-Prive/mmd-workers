@@ -27,7 +27,7 @@ test('current Digital Home shell resumes EMs only after authenticated API respon
  assert.ok(script);assert.ok(r.headers.get('content-security-policy').includes("'nonce-"+script[1]+"'"));
  for(const [response,expected] of [[Response.json({ok:false,error:'LOGIN_REQUIRED'},{status:401}),false],[Response.json({ok:false},{status:503}),false],[Response.json({ok:true,albums:[]}),true],[Response.json({ok:false,error:'VIP_REQUIRED'},{status:403}),true]]){
   let destination=null,timer=null;
-  const context={fetch:async()=>response,location:{replace:url=>destination=url},clearTimeout(){},setTimeout:fn=>{timer=fn},addEventListener(){},document:{addEventListener(){},getElementById:()=>null}};
+  const context={fetch:async()=>response,location:{replace:url=>destination=url},clearTimeout(){},setTimeout:fn=>{timer=fn},addEventListener(){},document:{createElement:()=>({style:{},setAttribute(){},append(){}}),body:{prepend(){}},addEventListener(){},getElementById:()=>null}};
   vm.runInNewContext(script[2],context);await new Promise(setImmediate);
   assert.equal(destination,expected?'/my-mmd/ems':null);assert.equal(Boolean(timer),!expected);
  }
