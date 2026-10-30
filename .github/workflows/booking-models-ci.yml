@@ -22,8 +22,17 @@ jobs:
           node-version: "22"
       - run: node --test admin-worker/booking-models.test.mjs
       - name: Install isolated DOM test dependency
-        run: npm install --prefix "$RUNNER_TEMP/booking-models-dom" --no-save --ignore-scripts linkedom@0.18.12
+        run: npm install --prefix "$RUNNER_TEMP/booking-models-dom" --no-save --ignore-scripts linkedom@0.18.12 esbuild@0.28.2
       - name: Test search UI
         env:
           BOOKING_MODELS_DOM_MODULE: ${{ runner.temp }}/booking-models-dom/node_modules/linkedom/esm/index.js
+        run: node --test admin-worker/booking-models-ui.test.mjs
+
+      - name: Bundle server page with production function-name helpers
+        run: |
+          "$RUNNER_TEMP/booking-models-dom/node_modules/.bin/esbuild" admin-worker/src/booking-models-page.js --bundle --format=esm --platform=node --keep-names --outfile="$RUNNER_TEMP/booking-models-page.bundle.mjs"
+      - name: Execute HTML delivered by the bundled server page
+        env:
+          BOOKING_MODELS_DOM_MODULE: ${{ runner.temp }}/booking-models-dom/node_modules/linkedom/esm/index.js
+          BOOKING_MODELS_PAGE_MODULE: ${{ runner.temp }}/booking-models-page.bundle.mjs
         run: node --test admin-worker/booking-models-ui.test.mjs

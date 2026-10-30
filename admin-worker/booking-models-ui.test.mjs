@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderBookingModelsPage, bookingModelsClient, bookingModelsCopy as copy } from "./src/booking-models-page.js";
+import { runInNewContext } from "node:vm";
+const { renderBookingModelsPage, bookingModelsCopy: copy } = await import(process.env.BOOKING_MODELS_PAGE_MODULE || "./src/booking-models-page.js");
 const { parseHTML } = await import(process.env.BOOKING_MODELS_DOM_MODULE || "/tmp/booking-models-dom/node_modules/linkedom/esm/index.js");
 
 const item = {model_id:"recFixture000001",name:"Leo Test",code:"LT01",height_cm:180,weight_kg:75,offers_public:true,offers_private:false,public_profile_allowed:true,private_profile_allowed:false,cover_status:"missing",cover_media_id:"",reasons:["missing_cover"],body_type:"athletic",skin_tone:"tan"};
@@ -16,7 +17,9 @@ function setup(t, handler) {
  document.getElementById("query").value="";
  document.getElementById("model-search").reset=()=>{document.getElementById("query").value="";setSelect("audience","all");setSelect("attention","all");};
  const calls=[];t.mock.method(globalThis,"fetch",async(input,init)=>{calls.push({input,init});return handler(input,init,calls.length);});
- bookingModelsClient(copy);
+ // Execute the script actually delivered in HTML, including when the server module is bundled.
+ const inline = document.querySelector("script").textContent;
+ runInNewContext(inline, {document,window,fetch:globalThis.fetch,AbortController,URLSearchParams,setTimeout,clearTimeout,Error});
  const event=(id,type)=>document.getElementById(id).dispatchEvent(new window.Event(type,{cancelable:true,bubbles:true}));
  return {document,window,event,calls,setSelect};
 }
