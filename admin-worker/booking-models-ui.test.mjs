@@ -70,3 +70,15 @@ test("detail gallery displays every status and Private media using protected sam
  assert.ok([...u.document.querySelectorAll(".gallery img,.gallery video")].every(el=>el.getAttribute("src").startsWith("/v1/admin/booking-models/")));
  u.event("close-detail","click");assert.equal(u.document.querySelectorAll(".gallery img,.gallery video").length,0);
 });
+
+test('linked Drive thumbnails and lazy detail gallery use owner routes and clear on close',async t=>{
+ const u=setup(t,async input=>input.endsWith('/drive')?Response.json({ok:true,items:[{file_id:'photo_fixture_123',kind:'photo',audience:'private'},{file_id:'clip_fixture_123',kind:'clip',audience:'private'}],partial:true}):Response.json({ok:true,items:[{...item,drive_linked:true,cover_status:'drive_linked'}],next_cursor:null}));
+ await flush();assert.equal(u.document.querySelector('article img').getAttribute('src'),'/v1/admin/booking-models/'+item.model_id+'/drive-cover');assert.equal(u.calls.length,1);
+ u.document.querySelector('article button').click();await flush();assert.equal(u.document.querySelectorAll('.gallery figure').length,2);assert.ok(u.document.getElementById('detail-content').textContent.includes(copy.drivePartial));assert.equal(u.document.querySelector('.gallery video').getAttribute('src'),'/v1/admin/booking-models/'+item.model_id+'/drive/clip_fixture_123');
+ u.event('close-detail','click');assert.equal(u.document.querySelectorAll('.gallery img,.gallery video').length,0);
+});
+test('late Drive inventory cannot reopen a closed profile and access expiry conceals profiles',async t=>{
+ let resolve;const pending=new Promise(r=>resolve=r);
+ const u=setup(t,async input=>input.endsWith('/drive')?pending:Response.json({ok:true,items:[{...item,drive_linked:true}],next_cursor:null}));
+ await flush();u.document.querySelector('article button').click();u.event('close-detail','click');resolve(Response.json({ok:true,items:[{file_id:'photo_fixture_123',kind:'photo'}]}));await flush();assert.equal(u.document.getElementById('detail-content').children.length,0);
+});

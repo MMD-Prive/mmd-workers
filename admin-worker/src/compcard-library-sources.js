@@ -33,7 +33,7 @@ async function driveJson(env, suffix) {
   if (!r.ok) { if (r.status === 401) authCache.delete(env); fail(r.status === 404 ? "source_not_found" : "drive_access_unavailable",r.status === 404 ? 404 : 503); }
   return r.json();
 }
-async function libraryDriveToken(env) {
+export async function libraryDriveToken(env) {
   if(env.GOOGLE_SERVICE_ACCOUNT_JSON)return ownerDriveAccessToken(env,driveHttp(env));
   if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)fail("drive_credentials_not_configured",503);
   const http=driveHttp(env);
@@ -132,3 +132,4 @@ export async function readJobBoardSource(env,query) {
   if(bytes.length!==u.bytes || await digest(bytes)!==u.sha256)fail("source_changed_reload",409);
   return {bytes,content_type:u.content_type,name:clean(a.applicant?.nickname)||app,original_name:`${app}-${slot}.${TYPES.get(u.content_type)}`,height_cm:a.applicant?.height_cm||null,weight_kg:a.applicant?.weight_kg||null,metrics_source:"job_board_applicant",source:{provider:"job_board",ref:`job-board:${job}:${app}:${slot}`,job_id:job,application_ref:app,slot,modified_at:a.updated_at}};
 }
+

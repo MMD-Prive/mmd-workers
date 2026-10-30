@@ -33,3 +33,25 @@ Thai copy source: [mmd-i18n PR #46](https://github.com/MMD-Prive/mmd-i18n/pull/4
 - No Model, approval, booking, entitlement or storage data is written by this feature.
 
 The existing owner-approved admin deployment workflow and narrow route families are unchanged.
+
+
+## Existing Drive folders (owner-requested, 2026-10-31)
+
+The admin now reads linked Drive originals alongside the R2 registry. No copy,
+customer approval or Model visibility is created. Exact canonical folder references
+must agree, and a fresh canonical lookup must have only this Model; duplicates are
+reported for review. The existing signed Model directory rechecks approved ancestry.
+OAuth uses the configured owner account and verifies its email; existing service
+account credentials are a fallback when owner OAuth is not configured. No credentials
+or Drive URLs are sent to the browser.
+
+Thumbnails use a same-origin owner route; opening detail loads a photo/clip gallery
+from the exact folder and up to four nested levels. Inventory is bounded (40 folders,
+500 media, 20 provider pages per folder), reports partial results explicitly and
+rejects repeated cursors. Each file read rechecks the current Model/folder binding
+and the file's exact ancestry; requests cannot choose another folder. R2 previews
+remain available in the same detail. Unlinked Models are not matched by name.
+
+Validation: 36 backend + actual inline DOM tests, plus 7 bundled DOM cases. Live
+validation is recorded in the change PR; passing fixtures alone does not establish
+production Drive access or mean every Model has been linked.
