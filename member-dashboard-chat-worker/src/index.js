@@ -40,6 +40,7 @@ import {
 export { KenjiModelIdempotency, KenjiShadowReceipt };
 
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
+import { isEmsAlbumCommand, emsAlbumNavigationReply, emsAlbumQuickReply } from '../../shared/ems-album-navigation.mjs';
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
 const LINE_RICH_MENU_LINK_URL = "https://api.line.me/v2/bot/user";
@@ -1222,6 +1223,7 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
+  if (isEmsAlbumCommand(eventText)) return emsAlbumNavigationReply();
   const resolvedModelIntent = options?.modelIntent?.matched === true ? options.modelIntent : resolveKenjiModelIntent(eventText);
   const inferredIntent = resolvedModelIntent.campaign_trigger ? "card_campaign_lead" : inferLineIntent(eventText, event);
   const postbackIntent = event?.type === "postback"
@@ -1586,7 +1588,7 @@ async function sendLineReply(env = {}, replyToken, text, options = {}) {
       },
       body: JSON.stringify({
         replyToken: reply,
-        messages: [{ type: "text", text: safeText }],
+        messages: [{ type: "text", text: safeText, ...(options.ems_album_navigation ? {quickReply:emsAlbumQuickReply()} : {}) }],
       }),
     });
   } catch (_) {
@@ -3398,7 +3400,7 @@ async function handleLineWebhook(request, env, ctx = null, options = {}) {
     if (requiresDurablePricingHandoff && !shouldReply && !pricingHandoffWrite && !pricingMatrixSkipReason) {
       pricingMatrixSkipReason = "pricing_handoff_reply_suppressed";
     }
-    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
+    const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true, ems_album_navigation:replyDecision.reply_source==='ems_album_navigation_v1' }) : null;
     const outboundHistoryPromise = lineBrainEnabled && replyResult?.ok === true
       ? recordDeliveredKenjiLineReply({ env, event: rawEvent, replyText }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
       : Promise.resolve({ skipped: true, reason: lineBrainEnabled ? "reply_not_delivered" : "line_brain_v1_disabled" });
