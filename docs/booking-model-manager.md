@@ -39,8 +39,8 @@ The existing owner-approved admin deployment workflow and narrow route families 
 
 The admin now reads linked Drive originals alongside the R2 registry. No copy,
 customer approval or Model visibility is created. Exact canonical folder references
-must agree, and a fresh canonical lookup must have only this Model; duplicates are
-reported for review. The existing signed Model directory rechecks approved ancestry.
+must agree, and a fresh canonical lookup must include this Model and may include records explicitly
+sharing the same folder. Unexplained conflicting links are reported for review. The existing signed Model directory rechecks approved ancestry.
 The admin uses signed requests to the existing Model Drive directory, whose OAuth
 credentials already serve Model discovery. The invalid admin-local OAuth credential
 is not used or copied. No credentials
@@ -76,3 +76,16 @@ categories, conflicting explicit references and ambiguous paths cannot bind by
 name. This is a read-only admin lookup, with no canonical field, customer
 visibility, approval or source-file mutation. Existing Drive and R2 read policies
 remain separate from customer media policies. Thai copy is mirrored in mmd-i18n.
+
+Admin inspection accepts multiple canonical records when their explicit folder ID
+or complete imported source path agrees with the same resolved folder. Duplicate
+catalog records do not require a merge before the owner can inspect their common
+source. Unexplained folder links, ambiguous source paths and mismatched scope
+remain unavailable. This does not consolidate records or grant customer access.
+
+The 126-record inventory also contains 27 records whose exact folder ID is already
+embedded in an imported public/private/exclusive folder_scope_key (without a
+separate drive_folder_id value). Read this existing ID directly, including typed
+legacy scopes. Conflicting explicit IDs still fail; old classification segments
+do not become a customer grant or an admin image approval requirement. No field
+migration is required to inspect these originals.

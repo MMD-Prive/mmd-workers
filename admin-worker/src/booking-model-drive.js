@@ -5,6 +5,7 @@ const fail=(code,status=503)=>{throw Object.assign(new Error(code),{status,code}
 export function bookingDriveFolder(fields={}) {
   const values=[fields.drive_folder_id];
   for(const key of ['unique_key','folder_scope_key']) { const match=String(fields[key]||'').match(/^(?:(?:public|private|exclusive):)?drive:([A-Za-z0-9_-]{10,180})$/); if(match)values.push(match[1]); }
+  const importedScope=String(fields.folder_scope_key||'').match(/^(?:public|private|exclusive):(?:[^:\x00-\x1f]+:)*([A-Za-z0-9_-]{20,180})$/);if(importedScope)values.push(importedScope[1]);
   if(fields.drive_folder_url) { try {const u=new URL(fields.drive_folder_url);if(u.hostname==='drive.google.com')values.push(u.pathname.match(/\/folders\/([A-Za-z0-9_-]+)/)?.[1]||u.searchParams.get('id'));}catch{} }
   const ids=[...new Set(values.filter(v=>typeof v==='string' && v.trim()).map(v=>v.trim()))];
   return ids.length===1 && ID.test(ids[0]) ? ids[0] : '';
@@ -32,15 +33,15 @@ async function canonical(env,modelId) {
     const expected=normalizedPath(legacy),matches=data.items.filter(i=>ID.test(i.drive_folder_id||'')&&(normalizedPath(i.folder_path)===expected || normalizedPath(i.folder_path).endsWith('/'+expected)));
     const ids=[...new Set(matches.map(i=>i.drive_folder_id))];if(ids.length!==1)fail('model_folder_conflict',409);folder=ids[0];
   }
-  const q=new URLSearchParams({pageSize:'100',filterByFormula:`OR({drive_folder_id}="${folder}",{unique_key}="drive:${folder}",{folder_scope_key}="public:drive:${folder}",{folder_scope_key}="private:drive:${folder}",{folder_scope_key}="exclusive:drive:${folder}"${legacy?",{source_folder}="+JSON.stringify(record.fields.source_folder):""})`});
+  const q=new URLSearchParams({pageSize:'100',filterByFormula:`OR({drive_folder_id}="${folder}",{unique_key}="drive:${folder}",{folder_scope_key}="public:drive:${folder}",{folder_scope_key}="private:drive:${folder}",{folder_scope_key}="exclusive:drive:${folder}"${record.fields.folder_scope_key?",{folder_scope_key}="+JSON.stringify(record.fields.folder_scope_key):""}${legacy?",{source_folder}="+JSON.stringify(record.fields.source_folder):""})`});
   const matches=await read('?'+q);
-  if(matches.offset||!Array.isArray(matches.records)||matches.records.length!==1||matches.records[0].id!==modelId)fail('model_folder_conflict',409);
+  if(matches.offset||!Array.isArray(matches.records)||!matches.records.some(r=>r.id===modelId)||matches.records.some(r=>r.id!==modelId && bookingDriveFolder(r.fields)!==folder && (!legacy || !bookingLegacyDrivePath(r.fields) || normalizedPath(r.fields?.source_folder)!==normalizedPath(record.fields.source_folder))))fail('model_folder_conflict',409);
   // Recheck ancestry using the existing signed Model directory, never a browser URL.
   const r=await directory(env,'/__internal/model-drive/resolve',{drive_folder_id:folder});
   const data=await r.json().catch(()=>null);
   if(!r.ok||!data?.ok||data.item?.drive_folder_id!==folder)fail('model_folder_unavailable',r.status>=500?503:409);
   const scope=String(record.fields.folder_scope_key||'');
-  if(scope && scope!==data.item.folder_scope_key)fail('model_folder_scope_conflict',409);
+  if(/^(?:public|private|exclusive):drive:[A-Za-z0-9_-]+$/.test(scope) && scope!==data.item.folder_scope_key)fail('model_folder_scope_conflict',409);
   return {folder,audience:data.item.lane==='public'?'public':'private'};
 }
 async function directory(env,path,payload,method='POST') {
