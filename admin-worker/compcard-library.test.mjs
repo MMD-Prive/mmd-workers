@@ -154,3 +154,23 @@ test('world and work category filters preserve distinct card classifications',as
   const extreme=await(await handleCompcardLibrary(req(API+'?work_type=extreme'),env)).json();assert.equal(extreme.items.length,0);
   assert.equal((await handleCompcardLibrary(req(API+'?world=forged'),env)).status,400);
 });
+test('Drive reuses the deployed OAuth account and verifies its identity before reading archive files',async()=>{
+  const {env,calls}=await driveFixture(),original=env.GOOGLE_DRIVE_HTTP.fetch;
+  delete env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  Object.assign(env,{GOOGLE_DRIVE_CLIENT_ID:'fixture-client',GOOGLE_DRIVE_CLIENT_SECRET:'fixture-secret',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture-refresh'});
+  let refreshes=0;
+  env.GOOGLE_DRIVE_HTTP.fetch=async(input,options)=>{
+    if(String(input)==='https://oauth2.googleapis.com/token'){refreshes++;assert.equal(options.method,'POST');assert.equal(options.body.get('grant_type'),'refresh_token');return Response.json({access_token:'oauth-fixture-only'});}
+    if(String(input).includes('/drive/v3/about?'))return Response.json({user:{emailAddress:'malemodel.bkk@gmail.com'}});
+    return original(input,options);
+  };
+  const source=await readDriveSource(env,'drive_file_000001');assert.deepEqual(source.bytes,jpeg);assert.equal(refreshes,1);assert.ok(calls.length>0);
+});
+test('Drive rejects a different OAuth account or absent credentials without reading archive contents',async()=>{
+  const {env}=await driveFixture();delete env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  Object.assign(env,{GOOGLE_DRIVE_CLIENT_ID:'fixture-client',GOOGLE_DRIVE_CLIENT_SECRET:'fixture-secret',GOOGLE_DRIVE_REFRESH_TOKEN:'fixture-refresh'});
+  const calls=[];env.GOOGLE_DRIVE_HTTP.fetch=async(input)=>{calls.push(String(input));return String(input).includes('/about?')?Response.json({user:{emailAddress:'other@example.invalid'}}):Response.json({access_token:'fixture-only'});};
+  await assert.rejects(readDriveSource(env,'drive_file_000001'),{code:'drive_account_mismatch'});assert.equal(calls.length,2);
+  const missing={COMPCARD_DRIVE_ROOTS_JSON:env.COMPCARD_DRIVE_ROOTS_JSON};
+  await assert.rejects(readDriveSource(missing,'drive_file_000001'),{code:'drive_credentials_not_configured'});
+});

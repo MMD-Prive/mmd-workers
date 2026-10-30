@@ -55,9 +55,13 @@ array of `{ "id": "DRIVE_FOLDER_ID", "name": "Display name", "world": "private",
 archive roots supplied by the owner (Private Standard, Private Premium and Public
 Travel). Configure the Public Travel root with `world: "public"` and
 `work_types: ["travel"]`. The IDs are not
-committed to the public repository. The existing `GOOGLE_SERVICE_ACCOUNT_JSON`
-must have read access to these roots. The connector's interactive Drive access
-does not establish service-account access in the deployed Worker.
+committed to the public repository. The library supports the existing
+`GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET` and
+`GOOGLE_DRIVE_REFRESH_TOKEN` bindings. It verifies the OAuth account against
+`COMPCARD_DRIVE_OWNER_EMAIL` (default `malemodel.bkk@gmail.com`) before reading
+files. `GOOGLE_SERVICE_ACCOUNT_JSON` is also supported when configured, and
+takes precedence. The selected runtime identity must have read access to the
+roots. Interactive connector access does not establish Worker runtime access.
 
 The UI reports missing configuration or access separately from an empty folder.
 Every Drive read rechecks ancestry under one configured root, rejects folders
