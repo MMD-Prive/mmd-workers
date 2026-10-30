@@ -12,7 +12,7 @@ import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 
 export const BASE = '2360dc8a8edb2f13721e43793f7ebbf54f84adec';
-export const LIVE_SOURCE = '23d652828c5c14cf9d59c1f7a0fc64598859decf';
+export const LIVE_SOURCE = '399ac23e8cf3364d5856ad995ea891a8c42c85c8';
 export const RUNTIME = 'eb2896da2c3eecc7c7722d114c478cd0bdcb5127';
 export const OLD_SECTION_SHA = 'c55bc45b68cded8e66562d057048fffc756cc857fceb5a85341b8d4edbc50ffc';
 export const START = '// src/held-document-review-ui.js\n';
