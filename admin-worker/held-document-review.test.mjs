@@ -173,7 +173,7 @@ test('existing Money Control navigation and read-only held view have no payment 
   const { env } = setup(); const normal = await handleMoneyControlWorkerHome(new Request(`${origin}/internal/admin/payments`)).text();
   assert.match(normal, /href="\/internal\/admin\/payments\?view=held-images"/); assert.match(normal, /id="extract-slip"/);
   const response = await run(env, '/internal/admin/payments?view=held-images'); const html = await response.text();
-  assert.match(html, /ภาพรอตรวจ/); assert.match(html, /id="held-viewer"/); assert.match(html, /หน้านี้ไม่มีคำสั่งลบภาพ/);
+  assert.match(html, /สลิปรอตรวจ/); assert.doesNotMatch(html, /ภาพรอตรวจ/); assert.match(html, /id="held-viewer"/); assert.match(html, /หน้านี้ไม่มีคำสั่งลบภาพ/);
   assert.doesNotMatch(html, /id="extract-slip"|id="reject-proof"|id="confirm-decision"|PAYMENT_JOB|\/decision|\/extract|type="file"/);
 });
 test('admin entry intercepts held route before background contact backfill', async () => {

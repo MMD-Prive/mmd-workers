@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { HELD_DOCUMENT_CLIENT } from './src/held-document-review-ui.js';
+import { HELD_DOCUMENT_CLIENT, HELD_REVIEW_COPY } from './src/held-document-review-ui.js';
 const { handleMoneyControlWorkerHome } = await import(process.env.HELD_DOCUMENT_PAGE_MODULE || './src/money-control-worker-home.js');
 const require = createRequire(import.meta.url);
 const { JSDOM } = require(process.env.MMD_UI_TEST_MODULES ? `${process.env.MMD_UI_TEST_MODULES}/jsdom` : 'jsdom');
@@ -64,5 +64,23 @@ test('pagination bounded, deduplicated and escaped; foreign image URL never load
     assert.equal(document.querySelectorAll('.held-row').length, 2); assert.match(calls[1].url, /cursor=opaque_cursor/);
     assert.equal(document.querySelectorAll('.held-row img').length, 0); assert.match(document.querySelector('#held-list').textContent, /<img src=x/);
     assert.equal(document.querySelectorAll('#held-list button').length, 1); assert.equal(document.querySelector('#held-more').hidden, true);
+  } finally { dom.window.close(); }
+});
+
+test('owner label is consistent without treating held images as confirmed bank slips', async () => {
+  const { dom, document } = await boot(() => ok({ items: [{ ...item, reason: 'non_payment' }], next_cursor: null }));
+  try {
+    await settled();
+    assert.equal(HELD_REVIEW_COPY.title, 'สลิปรอตรวจ');
+    assert.equal(HELD_REVIEW_COPY.navigation_label, 'หมวดตรวจสลิป');
+    assert.equal(HELD_REVIEW_COPY.loading, 'กำลังอ่านรายการสลิปรอตรวจ…');
+    assert.equal(document.title, 'สลิปรอตรวจ · Money Control');
+    assert.equal(document.querySelector('h1').textContent, 'สลิปรอตรวจ');
+    assert.equal(document.querySelector('.held-nav a[aria-current="page"]').textContent, 'สลิปรอตรวจ');
+    assert.doesNotMatch(document.body.textContent, /ภาพรอตรวจ/);
+    assert.match(document.querySelector('.lead').textContent, /ภาพที่ระบบยังจัดประเภทไม่ได้/);
+    assert.match(document.querySelector('.notice').textContent, /ยังไม่ยืนยันเงินเข้า/);
+    assert.match(document.querySelector('#held-list').textContent, /ภาพที่ไม่ใช่หลักฐานชำระเงิน/);
+    assert.equal(document.querySelector('[type=file],#confirm-decision,#extract-slip,#reject-proof'), null);
   } finally { dom.window.close(); }
 });

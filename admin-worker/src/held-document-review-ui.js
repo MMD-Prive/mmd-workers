@@ -1,15 +1,15 @@
 // Mirrored shared-catalog keys: admin.held_review.*. Shared-repository merge
 // remains a separate release dependency; this module contains no business rules.
 export const HELD_REVIEW_COPY = Object.freeze({
-  title: 'ภาพรอตรวจ',
-  navigation_label: 'หมวดตรวจภาพ',
+  title: 'สลิปรอตรวจ',
+  navigation_label: 'หมวดตรวจสลิป',
   read_only: 'อ่านอย่างเดียว',
   proofs: 'หลักฐานชำระเงิน',
   lead: 'ภาพที่ระบบยังจัดประเภทไม่ได้ แยกจากหลักฐานชำระเงิน หน้านี้ดูข้อมูลได้อย่างเดียวครับ',
   notice: 'ยังไม่ยืนยันเงินเข้า · ไม่เพิ่มสิทธิ์ · หน้านี้ไม่มีคำสั่งลบภาพ',
   retained_pending_policy: 'ภาพต้นฉบับเก็บไว้รอนโยบายระยะเก็บ',
   legacy_retention_policy: 'ภาพจากคิวพักเดิม ใช้นโยบายระยะเก็บเดิม',
-  loading: 'กำลังอ่านรายการภาพรอตรวจ…',
+  loading: 'กำลังอ่านรายการสลิปรอตรวจ…',
   empty: 'ยังไม่พบภาพในหน้านี้ครับ หากมีหน้าถัดไป ให้กด “ดูรายการถัดไป”',
   error: 'อ่านรายการไม่ได้ครับ ลองโหลดใหม่ หากยังไม่ได้ให้กลับมาใหม่ภายหลัง',
   refresh: 'โหลดใหม่',
