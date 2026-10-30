@@ -1,3 +1,4 @@
+import {RENEWAL} from './member-pages-renewal-artifact.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -791,5 +792,46 @@ test('artifact workflow selects explicit mode under existing owner gate without 
  assert.match(workflow,/options:[\s\S]*- companion-artifact/);
  assert.match(workflow,/RELEASE_MODE: \$\{\{ inputs.execution_mode \}\}/);
  assert.match(workflow,/Install pinned Wrangler bundler\s+if: inputs.execution_mode != 'companion-artifact'/);
- assert.match(workflow,/if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'companion-artifact'\s+env:/);
+ assert.match(workflow,/if: inputs.execution_mode == 'release' \|\| inputs.execution_mode == 'companion-artifact' \|\| inputs.execution_mode == 'renewal-artifact'\s+env:/);
+});
+
+test('Renewal mode rejects stale approval baseline before Cloudflare requests',async()=>{
+ const f=fixture();f.io.mode='renewal-artifact';f.io.sha=RENEWAL.sourceSha;
+ await assert.rejects(releaseMemberPagesCodeOnly(f.io));assert.equal(f.calls.length,0);assert.equal(f.writes(),0);
+});
+const renewalDir=process.env.RENEWAL_ARTIFACT_DIRECTORY;
+for(const kind of ['success','uploaded-code-drift','uploaded-config-drift','owner-denies-promotion','pre-upload-baseline-drift'])test(`Renewal real-artifact release transport: ${kind}`,{skip:!renewalDir},async()=>{
+ const f=fixture(kind==='uploaded-config-drift'?{uploadedVersionChange:v=>{v.resources.bindings.push({name:'unexpected',type:'plain_text',text:'invalid'});return v;}}:kind==='owner-denies-promotion'?{rejectApproval:3}:{});
+ f.io.mode='renewal-artifact';f.io.sha=RENEWAL.sourceSha;
+ f.io.expectedVersion=RENEWAL.baselineVersion;f.io.expectedDeployment=RENEWAL.baselineDeployment;
+ const artifact={id:RENEWAL.baselineVersion,main_module:RENEWAL.mainModule,modules:[
+  {name:'runtime-index.js',content_base64:readFileSync(renewalDir+'/baseline-runtime-index.mjs').toString('base64')},
+  {name:RENEWAL.mainModule,content_base64:readFileSync(renewalDir+'/tmib-release-entry.mjs').toString('base64')},
+ ]};let uploadModules,reads=0;
+ f.io.call=async(path,init={})=>{
+  if(path===VERSION_ROOT+'/'+RENEWAL.baselineVersion+'?include=modules')return structuredClone(artifact);
+  if(path===VERSION_ROOT+'/'+id(2)+'?include=modules')return {id:id(2),main_module:RENEWAL.mainModule,modules:uploadModules.map(m=>({...m,content_base64:kind==='uploaded-code-drift'&&m.name==='runtime-index.js'?Buffer.from('tampered').toString('base64'):m.content_base64}))};
+  if(path===ROOT+'/versions?bindings_inherit=strict'&&init.method==='POST'){
+   assert.deepEqual([...init.body.keys()].sort(),['metadata','runtime-index.js',RENEWAL.mainModule].sort());
+   const metadata=JSON.parse(init.body.get('metadata'));assert.equal(metadata.main_module,RENEWAL.mainModule);
+   assert.ok(metadata.bindings.every(b=>b.type==='inherit'));
+   assert.equal(metadata.annotations['workers/commit_sha'],undefined);
+   uploadModules=await Promise.all(['runtime-index.js',RENEWAL.mainModule].map(async name=>({name,content_base64:Buffer.from(await init.body.get(name).arrayBuffer()).toString('base64')})));
+   assert.equal(uploadModules.find(m=>m.name===RENEWAL.mainModule).content_base64,artifact.modules[1].content_base64);
+  }
+  const mapped=path.replace(RENEWAL.baselineVersion,id(1)).replace(RENEWAL.baselineDeployment,id(10));
+  let result=await f.call(mapped,init);
+  if(path===ROOT+'/deployments'&&(!init.method||init.method==='GET')&&++reads>=2&&kind==='pre-upload-baseline-drift')result={deployments:[deployment(id(99),id(99))]};
+  return JSON.parse(JSON.stringify(result).replaceAll(id(1),RENEWAL.baselineVersion).replaceAll(id(10),RENEWAL.baselineDeployment));
+ };
+ if(kind==='success'){
+  const result=await releaseMemberPagesCodeOnly(f.io);assert.equal(result.phase,'complete');
+  assert.equal(result.bundle_sha256,RENEWAL.candidateSha256);assert.equal(result.preserved_wrapper_sha256,RENEWAL.wrapperSha256);
+  assert.equal(f.writes(),2);
+ }else{
+  await assert.rejects(releaseMemberPagesCodeOnly(f.io));
+  assert.equal(f.writes(),kind==='pre-upload-baseline-drift'?0:1);
+  assert.equal(f.receipts.at(-1).phase,'stopped');
+ }
+ assert.ok(f.calls.filter(c=>c.method==='POST').every(c=>[ROOT+'/versions?bindings_inherit=strict',ROOT+'/deployments'].includes(c.path)));
 });
