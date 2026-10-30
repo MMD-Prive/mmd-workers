@@ -9,7 +9,7 @@ function compcardClient(copy) {
   const API='/v1/admin/compcards', $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const labels=copy.status;
   const errors=copy.errors;
-  let tab='library',cursor=null,folder='',rows=[],stack=[],busy=false,selected=new Set(),active=null,modelId='',models=[],viewSequence=0;
+  let tab='library',cursor=null,folder='',rows=[],stack=[],busy=false,pendingSearch=false,selected=new Set(),active=null,modelId='',models=[],viewSequence=0;
   const say=(s,bad=false)=>{$('status').textContent=s;$('status').dataset.error=String(bad);};
   async function api(path,options={}){const r=await fetch(API+path,{credentials:'same-origin',cache:'no-store',...options});let d;try{d=await r.json();}catch{throw Error('อ่านคำตอบไม่ได้ กรุณาลองใหม่');}if(!r.ok||!d.ok)throw Error(errors[d.error]||'ยังทำรายการไม่ได้ กรุณาลองใหม่');return d;}
   const send=(path,body,method='POST')=>api(path,{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});
@@ -26,7 +26,7 @@ function compcardClient(copy) {
     $('crumbs').innerHTML=tab==='drive'?'<button data-root>โฟลเดอร์หลัก</button>'+(stack.length?'<button data-back>ย้อนกลับ</button>':'')+(folder?'<small class="sourcepath">'+esc(folder)+'</small>':''):'';
   }
   async function load(append=false){
-    if(busy)return;busy=true;const sequence=++viewSequence;say('กำลังโหลด…');$('more').disabled=true;
+    if(busy){if(!append)pendingSearch=true;return;}busy=true;const sequence=++viewSequence;say('กำลังโหลด…');$('more').disabled=true;
     if(!append){rows=[];selected.clear();draw();}
     try{
       const p=new URLSearchParams();if(append&&cursor)p.set('cursor',cursor);
@@ -39,7 +39,7 @@ function compcardClient(copy) {
       cursor=d.next_cursor||null;draw();
       if(d.path)$('crumbs').insertAdjacentHTML('beforeend','<small class="sourcepath">'+esc(d.path)+'</small>');
       say('แสดง '+rows.length+' รายการ'+(cursor?' · ยังมีรายการให้โหลดต่อ':''));
-    }catch(e){say(e.message,true);}finally{busy=false;$('more').disabled=false;}
+    }catch(e){say(e.message,true);}finally{busy=false;$('more').disabled=false;if(pendingSearch){pendingSearch=false;load();}}
   }
   function setTab(value){if(busy)return;tab=value;cursor=null;rows=[];selected.clear();folder='';stack=[];
     document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===tab)));
