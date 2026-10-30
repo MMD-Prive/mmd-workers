@@ -1,4 +1,5 @@
 import { PAYMENT_JOB_SUGGESTIONS_SCRIPT } from "./payment-job-suggestions.mjs";
+import { heldDocumentNavigation, renderHeldDocumentPage } from './held-document-review-ui.js';
 // Payment authority remains payments-worker; this view only displays evidence and submits existing review actions.
 const PAGE = `<!doctype html>
 <html lang="th">
@@ -157,5 +158,7 @@ export function handleMoneyControlWorkerHome(request) {
     "referrer-policy": "same-origin",
     "x-robots-tag": "noindex, nofollow",
   });
-  return new Response(request.method === "HEAD" ? null : PAGE, { status: 200, headers });
+  const held = new URL(request.url).searchParams.get('view') === 'held-images';
+  const page = held ? renderHeldDocumentPage(PAGE) : PAGE.replace('<main>', `<main>${heldDocumentNavigation(false)}`);
+  return new Response(request.method === "HEAD" ? null : page, { status: 200, headers });
 }
