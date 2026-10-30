@@ -112,13 +112,13 @@ test("canonical My MMD HTML receives the pending Wish bridge without moving coup
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = typeof input === "string" ? input : input.url;
-    if (String(url).startsWith("https://my-mmd-member-profile.lovable.app")) {
-      return new Response("<!doctype html><html><head><title>My MMD</title></head><body><main>Lovable app</main></body></html>", {
+    if (String(url).startsWith("https://mmdprive.webflow.io/member/dashboard?")) {
+      return new Response('<!doctype html><html><head><title>My MMD</title></head><body><main class="mymmd-wf">Webflow Home</main></body></html>', {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     }
-    return originalFetch(input);
+    throw new Error("Unexpected fixture upstream");
   };
 
   try {
