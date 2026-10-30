@@ -23,3 +23,7 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts
       - run: npm run test:compcard-library
+      - name: Verify the browser client after bundler name preservation
+        run: |
+          npx --yes esbuild@0.25.0 admin-worker/src/compcard-library-page.js --bundle --keep-names --platform=browser --format=esm --outfile="$RUNNER_TEMP/compcard-library-page.mjs"
+          COMPCARD_UI_MODULE="$RUNNER_TEMP/compcard-library-page.mjs" node --test admin-worker/compcard-library-ui.test.mjs
