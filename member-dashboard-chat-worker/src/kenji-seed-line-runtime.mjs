@@ -1,3 +1,5 @@
+import { emsAlbumNavigationReply } from "../../shared/ems-album-navigation.mjs";
+import { isEmsAlbumQuestion, EMS_ALBUMS_URL } from "./my-mmd-ems-albums.mjs";
 import { richMenuNavigation, resolveRichMenuNavigation } from "./rich-menu-navigation-reply.mjs";
 import { isCheckptsShortcut, resolveCheckptsShortcut, richMenuConversationStart, resolveRichMenuConversation } from "./rich-menu-conversation.mjs";
 import { CHECKPTS_INTAKE } from "./checkpts-command.mjs";
@@ -248,6 +250,9 @@ function continuityMetadata(options = {}, inferredIntent = "") {
 }
 
 export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {}) {
+  if (event?.source?.type === "user" && event?.message?.type === "text" && isEmsAlbumQuestion(event.message.text)) {
+    return withDecisionMetadata({}, { ...emsAlbumNavigationReply(), reply_source: "my_mmd_ems_albums_v1", reply_button: { uri: EMS_ALBUMS_URL } });
+  }
   const raw = event?.type === "message" && event?.message?.type === "text"
     ? text(event.message.text)
     : event?.type === "postback"
@@ -532,7 +537,7 @@ export async function writeKenjiAiMessageEvent({ env = {}, event = {}, decision 
   }
 }
 
-async function sendReply(env = {}, replyToken = "", replyText = "") {
+async function sendReply(env = {}, replyToken = "", replyText = "", replyButton = null) {
   const token = text(env.LINE_CHANNEL_ACCESS_TOKEN);
   const reply = text(replyToken);
   const answer = text(replyText).slice(0, 1600);
@@ -544,7 +549,8 @@ async function sendReply(env = {}, replyToken = "", replyText = "") {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ replyToken: reply, messages: [{ type: "text", text: answer }] }),
+      body: JSON.stringify({ replyToken: reply, messages: [{ type: "text", text: answer,
+        ...(replyButton?.uri === EMS_ALBUMS_URL ? { quickReply: { items: [{ type: "action", action: { type: "uri", label: "ดูอัลบั้ม EMs", uri: EMS_ALBUMS_URL } }] } } : {}) }] }),
     });
     return response.ok
       ? { ok: true, status: response.status }
@@ -663,13 +669,14 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const navigation = richMenuNavigation(event);
     const supportButtonTap = navigation?.button === 5 && ["guest", "public"].includes(navigation.menu);
     const checkptsShortcut = isCheckptsShortcut(event);
+    const emsAlbumQuestion = event?.type === "message" && event?.message?.type === "text" && isEmsAlbumQuestion(event.message.text);
     // General replies stay paused. Rich Menu postbacks use fixed menu replies;
     // only Guest/Public SUPPORT taps may enter the bounded Per AI lane.
     let menuCommandEnabled = Boolean(navigation && (autoReplyEnabled || supportReplyEnabled) && directUser &&
       eventMode !== "standby" && !redelivered && replyToken);
     const rawText = event?.message?.text || event?.postback?.displayText || event?.postback?.data || "";
     const intakeCommand = lineIntakeCommand(event);
-    const currentIntent = intakeCommand ? ({ package: "membership_package", regis: "private_membership_signup", apply: "model_application" }[intakeCommand])
+    const currentIntent = emsAlbumQuestion ? "model_browse" : intakeCommand ? ({ package: "membership_package", regis: "private_membership_signup", apply: "model_application" }[intakeCommand])
       : checkptsShortcut ? "points_status" : navigation ? "rich_menu_navigation" : support ? "support" : refineKenjiSalesIntent(rawText, inferLineIntent(rawText, event));
     const continuity = continuityEnabled && directUser && ((!support && !navigation) || menuCommandEnabled)
       ? await resolveKenjiLineContinuity({ env, event, currentIntent })
@@ -686,13 +693,13 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     const supportConversation = supportReplyEnabled &&
       continuity.matrix?.payload_json?.rich_menu_v1?.entry === "per_support_button" &&
       continuity.matrix?.payload_json?.rich_menu_v1?.topic === "support";
-    const intakeTopic = !checkptsShortcut && !navigation && !support ? lineIntakeTopic(event, continuity) : "";
+    const intakeTopic = !emsAlbumQuestion && !checkptsShortcut && !navigation && !support ? lineIntakeTopic(event, continuity) : "";
     const intakeRequested = Boolean(intakeTopic);
     const intakeAge = Date.now() - Number(event.timestamp);
     let intakeEnabled = Boolean(intakeRequested && supportReplyEnabled && continuity.available === true && directUser &&
       /^U[a-f0-9]{32}$/i.test(text(event.source?.userId)) && eventMode !== "standby" && !redelivered && replyToken &&
       Number.isFinite(intakeAge) && intakeAge >= -60000 && intakeAge <= 300000);
-    const menuConversation = !intakeRequested && !checkptsShortcut && !navigation && !support && (eventAutoReplyEnabled || supportConversation) &&
+    const menuConversation = !emsAlbumQuestion && !intakeRequested && !checkptsShortcut && !navigation && !support && (eventAutoReplyEnabled || supportConversation) &&
       enabled(env.LINE_KENJI_AI_ENABLED) && enabled(env.LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED) &&
       directUser && eventMode !== "standby" && !redelivered && replyToken
       ? resolveRichMenuConversation(event, continuity) : null;
@@ -702,7 +709,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       eventMode !== "standby" && !redelivered && replyToken);
     // Exact Points aliases always use the same shortcut, even during SUPPORT.
     // Other rights sentences retain their existing bounded command behavior.
-    const rightsOutcome = checkptsShortcut || (supportConversation && menuConversation)
+    const rightsOutcome = emsAlbumQuestion || checkptsShortcut || (supportConversation && menuConversation)
       ? null : await handleLineRightsCheck({ env, event, runtime });
     if (rightsOutcome) {
       saved.push(rightsOutcome);
@@ -760,7 +767,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         currentRuntime.controls?.all_kenji_mutations !== true && currentRuntime.controls?.line_oa_auto_reply !== true &&
         owner.ok === true && owner.active !== true;
     }
-    const liveTruth = !intakeRequested && !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
+    const liveTruth = !emsAlbumQuestion && !intakeRequested && !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken
       ? await resolveKenjiLineLiveTruth({ env, event, intent: effectiveIntent })
       : { ok: false, status: "not_attempted", authority: "my_mmd_entitlement_resolver_v1" };
     const liveAvailability = !intakeRequested && !support && !navigation && !menuConversation && !checkptsShortcut && directUser && eventAutoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken &&
@@ -810,14 +817,25 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       : baseDecision;
     const decision = firstContactEnabled && !autoReplyEnabled
       ? firstContactFallback
-      : intakeRequested || navigation || support || menuConversation || checkptsShortcut || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
+      : emsAlbumQuestion || intakeRequested || navigation || support || menuConversation || checkptsShortcut || firstContactFallback.reply_pack_version ? firstContactFallback : applyKenjiNextAction(firstContactFallback, {
       intent: text(firstContactFallback.intent || effectiveIntent),
       continuity,
     });
     // OA Manager sends the add-friend greeting. A follow event must not get a
     // second Worker greeting, even if the broader reply flag is enabled later.
-    const shouldReply = Boolean(directUser && (intakeEnabled || eventAutoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled || checkptsShortcutEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
-    const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
+    let emsOwnerClear = true;
+    if (emsAlbumQuestion && directUser && decision.text) {
+      const fresh = await resolveKenjiLineContinuity({ env, event, currentIntent }).catch(() => ({ available: false }));
+      const [currentRuntime, owner] = await Promise.all([
+        requestKenjiRuntimeStatus(env),
+        getLineOwnerTakeoverState(env, event.source.userId, fresh, { signal: AbortSignal.timeout(1500) }).catch(() => ({ ok: false })),
+      ]);
+      emsOwnerClear = fresh.available === true && currentRuntime.ok === true &&
+        currentRuntime.controls?.all_kenji_mutations !== true && currentRuntime.controls?.line_oa_auto_reply !== true &&
+        owner.ok === true && owner.active !== true;
+    }
+    const shouldReply = Boolean(emsOwnerClear && directUser && (intakeEnabled || eventAutoReplyEnabled || firstContactEnabled || menuCommandEnabled || menuConversationEnabled || checkptsShortcutEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
+    const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text, decision.reply_button) : null;
     const delivered = replyResult?.ok === true;
 
     const postTurnWork = (async () => {
