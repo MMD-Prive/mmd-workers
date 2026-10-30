@@ -254,7 +254,7 @@ test("returns a bounded verified SVIP truth projection without raw LINE identity
   assert.equal(serialized.includes(TEST_KEY), false);
 });
 
-test("membership_status uses lightweight canonical entitlement resolver without full Customer360 profile", async () => {
+test("membership_status uses the canonical LIFF profile resolver before entitlement fallback", async () => {
   let airtableCalls = 0;
   let fullProfileCalls = 0;
   const env = {
@@ -284,7 +284,15 @@ test("membership_status uses lightweight canonical entitlement resolver without 
     MEMBER_STATUS_RESOLVER: {
       async fetch() {
         fullProfileCalls += 1;
-        throw new Error("full_profile_must_not_run");
+        return Response.json({
+          ok: true,
+          data: {
+            member_exists: true,
+            member_id: "member-test",
+            profile: { display_name: "Joeka" },
+            entitlement_snapshot: verifiedSnapshot(),
+          },
+        });
       },
     },
     MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
@@ -299,7 +307,7 @@ test("membership_status uses lightweight canonical entitlement resolver without 
   assert.equal(payload.ok, true);
   assert.equal(payload.authority, "my_mmd_entitlement_resolver_v1");
   assert.equal(payload.identity_status, "resolved");
-  assert.equal(payload.display_name, "");
+  assert.equal(payload.display_name, "Joeka");
   assert.equal(payload.membership.level, "svip");
   assert.equal(payload.membership.label, "SVIP");
   assert.equal(payload.membership.lifecycle, "active");
@@ -309,8 +317,8 @@ test("membership_status uses lightweight canonical entitlement resolver without 
   assert.equal(payload.resolver_snapshot.fail_closed, true);
   assert.deepEqual(payload.resolver_snapshot.capability_state.active, ["svip"]);
   assert.deepEqual(payload.points, { status: "unavailable", active_points: null });
-  assert.equal(airtableCalls, 1);
-  assert.equal(fullProfileCalls, 0);
+  assert.equal(airtableCalls, 0);
+  assert.equal(fullProfileCalls, 1);
   assert.equal(JSON.stringify(payload).includes(LINE_USER_ID), false);
 });
 
@@ -401,7 +409,33 @@ test("fails closed when canonical entitlement snapshot is not verified", async (
   assert.equal(response.status, 503);
   const payload = await response.json();
   assert.equal(payload.ok, false);
-  assert.equal(payload.status, "unavailable");
+  assert.equal(payload.status, "projection_invalid");
+});
+
+test("membership_status preserves unresolved identity and does not manufacture membership", async () => {
+  const response = await handleKenjiLineMemberTruth(request(), {
+    MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
+    MEMBER_STATUS_RESOLVER: { async fetch() { return Response.json({ ok: true, data: { member_exists: false } }); } },
+    AIRTABLE_API_KEY: "test-airtable-token",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+    AIRTABLE_HTTP: { async fetch() { return Response.json({ records: [] }); } },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    status: "identity_unresolved",
+    failure_class: "identity_unresolved",
+    authority: "my_mmd_entitlement_resolver_v1",
+  });
+});
+
+test("membership_status distinguishes resolver upstream failure", async () => {
+  const response = await handleKenjiLineMemberTruth(request(), {
+    MEMBER_STATUS_RESOLVER_SECRET: TEST_KEY,
+    MEMBER_STATUS_RESOLVER: { async fetch() { return new Response("failure", { status: 503 }); } },
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).failure_class, "upstream_error");
 });
 
 test("projection does not turn blocked membership into an active grant", () => {
