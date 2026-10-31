@@ -186,15 +186,45 @@ async function media(request, env, value, photoId, download, isOwner) {
   if (!original && (!variant || variant.contentType !== "image/webp" || !Number.isSafeInteger(variant.bytes)
     || variant.bytes <= 0 || variant.bytes > MAX_PREVIEW || !/^[a-f0-9]{64}$/.test(variant.sha256))) fail("preview_unavailable", 503);
   const object = await store(env).get((original ? mediaKey : previewKey)(value.id, photoId));
-  if (!object || object.size !== variant.bytes || object.httpMetadata?.contentType !== variant.contentType ||
+  let responseBody;
+  if (variant?.storageEncoding === "base64") {
+    responseBody = await readManagedBase64Media(object, variant, original ? MAX_PHOTO : MAX_PREVIEW);
+  } else {
+    // Existing browser imports retain their exact binary metadata checks.
+    if (!object || object.size !== variant.bytes || object.httpMetadata?.contentType !== variant.contentType ||
       object.customMetadata?.sha256 !== variant.sha256 || object.customMetadata?.shortlist_id !== value.id ||
       (!original && object.customMetadata?.variant !== "preview")) fail("media_unavailable", 503);
+    responseBody = object.body;
+  }
   // No redirect or public R2/Drive URL ever leaves this boundary.
   // Partner previews never fall back to the original, even if a preview is missing.
-  return new Response(request.method === "HEAD" ? null : object.body, { headers: { ...securityHeaders,
+  return new Response(request.method === "HEAD" ? null : responseBody, { headers: { ...securityHeaders,
     "content-type": variant.contentType, "content-length": String(variant.bytes),
     "content-disposition": (download ? "attachment" : "inline") + '; filename="model-photo.' + MIME.get(variant.contentType) + '"',
   } });
+}
+// Only private records created by authenticated owner-management tooling may
+// explicitly select this transport. Browser imports remain binary. Verify the
+// decoded bytes themselves because that management transport lacks R2 metadata.
+async function readManagedBase64Media(object, variant, limit) {
+  if (!MIME.has(variant.contentType) || !Number.isSafeInteger(variant.bytes) || variant.bytes <= 0 || variant.bytes > limit
+    || !/^[a-f0-9]{64}$/.test(variant.sha256)) fail("media_unavailable", 503);
+  const encodedLength = 4 * Math.ceil(variant.bytes / 3);
+  if (!object || object.size !== encodedLength || object.httpMetadata?.contentType !== "application/x-mmd-base64") fail("media_unavailable", 503);
+  try {
+    const encodedBytes = await bytes(object.body, encodedLength);
+    if (encodedBytes.length !== encodedLength) fail("media_unavailable", 503);
+    const encoded = new TextDecoder("utf-8", { fatal: true }).decode(encodedBytes);
+    // atob alone accepts whitespace and non-canonical pad bits. Round-tripping
+    // enforces the exact padded RFC 4648 representation, without normalization.
+    const binary = atob(encoded);
+    if (binary.length !== variant.bytes || btoa(binary) !== encoded) fail("media_unavailable", 503);
+    const decoded = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) decoded[i] = binary.charCodeAt(i);
+    checkImage(decoded, variant.contentType);
+    if (await hash(decoded) !== variant.sha256) fail("media_unavailable", 503);
+    return decoded;
+  } catch { fail("media_unavailable", 503); }
 }
 function checkImage(data, mime) {
   const head = new TextDecoder("latin1").decode(data.slice(0, 12));
