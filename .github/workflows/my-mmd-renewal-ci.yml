@@ -7,6 +7,10 @@ on:
       - 'payments-worker/reviewed-*'
       - 'shared/membership-promotion-policy*'
       - 'scripts/payments-confirmation-release-guard*'
+      - 'scripts/member-pages-renewal-activation*'
+      - 'payments-worker/renewal-pending-readback.test.mjs'
+      - 'webflow/pay/checkout/**'
+      - 'workers/member-renewal-checkout-presentation/**'
       - '.github/workflows/my-mmd-renewal-ci.yml'
 permissions:
   contents: read
@@ -19,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - run: node --test member-pages-worker/test/liff-renewal-*.test.mjs member-pages-worker/test/renewal-offer.test.mjs member-pages-worker/test/liff-payment-binding.test.mjs payments-worker/renewal-payment-intent.test.mjs payments-worker/canonical-web-renewal-settlement.test.mjs payments-worker/reviewed-membership-write-through.test.mjs payments-worker/reviewed-proof-line-recovery.test.mjs shared/membership-promotion-policy.test.mjs scripts/payments-confirmation-release-guard.test.mjs
+      - run: node --test member-pages-worker/test/liff-renewal-*.test.mjs member-pages-worker/test/renewal-offer.test.mjs member-pages-worker/test/liff-payment-binding.test.mjs payments-worker/renewal-payment-intent.test.mjs payments-worker/canonical-web-renewal-settlement.test.mjs payments-worker/reviewed-membership-write-through.test.mjs payments-worker/reviewed-proof-line-recovery.test.mjs shared/membership-promotion-policy.test.mjs scripts/payments-confirmation-release-guard.test.mjs scripts/member-pages-renewal-activation.test.mjs payments-worker/renewal-pending-readback.test.mjs webflow/pay/checkout/footer.test.mjs webflow/pay/checkout/renewal-finish.test.mjs workers/member-renewal-checkout-presentation/renewal-checkout-response.test.mjs
       - run: npm ci --prefix member-pages-worker/test-runtime --ignore-scripts --no-audit --no-fund
       - run: npm run check --prefix member-pages-worker/test-runtime
       - run: npm test --prefix member-pages-worker/test-runtime

@@ -1,0 +1,9 @@
+{
+  "version": "b9220119-94cc-4415-b373-358a3f627f5c",
+  "deployment": "405c5a6a-f136-4eac-bf8e-e9132e8a8f13",
+  "percentage": 100,
+  "mainModule": "runtime-index.js",
+  "moduleHashes": {
+    "runtime-index.js": "ed8c52f4ec843c0dd901bc960e3795cd29c61e0e7ef1e8b6242a0cd72ca0bbeb"
+  }
+}
