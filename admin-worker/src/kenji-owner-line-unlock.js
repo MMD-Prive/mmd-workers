@@ -21,12 +21,22 @@ export function globalUnlockReady(controls) {
     && all?.enabled === true && Number.isSafeInteger(all.version) && all.version > 0;
 }
 
+export function modelUnlockReady(controls) {
+  const line = controls?.line_oa_auto_reply;
+  const model = controls?.model_keyword_auto_reply;
+  const all = controls?.all_kenji_mutations;
+  return line?.enabled === false && Number.isSafeInteger(line.version) && line.version > 0
+    && model?.enabled === true && Number.isSafeInteger(model.version) && model.version > 0
+    && all?.enabled === false && Number.isSafeInteger(all.version) && all.version > 0;
+}
+
 // Static browser source must not capture Wrangler's Worker-only name helpers.
 export const OWNER_LINE_CLIENT = [
-  "function installOwnerLineUnlock(ready, globalReady) {",
+  "function installOwnerLineUnlock(ready, globalReady, modelReady) {",
   "  const root = document.getElementById('kenji-owner-line-unlock');",
   "  const button = root.querySelector('button');",
   "  const globalButton = root.querySelector('[data-global-unlock]');",
+  "  const modelButton = root.querySelector('[data-model-unlock]');",
   "  const refresh = root.querySelector('[data-refresh]');",
   "  const output = root.querySelector('[role=\"status\"]');",
   "  const readUrl = '/internal/ceo/kenji-control?kenji_line_unlock_state=1';",
@@ -48,19 +58,19 @@ export const OWNER_LINE_CLIENT = [
   "    const line = controls?.line_oa_auto_reply;",
   "    const model = controls?.model_keyword_auto_reply;",
   "    const all = controls?.all_kenji_mutations;",
-  "    output.textContent = `Pause รวม: ${all?.enabled === true ? 'ACTIVE' : all?.enabled === false ? 'CLEAR' : 'UNKNOWN'} (v${all?.version ?? '?'}) · LINE kill switch: ${line?.version > 0 ? line.enabled === true ? 'ACTIVE' : line.enabled === false ? 'CLEAR' : 'UNKNOWN' : 'UNKNOWN'} (v${line?.version ?? '?'}) · Model kill switch: ${model?.enabled === true && model?.version > 0 ? 'ACTIVE' : 'UNKNOWN / NOT ACTIVE'} (v${model?.version ?? '?'}) · ไม่เปลี่ยน model flag`;",
+  "    output.textContent = `Pause รวม: ${all?.enabled === true ? 'ACTIVE' : all?.enabled === false ? 'CLEAR' : 'UNKNOWN'} (v${all?.version ?? '?'}) · LINE kill switch: ${line?.version > 0 ? line.enabled === true ? 'ACTIVE' : line.enabled === false ? 'CLEAR' : 'UNKNOWN' : 'UNKNOWN'} (v${line?.version ?? '?'}) · Model kill switch: ${model?.version > 0 ? model.enabled === true ? 'ACTIVE' : model.enabled === false ? 'CLEAR' : 'UNKNOWN' : 'UNKNOWN'} (v${model?.version ?? '?'}) · ไม่เปลี่ยน model flag`;",
   "  }",
   "  async function load() {",
   "    if (busy) return;",
-  "    busy = true; button.disabled = true; globalButton.disabled = true; refresh.disabled = true;",
+  "    busy = true; button.disabled = true; globalButton.disabled = true; modelButton.disabled = true; refresh.disabled = true;",
   "    try { state = await read(); show(state); }",
   "    catch { state = null; output.textContent = 'อ่าน controls ไม่สำเร็จ — ไม่อนุญาตให้ปลด'; }",
-  "    finally { busy = false; refresh.disabled = false; button.disabled = !ready(state); globalButton.disabled = !globalReady(state); }",
+  "    finally { busy = false; refresh.disabled = false; button.disabled = !ready(state); globalButton.disabled = !globalReady(state); modelButton.disabled = !modelReady(state); }",
   "  }",
   "  globalButton.addEventListener('click', async () => {",
   "    if (busy || !globalReady(state)) return;",
   "    if (!root.querySelector('[data-owner-confirm]').checked) return;",
-  "    busy = true; button.disabled = true; globalButton.disabled = true; refresh.disabled = true;",
+  "    busy = true; button.disabled = true; globalButton.disabled = true; modelButton.disabled = true; refresh.disabled = true;",
   "    const before = state;",
   "    state = null;",
   "    try {",
@@ -83,13 +93,41 @@ export const OWNER_LINE_CLIENT = [
   "      output.textContent = `ปลด Pause รวมและตรวจ readback สำเร็จ (v${result.version}) · มี audit · Pause LINE และ Pause Model คงเดิม · กดอ่านสถานะใหม่เพื่อปลด LINE แยก`;",
   "    } catch {",
   "      output.textContent = 'ยังยืนยันการปลด Pause รวมไม่ได้ — ไม่มีการ retry อัตโนมัติ กดอ่านสถานะใหม่ก่อนดำเนินการต่อ';",
-  "    } finally { busy = false; refresh.disabled = false; button.disabled = true; globalButton.disabled = true; }",
+  "    } finally { busy = false; refresh.disabled = false; button.disabled = true; globalButton.disabled = true; modelButton.disabled = true; }",
+  "  });",
+  "  modelButton.addEventListener('click', async () => {",
+  "    if (busy || !modelReady(state)) return;",
+  "    if (!root.querySelector('[data-owner-confirm]').checked) return;",
+  "    busy = true; button.disabled = true; globalButton.disabled = true; modelButton.disabled = true; refresh.disabled = true;",
+  "    const before = state;",
+  "    state = null;",
+  "    try {",
+  "      const current = await read();",
+  "      if (!modelReady(current) || !Object.keys(before).every(scope => same(before[scope], current[scope]))) throw new Error('state_changed');",
+  "      const expected = current.model_keyword_auto_reply.version;",
+  "      const result = await request('/v1/admin/kenji/control/runtime/kill-switch', {",
+  "        method: 'POST', headers: { 'Content-Type': 'application/json',",
+  "          'Idempotency-Key': `owner-model-unlock-${crypto.randomUUID()}` },",
+  "        body: JSON.stringify({ scope: 'model_keyword_auto_reply', enabled: false, expected_version: expected,",
+  "          reason: 'Owner explicitly approved named-model replies only; preserve global and LINE controls and all feature flags; no CARE BACK' })",
+  "      });",
+  "      if (result.scope !== 'model_keyword_auto_reply' || result.enabled !== false",
+  "        || result.version !== expected + 1 || !result.audit_id) throw new Error('action_unconfirmed');",
+  "      const after = await read();",
+  "      if (after.model_keyword_auto_reply?.enabled !== false || after.model_keyword_auto_reply.version !== result.version",
+  "        || !same(after.line_oa_auto_reply, before.line_oa_auto_reply)",
+  "        || !same(after.all_kenji_mutations, before.all_kenji_mutations)) throw new Error('readback_failed');",
+  "      state = after;",
+  "      output.textContent = `ปลด Pause Model และตรวจ readback สำเร็จ (v${result.version}) · มี audit · Pause รวมและ LINE คงเดิม · ไม่เปลี่ยนโหมดตอบเฉพาะนายแบบหรือเปิด CARE BACK`;",
+  "    } catch {",
+  "      output.textContent = 'ยังยืนยันการปลด Pause Model ไม่ได้ — ไม่มีการ retry อัตโนมัติ กดอ่านสถานะใหม่ก่อนดำเนินการต่อ';",
+  "    } finally { busy = false; refresh.disabled = false; button.disabled = true; globalButton.disabled = true; modelButton.disabled = true; }",
   "  });",
   "  refresh.addEventListener('click', load);",
   "  button.addEventListener('click', async () => {",
   "    if (busy || !ready(state)) return;",
   "    if (!root.querySelector('[data-owner-confirm]').checked) return;",
-  "    busy = true; button.disabled = true; globalButton.disabled = true; refresh.disabled = true;",
+  "    busy = true; button.disabled = true; globalButton.disabled = true; modelButton.disabled = true; refresh.disabled = true;",
   "    const before = state;",
   "    state = null;",
   "    try {",
@@ -122,12 +160,13 @@ export const OWNER_LINE_CLIENT = [
 export function ownerLinePanel() {
   return `<section id="kenji-owner-line-unlock" aria-label="Owner LINE safe control" style="margin:16px;padding:20px;border:1px solid #777;background:#171717;color:#fff;border-radius:12px">
 <h2>Owner · LINE Safe Walk</h2><p>ปลดเฉพาะ LINE auto-reply kill switch ผ่าน control API เดิม ไม่แก้ model flag, model kill switch, secrets หรือ routes</p>
-<label style="display:block;margin:12px 0"><input type="checkbox" data-owner-confirm> ยืนยันปลด Pause ตามปุ่มที่เลือก โดยคง Pause Model ไว้ (ปลด Pause รวมแล้วการแก้ข้อมูลกลับมาทำงานตามสิทธิ์เดิม)</label>
+<label style="display:block;margin:12px 0"><input type="checkbox" data-owner-confirm> ยืนยันปลดเฉพาะ Pause ตามปุ่มที่เลือก โดยคง Pause อื่นและโหมดการตอบเดิม (Pause รวมมีผลต่อการแก้ข้อมูล)</label>
 <button type="button" disabled style="min-height:44px">ปลดเฉพาะ LINE kill switch</button>
 <button type="button" data-global-unlock disabled style="min-height:44px">ปลด Pause รวม · คง Pause LINE และ Model</button>
+<button type="button" data-model-unlock disabled style="min-height:44px">ปลดเฉพาะ Pause Model</button>
 <button type="button" data-refresh style="min-height:44px">อ่านสถานะใหม่</button>
 <p role="status" aria-live="polite">กำลังอ่าน controls — ยังไม่อนุญาตให้ปลด</p></section>
-<script>(${OWNER_LINE_CLIENT})(${lineUnlockReady.toString()}, ${globalUnlockReady.toString()});</script>`;
+<script>(${OWNER_LINE_CLIENT})(${lineUnlockReady.toString()}, ${globalUnlockReady.toString()}, ${modelUnlockReady.toString()});</script>`;
 }
 
 export async function handleOwnerLinePage(request, env, actor, page) {
