@@ -12,6 +12,7 @@ const AUTHORITY = "my_mmd_entitlement_resolver_v1";
 const event = text => ({ type: "message", mode: "active", replyToken: "fixture-reply", timestamp: Date.now(),
   webhookEventId: "fixture-event", source: { type: "user", userId: UID }, message: { id: "fixture-message", type: "text", text } });
 const truth = () => ({ ok: true, authority: AUTHORITY, identity_status: "resolved",
+  display_name: "Fixture Member",
   membership: { level: "private_premium", label: "Premium", lifecycle: "active", expire_at: "2027-01-01" },
   points: { status: "verified", active_points: 120 } });
 
@@ -144,7 +145,7 @@ for (const options of [{ owner: true }, { matrixOwner: true }, { ownerUnavailabl
   { runtimeUnavailable: true }, { invalidSignature: true }, { event: { mode: "standby" } },
   { event: { deliveryContext: { isRedelivery: true } } }, { event: { replyToken: "" } },
   { env: { LINE_KENJI_AI_ENABLED: "false" } }, { env: { KENJI_LINE_CONTINUITY_ENABLED: "false" } },
-  { env: { LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: "false" } }]) {
+  ]) {
   test(`shared command gate blocks before truth: ${JSON.stringify(options)}`, async () => {
     for (const command of ALIASES) {
       const { calls } = await run(command, options);
@@ -204,10 +205,45 @@ test("snapshot miss reads canonical membership without accepting its profile Poi
   }
 });
 
-test("a usable snapshot needs no extra membership read", async () => {
+test("a usable snapshot with a canonical name needs no extra membership read", async () => {
   const { calls } = await run("checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" } });
   assert.equal(calls.truth.length, 1);
   assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
+});
+
+test("snapshot name is read canonically without replacing its guarded Points or adding campaign claims", async () => {
+  for (const command of ALIASES) {
+    const { calls } = await run(command, { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+      truth: { ...truth(), display_name: "" },
+      membershipTruth: { ...truth(), display_name: "Canonical Fixture", points: { status: "verified", active_points: 999 } },
+    });
+    assert.deepEqual(calls.truth.map(call => call.intent), [undefined, "membership_status"]);
+    const reply = calls.replies[0].messages[0].text;
+    assert.match(reply, /ชื่อสมาชิก: Canonical Fixture/);
+    assert.match(reply, /Points: 120 Points/);
+    assert.match(reply, /การสมัคร\/ต่ออายุ: ยังยืนยันผลไม่ได้/);
+    assert.doesNotMatch(reply, /999|CARE BACK|CTA:|https?:\/\//);
+  }
+});
+
+test("missing or rejected canonical name keeps verified snapshot values and never invents a name", async () => {
+  for (const membershipTruth of [{ ...truth(), display_name: "" }, { ...truth(), authority: "untrusted", display_name: "Foreign" }]) {
+    const { calls } = await run("Checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+      truth: { ...truth(), display_name: "" }, membershipTruth,
+    });
+    assert.equal(calls.truth.length, 2);
+    assert.match(calls.replies[0].messages[0].text, /ชื่อสมาชิก: ยังตรวจสอบไม่ได้/);
+    assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
+    assert.doesNotMatch(calls.replies[0].messages[0].text, /Foreign/);
+  }
+});
+
+test("takeover during canonical name enrichment suppresses delivery", async () => {
+  const { calls } = await run("Checkpts", { env: { LINE_MEMBER_REPLY_SNAPSHOT_ENABLED: "true" },
+    truth: { ...truth(), display_name: "" }, ownerAfterTruth: true,
+  });
+  assert.equal(calls.truth.length, 2);
+  assert.equal(calls.replies.length, 0);
 });
 
 test("Per takeover during snapshot fallback still suppresses delivery", async () => {
@@ -228,4 +264,25 @@ test("a public webhook body cannot request the private lightweight intake branch
   assert.ok(calls.runtime >= 1, "the public request still goes through normal runtime controls");
   assert.equal(calls.truth.length, 0);
   assert.equal(calls.replies.length, 0);
+});
+
+test("exact Checkpts aliases remain available with general conversation and rights sentences disabled", async () => {
+  for (const command of ALIASES) {
+    const { calls } = await run(command, { env: { LINE_AUTO_REPLY_ENABLED: "false",
+      LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: "false", KENJI_LINE_RIGHTS_COMMAND_ENABLED: "false" } });
+    assert.equal(calls.replies.length, 1);
+    assert.equal(calls.truth.length, 1);
+    assert.match(calls.replies[0].messages[0].text, /ชื่อสมาชิก: Fixture Member/);
+    assert.match(calls.replies[0].messages[0].text, /Points: 120 Points/);
+    assert.doesNotMatch(calls.replies[0].messages[0].text, /CTA:|CARE BACK|https?:\/\//);
+  }
+});
+
+test("command-only activation does not enable ordinary text, partial aliases or rights sentences", async () => {
+  for (const command of ["สวัสดีครับ", "สถานะสมาชิก", "ต่ออายุ", "checkpoints", "checkpts ดูให้เพื่อน", "เช็กสิทธิ์ให้คนอื่น"]) {
+    const { calls } = await run(command, { env: { LINE_AUTO_REPLY_ENABLED: "false",
+      LINE_KENJI_DETERMINISTIC_CONVERSATION_ENABLED: "false", KENJI_LINE_RIGHTS_COMMAND_ENABLED: "false" } });
+    assert.equal(calls.replies.length, 0, command);
+    assert.equal(calls.truth.length, 0, command);
+  }
 });

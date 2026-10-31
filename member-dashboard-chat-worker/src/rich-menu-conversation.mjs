@@ -48,17 +48,14 @@ function membershipStatus(membership = {}) {
 }
 
 function membershipExpiry(membership = {}) {
-  const level = String(membership.level || "").trim().toLowerCase();
-  const label = String(membership.label || "").trim().toLowerCase();
   const lifecycle = String(membership.lifecycle || "").trim().toLowerCase();
-  if (level === "svip" || label === "svip") {
-    return ["active", "expiring_soon", "grace"].includes(lifecycle)
-      ? "SVIP ไม่มีวันหมดอายุปกติครับ"
-      : "ให้เปอร์ตรวจสถานะ SVIP เป็นรายบุคคลครับ";
-  }
   if (!/^(?:active|expiring_soon|grace|expired)$/.test(lifecycle)) return "ยังไม่มีวันที่ยืนยันได้ครับ";
   const match = String(membership.expire_at || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
   if (!match || Number(match[2]) < 1 || Number(match[2]) > 12 || Number(match[3]) < 1 || Number(match[3]) > 31)
+    return "ยังไม่มีวันที่ยืนยันได้ครับ";
+  const day = `${match[1]}-${match[2]}-${match[3]}`;
+  const parsed = Date.parse(`${day}T00:00:00Z`);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== day)
     return "ยังไม่มีวันที่ยืนยันได้ครับ";
   return `${match[3]}/${match[2]}/${match[1]} ครับ`;
 }
@@ -95,13 +92,17 @@ function checkptsCta(liveTruth = {}, now = Date.now()) {
 
 function pointsInChatAnswer(liveTruth = {}, now = Date.now(), includeCta = false) {
   if (liveTruth.ok !== true || liveTruth.authority !== POINTS_AUTHORITY || liveTruth.identity_status !== "resolved") {
-    return "ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้\n\nผลนี้ยังไม่ได้หมายความว่าสมาชิกหมดอายุหรือ Points เป็นศูนย์นะครับ หากเคยส่ง Wish หรือยืนยัน LINE แล้ว ไม่ต้องทำซ้ำ ฝากข้อความไว้ในแชตนี้ให้เปอร์ตรวจต่อได้ครับ";
+    return "ตอนนี้เปอร์ยังดึงข้อมูลจากระบบมายืนยันให้ไม่ได้ครับ\n\nชื่อสมาชิก: ยังตรวจสอบไม่ได้\nประเภทสมาชิก: ยังตรวจสอบไม่ได้\nสถานะสมาชิก: ยังตรวจสอบไม่ได้\nPoints: ยังยืนยันยอดไม่ได้\nวันหมดอายุสมาชิก: ยังตรวจสอบไม่ได้\nการสมัคร/ต่ออายุ: ยังยืนยันผลไม่ได้\n\nผลนี้ยังไม่ได้หมายความว่าสมาชิกหมดอายุหรือ Points เป็นศูนย์นะครับ หากเคยส่ง Wish หรือยืนยัน LINE แล้ว ไม่ต้องทำซ้ำ ฝากข้อความไว้ในแชตนี้ให้เปอร์ตรวจต่อได้ครับ";
   }
   const cta = includeCta ? "\n" + checkptsCta(liveTruth, now) : "";
   const points = liveTruth.points || {};
   const verified = points.status === "verified" && Number.isSafeInteger(points.active_points) && points.active_points >= 0;
   const pointText = verified ? `${points.active_points.toLocaleString("th-TH")} Points ครับ` : "ยังยืนยันยอดไม่ได้ครับ";
-  return `สถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${pointText}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}` + cta;
+  const name = String(liveTruth.display_name || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  // This read contract has no completed signup/renewal transaction evidence.
+  // A current entitlement or a renewal offer does not prove either event.
+  const memberType = String(liveTruth.membership?.label || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40);
+  return `ชื่อสมาชิก: ${name || "ยังตรวจสอบไม่ได้ครับ"}\nประเภทสมาชิก: ${memberType || "ยังตรวจสอบไม่ได้ครับ"}\nสถานะสมาชิก: ${membershipStatus(liveTruth.membership)}\nPoints: ${pointText}\nวันหมดอายุ: ${membershipExpiry(liveTruth.membership)}\nการสมัคร/ต่ออายุ: ยังยืนยันผลไม่ได้ครับ ให้เปอร์ตรวจหลักฐานต่อในแชตนี้ได้ครับ` + cta;
 }
 const TOPICS = {
   guest: ["membership", "models", "booking", "services", "stories", "support"],
