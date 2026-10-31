@@ -6,7 +6,7 @@ import {createLineSignature} from "../src/index.js";
 import {resolveKenjiSeedDecision,handleKenjiSeedLineRequest} from '../src/kenji-seed-line-runtime.mjs';
 test('customer album request returns direct button and no entitlement claims',async()=>{const r=await resolveKenjiSeedDecision({type:'message',source:{type:'user'},message:{type:'text',text:'ขอดูอัลบั้ม EMS ได้มั้ยครับ'}});assert.equal(r.reply_button.uri,EMS_ALBUMS_URL);assert.doesNotMatch(r.text,/VIP|ดูได้ครบ|ทุกคน/);assert.equal(r.reply_source,'my_mmd_ems_albums_v1')});
 test('specific bounded EMS intent',()=>{assert.equal(isEmsAlbumQuestion('EMS album'),true);assert.equal(isEmsAlbumQuestion('ขอดู EMS'),true);assert.equal(isEmsAlbumQuestion('EMS ส่งพัสดุ'),false);assert.equal(isEmsAlbumQuestion('ขอดูอัลบั้มคนอื่น'),false)});
-test('index/detail retain login return and render valid script',async()=>{for(const path of ['/my-mmd/ems','/my-mmd/ems/ems16-123456789abc']){const request=new Request('https://www.mmdbkk.com'+path);assert.equal(isEmsAlbumsPage(request),true);const response=emsAlbumsPage(request);const html=await response.text();assert.match(html,/miniapp.line.me/);assert.match(html,/view=ems_albums/);assert.match(html,/data\.photos/);const script=[...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)][0][1];new vm.Script(script);assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/)}});
+test('index/detail retain login return and render valid script',async()=>{for(const path of ['/my-mmd/ems','/my-mmd/ems/ems16-123456789abc']){const request=new Request('https://www.mmdbkk.com'+path);assert.equal(isEmsAlbumsPage(request),true);const response=emsAlbumsPage(request);const html=await response.text();assert.match(html,/miniapp.line.me/);assert.ok(html.includes('"kind":"ems"'));assert.match(html,/data\.photos/);const script=[...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)][0][1];new vm.Script(script);assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/)}});
 
 for (const mode of ["send", "takeover", "stop", "redelivery"]) test(`signed recheck delivery boundary: ${mode}`, async () => {
   const f = {env:{AIRTABLE_API_KEY:"test",AIRTABLE_BASE_ID:"test"}}; let sent = 0, runtimeReads = 0;
@@ -36,8 +36,8 @@ test('login uses registered MINI App and preserves album identifier',async()=>{
  const path='/my-mmd/ems/ems23-b2854abc264c';const html=await emsAlbumsPage(new Request('https://www.mmdbkk.com'+path)).text();
  const script=[...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)][0][1];
  let click, destination;
- const node={hidden:false,textContent:'',addEventListener(type,handler){click=handler}};
- const context={document:{getElementById:()=>node},location:{assign:url=>destination=url},fetch:async()=>Response.json({ok:false},{status:401})};
+ const nodes=new Map(); const get=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',value:'',children:[],append(...els){this.children.push(...els)},replaceChildren(...els){this.children=els},setAttribute(){},addEventListener(type,handler){if(id==='login'&&type==='click')click=handler}});return nodes.get(id)};
+ const context={document:{body:{classList:{add(){},remove(){}}},getElementById:get,createElement:()=>({setAttribute(){}})},location:{assign:url=>destination=url},fetch:async()=>Response.json({ok:false},{status:401})};
  vm.runInNewContext(script,context);await new Promise(setImmediate);click();
  assert.equal(destination,'https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status&view=ems_albums&album=ems23-b2854abc264c');
  assert.doesNotMatch(html,/liff.login|sdk.js/);

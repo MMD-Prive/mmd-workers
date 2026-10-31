@@ -152,6 +152,7 @@ jobs:
           node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
           npm run test:payment-delivery
           node --check member-dashboard-chat-worker/src/index.js
+          node --test member-dashboard-chat-worker/test/album-v3-release.test.mjs
           node --check member-dashboard-chat-worker/src/my-mmd-orders-webflow-page.js
           node --check member-dashboard-chat-worker/src/front-gate-index.js
           node --check member-dashboard-chat-worker/src/mms-ai-knowledge-v4.js
