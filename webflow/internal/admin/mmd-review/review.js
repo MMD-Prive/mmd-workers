@@ -6,9 +6,9 @@
   var q = function (id) { return root.querySelector('#mr-' + id); };
   var dialog = q('dialog'), selected = null, objectUrl = '', sha = '', busy = false, loading = false, cursor = null, generation = 0;
   var controllers = new Set();
-  var entries = new Map(), groups = new Map(), queue = [], activePreviews = 0, gridEpoch = 0;
+  var entries = new Map(), groups = new Map(), queue = [], activePreviews = 0, gridEpoch = 0, selectionEpoch = 0, groupJobs = 0;
   var observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(function (records) {
-    records.forEach(function (record) { if (record.isIntersecting) { observer.unobserve(record.target); queue.push(record.target._entry); pump(); } });
+    records.forEach(function (record) { if (record.isIntersecting) { observer.unobserve(record.target); schedulePreview(record.target._entry); } });
   }, { rootMargin: '200px' }) : null;
   function batchControls(reset) {
     if (reset) q('batch-confirm').checked = false;
@@ -16,21 +16,43 @@
     var publicCount = chosen.filter(function (e) { return e.item.audience === 'public'; }).length;
     q('batch').hidden = !chosen.length;
     message('selection', 'เลือก ' + chosen.length + ' รูป · Public ' + publicCount + ' / Private ' + (chosen.length - publicCount));
-    q('batch-approve').disabled = busy || !chosen.length || !q('batch-confirm').checked || chosen.some(function (e) { return !e.sha; });
+    q('batch-approve').disabled = busy || groupJobs > 0 || !chosen.length || !q('batch-confirm').checked || chosen.some(function (e) { return !e.sha; });
     q('clear').disabled = busy; q('batch-confirm').disabled = busy;
-    entries.forEach(function (e) { e.check.disabled = busy || !e.sha || e.item.status !== 'pending_review'; e.open.disabled = busy; });
-    groups.forEach(function (g) { g.select.disabled = busy; });
+    entries.forEach(function (e) { e.check.disabled = busy || groupJobs > 0 || !e.sha || e.item.status !== 'pending_review'; e.open.disabled = busy || groupJobs > 0; });
+    groups.forEach(function (g) { g.select.disabled = busy || groupJobs > 0; });
     q('refresh').disabled = busy || loading; q('filter').disabled = busy || loading; q('more').disabled = busy || loading;
   }
   function clearGrid() {
-    gridEpoch++; queue = []; if (observer) observer.disconnect();
-    entries.forEach(function (e) { if (e.url) URL.revokeObjectURL(e.url); });
+    gridEpoch++; selectionEpoch++; queue.forEach(function (e) { if (e.resolvePreview) e.resolvePreview(); }); queue = []; if (observer) observer.disconnect();
+    entries.forEach(function (e) { if (e.cancelDecode) e.cancelDecode(); if (e.url) URL.revokeObjectURL(e.url); });
     entries.clear(); groups.clear(); q('list').replaceChildren(); batchControls(true);
+  }
+  function schedulePreview(e) {
+    if (e.previewPromise) return e.previewPromise;
+    if (observer) observer.unobserve(e.preview);
+    e.previewPromise = new Promise(function (resolve) { e.resolvePreview = resolve; });
+    queue.push(e); pump(); return e.previewPromise;
+  }
+  async function selectGroup(groupKey) {
+    if (busy || groupJobs) return;
+    var group = groups.get(groupKey), epoch = gridEpoch, pickEpoch = ++selectionEpoch;
+    var targets = Array.from(entries.values()).filter(function (e) { return e.groupKey === groupKey && e.item.reviewable && e.item.status === 'pending_review' && /_pic$/.test(e.item.kind); });
+    groupJobs++; batchControls(true); var completed = 0;
+    group.status.textContent = 'กำลังโหลด 0 / ' + targets.length + ' รูป…';
+    try {
+      await Promise.all(targets.map(function (e) { return schedulePreview(e).then(function () {
+        completed++; if (epoch === gridEpoch && pickEpoch === selectionEpoch) group.status.textContent = 'กำลังโหลด ' + completed + ' / ' + targets.length + ' รูป…';
+      }); }));
+      if (epoch !== gridEpoch || pickEpoch !== selectionEpoch || document.hidden) return;
+      var loaded = targets.filter(function (e) { return !!e.sha; });
+      loaded.forEach(function (e) { e.check.checked = true; });
+      group.status.textContent = 'เลือก ' + loaded.length + ' / ' + targets.length + ' รูป' + (loaded.length < targets.length ? ' · เปิดไม่ได้ ' + (targets.length - loaded.length) + ' รูป กรุณาโหลดคิวใหม่เพื่อตรวจ' : ' · ดูรูปให้ครบก่อนยืนยัน');
+    } finally { groupJobs--; batchControls(true); }
   }
   function pump() {
     while (activePreviews < 3 && queue.length) {
       var e = queue.shift(); activePreviews++;
-      preview(e).finally(function () { activePreviews--; pump(); });
+      (function (entry) { preview(entry).finally(function () { entry.resolvePreview(); activePreviews--; pump(); }); }(e));
     }
   }
   async function preview(e) {
@@ -40,13 +62,23 @@
       if (epoch !== gridEpoch || document.hidden) return;
       if (!result.blob.type.startsWith('image/')) throw new Error('not_image');
       var img = element('img'); img.alt = e.item.name + ' · ' + e.item.audience.toUpperCase();
-      img.addEventListener('load', function () { if (epoch === gridEpoch) { e.sha = result.sha; e.hint.textContent = 'เลือกรูปนี้เมื่อดูครบแล้ว'; batchControls(false); } }, { once: true });
-      img.addEventListener('error', function () { if (epoch === gridEpoch) { e.sha = ''; e.hint.textContent = 'เปิดรูปไม่ได้ · ลองโหลดคิวใหม่'; batchControls(true); } });
-      e.url = URL.createObjectURL(result.blob); img.src = e.url; e.preview.replaceChildren(img);
+      await new Promise(function (resolve) {
+        var settled = false;
+        function finish(ok) {
+          if (settled) return; settled = true; clearTimeout(timer); e.cancelDecode = null;
+          if (epoch === gridEpoch) { e.sha = ok ? result.sha : ''; e.hint.textContent = ok ? 'เลือกรูปนี้เมื่อดูครบแล้ว' : 'เปิดรูปไม่ได้ · ลองโหลดคิวใหม่'; batchControls(false); }
+          resolve();
+        }
+        var timer = setTimeout(function () { finish(false); }, 30000);
+        e.cancelDecode = function () { finish(false); };
+        img.addEventListener('load', function () { finish(true); }, { once: true });
+        img.addEventListener('error', function () { finish(false); }, { once: true });
+        e.url = URL.createObjectURL(result.blob); img.src = e.url; e.preview.replaceChildren(img);
+      });
     } catch (error) { if (epoch === gridEpoch) { e.sha = ''; e.hint.textContent = errorText(error); batchControls(true); } }
   }
   async function approveBatch() {
-    if (busy || !q('batch-confirm').checked) return;
+    if (busy || groupJobs || !q('batch-confirm').checked) return;
     var chosen = Array.from(entries.values()).filter(function (e) { return e.check.checked; });
     if (!chosen.length || chosen.some(function (e) { return !e.sha || e.item.status !== 'pending_review'; })) return;
     busy = true; batchControls(false); var done = 0, failed = 0, epoch = gridEpoch;
@@ -133,10 +165,11 @@
     if (!group) {
       var section = element('section', 'mr-group'), heading = element('div', 'mr-group-heading');
       heading.append(element('h2', '', (item.model_name || item.model_id) + ' · ' + (item.audience === 'public' ? 'PUBLIC · สาธารณะ' : 'PRIVATE · จำกัดสิทธิ์')));
-      var select = element('button', '', 'เลือกภาพที่โหลดแล้วในกลุ่ม'); select.type = 'button'; select.hidden = item.status !== 'pending_review';
-      select.addEventListener('click', function () { entries.forEach(function (e) { if (!busy && e.groupKey === groupKey && e.sha && e.item.status === 'pending_review') e.check.checked = true; }); batchControls(true); });
-      heading.append(select); var grid = element('div', 'mr-grid'); section.append(heading, grid); q('list').append(section);
-      group = { grid: grid, select: select }; groups.set(groupKey, group);
+      var select = element('button', '', 'โหลดและเลือกทั้งกลุ่ม'); select.type = 'button'; select.hidden = item.status !== 'pending_review';
+      select.addEventListener('click', function () { selectGroup(groupKey); });
+      var groupStatus = element('p', 'mr-muted'); groupStatus.setAttribute('role', 'status');
+      heading.append(select); section.append(groupStatus); var grid = element('div', 'mr-grid'); section.prepend(heading); section.append(grid); q('list').append(section);
+      group = { grid: grid, select: select, status: groupStatus }; groups.set(groupKey, group);
     }
     var article = element('article', 'mr-card'), info = element('div', 'mr-card-info');
     var previewBox = element('div', 'mr-thumbnail', 'กำลังโหลดรูป…');
@@ -152,7 +185,7 @@
     if (!item.reviewable || item.status === 'rejected') previewBox.textContent = 'ไม่เปิดสื่อ · สิทธิ์หรือสถานะไม่พร้อม';
     else if (!isImage) previewBox.textContent = 'วิดีโอ · เปิดตรวจเต็มก่อนอนุมัติ';
     else if (observer) { previewBox._entry = entry; observer.observe(previewBox); }
-    else { queue.push(entry); pump(); }
+    else { schedulePreview(entry); }
   }
   async function load(more) {
     if (loading || busy) return;
@@ -184,7 +217,7 @@
   }
   q('batch-confirm').addEventListener('change', function () { batchControls(false); });
   q('batch-approve').addEventListener('click', approveBatch);
-  q('clear').addEventListener('click', function () { if (!busy) { entries.forEach(function (e) { e.check.checked = false; }); batchControls(true); } });
+  q('clear').addEventListener('click', function () { if (!busy) { selectionEpoch++; groups.forEach(function (g) { g.status.textContent = ''; }); entries.forEach(function (e) { e.check.checked = false; }); batchControls(true); } });
   q('refresh').addEventListener('click', function () { load(false); }); q('filter').addEventListener('change', function () { load(false); }); q('more').addEventListener('click', function () { load(true); });
   q('close').addEventListener('click', closeReview); dialog.addEventListener('cancel', function (event) { event.preventDefault(); closeReview(); });
   q('confirm').addEventListener('change', controls); q('teaser').addEventListener('change', controls); q('note').addEventListener('input', controls); q('form').addEventListener('submit', function (event) { event.preventDefault(); });
