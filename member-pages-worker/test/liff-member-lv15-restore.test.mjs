@@ -20,7 +20,7 @@ test("LV15 is mounted once after V4 and the trusted private/public brand styles"
   assert.equal(html.split("Level 15 shell skin").length - 1, 0, "React-only LV15 CSS must not be blindly copied to Worker markup");
   assert.equal(html.split("MY MMD LV15 \/ Worker presentation bridge").length - 1, 1);
   assert.ok(html.indexOf("MY MMD LV15 / Worker presentation bridge") > html.indexOf("--v4-bg:#0b0e10"));
-  assert.ok(html.indexOf("MY MMD LV15 / Worker presentation bridge") > html.indexOf("SĪGIL"));
+  assert.ok(html.indexOf("MY MMD LV15 / Worker presentation bridge") > html.indexOf("--v4-bg:#111210"), "LV15 must load after the existing private brand CSS");
   assert.match(html, /data-mmd-liff-digital="v3"/);
   assert.match(html, /data-mmd-graphics="v6"/);
 });
