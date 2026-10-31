@@ -104,7 +104,7 @@ const authorized={production_approved:true,approval_ref:'fixture',approved_sha:s
 
 test('approval-only is the explicit safe default; missing or invalid modes never release',()=>{
  assert.match(workflow,/execution_mode:[\s\S]*?type: choice\s+required: true\s+default: approval_boundary_only/);
- assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release']);
+ assert.deepEqual([...workflowJobs.keys()],['production-approval','approval-boundary-only','release','lv15-release']);
  for(const execution_mode of [undefined,'','invalid',true,false]) {
    for(const id of workflowJobs.keys()) assert.equal(jobCondition(id)(dispatch,{...authorized,execution_mode}),false);
  }
@@ -152,7 +152,7 @@ test('approval-only execution surface has no write credential, release command, 
  assert.deepEqual([...job.matchAll(/^          ([A-Z_]+):/gm)].map(match=>match[1]),['GH_TOKEN','APPROVAL_REF','APPROVED_SHA']);
  const header=workflow.split('\njobs:')[0];
  assert.doesNotMatch(header,/secrets\.|^env:|: write|id-token/);
- assert.equal((workflow.match(/secrets\./g)||[]).length,3);
+ assert.equal((workflow.match(/secrets\./g)||[]).length,4);
  assert.ok(workflowJobs.get('release').includes('secrets.CLOUDFLARE_API_TOKEN'));
 });
 
@@ -220,4 +220,24 @@ test('HTTP diagnostics expose only allowlisted numeric statuses, never caller st
  for(const status of ['403 secret-token',{toString(){throw Error('must not coerce');}},999,200,null]){
   d.mark('OWNER_APPROVAL_HTTP',status);assert.deepEqual(d.snapshot(),{stage:'OWNER_APPROVAL_HTTP',reason:'EVIDENCE_HTTP_STATUS'});
  }
+});
+
+
+test('LV15 mode is isolated behind the same owner gate and requires exact baseline inputs',()=>{
+ const inputs={...authorized,execution_mode:'lv15-artifact'};
+ assert.equal(jobCondition('production-approval')(dispatch,inputs),true);
+ assert.equal(jobCondition('lv15-release')(dispatch,inputs),true);
+ assert.equal(jobCondition('release')(dispatch,inputs),false);
+ assert.equal(jobCondition('approval-boundary-only')(dispatch,inputs),false);
+ for(const key of ['expected_version','expected_deployment','approval_ref','approved_sha'])
+  assert.equal(jobCondition('lv15-release')(dispatch,{...inputs,[key]:''}),false);
+ for(const execution_mode of ['release','renewal-artifact','renewal-activation','companion-artifact','promote-existing','approval_boundary_only'])
+  assert.equal(jobCondition('lv15-release')(dispatch,{...inputs,execution_mode}),false);
+ const job=workflowJobs.get('lv15-release');
+ assert.match(job,/needs: \[production-approval\]/);
+ assert.match(job,/environment: member-pages-code-only-owner/);
+ assert.match(job,/node scripts\/member-pages-lv15-artifact.mjs --execute-approved/);
+ assert.match(job,/node scripts\/verify-my-mmd-lv15-live.mjs --read-only/);
+ assert.doesNotMatch(job,/wrangler|secret put|AIRTABLE|permissions:[\s\S]*write/);
+ assert.equal((job.match(/secrets\./g)||[]).length,1);
 });

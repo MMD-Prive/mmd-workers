@@ -544,7 +544,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
   const source=readFileSync(new URL('../.github/workflows/deploy-member-pages-worker-code-only.yml',import.meta.url),'utf8');
   assert.match(source,/^  workflow_dispatch:/m);
   assert.doesNotMatch(source,/^  (push|pull_request|schedule|workflow_run):/m);
-  assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,3);
+  assert.equal((source.match(/inputs\.approved_sha == github\.sha/g)||[]).length,4);
   assert.match(source,/needs: \[production-approval\][\s\S]*environment: member-pages-code-only-owner/);
   const preflight = source.slice(source.indexOf('  production-approval:'), source.indexOf('  release:'));
   assert.match(preflight, /permissions:\s+contents: read\s+actions: read/);
@@ -554,7 +554,7 @@ test('release workflow is manual, exact-SHA and protected with no data-service c
 
   assert.match(source,/EXPECTED_VERSION: \$\{\{ inputs\.expected_version \}\}/);
   assert.match(source,/EXPECTED_DEPLOYMENT: \$\{\{ inputs\.expected_deployment \}\}/);
-  assert.equal((source.match(/secrets\./g)||[]).length,3);
+  assert.equal((source.match(/secrets\./g)||[]).length,4);
   assert.match(source,/CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
   assert.doesNotMatch(source,/AIRTABLE|R2_API|ensure-private|ensure-payment|wrangler route|wrangler secret|synthetic_write|production public Wish/i);
   assert.match(source,/node scripts\/member-pages-code-only-release\.mjs --execute-approved/);
