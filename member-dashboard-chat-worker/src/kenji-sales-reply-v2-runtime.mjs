@@ -1,3 +1,4 @@
+import { careBackOctoberReply, CARE_BACK_OCTOBER_VERSION } from './kenji-care-back-october.mjs';
 import { resolveKenjiLineLiveTruth } from "./kenji-line-live-truth.mjs";
 import { SALES_REPLY_VERSION, SALES_REPLY_REVIEW_AT, SALES_CARD_IDS, SALES_ROUTES, currentSalesRoute, salesCardKey, publishedSalesCard } from "./kenji-sales-reply-v2-policy.mjs";
 
@@ -95,6 +96,13 @@ export async function resolveKenjiSalesReply(event = {}, env = {}, options = {})
   const now = Number.isFinite(options.now) ? options.now : Date.now();
   const continuity = options.continuity || {};
   if (handoffRequested(continuity)) return answerDecision("", intent, { reason: "preserve_human_takeover", handoff: true });
+  const october = careBackOctoberReply(intent, event?.message?.text || '', now);
+  if (october) {
+    if (pendingProofCue(continuity)) return answerDecision('ตรวจรายการชำระเดิมก่อนนะครับ หากส่งหลักฐานไว้แล้ว ยังไม่ต้องโอนหรือส่งสลิปซ้ำ', intent, { route: SALES_ROUTES.payment, label: 'ตรวจรายการชำระเดิม', reason: 'avoid_duplicate_payment_without_claiming_payment_truth' });
+    return { ...answerDecision(october.text, intent, { route: october.route, label: october.label }),
+      reply_source: 'care_back_october_owner_approved', reply_pack_version: CARE_BACK_OCTOBER_VERSION,
+      guard_blocked: false, guard_reason: '', knowledge_response_mode: 'owner_approved_campaign_copy' };
+  }
   const campaign = intent.startsWith("care_back_") || ["promotion_overview", "double_moment"].includes(intent);
   const enabled = ["true", "1", "yes", "on"].includes(clean(env.LINE_KENJI_KNOWLEDGE_ENABLED).toLowerCase());
   let card = enabled ? await (options.readCard || readSalesCard)(env, key) : null;

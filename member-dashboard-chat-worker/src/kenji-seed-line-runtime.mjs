@@ -31,6 +31,7 @@ import {
 } from "./kenji-line-availability-live.mjs";
 import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-policy.mjs";
 import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
+import { careBackOctoberFollowup } from './kenji-care-back-october.mjs';
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 import { decideKenjiFirstContactMembership } from "./kenji-line-first-contact-membership.mjs";
 import { resolveKenjiContextFollowup } from "./kenji-context-followup.mjs";
@@ -264,8 +265,9 @@ export async function resolveKenjiSeedDecision(event = {}, env = {}, options = {
       : "";
   const inferredIntent = refineKenjiSalesIntent(raw, text(options.currentIntent || inferLineIntent(raw, event)));
   // Carry context only for an unclassified turn, never overwrite a new command.
-  const intent = ["note_only", "line_event"].includes(inferredIntent)
-    ? text(options?.continuity?.effective_intent || inferredIntent) : inferredIntent;
+  const intent = careBackOctoberFollowup(raw, options.continuity, options.now) ||
+    (["note_only", "line_event"].includes(inferredIntent)
+      ? text(options?.continuity?.effective_intent || inferredIntent) : inferredIntent);
   const continuityMeta = continuityMetadata(options, inferredIntent);
   const photoAccuracy = /(?:ตรง\s*ปก|ตัวจริง.{0,16}(?:เหมือน|ตรง).{0,8}(?:รูป|ภาพ)|(?:รูป|ภาพ).{0,16}(?:ตัวจริง|ถ่าย(?:ใหม่|ล่าสุด)))/i.test(raw);
   const adTerms = /(?:โฆษณา|เห็น\s*แอด|ใน\s*แอด)/i.test(raw) && /(?:\d|เงื่อนไข|สิทธิ์|ส่วนลด|ได้อะไร|กี่ครั้ง|ใช้ยังไง)/i.test(raw);

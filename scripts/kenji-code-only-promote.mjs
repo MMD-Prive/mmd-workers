@@ -40,7 +40,11 @@ export function validateCandidate(baseline, candidate, sourceSha, snapshotActiva
   for (const name of ['LINE_AUTO_REPLY_ENABLED', 'LINE_KENJI_MODEL_ENABLED', 'KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED']) {
     const binding = candidate.resources.bindings.find(item => item.name === name);
     assert.equal(binding?.type, 'plain_text');
-    assert.equal(binding.text, name === 'LINE_AUTO_REPLY_ENABLED' && autoReplyActivation ? 'true' : 'false',
+    const expected = name === 'LINE_AUTO_REPLY_ENABLED'
+      ? autoReplyActivation ? 'true' : baseline.resources.bindings.find(item => item.name === name)?.text
+      : 'false';
+    assert.ok(expected === 'true' || expected === 'false', 'Auto-reply baseline must be explicit');
+    assert.equal(binding.text, expected,
       `${name} has an unapproved value`);
   }
 }
@@ -85,7 +89,7 @@ export async function promote({ call, baselineId, candidateId, sourceSha, snapsh
   assert.equal(after.versions[0].version_id, candidateId);
   validateCandidate(baseline, await call(ROOT + '/versions/' + candidateId), sourceSha, snapshotActivation, autoReplyActivation);
   return { worker: 'member-dashboard-chat-worker', deployment: after.id, version: candidateId,
-    auto_reply: autoReplyActivation ? 'ON' : 'OFF', model: 'OFF', config_unchanged: !(snapshotActivation || autoReplyActivation),
+    auto_reply: candidate.resources.bindings.find(item => item.name === 'LINE_AUTO_REPLY_ENABLED')?.text === 'true' ? 'ON' : 'OFF', model: 'OFF', config_unchanged: !(snapshotActivation || autoReplyActivation),
     snapshot_enabled: snapshotActivation, route_writes: 0, secret_writes: 0 };
 }
 

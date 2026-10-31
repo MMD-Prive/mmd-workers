@@ -181,12 +181,12 @@ test("missing and expired campaign cards never revive legacy benefits", async ()
 });
 
 // Integration tests mock every external fetch; no real LINE message is sent.
-async function mockedRuntime(run, { killed = false } = {}) {
+async function mockedRuntime(run, { killed = false, now = NOW } = {}) {
   const fetchBefore = globalThis.fetch;
   const nowBefore = Date.now;
   const calls = { line: [], writes: [], truth: 0 };
   const env = { ...ENV, AIRTABLE_API_KEY: "synthetic-token", AIRTABLE_BASE_ID: "synthetic-base", LINE_CHANNEL_SECRET: "synthetic-secret", LINE_CHANNEL_ACCESS_TOKEN: "synthetic-line-token", LINE_AUTO_REPLY_ENABLED: "true", LINE_KENJI_AI_ENABLED: "true", INTERNAL_TOKEN: "synthetic-internal", KENJI_LINE_CONTINUITY_ENABLED: "false", ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: { all_kenji_mutations: false, line_oa_auto_reply: killed, model_keyword_auto_reply: false } }) } };
-  Date.now = () => NOW;
+  Date.now = () => now;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname === "api.line.me") { calls.line.push(JSON.parse(init.body)); return Response.json({}); }
@@ -261,3 +261,23 @@ test("read-only publication smoke checks eight records without LINE or telemetry
   assert.equal(calls.line.length, 0);
   assert.equal(calls.writes.length, 0);
 }));
+
+const OCTOBER_NOW = Date.parse('2026-10-31T12:00:00+07:00');
+for (const [message, expected] of [['สมัคร CARE BACK', /1,199.*2,999.*66/s], ['CARE BACK สมาชิกปัจจุบัน', /180 วัน.*1 ปี/s], ['CARE BACK หมดอายุไม่เกิน 90 วัน', /1,000.*180 วัน.*2,500.*1 ปี/s]]) {
+  test(`October signed LINE delivers one approved group CTA: ${message}`, async () => mockedRuntime(async (env, calls) => {
+    const response = await handleKenjiSeedLineRequest(await signedRequest(env, event(message)), env);
+    assert.equal(response.status, 200);
+    assert.equal(calls.line.length, 1);
+    const answer = calls.line[0].messages[0].text;
+    assert.match(answer, /วันนี้วันสุดท้าย/);
+    assert.match(answer, expected);
+    assert.match(answer, /https:\/\//);
+    assert.doesNotMatch(answer, /150 Welcome|250 Welcome|365 วัน/);
+  }, { now: OCTOBER_NOW }));
+}
+for (const [name, good, killed, mode] of [['bad signature', false, false, 'active'], ['runtime kill', true, true, 'active'], ['standby', true, false, 'standby']]) {
+  test(`October copy respects ${name}`, async () => mockedRuntime(async (env, calls) => {
+    await handleKenjiSeedLineRequest(await signedRequest(env, event('สมัคร CARE BACK', { mode }), good), env);
+    assert.equal(calls.line.length, 0);
+  }, { now: OCTOBER_NOW, killed }));
+}
