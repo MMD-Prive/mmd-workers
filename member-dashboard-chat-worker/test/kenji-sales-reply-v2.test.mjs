@@ -263,7 +263,7 @@ test("read-only publication smoke checks eight records without LINE or telemetry
 }));
 
 const OCTOBER_NOW = Date.parse('2026-10-31T12:00:00+07:00');
-for (const [message, expected] of [['สมัคร CARE BACK', /1,199.*2,999.*66/s], ['CARE BACK สมาชิกปัจจุบัน', /180 วัน.*1 ปี/s], ['CARE BACK หมดอายุไม่เกิน 90 วัน', /1,000.*180 วัน.*2,500.*1 ปี/s]]) {
+for (const [message, expected] of [['สมัคร CARE BACK', /1,199.*2,999.*66/s], ['CARE BACK สมาชิกปัจจุบัน', /1,199.*2,999.*66/s], ['CARE BACK หมดอายุไม่เกิน 90 วัน', /1,199.*2,999.*66/s]]) {
   test(`October signed LINE delivers one approved group CTA: ${message}`, async () => mockedRuntime(async (env, calls) => {
     const response = await handleKenjiSeedLineRequest(await signedRequest(env, event(message)), env);
     assert.equal(response.status, 200);

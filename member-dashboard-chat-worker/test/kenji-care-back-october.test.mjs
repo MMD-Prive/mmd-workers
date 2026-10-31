@@ -16,34 +16,20 @@ test('Bangkok date boundaries never advertise the offer after October 31', () =>
     assert.ok(answer.route);
   }
 });
-test('new, current and expired advertising have distinct short private CTAs', () => {
-  const fresh = careBackOctoberReply('care_back_new_member', '', start);
-  assert.match(fresh.text, /Standard 1,199 บาท\/1 ปี.*Premium 2,999 บาท\/2 ปี.*66 คะแนน/s);
-  assert.match(fresh.route, /world=private/);
-  const current = careBackOctoberReply('care_back_current_member', '', start);
-  assert.match(current.text, /ต่ออายุหรือชำระล่วงหน้า.*Standard แถม 180 วัน.*Premium แถม 1 ปี/s);
-  const expired = careBackOctoberReply('care_back_expired_member', '', start);
-  assert.match(expired.text, /หมดอายุไม่เกิน 90 วัน.*1,000 บาท.*180 วัน.*2,500 บาท.*1 ปี/s);
-  for (const answer of [fresh, current, expired]) {
-    assert.ok(answer.text.length < 320);
-    assert.ok(answer.label);
-    assert.doesNotMatch(answer.text, /150|250 Welcome|365 วัน|3 ปี|ได้รับสิทธิ์แล้ว/);
+test('all public CARE BACK groups receive one short signup CTA without eligibility promises', () => {
+  const replies = ['care_back_overview','care_back_new_member','care_back_current_member','care_back_expired_member','promotion_overview'].map(intent => careBackOctoberReply(intent, '', start));
+  for(const answer of replies) {
+    assert.deepEqual(answer,replies[0]); assert.ok(answer.text.length < 260);
+    assert.match(answer.text,/วันนี้วันสุดท้าย/);assert.match(answer.text,/66 คะแนน/);
+    assert.match(answer.route,/intent=signup.*world=private/);assert.ok(answer.label);
+    assert.doesNotMatch(answer.text,/ได้รับสิทธิ์แล้ว|แถม 180 วัน|แถม 1 ปี/);
   }
 });
-test('unknown group asks one question and bounded bare answers select the group', async () => {
-  for (const message of ['promo', 'โปรโมชั่น', 'มีโปรอะไรบ้าง']) assert.equal(refineKenjiSalesIntent(message, 'pricing_review'), 'promotion_overview');
-  assert.match(careBackOctoberReply('care_back_overview', '', start).text, /ใหม่.*ปัจจุบัน.*หมดอายุ/s);
-  for (const [text, expected] of [['ใหม่', /1,199/], ['ปัจจุบัน', /Standard แถม 180 วัน/], ['หมดอายุ', /ไม่เกิน 90 วัน/]]) {
-    const answer = await resolveKenjiSeedDecision(event(text), {}, { now: start, continuity: { available: true, decision: 'continuation', effective_intent: 'care_back_overview', matrix: { matrix_status: 'active', last_customer_intent: 'care_back_overview', state_expires_at: new Date(start + 60000).toISOString() } } });
-    assert.match(answer.text, expected);
-  }
-});
-test('over 90 days and protected questions never receive an eligibility promise', () => {
-  const beyond = careBackOctoberReply('care_back_expired_member', 'หมดอายุเกิน 90 วัน', start);
-  assert.match(beyond.text, /เปอร์ตรวจ/);
-  assert.doesNotMatch(beyond.text, /1,000|แถม/);
-  for (const intent of ['care_back_personal_status', 'care_back_payment_points', 'care_back_black_card', 'care_back_historical_points', 'privacy_request']) assert.equal(careBackOctoberReply(intent, 'CARE BACK', start), null);
-  for (const text of ['CARE BACK ของผมได้ไหม', 'CARE BACK โอนแล้ว', 'CARE BACK SVIP', 'CARE BACK คืนเงิน']) assert.equal(careBackOctoberReply('care_back_overview', text, start), null);
+test('generic copy does not ask membership group; personal/payment questions remain protected',()=>{
+ for(const message of ['promo','โปรโมชั่น','มีโปรอะไรบ้าง']) assert.equal(refineKenjiSalesIntent(message,'pricing_review'),'promotion_overview');
+ assert.doesNotMatch(careBackOctoberReply('care_back_overview','',start).text,/เป็นสมาชิก.*ไหม|พิมพ์.*ใหม่/);
+ for(const intent of ['care_back_personal_status','care_back_payment_points','care_back_black_card','care_back_historical_points','privacy_request']) assert.equal(careBackOctoberReply(intent,'CARE BACK',start),null);
+ for(const text of ['CARE BACK ของผมได้ไหม','CARE BACK โอนแล้ว','CARE BACK SVIP','CARE BACK คืนเงิน']) assert.equal(careBackOctoberReply('care_back_overview',text,start),null);
 });
 test('approved copy needs no stale card or personal record, while handoff and pending proof remain authoritative', async () => {
   const options = { intent: 'care_back_new_member', now: start, readCard: () => { throw new Error('retired card must not be read'); }, readTruth: () => { throw new Error('advertising must not read personal truth'); } };

@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import worker, { createLineSignature, kenjiLineModelOnlyAllowsReply } from "../src/index.js";
 
-test("owner model-only gate allows only direct Model lookup continuations", () => {
+test("owner gate allows Model lookups and the explicit public CARE BACK exception", () => {
   assert.equal(kenjiLineModelOnlyAllowsReply({ intent: "model_lookup", modelIntent: { query: "Jasper" } }), true);
   assert.equal(kenjiLineModelOnlyAllowsReply({ intent: "model_access_verification", modelIntent: {} }), true);
   assert.equal(kenjiLineModelOnlyAllowsReply({ intent: "card_campaign_lead", modelIntent: { query: "EMs11", campaign_trigger: { card_trigger: "EMs11" } } }), true);
 
-  for (const intent of [
+  for (const intent of ['care_back_overview','care_back_new_member','care_back_current_member','care_back_expired_member','promotion_overview']) assert.equal(kenjiLineModelOnlyAllowsReply({intent}),true);
+  for (const intent of ["care_back_personal_status", "care_back_payment_points", "care_back_black_card",
     "payment",
     "membership",
     "service",
@@ -115,4 +116,17 @@ test("production model-only lock suppresses ordinary LINE replies at transport",
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('CARE BACK exception delivers one common signup answer through signed production transport', async()=>{
+ const originalFetch=globalThis.fetch, originalNow=Date.now;const sent=[];
+ Date.now=()=>Date.parse('2026-10-31T12:00:00+07:00');
+ globalThis.fetch=async(url,init={})=>{const href=String(url);if(href.includes('/message/reply'))sent.push(JSON.parse(init.body));return Response.json(href.includes('/profile/')?{displayName:'Test Member'}:{ok:true});};
+ try{
+  for(const [i,text]of ['CARE BACK สมาชิกใหม่','CARE BACK สมาชิกปัจจุบัน','CARE BACK สมาชิกหมดอายุไม่เกิน 90 วัน'].entries()){
+   const r=await worker.fetch(await signedWebhook(customerTextEvent(text,100+i)),TRANSPORT_ENV);assert.equal(r.status,200);const body=await r.json();assert.equal(body.saved?.[0]?.replied,true);
+  }
+  assert.equal(sent.length,3);assert.deepEqual(sent[0].messages,sent[1].messages);assert.deepEqual(sent[0].messages,sent[2].messages);
+  assert.match(JSON.stringify(sent[0].messages),/intent=signup/);assert.match(JSON.stringify(sent[0].messages),/world=private/);
+ }finally{globalThis.fetch=originalFetch;Date.now=originalNow;}
 });
