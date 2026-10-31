@@ -139,7 +139,7 @@ export function createTransport(token, request = fetch) {
 
 export async function releaseCurrentSession(io) {
   const root = io.root ?? ROOT;
-  assert.ok([ROOT, `/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`].includes(root), 'unapproved release Worker');
+  assert.ok([ROOT, `/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`, `/accounts/${ACCOUNT}/workers/scripts/member-dashboard-chat-worker`].includes(root), 'unapproved release Worker');
   const state = { phase: 'preflight', worker: root.split('/').at(-1), source_sha: io.sha };
   const save = phase => { state.phase = phase; io.save({ ...state }); };
   try {
