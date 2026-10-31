@@ -5,7 +5,7 @@ import {JSDOM} from 'jsdom';
 const dir=new URL('../webflow/internal/admin/mmd-review/',import.meta.url);
 const html=await readFile(new URL('review.html',dir),'utf8'), js=await readFile(new URL('review.js',dir),'utf8');
 const tick=()=>new Promise(r=>setTimeout(r,15));
-async function setup({failure,broken=false,offscreen=false}={}) {
+async function setup({failure,broken=false,offscreen=false,fileFailure=false}={}) {
  const dom=new JSDOM(html,{url:'https://example.test/internal/admin/mmd-review',runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window, requests=[],revoked=[];
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
@@ -15,6 +15,7 @@ async function setup({failure,broken=false,offscreen=false}={}) {
  if(offscreen) items.splice(0,1,...Array.from({length:6},(_,i)=>({...items[0],id:'public'+i,name:'public'+i+'.jpg'})));
  w.fetch=async(url,opts)=>{const body=opts.body?JSON.parse(opts.body):null; requests.push({url,body});
  if(url.endsWith('/decision'))return {ok:body.media_asset_id===failure?false:true,status:409,json:async()=>({ok:true})};
+ if(url.endsWith('/file') && fileFailure)return {ok:false,status:503};
  if(url.endsWith('/file'))return {ok:true,headers:{get:()=>broken?'':'a'.repeat(64)},blob:async()=>({type:'image/jpeg',size:100})};
  return {ok:true,json:async()=>({ok:true,items,next_cursor:null})};};
  w.eval(js);await tick();
@@ -60,6 +61,7 @@ test('group button loads offscreen images with at most three requests at a time,
   images.slice(3).forEach((img,i)=>img.dispatchEvent(new t.w.Event(i===0?'error':'load')));await tick();
   assert.equal(t.w.document.querySelectorAll('.mr-pick input:checked').length,5);
   assert.match(t.w.document.querySelector('.mr-group [role=status]').textContent,/เปิดไม่ได้ 1/);
+  assert.equal(t.w.document.querySelectorAll('.mr-thumbnail')[3].textContent,'โหลดรูปไม่สำเร็จ · ลองโหลดคิวใหม่');
   assert.equal(t.requests.filter(r=>r.url.endsWith('/decision')).length,0);
   button.click();await tick();assert.equal(t.requests.filter(r=>r.url.endsWith('/file')).length,6);
  }finally{t.close();}
@@ -74,3 +76,5 @@ test('clearing while group is loading cancels late selection',async()=>{
   assert.equal(t.w.document.querySelector('#mr-batch-confirm').checked,false);
  }finally{t.close();}
 });
+
+test('HTTP preview failure replaces loading text and remains unselectable',async()=>{const t=await setup({fileFailure:true});try{await selectAll(t.w);assert.equal(t.w.document.querySelector('.mr-thumbnail').textContent,'โหลดรูปไม่สำเร็จ · ลองโหลดคิวใหม่');assert.equal(t.w.document.querySelectorAll('.mr-pick input:checked').length,0);assert.equal(t.requests.filter(r=>r.url.endsWith('/decision')).length,0);}finally{t.close();}});
