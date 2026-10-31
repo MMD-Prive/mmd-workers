@@ -1,0 +1,130 @@
+name: Inspect or release owner price chat count correction
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/kenji-owner-price-chat-count-release*'
+      - '.github/workflows/deploy-kenji-owner-price-chat-count.yml'
+      - 'member-dashboard-chat-worker/test/fixtures/kenji-owner-price-assessment-live-20261031.txt'
+      - 'member-dashboard-chat-worker/test/fixtures/kenji-owner-price-helpers-live-20261031.mjs'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Inspect first; release only using the reviewed exact inspection values'
+        type: choice
+        options: [inspect, release]
+        default: inspect
+        required: true
+      production_approved:
+        description: 'Owner-authorized protected operation; no flags, settings or business-data changes'
+        type: boolean
+        default: false
+        required: true
+      approval_ref:
+        description: 'Owner authorization reference for this exact operation'
+        type: string
+        required: true
+      approved_sha:
+        description: 'Exact full main SHA for this protected run'
+        type: string
+        required: true
+      expected_version:
+        description: 'Release only: fresh active member-dashboard-chat-worker version UUID'
+        type: string
+        required: false
+      expected_deployment:
+        description: 'Release only: fresh active deployment UUID'
+        type: string
+        required: false
+      expected_module:
+        description: 'Release only: the exact single worker.js module name from inspection'
+        type: string
+        required: false
+      expected_module_sha256:
+        description: 'Release only: reviewed SHA-256 of the complete active module'
+        type: string
+        required: false
+      expected_function_sha256:
+        description: 'Release only: reviewed owner-price function SHA-256 from inspection'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-member-dashboard-chat-worker-production' || format('kenji-owner-price-chat-count-contracts-{0}', github.ref) }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.21.1'
+      - name: Actual recovered price assessment and unchanged release guards, without credentials
+        run: |
+          node --test scripts/kenji-owner-price-chat-count-release.test.mjs scripts/admin-current-session-code-only.test.mjs scripts/admin-production-approval.test.mjs
+          node scripts/kenji-owner-price-chat-count-release.mjs --check-source
+
+  production-approval:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    uses: ./.github/workflows/admin-production-approval.yml
+    with:
+      approval_ref: ${{ inputs.approval_ref }}
+      approved_sha: ${{ inputs.approved_sha }}
+
+  reviewed-operation:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.production_approved == true && inputs.approval_ref != '' && inputs.approved_sha == github.sha
+    needs: [production-approval, contracts]
+    environment: mmd-production-mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.21.1'
+      - name: Install unchanged pinned release toolchain
+        if: inputs.mode == 'release'
+        run: npm install --global wrangler@4.105.0 --no-audit --no-fund
+      - name: Read exact active evidence or correct the one reviewed price expression
+        env:
+          MODE: ${{ inputs.mode }}
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_APPROVED: ${{ inputs.production_approved }}
+          APPROVAL_REF: ${{ inputs.approval_ref }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EXPECTED_DEPLOYMENT: ${{ inputs.expected_deployment }}
+          EXPECTED_MODULE: ${{ inputs.expected_module }}
+          EXPECTED_MODULE_SHA256: ${{ inputs.expected_module_sha256 }}
+          EXPECTED_FUNCTION_SHA256: ${{ inputs.expected_function_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          case "$MODE" in
+            inspect) node scripts/kenji-owner-price-chat-count-release.mjs --inspect-approved ;;
+            release) node scripts/kenji-owner-price-chat-count-release.mjs --execute-approved ;;
+            *) exit 1 ;;
+          esac
+      - name: Save sanitized inspection or release receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-price-chat-count-${{ inputs.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/owner-price-chat-count-inspection.json
+            ${{ runner.temp }}/owner-price-chat-count-receipt.json
+          if-no-files-found: ignore
+          retention-days: 90
