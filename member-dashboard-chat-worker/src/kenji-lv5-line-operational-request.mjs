@@ -21,6 +21,7 @@ import {
   accumulateKenjiLineBookingDraft,
   recordKenjiBookingAccumulatorAction,
 } from "./kenji-line-booking-accumulator.mjs";
+import { careBackOctoberReply } from "./kenji-care-back-october.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 
@@ -282,6 +283,9 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   const raw = eventText(event);
   if (!raw) return null;
   const currentIntent = inferLineIntent(raw, event);
+  // Public CARE BACK questions belong to the normal reply lane, even when a
+  // prior Model booking draft is active. Do not capture them as booking data.
+  if (careBackOctoberReply(currentIntent, raw, Date.now())) return null;
 
   if (!enabled(env.LINE_KENJI_AI_ENABLED) || !enabled(env.LINE_KENJI_BOOKING_INTENT_ENABLED ?? "true")) return null;
   const runtime = await requestKenjiRuntimeStatus(env).catch(() => ({ ok: false }));
