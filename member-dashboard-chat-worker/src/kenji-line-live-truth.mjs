@@ -154,6 +154,27 @@ export async function resolveKenjiLineLiveTruth({ env = {}, event = {}, intent =
   }
 }
 
+// Retry only a pending exact Checkpts snapshot against the canonical payment-backed
+// ledger. Conflicting verified membership snapshots never share a Points balance.
+export async function resolveKenjiCheckptsTruth({ env = {}, event = {}, useSnapshot = true } = {}) {
+  if (!useSnapshot) return resolveKenjiLineLiveTruth({ env, event, intent: "points_status" });
+  const snapshot = await resolveKenjiLineSnapshotTruth({ env, event });
+  if (snapshot.ok === true && snapshot.authority === AUTHORITY &&
+      snapshot.identity_status === "resolved" && hasVerifiedPoints(snapshot.points)) return snapshot;
+  const fresh = await resolveKenjiLineLiveTruth({ env, event, intent: "points_status" });
+  if (fresh.ok === true && fresh.authority === AUTHORITY && fresh.identity_status === "resolved" &&
+      hasVerifiedPoints(fresh.points)) {
+    if (snapshot.ok !== true) return fresh;
+    const fingerprint = (v) => [v?.membership?.level, v?.membership?.lifecycle,
+      v?.membership?.expire_at].map(text).join("|");
+    if (snapshot.authority === AUTHORITY && snapshot.identity_status === "resolved" &&
+        fingerprint(snapshot) === fingerprint(fresh)) return fresh;
+    return { ...snapshot, points: { status: "unavailable", active_points: null } };
+  }
+  // Preserve independently confirmed membership even when Points remain pending.
+  return snapshot.ok === true ? snapshot : fresh;
+}
+
 export async function resolveKenjiLineSnapshotTruth({ env = {}, event = {} } = {}) {
   const lineUserId = lineUserIdOf(event);
   if (!lineUserId || !env.MEMBER_PAGES_WORKER?.fetch) {
