@@ -48,3 +48,26 @@
 #mmd-review .mr-muted,#mmd-review .mr-help p,#mmd-review #mr-status{color:var(--mr-muted)!important;-webkit-text-fill-color:var(--mr-muted)!important}
 #mmd-review .mr-eyebrow,#mmd-review .mr-kind,#mmd-review a{color:var(--mr-gold)!important;-webkit-text-fill-color:var(--mr-gold)!important}
 #mmd-review button{-webkit-text-fill-color:currentColor!important;background-image:none!important}
+
+/* Compact review grid; styles stay inside this admin surface. */
+#mmd-review .mr-group{min-width:0;margin-bottom:20px}
+#mmd-review .mr-group-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+#mmd-review .mr-group-heading h2{font-size:18px}
+#mmd-review .mr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#mmd-review .mr-card{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px}
+#mmd-review .mr-card h3{font-size:14px;margin:0;overflow-wrap:anywhere}
+#mmd-review .mr-card .mr-muted{font-size:12px}
+#mmd-review .mr-thumbnail{aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#edf0f3;color:#272b30;border-radius:9px;overflow:hidden;text-align:center;font-size:13px}
+#mmd-review .mr-thumbnail img{display:block;width:100%;height:100%;object-fit:contain}
+#mmd-review .mr-pick{display:flex;align-items:center;gap:8px;min-height:44px}
+#mmd-review .mr-card button,#mmd-review .mr-group-heading button{font-size:13px;padding:7px 10px;min-height:44px}
+#mmd-review .mr-batch{position:sticky;bottom:12px;z-index:5;border:2px solid var(--mr-line);border-radius:14px;padding:14px;background:var(--mr-panel);box-shadow:0 4px 22px #0002}
+#mmd-review .mr-batch .mr-check{margin:8px 0;font-size:14px}
+#mmd-review .mr-batch p{font-size:13px}
+@media(min-width:760px){#mmd-review .mr-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+#mmd-review .mr-header{padding:18px 0}
+#mmd-review .mr-nav{padding-bottom:14px}
+#mmd-review .mr-toolbar{gap:10px}
+#mmd-review .mr-card:has(.mr-pick input:checked){outline:2px solid var(--mr-text);outline-offset:-2px}
+#mmd-review .mr-nav a,#mmd-review .mr-kind{color:var(--mr-text)!important;-webkit-text-fill-color:var(--mr-text)!important}
+@media(max-width:540px){#mmd-review .mr-toolbar{flex-wrap:nowrap}#mmd-review .mr-toolbar label{display:flex;align-items:center;min-width:0}#mmd-review select{min-width:0;max-width:170px}#mmd-review #mr-refresh{font-size:14px;white-space:nowrap}#mmd-review .mr-batch .mr-actions button{width:auto;flex:1}}
