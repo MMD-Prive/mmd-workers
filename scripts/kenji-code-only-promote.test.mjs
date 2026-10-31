@@ -134,3 +134,11 @@ test('Per AI release uploads under protection and promotes only exact reviewed c
   assert.match(workflow, /node scripts\/kenji-code-only-promote\.mjs/);
   assert.doesNotMatch(workflow, /\n  (?:push|pull_request):|wrangler@4 deploy|route_sync|CLOUDFLARE_ROUTES_API_TOKEN|secret put|mms-member-worker/);
 });
+
+test('code-only release preserves an already approved ON auto-reply flag', () => {
+  const baseline = version(); const candidate = version();
+  for (const item of [baseline, candidate]) item.resources.bindings.find(x => x.name === 'LINE_AUTO_REPLY_ENABLED').text = 'true';
+  validateCandidate(baseline, candidate, sha);
+  candidate.resources.bindings.find(x => x.name === 'LINE_AUTO_REPLY_ENABLED').text = 'false';
+  assert.throws(() => validateCandidate(baseline, candidate, sha));
+});

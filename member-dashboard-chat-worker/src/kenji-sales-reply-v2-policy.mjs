@@ -47,6 +47,7 @@ export function refineKenjiSalesIntent(raw = "", prior = "") {
   const text = clean(raw).normalize("NFKC");
   const intent = clean(prior);
   if (PROTECTED.has(intent) || !text) return intent;
+  if (/^(?:promo|promotion|โปร|โปรโมชั่น|โปรโมชัน)(?:ครับ|ค่ะ|คะ|หน่อย|[.!?])*$/i.test(text.replace(/\s+/g, ''))) return 'promotion_overview';
   const care = CARE.test(text);
   const double = DOUBLE.test(text);
   const proof = /ส่งสลิป|สลิป|โอนแล้ว|ชำระแล้ว|จ่ายแล้ว|จ่ายเงินแล้ว|payment\s*proof|already\s*paid/i.test(text);
@@ -65,7 +66,7 @@ export function refineKenjiSalesIntent(raw = "", prior = "") {
     if (/สมัคร|สมาชิกใหม่|standard|premium|พรีเมียม|สแตนดาร์ด|new\s*member/i.test(text)) return "care_back_new_member";
     return "care_back_overview";
   }
-  if (/โปร(?:โมชัน|โมชั่น)?(?:อะไร|เดือนนี้|กันยายน)|เดือนนี้.{0,16}โปร|promotion.{0,20}(?:month|september)/i.test(text)) return "promotion_overview";
+  if (/(?:มี|ดู|ขอ|ถาม|สอบถาม)?โปร(?:โมชัน|โมชั่น)?(?:อะไร|บ้าง|วันนี้|ตอนนี้|ไหม)|โปร(?:โมชัน|โมชั่น)?(?:อะไร|เดือนนี้|กันยายน)|เดือนนี้.{0,16}โปร|promotion.{0,20}(?:month|september)/i.test(text)) return "promotion_overview";
   // Do not reclassify a receipt or protected payment discussion as acquisition.
   if (proof || ["payment_status", "payment_dispute"].includes(intent)) return intent;
   if (/ต่ออายุ|renewal|\brenew\b/i.test(text)) return "membership_renewal";
