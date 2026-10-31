@@ -1,0 +1,41 @@
+name = "partner-shortlist-worker"
+main = "src/worker.js"
+compatibility_date = "2026-01-01"
+workers_dev = false
+preview_urls = false
+
+[images]
+binding = "IMAGES"
+
+[[services]]
+binding = "ADMIN"
+service = "admin-worker"
+
+[[r2_buckets]]
+binding = "SHORTLIST_STORE"
+bucket_name = "mmd-private-model-media"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/partner/model-selections*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/partner/model-selections*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/model-selections*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/model-selections*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/model-selections*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/model-selections*"
+zone_name = "mmdbkk.com"
+
