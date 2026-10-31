@@ -134,11 +134,13 @@ test('actual ingress → Admin signed-session → canonical state and Owner pane
     assert.match(html, /id="kenji-owner-line-unlock"/);
     const script = html.slice(html.indexOf('id="kenji-owner-line-unlock"')).match(/<script>([\s\S]*?)<\/script>/)[1];
     const button = { disabled: true, addEventListener() {} };
+    const globalButton = { disabled: true, addEventListener() {} };
     const refresh = { addEventListener() {} };
     const output = {};
-    await runInNewContext(script, { document: { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : output }) },
+    await runInNewContext(script, { document: { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : output }) },
       fetch: async () => Response.json({ ok: true, controls }), AbortSignal });
     assert.equal(button.disabled, false, 'compiled panel must boot without Worker-only helper references');
+    assert.equal(globalButton.disabled, true, 'already clear global pause cannot be unlocked again');
     const denied = await ingress.fetch(new Request('https://mmdbkk.com' + path + '?kenji_line_unlock_state=1', { headers: { Cookie: 'mmd_admin_gate_v1=' + adminToken } }), env);
     assert.equal(denied.status, 403); assert.equal((await denied.json()).error, 'owner_required');
     const adminPage = await ingress.fetch(new Request('https://mmdbkk.com' + path, { headers: { Cookie: 'mmd_admin_gate_v1=' + adminToken } }), env);
