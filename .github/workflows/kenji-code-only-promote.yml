@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
+      - run: node --test member-dashboard-chat-worker/test/album-v3-release.test.mjs scripts/kenji-code-only-promote.test.mjs scripts/kenji-pause-release-scope.test.mjs
       - name: Promote existing code-only candidate; preserve all configuration
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
