@@ -178,9 +178,23 @@ export const LINE_JOB_EVIDENCE_RELEASE_PATHS = new Set([
   '.github/workflows/payment-evidence-delivery-contract.yml',
 ]);
 
+// LINE status -> Lovable is a reviewed artifact delta, never legacy route sync.
+const liffLovableReturnPaths = new Set([
+  'member-dashboard-chat-worker/src/mms-line-front-gate.js',
+  'member-dashboard-chat-worker/test/my-mmd-status-recovery-gate.test.mjs',
+  'member-dashboard-chat-worker/test/my-mmd-lovable-return.test.mjs',
+  'scripts/kenji-pause-release-scope.mjs',
+  'scripts/kenji-pause-release-scope.test.mjs',
+]);
+
 export function deployRequired(event, files, beforeConfig, afterConfig, manifest = {}) {
   if (event !== 'push') return true;
   assert.ok(files.length, 'Empty or unavailable push diff; stop');
+  if (files.includes('member-dashboard-chat-worker/src/mms-line-front-gate.js')) {
+    assert.ok(files.every(file => liffLovableReturnPaths.has(file)),
+      'LIFF_LOVABLE_RETURN_MIXED_DELTA: stop; separate release review required');
+    return false;
+  }
   if (files.includes(configPath) && files.includes('scripts/kenji-code-only-promote.mjs') &&
       files.every(file => autoReplyActivationPaths.has(file)) &&
       /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m.test(beforeConfig) &&

@@ -240,3 +240,15 @@ test('cross-channel test updates do not trigger Payments deployment or secret ro
   const workflow = readFileSync(new URL('../.github/workflows/deploy-payments-worker.yml', import.meta.url), 'utf8');
   assert.match(workflow, /- "!payments-worker\/cross-channel-proof-flow\.test\.mjs"/);
 });
+
+test('LINE status Lovable return skips legacy deployment only for the exact scope', () => {
+  const files = ['member-dashboard-chat-worker/src/mms-line-front-gate.js',
+    'member-dashboard-chat-worker/test/my-mmd-status-recovery-gate.test.mjs',
+    'member-dashboard-chat-worker/test/my-mmd-lovable-return.test.mjs',
+    'scripts/kenji-pause-release-scope.mjs', 'scripts/kenji-pause-release-scope.test.mjs'];
+  assert.equal(deployRequired('push', files), false);
+  for (const extra of [config, 'member-pages-worker/src/liff-member-shell.js',
+    'member-dashboard-chat-worker/src/index.js', '.github/workflows/deploy-member-dashboard-chat-worker.yml']) {
+    assert.throws(() => deployRequired('push', [...files, extra]), /LIFF_LOVABLE_RETURN_MIXED_DELTA/);
+  }
+});
