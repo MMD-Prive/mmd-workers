@@ -1,0 +1,40 @@
+name: MY MMD LV15 Mobile Release Audit
+on:
+  pull_request:
+    paths:
+      - 'member-pages-worker/src/liff-member-lv15-style.js'
+      - 'member-pages-worker/src/liff-member-shell.js'
+      - 'scripts/my-mmd-lv15-mobile-release-audit.mjs'
+      - '.github/workflows/my-mmd-lv15-mobile-release-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Member runtime regressions
+        run: node --test member-pages-worker/test/liff-member-lv15-restore.test.mjs member-pages-worker/test/liff-member-compact-v4.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-quick-membership.test.mjs member-pages-worker/test/points-display-source-guard.test.mjs
+      - name: Browser audit dependencies
+        run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
+      - name: Render real Worker markup without LINE or member APIs
+        run: node scripts/my-mmd-lv15-mobile-release-audit.mjs
+      - name: Save exact source for offline review
+        if: always()
+        run: |
+          mkdir -p artifacts/my-mmd-lv15-release
+          git archive --format=tar.gz --output=artifacts/my-mmd-lv15-release/source.tar.gz HEAD member-pages-worker shared auth-worker scripts package.json package-lock.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: my-mmd-lv15-release-${{ github.run_id }}
+          path: artifacts/my-mmd-lv15-release
+          retention-days: 14
