@@ -26,10 +26,6 @@ export function careBackOctoberReply(intent, text = '', now = Date.now()) {
   // A proof, personal status, special membership or historical balance is never a sales offer.
   if (/สลิป|โอนแล้ว|ชำระแล้ว|จ่ายแล้ว|คืนเงิน|ได้สิทธิ์แล้ว|สิทธิ์เข้าแล้ว|(?:ของผม|ของฉัน|ของหนู)|(?:ผม|ฉัน|หนู).{0,24}(?:ได้ไหม|ได้อะไร|สิทธิ์|เข้าเกณฑ์)|black\s*card|\b[sv]*vip\b|ย้อนหลัง/i.test(text)) return null;
   if (now >= CARE_BACK_OCTOBER_END) return { text: 'CARE BACK รอบนี้สิ้นสุดวันที่ 31 ต.ค. 2569 แล้วครับ ตรวจข้อเสนอล่าสุดจากบัญชีเดิมได้เลย', route: status, label: 'ตรวจข้อเสนอล่าสุด' };
-  const short = String(text).trim().replace(/(?:ครับ|ค่ะ|คะ|นะ|หน่อย|[.!?])+$/g, '').trim();
-  if (['ใหม่', 'สมาชิกใหม่'].includes(short)) intent = 'care_back_new_member';
-  if (['ปัจจุบัน', 'สมาชิกปัจจุบัน'].includes(short)) intent = 'care_back_current_member';
-  if (['หมดอายุ', 'สมาชิกหมดอายุ'].includes(short)) intent = 'care_back_expired_member';
   const header = 'วันนี้วันสุดท้ายของ CARE BACK ครับ 🖤';
   if (/เกิน\s*90\s*วัน|เกิน\s*๙๐\s*วัน/.test(text) && !/ไม่เกิน\s*(?:90|๙๐)/.test(text)) return { text: `${header}\nหมดอายุเกิน 90 วัน ให้เปอร์ตรวจทางเลือกจากบัญชีเดิมก่อนครับ`, route: status, label: 'เปิดบัญชีเดิมให้ตรวจ' };
   if (intent.startsWith('care_back_new_')) return { text: `${header}\nสมาชิกใหม่: Standard 1,199 บาท/1 ปี · Premium 2,999 บาท/2 ปี พร้อม Welcome Points 66 คะแนน\nให้ระบบตรวจรายการก่อนชำระนะครับ`, route: signup, label: 'สมัคร Private CARE BACK' };

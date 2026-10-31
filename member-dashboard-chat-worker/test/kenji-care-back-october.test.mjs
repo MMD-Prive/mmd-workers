@@ -63,3 +63,9 @@ test('bare group cannot reuse missing, expired or handed-off campaign context', 
   assert.equal(careBackOctoberFollowup('ใหม่', context, start), 'care_back_new_member');
   for (const bad of [{}, { ...context, handoff_required: true }, { ...context, decision: 'stale_refresh' }, { ...context, matrix: { ...context.matrix, state_expires_at: new Date(start).toISOString() } }]) assert.equal(careBackOctoberFollowup('ใหม่', bad, start), '');
 });
+test('stale effective intent cannot turn a bare choice into an advertised group offer', async () => {
+  for (const text of ['ใหม่', 'ปัจจุบัน', 'หมดอายุ']) {
+    const reply = await resolveKenjiSeedDecision(event(text), {}, { now: start, continuity: { effective_intent: 'care_back_overview', available: false, decision: 'stale_refresh' } });
+    assert.doesNotMatch(reply.text || '', /1,199|1,000|แถม 180 วัน|Premium แถม 1 ปี/);
+  }
+});
