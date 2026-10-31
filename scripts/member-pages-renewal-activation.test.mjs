@@ -80,7 +80,7 @@ test('activation workflow keeps owner approval, exact SHA and default mode prote
  assert.match(text,/default: approval_boundary_only/);assert.match(text,/environment: member-pages-code-only-owner/);
  assert.match(text,/inputs\.approved_sha == github\.sha/);assert.match(text,/if: inputs.execution_mode == 'renewal-activation'\n\s+env:/);
  assert.match(text,/node scripts\/member-pages-renewal-activation.mjs --execute-approved/);
- assert.deepEqual([...text.matchAll(/secrets\.([A-Z_]+)/g)].map(m=>m[1]),Array(3).fill('CLOUDFLARE_API_TOKEN'));
+ assert.deepEqual([...text.matchAll(/secrets\.([A-Z_]+)/g)].map(m=>m[1]),Array(4).fill('CLOUDFLARE_API_TOKEN'));
  const step=text.slice(text.indexOf('      - name: Activate only'),text.indexOf('      - name: Promote only'));
  assert.doesNotMatch(step,/AIRTABLE|MEMBER_STATUS|PAYMENTS_WORKER|LINE_CHANNEL/);
 });
