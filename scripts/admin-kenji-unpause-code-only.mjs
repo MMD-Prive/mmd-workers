@@ -29,6 +29,13 @@ export function patchOwner(code, replacement, oldSha = OLD_SHA) {
     old_owner_sha256: oldSha, new_owner_sha256: digest(replacement),
     preserved_runtime_sha256: digest(outside), unrelated_runtime_bytes_unchanged: true } };
 }
+export function validateLiveParts(parts) {
+  assert.equal(parts.length, 1, 'reviewed baseline must contain exactly one module');
+  const [name, file] = parts[0];
+  assert.equal(name, 'worker.js', 'unexpected live main module name');
+  assert.ok(file && typeof file !== 'string' && file.size > 0 && file.size < 20*1024*1024, 'invalid live module');
+  return file;
+}
 export function compileOwner(esbuild, source) {
   assert.match(source, /^import \{ readKenjiRuntimeControlVersions \} from '\.\/kenji-control-actions.js';/);
   const plain = source.replace(/^import[^\n]+\n/, '').replace(/^export /gm, '');
@@ -71,12 +78,9 @@ async function main() {
         headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` }, redirect: 'error', signal: AbortSignal.timeout(30000) });
       assert.equal(response.status, 200);
       const parts = [...(await response.formData()).entries()];
-      assert.ok(parts.length <= 2 && parts.every(([n,v]) => typeof v !== 'string' && ['admin-login-hero-worker.js','admin-login-hero-worker.js.map'].includes(n)));
-      const mainPart = parts.find(([n]) => n === 'admin-login-hero-worker.js')?.[1];
-      assert.ok(mainPart && mainPart.size < 20*1024*1024);
+      const mainPart = validateLiveParts(parts);
       const result = patchOwner(await mainPart.text(), replacement);
-      const map = parts.find(([n]) => n.endsWith('.map'))?.[1];
-      preservation = { ...result.preservation, omitted_debug_map: map ? { sha256: digest(new Uint8Array(await map.arrayBuffer())) } : null };
+      preservation = { ...result.preservation, omitted_debug_map: null };
       writeFileSync(syntax, result.code); execFileSync(process.execPath, ['--check', syntax], { stdio: 'ignore' });
       return new TextEncoder().encode(result.code);
     },
