@@ -345,7 +345,7 @@ test("coupon adapter never promotes legacy fixed discount_percent into approvedD
         code: "ABC234",
         discount_percent: 10,
         benefit_value: 10,
-        expires_at: "2026-10-31T00:00:00.000Z",
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       },
     },
   });
