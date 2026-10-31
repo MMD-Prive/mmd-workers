@@ -66,6 +66,22 @@ function fixture() {
   return { env, bucket, calls, imageCalls, req, owner, partner, create, importInput, addModel };
 }
 
+async function managedBase64Fixture() {
+  const f = fixture(), c = await f.create(), input = f.importInput(1);
+  input.photos[0].downloadAllowed = true;
+  const item = await f.addModel(c, input), photoId = item.models[0].photos[0].id;
+  const recordKey = PREFIX + "records/" + c.id + ".json";
+  const record = await (await f.bucket.get(recordKey)).json(), photo = record.models[0].photos[0];
+  photo.storageEncoding = "base64"; photo.preview.storageEncoding = "base64";
+  const originalKey = PREFIX + "media/" + c.id + "/" + photoId, previewKey = PREFIX + "previews/" + c.id + "/" + photoId;
+  for (const [key, data] of [[originalKey, jpeg], [previewKey, webp]]) {
+    await f.bucket.put(key, Buffer.from(data).toString("base64"), { httpMetadata: { contentType: "application/x-mmd-base64" } });
+    assert.deepEqual(f.bucket.data.get(key).customMetadata, {});
+  }
+  await f.bucket.put(recordKey, JSON.stringify(record));
+  return { f, c, photoId, recordKey, record, photo, originalKey, previewKey };
+}
+
 test("owner authentication forwards only the credential-bound cookie and fails closed before storage", async () => {
   const f = fixture();
   for (const headers of [{}, { cookie: "mmd_model_session_v1=pretend" }, { "x-mmd-admin-role": "owner" }]) {
@@ -162,6 +178,90 @@ test("approved imports preserve originals privately; partner previews are resize
   const allowed = await f.partner(c.id, c.token, "media/" + model.photos[1].id + "/download");
   assert.equal(allowed.status, 200); assert.match(allowed.headers.get("content-disposition"), /^attachment/);
   assert.deepEqual(new Uint8Array(await allowed.arrayBuffer()), jpeg);
+});
+
+test("explicit managed base64 variants verify actual decoded preview and original bytes without R2 custom metadata", async () => {
+  const { f, c, photoId, originalKey, previewKey } = await managedBase64Fixture();
+  const preview = await f.partner(c.id, c.token, "media/" + photoId);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get("content-type"), "image/webp");
+  assert.equal(preview.headers.get("content-length"), String(webp.length));
+  assert.deepEqual(new Uint8Array(await preview.arrayBuffer()), webp);
+  const download = await f.partner(c.id, c.token, "media/" + photoId + "/download");
+  assert.equal(download.status, 200);
+  assert.equal(download.headers.get("content-type"), "image/jpeg");
+  assert.equal(download.headers.get("content-length"), String(jpeg.length));
+  assert.match(download.headers.get("content-disposition"), /^attachment/);
+  assert.deepEqual(new Uint8Array(await download.arrayBuffer()), jpeg);
+  const owner = await f.owner(O + "/" + c.id + "/media/" + photoId);
+  assert.equal(owner.status, 200); assert.deepEqual(new Uint8Array(await owner.arrayBuffer()), jpeg);
+  const head = await f.partner(c.id, c.token, "media/" + photoId, "HEAD");
+  assert.equal(head.status, 200); assert.equal(await head.text(), "");
+  assert.equal(f.bucket.data.get(originalKey).bytes.length, 4 * Math.ceil(jpeg.length / 3));
+  assert.equal(f.bucket.data.get(previewKey).bytes.length, 4 * Math.ceil(webp.length / 3));
+  const view = JSON.stringify(await (await f.partner(c.id, c.token)).json());
+  assert.ok(!view.includes("storageEncoding")); assert.ok(!view.includes("sha256"));
+});
+
+test("managed base64 hash, physical size, transport MIME and declared image corruption fail closed", async () => {
+  const mutations = [
+    ({ stored }) => { const data = Buffer.from(new TextDecoder().decode(stored.bytes), "base64"); data[data.length - 1] ^= 1; stored.bytes = new TextEncoder().encode(data.toString("base64")); },
+    ({ stored }) => { stored.bytes = new Uint8Array([...stored.bytes, 65]); },
+    ({ stored }) => { stored.httpMetadata.contentType = "text/plain"; },
+    ({ variant }) => { variant.sha256 = "0".repeat(64); },
+    ({ variant }) => { variant.bytes = 0; },
+    ({ variant }) => { variant.bytes = 10 * 1024 * 1024 + 1; },
+    ({ variant }) => { variant.contentType = "image/svg+xml"; },
+    ({ variant }) => { delete variant.storageEncoding; },
+  ];
+  for (const which of ["original", "preview"]) for (const mutate of mutations) {
+    const t = await managedBase64Fixture(), isPreview = which === "preview";
+    const key = isPreview ? t.previewKey : t.originalKey, variant = isPreview ? t.photo.preview : t.photo;
+    mutate({ stored: t.f.bucket.data.get(key), variant });
+    await t.f.bucket.put(t.recordKey, JSON.stringify(t.record));
+    const suffix = "media/" + t.photoId + (isPreview ? "" : "/download");
+    const response = await t.f.partner(t.c.id, t.c.token, suffix);
+    assert.equal(response.status, 503, which + " " + mutate.toString());
+    assert.match(response.headers.get("content-type"), /application\/json/);
+    const head = await t.f.partner(t.c.id, t.c.token, suffix, "HEAD");
+    assert.equal(head.status, 503); assert.equal(await head.text(), "");
+  }
+});
+
+test("managed base64 requires canonical padding and bounds the actual stream even when advertised size is correct", async () => {
+  const t = await managedBase64Fixture(), stored = t.f.bucket.data.get(t.originalKey);
+  const canonical = new TextDecoder().decode(stored.bytes), alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  assert.ok(canonical.endsWith("=="));
+  const nonCanonical = canonical.slice(0, -3) + alphabet[alphabet.indexOf(canonical.at(-3)) + 1] + "==";
+  assert.deepEqual(Buffer.from(nonCanonical, "base64"), Buffer.from(canonical, "base64"), "fixture changes only unused padding bits");
+  stored.bytes = new TextEncoder().encode(nonCanonical);
+  assert.equal((await t.f.partner(t.c.id, t.c.token, "media/" + t.photoId + "/download")).status, 503);
+  stored.bytes = new TextEncoder().encode(canonical);
+  const get = t.f.bucket.get.bind(t.f.bucket);
+  t.f.bucket.get = async key => {
+    const object = await get(key);
+    if (key === t.originalKey) object.body = new Response(canonical + "A").body;
+    return object;
+  };
+  assert.equal((await t.f.partner(t.c.id, t.c.token, "media/" + t.photoId + "/download")).status, 503);
+});
+
+test("managed base64 preserves token, explicit download, revocation and separate-preview gates", async () => {
+  const t = await managedBase64Fixture(), { f, c, photoId } = t;
+  const other = await f.create();
+  assert.equal((await f.partner(c.id, other.token, "media/" + photoId)).status, 401);
+  assert.equal((await handleShortlist(f.req(P + "/" + c.id + "/media/" + photoId), f.env)).status, 401);
+  assert.equal((await f.partner(other.id, other.token, "media/" + photoId)).status, 404);
+  t.photo.downloadAllowed = false; await f.bucket.put(t.recordKey, JSON.stringify(t.record));
+  assert.equal((await f.partner(c.id, c.token, "media/" + photoId + "/download")).status, 403);
+  f.bucket.data.delete(t.previewKey);
+  assert.equal((await f.partner(c.id, c.token, "media/" + photoId)).status, 503);
+  assert.equal((await f.owner(O + "/" + c.id + "/media/" + photoId)).status, 200);
+  t.record.state = "revoked"; await f.bucket.put(t.recordKey, JSON.stringify(t.record));
+  assert.equal((await f.partner(c.id, c.token, "media/" + photoId)).status, 410);
+  t.record.state = "active"; t.record.expiresAt = new Date(Date.now() - 1000).toISOString();
+  await f.bucket.put(t.recordKey, JSON.stringify(t.record));
+  assert.equal((await f.partner(c.id, c.token, "media/" + photoId)).status, 410);
 });
 
 test("missing or failed preview transforms prevent publishing and never fall back to originals", async () => {
