@@ -137,7 +137,7 @@ test('actual ingress → Admin signed-session → canonical state and Owner pane
     const globalButton = { disabled: true, addEventListener() {} };
     const refresh = { addEventListener() {} };
     const output = {};
-    await runInNewContext(script, { document: { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : output }) },
+    await runInNewContext(script, { document: { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : s === '[data-owner-confirm]' ? { checked: false } : output }) },
       fetch: async () => Response.json({ ok: true, controls }), AbortSignal });
     assert.equal(button.disabled, false, 'compiled panel must boot without Worker-only helper references');
     assert.equal(globalButton.disabled, true, 'already clear global pause cannot be unlocked again');

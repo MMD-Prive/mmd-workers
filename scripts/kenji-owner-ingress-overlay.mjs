@@ -12,10 +12,10 @@ import { parseWranglerVersion } from './admin-held-viewer-code-only.mjs';
 import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 export const ROOT=`/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`;
-export const BASE='072e33cf-55e3-45c4-88c0-e369b37d6410';
+export const BASE='b0834b26-a4c6-4901-8ce5-575a8ee5f99a';
 export const START='// ../admin-worker/src/kenji-owner-line-unlock.js\n';
 export const END='// src/kenji-owner-line-bridge.ts\n';
-export const HASH='8f37db0ff9001fe27d47c03aa25eeed9a09db660899ef9c5094f6818845e45b6';
+export const HASH='1d316b3d84d65d9a136f8ba1de3b11c80c5065cd6580d76dd1ad823fa4fa845e';
 export function ingressMetadata(version,sha) {
  const copy=structuredClone(version);
  const assets=copy.resources.script_runtime.assets;
@@ -54,7 +54,7 @@ async function main(){
  let preservation;
  await releaseCurrentSession({root:ROOT,metadataFactory:ingressMetadata,sha,approve,expectedVersion:BASE,expectedDeployment:process.env.EXPECTED_DEPLOYMENT,call:ingressTransport(process.env.CLOUDFLARE_API_TOKEN),
  sourceCheck:async v=>{assert.equal(v.id,BASE);return {commit_sha:sha,dirty_tree:false,dirty_path_count:0,method:'exact-Owner-panel-only-overlay',baseline_version:BASE};},
- bundle:async()=>{const r=await fetch('https://api.cloudflare.com/client/v4'+ROOT+'/content/v2',{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},redirect:'error',signal:AbortSignal.timeout(30000)});assert.equal(r.status,200);const parts=[...(await r.formData()).entries()];assert.equal(parts.length,1);assert.equal(parts[0][0],'customer-360-live-ingress-wrapper.js');assert.ok(typeof parts[0][1]!=='string'&&parts[0][1].size<2*1024*1024);const result=patchOwner(await parts[0][1].text(),replacement,HASH,START,END);preservation=result.preservation;writeFileSync(syntax,result.code);execFileSync(process.execPath,['--check',syntax],{stdio:'ignore'});return new TextEncoder().encode(result.code);},
+ bundle:async()=>{const r=await fetch('https://api.cloudflare.com/client/v4'+ROOT+'/content/v2',{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`},redirect:'error',signal:AbortSignal.timeout(30000)});assert.equal(r.status,200);const parts=[...(await r.formData()).entries()];assert.equal(parts.length,1);assert.equal(parts[0][0],'worker.js');assert.ok(typeof parts[0][1]!=='string'&&parts[0][1].size<2*1024*1024);const result=patchOwner(await parts[0][1].text(),replacement,HASH,START,END);preservation=result.preservation;writeFileSync(syntax,result.code);execFileSync(process.execPath,['--check',syntax],{stdio:'ignore'});return new TextEncoder().encode(result.code);},
  buildEvidence:code=>({...createBuildEvidence({code,releaseId,nodeVersion:process.version,wranglerVersion:parseWranglerVersion(execFileSync('wrangler',['--version'],{encoding:'utf8'})),lockfile:readFileSync('package-lock.json'),wranglerConfig:new TextEncoder().encode(JSON.stringify({panel:START,baseline:BASE}))}),preservation}),
  now:()=>new Date().toISOString(),save:s=>writeFileSync(join(process.env.RUNNER_TEMP,'kenji-ingress-panel-receipt.json'),JSON.stringify(s,null,2),{mode:0o600})});
  console.log('Ingress Owner panel deployed; unrelated runtime, routes, bindings and asset configuration preserved.');

@@ -59,7 +59,7 @@ export const OWNER_LINE_CLIENT = [
   "  }",
   "  globalButton.addEventListener('click', async () => {",
   "    if (busy || !globalReady(state)) return;",
-  "    if (!window.confirm('ปลด Pause รวม? การแก้ข้อมูลของ Kenji จะกลับมาทำงานได้ตามสิทธิ์เดิม โดยยังคง Pause LINE และ Pause Model ไว้ ต้องปลด LINE แยกอีกครั้ง')) return;",
+  "    if (!root.querySelector('[data-owner-confirm]').checked) return;",
   "    busy = true; button.disabled = true; globalButton.disabled = true; refresh.disabled = true;",
   "    const before = state;",
   "    state = null;",
@@ -88,7 +88,7 @@ export const OWNER_LINE_CLIENT = [
   "  refresh.addEventListener('click', load);",
   "  button.addEventListener('click', async () => {",
   "    if (busy || !ready(state)) return;",
-  "    if (!window.confirm('ปลดเฉพาะ LINE auto-reply kill switch? Model kill switch และ model flag จะไม่ถูกเปลี่ยน')) return;",
+  "    if (!root.querySelector('[data-owner-confirm]').checked) return;",
   "    busy = true; button.disabled = true; globalButton.disabled = true; refresh.disabled = true;",
   "    const before = state;",
   "    state = null;",
@@ -122,6 +122,7 @@ export const OWNER_LINE_CLIENT = [
 export function ownerLinePanel() {
   return `<section id="kenji-owner-line-unlock" aria-label="Owner LINE safe control" style="margin:16px;padding:20px;border:1px solid #777;background:#171717;color:#fff;border-radius:12px">
 <h2>Owner · LINE Safe Walk</h2><p>ปลดเฉพาะ LINE auto-reply kill switch ผ่าน control API เดิม ไม่แก้ model flag, model kill switch, secrets หรือ routes</p>
+<label style="display:block;margin:12px 0"><input type="checkbox" data-owner-confirm> ยืนยันปลด Pause ตามปุ่มที่เลือก โดยคง Pause Model ไว้ (ปลด Pause รวมแล้วการแก้ข้อมูลกลับมาทำงานตามสิทธิ์เดิม)</label>
 <button type="button" disabled style="min-height:44px">ปลดเฉพาะ LINE kill switch</button>
 <button type="button" data-global-unlock disabled style="min-height:44px">ปลด Pause รวม · คง Pause LINE และ Model</button>
 <button type="button" data-refresh style="min-height:44px">อ่านสถานะใหม่</button>
