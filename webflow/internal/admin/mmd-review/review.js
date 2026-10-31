@@ -66,7 +66,7 @@
         var settled = false;
         function finish(ok) {
           if (settled) return; settled = true; clearTimeout(timer); e.cancelDecode = null;
-          if (epoch === gridEpoch) { e.sha = ok ? result.sha : ''; e.hint.textContent = ok ? 'เลือกรูปนี้เมื่อดูครบแล้ว' : 'เปิดรูปไม่ได้ · ลองโหลดคิวใหม่'; batchControls(false); }
+          if (epoch === gridEpoch) { e.sha = ok ? result.sha : ''; if (!ok) e.preview.textContent = 'โหลดรูปไม่สำเร็จ · ลองโหลดคิวใหม่'; e.hint.textContent = ok ? 'เลือกรูปนี้เมื่อดูครบแล้ว' : 'เปิดรูปไม่ได้ · ลองโหลดคิวใหม่'; batchControls(false); }
           resolve();
         }
         var timer = setTimeout(function () { finish(false); }, 30000);
@@ -75,7 +75,7 @@
         img.addEventListener('error', function () { finish(false); }, { once: true });
         e.url = URL.createObjectURL(result.blob); img.src = e.url; e.preview.replaceChildren(img);
       });
-    } catch (error) { if (epoch === gridEpoch) { e.sha = ''; e.hint.textContent = errorText(error); batchControls(true); } }
+    } catch (error) { if (epoch === gridEpoch) { e.sha = ''; e.preview.textContent = 'โหลดรูปไม่สำเร็จ · ลองโหลดคิวใหม่'; e.hint.textContent = errorText(error); batchControls(true); } }
   }
   async function approveBatch() {
     if (busy || groupJobs || !q('batch-confirm').checked) return;
