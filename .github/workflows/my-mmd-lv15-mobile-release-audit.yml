@@ -5,6 +5,10 @@ on:
       - 'member-pages-worker/src/liff-member-lv15-style.js'
       - 'member-pages-worker/src/liff-member-shell.js'
       - 'scripts/my-mmd-lv15-mobile-release-audit.mjs'
+      - 'scripts/member-pages-lv15-artifact*'
+      - 'scripts/verify-my-mmd-lv15-live*'
+      - 'scripts/member-pages-owner-approval.test.mjs'
+      - '.github/workflows/deploy-member-pages-worker-code-only.yml'
       - '.github/workflows/my-mmd-lv15-mobile-release-audit.yml'
   workflow_dispatch:
 permissions:
@@ -21,8 +25,8 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Member runtime regressions
-        run: node --test member-pages-worker/test/liff-member-lv15-restore.test.mjs member-pages-worker/test/liff-member-compact-v4.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-quick-membership.test.mjs member-pages-worker/test/points-display-source-guard.test.mjs
+      - name: Member runtime and owner-gated release regressions
+        run: node --test scripts/member-pages-lv15-artifact.test.mjs scripts/member-pages-owner-approval.test.mjs member-pages-worker/test/liff-member-lv15-restore.test.mjs member-pages-worker/test/liff-member-compact-v4.test.mjs member-pages-worker/test/liff-member-shell.test.mjs member-pages-worker/test/liff-quick-membership.test.mjs member-pages-worker/test/points-display-source-guard.test.mjs
       - name: Browser audit dependencies
         run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
       - name: Render real Worker markup without LINE or member APIs
@@ -31,7 +35,7 @@ jobs:
         if: always()
         run: |
           mkdir -p artifacts/my-mmd-lv15-release
-          git archive --format=tar.gz --output=artifacts/my-mmd-lv15-release/source.tar.gz HEAD member-pages-worker shared auth-worker scripts package.json package-lock.json
+          git archive --format=tar.gz --output=artifacts/my-mmd-lv15-release/source.tar.gz HEAD .github member-pages-worker shared auth-worker scripts package.json package-lock.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
