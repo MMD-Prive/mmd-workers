@@ -82,6 +82,34 @@ test("invalid query, cursor and mutation requests never reach Airtable", async t
   for(const query of ["q="+"x".repeat(81),"audience=secret","attention=secret","cursor=%3Cscript%3E","q=%00"]) assert.equal((await handleBookingModels(request(API+"?"+query),env)).status,400);
   assert.equal((await handleBookingModels(request(API,{method:"POST",body:"{}"}),env)).status,405);assert.equal(calls.length,0);
 });
+test("owner Compcard filters reuse canonical Model lookup with bounded metric, physique and skin predicates", async t => {
+  const {request,calls}=await setup(t);
+  const url=API+"?q="+encodeURIComponent("Ice T")+"&height_min=175&height_max=190&weight_min=70&weight_max=90&body=muscular&skin=tan";
+  const response=await handleBookingModels(request(url),env);
+  assert.equal(response.status,200);
+  const formula=new URL(calls[0].url).searchParams.get("filterByFormula");
+  assert.match(formula,/LOWER\(\{working_name\}\)/);
+  assert.match(formula,/\{height_cm\}>=175/);
+  assert.match(formula,/\{height_cm\}<=190/);
+  assert.match(formula,/\{weight_kg\}>=70/);
+  assert.match(formula,/\{weight_kg\}<=90/);
+  assert.match(formula,/LOWER\(\{body_type\}\)="muscular"/);
+  assert.match(formula,/LOWER\(\{skin_tone\}\)="tan"/);
+  const result=await response.json();
+  assert.equal(result.source,"canonical_booking_models");
+  assert.equal(JSON.stringify(result).includes("LEAK_PHONE"),false);
+});
+
+test("invalid or reversed Compcard search filters reject before any Airtable calls",async t=>{
+  const {request,calls}=await setup(t);
+  for(const query of [
+    "height_min=abc","height_min=99","height_max=999","height_min=190&height_max=180",
+    "weight_min=30&weight_max=29","weight_max=251","weight_min=%7Bphone%7D",
+    "body=none","body=%3Cimg%3E","skin=orange","skin=%22%7D%2C%7Bphone%7D"
+  ]) assert.equal((await handleBookingModels(request(API+"?"+query),env)).status,400,query);
+  assert.equal(calls.length,0);
+});
+
 test("customer visibility remains diagnostic while admin can preview the Model", async t => {
   const hidden={...publicModel,fields:{...publicModel.fields,status:"hidden",can_work_private:true,private_tier:"premium"}};
   const {request}=await setup(t,"owner",{models:[hidden]});const b=await(await handleBookingModels(request(),env)).json();
