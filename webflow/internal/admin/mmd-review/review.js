@@ -4,7 +4,7 @@
   if (!root || root.dataset.ready) return;
   root.dataset.ready = 'true';
   var q = function (id) { return root.querySelector('#mr-' + id); };
-  var dialog = q('dialog'), selected = null, objectUrl = '', sha = '', busy = false, loading = false, cursor = null, generation = 0;
+  var dialog = q('dialog'), selected = null, objectUrl = '', sha = '', busy = false, loading = false, cursor = null, generation = 0, queueRequest = 0;
   var controllers = new Set();
   var entries = new Map(), groups = new Map(), queue = [], activePreviews = 0, gridEpoch = 0, selectionEpoch = 0, groupJobs = 0;
   var observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(function (records) {
@@ -189,21 +189,24 @@
   }
   async function load(more) {
     if (loading || busy) return;
+    var request = ++queueRequest;
     loading = true; q('refresh').disabled = true; q('filter').disabled = true; q('more').disabled = true;
     if (!more) { cursor = null; clearGrid(); }
     message('status', 'กำลังโหลดคิว…');
     try {
       var params = new URLSearchParams({ status: q('filter').value }); if (more && cursor) params.set('cursor', cursor);
       var data = await api('?' + params.toString());
+      if (request !== queueRequest) return;
       if (!Array.isArray(data.items)) throw new Error('invalid_queue');
       data.items.forEach(card); cursor = data.next_cursor || null;
       var count = entries.size;
       message('status', count ? 'แสดง ' + count + ' รายการ' + (cursor ? ' · มีรายการเพิ่มเติม' : '') : 'ไม่มีรายการในสถานะนี้');
       if (!count) q('list').append(element('div', 'mr-empty', 'เมื่อมีสื่อในสถานะนี้ รายการจะแสดงที่นี่'));
     } catch (error) {
+      if (request !== queueRequest) return;
       message('status', errorText(error));
       if (error.status === 401) { var link = element('a', '', 'เข้าสู่ระบบแอดมิน'); link.href = '/internal/admin/login?next=%2Finternal%2Fadmin%2Fmmd-review'; q('list').replaceChildren(link); }
-    } finally { loading = false; q('refresh').disabled = false; q('filter').disabled = false; q('more').disabled = false; q('more').hidden = !cursor; }
+    } finally { if (request === queueRequest) { loading = false; q('refresh').disabled = false; q('filter').disabled = false; q('more').disabled = false; q('more').hidden = !cursor; } }
   }
   async function decide(decision) {
     if (busy || !selected || !sha || !q('confirm').checked) return;
@@ -222,7 +225,7 @@
   q('close').addEventListener('click', closeReview); dialog.addEventListener('cancel', function (event) { event.preventDefault(); closeReview(); });
   q('confirm').addEventListener('change', controls); q('teaser').addEventListener('change', controls); q('note').addEventListener('input', controls); q('form').addEventListener('submit', function (event) { event.preventDefault(); });
   ['approve', 'reject', 'revoke'].forEach(function (decision) { q(decision).addEventListener('click', function () { decide(decision); }); });
-  function conceal() { controllers.forEach(function (controller) { controller.abort(); }); clearMedia(); clearGrid(); if (dialog.open) dialog.close(); }
+  function conceal() { queueRequest++; loading = false; controllers.forEach(function (controller) { controller.abort(); }); clearMedia(); clearGrid(); if (dialog.open) dialog.close(); }
   document.addEventListener('visibilitychange', function () { if (document.hidden) conceal(); else if (!busy) load(false); });
   window.addEventListener('pagehide', conceal);
   load(false);
