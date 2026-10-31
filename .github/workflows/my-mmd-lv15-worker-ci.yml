@@ -1,0 +1,49 @@
+name: MY MMD LV15 Worker presentation CI
+
+on:
+  pull_request:
+    paths:
+      - "member-pages-worker/src/liff-member-lv15-style.js"
+      - "member-pages-worker/src/liff-member-shell.js"
+      - "member-pages-worker/test/liff-member-lv15-restore.test.mjs"
+      - ".github/workflows/my-mmd-lv15-worker-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "member-pages-worker/src/liff-member-lv15-style.js"
+      - "member-pages-worker/src/liff-member-shell.js"
+      - "member-pages-worker/test/liff-member-lv15-restore.test.mjs"
+      - ".github/workflows/my-mmd-lv15-worker-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  presentation-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install locked test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check syntax and patch whitespace
+        run: |
+          node --check member-pages-worker/src/liff-member-lv15-style.js
+          node --check member-pages-worker/src/liff-member-shell.js
+          node --check member-pages-worker/test/liff-member-lv15-restore.test.mjs
+          git diff --check
+      - name: Regression for LV15, existing LIFF identity and V4 rollback
+        run: |
+          node --test \
+            member-pages-worker/test/liff-member-lv15-restore.test.mjs \
+            member-pages-worker/test/liff-member-compact-v4.test.mjs \
+            member-pages-worker/test/liff-member-shell.test.mjs \
+            member-pages-worker/test/liff-quick-membership.test.mjs \
+            member-pages-worker/test/points-display-source-guard.test.mjs
+      - name: Install Worker build dependencies
+        run: npm ci --prefix member-pages-worker/test-runtime --ignore-scripts --no-audit --no-fund
+      - name: Worker production-compatible build (no deployment)
+        run: npm run check:member-pages-wrangler
