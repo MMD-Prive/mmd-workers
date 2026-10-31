@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInThisContext } from 'node:vm';
-import { handleOwnerLinePage, OWNER_LINE_CLIENT, lineUnlockReady, globalUnlockReady, ownerLinePanel } from './src/kenji-owner-line-unlock.js';
+import { handleOwnerLinePage, OWNER_LINE_CLIENT, lineUnlockReady, globalUnlockReady, modelUnlockReady, ownerLinePanel } from './src/kenji-owner-line-unlock.js';
 const installOwnerLineUnlock = runInThisContext(`(${OWNER_LINE_CLIENT})`);
 
 const initial = () => ({ line_oa_auto_reply: { enabled: true, version: 6 },
@@ -78,10 +78,11 @@ async function clientFixture(options, run) {
   const events = {};
   const button = { disabled: true, addEventListener(_, fn) { events.click = fn; } };
   const globalButton = { disabled: true, addEventListener(_, fn) { events.global = fn; } };
+  const modelButton = { disabled: true, addEventListener(_, fn) { events.model = fn; } };
   const refresh = { addEventListener(_, fn) { events.refresh = fn; } };
   const status = { textContent: '' };
   const confirmation = { checked: options.confirm !== false };
-  globalThis.document = { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : s === '[data-owner-confirm]' ? confirmation : status }) };
+  globalThis.document = { getElementById: () => ({ querySelector: s => s === 'button' ? button : s === '[data-refresh]' ? refresh : s === '[data-global-unlock]' ? globalButton : s === '[data-model-unlock]' ? modelButton : s === '[data-owner-confirm]' ? confirmation : status }) };
   globalThis.window = { confirm: () => options.confirm !== false };
   const calls = []; let reads = 0; let controls = structuredClone(options.initial ?? initial());
   globalThis.fetch = async (input, init = {}) => {
@@ -100,6 +101,13 @@ async function clientFixture(options, run) {
     if (options.postFailure) return Response.json({ ok: false, error: 'version_conflict' }, { status: 409 });
     if (options.postUnknown) throw new Error('timeout');
     const scope = JSON.parse(init.body).scope;
+    if (scope === 'model_keyword_auto_reply') {
+      controls.model_keyword_auto_reply = { enabled: false, version: 4 };
+      if (options.afterDrift) controls.all_kenji_mutations.version++;
+      if (options.afterLineDrift) controls.line_oa_auto_reply.version++;
+      return Response.json({ ok: true, scope, enabled: false, version: 4,
+        ...(options.noAudit ? {} : { audit_id: 'fixture-model-audit' }) });
+    }
     if (scope === 'all_kenji_mutations') {
       controls.all_kenji_mutations = { enabled: false, version: 2 };
       if (options.afterDrift) controls.model_keyword_auto_reply.version++;
@@ -112,7 +120,7 @@ async function clientFixture(options, run) {
     return Response.json({ ok: true, scope: 'line_oa_auto_reply', enabled: false, version: 7,
       ...(options.noAudit ? {} : { audit_id: 'fixture-audit' }) });
   };
-  try { await installOwnerLineUnlock(lineUnlockReady, globalUnlockReady); await run({ events, button, globalButton, status, calls }); }
+  try { await installOwnerLineUnlock(lineUnlockReady, globalUnlockReady, modelUnlockReady); await run({ events, button, globalButton, modelButton, status, calls }); }
   finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } }
 }
 
@@ -171,7 +179,7 @@ test('global unlock requires both LINE and Model pauses and known positive versi
     assert.equal(globalUnlockReady(controls), false);
 });
 test('global action is audited, versioned, fixed scope and keeps LINE and Model paused', async () => {
-  await clientFixture({ initial: globallyPaused() }, async ({ events, button, globalButton, status, calls }) => {
+  await clientFixture({ initial: globallyPaused() }, async ({ events, button, globalButton, modelButton, status, calls }) => {
     assert.equal(button.disabled, true);
     assert.equal(globalButton.disabled, false);
     await Promise.all([events.global(), events.global()]);
@@ -211,4 +219,24 @@ test('global conflict, timeout, missing audit and changed sibling scope never cl
 test('owner confirmation is explicit inline acknowledgement and never a blocking browser dialog', () => {
  assert.match(ownerLinePanel(), /type="checkbox" data-owner-confirm/);
  assert.doesNotMatch(OWNER_LINE_CLIENT, /window\.confirm/);
+});
+
+const modelPaused = () => ({ line_oa_auto_reply: { enabled: false, version: 9 }, model_keyword_auto_reply: { enabled: true, version: 3 }, all_kenji_mutations: { enabled: false, version: 2 } });
+test('model unlock requires known clear LINE/global controls and active Model pause', () => {
+ assert.equal(modelUnlockReady(modelPaused()),true);
+ for(const x of [null,{},initial(),{...modelPaused(),all_kenji_mutations:{enabled:true,version:2}},{...modelPaused(),model_keyword_auto_reply:{enabled:false,version:4}}])assert.equal(modelUnlockReady(x),false);
+});
+test('model action writes only Model pause and verifies sibling controls', async()=>{
+ await clientFixture({initial:modelPaused()},async({events,calls,status,modelButton})=>{
+  assert.equal(modelButton.disabled,false);await Promise.all([events.model(),events.model()]);
+  const posts=calls.filter(c=>c.init.method==='POST');assert.equal(posts.length,1);
+  const p=JSON.parse(posts[0].init.body);assert.equal(p.scope,'model_keyword_auto_reply');assert.equal(p.enabled,false);assert.equal(p.expected_version,3);
+  assert.match(status.textContent,/readback สำเร็จ/);assert.equal(modelButton.disabled,true);
+ });
+});
+test('model cancellation, read failure and version drift never POST',async()=>{
+ for(const options of [{confirm:false},{readFailure:true},{beforeDrift:true},{initial:initial()}])await clientFixture({initial:modelPaused(),...options},async({events,calls})=>{await events.model();assert.equal(calls.some(c=>c.init.method==='POST'),false);});
+});
+test('model uncertain action, missing audit or sibling drift never claims success or retries',async()=>{
+ for(const options of [{postFailure:true},{postUnknown:true},{noAudit:true},{afterDrift:true},{afterLineDrift:true}])await clientFixture({initial:modelPaused(),...options},async({events,calls,status})=>{await events.model();await events.model();assert.equal(calls.filter(c=>c.init.method==='POST').length,1);assert.doesNotMatch(status.textContent,/readback สำเร็จ/);});
 });

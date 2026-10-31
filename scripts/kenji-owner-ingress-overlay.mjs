@@ -12,10 +12,10 @@ import { parseWranglerVersion } from './admin-held-viewer-code-only.mjs';
 import { verifyProductionApproval } from './admin-production-approval.mjs';
 import { inspectEnvironment } from './admin-production-validation.mjs';
 export const ROOT=`/accounts/${ACCOUNT}/workers/scripts/immigrate-worker`;
-export const BASE='b0834b26-a4c6-4901-8ce5-575a8ee5f99a';
+export const BASE='a64b2e1e-9e2b-426c-87be-f8e0f9ce119d';
 export const START='// ../admin-worker/src/kenji-owner-line-unlock.js\n';
 export const END='// src/kenji-owner-line-bridge.ts\n';
-export const HASH='1d316b3d84d65d9a136f8ba1de3b11c80c5065cd6580d76dd1ad823fa4fa845e';
+export const HASH='a9a12b9f94b93f39e4cb92fa453c7b5fecada929af5032b7f091a31fc9577a1b';
 export function ingressMetadata(version,sha) {
  const copy=structuredClone(version);
  const assets=copy.resources.script_runtime.assets;
